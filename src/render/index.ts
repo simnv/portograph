@@ -13,6 +13,7 @@ import { effectiveLayer, labelArea, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
+import { dotEnds } from './anonymous-end.js';
 import { groupShapes } from './frame-order.js';
 import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
@@ -484,31 +485,35 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     return label === undefined || label.omitted || label.bounds === undefined ? []
       : [textElement(label, locks, classes('link-label', 'mesh-bus-label'), bus.id, authorClass(bus.class))];
   });
+  // A link end on an anonymous port (ADR-0002: no geometry, no pill) is closed by a dot in the link stroke, so it does not look
+  // unfinished beside a pill. `dotEnds` is the predicate draw.io shares. Paint only. A routed dot stands in a group after the nodes,
+  // as draw.io's links layer stands above its diagram layer, so the node body does not cut the dot on the border. An overlay dot
+  // stands among the overlay marks and replaces the small mark of its end, so one dot shows.
+  const dotFor = (link: LayoutLink, overlay: boolean): string => {
+    const ends = dotEnds(layout.document, link), segments = link.path?.segments ?? [];
+    if (!ends.length || !segments.length) return '';
+    // A disc drawn as a stroke: radius r/2 with a stroke r wide covers the disc of radius r, in the colour of the link's own
+    // `.link-line` rules, so a document `css:` rule that recolours the line recolours the dot.
+    const radius = anonymousDotRadius(linkStrokeWidth(link));
+    return ends.map(end => {
+      const point = end === 'from' ? segments[0]!.from : segments.at(-1)!.to;
+      return element('circle', { class: classes('link-line', overlay ? 'overlay-line' : undefined, 'link-dot', linkClassToken(layout, link), locks.stroke(radius)),
+        style: 'stroke-dasharray:none', 'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: radius / 2 });
+    }).join('');
+  };
+  const dots = drawn.filter(link => effectiveLayer(link) === 'routed').map(link => dotFor(link, false)).join('');
+  const overlayDots = drawn.filter(link => effectiveLayer(link) === 'overlay').map(link => dotFor(link, true)).join('');
+
   const busMarks = buses.flatMap(bus => bus.stubs!.map(stub => element('circle', { class: classes('overlay-endpoint', authorClass(bus.class)),
     'data-owner': bus.id, 'data-end': stub.node, cx: stub.from.x, cy: stub.from.y, r: OVERLAY_ENDPOINT_RADIUS }))).join('');
   const marks = busMarks + drawn.filter(link => effectiveLayer(link) === 'overlay').flatMap(link => {
     const segments = link.path!.segments;
     if (!segments.length) return [];
-    return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).map(([end, point]) =>
+    const bare = dotEnds(layout.document, link);
+    return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).filter(([end]) => !bare.includes(end)).map(([end, point]) =>
       element('circle', { class: classes('overlay-endpoint', linkClassToken(layout, link)),
         'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: OVERLAY_ENDPOINT_RADIUS }));
-  }).join('');
-
-  // A routed link end on an anonymous port (ADR-0002: no geometry, no pill) is closed by a dot in the link stroke, so it does not
-  // look unfinished beside a pill. Paint only; an overlay link already carries its end mark. The group stands after the nodes, as
-  // draw.io's links layer stands above its diagram layer, so the node body does not cut the dot on the border.
-  const dots = layout.document.render?.anonymousPortMarker === 'none' ? '' : drawn.flatMap(link => {
-    if (effectiveLayer(link) !== 'routed' || link.attachments === undefined) return [];
-    const segments = link.path!.segments;
-    if (!segments.length) return [];
-    // A disc drawn as a stroke: radius r/2 with a stroke r wide covers the disc of radius r, in the colour of the link's own
-    // `.link-line` rules, so a document `css:` rule that recolours the line recolours the dot.
-    const radius = anonymousDotRadius(linkStrokeWidth(link));
-    return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).flatMap(([end, point]) =>
-      link.attachments![end].anonymous === true
-        ? [element('circle', { class: classes('link-line', 'link-dot', linkClassToken(layout, link), locks.stroke(radius)), style: 'stroke-dasharray:none',
-          'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: radius / 2 })] : []);
-  }).join('');
+  }).join('') + overlayDots;
 
   const legendSwatch = (entry: NonNullable<LayoutModel['legend']>['entries'][number]): string => {
     if (entry.kind === 'line') {

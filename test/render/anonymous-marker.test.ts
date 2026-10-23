@@ -83,6 +83,35 @@ describe('render.anonymousPortMarker', () => {
     expect(styles[1]).toContain('startArrow=none;');
   });
 
+  it('closes a straight routed link, whose connector has edgeStyle none', async () => {
+    const style = edgeStyle(drawio(await run(fixture)));
+    expect(style).toContain('edgeStyle=none;');
+    expect(style).toContain('endArrow=oval;');
+  });
+
+  const overlaySheet = 'portograph: 2\nprofile: network\ngroups:\n  g: { tier: 0 }\nnodes:\n  a: { group: g }\n  b: { group: g }\nlinks:\n  - [a, b, { class: flow }]\n';
+
+  it('closes both bare ends of an overlay link with one dot each, in SVG and draw.io', async () => {
+    const model = await run(overlaySheet);
+    expect(model.links[0]!.layer).toBe('overlay');
+    const svg = render(model);
+    expect([...svg.matchAll(/<circle class="link-line overlay-line link-dot/g)]).toHaveLength(2);
+    expect(svg).not.toContain('<circle class="overlay-endpoint');
+    const xml = drawio(model);
+    const style = edgeStyle(xml);
+    expect(style).toContain('startArrow=oval;');
+    expect(style).toContain('endArrow=oval;');
+    expect(xml).not.toContain('pg-overlayMark');
+  });
+
+  it('keeps the small end mark of an overlay link when the option is none', async () => {
+    const model = await run(overlaySheet.replace('profile: network\n', 'profile: network\nrender: { anonymousPortMarker: none }\n'));
+    expect(render(model)).toContain('<circle class="overlay-endpoint');
+    expect(render(model)).not.toContain('link-dot');
+    expect(drawio(model)).toContain('pg-overlayMark');
+    expect(drawio(model)).not.toContain('oval');
+  });
+
   it('refuses a value that is not dot or none, and a key it does not know', () => {
     const errors = (value: string) => parseWithDiagnostics(value).diagnostics.filter(d => d.severity === 'error');
     expect(errors(withOption('square'))).toEqual([expect.objectContaining({ code: 'INVALID_TYPE', path: '$.render.anonymousPortMarker' })]);
