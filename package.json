@@ -55,6 +55,7 @@
     "corpus": "vite build --logLevel error && node scripts/corpus.mjs",
     "sweep": "vite build --logLevel error && node scripts/sweep.mjs",
     "gate:compare": "node scripts/gate-compare.mjs",
+    "gate:branch": "node scripts/gate-branch.mjs",
     "png": "node scripts/png.mjs",
     "prepare": "(git config core.hooksPath .githooks || true) && vite build"
   },

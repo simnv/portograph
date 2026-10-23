@@ -17,6 +17,8 @@
  *   bends    the bends of every kept link, routed and overlay (`pathBends`: a turn or a reversal; a collinear piece is no bend)
  *   side     SIDE_HINT_TAKEN diagnostics
  *   removed  the links stage 8 removed
+ *   labelBorder  the scorer's labelBorderCrossings counter (0 when absent)
+ *   hash     12 hex of sha256 of the layout JSON without runtime stages (what portograph render writes)
  *
  * Every geometry number is the scorer's (`score().snapshot`: `metrics`, `counts`, `counters`,
  * `canvas`, `gates`); this script counts nothing of its own. A sheet that fails to lay out gets the
@@ -26,10 +28,10 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
-import { COLUMNS, ROOT, elapsed, failure, openPipeline, outputArgument, sheets } from './gate-lib.mjs';
+import { COLUMNS, ROOT, elapsed, failure, layoutHash, openPipeline, outputArgument, sheets, withGateLock } from './gate-lib.mjs';
 
 /** One corpus row from a laid-out model and its score snapshot. */
-function row(file, model, snapshot) {
+function row(file, model, snapshot, hash) {
   const diagnostics = (code) => model.diagnostics.filter((d) => d.code === code).length;
   const failed = (severity) => Object.keys(snapshot.gates).filter((id) => snapshot.gates[id].severity === severity && snapshot.gates[id].violations.length > 0).join(',') || '-';
   const { routed, overlay } = snapshot.counts;
@@ -48,6 +50,8 @@ function row(file, model, snapshot) {
     String(routed.turns + overlay.turns),
     String(diagnostics('SIDE_HINT_TAKEN')),
     String(snapshot.counters.removedLinks),
+    String(snapshot.counters.labelBorderCrossings ?? 0),
+    hash,
   ].join('\t');
 }
 
@@ -64,7 +68,7 @@ async function main(argv) {
       let line;
       try {
         const model = await pipeline.layout(pipeline.api.parse(readFileSync(join(ROOT, file), 'utf8')));
-        line = row(file, model, pipeline.api.score(model).snapshot);
+        line = row(file, model, pipeline.api.score(model).snapshot, layoutHash(pipeline.api, model));
       } catch (error) {
         line = `${file}\t${failure(error)}`;
       }
@@ -76,7 +80,7 @@ async function main(argv) {
   process.stderr.write(`corpus: ${files.length} sheets in ${elapsed(start)} -> ${out}\n`);
 }
 
-main(process.argv.slice(2)).then(
+withGateLock(() => main(process.argv.slice(2))).then(
   () => { process.exitCode = 0; },
   (error) => {
     process.stderr.write(`corpus: ${error instanceof Error ? error.message : String(error)}\n`);

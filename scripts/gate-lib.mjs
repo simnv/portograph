@@ -6,7 +6,8 @@
  * sheet; the router starts a worker per session and ends it with the session. `npm run corpus` and
  * `npm run sweep` build `dist/` before they run, so the measurement is never of a stale build.
  */
-import { existsSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { closeSync, existsSync, openSync, readFileSync, readdirSync, unlinkSync, writeSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, relative, sep } from 'node:path';
 import process from 'node:process';
@@ -15,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 
 /** The columns of a corpus TSV, in order; `corpus.mjs` writes them and `gate-compare.mjs` reads them. */
-export const COLUMNS = ['file', 'Q', 'X', 'W', 'gates', 'warn', 'routed', 'fb', 'edge', 'ob', 'bends', 'side', 'removed'];
+export const COLUMNS = ['file', 'Q', 'X', 'W', 'gates', 'warn', 'routed', 'fb', 'edge', 'ob', 'bends', 'side', 'removed', 'labelBorder', 'hash'];
 
 /** The repository root, as a path. */
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -101,4 +102,63 @@ export function outputArgument(argv, usage) {
 /** Seconds elapsed since `start` (a `performance.now()` value), to one decimal. */
 export function elapsed(start) {
   return `${((performance.now() - start) / 1000).toFixed(1)} s`;
+}
+
+/** A short (12 hex) sha256 of the layout JSON the CLI publishes without `--timings` (the runtime stages left out). */
+export function layoutHash(api, model) {
+  const json = `${api.serializeLayoutModel({ ...model, runtime: { stages: [] } })}\n`;
+  return createHash('sha256').update(json).digest('hex').slice(0, 12);
+}
+
+/** The lock file the corpus and sweep runs of every worktree queue on. */
+export const LOCK_PATH = process.env.PORTOGRAPH_GATE_LOCK ?? '/tmp/portograph-gate.lock';
+
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+function unlinkQuiet(path) {
+  try { unlinkSync(path); } catch { /* already gone */ }
+}
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Run `work` while holding the exclusive gate lock, so concurrent gate runs queue instead of competing
+ * for CPU. The lock file holds the owner's PID; a file whose owner is gone is stale and removed.
+ */
+export async function withGateLock(work, path = LOCK_PATH) {
+  let announced = false;
+  for (;;) {
+    try {
+      const fd = openSync(path, 'wx');
+      writeSync(fd, String(process.pid));
+      closeSync(fd);
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      let text;
+      try { text = readFileSync(path, 'utf8'); } catch { continue; } // released meanwhile
+      const owner = Number(text);
+      if (text === '') {
+        // its owner may sit between open and write; give it a moment before calling the file stale
+        await pause(200);
+        try { if (readFileSync(path, 'utf8') === '') unlinkQuiet(path); } catch { /* released */ }
+      } else if (Number.isInteger(owner) && owner > 0 && alive(owner)) {
+        if (!announced) process.stderr.write(`waiting for the gate lock (pid ${owner})\n`);
+        announced = true;
+        await pause(1000);
+      } else unlinkQuiet(path);
+    }
+  }
+  try {
+    return await work();
+  } finally {
+    unlinkQuiet(path);
+  }
 }

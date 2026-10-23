@@ -11,7 +11,7 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import process from 'node:process';
-import { ROOT, elapsed, failure, openPipeline, sheets } from './gate-lib.mjs';
+import { ROOT, elapsed, failure, openPipeline, sheets, withGateLock } from './gate-lib.mjs';
 
 const USAGE = 'npm run sweep -- <out.txt> [--only name,name]';
 
@@ -62,7 +62,7 @@ async function main(argv) {
   process.stdout.write(`${removed} removed of ${files.length}${errors > 0 ? ` (${errors} errors)` : ''}\n`);
 }
 
-main(process.argv.slice(2)).then(
+withGateLock(() => main(process.argv.slice(2))).then(
   () => { process.exitCode = 0; },
   (error) => {
     process.stderr.write(`sweep: ${error instanceof Error ? error.message : String(error)}\n`);
