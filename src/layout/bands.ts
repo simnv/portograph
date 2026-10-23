@@ -23,7 +23,7 @@ import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes } from '../score/model.js';
-import { LINK_LABEL_GEOMETRY, haloSize, labelWindowDeficit, overlayLabelsSuppressed, reservedLinkRuns } from './link-labels.js';
+import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -1340,12 +1340,7 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
  * about the *stub's* midpoint, inside the source pill — a run no label ever follows.
  */
 function overlayLongestRun(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
-  let run: PathSegment | undefined, longest = 0;
-  for (const segment of overlayPath(model, link).segments) {
-    const reach = Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
-    if (reach > longest + PLACEMENT_EPS) { longest = reach; run = segment; }
-  }
-  return run;
+  return longestRun(overlayPath(model, link).segments);
 }
 function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
   const run = overlayLongestRun(model, link);
@@ -1423,9 +1418,14 @@ function insertRoomAt(model: LayoutModel, split: number, deficit: number, ownTie
 function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, extent: number, split: number, farEndMoves = false,
   turned?: { across: number; axis: 'x' | 'y'; link: LayoutLink }): number | undefined {
   if (run === undefined) return 0;
-  const boxes = groupBoxes({ ...model, frames: deriveFrames(model) ?? model.frames ?? [] }).map(item => item.bounds);
+  const boxes = labelBorders(model);
   if (turned === undefined) return labelWindowDeficit(boxes, run, extent, split, farEndMoves);
-  return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id, boxes) });
+  return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id) });
+}
+
+/** The drawn group and frame borders a link label stays clear of, read in placement with the frames derived afresh. */
+export function labelBorders(model: LayoutModel): Rect[] {
+  return groupBoxes({ ...model, frames: deriveFrames(model) ?? model.frames ?? [] }).map(item => item.bounds);
 }
 
 /**
@@ -1459,13 +1459,14 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     shortfalls.push({ link: link.id, axis, required, room });
   };
   const suppressed = overlayLabelsSuppressed(model);
+  // Who yields among the labels on diagonal lines is decided once per pair, before the first reservation that reads it (R1).
+  recordLabelYields(model, labelBorders(model));
   const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
   const settle = (nodes: string[]): void => { if (nodes.length) rebuildNodeGeometry(model, nodes, 'current'); };
   for (const link of model.links) {
-    const text = model.document.links[link.sourceIndex]?.label;
     // A bus member's label goes to the bus tooltip (mesh-bus.md, section 6): it asks for no room.
-    if (!text || link.technique === 'stub' || link.bundle || link.meshBus !== undefined || !link.attachments) continue;
-    if (effectiveLayer(link) === 'overlay' && suppressed) continue;
+    if (!describedLink(model, link, suppressed) || !link.attachments) continue;
+    const text = model.document.links[link.sourceIndex]!.label!;
     const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
     if (!from?.anchor || !to?.anchor) continue;
     const fromNode = model.nodes[link.attachments.from.node]!, toNode = model.nodes[link.attachments.to.node]!;
@@ -1537,7 +1538,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
       const longest = overlay ? overlayLongestRun(model, link) : undefined;
       // A diagonal overlay run carries its label on the line, turned (ticket 20): its windows read the turned box's height.
-      const diagonal = longest !== undefined && Math.abs(longest.to.x - longest.from.x) > PLACEMENT_EPS && Math.abs(longest.to.y - longest.from.y) > PLACEMENT_EPS;
+      const diagonal = longest !== undefined && isDiagonalRun(longest);
       const x = lane !== undefined ? lane.x : Math.abs(lowerPort.anchor!.x - upperPort.anchor!.x) <= PLACEMENT_EPS ? upperPort.anchor!.x : undefined;
       const ridden: PathSegment | undefined = overlay
         ? (longest !== undefined && (diagonal || Math.abs(longest.to.x - longest.from.x) <= PLACEMENT_EPS) ? longest : undefined)
@@ -1796,6 +1797,11 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   attemptCounters.validationReplays++; attemptCounters.candidateCopies += 2;
   // Replay the grid on a copy: a settled model does not change; a genuinely unsettled chain exhausts
   // the pass bound again. A serialized diagnostic alone proves nothing.
+  // The yield record is read, never decided again (R1); a forged or incomplete one is refused (R5).
+  const fault = labelYieldsFault(model);
+  if (fault !== undefined) throw new Error(`The label yields are forged: ${fault}`);
+  const yields = clone(model);
+  if (recordLabelYields(yields, labelBorders(yields))) throw new Error('The label yields leave a pair of labels on diagonal lines undecided');
   const shortfalls: LinkLabelShortfall[] = [];
   if (reserveLinkLabelRoom(clone(model), shortfalls)) {
     throw new Error('A labelled link is shorter than the run its label reserved: '

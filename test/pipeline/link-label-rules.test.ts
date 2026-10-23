@@ -3,11 +3,12 @@ import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
-import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_LABEL_GEOMETRY, labelBands, labelRunWindows, labelWindowDeficit, produceLinkLabels, windowHolds } from '../../src/layout/link-labels.js';
-import { areaDistance } from '../../src/geometry/oriented.js';
+import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_CUT_HAIR, LINK_LABEL_GEOMETRY, labelBands, labelRunWindows, labelWindowDeficit, produceLinkLabels, recordLabelYields, windowHolds } from '../../src/layout/link-labels.js';
+import { areaDistance, areaSegmentDistance } from '../../src/geometry/oriented.js';
+import { EPS } from '../../src/geometry/planar.js';
 import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
 import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
-import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
+import { reserveLinkLabelRoom, validateGroupLabelBands } from '../../src/layout/bands.js';
 import { bench } from '../layout/link-label-fixture.js';
 import { measureText } from '../../src/text/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
@@ -631,13 +632,58 @@ it('a diagonal label keeps the window placement grew for it from the label of a 
   expect(long.onLine).toBe(true);
   const walls = groupBoxes(model).map(item => item.bounds);
   expect(walls.filter(box => labelCrossesBorder(labelArea(short), box))).toEqual([]);
-  // The longer line yields: its label keeps clear of the short line's band; the short line yields to nothing.
+  // The longer line yields, as 7f recorded: its label keeps clear of the short line's band; the short line yields to nothing.
+  expect(model.labelYields!['link-6']).toContain('link-10');
+  expect(model.labelYields!['link-10']).toEqual([]);
   const line = (id: string) => model.links.find(link => link.id === id)!.path!.segments[0]!;
-  expect(labelBands(model, 'link-6', walls).map(band => band.segment)).toContainEqual({ from: line('link-10').from, to: line('link-10').to });
-  expect(labelBands(model, 'link-10', walls)).toEqual([]);
+  expect(labelBands(model, 'link-6').map(band => band.segment)).toContainEqual({ from: line('link-10').from, to: line('link-10').to });
+  expect(labelBands(model, 'link-10')).toEqual([]);
   expect(areaDistance(labelArea(short), labelArea(long))).toBeGreaterThan(0);
   expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+  // The record is read, not decided again (R1): replayed on the published geometry it does not change.
+  expect(recordLabelYields(structuredClone(model), walls)).toBe(false);
+  // Stage 9 reads the record: a model whose record says the short line yields places the labels by it.
+  const flipped = structuredClone(model);
+  flipped.labelYields = { ...flipped.labelYields!, 'link-6': flipped.labelYields!['link-6']!.filter(id => id !== 'link-10'), 'link-10': ['link-6'] };
+  expect(labelBands(flipped, 'link-10').map(band => band.segment)).toEqual([{ from: line('link-6').from, to: line('link-6').to }]);
 }, 120000);
+
+// R5: the validator reads the yield record and refuses a forged or incomplete one.
+it('a forged label yield record is refused (ticket 20)', async () => {
+  const model = await run(fixture('a-diagonal-label-keeps-its-window-from-a-crossing-label'));
+  expect(() => validateGroupLabelBands(model)).not.toThrow();
+  const forge = (edit: (yields: Record<string, string[]>) => void): LayoutModel => {
+    const copy = structuredClone(model); edit(copy.labelYields!); return copy;
+  };
+  expect(() => validateGroupLabelBands(forge(yields => { yields['link-10'] = ['link-6']; }))).toThrow(/yield to each other/);
+  expect(() => validateGroupLabelBands(forge(yields => { yields['link-10'] = ['link-10']; }))).toThrow(/yields to itself/);
+  expect(() => validateGroupLabelBands(forge(yields => { yields['link-1'] = []; }))).toThrow(/carries no label on a diagonal line/);
+  expect(() => validateGroupLabelBands(forge(yields => { yields['link-6'] = yields['link-6']!.filter(id => id !== 'link-10'); }))).toThrow(/undecided/);
+}, 120000);
+
+// Review: two labelled diagonals from one node meet at the shared end. One yields; band avoidance is on the line only, and both stand.
+it('two diagonal labels from one node keep their lines (ticket 20)', async () => {
+  const model = await run(fixture('two-diagonal-labels-from-one-node-keep-their-lines'));
+  expect(model.diagnostics.filter(item => /LINK_LABEL/.test(item.code))).toEqual([]);
+  expect(model.labelYields).toEqual({ 'link-1': ['link-2'], 'link-2': [] });
+  for (const id of ['link-1', 'link-2']) expect(model.labels.find(label => label.id === `label:link:${id}`)!.onLine).toBe(true);
+  expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
+}, 120000);
+
+// The 0.7500001 case: a text that fills a window cut at a frozen chord passes stage 9's test of the chord (clearance + EPS).
+it('a text that fills a window cut at a link run keeps the clearance stage 9 asks (ticket 20)', () => {
+  const owner = { kind: 'link' as const, id: 'link-1' };
+  const run = { from: { x: 0, y: 300 }, to: { x: 240, y: 0 }, owner }, across = 15, length = Math.hypot(240, 300), clearance = 0.75;
+  const chord = { from: { x: 120, y: 0 }, to: { x: 120, y: 300 } };
+  const windows = labelRunWindows([], run, across, [{ segment: chord, clearance }])!;
+  const ux = 240 / length, uy = -300 / length, degrees = Math.atan2(-300, 240) * 180 / Math.PI, halo = LINK_LABEL_GEOMETRY.halo;
+  for (const window of windows) {
+    const centre = (window.from + window.to) / 2;
+    const area = { centre: { x: ux * centre, y: 300 + uy * centre }, width: window.to - window.from + 2 * halo, height: across, degrees };
+    // Stage 9 rejects below clearance + EPS; the window keeps more than that, so rounding at its edge cannot flip the test.
+    expect(areaSegmentDistance({ ...chord, owner }, area)).toBeGreaterThan(clearance + (EPS + LINK_CUT_HAIR) / 2);
+  }
+});
 
 it('labelRunWindows on a diagonal: the windows of a label on the line, clear of every border by the margin along the run (ticket 20)', () => {
   const owner = { kind: 'link' as const, id: 'link-1' };

@@ -536,6 +536,12 @@ export interface LayoutModel {
    * last step, and withdraws a move whose wall no longer holds (the column widened). Absent = no such move.
    */
   parentWallMoves?: { link: string; port: PortRef; fromLeft: number }[];
+  /**
+   * Who yields among the labels on diagonal lines (architecture-2 ticket 20, `recordLabelYields`): a key for every described overlay
+   * link whose label lies on a diagonal line, with the links whose label bands it keeps clear of ([] = none). Each pair is decided once,
+   * in 7f, and never again; 7f and stage 9 read the record. Absent = no label on a diagonal line, or a model before 7f.
+   */
+  labelYields?: Record<string, string[]>;
   /** The exits 7e reserved for shared runs that end inside their own group (architecture ticket 13); absent when none. */
   groupExits?: GroupExit[];
   /**

@@ -7,7 +7,8 @@ import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels, labelBorders } from './bands.js';
+import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { growTierGaps } from './gap-room.js';
 import { holds } from './reservation-checks.js';
@@ -325,6 +326,9 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // The fan edge keepers (architecture-2 ticket 18) are taken on the boxes that publish: 7f centres and stretches frames, so the choice
   // is open until the last replay. From here the validator and a restore read the record, member and depth, and never choose again.
   freezeFanKeepers(draft);
+  // A pair of labels on diagonal lines whose bands first meet on the geometry that publishes is decided here, once; a pair decided
+  // earlier keeps its direction (`recordLabelYields`). Stage 9 and the validator read the record.
+  recordLabelYields(draft, labelBorders(draft));
   // A move 7f cannot refuse (a title band's room, a tier gap's rows) may still leave a body on a held chord.
   // The chord is kept, its link is named, and the final gates judge it; it never falls back (ticket 34).
   for (const id of blockedChords(draft)) {

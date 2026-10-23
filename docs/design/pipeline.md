@@ -1113,13 +1113,18 @@ stroke (G3) is cut, grown by the halo. 7f and stage 9 pass the same runs, so sta
 in the window placement reserved. A link placement did not reserve is left to stage 9's collision
 test. **Two labels on diagonal lines do not take each other's window** (ticket 20 follow-up). A label on a
 diagonal line lies in the line's **band**: the line, with half the turned box's height plus the halo. When
-two bands can meet, one label yields (`labelBands`): its windows also keep clear of the other band, and in
-stage 9 every candidate of every rung does too. The label with the more slack yields (the longest window of
-its line clear of the borders, the reserved runs and the other band, less its text); on equal slack, the
-later link. The other label lies in its own band, so the two never meet, whichever stage 9 places first.
-Without this rule a label placed first took the window 7f had grown for a later one, and the growth was
-spent for a label that fell back across a border. A label that yields and finds no window, at any growth,
-is diagnosed `LINK_LABEL_ROOM_UNRESERVED` and no growth is spent on it. The tier gap grows until a window holds the text; the line turns as the lower end moves, so
+two bands can meet, one label yields: its windows also keep clear of the other band, and in stage 9 every
+candidate on its line does too (a candidate beside the line is left to the collision test). The label with
+the more slack yields (the longest window of its line clear of the borders, the reserved runs and the other
+band, less its text); on equal slack, the later link. The other label lies in its own band, so the two never
+meet, whichever stage 9 places first. The decision is made once per pair, when the bands first can meet, and
+recorded (`model.labelYields`, `recordLabelYields`: a key for every label on a diagonal line, `[]` = it
+yields to none); 7f and stage 9 read the record (`labelBands`), and the validator refuses a record that is
+forged or that a replay would complete. Without this rule a label placed first took the window 7f had grown
+for a later one, and the growth was spent for a label that fell back across a border. A label that yields
+and finds no window, at any growth, is diagnosed `LINK_LABEL_ROOM_UNRESERVED` and no growth is spent on it;
+a label that yields to two or more others can stay without a window that way. A decision never flips and
+growth only increases, so the passes end. The tier gap grows until a window holds the text; the line turns as the lower end moves, so
 `labelWindowDeficit` finds the least growth by bisection (`LABEL_WINDOW_BISECTIONS` steps, rounded up
 to `LABEL_WINDOW_GRAIN`).
 Self-links, same-tier links
@@ -1576,8 +1581,8 @@ whole label across a border still beats a shortened one), and the label is repor
 run a label rides with the same windows (`labelWindowDeficit`) and grows the tier gap or the row
 when no window holds the text (ticket 19). A label on a diagonal line takes the step nearest the midpoint
 whose text lies wholly in a window of the line, or the point of a window nearest the midpoint (ticket 20).
-A label that yields to the band of another label on a diagonal line (`labelBands`, 7f) keeps clear of that
-band with every candidate, on every rung, the rungs without walls included.
+A label that yields to the band of another label on a diagonal line (`model.labelYields`, recorded in 7f)
+keeps clear of that band with every candidate on its line, on every rung; stage 9 never decides a yield.
 The scorer counts the crossings as `labelBorderCrossings`.
 
 **What a candidate must clear.** Visible nodes and their stroke, visible pills, every already
