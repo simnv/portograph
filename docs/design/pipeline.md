@@ -935,6 +935,12 @@ bands' — reads lane x as that feed's authoritative x and chases a corridor tha
 therefore reserves no room: the gap keeps the height this stage gave it, and a move whose new row
 that height cannot hold is refused (§ 7a states the whole condition).
 
+**Direct families come first** (architecture-2 ticket 22; `docs/design/routed-chords.md`, Section 15). Before `freezeChords`,
+`planDirectFamilies` counts the orthogonal crossings of each facing pair on a copy, grows the tier gap of a triggered family so
+that its members reach 30 degrees (at most twice the band gap, on copies the region replay settles), applies that growth with the
+same replay, and decides each family's chords on the grown gap. The record (`directFamilies`) is written even when no family
+exists (`[]`); the freeze then holds the accepted members, and `growTierGaps` never gives the growth back.
+
 **A frame keeps out of a foreign drop's clearance** (ticket 75). A routed link between a cell of a frame and a port of another tier
 drops to the x of that port from a row in the padding of the frame. When that x stands outside the frame, closer to a left or right
 edge than `GROUP_EDGE_LINK_CLEARANCE` plus half the routed stroke, the drop runs along the edge and G6 refuses it. Routing can only

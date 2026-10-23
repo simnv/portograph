@@ -192,7 +192,14 @@ command, the time is simply not a promise.
     A part of a tier gap the plan declines is not a removal: it is named `TIER_GAP_PART_RESIDUAL` (or
     `TIER_GAP_ROW_CYCLE`) and published with its gate findings, a G6 pair at worst (ADR-0021).
 12. A routed link inside one frame (including a group-link member) is one straight segment where
-    its chord clears every body. It is orthogonal only where a body stands on the chord.
+    its chord clears every body. It is orthogonal only where a body stands on the chord, or where its two
+    end faces are not opposite: a chord joins `top` to `bottom` or `left` to `right`, and two faces at 90
+    degrees (a bottom face to a lateral side) make the link orthogonal (user, 2026-10-23).
+13. Facing units link direct (architecture-2 ticket 22). The routed links between two facing rows on
+    adjacent sub-tiers split into one direct family per source node. Where the orthogonal drawing of a
+    family would cross more than once, its members are chords at least 30 degrees from horizontal (the
+    gap grows for them, up to twice the band gap), each fan in peer order with no crossing inside it. A
+    member that cannot stand so is orthogonal, with its reason in `directFamilies`.
 
 A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
 bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again
