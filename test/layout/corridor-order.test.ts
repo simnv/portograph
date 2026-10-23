@@ -137,11 +137,70 @@ links: [[a, y], [b, x]]`);
 
   it('reads every transit link as one diagonal under layout.corridorRowOrder: false, as main did', async () => {
     const [on, off] = await Promise.all([skeletonOf(fixture), skeletonOf(declared)]);
+    const turned = readDraft(on)!.measureRange(0, 3, true).crossings;
     // The same declared order on both: `on` is turned by the step, so it is put back first.
     for (const [group, order] of [['top', ['t0', 't1']], ['upper', ['u0', 'u1']]] as const) expect(reseatRow(on, on.groups[group]!, [...order], true)).toBe(true);
-    // Cut at their corridors, the two transit links of the declared order cross two feeds; read as diagonals, one.
-    expect(readDraft(on)!.measureRange(0, 3, true).crossings).toBe(2);
+    // Cut at their corridors and read at their ports, the links of the declared order cross 3 times (the two transit links cross two
+    // feeds, and one more pair crosses at a shared node), once with the rows turned; read as diagonals between body centres, once.
+    expect(readDraft(on)!.measureRange(0, 3, true).crossings).toBe(3);
+    expect(turned).toBe(1);
     expect(readDraft(off)!.measureRange(0, 3, true).crossings).toBe(1);
+  }, 60000);
+
+  it('reads each link end at the port sides-two gives it, so links that share a node can cross there (follow-up)', async () => {
+    const shared = readFileSync(new URL('../../goldens/synthetic/a-shared-end-reads-its-port-order.yaml', import.meta.url), 'utf8');
+    const [model, plain] = await Promise.all([skeletonOf(shared), skeletonOf(shared.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n'))]);
+    expect(model.groups.src!.rowOrderDecision).toEqual({ rule: 'kept', before: ['src0', 'src1'], after: ['src0', 'src1'] });
+    const declaredCount = readDraft(model)!.measureRange(0, 2, true).crossings;
+    expect(reseatRow(model, model.groups.src!, ['src1', 'src0'], true)).toBe(true);
+    const turnedCount = readDraft(model)!.measureRange(0, 2, true).crossings;
+    // At the predicted ports the turn gains nothing; at the body centres it showed a gain of one.
+    expect(turnedCount).toBeGreaterThanOrEqual(declaredCount);
+    expect(declaredCount).toBe(23);
+    expect(turnedCount).toBe(23);
+    expect(plain.groups.src!.rowOrderDecision!.rule).toBe('author');
+  }, 60000);
+
+  it('seats a port on its sizing side where stage 2 left the side open: a bus port shares the face (follow-up review)', async () => {
+    const bus = readFileSync(new URL('../../goldens/synthetic/a-bus-leaves-a-title-edge-with-more-legs.yaml', import.meta.url), 'utf8');
+    const model = await skeletonOf(bus);
+    const [feed, member] = model.nodes.n1!.ports;
+    // At stage 4 the mesh-bus port has only its sizing side; the feed from `core` has its side.
+    expect([feed!.side, member!.side, member!.sizingSide]).toEqual(['top', undefined, 'top']);
+    const draft = readDraft(model)!, centre = model.nodes.n1!.bounds!.x + model.nodes.n1!.bounds!.width / 2, pitch = model.nodes.n1!.sidePitch!.top!;
+    // Two ports on the top face, the bus port last (`sortFace`): the feed half a pitch left of the centre, not on it.
+    expect(draft.portX(feed!.ref)).toBeCloseTo(centre - pitch / 2, 6);
+    expect(draft.portX(member!.ref)).toBeCloseTo(centre + pitch / 2, 6);
+  }, 60000);
+
+  it('the overlay order judges the routed crossings at the predicted ports: an authored port order at a shared node (follow-up review)', async () => {
+    // `s` takes the feed of `a` on its left port and that of `b` on its right one (authored `order:`). With `mid` turned the feeds
+    // cross at `s`. `measure` is what `orderByOverlay` judges a re-order by; at one body centre the two feeds never crossed.
+    const yaml = `portograph: 2
+groups:
+  top: { tier: 0 }
+  mid: { tier: 1 }
+  low: { tier: 2 }
+nodes:
+  t0: { group: top, class: server }
+  t2: { group: top, class: server }
+  a: { group: mid, class: server }
+  b: { group: mid, class: server }
+  s: { group: low, class: server, ports: [{ name: p1, side: top, order: 1 }, { name: p2, side: top, order: 2 }] }
+links:
+  - [a, s.p1]
+  - [b, s.p2]
+  - [t2, a, { route: overlay }]
+`;
+    const judge = async (sheet: string): Promise<[number, number]> => {
+      const model = await skeletonOf(sheet);
+      expect(model.groups.mid!.rowOrder).toEqual(['a', 'b']);
+      const before = readDraft(model)!.measure(1).crossings;
+      expect(reseatRow(model, model.groups.mid!, ['b', 'a'], true)).toBe(true);
+      return [before, readDraft(model)!.measure(1).crossings];
+    };
+    expect(await judge(yaml)).toEqual([0, 1]);
+    expect(await judge(yaml.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n'))).toEqual([0, 0]);
   }, 60000);
 
   it('passes a transited box on the side of the target where it is known, else on the side of the source (7a)', () => {

@@ -723,9 +723,8 @@ export function sweepTiers(model: LayoutModel): void {
 }
 const PLACEMENT_EPS_SWEEP = 1e-6;
 
-/** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */
-export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>): LayoutModel {
-  if (model.stage !== 'skeleton' || model.freeze) throw new Error('Phase-two sides require the skeleton stage');
+/** The far ends of the links of every port, by port key (a link from a port to itself counts once). Stage 5 orders a face by them. */
+export function portPeers(model: LayoutModel): Map<string, PortRef[]> {
   const peers = new Map<string, PortRef[]>();
   for (const link of model.links) {
     const { from, to } = link.attachments!;
@@ -733,6 +732,61 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       const list = peers.get(key(a!)) ?? []; list.push(b!); peers.set(key(a!), list);
     }
   }
+  return peers;
+}
+/**
+ * The far-end coordinate a port of `side` is ordered by in the provisional engine order (stage 5): the mean over its peers of the
+ * peer port's anchor (x on a top or bottom face, y on a lateral one), or of the peer node's centre where the peer has no anchor.
+ * A peerless port reads `Infinity`. The stage-4 draft reads the same key (`readDraft`, architecture-2 ticket 17).
+ */
+export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>, ref: PortRef, side: Side): number {
+  const list = peers.get(key(ref)) ?? [];
+  const coordinate = (peer: PortRef): number => {
+    const box = model.nodes[peer.node]!.bounds!, point = findPort(model, peer)?.anchor;
+    return side === 'top' || side === 'bottom' ? (point?.x ?? box.x + box.width / 2) : (point?.y ?? box.y + box.height / 2);
+  };
+  return list.length ? list.reduce((sum, peer) => sum + coordinate(peer), 0) / list.length : Infinity;
+}
+/** The keys of every mesh-bus port (`busOfPort` answers a bus for exactly these). A caller that sorts many faces reads it once. */
+export function busPortKeys(model: LayoutModel): Set<string> {
+  return new Set(meshBuses(model).flatMap(bus => bus.ports.map(key)));
+}
+/**
+ * One face in engine order before the author order: a bus port last, then by `slots` (`turnOrder`); a tie keeps the face's port order.
+ * `buses` is `busPortKeys(model)`, passed in by a caller that sorts many faces on one model.
+ */
+export function sortFace(model: LayoutModel, ports: readonly LayoutPort[], slots: ReadonlyMap<LayoutPort, TurnPort>, buses: ReadonlySet<string> = busPortKeys(model)): LayoutPort[] {
+  const bus = new Map(ports.map(port => [port, buses.has(key(port.ref)) ? 1 : 0]));
+  const byslot = turnOrder([...slots.values()]);
+  return [...ports].sort((a, b) => bus.get(a)! - bus.get(b)! || byslot(slots.get(a)!, slots.get(b)!));
+}
+/** The ports with an authored `order:` take the slots of the authored ports, in author order; the free ports keep theirs. */
+export function seatAuthored(ports: readonly LayoutPort[]): LayoutPort[] {
+  const authored = ports.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
+  let next = 0;
+  return ports.map(port => port.authorOrder === undefined ? port : authored[next++]!);
+}
+/**
+ * The pitch floor of each top or bottom face that the alignment end of a transit link leaves (`laneSource`): the widest lane width,
+ * so consecutive feeds can keep their own x (7a). A spanning chord (ticket 22) owns no transit lane, so its ends take no lane pitch.
+ * Stage 5 raises the face pitch to it; the stage-4 draft reads it (ticket 17).
+ */
+export function lanePitchFloors(model: LayoutModel): Map<string, { node: string; side: 'top' | 'bottom'; width: number }> {
+  const floors = new Map<string, { node: string; side: 'top' | 'bottom'; width: number }>();
+  for (const link of model.links) {
+    if (!transitTiers(model, link).length || link.spanHint === true) continue;
+    const ref = laneSource(model, link), side = findPort(model, ref)?.side;
+    if (side !== 'top' && side !== 'bottom') continue;
+    const id = `${ref.node}\u0000${side}`, width = Math.max(floors.get(id)?.width ?? 0, laneWidth(model, link));
+    floors.set(id, { node: ref.node, side, width });
+  }
+  return floors;
+}
+
+/** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */
+export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>): LayoutModel {
+  if (model.stage !== 'skeleton' || model.freeze) throw new Error('Phase-two sides require the skeleton stage');
+  const peers = portPeers(model);
   // The votes of one undecided port, from where its peers sit.
   const voteFor = (id: string, port: LayoutPort): Record<Side, number> => {
     const node = model.nodes[id]!, group = model.groups[model.document.nodes[id]!.group]!;
@@ -809,14 +863,9 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   for (const id of orderedNodeIds(model.document)) for (const port of model.nodes[id]!.ports) delete port.sizingSide;
   // Transit corridors are wider than the ordinary port pitch. Reserve that capacity on the end the
   // lane aligns to (7a) before allocation, so consecutive feeds can retain their own x coordinates.
-  for (const link of model.links) {
-    // A spanning chord (ticket 22) owns no transit lane, so its ends take no lane pitch.
-    if (!transitTiers(model, link).length || link.spanHint === true) continue;
-    const ref = laneSource(model, link), node = model.nodes[ref.node]!;
-    const port = node.ports.find(port => key(port.ref) === key(ref))!;
-    if (port.side === 'top' || port.side === 'bottom') {
-      node.sidePitch![port.side] = Math.max(node.sidePitch![port.side]!, laneWidth(model, link));
-    }
+  for (const { width, ...face } of lanePitchFloors(model).values()) {
+    const node = model.nodes[face.node]!;
+    node.sidePitch![face.side] = Math.max(node.sidePitch![face.side]!, width);
   }
   // Bundle membership and link widths are already known. Reserve their minimum side capacity
   // before lanes freeze, rather than discovering a larger row width in stage 7e.
@@ -881,22 +930,13 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   const planned = plannedTurns(model), plainTurns = model.turnOrder === true ? plannedTurns(model, false) : planned;
   // The faces that a planned first turn moved (ticket 24): the order with the turns differs from the order with the overlay brackets alone.
   const turned: { node: string; side: Side }[] = [];
-  const sortOrder = orderedNodeIds(model.document);
+  const sortOrder = orderedNodeIds(model.document), buses = busPortKeys(model);
   for (const id of [...sortOrder.filter(item => leaders.has(item)), ...sortOrder.filter(item => !leaders.has(item))]) {
     const node = model.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
-      const coordinate = (ref: PortRef): number => {
-        const peer = model.nodes[ref.node]!, box = peer.bounds!;
-        const point = peer.ports.find(port => key(port.ref) === key(ref))?.anchor;
-        return side === 'top' || side === 'bottom' ? (point?.x ?? box.x + box.width / 2) : (point?.y ?? box.y + box.height / 2);
-      };
       const ports = node.ports.filter(port => port.side === side);
-      const far = (ref: PortRef): number => {
-        const list = peers.get(key(ref)) ?? [];
-        return list.length ? list.reduce((sum, peer) => sum + coordinate(peer), 0) / list.length : Infinity;
-      };
-      // The bus port is the last port in engine order on its side, after a peerless port too (an authored `order:` still wins below).
-      const isBus = (ref: PortRef): number => busOfPort(model, ref) !== undefined ? 1 : 0;
+      const far = (ref: PortRef): number => farCoordinate(model, peers, ref, side);
+      // The bus port is the last port in engine order on its side, after a peerless port too (`sortFace`; an authored `order:` still wins below).
       // Two overlay courses that leave one lateral face are brackets of one margin and nest (ticket 15, P2): the lane that runs farther along its margin stands outside
       // the other, so its port stands where its run does not cross the other's. One comparator on one y scale (`turnOrder`): a routed port is not pushed past the brackets by their order.
       const lateral = side === 'left' || side === 'right';
@@ -904,18 +944,13 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
         const turn = lateral || turns !== plainTurns ? turns.get(key(port.ref)) : undefined;
         return [port, { far: far(port.ref), ...(turn === undefined ? {} : turn) }] as const;
       }));
-      const sorted = (turns: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => {
-        const slots = slotsOf(turns), byslot = turnOrder([...slots.values()]);
-        return [...ports].sort((a, b) => isBus(a.ref) - isBus(b.ref) || byslot(slots.get(a)!, slots.get(b)!));
-      };
+      const sorted = (turns: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => sortFace(model, ports, slotsOf(turns), buses);
       // A run that carries the order for some links only (`turnLinks`) orders the other faces as today.
       const usePlanned = turnScope(model, id, side) ? planned : plainTurns;
       const plain = usePlanned === plainTurns ? undefined : sorted(plainTurns);
       ports.splice(0, ports.length, ...sorted(usePlanned));
       if (plain !== undefined && plain.some((port, index) => port !== ports[index])) turned.push({ node: id, side });
-      const authored = ports.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
-      let next = 0;
-      const ordered = ports.map(port => port.authorOrder === undefined ? port : authored[next++]!);
+      const ordered = seatAuthored(ports);
       ordered.forEach((port, index) => { port.engineOrder = index; });
       const seated = ordered.filter(port => port.anchor !== undefined);
       if (seated.length > 1 && seated.some(port => bundled.has(key(port.ref)))) {

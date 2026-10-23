@@ -66,7 +66,6 @@ describe('overlay-weighted order', () => {
     expect(score(model).snapshot.metrics.crossings.count).toBe(0);
   });
 
-
   describe('the partners of a row (ticket 78)', () => {
     const nodeLeft = (model: LayoutModel, id: string): number => model.nodes[id]!.bounds!.x;
     it('stands the linked nodes of a row next to each other, and both overlay links are one straight segment', async () => {

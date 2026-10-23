@@ -4,8 +4,8 @@
 # gives, so the run from the corridor to the far end crosses the feeds of a row whose order puts the far
 # end on the other side. In the declared order (`t0 t1`, `u0 u1`) the corridor of `m0` → `t1` stands left of
 # `upper` and its run to `t1` crosses the feed `t0` → `u0`, and the run of `b2` → `u0` crosses the feed
-# `u1` → `m1`. Stage 4 cuts each transit link at its predicted corridor, counts 2 crossings in the declared
-# order and 1 with `top` and `upper` turned, and turns both rows (`rowOrderDecision` `corridor-crossings`).
+# `u1` → `m1`. Stage 4 cuts each transit link at its predicted corridor, reads each end at its predicted
+# port (ticket 17 follow-up), counts 3 crossings in the declared order and 1 with `top` and `upper` turned, and turns both rows (`rowOrderDecision` `corridor-crossings`).
 #
 # Measured: with `layout: { corridorRowOrder: false }` the sheet publishes at Q 0.6796, crossings 2,
 # bends 7, canvas 1389 × 670; by default at Q 0.7672, crossings 1, bends 6, canvas 418 × 653, and no gate

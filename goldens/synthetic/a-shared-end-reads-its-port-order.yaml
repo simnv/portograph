@@ -1,0 +1,50 @@
+# Expected (architecture-2 ticket 17 follow-up): the row order reads each link end at the port it will get.
+# Two sources over a wide row: `src0` feeds the even switches and `snk0`, `src1` the odd switches and
+# `snk1`; each source also has a transit link to its sink, which passes `access` in a corridor. The fans
+# interleave, so they cross equally in both orders of `src`. Read at the body centres, the links that
+# share a node meet at one point and never cross there, and turning `src` showed a one-crossing gain.
+# `sides-two` gives each end a port in the order of its far ends, so with `src` turned the transit link
+# `src0` → `snk0` enters `snk0` between the feeds of `acc0` and `acc2` and crosses one. Stage 4 now reads
+# every end at its predicted port (`farCoordinate`, `sortFace`, `seatAuthored`, `lanePitchFloors`, the
+# functions of `sides-two`), counts 23 crossings in both orders (20 against 19 at the centres), and keeps
+# `src` (`rowOrderDecision` `kept`).
+#
+# Measured: with `layout: { corridorRowOrder: false }` and by default the sheet publishes at Q 0.4894,
+# crossings 24, bends 10, canvas 1970 × 488 (G5 fails in both, as before ticket 17). With `src` turned it
+# published at Q 0.4467, crossings 26, bends 22, canvas 1634 × 518, and G5 and G6 failed. Same sheet as
+# the sweep input `v7-0-2`. Test-only input; test/layout/corridor-order.test.ts reads it.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  src0: { group: src, class: router, ports: [] }
+  src1: { group: src, class: router, ports: [] }
+  acc0: { group: access, class: switch, ports: [] }
+  acc1: { group: access, class: switch, ports: [] }
+  acc2: { group: access, class: switch, ports: [] }
+  acc3: { group: access, class: switch, ports: [] }
+  acc4: { group: access, class: switch, ports: [] }
+  acc5: { group: access, class: switch, ports: [] }
+  acc6: { group: access, class: switch, ports: [] }
+  snk0: { group: edge-near, class: server, ports: [] }
+  snk1: { group: edge-far, class: server, ports: [] }
+links:
+  - [src0, acc0]
+  - [src1, acc1]
+  - [src0, acc2]
+  - [src1, acc3]
+  - [src0, acc4]
+  - [src1, acc5]
+  - [src0, acc6]
+  - [acc0, snk0]
+  - [acc1, snk1]
+  - [acc2, snk0]
+  - [acc3, snk1]
+  - [acc4, snk0]
+  - [acc5, snk1]
+  - [acc6, snk0]
+  - [src0, snk0]
+  - [src1, snk1]
