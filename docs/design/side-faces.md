@@ -567,7 +567,7 @@ count a lateral chord as any straight overlay chord.
   not a gate; review L6); the routed and overlay bent counts fall; Q is not below
   0.8188; no gate fails; crossings are reported.
 - **`SIDE_SHAPE_LOST`:** 0 on the corpus.
-- **M1 golden:** rendered again; each changed link is named and reviewed by `agy -p` against
+- **M1 golden:** rendered again; each changed link is named and read as a PNG (`npm run png`) against
   `docs/design/quality.md`.
 
 ## 16. Not in the first version

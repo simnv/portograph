@@ -55,10 +55,12 @@
     "corpus": "vite build --logLevel error && node scripts/corpus.mjs",
     "sweep": "vite build --logLevel error && node scripts/sweep.mjs",
     "gate:compare": "node scripts/gate-compare.mjs",
+    "png": "node scripts/png.mjs",
     "prepare": "(git config core.hooksPath .githooks || true) && vite build"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^18.19.130",
     "elkjs": "0.12.0",
     "eslint": "^9.39.5",
