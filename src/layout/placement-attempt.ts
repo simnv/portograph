@@ -277,8 +277,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
     // placement as unfinished work. It also turns the run in the gap beside the corridor from a
     // column into a row, and the height rule has already measured that gap: a gap that cannot
     // seat the new row would owe room nothing reserves. And a corridor is an obstacle the link
-    // label reservation measures against — it decides whether a labelled row link detours, and
-    // whether the room it needs lies beyond a reserved lane — so a corridor that moves across one
+    // label reservation measures against — it decides whether a labelled row link detours and
+    // where the room it needs is inserted — so a corridor that moves across one
     // of those runs leaves a label a run 7e and 7f already reserved and did not get (stress ticket
     // 18). That third one has to be refused rather than settled again: re-reserving moves nodes,
     // and by here the corridors are fixed. The first three are compared as sets, not as counts: a

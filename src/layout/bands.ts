@@ -24,8 +24,8 @@ import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placem
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
-import { overlayBasePath, overlayPath, overlayTrackRuns, overlayTrackUnreserved } from './overlay-paths.js';
-import { paddingOf, sideRoomBlocked, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
+import { overlayBasePath, overlayPath, overlayTrackRuns } from './overlay-paths.js';
+import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
@@ -1329,8 +1329,7 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
  * placement can run the very producer stage 8 will run rather than assume the shape the run takes
  * (ticket 04 B; ticket 01 recorded the `2 × OVERLAY_PILL_CLEARANCE` proxy it replaces). `undefined`
  * where the long run lies on the other axis — the way round the pair and the run down the middle of
- * the gap — because there is then nothing for 7f to widen and the stage 9 ladder decides, exactly as
- * it does for a link whose room lies beyond a reserved lane.
+ * the gap — because there is then nothing for 7f to widen and the stage 9 ladder decides.
  *
  * "On the other axis" is read as *no reach at all* on the axis being grown. The straight branch is
  * one **diagonal** from face to face (stress tickets 20 and 30) and it has reach on both; widening
@@ -1410,6 +1409,16 @@ export interface LinkLabelShortfall {
  */
 function insertRoomAt(model: LayoutModel, split: number, deficit: number, ownTier: number): string[] {
   const moved: string[] = [];
+  // Label room wins over a lane beyond it (user, 2026-10-24: "make room, push the lane"): a reserved lane at or beyond the split moves out
+  // with the room, so it keeps its distance to what it serves and is never crowded (R2). A perimeter lane is derived from the boxes
+  // (`rebuildLaneExtents`) and follows them.
+  for (const lane of model.lanes) {
+    if (lane.kind === 'perimeter' || lane.x < split - PLACEMENT_EPS) continue;
+    // The box is derived from the axis where it was (`validateLanes` compares exactly), so two separate sums do not drift apart.
+    const centred = lane.bounds.x === lane.x - lane.bounds.width / 2;
+    lane.x += deficit;
+    lane.bounds.x = centred ? lane.x - lane.bounds.width / 2 : lane.bounds.x + deficit;
+  }
   for (const group of Object.values(model.groups)) {
     if (group.bounds!.x >= split - PLACEMENT_EPS) { moveGroup(model, group, deficit, 0); moved.push(...group.nodes); continue; }
     if (right(group.bounds!) <= split + PLACEMENT_EPS) continue;
@@ -1493,8 +1502,8 @@ const roomGrain = (room: number): number => Math.ceil(room / LABEL_PADDING_GRAIN
  * of a labelled link in a top or bottom padding holds the label beyond it too: half the stroke, the normal gap, the text and half the
  * border's stroke, as a label beside a run asks (`acrossRunPadding`); the label window of a run that near the border is cut away. Every
  * such track of the link holds it, not only the run the label rides now: which run is longest can change with a later move, and the
- * need may not flip with it. A track in a side padding holds no label room: a side edge beyond a reserved lane cannot grow, and the
- * label of a vertical run is placed by stage 9 (`LINK_LABEL_ROOM_UNRESERVED` names the same limit for a label).
+ * need may not flip with it. A track in a side padding holds its label room the same way; a reserved lane beyond that edge moves out
+ * with the room (`insertRoomAt`).
  */
 export function trackRoomPadding(model: LayoutModel, link: LayoutLink, labelHeight?: number): AcrossRunRoom[] {
   const stroke = linkStrokeWidth(link);
@@ -1508,6 +1517,14 @@ export function trackRoomPadding(model: LayoutModel, link: LayoutLink, labelHeig
 const trackRooms = (model: LayoutModel, link: LayoutLink): AcrossRunRoom[] =>
   effectiveLayer(link) === 'overlay' && link.meshBus === undefined && link.attachments !== undefined
     ? trackRoomPadding(model, link, trackLabelHeight(model, link)) : [];
+/** The padding a group's box holds on one edge, from its node bodies to the box edge. */
+function heldEdge(model: LayoutModel, group: string, side: Side): number {
+  const box = model.groups[group]!.bounds!, bodies = union(model.groups[group]!.nodes.map(node => model.nodes[node]!.bounds!));
+  return side === 'top' ? bodies.y - box.y : side === 'bottom' ? bottom(box) - bottom(bodies) : side === 'left' ? bodies.x - box.x : right(box) - right(bodies);
+}
+/** Whether a separated overlay track needs more room than its edge holds now (`trackRooms`): what `reserveAcrossRunRoom` would grow (ticket 23). */
+export const trackRoomShort = (model: LayoutModel): boolean =>
+  model.links.some(link => trackRooms(model, link).some(room => room.padding - heldEdge(model, room.group, room.side) > PLACEMENT_EPS));
 const overlaps = (a: Rect, b: Rect): boolean =>
   a.x < right(b) - PLACEMENT_EPS && b.x < right(a) - PLACEMENT_EPS && a.y < bottom(b) - PLACEMENT_EPS && b.y < bottom(a) - PLACEMENT_EPS;
 
@@ -1573,14 +1590,10 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
     const label = run === undefined ? undefined : acrossRunPadding(model, labelBorders(model), run, labelSize(model, link), linkStrokeWidth(link) / 2);
     return [label, ...trackRooms(model, link)];
   };
-  // A detour that keeps a shared track because its offset needs room 7f cannot grow is named (ticket 23); the scorer counts the pair.
-  for (const link of model.links) if (effectiveLayer(link) === 'overlay' && overlayTrackUnreserved(model, link)) {
-    placementWarning(model, 'OVERLAY_TRACK_ROOM_UNRESERVED', `${link.id} keeps a shared overlay track: the offset that frees it needs room beyond a reserved lane, which placement cannot reserve.`, [link.id]);
-  }
   for (const link of model.links) for (const room of roomsOf(link)) {
     if (room === undefined) continue;
-    const group = model.groups[room.group]!, box = group.bounds!, bodies = union(group.nodes.map(node => model.nodes[node]!.bounds!));
-    const held = room.side === 'top' ? bodies.y - box.y : room.side === 'bottom' ? bottom(box) - bottom(bodies) : room.side === 'left' ? bodies.x - box.x : right(box) - right(bodies);
+    const group = model.groups[room.group]!, bodies = union(group.nodes.map(node => model.nodes[node]!.bounds!));
+    const held = heldEdge(model, room.group, room.side);
     const deficit = room.padding - held;
     if (deficit <= PLACEMENT_EPS) continue;
     const tier = group.tier!;
@@ -1591,11 +1604,6 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
       settle(moved.flatMap(item => item.nodes));
     } else {
       const split = room.side === 'left' ? bodies.x : right(bodies);
-      if (sideRoomBlocked(model, room.group, room.side)) {
-        if (room.track) placementWarning(model, 'OVERLAY_TRACK_ROOM_UNRESERVED', `${link.id} has an overlay track beyond a reserved lane; its room cannot be reserved and the track stands where the separation put it.`, [link.id]);
-        else placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} needs room across its run beyond a reserved lane; its label room cannot be reserved and the label placement decides.`, [link.id]);
-        continue;
-      }
       settle(insertRoomAt(model, split, deficit, tier));
     }
     // The room only grows and its links only join, in link order (R3), so a later pass never takes back a room an earlier one grew.
@@ -1635,9 +1643,9 @@ export function labelBorders(model: LayoutModel): Rect[] {
  * A routed link that will detour (ends that are not level, or a straight run `straightCorridorClear`
  * rejects) adds both stroke-aware stems and the anchor-side pill protrusion. Every authored label on
  * a drawn link counts — bars, overlay links whose labels are not suppressed — except bundle members,
- * whose geometry 7e owns. Self-links, same-tier links through top/bottom ports, pairs whose ports do
- * not face each other and links whose room lies beyond a reserved lane are diagnosed and left to the
- * stage 9 ladder. A label also stays in one region (ticket 19): on every run a label rides, one window
+ * whose geometry 7e owns. Self-links, same-tier links through top/bottom ports and pairs whose ports do
+ * not face each other are diagnosed and left to the stage 9 ladder. Room beyond a reserved lane is inserted,
+ * and the lane moves out with it (`insertRoomAt`). A label also stays in one region (ticket 19): on every run a label rides, one window
  * between the borders the run crosses must hold it (`labelWindowRoom`), and the growth is the larger of the two.
  */
 export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = []): boolean {
@@ -1706,7 +1714,6 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         if (windowed === undefined) unreserved('crosses a drawn box along its side run; no window between borders can be reserved for its label');
         const deficit = Math.max(short, windowed ?? 0);
         if (deficit <= PLACEMENT_EPS) continue;
-        if (model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
         // The lateral end's tier is the link's own tier for the move: its body stays by the run's end.
         const moved = insertRoomAt(model, split, deficit, model.groups[model.document.nodes[lateralNode.id]!.group]!.tier!);
         settle(moved);
@@ -1801,7 +1808,6 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     if (windowed === undefined) unreserved('crosses a drawn box in its row; no window between borders can be reserved for its label');
     const deficit = Math.max(wanted - room, windowed ?? 0);
     if (deficit <= PLACEMENT_EPS) continue;
-    if (model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
     const moved = insertRoomAt(model, split, deficit, fromGroup.tier!);
     settle(moved);
     // The record names the figure that drove the growth, as in the tier gap.
@@ -1975,6 +1981,10 @@ export function replanGroupLabels(model: LayoutModel): void {
   const reserved = clone(model.labelBands);
   const reserveAgain = (): void => { model.labelBands = reserved; produceGroupLabelBands(model); };
   if (syncBands(model)) { reserveAgain(); return; }
+  // A move of groups can move a separated overlay track (ticket 23): the joint separation reads every path, so a run the room held before
+  // can need more after it, on any edge. A box that no longer holds a track's room is reserved again by the full producer, as the
+  // validator replays it.
+  if (trackRoomShort(model)) { reserveAgain(); return; }
   const retained = model.labels.filter(label => label.role !== 'group');
   const spent = legSpentOf(model);
   let plan = planLabels({ ...model, labels: retained }, true, true, spent);

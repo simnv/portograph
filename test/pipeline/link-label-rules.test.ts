@@ -111,12 +111,17 @@ links: [[flank.p, peer.p, {label: ${text}}]]`);
     layer: 'routed' as const, group: 'tier-group', tier: 9, side: 'right' as const, x,
     bounds: { x: x - 17, y: 0, width: 34, height: 10 } });
 
-  // A corridor at the split: the room lies beyond geometry that cannot move, so nothing is reserved.
+  // A corridor at the split: label room wins over the lane (architecture-2 ticket 23). The room is inserted and the corridor moves out
+  // with the peer, so it keeps its distance to it (R2); nothing is diagnosed.
   const beyond = copy(short);
   beyond.lanes.push(corridor(split));
-  expect(reserveLinkLabelRoom(beyond)).toBe(false);
-  expect(beyond.diagnostics.filter(d => d.code === 'LINK_LABEL_ROOM_UNRESERVED').map(d => d.message))
-    .toEqual([expect.stringMatching(/beyond a reserved lane/)]);
+  const peerBefore = beyond.nodes.peer!.bounds!.x;
+  expect(reserveLinkLabelRoom(beyond)).toBe(true);
+  const lane = beyond.lanes.find(item => item.id === 'lane:"transit":9')!;
+  expect(lane.x - split).toBeCloseTo(beyond.nodes.peer!.bounds!.x - peerBefore, 6);
+  expect(lane.x).toBeGreaterThan(split);
+  expect(lane.bounds.x).toBe(lane.x - lane.bounds.width / 2);
+  expect(beyond.diagnostics.filter(d => d.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
   // The same corridor one pixel to the left of the split, which is where the move takes it: reserved.
   const before = copy(short);
   before.lanes.push(corridor(split - 1));

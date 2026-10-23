@@ -181,8 +181,8 @@ export interface TrackRoom { group: string; side: Side; padding: number }
  * The room a run that track separation moved needs across it (architecture-2 ticket 23): the run the per-link rule derived (`base`) lies
  * in a plain group's padding (`paddingOf`) on an edge no title holds, and the moved run (`drawn`) stands further from the bodies; the
  * padding must reach it plus one track pitch to the border, or plus the label beyond it (`label`, from the run to the half border) when
- * the link shows one there. `grain` rounds the room up (7f's `LABEL_PADDING_GRAIN`). 7f grows the edge for it (`trackRoomPadding`), and
- * the separation refuses a move whose room 7f cannot grow (`sideRoomBlocked`): one reading (R1).
+ * the link shows one there. `grain` rounds the room up (7f's `LABEL_PADDING_GRAIN`). 7f grows the edge for it (`trackRoomPadding`),
+ * and pushes a lane beyond the edge out with the room (`insertRoomAt`).
  */
 export function trackRoomNeed(model: LayoutModel, base: readonly [Point, Point], drawn: readonly [Point, Point], stroke: number,
   label: number | undefined, grain: (room: number) => number = room => room): TrackRoom | undefined {
@@ -193,24 +193,6 @@ export function trackRoomNeed(model: LayoutModel, base: readonly [Point, Point],
   if (reach <= reachBeyond(bodies, held.side, base[0]) + PLACEMENT_EPS) return undefined;
   const beyond = Math.max(overlayTrackPitch(stroke, DEFAULT_STROKE_WIDTHS.group), label ?? 0);
   return { group: held.group, side: held.side, padding: grain(reach + beyond) };
-}
-
-/**
- * Whether 7f cannot grow a side edge of a group for a room across a run: a reserved lane (no perimeter lane) stands at or beyond the
- * bodies' face on that edge, and the room `insertRoomAt` inserts there would move it. 7f and the separation read it (R1).
- */
-export function sideRoomBlocked(model: LayoutModel, group: string, side: Side): boolean {
-  if (side !== 'left' && side !== 'right') return false;
-  const bodies = bodiesOf(model, model.groups[group]!.nodes);
-  const split = side === 'left' ? bodies.x : bodies.x + bodies.width;
-  return model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS);
-}
-
-/** The padding a group holds now on one edge, from its node bodies to its box edge. */
-export function heldPadding(model: LayoutModel, group: string, side: Side): number {
-  const box = model.groups[group]!.bounds!, bodies = bodiesOf(model, model.groups[group]!.nodes);
-  return side === 'top' ? bodies.y - box.y : side === 'bottom' ? box.y + box.height - bodies.y - bodies.height
-    : side === 'left' ? bodies.x - box.x : box.x + box.width - bodies.x - bodies.width;
 }
 
 /** The room a label beside a track takes beyond it: half the stroke, the normal gap, the text and half the border's stroke (`acrossRunPadding`). */

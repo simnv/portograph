@@ -99,7 +99,9 @@ describe('the step over a chord, where the mover holds routed links or shares a 
   it('a routed group moves in one round only, and the last round runs no step (a-corridor-moves-after-the-grid-settles)', async () => {
     const model = await run(fixture('a-corridor-moves-after-the-grid-settles'));
     // Main 6757da1 moves `row-11` by 0 here. The first try moved it -25, +82, +0.5 and +0.7 px in four rounds and kept nothing after the first.
-    expect(Math.abs(model.groups['row-11']!.bounds!.x - 1489.1)).toBeLessThan(30); // 1587.4 before ticket 78 ordered the tier-6 row by its partners (the row stands 98 px to the left)
+    // 1587.4 before ticket 78 ordered the tier-6 row by its partners; 1489.1 before architecture-2 ticket 23 inserted the track and label
+    // room beside zone-7b and the room on row-14 and zone-1, which push the lanes and the row beyond them out (label room wins over a lane).
+    expect(Math.abs(model.groups['row-11']!.bounds!.x - 1807.8)).toBeLessThan(30);
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE' && d.message.startsWith('The cantons'))).toEqual([]);
     // The centring warning on main stands; the step adds none.
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);

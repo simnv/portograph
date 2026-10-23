@@ -1169,9 +1169,10 @@ growth only increases, so the passes end. The tier gap grows until a window hold
 `labelWindowDeficit` finds the least growth by bisection (`LABEL_WINDOW_BISECTIONS` steps, rounded up
 to `LABEL_WINDOW_GRAIN`).
 Self-links, same-tier links
-through top/bottom ports, pairs whose ports do not face each other across the gap, overlay links
-whose longest run lies wholly across the axis the room grows on, and links whose room
-lies beyond a reserved lane are diagnosed `LINK_LABEL_ROOM_UNRESERVED`. Moves settle pills before the next link measures; the
+through top/bottom ports, pairs whose ports do not face each other across the gap, and overlay links
+whose longest run lies wholly across the axis the room grows on are diagnosed `LINK_LABEL_ROOM_UNRESERVED`.
+Room that lies beyond a reserved lane is inserted, and the lane and everything beyond it move out
+with it (`insertRoomAt`; label room wins over an adjacent lane, architecture-2 ticket 23). Moves settle pills before the next link measures; the
 reservation re-runs after the grid inside the 7f loop and any movement replays the region producers. That group's band clearance also
 reserves the label's room beside the detour run under the title. Publication and restore re-run the
 reservation on a copy and reject a model it would still change.
@@ -1516,10 +1517,10 @@ appears. Every way round with the same bends is tried (a non-collinear alternati
 the way with fewer crossings where the bends are equal). A candidate walks back along nothing, enters no body or pill, keeps the overlay port
 clearance from each (or the distance the derived way kept, where less), and stands to every group and
 frame box as the derived run did; it may cross the padding edge of a plain group on a side no title
-holds, which 7f then grows. A move whose room across it (the track, and the label the link shows beside it,
-`trackRoomNeed`) does not fit an edge 7f cannot grow (a side edge with a reserved lane beyond,
-`sideRoomBlocked`) is not taken: the run keeps its track, 7f names it `OVERLAY_TRACK_ROOM_UNRESERVED`,
-and the scorer counts the pair. Rank: fewest shared tracks, no growth beyond the box as it stands (a track the
+holds, which 7f then grows. 7f reserves the room across a moved run (the track, and the label the link shows
+beside it, `trackRoomNeed`); where a reserved lane stands beyond that edge, the room is inserted and the
+lane and everything beyond it move out with it (`insertRoomAt`): label room wins over an adjacent lane, and
+the lane keeps its distance to what it serves (R2). Rank: fewest shared tracks, no growth beyond the box as it stands (a track the
 grown room holds is no growth, so a replay after 7f keeps it), fewest crossings with the held paths (the
 tracks nest), for a labelled detour the way out of its U, the nearest track, out of the U, the positive direction. The
 result is a function of the frozen geometry, so nothing is recorded: stage 8 publishes it and

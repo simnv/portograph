@@ -847,20 +847,18 @@ it('stress ticket 19: a grown group label lands inside the inset the growth aske
 }, 120000);
 
 it('stress ticket 18: a corridor that would cross a labelled row link\'s split does not move', async () => {
-  // `reserveLinkLabelRoom` declines a row link whose room lies beyond a reserved lane. Here the
-  // corridor `link-16` owns across tier 2 stands at x 231, beyond `link-17`'s split, so nothing is
-  // reserved and the ladder decides; 7f's last step would then take that corridor to its child's
-  // port x at -197.19, on the far side of the split, and the publication replay would reserve
-  // 206.61279296875 px of row the published model does not have. Re-reserving moves nodes and the
-  // corridors are fixed by then, so the move is refused instead.
+  // The corridor `link-16` owns across tier 2 stands at x 231, beyond `link-17`'s split. Label room wins over the lane (architecture-2
+  // ticket 23): 7f inserts the row's room at the split and the corridor moves out with it, by the same 197.61279296875 px, so it keeps
+  // its distance to what it serves (R2). 7f's last step would take that corridor to its child's port, on the far side of the split, and
+  // the publication replay would reserve room the published model does not have; the corridors are fixed by then, so that move is
+  // still refused.
   const model = run(await throughBundles(corridorCrossesSplit));
   expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(false);
-  expect(model.lanes.map(lane => lane.x)).toEqual([95.5, 231]);
-  // The claim itself: the replay asks for nothing, which is what the refusal buys.
+  expect(model.lanes.map(lane => lane.x)).toEqual([95.5, 428.61279296875]);
+  // The claim itself: the replay asks for nothing more.
   const shortfalls: LinkLabelShortfall[] = [];
   expect(reserveLinkLabelRoom(copy(model), shortfalls)).toBe(false);
   expect(shortfalls).toEqual([]);
-  // And the link is diagnosed rather than silently reserved.
-  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')
-    .map(item => item.message)).toEqual([expect.stringMatching(/link-17 needs room beyond a reserved lane/)]);
+  // And the link is reserved, not diagnosed.
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
 }, 180000);
