@@ -1490,9 +1490,11 @@ const roomGrain = (room: number): number => Math.ceil(room / LABEL_PADDING_GRAIN
  * into a plain group's padding, beyond the run the per-link rule derived there, on an edge no title holds, needs that padding to reach
  * the run plus one overlay track pitch to the border (half the stroke, `OVERLAY_GAP`, half the border's stroke). The tracks are decided
  * beyond the edge as it stands (`overlayPath` lets a run cross the edge it grows), and 7f grows the edge to hold them. A moved track
- * of a labelled link holds the label beyond it too: half the stroke, the normal gap, the text and half the border's stroke, as a label
- * beside a run asks (`acrossRunPadding`); the label window of a run that near the border is cut away. Every moved track of the link
- * holds it, not only the run the label rides now: which run is longest can change with a later move, and the need may not flip with it.
+ * of a labelled link in a top or bottom padding holds the label beyond it too: half the stroke, the normal gap, the text and half the
+ * border's stroke, as a label beside a run asks (`acrossRunPadding`); the label window of a run that near the border is cut away. Every
+ * such track of the link holds it, not only the run the label rides now: which run is longest can change with a later move, and the
+ * need may not flip with it. A track in a side padding holds no label room: a side edge beyond a reserved lane cannot grow, and the
+ * label of a vertical run is placed by stage 9 (`LINK_LABEL_ROOM_UNRESERVED` names the same limit for a label).
  */
 export function trackRoomPadding(model: LayoutModel, link: LayoutLink, labelHeight?: number): AcrossRunRoom[] {
   const rooms: AcrossRunRoom[] = [];
@@ -1504,7 +1506,7 @@ export function trackRoomPadding(model: LayoutModel, link: LayoutLink, labelHeig
     const reach = reachBeyond(bodies, held.side, drawn[0]);
     if (reach <= reachBeyond(bodies, held.side, base[0]) + PLACEMENT_EPS) continue;
     const beyond = Math.max(overlayTrackPitch(stroke, DEFAULT_STROKE_WIDTHS.group),
-      labelHeight !== undefined ? stroke / 2 + LINK_LABEL_GEOMETRY.normalGap + labelHeight! + DEFAULT_STROKE_WIDTHS.group / 2 : 0);
+      labelHeight !== undefined && (held.side === 'top' || held.side === 'bottom') ? stroke / 2 + LINK_LABEL_GEOMETRY.normalGap + labelHeight! + DEFAULT_STROKE_WIDTHS.group / 2 : 0);
     rooms.push({ group: held.group, side: held.side, padding: roomGrain(reach + beyond), track: true });
   }
   return rooms;
