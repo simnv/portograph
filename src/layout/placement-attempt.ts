@@ -1,5 +1,6 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
+import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
 import { centreContext } from './centre.js';
 import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
@@ -321,6 +322,9 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // A perimeter lane's x is derived from the boxes over its span (ADR-0010, amendment of ticket 15, phase 4): the settling above can move a box after the last
   // replay, so the lane is read once more on the geometry that publishes.
   if (draft.lanes.some(lane => lane.kind === 'perimeter')) rebuildLaneExtents(draft);
+  // The fan edge keepers (architecture-2 ticket 18) are taken on the boxes that publish: 7f centres and stretches frames, so the choice
+  // is open until the last replay. From here the validator and a restore read the record, member and depth, and never choose again.
+  freezeFanKeepers(draft);
   // A move 7f cannot refuse (a title band's room, a tier gap's rows) may still leave a body on a held chord.
   // The chord is kept, its link is named, and the final gates judge it; it never falls back (ticket 34).
   for (const id of blockedChords(draft)) {
