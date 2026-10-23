@@ -44,6 +44,12 @@ export interface LayoutLabel extends OwnedElement {
   lines?: string[];
   /** Degrees, counter-clockwise negative; `-90` for a vertical run, any angle for a straight member. */
   textRotation?: number;
+  /**
+   * Set only for a turned label, one whose `textRotation` is not 0 or ±90 (architecture-2 ticket 20): the size of the rectangle
+   * its text occupies (with the halo for a label on its line) before the turn about the centre of `bounds`. `bounds` is then the
+   * upright box of that turned rectangle; the border check and every collision test read the turned rectangle (`labelArea`).
+   */
+  turnedSize?: Size;
   tooltip?: string;
   bounds?: Rect;
   omitted?: boolean;

@@ -1087,8 +1087,18 @@ between two facing pill faces in one row — `labelWindowDeficit` computes the g
 borders the run crosses holds the label, with the same `windowHolds` stage 9 asks. The growth is the
 larger of that and the symmetric deficit. A routed link that bends or detours has no run for
 placement to read, and stage 9 decides. A run whose window no growth at the split can open (a box
-that moves with the far end cuts it) is diagnosed `LINK_LABEL_ROOM_UNRESERVED`. Room *across* a run
+that moves with the far end cuts it) is diagnosed `LINK_LABEL_ROOM_UNRESERVED`, and so is an overlay
+L's side run that has no gap to grow and whose windows do not hold the label now. Room *across* a run
 (a border parallel to the run, within the label's height of it) is not reserved yet.
+**A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line lies on the line,
+turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
+(`labelRunWindows` with the turned box's height) are the line less the shorten margins, less every
+stretch where a cross-section of the turned box touches a border's stroke, grown by the border margin
+and the halo along the line. 7f also cuts them where the line crosses a routed drop placement can
+predict (another routed link's anchors at one x in two tiers): text across a routed run is a label
+hit. The tier gap grows until a window holds the text; the line turns as the lower end moves, so
+`labelWindowDeficit` finds the least growth by bisection (`LABEL_WINDOW_BISECTIONS` steps, rounded up
+to `LABEL_WINDOW_GRAIN`).
 Self-links, same-tier links
 through top/bottom ports, pairs whose ports do not face each other across the gap, overlay links
 whose longest run lies wholly across the axis the room grows on, and links whose room
@@ -1541,10 +1551,18 @@ place clears every border do both overlay rungs run again at the midpoint withou
 whole label across a border still beats a shortened one), and the label is reported as
 `LINK_LABEL_ON_BORDER`. Placement reserves the window: 7f's `reserveLinkLabelRoom` measures every
 run a label rides with the same windows (`labelWindowDeficit`) and grows the tier gap or the row
-when no window holds the text (ticket 19). The scorer counts the crossings as `labelBorderCrossings`.
+when no window holds the text (ticket 19). A label on a diagonal line takes the step nearest the midpoint
+whose text lies wholly in a window of the line, or the point of a window nearest the midpoint (ticket 20).
+The scorer counts the crossings as `labelBorderCrossings`.
 
 **What a candidate must clear.** Visible nodes and their stroke, visible pills, every already
-placed label, and every routed-layer segment with its half stroke. Only the *clearance zone* of the
+placed label, and every routed-layer segment with its half stroke. A **turned label** (a heading that
+is not 0 or ±90: a label on a diagonal line, or beside a declared straight member) is tested by the
+rectangle its text occupies, turned, not by its upright box (ticket 20): the label records the
+rectangle's size (`turnedSize`), and the border check, this test and G3 read it through one
+predicate (`labelArea` and the separating-axis helpers of `src/geometry/oriented.ts`). A label beside
+a straight member stands half its text height plus the visible gap off the run. An upright label is
+tested by its box, exactly as before. Only the *clearance zone* of the
 one segment the label was finally measured against is exempt, through a persisted `support`
 reference that G3 reads; text drawn across a segment is a hit whatever it claims, and a stale,
 absent or foreign reference exempts nothing. A **multiplicity label** carries its bundle's owner

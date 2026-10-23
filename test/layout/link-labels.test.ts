@@ -9,7 +9,8 @@ import { bundles } from '../../src/layout/bundles.js';
 import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
-import { segmentRectDistance } from '../../src/score/geometry.js';
+import { areaSegmentDistance } from '../../src/geometry/oriented.js';
+import { labelArea } from '../../src/score/model.js';
 import { LINK_LABEL_GEOMETRY, OVERLAY_LABEL_DENSITY, candidateBox, overlayDensity, overlayLabelsSuppressed, produceLinkLabels, validateLinkLabels } from '../../src/layout/link-labels.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { rows } from '../../src/layout/rows.js';
@@ -795,7 +796,7 @@ it('ADR-0017: a label on a straight bundle member follows the diagonal and never
   const diagonal = (dx: number, dy: number): PathSegment => ({ from: { x: 100, y: 100 }, to: { x: 100 + dx, y: 100 + dy }, owner: { kind: 'link', id: 'link-1' }, straight: true });
   const size = { width: 40, height: 10 };
   for (const [dx, dy] of [[80, 60], [-80, 60], [80, -60], [-80, -60]] as const) {
-    const { bounds, textRotation } = candidateBox(diagonal(dx, dy), 0.75, size, false);
+    const { bounds, textRotation, turnedSize } = candidateBox(diagonal(dx, dy), 0.75, size, false);
     // The heading is the run's own angle, brought into (-90, 90] so the text stays upright. An exactly
     // vertical member is the exception: it takes -90 and reads bottom-to-top (checked below).
     expect(textRotation).toBeGreaterThan(-90);
@@ -806,8 +807,10 @@ it('ADR-0017: a label on a straight bundle member follows the diagonal and never
     const radians = textRotation * Math.PI / 180;
     expect(bounds.width).toBeCloseTo(Math.abs(size.width * Math.cos(radians)) + Math.abs(size.height * Math.sin(radians)), 9);
     expect(bounds.height).toBeCloseTo(Math.abs(size.width * Math.sin(radians)) + Math.abs(size.height * Math.cos(radians)), 9);
-    // The stored box — what every gate measures — clears the run by the visible gap.
-    expect(segmentRectDistance(diagonal(dx, dy), bounds)).toBeGreaterThanOrEqual(LINK_LABEL_GEOMETRY.normalGap + 0.75 - 1e-9);
+    // The turned rectangle of the text — what every gate measures (ticket 20) — clears the run by exactly the visible gap.
+    expect(turnedSize).toEqual(size);
+    const area = labelArea({ bounds, textRotation, turnedSize: turnedSize! });
+    expect(areaSegmentDistance(diagonal(dx, dy), area)).toBeCloseTo(LINK_LABEL_GEOMETRY.normalGap + 0.75, 9);
   }
   // An exactly vertical member reads bottom-to-top whichever way it runs, its first side on the right.
   for (const dy of [80, -80]) {

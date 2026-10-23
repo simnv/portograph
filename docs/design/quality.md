@@ -33,7 +33,7 @@ out of scope for G2, G4 and G6.
 |---|---|---|---|
 | G1 | **No node overlap; containment** | node–node rectangles; node inside its group box; group boxes inside their tier band; no group–group overlap | — |
 | G2 | **No routed segment through a foreign node or group** | routed segments × node rectangles; routed segments × group boxes the link does not attach inside (ADR-0013) | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported); a link owning a lane in the group's margin or crossing a declared bar of the group |
-| G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware); a **group title** also owns an 8 px link-free margin no routed segment may enter | a label vs its **owner** (node label inside its node; pill text inside its own pill and over its own incident stem within that pill; a link label on the clearance zone — never the body — of the **one** segment its persisted `support` reference names, and only when that reference's link is its own owner); overlay layer |
+| G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware; a turned label's area is its turned text rectangle, not its upright box, ticket 20); a **group title** also owns an 8 px link-free margin no routed segment may enter | a label vs its **owner** (node label inside its node; pill text inside its own pill and over its own incident stem within that pill; a link label on the clearance zone — never the body — of the **one** segment its persisted `support` reference names, and only when that reference's link is its own owner); overlay layer |
 | G4 | **No collinear overlap** | pairs of routed segments on the same line sharing > 1 px | validated counted merge runs of selected bundle members (reported as `bundledLength`); exact source/target shared-run trees at one port; lane-owner runs vs their own lane |
 | G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; every other segment axis-aligned unless it is a declared **straight bundle member** (`straight: true`, ADR-0017); port order on a side matches far-end order | author `order:`; overlay; stub |
 | G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10; a routed segment on or outside a group box runs no closer than 10 px beyond its half stroke parallel to its edge (ADR-0013) | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans; one link's own staircase tread; against another member's copy of a verified junction stem, a member's segment that is its staircase tread or its own neighbour segment |
@@ -72,7 +72,8 @@ non-random layout).
 Also reported: `overlaps`, `bundledLength`, `barCross`, `labelHits`, `labelsOmitted`, `stubs`, `removedLinks`,
 `groupLinks`, `lanesUsed`, `inversions`, `fallbackUsed`, `deadlineHit`, canvas size, and (outside
 the snapshot block) layout time per stage. `labelBorderCrossings` counts the pairs of a visible link
-label and a drawn group or frame box whose border the label lies across; it is present only when
+label and a drawn group or frame box whose border the label lies across (a turned label by its turned
+rectangle); it is present only when
 one does, and no gate reads it yet (stage 9 reports each such label as `LINK_LABEL_ON_BORDER`).
 
 `counts` gives the raw counts of each link family, beside Q and outside it (Q reads only the routed

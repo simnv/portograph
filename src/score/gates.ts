@@ -18,7 +18,8 @@ interface Span { x: number; y: number; right: number; bottom: number; measurable
 const REJECT_LIMIT = 2 ** 26;
 const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
-import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, labelArea, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
+import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../geometry/oriented.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
@@ -330,20 +331,22 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       && contains(associatedPill.bounds, label.bounds!);
     const hit = (other: string): void => { counters.labelHits++; fail('G3', 'label-collision', [label.id, other], 'Label intersects unrelated geometry'); };
     const labelSpan = rectSpan(label.bounds!);
+    // A turned label is tested by its turned rectangle (ticket 20); an upright one by its box, as before.
+    const area = labelArea(label);
     for (let j = i + 1; j < labels.length; j++) {
       const other = labels[j]!;
-      if (rectOverlap(label.bounds!, other.bounds!)) hit(other.id);
+      if (areaOverlap(area, labelArea(other))) hit(other.id);
     }
     for (let n = 0; n < nodes.length; n++) {
       const node = nodes[n]!;
       if (apart(labelSpan, nodeExtent[n]!, labelNodeReach)) continue;
       const owns = label.owner.kind === 'node' && label.owner.id === node.id;
       const ownedExtent = owns && (label.role === 'pill' ? containedOwnPill : contains(node.bounds!, label.bounds!));
-      if (node.layer !== 'overlay' && !ownedExtent && (rectDistance(label.bounds!, node.bounds!) < nodeStroke(node) / 2 - EPS || rectOverlap(label.bounds!, node.bounds!))) hit(node.id);
+      if (node.layer !== 'overlay' && !ownedExtent && (areaDistance(area, node.bounds!) < nodeStroke(node) / 2 - EPS || areaOverlap(area, node.bounds!))) hit(node.id);
       for (const p of node.ports) {
         if (!p.pill || p.pill.layer === 'overlay') continue;
         const ownPill = owns && containedOwnPill && label.port !== undefined && refEqual(label.port, p.ref);
-        if (!ownPill && (rectOverlap(label.bounds!, p.pill.bounds) || rectDistance(label.bounds!, p.pill.bounds) < DEFAULT_STROKE_WIDTHS.pill / 2 - EPS)) hit(`pill:${node.id}:${p.ref.ordinal}`);
+        if (!ownPill && (areaOverlap(area, p.pill.bounds) || areaDistance(area, p.pill.bounds) < DEFAULT_STROKE_WIDTHS.pill / 2 - EPS)) hit(`pill:${node.id}:${p.ref.ordinal}`);
       }
     }
     // A group title owns a link-free margin beyond its stroke-aware edge.
@@ -360,14 +363,14 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
         && label.support.link === s.link.id && s.index >= label.support.segment && s.index <= (label.support.through ?? label.support.segment);
       if (own && !horizontal(s.segment) && !vertical(s.segment)) continue;
       // Text drawn across a routed segment is a hit whatever it claims to support.
-      if (segmentRect(s.segment, label.bounds!)) { hit(s.link.id); continue; }
+      if (areaSegment(s.segment, area)) { hit(s.link.id); continue; }
       // Only the clearance zone of the one segment a link label was measured against is exempt.
       // Another segment of the same link, a stale or absent reference, and every multiplicity
       // label exempt nothing.
       const support = label.support;
       if (support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === support.link
         && support.link === s.link.id && s.index >= support.segment && s.index <= (support.through ?? support.segment)) continue;
-      if (segmentRectDistance(s.segment, label.bounds!) < s.stroke / 2 + margin - EPS) hit(s.link.id);
+      if (areaSegmentDistance(s.segment, area) < s.stroke / 2 + margin - EPS) hit(s.link.id);
     }
   }
   collinearSweep(routed, (a, b, overlap) => {

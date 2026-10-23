@@ -158,6 +158,24 @@ describe('the label room of an overlay L', () => {
     expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.message)).toEqual([expect.stringMatching(/no gap/)]);
   }, 60000);
 
+  it('with no gap, a run long enough whose windows hold no label is still reported (ticket 20)', async () => {
+    const { model } = await shortDrop();
+    const lb = model.nodes['lb']!, outlet = model.nodes['outlet']!, link = overlay(model);
+    lb.bounds!.width = outlet.bounds!.x - lb.bounds!.x + 5;
+    const runs = overlayPath(model, link).segments, run = runs.find(s => Math.abs(s.to.y - s.from.y) < 1e-6)!;
+    const length = Math.abs(run.to.x - run.from.x), font = { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight };
+    // The longest text of x's the whole run holds with both margins: no longer short, but one border across its middle leaves no window for it.
+    let text = 'x';
+    while (measureText(`${text}x`, font).width + 2 * LINK_LABEL_GEOMETRY.shortenMargin < length - 1) text += 'x';
+    model.document.links[link.sourceIndex]!.label = text;
+    const middle = (run.from.x + run.to.x) / 2;
+    model.groups['wall'] = { id: 'wall', owner: { kind: 'group', id: 'wall' }, layer: 'routed', nodes: ['shim'], tier: 99,
+      bounds: { x: middle, y: run.from.y - 400, width: 2000, height: 800 } };
+    reserveLinkLabelRoom(model);
+    expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.message))
+      .toEqual([expect.stringMatching(/crosses a drawn box along its side run, with no gap/)]);
+  }, 60000);
+
   it('refuses when a lane stands beyond the split, and names the link', async () => {
     const { model, split } = await shortDrop();
     model.lanes.push({ id: 'lane:"transit":9', owner: { kind: 'link', id: 'transit' }, layer: 'routed', group: 'back', tier: 9, side: 'right', x: split + 10,

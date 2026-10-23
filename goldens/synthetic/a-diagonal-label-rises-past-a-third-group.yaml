@@ -1,10 +1,11 @@
-# Expected (open, architecture-2 ticket 19): two described overlay links rise from `l` in `lower` to `u` in `upper`, past the group
-# `third` beside `upper`. Each draws one diagonal from face to face, and its label lies on the line (ticket 16). The stored box of a
-# label on a diagonal is the axis-aligned box of the turned text, about 143 x 116 px for a 130 px text, so the box reaches the
-# routed link `t`-`l2` and the corner of `third` that the text does not reach. No place along the line clears every border, and stage 9
-# falls back: LINK_LABEL_ON_BORDER on `upper` and `third`, `labelBorderCrossings` 1, and the second label is omitted. Placement reserves
-# no window on a diagonal (`labelRunWindows` has no axis there). The fix waits for a design decision; see the ticket.
-# Test-only input; test/pipeline/link-label-rules.test.ts reads it (`it.fails` until the decision).
+# Expected (architecture-2 ticket 20): two described overlay links rise from `l` in `lower` to `u` in `upper`, past the group `third`
+# beside `upper`. Each draws one diagonal from face to face, and its label lies on the line (ticket 16). A turned label is tested by
+# the rectangle its text really occupies, not by its upright box (about 143 x 116 px for a 170 px turned box). 7f reserves a window
+# along the first line: between the borders of `upper` and `lower` and the routed drop `t`-`l2` the line crosses, 8 px clear of each
+# along the run, and grows the tier gap until that window holds the text. Stage 9 places the label there: no LINK_LABEL_ON_BORDER,
+# `labelBorderCrossings` absent. The second line crosses the first at its middle; its label finds no place clear of the first one
+# and is omitted (placement reserves each link's window alone).
+# Test-only input; test/pipeline/link-label-rules.test.ts reads it.
 portograph: 2
 groups:
   upper: { tier: 0, label: Upper }

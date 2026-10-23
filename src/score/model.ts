@@ -1,4 +1,5 @@
-import type { Junction, Layer, LayoutLink, LayoutModel, LayoutPort, PathSegment, PortRef, Rect } from '../model/index.js';
+import type { Junction, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment, PortRef, Rect } from '../model/index.js';
+import { type Area, areaInside, areaOverlap, isOriented } from '../geometry/oriented.js';
 import { frameSubtreeCells } from '../model/index.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
@@ -26,12 +27,29 @@ export function groupBoxes(model: LayoutModel): { id: string; bounds: Rect }[] {
   return [...groups, ...(model.frames ?? []).map(frame => ({ id: frame.id, bounds: frame.box }))];
 }
 /**
+ * The area a label is tested by (architecture-2 ticket 20): the turned rectangle its text occupies when it records one
+ * (`turnedSize`, a heading that is not 0 or ±90), turned by `textRotation` about the centre of its box; its stored box otherwise.
+ * The border check, stage 9's collision test and G3 read this one area.
+ */
+export function labelArea(label: Pick<LayoutLabel, 'bounds' | 'turnedSize' | 'textRotation'>): Area {
+  const box = label.bounds!;
+  if (label.turnedSize === undefined) return box;
+  return { centre: { x: box.x + box.width / 2, y: box.y + box.height / 2 }, ...label.turnedSize, degrees: label.textRotation ?? 0 };
+}
+/**
  * True when `label` lies across the drawn border of `box`: it touches the stroke of an edge, so it is
  * neither wholly inside the box nor wholly outside it. A link label stays in one region (stage 9);
- * stage 9 and the `labelBorderCrossings` counter read this one predicate.
+ * placement (the windows of a diagonal run), stage 9 and the `labelBorderCrossings` counter read this
+ * one predicate. A turned label is tested by its turned rectangle (`labelArea`, ticket 20); an upright
+ * box gives the result it gave before.
  */
-export function labelCrossesBorder(label: Rect, box: Rect): boolean {
+export function labelCrossesBorder(label: Area, box: Rect): boolean {
   const half = DEFAULT_STROKE_WIDTHS.group / 2;
+  if (isOriented(label)) {
+    const outer = { x: box.x - half, y: box.y - half, width: box.width + 2 * half, height: box.height + 2 * half };
+    const inner = { x: box.x + half, y: box.y + half, width: box.width - 2 * half, height: box.height - 2 * half };
+    return areaOverlap(label, outer) && !areaInside(label, inner);
+  }
   const outside = label.x >= right(box) + half - EPS || right(label) <= box.x - half + EPS
     || label.y >= bottom(box) + half - EPS || bottom(label) <= box.y - half + EPS;
   const inside = label.x >= box.x + half - EPS && right(label) <= right(box) - half + EPS

@@ -3,7 +3,7 @@ import { counts } from './counts.js';
 import { gates } from './gates.js';
 import { EPS } from './geometry.js';
 import { advisories, metrics, weightedScore } from './metrics.js';
-import { groupBoxes, labelCrossesBorder, segments, validate } from './model.js';
+import { groupBoxes, labelArea, labelCrossesBorder, segments, validate } from './model.js';
 import type { ScoreAssertion, ScoreCounters, ScoreOptions, ScoreReport } from './types.js';
 import { riserCrossings } from '../layout/bus.js';
 import { routedTrunkCrossings } from '../layout/trunk.js';
@@ -19,7 +19,7 @@ export function score(layout: LayoutModel, options: ScoreOptions = {}): ScoreRep
   const routed = segments(layout);
   const borders = groupBoxes(layout);
   const labelBorderCrossings = layout.labels.filter(label => label.role === 'link' && !label.omitted && label.bounds !== undefined)
-    .reduce((sum, label) => sum + borders.filter(box => labelCrossesBorder(label.bounds!, box.bounds)).length, 0);
+    .reduce((sum, label) => sum + borders.filter(box => labelCrossesBorder(labelArea(label), box.bounds)).length, 0);
   const counters: ScoreCounters = {
     overlaps: 0, bundledLength: 0, barCross: 0, labelHits: 0, labelsOmitted: layout.labels.filter(l => l.omitted).length,
     stubs: layout.links.filter(l => l.technique === 'stub').length, removedLinks: layout.links.filter(l => l.removed === true).length, groupLinks: layout.groupLinks.length, lanesUsed: 0,

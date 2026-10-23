@@ -3,8 +3,8 @@ import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
-import { LABEL_BORDER_REACH, LINK_LABEL_GEOMETRY, labelRunWindows, labelWindowDeficit, produceLinkLabels } from '../../src/layout/link-labels.js';
-import { groupBoxes, labelCrossesBorder } from '../../src/score/model.js';
+import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_LABEL_GEOMETRY, labelRunWindows, labelWindowDeficit, produceLinkLabels, windowHolds } from '../../src/layout/link-labels.js';
+import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
 import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
 import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
 import { bench } from '../layout/link-label-fixture.js';
@@ -597,10 +597,56 @@ it.fails('a label beside an overlay detour in a group padding stays clear of the
   expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
 }, 120000);
 
-// Open (ticket 19): a label on a diagonal is measured by the axis-aligned box of its turned text, and placement reserves no window
-// on a diagonal. This test passes once the design decision lands; until then `it.fails` records the gap.
-it.fails('a diagonal label rising past a third group stays clear of every border (ticket 19, open)', async () => {
+// Ticket 20: a turned label is tested by its turned rectangle, and placement reserves a window along the diagonal it lies on, clear
+// of the borders and of the routed drop the line crosses.
+it('a diagonal label rising past a third group stays clear of every border (ticket 20)', async () => {
   const model = await run(fixture('a-diagonal-label-rises-past-a-third-group'));
-  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER')).toEqual([]);
-  expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+  const report = score(model).snapshot;
+  expect(report.counters.labelBorderCrossings).toBeUndefined();
+  expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
+  const first = model.labels.find(label => label.id === 'label:link:link-2')!;
+  expect(first.omitted).toBeUndefined();
+  expect(first.onLine).toBe(true);
+  expect(first.turnedSize).toBeDefined();
+  // Its upright box still reaches a border; its turned rectangle does not.
+  expect(groupBoxes(model).filter(box => labelCrossesBorder(labelArea(first), box.bounds))).toEqual([]);
+  // The reservation is at its fixed point (R1).
+  expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
 }, 120000);
+
+it('labelRunWindows on a diagonal: the windows of a label on the line, clear of every border by the margin along the run (ticket 20)', () => {
+  const owner = { kind: 'link' as const, id: 'link-1' };
+  const boxes = [{ x: 0, y: 0, width: 100, height: 100 }, { x: 60, y: 200, width: 300, height: 100 }];
+  const run = { from: { x: 50, y: 50 }, to: { x: 250, y: 250 }, owner }, across = 15, length = Math.hypot(200, 200);
+  // With no height the diagonal still has no windows.
+  expect(labelRunWindows(boxes, run)).toBeUndefined();
+  const windows = labelRunWindows(boxes, run, across)!;
+  // Inside the upper box, between the two boxes, inside the lower box.
+  expect(windows.length).toBe(3);
+  const window = windows[1]!;
+  const halo = LINK_LABEL_GEOMETRY.halo, margin = LINK_LABEL_GEOMETRY.borderMargin;
+  const box = (from: number, to: number) => ({ centre: { x: 50 + (from + to) / 2 / Math.SQRT2, y: 50 + (from + to) / 2 / Math.SQRT2 },
+    width: to - from + 2 * halo, height: across, degrees: 45 });
+  // Text wholly in the window: its turned box (with the halo) crosses no border; moved past the margin, it does.
+  expect(boxes.some(item => labelCrossesBorder(box(window.from, window.to), item))).toBe(false);
+  expect(boxes.some(item => labelCrossesBorder(box(window.from - margin - 0.5, window.from), item))).toBe(true);
+  expect(boxes.some(item => labelCrossesBorder(box(window.to, window.to + margin + 0.5), item))).toBe(true);
+  expect(window.to).toBeLessThan(length - LINK_LABEL_GEOMETRY.shortenMargin);
+});
+
+it('labelWindowDeficit on a diagonal: the least growth after which a window holds the label (ticket 20)', () => {
+  const owner = { kind: 'link' as const, id: 'link-1' };
+  const boxes = [{ x: 0, y: 0, width: 100, height: 100 }, { x: 60, y: 160, width: 300, height: 100 }];
+  const run = { from: { x: 60, y: 60 }, to: { x: 200, y: 200 }, owner }, across = 15, extent = 100, split = 130;
+  const turned = { across, axis: 'y' as const };
+  // Without the label's height a diagonal is left to stage 9, as before.
+  expect(labelWindowDeficit(boxes, run, extent, split, true)).toBe(0);
+  const growth = labelWindowDeficit(boxes, run, extent, split, true, turned)!;
+  expect(growth).toBeGreaterThan(0);
+  const holds = (g: number) => labelRunWindows(boxes.map(box => box.y >= split ? { ...box, y: box.y + g } : box),
+    { ...run, to: { ...run.to, y: run.to.y + g } }, across)!.some(window => windowHolds(window, extent));
+  expect(holds(growth)).toBe(true);
+  // Rounded up to the grain, and no more: a growth one grain and a hair less does not hold.
+  expect(holds(growth - 2 * LABEL_WINDOW_GRAIN)).toBe(false);
+});
