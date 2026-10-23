@@ -1,7 +1,7 @@
-import type { Point, Rect } from '../model/geometry.js';
-import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
+import type { Point, Rect, Side } from '../model/geometry.js';
+import type { LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
-import { farCoordinate, lanePitchFloors, portPeers, seatAuthored, sortFace } from './sides-two.js';
+import { busPortKeys, farCoordinate, lanePitchFloors, portPeers, seatAuthored, sortFace } from './sides-two.js';
 import { groupShape } from './grid.js';
 import { corridorReader, corridorSide, directPlan, fixedSourceGroups, laneSource, laneWidth, ownsTransitLanes, selectAnchorTier, transitedCore, transitTiers } from './lanes.js';
 import { crosses } from './overlay-paths.js';
@@ -62,7 +62,10 @@ export function readDraft(model: LayoutModel) {
   // `layout.corridorRowOrder: false` keeps the measure of main as well (ticket 17): no transit link is cut at a corridor.
   const cut = model.document.layout?.corridorRowOrder !== false;
   const corridors = corridorReader(model), fixed = fixedSourceGroups(model);
-  const peers = portPeers(model), floors = lanePitchFloors(model);
+  // The bus ports do not change with a candidate's geometry, so one set serves every measurement (`sortFace`).
+  const peers = portPeers(model), floors = lanePitchFloors(model), buses = busPortKeys(model);
+  /** A port's side as stage 3 reads it: the decided side, else the sizing estimate (a shared port stage 2 deferred, a mesh-bus port). */
+  const sideOf = (port: LayoutPort | undefined): Side | undefined => port?.side ?? port?.sizingSide;
   /**
    * What one measurement reads again and again on one geometry: the groups of each sub-tier left to right, and the predicted x of each
    * port. `measureRange` empties it, because a candidate moves the geometry between two measurements.
@@ -81,21 +84,22 @@ export function readDraft(model: LayoutModel) {
    * The x a port on a top or bottom face is predicted to hold (ticket 17 and its follow-up). The draft has no final port x yet: `sides-two`
    * centres the ports of a face over the node at the face's pitch, in its provisional engine order, and gives the face of an alignment
    * end at least the lane width as pitch. This reads that order with the same functions (`farCoordinate`, `sortFace`, `seatAuthored`,
-   * `lanePitchFloors`; R1) on the draft, without the planned first turns (stage 5 plans them later) and without a bundle's pitch. A port
-   * whose side is not `top` or `bottom` is read at its node centre. Links that share a node meet at their own ports, not at one centre:
+   * `lanePitchFloors`; R1) on the draft, without the planned first turns (stage 5 plans them later) and without a bundle's pitch. A port is on
+   * the face of its side, else of its sizing side (`sideOf`, as stage 3 reads it); one whose side is not `top` or `bottom` is read at its
+   * node centre. Links that share a node meet at their own ports, not at one centre:
    * the order of their ports decides whether they cross.
    */
   const portX = (ref: PortRef): number => {
     const id = portId(ref), known = memo.port.get(id);
     if (known !== undefined) return known;
-    const node = model.nodes[ref.node]!, side = findPort(model, ref)?.side;
+    const node = model.nodes[ref.node]!, side = sideOf(findPort(model, ref));
     if (side !== 'top' && side !== 'bottom') {
       memo.port.set(id, centre(ref.node));
       return centre(ref.node);
     }
     // The whole face at once: one order gives the x of each of its ports.
-    const ports = node.ports.filter(port => port.side === side);
-    const face = seatAuthored(sortFace(model, ports, new Map(ports.map(port => [port, { far: farCoordinate(model, peers, port.ref, side) }]))));
+    const ports = node.ports.filter(port => sideOf(port) === side);
+    const face = seatAuthored(sortFace(model, ports, new Map(ports.map(port => [port, { far: farCoordinate(model, peers, port.ref, side) }])), buses));
     const pitch = Math.max(node.sidePitch?.[side] ?? 0, floors.get(`${ref.node}\u0000${side}`)?.width ?? 0);
     face.forEach((port, at) => memo.port.set(portId(port.ref), centre(ref.node) + (at - (face.length - 1) / 2) * pitch));
     return memo.port.get(id)!;
@@ -241,7 +245,7 @@ export function readDraft(model: LayoutModel) {
     });
     return items.map(item => keys.get(item) === undefined ? item : queue.shift()!);
   };
-  return { anchor, tiers, index, tierOf, groupOf, drawn, busDrawn, centre, isRow, partners, touched, keyOfNodes, same, measure, measureRange, reach, reorder };
+  return { anchor, tiers, index, tierOf, groupOf, drawn, busDrawn, centre, isRow, partners, touched, keyOfNodes, same, measure, measureRange, reach, reorder, portX };
 }
 
 /** What both orderings (groups and nodes, and frames) read: the draft's keys, its tiers and its two measures. */

@@ -747,9 +747,16 @@ export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, rea
   };
   return list.length ? list.reduce((sum, peer) => sum + coordinate(peer), 0) / list.length : Infinity;
 }
-/** One face in engine order before the author order: a bus port last, then by `slots` (`turnOrder`); a tie keeps the face's port order. */
-export function sortFace(model: LayoutModel, ports: readonly LayoutPort[], slots: ReadonlyMap<LayoutPort, TurnPort>): LayoutPort[] {
-  const bus = new Map(ports.map(port => [port, busOfPort(model, port.ref) !== undefined ? 1 : 0]));
+/** The keys of every mesh-bus port (`busOfPort` answers a bus for exactly these). A caller that sorts many faces reads it once. */
+export function busPortKeys(model: LayoutModel): Set<string> {
+  return new Set(meshBuses(model).flatMap(bus => bus.ports.map(key)));
+}
+/**
+ * One face in engine order before the author order: a bus port last, then by `slots` (`turnOrder`); a tie keeps the face's port order.
+ * `buses` is `busPortKeys(model)`, passed in by a caller that sorts many faces on one model.
+ */
+export function sortFace(model: LayoutModel, ports: readonly LayoutPort[], slots: ReadonlyMap<LayoutPort, TurnPort>, buses: ReadonlySet<string> = busPortKeys(model)): LayoutPort[] {
+  const bus = new Map(ports.map(port => [port, buses.has(key(port.ref)) ? 1 : 0]));
   const byslot = turnOrder([...slots.values()]);
   return [...ports].sort((a, b) => bus.get(a)! - bus.get(b)! || byslot(slots.get(a)!, slots.get(b)!));
 }
@@ -923,7 +930,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   const planned = plannedTurns(model), plainTurns = model.turnOrder === true ? plannedTurns(model, false) : planned;
   // The faces that a planned first turn moved (ticket 24): the order with the turns differs from the order with the overlay brackets alone.
   const turned: { node: string; side: Side }[] = [];
-  const sortOrder = orderedNodeIds(model.document);
+  const sortOrder = orderedNodeIds(model.document), buses = busPortKeys(model);
   for (const id of [...sortOrder.filter(item => leaders.has(item)), ...sortOrder.filter(item => !leaders.has(item))]) {
     const node = model.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
@@ -937,7 +944,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
         const turn = lateral || turns !== plainTurns ? turns.get(key(port.ref)) : undefined;
         return [port, { far: far(port.ref), ...(turn === undefined ? {} : turn) }] as const;
       }));
-      const sorted = (turns: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => sortFace(model, ports, slotsOf(turns));
+      const sorted = (turns: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => sortFace(model, ports, slotsOf(turns), buses);
       // A run that carries the order for some links only (`turnLinks`) orders the other faces as today.
       const usePlanned = turnScope(model, id, side) ? planned : plainTurns;
       const plain = usePlanned === plainTurns ? undefined : sorted(plainTurns);
