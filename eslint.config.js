@@ -20,7 +20,7 @@ const DOM_GLOBALS = [
 ];
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/', 'prototype/', 'ref/', '.scratch/', '.superpowers/'] },
+  { ignores: ['dist/', 'node_modules/', '.claude/', 'prototype/', 'ref/', '.scratch/', '.superpowers/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
