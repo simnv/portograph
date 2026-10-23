@@ -594,10 +594,6 @@ export interface DirectFamily {
   witnesses: { links: [string, string]; at: Point }[];
   /** Whether the orthogonal drawing crosses more than once (or the inversions prove it): only then does the family draw direct. */
   triggered: boolean;
-  /** The px the tier gap grows beyond its height at the decision so that the direct members of its families stand at 30 degrees (0 = none); one value per gap. */
-  growth: number;
-  /** The tier-gap height this growth reserves, from the upper band's bottom to the lower band's top (0 = none): the tier-gap plan reads it as a floor. */
-  height: number;
   /** The faces and the peer order the family's ports stand in: the upper port on `bottom`, the lower on `top`, `index` in peer order. */
   portPlan: { link: string; index: number; upper: { port: string; side: 'bottom' }; lower: { port: string; side: 'top' } }[];
   /** `direct`, or `orthogonal` with the reason (`unplanned` is never published: an untriggered family is not recorded). */

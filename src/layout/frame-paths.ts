@@ -1,4 +1,4 @@
-import type { LayoutLink, LayoutModel, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
+import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { crosses, sharedBlockers, straightChord } from './overlay-paths.js';
@@ -8,7 +8,7 @@ import { frameSubtreeCells } from '../model/model.js';
 import type { Point } from '../model/geometry.js';
 import { stopsOf } from './gap-runs.js';
 import { portId } from './skeleton-graph.js';
-import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, type CorridorOptions } from './row-paths.js';
+import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, straightLengthLimit, type CorridorOptions } from './row-paths.js';
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
 import { measureText } from '../text/index.js';
@@ -441,7 +441,7 @@ export function edgeMisses(model: LayoutModel, link: LayoutLink, segment: PathSe
  */
 export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0): { segment: PathSegment } | { reason: ChordRefusal } {
   const kind = chordKind(model, link);
-  if (perpendicularFaces(model, link)) return { reason: 'faces' };
+  if (longPerpendicularChord(model, link)) return { reason: 'faces' };
   const geometry = straightChord(model, link, undefined, true);
   if (!geometry || Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y) < PLACEMENT_EPS) return { reason: 'faces' };
   // A link that crosses a tier it does not end in needs the lane lanes.ts reserves for it, and a lane
@@ -469,15 +469,19 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
 
 const VERTICAL = new Set(['top', 'bottom']);
 /**
- * A routed chord never joins two perpendicular faces (user, 2026-10-23, architecture-2 ticket 22): a `top` or `bottom` face and a lateral side
- * stand at 90 degrees, and the link is orthogonal. Opposite faces and two faces on one side keep the other chord rules. Every chord decision
- * reads this one predicate (`chordVerdict`).
+ * A long routed chord never joins two perpendicular faces (user, 2026-10-23 and 2026-10-24, architecture-2 ticket 22): when a `top` or `bottom` face and a
+ * lateral side stand at 90 degrees and the chord between the two anchors is at least the straight-link length limit (`straightLengthLimit`, twice the
+ * larger dimension of the two bodies), the link is orthogonal. A shorter chord between perpendicular faces, opposite faces and two faces on one side keep
+ * the other chord rules. Every chord decision reads this one predicate (`chordVerdict`).
  */
-export function perpendicularFaces(model: LayoutModel, link: LayoutLink): boolean {
+export function longPerpendicularChord(model: LayoutModel, link: LayoutLink): boolean {
   const ends = link.attachments;
   if (!ends) return false;
-  const one = findPort(model, ends.from)?.side, two = findPort(model, ends.to)?.side;
-  return one !== undefined && two !== undefined && VERTICAL.has(one) !== VERTICAL.has(two);
+  const one = findPort(model, ends.from), two = findPort(model, ends.to);
+  if (one?.side === undefined || two?.side === undefined || VERTICAL.has(one.side) === VERTICAL.has(two.side) || !one.anchor || !two.anchor) return false;
+  const nodes = [model.nodes[ends.from.node], model.nodes[ends.to.node]];
+  if (nodes.some(node => node?.bounds === undefined)) return false;
+  return Math.hypot(two.anchor.x - one.anchor.x, two.anchor.y - one.anchor.y) >= straightLengthLimit(nodes as LayoutNode[]) - EPS;
 }
 
 /** The chord of the link when nothing that no other link can change refuses it. The fan rules ask this first. */

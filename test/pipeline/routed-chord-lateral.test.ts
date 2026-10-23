@@ -93,10 +93,7 @@ describe('the facing edge is read per port face', () => {
     nodes['east-router'] = { ...nodes['east-router']!, ports: nodes['east-router']!.ports.map(port => port.side === 'bottom'
       ? { ...port, side: 'right' as const, sideHint: true, anchor: { x: east.x + east.width, y: east.y + 25 } } : port) };
     nodes['provider'] = { ...nodes['provider']!, ports: nodes['provider']!.ports.map(port => port.side === 'top' ? { ...port, anchor: { x: east.x + east.width + 120, y: port.anchor!.y } } : port) };
-    // Right face to top face stand at 90 degrees: refused for its faces before the edge is read (ticket 22). The provider port on its left face opposes the
-    // router's right face, and the edge decides.
-    expect(chordVerdict({ ...model, nodes }, link, SIDE_EDGE_SLACK)).toEqual({ reason: 'faces' });
-    nodes['provider'] = { ...nodes['provider']!, ports: nodes['provider']!.ports.map(port => port.side === 'top' ? { ...port, side: 'left' as const, sideHint: true } : port) };
+    // Right face to top face stand at 90 degrees, but the chord is shorter than the straight-link limit, so the faces do not refuse it (ticket 22).
     const steep = { ...model, nodes };
     expect(chordKind(steep, link)).toBe('cross');
     expect(chordVerdict(steep, link, SIDE_EDGE_SLACK)).toEqual({ reason: 'edge' });

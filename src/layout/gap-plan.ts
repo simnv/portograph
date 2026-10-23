@@ -7,7 +7,6 @@ import { cantonTiers, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, 
 import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type NestedTip, type TierGap } from './gap-runs.js';
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
 import { isRoutedChord } from './frame-paths.js';
-import { directGapHeight } from './direct-families.js';
 import { endPort } from './approach.js';
 import { findPort } from './row-paths.js';
 import { courseOf } from './course-lanes.js';
@@ -720,8 +719,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   const margin = GROUP_EDGE_LINK_CLEARANCE + half, stem = GROUP_LABEL_GEOMETRY.routerStem;
   const bandOf = (tier: number): Rect => model.tierBands.find(band => band.tier === tier)!.bounds!;
   const above = bandOf(gap.above), bandTop = bandOf(gap.below).y;
-  // A triggered direct family reserves the height its chords need to stand at 30 degrees (ticket 22): a floor beside the band gap.
-  const floor = Math.max(0, bandGap(model) - (gap.low - bottom(above)), directGapHeight(model, gap) - (gap.low - bottom(above)));
+  const floor = Math.max(0, bandGap(model) - (gap.low - bottom(above)));
   const chords = new Set(model.frozenChords ?? []);
 
   const inputs: PlanInput[] = [], residual: ResidualPart[] = [];
