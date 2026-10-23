@@ -1582,7 +1582,9 @@ run a label rides with the same windows (`labelWindowDeficit`) and grows the tie
 when no window holds the text (ticket 19). A label on a diagonal line takes the step nearest the midpoint
 whose text lies wholly in a window of the line, or the point of a window nearest the midpoint (ticket 20).
 A label that yields to the band of another label on a diagonal line (`model.labelYields`, recorded in 7f)
-keeps clear of that band with every candidate on its line, on every rung; stage 9 never decides a yield.
+keeps clear of that band with every candidate on its line, on every rung; stage 9 never decides a yield. The band is read on
+the line placement derives (`overlayPath`), as in 7f; a recorded yield whose other line carries no label on a diagonal line now is
+not applied and is reported (`LINK_LABEL_YIELD_UNAPPLIED`).
 The scorer counts the crossings as `labelBorderCrossings`.
 
 **What a candidate must clear.** Visible nodes and their stroke, visible pills, every already

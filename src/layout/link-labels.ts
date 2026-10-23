@@ -252,17 +252,16 @@ interface LabelledLine { link: LayoutLink; line: PathSegment; extent: number; ac
 /**
  * Every described overlay link (`describedLink`) whose longest run (`longestRun`) is a diagonal line (`isDiagonalRun`). Its label
  * lies on that line, so wholly in the line's **band**: the line, with half the height of the label's turned box plus the halo as
- * clearance. `drawn` reads the published path when there is one (the band a drawn label lies in, `labelBands`); otherwise, and for the
- * decision and its check (`recordLabelYields`, `labelYieldsFault`), the path placement derives (`overlayPath`): under
- * `layout.overlayOverBodies` the two can differ, and the record is a placement decision.
+ * clearance. The line is always the one placement derives (`overlayPath`), in 7f and in stage 9 alike (one source, R1): the record is
+ * a placement decision, and under `layout.overlayOverBodies` the published path can differ from it.
  */
-function labelledLines(model: LayoutModel, drawn: boolean): LabelledLine[] {
+function labelledLines(model: LayoutModel): LabelledLine[] {
   const suppressed = overlayLabelsSuppressed(model);
   const lines: LabelledLine[] = [];
   let blockers: ShapeQuery | undefined;
   for (const link of model.links) {
     if (!describedLink(model, link, suppressed) || effectiveLayer(link) !== 'overlay') continue;
-    const line = longestRun((drawn ? link.path?.segments : undefined) ?? overlayPath(model, link, blockers ??= sharedBlockers(model)).segments);
+    const line = longestRun(overlayPath(model, link, blockers ??= sharedBlockers(model)).segments);
     if (line === undefined || !isDiagonalRun(line)) continue;
     const measured = measure(model.document.links[link.sourceIndex]!.label!), across = haloSize(measured).height;
     lines.push({ link, line, extent: measured.width, across,
@@ -275,11 +274,15 @@ function labelledLines(model: LayoutModel, drawn: boolean): LabelledLine[] {
  * The bands of the labels the label of `own` yields to, read from the record 7f made (`model.labelYields`, `recordLabelYields`), on
  * the lines as they stand now. Absent record: no yield. Stage 9 never decides a yield; it reads this.
  */
-export function labelBands(model: LayoutModel, own: string): LinkRun[] {
+export function labelBands(model: LayoutModel, own: string, unapplied: string[] = []): LinkRun[] {
   const yields = model.labelYields?.[own];
   if (!yields?.length) return [];
-  const lines = new Map(labelledLines(model, true).map(item => [item.link.id, item]));
-  return yields.flatMap(id => { const line = lines.get(id); return line ? [line.band] : []; });
+  const lines = new Map(labelledLines(model).map(item => [item.link.id, item]));
+  return yields.flatMap(id => {
+    const line = lines.get(id);
+    if (line === undefined) unapplied.push(id);
+    return line ? [line.band] : [];
+  });
 }
 
 /**
@@ -300,7 +303,7 @@ export function labelBands(model: LayoutModel, own: string): LinkRun[] {
  * that yields to two or more others may find no window clear of every band at any growth: it is reported and stays without a window.
  */
 export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): boolean {
-  const lines = labelledLines(model, false);
+  const lines = labelledLines(model);
   const live = new Set(lines.map(item => item.link.id));
   const before = model.labelYields;
   const record: Record<string, string[]> = {};
@@ -337,7 +340,7 @@ export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): b
 export function labelYieldsFault(model: LayoutModel): string | undefined {
   const record = model.labelYields;
   if (record === undefined) return undefined;
-  const live = new Set(labelledLines(model, false).map(item => item.link.id));
+  const live = new Set(labelledLines(model).map(item => item.link.id));
   for (const [id, yields] of Object.entries(record)) {
     if (!live.has(id)) return `${id} carries no label on a diagonal line`;
     for (const other of yields) {
@@ -479,7 +482,8 @@ export function turnedBox(centre: { x: number; y: number }, size: { width: numbe
 /** Overlay labels are suppressed strictly above this density (overlay links per node). */
 export const OVERLAY_LABEL_DENSITY = 3;
 
-export const LINK_LABEL_CODES = ['LINK_LABEL_OMITTED', 'LINK_LABEL_SHORTENED', 'LINK_LABELS_OVERLAY_SUPPRESSED', 'LINK_LABEL_ON_BORDER'] as const;
+export const LINK_LABEL_CODES = ['LINK_LABEL_OMITTED', 'LINK_LABEL_SHORTENED', 'LINK_LABELS_OVERLAY_SUPPRESSED', 'LINK_LABEL_ON_BORDER',
+  'LINK_LABEL_YIELD_UNAPPLIED'] as const;
 
 /** Diagram density as `pipeline.md` defines it; an empty diagram divides by one, not by zero. */
 export function overlayDensity(model: LayoutModel): number {
@@ -966,7 +970,12 @@ export function produceLinkLabels(model: LayoutModel): void {
 
   // The runs a label on a diagonal line keeps clear of (`reservedLinkRuns`), and the bands among them that every candidate on the line keeps clear of.
   const linkRunsOf = (own: string): { links: LinkRun[]; bands: LinkRun[] } => {
-    const bands = labelBands(model, own);
+    const unapplied: string[] = [];
+    const bands = labelBands(model, own, unapplied);
+    // R6: a recorded yield whose other line no longer carries a label on a diagonal line cannot be applied; it is named, not dropped.
+    if (unapplied.length) model.diagnostics.push(diagnostic('LINK_LABEL_YIELD_UNAPPLIED', 'warning',
+      `Label of ${own} yields to ${unapplied.join(', ')} in the record placement made, but no label on a diagonal line stands there now; the yield is not applied.`,
+      [{ kind: 'link', id: own }]));
     return { links: [...fixedLinkRuns(model, own), ...bands], bands };
   };
   for (const link of model.links) {

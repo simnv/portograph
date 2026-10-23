@@ -646,6 +646,16 @@ it('a diagonal label keeps the window placement grew for it from the label of a 
   const flipped = structuredClone(model);
   flipped.labelYields = { ...flipped.labelYields!, 'link-6': flipped.labelYields!['link-6']!.filter(id => id !== 'link-10'), 'link-10': ['link-6'] };
   expect(labelBands(flipped, 'link-10').map(band => band.segment)).toEqual([{ from: line('link-6').from, to: line('link-6').to }]);
+  // R6: a recorded yield that names no label on a diagonal line is not applied, and stage 9 names it.
+  const stale = structuredClone(model);
+  stale.labelYields = { ...stale.labelYields!, 'link-10': ['link-1'] };
+  const unapplied: string[] = [];
+  expect(labelBands(stale, 'link-10', unapplied)).toEqual([]);
+  expect(unapplied).toEqual(['link-1']);
+  stale.labels = stale.labels.filter(label => label.role !== 'link' && label.role !== 'legend' && label.role !== 'mesh-bus');
+  delete stale.legend;
+  produceLinkLabels(stale);
+  expect(stale.diagnostics.filter(item => item.code === 'LINK_LABEL_YIELD_UNAPPLIED').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-10' }]]);
 }, 120000);
 
 // R5: the validator reads the yield record and refuses a forged or incomplete one.
