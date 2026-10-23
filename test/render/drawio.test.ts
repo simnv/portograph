@@ -1329,6 +1329,7 @@ describe('maintainer edit principles', () => {
     // at all, because the exporter's own detour needed two pills.
     const model = await pipeline(`
 portograph: 2
+render: {anonymousPortMarker: none}
 groups: {upper: {tier: 0}, lower: {tier: 1}}
 nodes:
   a: {group: upper, ports: [{name: d1, side: bottom}]}
@@ -1711,7 +1712,8 @@ describe('link ends and nested groups move with their owner (issue 03)', () => {
   }, 60000);
 
   it('hangs a mark on a port that draws no pill on its node, and ends the connector on that node', async () => {
-    const model = await pipeline(fixture('drawio-nested-groups'));
+    // The mark is what an overlay end draws when the dot is off; with the dot on, the connector's own oval replaces it.
+    const model = await pipeline(fixture('drawio-nested-groups').replace('portograph: 2\n', 'portograph: 2\nrender: {anonymousPortMarker: none}\n'));
     const all = cells(drawio(model)), canvas = model.canvas!;
     const overlays = model.links.filter(item => effectiveLayer(item) === 'overlay');
     expect(overlays).toHaveLength(2);

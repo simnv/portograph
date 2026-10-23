@@ -55,6 +55,7 @@ import type {
   Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
 } from '../model/layout.js';
 import type { Meta } from '../model/document.js';
+import { dotEnds } from './anonymous-end.js';
 import { endpointId, linkIds } from '../model/link-ids.js';
 import { orderedNodeIds } from '../model/model.js';
 import { isDirect } from '../layout/link-labels.js';
@@ -1007,12 +1008,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   /**
    * The marker an anonymous end carries (`render.anonymousPortMarker`, default `dot`): a filled oval in the edge stroke, so the end
-   * does not look unfinished beside a pill. An end on a port cell is unchanged. Paint only; no point or cell moves. An overlay link
-   * already carries its end mark and takes none.
+   * does not look unfinished beside a pill. Which ends are bare is `dotEnds`, the predicate the SVG shares. An end on a port cell is
+   * unchanged. Paint only; no point or cell moves. The oval is stated on the connector whatever its `edgeStyle` is.
    */
-  const dotMarker = (end: 'start' | 'end', terminalEnd: { anonymous?: true } | undefined, overlay: boolean): Readonly<Record<string, StyleValue>> =>
-    terminalEnd?.anonymous === true && !overlay && layout.document.render?.anonymousPortMarker !== 'none'
-      ? { [`${end}Arrow`]: 'oval', [`${end}Fill`]: 1, [`${end}Size`]: ANONYMOUS_DOT_SIZE } : {};
+  const dotMarker = (link: LayoutLink, end: 'from' | 'to'): Readonly<Record<string, StyleValue>> => {
+    if (!dotEnds(layout.document, link).includes(end)) return {};
+    const side = end === 'from' ? 'start' : 'end';
+    return { [`${side}Arrow`]: 'oval', [`${side}Fill`]: 1, [`${side}Size`]: ANONYMOUS_DOT_SIZE };
+  };
 
   /**
    * The pill a link ends on, in page space: its cell, its box, the point on its outward edge the
@@ -1256,8 +1259,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         strokeWidth: linkStrokeWidth(link),
         opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
         ...dashEntries(klass.dash),
-        ...dotMarker('start', source, overlay),
-        ...dotMarker('end', target, overlay),
+        ...(source ? dotMarker(link, 'from') : {}),
+        ...(target ? dotMarker(link, 'to') : {}),
         ...(source?.style ?? {}),
         ...(target?.style ?? {}),
         ...(carried ? labelStyle(carried.label, labelPoint(carried.label, link), 'edge', link) : {}),
@@ -1287,7 +1290,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         { end: 'from', at: ends[0]!.from, host: headHost },
         { end: 'to', at: ends[ends.length - 1]!.to, host: tailHost },
       ] as const;
+      const bare = dotEnds(layout.document, link);
       for (const mark of marks) {
+        // A bare end is closed by the connector's own oval, so it takes no second mark.
+        if (bare.includes(mark.end) && (mark.end === 'from' ? head : tail)) continue;
         const at = mark.host?.at ?? shift(mark.at);
         const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
