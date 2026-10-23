@@ -34,7 +34,7 @@ const row = (name: string, counters: string | undefined, runs: number, attempts:
 const ROWS: Row[] = [
   // Phase 4 (the unified order): the base 7f of three-continents now moves a chord (before 0 moves) and loses 2 overlay links in the loop, and the attempt costs more work.
   row('three-continents', '23/74/54/5', 2, 2, 4, 0, 2, { preCentre: 2, baseChord: 1, base7f: '2/0/0' }),
-  // Ticket 22: a direct family reserves gap height on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
+  // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
   row('a-tier-gap-plan-orders-every-part', '2/56/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
   row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/7/7/3', 1, 1, 1, 0, 0),
   row('a-tier-gap-grows-to-its-rows', '1/5/7/3', 1, 1, 1, 0, 0),
@@ -43,8 +43,7 @@ const ROWS: Row[] = [
   row('an-overlay-leaves-a-lateral-side-past-a-sibling-body', '2/7/12/5', 2, 2, 2, 0, 0),
   // Ticket 22: a chord never joins perpendicular faces, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
   row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/14/7/3', 4, 1, 1, 0, 0, { probe: 1 }),
-  // Ticket 22: the direct family of the fan reserves gap height; one more centring pass (1/7/7/3 before).
-  row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/8/7/3', 2, 1, 1, 0, 0),
+  row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/7/7/3', 2, 1, 1, 0, 0),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
   row('a-canton-member-frame-slides-off-a-straight-chord', '1/10/7/3', 2, 1, 1, 0, 0),
   // Ticket 22: a chord at 90 degrees is refused, so the side trial on this sheet takes a second 7f attempt (1/19/7/3, 3 runs, 1 attempt before).

@@ -937,9 +937,8 @@ that height cannot hold is refused (§ 7a states the whole condition).
 
 **Direct families come first** (architecture-2 ticket 22; `docs/design/routed-chords.md`, Section 15). Before `freezeChords`,
 `planDirectFamilies` counts the orthogonal crossings of each facing pair on a copy, and decides each triggered family's chords
-with the growth that lets its members reach 30 degrees added to the gap (at most twice the band gap). It moves nothing: it records
-the height the direct members need (`directFamilies`, triggered families only), and the tier-gap plan reads that height as a floor,
-so `growTierGaps` grows the gap to it after the freeze and never gives it back. The freeze holds the accepted members. When the
+together, at any angle, before the freeze; it records them (`directFamilies`, triggered families only) and moves nothing. The
+freeze holds the accepted members. When the
 centring after the freeze brings a member within the chord clearance of a leg or a held chord, the attempt runs again with that
 member refused (`DIRECT_RETRIES`, 2).
 

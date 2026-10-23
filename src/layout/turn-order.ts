@@ -3,6 +3,7 @@ import type { Point, Side } from '../model/geometry.js';
 import type { Course, Diagnostic, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { portId } from './skeleton-graph.js';
 import { COURSE_STEM, endMode } from './course-rows.js';
+import { laneSource } from './lanes.js';
 import { farCoordinate } from './peers.js';
 import { bypassRowY } from './course-bypass.js';
 import { busOfPort } from './bus.js';
@@ -159,15 +160,14 @@ function reservedTurn(model: LayoutModel, link: LayoutLink, which: 'from' | 'to'
 }
 
 /**
- * The turn of either end of a link that owns a transit lane (stage 7a, Section 4): at the source the run leaves the port along its horizontal face toward the lane
- * and goes on down it; at the target it comes off the lane along the target's face (architecture-2 ticket 22: the run that comes from the lane rides the track
- * nearest the face, so it takes the port nearest the lane and nests outside the others). It is known only when the lane stands outside the span of the ports of
- * the face, so that every permutation of the face turns the same way; a lane between two ports of the face fixes no turn. `reach` is the lane x.
+ * The turn of the source end of a link that owns a transit lane (stage 7a, Section 4): the run leaves the port along its horizontal face toward the lane and goes on
+ * down it. It is known only when the lane stands outside the span of the ports of the face, so that every permutation of the face turns the same way; a lane
+ * between two ports of the face fixes no turn. `reach` is the lane x.
  */
 function transitTurn(model: LayoutModel, link: LayoutLink, mine: PortRef, own: LayoutPort): PlannedTurn | undefined {
   if (own.side !== 'top' && own.side !== 'bottom') return undefined;
   const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && (item.kind === undefined || item.kind === 'transit'));
-  if (lane === undefined || link.spanHint === true) return undefined;
+  if (lane === undefined || link.spanHint === true || portId(laneSource(model, link)) !== portId(mine)) return undefined;
   const xs = (model.nodes[mine.node]?.ports ?? []).filter(port => port.side === own.side && port.anchor !== undefined).map(port => port.anchor!.x);
   if (lane.x < Math.min(...xs) - 1e-6) return { turn: 'low', shape: 'onward', reach: lane.x };
   if (lane.x > Math.max(...xs) + 1e-6) return { turn: 'high', shape: 'onward', reach: lane.x };

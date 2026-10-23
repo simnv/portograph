@@ -571,7 +571,7 @@ export interface LayoutModel {
 /** A unit of a direct family: one node, or one packed row of one layout group (`group`). */
 export type DirectUnit = { kind: 'node'; id: string; group: string } | { kind: 'row'; id: string; group: string; nodes: string[] };
 /**
- * Why a member of a triggered direct family stays orthogonal: a `chordVerdict` refusal, `angle` (flatter than 30 degrees), `crossing` or
+ * Why a member of a triggered direct family stays orthogonal: a `chordVerdict` refusal, `crossing` or
  * `clearance` (another member of the chosen set), `leg`, `chord` or `title` (the fixed-point checks beside the chosen set), `crowds` (it
  * would push a chosen member off its fixed point).
  */
