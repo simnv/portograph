@@ -4,7 +4,7 @@ import { layout, parse } from '../../src/index.js';
 import { restoreLayoutModel, validateLanes, rebuildLaneExtents } from '../../src/internal.js';
 import type { Lane, LayoutModel } from '../../src/index.js';
 import { reseatLanes, sideLaneExtent } from '../../src/layout/lanes.js';
-import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
+import { LABEL_BORDER_REACH, LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
 import { measureText } from '../../src/text/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -37,10 +37,14 @@ describe('placement reserves a side lane into a lateral port (ticket 118)', () =
     // The description asks for room on the vertical run (the drop and the lane): it is longer than the label and its margins.
     const text = model.document.links[link.sourceIndex]!.label!;
     const required = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
-    // The vertical run ends at the port's y, not at the top of the outlet, so the room is the label and no more.
+    // The vertical run ends at the port's y, not at the top of the outlet. The label stays in one region (ticket 19): the window of
+    // the run below the border of `front`, 8 px clear of it, holds the label and no more.
     const drop = port.y - (model.nodes['lb']!.bounds!.y + model.nodes['lb']!.bounds!.height);
     expect(drop).toBeGreaterThanOrEqual(required - 1e-6);
-    expect(drop).toBeLessThan(required + 1);
+    const front = model.groups['front']!.bounds!, width = required - 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+    const window = port.y - LINK_LABEL_GEOMETRY.shortenMargin - (front.y + front.height + LABEL_BORDER_REACH);
+    expect(window).toBeGreaterThanOrEqual(width - 1e-6);
+    expect(window).toBeLessThan(width + 1);
     expect(model.diagnostics.some(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toBe(false);
     // The short label needs no move in y: the same document with a short label has a smaller gap.
     const short = await run(source(FIXTURE).replace(/label: Health checks.*\}/, 'label: Check }'));

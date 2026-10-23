@@ -1,6 +1,7 @@
 # Expected: side-faces.md, Section 19.12, note 5 (ticket 142). A routed link runs through a side lane and its vertical run is published as three
 # collinear pieces (stem, gap part, lane). The description is longer than every single piece and longer than the side run, so stage 9 must place it on
-# the whole vertical run, whose room 7a reserved. The label stays whole.
+# the whole vertical run, whose room 7a reserved. The label stays whole. It stands in the window of the run below the bottom border of `edge`,
+# 8 px clear of that border: 7f grows the tier gap until that window holds it (ticket 19). No LINK_LABEL_ON_BORDER.
 # Test-only input owned by ticket 142; test/pipeline/side-lane-label.test.ts reads it.
 portograph: 2
 groups:

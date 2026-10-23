@@ -1,0 +1,21 @@
+# Expected (open, architecture-2 ticket 19): two described overlay links rise from `l` in `lower` to `u` in `upper`, past the group
+# `third` beside `upper`. Each draws one diagonal from face to face, and its label lies on the line (ticket 16). The stored box of a
+# label on a diagonal is the axis-aligned box of the turned text, about 143 x 116 px for a 130 px text, so the box reaches the
+# routed link `t`-`l2` and the corner of `third` that the text does not reach. No place along the line clears every border, and stage 9
+# falls back: LINK_LABEL_ON_BORDER on `upper` and `third`, `labelBorderCrossings` 1, and the second label is omitted. Placement reserves
+# no window on a diagonal (`labelRunWindows` has no axis there). The fix waits for a design decision; see the ticket.
+# Test-only input; test/pipeline/link-label-rules.test.ts reads it (`it.fails` until the decision).
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  third: { tier: 0, label: Third }
+  lower: { tier: 1, label: Lower }
+nodes:
+  u: { group: upper, class: router, label: U }
+  t: { group: third, class: router, label: T }
+  l: { group: lower, class: router, label: L }
+  l2: { group: lower, class: router, label: L2 }
+links:
+  - [t, l2]
+  - { from: l, to: u, class: sync, label: a long tunnel description that rises across }
+  - { from: l, to: u, class: sync, label: a second tunnel description that rises too }
