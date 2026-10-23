@@ -89,16 +89,16 @@ export function readDraft(model: LayoutModel) {
     const id = portId(ref), known = memo.port.get(id);
     if (known !== undefined) return known;
     const node = model.nodes[ref.node]!, side = findPort(model, ref)?.side;
-    let x = centre(ref.node);
-    if (side === 'top' || side === 'bottom') {
-      const ports = node.ports.filter(port => port.side === side);
-      const face = seatAuthored(sortFace(model, ports, new Map(ports.map(port => [port, { far: farCoordinate(model, peers, port.ref, side) }]))));
-      const at = face.findIndex(port => portId(port.ref) === id);
-      const pitch = Math.max(node.sidePitch?.[side] ?? 0, floors.get(`${ref.node}\u0000${side}`)?.width ?? 0);
-      x += (at - (face.length - 1) / 2) * pitch;
+    if (side !== 'top' && side !== 'bottom') {
+      memo.port.set(id, centre(ref.node));
+      return centre(ref.node);
     }
-    memo.port.set(id, x);
-    return x;
+    // The whole face at once: one order gives the x of each of its ports.
+    const ports = node.ports.filter(port => port.side === side);
+    const face = seatAuthored(sortFace(model, ports, new Map(ports.map(port => [port, { far: farCoordinate(model, peers, port.ref, side) }]))));
+    const pitch = Math.max(node.sidePitch?.[side] ?? 0, floors.get(`${ref.node}\u0000${side}`)?.width ?? 0);
+    face.forEach((port, at) => memo.port.set(portId(port.ref), centre(ref.node) + (at - (face.length - 1) / 2) * pitch));
+    return memo.port.get(id)!;
   };
   /** The x the alignment end of a transit link is predicted to hold. */
   const sourceX = (link: LayoutLink): number => portX(laneSource(model, link));

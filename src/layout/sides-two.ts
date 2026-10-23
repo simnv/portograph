@@ -742,17 +742,16 @@ export function portPeers(model: LayoutModel): Map<string, PortRef[]> {
 export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>, ref: PortRef, side: Side): number {
   const list = peers.get(key(ref)) ?? [];
   const coordinate = (peer: PortRef): number => {
-    const node = model.nodes[peer.node]!, box = node.bounds!;
-    const point = node.ports.find(port => key(port.ref) === key(peer))?.anchor;
+    const box = model.nodes[peer.node]!.bounds!, point = findPort(model, peer)?.anchor;
     return side === 'top' || side === 'bottom' ? (point?.x ?? box.x + box.width / 2) : (point?.y ?? box.y + box.height / 2);
   };
   return list.length ? list.reduce((sum, peer) => sum + coordinate(peer), 0) / list.length : Infinity;
 }
 /** One face in engine order before the author order: a bus port last, then by `slots` (`turnOrder`); a tie keeps the face's port order. */
 export function sortFace(model: LayoutModel, ports: readonly LayoutPort[], slots: ReadonlyMap<LayoutPort, TurnPort>): LayoutPort[] {
-  const isBus = (ref: PortRef): number => busOfPort(model, ref) !== undefined ? 1 : 0;
+  const bus = new Map(ports.map(port => [port, busOfPort(model, port.ref) !== undefined ? 1 : 0]));
   const byslot = turnOrder([...slots.values()]);
-  return [...ports].sort((a, b) => isBus(a.ref) - isBus(b.ref) || byslot(slots.get(a)!, slots.get(b)!));
+  return [...ports].sort((a, b) => bus.get(a)! - bus.get(b)! || byslot(slots.get(a)!, slots.get(b)!));
 }
 /** The ports with an authored `order:` take the slots of the authored ports, in author order; the free ports keep theirs. */
 export function seatAuthored(ports: readonly LayoutPort[]): LayoutPort[] {
