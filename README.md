@@ -97,7 +97,7 @@ const svg = render(model);
 
 See [`AGENTS.md`](AGENTS.md): tickets live in `.scratch/<feature>/issues/`, decisions in
 `docs/adr/`, vocabulary in `CONTEXT.md`. Every ticket is reviewed adversarially by codex (code) and
-agy (renders) before merge; correctness and metric regressions block.
+a PNG read of each render (`npm run png`) before merge; correctness and metric regressions block.
 
 ## Toolchain
 
