@@ -1,7 +1,8 @@
 # Expected: a chord hint and a lane hint in one offer (ticket 119). The far location router (ticket 117) wants a lateral chord to the provider, and the outlet (ticket 118 shape)
 # wants a side lane. The side round never offers the lane in the batch that holds a chord hint: a side lane would stand as a wall in the chord's corridor at 7a, and the chord
 # would be lost at 7e. The chord wins; the lane waits for a later batch.
-# Test-only input owned by ticket 119; test/pipeline/side-round-lane.test.ts reads the offer.
+# Ticket 22: a chord joins opposite faces only, so the router's bottom face and the provider's lateral face (90 degrees) give no chord hint now; the batch guard has
+# no live case here. Test-only input owned by ticket 119; test/pipeline/side-round-lane.test.ts reads the offer.
 portograph: 2
 profile: network
 groups:
