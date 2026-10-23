@@ -29,6 +29,17 @@ const stable = (model: LayoutModel, linkId: string): string => {
   return inFile(link ? linkIds(model.document)[link.sourceIndex] ?? link.id : linkId);
 };
 
+/** The connector rule (maintainer, 2026-10-23): no bend is `none` with no jetty, a bend is orthogonal with `jettySize=0`. */
+const styleRule = (cell: { style: Record<string, string> }): 'straight' | 'bent' => {
+  if (cell.style['edgeStyle'] === 'none') {
+    expect(cell.style['jettySize']).toBeUndefined();
+    return 'straight';
+  }
+  expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+  expect(cell.style['jettySize']).toBe('0');
+  return 'bent';
+};
+
 const fixture = (name: string): string =>
   readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const goldenYaml = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
@@ -123,6 +134,7 @@ describe('draw.io export', () => {
       });
     }
 
+    const kinds = new Set<string>();
     let pinned = 0;
     for (const link of model.links) {
       if (link.technique === 'stub' || !link.path) continue;
@@ -132,8 +144,7 @@ describe('draw.io export', () => {
       // router that keeps it square when a shape is moved. An overlay link is the one exception —
       // it is routed around its pills — and `maintainer edit principles` below covers it.
       if (effectiveLayer(link) === 'overlay') continue;
-      expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
-      expect(cell.style['jettySize']).toBe('0');
+      kinds.add(styleRule(cell));
       const interior = link.path.segments.slice(0, -1)
         .map(segment => ({ x: segment.to.x - canvas.x, y: segment.to.y - canvas.y }));
       expect(cell.points).toEqual(interior);
@@ -1230,17 +1241,36 @@ describe('maintainer edit principles', () => {
     const model = await pipeline(fixture('drawio-constructs'));
     const all = cells(drawio(model));
     const canvas = model.canvas!;
+    const kinds = new Set<string>();
     let square = 0;
     for (const link of model.links) {
       if (link.technique === 'stub' || !link.path || effectiveLayer(link) === 'overlay') continue;
       const cell = all.get(id('link', stable(model, link.id)))!;
-      expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
-      expect(cell.style['jettySize']).toBe('0');
+      kinds.add(styleRule(cell));
       expect(cell.points).toEqual(link.path.segments.slice(0, -1)
         .map(segment => ({ x: segment.to.x - canvas.x, y: segment.to.y - canvas.y })));
       square += 1;
     }
     expect(square).toBeGreaterThan(0);
+  }, 60000);
+
+  it('exports a straight link as `edgeStyle=none` and a bent link as orthogonal with `jettySize=0`', async () => {
+    // Maintainer, 2026-10-23: a run with no bend is a straight connector, because that is easier to
+    // edit in draw.io. A run with a bend keeps the orthogonal style.
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    const kinds = new Set<string>();
+    for (const link of model.links) {
+      if (!link.path || link.technique === 'stub' || effectiveLayer(link) === 'overlay') continue;
+      const cell = all.get(id('link', stable(model, link.id)))!;
+      const kind = styleRule(cell);
+      kinds.add(kind);
+      const points = [link.path.segments[0]!.from, ...link.path.segments.map(segment => segment.to)];
+      const turns = points.some(point => Math.abs(point.x - points[0]!.x) > 1e-6)
+        && points.some(point => Math.abs(point.y - points[0]!.y) > 1e-6);
+      expect(kind).toBe(turns ? 'bent' : 'straight');
+    }
+    expect([...kinds].sort()).toEqual(['bent', 'straight']);
   }, 60000);
 
   it('keeps `edgeStyle=none` for a polyline the orthogonal router cannot hold', async () => {
@@ -1272,7 +1302,8 @@ describe('maintainer edit principles', () => {
     const model = await pipeline(fixture('drawio-constructs'));
     const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
     const square = cells(drawio(model)).get(id('link', stable(model, link.id)))!;
-    expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    expect(square.style['edgeStyle']).toBe('none');
+    expect(square.style['jettySize']).toBeUndefined();
     const skewed = structuredClone(model);
     const ref = link.attachments!.from;
     // The pill grew outward, away from the face the model's one segment leaves from — a hand edit
@@ -1332,8 +1363,8 @@ links:
     // two pinned terminals and no waypoint at all, where it used to carry the two of a detour over
     // the heads (maintainer, 2026-09-16, *"no point in stub then"*, stress ticket 30).
     const { cell, head, tail, path } = await overlayOf(fixture('drawio-constructs'));
-    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
-    expect(cell.style['jettySize']).toBe('0');
+    expect(cell.style['edgeStyle']).toBe('none');
+    expect(cell.style['jettySize']).toBeUndefined();
     expect([head.side, tail.side]).toEqual(['top', 'top']);
     expect(cell.points).toEqual([]);
     expect(path).toHaveLength(2);
@@ -1582,8 +1613,8 @@ describe('direct lines', () => {
       expect(cell.source).toBe(head.cell);
       expect(cell.target).toBe(tail.cell);
       expect(cell.value).toBe(stated.value);
-      expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
-      expect(cell.style['jettySize']).toBe('0');
+      expect(cell.style['edgeStyle']).toBe('none');
+      expect(cell.style['jettySize']).toBeUndefined();
       expect(cell.points).toEqual([]);
       const ends = [endOf(cell, 'exit', head), endOf(cell, 'entry', tail)] as const;
       expect(ends[0][stated.along]).toBeCloseTo(ends[1][stated.along], 6);

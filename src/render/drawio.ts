@@ -10,7 +10,11 @@
  * node carries its ports, and a link is one connector pinned to the two ports it joins. Four
  * measured facts about the format shape the code, and each is load-bearing:
  *
- * 1. `edgeStyle=orthogonalEdgeStyle;jettySize=0` draws a square route on the reserved route. Over 61
+ * 1. A run with no bend (one straight segment, waypoints and drawn polyline both) is exported with
+ *    `edgeStyle=none` and no `jettySize`, by the maintainer's decision of 2026-10-23: a straight
+ *    connector is easier to edit in draw.io than an orthogonal one. Mesh-bus bars, stubs, risers and
+ *    trunk pieces are single straight pieces and were already `none`. Every run with a bend takes the
+ *    rule below. `edgeStyle=orthogonalEdgeStyle;jettySize=0` draws a square route on the reserved route. Over 61
  *    link edges in four diagrams, 59 render within 0.05 px of the model polyline — the orthogonal
  *    router rounds a waypoint to 0.1 px — and 2 within 0.51 px, which is an endpoint defect the
  *    export has with `edgeStyle=none` as well. No waypoint is dropped and no edge is re-routed.
@@ -242,6 +246,26 @@ const NORMAL: Readonly<Record<Side, Point>> = {
 const axisAligned = (points: readonly Point[], within = EPS): boolean =>
   points.slice(1).every((point, index) =>
     Math.abs(point.x - points[index]!.x) <= within || Math.abs(point.y - points[index]!.y) <= within);
+
+/**
+ * Whether a polyline is one straight segment: every point lies within `within` of the line from the
+ * first point to the last, and none steps back against that direction. A polyline with no distinct
+ * ends is straight. Collinear waypoints stay in the file; `edgeStyle=none` draws them verbatim.
+ */
+const isStraight = (points: readonly Point[], within = EPS): boolean => {
+  const a = points[0], b = points[points.length - 1];
+  if (a === undefined || b === undefined) return true;
+  const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
+  if (length <= within) return points.every(point => Math.hypot(point.x - a.x, point.y - a.y) <= within);
+  let along = 0;
+  return points.every(point => {
+    const t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / length;
+    const off = Math.abs((point.x - a.x) * dy - (point.y - a.y) * dx) / length;
+    const ok = off <= within && t >= along - within;
+    along = Math.max(along, t);
+    return ok;
+  });
+};
 
 /**
  * How far a **drawn** endpoint may sit off its segment's axis and still count as a square route.
@@ -1200,7 +1224,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // draw.io really draws — the pinned terminals included — within the endpoint tolerance. A port
       // that draws no pill terminates on its node's box, which can leave the drawn line diagonal
       // while every waypoint is square, and that is a corner the router would invent.
-      const square = axisAligned(points) && axisAligned(shown[index]!.points, SQUARE_ENDPOINT_TOLERANCE);
+      //
+      // A run with no bend is the exception (maintainer, 2026-10-23): it is a straight connector,
+      // `edgeStyle=none`, because a straight line is easier to edit in draw.io than an orthogonal one.
+      // It is tested on both polylines, as `square` is. Only a run with a bend keeps the orthogonal style.
+      const straight = isStraight(points) && isStraight(shown[index]!.points, SQUARE_ENDPOINT_TOLERANCE);
+      const square = !straight && axisAligned(points) && axisAligned(shown[index]!.points, SQUARE_ENDPOINT_TOLERANCE);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
       const style = styleString([], {

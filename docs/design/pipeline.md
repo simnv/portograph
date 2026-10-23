@@ -1620,7 +1620,7 @@ and one per stub, each `link-line overlay-line <class>`, so the class stroke and
 group-links and the members' authored labels. The member `<g class="link">` elements are not emitted, and one endpoint mark per stub is drawn
 above the mask at the port face. The bus label is drawn on the label layer (`link-label mesh-bus-label`). `document.overlays` hides the bus
 with its class. The draw.io export writes the bar as one `edgeStyle=none` edge with two free points, each stub as an
-`orthogonalEdgeStyle;jettySize=0` edge from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
+`edgeStyle=none` edge (a run with no bend is straight, Q118) from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
 vertex on the `labels` layer; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
 Ticket 97: the riser of a joined pair is one more `<path class="link-line overlay-line <class> riser">` in the upper bus's group, both groups carry `data-joined`, the tooltip names both buses, the members and the cross links, and a cross link draws no `<g class="link">`. draw.io: the riser is one `edgeStyle=none` edge with two free points on the overlay layer (`pg-busRiser~<bus>`).
 
