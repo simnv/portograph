@@ -324,9 +324,9 @@ it('architecture-2 ticket 18: a fan track keeps the group edge margin of the box
   const box = model.frames!.find(frame => frame.id === 'home')!.box;
   const branch = model.links.find(link => link.attachments!.to.node === 'c1')!;
   const target = model.nodes['c1']!.ports[0]!.anchor!, anchor = model.nodes['s1']!.ports[0]!.anchor!;
-  const [, turn, along, rise] = branch.sharedRuns!.from!;
+  const [turn, along, rise] = branch.sharedRuns!.from!;
   const margin = edgeMargin(routedStrokeWidth(model));
-  // Up the port's column, out past the frame's top edge by the margin, across, and up on c1's column.
+  // Up the port column as one junction stem, out past the frame top edge by the margin, across, and up on the column of c1.
   expect(turn!.from.x).toBe(anchor.x);
   expect(box.y - turn!.to.y).toBeGreaterThanOrEqual(margin);
   expect(along!.to.y).toBe(turn!.to.y);

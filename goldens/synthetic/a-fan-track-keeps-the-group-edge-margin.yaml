@@ -4,8 +4,9 @@
 # rose 7.4 px outside the frame edge, within the 10 px group edge clearance (ADR-0013): G6
 # `segment-group-edge [link-2, home]`. A fan track stands strictly inside every box its branch
 # leaves, or outside it one edge margin off its edges. Here the branch is alone on its side of the port,
-# so it keeps the port's column out past the frame's top margin (inside the fan's reserved depth), turns
-# there and rises on `c1`'s column: one L, no step. Every gate passes; 6 routed bends.
+# so it is the edge keeper: the junction moves out along the port's column past the frame's top margin
+# (inside the rows the fan holds), link-3 turns right there, link-2 turns left and rises on `c1`'s
+# column: one L each, no step. Every gate passes; 6 routed bends; no warning.
 portograph: 2
 groups:
   up: { tier: 2, label: "Up" }

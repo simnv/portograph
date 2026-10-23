@@ -857,11 +857,17 @@ path carries. An excluded member keeps its own stem out of the port, which cover
 7e reports it with `FAN_MEMBER_UNRESERVED` and G4 reports the overlap, until ticket 47 adopts the
 last two shapes. A track also stands strictly inside every group or frame box its branch leaves, or outside it
 one edge margin off its edge, whichever face is nearer the coordinate it wanted (ticket 18 of
-architecture-2): a track outside the box ends its run there, so no group exit covers it. Before that step, a
-member alone on its side of the port whose coordinate stands in that outer band is the **edge keeper**
-(`edgeKeeper`): it is peeled last, keeps the shared normal out past the margin of every box it leaves
-(plus `EXIT_SLACK`), turns there and runs on the coordinate it wanted, when that depth lies within the
-tree's common end (`fanEnd`) and no node wall stands on the coordinate. A last pass releases the branch whose reserved run closes the checkpoint another
+architecture-2): a track outside the box ends its run there, so no group exit covers it. Instead of that
+step, a member alone on its side of the port whose coordinate stands in that outer band is the **edge
+keeper** (`edgeKeeper`): it is peeled last, and the tree's last junction moves out along the shared
+normal past the margin of every box it leaves (plus `EXIT_SLACK`). The member peeled there turns the
+other way and the keeper turns toward the coordinate it wanted: one L each. It is refused (and the step
+stands, named `FAN_TRACK_STEPPED_AT_GROUP_EDGE`) when the depth passes the deepest row `fanRows` holds,
+a node or stem wall stands on the coordinate, another member rises within the member pitch of the
+extended stem, its turn crosses or crowds another port's row on the side, or its runs come within the
+member gap of a run another link reserved. The junction records the keeper and its depth; final
+placement freezes them in `LayoutModel.fanKeepers` after 7f, and a replay reads the record and never
+chooses again from a box (R1). A fan built later than the keeper's does not read its runs. A last pass releases the branch whose reserved run closes the checkpoint another
 link's port must be approached from, and every branch of the link it hems (`FAN_BRANCH_HEMMED`,
 ADR-0018 rule 3). **Only an end that reserved nothing is measured there**, and only for a link the
 router really approaches — never one whose path a rule fixed, and never a bundle member, since
