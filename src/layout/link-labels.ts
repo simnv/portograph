@@ -8,11 +8,12 @@ import { effectiveLayer, groupBoxes, labelArea, labelCrossesBorder } from '../sc
 import { type Area, type OrientedBox, areaBounds, areaDistance, areaSegment, areaSegmentDistance, isOriented, orientedBounds } from '../geometry/oriented.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { straightChord } from './overlay-paths.js';
+import { type ShapeQuery, overlayPath, sharedBlockers, straightChord } from './overlay-paths.js';
 import { drawnBoxes as paintedBoxes, produceLegend } from './legend.js';
 import { BUS_LABEL_FONT, BUS_LABEL_GAP, busCarriesLabel, busLabelText } from './bus-room.js';
 import { withLayoutMutation } from './mutation.js';
 import { RectangleIndex, type RectangleBounds } from './rectangle-index.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /** Theme typography and the two spacing rulings stage 9 needs; `pipeline.md` fixes the ladder. */
 export const LINK_LABEL_GEOMETRY = {
@@ -154,6 +155,14 @@ export interface LinkRun { segment: { from: Point; to: Point }; clearance: numbe
 const LINK_CUT_STEPS = 60;
 
 /**
+ * How far beyond a link run's clearance `linkCut` ends a window. Stage 9's collision test (`collides`, `meetsBand`) rejects a text
+ * nearer than the clearance plus `EPS`. The window edge lies where the bisection stopped, within rounding of the cut's own threshold,
+ * so a cut at `+ EPS` let a text that fills its window come out at 0.7500001 against a 0.75 clearance and be rejected. The cut keeps
+ * twice that hair, so a text in a window always passes the collision test.
+ */
+export const LINK_CUT_HAIR = 2 * EPS;
+
+/**
  * The stretch of a diagonal `run` (as t from `run.from`) where the cross-section of a label `2 h` high, at right angles to the run,
  * comes nearer than the clearance to `link`'s segment: G3's test of a label against a routed segment, `areaSegmentDistance` below
  * its half stroke, read one cross-section at a time. The distance of a sliding cross-section to a fixed segment is convex in t, so
@@ -166,7 +175,7 @@ function linkCut(run: PathSegment, length: number, h: number, link: LinkRun): [n
     const x = run.from.x + t * ux, y = run.from.y + t * uy;
     return segmentDistance({ from: { x: x - h * nx, y: y - h * ny }, to: { x: x + h * nx, y: y + h * ny }, owner: run.owner }, target);
   };
-  const near = (t: number): boolean => distance(t) < link.clearance + EPS;
+  const near = (t: number): boolean => distance(t) < link.clearance + LINK_CUT_HAIR;
   let low = -length, high = 2 * length;
   for (let step = 0; step < LINK_CUT_STEPS; step++) {
     const a = low + (high - low) / 3, b = high - (high - low) / 3;
@@ -182,15 +191,19 @@ function linkCut(run: PathSegment, length: number, h: number, link: LinkRun): [n
   };
   return [edge(-length), edge(2 * length)];
 }
-
 /**
  * The link geometry placement reserved, as the runs a label on a diagonal line keeps clear of (ticket 20, user decision 2026-10-23):
  * every frozen chord (`model.frozenChords`, its straight segment between its two faces) and every routed lane (`model.lanes`: a
  * vertical run at the lane's x over its reserved extent; a span corridor is its chord's room, not a run), less the label's own
- * link. Placement (7f) and stage 9 pass the same runs to `labelRunWindows` (R1). A link placement did not reserve is left to
- * stage 9's collision test.
+ * link, and the bands of the labels this label yields to (`labelBands`, read from `model.labelYields`). Placement (7f) and stage 9
+ * pass the same runs to `labelRunWindows` (R1). A link placement did not reserve is left to stage 9's collision test.
  */
 export function reservedLinkRuns(model: LayoutModel, own: string): LinkRun[] {
+  return [...fixedLinkRuns(model, own), ...labelBands(model, own)];
+}
+
+/** The frozen chords and routed lanes of `reservedLinkRuns`, less the label's own link. */
+function fixedLinkRuns(model: LayoutModel, own: string): LinkRun[] {
   const runs: LinkRun[] = [];
   const byId = new Map(model.links.map(link => [link.id, link]));
   for (const id of model.frozenChords ?? []) {
@@ -206,6 +219,137 @@ export function reservedLinkRuns(model: LayoutModel, own: string): LinkRun[] {
       clearance: (owner ? linkStrokeWidth(owner) : DEFAULT_STROKE_WIDTHS.path) / 2 });
   }
   return runs;
+}
+
+/** The longest run of a path, the first of equal ones: the run stage 9 tries first and 7f reserves a label's room on. */
+export function longestRun(segments: readonly PathSegment[]): PathSegment | undefined {
+  let run: PathSegment | undefined, longest = 0;
+  for (const segment of segments) {
+    const reach = segmentLength(segment);
+    if (reach > longest + PLACEMENT_EPS) { longest = reach; run = segment; }
+  }
+  return run;
+}
+
+/** A run with no axis: a diagonal line, whose label lies on it (ticket 16). */
+export function isDiagonalRun(run: PathSegment): boolean {
+  return Math.abs(run.to.x - run.from.x) > PLACEMENT_EPS && Math.abs(run.to.y - run.from.y) > PLACEMENT_EPS;
+}
+
+/**
+ * Whether a link's authored label asks for room and a place: it has text, draws a line of its own (no stub, bundle member or bus
+ * member), is not removed, and is not a suppressed overlay label. 7f (`reserveLinkLabelRoom`) and the label bands read this one test.
+ */
+export function describedLink(model: LayoutModel, link: LayoutLink, suppressed = overlayLabelsSuppressed(model)): boolean {
+  const text = model.document.links[link.sourceIndex]?.label;
+  return !!text && link.removed !== true && link.technique !== 'stub' && !link.bundle && link.meshBus === undefined
+    && link.attachments !== undefined && !(effectiveLayer(link) === 'overlay' && suppressed);
+}
+
+/** A described overlay link whose label lies on a diagonal line, with that label's extent, turned height and band. */
+interface LabelledLine { link: LayoutLink; line: PathSegment; extent: number; across: number; band: LinkRun }
+
+/**
+ * Every described overlay link (`describedLink`) whose longest run (`longestRun`) is a diagonal line (`isDiagonalRun`). Its label
+ * lies on that line, so wholly in the line's **band**: the line, with half the height of the label's turned box plus the halo as
+ * clearance. The line is always the one placement derives (`overlayPath`), in 7f and in stage 9 alike (one source, R1): the record is
+ * a placement decision, and under `layout.overlayOverBodies` the published path can differ from it.
+ */
+function labelledLines(model: LayoutModel): LabelledLine[] {
+  const suppressed = overlayLabelsSuppressed(model);
+  const lines: LabelledLine[] = [];
+  let blockers: ShapeQuery | undefined;
+  for (const link of model.links) {
+    if (!describedLink(model, link, suppressed) || effectiveLayer(link) !== 'overlay') continue;
+    const line = longestRun(overlayPath(model, link, blockers ??= sharedBlockers(model)).segments);
+    if (line === undefined || !isDiagonalRun(line)) continue;
+    const measured = measure(model.document.links[link.sourceIndex]!.label!), across = haloSize(measured).height;
+    lines.push({ link, line, extent: measured.width, across,
+      band: { segment: { from: { ...line.from }, to: { ...line.to } }, clearance: across / 2 + LINK_LABEL_GEOMETRY.halo } });
+  }
+  return lines;
+}
+
+/**
+ * The bands of the labels the label of `own` yields to, read from the record 7f made (`model.labelYields`, `recordLabelYields`), on
+ * the lines as they stand now. Absent record: no yield. Stage 9 never decides a yield; it reads this.
+ */
+export function labelBands(model: LayoutModel, own: string, unapplied: string[] = []): LinkRun[] {
+  const yields = model.labelYields?.[own];
+  if (!yields?.length) return [];
+  const lines = new Map(labelledLines(model).map(item => [item.link.id, item]));
+  return yields.flatMap(id => {
+    const line = lines.get(id);
+    if (line === undefined) unapplied.push(id);
+    return line ? [line.band] : [];
+  });
+}
+
+/**
+ * Who yields, decided once per pair and recorded (`model.labelYields`, R1). Two labels on diagonal lines whose bands can meet would
+ * each take the window placement reserved for the other (the label placed first takes it). So one label of each such pair keeps clear
+ * of the other's band, in placement (its windows) and in stage 9 (every candidate on its line), and the other lies in its own band:
+ * the two never meet, whichever stage 9 places first. The label with the more **slack** yields: the longest window of its line clear
+ * of the borders (`boxes`), the fixed link runs and the other's band, less its text. On equal slack the later link in link order
+ * yields (the last key).
+ *
+ * The record has a key for every labelled diagonal line ([] = it yields to none). A pair is decided when its bands first can meet,
+ * and never again: a decided pair keeps its direction whatever moves later. A key whose link no longer carries a label on a diagonal
+ * line is dropped, with every reference to it. Returns whether the record changed. 7f calls it before each reservation and once more
+ * on the geometry that publishes; the validator replays it on a copy, and a record it would change is rejected.
+ *
+ * Convergence, per pair: the reservation grows the gap until the yielding label's window holds, or reports the label
+ * LINK_LABEL_ROOM_UNRESERVED and grows nothing for it; the decision never flips, and growth only increases, so the passes end. A label
+ * that yields to two or more others may find no window clear of every band at any growth: it is reported and stays without a window.
+ */
+export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): boolean {
+  const lines = labelledLines(model);
+  const live = new Set(lines.map(item => item.link.id));
+  const before = model.labelYields;
+  const record: Record<string, string[]> = {};
+  for (const item of lines) record[item.link.id] = (before?.[item.link.id] ?? []).filter(id => live.has(id));
+  const fixed = new Map<string, LinkRun[]>();
+  const slack = (line: LabelledLine, other: LabelledLine): number => {
+    let runs = fixed.get(line.link.id);
+    if (runs === undefined) fixed.set(line.link.id, runs = fixedLinkRuns(model, line.link.id));
+    const windows = labelRunWindows(boxes, line.line, line.across, [...runs, other.band]) ?? [];
+    return Math.max(-Infinity, ...windows.map(window => window.to - window.from)) - line.extent;
+  };
+  for (const [i, mine] of lines.entries()) for (const other of lines.slice(i + 1)) {
+    const a = mine.link.id, b = other.link.id;
+    if (record[a]!.includes(b) || record[b]!.includes(a)) continue;
+    // Bands that cannot meet: the two lines stay farther apart than both clearances.
+    if (segmentDistance(mine.line, { ...other.line, owner: mine.line.owner }) >= mine.band.clearance + other.band.clearance - EPS) continue;
+    const p = slack(mine, other), q = slack(other, mine);
+    // A line with no window has slack -Infinity: two such lines are equal, and the later link (`other`) yields.
+    if (p > q + EPS) record[a]!.push(b); else record[b]!.push(a);
+  }
+  // Values in link order, so the record does not depend on the order pairs were decided in.
+  const order = new Map(model.links.map((link, at) => [link.id, at]));
+  for (const id of Object.keys(record)) record[id]!.sort((x, y) => order.get(x)! - order.get(y)!);
+  const next = lines.length ? record : undefined;
+  if (equal(next, before)) return false;
+  if (next === undefined) delete model.labelYields; else model.labelYields = next;
+  return true;
+}
+
+/**
+ * The checks a validator makes on `model.labelYields` before it replays it (R5): every key and every value names a link whose label
+ * lies on a diagonal line now, no link yields to itself, and no pair yields both ways.
+ */
+export function labelYieldsFault(model: LayoutModel): string | undefined {
+  const record = model.labelYields;
+  if (record === undefined) return undefined;
+  const live = new Set(labelledLines(model).map(item => item.link.id));
+  for (const [id, yields] of Object.entries(record)) {
+    if (!live.has(id)) return `${id} carries no label on a diagonal line`;
+    for (const other of yields) {
+      if (other === id) return `${id} yields to itself`;
+      if (!live.has(other)) return `${id} yields to ${other}, which carries no label on a diagonal line`;
+      if (record[other]?.includes(id)) return `${id} and ${other} yield to each other`;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -338,7 +482,8 @@ export function turnedBox(centre: { x: number; y: number }, size: { width: numbe
 /** Overlay labels are suppressed strictly above this density (overlay links per node). */
 export const OVERLAY_LABEL_DENSITY = 3;
 
-export const LINK_LABEL_CODES = ['LINK_LABEL_OMITTED', 'LINK_LABEL_SHORTENED', 'LINK_LABELS_OVERLAY_SUPPRESSED', 'LINK_LABEL_ON_BORDER'] as const;
+export const LINK_LABEL_CODES = ['LINK_LABEL_OMITTED', 'LINK_LABEL_SHORTENED', 'LINK_LABELS_OVERLAY_SUPPRESSED', 'LINK_LABEL_ON_BORDER',
+  'LINK_LABEL_YIELD_UNAPPLIED'] as const;
 
 /** Diagram density as `pipeline.md` defines it; an empty diagram divides by one, not by zero. */
 export function overlayDensity(model: LayoutModel): number {
@@ -512,6 +657,13 @@ interface Supported {
   segments: PathSegment[]; half: number; support: (index: number) => LabelSupport | undefined;
   /** The link runs placement reserved that a label on a diagonal line keeps clear of (`reservedLinkRuns`). */
   links?: readonly LinkRun[];
+  /** The bands of the labels this label yields to (`labelBands`): no candidate on its line meets one, on any rung. A candidate beside the line is left to the collision test. */
+  bands?: readonly LinkRun[];
+}
+
+/** Whether `area` meets one of the label bands a label yields to (`labelBands`), with the hair every predicate here keeps. */
+function meetsBand(bands: readonly LinkRun[] | undefined, area: Area): boolean {
+  return (bands ?? []).some(band => areaSegmentDistance({ ...band.segment, owner: { kind: 'link', id: '' } }, area) < band.clearance + EPS);
 }
 
 /**
@@ -632,7 +784,7 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
         const measuredOn = onLine === undefined ? undefined : measure(onLine);
         const fits = measuredOn !== undefined && measuredOn.lines.length > 0
           && (shortened || !shortenable || measuredOn.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin <= length + EPS);
-        const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts, borders, refusal, supported.links) : undefined;
+        const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts, borders, refusal, supported.links, supported.bands) : undefined;
         if (found && measuredOn) {
           const placement: Placement = { onLine: true, segment: at, bounds: found.bounds, textRotation: found.textRotation, turnedSize: found.turnedSize,
             text: onLine!, lines: measuredOn.lines, lineHeight: measuredOn.lineHeight };
@@ -684,7 +836,7 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
  */
 function alongLine(index: ObstacleIndex, segment: PathSegment, length: number, measured: { width: number; height: number },
   support: LabelSupport | undefined, overlayCounts: boolean, borders: readonly Rect[] | undefined,
-  refusal: { border: boolean }, links: readonly LinkRun[] = []): { bounds: Rect; textRotation: number; turnedSize: { width: number; height: number } } | undefined {
+  refusal: { border: boolean }, links: readonly LinkRun[] = [], bands: readonly LinkRun[] = []): { bounds: Rect; textRotation: number; turnedSize: { width: number; height: number } } | undefined {
   const degrees = lineAngle(segment), size = haloSize(measured);
   const ux = (segment.to.x - segment.from.x) / length, uy = (segment.to.y - segment.from.y) / length;
   const reach = Math.min(length / 2, measured.width / 2 + LINK_LABEL_GEOMETRY.shortenMargin);
@@ -707,7 +859,7 @@ function alongLine(index: ObstacleIndex, segment: PathSegment, length: number, m
   for (const along of candidates) {
     const area: OrientedBox = { centre: { x: segment.from.x + ux * along, y: segment.from.y + uy * along }, ...size, degrees };
     if (borders !== undefined && borders.some(box => labelCrossesBorder(area, box))) { refusal.border = true; continue; }
-    if (!collides(index, area, support, overlayCounts, true)) return { bounds: orientedBounds(area), textRotation: degrees, turnedSize: { ...size } };
+    if (!collides(index, area, support, overlayCounts, true) && !meetsBand(bands, area)) return { bounds: orientedBounds(area), textRotation: degrees, turnedSize: { ...size } };
   }
   return undefined;
 }
@@ -816,6 +968,16 @@ export function produceLinkLabels(model: LayoutModel): void {
     index.add(labelObstacle(final));
   };
 
+  // The runs a label on a diagonal line keeps clear of (`reservedLinkRuns`), and the bands among them that every candidate on the line keeps clear of.
+  const linkRunsOf = (own: string): { links: LinkRun[]; bands: LinkRun[] } => {
+    const unapplied: string[] = [];
+    const bands = labelBands(model, own, unapplied);
+    // R6: a recorded yield whose other line no longer carries a label on a diagonal line cannot be applied; it is named, not dropped.
+    if (unapplied.length) model.diagnostics.push(diagnostic('LINK_LABEL_YIELD_UNAPPLIED', 'warning',
+      `Label of ${own} yields to ${unapplied.join(', ')} in the record placement made, but no label on a diagonal line stands there now; the yield is not applied.`,
+      [{ kind: 'link', id: own }]));
+    return { links: [...fixedLinkRuns(model, own), ...bands], bands };
+  };
   for (const link of model.links) {
     const text = model.document.links[link.sourceIndex]?.label;
     if (text === undefined || text === '') continue;
@@ -831,7 +993,7 @@ export function produceLinkLabels(model: LayoutModel): void {
     emit(label, drawable ? { segments: runs.map(run => run.segment), half: halfStroke(link.path),
       support: at => ({ kind: 'link-segment', link: link.id, segment: runs[at]!.first,
         ...(runs[at]!.last > runs[at]!.first ? { through: runs[at]!.last } : {}) }),
-      ...(runs.some(run => isDirect(run.segment)) ? { links: reservedLinkRuns(model, link.id) } : {}) } : undefined, true);
+      ...(runs.some(run => isDirect(run.segment)) ? linkRunsOf(link.id) : {}) } : undefined, true);
   }
 
   const byId = new Map(model.links.map(link => [link.id, link]));

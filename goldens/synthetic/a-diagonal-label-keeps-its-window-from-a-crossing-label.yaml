@@ -1,0 +1,49 @@
+# Expected (architecture-2 ticket 20, follow-up): described overlay links rise from `w` in `west` and `e` in `east` to the peers in
+# `outside`; each draws one diagonal from face to face, and its label lies on the line. The line `e`-`p2` (link-10) is short: only
+# a short stretch of it lies between the bottom border of `outside` and the top border of `east`, so 7f grows the tier gap until
+# a window there holds its text. The longer line `w`-`p3` (link-6), earlier in link order, crosses it in that window. The two labels
+# yield one to the other (`labelBands`): the label with the more slack, here `w`-`p3`'s, keeps clear of the band of the other line,
+# in 7f's windows and in every stage 9 candidate. So stage 9 places link-10's label in the window 7f grew for it: no
+# LINK_LABEL_ON_BORDER, no `labelBorderCrossings` counter, every gate passes. Before the fix link-6's label took that window, and
+# link-10's label fell back across the border of `east` with the growth spent.
+# Test-only input; test/pipeline/link-label-rules.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  outside: { tier: 0, label: Outside }
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  below: { tier: 2, label: Below }
+nodes:
+  zone: { group: outside, label: Zone }
+  p2: { group: outside, class: cloud, icon: cloud, label: P2, description: second peer }
+  p1: { group: outside, class: cloud, icon: cloud, label: P1, description: first peer }
+  p3: { group: outside, class: cloud, icon: cloud, label: P3, description: third peer }
+  p0: { group: outside, class: cloud, icon: cloud, label: P0, description: zero peer }
+  w:
+    group: west
+    class: router
+    icon: router
+    label: W
+    description: west router
+    ports: [{ name: up1 }, { name: up2 }, { name: up3 }]
+  e:
+    group: east
+    class: router
+    icon: router
+    label: E
+    description: east router
+    ports: [{ name: up }]
+  far: { group: below, label: Far }
+links:
+  - [w.up1, zone, { label: first, class: primary }]
+  - [w.up2, zone, { label: second, class: backup }]
+  - [w.up3, zone, { label: third, class: standby }]
+  - [e.up, zone, { label: uplink one, class: uplink }]
+  - [w, e, { label: tunnel, class: overlay }]
+  - [w, p3, { label: west-main, route: overlay, class: overlay }]
+  - [w, p2, { label: west-two, route: overlay, class: overlay }]
+  - [w, far, { label: west-far, route: overlay, class: overlay }]
+  - [e, p3, { label: east-main, route: overlay, class: overlay }]
+  - [e, p2, { label: east two via relay, route: overlay, class: overlay }]
+  - [e, p0, { label: east-zero, route: overlay, class: overlay }]
