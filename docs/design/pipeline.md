@@ -311,8 +311,12 @@ cuts each link that owns transit lanes at its predicted corridor, one straight p
 the main group of the crossed tier nearest the source, on the side of 7a's direct plan at the source x
 (`directPlan`, the function 7a calls, with the draft boxes and the groups 7a holds, `fixedSourceGroups`),
 which faces the target where it can; where no direct plan exists, on the side the source asks for
-(`corridorSide`). A link foreign to a frame of the crossed tier passes outside the frame, in the gap after the frame roots whose centre stands before the target x (or the source x), as 7a's frame pass takes it. The source is read at the port x `sides-two` will give it (the ports of a face centred
-at the face's pitch, in the order of their peers' x), the target at its node centre. The overlay order
+(`corridorSide`). A link foreign to a frame of the crossed tier keeps the diagonal (the draft has not the frame columns that 7a's
+gap choice reads). Every end of a routed link is read at the port x `sides-two` will give it: the ports of a top or bottom face
+centred at the face's pitch (at least the lane width on a face an alignment end leaves), in the provisional engine order, read with
+the functions `sides-two` calls (`farCoordinate`, `sortFace`, `seatAuthored`, `lanePitchFloors`), without the planned first turns
+and without a bundle's pitch (ticket 17 follow-up). So links that share a node meet at their own ports, and a pair whose port order
+disagrees with the order of its far ends counts as a crossing; at one body centre it never did. The overlay order
 reads the same measure. A candidate is measured over every region it can change: the whole span of each
 routed link with an end in a candidate row or crossing a candidate row's tier (`reach`), because a turned
 row moves the source x, and so the corridor, in every tier the link crosses. Then one step per sub-tier that a transit link spans, down from the anchor

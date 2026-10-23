@@ -33,7 +33,7 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
  * touches. Neither sees the corridors 7a reserves for a routed link that crosses a tier it does not end in: a corridor passes the
  * transited group on the side `corridorSide` gives, so the run between the corridor and the far end can cross the links of a row
  * whose order would let it pass clear. This step runs after `orderByOverlay`, on the same draft, and reads the corridor-aware
- * crossings of `readDraft` (each transit link cut at its predicted corridor).
+ * crossings of `readDraft` (each transit link cut at its predicted corridor, each end read at its predicted port).
  *
  * - **What moves.** The nodes of a free row (`orderTools().freeRow`) with two or more nodes whose turn changes no region that holds
  *   a frame cell. Such a row records `frame-columns`: the frame columns are packed after this step, so the draft has not their x. A flank, a frame cell (a canton member

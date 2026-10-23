@@ -137,11 +137,28 @@ links: [[a, y], [b, x]]`);
 
   it('reads every transit link as one diagonal under layout.corridorRowOrder: false, as main did', async () => {
     const [on, off] = await Promise.all([skeletonOf(fixture), skeletonOf(declared)]);
+    const turned = readDraft(on)!.measureRange(0, 3, true).crossings;
     // The same declared order on both: `on` is turned by the step, so it is put back first.
     for (const [group, order] of [['top', ['t0', 't1']], ['upper', ['u0', 'u1']]] as const) expect(reseatRow(on, on.groups[group]!, [...order], true)).toBe(true);
-    // Cut at their corridors, the two transit links of the declared order cross two feeds; read as diagonals, one.
-    expect(readDraft(on)!.measureRange(0, 3, true).crossings).toBe(2);
+    // Cut at their corridors and read at their ports, the links of the declared order cross 3 times (the two transit links cross two
+    // feeds, and one more pair crosses at a shared node), once with the rows turned; read as diagonals between body centres, once.
+    expect(readDraft(on)!.measureRange(0, 3, true).crossings).toBe(3);
+    expect(turned).toBe(1);
     expect(readDraft(off)!.measureRange(0, 3, true).crossings).toBe(1);
+  }, 60000);
+
+  it('reads each link end at the port sides-two gives it, so links that share a node can cross there (follow-up)', async () => {
+    const shared = readFileSync(new URL('../../goldens/synthetic/a-shared-end-reads-its-port-order.yaml', import.meta.url), 'utf8');
+    const [model, plain] = await Promise.all([skeletonOf(shared), skeletonOf(shared.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n'))]);
+    expect(model.groups.src!.rowOrderDecision).toEqual({ rule: 'kept', before: ['src0', 'src1'], after: ['src0', 'src1'] });
+    const declaredCount = readDraft(model)!.measureRange(0, 2, true).crossings;
+    expect(reseatRow(model, model.groups.src!, ['src1', 'src0'], true)).toBe(true);
+    const turnedCount = readDraft(model)!.measureRange(0, 2, true).crossings;
+    // At the predicted ports the turn gains nothing; at the body centres it showed a gain of one.
+    expect(turnedCount).toBeGreaterThanOrEqual(declaredCount);
+    expect(declaredCount).toBe(23);
+    expect(turnedCount).toBe(23);
+    expect(plain.groups.src!.rowOrderDecision!.rule).toBe('author');
   }, 60000);
 
   it('passes a transited box on the side of the target where it is known, else on the side of the source (7a)', () => {
