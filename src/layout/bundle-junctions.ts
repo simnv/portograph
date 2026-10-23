@@ -1,7 +1,7 @@
 import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Owner, PathSegment, Point, Rect } from '../model/index.js';
 import type { PortRef } from '../model/document.js';
 import { portId } from './skeleton-graph.js';
-import { reserveGroupExits, standsIn } from './group-exits.js';
+import { EXIT_SLACK, reserveGroupExits, standsIn } from './group-exits.js';
 import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, edgeMargin, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
 import { placementWarning } from './regions.js';
 import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
@@ -182,6 +182,45 @@ function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: numbe
   return result;
 }
 
+interface FanItem { link: LayoutLink; end: 'from' | 'to'; far: LayoutPort }
+/**
+ * The member of a fan that keeps the port's own track out of the boxes it leaves, and the depth it
+ * turns at (architecture-2 ticket 18). A track that stands in the edge margin outside a box the
+ * branch leaves (a group or frame that holds the fan's node and not the far node) would rise beside
+ * that edge (G6 `segment-group-edge`), and stepping it off the coordinate it wanted leaves the router
+ * a short step back. Such a member instead stays on the shared normal past the margin of every box it
+ * leaves (plus `EXIT_SLACK`, as a group exit does), turns there and runs on the coordinate it wanted.
+ *
+ * Only inside room the fan already holds: the turn depth must not pass the tree's common end
+ * (`fanEnd`, reserved at sizing), so nothing is found later. Only one member: the one alone on its side
+ * of the port's coordinate, so its turn crosses no other branch; it is peeled last, so the shared
+ * normal past the last junction is its own. The coordinate must be clear of every node wall over the
+ * run from the turn on. Otherwise there is no keeper, and the wall step of `blockedTracks` stands.
+ */
+function edgeKeeper(model: LayoutModel, port: LayoutPort, items: readonly FanItem[], wanted: (item: FanItem) => number,
+  end: number, walls: (item: FanItem, from: number) => { lo: number; hi: number }[]): { item: FanItem; depth: number } | undefined {
+  const n = normal(port.side!), tangent = axis(port.side!), here = coordinate(port), anchor = port.anchor!;
+  const margin = edgeMargin(routedStroke(model));
+  const candidates = items.flatMap(item => {
+    const at = wanted(item), side = Math.sign(at - here);
+    if (side === 0 || items.some(other => other !== item && Math.sign(wanted(other) - here) === side)) return [];
+    const left = groupBoxes(model).filter(box => standsIn(model, box.id, port.ref.node) && !standsIn(model, box.id, item.far.ref.node));
+    // The coordinate stands on or outside an edge across the side, closer than the margin.
+    const inBand = left.some(({ bounds: box }) => {
+      const [low, high] = tangent === 'x' ? [box.x, box.x + box.width] : [box.y, box.y + box.height];
+      return (at <= low + PLACEMENT_EPS && at > low - margin) || (at >= high - PLACEMENT_EPS && at < high + margin);
+    });
+    if (!inBand) return [];
+    const depth = Math.max(...left.map(({ bounds: box }) => Math.max(
+      n.x * (box.x - anchor.x) + n.y * (box.y - anchor.y), n.x * (box.x + box.width - anchor.x) + n.y * (box.y + box.height - anchor.y))))
+      + margin + EXIT_SLACK;
+    if (depth > end + PLACEMENT_EPS) return [];
+    if (walls(item, depth).some(span => at > span.lo + PLACEMENT_EPS && at < span.hi - PLACEMENT_EPS)) return [];
+    return [{ item, depth }];
+  });
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 /**
  * A port can belong to several bundles, to a plain fan of routed links, or to a bundle and a later
  * routing remainder. One junction tree owns it: every link leaves the anchor on one shared stem and
@@ -324,13 +363,17 @@ export function crossBundleFans(model: LayoutModel): void {
     // The row each member peels at, which is the depth its own run leaves the tree from. The peel
     // loop below takes the farthest track first and the fixed member last; it reads the tracks this
     // pass is about to choose, so the rank is taken from the coordinates they are chosen for.
+    const keeper = fixedItem ? undefined : edgeKeeper(model, port, items, wanted, end, (item, from) =>
+      blockedTracks(model, port, { from, to: Math.max(from, stop(item, from, wanted(item))) },
+        new Set([portId(port.ref), portId(item.far.ref)]), item.far.ref.node));
+    if (keeper) target.set(keeper.item.link.id, wanted(keeper.item));
     const peelRank = new Map([...ordered]
-      .sort((a, b) => (Number(a === fixedItem) - Number(b === fixedItem))
+      .sort((a, b) => (Number(a === fixedItem || a === keeper?.item) - Number(b === fixedItem || b === keeper?.item))
         || Math.abs(wanted(b) - coordinate(port)) - Math.abs(wanted(a) - coordinate(port)))
       .map((item, index) => [item, index] as const));
     let prior = -Infinity;
     for (const item of ordered) {
-      if (item === fixedItem) continue;
+      if (item === fixedItem || item === keeper?.item) continue;
       const own = linkStrokeWidth(item.link);
       // Re-check every row after any move: a step taken for one row can carry the slot onto another
       // it already passed. Bounded, since each pass only moves the slot away from the target's side.
@@ -405,7 +448,9 @@ export function crossBundleFans(model: LayoutModel): void {
         ...(parent ? { parent } : {}), point, stem });
       for (const item of active) paths.get(item.link.id)!.push(clone(stem));
       // Farthest track first; a fixed member is never peeled while another member remains.
-      const leaf = [...active].sort((a, b) => (Number(isFixed(a.link.id)) - Number(isFixed(b.link.id)))
+      // The edge keeper is peeled last too: it keeps the port's own track out of the box.
+      const last = (item: typeof items[number]): number => Number(isFixed(item.link.id) || item === keeper?.item);
+      const leaf = [...active].sort((a, b) => (last(a) - last(b))
         || Math.abs(target.get(b.link.id)! - coordinate(port)) - Math.abs(target.get(a.link.id)! - coordinate(port)))[0]!;
       const at = target.get(leaf.link.id)!, elbow = world(at, rows[depth]!);
       if (hemmed(leaf, rows[depth]!, at)) release(leaf);
@@ -425,7 +470,17 @@ export function crossBundleFans(model: LayoutModel): void {
     const last = active[0]!, owner = { kind: 'shared-stem' as const, id: parent! };
     const goal = target.get(last.link.id)!, here = coordinate(port);
     const shares = goal !== here && peeled !== undefined && Math.sign(goal - here) === Math.sign(peeled - here);
-    if (hemmed(last, rows[shares ? depth : Math.max(depth - 1, 0)]!, goal)) release(last);
+    if (last === keeper?.item) {
+      // The edge keeper (ticket 18) keeps the shared normal out past the margin of every box it
+      // leaves, turns there, and runs on its own coordinate: one clean L, no step.
+      const row = keeper.depth, turn = world(here, row), elbow = world(goal, row);
+      if (hemmed(last, row, goal)) release(last);
+      else {
+        push(last.link.id, cursor, turn, owner);
+        push(last.link.id, turn, elbow, last.link.owner);
+        push(last.link.id, elbow, world(goal, Math.max(row, stop(last, row, goal))), last.link.owner);
+      }
+    } else if (hemmed(last, rows[shares ? depth : Math.max(depth - 1, 0)]!, goal)) release(last);
     else if (shares) {
       const turn = world(here, rows[depth]!), elbow = world(goal, rows[depth]!);
       // The extension leaves the last junction's point along the shared normal, so it claims that
