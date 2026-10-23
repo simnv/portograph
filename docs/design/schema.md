@@ -67,6 +67,7 @@ pipeline. Labels are free text; ids are not.
 | `groups` | map | yes | |
 | `nodes` | map | yes | |
 | `links` | list | no | |
+| `render` | map | no | paint-only settings; nothing here reaches layout or score. One key, `anonymousPortMarker` (`dot` default, or `none`): a routed link end on an anonymous port (a link written to a bare node, ADR-0002) is closed by a filled dot in the link stroke (draw.io: `endArrow=oval;endFill=1;endSize=6`, or `startArrow` for the source end), so it does not look unfinished beside a pill. `none` draws the bare end as before. An overlay link keeps its own end mark. Camel case like `layout.corridorRowOrder`; an unknown key or value is an error with its path |
 | `overlays` | map | no | render switches, e.g. `{ flow: hidden }` |
 | `meta` | map | no | document metadata for the draw.io export, on the root cell; no cell inherits it. See **Meta** below |
 

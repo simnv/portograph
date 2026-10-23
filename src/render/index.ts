@@ -11,10 +11,10 @@ import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
 import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, labelArea, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
-import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
+import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { groupShapes } from './frame-order.js';
-import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
+import { GeometryLocks, linkDotCss, sheetClassWashCss, themeCss } from './theme.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 
 export { OVERLAY_ENDPOINT_RADIUS };
@@ -494,6 +494,19 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
         'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: OVERLAY_ENDPOINT_RADIUS }));
   }).join('');
 
+  // A routed link end on an anonymous port (ADR-0002: no geometry, no pill) is closed by a dot in the link stroke, so it does not
+  // look unfinished beside a pill. Paint only; an overlay link already carries its end mark. The group stands after the nodes, as
+  // draw.io's links layer stands above its diagram layer, so the node body does not cut the dot on the border.
+  const dots = layout.document.render?.anonymousPortMarker === 'none' ? '' : drawn.flatMap(link => {
+    if (effectiveLayer(link) !== 'routed' || link.attachments === undefined) return [];
+    const segments = link.path!.segments;
+    if (!segments.length) return [];
+    return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).flatMap(([end, point]) =>
+      link.attachments![end].anonymous === true
+        ? [element('circle', { class: classes('link-dot', linkClassToken(layout, link)), 'data-owner': link.id, 'data-end': end,
+          cx: point.x, cy: point.y, r: anonymousDotRadius(linkStrokeWidth(link)) })] : []);
+  }).join('');
+
   const legendSwatch = (entry: NonNullable<LayoutModel['legend']>['entries'][number]): string => {
     if (entry.kind === 'line') {
       const middle = centre(entry.swatch).y;
@@ -542,7 +555,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
   const documentCss = layout.document.css ?? '';
   const style = element('style', { type: 'text/css' },
-    escapeStyle([themeCss(), sheetClassWashCss(nodeClassAttrs), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
+    escapeStyle([themeCss(), dots ? linkDotCss() : '', sheetClassWashCss(nodeClassAttrs), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
 
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)
@@ -550,6 +563,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     + (crossedBodies.length ? element('g', { class: 'nodes crossed-bars' }, crossedBodies.join('')) : '')
     + element('g', { class: 'links', ...(routedMask ? { mask: `url(#${routedMaskId})` } : {}) }, routedPaths + trunks)
     + element('g', { class: 'nodes' }, nodes)
+    + (dots ? element('g', { class: 'link-dots' }, dots) : '')
     + element('g', { class: 'labels' }, groupLabels + linkLabels + busLabels.join(''))
     + (marks ? element('g', { class: 'overlay-marks' }, marks) : '')
     + legend;

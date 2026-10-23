@@ -66,7 +66,7 @@ import {
 } from '../profiles/network/theme.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
-import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
+import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { groupShapes } from './frame-order.js';
 import { linkVisible } from './index.js';
 import { authorClass, element, num } from './svg.js';
@@ -980,7 +980,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * half depth, onto the point the diagram already showed.
    */
   const terminal = (end: 'exit' | 'entry', ref: { node: string; name?: string; ordinal: number }):
-  { cell: string; style: Readonly<Record<string, StyleValue>>; at: Point } | undefined => {
+  { cell: string; style: Readonly<Record<string, StyleValue>>; at: Point; anonymous?: true } | undefined => {
     const node = layout.nodes[ref.node];
     const port = node?.ports.find(item => item.ref.node === ref.node && item.ref.name === ref.name
       && item.ref.ordinal === ref.ordinal);
@@ -1002,8 +1002,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     return { cell: cellId('node', ref.node), style: fix({
       x: (port.anchor.x - node.bounds.x) / node.bounds.width,
       y: (port.anchor.y - node.bounds.y) / node.bounds.height,
-    }), at: shift(port.anchor) };
+    }), at: shift(port.anchor), ...(port.ref.anonymous === true ? { anonymous: true as const } : {}) };
   };
+
+  /**
+   * The marker an anonymous end carries (`render.anonymousPortMarker`, default `dot`): a filled oval in the edge stroke, so the end
+   * does not look unfinished beside a pill. An end on a port cell is unchanged. Paint only; no point or cell moves. An overlay link
+   * already carries its end mark and takes none.
+   */
+  const dotMarker = (end: 'start' | 'end', terminalEnd: { anonymous?: true } | undefined, overlay: boolean): Readonly<Record<string, StyleValue>> =>
+    terminalEnd?.anonymous === true && !overlay && layout.document.render?.anonymousPortMarker !== 'none'
+      ? { [`${end}Arrow`]: 'oval', [`${end}Fill`]: 1, [`${end}Size`]: ANONYMOUS_DOT_SIZE } : {};
 
   /**
    * The pill a link ends on, in page space: its cell, its box, the point on its outward edge the
@@ -1247,6 +1256,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         strokeWidth: linkStrokeWidth(link),
         opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
         ...dashEntries(klass.dash),
+        ...dotMarker('start', source, overlay),
+        ...dotMarker('end', target, overlay),
         ...(source?.style ?? {}),
         ...(target?.style ?? {}),
         ...(carried ? labelStyle(carried.label, labelPoint(carried.label, link), 'edge', link) : {}),

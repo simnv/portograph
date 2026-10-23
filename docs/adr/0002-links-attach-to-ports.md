@@ -17,3 +17,6 @@ they do. Ports on a side are ordered by far-end position.
 - A shared port's exit stems are one stem then a fan — exempt from the overlap gate (codex F13).
 - Port pitch must account for measured pill geometry after rotation, not a fixed 12 px (codex F14).
 - `*` in YAML means "next free port"; d3-fd's silent consume-by-declaration-order is retired.
+
+## Note (2026-10-23): the dot
+An anonymous port still has no geometry and no pill. `render.anonymousPortMarker: dot` (the default) paints a dot at the link end on the node border, in the link stroke. It is paint only: the layout and the score do not change, and `none` restores the bare end.

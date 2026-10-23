@@ -128,6 +128,22 @@ export function themeCss(): string {
 }
 
 /**
+ * The paint of the dot a link end on an anonymous port is drawn with: the fill is the link stroke of the same class, in the same
+ * three modes. A sheet states these only when it draws a dot, so a sheet with `render.anonymousPortMarker: none`, or with no
+ * anonymous end, carries the same bytes as before the dot existed.
+ */
+export function linkDotCss(): string {
+  const rules = (mode: ThemeMode): string[] => [
+    `.link-dot{fill:${NETWORK_THEME[mode].link.stroke};stroke:none}`,
+    ...NETWORK_LINK_CLASSES.filter(([name]) => name !== LEGEND_DEFAULT_CLASS)
+      .map(([name, style]) => `.link-dot.${name}{fill:${style.strokes[mode]}}`),
+  ];
+  return [...rules('light'),
+    '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
+    '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');
+}
+
+/**
  * Wash rules for the node classes a sheet defines and the profile does not know. A body carries one
  * `pg-wash-<n>` class (`washClass`), so a node with several class tokens takes the one hue the draw.io
  * export takes. `:where()` keeps the rule at the specificity of `.node-body`, and the rules come ahead

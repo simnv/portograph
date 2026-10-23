@@ -398,7 +398,7 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
     return withLocate({ ok: false, diagnostics: v.diagnostics }, v.locate);
   }
   const root = v.map(parsedYaml, '$');
-  v.keys(root, ['portograph', 'profile', 'title', 'css', 'layout', 'meta', 'groups', 'nodes', 'links', 'overlays'], '$');
+  v.keys(root, ['portograph', 'profile', 'title', 'css', 'layout', 'render', 'meta', 'groups', 'nodes', 'links', 'overlays'], '$');
   if (root.get('portograph') !== 2) v.report('VERSION', '$.portograph', 'portograph: 2 is required');
   if (root.has('profile')) {
     const profile = v.string(root.get('profile'), '$.profile');
@@ -424,6 +424,16 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
       else settings[key] = value;
     }
     if (Object.keys(settings).length) doc.layout = settings;
+  }
+  if (root.has('render')) {
+    // Paint-only settings: nothing here reaches layout or score. Written only when the author states them.
+    const settings: NonNullable<NormalisedDocument['render']> = {};
+    for (const [key, value] of v.map(root.get('render'), '$.render')) {
+      if (key !== 'anonymousPortMarker') { v.report('UNKNOWN_KEY', `$.render.${key}`, `Unknown key ${key}`); continue; }
+      const marker = v.choice(value, ['dot', 'none'], `$.render.${key}`);
+      if (marker !== undefined) settings.anonymousPortMarker = marker;
+    }
+    if (Object.keys(settings).length) doc.render = settings;
   }
   if (root.has('meta')) { const data = meta(root.get('meta'), '$.meta', v); if (data !== undefined) doc.meta = data; }
   const groupInput = v.map(root.get('groups'), '$.groups');

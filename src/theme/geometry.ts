@@ -35,6 +35,14 @@ export function pathStrokeWidth(link: Pick<LayoutLink, 'path' | 'strokeWidth'>):
   return width === DEFAULT_STROKE_WIDTHS.path ? {} : { strokeWidth: width };
 }
 
+/**
+ * The dot a link end on an anonymous port is drawn with (`render.anonymousPortMarker: dot`). draw.io states it as
+ * `oval` with this `endSize`; the SVG draws a circle of the same visual size. Paint only: no geometry reads it.
+ */
+export const ANONYMOUS_DOT_SIZE = 6;
+/** Radius of the SVG circle that matches draw.io's `oval` marker of `ANONYMOUS_DOT_SIZE` on a stroke of this width (measured, draw.io 31.4.5: diameter = size + stroke width). */
+export const anonymousDotRadius = (strokeWidth: number): number => (ANONYMOUS_DOT_SIZE + strokeWidth) / 2;
+
 /** Radius of the mark stage 11 draws at each overlay endpoint, above the masked overlay layer. */
 export const OVERLAY_ENDPOINT_RADIUS = 2;
 /**
