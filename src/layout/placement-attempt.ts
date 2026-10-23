@@ -1,5 +1,6 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
+import { planDirectFamilies } from './direct-families.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
 import { centreContext } from './centre.js';
@@ -177,6 +178,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // touched, exactly as a reservation change does anywhere else in 7f.
   // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
   abortAt?.();
+  planDirectFamilies(draft, model => rebuildRegionGeometry(model, undefined, undefined, true));
+  note('direct-families', String(draft.directFamilies!.filter(family => family.triggered).length));
   freezeChords(draft);
   note('freeze-chords', 'done');
   produceGroupLabelBands(draft);

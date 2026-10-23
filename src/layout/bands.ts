@@ -26,6 +26,7 @@ import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.j
 import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
+import { directFamiliesFault } from './direct-families.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry, trunkJoins } from './bus.js';
@@ -1951,6 +1952,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   const fault = labelYieldsFault(model);
   if (fault !== undefined) throw new Error(`The label yields are forged: ${fault}`);
   // The room across a run is read from its record and checked against the runs that need it (ticket 21, R5).
+  // The direct families are read from their record and the geometry, never decided again (ticket 22, R1/R5).
+  const family = directFamiliesFault(model);
+  if (family !== undefined) throw new Error(`The direct family record is forged: ${family}`);
   const padding = labelPaddingFault(model);
   if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
   const yields = clone(model);

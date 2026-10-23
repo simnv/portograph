@@ -441,6 +441,7 @@ export function edgeMisses(model: LayoutModel, link: LayoutLink, segment: PathSe
  */
 export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0): { segment: PathSegment } | { reason: ChordRefusal } {
   const kind = chordKind(model, link);
+  if (!opposedFaces(model, link)) return { reason: 'faces' };
   const geometry = straightChord(model, link, undefined, true);
   if (!geometry || Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y) < PLACEMENT_EPS) return { reason: 'faces' };
   // A link that crosses a tier it does not end in needs the lane lanes.ts reserves for it, and a lane
@@ -464,6 +465,19 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
   const refusal: NonNullable<CorridorOptions['refusal']> = {};
   if (!straightCorridorClear(model, link, segment, { refusal })) return { reason: refusal.reason ?? 'corridor' };
   return { segment };
+}
+
+const OPPOSITE = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' } as const;
+/**
+ * A routed chord joins opposite faces only (user, 2026-10-23, architecture-2 ticket 22): `top` to `bottom`, or `left` to `right`. Two end faces at
+ * 90 degrees (a bottom face to a lateral side) make the link orthogonal, and two faces on one side never make a chord. Every chord decision reads this
+ * one predicate (`chordVerdict`).
+ */
+export function opposedFaces(model: LayoutModel, link: LayoutLink): boolean {
+  const ends = link.attachments;
+  if (!ends) return false;
+  const one = findPort(model, ends.from)?.side, two = findPort(model, ends.to)?.side;
+  return one !== undefined && two !== undefined && OPPOSITE[one] === two;
 }
 
 /** The chord of the link when nothing that no other link can change refuses it. The fan rules ask this first. */
@@ -548,7 +562,7 @@ function mouthLegs(model: LayoutModel, link: LayoutLink): { leg: PathSegment; ot
  * The checks of the fixed point on a chord that stands alone: the chords already held and the vertical legs of the links that stay
  * orthogonal, mouth legs of the gap's lanes included. The first that fails names the refusal.
  */
-export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, undecided?: ReadonlySet<string>): 'chord' | 'leg' | 'title' | undefined {
+export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, undecided?: ReadonlySet<string>, crossable?: ReadonlySet<string>): 'chord' | 'leg' | 'title' | undefined {
   // Two chords are no obstacle to each other for the router, but G6 still measures their clearance:
   // only a strict crossing excuses a pair that stands closer than 10 px (a shared end does not).
   const stroke = linkStrokeWidth(link);
@@ -567,7 +581,13 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
     if (isRoutedChord(model, other) || undecided?.has(other.id)) continue;
     for (const end of ['from', 'to'] as const) {
       const leg = orthogonalLeg(model, other, end);
-      if (leg && segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
+      if (!leg) continue;
+      // A direct member may cross the fallback leg of another source node's fan (ticket 22, user 2026-10-23). The leg reserved here runs to the far
+      // stem tip, but the real one ends at a row the plan seats later, anywhere in the gap: so the chord crosses the leg's line, and a chord whose
+      // x-span holds the leg's x strictly is taken as crossing it. Otherwise it keeps the clearance, as G6 measures it.
+      if (crossable?.has(other.id) && Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS
+        && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS) continue;
+      if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }
   for (const { leg, other } of mouthLegs(model, link)) {
@@ -656,6 +676,11 @@ export function edgeLeavers(model: LayoutModel): string[] {
     const chord = link === undefined || chordKind(model, link) !== 'cross' ? undefined : straightChord(model, link, undefined, true);
     return link !== undefined && chord !== undefined && crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) === 'edge';
   });
+}
+/** Whether two segments cross at a point that is an end of neither (G6 excuses only such a crossing). */
+export function strictCrossing(a: PathSegment, b: PathSegment): boolean {
+  const point = intersection(a, b);
+  return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
 }
 /** Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing). */
 function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, strokeB: number): boolean {
