@@ -1,6 +1,6 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
-import { planDirectFamilies } from './direct-families.js';
+import { crowdedDirectMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
 import { centreContext } from './centre.js';
@@ -157,10 +157,27 @@ export interface SettleReading { shift: number; steps: ['grow' | 'close-up' | 'k
  */
 export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {}): void {
   attemptCounters.attempts++; attemptCounters.in7f++;
-  try { attemptBody(draft, options); } finally { attemptCounters.in7f--; }
+  try {
+    // A direct member that 7f's later moves bring within the clearance of a fallback's planned part is not unfrozen: the attempt is run again
+    // from its start with that member refused (`crowds`, architecture-2 ticket 22). The refusals only grow, so the retries end (R2, R4).
+    const start = clone(draft), refused = new Set<string>();
+    for (let retry = 0; ; retry++) {
+      attemptBody(draft, options, refused);
+      const crowded = crowdedDirectMembers(draft).filter(id => !refused.has(id));
+      if (!crowded.length) break;
+      if (retry >= DIRECT_RETRIES) {
+        draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
+          message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
+        break;
+      }
+      for (const id of crowded) refused.add(id);
+      for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
+      Object.assign(draft, clone(start));
+    }
+  } finally { attemptCounters.in7f--; }
 }
 
-function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
+function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: ReadonlySet<string> = new Set()): void {
   const { abortAt, trace } = options, moves = options.moves !== false;
   const note = (pass: string, verdict: string): void => { if (trace) trace({ pass, revision: revisionOf(draft), verdict }); };
   // The ledger (architecture ticket 13, phase 1): what each step loses and gains, read only when a test or the trace asks for it.
@@ -178,8 +195,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // touched, exactly as a reservation change does anywhere else in 7f.
   // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
   abortAt?.();
-  planDirectFamilies(draft, model => rebuildRegionGeometry(model, undefined, undefined, true));
-  note('direct-families', String(draft.directFamilies!.filter(family => family.triggered).length));
+  planDirectFamilies(draft, refused);
+  note('direct-families', String(draft.directFamilies?.length ?? 0));
   freezeChords(draft);
   note('freeze-chords', 'done');
   produceGroupLabelBands(draft);

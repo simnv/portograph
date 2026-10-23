@@ -7,10 +7,11 @@ import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, SIDE_EDGE_SL
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { groupShape } from './grid.js';
 import { bandGap, portId } from './skeleton-graph.js';
-import { plannedSegments, tierGapPlan } from './gap-plan.js';
+import { PLACEMENT_EPS } from './tolerance.js';
+import { plannedSegments, tierGapPlan, tierGapPlans } from './gap-plan.js';
 import { tierGaps } from './gap-runs.js';
-import { moveBands } from './gap-room.js';
 import { clone } from './bundle-geometry.js';
+import type { TierGap } from './gap-runs.js';
 
 /**
  * Facing units link direct (architecture-2 ticket 22, slice 1).
@@ -32,16 +33,19 @@ import { clone } from './bundle-geometry.js';
 export const DIRECT_MIN_SLOPE = 1 / Math.sqrt(3);
 /** A triggered family may grow its tier gap until the gap is this many band gaps tall (user, 2026-10-23: about twice the normal gap). */
 export const DIRECT_GAP_CAP = 2;
+/** Retries of a 7f attempt whose direct members a later move crowded (R4: per attempt); each retry refuses the crowded members. */
+export const DIRECT_RETRIES = 2;
 /** The member sets one family's search tries at most (R4: per family). A truncated search keeps the best set found and says so. */
 export const DIRECT_SEARCH_BUDGET = 4096;
-/** Trials of the gap growth before the verdict (R4, per placement attempt): each adds what the flat members of the one before still ask. */
-const GROWTH_TRIALS = 3;
 
 const OK_SIDES = { upper: 'bottom', lower: 'top' } as const;
 
-/** Whether a chord from `from` to `to` stands at least 30 degrees from horizontal (`abs(dy) >= abs(dx) / sqrt(3)`, inclusive). */
-export function steepEnough(segment: { from: Point; to: Point }): boolean {
-  const dx = Math.abs(segment.to.x - segment.from.x), dy = Math.abs(segment.to.y - segment.from.y);
+/**
+ * Whether a chord from `from` to `to` stands at least 30 degrees from horizontal (`abs(dy) >= abs(dx) / sqrt(3)`, inclusive), once its tier gap
+ * has grown by `extra` (the growth reserved for the family, which moves the lower end down by that much).
+ */
+export function steepEnough(segment: { from: Point; to: Point }, extra = 0): boolean {
+  const dx = Math.abs(segment.to.x - segment.from.x), dy = Math.abs(segment.to.y - segment.from.y) + extra;
   return dy >= dx * DIRECT_MIN_SLOPE - EPS;
 }
 
@@ -236,14 +240,14 @@ function makeChord(model: LayoutModel, link: LayoutLink, segment: PathSegment): 
  * same pair may be crossed strictly (`crossable`). The set is searched whole (R3: no first-wins), largest first, then the shorter chords,
  * then the semantic port keys. Leaves the members as it found them.
  */
-function familyVerdict(model: LayoutModel, members: readonly Member[], crossable: ReadonlySet<string>):
+function familyVerdict(model: LayoutModel, members: readonly Member[], crossable: ReadonlySet<string>, extra: number):
   { direct: Set<string>; segments: Map<string, PathSegment>; reasons: Map<string, DirectMemberReason>; truncated: boolean } {
   const reasons = new Map<string, DirectMemberReason>();
   const segments = new Map<string, PathSegment>();
   for (const member of members) {
     const verdict = chordVerdict(model, member.link, SIDE_EDGE_SLACK);
     if ('reason' in verdict) { reasons.set(member.link.id, verdict.reason); continue; }
-    if (!steepEnough(verdict.segment)) { reasons.set(member.link.id, 'angle'); continue; }
+    if (!steepEnough(verdict.segment, extra)) { reasons.set(member.link.id, 'angle'); continue; }
     segments.set(member.link.id, verdict.segment);
   }
   const open = members.filter(member => segments.has(member.link.id)).map(member => member.link);
@@ -324,7 +328,8 @@ interface Decided { families: DirectFamily[]; diagnostics: LayoutModel['diagnost
  * The decision on one model (the draft or a growth trial): every triggered member is made orthogonal, then each triggered family takes
  * its verdict in family order, its chords held for the families after it. Writes the paths; returns the records.
  */
-function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate; family: DirectFamily }[]): Decided {
+function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate; family: DirectFamily }[], growth: ReadonlyMap<number, number>,
+  refused: ReadonlySet<string>): Decided {
   const diagnostics: LayoutModel['diagnostics'] = [];
   for (const { candidate, family } of plans) if (family.triggered) for (const member of candidate.members) makeOrthogonal(model, linkOf(model, member.link.id));
   const families: DirectFamily[] = [];
@@ -333,7 +338,8 @@ function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate
     const members = candidate.members.map(member => ({ ...member, link: linkOf(model, member.link.id) }));
     const own = new Set(members.map(member => member.link.id));
     const crossable = new Set(candidate.pairMembers.map(member => member.link.id).filter(id => !own.has(id)));
-    const verdict = familyVerdict(model, members, crossable);
+    const verdict = familyVerdict(model, members.filter(member => !refused.has(member.link.id)), crossable, growth.get(candidate.gap.below) ?? 0);
+    for (const member of members) if (refused.has(member.link.id)) verdict.reasons.set(member.link.id, 'crowds');
     for (const member of members) if (verdict.direct.has(member.link.id)) makeChord(model, member.link, verdict.segments.get(member.link.id)!);
     if (verdict.truncated) diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_SEARCH_TRUNCATED',
       message: `The member search of the direct family ${family.id} stopped at ${DIRECT_SEARCH_BUDGET} sets; the best set found is kept.`,
@@ -347,13 +353,13 @@ function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate
 const linkOf = (model: LayoutModel, id: string): LayoutLink => model.links.find(link => link.id === id)!;
 
 /**
- * Decide every direct family of the draft, once, at the start of 7f and before `freezeChords` (R1), and record `model.directFamilies`
- * (`[]` = planned, no family). The tier gap of a triggered family first grows so that its members reach 30 degrees, at most to
- * `DIRECT_GAP_CAP` band gaps (R2: the room is reserved in placement, before the freeze): the growth is tried on a copy, cut back to what
- * the members the verdict keeps need, and applied to the draft with `replay`, the 7f replay of a group move. The verdict then runs on the
- * grown draft. A family whose orthogonal drawing crosses once or never is recorded untriggered and left as the other rules make it.
+ * Decide every direct family of the draft, once, at the start of 7f and before `freezeChords` (R1), and record the triggered ones in
+ * `model.directFamilies` (absent = none triggered). The verdict reads a member's angle on its tier gap grown so that the triggered members
+ * reach 30 degrees, at most to `DIRECT_GAP_CAP` band gaps; the gap then reserves the height the members held direct need (`height`, R2:
+ * the room is reserved in placement, before the freeze), which the tier-gap plan reads as a floor. A family whose orthogonal drawing
+ * crosses once or never is not recorded and is left as the other rules make it.
  */
-export function planDirectFamilies(draft: LayoutModel, replay: (model: LayoutModel) => void): void {
+export function planDirectFamilies(draft: LayoutModel, refused: ReadonlySet<string> = new Set()): void {
   const candidates = familyCandidates(draft);
   const counted = new Map<string, ReturnType<typeof orthogonalCounterfactual>>();
   const plans = candidates.map(candidate => {
@@ -365,62 +371,52 @@ export function planDirectFamilies(draft: LayoutModel, replay: (model: LayoutMod
     // An inversion count above one proves the threshold without the plan (each inversion is a crossing the orthogonal drawing cannot avoid).
     const triggered = triggers(crossings, inverted);
     const family: DirectFamily = { id: candidate.id, units: candidate.units, gap: candidate.gap, baselineOrder: candidate.members.map(member => member.link.id),
-      crossings, inversions: inverted, witnesses, triggered, growth: 0,
+      crossings, inversions: inverted, witnesses, triggered, growth: 0, height: 0,
       portPlan: candidate.members.map((member, index) => ({ link: member.link.id, index,
         upper: { port: portId(member.link.attachments![member.upper]), side: OK_SIDES.upper }, lower: { port: portId(member.link.attachments![member.lower]), side: OK_SIDES.lower } })),
       members: candidate.members.map(member => ({ link: member.link.id, mode: 'unplanned' as const })) };
     return { candidate, family };
   });
-  // The growth a tier gap asks on a model: the most any triggered member that the verdict refused as too flat needs, among those the
-  // cap lets reach 30 degrees (the gap no taller than `DIRECT_GAP_CAP` band gaps).
-  const asks = (model: LayoutModel, flat: ReadonlySet<string>): Map<number, number> => {
-    const result = new Map<number, number>();
-    for (const { candidate, family } of plans) {
-      if (!family.triggered) continue;
-      const height = gapHeight(model, candidate.gap);
-      if (height === undefined) continue;
-      const room = Math.max(0, DIRECT_GAP_CAP * bandGap(model) - height);
-      for (const member of candidate.members) {
-        if (!flat.has(member.link.id)) continue;
-        const need = steepnessNeed(model, { ...member, link: linkOf(model, member.link.id) });
-        if (need > EPS && need <= room + EPS) result.set(candidate.gap.below, Math.max(result.get(candidate.gap.below) ?? 0, need));
-      }
+  // The growth each tier gap may take for its triggered members: the most any of them needs to reach 30 degrees, among those the cap lets
+  // reach it (the gap no taller than `DIRECT_GAP_CAP` band gaps). The verdict reads the angle on the gap grown by it.
+  const growth = new Map<number, number>();
+  for (const { candidate, family } of plans) {
+    if (!family.triggered) continue;
+    const height = gapHeight(draft, candidate.gap);
+    if (height === undefined) continue;
+    const room = Math.max(0, DIRECT_GAP_CAP * bandGap(draft) - height);
+    for (const member of candidate.members) {
+      if (refused.has(member.link.id)) continue;
+      const need = steepnessNeed(draft, member);
+      if (need > EPS && need <= room + EPS) growth.set(candidate.gap.below, Math.max(growth.get(candidate.gap.below) ?? 0, need));
     }
-    return result;
-  };
-  const flatOf = (families: readonly DirectFamily[]): Set<string> =>
-    new Set(families.flatMap(family => family.members.filter(member => member.reason === 'angle').map(member => member.link)));
-  const directOf = (families: readonly DirectFamily[]): number => families.reduce((sum, family) => sum + family.members.filter(member => member.mode === 'direct').length, 0);
-  const total = (growth: ReadonlyMap<number, number>): number => [...growth.values()].reduce((sum, extra) => sum + extra, 0);
-  // Trials (R4: `GROWTH_TRIALS`): each grows the gaps by what the flat members of the trial before still ask, on a copy that the 7f replay has
-  // settled (the replay re-centres, so the need is read on the trial, never on the ungrown draft). The trial with the most direct members is
-  // kept, then the one that grew less; the ungrown draft is the first candidate.
-  let growth = new Map<number, number>();
-  let best = { growth, direct: directOf(decide(clone(draft), plans).families) };
-  let ask = asks(draft, flatOf(decide(clone(draft), plans).families));
-  for (let trial = 0; trial < GROWTH_TRIALS && ask.size; trial++) {
-    growth = new Map(growth);
-    for (const [tier, extra] of ask) growth.set(tier, (growth.get(tier) ?? 0) + extra);
-    const copy = clone(draft);
-    moveBands(copy, growth);
-    replay(copy);
-    const { families } = decide(copy, plans);
-    const direct = directOf(families);
-    if (direct > best.direct || (direct === best.direct && total(growth) < total(best.growth) - EPS)) best = { growth, direct };
-    ask = asks(copy, flatOf(families));
   }
-  growth = best.growth;
-  if (growth.size) {
-    moveBands(draft, growth);
-    replay(draft);
-    for (const [tier, extra] of growth) draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'DIRECT_FAMILY_GAP_GROWN',
-      message: `The tier gap above tier ${tier} grew ${extra.toFixed(2)} px so that its direct families stand at 30 degrees.`,
-      owners: plans.filter(item => item.family.triggered && item.candidate.gap.below === tier).flatMap(item => item.candidate.members.map(member => ({ kind: 'link' as const, id: member.link.id }))) });
-  }
-  for (const item of plans) item.family.growth = growth.get(item.candidate.gap.below) ?? 0;
-  const { families, diagnostics } = decide(draft, plans);
+  const { families, diagnostics } = decide(draft, plans, growth, refused);
   draft.diagnostics.push(...diagnostics);
-  draft.directFamilies = families;
+  // The gap reserves only what the members held direct need (R2): the tier-gap plan reads the height as a floor (`directGapHeight`), so
+  // `growTierGaps` grows the gap to it after the freeze and never gives it back.
+  for (const family of families) {
+    if (!family.triggered) continue;
+    const height = gapHeight(draft, family.gap) ?? 0;
+    const need = Math.max(0, ...plans.filter(item => item.family.gap.below === family.gap.below).flatMap(item => item.candidate.members)
+      .filter(member => families.some(other => other.members.some(entry => entry.link === member.link.id && entry.mode === 'direct')))
+      .map(member => steepnessNeed(draft, member)));
+    family.growth = need;
+    family.height = need > EPS ? height + need : 0;
+  }
+  for (const family of families) {
+    if (family.triggered) family.growth = Math.max(0, ...families.filter(other => other.triggered && other.gap.below === family.gap.below).map(other => other.growth));
+    if (family.triggered) family.height = Math.max(0, ...families.filter(other => other.triggered && other.gap.below === family.gap.below).map(other => other.height));
+  }
+  for (const family of families) if (family.triggered && family.growth > EPS && families.find(other => other.triggered && other.gap.below === family.gap.below) === family) {
+    draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'DIRECT_FAMILY_GAP_RESERVED',
+      message: `The tier gap above tier ${family.gap.below} reserves ${family.height.toFixed(2)} px (${family.growth.toFixed(2)} px more) so that its direct families stand at 30 degrees.`,
+      owners: families.filter(other => other.triggered && other.gap.below === family.gap.below).flatMap(other => other.members.map(member => ({ kind: 'link' as const, id: member.link }))) });
+  }
+  // Only a triggered family is recorded. Absent before the freeze = not planned; absent once `frozenChords` is set = planned, no family
+  // triggered (an untriggered family changes nothing, and a sheet with none publishes the bytes it did before ticket 22).
+  const triggered = families.filter(family => family.triggered);
+  if (triggered.length) draft.directFamilies = triggered; else delete draft.directFamilies;
 }
 
 /** The trigger, read the same way by the decision and the validator: the orthogonal drawing crosses more than once, or the inversions prove it. */
@@ -428,18 +424,21 @@ export const triggers = (crossings: number | 'unresolved', inverted: number): bo
 
 /**
  * What a validator checks on `model.directFamilies` (R5): it reads the record and the geometry, and never decides a family again.
- * Absent before 7f; absent after the freeze is a fault (the freeze always records, `[]` when no family). Each family names member links of
+ * Absent = no triggered family (or, before the freeze, not planned yet); a record before the freeze is a fault. Each family names member links of
  * the model between its units, its trigger agrees with its counts, its growth lies within the cap, a direct member is a held chord and a
  * refused one is not, and no two direct members of one fan touch.
  */
 export function directFamiliesFault(model: LayoutModel): string | undefined {
   const record = model.directFamilies;
-  if (record === undefined) return model.frozenChords !== undefined ? 'the chords are frozen and no direct family was planned' : undefined;
+  if (record === undefined) return undefined;
+  if (model.frozenChords === undefined) return 'a direct family is recorded before the freeze';
   const frozen = new Set(model.frozenChords ?? []);
   const seen = new Set<string>();
   for (const family of record) {
-    if (family.triggered !== triggers(family.crossings, family.inversions)) return `${family.id} is recorded ${family.triggered ? '' : 'un'}triggered against its counts`;
-    if (!(family.growth >= 0 && family.growth <= DIRECT_GAP_CAP * bandGap(model) + EPS)) return `${family.id} records a growth of ${family.growth} px`;
+    if (!family.triggered || !triggers(family.crossings, family.inversions)) return `${family.id} is recorded without a trigger its counts give`;
+    if (!(family.growth >= 0 && family.height >= 0 && family.height <= DIRECT_GAP_CAP * bandGap(model) + EPS)) return `${family.id} reserves a gap of ${family.height} px`;
+    const gap = gapHeight(model, family.gap);
+    if (family.height > EPS && (gap === undefined || gap < family.height - PLACEMENT_EPS)) return `the tier gap of ${family.id} is ${gap} px, short of the ${family.height} px it reserves`;
     const units = family.units;
     const holds = (unit: DirectUnit, node: string): boolean => unit.kind === 'node' ? unit.id === node : unit.nodes.includes(node);
     const direct: { link: LayoutLink; segment: { from: Point; to: Point } }[] = [];
@@ -452,7 +451,6 @@ export function directFamiliesFault(model: LayoutModel): string | undefined {
       if (!((holds(units.upper, from.node) && holds(units.lower, to.node)) || (holds(units.upper, to.node) && holds(units.lower, from.node)))) {
         return `${link.id} does not join the units of ${family.id}`;
       }
-      if (!family.triggered) { if (member.mode !== 'unplanned') return `${link.id} is ${member.mode} in the untriggered family ${family.id}`; continue; }
       if (member.mode === 'unplanned') return `${link.id} is unplanned in the triggered family ${family.id}`;
       if (member.mode === 'orthogonal' && frozen.has(link.id)) return `${link.id} holds a chord its family refused (${member.reason ?? 'no reason'})`;
       if (member.mode === 'orthogonal' && member.reason === undefined) return `${link.id} is refused with no reason`;
@@ -475,4 +473,47 @@ export function directFamiliesFault(model: LayoutModel): string | undefined {
 export function refusedMembers(model: LayoutModel): Set<string> {
   return new Set((model.directFamilies ?? []).filter(family => family.triggered)
     .flatMap(family => family.members.filter(member => member.mode === 'orthogonal').map(member => member.link)));
+}
+
+/** The height the triggered direct families reserve for one tier gap (0 = none): the tier-gap plan reads it as a floor (R1, R2). */
+export function directGapHeight(model: LayoutModel, gap: Pick<TierGap, 'above' | 'below'>): number {
+  return Math.max(0, ...(model.directFamilies ?? []).filter(family => family.gap.above === gap.above && family.gap.below === gap.below).map(family => family.height));
+}
+
+/**
+ * The direct members that stand, after 7f, within the chord clearance of a part the tier-gap plan seats in their gap (a leg, a row, a drop, a
+ * stem), or of another held chord, and cross it nowhere strictly: what G6 would fail. Read on the model as 7f leaves it.
+ */
+export function crowdedDirectMembers(model: LayoutModel): string[] {
+  const direct = (model.directFamilies ?? []).flatMap(family => family.members.filter(member => member.mode === 'direct').map(member => ({ id: member.link, gap: family.gap })));
+  if (!direct.length) return [];
+  const plans = tierGapPlans(model);
+  const crowded: string[] = [];
+  for (const { id, gap } of direct) {
+    const link = model.links.find(item => item.id === id), chord = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
+    if (link === undefined || chord === undefined) continue;
+    const stroke = linkStrokeWidth(link);
+    const near = (segment: PathSegment, other: number): boolean => !strictCrossing(chord, segment)
+      && segmentDistance(chord, segment) - (stroke + other) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS;
+    const found = plans.find(item => item.gap.above === gap.above && item.gap.below === gap.below);
+    let hit = false;
+    for (const part of found?.plan.parts ?? []) {
+      const owner = model.links.find(item => item.id === part.link);
+      if (owner === undefined) continue;
+      const ends = [findPort(model, owner.attachments!.from)?.anchor, findPort(model, owner.attachments!.to)?.anchor];
+      const stems: PathSegment[] = [];
+      for (const tip of [part.upper, part.lower]) {
+        if (tip.kind !== 'tip') continue;
+        const anchor = ends.find(point => point !== undefined && Math.abs(point.x - tip.x) < EPS);
+        if (anchor && !samePoint(anchor, tip)) stems.push({ from: anchor, to: { x: tip.x, y: tip.y }, owner: owner.owner });
+      }
+      if ([...plannedSegments(part, found!.gap), ...stems].some(segment => near(segment, linkStrokeWidth(owner)))) { hit = true; break; }
+    }
+    if (!hit) for (const other of model.links) {
+      if (other.id === id || !isRoutedChord(model, other)) continue;
+      if (near(other.path!.segments[0]!, linkStrokeWidth(other))) { hit = true; break; }
+    }
+    if (hit) crowded.push(id);
+  }
+  return crowded;
 }
