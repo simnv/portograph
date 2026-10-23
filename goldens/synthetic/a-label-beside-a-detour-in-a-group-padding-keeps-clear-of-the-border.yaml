@@ -1,11 +1,12 @@
-# Expected (architecture-2 tickets 21 and 23): room across a run, and the user's report of ticket 23. Four nodes of `row` are a full
+# Expected (architecture-2 tickets 21 and 23): room across a run, and the user's reports of ticket 23. Four nodes of `row` are a full
 # mesh of `sync` links; one is labelled, so no bus forms. The detours out of `a` to `c` and to `d` used to rise on one riser and run on
-# one line over the row; they take separate tracks now (`a`-`c` over the row, `a`-`d` under it), and no pair of overlay runs shares a
-# track (`overlayTrackShares` absent). Each turn steps out of its face by the overlay port clearance (7.75 px). The labelled link
-# `b`-`d` has `c` between its ends and detours under the row in the bottom padding (the title is on the top edge); as a labelled
-# detour it leaves its U outward, one track pitch outside `a`-`d`, and its label stands beyond that track. 7f grows the bottom
-# padding of `row` to the track plus the label (half the stroke, the gap, the text height and half the border's stroke) and records it
-# (`labelPadding`: row bottom 29.5, link-5). The label clears the border: no LINK_LABEL_ON_BORDER, `labelBorderCrossings` absent.
+# one line over the row; they take separate tracks now, and no pair of overlay runs shares a track (`overlayTrackShares` absent). Each
+# turn steps out of its face by the overlay port clearance (7.75 px). The two detours under the row, `a`-`d` and the labelled `b`-`d`,
+# nest and do not cross: `a`-`d` goes further round, so it takes the outer track and the lower of their two ports on `d` (7f trades the
+# two slots, `nestOverlayPorts`); `b`-`d` takes the inner track one pitch inside and the upper port. The bottom padding holds both
+# tracks, so 7f grows nothing (`labelPadding` absent). The label of `b`-`d` has no room between its track and the bodies and stands below
+# it, across the line of `a`-`d` (a known residual: crossings come before a label's room). The label clears the border: no
+# LINK_LABEL_ON_BORDER, `labelBorderCrossings` absent.
 # Test-only input; test/pipeline/link-label-rules.test.ts reads it.
 portograph: 2
 groups:

@@ -543,11 +543,13 @@ export interface LayoutModel {
    */
   labelYields?: Record<string, string[]>;
   /**
-   * The room across a run (architecture-2 ticket 21, `acrossRunPadding`): per group and edge, the padding a link label beside a run in
-   * that padding needs, measured from the group's node bodies to the box edge, when it is more than the group's padding on that edge.
+   * The room across a run (architecture-2 tickets 21 and 23): per group and edge, the padding measured from the group's node bodies to
+   * the box edge, when it is more than the group's padding on that edge. Two needs grow it: a link label beside a run in that padding
+   * (`acrossRunPadding`, ticket 21), and a separated overlay track moved into that padding, with the label the track carries
+   * (`trackRoomPadding`, ticket 23). The name stays from ticket 21; an entry may name an unlabelled overlay link, for its track.
    * 7f writes it and grows the edge by the deficit; `groupPadding` reads it, so every geometry rebuild keeps the room. `links` are the
-   * labelled links the room was grown for: the validator checks that the room holds what each of them needs now (room ≥ need) and
-   * refuses an entry that names no such link. A room only grows, and its links only join. Absent = no edge grown for a label.
+   * links the room was grown for: the validator checks that the room holds what each of them needs now (room ≥ need) and refuses an
+   * entry that names no such link. A room only grows, and its links only join. Absent = no edge grown.
    */
   labelPadding?: Record<string, Partial<Record<Side, LabelPaddingEntry>>>;
   /** The exits 7e reserved for shared runs that end inside their own group (architecture ticket 13); absent when none. */
@@ -561,7 +563,7 @@ export interface LayoutModel {
   frames?: Frame[];
 }
 
-/** One edge's room across a run (`labelPadding`, ticket 21): the padding from the node bodies to the box edge, and the links it holds. */
+/** One edge's room across a run (`labelPadding`, tickets 21 and 23): the padding from the node bodies to the box edge, and the links (a label's or a track's) it holds. */
 export interface LabelPaddingEntry { room: number; links: string[] }
 
 /**

@@ -204,7 +204,9 @@ command, the time is simply not a promise.
 13. Two overlay detours never share a track: no two overlay lines run on one line, overlapping or end
     to end, unless they leave one port and fork. An overlay detour steps out of each port face clear of
     the endpoint dot by a visible gap (the overlay port clearance) before it turns, and passes no
-    foreign port nearer than that (architecture-2 ticket 23).
+    foreign port nearer than that. Detours that arrive at one face by parallel tracks nest: the outer
+    track takes the port nearer the side the tracks come from, so they do not cross there
+    (architecture-2 ticket 23).
 
 A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
 bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again

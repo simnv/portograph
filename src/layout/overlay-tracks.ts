@@ -97,6 +97,38 @@ export function sharedTrackPairs(paths: readonly TrackPath[]): TrackShare[] {
   return found.sort((a, b) => a[0][0] - b[0][0] || a[0][1] - b[0][1] || a[1][0] - b[1][0] || a[1][1] - b[1][1]);
 }
 
+/**
+ * The held tracks of the separation, indexed by axis and `at`, so that one candidate path is read against them alone and not the whole
+ * layer again (`sharedTrackPairs` gives the same pairs).
+ */
+export class TrackIndex {
+  readonly paths: TrackPath[] = [];
+  private readonly axes: [TrackRun[], TrackRun[]] = [[], []];
+  private widest = 0;
+  add(path: TrackPath): void {
+    const at = this.paths.push(path) - 1;
+    this.widest = Math.max(this.widest, path.strokeWidth);
+    for (const run of trackRuns(path.points, at)) this.axes[run.horizontal ? 0 : 1].push(run);
+    for (const axis of this.axes) axis.sort((a, b) => a.at - b.at || a.path - b.path || a.index - b.index);
+  }
+  /** The run index of `path` for each pair it makes with a held run on one track (no fork), as `sharedTrackPairs` counts them. */
+  sharesOf(path: TrackPath): number[] {
+    const found: number[] = [];
+    const reach = overlayTrackPitch(Math.max(this.widest, path.strokeWidth), Math.max(this.widest, path.strokeWidth));
+    for (const run of trackRuns(path.points, -1)) {
+      const axis = this.axes[run.horizontal ? 0 : 1];
+      let low = 0, high = axis.length;
+      while (low < high) { const mid = (low + high) >> 1; if (axis[mid]!.at <= run.at - reach) low = mid + 1; else high = mid; }
+      for (let i = low; i < axis.length && axis[i]!.at - run.at < reach; i++) {
+        const other = axis[i]!, held = this.paths[other.path]!;
+        if (!onOneTrack(run, other, overlayTrackPitch(path.strokeWidth, held.strokeWidth))) continue;
+        if (!forks(path.points, run.index, held.points, other.index)) found.push(run.index);
+      }
+    }
+    return found;
+  }
+}
+
 /** Where an axis-aligned run lies in a group's padding (`paddingOf`): the group, the edge, and whether its title band holds that edge. */
 export interface PaddingSide { group: string; side: Side; title: boolean }
 

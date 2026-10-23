@@ -4,6 +4,7 @@ import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel, Point } from '../../src/index.js';
 import { overlayBasePath, overlayPath, OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
 import { sharedTrackPairs } from '../../src/layout/overlay-tracks.js';
+import { nestOverlayPorts } from '../../src/layout/overlay-nest.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { validateRoutedPaths } from '../../src/route/validate.js';
 import { anonymousDotRadius, DEFAULT_STROKE_WIDTHS, overlayPortClearance, overlayTrackPitch } from '../../src/theme/geometry.js';
@@ -97,6 +98,42 @@ describe('two overlay detours never share a track (architecture-2 ticket 23)', (
     const drawn = (model: LayoutModel) => overlays(model).map(link => `${link.attachments!.from.node}-${link.attachments!.to.node} ${JSON.stringify(pointsOf(link.path!.segments))}`).sort();
     const one = await run(source), two = await run(reversed);
     expect(drawn(two)).toEqual(drawn(one));
+  }, 120000);
+
+  it('does not depend on the order of the nodes and groups of the model (R3)', async () => {
+    for (const name of ['two-overlay-detours-never-share-a-track', 'a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border']) {
+      const model = await run(fixture(name));
+      const reversed = structuredClone(model);
+      reversed.nodes = Object.fromEntries(Object.entries(reversed.nodes).reverse());
+      reversed.groups = Object.fromEntries(Object.entries(reversed.groups).reverse());
+      for (const link of overlays(model)) {
+        expect(overlayPath(reversed, reversed.links.find(item => item.id === link.id)!).segments).toEqual(link.path!.segments);
+      }
+      // The nesting rule gives one answer in either order.
+      expect(nestOverlayPorts(reversed)).toEqual(nestOverlayPorts(structuredClone(model)));
+    }
+  }, 120000);
+
+  it('nests the overlay ports of a face, and never moves an authored port (R3)', async () => {
+    const model = await run(fixture('a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border'));
+    const portOf = (copy: LayoutModel, id: string) => {
+      const end = copy.links.find(link => link.id === id)!.attachments!.to;
+      return copy.nodes.d!.ports.find(port => port.ref.ordinal === end.ordinal && port.ref.name === end.name)!;
+    };
+    const unnest = (copy: LayoutModel): void => {
+      const one = portOf(copy, 'link-3'), two = portOf(copy, 'link-5');
+      [one.anchor, two.anchor, one.engineOrder, two.engineOrder] = [two.anchor!, one.anchor!, two.engineOrder!, one.engineOrder!];
+    };
+    // a-d (link-3) and b-d (link-5) put back in each other's slot on `d`: the rule trades them again, and the bottom detours nest.
+    const loose = structuredClone(model);
+    unnest(loose);
+    expect(nestOverlayPorts(loose).length).toBe(2);
+    expect(portOf(loose, 'link-3').anchor).toEqual(portOf(model, 'link-3').anchor);
+    // An authored order is the author's: the rule does not move that port.
+    const authored = structuredClone(model);
+    unnest(authored);
+    portOf(authored, 'link-3').authorOrder = 1;
+    expect(nestOverlayPorts(authored)).toEqual([]);
   }, 120000);
 
   it('the validator and the scorer read the separation: a detour put back on the shared track is refused and counted (R5)', async () => {

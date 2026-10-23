@@ -594,6 +594,38 @@ for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-ov
   }, 120000);
 }
 
+// Ticket 23, the user's report and the nesting rule: the detours out of `a` to `c` and to `d` no longer rise on one riser, and the two
+// detours under the row nest instead of crossing. `a`-`d` goes furthest round, so it takes the outer track and the port of `d` nearer
+// the side it comes from (the lower one); `b`-`d` takes the inner track and the upper port. No pair of overlay runs shares a track, and
+// the labels and tracks keep clear of the border.
+it('two detours under a row nest: the outer track takes the lower port (ticket 23)', async () => {
+  const model = await run(fixture('a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border'));
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+  const report = score(model).snapshot;
+  expect(report.counters.labelBorderCrossings).toBeUndefined();
+  expect(report.counters.overlayTrackShares).toBeUndefined();
+  expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
+  expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+  expect(() => validateGroupLabelBands(model)).not.toThrow();
+  const path = (id: string) => model.links.find(link => link.id === id)!.path!.segments;
+  const bottom = model.nodes.d!.bounds!.y + model.nodes.d!.bounds!.height;
+  const under = (id: string): number => Math.max(...path(id).map(segment => segment.from.y));
+  // link-3 is a-d, link-5 is b-d (the labelled one): both go under the row, a-d outside b-d.
+  expect(under('link-3')).toBeGreaterThan(bottom);
+  expect(under('link-5')).toBeGreaterThan(bottom);
+  expect(under('link-3') - under('link-5')).toBeCloseTo(overlayTrackPitch(DEFAULT_STROKE_WIDTHS.path, DEFAULT_STROKE_WIDTHS.path), 6);
+  const end = (id: string) => path(id).at(-1)!.to;
+  expect(end('link-3').y).toBeGreaterThan(end('link-5').y);
+  // The two detours do not cross.
+  const crosses = path('link-3').some(a => path('link-5').some(b => {
+    const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y, d = ax * by - ay * bx;
+    if (Math.abs(d) < 1e-9) return false;
+    const cx = b.from.x - a.from.x, cy = b.from.y - a.from.y, t = (cx * by - cy * bx) / d, u = (cx * ay - cy * ax) / d;
+    return t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6;
+  }));
+  expect(crosses).toBe(false);
+}, 120000);
+
 // Ticket 21: room across a run; ticket 23: the room of separated overlay tracks. Each row draws a full mesh as plain overlay links. The
 // detours over and under the row take separate tracks (ticket 23): the first one overlay port clearance from the bodies, each next one
 // track pitch further out. A labelled detour goes after the others and leaves its U outward, so its label stands beyond the outermost
@@ -601,7 +633,6 @@ for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-ov
 // that edge by exactly the deficit and records the room and its link (`labelPadding`, R1): the outermost track plus one track pitch to
 // the border, or plus the label (half the stroke, the normal gap, the text, half the border) when that track carries it.
 for (const [name, room] of [['a-row-mesh-with-another-label-draws-plain-links', { side: 'top', link: 'link-6', tracks: 3, label: false, shares: 1 }],
-  ['a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border', { side: 'bottom', link: 'link-5', tracks: 2, label: true, shares: undefined }],
   ['a-label-beside-a-detour-grows-its-own-group-only', { side: 'top', link: 'link-7', tracks: 3, label: false, shares: 1 }]] as const) {
   it(`labels and overlay tracks in a group padding stay clear of the border: ${name} (tickets 21 and 23)`, async () => {
     const model = await run(fixture(name));

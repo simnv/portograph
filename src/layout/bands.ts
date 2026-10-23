@@ -24,7 +24,8 @@ import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placem
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
-import { overlayPath, overlayTrackRuns } from './overlay-paths.js';
+import { overlayBasePath, overlayPath, overlayTrackRuns } from './overlay-paths.js';
+import { nestOverlayPorts } from './overlay-nest.js';
 import { bodiesOf, paddingOf, reachBeyond } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -1343,6 +1344,12 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
 function overlayLongestRun(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
   return longestRun(overlayPath(model, link).segments);
 }
+/** `overlayRunMid` on the per-link path, before track separation (`overlayBasePath`): for the readers of placement that judge. */
+function overlayBaseRunAlong(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
+  const run = longestRun(overlayBasePath(model, link).segments);
+  if (!run || Math.abs(run.to[axis] - run.from[axis]) <= PLACEMENT_EPS) return undefined;
+  return (run.from[axis] + run.to[axis]) / 2;
+}
 function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
   const run = overlayLongestRun(model, link);
   if (!run || Math.abs(run.to[axis] - run.from[axis]) <= PLACEMENT_EPS) return undefined;
@@ -1372,8 +1379,9 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
     const fromNode = model.nodes[link.attachments.from.node]!, toNode = model.nodes[link.attachments.to.node]!;
     const found = sameTierEnds(from, fromNode, to, toNode);
     if ('unreservable' in found) continue;
-    // The path of an overlay link is derived, which costs a search: it is asked for only once the two ends are known to face.
-    if (effectiveLayer(link) === 'overlay' && (overlayLabelsSuppressed(model) || overlayRunMid(model, link, 'x') === undefined)) continue;
+    // The path of an overlay link is derived, which costs a search: it is asked for only once the two ends are known to face. A centring
+    // limit reads the per-link path (`overlayBasePath`, ticket 23): a separated run moves across its axis and keeps its direction.
+    if (effectiveLayer(link) === 'overlay' && (overlayLabelsSuppressed(model) || overlayBaseRunAlong(model, link, 'x') === undefined)) continue;
     const { leftPort, leftNode, rightPort, rightNode } = found;
     const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
     const protrusion = Math.max(right(outer(leftPort, leftNode)) - leftPort.anchor!.x, rightPort.anchor!.x - outer(rightPort, rightNode).x, 0);
@@ -1384,7 +1392,9 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
 }
 
 /** One labelled link whose run is shorter than the label it carries needs, and by how much. */
-export interface LinkLabelShortfall { link: string; axis: 'row' | 'row window' | 'tier gap' | 'tier gap window' | `${Side} padding of ${string}`; required: number; room: number }
+export interface LinkLabelShortfall {
+  link: string; axis: 'row' | 'row window' | 'tier gap' | 'tier gap window' | `${Side} padding of ${string}` | `overlay track in the ${Side} padding of ${string}`; required: number; room: number;
+}
 
 /**
  * Insert `deficit` px of room at `split`: everything at or right of it moves right, in every tier (see `reserveLinkLabelRoom`). A node of tier
@@ -1428,7 +1438,8 @@ function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, exten
 export const LABEL_PADDING_GRAIN = 1e-3;
 
 /** What a label beside a run in a group's padding needs across the run (`acrossRunPadding`). */
-export interface AcrossRunRoom { group: string; side: Side; padding: number }
+/** One edge's room across a run: the group, the edge, the padding it needs; `track` when it holds a separated overlay track (ticket 23). */
+export interface AcrossRunRoom { group: string; side: Side; padding: number; track?: true }
 
 /**
  * Room across a run (architecture-2 ticket 21). A run that lies in a group's padding, between the group's node bodies and one edge of
@@ -1471,22 +1482,22 @@ const roomGrain = (room: number): number => Math.ceil(room / LABEL_PADDING_GRAIN
  * into a plain group's padding, beyond the run the per-link rule derived there, on an edge no title holds, needs that padding to reach
  * the run plus one overlay track pitch to the border (half the stroke, `OVERLAY_GAP`, half the border's stroke). The tracks are decided
  * beyond the edge as it stands (`overlayPath` lets a run cross the edge it grows), and 7f grows the edge to hold them. A moved track
- * that carries the link's label (`riddenRun`) holds the label beyond it too: half the stroke, the normal gap, the text and half the
- * border's stroke, as a label beside a run asks (`acrossRunPadding`); the label window of a run that near the border is cut away.
+ * of a labelled link holds the label beyond it too: half the stroke, the normal gap, the text and half the border's stroke, as a label
+ * beside a run asks (`acrossRunPadding`); the label window of a run that near the border is cut away. Every moved track of the link
+ * holds it, not only the run the label rides now: which run is longest can change with a later move, and the need may not flip with it.
  */
 export function trackRoomPadding(model: LayoutModel, link: LayoutLink, labelHeight?: number): AcrossRunRoom[] {
   const rooms: AcrossRunRoom[] = [];
-  const stroke = linkStrokeWidth(link), ridden = labelHeight === undefined ? undefined : riddenRun(model, link);
+  const stroke = linkStrokeWidth(link);
   for (const { base, drawn } of overlayTrackRuns(model, link)) {
     const held = paddingOf(model, base[0], base[1]);
     if (held === undefined || held.title) continue;
     const bodies = bodiesOf(model, model.groups[held.group]!.nodes);
     const reach = reachBeyond(bodies, held.side, drawn[0]);
     if (reach <= reachBeyond(bodies, held.side, base[0]) + PLACEMENT_EPS) continue;
-    const carries = ridden !== undefined && [ridden.from, ridden.to].every(point => [drawn[0], drawn[1]].some(end => Math.abs(end.x - point.x) <= PLACEMENT_EPS && Math.abs(end.y - point.y) <= PLACEMENT_EPS));
     const beyond = Math.max(overlayTrackPitch(stroke, DEFAULT_STROKE_WIDTHS.group),
-      carries ? stroke / 2 + LINK_LABEL_GEOMETRY.normalGap + labelHeight! + DEFAULT_STROKE_WIDTHS.group / 2 : 0);
-    rooms.push({ group: held.group, side: held.side, padding: roomGrain(reach + beyond) });
+      labelHeight !== undefined ? stroke / 2 + LINK_LABEL_GEOMETRY.normalGap + labelHeight! + DEFAULT_STROKE_WIDTHS.group / 2 : 0);
+    rooms.push({ group: held.group, side: held.side, padding: roomGrain(reach + beyond), track: true });
   }
   return rooms;
 }
@@ -1500,7 +1511,7 @@ const overlaps = (a: Rect, b: Rect): boolean =>
 /**
  * The checks a validator makes on `model.labelPadding` (R5). Every entry names a plain group (not a rank cell), one of its edges, a
  * finite positive room and at least one link of the model. For each named link whose label needs room on that edge now
- * (`acrossRunPadding`), the room holds the need. Geometry a legal later move changes is no fault: a need that moved off the edge or
+ * (`acrossRunPadding`), or whose separated overlay track does (`trackRoomPadding`, ticket 23), the room holds the need. Geometry a legal later move changes is no fault: a need that moved off the edge or
  * below the room, a link that carries no label on a run now (overlay label suppression reads the density), and a room the ordinary
  * padding has reached (a padding row added later). The record keeps the largest room it was grown to (it only grows); "above the
  * ordinary padding" holds when 7f writes it. Whether the box still holds the room is the replay's to check (`reserveLinkLabelRoom`
@@ -1574,7 +1585,8 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
     } else {
       const split = room.side === 'left' ? bodies.x : right(bodies);
       if (model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS)) {
-        placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} needs room across its run beyond a reserved lane; its label room cannot be reserved and the label placement decides.`, [link.id]);
+        if (room.track) placementWarning(model, 'OVERLAY_TRACK_ROOM_UNRESERVED', `${link.id} has an overlay track beyond a reserved lane; its room cannot be reserved and the track stands where the separation put it.`, [link.id]);
+        else placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} needs room across its run beyond a reserved lane; its label room cannot be reserved and the label placement decides.`, [link.id]);
         continue;
       }
       settle(insertRoomAt(model, split, deficit, tier));
@@ -1585,7 +1597,7 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
     sides[room.side] = { room: Math.max(prior?.room ?? 0, room.padding),
       links: [...new Set([...(prior?.links ?? []), link.id])].sort((x, y) => order.get(x)! - order.get(y)!) };
     fitRegionGroup(model, group);
-    shortfalls.push({ link: link.id, axis: `${room.side} padding of ${room.group}`, required: room.padding, room: held });
+    shortfalls.push({ link: link.id, axis: room.track ? `overlay track in the ${room.side} padding of ${room.group}` : `${room.side} padding of ${room.group}`, required: room.padding, room: held });
     changed = true;
   }
   return changed;
@@ -1820,6 +1832,10 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
     }
   }
   reserveInitialSpace(model);
+  // The overlay ports of a face nest (ticket 23), once, before any room is reserved: which slot a detour leaves decides which track it
+  // takes and whether it crosses, and the rooms below read those tracks. The trade is recorded in the anchors and `engineOrder`, which
+  // every reader reads; it is a choice, not a fixed point, so no replay asks it again.
+  nestOverlayPorts(model);
   reserveLinkLabelRoom(model);
   // A producer call owns its leg allowances: the entries an earlier call left would be stale (or duplicated) now.
   model.diagnostics = model.diagnostics.filter(item => item.code !== LEG_ALLOWANCE_EXHAUSTED);
@@ -1985,8 +2001,14 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   if (recordLabelYields(yields, labelBorders(yields))) throw new Error('The label yields leave a pair of labels on diagonal lines undecided');
   const shortfalls: LinkLabelShortfall[] = [];
   if (reserveLinkLabelRoom(clone(model), shortfalls)) {
-    throw new Error('A labelled link is shorter than the run its label reserved: '
-      + shortfalls.map(item => `${item.link} needs ${item.required} px along its ${item.axis} and holds ${item.room} px`).join('; '));
+    // A separated overlay track (ticket 23) is named as such: its room is the track's, not a label's.
+    const tracks = shortfalls.filter(item => item.axis.startsWith('overlay track')), labels = shortfalls.filter(item => !item.axis.startsWith('overlay track'));
+    throw new Error([
+      ...(labels.length ? ['A labelled link is shorter than the run its label reserved: '
+        + labels.map(item => `${item.link} needs ${item.required} px along its ${item.axis} and holds ${item.room} px`).join('; ')] : []),
+      ...(tracks.length ? ['An overlay track stands beyond the padding reserved for it: '
+        + tracks.map(item => `${item.link} needs ${item.required} px for its ${item.axis} and holds ${item.room} px`).join('; ')] : []),
+    ].join('. '));
   }
   const trial = clone(model);
   trial.diagnostics = trial.diagnostics.filter(item => item.code !== 'GROUP_GRID_NON_CONVERGENCE');

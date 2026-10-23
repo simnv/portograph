@@ -1124,7 +1124,17 @@ the overlay paths share) needs the padding to reach it plus one overlay track pi
 the label (half the stroke, the normal gap, the text, half the border) when the run carries the link's
 label (`trackRoomPadding`). 7f grows those edges first, before the label windows are read, by the same
 growth and into the same record (`labelPadding`, the link that holds the track); the validator reads the
-same need.
+same need. **Overlay ports nest (ticket 23).** Before the track room, the free overlay ports of each face
+trade slots where the tracks then nest instead of crossing: the outer track takes the port nearer the side
+the tracks come from (on a lateral face, the lower track the lower port when both come from below). Stage
+5 cannot decide it: it orders a face before any detour is derived, and the side and the track of a detour
+depend on the geometry 7f settles and on the whole layer. The measure is the separation itself
+(`nestOverlayPorts`: the published overlay paths, then fewer shared tracks, fewer bent links and turns,
+fewer crossing points). Only a free port moves: no authored `order:`, no other link on it (so no routed
+port), no bus, no course, a detour, and a pill of the same size. The two ports trade anchor and
+`engineOrder`, so no size or spacing changes, as 7e bundles reorder their own ports. It runs once, before
+the first room is reserved; the anchors are its record, and no replay asks it again (a choice, not a fixed
+point).
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
 (`labelRunWindows` with the turned box's height) are the line less the shorten margins, less every
@@ -1488,18 +1498,21 @@ it was 4 px, and the turn read as lying on the face).
 **Two overlay detours never share a track (ticket 23).** The per-link rule reads each link alone, so two
 detours out of one face rose on one riser and ran over the row on one line, and read as one line. The
 layer is read once (`overlayTracks`, kept per model and blocker index): the paths that cannot move
-(straight segments, courses, mesh-bus members) hold their tracks, then the detours with a middle run take
-theirs, unlabelled before labelled, shortest first (last key `sourceIndex`). Two runs of two paths are on
+(straight segments, courses, a link drawn straight over a body under `overlayOverBodies`) hold their
+tracks, then the detours with a middle run take theirs, unlabelled before labelled, shortest first (last
+key `sourceIndex`). Mesh-bus members are not read, as the scorer does not read them. Placement judges read
+the per-link path (`overlayBasePath`); only 7f reservations, stage 8 and the scorer read the separation. Two runs of two paths are on
 one track when they lie on one axis nearer than the **overlay track pitch** (half of each stroke plus
 `OVERLAY_GAP`: 5.5 px) and overlap or meet end to end within it; two paths that leave one port draw their
 common stretch once and may fork there (`sharedTrackPairs`, `forks`). A middle run on a shared track
 moves across its axis by one, two or three pitches; its two neighbours lengthen or shorten, so no bend
-appears. The other ways round with the same bends are tried as well (a non-collinear alternative before
-an offset). A candidate walks back along nothing, enters no body or pill, keeps the overlay port
+appears. Every way round with the same bends is tried (a non-collinear alternative before an offset, and
+the way with fewer crossings where the bends are equal). A candidate walks back along nothing, enters no body or pill, keeps the overlay port
 clearance from each (or the distance the derived way kept, where less), and stands to every group and
 frame box as the derived run did; it may cross the padding edge of a plain group on a side no title
-holds, which 7f then grows. Rank: fewest shared tracks, for a labelled detour the way out of its U, fewest
-crossings with the held paths, no growth, the nearest track, out of the U, the positive direction. The
+holds, which 7f then grows. Rank: fewest shared tracks, no growth beyond the box as it stands (a track the
+grown room holds is no growth, so a replay after 7f keeps it), fewest crossings with the held paths (the
+tracks nest), for a labelled detour the way out of its U, the nearest track, out of the U, the positive direction. The
 result is a function of the frozen geometry, so nothing is recorded: stage 8 publishes it and
 `route/validate` derives it again and compares (R1, R5). A run no candidate frees keeps its track, and the
 scorer counts the pair (`overlayTrackShares`); a column gap that holds fewer risers than need it is not
