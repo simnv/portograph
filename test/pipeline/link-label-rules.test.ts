@@ -580,3 +580,11 @@ for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-ov
     expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
   }, 120000);
 }
+
+// Open (ticket 19): a label on a diagonal is measured by the axis-aligned box of its turned text, and placement reserves no window
+// on a diagonal. This test passes once the design decision lands; until then `it.fails` records the gap.
+it.fails('a diagonal label rising past a third group stays clear of every border (ticket 19, open)', async () => {
+  const model = await run(fixture('a-diagonal-label-rises-past-a-third-group'));
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER')).toEqual([]);
+  expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
+}, 120000);

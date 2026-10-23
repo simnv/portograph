@@ -1529,7 +1529,14 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         : x === undefined || lowerEdge - upperEdge <= PLACEMENT_EPS ? undefined
           : { from: { x, y: upperEdge }, to: { x, y: lowerEdge }, owner: { ...link.owner } };
       const split = Math.min(...moved.map(group => group.bounds!.y), ridden === undefined ? Infinity : Math.max(ridden.from.y, ridden.to.y));
-      const windowed = labelWindowRoom(model, ridden, measured.width, split);
+      // Stage 9 tries the longest run first: a side lane's side run that is longer than its vertical run, and has a window that holds
+      // the label now, carries the label, and the vertical run needs no window.
+      const lateral = lane === undefined ? undefined : findPort(model, lane.port!)?.anchor;
+      const sideRun: PathSegment | undefined = lateral === undefined || lane === undefined ? undefined
+        : { from: { x: lane.x, y: lateral.y }, to: { x: lateral.x, y: lateral.y }, owner: { ...link.owner } };
+      const onSide = sideRun !== undefined && ridden !== undefined && Math.abs(sideRun.to.x - sideRun.from.x) > Math.abs(ridden.to.y - ridden.from.y)
+        && labelWindowRoom(model, sideRun, measured.width, Infinity) === 0;
+      const windowed = onSide ? 0 : labelWindowRoom(model, ridden, measured.width, split);
       if (windowed === undefined) unreserved('crosses a drawn box in its tier gap; no window between borders can be reserved for its label');
       const deficit = Math.max(required - room, windowed ?? 0);
       if (deficit <= PLACEMENT_EPS) continue;
