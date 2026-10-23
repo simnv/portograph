@@ -1,0 +1,18 @@
+# Expected: The overlay link from `a` to `b` (class `sync`) joins two groups of one tier with one straight segment. The segment
+# crosses the right border of `left` and the left border of `right`, and its label is longer than the gap between the two groups.
+# Placement reserves the window between the two borders on the derived path's longest run (7f, `reserveLinkLabelRoom`,
+# `labelWindowDeficit`) and stage 9 places the label upright in it, 8 px clear of each border. No LINK_LABEL_ON_BORDER, no
+# `labelBorderCrossings` counter, every gate passes. Test-only input (architecture-2 ticket 19); the whole pipeline runs.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  left: { tier: 1, label: Left }
+  right: { tier: 1, label: Right }
+nodes:
+  t1: { group: top, class: router, label: T1 }
+  a: { group: left, class: router, label: A }
+  b: { group: right, class: router, label: B }
+links:
+  - [t1, a]
+  - [t1, b]
+  - { from: a, to: b, class: sync, label: a long description of the sync across both borders }

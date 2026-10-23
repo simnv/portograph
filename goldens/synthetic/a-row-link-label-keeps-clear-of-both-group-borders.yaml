@@ -1,0 +1,17 @@
+# Expected: The routed link from `a.e` to `b.w` joins two groups of one tier. Its straight run crosses the right border of `left`
+# and the left border of `right`, and its label is longer than the gap between the two groups. Placement reserves the window
+# between the two borders (7f, `reserveLinkLabelRoom`, `labelWindowDeficit`): it moves `right` right until the window holds
+# the label. Stage 9 places the label upright in that window, 8 px clear of each border. No LINK_LABEL_ON_BORDER, no
+# `labelBorderCrossings` counter, every gate passes. Test-only input (architecture-2 ticket 19); the whole pipeline runs.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  left: { tier: 1, label: Left }
+  right: { tier: 1, label: Right }
+nodes:
+  t1: { group: top, class: router, label: T1 }
+  a: { group: left, class: router, label: A, ports: [{ name: e, side: right }] }
+  b: { group: right, class: router, label: B, ports: [{ name: w, side: left }] }
+links:
+  - [t1, a]
+  - [a.e, b.w, { label: a long description of the link across both group borders }]

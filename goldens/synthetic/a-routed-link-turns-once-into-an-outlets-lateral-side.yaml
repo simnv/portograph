@@ -1,7 +1,8 @@
 # Expected: side-faces.md, Section 10 and Q109 (ticket 119). The input of ticket 118 with no author `side:`. The load balancer `lb` stands at the right of
 # tier 0; `outlet` is the last node of its row in tier 1. The link `lb` to `outlet` is described. On the natural sides it is stepped (three segments or
 # more). The side round puts the port `feed` on the right side by a hint: 7a reserves a side lane at the x of the port of `lb`, so the link is one drop,
-# one turn and one side run (one bend), and its label stands on the vertical run. No `SIDE_SHAPE_LOST`.
+# one turn and one side run (one bend). Its label stands on the side run, the longest run (stage 9 tries it first), so 7f reserves no window on the
+# vertical run (ticket 19). No `SIDE_SHAPE_LOST`.
 # Test-only input owned by ticket 119; test/pipeline/side-round-lane.test.ts reads it.
 portograph: 2
 groups:

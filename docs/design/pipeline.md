@@ -1090,6 +1090,17 @@ two faces, so the run the label rides *is* the room. An overlay link once carrie
 `OVERLAY_PILL_CLEARANCE` per end on top (synthetics review ticket 01), which was true while its
 labelled run started a stub beyond each face; stress ticket 30 removed the stub, and the allowance
 with it, as 8 px of over-reservation.
+**A label stays in one region, and placement reserves the region (ticket 19).** The run must also hold
+the label in one of its **windows** (`labelRunWindows`, the windows stage 9 places the label in): on
+every run a label rides — a straight drop between two level anchors, a side lane's vertical run (at
+the lane's x, down to the lateral port's y), an overlay link's longest run, and a straight run
+between two facing pill faces in one row — `labelWindowDeficit` computes the growth at the split
+(the top of the lower tiers, or the split between the two faces) after which a window between the
+borders the run crosses holds the label, with the same `windowHolds` stage 9 asks. The growth is the
+larger of that and the symmetric deficit. A routed link that bends or detours has no run for
+placement to read, and stage 9 decides. A run whose window no growth at the split can open (a box
+that moves with the far end cuts it) is diagnosed `LINK_LABEL_ROOM_UNRESERVED`. Room *across* a run
+(a border parallel to the run, within the label's height of it) is not reserved yet.
 Self-links, same-tier links
 through top/bottom ports, pairs whose ports do not face each other across the gap, overlay links
 whose longest run lies wholly across the axis the room grows on, and links whose room
@@ -1540,9 +1551,9 @@ every stretch within 8 px of a border's stroke), at the point nearest the midpoi
 text fits the longest window. A run no border cuts keeps the midpoint, as before. Only when no
 place clears every border do both overlay rungs run again at the midpoint without the walls (a
 whole label across a border still beats a shortened one), and the label is reported as
-`LINK_LABEL_ON_BORDER`. Placement reserves the window: 7f's `reserveLinkLabelRoom` measures a
-vertical run between two tiers with the same windows and grows the tier gap when no window holds
-the text. The scorer counts the crossings as `labelBorderCrossings`.
+`LINK_LABEL_ON_BORDER`. Placement reserves the window: 7f's `reserveLinkLabelRoom` measures every
+run a label rides with the same windows (`labelWindowDeficit`) and grows the tier gap or the row
+when no window holds the text (ticket 19). The scorer counts the crossings as `labelBorderCrossings`.
 
 **What a candidate must clear.** Visible nodes and their stroke, visible pills, every already
 placed label, and every routed-layer segment with its half stroke. Only the *clearance zone* of the
@@ -1632,7 +1643,7 @@ and one per stub, each `link-line overlay-line <class>`, so the class stroke and
 group-links and the members' authored labels. The member `<g class="link">` elements are not emitted, and one endpoint mark per stub is drawn
 above the mask at the port face. The bus label is drawn on the label layer (`link-label mesh-bus-label`). `document.overlays` hides the bus
 with its class. The draw.io export writes the bar as one `edgeStyle=none` edge with two free points, each stub as an
-`orthogonalEdgeStyle;jettySize=0` edge from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
+`edgeStyle=none` edge (a run with no bend is straight, Q118) from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
 vertex on the `labels` layer; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
 Ticket 97: the riser of a joined pair is one more `<path class="link-line overlay-line <class> riser">` in the upper bus's group, both groups carry `data-joined`, the tooltip names both buses, the members and the cross links, and a cross link draws no `<g class="link">`. draw.io: the riser is one `edgeStyle=none` edge with two free points on the overlay layer (`pg-busRiser~<bus>`).
 

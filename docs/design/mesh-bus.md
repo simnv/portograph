@@ -399,7 +399,7 @@ group-links, and leaves no omission record.
 
 **draw.io.** The bar is one edge with `edgeStyle=none` and two free points, no terminals. Each
 stub is an edge from the port's cell (the pill, or the node) to a target point on the bar,
-`orthogonalEdgeStyle;jettySize=0`, as an axis-aligned overlay is exported today. Both take the
+`edgeStyle=none`: a stub is one straight run, and a run with no bend is exported straight (decisions-log Q118). Both take the
 class stroke and dash the exporter already resolves for an overlay, on the `overlay` layer above
 the diagram, so an across-frames stub draws over the frame edge it crosses, as a routed leg does.
 The label is a text vertex on the `labels` layer, as a link label is. Verified with the drawio CLI
