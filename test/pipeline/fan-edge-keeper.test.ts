@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { layout, parse } from '../../src/index.js';
+import { layout, parse, restoreFinalLayout } from '../../src/index.js';
 import { crossBundleFans } from '../../src/layout/bundle-junctions.js';
 import { MEMBER_GAP, edgeMargin } from '../../src/layout/bundle-geometry.js';
 import { routedStrokeWidth } from '../../src/theme/geometry.js';
@@ -91,4 +91,26 @@ it('ticket 18: once frozen, the keeper and its depth are read from the record, n
   // Frozen with no record: no keeper, and none is chosen, though the published geometry would admit one.
   const none = await forged(m => { delete m.fanKeepers; }, true);
   expect(none.model.junctions.some(item => item.keeper !== undefined)).toBe(false);
+}, 60000);
+
+it('ticket 18: a partner whose own approach begins short of the keeper depth refuses the keeper, and the step names why', async () => {
+  // The far port of link-3 stands 25 px out of the side and faces it: its approach begins 10 px out, short of the keeper's turn.
+  const { model } = await forged((m, _box, x) => {
+    const port = farPort(m, 'c2');
+    port.anchor = { x: x + 30, y: m.nodes['s1']!.ports[0]!.anchor!.y - 25 };
+  });
+  expect(model.junctions.some(item => item.keeper !== undefined)).toBe(false);
+  const named = model.diagnostics.find(item => item.code === 'FAN_TRACK_STEPPED_AT_GROUP_EDGE');
+  expect(named?.message).toContain("the partner's own approach begins short of the keeper depth");
+}, 60000);
+
+it('ticket 18: a restore rejects a forged keeper record (R5)', async () => {
+  const model = await published;
+  expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
+  const deeper = structuredClone(model);
+  deeper.fanKeepers = deeper.fanKeepers!.map(entry => ({ ...entry, depth: entry.depth + 8 }));
+  expect(() => restoreFinalLayout(JSON.stringify(deeper))).toThrow(/contradict/);
+  const dropped = structuredClone(model);
+  delete dropped.fanKeepers;
+  expect(() => restoreFinalLayout(JSON.stringify(dropped))).toThrow(/contradict/);
 }, 60000);

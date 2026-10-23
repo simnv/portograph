@@ -218,6 +218,8 @@ interface KeeperInput {
   siblings: readonly { at: number; stroke: number }[];
   stop: (item: FanItem, row: number, track: number) => number;
   walls: (item: FanItem, from: number) => Span[];
+  /** The depth at which a member's far port's own approach begins (`reachOf`). */
+  reach: (item: FanItem) => number;
 }
 /**
  * The member of a fan that keeps the port's own track out of the boxes it leaves, and the depth it turns at (architecture-2
@@ -230,11 +232,12 @@ interface KeeperInput {
  * coordinate stands in such a band. After it, the recorded member (`LayoutModel.fanKeepers`) or none. Either way it is refused,
  * with the reason, when the depth passes the deepest row `fanRows` holds (room placement reserved), when a node wall stands on
  * the coordinate from that depth on, when another member's track stands within the member pitch of the extended stem (rule 2),
- * when it would cross or crowd another port's row on this side, or when its runs would come within the member gap of a run
+ * when the partner's own approach begins short of the depth (it would be handed over past it), when it would cross or crowd
+ * another port's row on this side, or when its runs would come within the member gap of a run
  * another link already reserved.
  */
 function edgeKeeper(model: LayoutModel, port: LayoutPort, input: KeeperInput): { keeper?: { item: FanItem; depth: number }; refused?: { item: FanItem; reason: string } } {
-  const { items, wanted, target, rows, siblings, stop, walls } = input;
+  const { items, wanted, target, rows, siblings, stop, walls, reach } = input;
   const n = normal(port.side!), tangent = axis(port.side!), here = coordinate(port), anchor = port.anchor!, stroke = routedStroke(model);
   // Before final placement freezes, every replay chooses. After it (`freeze.placement`), the record is the decision: an absent
   // record means no keeper, and nothing is chosen again (R1).
@@ -272,6 +275,8 @@ function edgeKeeper(model: LayoutModel, port: LayoutPort, input: KeeperInput): {
   const crowded = others.some(item => item !== partner
     && Math.abs(target.get(item.link.id)! - here) < MEMBER_GAP + (own + linkStrokeWidth(item.link)) / 2 - PLACEMENT_EPS);
   if (crowded) return refuse('another member rises within the member pitch of the extended stem');
+  // The partner turns at the keeper depth: where its far port's own approach begins shallower, it would be handed over past it.
+  if (reach(partner) < depth - PLACEMENT_EPS) return refuse("the partner's own approach begins short of the keeper depth");
   if (siblings.some(row => (row.at - here) * (row.at - at) <= 0 || Math.abs(row.at - at) < MEMBER_GAP + (own + row.stroke) / 2 - PLACEMENT_EPS)) {
     return refuse("its turn would cross or crowd another port's row");
   }
@@ -483,7 +488,7 @@ export function crossBundleFans(model: LayoutModel): void {
     // Architecture-2 ticket 18: a member whose wanted coordinate stands in the outer edge band of a box
     // it leaves either becomes the edge keeper (one L past the box margin) or keeps the step the wall
     // gave it, and the step is named so the short step back that stage 8 then draws is visible (R6).
-    const { keeper, refused } = fixedItem ? {} : edgeKeeper(model, port, { items, wanted, target, rows, siblings, stop,
+    const { keeper, refused } = fixedItem ? {} : edgeKeeper(model, port, { items, wanted, target, rows, siblings, stop, reach: reachOf,
       // Nodes and stems only: past its turn the keeper stands outside every box it leaves, and once frozen a box that stretched
       // after the freeze is the gates' to judge, not a reason to choose again (R1, R5).
       walls: (item, from) => blockedTracks(model, port, { from, to: Math.max(from, stop(item, from, wanted(item))) },
