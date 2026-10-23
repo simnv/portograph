@@ -14,7 +14,7 @@ import { measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { groupShapes } from './frame-order.js';
-import { GeometryLocks, linkDotCss, sheetClassWashCss, themeCss } from './theme.js';
+import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 
 export { OVERLAY_ENDPOINT_RADIUS };
@@ -501,10 +501,13 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     if (effectiveLayer(link) !== 'routed' || link.attachments === undefined) return [];
     const segments = link.path!.segments;
     if (!segments.length) return [];
+    // A disc drawn as a stroke: radius r/2 with a stroke r wide covers the disc of radius r, in the colour of the link's own
+    // `.link-line` rules, so a document `css:` rule that recolours the line recolours the dot.
+    const radius = anonymousDotRadius(linkStrokeWidth(link));
     return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).flatMap(([end, point]) =>
       link.attachments![end].anonymous === true
-        ? [element('circle', { class: classes('link-dot', linkClassToken(layout, link)), 'data-owner': link.id, 'data-end': end,
-          cx: point.x, cy: point.y, r: anonymousDotRadius(linkStrokeWidth(link)) })] : []);
+        ? [element('circle', { class: classes('link-line', 'link-dot', linkClassToken(layout, link), locks.stroke(radius)), style: 'stroke-dasharray:none',
+          'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: radius / 2 })] : []);
   }).join('');
 
   const legendSwatch = (entry: NonNullable<LayoutModel['legend']>['entries'][number]): string => {
@@ -555,7 +558,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
   const documentCss = layout.document.css ?? '';
   const style = element('style', { type: 'text/css' },
-    escapeStyle([themeCss(), dots ? linkDotCss() : '', sheetClassWashCss(nodeClassAttrs), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
+    escapeStyle([themeCss(), sheetClassWashCss(nodeClassAttrs), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
 
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)
@@ -563,7 +566,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     + (crossedBodies.length ? element('g', { class: 'nodes crossed-bars' }, crossedBodies.join('')) : '')
     + element('g', { class: 'links', ...(routedMask ? { mask: `url(#${routedMaskId})` } : {}) }, routedPaths + trunks)
     + element('g', { class: 'nodes' }, nodes)
-    + (dots ? element('g', { class: 'link-dots' }, dots) : '')
+    + (dots ? element('g', { class: 'link-dots', ...(routedMask ? { mask: `url(#${routedMaskId})` } : {}) }, dots) : '')
     + element('g', { class: 'labels' }, groupLabels + linkLabels + busLabels.join(''))
     + (marks ? element('g', { class: 'overlay-marks' }, marks) : '')
     + legend;

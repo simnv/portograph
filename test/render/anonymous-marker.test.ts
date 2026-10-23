@@ -13,14 +13,17 @@ const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { create
 const geometry = (model: LayoutModel): string => JSON.stringify({ ...model, document: undefined, runtime: undefined });
 const edgeStyle = (xml: string): string => /<mxCell [^>]*style="([^"]*)"[^>]*edge="1"/.exec(xml)![1]!;
 
+const both = (): string => fixture.replaceAll('core.p1', 'core');
+
 describe('render.anonymousPortMarker', () => {
   it('draws a dot on the bare end only, in the link stroke width, after the nodes', async () => {
     const model = await run(fixture);
     const svg = render(model);
-    const dots = [...svg.matchAll(/<circle class="link-dot"[^>]*>/g)];
+    const dots = [...svg.matchAll(/<circle class="link-line link-dot[^>]*>/g)];
     expect(dots).toHaveLength(1);
     expect(dots[0]![0]).toContain('data-end="to"');
-    expect(dots[0]![0]).toContain(`r="${anonymousDotRadius(1.5)}"`);
+    expect(dots[0]![0]).toContain(`r="${anonymousDotRadius(1.5) / 2}"`);
+    expect(dots[0]![0]).toContain('link-line');
     expect(svg.indexOf('class="link-dots"')).toBeGreaterThan(svg.indexOf('class="nodes"'));
   });
 
@@ -44,10 +47,10 @@ describe('render.anonymousPortMarker', () => {
     expect(svg).not.toContain('link-dots');
     expect(svg).not.toContain('<circle');
     expect(xml).not.toContain('oval');
-    // The dot adds one group and one rule per class and nothing else: removing them from the dot output gives the none output.
+    // The dot adds one group and one stroke-width rule and nothing else: removing them from the dot output gives the none output.
     const dotted = await run(fixture);
-    const rules = (text: string): string => text.replace(/\n *\.link-dot[^\n]*/g, '').replace(/\n@media [^\n]*\{\n\}/g, '');
-    expect(rules(render(dotted).replace(/<g class="link-dots">.*?<\/g>/, ''))).toBe(svg);
+    const lockRules = (text: string): string => text.replace(/\n\.pg-w-3_75\{[^\n]*/, '');
+    expect(lockRules(render(dotted).replace(/<g class="link-dots"[^>]*>.*?<\/g>/, ''))).toBe(svg);
     expect(drawio(dotted).replace('endArrow=oval;', 'endArrow=none;').replace('endFill=1;endSize=6;', '')).toBe(xml);
   });
 
@@ -55,6 +58,29 @@ describe('render.anonymousPortMarker', () => {
     const [on, off] = await Promise.all([run(fixture), run(withOption('none'))]);
     expect(geometry(on)).toBe(geometry(off));
     expect(JSON.stringify(score(on).snapshot)).toBe(JSON.stringify(score(off).snapshot));
+  });
+
+  it('closes both ends of a link between two bare nodes', async () => {
+    const model = await run(both());
+    expect([...render(model).matchAll(/<circle class="link-line link-dot/g)]).toHaveLength(2);
+    const style = edgeStyle(drawio(model));
+    expect(style).toContain('startArrow=oval;');
+    expect(style).toContain('endArrow=oval;');
+    expect(style).toContain('startSize=6;');
+  });
+
+  it('puts the oval on the first and the last run of a link split in several', async () => {
+    const model = JSON.parse(JSON.stringify(await run(both()))) as LayoutModel;
+    const link = model.links[0]!;
+    const [only] = link.path!.segments;
+    const mid = { x: only!.from.x, y: (only!.from.y + only!.to.y) / 2 };
+    link.path!.segments = [{ ...only!, to: mid }, { ...only!, from: { x: mid.x + 20, y: mid.y }, to: { x: mid.x + 20, y: only!.to.y } }];
+    const styles = [...drawio(model).matchAll(/<mxCell [^>]*style="([^"]*)"[^>]*edge="1"/g)].map(match => match[1]!);
+    expect(styles).toHaveLength(2);
+    expect(styles[0]).toContain('startArrow=oval;');
+    expect(styles[0]).toContain('endArrow=none;');
+    expect(styles[1]).toContain('endArrow=oval;');
+    expect(styles[1]).toContain('startArrow=none;');
   });
 
   it('refuses a value that is not dot or none, and a key it does not know', () => {
