@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
-import { LABEL_BORDER_REACH, LINK_LABEL_GEOMETRY, labelRunWindows, produceLinkLabels } from '../../src/layout/link-labels.js';
+import { LABEL_BORDER_REACH, LINK_LABEL_GEOMETRY, labelRunWindows, labelWindowDeficit, produceLinkLabels } from '../../src/layout/link-labels.js';
 import { groupBoxes, labelCrossesBorder } from '../../src/score/model.js';
 import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
 import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
@@ -379,12 +379,15 @@ links: [[a.p, b.p, {label: ${text}}]]`)))))));
   blocked.groups['foreign'] = { id: 'foreign', owner: { kind: 'group', id: 'foreign' }, layer: 'routed', nodes: ['f'], tier: 0, bounds: box };
   const distance = (model: LayoutModel) => model.nodes.b!.ports[0]!.anchor!.x - model.nodes.a!.ports[0]!.anchor!.x;
   const before = distance(plain);
+  const pillA = plain.nodes.a!.ports[0]!.pill!.bounds, pillB = plain.nodes.b!.ports[0]!.pill!.bounds;
+  const room = pillB.x - (pillA.x + pillA.width);
   reserveLinkLabelRoom(plain); reserveLinkLabelRoom(blocked);
   // Both reserve the label; only the blocked copy also reserves the coming detour: both 15 px stems
-  // and twice the pill protrusion (half the 24 px pill) on the anchor side.
+  // and twice the pill protrusion (half the 24 px pill) on the anchor side. The plain copy's straight
+  // run crosses both group borders, so it reserves the window between them (ticket 19), not the stems.
   expect(distance(plain)).toBeGreaterThanOrEqual(before);
-  const pill = plain.nodes.a!.ports[0]!.pill!.bounds.width;
-  expect(distance(blocked) - distance(plain)).toBeCloseTo(2 * 15 + 2 * (pill / 2), 6);
+  const required = width(text) + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+  expect(distance(blocked) - before).toBeCloseTo(required + 2 * 15 + 2 * (pillA.width / 2) - room, 6);
 });
 
 it('ADR-0014: ports on one side are diagnosed; two bars are moved with everything beyond the gap', async () => {
@@ -541,3 +544,39 @@ it('a label with no window clear of a border keeps the midpoint and says so (LIN
   expect(label.bounds!.y + label.bounds!.height / 2).toBeCloseTo(90, 9);
   expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-1' }]]);
 });
+
+it('labelWindowDeficit: the growth at the split after which one window of the run holds the label (ticket 19)', () => {
+  const owner = { kind: 'link' as const, id: 'link-1' };
+  const reach = LABEL_BORDER_REACH, margin = LINK_LABEL_GEOMETRY.shortenMargin;
+  // A run down out of the upper box into the lower one: the window between the two borders is 60 - 2 × reach long.
+  const boxes = [{ x: 0, y: 0, width: 100, height: 100 }, { x: 0, y: 160, width: 100, height: 100 }];
+  const run = { from: { x: 50, y: 60 }, to: { x: 50, y: 200 }, owner };
+  expect(labelWindowDeficit(boxes, run, 30, 130)).toBe(0);
+  expect(labelWindowDeficit(boxes, run, 60, 130)).toBeCloseTo(60 - (60 - 2 * reach), 9);
+  // Everything beyond the split moves: the lower box and the run's lower end. A split before the upper border moves that border
+  // too, so no window between the two borders grows.
+  expect(labelWindowDeficit(boxes, run, 60, 50)).toBeUndefined();
+  // A run along a row (x axis) behaves alike; the run's own end bounds a window the same way.
+  const row = { from: { x: 60, y: 50 }, to: { x: 140, y: 50 }, owner };
+  expect(labelWindowDeficit([{ x: 0, y: 0, width: 100, height: 100 }], row, 50, 120)).toBeCloseTo(50 - (140 - margin - (100 + reach)), 9);
+  // A diagonal has no axis: stage 9 decides.
+  expect(labelWindowDeficit(boxes, { from: { x: 0, y: 0 }, to: { x: 50, y: 60 }, owner }, 60, 30)).toBe(0);
+});
+
+for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-overlay-row-label-keeps-clear-of-both-group-borders',
+  'a-side-lane-label-spans-the-collinear-pieces', 'a-link-drops-beside-a-frame-into-a-lateral-side']) {
+  it(`placement reserves the label window on every run a label rides: ${name} (ticket 19)`, async () => {
+    const model = await run(fixture(name));
+    const label = linkLabel(model);
+    expect(label.omitted).toBeUndefined();
+    const owner = label.owner.kind === 'link' ? label.owner.id : undefined;
+    expect(label.text).toBe(model.document.links[model.links.find(link => link.id === owner)!.sourceIndex]!.label);
+    expect(groupBoxes(model).filter(box => labelCrossesBorder(label.bounds!, box.bounds)).map(box => box.id)).toEqual([]);
+    expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+    const report = score(model).snapshot;
+    expect(report.counters.labelBorderCrossings).toBeUndefined();
+    expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
+    // The reservation is at its fixed point: a replay on the published model reserves nothing more (R1).
+    expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+  }, 120000);
+}

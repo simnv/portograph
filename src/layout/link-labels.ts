@@ -98,6 +98,35 @@ export function windowHolds(window: { from: number; to: number }, extent: number
   return window.to - window.from >= extent - EPS;
 }
 
+/**
+ * How far placement must grow an axis-aligned `run` so that one of its windows (`labelRunWindows`) holds a label `extent` long
+ * (`windowHolds`), when the growth moves everything at or beyond `split` on the run's axis on by that much: a box beyond the split
+ * moves, a box across it stretches, a box before it stays, and so do the run's two ends. Placement (`reserveLinkLabelRoom`) asks
+ * this for every run a label rides, with the same two functions stage 9 places the label with (R1).
+ *
+ * Zero when a window holds the label now, and for a run with no axis (the path bends there and stage 9 decides). `undefined` when no
+ * window grows with the move, or the grown window still does not hold the label: a box that moves with the far end cuts the run.
+ * A window between a cut that stays and a cut that moves grows by exactly the growth, so one probe gives the growth.
+ */
+export function labelWindowDeficit(boxes: readonly Rect[], run: PathSegment, extent: number, split: number): number | undefined {
+  const vertical = Math.abs(run.to.x - run.from.x) <= EPS, horizontal = Math.abs(run.to.y - run.from.y) <= EPS;
+  if (vertical === horizontal) return 0;
+  const axis = vertical ? 'y' : 'x', size = vertical ? 'height' : 'width';
+  const windows = (growth: number): { from: number; to: number }[] => {
+    const moved = (at: number): number => at >= split - EPS ? at + growth : at;
+    const grown = boxes.map(box => ({ ...box, [axis]: moved(box[axis]), [size]: moved(box[axis] + box[size]) - moved(box[axis]) }));
+    return labelRunWindows(grown, { ...run, from: { ...run.from, [axis]: moved(run.from[axis]) }, to: { ...run.to, [axis]: moved(run.to[axis]) } }) ?? [];
+  };
+  if (windows(0).some(window => windowHolds(window, extent))) return 0;
+  // A probe longer than the run, the label and every border cut together: a window that grows is then the longest one, and the
+  // only one that can hold the label (no window that stays holds it).
+  const span = Math.abs(run.to[axis] - run.from[axis]), probe = span + extent + 4 * LABEL_BORDER_REACH + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+  const longest = Math.max(0, ...windows(probe).map(window => window.to - window.from));
+  if (longest < extent - EPS) return undefined;
+  const growth = Math.max(0, extent - (longest - probe));
+  return windows(growth).some(window => windowHolds(window, extent)) ? growth : undefined;
+}
+
 /** The windows of a run (`labelRunWindows`) when a border cuts it; `undefined` for a run no border cuts or a run with no axis. */
 function cutWindows(boxes: readonly Rect[], run: PathSegment): { from: number; to: number }[] | undefined {
   const windows = labelRunWindows(boxes, run);

@@ -317,9 +317,10 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     const support = label.support as { segment: number; through: number };
     expect(support.through).toBeGreaterThan(support.segment);
     const segments = link.path!.segments, at = (n: number) => segments.slice(0, n).reduce((sum, s) => sum + Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y), 0);
-    const total = at(segments.length), middle = (at(support.segment) + at(support.through + 1)) / 2;
+    // The label stands where stage 9 put it on the joined run: in the window below the border it crosses (ticket 19), not always at the middle.
+    const total = at(segments.length), middle = at(support.segment) + Math.abs(label.bounds!.y + label.bounds!.height / 2 - segments[support.segment]!.from.y);
     const cell = cells(drawio(model, { labels: 'on-run' })).get(id('link', stable(model, link.id)))!;
-    // The label is stated at the middle of the joined run, on the line: not clamped to the 15 px stem, and with at most the sub-pixel rounding of the arc length as offset.
+    // The label is stated where it stands on the joined run, on the line: not clamped to the 15 px stem, and with at most the sub-pixel rounding of the arc length as offset.
     expect(Math.hypot(cell.offset?.x ?? 0, cell.offset?.y ?? 0)).toBeLessThan(1);
     expect(Number(cell.geometry['y'])).toBeCloseTo(0, 9);
     // The export's polyline is a few px off the path (terminals), so the arc length is checked to within 10 px.

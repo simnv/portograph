@@ -4,7 +4,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
 import { crosses, overlayPath } from '../../src/layout/overlay-paths.js';
-import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
+import { LABEL_BORDER_REACH, LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
 import { measureText } from '../../src/text/index.js';
 import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -211,7 +211,12 @@ describe('the label room of an overlay L', () => {
     const lb = model.nodes["lb"]!, drop = anchor - (lb.bounds!.y + lb.bounds!.height);
     // Measured to the node top the run would end one port depth short and the tier gap would grow by that much too much.
     expect(drop).toBeGreaterThanOrEqual(required - 1e-6);
-    expect(drop).toBeLessThan(required + 1);
+    // The label stays in one region (ticket 19): the window of the run below the border of the upper end's group, 8 px clear of it,
+    // holds the label and no more.
+    const upper = model.groups[model.document.nodes['lb']!.group]!.bounds!, width = required - 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+    const window = anchor - LINK_LABEL_GEOMETRY.shortenMargin - (upper.y + upper.height + LABEL_BORDER_REACH);
+    expect(window).toBeGreaterThanOrEqual(width - 1e-6);
+    expect(window).toBeLessThan(width + 1);
     expect(reserveLinkLabelRoom(model)).toBe(false);
   }, 60000);
 

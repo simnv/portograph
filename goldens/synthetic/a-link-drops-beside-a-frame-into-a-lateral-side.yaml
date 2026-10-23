@@ -2,7 +2,8 @@
 # stands at the left of tier 1 and holds two ranks: `spare` and `outlet` in rank 0 (the outlet last in its row) and `tail` in rank 1.
 # One routed, described link runs from `lb` to the port `feed` of `outlet`, which the author puts on the right side. The port is lateral and
 # its peer is on another sub-tier, so 7a reserves a side lane beside the frame at the x of the load balancer's port: one vertical run down
-# beside the frame to the port's y, then the side run to the face. The label room is reserved on the vertical run.
+# beside the frame to the port's y, then the side run to the face. The label room is reserved on the vertical run: 7f grows the tier gap until
+# the window of the run below the bottom border of `front` holds the label, 8 px clear of that border (ticket 19). No LINK_LABEL_ON_BORDER.
 # Test-only input owned by ticket 118; test/pipeline/side-lane.test.ts reads the placed model.
 portograph: 2
 groups:

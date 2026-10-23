@@ -23,11 +23,10 @@ import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes } from '../score/model.js';
-import { LABEL_BORDER_REACH, LINK_LABEL_GEOMETRY, labelRunWindows, overlayLabelsSuppressed, windowHolds } from './link-labels.js';
+import { LINK_LABEL_GEOMETRY, labelWindowDeficit, overlayLabelsSuppressed } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { contains } from '../geometry/planar.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry, trunkJoins } from './bus.js';
 import { reportTrunkCrossings } from './trunk.js';
@@ -1389,7 +1388,7 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
 }
 
 /** One labelled link whose run is shorter than the label it carries needs, and by how much. */
-export interface LinkLabelShortfall { link: string; axis: 'row' | 'tier gap' | 'tier gap window'; required: number; room: number }
+export interface LinkLabelShortfall { link: string; axis: 'row' | 'row window' | 'tier gap' | 'tier gap window'; required: number; room: number }
 
 /**
  * Insert `deficit` px of room at `split`: everything at or right of it moves right, in every tier (see `reserveLinkLabelRoom`). A node of tier
@@ -1416,29 +1415,15 @@ function insertRoomAt(model: LayoutModel, split: number, deficit: number, ownTie
 }
 
 /**
- * The room a label `extent` long lacks in the windows of a vertical run between two tiers (`labelRunWindows`, the windows stage 9
- * places the label in), read on the drawn boxes as they stand now (frames derived afresh). Zero when a window holds it, or when the run
- * is not one vertical (the ends are not level in x: the path bends and stage 9 decides). Otherwise the room the **gap window** lacks:
- * the stretch between the bottom border of the upper end's own boxes and the top border of the lower end's own boxes, which moving the
- * lower tiers down grows. `undefined` when the gap window is long enough and still no window holds the label: a foreign box cuts it.
+ * The room a label `extent` long lacks on the run it rides (`run`), read on the drawn boxes as they stand now (frames derived afresh):
+ * the growth at `split` after which one window of the run (`labelRunWindows`, the windows stage 9 places the label in) holds it
+ * (`labelWindowDeficit`). Zero when a window holds it now, or when `run` is absent (the path bends and stage 9 decides). `undefined`
+ * when no growth at the split gives a window that holds it: a box that moves with the far end cuts the run.
  */
-function borderWindowDeficit(model: LayoutModel, upperPort: LayoutPort, lowerPort: LayoutPort, upper: LayoutNode, lower: LayoutNode,
-  upperEdge: number, lowerEdge: number, extent: number): number | undefined {
-  const x = upperPort.anchor!.x;
-  if (Math.abs(lowerPort.anchor!.x - x) > PLACEMENT_EPS || lowerEdge - upperEdge <= PLACEMENT_EPS) return 0;
+function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, extent: number, split: number): number | undefined {
+  if (run === undefined) return 0;
   const boxes = groupBoxes({ ...model, frames: deriveFrames(model) ?? model.frames ?? [] }).map(item => item.bounds);
-  const run: PathSegment = { from: { x, y: upperEdge }, to: { x, y: lowerEdge }, owner: { kind: 'node', id: upper.id } };
-  const windows = labelRunWindows(boxes, run) ?? [];
-  if (windows.some(window => windowHolds(window, extent))) return 0;
-  const holds = (box: Rect, node: LayoutNode): boolean => contains(box, node.bounds!);
-  const own = (node: LayoutNode, other: LayoutNode): Rect[] => boxes.filter(box => holds(box, node) && !holds(box, other));
-  const upperOwn = own(upper, lower), lowerOwn = own(lower, upper);
-  if (!upperOwn.length || !lowerOwn.length) return undefined;
-  // The gap window as `labelRunWindows` cuts it: off the own borders by the reach, and off the run's ends (a pill may stand out of its box) by the shorten margin.
-  const from = Math.max(Math.max(...upperOwn.map(bottom)) + LABEL_BORDER_REACH, upperEdge + LINK_LABEL_GEOMETRY.shortenMargin);
-  const to = Math.min(Math.min(...lowerOwn.map(box => box.y)) - LABEL_BORDER_REACH, lowerEdge - LINK_LABEL_GEOMETRY.shortenMargin);
-  const deficit = extent - (to - from);
-  return deficit > PLACEMENT_EPS ? deficit : undefined;
+  return labelWindowDeficit(boxes, run, extent, split);
 }
 
 /**
@@ -1458,7 +1443,8 @@ function borderWindowDeficit(model: LayoutModel, upperPort: LayoutPort, lowerPor
  * a drawn link counts — bars, overlay links whose labels are not suppressed — except bundle members,
  * whose geometry 7e owns. Self-links, same-tier links through top/bottom ports, pairs whose ports do
  * not face each other and links whose room lies beyond a reserved lane are diagnosed and left to the
- * stage 9 ladder.
+ * stage 9 ladder. A label also stays in one region (ticket 19): on every run a label rides, one window
+ * between the borders the run crosses must hold it (`labelWindowRoom`), and the growth is the larger of the two.
  */
 export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = []): boolean {
   let changed = false;
@@ -1524,17 +1510,29 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       const mid = centre;
       // A side lane (side-faces.md, Section 10): the label rides the vertical run, the drop and the lane, so the run ends at the lateral port's y,
       // not at the node's face. The move in y below moves the lateral node with its tier, and the lane's extent follows the port.
-      const laned = model.lanes.some(lane => isSideLane(lane) && lane.owner.kind === 'link' && lane.owner.id === link.id)
+      const lane = model.lanes.find(item => isSideLane(item) && item.owner.kind === 'link' && item.owner.id === link.id);
+      const laned = lane !== undefined
         || (overlay && (from.sideHint === true || to.sideHint === true)); // an overlay L's vertical run ends at the lateral anchor too (review L1)
       const upperEdge = laned && upperPort.side !== 'bottom' ? upperPort.anchor!.y : Math.max(bottom(upper.bounds!), bottom(outer(upperPort, upper)));
       const lowerEdge = laned && lowerPort.side !== 'top' ? lowerPort.anchor!.y : Math.min(lower.bounds!.y, outer(lowerPort, lower).y);
       const room = 2 * Math.min(mid - upperEdge, lowerEdge - mid);
-      // A label stays in one region: one window of the run between the drawn borders it crosses must hold it (`labelRunWindows`).
-      const windowed = overlay || laned ? 0 : borderWindowDeficit(model, upperPort, lowerPort, upper, lower, upperEdge, lowerEdge, measured.width);
+      // A label stays in one region: one window of the run it rides, between the drawn borders the run crosses, must hold it
+      // (`labelWindowDeficit`). The run is the overlay path's longest run, the side lane's vertical run (at the lane's x, down to the
+      // lateral port's y), or the straight drop between two level anchors; a routed drop between anchors that are not level bends,
+      // and stage 9 decides. Every group below the upper tier moves down, so the split is the top of the highest of them, or the
+      // run's lower end when a pill stands out above its box: that end moves with its node.
+      const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
+      const longest = overlay ? overlayLongestRun(model, link) : undefined;
+      const x = lane !== undefined ? lane.x : Math.abs(lowerPort.anchor!.x - upperPort.anchor!.x) <= PLACEMENT_EPS ? upperPort.anchor!.x : undefined;
+      const ridden: PathSegment | undefined = overlay
+        ? (longest !== undefined && Math.abs(longest.to.x - longest.from.x) <= PLACEMENT_EPS ? longest : undefined)
+        : x === undefined || lowerEdge - upperEdge <= PLACEMENT_EPS ? undefined
+          : { from: { x, y: upperEdge }, to: { x, y: lowerEdge }, owner: { ...link.owner } };
+      const split = Math.min(...moved.map(group => group.bounds!.y), ridden === undefined ? Infinity : Math.max(ridden.from.y, ridden.to.y));
+      const windowed = labelWindowRoom(model, ridden, measured.width, split);
       if (windowed === undefined) unreserved('crosses a drawn box in its tier gap; no window between borders can be reserved for its label');
       const deficit = Math.max(required - room, windowed ?? 0);
       if (deficit <= PLACEMENT_EPS) continue;
-      const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
       for (const group of moved) moveGroup(model, group, 0, deficit);
       settle(moved.flatMap(group => group.nodes));
       // The record names the figure that drove the growth: the label width against its gap window, or the run against its symmetric room.
@@ -1561,18 +1559,31 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     // not the pill-face midpoint: the label centred there must clear the pill on the anchor side.
     const protrusion = Math.max(right(outer(leftPort, leftNode)) - leftPort.anchor!.x, rightPort.anchor!.x - outer(rightPort, rightNode).x, 0);
     const wanted = required + (detour ? stemReach(model, leftNode) + stemReach(model, rightNode) + 2 * protrusion : 0);
-    const deficit = wanted - room;
-    if (deficit <= PLACEMENT_EPS) continue;
     // Insert the room at the gap itself: everything at or right of the split — in every tier — moves
     // right together, and a group straddling the split shifts only its nodes beyond it. Alignments,
     // flank sides and bar-to-source slots all survive because both ends of each of them move alike;
     // nothing ever moves left into a preceding group. A reserved lane at or beyond the split cannot
     // move, so such a link is diagnosed instead.
-    const split = (Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))) + Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x)) / 2;
+    const faceLeft = Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))), faceRight = Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x);
+    const split = (faceLeft + faceRight) / 2;
+    // A label stays in one region: one window of the run it rides, between the drawn borders the run crosses, must hold it
+    // (`labelWindowDeficit`). The run is the overlay path's longest run, or the straight run between the two pill faces; a routed
+    // link that detours bends, and stage 9 decides.
+    const longest = overlay ? overlayLongestRun(model, link) : undefined;
+    const ridden: PathSegment | undefined = overlay
+      ? (longest !== undefined && Math.abs(longest.to.y - longest.from.y) <= PLACEMENT_EPS ? longest : undefined)
+      : detour || faceRight - faceLeft <= PLACEMENT_EPS ? undefined
+        : { from: { x: faceLeft, y: leftPort.anchor!.y }, to: { x: faceRight, y: leftPort.anchor!.y }, owner: { ...link.owner } };
+    const windowed = labelWindowRoom(model, ridden, measured.width, split);
+    if (windowed === undefined) unreserved('crosses a drawn box in its row; no window between borders can be reserved for its label');
+    const deficit = Math.max(wanted - room, windowed ?? 0);
+    if (deficit <= PLACEMENT_EPS) continue;
     if (model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
     const moved = insertRoomAt(model, split, deficit, fromGroup.tier!);
     settle(moved);
-    record(link, 'row', wanted, room);
+    // The record names the figure that drove the growth, as in the tier gap.
+    if ((windowed ?? 0) > wanted - room) record(link, 'row window', measured.width, measured.width - windowed!);
+    else record(link, 'row', wanted, room);
     changed = true;
   }
   if (changed) { rebuildBands(model); rebuildRegions(model); }
