@@ -312,6 +312,32 @@ it('ticket 45: a fan track steps past the node standing in its corridor (ADR-001
   expect(Math.max(reach.from.x, reach.to.x)).toBeGreaterThan(wall.x);
 }, 60000);
 
+it('architecture-2 ticket 18: a fan track keeps the group edge margin of the box its branch leaves', async () => {
+  // The branch to `c1` wants the x of `c1`'s port, 7.4 px outside the left edge of the frame `home`. The track
+  // rose there, within the edge margin (G6 `segment-group-edge [link-2, home]`); no group exit is reserved,
+  // because the run already ends outside the box. The branch now keeps the port's column out past the
+  // frame's margin, turns there and rises on `c1`'s own column: one L, no step back in the tier gap.
+  const model = await run(fixture('a-fan-track-keeps-the-group-edge-margin'));
+  const report = score(model).snapshot;
+  expect(Object.entries(report.gates).flatMap(([id, gate]) => gate.violations.map(item => [id, item.code, item.elements]))).toEqual([]);
+  expect(report.counts.routed.turns).toBeLessThanOrEqual(6);
+  const box = model.frames!.find(frame => frame.id === 'home')!.box;
+  const branch = model.links.find(link => link.attachments!.to.node === 'c1')!;
+  const target = model.nodes['c1']!.ports[0]!.anchor!, anchor = model.nodes['s1']!.ports[0]!.anchor!;
+  const [turn, along, rise] = branch.sharedRuns!.from!;
+  const margin = edgeMargin(routedStrokeWidth(model));
+  // Up the port column as one junction stem, out past the frame top edge by the margin, across, and up on the column of c1.
+  expect(turn!.from.x).toBe(anchor.x);
+  expect(box.y - turn!.to.y).toBeGreaterThanOrEqual(margin);
+  expect(along!.to.y).toBe(turn!.to.y);
+  expect(rise!.from.x).toBe(target.x);
+  expect(rise!.to.x).toBe(target.x);
+  // The whole path turns twice.
+  const segments = branch.path!.segments;
+  const turns = segments.slice(1).filter((segment, index) => (segment.from.x === segment.to.x) !== (segments[index]!.from.x === segments[index]!.to.x));
+  expect(turns).toHaveLength(2);
+}, 60000);
+
 it('ticket 48: a branch that would hand over beyond its port keeps the shared stem and nothing else', async () => {
   // The track steps to the edge below the target node, so the branch's outward run points away from
   // that port's own approach and stage 8 would come back along it. The branch keeps the tree's stem

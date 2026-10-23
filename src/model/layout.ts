@@ -298,6 +298,11 @@ export interface Junction extends OwnedElement {
   links: string[];
   point?: Point;
   stem?: PathSegment;
+  /**
+   * The edge keeper that parts here (architecture-2 ticket 18): the link that turns past the margin of the boxes it leaves, and the
+   * depth of this junction out of the port's side, which is where it turns.
+   */
+  keeper?: { link: string; depth: number };
 }
 
 export interface LabelBand extends OwnedElement {
@@ -512,6 +517,13 @@ export interface LayoutModel {
    * its geometry follows the ports, the decision is never re-taken, and a move that would put a body on it is refused.
    */
   frozenChords?: string[];
+  /**
+   * The fan edge keepers held when final placement freezes, after 7f (architecture-2 ticket 18): the fan's port id, the member's link
+   * and the depth it turns at out of the port's side. From then on a replay takes the recorded member at the recorded depth or none, and
+   * never derives either again from a box. Present only when a keeper is held. Before `freeze.placement` the field is not read and every
+   * replay chooses; after it, absent = no keeper, and none is chosen.
+   */
+  fanKeepers?: { port: string; link: string; depth: number }[];
   /**
    * The parent-port moves taken at a frame-column wall (architecture ticket 15, follow-up): the link, its moved port and where the port stood before the
    * move, as a distance from the left edge of its node box (the node can move between replays). `centreDraft` reads it before its passes and after its

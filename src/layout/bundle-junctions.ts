@@ -1,15 +1,15 @@
 import type { Bundle, LayoutLink, LayoutModel, LayoutPort, Owner, PathSegment, Point, Rect } from '../model/index.js';
 import type { PortRef } from '../model/document.js';
 import { portId } from './skeleton-graph.js';
-import { reserveGroupExits } from './group-exits.js';
-import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
+import { EXIT_SLACK, reserveGroupExits, standsIn } from './group-exits.js';
+import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, edgeMargin, facing, fanCohorts, fanEnd, fanPitch, fanRows, junctionId, normal, type Member } from './bundle-geometry.js';
 import { placementWarning } from './regions.js';
 import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
 import { stemCache, stemPlan } from './sides-two.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
-import { segmentRectDistance } from '../geometry/planar.js';
+import { segmentDistance, segmentRectDistance } from '../geometry/planar.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 
@@ -102,7 +102,8 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
  * The spans along `port`'s side at which a fan branch may not turn: for every node whose routing
  * obstacle stands in the corridor the branch's outward run crosses, the span that node occupies
  * along the side (ADR-0018 rule 3, ticket 45). Rule 2 spaces a track against the rows on its own
- * side; this is what spaces it against the nodes beside it.
+ * side; this is what spaces it against the nodes beside it. With `farNode` given, the outer edge
+ * bands of every box the branch to that node leaves are walls too (ticket 18 of architecture-2).
  *
  * The reach is `routeObstacles`' own — the widest routed stroke, and the enclosing rectangle of the
  * expanded body and of every expanded pill, since the router owns the corners between them — so the
@@ -114,7 +115,7 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
  * answer independent of the order the nodes were read in.
  */
 function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: number; to: number },
-  exempt: ReadonlySet<string>): { lo: number; hi: number }[] {
+  exempt: ReadonlySet<string>, farNode: string | undefined): { lo: number; hi: number }[] {
   const n = normal(port.side!), tangent = axis(port.side!), stroke = routedStroke(model);
   const low = Math.min(band.from, band.to), high = Math.max(band.from, band.to);
   const pillGap = (stroke + DEFAULT_STROKE_WIDTHS.pill) / 2;
@@ -152,6 +153,18 @@ function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: numbe
     // stands along it.
     span({ x, y, right: Math.max(...boxes.map(box => box.x + box.width)), bottom: Math.max(...boxes.map(box => box.y + box.height)) });
   }
+  // A branch that leaves a box runs its track either strictly inside the box, the group's own routing
+  // space, or outside it one edge margin off each edge across the side (ADR-0013, architecture-2
+  // ticket 18). A track outside the box ends the run there, so 7e reserves no group exit for it, and
+  // G6 `segment-group-edge` measures the run beside the edge. Each outer edge band (`edgeBands`), over
+  // the depth the box spans, is a wall; the step below takes the track to the face nearer the
+  // coordinate it wanted. A box the branch enters or stays in is not read here.
+  for (const { bounds: box } of farNode === undefined ? [] : leftBoxes(model, port.ref.node, farNode)) {
+    const [near, far] = tangent === 'x' ? [box.y, box.y + box.height] : [box.x, box.x + box.width];
+    for (const band of edgeBands(box, tangent, stroke)) {
+      span(tangent === 'x' ? { x: band.lo, y: near, right: band.hi, bottom: far } : { x: near, y: band.lo, right: far, bottom: band.hi });
+    }
+  }
   const result: { lo: number; hi: number }[] = [];
   for (const span of found.sort((a, b) => a.lo - b.lo || a.hi - b.hi)) {
     const last = result.at(-1);
@@ -159,6 +172,130 @@ function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: numbe
     else result.push({ ...span });
   }
   return result;
+}
+
+interface FanItem { link: LayoutLink; end: 'from' | 'to'; far: LayoutPort }
+type Span = { lo: number; hi: number };
+
+/** The group and frame boxes a branch from `node` to `farNode` leaves: those that hold `node` and not `farNode` (ticket 18). */
+export function leftBoxes(model: LayoutModel, node: string, farNode: string): { id: string; bounds: Rect }[] {
+  return groupBoxes(model).filter(box => standsIn(model, box.id, node) && !standsIn(model, box.id, farNode));
+}
+/**
+ * The outer edge bands of `box` along a side's tangent: from each edge out to one edge margin for `stroke`, and a hair in, so a
+ * coordinate on the edge is in its band. A track strictly inside a band (`inSpan`) stands on or outside the edge, closer than G6
+ * `segment-group-edge` allows; strictly inside the box is the group's own routing space, as `clearOfGroupEdges` leaves it.
+ */
+export function edgeBands(box: Rect, tangent: 'x' | 'y', stroke: number): Span[] {
+  const margin = edgeMargin(stroke) + PLACEMENT_EPS, within = 2 * PLACEMENT_EPS;
+  const [low, high] = tangent === 'x' ? [box.x, box.x + box.width] : [box.y, box.y + box.height];
+  return [{ lo: low - margin, hi: low + within }, { lo: high - within, hi: high + margin }];
+}
+/** The span `at` stands strictly inside: the one test the wall step, the edge keeper and the warning read. */
+export function inSpan(at: number, spans: readonly Span[]): Span | undefined {
+  return spans.find(span => at > span.lo + PLACEMENT_EPS && at < span.hi - PLACEMENT_EPS);
+}
+/**
+ * The keepers held when final placement freezes, read from the junctions the last replay recorded them on (architecture-2 ticket 18).
+ * From then on neither the member nor its depth is derived again from a box. Present only when a keeper is held, so a sheet without one
+ * publishes the bytes it did before; the frozen state itself is `freeze.placement` (see `edgeKeeper`).
+ */
+export function freezeFanKeepers(model: LayoutModel): void {
+  const held = model.junctions.flatMap(junction => junction.keeper === undefined ? []
+    : [{ port: portId(junction.port), link: junction.keeper.link, depth: junction.keeper.depth }])
+    .sort((a, b) => a.port < b.port ? -1 : a.port > b.port ? 1 : a.link < b.link ? -1 : a.link > b.link ? 1 : 0);
+  if (held.length) model.fanKeepers = held;
+  else delete model.fanKeepers;
+}
+
+interface KeeperInput {
+  items: readonly FanItem[];
+  wanted: (item: FanItem) => number;
+  /** The tracks the pitch pass chose; the keeper's own is its fallback. */
+  target: ReadonlyMap<string, number>;
+  rows: readonly number[];
+  /** The other ports' rows on this side, as the pitch pass reads them. */
+  siblings: readonly { at: number; stroke: number }[];
+  stop: (item: FanItem, row: number, track: number) => number;
+  walls: (item: FanItem, from: number) => Span[];
+  /** The depth at which a member's far port's own approach begins (`reachOf`). */
+  reach: (item: FanItem) => number;
+}
+/**
+ * The member of a fan that keeps the port's own track out of the boxes it leaves, and the depth it turns at (architecture-2
+ * ticket 18). A track in the outer edge band of a box the branch leaves would rise beside that edge (G6 `segment-group-edge`),
+ * and the wall step off it leaves the router a short step back to the far port. The keeper instead stays on the shared normal
+ * past the margin of every box it leaves (plus `EXIT_SLACK`, as a group exit does), and the last junction of the tree moves out
+ * to that depth: the member peeled there turns the other way, and the keeper turns toward the coordinate it wanted. One L.
+ *
+ * Before the freeze the keeper is the one member alone on its side of the port (so its turn crosses no branch) whose wanted
+ * coordinate stands in such a band. After it, the recorded member (`LayoutModel.fanKeepers`) or none. Either way it is refused,
+ * with the reason, when the depth passes the deepest row `fanRows` holds (room placement reserved), when a node wall stands on
+ * the coordinate from that depth on, when another member's track stands within the member pitch of the extended stem (rule 2),
+ * when the partner's own approach begins short of the depth (it would be handed over past it), when it would cross or crowd
+ * another port's row on this side, or when its runs would come within the member gap of a run
+ * another link already reserved.
+ */
+function edgeKeeper(model: LayoutModel, port: LayoutPort, input: KeeperInput): { keeper?: { item: FanItem; depth: number }; refused?: { item: FanItem; reason: string } } {
+  const { items, wanted, target, rows, siblings, stop, walls, reach } = input;
+  const n = normal(port.side!), tangent = axis(port.side!), here = coordinate(port), anchor = port.anchor!, stroke = routedStroke(model);
+  // Before final placement freezes, every replay chooses. After it (`freeze.placement`), the record is the decision: an absent
+  // record means no keeper, and nothing is chosen again (R1).
+  const recorded = model.freeze?.placement !== undefined ? model.fanKeepers ?? [] : undefined;
+  const fresh = (): FanItem | undefined => {
+    const found = items.filter(item => {
+      const at = wanted(item), side = Math.sign(at - here);
+      if (side === 0 || item.link.path?.fixed === true || items.some(other => other !== item && Math.sign(wanted(other) - here) === side)) return false;
+      return leftBoxes(model, port.ref.node, item.far.ref.node).some(({ bounds }) => inSpan(at, edgeBands(bounds, tangent, stroke)) !== undefined);
+    });
+    return found.length === 1 ? found[0] : undefined;
+  };
+  const record = recorded?.find(entry => entry.port === portId(port.ref) && items.some(item => item.link.id === entry.link));
+  const candidate = recorded !== undefined ? items.find(item => item.link.id === record?.link) : fresh();
+  if (!candidate || items.length < 2) return {};
+  const refuse = (reason: string): { refused: { item: FanItem; reason: string } } => ({ refused: { item: candidate, reason } });
+  const at = wanted(candidate), own = linkStrokeWidth(candidate.link);
+  const lastRow = rows[Math.max(items.length - 2, 0)]!;
+  // The depth: past the margin of every box the branch leaves, and never short of the last junction's row. Once frozen, the record's.
+  const derived = (): number | undefined => {
+    const left = leftBoxes(model, port.ref.node, candidate.far.ref.node);
+    if (!left.length) return undefined;
+    const far = Math.max(...left.map(({ bounds: box }) => Math.max(
+      n.x * (box.x - anchor.x) + n.y * (box.y - anchor.y), n.x * (box.x + box.width - anchor.x) + n.y * (box.y + box.height - anchor.y))));
+    return Math.max(far + edgeMargin(stroke) + EXIT_SLACK, lastRow);
+  };
+  const depth = record?.depth ?? derived();
+  if (depth === undefined) return refuse('it leaves no box');
+  if (depth > rows.at(-1)! + PLACEMENT_EPS) return refuse('the turn past the box margin lies beyond the rows the fan holds');
+  if (inSpan(at, walls(candidate, depth))) return refuse('a node stands on its coordinate');
+  // The member peeled at the moved junction turns there; every other member rises beside the extended stem and keeps the pitch.
+  const others = items.filter(item => item !== candidate);
+  const partner = [...others].sort((a, b) => Math.abs(target.get(a.link.id)! - here) - Math.abs(target.get(b.link.id)! - here)
+    || a.link.sourceIndex - b.link.sourceIndex)[0]!;
+  const crowded = others.some(item => item !== partner
+    && Math.abs(target.get(item.link.id)! - here) < MEMBER_GAP + (own + linkStrokeWidth(item.link)) / 2 - PLACEMENT_EPS);
+  if (crowded) return refuse('another member rises within the member pitch of the extended stem');
+  // The partner turns at the keeper depth: where its far port's own approach begins shallower, it would be handed over past it.
+  if (reach(partner) < depth - PLACEMENT_EPS) return refuse("the partner's own approach begins short of the keeper depth");
+  if (siblings.some(row => (row.at - here) * (row.at - at) <= 0 || Math.abs(row.at - at) < MEMBER_GAP + (own + row.stroke) / 2 - PLACEMENT_EPS)) {
+    return refuse("its turn would cross or crowd another port's row");
+  }
+  const world = (u: number, v: number): Point => tangent === 'x' ? { x: u, y: anchor.y + n.y * v } : { x: anchor.x + n.x * v, y: u };
+  const partnerAt = target.get(partner.link.id)!;
+  const mine: PathSegment[] = [
+    { from: world(here, lastRow), to: world(here, depth), owner: candidate.link.owner },
+    { from: world(here, depth), to: world(at, depth), owner: candidate.link.owner },
+    { from: world(at, depth), to: world(at, Math.max(depth, stop(candidate, depth, at))), owner: candidate.link.owner },
+    { from: world(here, depth), to: world(partnerAt, depth), owner: partner.link.owner },
+  ];
+  const fan = new Set(items.map(item => item.link.id));
+  const reservedRuns = model.links.filter(link => link.layer !== 'overlay' && !fan.has(link.id)).flatMap(link => [
+    ...(link.path?.fixed === true ? link.path.segments : []), ...(link.fixedSegments ?? []), ...(link.sharedRuns?.from ?? []), ...(link.sharedRuns?.to ?? [])]
+    .map(run => ({ run, gap: MEMBER_GAP + (own + linkStrokeWidth(link)) / 2 })));
+  if (mine.some(segment => reservedRuns.some(({ run, gap }) => segmentDistance(segment, run) < gap - PLACEMENT_EPS))) {
+    return refuse('its runs would cross or crowd a run another link reserved');
+  }
+  return { keeper: { item: candidate, depth } };
 }
 
 /**
@@ -330,11 +467,11 @@ export function crossBundleFans(model: LayoutModel): void {
       // past, to the edge of it nearer the coordinate the member wanted.
       const peel = rows[Math.min(peelRank.get(item) ?? 0, rows.length - 1)]!;
       const walls = blockedTracks(model, port, { from: peel, to: stop(item, peel, wanted(item)) },
-        new Set([portId(port.ref), portId(item.far.ref)]));
+        new Set([portId(port.ref), portId(item.far.ref)]), item.far.ref.node);
       const base = clearOfRows(Math.max(wanted(item), prior + q));
       let slot = base;
       for (let guard = 0; guard < walls.length + 1; guard++) {
-        const wall = walls.find(span => slot > span.lo + PLACEMENT_EPS && slot < span.hi - PLACEMENT_EPS);
+        const wall = inSpan(slot, walls);
         if (!wall) break;
         const keep = Math.abs(wanted(item) - wall.lo) <= Math.abs(wanted(item) - wall.hi) ? wall.lo : wall.hi;
         const next = clearOfRows(keep >= prior + q - PLACEMENT_EPS ? keep : wall.hi);
@@ -348,7 +485,25 @@ export function crossBundleFans(model: LayoutModel): void {
       if (occupied.some(row => (row.at - base) * (row.at - slot) < -SIGN_EPS)) slot = base;
       target.set(item.link.id, slot); prior = slot;
     }
-    const isFixed = (id: string): boolean => links.find(link => link.id === id)?.path?.fixed === true;
+    // Architecture-2 ticket 18: a member whose wanted coordinate stands in the outer edge band of a box
+    // it leaves either becomes the edge keeper (one L past the box margin) or keeps the step the wall
+    // gave it, and the step is named so the short step back that stage 8 then draws is visible (R6).
+    const { keeper, refused } = fixedItem ? {} : edgeKeeper(model, port, { items, wanted, target, rows, siblings, stop, reach: reachOf,
+      // Nodes and stems only: past its turn the keeper stands outside every box it leaves, and once frozen a box that stretched
+      // after the freeze is the gates' to judge, not a reason to choose again (R1, R5).
+      walls: (item, from) => blockedTracks(model, port, { from, to: Math.max(from, stop(item, from, wanted(item))) },
+        new Set([portId(port.ref), portId(item.far.ref)]), undefined) });
+    if (keeper) target.set(keeper.item.link.id, wanted(keeper.item));
+    for (const item of items) {
+      if (item === keeper?.item || item === fixedItem || Math.abs(target.get(item.link.id)! - wanted(item)) < PLACEMENT_EPS) continue;
+      const band = leftBoxes(model, port.ref.node, item.far.ref.node)
+        .some(({ bounds }) => inSpan(wanted(item), edgeBands(bounds, tangent, routedStroke(model))) !== undefined);
+      if (!band) continue;
+      placementWarning(model, 'FAN_TRACK_STEPPED_AT_GROUP_EDGE', `${item.link.id} leaves ${port.ref.node}.${port.ref.name ?? '*'} on a track `
+        + `${Math.abs(target.get(item.link.id)! - wanted(item)).toFixed(1)} px off the coordinate it wanted, which stands within the edge margin `
+        + `of a box it leaves${refused?.item === item ? ` (no edge keeper: ${refused.reason})` : ''}; stage 8 steps back to it.`, [item.link.id]);
+    }
+    const isFixed =(id: string): boolean => links.find(link => link.id === id)?.path?.fixed === true;
     /**
      * Whether a branch's own run would leave stage 8 no way on but back along it. The branch hands
      * over at its own depth on its own track; where its far port's checkpoint stands *shallower*
@@ -379,18 +534,24 @@ export function crossBundleFans(model: LayoutModel): void {
     };
     while (active.length > 1) {
       const id = junctionId(port, depth), owner = { kind: 'shared-stem' as const, id };
-      const point = world(coordinate(port), rows[depth]!), stem: PathSegment = { from: cursor, to: point, owner };
+      // The junction where the edge keeper parts from the last other member stands at the keeper's
+      // depth, past the margin of the boxes it leaves; the junction records the decision (R1).
+      const parts = keeper !== undefined && active.length === 2 && active.includes(keeper.item);
+      const row = parts ? keeper.depth : rows[depth]!;
+      const point = world(coordinate(port), row), stem: PathSegment = { from: cursor, to: point, owner };
       model.junctions.push({ id, owner, layer: 'routed', port: { ...port.ref }, links: active.map(i => i.link.id),
-        ...(parent ? { parent } : {}), point, stem });
+        ...(parent ? { parent } : {}), point, stem, ...(parts ? { keeper: { link: keeper.item.link.id, depth: keeper.depth } } : {}) });
       for (const item of active) paths.get(item.link.id)!.push(clone(stem));
       // Farthest track first; a fixed member is never peeled while another member remains.
-      const leaf = [...active].sort((a, b) => (Number(isFixed(a.link.id)) - Number(isFixed(b.link.id)))
+      // The edge keeper is peeled last too: it keeps the port's own track out of the box.
+      const last = (item: typeof items[number]): number => Number(isFixed(item.link.id) || item === keeper?.item);
+      const leaf = [...active].sort((a, b) => (last(a) - last(b))
         || Math.abs(target.get(b.link.id)! - coordinate(port)) - Math.abs(target.get(a.link.id)! - coordinate(port)))[0]!;
-      const at = target.get(leaf.link.id)!, elbow = world(at, rows[depth]!);
-      if (hemmed(leaf, rows[depth]!, at)) release(leaf);
+      const at = target.get(leaf.link.id)!, elbow = world(at, row);
+      if (hemmed(leaf, row, at)) release(leaf);
       else {
         push(leaf.link.id, point, elbow, owner);
-        push(leaf.link.id, elbow, world(at, stop(leaf, rows[depth]!, at)), leaf.link.owner);
+        push(leaf.link.id, elbow, world(at, Math.max(row, stop(leaf, row, at))), leaf.link.owner);
         peeled = at;
       }
       active = active.filter(i => i !== leaf); cursor = point; parent = id; depth++;
@@ -404,7 +565,16 @@ export function crossBundleFans(model: LayoutModel): void {
     const last = active[0]!, owner = { kind: 'shared-stem' as const, id: parent! };
     const goal = target.get(last.link.id)!, here = coordinate(port);
     const shares = goal !== here && peeled !== undefined && Math.sign(goal - here) === Math.sign(peeled - here);
-    if (hemmed(last, rows[shares ? depth : Math.max(depth - 1, 0)]!, goal)) release(last);
+    if (last === keeper?.item) {
+      // The edge keeper (ticket 18) turns at its own junction, past the margin of every box it
+      // leaves, and runs on its own coordinate: one clean L, no step.
+      const row = keeper.depth, elbow = world(goal, row);
+      if (hemmed(last, row, goal)) release(last);
+      else {
+        push(last.link.id, cursor, elbow, owner);
+        push(last.link.id, elbow, world(goal, Math.max(row, stop(last, row, goal))), last.link.owner);
+      }
+    } else if (hemmed(last, rows[shares ? depth : Math.max(depth - 1, 0)]!, goal)) release(last);
     else if (shares) {
       const turn = world(here, rows[depth]!), elbow = world(goal, rows[depth]!);
       // The extension leaves the last junction's point along the shared normal, so it claims that
