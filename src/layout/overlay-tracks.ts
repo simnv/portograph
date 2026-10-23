@@ -5,7 +5,7 @@ import { EPS, samePoint } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, overlayTrackPitch } from '../theme/geometry.js';
 import { bandHeldBy } from './regions.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { describedLink, LINK_LABEL_GEOMETRY } from './link-labels.js';
+import { LINK_LABEL_GEOMETRY } from './link-label-geometry.js';
 import { measureText } from '../text/index.js';
 
 /**
@@ -217,8 +217,13 @@ export function heldPadding(model: LayoutModel, group: string, side: Side): numb
 export const trackLabelRoom = (stroke: number, labelHeight: number): number =>
   stroke / 2 + LINK_LABEL_GEOMETRY.normalGap + labelHeight + DEFAULT_STROKE_WIDTHS.group / 2;
 
-/** The label height a drawn overlay link shows beside its tracks, or `undefined` when it shows none (`describedLink`). 7f and the separation read it (R1). */
+/**
+ * The label height an overlay link may show beside its tracks, or `undefined` when it has no label (a removed link, a stub, a bundle or
+ * mesh-bus member shows none). The density suppression of stage 9 is not read: the room is kept for the label whether or not a dense
+ * sheet hides it, so the separation and 7f need no stage-9 reading. 7f and the separation read it (R1).
+ */
 export function trackLabelHeight(model: LayoutModel, link: LayoutLink): number | undefined {
-  if (!describedLink(model, link)) return undefined;
+  const text = model.document.links[link.sourceIndex]?.label;
+  if (!text || link.removed === true || link.technique === 'stub' || link.bundle || link.meshBus !== undefined || link.attachments === undefined) return undefined;
   return measureText(model.document.links[link.sourceIndex]!.label!, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).height;
 }

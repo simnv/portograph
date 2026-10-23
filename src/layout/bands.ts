@@ -25,7 +25,7 @@ import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
 import { overlayBasePath, overlayPath, overlayTrackRuns, overlayTrackUnreserved } from './overlay-paths.js';
-import { paddingOf, sideRoomBlocked, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
+import { paddingOf, sideRoomBlocked, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
@@ -1505,9 +1505,9 @@ export function trackRoomPadding(model: LayoutModel, link: LayoutLink, labelHeig
   });
 }
 /** The track rooms of a drawn overlay link (`trackRoomPadding`), with its label when it shows one: 7f and the validator read this (R1). */
-const trackRooms = (model: LayoutModel, link: LayoutLink, suppressed: boolean): AcrossRunRoom[] =>
+const trackRooms = (model: LayoutModel, link: LayoutLink): AcrossRunRoom[] =>
   effectiveLayer(link) === 'overlay' && link.meshBus === undefined && link.attachments !== undefined
-    ? trackRoomPadding(model, link, describedLink(model, link, suppressed) ? labelSize(model, link).height : undefined) : [];
+    ? trackRoomPadding(model, link, trackLabelHeight(model, link)) : [];
 const overlaps = (a: Rect, b: Rect): boolean =>
   a.x < right(b) - PLACEMENT_EPS && b.x < right(a) - PLACEMENT_EPS && a.y < bottom(b) - PLACEMENT_EPS && b.y < bottom(a) - PLACEMENT_EPS;
 
@@ -1535,7 +1535,7 @@ export function labelPaddingFault(model: LayoutModel): string | undefined {
         if (link === undefined) return `${id} ${side} names ${name}, which is not a link of the model`;
         const run = describedLink(model, link, suppressed) ? riddenRun(model, link) : undefined;
         const label = run === undefined ? undefined : acrossRunPadding(model, borders, run, labelSize(model, link), linkStrokeWidth(link) / 2);
-        const tracks = trackRooms(model, link, suppressed);
+        const tracks = trackRooms(model, link);
         for (const need of [label, ...tracks]) {
           if (need !== undefined && need.group === id && need.side === side && need.padding > entry.room + PLACEMENT_EPS) {
             return `${id} ${side} records ${entry.room} px and ${name} needs ${need.padding} px`;
@@ -1571,7 +1571,7 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
   const roomsOf = (link: LayoutLink): (AcrossRunRoom | undefined)[] => {
     const run = only === undefined && describedLink(model, link, suppressed) ? runOf(model, link) : undefined;
     const label = run === undefined ? undefined : acrossRunPadding(model, labelBorders(model), run, labelSize(model, link), linkStrokeWidth(link) / 2);
-    return [label, ...trackRooms(model, link, suppressed)];
+    return [label, ...trackRooms(model, link)];
   };
   // A detour that keeps a shared track because its offset needs room 7f cannot grow is named (ticket 23); the scorer counts the pair.
   for (const link of model.links) if (effectiveLayer(link) === 'overlay' && overlayTrackUnreserved(model, link)) {
