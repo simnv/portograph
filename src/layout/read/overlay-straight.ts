@@ -1,6 +1,6 @@
 import type { Point } from '../../model/geometry.js';
 import type { LayoutModel, PathSegment } from '../../model/layout.js';
-import { sharedBlockers, overlayPath, straightChord, type ShapeQuery } from '../overlay-paths.js';
+import { sharedBlockers, overlayBasePath, straightChord, type ShapeQuery } from '../overlay-paths.js';
 
 /**
  * Shared readers: "is this overlay link straight?" The question has two answers, and both are named modes. They differ on one
@@ -9,7 +9,7 @@ import { sharedBlockers, overlayPath, straightChord, type ShapeQuery } from '../
  * On the published NTP model the two modes agree (38 of 54), so the difference is latent; it is listed in
  * `.scratch/architecture/issues/03-shared-readers.md` for the ticket that unifies it.
  *
- * Both modes read the ordinary overlay (`overlayPath`, `straightChord`), never `publishedOverlayPath`: under the opt-in
+ * Both modes read the ordinary overlay (`overlayBasePath`, which straightens exactly the links `overlayPath` does, and `straightChord`), never `publishedOverlayPath`: under the opt-in
  * `layout.overlayOverBodies` only stage 8 lets a link pass over a body, and placement must not take that option as a reason to
  * stand differently. A mesh bus member is neither straight nor bent, and both modes skip it.
  */
@@ -41,7 +41,7 @@ export function straightOverlaysAsDrawn(model: LayoutModel, only?: ReadonlySet<s
   let blockers: ShapeQuery | undefined;
   for (const link of model.links) {
     if (link.layer !== 'overlay' || link.meshBus !== undefined || !link.attachments || (only && !only.has(link.id))) continue;
-    const { segments } = overlayPath(model, link, blockers ??= sharedBlockers(model));
+    const { segments } = overlayBasePath(model, link, blockers ??= sharedBlockers(model));
     if (!isOneSegment(segments)) continue;
     found.push({ id: link.id, ends: new Set([link.attachments.from.node, link.attachments.to.node].map(node => model.document.nodes[node]!.group)), from: segments[0]!.from, to: segments[0]!.to });
   }

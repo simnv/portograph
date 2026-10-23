@@ -1,0 +1,24 @@
+# Expected (architecture-2 ticket 23): two overlay detours never share a track. Four nodes of one row are a full mesh of `sync` overlay
+# links; one straight link is labelled, so the links do not draw alike and no mesh bus forms (`MESH_BUS_DECLINED`). A link with a node
+# between its ends detours round the row. The per-link rule puts the two detours out of `a` on one riser beside `a` and on one run over
+# the row, so they read as one line from `a` to `d`. The detours take separate tracks instead: on a shared run the later (longer) one
+# moves one overlay track pitch further out (half of each stroke plus 4 px: 5.5 px), or goes the other way round the row where that
+# way shares no track. Every turn steps out of its port face by the overlay port clearance (the bare-end dot plus 4 px: 7.75 px at a
+# 1.5 px stroke), so no riser runs by a foreign port nearer than that. No pair of overlay runs shares a track (`overlayTrackShares`
+# absent), every link keeps the bends the per-link rule gives it, and the drawing does not depend on the order of `links`.
+# Test-only input; test/pipeline/overlay-tracks.test.ts reads it.
+portograph: 2
+groups:
+  row: { tier: 0, label: Row }
+nodes:
+  a: { group: row, class: router, label: A }
+  b: { group: row, class: router, label: B }
+  c: { group: row, class: router, label: C }
+  d: { group: row, class: router, label: D }
+links:
+  - { from: a, to: b, class: sync, label: uplink }
+  - { from: a, to: c, class: sync }
+  - { from: a, to: d, class: sync }
+  - { from: b, to: c, class: sync }
+  - { from: b, to: d, class: sync }
+  - { from: c, to: d, class: sync }

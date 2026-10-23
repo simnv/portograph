@@ -46,6 +46,25 @@ export const anonymousDotRadius = (strokeWidth: number): number => (ANONYMOUS_DO
 /** Radius of the mark stage 11 draws at each overlay endpoint, above the masked overlay layer. */
 export const OVERLAY_ENDPOINT_RADIUS = 2;
 /**
+ * The visible gap an overlay line keeps beyond what is drawn at a port (architecture-2 ticket 23): past the endpoint dot when it
+ * steps out of a face, and between two parallel overlay strokes on neighbouring tracks. Twice the endpoint mark's radius.
+ */
+export const OVERLAY_GAP = 2 * OVERLAY_ENDPOINT_RADIUS;
+/**
+ * The **overlay port clearance** of a link of this stroke (architecture-2 ticket 23, user 2026-10-23: *"it's better for link to step a
+ * bit more from side of a node"*): how far the orthogonal branch of the overlay rule steps out of a port's outward face before it turns,
+ * and the margin its ways round the pair keep from every shape. The widest thing drawn at the end is the dot of a bare end
+ * (`anonymousDotRadius`, stroke + 6 px across), so the step clears that dot by `OVERLAY_GAP`: 7.75 px at the default 1.5 px stroke.
+ * Placement and the overlay path derivation read this one function (R1).
+ */
+export const overlayPortClearance = (strokeWidth: number): number => anonymousDotRadius(strokeWidth) + OVERLAY_GAP;
+/**
+ * The **overlay track pitch** of two overlay strokes (architecture-2 ticket 23): the least distance between the centre lines of two
+ * collinear overlay runs, half of each stroke plus `OVERLAY_GAP`. Two runs on one axis nearer than this, whose spans overlap or meet
+ * end to end within it, share a track and read as one line.
+ */
+export const overlayTrackPitch = (one: number, two: number): number => (one + two) / 2 + OVERLAY_GAP;
+/**
  * The one uniform margin between everything the diagram paints and the canvas edge (ticket 28). The
  * skeleton starts the canvas at this padding; stage 9 refits the canvas to the drawn union plus this
  * margin on every side, so growth during placement leaves no dead space and no side without margin.

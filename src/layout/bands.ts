@@ -6,7 +6,7 @@ import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, overlayTrackPitch } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
 import { isSideLane, rebuildLaneExtents, riserKeepOutBreaches } from './lanes.js';
 import { PlacementRefusal } from './placement-refusal.js';
@@ -24,7 +24,8 @@ import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placem
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
-import { overlayPath } from './overlay-paths.js';
+import { overlayPath, overlayTrackRuns } from './overlay-paths.js';
+import { bodiesOf, paddingOf, reachBeyond } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
@@ -1442,38 +1443,57 @@ export interface AcrossRunRoom { group: string; side: Side; padding: number }
  * the title band, which reserves the room below the title for a detour (ADR-0014).
  */
 export function acrossRunPadding(model: LayoutModel, borders: readonly Rect[], run: PathSegment, size: { width: number; height: number }, half: number): AcrossRunRoom | undefined {
-  const horizontal = Math.abs(run.to.y - run.from.y) <= PLACEMENT_EPS, vertical = Math.abs(run.to.x - run.from.x) <= PLACEMENT_EPS;
-  if (horizontal === vertical) return undefined;
   const stroke = DEFAULT_STROKE_WIDTHS.group / 2;
-  const low = (axis: 'x' | 'y'): number => Math.min(run.from[axis], run.to[axis]), high = (axis: 'x' | 'y'): number => Math.max(run.from[axis], run.to[axis]);
-  // Last key: group id order (`orderedGroupIds`); the boxes of one tier do not overlap, so at most one group holds the run.
-  for (const id of orderedGroupIds(model.document)) {
-    const group = model.groups[id];
-    if (group === undefined || group.frame !== undefined || !group.nodes.length || group.bounds === undefined) continue;
-    const box = group.bounds, bodies = union(group.nodes.map(node => model.nodes[node]!.bounds!));
-    const inside = horizontal
-      ? run.from.y > box.y + PLACEMENT_EPS && run.from.y < bottom(box) - PLACEMENT_EPS && low('x') >= box.x - PLACEMENT_EPS && high('x') <= right(box) + PLACEMENT_EPS
-      : run.from.x > box.x + PLACEMENT_EPS && run.from.x < right(box) - PLACEMENT_EPS && low('y') >= box.y - PLACEMENT_EPS && high('y') <= bottom(box) + PLACEMENT_EPS;
-    if (!inside) continue;
-    const side: Side | undefined = horizontal
-      ? run.from.y < bodies.y - PLACEMENT_EPS ? 'top' : run.from.y > bottom(bodies) + PLACEMENT_EPS ? 'bottom' : undefined
-      : run.from.x < bodies.x - PLACEMENT_EPS ? 'left' : run.from.x > right(bodies) + PLACEMENT_EPS ? 'right' : undefined;
-    if (side === undefined || bandHeldBy(model, id)?.side === side) return undefined;
-    const second = side === 'bottom' || side === 'left';
-    if (second) {
-      // Stage 9 tries the side of the bodies first: when that box is free of bodies, pills and borders, the label stands there.
-      const first = runLabelBox(borders, run, half, size, false);
-      const taken = first === undefined || borders.some(item => labelCrossesBorder(first, item)) || Object.values(model.nodes).some(node =>
-        overlaps(first, node.bounds!) || node.ports.some(port => port.pill !== undefined && overlaps(first, port.pill.bounds)));
-      if (!taken) return undefined;
-    }
-    const label = runLabelBox(borders, run, half, size, second);
-    if (label === undefined) return undefined;
-    const reach = side === 'top' ? bodies.y - label.y : side === 'bottom' ? bottom(label) - bottom(bodies) : side === 'left' ? bodies.x - label.x : right(label) - right(bodies);
-    return { group: id, side, padding: Math.ceil((reach + stroke) / LABEL_PADDING_GRAIN - PLACEMENT_EPS) * LABEL_PADDING_GRAIN };
+  // The padding the run lies in (`paddingOf`, one reader with the overlay track room, R1). Last key: group id order; the boxes of one
+  // tier do not overlap, so at most one group holds the run.
+  const held = paddingOf(model, run.from, run.to);
+  if (held === undefined || held.title) return undefined;
+  const id = held.group, side = held.side, group = model.groups[id]!, bodies = union(group.nodes.map(node => model.nodes[node]!.bounds!));
+  const second = side === 'bottom' || side === 'left';
+  if (second) {
+    // Stage 9 tries the side of the bodies first: when that box is free of bodies, pills and borders, the label stands there.
+    const first = runLabelBox(borders, run, half, size, false);
+    const taken = first === undefined || borders.some(item => labelCrossesBorder(first, item)) || Object.values(model.nodes).some(node =>
+      overlaps(first, node.bounds!) || node.ports.some(port => port.pill !== undefined && overlaps(first, port.pill.bounds)));
+    if (!taken) return undefined;
   }
-  return undefined;
+  const label = runLabelBox(borders, run, half, size, second);
+  if (label === undefined) return undefined;
+  const reach = side === 'top' ? bodies.y - label.y : side === 'bottom' ? bottom(label) - bottom(bodies) : side === 'left' ? bodies.x - label.x : right(label) - right(bodies);
+  return { group: id, side, padding: roomGrain(reach + stroke) };
 }
+
+/** A room across a run, rounded up to `LABEL_PADDING_GRAIN`. */
+const roomGrain = (room: number): number => Math.ceil(room / LABEL_PADDING_GRAIN - PLACEMENT_EPS) * LABEL_PADDING_GRAIN;
+
+/**
+ * The room across the runs of an overlay link's separated tracks (architecture-2 ticket 23): a run that track separation moved out
+ * into a plain group's padding, beyond the run the per-link rule derived there, on an edge no title holds, needs that padding to reach
+ * the run plus one overlay track pitch to the border (half the stroke, `OVERLAY_GAP`, half the border's stroke). The tracks are decided
+ * beyond the edge as it stands (`overlayPath` lets a run cross the edge it grows), and 7f grows the edge to hold them. A moved track
+ * that carries the link's label (`riddenRun`) holds the label beyond it too: half the stroke, the normal gap, the text and half the
+ * border's stroke, as a label beside a run asks (`acrossRunPadding`); the label window of a run that near the border is cut away.
+ */
+export function trackRoomPadding(model: LayoutModel, link: LayoutLink, labelHeight?: number): AcrossRunRoom[] {
+  const rooms: AcrossRunRoom[] = [];
+  const stroke = linkStrokeWidth(link), ridden = labelHeight === undefined ? undefined : riddenRun(model, link);
+  for (const { base, drawn } of overlayTrackRuns(model, link)) {
+    const held = paddingOf(model, base[0], base[1]);
+    if (held === undefined || held.title) continue;
+    const bodies = bodiesOf(model, model.groups[held.group]!.nodes);
+    const reach = reachBeyond(bodies, held.side, drawn[0]);
+    if (reach <= reachBeyond(bodies, held.side, base[0]) + PLACEMENT_EPS) continue;
+    const carries = ridden !== undefined && [ridden.from, ridden.to].every(point => [drawn[0], drawn[1]].some(end => Math.abs(end.x - point.x) <= PLACEMENT_EPS && Math.abs(end.y - point.y) <= PLACEMENT_EPS));
+    const beyond = Math.max(overlayTrackPitch(stroke, DEFAULT_STROKE_WIDTHS.group),
+      carries ? stroke / 2 + LINK_LABEL_GEOMETRY.normalGap + labelHeight! + DEFAULT_STROKE_WIDTHS.group / 2 : 0);
+    rooms.push({ group: held.group, side: held.side, padding: roomGrain(reach + beyond) });
+  }
+  return rooms;
+}
+/** The track rooms of a drawn overlay link (`trackRoomPadding`), with its label when it shows one: 7f and the validator read this (R1). */
+const trackRooms = (model: LayoutModel, link: LayoutLink, suppressed: boolean): AcrossRunRoom[] =>
+  effectiveLayer(link) === 'overlay' && link.meshBus === undefined && link.attachments !== undefined
+    ? trackRoomPadding(model, link, describedLink(model, link, suppressed) ? labelSize(model, link).height : undefined) : [];
 const overlaps = (a: Rect, b: Rect): boolean =>
   a.x < right(b) - PLACEMENT_EPS && b.x < right(a) - PLACEMENT_EPS && a.y < bottom(b) - PLACEMENT_EPS && b.y < bottom(a) - PLACEMENT_EPS;
 
@@ -1500,10 +1520,12 @@ export function labelPaddingFault(model: LayoutModel): string | undefined {
         const link = byId.get(name);
         if (link === undefined) return `${id} ${side} names ${name}, which is not a link of the model`;
         const run = describedLink(model, link, suppressed) ? riddenRun(model, link) : undefined;
-        if (run === undefined) continue;
-        const need = acrossRunPadding(model, borders, run, labelSize(model, link), linkStrokeWidth(link) / 2);
-        if (need !== undefined && need.group === id && need.side === side && need.padding > entry.room + PLACEMENT_EPS) {
-          return `${id} ${side} records ${entry.room} px and ${name} needs ${need.padding} px`;
+        const label = run === undefined ? undefined : acrossRunPadding(model, borders, run, labelSize(model, link), linkStrokeWidth(link) / 2);
+        const tracks = trackRooms(model, link, suppressed);
+        for (const need of [label, ...tracks]) {
+          if (need !== undefined && need.group === id && need.side === side && need.padding > entry.room + PLACEMENT_EPS) {
+            return `${id} ${side} records ${entry.room} px and ${name} needs ${need.padding} px`;
+          }
         }
       }
     }
@@ -1527,14 +1549,17 @@ function riddenRun(model: LayoutModel, link: LayoutLink): PathSegment | undefine
  * rides (`riddenRun`); a test passes a side run, which no overlay path of the corpus takes yet.
  */
 export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[]) => void, shortfalls: LinkLabelShortfall[],
-  runOf: (model: LayoutModel, link: LayoutLink) => PathSegment | undefined = riddenRun): boolean {
+  runOf: (model: LayoutModel, link: LayoutLink) => PathSegment | undefined = riddenRun, only?: 'tracks'): boolean {
   let changed = false;
   const suppressed = overlayLabelsSuppressed(model);
-  for (const link of model.links) {
-    if (!describedLink(model, link, suppressed)) continue;
-    const run = runOf(model, link);
-    if (run === undefined) continue;
-    const room = acrossRunPadding(model, labelBorders(model), run, labelSize(model, link), linkStrokeWidth(link) / 2);
+  // A label's room across its run (ticket 21), then the room of the link's separated overlay tracks (ticket 23); each is read on the
+  // model as the growth before it left it. `only: 'tracks'` reads the tracks alone.
+  const roomsOf = (link: LayoutLink): (AcrossRunRoom | undefined)[] => {
+    const run = only === undefined && describedLink(model, link, suppressed) ? runOf(model, link) : undefined;
+    const label = run === undefined ? undefined : acrossRunPadding(model, labelBorders(model), run, labelSize(model, link), linkStrokeWidth(link) / 2);
+    return [label, ...trackRooms(model, link, suppressed)];
+  };
+  for (const link of model.links) for (const room of roomsOf(link)) {
     if (room === undefined) continue;
     const group = model.groups[room.group]!, box = group.bounds!, bodies = union(group.nodes.map(node => model.nodes[node]!.bounds!));
     const held = room.side === 'top' ? bodies.y - box.y : room.side === 'bottom' ? bottom(box) - bottom(bodies) : room.side === 'left' ? bodies.x - box.x : right(box) - right(bodies);
@@ -1611,6 +1636,9 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
   recordLabelYields(model, labelBorders(model));
   const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
   const settle = (nodes: string[]): void => { if (nodes.length) rebuildNodeGeometry(model, nodes, 'current'); };
+  // The room of separated overlay tracks first (ticket 23): a track decided beyond the edge it grows stands inside the box before a
+  // label window is read on its run.
+  if (reserveAcrossRunRoom(model, settle, shortfalls, riddenRun, 'tracks')) changed = true;
   for (const link of model.links) {
     // A bus member's label goes to the bus tooltip (mesh-bus.md, section 6): it asks for no room.
     if (!describedLink(model, link, suppressed) || !link.attachments) continue;

@@ -458,7 +458,7 @@ links:
     expect(JSON.stringify(model.groups['zone#2']!.bounds)).toBe(row);
   }, 60000);
 
-  it('the guard fixture (a fan over the row): the lower rank moves, for fewer bent links, though it adds a crossing', async () => {
+  it('the guard fixture (a fan over the row): the lower rank moves, for fewer bent links', async () => {
     const yaml = `portograph: 2
 groups:
   core: { tier: 0, label: Core }
@@ -492,9 +492,10 @@ links:
   - [up-b, c-3, { class: sync }]
 `;
     const model = await run(yaml);
-    // Architecture ticket 13, phase 4: a crossing added is no veto any more. The move straightens two links and adds one crossing: fewer bent links decide.
+    // Architecture ticket 13, phase 4: a crossing added is no veto any more; fewer bent links decide. Since ticket 23 the detours before
+    // the move take separate tracks and two pairs of them cross; after the move one pair crosses.
     expect(model.diagnostics.filter(d => d.code === 'RANK_STEPPED_OFF_CHORD').map(d => d.message)).toEqual([
-      'The lower rank zone#3 moved -28.4 px off the overlay chords of the ranks above: 2 more straight overlay links, overlay crossings 0 to 1.']);
+      'The lower rank zone#3 moved -28.4 px off the overlay chords of the ranks above: 2 more straight overlay links, overlay crossings 2 to 1.']);
     expect(overlays(model).filter(link => link.path!.segments.length > 1)).toHaveLength(1);
   }, 60000);
 

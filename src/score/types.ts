@@ -20,6 +20,8 @@ export interface ScoreCounters {
   inversions: number; fallbackUsed: boolean; deadlineHit: boolean;
   /** Link-label and group-or-frame-box pairs where the label lies across the box's border (`labelCrossesBorder`); present only when one does. No gate reads it. */
   labelBorderCrossings?: number;
+  /** Pairs of runs of two overlay paths that share a track (`sharedTrackPairs`, architecture-2 ticket 23): collinear, nearer than the overlay track pitch, overlapping or meeting end to end. Mesh-bus members are left out (their bar is shared by design). Present only when one pair is; no gate reads it. */
+  overlayTrackShares?: number;
   /** The mesh buses drawn; present only when there is one, so a model without a bus keeps the counters it always had. */
   meshBuses?: number;
   /** The routed segments that cross a mesh bus riser (mesh-bus.md, section 11.5); no gate reads them. */

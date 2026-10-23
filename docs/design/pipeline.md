@@ -1118,7 +1118,13 @@ every rebuild keeps it. 7f writes a room only above the edge's ordinary padding.
 entry with no link, a link the model does not have, or a room short of what a named link needs now (room ≥
 need); a named link with no labelled run now, or a room a later padding row reached, is no fault (both follow
 legal later geometry). The replay reports a box that no longer holds the room. The title edge is left
-to the title band; a rank cell's border is its frame's, and is not grown.
+to the title band; a rank cell's border is its frame's, and is not grown. **Track room (ticket 23).** A run
+that track separation moved further into a plain group's padding (`paddingOf`, the reader this rule and
+the overlay paths share) needs the padding to reach it plus one overlay track pitch to the border, or plus
+the label (half the stroke, the normal gap, the text, half the border) when the run carries the link's
+label (`trackRoomPadding`). 7f grows those edges first, before the label windows are read, by the same
+growth and into the same record (`labelPadding`, the link that holds the track); the validator reads the
+same need.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
 (`labelRunWindows` with the turned box's height) are the line less the shorten margins, less every
@@ -1474,7 +1480,30 @@ right round the pair one clearance outside its own extent, two down the middle o
 — that enters no node body and no pill, with ties going to the single turn that carries on the way
 the source faces, and with no candidate that walks back along a run it already drew. When every way
 is blocked the shortest that clears the link's own two end boxes is taken, and the renderer's mask
-carries the body it then crosses.
+carries the body it then crosses. The clearance is the **overlay port clearance** of the link's stroke
+(`overlayPortClearance`: the bare-end dot, stroke + 6 px across, plus `OVERLAY_GAP` 4 px; 7.75 px at
+1.5 px), on every face, for the turn out of each face and for the margins of the ways round (ticket 23;
+it was 4 px, and the turn read as lying on the face).
+
+**Two overlay detours never share a track (ticket 23).** The per-link rule reads each link alone, so two
+detours out of one face rose on one riser and ran over the row on one line, and read as one line. The
+layer is read once (`overlayTracks`, kept per model and blocker index): the paths that cannot move
+(straight segments, courses, mesh-bus members) hold their tracks, then the detours with a middle run take
+theirs, unlabelled before labelled, shortest first (last key `sourceIndex`). Two runs of two paths are on
+one track when they lie on one axis nearer than the **overlay track pitch** (half of each stroke plus
+`OVERLAY_GAP`: 5.5 px) and overlap or meet end to end within it; two paths that leave one port draw their
+common stretch once and may fork there (`sharedTrackPairs`, `forks`). A middle run on a shared track
+moves across its axis by one, two or three pitches; its two neighbours lengthen or shorten, so no bend
+appears. The other ways round with the same bends are tried as well (a non-collinear alternative before
+an offset). A candidate walks back along nothing, enters no body or pill, keeps the overlay port
+clearance from each (or the distance the derived way kept, where less), and stands to every group and
+frame box as the derived run did; it may cross the padding edge of a plain group on a side no title
+holds, which 7f then grows. Rank: fewest shared tracks, for a labelled detour the way out of its U, fewest
+crossings with the held paths, no growth, the nearest track, out of the U, the positive direction. The
+result is a function of the frozen geometry, so nothing is recorded: stage 8 publishes it and
+`route/validate` derives it again and compares (R1, R5). A run no candidate frees keeps its track, and the
+scorer counts the pair (`overlayTrackShares`); a column gap that holds fewer risers than need it is not
+widened yet.
 
 Two ports facing each other on one line closer than their
 two clearances ride their own faces on the orthogonal branch instead, which keeps its two ends in

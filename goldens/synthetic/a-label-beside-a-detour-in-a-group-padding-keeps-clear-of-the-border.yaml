@@ -1,9 +1,11 @@
-# Expected (architecture-2 ticket 21): room across a run. Four nodes of `row` are a full mesh of `sync` links; one is labelled, so no
-# bus forms. The labelled link `b`-`d` has `c` between its ends, so it detours under the row, 4 px below the bodies, in the bottom
-# padding of `row` (the title is on the top edge). Its label stands beside that run on the side of the bottom edge: the side of the
-# bodies is taken by `c`. The ordinary padding (20 px) is 0.25 px short of the room the label needs (the run's offset, half the
-# stroke, the gap, the text height and half the border's stroke): 7f grows the bottom padding of `row` by exactly that and records it
-# (`labelPadding`: row bottom 20.25). The label clears the border: no LINK_LABEL_ON_BORDER, `labelBorderCrossings` absent.
+# Expected (architecture-2 tickets 21 and 23): room across a run, and the user's report of ticket 23. Four nodes of `row` are a full
+# mesh of `sync` links; one is labelled, so no bus forms. The detours out of `a` to `c` and to `d` used to rise on one riser and run on
+# one line over the row; they take separate tracks now (`a`-`c` over the row, `a`-`d` under it), and no pair of overlay runs shares a
+# track (`overlayTrackShares` absent). Each turn steps out of its face by the overlay port clearance (7.75 px). The labelled link
+# `b`-`d` has `c` between its ends and detours under the row in the bottom padding (the title is on the top edge); as a labelled
+# detour it leaves its U outward, one track pitch outside `a`-`d`, and its label stands beyond that track. 7f grows the bottom
+# padding of `row` to the track plus the label (half the stroke, the gap, the text height and half the border's stroke) and records it
+# (`labelPadding`: row bottom 29.5, link-5). The label clears the border: no LINK_LABEL_ON_BORDER, `labelBorderCrossings` absent.
 # Test-only input; test/pipeline/link-label-rules.test.ts reads it.
 portograph: 2
 groups:
