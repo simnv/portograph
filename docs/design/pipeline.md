@@ -1104,8 +1104,21 @@ borders the run crosses holds the label, with the same `windowHolds` stage 9 ask
 larger of that and the symmetric deficit. A routed link that bends or detours has no run for
 placement to read, and stage 9 decides. A run whose window no growth at the split can open (a box
 that moves with the far end cuts it) is diagnosed `LINK_LABEL_ROOM_UNRESERVED`, and so is an overlay
-L's side run that has no gap to grow and whose windows do not hold the label now. Room *across* a run
-(a border parallel to the run, within the label's height of it) is not reserved yet.
+L's side run that has no gap to grow and whose windows do not hold the label now. **Room across a run
+(ticket 21).** An overlay link's longest run that lies in a group's padding, between the node bodies and
+one edge of the box, carries its label on the side of that edge: always on the top and right edges (the
+side stage 9 tries first), and on the bottom and left edges when the box on the side of the bodies meets a
+body, a pill or a border. The box is the one stage 9 tries (`runLabelBox`). When the padding on that edge,
+from the bodies to the box edge, is less than the label's reach beyond the bodies plus the border's half
+stroke (`acrossRunPadding`), 7f grows that edge by exactly the deficit: the group's own content and the tiers
+below move down for the top edge (a sibling of its tier stays), the tiers below for the bottom edge, and the
+room is inserted at the bodies' face for a side edge. The room is recorded per group and edge with the links
+it was grown for (`model.labelPadding`: `room`, `links`; the room only grows), `groupPadding` reads it, so
+every rebuild keeps it. 7f writes a room only above the edge's ordinary padding. The validator refuses an
+entry with no link, a link the model does not have, or a room short of what a named link needs now (room ≥
+need); a named link with no labelled run now, or a room a later padding row reached, is no fault (both follow
+legal later geometry). The replay reports a box that no longer holds the room. The title edge is left
+to the title band; a rank cell's border is its frame's, and is not grown.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
 (`labelRunWindows` with the turned box's height) are the line less the shorten margins, less every
@@ -1118,9 +1131,11 @@ in the window placement reserved. A link placement did not reserve is left to st
 test. **Two labels on diagonal lines do not take each other's window** (ticket 20 follow-up). A label on a
 diagonal line lies in the line's **band**: the line, with half the turned box's height plus the halo. When
 two bands can meet, one label yields: its windows also keep clear of the other band, and in stage 9 every
-candidate on its line does too (a candidate beside the line is left to the collision test). The label with
-the more slack yields (the longest window of its line clear of the borders, the reserved runs and the other
-band, less its text); on equal slack, the later link. The other label lies in its own band, so the two never
+candidate on its line does too (a candidate beside the line is left to the collision test). The ranking
+(ticket 21): first, a label for which some growth 7f can make gives a window clear of the other band
+(`labelWindowDeficit` defined, at the split 7f grows at, `tierGapSplit`) yields, rather than one no growth
+can help; then the label with the more slack yields (the longest window of its line clear of the borders, the
+reserved runs and the other band, less its text); last, the later link. The other label lies in its own band, so the two never
 meet, whichever stage 9 places first. The decision is made once per pair, when the bands first can meet, and
 recorded (`model.labelYields`, `recordLabelYields`: a key for every label on a diagonal line, `[]` = it
 yields to none); 7f and stage 9 read the record (`labelBands`), and the validator refuses a record that is
@@ -1583,7 +1598,8 @@ place clears every border do both overlay rungs run again at the midpoint withou
 whole label across a border still beats a shortened one), and the label is reported as
 `LINK_LABEL_ON_BORDER`. Placement reserves the window: 7f's `reserveLinkLabelRoom` measures every
 run a label rides with the same windows (`labelWindowDeficit`) and grows the tier gap or the row
-when no window holds the text (ticket 19). A label on a diagonal line takes the step nearest the midpoint
+when no window holds the text (ticket 19), and grows a group's padding when the label beside a run in
+that padding reaches the edge (ticket 21, room across a run). A label on a diagonal line takes the step nearest the midpoint
 whose text lies wholly in a window of the line, or the point of a window nearest the midpoint (ticket 20).
 A label that yields to the band of another label on a diagonal line (`model.labelYields`, recorded in 7f)
 keeps clear of that band with every candidate on its line, on every rung; stage 9 never decides a yield. The band is read on

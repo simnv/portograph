@@ -64,8 +64,9 @@ export const LABEL_BORDER_REACH = LINK_LABEL_GEOMETRY.borderMargin + DEFAULT_STR
  *
  * The windows cut the run along its own line only. The label box stands beside the run, so stage 9
  * also tests the whole box with `labelCrossesBorder`: a border parallel to the run, or a corner, that
- * the box reaches and the run does not refuses the candidate there. Placement reserves no room across
- * the run for that case; such a label falls back to the midpoint and reports `LINK_LABEL_ON_BORDER`.
+ * the box reaches and the run does not refuses the candidate there. Placement reserves room across the
+ * run for a run in a group's padding (`acrossRunPadding`, ticket 21); elsewhere such a label falls back to
+ * the midpoint and reports `LINK_LABEL_ON_BORDER`.
  */
 export function labelRunWindows(boxes: readonly Rect[], run: PathSegment, across = 0, links: readonly LinkRun[] = []): { from: number; to: number }[] | undefined {
   const vertical = Math.abs(run.to.x - run.from.x) <= EPS, horizontal = Math.abs(run.to.y - run.from.y) <= EPS;
@@ -289,9 +290,10 @@ export function labelBands(model: LayoutModel, own: string, unapplied: string[] 
  * Who yields, decided once per pair and recorded (`model.labelYields`, R1). Two labels on diagonal lines whose bands can meet would
  * each take the window placement reserved for the other (the label placed first takes it). So one label of each such pair keeps clear
  * of the other's band, in placement (its windows) and in stage 9 (every candidate on its line), and the other lies in its own band:
- * the two never meet, whichever stage 9 places first. The label with the more **slack** yields: the longest window of its line clear
- * of the borders (`boxes`), the fixed link runs and the other's band, less its text. On equal slack the later link in link order
- * yields (the last key).
+ * the two never meet, whichever stage 9 places first. The ranking (ticket 21): first, a label that some growth 7f can make gives a
+ * window clear of the other's band (`labelWindowDeficit` defined at `tierGapSplit`) yields, rather than one no growth can help, so the
+ * label growth cannot help keeps its line. Then the label with the more **slack** yields: the longest window of its line clear of the
+ * borders (`boxes`), the fixed link runs and the other's band, less its text. Last key: the later link in link order yields.
  *
  * The record has a key for every labelled diagonal line ([] = it yields to none). A pair is decided when its bands first can meet,
  * and never again: a decided pair keeps its direction whatever moves later. A key whose link no longer carries a label on a diagonal
@@ -309,20 +311,29 @@ export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): b
   const record: Record<string, string[]> = {};
   for (const item of lines) record[item.link.id] = (before?.[item.link.id] ?? []).filter(id => live.has(id));
   const fixed = new Map<string, LinkRun[]>();
+  const runs = (line: LabelledLine, other: LabelledLine): LinkRun[] => {
+    let held = fixed.get(line.link.id);
+    if (held === undefined) fixed.set(line.link.id, held = fixedLinkRuns(model, line.link.id));
+    return [...held, other.band];
+  };
   const slack = (line: LabelledLine, other: LabelledLine): number => {
-    let runs = fixed.get(line.link.id);
-    if (runs === undefined) fixed.set(line.link.id, runs = fixedLinkRuns(model, line.link.id));
-    const windows = labelRunWindows(boxes, line.line, line.across, [...runs, other.band]) ?? [];
+    const windows = labelRunWindows(boxes, line.line, line.across, runs(line, other)) ?? [];
     return Math.max(-Infinity, ...windows.map(window => window.to - window.from)) - line.extent;
   };
+  // Ticket 21: whether some growth 7f can make gives the line a window clear of the other's band (`labelWindowDeficit` defined), at
+  // the split and on the axis 7f grows it at (`tierGapSplit`); a line within one tier grows at no split.
+  const helped = (line: LabelledLine, other: LabelledLine): boolean =>
+    labelWindowDeficit(boxes, line.line, line.extent, tierGapSplit(model, line.link), true, { across: line.across, axis: 'y', links: runs(line, other) }) !== undefined;
   for (const [i, mine] of lines.entries()) for (const other of lines.slice(i + 1)) {
     const a = mine.link.id, b = other.link.id;
     if (record[a]!.includes(b) || record[b]!.includes(a)) continue;
     // Bands that cannot meet: the two lines stay farther apart than both clearances.
     if (segmentDistance(mine.line, { ...other.line, owner: mine.line.owner }) >= mine.band.clearance + other.band.clearance - EPS) continue;
+    // First key: a label growth can help yields, rather than one no growth helps. Then the more slack yields; a line with no window has
+    // slack -Infinity, so two such lines are equal. Last key: the later link (`other`) yields.
+    const ha = helped(mine, other), hb = helped(other, mine);
     const p = slack(mine, other), q = slack(other, mine);
-    // A line with no window has slack -Infinity: two such lines are equal, and the later link (`other`) yields.
-    if (p > q + EPS) record[a]!.push(b); else record[b]!.push(a);
+    if (ha !== hb ? ha : p > q + EPS) record[a]!.push(b); else record[b]!.push(a);
   }
   // Values in link order, so the record does not depend on the order pairs were decided in.
   const order = new Map(model.links.map((link, at) => [link.id, at]));
@@ -331,6 +342,20 @@ export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): b
   if (equal(next, before)) return false;
   if (next === undefined) delete model.labelYields; else model.labelYields = next;
   return true;
+}
+
+/**
+ * Where 7f grows the tier gap a link between two tiers crosses (ticket 19): the top of the highest group below the tier of the link's
+ * upper end, whose boxes all move down. `Infinity` for a link within one tier: no growth moves a diagonal there. 7f and the yield
+ * ranking (`recordLabelYields`) read this one split (R1).
+ */
+export function tierGapSplit(model: LayoutModel, link: LayoutLink): number {
+  const ends = link.attachments === undefined ? [] : [link.attachments.from.node, link.attachments.to.node].map(id => model.nodes[id]!);
+  if (ends.length !== 2) return Infinity;
+  const tier = (node: LayoutModel['nodes'][string]): number => model.groups[model.document.nodes[node.id]!.group]!.tier!;
+  if (tier(ends[0]!) === tier(ends[1]!)) return Infinity;
+  const upper = ends[0]!.bounds!.y <= ends[1]!.bounds!.y ? ends[0]! : ends[1]!;
+  return Math.min(...Object.values(model.groups).filter(group => group.tier! > tier(upper)).map(group => group.bounds!.y));
 }
 
 /**
@@ -452,6 +477,24 @@ function windowCentre(windows: readonly { from: number; to: number }[], run: Pat
     if (best === undefined || Math.abs(centre - mid) < Math.abs(best - mid) - EPS) best = centre;
   }
   return best;
+}
+
+/** The centre of a label `extent` long on an axis-aligned run with `windows` (`cutWindows`): `undefined` = the midpoint (no border cuts the run), `null` = no window holds it. */
+function runCentre(windows: readonly { from: number; to: number }[] | undefined, run: PathSegment, extent: number): { x: number; y: number } | undefined | null {
+  if (windows === undefined) return undefined;
+  const along = windowCentre(windows, run, extent);
+  if (along === undefined) return null;
+  return Math.abs(run.to.x - run.from.x) <= EPS ? { x: run.from.x, y: along } : { x: along, y: run.from.y };
+}
+
+/**
+ * The box stage 9 tries for a label `size` beside the axis-aligned `run` on one side (`second`): centred where `placeLabel` centres it
+ * (the midpoint, or the window point nearest it), `candidateBox` on that side. `undefined` when no window of the run holds the label.
+ * Placement reads it to reserve room across a run (ticket 21, `acrossRunPadding`), so the two read one box (R1).
+ */
+export function runLabelBox(borders: readonly Rect[], run: PathSegment, half: number, size: { width: number; height: number }, second: boolean): Rect | undefined {
+  const centre = runCentre(cutWindows(borders, run), run, size.width);
+  return centre === null ? undefined : candidateBox(run, half, size, second, centre).bounds;
 }
 
 /** A direct line is a segment with no axis: its label lies on it (ticket 16). */
@@ -804,12 +847,8 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
       const measured = measure(drawn);
       if (!measured.lines.length) continue;
       if (!shortened && shortenable && measured.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin > length + EPS) continue;
-      let centre: { x: number; y: number } | undefined;
-      if (windows !== undefined) {
-        const along = windowCentre(windows, segment, measured.width);
-        if (along === undefined) continue;
-        centre = Math.abs(segment.to.x - segment.from.x) <= EPS ? { x: segment.from.x, y: along } : { x: along, y: segment.from.y };
-      }
+      const centre = runCentre(windows, segment, measured.width);
+      if (centre === null) continue;
       const { bounds, textRotation, turnedSize } = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second, centre);
       const area = labelArea({ bounds, textRotation, ...(turnedSize ? { turnedSize } : {}) });
       if (borders !== undefined && borders.some(box => labelCrossesBorder(area, box))) { refusal.border = true; continue; }

@@ -3,12 +3,14 @@ import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
-import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_CUT_HAIR, LINK_LABEL_GEOMETRY, labelBands, labelRunWindows, labelWindowDeficit, produceLinkLabels, recordLabelYields, windowHolds } from '../../src/layout/link-labels.js';
+import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_CUT_HAIR, LINK_LABEL_GEOMETRY, labelBands, labelRunWindows, labelWindowDeficit, produceLinkLabels, recordLabelYields, tierGapSplit, windowHolds } from '../../src/layout/link-labels.js';
 import { areaDistance, areaSegmentDistance } from '../../src/geometry/oriented.js';
 import { EPS } from '../../src/geometry/planar.js';
 import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
 import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
-import { reserveLinkLabelRoom, validateGroupLabelBands } from '../../src/layout/bands.js';
+import { reserveAcrossRunRoom, reserveLinkLabelRoom, validateGroupLabelBands } from '../../src/layout/bands.js';
+import { fitRegionGroup } from '../../src/layout/regions.js';
+import { union } from '../../src/layout/skeleton-geometry.js';
 import { bench } from '../layout/link-label-fixture.js';
 import { measureText } from '../../src/text/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
@@ -591,12 +593,114 @@ for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-ov
   }, 120000);
 }
 
-// Open (ticket 19): room across a run. An overlay detour over the row runs 4 px above the bodies in the top padding; the label
-// beside it needs 20.25 px of padding and `GROUP_PADDING` is 20, so it touches the top border's stroke by 0.25 px.
-it.fails('a label beside an overlay detour in a group padding stays clear of the border (ticket 19, open)', async () => {
-  const model = await run(fixture('a-row-mesh-with-another-label-draws-plain-links'));
-  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER')).toEqual([]);
-  expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
+// Ticket 21: room across a run. A detour over or under the row runs 4 px from the bodies in a group's padding; the label beside it
+// needs 20.25 px of padding and `GROUP_PADDING` is 20. 7f grows that edge by exactly the deficit and records the room and its link (R1).
+for (const [name, side, link] of [['a-row-mesh-with-another-label-draws-plain-links', 'top', 'link-8'],
+  ['a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border', 'bottom', 'link-5'],
+  ['a-label-beside-a-detour-grows-its-own-group-only', 'top', 'link-9']] as const) {
+  it(`a label beside a detour in a group padding stays clear of the border: ${name} (ticket 21)`, async () => {
+    const model = await run(fixture(name));
+    expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+    const report = score(model).snapshot;
+    expect(report.counters.labelBorderCrossings).toBeUndefined();
+    expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
+    // The growth is only as large as the label needs: the run's offset (4), half the stroke, the gap, the text height, half the border.
+    const text = model.labels.find(label => label.role === 'link')!.bounds!.height;
+    const need = 4 + DEFAULT_STROKE_WIDTHS.path / 2 + LINK_LABEL_GEOMETRY.normalGap + text + DEFAULT_STROKE_WIDTHS.group / 2;
+    expect(need).toBeGreaterThan(20);
+    expect(model.labelPadding).toEqual({ row: { [side]: { room: expect.closeTo(need, 3), links: [link] } } });
+    const row = model.groups.row!;
+    const bodies = row.nodes.map(id => model.nodes[id]!.bounds!);
+    const held = side === 'top' ? Math.min(...bodies.map(box => box.y)) - row.bounds!.y : row.bounds!.y + row.bounds!.height - Math.max(...bodies.map(box => box.y + box.height));
+    expect(held).toBeCloseTo(need, 3);
+    // R2: a sibling group of the same tier does not move; its top and its padding stay as they were.
+    const aside = model.groups.aside;
+    if (aside !== undefined) {
+      expect(aside.bounds!.y).toBeCloseTo(row.bounds!.y, 9);
+      expect(model.nodes.s!.bounds!.y - aside.bounds!.y).toBeCloseTo(20, 9);
+    }
+    // The reservation is at its fixed point, and the validator accepts the record (R1).
+    expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+    expect(() => validateGroupLabelBands(model)).not.toThrow();
+    // `groupPadding` reads the record: a box refitted from its bodies keeps the room. Every plain group holds a title band, and a band
+    // group's refit keeps the extent it had, so the box is first collapsed to its bodies. Without the record the edge gets the ordinary
+    // padding back, and the replay and the validator report the shortfall.
+    const refit = (copy: LayoutModel): void => {
+      const group = copy.groups.row!;
+      group.bounds = union(group.nodes.map(id => copy.nodes[id]!.bounds!));
+      fitRegionGroup(copy, group);
+    };
+    const kept = structuredClone(model);
+    refit(kept);
+    expect(kept.groups.row!.bounds).toEqual(row.bounds);
+    const lost = structuredClone(model);
+    delete lost.labelPadding;
+    refit(lost);
+    expect(lost.groups.row!.bounds!.height).toBeCloseTo(row.bounds!.height - (need - 20), 3);
+    expect(reserveLinkLabelRoom(structuredClone(lost))).toBe(true);
+    expect(() => validateGroupLabelBands(lost)).toThrow(/padding of row/);
+    // Geometry a legal later move changes is no fault: a listed link that carries no label on a run now (`link-1` is unlabelled), and a
+    // room the ordinary padding has reached (a padding row added later); the box still holds the room, so the replay finds no shortfall.
+    const entry = model.labelPadding!.row![side]!;
+    for (const legal of [{ row: { [side]: { room: entry.room, links: ['link-1', link] } } }, { row: { [side]: { room: entry.room, links: ['link-1'] } } },
+      { row: { [side]: { room: 20, links: ['link-1'] } } }]) {
+      const copy = structuredClone(model);
+      copy.labelPadding = legal;
+      expect(() => validateGroupLabelBands(copy)).not.toThrow();
+    }
+    // R5: a forged record is refused: a room that is not a positive number, no link, a link the model does not have, a room short of
+    // the need of its link, an unknown group.
+    const forgeries: [NonNullable<LayoutModel['labelPadding']>, RegExp][] = [
+      [{ row: { [side]: { room: -1, links: [link] } } }, /records -1 px/],
+      [{ row: { [side]: { room: entry.room, links: [] } } }, /names no link/],
+      [{ row: { [side]: { room: entry.room, links: ['link-99'] } } }, /not a link of the model/],
+      [{ row: { [side]: { room: entry.room - 0.1, links: [link] } } }, /needs/],
+      [{ nowhere: { top: entry } }, /not a group/],
+    ];
+    for (const [forged, why] of forgeries) {
+      const copy = structuredClone(model);
+      copy.labelPadding = forged;
+      expect(() => validateGroupLabelBands(copy)).toThrow(why);
+    }
+  }, 120000);
+}
+
+// Ticket 21 re-check: room across a run on a side edge. No overlay path of the corpus runs in a group's side padding yet, so the run is
+// given (`runOf`): a vertical run 4 px beside the bodies of a grid, as a detour round the column would stand. The left edge inserts
+// the room at the bodies' face (the bodies move right, the box's left edge stays); the right edge grows the box to the right.
+it('a label beside a run in a side padding grows that edge by exactly the deficit (ticket 21)', async () => {
+  const model = await run(`portograph: 2
+groups:
+  stack: { tier: 0, label: Stack, shape: grid }
+nodes:
+${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => `  n${i}: { group: stack, class: router, label: N${i} }`).join('\n')}
+links:
+  - { from: n1, to: n7, class: sync, label: standby }`);
+  const group = model.groups.stack!, owner = { kind: 'link' as const, id: 'link-1' };
+  const bodies = union(group.nodes.map(id => model.nodes[id]!.bounds!));
+  const text = measureText('standby', { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).height;
+  const need = 4 + DEFAULT_STROKE_WIDTHS.path / 2 + LINK_LABEL_GEOMETRY.normalGap + text + DEFAULT_STROKE_WIDTHS.group / 2;
+  for (const side of ['left', 'right'] as const) {
+    const copy = structuredClone(model), box = copy.groups.stack!.bounds!;
+    // The run stands by the bodies as they stand, as a derived path does: it moves with them.
+    const runOf = (at: LayoutModel, link: LayoutModel['links'][number]) => {
+      if (link.id !== 'link-1') return undefined;
+      const now = union(at.groups.stack!.nodes.map(id => at.nodes[id]!.bounds!)), x = side === 'left' ? now.x - 4 : now.x + now.width + 4;
+      return { from: { x, y: now.y + 20 }, to: { x, y: now.y + now.height - 20 }, owner };
+    };
+    const shortfalls: Parameters<typeof reserveAcrossRunRoom>[2] = [];
+    expect(reserveAcrossRunRoom(copy, () => {}, shortfalls, runOf)).toBe(true);
+    expect(shortfalls.map(item => item.axis)).toEqual([`${side} padding of stack`]);
+    expect(copy.labelPadding).toEqual({ stack: { [side]: { room: expect.closeTo(need, 3), links: ['link-1'] } } });
+    const grown = copy.groups.stack!.bounds!, moved = union(copy.groups.stack!.nodes.map(id => copy.nodes[id]!.bounds!));
+    // Exactly the deficit, on that edge only.
+    expect(grown.width - box.width).toBeCloseTo(need - 20, 3);
+    expect(grown.x).toBeCloseTo(box.x, 9);
+    expect(moved.x - bodies.x).toBeCloseTo(side === 'left' ? need - 20 : 0, 3);
+    expect(side === 'left' ? moved.x - grown.x : grown.x + grown.width - moved.x - moved.width).toBeCloseTo(need, 3);
+    // At its fixed point: a second pass grows nothing.
+    expect(reserveAcrossRunRoom(copy, () => {}, [], runOf)).toBe(false);
+  }
 }, 120000);
 
 // Ticket 20: a turned label is tested by its turned rectangle, and placement reserves a window along the diagonal it lies on, clear
@@ -678,6 +782,27 @@ it('two diagonal labels from one node keep their lines (ticket 20)', async () =>
   expect(model.labelYields).toEqual({ 'link-1': ['link-2'], 'link-2': [] });
   for (const id of ['link-1', 'link-2']) expect(model.labels.find(label => label.id === `label:link:${id}`)!.onLine).toBe(true);
   expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
+  // Ticket 21: who yields is ranked first by whether growth can help. Extra borders: a box edge that link-1 runs along across the tier
+  // gap's split (its cut stretches with the growth, so no window of link-1 grows), and three boxes stacked on link-2 above the split
+  // (the window across the split grows). link-1 has the more slack (its best window is 5 px short, link-2's 42 px), so ranking by
+  // slack alone makes link-1 yield, and nothing can help it; link-2 yields now, and 7f can grow its window.
+  const walls = groupBoxes(model).map(item => item.bounds);
+  const boxes = [...walls, { x: 54, y: 205, width: 4, height: 95 },
+    { x: 80, y: 140, width: 120, height: 40 }, { x: 80, y: 180, width: 120, height: 35 }, { x: 80, y: 215, width: 120, height: 30 }];
+  const line = (id: string) => model.links.find(link => link.id === id)!.path!.segments[0]!;
+  const label = (id: string) => model.labels.find(item => item.id === `label:link:${id}`)!.turnedSize!;
+  const band = (id: string) => ({ segment: { from: line(id).from, to: line(id).to }, clearance: label(id).height / 2 + LINK_LABEL_GEOMETRY.halo });
+  const extent = (id: string) => label(id).width - 2 * LINK_LABEL_GEOMETRY.halo;
+  const deficit = (id: string, other: string) => labelWindowDeficit(boxes, line(id), extent(id), tierGapSplit(model, model.links.find(link => link.id === id)!), true,
+    { across: label(id).height, axis: 'y', links: [band(other)] });
+  const slack = (id: string, other: string) => Math.max(...labelRunWindows(boxes, line(id), label(id).height, [band(other)])!.map(window => window.to - window.from)) - extent(id);
+  expect(deficit('link-1', 'link-2')).toBeUndefined();
+  expect(deficit('link-2', 'link-1')).toBeGreaterThan(0);
+  expect(slack('link-1', 'link-2')).toBeGreaterThan(slack('link-2', 'link-1'));
+  const fresh = structuredClone(model);
+  delete fresh.labelYields;
+  expect(recordLabelYields(fresh, boxes)).toBe(true);
+  expect(fresh.labelYields).toEqual({ 'link-1': [], 'link-2': ['link-1'] });
 }, 120000);
 
 // The 0.7500001 case: a text that fills a window cut at a frozen chord passes stage 9's test of the chord (clearance + EPS).

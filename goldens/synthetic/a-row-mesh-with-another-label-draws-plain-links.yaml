@@ -1,6 +1,8 @@
 # Expected: the ten `sync` links among the five nodes of `row` do not draw alike (one is labelled `backup`), so no bus forms and no smaller
 # bus forms inside the refused mesh: MESH_BUS_DECLINED reason `label` naming that link, ten plain overlay links.
-# Test-only input owned by ranked-groups ticket 94; test/resolve/mesh-bus-join.test.ts reads it.
+# Architecture-2 ticket 21: the `backup` label beside its detour over the row needs 20.25 px of top padding; 7f grows the top edge of
+# `row` by 0.25 px and records it (`labelPadding`), so the label crosses no border.
+# Test-only input owned by ranked-groups ticket 94; test/resolve/mesh-bus-join.test.ts and test/pipeline/link-label-rules.test.ts read it.
 portograph: 2
 groups:
   top: { tier: 0, label: Top }

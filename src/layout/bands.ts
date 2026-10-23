@@ -1,7 +1,7 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import { stemCache, stemDepth } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
-import type { LabelBand, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
+import type { LabelBand, LabelPaddingEntry, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
@@ -16,14 +16,14 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { findPort, straightCorridorClear } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
-import { moveGroup, rebuildBands } from './skeleton-geometry.js';
+import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 import { allBut, copyWithShared } from './trial-copy.js';
 import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRows, sweptUnits } from './columns.js';
 import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
-import { effectiveLayer, groupBoxes } from '../score/model.js';
-import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns } from './link-labels.js';
+import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
+import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -1383,7 +1383,7 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
 }
 
 /** One labelled link whose run is shorter than the label it carries needs, and by how much. */
-export interface LinkLabelShortfall { link: string; axis: 'row' | 'row window' | 'tier gap' | 'tier gap window'; required: number; room: number }
+export interface LinkLabelShortfall { link: string; axis: 'row' | 'row window' | 'tier gap' | 'tier gap window' | `${Side} padding of ${string}`; required: number; room: number }
 
 /**
  * Insert `deficit` px of room at `split`: everything at or right of it moves right, in every tier (see `reserveLinkLabelRoom`). A node of tier
@@ -1422,6 +1422,154 @@ function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, exten
   if (turned === undefined) return labelWindowDeficit(boxes, run, extent, split, farEndMoves);
   return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id) });
 }
+
+/** The grain, in px, the room across a run is rounded up to, so a replay on the grown box finds the label clear (ticket 21). */
+export const LABEL_PADDING_GRAIN = 1e-3;
+
+/** What a label beside a run in a group's padding needs across the run (`acrossRunPadding`). */
+export interface AcrossRunRoom { group: string; side: Side; padding: number }
+
+/**
+ * Room across a run (architecture-2 ticket 21). A run that lies in a group's padding, between the group's node bodies and one edge of
+ * its box, carries its label on the side of that edge when the other side is taken: always on the top and right edges (the side stage
+ * 9 tries first), and on the bottom and left edges when the box on the side of the bodies meets a node body, a pill or a border. The
+ * label box is the one stage 9 tries (`runLabelBox`, R1). It stays clear of the edge's stroke (`labelCrossesBorder`) when the padding
+ * on that edge, from the node bodies to the box edge, is at least the label's reach beyond the bodies plus the half stroke: that figure,
+ * rounded up to `LABEL_PADDING_GRAIN`, is the result. It does not depend on where the group stands, so a move does not change it.
+ *
+ * `undefined` when the run has no axis, no window of the run holds the label, or the run lies in no padding of a group: between two
+ * node rows, outside every group box, or in a rank cell (whose border the frame draws). An edge that holds the group title is left to
+ * the title band, which reserves the room below the title for a detour (ADR-0014).
+ */
+export function acrossRunPadding(model: LayoutModel, borders: readonly Rect[], run: PathSegment, size: { width: number; height: number }, half: number): AcrossRunRoom | undefined {
+  const horizontal = Math.abs(run.to.y - run.from.y) <= PLACEMENT_EPS, vertical = Math.abs(run.to.x - run.from.x) <= PLACEMENT_EPS;
+  if (horizontal === vertical) return undefined;
+  const stroke = DEFAULT_STROKE_WIDTHS.group / 2;
+  const low = (axis: 'x' | 'y'): number => Math.min(run.from[axis], run.to[axis]), high = (axis: 'x' | 'y'): number => Math.max(run.from[axis], run.to[axis]);
+  // Last key: group id order (`orderedGroupIds`); the boxes of one tier do not overlap, so at most one group holds the run.
+  for (const id of orderedGroupIds(model.document)) {
+    const group = model.groups[id];
+    if (group === undefined || group.frame !== undefined || !group.nodes.length || group.bounds === undefined) continue;
+    const box = group.bounds, bodies = union(group.nodes.map(node => model.nodes[node]!.bounds!));
+    const inside = horizontal
+      ? run.from.y > box.y + PLACEMENT_EPS && run.from.y < bottom(box) - PLACEMENT_EPS && low('x') >= box.x - PLACEMENT_EPS && high('x') <= right(box) + PLACEMENT_EPS
+      : run.from.x > box.x + PLACEMENT_EPS && run.from.x < right(box) - PLACEMENT_EPS && low('y') >= box.y - PLACEMENT_EPS && high('y') <= bottom(box) + PLACEMENT_EPS;
+    if (!inside) continue;
+    const side: Side | undefined = horizontal
+      ? run.from.y < bodies.y - PLACEMENT_EPS ? 'top' : run.from.y > bottom(bodies) + PLACEMENT_EPS ? 'bottom' : undefined
+      : run.from.x < bodies.x - PLACEMENT_EPS ? 'left' : run.from.x > right(bodies) + PLACEMENT_EPS ? 'right' : undefined;
+    if (side === undefined || bandHeldBy(model, id)?.side === side) return undefined;
+    const second = side === 'bottom' || side === 'left';
+    if (second) {
+      // Stage 9 tries the side of the bodies first: when that box is free of bodies, pills and borders, the label stands there.
+      const first = runLabelBox(borders, run, half, size, false);
+      const taken = first === undefined || borders.some(item => labelCrossesBorder(first, item)) || Object.values(model.nodes).some(node =>
+        overlaps(first, node.bounds!) || node.ports.some(port => port.pill !== undefined && overlaps(first, port.pill.bounds)));
+      if (!taken) return undefined;
+    }
+    const label = runLabelBox(borders, run, half, size, second);
+    if (label === undefined) return undefined;
+    const reach = side === 'top' ? bodies.y - label.y : side === 'bottom' ? bottom(label) - bottom(bodies) : side === 'left' ? bodies.x - label.x : right(label) - right(bodies);
+    return { group: id, side, padding: Math.ceil((reach + stroke) / LABEL_PADDING_GRAIN - PLACEMENT_EPS) * LABEL_PADDING_GRAIN };
+  }
+  return undefined;
+}
+const overlaps = (a: Rect, b: Rect): boolean =>
+  a.x < right(b) - PLACEMENT_EPS && b.x < right(a) - PLACEMENT_EPS && a.y < bottom(b) - PLACEMENT_EPS && b.y < bottom(a) - PLACEMENT_EPS;
+
+/**
+ * The checks a validator makes on `model.labelPadding` (R5). Every entry names a plain group (not a rank cell), one of its edges, a
+ * finite positive room and at least one link of the model. For each named link whose label needs room on that edge now
+ * (`acrossRunPadding`), the room holds the need. Geometry a legal later move changes is no fault: a need that moved off the edge or
+ * below the room, a link that carries no label on a run now (overlay label suppression reads the density), and a room the ordinary
+ * padding has reached (a padding row added later). The record keeps the largest room it was grown to (it only grows); "above the
+ * ordinary padding" holds when 7f writes it. Whether the box still holds the room is the replay's to check (`reserveLinkLabelRoom`
+ * on a copy reports a shortfall).
+ */
+export function labelPaddingFault(model: LayoutModel): string | undefined {
+  const record = model.labelPadding;
+  if (record === undefined) return undefined;
+  const borders = labelBorders(model), suppressed = overlayLabelsSuppressed(model), byId = new Map(model.links.map(link => [link.id, link]));
+  for (const [id, sides] of Object.entries(record)) {
+    const group = model.groups[id];
+    if (group === undefined || group.frame !== undefined || !group.nodes.length) return `${id} is not a group whose padding a label can grow`;
+    for (const [side, entry] of Object.entries(sides) as [Side, LabelPaddingEntry][]) {
+      if (!['top', 'right', 'bottom', 'left'].includes(side) || entry === undefined || !Number.isFinite(entry.room) || entry.room <= 0) return `${id} ${side} records ${entry?.room} px`;
+      if (!Array.isArray(entry.links) || !entry.links.length) return `${id} ${side} names no link`;
+      for (const name of entry.links) {
+        const link = byId.get(name);
+        if (link === undefined) return `${id} ${side} names ${name}, which is not a link of the model`;
+        const run = describedLink(model, link, suppressed) ? riddenRun(model, link) : undefined;
+        if (run === undefined) continue;
+        const need = acrossRunPadding(model, borders, run, labelSize(model, link), linkStrokeWidth(link) / 2);
+        if (need !== undefined && need.group === id && need.side === side && need.padding > entry.room + PLACEMENT_EPS) {
+          return `${id} ${side} records ${entry.room} px and ${name} needs ${need.padding} px`;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The run whose room across 7f reserves: an overlay link's longest run (`overlayPath`), the run stage 9 tries first. A routed link's
+ * path is not drawn yet: its straight runs stand between two pill faces, outside every padding, and a detour is left to stage 9.
+ */
+function riddenRun(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
+  return effectiveLayer(link) === 'overlay' ? overlayLongestRun(model, link) : undefined;
+}
+
+/**
+ * Grow, for every labelled run in a group's padding, that edge's padding by exactly the room its label lacks across the run
+ * (`acrossRunPadding`, ticket 21), and record the room and the link (`model.labelPadding`). The group's own content and the tiers below
+ * move down for the top edge (a sibling of its tier stays), the tiers below for the bottom edge, and the room is inserted at the bodies' face for a side edge (`insertRoomAt`); the
+ * box then grows on the edge by the record, so no other gap shrinks. Returns whether anything grew. `runOf` gives the run a label
+ * rides (`riddenRun`); a test passes a side run, which no overlay path of the corpus takes yet.
+ */
+export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[]) => void, shortfalls: LinkLabelShortfall[],
+  runOf: (model: LayoutModel, link: LayoutLink) => PathSegment | undefined = riddenRun): boolean {
+  let changed = false;
+  const suppressed = overlayLabelsSuppressed(model);
+  for (const link of model.links) {
+    if (!describedLink(model, link, suppressed)) continue;
+    const run = runOf(model, link);
+    if (run === undefined) continue;
+    const room = acrossRunPadding(model, labelBorders(model), run, labelSize(model, link), linkStrokeWidth(link) / 2);
+    if (room === undefined) continue;
+    const group = model.groups[room.group]!, box = group.bounds!, bodies = union(group.nodes.map(node => model.nodes[node]!.bounds!));
+    const held = room.side === 'top' ? bodies.y - box.y : room.side === 'bottom' ? bottom(box) - bottom(bodies) : room.side === 'left' ? bodies.x - box.x : right(box) - right(bodies);
+    const deficit = room.padding - held;
+    if (deficit <= PLACEMENT_EPS) continue;
+    const tier = group.tier!;
+    if (room.side === 'top' || room.side === 'bottom') {
+      // The tiers below move down; for the top edge the group's own content moves too, its box top stays, and a sibling of its tier stays (R2).
+      const moved = Object.values(model.groups).filter(item => (item.tier !== undefined && item.tier > tier) || (room.side === 'top' && item === group));
+      for (const item of moved) moveGroup(model, item, 0, deficit);
+      settle(moved.flatMap(item => item.nodes));
+    } else {
+      const split = room.side === 'left' ? bodies.x : right(bodies);
+      if (model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS)) {
+        placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} needs room across its run beyond a reserved lane; its label room cannot be reserved and the label placement decides.`, [link.id]);
+        continue;
+      }
+      settle(insertRoomAt(model, split, deficit, tier));
+    }
+    // The room only grows and its links only join, in link order (R3), so a later pass never takes back a room an earlier one grew.
+    const sides = (model.labelPadding ??= {})[room.group] ??= {}, prior = sides[room.side];
+    const order = new Map(model.links.map((item, at) => [item.id, at]));
+    sides[room.side] = { room: Math.max(prior?.room ?? 0, room.padding),
+      links: [...new Set([...(prior?.links ?? []), link.id])].sort((x, y) => order.get(x)! - order.get(y)!) };
+    fitRegionGroup(model, group);
+    shortfalls.push({ link: link.id, axis: `${room.side} padding of ${room.group}`, required: room.padding, room: held });
+    changed = true;
+  }
+  return changed;
+}
+
+const labelSize = (model: LayoutModel, link: LayoutLink): { width: number; height: number } => {
+  const measured = measureText(model.document.links[link.sourceIndex]!.label!, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
+  return { width: measured.width, height: measured.height };
+};
 
 /** The drawn group and frame borders a link label stays clear of, read in placement with the frames derived afresh. */
 export function labelBorders(model: LayoutModel): Rect[] {
@@ -1544,7 +1692,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         ? (longest !== undefined && (diagonal || Math.abs(longest.to.x - longest.from.x) <= PLACEMENT_EPS) ? longest : undefined)
         : x === undefined || lowerEdge - upperEdge <= PLACEMENT_EPS ? undefined
           : { from: { x, y: upperEdge }, to: { x, y: lowerEdge }, owner: { ...link.owner } };
-      const split = Math.min(...moved.map(group => group.bounds!.y));
+      const split = tierGapSplit(model, link);
       // Stage 9 tries the longest run first: a side lane's side run that is longer than its vertical run, and has a window that holds
       // the label now, carries the label, and the vertical run needs no window. The lengths here are the anchor runs, not the pieces
       // `labelRuns` joins (the router has not drawn them yet), so the order can differ from stage 9's by a stem. That decides only which
@@ -1614,6 +1762,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     else record(link, 'row', wanted, room);
     changed = true;
   }
+  // Room across a run (ticket 21), on the geometry the reservations along the runs left.
+  if (reserveAcrossRunRoom(model, settle, shortfalls)) changed = true;
   if (changed) { rebuildBands(model); rebuildRegions(model); }
   return changed;
 }
@@ -1800,6 +1950,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   // The yield record is read, never decided again (R1); a forged or incomplete one is refused (R5).
   const fault = labelYieldsFault(model);
   if (fault !== undefined) throw new Error(`The label yields are forged: ${fault}`);
+  // The room across a run is read from its record and checked against the runs that need it (ticket 21, R5).
+  const padding = labelPaddingFault(model);
+  if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
   const yields = clone(model);
   if (recordLabelYields(yields, labelBorders(yields))) throw new Error('The label yields leave a pair of labels on diagonal lines undecided');
   const shortfalls: LinkLabelShortfall[] = [];
