@@ -154,17 +154,23 @@ function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: numbe
     span({ x, y, right: Math.max(...boxes.map(box => box.x + box.width)), bottom: Math.max(...boxes.map(box => box.y + box.height)) });
   }
   // A branch that leaves a box (a group or frame that holds the fan's node and not the far node) runs
-  // its track either inside the box or outside it, one edge margin off each edge across the side
-  // (ADR-0013, architecture-2 ticket 18). A track outside the box ends the run there, so 7e reserves no
-  // group exit for it, and G6 `segment-group-edge` measures the run beside the edge. Each such edge is
-  // a wall the margin deep on both faces, over the depth the box spans; the step below takes the track
-  // to the face nearer the coordinate it wanted. A box the branch enters or stays in is not read here.
-  const edge = edgeMargin(stroke) + PLACEMENT_EPS;
+  // its track either strictly inside the box, the group's own routing space, or outside it one edge
+  // margin off each edge across the side (ADR-0013, architecture-2 ticket 18). A track outside the box
+  // ends the run there, so 7e reserves no group exit for it, and G6 `segment-group-edge` measures the
+  // run beside the edge. The band from the edge out to the margin, over the depth the box spans, is a
+  // wall; the step below takes the track to the face nearer the coordinate it wanted. The inner face is
+  // just inside the edge, as `clearOfGroupEdges` leaves it. A box the branch enters or stays in is not
+  // read here.
+  const edge = edgeMargin(stroke) + PLACEMENT_EPS, within = 2 * PLACEMENT_EPS;
   for (const { id, bounds: box } of groupBoxes(model)) {
     if (!standsIn(model, id, port.ref.node) || standsIn(model, id, farNode)) continue;
     const bottom = box.y + box.height, right = box.x + box.width;
-    for (const at of tangent === 'x' ? [box.x, right] : [box.y, bottom]) {
-      span(tangent === 'x' ? { x: at - edge, y: box.y, right: at + edge, bottom } : { x: box.x, y: at - edge, right, bottom: at + edge });
+    if (tangent === 'x') {
+      span({ x: box.x - edge, y: box.y, right: box.x + within, bottom });
+      span({ x: right - within, y: box.y, right: right + edge, bottom });
+    } else {
+      span({ x: box.x, y: box.y - edge, right, bottom: box.y + within });
+      span({ x: box.x, y: bottom - within, right, bottom: bottom + edge });
     }
   }
   const result: { lo: number; hi: number }[] = [];

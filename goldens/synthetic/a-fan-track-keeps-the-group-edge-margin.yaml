@@ -2,8 +2,8 @@
 # `home` has two ranks (`s1` above `s0`), so its box is a frame. The branch to `c1` wants the x of
 # `c1`'s port, which stands just outside the frame's left edge. Before the fix the track stood there and
 # rose 7.4 px outside the frame edge, within the 10 px group edge clearance (ADR-0013): G6
-# `segment-group-edge [link-2, home]`. A fan track stands inside or outside every box its branch
-# leaves, one edge margin off its edges; here it steps out to the margin, and stage 8 takes a 3 px jog
+# `segment-group-edge [link-2, home]`. A fan track stands strictly inside every box its branch
+# leaves, or outside it one edge margin off its edges; here it steps out to the margin, and stage 8 takes a 3 px jog
 # back to the column of `c1`'s port in the tier gap. Every gate passes.
 portograph: 2
 groups:

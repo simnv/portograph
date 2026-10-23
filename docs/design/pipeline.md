@@ -855,8 +855,8 @@ stay outside the tree, and the cohort shrinks accordingly — one rule (`treeCoh
 7d from the traversals under construction, and in 7e and on restore from the root junction id a split
 path carries. An excluded member keeps its own stem out of the port, which covers the tree's root:
 7e reports it with `FAN_MEMBER_UNRESERVED` and G4 reports the overlap, until ticket 47 adopts the
-last two shapes. A track also stands one edge margin off each edge of every group or frame box its branch
-leaves, inside the box or outside it, whichever face is nearer the coordinate it wanted (ticket 18 of
+last two shapes. A track also stands strictly inside every group or frame box its branch leaves, or outside it
+one edge margin off its edge, whichever face is nearer the coordinate it wanted (ticket 18 of
 architecture-2): a track outside the box ends its run there, so no group exit covers it. A last pass releases the branch whose reserved run closes the checkpoint another
 link's port must be approached from, and every branch of the link it hems (`FAN_BRANCH_HEMMED`,
 ADR-0018 rule 3). **Only an end that reserved nothing is measured there**, and only for a link the
