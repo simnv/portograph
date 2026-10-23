@@ -1,6 +1,7 @@
 /**
  * Compare two corpus TSVs (`corpus.mjs` output): the changed cells, side by side, and a flag on
- * every sheet that is worse on bends, removed, gates, crossings (X) or canvas (W), in that order.
+ * every sheet that is worse on bends, removed, gates, crossings (X), canvas (W) or labelBorder, in that order.
+ * A changed `hash` is printed as a changed cell, never judged; the last line counts the sheets whose hash changed.
  *
  * Usage: npm run gate:compare -- <base.tsv> <head.tsv>
  *
@@ -15,9 +16,9 @@ import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import { COLUMNS } from './gate-lib.mjs';
 
-const JUDGED = ['bends', 'removed', 'gates', 'crossings', 'canvas'];
+const JUDGED = ['bends', 'removed', 'gates', 'crossings', 'canvas', 'labelBorder'];
 /** The columns in print order: the judged ones first, in judgement order, then the rest as the TSV has them. */
-const PRINT_ORDER = ['bends', 'removed', 'gates', 'X', 'W', ...COLUMNS.filter((column) => !['file', 'bends', 'removed', 'gates', 'X', 'W'].includes(column))];
+const PRINT_ORDER = ['bends', 'removed', 'gates', 'X', 'W', 'labelBorder', ...COLUMNS.filter((column) => !['file', 'bends', 'removed', 'gates', 'X', 'W', 'labelBorder'].includes(column))];
 
 class ParseError extends Error {}
 
@@ -47,7 +48,7 @@ function parseTsv(path) {
     }
     if (fields.length !== columns.length) throw new ParseError(`${path}:${index + 2}: ${fields.length} fields, header has ${columns.length}`);
     const cells = Object.fromEntries(columns.map((column, position) => [column, fields[position]]));
-    for (const column of ['bends', 'removed', 'X']) {
+    for (const column of ['bends', 'removed', 'X', 'labelBorder']) {
       if (column in cells && !/^\d+$/.test(cells[column])) throw new ParseError(`${path}:${index + 2}: ${column} is not a count: ${cells[column]}`);
     }
     if ('W' in cells && cells.W !== '-' && !/^\d+x\d+$/.test(cells.W)) throw new ParseError(`${path}:${index + 2}: W is not <width>x<height> or -: ${cells.W}`);
@@ -68,6 +69,7 @@ function flags(base, head) {
   if (both('gates') && [...gateSet(head.gates)].some((id) => !gateSet(base.gates).has(id))) worse.push('gates');
   if (both('X') && Number(head.X) > Number(base.X)) worse.push('crossings');
   if (both('W') && head.W !== '-' && base.W !== '-' && area(head.W) > area(base.W)) worse.push('canvas');
+  if (both('labelBorder') && Number(head.labelBorder) > Number(base.labelBorder)) worse.push('labelBorder');
   return worse;
 }
 
@@ -77,6 +79,7 @@ function compare(base, head) {
   const lines = []; // [file, column, base, head, flag]
   const counts = Object.fromEntries(['error', ...JUDGED].map((flag) => [flag, 0]));
   let changed = 0;
+  let geometry = 0;
   for (const file of files) {
     const b = base.rows.get(file);
     const h = head.rows.get(file);
@@ -94,22 +97,24 @@ function compare(base, head) {
       sheetFlags = flags(b.cells, h.cells);
     }
     changed++;
+    if (cells.some(([column]) => column === 'hash')) geometry++;
     for (const flag of sheetFlags) counts[flag]++;
     for (const [column, left, right] of cells) {
-      const flag = column === 'bends' ? 'bends' : column === 'removed' ? 'removed' : column === 'gates' ? 'gates' : column === 'X' ? 'crossings' : column === 'W' ? 'canvas' : column === '(sheet)' ? 'error' : undefined;
+      const flag = column === 'bends' ? 'bends' : column === 'removed' ? 'removed' : column === 'gates' ? 'gates' : column === 'X' ? 'crossings' : column === 'W' ? 'canvas' : column === 'labelBorder' ? 'labelBorder' : column === '(sheet)' ? 'error' : undefined;
       lines.push([file, column, left, right, flag !== undefined && sheetFlags.includes(flag) ? 'WORSE' : '']);
     }
   }
-  return { lines, changed, counts, total: files.length };
+  return { lines, changed, counts, total: files.length, geometry };
 }
 
-function format({ lines, changed, counts, total }) {
-  if (changed === 0) return `no change: ${total} sheets\n`;
+function format({ lines, changed, counts, total, geometry }) {
+  if (changed === 0) return `no change: ${total} sheets\n${geometry} sheets with a geometry change (hash)\n`;
   const table = [['file', 'column', 'base', 'head', ''], ...lines];
   const widths = [0, 1, 2, 3].map((position) => Math.max(...table.map((row) => row[position].length)));
   const out = table.map((row) => row.map((cell, position) => (position < 4 ? cell.padEnd(widths[position]) : cell)).join('  ').trimEnd());
   const worse = ['error', ...JUDGED].filter((flag) => counts[flag] > 0).map((flag) => `${flag} ${counts[flag]}`).join(', ');
   out.push('', `${changed} of ${total} sheets changed; worse: ${worse || 'none'}`);
+  out.push(`${geometry} sheets with a geometry change (hash)`);
   return `${out.join('\n')}\n`;
 }
 
