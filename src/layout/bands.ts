@@ -1420,10 +1420,10 @@ function insertRoomAt(model: LayoutModel, split: number, deficit: number, ownTie
  * (`labelWindowDeficit`). Zero when a window holds it now, or when `run` is absent (the path bends and stage 9 decides). `undefined`
  * when no growth at the split gives a window that holds it: a box that moves with the far end cuts the run.
  */
-function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, extent: number, split: number): number | undefined {
+function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, extent: number, split: number, farEndMoves = false): number | undefined {
   if (run === undefined) return 0;
   const boxes = groupBoxes({ ...model, frames: deriveFrames(model) ?? model.frames ?? [] }).map(item => item.bounds);
-  return labelWindowDeficit(boxes, run, extent, split);
+  return labelWindowDeficit(boxes, run, extent, split, farEndMoves);
 }
 
 /**
@@ -1485,8 +1485,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       // An overlay L out of a hinted lateral side (ticket 116): when its longest run is horizontal, the room is inserted at the split of that run.
       const run = centre === undefined && overlay && (from.sideHint === true || to.sideHint === true) ? overlayLongestRun(model, link) : undefined;
       if (run !== undefined && overlayPath(model, link).segments.length === 2 && Math.abs(run.to.y - run.from.y) <= PLACEMENT_EPS) {
-        const deficit = required - Math.abs(run.to.x - run.from.x);
-        if (deficit <= PLACEMENT_EPS) continue;
+        const short = required - Math.abs(run.to.x - run.from.x);
         // The split lies in the gap between the node that holds the vertical run (with its pill) and the lateral face, as in the same-tier branch: a
         // split at the middle of the run can fall inside a wide peer, which then moves with the lateral node and the run does not grow (review H2).
         const lateralIsFrom = from.sideHint === true, lateralNode = lateralIsFrom ? fromNode : toNode, lateralPort = lateralIsFrom ? from : to;
@@ -1496,13 +1495,19 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         const gapTo = lateralEast ? Math.min(lateralNode.bounds!.x, outer(lateralPort, lateralNode).x) : verticalPort.anchor!.x;
         // West of the vertical (the lateral face looks east): the peer sits in another tier, and `insertRoomAt` moves it whole when any part of it lies beyond
         // the split, so a left edge that overhangs the lateral face does not matter: the split need only stand left of the vertical port's x.
-        if (gapTo - gapFrom <= PLACEMENT_EPS) { unreserved('has no gap between the vertical run and the lateral face to insert its label room in'); continue; }
-        const split = (gapFrom + gapTo) / 2;
+        const gapOk = gapTo - gapFrom > PLACEMENT_EPS, split = (gapFrom + gapTo) / 2;
+        // A label stays in one region: one window of the horizontal run, between the borders it crosses, must hold it (`labelWindowDeficit`).
+        const windowed = gapOk ? labelWindowRoom(model, run, measured.width, split) : 0;
+        if (windowed === undefined) unreserved('crosses a drawn box along its side run; no window between borders can be reserved for its label');
+        const deficit = Math.max(short, windowed ?? 0);
+        if (deficit <= PLACEMENT_EPS) continue;
+        if (!gapOk) { unreserved('has no gap between the vertical run and the lateral face to insert its label room in'); continue; }
         if (model.lanes.some(lane => lane.kind !== 'perimeter' && lane.x >= split - PLACEMENT_EPS)) { unreserved('needs room beyond a reserved lane'); continue; }
         // The lateral end's tier is the link's own tier for the move: its body stays by the run's end.
         const moved = insertRoomAt(model, split, deficit, model.groups[model.document.nodes[lateralNode.id]!.group]!.tier!);
         settle(moved);
-        record(link, 'row', required, required - deficit);
+        if ((windowed ?? 0) > short) record(link, 'row window', measured.width, measured.width - windowed!);
+        else record(link, 'row', required, required - deficit);
         changed = true;
         continue;
       }
@@ -1519,8 +1524,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       // A label stays in one region: one window of the run it rides, between the drawn borders the run crosses, must hold it
       // (`labelWindowDeficit`). The run is the overlay path's longest run, the side lane's vertical run (at the lane's x, down to the
       // lateral port's y), or the straight drop between two level anchors; a routed drop between anchors that are not level bends,
-      // and stage 9 decides. Every group below the upper tier moves down, so the split is the top of the highest of them, or the
-      // run's lower end when a pill stands out above its box: that end moves with its node.
+      // and stage 9 decides. Every group below the upper tier moves down, so the split is the top of the highest of them. The run's
+      // lower end moves with its node even when its pill stands out above that top (`farEndMoves`); no upper-tier box is taken as moved.
       const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
       const longest = overlay ? overlayLongestRun(model, link) : undefined;
       const x = lane !== undefined ? lane.x : Math.abs(lowerPort.anchor!.x - upperPort.anchor!.x) <= PLACEMENT_EPS ? upperPort.anchor!.x : undefined;
@@ -1528,15 +1533,17 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         ? (longest !== undefined && Math.abs(longest.to.x - longest.from.x) <= PLACEMENT_EPS ? longest : undefined)
         : x === undefined || lowerEdge - upperEdge <= PLACEMENT_EPS ? undefined
           : { from: { x, y: upperEdge }, to: { x, y: lowerEdge }, owner: { ...link.owner } };
-      const split = Math.min(...moved.map(group => group.bounds!.y), ridden === undefined ? Infinity : Math.max(ridden.from.y, ridden.to.y));
+      const split = Math.min(...moved.map(group => group.bounds!.y));
       // Stage 9 tries the longest run first: a side lane's side run that is longer than its vertical run, and has a window that holds
-      // the label now, carries the label, and the vertical run needs no window.
+      // the label now, carries the label, and the vertical run needs no window. The lengths here are the anchor runs, not the pieces
+      // `labelRuns` joins (the router has not drawn them yet), so the order can differ from stage 9's by a stem. That decides only which
+      // window is reserved: stage 9 tries every run with the borders as walls before it falls back, and the side run's window holds.
       const lateral = lane === undefined ? undefined : findPort(model, lane.port!)?.anchor;
       const sideRun: PathSegment | undefined = lateral === undefined || lane === undefined ? undefined
         : { from: { x: lane.x, y: lateral.y }, to: { x: lateral.x, y: lateral.y }, owner: { ...link.owner } };
       const onSide = sideRun !== undefined && ridden !== undefined && Math.abs(sideRun.to.x - sideRun.from.x) > Math.abs(ridden.to.y - ridden.from.y)
         && labelWindowRoom(model, sideRun, measured.width, Infinity) === 0;
-      const windowed = onSide ? 0 : labelWindowRoom(model, ridden, measured.width, split);
+      const windowed = onSide ? 0 : labelWindowRoom(model, ridden, measured.width, split, true);
       if (windowed === undefined) unreserved('crosses a drawn box in its tier gap; no window between borders can be reserved for its label');
       const deficit = Math.max(required - room, windowed ?? 0);
       if (deficit <= PLACEMENT_EPS) continue;

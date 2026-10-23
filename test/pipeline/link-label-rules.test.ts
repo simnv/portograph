@@ -561,6 +561,14 @@ it('labelWindowDeficit: the growth at the split after which one window of the ru
   expect(labelWindowDeficit([{ x: 0, y: 0, width: 100, height: 100 }], row, 50, 120)).toBeCloseTo(50 - (140 - margin - (100 + reach)), 9);
   // A diagonal has no axis: stage 9 decides.
   expect(labelWindowDeficit(boxes, { from: { x: 0, y: 0 }, to: { x: 50, y: 60 }, owner }, 60, 30)).toBe(0);
+  // The run's lower end on a pill that stands out above the lower box (y 150 < 160): with `farEndMoves` the split stays at the box
+  // top, so the upper box (bottom 100) is not taken as moved, and the end still moves with its node. The window [100 + reach, 150 - 8]
+  // grows by exactly the growth.
+  const pill = { from: { x: 50, y: 60 }, to: { x: 50, y: 150 }, owner };
+  const open = 150 - margin - (100 + reach);
+  expect(labelWindowDeficit(boxes, pill, 60, 160, true)).toBeCloseTo(60 - open, 9);
+  // Without it the end stays where it is and no window grows.
+  expect(labelWindowDeficit(boxes, pill, 60, 160)).toBeUndefined();
 });
 
 for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-overlay-row-label-keeps-clear-of-both-group-borders',
@@ -580,6 +588,14 @@ for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-ov
     expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
   }, 120000);
 }
+
+// Open (ticket 19): room across a run. An overlay detour over the row runs 4 px above the bodies in the top padding; the label
+// beside it needs 20.25 px of padding and `GROUP_PADDING` is 20, so it touches the top border's stroke by 0.25 px.
+it.fails('a label beside an overlay detour in a group padding stays clear of the border (ticket 19, open)', async () => {
+  const model = await run(fixture('a-row-mesh-with-another-label-draws-plain-links'));
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER')).toEqual([]);
+  expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
+}, 120000);
 
 // Open (ticket 19): a label on a diagonal is measured by the axis-aligned box of its turned text, and placement reserves no window
 // on a diagonal. This test passes once the design decision lands; until then `it.fails` records the gap.

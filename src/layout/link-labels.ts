@@ -107,15 +107,21 @@ export function windowHolds(window: { from: number; to: number }, extent: number
  * Zero when a window holds the label now, and for a run with no axis (the path bends there and stage 9 decides). `undefined` when no
  * window grows with the move, or the grown window still does not hold the label: a box that moves with the far end cuts the run.
  * A window between a cut that stays and a cut that moves grows by exactly the growth, so one probe gives the growth.
+ *
+ * `farEndMoves` states that the run's end with the larger coordinate moves whatever the split says: the end on a pill that stands out
+ * of its box, before the top of the box that moves with it. The split then stays where the boxes part, and no box before it is taken
+ * as moved.
  */
-export function labelWindowDeficit(boxes: readonly Rect[], run: PathSegment, extent: number, split: number): number | undefined {
+export function labelWindowDeficit(boxes: readonly Rect[], run: PathSegment, extent: number, split: number, farEndMoves = false): number | undefined {
   const vertical = Math.abs(run.to.x - run.from.x) <= EPS, horizontal = Math.abs(run.to.y - run.from.y) <= EPS;
   if (vertical === horizontal) return 0;
   const axis = vertical ? 'y' : 'x', size = vertical ? 'height' : 'width';
   const windows = (growth: number): { from: number; to: number }[] => {
     const moved = (at: number): number => at >= split - EPS ? at + growth : at;
+    const far = Math.max(run.from[axis], run.to[axis]);
+    const end = (at: number): number => farEndMoves && at >= far - EPS ? at + growth : moved(at);
     const grown = boxes.map(box => ({ ...box, [axis]: moved(box[axis]), [size]: moved(box[axis] + box[size]) - moved(box[axis]) }));
-    return labelRunWindows(grown, { ...run, from: { ...run.from, [axis]: moved(run.from[axis]) }, to: { ...run.to, [axis]: moved(run.to[axis]) } }) ?? [];
+    return labelRunWindows(grown, { ...run, from: { ...run.from, [axis]: end(run.from[axis]) }, to: { ...run.to, [axis]: end(run.to[axis]) } }) ?? [];
   };
   if (windows(0).some(window => windowHolds(window, extent))) return 0;
   // A probe longer than the run, the label and every border cut together: a window that grows is then the longest one, and the
