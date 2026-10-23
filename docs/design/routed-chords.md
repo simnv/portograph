@@ -454,26 +454,31 @@ two lateral faces there is no angle floor (a slight tilt is fine). Overlay chord
   crossings of their planned paths (stem, part, stem) are counted, once per point and pair. A family is
   triggered when more than one counted crossing involves its members, or when more than one endpoint
   inversion involves them (`triggers`). A member the plan leaves residual makes the count `unresolved`.
-- **Growth.** At the start of 7f, before the freeze, the tier gap of a triggered family grows so that its flat
-  members reach 30 degrees, until the gap is `DIRECT_GAP_CAP` (2) band gaps tall. The growth is tried on
-  copies that the 7f replay settles (`GROWTH_TRIALS`, 3, each adding what the flat members of the one before
-  still ask); the trial with the most direct members is kept, then the one that grew less, the ungrown draft
-  first. It is applied with the same replay and recorded on every family of the gap (`growth`).
-- **Verdict.** On the grown draft, each triggered family in id order takes the largest set of members that
+- **Growth.** At the start of 7f, before the freeze, the tier gap of a triggered family is reserved as tall as
+  its flat members need to reach 30 degrees, until the gap is `DIRECT_GAP_CAP` (2) band gaps tall. A member
+  that needs more stays orthogonal (`angle`). Nothing moves before the freeze: the verdict reads each angle
+  with the growth added to `dy`, and the record keeps the height the direct members need (`height`, the most
+  any of them needs; 0 when none grows). The tier-gap plan reads that height as a floor, as it reads label
+  room, so `growTierGaps` grows the gap to it after the freeze and never gives it back (R2).
+- **Verdict.** With the reserved growth, each triggered family in id order takes the largest set of members that
   hold together (`DIRECT_SEARCH_BUDGET` sets at most): `chordVerdict`; at least 30 degrees from horizontal
   (`abs(dy) >= abs(dx) / sqrt(3)`, inclusive); no two members of the fan touching or nearer than the chord
   clearance; and `fixedPointRefusal` with the members left out as orthogonal legs. Fans of two source nodes
   may cross each other straight: a member may cross the leg of another fan's fallback, taken as crossing
   when its x-span holds the leg's x, and keeps the clearance from it otherwise. Ties: the shorter chords,
   then the port keys.
-- **Record.** `model.directFamilies` (absent before 7f, `[]` when no family): units, gap, peer order, the
-  count, its witnesses, the inversions, the growth, the port plan and each member's mode (`direct`,
-  `orthogonal` with a reason, `unplanned` in an untriggered family). A direct member is a held chord
+- **Crowding.** The centring of 7f can still move x after the freeze and bring a direct member within the chord
+  clearance of a planned leg or another held chord (`crowdedDirectMembers`). The attempt then runs again from
+  its start with those members refused (`crowds`), at most `DIRECT_RETRIES` (2) times; a member still crowded
+  after that is a `DIRECT_FAMILY_CROWDED` warning, and G6 judges it.
+- **Record.** `model.directFamilies`, triggered families only: absent before 7f means not planned, absent after
+  the freeze means no family triggered (so a sheet with none keeps its bytes). Each family keeps its units,
+  gap, peer order, the count, its witnesses, the inversions, the growth, the reserved height, the port plan
+  and each member's mode (`direct`, or `orthogonal` with a reason; `unplanned` is never published). A direct member is a held chord
   (`frozenChords`); a refused member is orthogonal, and no later replay offers it the chord. Outside triggered
   families the chord rules are unchanged, a chord flatter than 30 degrees included.
 - **Validator.** `validateGroupLabelBands` reads the record (`directFamiliesFault`, R5): the trigger agrees with
-  its counts, the growth lies within the cap, every member joins the family's units and is in one family, a
+  its counts, the height lies within the cap and the gap holds it, every member joins the family's units and is in one family, a
   direct member is frozen and a refused one is not, and no two direct members of one fan cross.
 
-Not in slice 1: bundles, shared ports, grid rows, labelled chords, a guard after the freeze (a 7f x-move can
-still bring a member near a fallback leg; G6 judges).
+Not in slice 1: bundles, shared ports, grid rows, labelled chords.
