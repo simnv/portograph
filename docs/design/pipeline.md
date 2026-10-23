@@ -1110,9 +1110,10 @@ stroke (`acrossRunPadding`), 7f grows that edge by exactly the deficit: the grou
 below move down for the top edge (a sibling of its tier stays), the tiers below for the bottom edge, and the
 room is inserted at the bodies' face for a side edge. The room is recorded per group and edge with the links
 it was grown for (`model.labelPadding`: `room`, `links`; the room only grows), `groupPadding` reads it, so
-every rebuild keeps it. The validator refuses an entry whose room is not above the edge's ordinary padding,
-that names no link or a link with no labelled run, or whose room is short of what a named link needs now
-(room ≥ need); the replay reports a box that no longer holds the room. The title edge is left
+every rebuild keeps it. 7f writes a room only above the edge's ordinary padding. The validator refuses an
+entry with no link, a link the model does not have, or a room short of what a named link needs now (room ≥
+need); a named link with no labelled run now, or a room a later padding row reached, is no fault (both follow
+legal later geometry). The replay reports a box that no longer holds the room. The title edge is left
 to the title band; a rank cell's border is its frame's, and is not grown.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows

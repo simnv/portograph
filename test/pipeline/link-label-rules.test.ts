@@ -8,7 +8,7 @@ import { areaDistance, areaSegmentDistance } from '../../src/geometry/oriented.j
 import { EPS } from '../../src/geometry/planar.js';
 import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
 import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
-import { reserveLinkLabelRoom, validateGroupLabelBands } from '../../src/layout/bands.js';
+import { reserveAcrossRunRoom, reserveLinkLabelRoom, validateGroupLabelBands } from '../../src/layout/bands.js';
 import { fitRegionGroup } from '../../src/layout/regions.js';
 import { union } from '../../src/layout/skeleton-geometry.js';
 import { bench } from '../layout/link-label-fixture.js';
@@ -639,13 +639,21 @@ for (const [name, side, link] of [['a-row-mesh-with-another-label-draws-plain-li
     expect(lost.groups.row!.bounds!.height).toBeCloseTo(row.bounds!.height - (need - 20), 3);
     expect(reserveLinkLabelRoom(structuredClone(lost))).toBe(true);
     expect(() => validateGroupLabelBands(lost)).toThrow(/padding of row/);
-    // R5: a forged record is refused: a room not above the ordinary padding, no link, a link with no labelled run, a room short of
-    // the need of its link, an unknown group.
+    // Geometry a legal later move changes is no fault: a listed link that carries no label on a run now (`link-1` is unlabelled), and a
+    // room the ordinary padding has reached (a padding row added later); the box still holds the room, so the replay finds no shortfall.
     const entry = model.labelPadding!.row![side]!;
+    for (const legal of [{ row: { [side]: { room: entry.room, links: ['link-1', link] } } }, { row: { [side]: { room: entry.room, links: ['link-1'] } } },
+      { row: { [side]: { room: 20, links: ['link-1'] } } }]) {
+      const copy = structuredClone(model);
+      copy.labelPadding = legal;
+      expect(() => validateGroupLabelBands(copy)).not.toThrow();
+    }
+    // R5: a forged record is refused: a room that is not a positive number, no link, a link the model does not have, a room short of
+    // the need of its link, an unknown group.
     const forgeries: [NonNullable<LayoutModel['labelPadding']>, RegExp][] = [
-      [{ row: { [side]: { room: 20, links: [link] } } }, /ordinary padding/],
+      [{ row: { [side]: { room: -1, links: [link] } } }, /records -1 px/],
       [{ row: { [side]: { room: entry.room, links: [] } } }, /names no link/],
-      [{ row: { [side]: { room: entry.room, links: ['link-1'] } } }, /carries no label on a run/],
+      [{ row: { [side]: { room: entry.room, links: ['link-99'] } } }, /not a link of the model/],
       [{ row: { [side]: { room: entry.room - 0.1, links: [link] } } }, /needs/],
       [{ nowhere: { top: entry } }, /not a group/],
     ];
@@ -656,6 +664,44 @@ for (const [name, side, link] of [['a-row-mesh-with-another-label-draws-plain-li
     }
   }, 120000);
 }
+
+// Ticket 21 re-check: room across a run on a side edge. No overlay path of the corpus runs in a group's side padding yet, so the run is
+// given (`runOf`): a vertical run 4 px beside the bodies of a grid, as a detour round the column would stand. The left edge inserts
+// the room at the bodies' face (the bodies move right, the box's left edge stays); the right edge grows the box to the right.
+it('a label beside a run in a side padding grows that edge by exactly the deficit (ticket 21)', async () => {
+  const model = await run(`portograph: 2
+groups:
+  stack: { tier: 0, label: Stack, shape: grid }
+nodes:
+${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => `  n${i}: { group: stack, class: router, label: N${i} }`).join('\n')}
+links:
+  - { from: n1, to: n7, class: sync, label: standby }`);
+  const group = model.groups.stack!, owner = { kind: 'link' as const, id: 'link-1' };
+  const bodies = union(group.nodes.map(id => model.nodes[id]!.bounds!));
+  const text = measureText('standby', { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).height;
+  const need = 4 + DEFAULT_STROKE_WIDTHS.path / 2 + LINK_LABEL_GEOMETRY.normalGap + text + DEFAULT_STROKE_WIDTHS.group / 2;
+  for (const side of ['left', 'right'] as const) {
+    const copy = structuredClone(model), box = copy.groups.stack!.bounds!;
+    // The run stands by the bodies as they stand, as a derived path does: it moves with them.
+    const runOf = (at: LayoutModel, link: LayoutModel['links'][number]) => {
+      if (link.id !== 'link-1') return undefined;
+      const now = union(at.groups.stack!.nodes.map(id => at.nodes[id]!.bounds!)), x = side === 'left' ? now.x - 4 : now.x + now.width + 4;
+      return { from: { x, y: now.y + 20 }, to: { x, y: now.y + now.height - 20 }, owner };
+    };
+    const shortfalls: Parameters<typeof reserveAcrossRunRoom>[2] = [];
+    expect(reserveAcrossRunRoom(copy, () => {}, shortfalls, runOf)).toBe(true);
+    expect(shortfalls.map(item => item.axis)).toEqual([`${side} padding of stack`]);
+    expect(copy.labelPadding).toEqual({ stack: { [side]: { room: expect.closeTo(need, 3), links: ['link-1'] } } });
+    const grown = copy.groups.stack!.bounds!, moved = union(copy.groups.stack!.nodes.map(id => copy.nodes[id]!.bounds!));
+    // Exactly the deficit, on that edge only.
+    expect(grown.width - box.width).toBeCloseTo(need - 20, 3);
+    expect(grown.x).toBeCloseTo(box.x, 9);
+    expect(moved.x - bodies.x).toBeCloseTo(side === 'left' ? need - 20 : 0, 3);
+    expect(side === 'left' ? moved.x - grown.x : grown.x + grown.width - moved.x - moved.width).toBeCloseTo(need, 3);
+    // At its fixed point: a second pass grows nothing.
+    expect(reserveAcrossRunRoom(copy, () => {}, [], runOf)).toBe(false);
+  }
+}, 120000);
 
 // Ticket 20: a turned label is tested by its turned rectangle, and placement reserves a window along the diagonal it lies on, clear
 // of the borders and of the frozen chord the line crosses (a stored reservation, `reservedLinkRuns`).

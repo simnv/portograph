@@ -1479,10 +1479,12 @@ const overlaps = (a: Rect, b: Rect): boolean =>
 
 /**
  * The checks a validator makes on `model.labelPadding` (R5). Every entry names a plain group (not a rank cell), one of its edges, a
- * finite room above that edge's ordinary padding (`groupPadding` without the record), and at least one link, each a described link
- * that rides a run. For each named link whose label needs room on that edge now (`acrossRunPadding`), the room holds the need. A need
- * that moved off the edge, or below the room, is no fault: the record keeps the largest room it was grown to (it only grows). Whether
- * the box still holds the room is the replay's to check (`reserveLinkLabelRoom` on a copy reports a shortfall).
+ * finite positive room and at least one link of the model. For each named link whose label needs room on that edge now
+ * (`acrossRunPadding`), the room holds the need. Geometry a legal later move changes is no fault: a need that moved off the edge or
+ * below the room, a link that carries no label on a run now (overlay label suppression reads the density), and a room the ordinary
+ * padding has reached (a padding row added later). The record keeps the largest room it was grown to (it only grows); "above the
+ * ordinary padding" holds when 7f writes it. Whether the box still holds the room is the replay's to check (`reserveLinkLabelRoom`
+ * on a copy reports a shortfall).
  */
 export function labelPaddingFault(model: LayoutModel): string | undefined {
   const record = model.labelPadding;
@@ -1491,16 +1493,15 @@ export function labelPaddingFault(model: LayoutModel): string | undefined {
   for (const [id, sides] of Object.entries(record)) {
     const group = model.groups[id];
     if (group === undefined || group.frame !== undefined || !group.nodes.length) return `${id} is not a group whose padding a label can grow`;
-    const ordinary = groupPadding(model, group, false);
     for (const [side, entry] of Object.entries(sides) as [Side, LabelPaddingEntry][]) {
-      if (!['top', 'right', 'bottom', 'left'].includes(side) || entry === undefined || !Number.isFinite(entry.room) || entry.room <= ordinary[side] + PLACEMENT_EPS) {
-        return `${id} ${side} records ${entry?.room} px, not above its ordinary padding of ${ordinary[side]} px`;
-      }
+      if (!['top', 'right', 'bottom', 'left'].includes(side) || entry === undefined || !Number.isFinite(entry.room) || entry.room <= 0) return `${id} ${side} records ${entry?.room} px`;
       if (!Array.isArray(entry.links) || !entry.links.length) return `${id} ${side} names no link`;
       for (const name of entry.links) {
-        const link = byId.get(name), run = link === undefined || !describedLink(model, link, suppressed) ? undefined : riddenRun(model, link);
-        if (run === undefined) return `${id} ${side} names ${name}, which carries no label on a run`;
-        const need = acrossRunPadding(model, borders, run, labelSize(model, link!), linkStrokeWidth(link!) / 2);
+        const link = byId.get(name);
+        if (link === undefined) return `${id} ${side} names ${name}, which is not a link of the model`;
+        const run = describedLink(model, link, suppressed) ? riddenRun(model, link) : undefined;
+        if (run === undefined) continue;
+        const need = acrossRunPadding(model, borders, run, labelSize(model, link), linkStrokeWidth(link) / 2);
         if (need !== undefined && need.group === id && need.side === side && need.padding > entry.room + PLACEMENT_EPS) {
           return `${id} ${side} records ${entry.room} px and ${name} needs ${need.padding} px`;
         }
@@ -1522,14 +1523,16 @@ function riddenRun(model: LayoutModel, link: LayoutLink): PathSegment | undefine
  * Grow, for every labelled run in a group's padding, that edge's padding by exactly the room its label lacks across the run
  * (`acrossRunPadding`, ticket 21), and record the room and the link (`model.labelPadding`). The group's own content and the tiers below
  * move down for the top edge (a sibling of its tier stays), the tiers below for the bottom edge, and the room is inserted at the bodies' face for a side edge (`insertRoomAt`); the
- * box then grows on the edge by the record, so no other gap shrinks. Returns whether anything grew.
+ * box then grows on the edge by the record, so no other gap shrinks. Returns whether anything grew. `runOf` gives the run a label
+ * rides (`riddenRun`); a test passes a side run, which no overlay path of the corpus takes yet.
  */
-function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[]) => void, shortfalls: LinkLabelShortfall[]): boolean {
+export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[]) => void, shortfalls: LinkLabelShortfall[],
+  runOf: (model: LayoutModel, link: LayoutLink) => PathSegment | undefined = riddenRun): boolean {
   let changed = false;
   const suppressed = overlayLabelsSuppressed(model);
   for (const link of model.links) {
     if (!describedLink(model, link, suppressed)) continue;
-    const run = riddenRun(model, link);
+    const run = runOf(model, link);
     if (run === undefined) continue;
     const room = acrossRunPadding(model, labelBorders(model), run, labelSize(model, link), linkStrokeWidth(link) / 2);
     if (room === undefined) continue;
