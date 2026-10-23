@@ -337,7 +337,10 @@ function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate
         if (fan.some(other => !membersApart(verdict.segment, other.path!.segments[0]!, linkStrokeWidth(link), linkStrokeWidth(other)))) continue;
         if (fixedPointRefusal(model, link, verdict.segment, undefined, crossable) !== undefined) continue;
         makeChord(model, link, verdict.segment);
-        const held = families.flatMap((item, at) => item.members.filter(m => m.mode === 'direct').map(m => ({ link: linkOf(model, m.link), crossable: settings.find(x => x.index === at)!.crossable })));
+        // Only a held chord near the new one can lose its fixed point to it.
+        const near = (other: LayoutLink): boolean => segmentDistance(verdict.segment, other.path!.segments[0]!) - (linkStrokeWidth(link) + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path + EPS;
+        const held = families.flatMap((item, at) => item.members.filter(m => m.mode === 'direct').map(m => ({ link: linkOf(model, m.link), crossable: settings.find(x => x.index === at)!.crossable })))
+          .filter(item => near(item.link));
         if (held.some(item => fixedPointRefusal(model, item.link, item.link.path!.segments[0]!, undefined, item.crossable) !== undefined)) { makeOrthogonal(model, link); continue; }
         entry.mode = 'direct'; delete entry.reason; changed = true;
       }
