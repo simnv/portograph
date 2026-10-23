@@ -252,15 +252,17 @@ interface LabelledLine { link: LayoutLink; line: PathSegment; extent: number; ac
 /**
  * Every described overlay link (`describedLink`) whose longest run (`longestRun`) is a diagonal line (`isDiagonalRun`). Its label
  * lies on that line, so wholly in the line's **band**: the line, with half the height of the label's turned box plus the halo as
- * clearance. The line is the published path in stage 9 and `overlayPath` in placement, the same geometry.
+ * clearance. `drawn` reads the published path when there is one (the band a drawn label lies in, `labelBands`); otherwise, and for the
+ * decision and its check (`recordLabelYields`, `labelYieldsFault`), the path placement derives (`overlayPath`): under
+ * `layout.overlayOverBodies` the two can differ, and the record is a placement decision.
  */
-function labelledLines(model: LayoutModel): LabelledLine[] {
+function labelledLines(model: LayoutModel, drawn: boolean): LabelledLine[] {
   const suppressed = overlayLabelsSuppressed(model);
   const lines: LabelledLine[] = [];
   let blockers: ShapeQuery | undefined;
   for (const link of model.links) {
     if (!describedLink(model, link, suppressed) || effectiveLayer(link) !== 'overlay') continue;
-    const line = longestRun(link.path?.segments ?? overlayPath(model, link, blockers ??= sharedBlockers(model)).segments);
+    const line = longestRun((drawn ? link.path?.segments : undefined) ?? overlayPath(model, link, blockers ??= sharedBlockers(model)).segments);
     if (line === undefined || !isDiagonalRun(line)) continue;
     const measured = measure(model.document.links[link.sourceIndex]!.label!), across = haloSize(measured).height;
     lines.push({ link, line, extent: measured.width, across,
@@ -276,7 +278,7 @@ function labelledLines(model: LayoutModel): LabelledLine[] {
 export function labelBands(model: LayoutModel, own: string): LinkRun[] {
   const yields = model.labelYields?.[own];
   if (!yields?.length) return [];
-  const lines = new Map(labelledLines(model).map(item => [item.link.id, item]));
+  const lines = new Map(labelledLines(model, true).map(item => [item.link.id, item]));
   return yields.flatMap(id => { const line = lines.get(id); return line ? [line.band] : []; });
 }
 
@@ -298,7 +300,7 @@ export function labelBands(model: LayoutModel, own: string): LinkRun[] {
  * that yields to two or more others may find no window clear of every band at any growth: it is reported and stays without a window.
  */
 export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): boolean {
-  const lines = labelledLines(model);
+  const lines = labelledLines(model, false);
   const live = new Set(lines.map(item => item.link.id));
   const before = model.labelYields;
   const record: Record<string, string[]> = {};
@@ -335,7 +337,7 @@ export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): b
 export function labelYieldsFault(model: LayoutModel): string | undefined {
   const record = model.labelYields;
   if (record === undefined) return undefined;
-  const live = new Set(labelledLines(model).map(item => item.link.id));
+  const live = new Set(labelledLines(model, false).map(item => item.link.id));
   for (const [id, yields] of Object.entries(record)) {
     if (!live.has(id)) return `${id} carries no label on a diagonal line`;
     for (const other of yields) {
