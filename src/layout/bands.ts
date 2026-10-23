@@ -25,7 +25,6 @@ import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
 import { overlayBasePath, overlayPath, overlayTrackRuns } from './overlay-paths.js';
-import { nestOverlayPorts } from './overlay-nest.js';
 import { bodiesOf, paddingOf, reachBeyond } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -1391,6 +1390,15 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
   return gap;
 }
 
+/**
+ * Whether the room 7f reserved still holds on `model` as the validator reads it (`validateGroupLabelBands`): the room-across-a-run record
+ * holds every need it names, and a replay of the label room reserves nothing more. The overlay port trade (`nestOverlayPorts`, ticket 23)
+ * runs after the last reservation and makes no trade that would need room 7f did not reserve.
+ */
+export function roomHolds(model: LayoutModel): boolean {
+  return labelPaddingFault(model) === undefined && !reserveLinkLabelRoom(clone(model));
+}
+
 /** One labelled link whose run is shorter than the label it carries needs, and by how much. */
 export interface LinkLabelShortfall {
   link: string; axis: 'row' | 'row window' | 'tier gap' | 'tier gap window' | `${Side} padding of ${string}` | `overlay track in the ${Side} padding of ${string}`; required: number; room: number;
@@ -1832,10 +1840,6 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
     }
   }
   reserveInitialSpace(model);
-  // The overlay ports of a face nest (ticket 23), once, before any room is reserved: which slot a detour leaves decides which track it
-  // takes and whether it crosses, and the rooms below read those tracks. The trade is recorded in the anchors and `engineOrder`, which
-  // every reader reads; it is a choice, not a fixed point, so no replay asks it again.
-  nestOverlayPorts(model);
   reserveLinkLabelRoom(model);
   // A producer call owns its leg allowances: the entries an earlier call left would be stale (or duplicated) now.
   model.diagnostics = model.diagnostics.filter(item => item.code !== LEG_ALLOWANCE_EXHAUSTED);

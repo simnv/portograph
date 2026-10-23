@@ -18,8 +18,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * branch still makes has main's verdict, and every call it dropped belonged to a replay whose result the check discarded. The verdicts did not change.
  *
  * `three-canton-groups-close-up-to-a-band-gap` and `three-continents` were re-recorded for architecture-2 ticket 23: the overlay port clearance
- * grew from 4 to 7.75 px and overlay detours take separate tracks, so the overlay paths the judges read, and their figures, changed. No judge
- * changed; on `three-continents` the trial asks `sheetGains` 23 times (was 36) and `windowsHold` 54 times (was 55).
+ * grew from 4 to 7.75 px, so the per-link overlay paths the judges read (`overlayBasePath`; the separated tracks are stage 8's) and their
+ * figures changed. No judge changed, and every call count is main's but one: on `three-continents` the trial asks `windowsHold` 54 times
+ * (was 55).
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

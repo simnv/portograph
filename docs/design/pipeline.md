@@ -1124,7 +1124,7 @@ the overlay paths share) needs the padding to reach it plus one overlay track pi
 the label (half the stroke, the normal gap, the text, half the border) when the run carries the link's
 label (`trackRoomPadding`). 7f grows those edges first, before the label windows are read, by the same
 growth and into the same record (`labelPadding`, the link that holds the track); the validator reads the
-same need. **Overlay ports nest (ticket 23).** Before the track room, the free overlay ports of each face
+same need. **Overlay ports nest (ticket 23).** The free overlay ports of each face
 trade slots where the tracks then nest instead of crossing: the outer track takes the port nearer the side
 the tracks come from (on a lateral face, the lower track the lower port when both come from below). Stage
 5 cannot decide it: it orders a face before any detour is derived, and the side and the track of a detour
@@ -1132,9 +1132,11 @@ depend on the geometry 7f settles and on the whole layer. The measure is the sep
 (`nestOverlayPorts`: the published overlay paths, then fewer shared tracks, fewer bent links and turns,
 fewer crossing points). Only a free port moves: no authored `order:`, no other link on it (so no routed
 port), no bus, no course, a detour, and a pill of the same size. The two ports trade anchor and
-`engineOrder`, so no size or spacing changes, as 7e bundles reorder their own ports. It runs once, before
-the first room is reserved; the anchors are its record, and no replay asks it again (a choice, not a fixed
-point).
+`engineOrder`, so no size or spacing changes, as 7e bundles reorder their own ports. It runs at the end of
+the 7f attempt, after every placement move was judged on the order stage 5 gave (a trade made earlier
+would stand under the judges of later moves), and it makes no trade that would need room 7f did not
+reserve (`roomHolds`: the record holds every need, and a replay reserves nothing more). The anchors are
+its record; no replay asks it again (a choice, not a fixed point).
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
 (`labelRunWindows` with the turned box's height) are the line less the shorten margins, less every

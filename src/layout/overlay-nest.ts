@@ -16,9 +16,11 @@ import { orderedNodeIds } from '../model/model.js';
  * tracks stand so that the tracks nest instead of crossing. The outer track takes the port nearer the side the tracks come from: on a
  * lateral face, the lower track the lower port when both come from below, and the mirror for above, left and right.
  *
- * Decided in 7f, where the separated tracks first exist. Stage 5 orders a face before any overlay detour is derived: the side a detour
- * goes round and the track it takes depend on the geometry 7f settles and on the whole layer (the joint separation), so neither is
- * known there. The measure is the separation itself (`publishedOverlayPath`, the paths stage 8 draws and the scorer reads): one
+ * Decided at the end of the 7f attempt, on the geometry that publishes, after every placement move was judged on the face order
+ * stage 5 gave. Stage 5 orders a face before any overlay detour is derived: the side a detour goes round and the track it takes depend
+ * on the geometry 7f settles and on the whole layer (the joint separation), so neither is known there. A trade made earlier would stand
+ * under the judges of later moves, which read straight chords from the same anchors. `holds` (`roomHolds`) refuses a trade that would
+ * need room 7f did not reserve: the reservations are done by then. The measure is the separation itself (`publishedOverlayPath`, the paths stage 8 draws and the scorer reads): one
  * derivation, no second predicate (R1). A trade is kept only when the layer is better by the user's order: no more shared tracks, then
  * no more bent links and turns (bends first), then fewer crossing points.
  *
@@ -27,7 +29,7 @@ import { orderedNodeIds } from '../model/model.js';
  * `engineOrder`), so no size and no spacing changes, as 7e bundles reorder their own ports. Faces in node order (`orderedNodeIds`),
  * sides in `SIDE_TIE_ORDER`, pairs in engine order; at most `NEST_PASSES` passes (R4).
  */
-export function nestOverlayPorts(model: LayoutModel): string[] {
+export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel) => boolean = () => true): string[] {
   const links = model.links.filter(link => (link.layer ?? link.family) === 'overlay' && link.technique !== 'stub' && link.removed !== true
     && link.meshBus === undefined && link.attachments !== undefined);
   if (links.length < 2) return [];
@@ -57,7 +59,7 @@ export function nestOverlayPorts(model: LayoutModel): string[] {
     const shares = sharedTrackPairs(links.map((link, index) => ({ points: points[index]!, strokeWidth: linkStrokeWidth(link) }))).length;
     const bent = points.filter(item => item.length > 2).length, turns = points.reduce((sum, item) => sum + Math.max(0, item.length - 2), 0);
     const crossings = overlayCrossingPoints(links.map((link, index) => drawn(points[index]!, [portKey(link.attachments!.from), portKey(link.attachments!.to)])));
-    return [shares, bent, turns, crossings];
+    return [bent, turns, shares, crossings];
   };
   const trade = (node: string, one: LayoutPort, two: LayoutPort): void => {
     // Both are free ports, so both have an anchor and an engine order (`free`).
@@ -72,19 +74,22 @@ export function nestOverlayPorts(model: LayoutModel): string[] {
     return a.width === b.width && a.height === b.height;
   };
   const moved = new Set<string>();
-  let current = measure();
+  let current = measure(), tried = false;
   for (let pass = 0; pass < NEST_PASSES; pass++) {
     let any = false;
     for (const face of faces) for (let i = 0; i < face.ports.length; i++) for (let j = i + 1; j < face.ports.length; j++) {
       const one = face.ports[i]!, two = face.ports[j]!;
       if (!sameSize(one, two)) continue;
+      tried = true;
       trade(face.node, one, two);
       const next = measure();
-      if (better(next, current)) { current = next; any = true; moved.add(portId(one.ref)).add(portId(two.ref)); }
+      if (better(next, current) && holds(model)) { current = next; any = true; moved.add(portId(one.ref)).add(portId(two.ref)); }
       else trade(face.node, one, two);
     }
     if (!any) break;
   }
+  // A trade rebuilt one node's pills and labels; the whole sheet is rebuilt in document order, as every other rebuild leaves it.
+  if (tried) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
   return [...moved].sort();
 }
 
