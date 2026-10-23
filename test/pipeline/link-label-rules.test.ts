@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
-import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_CUT_HAIR, LINK_LABEL_GEOMETRY, labelBands, labelRunWindows, labelWindowDeficit, produceLinkLabels, recordLabelYields, windowHolds } from '../../src/layout/link-labels.js';
+import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_CUT_HAIR, LINK_LABEL_GEOMETRY, labelBands, labelRunWindows, labelWindowDeficit, produceLinkLabels, recordLabelYields, tierGapSplit, windowHolds } from '../../src/layout/link-labels.js';
 import { areaDistance, areaSegmentDistance } from '../../src/geometry/oriented.js';
 import { EPS } from '../../src/geometry/planar.js';
 import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
@@ -591,13 +591,34 @@ for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-ov
   }, 120000);
 }
 
-// Open (ticket 19): room across a run. An overlay detour over the row runs 4 px above the bodies in the top padding; the label
-// beside it needs 20.25 px of padding and `GROUP_PADDING` is 20, so it touches the top border's stroke by 0.25 px.
-it.fails('a label beside an overlay detour in a group padding stays clear of the border (ticket 19, open)', async () => {
-  const model = await run(fixture('a-row-mesh-with-another-label-draws-plain-links'));
-  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER')).toEqual([]);
-  expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
-}, 120000);
+// Ticket 21: room across a run. A detour over or under the row runs 4 px from the bodies in a group's padding; the label beside it
+// needs 20.25 px of padding and `GROUP_PADDING` is 20. 7f grows that edge by exactly the deficit and records the room (R1).
+for (const [name, side] of [['a-row-mesh-with-another-label-draws-plain-links', 'top'], ['a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border', 'bottom']] as const) {
+  it(`a label beside a detour in a group padding stays clear of the border: ${name} (ticket 21)`, async () => {
+    const model = await run(fixture(name));
+    expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+    const report = score(model).snapshot;
+    expect(report.counters.labelBorderCrossings).toBeUndefined();
+    expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
+    // The growth is only as large as the label needs: the run's offset (4), half the stroke, the gap, the text height, half the border.
+    const text = model.labels.find(label => label.role === 'link')!.bounds!.height;
+    const need = 4 + DEFAULT_STROKE_WIDTHS.path / 2 + LINK_LABEL_GEOMETRY.normalGap + text + DEFAULT_STROKE_WIDTHS.group / 2;
+    expect(need).toBeGreaterThan(20);
+    expect(model.labelPadding).toEqual({ row: { [side]: expect.closeTo(need, 3) } });
+    const row = model.groups.row!, bodies = row.nodes.map(id => model.nodes[id]!.bounds!);
+    const held = side === 'top' ? Math.min(...bodies.map(box => box.y)) - row.bounds!.y : row.bounds!.y + row.bounds!.height - Math.max(...bodies.map(box => box.y + box.height));
+    expect(held).toBeCloseTo(need, 3);
+    // The reservation is at its fixed point, and the validator accepts the record (R1).
+    expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+    expect(() => validateGroupLabelBands(model)).not.toThrow();
+    // R5: a forged record is refused: an edge no labelled run needs, a room the run does not need, an unknown group.
+    for (const forged of [{ row: { [side]: model.labelPadding!.row![side]!, left: 30 } }, { row: { [side]: need + 5 } }, { nowhere: { top: 30 } }]) {
+      const copy = structuredClone(model);
+      copy.labelPadding = forged;
+      expect(() => validateGroupLabelBands(copy)).toThrow(/label padding record is forged/);
+    }
+  }, 120000);
+}
 
 // Ticket 20: a turned label is tested by its turned rectangle, and placement reserves a window along the diagonal it lies on, clear
 // of the borders and of the frozen chord the line crosses (a stored reservation, `reservedLinkRuns`).
@@ -678,6 +699,27 @@ it('two diagonal labels from one node keep their lines (ticket 20)', async () =>
   expect(model.labelYields).toEqual({ 'link-1': ['link-2'], 'link-2': [] });
   for (const id of ['link-1', 'link-2']) expect(model.labels.find(label => label.id === `label:link:${id}`)!.onLine).toBe(true);
   expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
+  // Ticket 21: who yields is ranked first by whether growth can help. Extra borders: a box edge that link-1 runs along across the tier
+  // gap's split (its cut stretches with the growth, so no window of link-1 grows), and three boxes stacked on link-2 above the split
+  // (the window across the split grows). link-1 has the more slack (its best window is 5 px short, link-2's 42 px), so ranking by
+  // slack alone makes link-1 yield, and nothing can help it; link-2 yields now, and 7f can grow its window.
+  const walls = groupBoxes(model).map(item => item.bounds);
+  const boxes = [...walls, { x: 54, y: 205, width: 4, height: 95 },
+    { x: 80, y: 140, width: 120, height: 40 }, { x: 80, y: 180, width: 120, height: 35 }, { x: 80, y: 215, width: 120, height: 30 }];
+  const line = (id: string) => model.links.find(link => link.id === id)!.path!.segments[0]!;
+  const label = (id: string) => model.labels.find(item => item.id === `label:link:${id}`)!.turnedSize!;
+  const band = (id: string) => ({ segment: { from: line(id).from, to: line(id).to }, clearance: label(id).height / 2 + LINK_LABEL_GEOMETRY.halo });
+  const extent = (id: string) => label(id).width - 2 * LINK_LABEL_GEOMETRY.halo;
+  const deficit = (id: string, other: string) => labelWindowDeficit(boxes, line(id), extent(id), tierGapSplit(model, model.links.find(link => link.id === id)!), true,
+    { across: label(id).height, axis: 'y', links: [band(other)] });
+  const slack = (id: string, other: string) => Math.max(...labelRunWindows(boxes, line(id), label(id).height, [band(other)])!.map(window => window.to - window.from)) - extent(id);
+  expect(deficit('link-1', 'link-2')).toBeUndefined();
+  expect(deficit('link-2', 'link-1')).toBeGreaterThan(0);
+  expect(slack('link-1', 'link-2')).toBeGreaterThan(slack('link-2', 'link-1'));
+  const fresh = structuredClone(model);
+  delete fresh.labelYields;
+  expect(recordLabelYields(fresh, boxes)).toBe(true);
+  expect(fresh.labelYields).toEqual({ 'link-1': [], 'link-2': ['link-1'] });
 }, 120000);
 
 // The 0.7500001 case: a text that fills a window cut at a frozen chord passes stage 9's test of the chord (clearance + EPS).

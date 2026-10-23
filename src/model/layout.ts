@@ -542,6 +542,13 @@ export interface LayoutModel {
    * in 7f, and never again; 7f and stage 9 read the record. Absent = no label on a diagonal line, or a model before 7f.
    */
   labelYields?: Record<string, string[]>;
+  /**
+   * The room across a run (architecture-2 ticket 21, `acrossRunPadding`): per group and edge, the padding a link label beside a run in
+   * that padding needs, measured from the group's node bodies to the box edge, when it is more than the group's padding on that edge.
+   * 7f writes it and grows the edge by the deficit; `groupPadding` reads it, so every geometry rebuild keeps the room, and the
+   * validator refuses an entry no labelled run backs. A value only grows. Absent = no edge grown for a label.
+   */
+  labelPadding?: Record<string, Partial<Record<Side, number>>>;
   /** The exits 7e reserved for shared runs that end inside their own group (architecture ticket 13); absent when none. */
   groupExits?: GroupExit[];
   /**

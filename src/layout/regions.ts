@@ -23,6 +23,8 @@ export function groupPadding(model: LayoutModel, group: LayoutGroup): { top: num
   }
   // The padding rows of the courses that end in this group (ticket 15): the edge holds the stem, the rows and the edge margin.
   for (const [side, rows] of Object.entries(paddingRows(model, group)) as ['top' | 'bottom', NonNullable<ReturnType<typeof paddingRows>['top']>][]) padding[side] = Math.max(padding[side], rowsInset(rows));
+  // The room a link label beside a run in this padding needs (ticket 21): the record 7f wrote, read by every rebuild (R1).
+  for (const [side, room] of Object.entries(model.labelPadding?.[group.id] ?? {}) as [Side, number][]) padding[side] = Math.max(padding[side], room);
   return group.frame === undefined ? padding : cellPadding(model, group, padding);
 }
 /**

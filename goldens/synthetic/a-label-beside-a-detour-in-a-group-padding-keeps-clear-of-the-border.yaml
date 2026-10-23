@@ -1,0 +1,22 @@
+# Expected (architecture-2 ticket 21): room across a run. Four nodes of `row` are a full mesh of `sync` links; one is labelled, so no
+# bus forms. The labelled link `b`-`d` has `c` between its ends, so it detours under the row, 4 px below the bodies, in the bottom
+# padding of `row` (the title is on the top edge). Its label stands beside that run on the side of the bottom edge: the side of the
+# bodies is taken by `c`. The ordinary padding (20 px) is 0.25 px short of the room the label needs (the run's offset, half the
+# stroke, the gap, the text height and half the border's stroke): 7f grows the bottom padding of `row` by exactly that and records it
+# (`labelPadding`: row bottom 20.25). The label clears the border: no LINK_LABEL_ON_BORDER, `labelBorderCrossings` absent.
+# Test-only input; test/pipeline/link-label-rules.test.ts reads it.
+portograph: 2
+groups:
+  row: { tier: 0, label: Row }
+nodes:
+  a: { group: row, class: router, label: A }
+  b: { group: row, class: router, label: B }
+  c: { group: row, class: router, label: C }
+  d: { group: row, class: router, label: D }
+links:
+  - { from: a, to: b, class: sync }
+  - { from: a, to: c, class: sync }
+  - { from: a, to: d, class: sync }
+  - { from: b, to: c, class: sync }
+  - { from: b, to: d, class: sync, label: standby }
+  - { from: c, to: d, class: sync }
