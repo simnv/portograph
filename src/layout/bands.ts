@@ -1,7 +1,7 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import { stemCache, stemDepth } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
-import type { LabelBand, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
+import type { LabelBand, LabelPaddingEntry, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
@@ -1478,21 +1478,33 @@ const overlaps = (a: Rect, b: Rect): boolean =>
   a.x < right(b) - PLACEMENT_EPS && b.x < right(a) - PLACEMENT_EPS && a.y < bottom(b) - PLACEMENT_EPS && b.y < bottom(a) - PLACEMENT_EPS;
 
 /**
- * The checks a validator makes on `model.labelPadding` (R5): every entry names a plain group (not a rank cell) and one of its edges with a
- * finite room above the ordinary padding, and some labelled run needs exactly that room on that edge now (`acrossRunPadding`, the largest
- * one). The room is measured from the node bodies, so the moves after the reservation do not change it.
+ * The checks a validator makes on `model.labelPadding` (R5). Every entry names a plain group (not a rank cell), one of its edges, a
+ * finite room above that edge's ordinary padding (`groupPadding` without the record), and at least one link, each a described link
+ * that rides a run. For each named link whose label needs room on that edge now (`acrossRunPadding`), the room holds the need. A need
+ * that moved off the edge, or below the room, is no fault: the record keeps the largest room it was grown to (it only grows). Whether
+ * the box still holds the room is the replay's to check (`reserveLinkLabelRoom` on a copy reports a shortfall).
  */
 export function labelPaddingFault(model: LayoutModel): string | undefined {
   const record = model.labelPadding;
   if (record === undefined) return undefined;
-  const needs = labelPaddingNeeds(model);
+  const borders = labelBorders(model), suppressed = overlayLabelsSuppressed(model), byId = new Map(model.links.map(link => [link.id, link]));
   for (const [id, sides] of Object.entries(record)) {
     const group = model.groups[id];
-    if (group === undefined || group.frame !== undefined) return `${id} is not a group whose padding a label can grow`;
-    for (const [side, room] of Object.entries(sides)) {
-      if (!['top', 'right', 'bottom', 'left'].includes(side) || !Number.isFinite(room) || room! <= GROUP_PADDING) return `${id} ${side} records ${room}`;
-      const need = needs.get(`${id}\u0000${side}`);
-      if (need === undefined || Math.abs(need - room!) > PLACEMENT_EPS) return `${id} ${side} records ${room} px and its labelled runs need ${need ?? 'none'}`;
+    if (group === undefined || group.frame !== undefined || !group.nodes.length) return `${id} is not a group whose padding a label can grow`;
+    const ordinary = groupPadding(model, group, false);
+    for (const [side, entry] of Object.entries(sides) as [Side, LabelPaddingEntry][]) {
+      if (!['top', 'right', 'bottom', 'left'].includes(side) || entry === undefined || !Number.isFinite(entry.room) || entry.room <= ordinary[side] + PLACEMENT_EPS) {
+        return `${id} ${side} records ${entry?.room} px, not above its ordinary padding of ${ordinary[side]} px`;
+      }
+      if (!Array.isArray(entry.links) || !entry.links.length) return `${id} ${side} names no link`;
+      for (const name of entry.links) {
+        const link = byId.get(name), run = link === undefined || !describedLink(model, link, suppressed) ? undefined : riddenRun(model, link);
+        if (run === undefined) return `${id} ${side} names ${name}, which carries no label on a run`;
+        const need = acrossRunPadding(model, borders, run, labelSize(model, link!), linkStrokeWidth(link!) / 2);
+        if (need !== undefined && need.group === id && need.side === side && need.padding > entry.room + PLACEMENT_EPS) {
+          return `${id} ${side} records ${entry.room} px and ${name} needs ${need.padding} px`;
+        }
+      }
     }
   }
   return undefined;
@@ -1508,8 +1520,8 @@ function riddenRun(model: LayoutModel, link: LayoutLink): PathSegment | undefine
 
 /**
  * Grow, for every labelled run in a group's padding, that edge's padding by exactly the room its label lacks across the run
- * (`acrossRunPadding`, ticket 21), and record the room (`model.labelPadding`). The group's own tier and those below move down for the
- * top edge, the tiers below for the bottom edge, and the room is inserted at the bodies' face for a side edge (`insertRoomAt`); the
+ * (`acrossRunPadding`, ticket 21), and record the room and the link (`model.labelPadding`). The group's own content and the tiers below
+ * move down for the top edge (a sibling of its tier stays), the tiers below for the bottom edge, and the room is inserted at the bodies' face for a side edge (`insertRoomAt`); the
  * box then grows on the edge by the record, so no other gap shrinks. Returns whether anything grew.
  */
 function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[]) => void, shortfalls: LinkLabelShortfall[]): boolean {
@@ -1527,7 +1539,8 @@ function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[]) => v
     if (deficit <= PLACEMENT_EPS) continue;
     const tier = group.tier!;
     if (room.side === 'top' || room.side === 'bottom') {
-      const moved = Object.values(model.groups).filter(item => item.tier !== undefined && (room.side === 'top' ? item.tier >= tier : item.tier > tier));
+      // The tiers below move down; for the top edge the group's own content moves too, its box top stays, and a sibling of its tier stays (R2).
+      const moved = Object.values(model.groups).filter(item => (item.tier !== undefined && item.tier > tier) || (room.side === 'top' && item === group));
       for (const item of moved) moveGroup(model, item, 0, deficit);
       settle(moved.flatMap(item => item.nodes));
     } else {
@@ -1538,8 +1551,11 @@ function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[]) => v
       }
       settle(insertRoomAt(model, split, deficit, tier));
     }
-    const sides = (model.labelPadding ??= {})[room.group] ??= {};
-    sides[room.side] = Math.max(sides[room.side] ?? 0, room.padding);
+    // The room only grows and its links only join, in link order (R3), so a later pass never takes back a room an earlier one grew.
+    const sides = (model.labelPadding ??= {})[room.group] ??= {}, prior = sides[room.side];
+    const order = new Map(model.links.map((item, at) => [item.id, at]));
+    sides[room.side] = { room: Math.max(prior?.room ?? 0, room.padding),
+      links: [...new Set([...(prior?.links ?? []), link.id])].sort((x, y) => order.get(x)! - order.get(y)!) };
     fitRegionGroup(model, group);
     shortfalls.push({ link: link.id, axis: `${room.side} padding of ${room.group}`, required: room.padding, room: held });
     changed = true;
@@ -1547,20 +1563,6 @@ function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[]) => v
   return changed;
 }
 
-/** The labelled runs `reserveLinkLabelRoom` reads the room across of, as `group\0side` → the largest room needed. */
-function labelPaddingNeeds(model: LayoutModel): Map<string, number> {
-  const needs = new Map<string, number>(), borders = labelBorders(model), suppressed = overlayLabelsSuppressed(model);
-  for (const link of model.links) {
-    if (!describedLink(model, link, suppressed)) continue;
-    const run = riddenRun(model, link);
-    if (run === undefined) continue;
-    const room = acrossRunPadding(model, borders, run, labelSize(model, link), linkStrokeWidth(link) / 2);
-    if (room === undefined) continue;
-    const key = `${room.group}\u0000${room.side}`;
-    needs.set(key, Math.max(needs.get(key) ?? 0, room.padding));
-  }
-  return needs;
-}
 const labelSize = (model: LayoutModel, link: LayoutLink): { width: number; height: number } => {
   const measured = measureText(model.document.links[link.sourceIndex]!.label!, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
   return { width: measured.width, height: measured.height };

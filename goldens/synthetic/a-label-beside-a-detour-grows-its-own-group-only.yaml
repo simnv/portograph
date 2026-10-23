@@ -1,0 +1,32 @@
+# Expected (architecture-2 ticket 21, review): room across a run beside a sibling. As in a-row-mesh-with-another-label-draws-plain-links,
+# the `backup` link detours over the row in the top padding of `row`, and its label needs 20.25 px of padding: 7f grows the top edge of
+# `row` by 0.25 px and records it (`labelPadding`: row top, room 20.25, links [link-9]). Only the content of `row` and the tiers below
+# move down; the sibling `aside` in the same tier keeps its top and its 20 px padding. No LINK_LABEL_ON_BORDER.
+# Test-only input; test/pipeline/link-label-rules.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  row: { tier: 1, label: Row }
+  aside: { tier: 1, label: Aside }
+nodes:
+  core: { group: top, class: router, label: Core }
+  n1: { group: row, class: router, label: N1 }
+  n2: { group: row, class: router, label: N2 }
+  n3: { group: row, class: router, label: N3 }
+  n4: { group: row, class: router, label: N4 }
+  n5: { group: row, class: router, label: N5 }
+  s: { group: aside, class: router, label: S }
+links:
+  - [core, n1]
+  - [core, n5]
+  - [core, s]
+  - { from: n1, to: n2, class: sync }
+  - { from: n1, to: n3, class: sync }
+  - { from: n1, to: n4, class: sync }
+  - { from: n1, to: n5, class: sync }
+  - { from: n2, to: n3, class: sync }
+  - { from: n2, to: n4, class: sync, label: backup }
+  - { from: n2, to: n5, class: sync }
+  - { from: n3, to: n4, class: sync }
+  - { from: n3, to: n5, class: sync }
+  - { from: n4, to: n5, class: sync }

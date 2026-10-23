@@ -13,8 +13,10 @@ export const GROUP_PADDING = 20;
 /**
  * Label bands extend the top inset while ordinary group padding remains below and at both sides.
  * A band reserves its own clearance below itself; that reservation is at least the ordinary padding.
+ * `withLabelRoom` false leaves out the room across a run (`labelPadding`): the edge's ordinary padding, which the validator compares a
+ * recorded room with.
  */
-export function groupPadding(model: LayoutModel, group: LayoutGroup): { top: number; right: number; bottom: number; left: number } {
+export function groupPadding(model: LayoutModel, group: LayoutGroup, withLabelRoom = true): { top: number; right: number; bottom: number; left: number } {
   const padding = { top: GROUP_PADDING, right: GROUP_PADDING, bottom: GROUP_PADDING, left: GROUP_PADDING };
   for (const id of group.nodes) for (const port of model.nodes[id]!.ports) {
     if (port.ref.anonymous === true || port.side === undefined) continue;
@@ -24,7 +26,7 @@ export function groupPadding(model: LayoutModel, group: LayoutGroup): { top: num
   // The padding rows of the courses that end in this group (ticket 15): the edge holds the stem, the rows and the edge margin.
   for (const [side, rows] of Object.entries(paddingRows(model, group)) as ['top' | 'bottom', NonNullable<ReturnType<typeof paddingRows>['top']>][]) padding[side] = Math.max(padding[side], rowsInset(rows));
   // The room a link label beside a run in this padding needs (ticket 21): the record 7f wrote, read by every rebuild (R1).
-  for (const [side, room] of Object.entries(model.labelPadding?.[group.id] ?? {}) as [Side, number][]) padding[side] = Math.max(padding[side], room);
+  if (withLabelRoom) for (const [side, entry] of Object.entries(model.labelPadding?.[group.id] ?? {}) as [Side, { room: number }][]) padding[side] = Math.max(padding[side], entry.room);
   return group.frame === undefined ? padding : cellPadding(model, group, padding);
 }
 /**

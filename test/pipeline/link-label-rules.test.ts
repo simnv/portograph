@@ -9,6 +9,8 @@ import { EPS } from '../../src/geometry/planar.js';
 import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
 import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
 import { reserveLinkLabelRoom, validateGroupLabelBands } from '../../src/layout/bands.js';
+import { fitRegionGroup } from '../../src/layout/regions.js';
+import { union } from '../../src/layout/skeleton-geometry.js';
 import { bench } from '../layout/link-label-fixture.js';
 import { measureText } from '../../src/text/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
@@ -592,8 +594,10 @@ for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-ov
 }
 
 // Ticket 21: room across a run. A detour over or under the row runs 4 px from the bodies in a group's padding; the label beside it
-// needs 20.25 px of padding and `GROUP_PADDING` is 20. 7f grows that edge by exactly the deficit and records the room (R1).
-for (const [name, side] of [['a-row-mesh-with-another-label-draws-plain-links', 'top'], ['a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border', 'bottom']] as const) {
+// needs 20.25 px of padding and `GROUP_PADDING` is 20. 7f grows that edge by exactly the deficit and records the room and its link (R1).
+for (const [name, side, link] of [['a-row-mesh-with-another-label-draws-plain-links', 'top', 'link-8'],
+  ['a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border', 'bottom', 'link-5'],
+  ['a-label-beside-a-detour-grows-its-own-group-only', 'top', 'link-9']] as const) {
   it(`a label beside a detour in a group padding stays clear of the border: ${name} (ticket 21)`, async () => {
     const model = await run(fixture(name));
     expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
@@ -604,18 +608,51 @@ for (const [name, side] of [['a-row-mesh-with-another-label-draws-plain-links', 
     const text = model.labels.find(label => label.role === 'link')!.bounds!.height;
     const need = 4 + DEFAULT_STROKE_WIDTHS.path / 2 + LINK_LABEL_GEOMETRY.normalGap + text + DEFAULT_STROKE_WIDTHS.group / 2;
     expect(need).toBeGreaterThan(20);
-    expect(model.labelPadding).toEqual({ row: { [side]: expect.closeTo(need, 3) } });
-    const row = model.groups.row!, bodies = row.nodes.map(id => model.nodes[id]!.bounds!);
+    expect(model.labelPadding).toEqual({ row: { [side]: { room: expect.closeTo(need, 3), links: [link] } } });
+    const row = model.groups.row!;
+    const bodies = row.nodes.map(id => model.nodes[id]!.bounds!);
     const held = side === 'top' ? Math.min(...bodies.map(box => box.y)) - row.bounds!.y : row.bounds!.y + row.bounds!.height - Math.max(...bodies.map(box => box.y + box.height));
     expect(held).toBeCloseTo(need, 3);
+    // R2: a sibling group of the same tier does not move; its top and its padding stay as they were.
+    const aside = model.groups.aside;
+    if (aside !== undefined) {
+      expect(aside.bounds!.y).toBeCloseTo(row.bounds!.y, 9);
+      expect(model.nodes.s!.bounds!.y - aside.bounds!.y).toBeCloseTo(20, 9);
+    }
     // The reservation is at its fixed point, and the validator accepts the record (R1).
     expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
     expect(() => validateGroupLabelBands(model)).not.toThrow();
-    // R5: a forged record is refused: an edge no labelled run needs, a room the run does not need, an unknown group.
-    for (const forged of [{ row: { [side]: model.labelPadding!.row![side]!, left: 30 } }, { row: { [side]: need + 5 } }, { nowhere: { top: 30 } }]) {
+    // `groupPadding` reads the record: a box refitted from its bodies keeps the room. Every plain group holds a title band, and a band
+    // group's refit keeps the extent it had, so the box is first collapsed to its bodies. Without the record the edge gets the ordinary
+    // padding back, and the replay and the validator report the shortfall.
+    const refit = (copy: LayoutModel): void => {
+      const group = copy.groups.row!;
+      group.bounds = union(group.nodes.map(id => copy.nodes[id]!.bounds!));
+      fitRegionGroup(copy, group);
+    };
+    const kept = structuredClone(model);
+    refit(kept);
+    expect(kept.groups.row!.bounds).toEqual(row.bounds);
+    const lost = structuredClone(model);
+    delete lost.labelPadding;
+    refit(lost);
+    expect(lost.groups.row!.bounds!.height).toBeCloseTo(row.bounds!.height - (need - 20), 3);
+    expect(reserveLinkLabelRoom(structuredClone(lost))).toBe(true);
+    expect(() => validateGroupLabelBands(lost)).toThrow(/padding of row/);
+    // R5: a forged record is refused: a room not above the ordinary padding, no link, a link with no labelled run, a room short of
+    // the need of its link, an unknown group.
+    const entry = model.labelPadding!.row![side]!;
+    const forgeries: [NonNullable<LayoutModel['labelPadding']>, RegExp][] = [
+      [{ row: { [side]: { room: 20, links: [link] } } }, /ordinary padding/],
+      [{ row: { [side]: { room: entry.room, links: [] } } }, /names no link/],
+      [{ row: { [side]: { room: entry.room, links: ['link-1'] } } }, /carries no label on a run/],
+      [{ row: { [side]: { room: entry.room - 0.1, links: [link] } } }, /needs/],
+      [{ nowhere: { top: entry } }, /not a group/],
+    ];
+    for (const [forged, why] of forgeries) {
       const copy = structuredClone(model);
       copy.labelPadding = forged;
-      expect(() => validateGroupLabelBands(copy)).toThrow(/label padding record is forged/);
+      expect(() => validateGroupLabelBands(copy)).toThrow(why);
     }
   }, 120000);
 }

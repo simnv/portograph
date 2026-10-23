@@ -1106,10 +1106,13 @@ one edge of the box, carries its label on the side of that edge: always on the t
 side stage 9 tries first), and on the bottom and left edges when the box on the side of the bodies meets a
 body, a pill or a border. The box is the one stage 9 tries (`runLabelBox`). When the padding on that edge,
 from the bodies to the box edge, is less than the label's reach beyond the bodies plus the border's half
-stroke (`acrossRunPadding`), 7f grows that edge by exactly the deficit: the group's tier and the tiers below
-move down for the top edge, the tiers below for the bottom edge, and the room is inserted at the bodies' face
-for a side edge. The room is recorded per group and edge (`model.labelPadding`), `groupPadding` reads it, so
-every rebuild keeps it, and the validator refuses an entry that no labelled run needs. The title edge is left
+stroke (`acrossRunPadding`), 7f grows that edge by exactly the deficit: the group's own content and the tiers
+below move down for the top edge (a sibling of its tier stays), the tiers below for the bottom edge, and the
+room is inserted at the bodies' face for a side edge. The room is recorded per group and edge with the links
+it was grown for (`model.labelPadding`: `room`, `links`; the room only grows), `groupPadding` reads it, so
+every rebuild keeps it. The validator refuses an entry whose room is not above the edge's ordinary padding,
+that names no link or a link with no labelled run, or whose room is short of what a named link needs now
+(room ≥ need); the replay reports a box that no longer holds the room. The title edge is left
 to the title band; a rank cell's border is its frame's, and is not grown.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
