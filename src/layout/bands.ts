@@ -25,7 +25,7 @@ import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
 import { overlayPath } from './overlay-paths.js';
-import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
+import { chordKind, crossingRect, isRoutedChord, perpendicularRefusalsFault } from './frame-paths.js';
 import { directFamiliesFault } from './direct-families.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
@@ -1953,6 +1953,8 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   if (fault !== undefined) throw new Error(`The label yields are forged: ${fault}`);
   // The room across a run is read from its record and checked against the runs that need it (ticket 21, R5).
   // The direct families are read from their record and the geometry, never decided again (ticket 22, R1/R5).
+  const perpendicular = perpendicularRefusalsFault(model);
+  if (perpendicular !== undefined) throw new Error(`The perpendicular refusal record is forged: ${perpendicular}`);
   const family = directFamiliesFault(model);
   if (family !== undefined) throw new Error(`The direct family record is forged: ${family}`);
   const padding = labelPaddingFault(model);

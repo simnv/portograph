@@ -4,7 +4,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import { validateGroupLabelBands } from '../../src/layout/bands.js';
 import { directFamiliesFault, planDirectFamilies, triggers } from '../../src/layout/direct-families.js';
-import { chordVerdict, longPerpendicularChord, SIDE_EDGE_SLACK } from '../../src/layout/frame-paths.js';
+import { chordVerdict, flatPerpendicularChord, PERPENDICULAR_FLAT_ANGLE, perpendicularRefusalsFault, SIDE_EDGE_SLACK } from '../../src/layout/frame-paths.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -99,29 +99,61 @@ describe('facing units link direct', () => {
   }, 120000);
 });
 
-describe('a long chord never joins perpendicular faces (ticket 22, rule 5)', () => {
-  it('draws the long bottom-to-lateral link as an L, and chordVerdict names the faces', async () => {
+describe('a long, flat chord never joins perpendicular faces (ticket 22, rule 5)', () => {
+  const lateral = async () => {
     const model = await run(fixture(LATERAL));
     const link = model.links.find(item => item.attachments!.from.node === 'west-router' && item.attachments!.to.node === 'provider')!;
+    return { model, link };
+  };
+  it('draws the long, flat bottom-to-lateral link as an L, and after the freeze reads the record, not the geometry', async () => {
+    const { model, link } = await lateral();
     expect(link.technique).not.toBe('straight');
     expect(link.path!.segments.length).toBeGreaterThan(1);
-    expect(longPerpendicularChord(model, link)).toBe(true);
-    expect(chordVerdict(model, link, SIDE_EDGE_SLACK)).toEqual({ reason: 'faces' });
+    // The side round refused the chord hint before placement; at the freeze the link has a lane, so the freeze records nothing (absent).
+    expect(model.perpendicularRefusals).toBeUndefined();
+    const before = structuredClone(model);
+    delete before.frozenChords;
+    expect(flatPerpendicularChord(before, link)).toBe(true);
+    expect(chordVerdict(before, link, SIDE_EDGE_SLACK)).toEqual({ reason: 'faces' });
+    expect(flatPerpendicularChord({ ...model, perpendicularRefusals: [link.id] }, link)).toBe(true);
     const east = model.links.find(item => item.attachments!.from.node === 'east-router' && item.attachments!.to.node === 'provider')!;
     expect(east.technique).toBe('straight');
+    // The record answers after the freeze (R1): an absent record refuses nothing, whatever the geometry says.
+    expect(flatPerpendicularChord(model, link)).toBe(false);
   }, 120000);
 
-  it('leaves a perpendicular chord shorter than twice the larger body to the other chord rules', async () => {
-    const model = await run(fixture(LATERAL));
-    const link = model.links.find(item => item.attachments!.from.node === 'west-router' && item.attachments!.to.node === 'provider')!;
-    const router = model.nodes['west-router']!, provider = model.nodes['provider']!;
-    // The provider's right port is put 100 px below the router's bottom port: perpendicular faces, a chord far under the limit.
-    const near = structuredClone(model);
-    const from = near.nodes['west-router']!.ports.find(port => port.side === 'bottom')!.anchor!;
-    const end = link.attachments!.to;
-    near.nodes['provider']!.ports = provider.ports.map(port => port.ref.ordinal === end.ordinal && (port.ref.name ?? null) === (end.name ?? null)
-      ? { ...port, side: 'right' as const, anchor: { x: from.x + 60, y: from.y + 100 } } : port);
-    expect(Math.hypot(60, 100)).toBeLessThan(2 * Math.max(router.bounds!.width, router.bounds!.height));
-    expect(longPerpendicularChord(near, link)).toBe(false);
+  it('before the freeze, leaves a short or a steep perpendicular chord to the other chord rules', async () => {
+    const { model, link } = await lateral();
+    const router = model.nodes['west-router']!, provider = model.nodes['provider']!, end = link.attachments!.to;
+    const from = router.ports.find(port => port.side === 'bottom')!.anchor!;
+    const moved = (dx: number, dy: number): LayoutModel => {
+      const copy = structuredClone(model);
+      delete copy.perpendicularRefusals; delete copy.frozenChords;
+      copy.nodes['provider']!.ports = provider.ports.map(port => port.ref.ordinal === end.ordinal && (port.ref.name ?? null) === (end.name ?? null)
+        ? { ...port, side: 'right' as const, anchor: { x: from.x + dx, y: from.y + dy } } : port);
+      return copy;
+    };
+    const limit = 2 * Math.max(router.bounds!.width, router.bounds!.height);
+    // Short: 60 x 100 px, far under the limit. Steep: as long as the limit and more, 60 degrees from the normal. Flat: 85 degrees.
+    expect(flatPerpendicularChord(moved(60, 100), link)).toBe(false);
+    const at = (degrees: number, length: number): [number, number] => [length * Math.sin(degrees * Math.PI / 180), length * Math.cos(degrees * Math.PI / 180)];
+    expect(flatPerpendicularChord(moved(...at(60, limit * 1.5)), link)).toBe(false);
+    expect(flatPerpendicularChord(moved(...at(85, limit * 1.5)), link)).toBe(true);
+    expect(PERPENDICULAR_FLAT_ANGLE).toBe(80);
+  }, 120000);
+
+  it('refuses a forged record (R5)', async () => {
+    const { model, link } = await lateral();
+    const east = model.links.find(item => item.attachments!.from.node === 'east-router' && item.attachments!.to.node === 'provider')!;
+    expect(() => validateGroupLabelBands(model)).not.toThrow();
+    for (const [forged, why] of [
+      [{ ...model, perpendicularRefusals: ['link-99'] }, /not a link of the model/],
+      [{ ...model, perpendicularRefusals: [east.id] }, /holds a chord its perpendicular faces refused/],
+      [{ ...model, frozenChords: [], perpendicularRefusals: model.links.filter(item => item.attachments!.from.node === 'west-core').map(item => item.id) }, /does not join perpendicular faces/],
+    ] as [LayoutModel, RegExp][]) expect(() => validateGroupLabelBands(forged)).toThrow(why);
+    const early = structuredClone(model);
+    delete early.frozenChords; early.perpendicularRefusals = [link.id];
+    expect(perpendicularRefusalsFault(early)).toMatch(/before the freeze/);
+    expect(perpendicularRefusalsFault({ ...model, perpendicularRefusals: [link.id] })).toBeUndefined();
   }, 120000);
 });

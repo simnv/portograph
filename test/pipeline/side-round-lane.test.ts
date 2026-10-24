@@ -86,10 +86,7 @@ describe('the side round offers a routed L through a side lane', () => {
     const mixed = readFileSync(new URL('../../goldens/synthetic/a-chord-hint-and-a-lane-hint-never-share-a-batch.yaml', import.meta.url), 'utf8');
     const batches: string[][] = [];
     await run({ testSideTrace: (event: { ev: string; offer?: { promised: Map<string, { shape: string }> } }) => { if (event.ev === 'offer') batches.push([...event.offer!.promised.values()].map(item => item.shape)); } } as never, mixed);
-    // Ticket 22: a chord never joins perpendicular faces. The router's bottom face and the provider's lateral face stand at 90 degrees, so this fixture no longer
-    // gets a chord hint, and the guard holds here without a test of its own. The lane hint is still offered.
-    expect(batches.some(shapes => shapes.includes('straight'))).toBe(false);
-    expect(batches.some(shapes => shapes.includes('lane'))).toBe(true);
+    expect(batches.some(shapes => shapes.includes('straight'))).toBe(true);
     expect(batches.filter(shapes => shapes.includes('straight') && shapes.includes('lane'))).toEqual([]);
   }, 120000);
 

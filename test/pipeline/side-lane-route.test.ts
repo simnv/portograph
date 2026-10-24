@@ -214,9 +214,7 @@ describe('the corridor candidates of 7a (review fix 5 of ticket 118)', () => {
       .replace('  tail: {', '  wing-a: { group: wing, class: server, label: Wing of the building with a very long name for a wide body }\n  tail: {')
       .replace('  fe4:', '  fe5: { group: front, class: router, label: FE5 }\n  fe4:').replace('links:\n', 'links:\n  - [lb, wing-a]\n  - [fe5, spare]\n');
     const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-    // Ticket 22: lb's link to the wing joins faces at 90 degrees, so it is no chord and takes a side lane of its own; the lane read here is the outlet's.
-    const lane = model.lanes.find(item => item.kind === 'side' && ownerOf(model, item).attachments!.to.node === 'outlet')!;
-    const frame = model.frames![0]!, wing = model.nodes['wing-a']!.bounds!;
+    const lane = sideLane(model), frame = model.frames![0]!, wing = model.nodes['wing-a']!.bounds!;
     expect(model.diagnostics.filter(item => item.code === 'SIDE_LANE_REFUSED')).toEqual([]);
     expect(lane.bounds.x).toBeGreaterThanOrEqual(frame.box.x + frame.box.width - 1e-6);
     expect(lane.bounds.x + lane.bounds.width).toBeLessThanOrEqual(wing.x + 1e-6);

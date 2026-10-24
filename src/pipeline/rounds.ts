@@ -183,12 +183,7 @@ export const course: Round<CourseOffer> = {
   async live(_env, s) { return measureCourses(s.base, s.routedFinal ?? s.routedBase!).courses.length > 0; },
   gain: (_env, _s, o) => gainOf([...o.promised].map(([, item]) => [item.base.turns === Infinity ? undefined : item.base.turns, item.turns] as [number | undefined, number])),
   skip(env, _s, o) { env.options.testSideTrace?.({ ev: 'course-skipped', offer: o, reruns: env.reruns }); },
-  // A course trial whose placement breaks the group geometry is refused, and the baseline stands. Measured (architecture-2 ticket 22): once a
-  // chord joins opposite faces only, `a-bar-spans-leaves-far-apart-and-keeps-its-neighbour-gap` offers a skirt course whose 7d bar span runs into
-  // the group beside it; the defect of the bar reservation under a course is its own ticket, and the command must not fail on a trial.
-  tolerates: (error, phase) => phase === 'place'
-    ? (error instanceof PlacementRefusal && error.code !== 'budget') || (error instanceof Error && error.message.startsWith('Invalid group or tier geometry'))
-    : refusedAtBands(error),
+  tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal && error.code !== 'budget' : refusedAtBands(error),
   async measure(env, s) {
     if (s.courseRetry === 'none') return undefined;
     s.routedBase = s.routedFinal ?? s.routedBase ?? await env.route(s.base);

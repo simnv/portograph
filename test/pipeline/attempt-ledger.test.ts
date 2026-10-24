@@ -41,13 +41,12 @@ const ROWS: Row[] = [
   row('a-re-seated-band-carries-its-bar-and-flank', '1/5/7/3', 1, 1, 1, 0, 0),
   row('sync-links-do-not-stack-a-tier', '1/4/7/3', 1, 1, 1, 0, 0),
   row('an-overlay-leaves-a-lateral-side-past-a-sibling-body', '2/7/12/5', 2, 2, 2, 0, 0),
-  // Ticket 22: a chord never joins perpendicular faces, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
+  // Ticket 22: a long, flat chord never joins perpendicular faces, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
   row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/14/7/3', 4, 1, 1, 0, 0, { probe: 1 }),
   row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/7/7/3', 2, 1, 1, 0, 0),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
   row('a-canton-member-frame-slides-off-a-straight-chord', '1/10/7/3', 2, 1, 1, 0, 0),
-  // Ticket 22: a chord at 90 degrees is refused, so the side trial on this sheet takes a second 7f attempt (1/19/7/3, 3 runs, 1 attempt before).
-  row('columns-hold-their-axis-after-7f', '2/17/12/5', 2, 2, 2, 0, 0, { probe: 1 }),
+  row('columns-hold-their-axis-after-7f', '1/19/7/3', 3, 1, 1, 0, 0),
   row('a-canton-band-holds-the-rows-off', '1/7/7/3', 2, 1, 1, 0, 0),
   row('a-member-title-widens-a-beside-row', '1/7/7/3', 1, 1, 1, 0, 0, { base7f: '0/1/0' }),
   // The cost counters (settle, centring passes, copies, replays) of this sheet move with every change to the sweep that seats a flank beside a frame (architecture ticket 19: the

@@ -441,7 +441,7 @@ export function edgeMisses(model: LayoutModel, link: LayoutLink, segment: PathSe
  */
 export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0): { segment: PathSegment } | { reason: ChordRefusal } {
   const kind = chordKind(model, link);
-  if (longPerpendicularChord(model, link)) return { reason: 'faces' };
+  if (flatPerpendicularChord(model, link)) return { reason: 'faces' };
   const geometry = straightChord(model, link, undefined, true);
   if (!geometry || Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y) < PLACEMENT_EPS) return { reason: 'faces' };
   // A link that crosses a tier it does not end in needs the lane lanes.ts reserves for it, and a lane
@@ -469,19 +469,54 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
 
 const VERTICAL = new Set(['top', 'bottom']);
 /**
- * A long routed chord never joins two perpendicular faces (user, 2026-10-23 and 2026-10-24, architecture-2 ticket 22): when a `top` or `bottom` face and a
- * lateral side stand at 90 degrees and the chord between the two anchors is at least the straight-link length limit (`straightLengthLimit`, twice the
- * larger dimension of the two bodies), the link is orthogonal. A shorter chord between perpendicular faces, opposite faces and two faces on one side keep
- * the other chord rules. Every chord decision reads this one predicate (`chordVerdict`).
+ * The angle from the normal of the `top` or `bottom` face at and above which a long chord to a lateral face runs nearly along that face (user, 2026-10-24:
+ * "90 degrees turn work only in some cases"). Measured on the corpus: the provider chord stands at 81.3 degrees and its L costs one bend; every long
+ * perpendicular chord at 75.8 degrees or less stood in a sheet where its L cost bends (and on a-foreign-unit a G9).
  */
-export function longPerpendicularChord(model: LayoutModel, link: LayoutLink): boolean {
+export const PERPENDICULAR_FLAT_ANGLE = 80;
+
+/**
+ * Whether a routed chord between perpendicular faces is refused, derived from the geometry: a `top` or `bottom` face and a lateral side stand at 90
+ * degrees, the chord between the anchors is at least the straight-link length limit (`straightLengthLimit`, twice the larger dimension of the two
+ * bodies), and it leaves the top or bottom face at `PERPENDICULAR_FLAT_ANGLE` or more from its normal. A shorter or steeper perpendicular chord, opposite
+ * faces and two faces on one side keep the other chord rules.
+ */
+function derivedFlatPerpendicular(model: LayoutModel, link: LayoutLink): boolean {
   const ends = link.attachments;
   if (!ends) return false;
   const one = findPort(model, ends.from), two = findPort(model, ends.to);
   if (one?.side === undefined || two?.side === undefined || VERTICAL.has(one.side) === VERTICAL.has(two.side) || !one.anchor || !two.anchor) return false;
   const nodes = [model.nodes[ends.from.node], model.nodes[ends.to.node]];
   if (nodes.some(node => node?.bounds === undefined)) return false;
-  return Math.hypot(two.anchor.x - one.anchor.x, two.anchor.y - one.anchor.y) >= straightLengthLimit(nodes as LayoutNode[]) - EPS;
+  const dx = Math.abs(two.anchor.x - one.anchor.x), dy = Math.abs(two.anchor.y - one.anchor.y);
+  if (Math.hypot(dx, dy) < straightLengthLimit(nodes as LayoutNode[]) - EPS) return false;
+  return Math.atan2(dx, dy) * 180 / Math.PI >= PERPENDICULAR_FLAT_ANGLE - EPS;
+}
+
+/**
+ * A long, flat chord never joins perpendicular faces (architecture-2 ticket 22). Before the freeze the rule is derived from the geometry; the freeze
+ * records the links it refused (`model.perpendicularRefusals`, R1; absent = none), and from then on the record answers: a later move in x does not take
+ * the decision again. Every chord decision reads this one predicate (`chordVerdict`).
+ */
+export function flatPerpendicularChord(model: LayoutModel, link: LayoutLink): boolean {
+  if (model.frozenChords !== undefined) return model.perpendicularRefusals?.includes(link.id) ?? false;
+  return derivedFlatPerpendicular(model, link);
+}
+
+/** What a validator checks on `model.perpendicularRefusals` (R5): recorded with the freeze, naming links of the model that hold no frozen chord. */
+export function perpendicularRefusalsFault(model: LayoutModel): string | undefined {
+  const record = model.perpendicularRefusals;
+  if (record === undefined) return undefined;
+  if (model.frozenChords === undefined) return 'the perpendicular refusals are recorded before the freeze';
+  const frozen = new Set(model.frozenChords);
+  for (const id of record) {
+    const link = model.links.find(item => item.id === id);
+    if (link?.attachments === undefined) return `${id} is not a link of the model`;
+    if (frozen.has(id)) return `${id} holds a chord its perpendicular faces refused`;
+    const one = findPort(model, link.attachments.from)?.side, two = findPort(model, link.attachments.to)?.side;
+    if (one === undefined || two === undefined || VERTICAL.has(one) === VERTICAL.has(two)) return `${id} does not join perpendicular faces`;
+  }
+  return undefined;
 }
 
 /** The chord of the link when nothing that no other link can change refuses it. The fan rules ask this first. */
@@ -647,6 +682,10 @@ export function freezeChords(model: LayoutModel): void {
     model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
       message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
   }
+  // The links whose chord the perpendicular rule refuses at the freeze (R1): from now on the record answers, not the geometry.
+  // Absent after the freeze = none refused, so a sheet with none keeps its bytes.
+  const refusals = model.links.filter(link => !held.includes(link.id) && chordKind(model, link) !== undefined && derivedFlatPerpendicular(model, link)).map(link => link.id);
+  if (refusals.length) model.perpendicularRefusals = refusals; else delete model.perpendicularRefusals;
   // The freeze is a decision even when nothing is held: a link that was not straight here stays orthogonal. An absent field would let the replays of 7f
   // take a chord the freeze refused, on boxes that the grid then widens (a row path that the region rule derives differently once the geometry settles).
   model.frozenChords = held;

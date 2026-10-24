@@ -435,16 +435,26 @@ with no hint is no spanning-chord candidate at the freeze.
 Status: decided by the user 2026-10-23 and 2026-10-24 (ticket 22, "User decisions after slice 1" and the
 two rounds after it). Slice 1 as built.
 
-### 15.1 A long chord never joins perpendicular faces
+### 15.1 A long, flat chord never joins perpendicular faces
 
-When the two end faces of a routed link stand at 90 degrees (a `top` or `bottom` face and a lateral side) and
-the chord between the anchors is at least the straight-link length limit (twice the larger dimension of the
-two bodies, `straightLengthLimit`, the limit of `expectedLevelPath`), the link is orthogonal: *"90 degrees
-turn between faces is a cause for orthogonal link"*. A shorter perpendicular chord, opposite faces and two
-faces on one side keep the other chord rules (user, 2026-10-24). One predicate (`longPerpendicularChord`,
-`frame-paths.ts`) is the first check of
+When the two end faces of a routed link stand at 90 degrees (a `top` or `bottom` face and a lateral side), the
+chord between the anchors is at least the straight-link length limit (twice the larger dimension of the two
+bodies, `straightLengthLimit`, the limit of `expectedLevelPath`), and it leaves the `top` or `bottom` face at
+`PERPENDICULAR_FLAT_ANGLE` (80 degrees) or more from the face's normal, the link is orthogonal. The user:
+*"90 degrees turn work only in some cases. in a crowded example it indeed goes to regress"* (2026-10-24). A
+shorter or steeper perpendicular chord, opposite faces and two faces on one side keep the other chord rules.
+The angle is measured: the provider chord of
+`a-location-router-leaves-a-lateral-side-toward-a-far-provider` stands at 81.3 degrees (its L costs one bend
+and is wanted); every long perpendicular chord at 75.8 degrees or less stood on a sheet where its L cost bends
+(two to six), and on `a-foreign-unit-with-routed-links-to-two-canton-groups` a G9. A crossing test (the L only
+when the chord crosses more than one link) changes nothing on the corpus and keeps the provider a chord.
+
+The freeze records the links the rule refuses (`model.perpendicularRefusals`, absent = none, R1); after it the
+record answers, not the geometry, and `validateGroupLabelBands` checks it (`perpendicularRefusalsFault`: links
+of the model, not frozen, on perpendicular faces, recorded with the freeze). One predicate
+(`flatPerpendicularChord`, `frame-paths.ts`) is the first check of
 `chordVerdict`, so every chord decision reads it: the fixed point, the freeze, the fan, span and side
-measures. A side hint that would give a cross-frame chord a long one to a lateral end no longer makes a chord. Between
+measures. A side hint that would give a cross-frame chord a long, flat one to a lateral end no longer makes a chord. Between
 two lateral faces there is no angle floor (a slight tilt is fine). Overlay chords do not read the predicate.
 
 ### 15.2 Direct families

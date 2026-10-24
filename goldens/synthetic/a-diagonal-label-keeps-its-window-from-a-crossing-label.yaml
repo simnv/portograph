@@ -6,8 +6,6 @@
 # in 7f's windows and in every stage 9 candidate. So stage 9 places link-10's label in the window 7f grew for it: no
 # LINK_LABEL_ON_BORDER, no `labelBorderCrossings` counter, every gate passes. Before the fix link-6's label took that window, and
 # link-10's label fell back across the border of `east` with the growth spent.
-# Ticket 22: `e`'s uplink (link-4) goes to `p1`, a straight top-to-bottom chord. It went to `zone` as a chord from `e`'s left face to `zone`'s
-# bottom face; a chord never joins perpendicular faces now, and its orthogonal legs would stand in the window of link-10.
 # Test-only input; test/pipeline/link-label-rules.test.ts reads it.
 portograph: 2
 profile: network
@@ -41,7 +39,7 @@ links:
   - [w.up1, zone, { label: first, class: primary }]
   - [w.up2, zone, { label: second, class: backup }]
   - [w.up3, zone, { label: third, class: standby }]
-  - [e.up, p1, { label: uplink one, class: uplink }]
+  - [e.up, zone, { label: uplink one, class: uplink }]
   - [w, e, { label: tunnel, class: overlay }]
   - [w, p3, { label: west-main, route: overlay, class: overlay }]
   - [w, p2, { label: west-two, route: overlay, class: overlay }]

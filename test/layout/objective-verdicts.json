@@ -76,9 +76,11 @@
     "pickTarget": "12 727812f2808992bc"
   },
   "overlay-links-reorder-two-locations": {
-    "centreGroupStep": "76 bd264ed0f9f725a1",
-    "pullTier": "6 a332b69ba9059fa1",
-    "pullTierHeld": "3 582fe83ac9774415"
+    "centreGroupStep": "128 c9dff42384ded98e",
+    "judgeTrial": "1 b9449d780e1a4d74",
+    "pullTier": "13 025c7ba8baa49833",
+    "pullTierHeld": "5 b6207d17ad1f803b",
+    "settleKeepOut": "1 0a5865ff037dbf1d"
   },
   "an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack": {
     "attemptCheap": "2 0d5ac49bf18f7073",

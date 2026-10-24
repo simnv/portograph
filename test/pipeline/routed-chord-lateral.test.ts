@@ -48,7 +48,7 @@ describe('a routed chord leaves a lateral side', () => {
     expect(places).toBe(2);
     expect(refusals(model)).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'SIDE_HINT_TAKEN')).toHaveLength(1);
-    // Ticket 22 (routed-chords.md, Section 15.1): a chord never joins perpendicular faces. The router's bottom face and the provider's right face stand at 90 degrees,
+    // Ticket 22 (routed-chords.md, Section 15.1): a long, flat chord never joins perpendicular faces. The router's bottom face and the provider's right face stand at 90 degrees,
     // so the freed link is an orthogonal L into the lateral face, not the chord of ticket 117. The east link joins bottom to top and stays a chord.
     const east = toProvider(model, 'east-router');
     expect(east.technique).toBe('straight');
@@ -168,10 +168,9 @@ describe('a chord is offered only when the fixed point of placement would hold i
       const offer = measureSides(blocked, blocked, new Set());
       expect([...offer.promised.values()].filter(item => item.shape === 'straight')).toEqual([]);
     } finally { delete chordTrace.on; }
-    // A configuration at 90 degrees is refused for its faces (ticket 22); one with opposite faces is refused for the chord clearance to the held chord, named by
+    // A configuration with opposite faces is refused for the chord clearance to the held chord, named by
     // the fixed point of placement (not the offer logic, not `chordVerdict`).
     const refused = events.filter(event => event['ev'] === 'attempt' && event['offered'] === false).map(event => event['why'] as string);
-    expect(refused).toContain('chordVerdict refuses: faces');
     const held = refused.filter(why => why.startsWith('the fixed point'));
     expect(held.every(why => why.endsWith(': chord'))).toBe(true);
   }, 60000);

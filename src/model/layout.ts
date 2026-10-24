@@ -531,6 +531,11 @@ export interface LayoutModel {
    */
   directFamilies?: DirectFamily[];
   /**
+   * The routed links whose chord the freeze refused because it would join perpendicular faces, long and flat (architecture-2 ticket 22,
+   * `flatPerpendicularChord`). Absent before the freeze: the rule is derived from the geometry. Absent after it: the freeze refused none.
+   */
+  perpendicularRefusals?: string[];
+  /**
    * The fan edge keepers held when final placement freezes, after 7f (architecture-2 ticket 18): the fan's port id, the member's link
    * and the depth it turns at out of the port's side. From then on a replay takes the recorded member at the recorded depth or none, and
    * never derives either again from a box. Present only when a keeper is held. Before `freeze.placement` the field is not read and every
