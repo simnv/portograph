@@ -599,7 +599,8 @@ reads and owns none of the gap's height: the plan asks for it, and 7f reserves i
 The order is four rules over the parts. O1: parts that run the same way, do not interleave and
 overlap in x are ordered by their upper ends. O2: where the upper end of one part and the lower end
 of another stand within `k` in x, the one leaving the low boundary turns first. O3: two parts share
-a row only where their x-spans, each grown by `k`, are disjoint; every other pair takes rows a
+a row only where their x-spans, each grown by `k`, are disjoint, or where they come from opposite
+sides and turn the same way at facing ends at least `k` apart (ticket 22); every other pair takes rows a
 pitch `P = k` apart. O4 and O5: a run keeps `k` from every foreign tip, drop, lane box, bundle
 envelope, bar band, shared run and fixed obstacle, and `e = 10.75` px from a group edge it would run
 along (an obstacle anchored to the band above is a lower bound of the row, one anchored to the band

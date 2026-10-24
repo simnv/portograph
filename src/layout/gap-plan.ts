@@ -611,14 +611,30 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const rows = new Map<string, number>(), order: Unit[] = [];
   const rank = (unit: Unit): number => unit.part.order * 4 + unit.half;
   const spread = (a: Unit, b: Unit): number => Math.max(a.lo, b.lo) - Math.min(a.hi, b.hi);
+  /** The leg a unit's run turns into at `x`, one of its two ends: up to the band above, down to the band below, or a Z part's middle drop. */
+  const turnAt = (unit: Unit, x: number): 'up' | 'down' | 'middle' => unit.part.u === true ? 'up'
+    : unit.half === 1 ? (same(x, unit.xu) ? 'up' : 'middle') : unit.half === 2 ? (same(x, unit.xl) ? 'down' : 'middle') : same(x, unit.xl) ? 'down' : 'up';
+  /**
+   * O3: two parts share a row only where their spans, each grown by `keep`, are disjoint. Two runs that come from opposite sides and turn the
+   * same way at their facing ends (both down to the band below, or both up) share a row where those two ends stand `keep` apart: the two legs
+   * keep that clearance all their length anyway, so the shared row brings nothing nearer, and the runs stand opposite each other instead of
+   * stacked (ticket 22; user, 2026-10-24: "links to provider should be aligned opposite each other").
+   */
+  const shareRow = (a: Unit, b: Unit): boolean => {
+    const gap = spread(a, b);
+    if (gap > 2 * keep + EPS) return true;
+    if (gap < keep - EPS) return false;
+    const [left, right] = a.hi <= b.lo + EPS ? [a, b] : [b, a];
+    const one = turnAt(left, left.hi), two = turnAt(right, right.lo);
+    return one !== 'middle' && one === two;
+  };
   while (ready.length) {
     ready.sort((a, b) => need.get(b.id)! - need.get(a.id)! || lbs.get(a.id)! - lbs.get(b.id)! || rank(a) - rank(b));
     const unit = ready.shift()!;
     let y = lbs.get(unit.id)!;
     for (const earlier of order) {
       const ordered = edges.some(item => item.above === earlier.id && item.below === unit.id);
-      // Two parts share a row only where their spans, each grown by `keep`, are disjoint (O3).
-      if (ordered || spread(earlier, unit) <= 2 * keep + EPS) y = Math.max(y, rows.get(earlier.id)! + earlier.part.after);
+      if (ordered || !shareRow(earlier, unit)) y = Math.max(y, rows.get(earlier.id)! + earlier.part.after);
     }
     rows.set(unit.id, y);
     order.push(unit);

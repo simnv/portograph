@@ -202,6 +202,9 @@ command, the time is simply not a promise.
     family would cross more than once, its members are chords at any angle, decided together, each fan in
     peer order with no crossing inside it. A
     member that cannot stand so is orthogonal, with its reason in `directFamilies`.
+14. Runs that come to one face from opposite sides and do not overlap stand opposite each other: one
+    row of the tier gap, not stacked, where they turn the same way at their facing ends and those ends
+    keep a run clearance (O3, `tier-gap-rows.md`; user, 2026-10-24).
 
 A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
 bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again

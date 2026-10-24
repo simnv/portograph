@@ -157,3 +157,14 @@ describe('a long, flat chord never joins perpendicular faces (ticket 22, rule 5)
     expect(perpendicularRefusalsFault({ ...model, perpendicularRefusals: [link.id] })).toBeUndefined();
   }, 120000);
 });
+
+describe('two runs come to one face from opposite sides (ticket 22, user 2026-10-24)', () => {
+  it('brings the two provider runs of a-chord-hint to one row, opposite each other', async () => {
+    const model = await run(fixture('a-chord-hint-and-a-lane-hint-never-share-a-batch'));
+    // The two dashed runs come to the provider's top face from opposite sides, do not overlap, and share one horizontal height.
+    const flat = (link: LayoutModel['links'][number]): number => link.path!.segments.find(item => Math.abs(item.from.y - item.to.y) < 1e-6)!.from.y;
+    const rows = model.links.filter(link => link.attachments!.to.node === 'provider').map(flat);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toBeCloseTo(rows[1]!, 6);
+  }, 120000);
+});
