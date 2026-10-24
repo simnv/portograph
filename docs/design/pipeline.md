@@ -332,6 +332,25 @@ the record without searching again; a free row of two or more nodes without a re
 `false` also switches the corridor cut off, so the overlay order measures as before ticket 17. The prediction is not 7a's answer: a later round (a course, a
 spanning chord, centring) can still move the link, so the corpus measures the rule.
 
+**A row pulls a member toward its link's far end (architecture-2 ticket 22, `pullTowardFarEnds`).** Declaration
+order is a hint (user, 2026-10-24). After the corridor search, a member of a free row is pulled when all its links are
+routed and end on one node of a band that faces its row across one tier gap, no other member of the row feeds that node,
+and the node will stand farther off in x than the straight-link length limit of the two bodies: the pull serves a link
+that would bend, and a member whose link a chord can take keeps its place. Where the node will stand is predicted: 7c
+seats its siblings under their feeds, so it stands beyond the farthest feed of every sibling before it in its row and
+short of the nearest feed of every sibling after it. It trades places with a neighbour while that brings its centre strictly
+nearer the far node's centre. The neighbour is an unlinked member, or a linked member that is no pull target, has not been
+passed yet, and whose links all stay straight or chords one slot away: its centre stands over the far node's box or nearer it
+than the straight-link length limit (user, 2026-10-24: "move f1 to the right side of container"). So a passed linked member
+moves one slot, and the pulled members keep their relative order. A row
+next to a frame cell takes the pull too, because the frame column is later centred on its feeds. A pull stands only
+where the draft measure over the regions the row reaches is no worse (straight overlay links, blocked routed links,
+crossings). The record keeps the order the search left (`rowOrderDecision.pulledFrom`) and the members the pull served
+(`pulled`). The validator checks that the pulled members are linked and kept their relative order, that the other linked
+members kept theirs, and that each of those was passed by one pulled member at most. `layout.farEndPull: false` switches the pull off and keeps the corridor row order: a
+test input whose subject needs a node where it is declared pins it so. `layout.corridorRowOrder: false` keeps the declared
+order of every row, with no pull either.
+
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the
 fallback: one ELK run per tier band without partitioning, bands stacked in tier order with the
@@ -599,7 +618,8 @@ reads and owns none of the gap's height: the plan asks for it, and 7f reserves i
 The order is four rules over the parts. O1: parts that run the same way, do not interleave and
 overlap in x are ordered by their upper ends. O2: where the upper end of one part and the lower end
 of another stand within `k` in x, the one leaving the low boundary turns first. O3: two parts share
-a row only where their x-spans, each grown by `k`, are disjoint; every other pair takes rows a
+a row only where their x-spans, each grown by `k`, are disjoint, or where they come from opposite
+sides and turn the same way at facing ends at least `k` apart (ticket 22); every other pair takes rows a
 pitch `P = k` apart. O4 and O5: a run keeps `k` from every foreign tip, drop, lane box, bundle
 envelope, bar band, shared run and fixed obstacle, and `e = 10.75` px from a group edge it would run
 along (an obstacle anchored to the band above is a lower bound of the row, one anchored to the band
@@ -935,6 +955,13 @@ bands' — reads lane x as that feed's authoritative x and chases a corridor tha
 therefore reserves no room: the gap keeps the height this stage gave it, and a move whose new row
 that height cannot hold is refused (§ 7a states the whole condition).
 
+**Direct families come first** (architecture-2 ticket 22; `docs/design/routed-chords.md`, Section 15). Before `freezeChords`,
+`planDirectFamilies` counts the orthogonal crossings of each facing pair on a copy, and decides each triggered family's chords
+together, at any angle, before the freeze; it records them (`directFamilies`, triggered families only) and moves nothing. The
+freeze holds the accepted members. When the
+centring after the freeze brings a member within the chord clearance of a leg or a held chord, the attempt runs again with that
+member refused (`DIRECT_RETRIES`, 2).
+
 **A frame keeps out of a foreign drop's clearance** (ticket 75). A routed link between a cell of a frame and a port of another tier
 drops to the x of that port from a row in the padding of the frame. When that x stands outside the frame, closer to a left or right
 edge than `GROUP_EDGE_LINK_CLEARANCE` plus half the routed stroke, the drop runs along the edge and G6 refuses it. Routing can only
@@ -1141,7 +1168,8 @@ the 7f attempt, after every placement move was judged on the order stage 5 gave 
 would stand under the judges of later moves), and it makes no trade that would need room 7f did not
 reserve (`roomHolds`: the record holds every need, and a replay reserves nothing more). The anchors are
 its record; no replay asks it again (a choice, not a fixed point).
-**A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line lies on the line,
+**A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line, or on a held routed chord
+(ticket 22), lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
 (`labelRunWindows` with the turned box's height) are the line less the shorten margins, less every
 stretch where a cross-section of the turned box touches a border's stroke, grown by the border margin

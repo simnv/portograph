@@ -1,4 +1,4 @@
-import type { LayoutLink, LayoutModel, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
+import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { crosses, sharedBlockers, straightChord } from './overlay-paths.js';
@@ -8,7 +8,7 @@ import { frameSubtreeCells } from '../model/model.js';
 import type { Point } from '../model/geometry.js';
 import { stopsOf } from './gap-runs.js';
 import { portId } from './skeleton-graph.js';
-import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, type CorridorOptions } from './row-paths.js';
+import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, straightLengthLimit, type CorridorOptions } from './row-paths.js';
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
 import { measureText } from '../text/index.js';
@@ -441,6 +441,7 @@ export function edgeMisses(model: LayoutModel, link: LayoutLink, segment: PathSe
  */
 export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0): { segment: PathSegment } | { reason: ChordRefusal } {
   const kind = chordKind(model, link);
+  if (flatPerpendicularChord(model, link)) return { reason: 'faces' };
   const geometry = straightChord(model, link, undefined, true);
   if (!geometry || Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y) < PLACEMENT_EPS) return { reason: 'faces' };
   // A link that crosses a tier it does not end in needs the lane lanes.ts reserves for it, and a lane
@@ -464,6 +465,45 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
   const refusal: NonNullable<CorridorOptions['refusal']> = {};
   if (!straightCorridorClear(model, link, segment, { refusal })) return { reason: refusal.reason ?? 'corridor' };
   return { segment };
+}
+
+const VERTICAL = new Set(['top', 'bottom']);
+/**
+ * The angle from the normal of the `top` or `bottom` face at and above which a long chord to a lateral face runs nearly along that face (user, 2026-10-24:
+ * "90 degrees turn work only in some cases"). Measured on the corpus: the provider chord stands at 81.3 degrees and its L costs one bend; every long
+ * perpendicular chord at 75.8 degrees or less stood in a sheet where its L cost bends (and on a-foreign-unit a G9).
+ */
+export const PERPENDICULAR_FLAT_ANGLE = 80;
+
+/**
+ * Whether a routed chord between perpendicular faces is refused, derived from the geometry: a `top` or `bottom` face and a lateral side stand at 90
+ * degrees, the chord between the anchors is at least the straight-link length limit (`straightLengthLimit`, twice the larger dimension of the two
+ * bodies), and it leaves the top or bottom face at `PERPENDICULAR_FLAT_ANGLE` or more from its normal. A shorter or steeper perpendicular chord, opposite
+ * faces and two faces on one side keep the other chord rules.
+ */
+function derivedFlatPerpendicular(model: LayoutModel, link: LayoutLink): boolean {
+  const ends = link.attachments;
+  if (!ends) return false;
+  const one = findPort(model, ends.from), two = findPort(model, ends.to);
+  if (one?.side === undefined || two?.side === undefined || VERTICAL.has(one.side) === VERTICAL.has(two.side) || !one.anchor || !two.anchor) return false;
+  const nodes = [model.nodes[ends.from.node], model.nodes[ends.to.node]];
+  if (nodes.some(node => node?.bounds === undefined)) return false;
+  const dx = Math.abs(two.anchor.x - one.anchor.x), dy = Math.abs(two.anchor.y - one.anchor.y);
+  if (Math.hypot(dx, dy) < straightLengthLimit(nodes as LayoutNode[]) - EPS) return false;
+  return Math.atan2(dx, dy) * 180 / Math.PI >= PERPENDICULAR_FLAT_ANGLE - EPS;
+}
+
+/**
+ * A long, flat chord never joins perpendicular faces (architecture-2 ticket 22). Before the freeze the rule is derived from the geometry. From the
+ * freeze on, the held chords are the decision (`model.frozenChords`, R1), and the rule refuses nothing: a later move in x does not take the
+ * decision again. Every chord decision reads this one predicate (`chordVerdict`).
+ *
+ * The freeze recorded the links the rule refused until review (`perpendicularRefusals`). A scan of every golden found the record empty on every
+ * sheet: a link the rule refuses takes a side-lane hint before the freeze and is no chord candidate there. So the record changed no result, and
+ * it was deleted.
+ */
+export function flatPerpendicularChord(model: LayoutModel, link: LayoutLink): boolean {
+  return model.frozenChords === undefined && derivedFlatPerpendicular(model, link);
 }
 
 /** The chord of the link when nothing that no other link can change refuses it. The fan rules ask this first. */
@@ -548,7 +588,7 @@ function mouthLegs(model: LayoutModel, link: LayoutLink): { leg: PathSegment; ot
  * The checks of the fixed point on a chord that stands alone: the chords already held and the vertical legs of the links that stay
  * orthogonal, mouth legs of the gap's lanes included. The first that fails names the refusal.
  */
-export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, undecided?: ReadonlySet<string>): 'chord' | 'leg' | 'title' | undefined {
+export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, undecided?: ReadonlySet<string>, crossable?: ReadonlySet<string>): 'chord' | 'leg' | 'title' | undefined {
   // Two chords are no obstacle to each other for the router, but G6 still measures their clearance:
   // only a strict crossing excuses a pair that stands closer than 10 px (a shared end does not).
   const stroke = linkStrokeWidth(link);
@@ -567,7 +607,13 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
     if (isRoutedChord(model, other) || undecided?.has(other.id)) continue;
     for (const end of ['from', 'to'] as const) {
       const leg = orthogonalLeg(model, other, end);
-      if (leg && segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
+      if (!leg) continue;
+      // A direct member may cross the fallback leg of another source node's fan (ticket 22, user 2026-10-23). The leg reserved here runs to the far
+      // stem tip, but the real one ends at a row the plan seats later, anywhere in the gap: so the chord crosses the leg's line, and a chord whose
+      // x-span holds the leg's x strictly is taken as crossing it. Otherwise it keeps the clearance, as G6 measures it.
+      if (crossable?.has(other.id) && Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS
+        && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS) continue;
+      if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }
   for (const { leg, other } of mouthLegs(model, link)) {
@@ -656,6 +702,11 @@ export function edgeLeavers(model: LayoutModel): string[] {
     const chord = link === undefined || chordKind(model, link) !== 'cross' ? undefined : straightChord(model, link, undefined, true);
     return link !== undefined && chord !== undefined && crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) === 'edge';
   });
+}
+/** Whether two segments cross at a point that is an end of neither (G6 excuses only such a crossing). */
+export function strictCrossing(a: PathSegment, b: PathSegment): boolean {
+  const point = intersection(a, b);
+  return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
 }
 /** Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing). */
 function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, strokeB: number): boolean {

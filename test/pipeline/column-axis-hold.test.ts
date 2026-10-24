@@ -10,7 +10,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
 /** Feeds four nodes apart (`west-5`, `west-9`): the two frames can both stand under their feed. */
 const reachable = readFileSync(new URL('../../goldens/synthetic/two-locations-keep-their-feed-axis.yaml', import.meta.url), 'utf8');
 /** The same input with the feeds two nodes apart (`west-6`, `west-8`): the frames cannot both stand under theirs. */
-const forcedInput = reachable.replace('[west-5, one-gw]', '[west-6, one-gw]').replace('[west-9, two-gw]', '[west-8, two-gw]');
+// The feeds stand where the test puts them: the far-end pull (ticket 22) is off, or it would move them under their locations.
+const forcedInput = reachable.replace('[west-5, one-gw]', '[west-6, one-gw]').replace('[west-9, two-gw]', '[west-8, two-gw]')
+  .replace('portograph: 2\n', 'portograph: 2\nlayout: { farEndPull: false }\n');
 const run = (source: string): Promise<LayoutModel> => layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const portX = (model: LayoutModel, node: string, side: 'top' | 'bottom'): number => model.nodes[node]!.ports.find(port => port.side === side)!.anchor!.x;
 const jog = (model: LayoutModel, from: string, to: string): number => Math.abs(portX(model, from, 'bottom') - portX(model, to, 'top'));
@@ -74,7 +76,9 @@ describe('columns hold their feed axis after rows and centre', () => {
     // `west-1` is in the anchor tier, so `placeOverlayFree` never moves it, and it is 8 nodes from the feed `west-9`
     // of `two`: no slide of the cells reaches both, so `two` keeps the place the overlay order gave it.
     const links = readFileSync(new URL('../../goldens/synthetic/overlay-ends-keep-the-feed-axis.yaml', import.meta.url), 'utf8').trimEnd().split('\n');
-    const stem = links.slice(0, -3).join('\n');
+    // The feeds stand where they are declared: the far-end pull (ticket 22) is off, or it moves the feed west-5 past the linked members to the row end.
+    const stem = links.slice(0, -3).join('\n').replace('portograph: 2\n', 'portograph: 2\nlayout: { farEndPull: false }\n');
+    expect(stem).toContain('farEndPull');
     const model = await run(`${stem}\n  - [west-1, two-s5, { route: overlay }]\n`);
     const held = model.diagnostics.filter(diagnostic => diagnostic.code === COLUMN_AXIS_HELD && diagnostic.owners?.some(owner => 'id' in owner && owner.id === 'two'));
     expect(held).toHaveLength(1);

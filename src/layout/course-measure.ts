@@ -3,7 +3,8 @@ import type { Course, Lane, LayoutGroup, LayoutLink, LayoutModel, LayoutPort } f
 import { courseGeometry, ringsOf } from './course-lanes.js';
 import { probeBypassLanes, probeGapLane } from './lanes.js';
 import { bypassGeometry } from './course-bypass.js';
-import { carriesTitle } from './bands.js';
+import { carriesTitle, GROUP_LABEL_GEOMETRY } from './bands.js';
+import { groupInsets } from './regions.js';
 import { gapGeometry, gapPolyline } from './course-gap.js';
 import { polylineCrossings, polylineTurns } from './course-plan.js';
 import { authoredSide, groupShape } from './grid.js';
@@ -202,6 +203,23 @@ function bypassCandidate(base: LayoutModel, link: LayoutLink, found: LinkFacts, 
   return { course, turns, crossings: crossedBy(link.id, geometry.polyline), points: geometry.polyline };
 }
 
+/**
+ * The x-extent a group has when stage 7a of the trial stands a course lane beside it: its nodes with the group insets, wide enough for its title, on the y-extent of its box.
+ * The 7f box of the baseline can be wider: the linked-group grid widens a box onto its partner's extent after the lanes, and refuses a widening that would cross a
+ * reserved lane. A lane read off the widened box stands farther out than 7a will stand it, and the far end it could drop into straight is judged out of reach.
+ */
+export function placedExtent(model: LayoutModel, group: LayoutGroup): Rect {
+  const box = group.bounds!;
+  if (group.nodes.length === 0) return box;
+  const nodes = group.nodes.map(id => model.nodes[id]!.bounds!), inset = groupInsets(model, group);
+  const left = Math.max(box.x, Math.min(...nodes.map(item => item.x)) - inset.left);
+  // The title holds its own width from the left edge of the box it stands in.
+  const title = model.labels.find(label => label.id === `label:group:${group.id}`)?.bounds?.width;
+  const end = Math.min(box.x + box.width, Math.max(Math.max(...nodes.map(item => item.x + item.width)) + inset.right,
+    title === undefined ? -Infinity : left + title + 2 * GROUP_LABEL_GEOMETRY.horizontalInset));
+  return { x: left, y: box.y, width: end - left, height: box.height };
+}
+
 /** The best perimeter course of a link between two tiers: the sides and the modes of both ends, judged by turns, crossings, ports and rows added, then the nearer margin. */
 export interface PerimeterBest { turns: number; crossings: number; added: number; distance: number; course: Course | undefined; points: Point[]; lane?: Lane }
 export function perimeterBest(base: LayoutModel, link: LayoutLink, found: LinkFacts, upper: EndFacts, lower: EndFacts, crossedBy: (id: string, points: readonly Point[]) => number,
@@ -228,7 +246,7 @@ export function perimeterBest(base: LayoutModel, link: LayoutLink, found: LinkFa
         probeNodes[ref.node] = { ...node, ports: node.ports.map(item => portId(item.ref) === portId(ref) ? movedPort(port, node.bounds!, end.face) : item) };
       }
       const probe: LayoutModel = { ...base, nodes: probeNodes, courses: [course], lanes: base.lanes.filter(item => !(item.owner.kind === 'link' && item.owner.id === link.id)) };
-      const occ = (group: LayoutGroup): Rect => group.bounds!;
+      const occ = (group: LayoutGroup): Rect => placedExtent(base, group);
       const lane = { id: `perimeter:${link.id}`, side: s, ring: 0, ...(first.mode === 'natural' || last.mode === 'natural' ? { aligned: true as const } : {}) };
       let geometry = courseGeometry(probe, link, course, lane, occ, ringsOf(stack ?? []));
       if (geometry === undefined) continue;

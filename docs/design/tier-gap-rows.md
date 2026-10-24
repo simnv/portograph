@@ -132,7 +132,11 @@ never sees.
   applies between a drop's vertical and a stepped part's leg: the stepped part's leg within `k` of the
   drop's lower x runs at least `k + jogDepth` above the band below (`jogDepth = max(depth + k, the O5 band anchored below)`, `depth` of the drop's lower end), so its row stays `k` above the jog.
 - **O3, no row shared.** Two parts share one row only where their x-spans, each grown by `k`, are
-  disjoint. Every other pair takes rows at least `P` apart. A described part (one with a link
+  disjoint, or where they come from opposite sides and turn the same way at their facing ends (both
+  down to the band below, or both up) with those two ends at least `k` apart: the two legs keep that
+  clearance all their length anyway, so the runs stand opposite each other, not stacked (architecture-2
+  ticket 22; user, 2026-10-24). A middle drop of a Z part is no such end. Every other pair takes rows
+  at least `P` apart. A described part (one with a link
   label) keeps `label height + 2 × 4 + stroke` below its row before the next row, or its label is
   suppressed (open question 1).
 - **O4, tips and drops.** A run keeps `k` from every foreign tip whose leg it crosses: at least `k`

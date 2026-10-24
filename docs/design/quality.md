@@ -200,8 +200,20 @@ command, the time is simply not a promise.
     A part of a tier gap the plan declines is not a removal: it is named `TIER_GAP_PART_RESIDUAL` (or
     `TIER_GAP_ROW_CYCLE`) and published with its gate findings, a G6 pair at worst (ADR-0021).
 12. A routed link inside one frame (including a group-link member) is one straight segment where
-    its chord clears every body. It is orthogonal only where a body stands on the chord.
-13. Two overlay detours never share a track: no two overlay lines run on one line, overlapping or end
+    its chord clears every body. It is orthogonal only where a body stands on the chord, or where its two
+    end faces stand at 90 degrees, the chord is at least twice the larger body and it leaves the bottom
+    or top face 80 degrees or more from the normal: such a long, flat chord to a lateral side makes the
+    link orthogonal (user, 2026-10-24). A shorter or steeper one, opposite faces and two faces on one side
+    keep the chord rules.
+13. Facing units link direct (architecture-2 ticket 22). The routed links between two facing rows on
+    adjacent sub-tiers split into one direct family per source node. Where the orthogonal drawing of a
+    family would cross more than once, its members are chords at any angle, decided together, each fan in
+    peer order with no crossing inside it. A
+    member that cannot stand so is orthogonal, with its reason in `directFamilies`.
+14. Runs that come to one face from opposite sides and do not overlap stand opposite each other: one
+    row of the tier gap, not stacked, where they turn the same way at their facing ends and those ends
+    keep a run clearance (O3, `tier-gap-rows.md`; user, 2026-10-24).
+15. Two overlay detours never share a track: no two overlay lines run on one line, overlapping or end
     to end, unless they leave one port and fork. An overlay detour steps out of each port face clear of
     the endpoint dot by a visible gap (the overlay port clearance) before it turns, and passes no
     foreign port nearer than that. Detours that arrive at one face by parallel tracks nest: the outer

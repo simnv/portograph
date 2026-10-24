@@ -24,9 +24,10 @@ import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placem
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
-import { overlayBasePath, overlayPath, overlayTrackRuns } from './overlay-paths.js';
+import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from './overlay-paths.js';
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
+import { directFamiliesFault } from './direct-families.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry, trunkJoins } from './bus.js';
@@ -1749,11 +1750,15 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       // and stage 9 decides. Every group below the upper tier moves down, so the split is the top of the highest of them. The run's
       // lower end moves with its node even when its pill stands out above that top (`farEndMoves`); no upper-tier box is taken as moved.
       const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
-      const longest = overlay ? overlayLongestRun(model, link) : undefined;
-      // A diagonal overlay run carries its label on the line, turned (ticket 20): its windows read the turned box's height.
+      // A held routed chord (ticket 22) is one diagonal line between its anchors, as an overlay line is: its label lies on it, turned. The line is
+      // read from the anchors as they stand now (`straightChord`, geometry only), as stage 9 draws it, not from a path an earlier pass stored.
+      const anchored = !overlay && isRoutedChord(model, link) ? straightChord(model, link, undefined, true) : undefined;
+      const chord: PathSegment | undefined = anchored === undefined ? undefined : { from: anchored.from, to: anchored.to, owner: { ...link.owner } };
+      const longest = overlay ? overlayLongestRun(model, link) : chord;
+      // A diagonal run carries its label on the line, turned (ticket 20): its windows read the turned box's height.
       const diagonal = longest !== undefined && isDiagonalRun(longest);
       const x = lane !== undefined ? lane.x : Math.abs(lowerPort.anchor!.x - upperPort.anchor!.x) <= PLACEMENT_EPS ? upperPort.anchor!.x : undefined;
-      const ridden: PathSegment | undefined = overlay
+      const ridden: PathSegment | undefined = overlay || diagonal
         ? (longest !== undefined && (diagonal || Math.abs(longest.to.x - longest.from.x) <= PLACEMENT_EPS) ? longest : undefined)
         : x === undefined || lowerEdge - upperEdge <= PLACEMENT_EPS ? undefined
           : { from: { x, y: upperEdge }, to: { x, y: lowerEdge }, owner: { ...link.owner } };
@@ -2024,6 +2029,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   const fault = labelYieldsFault(model);
   if (fault !== undefined) throw new Error(`The label yields are forged: ${fault}`);
   // The room across a run is read from its record and checked against the runs that need it (ticket 21, R5).
+  // The direct families are read from their record and the geometry, never decided again (ticket 22, R1/R5).
+  const family = directFamiliesFault(model);
+  if (family !== undefined) throw new Error(`The direct family record is forged: ${family}`);
   const padding = labelPaddingFault(model);
   if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
   const yields = clone(model);

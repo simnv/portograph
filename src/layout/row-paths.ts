@@ -221,6 +221,12 @@ export function expectedRowPath(model: LayoutModel, link: LayoutLink): LayoutPat
   // one frame answers to the frame rule, which reads the chord between the two faces (ticket 34).
   return level ?? (routedChordCandidate(model, link) ? expectedFramePath(model, link) : undefined);
 }
+/** The straight-link length limit (CONTEXT.md, "Straight-link eligibility"): a link this long or longer is no short straight link. */
+export const STRAIGHT_LENGTH_FACTOR = 2;
+/** The length limit of a straight link between two nodes: `STRAIGHT_LENGTH_FACTOR` times the larger dimension of the two bodies. */
+export function straightLengthLimit(nodes: readonly LayoutNode[]): number {
+  return STRAIGHT_LENGTH_FACTOR * Math.max(...nodes.flatMap(node => [node.bounds!.width, node.bounds!.height]));
+}
 function expectedLevelPath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
   const pair = facingPair(model, link);
   if (!pair) return undefined;
@@ -228,7 +234,7 @@ function expectedLevelPath(model: LayoutModel, link: LayoutLink): LayoutPath | u
   if (Math.abs(from.anchor!.y - to.anchor!.y) > EPS) return undefined;
   const segment: PathSegment = { from: { ...from.anchor! }, to: { ...to.anchor! }, owner: { ...link.owner } };
   const extent = length(segment);
-  const limit = 2 * Math.max(...[pair.left.node, pair.right.node].flatMap(node => [node.bounds!.width, node.bounds!.height]));
+  const limit = straightLengthLimit([pair.left.node, pair.right.node]);
   if (extent < MIN_STEM - EPS || extent >= limit - EPS) return undefined;
   if (!straightCorridorClear(model, link, segment)) return undefined;
   return { owner: { ...link.owner }, layer: 'routed', fixed: true, ...pathStrokeWidth(link), segments: [segment] };

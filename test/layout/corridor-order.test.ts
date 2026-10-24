@@ -211,3 +211,89 @@ links:
     expect(corridorSide(core, 180, 0)).toBe('left');
   });
 });
+
+describe('a row pulls a member toward its link\'s far end (architecture-2 ticket 22)', () => {
+  const pulled = readFileSync(new URL('../../goldens/synthetic/a-row-member-passes-unlinked-peers-toward-its-far-end.yaml', import.meta.url), 'utf8');
+
+  it('moves lb past the unlinked members to stand next to fe2, and records the order the search left', async () => {
+    const model = await skeletonOf(pulled);
+    const decision = model.groups.front!.rowOrderDecision!;
+    expect(decision.rule).toBe('kept');
+    expect(decision.pulledFrom).toEqual(['fe1', 'fe2', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'lb']);
+    expect(decision.after).toEqual(['fe1', 'fe2', 'lb', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6']);
+    expect(validateRowOrderDecisions(model)).toEqual([]);
+  }, 60000);
+
+  it('serves the member whose link would bend, and keeps a member whose far node another member feeds (a-row-stretches, user 2026-10-24)', async () => {
+    const text = readFileSync(new URL('../../goldens/synthetic/a-row-stretches-a-body-past-its-sibling.yaml', import.meta.url), 'utf8');
+    const decision = (await skeletonOf(text)).groups.top!.rowOrderDecision!;
+    // n1 is fed by rB and rA, so neither is pulled. s1 will stand past rA once 7c stretches n1 under both, so f1 passes f2 toward it, and
+    // then rA: rA moves one slot and still stands over n1, so its three links stay straight (user, 2026-10-24: "move f1 to the right side").
+    expect(decision.pulledFrom).toEqual(['rB', 'f1', 'f2', 'rA']);
+    expect(decision.after).toEqual(['rB', 'f2', 'rA', 'f1']);
+    expect(decision.pulled).toEqual(['f1']);
+  }, 60000);
+
+  it('passes a linked peer whose links stay straight one slot away, and never a peer with a link to a band farther off', async () => {
+    const text = readFileSync(new URL('../../goldens/synthetic/a-bent-member-passes-a-linked-peer-whose-links-stay-straight.yaml', import.meta.url), 'utf8');
+    const model = await skeletonOf(text);
+    const decision = model.groups.top!.rowOrderDecision!;
+    expect(decision.pulledFrom).toEqual(['f1', 'rA']);
+    expect(decision.after).toEqual(['rA', 'f1']);
+    expect(decision.pulled).toEqual(['f1']);
+    expect(validateRowOrderDecisions(model)).toEqual([]);
+    // A link of rA to a band two tier gaps off is no link a chord or a straight drop takes from the row: rA keeps its place.
+    const far = text.replace('  low: { tier: 1, label: Low }\n', '  low: { tier: 1, label: Low }\n  far: { tier: 2, label: Far }\n')
+      .replace('  s1: { group: low, label: S1 }\n', '  s1: { group: low, label: S1 }\n  z: { group: far, label: Z }\n')
+      .replace('- [f1, s1]\n', '- [f1, s1]\n- [rA, z]\n');
+    expect(far).toContain('[rA, z]');
+    expect((await skeletonOf(far)).groups.top!.rowOrderDecision!.after).toEqual(['f1', 'rA']);
+  }, 60000);
+
+  it('pulls nothing when the author keeps the declared order', async () => {
+    const model = await skeletonOf(pulled.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n'));
+    const decision = model.groups.front!.rowOrderDecision!;
+    expect(decision.rule).toBe('author');
+    expect(decision.pulledFrom).toBeUndefined();
+    expect(decision.after.at(-1)).toBe('lb');
+  }, 60000);
+
+  it('pulls nothing under its own key, farEndPull: false, and the corridor row order still decides the row', async () => {
+    const model = await skeletonOf(pulled.replace('portograph: 2\n', 'portograph: 2\nlayout: { farEndPull: false }\n'));
+    const decision = model.groups.front!.rowOrderDecision!;
+    expect(decision.rule).toBe('kept');
+    expect(decision.pulledFrom).toBeUndefined();
+    expect(decision.after.at(-1)).toBe('lb');
+    expect(validateRowOrderDecisions(model)).toEqual([]);
+    // A pull recorded under the setting is refused.
+    const forged = copy(model);
+    forged.groups.front!.rowOrderDecision = { ...decision, pulledFrom: [...decision.after], pulled: ['lb'], after: ['fe1', 'fe2', 'lb', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6'] };
+    forged.groups.front!.rowOrder = forged.groups.front!.rowOrderDecision.after;
+    expect(validateRowOrderDecisions(forged)).toContain('The row order decision of front records a far-end pull, and the document setting farEndPull is false');
+  }, 60000);
+
+  it('refuses a pull record that moves a linked member past another, or names no move (R5)', async () => {
+    const model = await skeletonOf(pulled);
+    // The fixture of the linked peer: f1 passes rA, and the record names f1 as the member it served.
+    const peer = await skeletonOf(readFileSync(new URL('../../goldens/synthetic/a-bent-member-passes-a-linked-peer-whose-links-stay-straight.yaml', import.meta.url), 'utf8'));
+    // A linked member moves one slot: two pulled members never both pass it.
+    const twice = copy(model), us = ['u1', 'u2', 'u3', 'u4', 'u5', 'u6'];
+    twice.groups.front!.rowOrder = ['fe2', 'fe1', 'lb', ...us];
+    twice.groups.front!.rowOrderDecision = { ...twice.groups.front!.rowOrderDecision!, pulledFrom: ['fe1', 'lb', 'fe2', ...us], pulled: ['fe1', 'lb'], after: ['fe2', 'fe1', 'lb', ...us] };
+    expect(validateRowOrderDecisions(twice)).toContain('The far-end pull of front is recorded on orders it cannot give');
+    const once = copy(twice);
+    once.groups.front!.rowOrderDecision = { ...once.groups.front!.rowOrderDecision!, pulledFrom: ['fe1', 'fe2', 'lb', ...us] };
+    expect(validateRowOrderDecisions(once).filter(error => error.includes('far-end pull'))).toEqual([]);
+    const half = copy(peer);
+    delete half.groups.top!.rowOrderDecision!.pulled;
+    expect(validateRowOrderDecisions(half)).toContain('The far-end pull of top records only one of its order and its members');
+    const swapped = copy(model);
+    const order = ['fe2', 'fe1', 'lb', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6'];
+    swapped.groups.front!.rowOrder = order;
+    swapped.groups.front!.rowOrderDecision = { ...swapped.groups.front!.rowOrderDecision!, after: order };
+    expect(validateRowOrderDecisions(swapped)).toContain('The far-end pull of front is recorded on orders it cannot give');
+    const still = copy(model);
+    still.groups.front!.rowOrderDecision = { ...still.groups.front!.rowOrderDecision!, pulledFrom: [...still.groups.front!.rowOrderDecision!.after] };
+    expect(validateRowOrderDecisions(still)).toContain('The far-end pull of front is recorded on orders it cannot give');
+  }, 60000);
+});

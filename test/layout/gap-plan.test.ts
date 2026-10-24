@@ -357,6 +357,9 @@ describe('the follow-ups of ticket 48 (ticket 51)', () => {
 
   it('anchors an obstacle that starts inside the gap and ends below it to the band below: the rows stay above it, and H holds its need', async () => {
     const model = await edited();
+    // Ticket 22: a's fan (link-1, link-4) is a direct family whose chords crowd after 7f, so both stay orthogonal and join this plan. The
+    // test reads the parts it was written for, as when those two were held chords: the obstacle then stands under link-5 alone.
+    model.links = model.links.filter(link => link.id !== 'link-1' && link.id !== 'link-4');
     const { gap, plan: free } = tierGapPlans(model).find(item => item.gap.above === 0)!;
     const top = gap.low + 20;
     // A box in the empty x between two ends, so that no leg runs into it and only the runs that pass over it feel it.
@@ -523,5 +526,24 @@ describe('the U part (ticket 15, phase 5)', () => {
     const plan = planGap([u('A', 0, tip(20), mouth(80)), u('B', 1, tip(200), mouth(260))], frame());
     const rows = plan.parts.map(item => item.rows[0]!);
     expect(rows[0]).toBeCloseTo(rows[1]!, 6);
+  });
+});
+
+describe('two runs from opposite sides of one face (architecture-2 ticket 22)', () => {
+  const row = (plan: GapPlan, id: string): number => plan.parts.find(item => item.id === id)!.rows[0]!;
+
+  it('share one row when both turn down at their facing ends and those ends stand a clearance apart', () => {
+    // W runs from 0 right to 490 and E from 1000 left to 505: 15 px between the two lower legs, more than k = 11.5 and less than 2k.
+    const plan = planGap([part('W', 0, 0, 490), part('E', 1, 1000, 505)], frame());
+    expect(row(plan, 'W')).toBeCloseTo(row(plan, 'E'), 6);
+    expect(plan.crossings).toEqual([]);
+  });
+
+  it('stack where the facing ends turn opposite ways, or stand less than a clearance apart', () => {
+    // A turns down at 490, B turns up at 505: one row would read as one line through two turns.
+    const mixed = planGap([part('A', 0, 0, 490), part('B', 1, 505, 1000)], frame());
+    expect(row(mixed, 'A')).not.toBeCloseTo(row(mixed, 'B'), 6);
+    const near = planGap([part('W', 0, 0, 495), part('E', 1, 1000, 505)], frame());
+    expect(row(near, 'W')).not.toBeCloseTo(row(near, 'E'), 6);
   });
 });

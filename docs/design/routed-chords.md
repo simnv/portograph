@@ -57,7 +57,8 @@ A link is a cross-frame candidate when all of these are true:
    members; a canton adds no tier.
 4. After the side freeze (ADR-0009), the port on the upper end is on `bottom` or on a lateral side that
    a side hint gave it (`sideHint`), and the port on the lower end is on `top` or on a lateral side
-   that a side hint gave it (`docs/design/side-faces.md`, Section 9; ticket 117). A lateral side that
+   that a side hint gave it (`docs/design/side-faces.md`, Section 9; ticket 117). The two faces must not
+   be perpendicular (Section 15.1): a `bottom` end and a lateral end make no chord. A lateral side that
    is not a hint (an author `side:`) does not make a candidate.
 
 Items 1 to 3 are known at stage 1. Item 4 is known after stage 6. The document tier of item 3 is the authored tier: stage 1 keeps it beside the
@@ -113,7 +114,7 @@ The fixed-point checks of `expectedFramePath` apply unchanged:
 So a held chord never crosses an orthogonal leg or a mouth leg of its gap.
 
 **Angle.** There is no angle limit (**maintainer, 2026-09-30:** any clear chord draws straight,
-however shallow). A frame chord and an overlay chord take any angle, and the facing-edge rule already keeps a shallow chord inside the tier gap. The shallowest chord on the
+however shallow), except for a member of a triggered direct family (Section 15.2: 30 degrees). A frame chord and an overlay chord take any angle, and the facing-edge rule already keeps a shallow chord inside the tier gap. The shallowest chord on the
 private sheet is about 68 degrees from the vertical (391 px across, 161 px down).
 
 ## 5. The frame edge
@@ -428,3 +429,73 @@ judge reads crossings last.
 
 The offer, the refused trial and its reason are in the trace only. `ROUTED_CHORD_REFUSED` does not change: a link
 with no hint is no spanning-chord candidate at the freeze.
+
+## 15. Perpendicular faces and direct families (architecture-2 ticket 22)
+
+Status: decided by the user 2026-10-23 and 2026-10-24 (ticket 22, "User decisions after slice 1" and the
+two rounds after it). Slice 1 as built.
+
+### 15.1 A long, flat chord never joins perpendicular faces
+
+When the two end faces of a routed link stand at 90 degrees (a `top` or `bottom` face and a lateral side), the
+chord between the anchors is at least the straight-link length limit (twice the larger dimension of the two
+bodies, `straightLengthLimit`, the limit of `expectedLevelPath`), and it leaves the `top` or `bottom` face at
+`PERPENDICULAR_FLAT_ANGLE` (80 degrees) or more from the face's normal, the link is orthogonal. The user:
+*"90 degrees turn work only in some cases. in a crowded example it indeed goes to regress"* (2026-10-24). A
+shorter or steeper perpendicular chord, opposite faces and two faces on one side keep the other chord rules.
+The angle is measured: the provider chord of
+`a-location-router-leaves-a-lateral-side-toward-a-far-provider` stands at 81.3 degrees (its L costs one bend
+and is wanted); every long perpendicular chord at 75.8 degrees or less stood on a sheet where its L cost bends
+(two to six), and on `a-foreign-unit-with-routed-links-to-two-canton-groups` a G9. A crossing test (the L only
+when the chord crosses more than one link) changes nothing on the corpus and keeps the provider a chord.
+
+Before the freeze the rule is derived from the geometry; from the freeze on, the held chords are the decision
+(`model.frozenChords`, R1), and the rule refuses nothing. A record of the refused links (`perpendicularRefusals`) was
+tried and deleted at review: a scan of every golden found it empty, because a link the rule refuses takes a side-lane
+hint before the freeze and is no chord candidate there. One predicate
+(`flatPerpendicularChord`, `frame-paths.ts`) is the first check of
+`chordVerdict`, so every chord decision reads it: the fixed point, the freeze, the fan, span and side
+measures. A side hint that would give a cross-frame chord a long, flat one to a lateral end no longer makes a chord. Between
+two lateral faces there is no angle floor (a slight tilt is fine). Overlay chords do not read the predicate.
+
+### 15.2 Direct families
+
+- **Units and families.** A **facing pair** is the set of slice-1 routed links between two `row` groups on
+  adjacent occupied sub-tier bands: no bundle, no label, no authored route but `straight`, a chord candidate,
+  ports on no other routed link, the upper port on `bottom` and the lower on `top`. The pair splits into one
+  **direct family** per node of its source side, the side with fewer nodes (the upper side on a tie): a
+  node↔row or node↔node family. An interleaved row↔row case is one family per source node.
+- **Trigger.** On a copy with the pair's chords suppressed, the tier-gap plan seats every member, and the strict
+  crossings of their planned paths (stem, part, stem) are counted, once per point and pair. A family is
+  triggered when more than one counted crossing involves its members, or when more than one endpoint
+  inversion involves them (`triggers`). A member the plan leaves residual makes the count `unresolved`.
+- **No angle floor, no growth.** The 30 degree floor and the gap growth of the first rounds are gone (user,
+  2026-10-24: the flat fans of `a-shared-end-reads-its-port-order` on main are "closest to ideal"). Measured
+  with the floor: v7 fans stayed orthogonal, a-shared-end went from 10 to 22 bends and six canvases grew.
+- **Verdict.** At the start of 7f, before the freeze, each triggered family in id order takes the largest set of
+  members that hold together (`DIRECT_SEARCH_BUDGET` sets at most): `chordVerdict`; no two members of the fan
+  touching or nearer than the chord clearance; and `fixedPointRefusal` with the members left out as orthogonal
+  legs. Fans of two source nodes may cross each other straight: a member may cross the leg of another fan's
+  fallback, taken as crossing when its x-span holds the leg's x, and keeps the clearance from it otherwise.
+  Ties: the shorter chords, then the port keys. A family decided first read the later families' members as
+  legs; once all stand, a member refused for a leg or a chord takes its chord where it now holds and every
+  held chord still holds beside it, in family and peer order until nothing changes.
+- **Crowding.** The centring of 7f can still move x after the freeze and bring a direct member within the chord
+  clearance of a planned leg or another held chord (`crowdedDirectMembers`). The attempt then runs again from
+  its start with those members refused (`crowds`), at most `DIRECT_RETRIES` (2) times; a member still crowded
+  after that is a `DIRECT_FAMILY_CROWDED` warning, and G6 judges it.
+- **Record.** `model.directFamilies`, triggered families only: absent before 7f means not planned, absent after
+  the freeze means no family triggered (so a sheet with none keeps its bytes). Each family keeps its units,
+  gap, peer order, the count, its witnesses, the inversions, the port plan
+  and each member's mode (`direct`, or `orthogonal` with a reason; `unplanned` is never published). A direct member is a held chord
+  (`frozenChords`); a refused member is orthogonal, and no later replay offers it the chord. Outside triggered
+  families the chord rules are unchanged.
+- **Validator.** `validateGroupLabelBands` reads the record (`directFamiliesFault`, R5): the trigger agrees with
+  its counts, every member joins the family's units and is in one family, a
+  direct member is frozen and a refused one is not, and no two direct members of one fan cross.
+
+What it changes on the corpus without the floor (2026-10-24): `a-port-facing-away-from-a-tier-gap-is-left-to-the-router`
+14 to 6 bends, where the fixed point alone refuses five chords for each other's legs; nothing else on the corpus. On the
+v7 sweep sheets the crowding retry trades the G6 of `link-5~link-6` for 2 bends.
+
+Not in slice 1: bundles, shared ports, grid rows, labelled chords.

@@ -1,0 +1,22 @@
+# Expected: two runs that come to one face from opposite sides share one row of the tier gap (architecture-2 ticket 22, O3 of tier-gap-rows.md). The
+# west and east routers stand far left and far right of the provider, and both links are authored orthogonal, so both come down to the provider's top
+# face, one port each. The two runs do not overlap, and each turns down at its end next to the other, so they share one row: one horizontal height,
+# opposite each other, not stacked. Their two legs keep the clearance they keep anyway.
+# Test-only input owned by architecture-2 ticket 22; test/pipeline/direct-families.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  providers: { tier: 2, label: Provider }
+nodes:
+  west-core: { group: west, class: router, label: West core, size: { width: 640, height: 50 } }
+  west-router: { group: west, class: router, label: West router, size: { width: 180, height: 50 } }
+  east-core: { group: east, class: router, label: East core, size: { width: 640, height: 50 } }
+  east-router: { group: east, class: router, label: East router, size: { width: 180, height: 50 } }
+  provider: { group: providers, class: provider, label: Provider }
+links:
+  - [west-core, west-router]
+  - [east-core, east-router]
+  - [west-router, provider, { class: dashed, route: orthogonal }]
+  - [east-router, provider, { class: dashed, route: orthogonal }]

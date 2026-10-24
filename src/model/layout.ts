@@ -129,6 +129,14 @@ export interface RowOrderDecision {
   rule: 'kept' | 'corridor-crossings' | 'author' | 'frame-columns';
   before: string[];
   after: string[];
+  /**
+   * The order the search left when the pull toward the far ends then moved the row (architecture-2 ticket 22, `pullTowardFarEnds`): a linked
+   * member passed unlinked members toward its links' far ends, and a linked member whose links stay straight or chords one slot away. Absent =
+   * the pull moved nothing; `rule` describes `before` against this order.
+   */
+  pulledFrom?: string[];
+  /** The members the pull moved toward their far ends, in row order; present exactly with `pulledFrom`. */
+  pulled?: string[];
 }
 
 /**
@@ -525,6 +533,13 @@ export interface LayoutModel {
    */
   frozenChords?: string[];
   /**
+   * The triggered direct families (architecture-2 ticket 22): one per source node of a pair of facing rows whose orthogonal drawing would cross
+   * more than once at its members, decided once at the start of 7f, immediately before `freezeChords`. Absent before the freeze = not planned;
+   * absent once `frozenChords` is set = planned, no family triggered (an untriggered family changes nothing and is not recorded). A direct
+   * member is in `frozenChords`; a refused member is not, and no later rule holds its chord.
+   */
+  directFamilies?: DirectFamily[];
+  /**
    * The fan edge keepers held when final placement freezes, after 7f (architecture-2 ticket 18): the fan's port id, the member's link
    * and the depth it turns at out of the port's side. From then on a replay takes the recorded member at the recorded depth or none, and
    * never derives either again from a box. Present only when a keeper is held. Before `freeze.placement` the field is not read and every
@@ -562,6 +577,38 @@ export interface LayoutModel {
   gridRefusals?: string[];
   /** One per `document.frames` entry, in document order; absent when no group was replaced by cells. */
   frames?: Frame[];
+}
+
+/** A unit of a direct family: one node, or one packed row of one layout group (`group`). */
+export type DirectUnit = { kind: 'node'; id: string; group: string } | { kind: 'row'; id: string; group: string; nodes: string[] };
+/**
+ * Why a member of a triggered direct family stays orthogonal: a `chordVerdict` refusal, `crossing` or
+ * `clearance` (another member of the chosen set), `leg`, `chord` or `title` (the fixed-point checks beside the chosen set), `crowds` (it
+ * would push a chosen member off its fixed point).
+ */
+export type DirectMemberReason = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg'
+  | 'angle' | 'crossing' | 'clearance' | 'crowds';
+/** One direct family as 7f decided it (`LayoutModel.directFamilies`). */
+export interface DirectFamily {
+  /** `<kind>:<unit>><kind>:<unit>`, upper unit first. */
+  id: string;
+  units: { upper: DirectUnit; lower: DirectUnit };
+  /** The sub-tiers of the two facing bands. */
+  gap: { above: number; below: number };
+  /** The members in peer order (upper port x, lower port x, port keys) at the decision. */
+  baselineOrder: string[];
+  /** The strict crossings of the members' orthogonal drawing (the counterfactual), or `unresolved` when the plan left a member residual. */
+  crossings: number | 'unresolved';
+  /** The endpoint inversions of the members' port order. */
+  inversions: number;
+  /** One entry per counted crossing: the two members and the point. */
+  witnesses: { links: [string, string]; at: Point }[];
+  /** Whether the orthogonal drawing crosses more than once (or the inversions prove it): only then does the family draw direct. */
+  triggered: boolean;
+  /** The faces and the peer order the family's ports stand in: the upper port on `bottom`, the lower on `top`, `index` in peer order. */
+  portPlan: { link: string; index: number; upper: { port: string; side: 'bottom' }; lower: { port: string; side: 'top' } }[];
+  /** `direct`, or `orthogonal` with the reason (`unplanned` is never published: an untriggered family is not recorded). */
+  members: { link: string; mode: 'direct' | 'orthogonal' | 'unplanned'; reason?: DirectMemberReason }[];
 }
 
 /** One edge's room across a run (`labelPadding`, tickets 21 and 23): the padding from the node bodies to the box edge, and the links (a label's or a track's) it holds. */

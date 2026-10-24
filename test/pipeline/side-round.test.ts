@@ -75,7 +75,8 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     expect(places).toBe(2);
     // The hash moved from 6e2c23e8fd517290 with the message rewrite (ticket 02): the only difference in the layout JSON is the text of
     // the ROUTE_UNSUPPORTED message, 'M1 draws the members for group-link' now 'A group-link is drawn as its member links'.
-    expect(hash(model)).toBe('db0b5d006f05102c');
+    // Ticket 22: the fan is a triggered direct family, and its record is published (db0b5d006f05102c before).
+    expect(hash(model)).toBe('3dcf58b8a7c3c196');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);

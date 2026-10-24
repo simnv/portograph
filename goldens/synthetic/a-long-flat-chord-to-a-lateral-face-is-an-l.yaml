@@ -1,0 +1,23 @@
+# Expected: a long, flat chord never joins perpendicular faces (architecture-2 ticket 22, routed-chords.md Section 15.1). Two location frames stand far
+# apart on tier 1, and the provider stands on tier 2 nearer the east one. The west router's link would be a chord from its bottom face to the provider's
+# right face: at least twice the larger body long, and leaving the bottom face 80 degrees or more from its normal (`PERPENDICULAR_FLAT_ANGLE`). It is
+# drawn as an orthogonal L with one bend into the right face instead. The east router's link joins a bottom face to a top face and stays a chord.
+# Every gate passes.
+# Test-only input owned by architecture-2 ticket 22; test/pipeline/direct-families.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  providers: { tier: 2, label: Provider }
+nodes:
+  west-core: { group: west, class: router, label: West core, size: { width: 640, height: 50 } }
+  west-router: { group: west, class: router, label: West router, size: { width: 180, height: 50 } }
+  east-core: { group: east, class: router, label: East core, size: { width: 640, height: 50 } }
+  east-router: { group: east, class: router, label: East router, size: { width: 180, height: 50 } }
+  provider: { group: providers, class: provider, label: Provider }
+links:
+  - [west-core, west-router]
+  - [east-core, east-router]
+  - [west-router, provider, { class: dashed }]
+  - [east-router, provider, { class: dashed }]

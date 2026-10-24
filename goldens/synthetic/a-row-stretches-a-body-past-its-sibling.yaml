@@ -2,7 +2,8 @@
 # bounds the rule). rB feeds b from the left end of the row above, rA feeds a1 to a3 from its right end, and the
 # sibling s1 stands right of n1. In each pass the a-ports are beyond s1 and declined, but the move toward their mean
 # and the growth that keeps b under rB stretch n1 to the right a pass at a time, until it spans both routers.
-# Today: all four links of n1 stand straight; n1 is 383.9 px wide and s1's own link bends.
+# Today: all four links of n1 stand straight and n1 is 257 px wide. The far-end pull (ticket 22) moves f1 to the right end of
+# the row, past rA, so s1's own link drops straight too (it bent while f1 stood left of rA).
 # Wanted: the same four straight links. A rule that stops a declined feed from pulling the move bends the three links
 # to rA instead (measured: 3 bent links, not 1); it has to price the push of the sibling.
 # Test-only input owned by architecture-2 ticket 14; test/pipeline/declined-feed-growth.test.ts runs the whole pipeline on it.

@@ -1,7 +1,8 @@
 import type { Diagnostic, LayoutGroup, LayoutModel, RowOrderDecision } from '../model/layout.js';
 import { ownsTransitLanes, selectAnchorTier } from './lanes.js';
 import { orderTools, readDraft, reseatRow, saveGroups } from './overlay-order.js';
-import { compareId } from './skeleton-graph.js';
+import { compareId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
+import { straightLengthLimit } from './row-paths.js';
 import { rebuildBands } from './skeleton-geometry.js';
 
 /** A row of at most this many nodes is judged in every order; a longer row in its adjacent swaps only. */
@@ -49,6 +50,11 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
  *   routed links blocked on their row do not rise, and the routed crossings drop strictly. Among the accepted candidates the most
  *   straight links win, then the fewest blocked, then the fewest crossings; a tie keeps the first enumerated (the current order of
  *   each row comes first, then the orders in the lexicographic order of their positions). No candidate accepted: the order stands.
+ * - **The far-end pull (ticket 22).** After both sweeps, every free row, a row next to a frame cell included, pulls its members
+ *   toward their links' far ends (`pullTowardFarEnds`): declaration order is a hint. A pulled member passes unlinked members, and a
+ *   linked member once when that member's links stay straight or chords. A pull stands only where the draft measure over the regions
+ *   the row reaches is no worse. The record keeps the order the search left (`pulledFrom`) and the members served (`pulled`).
+ *   `layout.farEndPull: false` switches the pull off.
  *
  * Every free row of two or more nodes gets `rowOrderDecision`, also when the order stands; `validateRowOrderDecisions` reads it.
  * The document setting `layout.corridorRowOrder: false` keeps every row as the skeleton gave it (rule `author`), for a sheet whose
@@ -144,9 +150,25 @@ export function orderByCorridors(model: LayoutModel): void {
   for (let k = at + 1; k < tiers.length; k++) step(k, k + 1 < tiers.length ? k + 1 : undefined);
   for (let k = at - 1; k >= 0; k--) step(k, k > 0 ? k - 1 : undefined);
 
+  // The pull toward the far ends (ticket 22): after the search, a member whose link would bend passes the members beside it toward its link's far end.
+  const searched = new Map(free.map(group => [group, orderOf(group)])), pulled = new Map<LayoutGroup, string[]>();
+  // A row next to a frame cell takes it too: the frame column is later centred on its feeds, this member's link among them. A pull stands only
+  // where the draft measure over the regions the row reaches is no worse: no straight overlay link lost, no routed link more blocked, no crossing more.
+  // `layout.farEndPull: false` keeps the order the search left (a sheet whose subject needs a node where it is declared).
+  for (const group of model.document.layout?.farEndPull === false ? [] : free) {
+    const [low, high] = reach([group]), now = measureRange(low, high, true), undo = saveGroups(model, [group]);
+    const served = pullTowardFarEnds(model, group, tiers);
+    if (!served.length) continue;
+    const after = measureRange(low, high, true);
+    if (after.straight < now.straight || after.blocked > now.blocked || after.crossings > now.crossings) { undo(); continue; }
+    pulled.set(group, served);
+    moved = true;
+  }
+
   for (const [group, order] of before) {
-    const after = orderOf(group);
-    const decision: RowOrderDecision = { rule: frameBound.has(group) ? 'frame-columns' : sameOrder(order, after) ? 'kept' : 'corridor-crossings', before: order, after };
+    const found = searched.get(group)!, after = orderOf(group);
+    const decision: RowOrderDecision = { rule: frameBound.has(group) ? 'frame-columns' : sameOrder(order, found) ? 'kept' : 'corridor-crossings', before: order, after };
+    if (!sameOrder(found, after)) { decision.pulledFrom = found; decision.pulled = pulled.get(group)!; }
     group.rowOrderDecision = decision;
   }
   for (const reason of caps) {
@@ -154,6 +176,121 @@ export function orderByCorridors(model: LayoutModel): void {
     model.diagnostics.push(note);
   }
   if (moved) rebuildBands(model, false);
+}
+
+/** The nodes of `group` that some drawn link ends on: the members whose place in the row changes a link. */
+function linkedMembers(model: LayoutModel, group: LayoutGroup): Set<string> {
+  const own = new Set(group.nodes);
+  const linked = new Set<string>();
+  for (const link of model.links) {
+    if (link.removed === true || !link.attachments) continue;
+    for (const end of [link.attachments.from.node, link.attachments.to.node]) if (own.has(end)) linked.add(end);
+  }
+  return linked;
+}
+
+/**
+ * A row pulls a member toward its link's far end (architecture-2 ticket 22; user, 2026-10-24: "LB should be moved closer to FE4", and on
+ * a-row-stretches "we could switch f1 and f2 places"). A member is pulled when all its links are routed and end on one node of a band that
+ * faces its row across one tier gap, no other member of the row feeds that node (its x is then a compromise between the feeds), and the
+ * node will stand farther off in x than the straight-link length limit of the two bodies (`straightLengthLimit`): a link that would bend.
+ * A member whose link a chord can take keeps its place. Where the node will stand is predicted (`predictedCentre`): 7c seats its siblings
+ * under their feeds, so it stands beyond the farthest feed of every sibling before it and short of the nearest feed of every one after it.
+ * The member trades places with a neighbour while that brings its centre strictly nearer the far node's centre. The neighbour is an
+ * unlinked member, or a linked member that is no pull target, is passed for the first time, and whose links all stay straight or chords
+ * after the trade (`staysDirect`; user, 2026-10-24: "move f1 to the right side of container"). A passed linked member moves one slot, so
+ * the order of its links' ends changes against the pulled member's only; the draft measure of the caller refuses a pull that adds a crossing.
+ * Members are taken in row order, again until none moves (R3: the row order, never the link order). Returns the members the pull moved,
+ * in row order (empty: the row stands).
+ */
+function pullTowardFarEnds(model: LayoutModel, group: LayoutGroup, tiers: readonly number[]): string[] {
+  const linked = linkedMembers(model, group);
+  if (!linked.size || group.nodes.length < 2) return [];
+  const centre = (node: string): number => { const box = model.nodes[node]!.bounds!; return box.x + box.width / 2; };
+  // The bands that face this row across one tier gap: the occupied sub-tiers next to its own.
+  const at = tiers.indexOf(group.tier!), facing = new Set([tiers[at - 1], tiers[at + 1]].filter(tier => tier !== undefined));
+  const own = new Set(group.nodes);
+  /** The members of this row that a routed link joins to `far`. */
+  const feeders = (far: string): string[] => [...new Set(model.links.flatMap(link => {
+    if (link.removed === true || !link.attachments || link.layer !== 'routed') return [];
+    const { from, to } = link.attachments;
+    return from.node === far && own.has(to.node) ? [to.node] : to.node === far && own.has(from.node) ? [from.node] : [];
+  }))];
+  /**
+   * Where the far node will stand once 7c has seated its siblings under their feeds: a sibling stretches or moves to reach the members of
+   * this row that feed it, so the far node stands beyond the farthest feed of every sibling before it in its row, and short of the nearest
+   * feed of every sibling after it (half its width and the node clearance off). Its draft x where no sibling pushes it.
+   */
+  const predictedCentre = (far: string): number => {
+    const box = model.nodes[far]!.bounds!, row = model.groups[model.document.nodes[far]!.group]!, order = row.rowOrder ?? row.nodes, at = order.indexOf(far);
+    const reach = box.width / 2 + spacing.nodeClearance;
+    let goal = centre(far);
+    for (const [index, sibling] of order.entries()) {
+      const xs = feeders(sibling).map(centre);
+      if (!xs.length || index === at) continue;
+      if (index < at) goal = Math.max(goal, Math.max(...xs) + reach);
+      else goal = Math.min(goal, Math.min(...xs) - reach);
+    }
+    return goal;
+  };
+  const target = new Map<string, number>();
+  for (const node of linked) {
+    const far = new Set<string>();
+    let pulled = true;
+    for (const link of model.links) {
+      if (link.removed === true || !link.attachments) continue;
+      const { from, to } = link.attachments;
+      const other = from.node === node ? to.node : to.node === node ? from.node : undefined;
+      if (other === undefined) continue;
+      const tier = model.groups[model.document.nodes[other]?.group ?? '']?.tier;
+      // An overlay link keeps the place the overlay order gave; a link to a band farther off is not this gap's.
+      if (link.layer !== 'routed' || other === node || tier === undefined || !facing.has(tier) || model.nodes[other]?.bounds === undefined) { pulled = false; break; }
+      far.add(other);
+    }
+    if (!pulled || far.size !== 1) continue;
+    const other = [...far][0]!;
+    // No pull toward a far node that another member of this row also feeds: its x is a compromise between the feeds, not one member's goal.
+    if (feeders(other).some(peer => peer !== node)) continue;
+    const goal = predictedCentre(other);
+    // A member whose link a chord can take keeps its place: the pull serves a link that would bend.
+    if (Math.abs(centre(node) - goal) >= straightLengthLimit([model.nodes[node]!, model.nodes[other]!]) - 1e-6) target.set(node, goal);
+  }
+  /**
+   * Whether every link of a linked member stays straight or a chord where it now stands: each is routed to a node of a facing band, and the
+   * member's centre lies over that node's box or nearer it than the straight-link length limit of the two bodies (a body that a feed stretches
+   * keeps the link straight while the member stands over it).
+   */
+  const staysDirect = (node: string): boolean => model.links.every(link => {
+    if (link.removed === true || !link.attachments) return true;
+    const { from, to } = link.attachments, other = from.node === node ? to.node : to.node === node ? from.node : undefined;
+    if (other === undefined) return true;
+    const tier = model.groups[model.document.nodes[other]?.group ?? '']?.tier, box = model.nodes[other]?.bounds;
+    if (link.layer !== 'routed' || other === node || tier === undefined || !facing.has(tier) || box === undefined) return false;
+    const x = centre(node), off = Math.max(0, box.x - x, x - (box.x + box.width));
+    return off < straightLengthLimit([model.nodes[node]!, model.nodes[other]!]) - 1e-6;
+  });
+  const served = new Set<string>(), passed = new Set<string>();
+  // R4: the bound is a guard the loop never meets. Each trade moves one pull target past one member that is no target, strictly nearer its
+  // goal, and the goal stays fixed. Trading back would put it where it was, which is not nearer, so a target passes each other member at most
+  // once (a linked one once in all). A round that changes the row makes one trade at least, so there are at most n² rounds.
+  for (let moved = true, rounds = 0; moved && rounds < group.nodes.length * group.nodes.length; rounds++) {
+    moved = false;
+    for (const node of [...(group.rowOrder ?? group.nodes)]) {
+      const goal = target.get(node);
+      if (goal === undefined) continue;
+      const order = [...(group.rowOrder ?? group.nodes)], at = order.indexOf(node);
+      const step = goal < centre(node) ? -1 : 1, next = order[at + step];
+      if (next === undefined || target.has(next) || passed.has(next)) continue;
+      const before = Math.abs(centre(node) - goal);
+      const undo = saveGroups(model, [group]);
+      order[at] = next; order[at + step] = node;
+      if (!reseatRow(model, group, order, true) || Math.abs(centre(node) - goal) >= before - 1e-6 || (linked.has(next) && !staysDirect(next))) { undo(); continue; }
+      if (linked.has(next)) passed.add(next);
+      served.add(node);
+      moved = true;
+    }
+  }
+  return (group.rowOrder ?? group.nodes).filter(node => served.has(node));
 }
 
 /**
@@ -178,7 +315,24 @@ export function validateRowOrderDecisions(model: LayoutModel): string[] {
     }
     if (!freeRow(group) || group.nodes.length < 2) errors.push(`Group ${group.id} records a row order decision but is no free row`);
     if (!ofRow(group, decision.before) || !ofRow(group, decision.after)) errors.push(`The row order decision of ${group.id} names nodes that are not its own`);
-    if ((decision.rule !== 'corridor-crossings') !== sameOrder(decision.before, decision.after)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and its before and after orders contradict it`);
+    const searched = decision.pulledFrom ?? decision.after;
+    if ((decision.rule !== 'corridor-crossings') !== sameOrder(decision.before, searched)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and its before and after orders contradict it`);
+    if ((decision.pulledFrom === undefined) !== (decision.pulled === undefined)) errors.push(`The far-end pull of ${group.id} records only one of its order and its members`);
+    if (decision.pulledFrom !== undefined && decision.pulled !== undefined) {
+      // R5, read and not searched again: the pulled members are linked members of the row and keep their relative order, the other linked members
+      // keep theirs, and each of those is passed by one pulled member at most (a linked member moves one slot).
+      const linked = linkedMembers(model, group), pulled = new Set(decision.pulled);
+      const keep = (order: readonly string[], served: boolean): string[] => order.filter(node => linked.has(node) && pulled.has(node) === served);
+      const at = (order: readonly string[], node: string): number => order.indexOf(node);
+      const passes = (node: string): number => decision.pulled!.filter(item => Math.sign(at(decision.pulledFrom!, item) - at(decision.pulledFrom!, node)) !== Math.sign(at(decision.after, item) - at(decision.after, node))).length;
+      if (!ofRow(group, decision.pulledFrom) || sameOrder(decision.pulledFrom, decision.after) || decision.pulled.length === 0 || decision.pulled.some(node => !linked.has(node))
+        || !sameOrder(keep(decision.pulledFrom, true), keep(decision.after, true)) || !sameOrder(keep(decision.pulledFrom, false), keep(decision.after, false))
+        || keep(decision.after, false).some(node => passes(node) > 1)) {
+        errors.push(`The far-end pull of ${group.id} is recorded on orders it cannot give`);
+      }
+      if (decision.rule === 'author') errors.push(`The row order decision of ${group.id} is ${decision.rule}, and records a far-end pull`);
+      if (model.document.layout?.farEndPull === false) errors.push(`The row order decision of ${group.id} records a far-end pull, and the document setting farEndPull is false`);
+    }
     if ((decision.rule === 'author') !== (model.document.layout?.corridorRowOrder === false)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and the document setting corridorRowOrder contradicts it`);
     if (!sameOrder(group.rowOrder ?? group.nodes, decision.after)) errors.push(`Group ${group.id} stands in an order its row order decision does not name`);
   }

@@ -24,11 +24,9 @@
     "centreGroupStep": "1 123fd9e157a59830"
   },
   "a-chord-hint-and-a-lane-hint-never-share-a-batch": {
-    "centreGroupStep": "43 76c8767b8fb8d9e4",
+    "centreGroupStep": "15 17075dd40be6a177",
     "fanRoundHolds": "1 0a22f04442a90cca",
-    "judgeTrial": "1 cbf69f5f691d95cd",
-    "pullTier": "12 54cf982033f571d4",
-    "settleKeepOut": "2 3d075ae4342c7142"
+    "pullTier": "10 b06612ea32ad87db"
   },
   "a-location-router-leaves-a-lateral-side-toward-a-far-provider": {
     "centreGroupStep": "11 8c069ab3fdc9ede5",
@@ -39,10 +37,10 @@
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "three-canton-groups-close-up-to-a-band-gap": {
-    "attemptCheap": "124 a1d499f44eebf289",
-    "centreGroupStep": "1189 35655e657c9eb36c",
+    "attemptCheap": "124 eff7262cf983f9f3",
+    "centreGroupStep": "1201 f72fcff613440f15",
     "closeUp": "26 5b888ef2bb5c6903",
-    "holdsSettled": "18 5b2366432453a9fd",
+    "holdsSettled": "18 7487b420e8397752",
     "judgeTrial": "1 cbf69f5f691d95cd",
     "pickRankMove": "2 34e86ef4dc04805a",
     "pickTarget": "210 a206c5cd2625a153",

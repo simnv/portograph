@@ -1,0 +1,27 @@
+# Expected: a linked member of a free row passes the unlinked members beside it toward its link's far end (architecture-2
+# ticket 22). lb is declared last, and its one link goes to outlet, which the stage-4 draft puts under the left end of the
+# row. The pull moves lb past the unlinked members u1 to u6, so lb stands next to fe2, and spare and outlet keep their
+# natural width. The linked members fe1, fe2 and lb keep their relative order. Without the pull, lb stays at the right
+# end, and spare and outlet stretch across the whole row to keep the three links straight.
+# Test-only input owned by architecture-2 ticket 22; test/layout/corridor-order.test.ts reads the row order decision.
+portograph: 2
+profile: network
+groups:
+  front: { tier: 0, label: Front }
+  bank: { tier: 1, label: Bank }
+nodes:
+  fe1: { group: front, class: router, label: FE1 }
+  fe2: { group: front, class: router, label: FE2 }
+  u1: { group: front, class: router, label: U1 }
+  u2: { group: front, class: router, label: U2 }
+  u3: { group: front, class: router, label: U3 }
+  u4: { group: front, class: router, label: U4 }
+  u5: { group: front, class: router, label: U5 }
+  u6: { group: front, class: router, label: U6 }
+  lb: { group: front, class: router, label: LB }
+  spare: { group: bank, class: server, label: Spare }
+  outlet: { group: bank, class: server, label: Outlet }
+links:
+  - [fe1, spare]
+  - [fe2, spare]
+  - [lb, outlet]
