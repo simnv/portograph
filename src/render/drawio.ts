@@ -59,6 +59,7 @@ import { dotEnds } from './anonymous-end.js';
 import { endpointId, linkIds } from '../model/link-ids.js';
 import { orderedNodeIds } from '../model/model.js';
 import { isDirect } from '../layout/link-labels.js';
+import { nodeSymbolIds } from '../layout/legend.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 import {
@@ -749,6 +750,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
   }
 
+  const symbolIds = nodeSymbolIds(layout);
   for (const id of orderedNodeIds(document)) {
     const node = layout.nodes[id]!;
     // A node hangs under its frame when its cell has one, and under its own group otherwise.
@@ -827,7 +829,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         fontStyle: (named.fontWeight ?? 700) === 700 ? 1 : undefined,
       }),
     }), relative(box, origin), named === undefined ? undefined : plainText(labelLines(named)), {},
-    binding({ 'pg-kind': 'node', 'pg-id': id }, document.nodes[id]?.meta));
+    binding({
+      'pg-kind': 'node', 'pg-id': id,
+      // The legend's own id for this node's symbol, without its `symbol:` prefix, so the two cannot drift.
+      ...(symbolIds.has(id) ? { 'pg-symbol': part(symbolIds.get(id)!.slice('symbol:'.length)) } : {}),
+    }, document.nodes[id]?.meta));
     if (described !== undefined) {
       textCell(cellId('nodeDescription', id), cellId('node', id), described,
         relative(shiftRect(described.bounds!), shift(node.bounds!)), paint.node.description,

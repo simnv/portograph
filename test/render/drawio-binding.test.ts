@@ -230,3 +230,36 @@ links: ${links}
     expect(ids(reordered, 'pg-link~')).toEqual(ids(xml, 'pg-link~'));
   }, 60000);
 });
+
+describe('draw.io pg-symbol', () => {
+  const symbolSheet = (classes: Record<string, string | undefined>): string => `portograph: 2
+groups: {ga: {tier: 0}}
+nodes:
+${Object.entries(classes).map(([id, cls]) =>
+    `  ${id}: {group: ga${cls === undefined ? '' : `, class: "${cls}"`}, ports: [{name: p, side: bottom}]}`).join('\n')}
+links: []
+`;
+  const symbolOf = (xml: string, node: string): string | undefined =>
+    objects(xml).find(item => item.attributes['pg-kind'] === 'node' && item.attributes.id === `pg-node~${node}`)!.attributes['pg-symbol'];
+
+  it('names the legend symbol on a node, and none on a node without a class', async () => {
+    const xml = await render(symbolSheet({ r: 'router', s: 'switch', n: undefined }));
+    expect(symbolOf(xml, 'r')).toBe('router');
+    expect(symbolOf(xml, 's')).toBe('switch');
+    expect(symbolOf(xml, 'n')).toBeUndefined();
+    expect(allIds(xml)).toContain('pg-legendRow~symbol:router');
+  }, 60000);
+
+  it('names the symbol also when the sheet has no legend row', async () => {
+    const xml = await render(symbolSheet({ r: 'router' }));
+    expect(symbolOf(xml, 'r')).toBe('router');
+    expect(allIds(xml).some(id => id.startsWith('pg-legendRow~'))).toBe(false);
+  }, 60000);
+
+  it('escapes % and ~ the way the legend row id does', async () => {
+    const xml = await render(symbolSheet({ x: 'a%b~c', y: 'plain' }));
+    const value = symbolOf(xml, 'x')!;
+    expect(value).toBe('a%2525b%7ec');
+    expect(allIds(xml)).toContain(`pg-legendRow~symbol:${value}`);
+  }, 60000);
+});
