@@ -333,7 +333,7 @@ export function withdrawPullsAcrossFlips(model: LayoutModel): boolean {
     group.rowOrderDecision = { rule: decision.rule, before: decision.before, after: [...decision.pulledFrom], pullWithdrawn: crossed };
     changed = true;
   }
-  if (changed) rebuildBands(model, false);
+  // The row takes a permutation of its own nodes in its own box (`reseatRow` keeps the width it has), so no band moves.
   return changed;
 }
 /**
