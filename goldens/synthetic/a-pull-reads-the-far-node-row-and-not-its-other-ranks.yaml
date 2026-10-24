@@ -1,0 +1,34 @@
+# Expected: the far-end pull predicts where a far node will stand from the siblings on its own row only (architecture-2
+# ticket 22, review). x feeds r-gw, the rank-0 node of the two-rank group Right; q1 and q2 feed r-acc, its rank-1 node,
+# and the overlay links of p1 and p2 also end on r-acc. Built to make a frame order flip after the pull, this sheet
+# showed a pull the wrong way instead: the prediction read r-acc, which comes before r-gw in the group's node order, as
+# a sibling on r-gw's row, so q1 and q2 seemed to push r-gw to the right, and x moved right past u1 and u2 while r-gw
+# stood left. r-acc stands on another sub-tier and pushes nothing: x keeps its place over r-gw, and its link stays a
+# chord. A pull whose far node ends on the other side of the move is also withdrawn after the frames are ordered
+# (`withdrawPullsAcrossFlips`); no golden needs it once the prediction reads the right row.
+# Test-only input owned by architecture-2 ticket 22; test/layout/corridor-order.test.ts reads the row order decision.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  left: { tier: 1, label: Left }
+  right: { tier: 1, label: Right }
+nodes:
+  p1: { group: top, label: P1 }
+  p2: { group: top, label: P2 }
+  x: { group: top, label: X }
+  u1: { group: top, label: U1 }
+  u2: { group: top, label: U2 }
+  q1: { group: top, label: Q1 }
+  q2: { group: top, label: Q2 }
+  l-gw: { group: left, class: router, label: L gateway }
+  l-acc: { group: left, class: switch, label: L access }
+  r-gw: { group: right, class: router, label: R gateway }
+  r-acc: { group: right, class: switch, label: R access }
+links:
+  - [l-gw, l-acc]
+  - [r-gw, r-acc]
+  - [x, r-gw]
+  - [q1, r-acc]
+  - [q2, r-acc]
+  - [p1, r-acc, { route: overlay }]
+  - [p2, r-acc, { route: overlay }]
