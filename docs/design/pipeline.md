@@ -334,8 +334,11 @@ spanning chord, centring) can still move the link, so the corpus measures the ru
 
 **A row pulls a member toward its link's far end (architecture-2 ticket 22, `pullTowardFarEnds`).** Declaration
 order is a hint (user, 2026-10-24). After the corridor search, a member of a free row is pulled when all its links are
-routed and end on one node of a band that faces its row across one tier gap, farther off in x than the straight-link
-length limit of the two bodies. It trades places with an unlinked neighbour while that brings its centre strictly
+routed and end on one node of a band that faces its row across one tier gap, no other member of the row feeds that node,
+and the node will stand farther off in x than the straight-link length limit of the two bodies: the pull serves a link
+that would bend, and a member whose link a chord can take keeps its place. Where the node will stand is predicted: 7c
+seats its siblings under their feeds, so it stands beyond the farthest feed of every sibling before it in its row and
+short of the nearest feed of every sibling after it. It trades places with an unlinked neighbour while that brings its centre strictly
 nearer the far node's centre: an unlinked member ends no link, so the linked members keep their relative order. A row
 next to a frame cell takes the pull too, because the frame column is later centred on its feeds. A pull stands only
 where the draft measure over the regions the row reaches is no worse (straight overlay links, blocked routed links,

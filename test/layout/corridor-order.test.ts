@@ -224,6 +224,14 @@ describe('a row pulls a member toward its link\'s far end (architecture-2 ticket
     expect(validateRowOrderDecisions(model)).toEqual([]);
   }, 60000);
 
+  it('serves the member whose link would bend, and keeps a member whose far node another member feeds (a-row-stretches, user 2026-10-24)', async () => {
+    const text = readFileSync(new URL('../../goldens/synthetic/a-row-stretches-a-body-past-its-sibling.yaml', import.meta.url), 'utf8');
+    const decision = (await skeletonOf(text)).groups.top!.rowOrderDecision!;
+    // n1 is fed by rB and rA, so neither is pulled. s1 will stand past rA once 7c stretches n1 under both, so f1 passes f2 toward it.
+    expect(decision.pulledFrom).toEqual(['rB', 'f1', 'f2', 'rA']);
+    expect(decision.after).toEqual(['rB', 'f2', 'f1', 'rA']);
+  }, 60000);
+
   it('pulls nothing when the author keeps the declared order', async () => {
     const model = await skeletonOf(pulled.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n'));
     const decision = model.groups.front!.rowOrderDecision!;
