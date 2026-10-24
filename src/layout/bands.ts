@@ -1993,9 +1993,9 @@ export function replanGroupLabels(model: LayoutModel): void {
   const reserveAgain = (): void => { model.labelBands = reserved; produceGroupLabelBands(model); };
   if (syncBands(model)) { reserveAgain(); return; }
   // A move of groups can move a separated overlay track (ticket 23): the joint separation reads every path, so a run the room held before
-  // can need more after it, on any edge. A box that no longer holds a track's room gets the room again (`reserveLinkLabelRoom`, as the
-  // validator replays it); the title plan below reads the grown boxes. The full producer is not run for it: it plans the bands again.
-  if (trackRoomShort(model)) reserveLinkLabelRoom(model);
+  // can need more after it, on any edge. A box that no longer holds a track's room is reserved again by the full producer, as the
+  // validator replays it. The room alone is not enough: the nodes it moves change the row paths, which the producer derives again.
+  if (trackRoomShort(model)) { reserveAgain(); return; }
   const retained = model.labels.filter(label => label.role !== 'group');
   const spent = legSpentOf(model);
   let plan = planLabels({ ...model, labels: retained }, true, true, spent);
