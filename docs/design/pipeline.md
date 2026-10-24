@@ -1554,7 +1554,8 @@ tracks nest), for a labelled detour the way out of its U, the nearest track, out
 greedy order gives the later detour the outer offset on every run it shares; two U's out of one face need the outer track over the
 row and the inner riser beside the face. So after the last detour, two detours that cross and that the separation moved apart off
 one track (a run of each on one line in the ways round) trade the offsets of those two runs, when each moved run keeps the rules
-above and the layer then shares and crosses less, in that order (`nestTracks`, ticket 24). The port trade of 7f
+above, the two then no longer cross, and the layer shares and crosses less, in that order (`nestTracks`, ticket 24). A labelled
+detour is not traded: its label keeps the outer side and the room 7f reserved on its run. The port trade of 7f
 (`nestOverlayPorts`) measures this result. The
 result is a function of the frozen geometry, so nothing is recorded: stage 8 publishes it and
 `route/validate` derives it again and compares (R1, R5). A run no candidate frees keeps its track, and the

@@ -710,11 +710,11 @@ function separateTracks(model: LayoutModel, links: readonly LayoutLink[], shapes
       || a.link.sourceIndex - b.link.sourceIndex);
   const borders: Border[] = [...Object.entries(model.groups).flatMap(([id, group]) => group.bounds === undefined ? [] : [{ group: id, box: group.bounds }]),
     ...(model.frames ?? []).map(frame => ({ group: undefined, box: frame.box }))];
-  const placed: (Separated & { id: string; stroke: number })[] = [];
+  const placed: (Separated & { id: string; stroke: number; labelled: boolean })[] = [];
   for (const item of movers) {
     const separated = separate(model, [item.points, ...item.ways], item.stroke, held, shapes, borders, item.labelled);
     held.add({ points: separated.points, strokeWidth: item.stroke });
-    placed.push({ ...separated, id: item.link.id, stroke: item.stroke });
+    placed.push({ ...separated, id: item.link.id, stroke: item.stroke, labelled: item.labelled });
   }
   nestTracks(model, placed, items.filter(item => !item.movable).map(item => ({ points: item.points, strokeWidth: item.stroke })), shapes, borders);
   return new Map(placed.map(({ id, points, way }) => [id, { points, way }]));
@@ -726,12 +726,12 @@ function separateTracks(model: LayoutModel, links: readonly LayoutLink[], shapes
  * trade lowers what the layer shares and crosses. The greedy separation gives the later detour the outer offset on every run it
  * shares; two U's that leave one face need it the other way on one of the runs: the detour on the outer track over the row takes the
  * inner riser beside the face, so neither crosses the other. Nothing else changes: the bends stay (each neighbour keeps its direction),
- * and each moved run keeps the rules `shiftOff` keeps (`runRules`). The measure is the separation's own, in its order: shared tracks,
+ * and each moved run keeps the rules `shiftOff` keeps (`runRules`). A labelled detour is not traded: its label keeps the outer side. The measure is the separation's own, in its order: shared tracks,
  * then crossing pairs, over the whole layer. A trade is tried only where the two then no longer cross each other, so one trade at most
  * per pair. One pass over the pairs in the movers' order, the runs in path order (R3: the movers are ordered by geometry; finite, no
  * cap).
  */
-function nestTracks(model: LayoutModel, placed: (Separated & { stroke: number })[], fixed: readonly TrackPath[], shapes: ShapeQuery,
+function nestTracks(model: LayoutModel, placed: (Separated & { stroke: number; labelled: boolean })[], fixed: readonly TrackPath[], shapes: ShapeQuery,
   borders: readonly Border[]): void {
   // The layer as it stands: the held paths, then the movers (`placed.length` on). Two paths whose boxes stand more than a pitch apart
   // share no track and cross nowhere, so a pair is measured against the paths near it only.
@@ -793,6 +793,9 @@ function nestTracks(model: LayoutModel, placed: (Separated & { stroke: number })
     return vertical === horizontal ? undefined : vertical ? 'x' : 'y';
   };
   for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
+    // A labelled detour keeps its offsets: it took its tracks last so that its label stands on the outer side (`separateTracks`), and
+    // 7f reserved the label's room on the run it draws.
+    if (placed[i]!.labelled || placed[j]!.labelled) continue;
     if (!near(layer[i]!.box, layer[j]!.box) || overlayCrossingPairs([segmentsOf(placed[i]!.points), segmentsOf(placed[j]!.points)]) === 0) continue;
     let now: number[] | undefined;
     // Middle runs only: an end run leaves a port face (`shiftOff`).
