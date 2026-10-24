@@ -13,7 +13,7 @@ import { linkStrokeWidth } from '../theme/geometry.js';
 import { orderedNodeIds } from '../model/model.js';
 
 /**
- * Overlay ports nest (architecture-2 ticket 23, user 2026-10-23): on one face, the ports of overlay detours that arrive by parallel
+ * Overlay ports nest (architecture-2 tickets 23 and 24, user 2026-10-23): on one face, the ports of overlay detours that arrive by parallel
  * tracks stand so that the tracks nest instead of crossing. The outer track takes the port nearer the side the tracks come from: on a
  * lateral face, the lower track the lower port when both come from below, and the mirror for above, left and right.
  *
@@ -24,7 +24,9 @@ import { orderedNodeIds } from '../model/model.js';
  * need room 7f did not reserve: the reservations are done by then. `quick` is a cheaper guard the trades run under first (no padding
  * record forged, no track room short); `holds` then reads the result once, and refuses it back to a run with `holds` on every trade. The measure is the separation itself (`publishedOverlayPath`, the paths stage 8 draws and the scorer reads): one
  * derivation, no second predicate (R1). A trade is kept only when the layer is better by the user's order: no more shared tracks, then
- * no more bent links and turns (bends first), then fewer crossing points.
+ * no more bent links and turns (bends first), then fewer crossing points. The separation nests the offsets of two detours it moved
+ * apart off one track (`nestTracks`, ticket 24); before it did, the outer track also took the outer riser, the nested port order
+ * measured one crossing more than the crossed one, and the trade was refused.
  *
  * The same holds for a face where detours and direct links leave (user, 2026-10-24): a link that turns up takes a port above one that
  * leaves straight or on a diagonal, and one that turns down a port below it, so the direct links keep the middle in the order of their far

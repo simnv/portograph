@@ -6,6 +6,8 @@
 # way shares no track. Every turn steps out of its port face by the overlay port clearance (the bare-end dot plus 4 px: 7.75 px at a
 # 1.5 px stroke), so no riser runs by a foreign port nearer than that. No pair of overlay runs shares a track (`overlayTrackShares`
 # absent), every link keeps the bends the per-link rule gives it, and the drawing does not depend on the order of `links`.
+# Ticket 24: the detours out of `a` nest. A's right face holds, from the top down, a-d (the outer track over the row, the inner riser
+# beside the face), a-c (the inner track, the outer riser) and the straight `uplink` to b; a-c and a-d do not cross.
 # Test-only input; test/pipeline/overlay-tracks.test.ts reads it.
 portograph: 2
 groups:

@@ -1551,6 +1551,11 @@ lane and everything beyond it move out with it (`insertRoomAt`): label room wins
 the lane keeps its distance to what it serves (R2). Rank: fewest shared tracks, no growth beyond the box as it stands (a track the
 grown room holds is no growth, so a replay after 7f keeps it), fewest crossings with the held paths (the
 tracks nest), for a labelled detour the way out of its U, the nearest track, out of the U, the positive direction. The
+greedy order gives the later detour the outer offset on every run it shares; two U's out of one face need the outer track over the
+row and the inner riser beside the face. So after the last detour, two detours that cross and that the separation moved apart off
+one track (a run of each on one line in the ways round) trade the offsets of those two runs, when each moved run keeps the rules
+above and the layer then shares and crosses less, in that order (`nestTracks`, ticket 24). The port trade of 7f
+(`nestOverlayPorts`) measures this result. The
 result is a function of the frozen geometry, so nothing is recorded: stage 8 publishes it and
 `route/validate` derives it again and compares (R1, R5). A run no candidate frees keeps its track, and the
 scorer counts the pair (`overlayTrackShares`); a column gap that holds fewer risers than need it is not

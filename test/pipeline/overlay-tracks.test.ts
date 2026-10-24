@@ -6,6 +6,7 @@ import { overlayBasePath, overlayPath, OVERLAY_PILL_CLEARANCE } from '../../src/
 import { sharedTrackPairs } from '../../src/layout/overlay-tracks.js';
 import { nestOverlayPorts } from '../../src/layout/overlay-nest.js';
 import { pathBends } from '../../src/layout/objective.js';
+import { overlayCrossingPairs } from '../../src/layout/read/crossings.js';
 import { validateRoutedPaths } from '../../src/route/validate.js';
 import { anonymousDotRadius, DEFAULT_STROKE_WIDTHS, overlayPortClearance, overlayTrackPitch } from '../../src/theme/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -152,6 +153,23 @@ describe('two overlay detours never share a track (architecture-2 ticket 23)', (
     let calls = 0;
     expect(nestOverlayPorts(second, () => ++calls > 1, () => true).length).toBe(2);
     expect(portOf(second, 'link-3').anchor).toEqual(portOf(model, 'link-3').anchor);
+  }, 120000);
+
+  it('nested detours leave a face by nested ports: the outer track takes the port nearer the tracks, and the two do not cross (ticket 24)', async () => {
+    const model = await run(fixture('two-overlay-detours-never-share-a-track'));
+    const byEnds = (from: string, to: string) => overlays(model).find(link => link.attachments!.from.node === from && link.attachments!.to.node === to)!;
+    const portY = (link: ReturnType<typeof byEnds>) => {
+      const end = link.attachments!.from;
+      return model.nodes.a!.ports.find(port => port.ref.ordinal === end.ordinal && port.ref.name === end.name)!.anchor!.y;
+    };
+    const toB = byEnds('a', 'b'), toC = byEnds('a', 'c'), toD = byEnds('a', 'd');
+    // A's right face, from the top down: A→D (the outer track over the row), A→C (the inner track), then `uplink` to B, which leaves straight.
+    expect([toD, toC, toB].map(link => portY(link))).toEqual([...[toD, toC, toB].map(link => portY(link))].sort((a, b) => a - b));
+    expect(new Set([toD, toC, toB].map(link => portY(link))).size).toBe(3);
+    const toCPoints = pointsOf(toC.path!.segments), toDPoints = pointsOf(toD.path!.segments);
+    expect(Math.min(...toDPoints.map(point => point.y))).toBeLessThan(Math.min(...toCPoints.map(point => point.y)));
+    const segments = (points: Point[]) => points.slice(1).map((point, index) => ({ from: points[index]!, to: point }));
+    expect(overlayCrossingPairs([segments(toCPoints), segments(toDPoints)])).toBe(0);
   }, 120000);
 
   it('the validator and the scorer read the separation: a detour put back on the shared track is refused and counted (R5)', async () => {
