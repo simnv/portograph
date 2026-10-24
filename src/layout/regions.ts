@@ -13,8 +13,8 @@ export const GROUP_PADDING = 20;
 /**
  * Label bands extend the top inset while ordinary group padding remains below and at both sides.
  * A band reserves its own clearance below itself; that reservation is at least the ordinary padding.
- * `withLabelRoom` false leaves out the room across a run (`labelPadding`): the edge's ordinary padding, which the validator compares a
- * recorded room with.
+ * `withLabelRoom` false leaves out the room across a run (`labelPadding`: a label's room and a separated overlay track's room): the
+ * edge's ordinary padding, which the validator compares a recorded room with.
  */
 export function groupPadding(model: LayoutModel, group: LayoutGroup, withLabelRoom = true): { top: number; right: number; bottom: number; left: number } {
   const padding = { top: GROUP_PADDING, right: GROUP_PADDING, bottom: GROUP_PADDING, left: GROUP_PADDING };

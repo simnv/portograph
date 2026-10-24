@@ -6,7 +6,7 @@ import { measurePortPill } from '../text/index.js';
 import { EPS } from '../geometry/planar.js';
 import { isRoutedChord } from './frame-paths.js';
 import { isSideLane, transitTiers } from './lanes.js';
-import { crosses, sharedBlockers, overlayPath, straightChord, type ShapeQuery } from './overlay-paths.js';
+import { crosses, sharedBlockers, overlayBasePath, straightChord, type ShapeQuery } from './overlay-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 import { measureChordSides } from './side-chords.js';
@@ -37,7 +37,7 @@ const isOverlay = (link: LayoutLink): boolean => link.layer === 'overlay' && lin
  */
 export function plannedBends(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery): number {
   if (link.attachments === undefined) return 0;
-  if (isOverlay(link)) return Math.max(0, overlayPath(model, link, blockers).segments.length - 1);
+  if (isOverlay(link)) return Math.max(0, overlayBasePath(model, link, blockers).segments.length - 1);
   if (isRoutedChord(model, link)) return 0;
   // A side lane (spec Section 6): one bend into the lateral port, and a stepped part in the gap above a lane the far port does not stand on.
   const lane = model.lanes.find(item => isSideLane(item) && item.owner.kind === 'link' && item.owner.id === link.id);
@@ -108,7 +108,7 @@ function lShapes(model: LayoutModel, kept7e: LayoutModel, nodes: LayoutModel['no
     if (result === undefined) continue;
     const draft = { ...nodes, [lateral.ref.node]: result.node };
     const probe: LayoutModel = { ...model, nodes: draft };
-    const blockers = sharedBlockers(probe), segments = overlayPath(probe, link, blockers).segments;
+    const blockers = sharedBlockers(probe), segments = overlayBasePath(probe, link, blockers).segments;
     // `between()` falls back to paths that ignore pills and then bodies when every way round is blocked, and such a path can still have two
     // segments: an L is offered only when both runs are clear of every body and every foreign pill (ticket 116 review, H1).
     const own = ends.flatMap(ref => { const pill = probe.nodes[ref.node]?.ports.find(port => portKey(port.ref) === portKey(ref))?.pill; return pill === undefined ? [] : [pill.bounds]; });

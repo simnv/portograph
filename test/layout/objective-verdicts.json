@@ -43,11 +43,11 @@
     "holdsSettled": "18 7487b420e8397752",
     "judgeTrial": "1 cbf69f5f691d95cd",
     "pickRankMove": "2 34e86ef4dc04805a",
-    "pickTarget": "210 8006288bf7323ea0",
+    "pickTarget": "210 a206c5cd2625a153",
     "pullTier": "588 f0b4346836e80001",
     "settleKeepOut": "4 36a88b7f782c05e7",
-    "sheetGains": "22 d6ddc9fcd2255294",
-    "windowsHold": "74 40244e0979c55329"
+    "sheetGains": "22 997366dd605b5d71",
+    "windowsHold": "74 3db5a8e16608d6a9"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
     "centreGroupStep": "33 7f0263d0fe64a80d",
@@ -59,10 +59,10 @@
     "centreGroupStep": "1235 8049eb07584523b9",
     "holdsSettled": "17 e6f70c17a5b0c9ae",
     "judgeTrial": "1 40c5e1b547e445dd",
-    "pickTarget": "234 8c88d88ecc24c00d",
-    "pullTier": "516 b41e9c4887112694",
-    "sheetGains": "36 01fc80170dbdc3e4",
-    "windowsHold": "55 f75ef8d5e496e9ec"
+    "pickTarget": "234 7672d3baafd4658d",
+    "pullTier": "516 e981d9162ea42d05",
+    "sheetGains": "36 91b5aff023832c3b",
+    "windowsHold": "54 cc56be4e4799997d"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
     "centreGroupStep": "6 05a98be679fb1378",

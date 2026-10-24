@@ -176,15 +176,18 @@ describe('the label room of an overlay L', () => {
       .toEqual([expect.stringMatching(/crosses a drawn box along its side run, with no gap/)]);
   }, 60000);
 
-  it('refuses when a lane stands beyond the split, and names the link', async () => {
+  it('pushes a lane beyond the split out with the room (label room wins over an adjacent lane, ticket 23)', async () => {
     const { model, split } = await shortDrop();
     model.lanes.push({ id: 'lane:"transit":9', owner: { kind: 'link', id: 'transit' }, layer: 'routed', group: 'back', tier: 9, side: 'right', x: split + 10,
       bounds: { x: split - 7, y: 0, width: 34, height: 10 } });
     const before = model.nodes['outlet']!.bounds!.x;
-    expect(reserveLinkLabelRoom(model)).toBe(false);
-    expect(model.nodes['outlet']!.bounds!.x).toBe(before);
-    expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.message)).toEqual([expect.stringMatching(/beyond a reserved lane/)]);
-    expect(model.diagnostics.find(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')!.owners).toEqual([{ kind: 'link', id: overlay(model).id }]);
+    expect(reserveLinkLabelRoom(model)).toBe(true);
+    const moved = model.nodes['outlet']!.bounds!.x - before, lane = model.lanes.find(item => item.id === 'lane:"transit":9')!;
+    expect(moved).toBeGreaterThan(0);
+    // The lane and the outlet move by the same room, so the lane keeps its distance to what it serves (R2).
+    expect(lane.x).toBeCloseTo(split + 10 + moved, 6);
+    expect(lane.bounds.x).toBeCloseTo(split - 7 + moved, 6);
+    expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
   }, 60000);
 
   // The shortened published L reflected in x: the lateral face of the outlet now looks east and the balancer stands to the east of it.

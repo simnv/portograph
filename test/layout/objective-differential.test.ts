@@ -17,6 +17,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * with no candidate, and a replay calls the judge, so the call count fell (for example 7 to 1). Recorded on all 16 fixtures with inputs: every call the
  * branch still makes has main's verdict, and every call it dropped belonged to a replay whose result the check discarded. The verdicts did not change.
  *
+ * `three-canton-groups-close-up-to-a-band-gap` and `three-continents` were re-recorded for architecture-2 ticket 23: the overlay port clearance
+ * grew from 4 to 7.75 px, so the per-link overlay paths the judges read (`overlayBasePath`; the separated tracks are stage 8's) and their
+ * figures changed. No judge changed, and every call count is main's but one: on `three-continents` the trial asks `windowsHold` 54 times
+ * (was 55).
  * Re-recorded again for architecture 2 ticket 22: no judge moved, but the inputs did. A chord never joins perpendicular faces, and a direct family reserves
  * gap height and may run the attempt again, so four fixtures place other geometry and call the judges on it. three-canton-groups-close-up-to-a-band-gap
  * was recorded once more when two runs from opposite sides of one face came to share a row of the tier gap: its gap plan, and so its geometry, changed. a-chord-hint-and-a-lane-hint-never-share-a-batch

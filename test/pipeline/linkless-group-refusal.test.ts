@@ -14,14 +14,13 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const state = vi.hoisted(() => ({ armed: false }));
 vi.mock('../../src/layout/overlay-paths.js', async importOriginal => {
   const actual = await importOriginal<typeof import('../../src/layout/overlay-paths.js')>();
-  return {
-    ...actual,
-    overlayPath: (...args: Parameters<typeof actual.overlayPath>) => {
-      const path = actual.overlayPath(...args);
-      const [model, link] = args;
-      return state.armed && link.id === 'link-6' && (model.groups['key']?.bounds?.x ?? 1) < 0 ? { ...path, segments: Array.from({ length: 8 }, () => path.segments).flat() } : path;
-    },
+  // The judges of placement read the per-link path (`overlayBasePath`, ticket 23); both readers are made to report it.
+  type Read = typeof actual.overlayPath;
+  const worse = (read: Read): Read => (model, link, blockers) => {
+    const path = read(model, link, blockers);
+    return state.armed && link.id === 'link-6' && (model.groups['key']?.bounds?.x ?? 1) < 0 ? { ...path, segments: Array.from({ length: 8 }, () => path.segments).flat() } : path;
   };
+  return { ...actual, overlayPath: worse(actual.overlayPath), overlayBasePath: worse(actual.overlayBasePath) };
 });
 
 it('undoes a move that would leave the overlay links worse, and warns', async () => {

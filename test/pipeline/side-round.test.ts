@@ -92,8 +92,8 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     const { model, places } = await run(BLOCKED);
     expect(model.links.find(item => item.layer === 'overlay')!.path!.segments.length).toBeGreaterThan(1);
     expect(places).toBe(1);
-    // Re-baselined for architecture ticket 17: the free rows gain a `rowOrderDecision` record; without that key the hash is the old one.
-    expect(hash(model)).toBe('77ce3286e5e7652d');
+    // Re-baselined for architecture ticket 17 (a `rowOrderDecision` record) and ticket 23 (the overlay port clearance is 7.75 px, not 4).
+    expect(hash(model)).toBe('e21a79fe9f158ae7');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);

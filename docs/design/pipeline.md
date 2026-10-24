@@ -1145,7 +1145,29 @@ every rebuild keeps it. 7f writes a room only above the edge's ordinary padding.
 entry with no link, a link the model does not have, or a room short of what a named link needs now (room ≥
 need); a named link with no labelled run now, or a room a later padding row reached, is no fault (both follow
 legal later geometry). The replay reports a box that no longer holds the room. The title edge is left
-to the title band; a rank cell's border is its frame's, and is not grown.
+to the title band; a rank cell's border is its frame's, and is not grown. **Track room (ticket 23).** A run
+that track separation moved further into a plain group's padding (`paddingOf`, the reader this rule and
+the overlay paths share) needs the padding to reach it plus one overlay track pitch to the border, or plus
+the label (half the stroke, the normal gap, the text, half the border) when the run carries the link's
+label (`trackRoomPadding`). 7f grows those edges first, before the label windows are read, by the same
+growth and into the same record (`labelPadding`, the link that holds the track); the validator reads the
+same need. **Overlay ports nest (ticket 23).** The free overlay ports of each face
+trade slots where the tracks then nest instead of crossing: the outer track takes the port nearer the side
+the tracks come from (on a lateral face, the lower track the lower port when both come from below). Stage
+5 cannot decide it: it orders a face before any detour is derived, and the side and the track of a detour
+depend on the geometry 7f settles and on the whole layer. The measure is the separation itself
+(`nestOverlayPorts`: the published overlay paths, then fewer shared tracks, fewer bent links and turns,
+fewer crossing points). On a face where detours and direct links leave, the direct links trade too: a
+link that turns up takes a port above one that leaves straight or on a diagonal, one that turns down a port
+below it (user, 2026-10-24). Only a free port moves: no authored `order:`, no other link on it (so no routed
+port), no bus, no course, on a face where a free port leaves by a detour, and a pill of the same size. A
+pair is tried only when its two paths cross or share a track, and at most `NEST_TRIALS` (24) trades are
+tried per attempt (R4). The two ports trade anchor and
+`engineOrder`, so no size or spacing changes, as 7e bundles reorder their own ports. It runs at the end of
+the 7f attempt, after every placement move was judged on the order stage 5 gave (a trade made earlier
+would stand under the judges of later moves), and it makes no trade that would need room 7f did not
+reserve (`roomHolds`: the record holds every need, and a replay reserves nothing more). The anchors are
+its record; no replay asks it again (a choice, not a fixed point).
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line, or on a held routed chord
 (ticket 22), lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
@@ -1175,9 +1197,10 @@ growth only increases, so the passes end. The tier gap grows until a window hold
 `labelWindowDeficit` finds the least growth by bisection (`LABEL_WINDOW_BISECTIONS` steps, rounded up
 to `LABEL_WINDOW_GRAIN`).
 Self-links, same-tier links
-through top/bottom ports, pairs whose ports do not face each other across the gap, overlay links
-whose longest run lies wholly across the axis the room grows on, and links whose room
-lies beyond a reserved lane are diagnosed `LINK_LABEL_ROOM_UNRESERVED`. Moves settle pills before the next link measures; the
+through top/bottom ports, pairs whose ports do not face each other across the gap, and overlay links
+whose longest run lies wholly across the axis the room grows on are diagnosed `LINK_LABEL_ROOM_UNRESERVED`.
+Room that lies beyond a reserved lane is inserted, and the lane and everything beyond it move out
+with it (`insertRoomAt`; label room wins over an adjacent lane, architecture-2 ticket 23). Moves settle pills before the next link measures; the
 reservation re-runs after the grid inside the 7f loop and any movement replays the region producers. That group's band clearance also
 reserves the label's room beside the detour run under the title. Publication and restore re-run the
 reservation on a copy and reject a model it would still change.
@@ -1502,7 +1525,36 @@ right round the pair one clearance outside its own extent, two down the middle o
 — that enters no node body and no pill, with ties going to the single turn that carries on the way
 the source faces, and with no candidate that walks back along a run it already drew. When every way
 is blocked the shortest that clears the link's own two end boxes is taken, and the renderer's mask
-carries the body it then crosses.
+carries the body it then crosses. The clearance is the **overlay port clearance** of the link's stroke
+(`overlayPortClearance`: the bare-end dot, stroke + 6 px across, plus `OVERLAY_GAP` 4 px; 7.75 px at
+1.5 px), on every face, for the turn out of each face and for the margins of the ways round (ticket 23;
+it was 4 px, and the turn read as lying on the face).
+
+**Two overlay detours never share a track (ticket 23).** The per-link rule reads each link alone, so two
+detours out of one face rose on one riser and ran over the row on one line, and read as one line. The
+layer is read once (`overlayTracks`, kept per model and blocker index): the paths that cannot move
+(straight segments, courses, a link drawn straight over a body under `overlayOverBodies`) hold their
+tracks, then the detours with a middle run take theirs, unlabelled before labelled, shortest first (last
+key `sourceIndex`). Mesh-bus members are not read, as the scorer does not read them. Placement judges read
+the per-link path (`overlayBasePath`); only 7f reservations, stage 8 and the scorer read the separation. Two runs of two paths are on
+one track when they lie on one axis nearer than the **overlay track pitch** (half of each stroke plus
+`OVERLAY_GAP`: 5.5 px) and overlap or meet end to end within it; two paths that leave one port draw their
+common stretch once and may fork there (`sharedTrackPairs`, `forks`). A middle run on a shared track
+moves across its axis by one, two or three pitches; its two neighbours lengthen or shorten, so no bend
+appears. Every way round with the same bends is tried (a non-collinear alternative before an offset, and
+the way with fewer crossings where the bends are equal). A candidate walks back along nothing, enters no body or pill, keeps the overlay port
+clearance from each (or the distance the derived way kept, where less), and stands to every group and
+frame box as the derived run did; it may cross the padding edge of a plain group on a side no title
+holds, which 7f then grows. 7f reserves the room across a moved run (the track, and the label the link shows
+beside it, `trackRoomNeed`); where a reserved lane stands beyond that edge, the room is inserted and the
+lane and everything beyond it move out with it (`insertRoomAt`): label room wins over an adjacent lane, and
+the lane keeps its distance to what it serves (R2). Rank: fewest shared tracks, no growth beyond the box as it stands (a track the
+grown room holds is no growth, so a replay after 7f keeps it), fewest crossings with the held paths (the
+tracks nest), for a labelled detour the way out of its U, the nearest track, out of the U, the positive direction. The
+result is a function of the frozen geometry, so nothing is recorded: stage 8 publishes it and
+`route/validate` derives it again and compares (R1, R5). A run no candidate frees keeps its track, and the
+scorer counts the pair (`overlayTrackShares`); a column gap that holds fewer risers than need it is not
+widened yet.
 
 Two ports facing each other on one line closer than their
 two clearances ride their own faces on the orthogonal branch instead, which keeps its two ends in

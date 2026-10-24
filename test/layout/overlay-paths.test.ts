@@ -86,7 +86,7 @@ describe('overlay paths', () => {
         { node: 'd', name: 'west', side: 'left', anchor: { x: 100, y: 120 } }],
       links: [{ id: 'flow', from: 'd', to: 'c', layer: 'overlay',
         points: [{ x: 100, y: 120 }, { x: 30, y: 100 }] }],
-    })).toEqual([{ x: 87, y: 120 }, { x: 83, y: 120 }, { x: 83, y: 83 }, { x: 30, y: 83 }, { x: 30, y: 87 }]);
+    })).toEqual([{ x: 87, y: 120 }, { x: 79.25, y: 120 }, { x: 79.25, y: 79.25 }, { x: 30, y: 79.25 }, { x: 30, y: 87 }]);
   });
 
   /**
@@ -115,8 +115,8 @@ describe('overlay paths', () => {
     // The stub used to lift the line clear before it turned, so this is the one shape stress
     // ticket 30 moved.
     expect(path(facingAway()))
-      .toEqual([{ x: 105, y: 99 }, { x: 105, y: 95 }, { x: 75, y: 95 },
-        { x: 75, y: 109 }, { x: 45, y: 109 }, { x: 45, y: 105 }]);
+      .toEqual([{ x: 105, y: 99 }, { x: 105, y: 91.25 }, { x: 75, y: 91.25 },
+        { x: 75, y: 112.75 }, { x: 45, y: 112.75 }, { x: 45, y: 105 }]);
   });
 
   it('tilts as far as level and no further, and its own pills never decide it', () => {
@@ -159,8 +159,8 @@ describe('overlay paths', () => {
     // round the outside reaches, so the route runs down the middle of the gap the two boxes leave on
     // x. The geometry is codex's, from round 2 of the draw.io export ticket.
     expect(path(facingAway({ id: 'g', bounds: { x: 88, y: 96, width: 6, height: 6 } })))
-      .toEqual([{ x: 105, y: 99 }, { x: 105, y: 95 }, { x: 75, y: 95 },
-        { x: 75, y: 109 }, { x: 45, y: 109 }, { x: 45, y: 105 }]);
+      .toEqual([{ x: 105, y: 99 }, { x: 105, y: 91.25 }, { x: 75, y: 91.25 },
+        { x: 75, y: 112.75 }, { x: 45, y: 112.75 }, { x: 45, y: 105 }]);
   });
 
   it('stays one straight segment when the two ports face each other on a clear axis', () => {
@@ -192,8 +192,8 @@ describe('overlay paths', () => {
     // the orthogonal branch takes the way round the pair on its left, one stub outside the pair's own
     // extent at x 21.
     expect(path(facingColumn({ id: 'x', bounds: { x: 26, y: 70, width: 8, height: 20 } })))
-      .toEqual([{ x: 30, y: 53 }, { x: 30, y: 57 }, { x: 21, y: 57 },
-        { x: 21, y: 103 }, { x: 30, y: 103 }, { x: 30, y: 107 }]);
+      .toEqual([{ x: 30, y: 53 }, { x: 30, y: 60.75 }, { x: 17.25, y: 60.75 },
+        { x: 17.25, y: 99.25 }, { x: 30, y: 99.25 }, { x: 30, y: 107 }]);
   });
 
   it('goes round a body wider than the pair itself (ticket 86)', () => {
@@ -203,8 +203,8 @@ describe('overlay paths', () => {
     // a body between them are the case ticket 86 names. The orthogonal branch now also tries runs
     // outside every shape they pass, and one of them clears the body: x -4: one clearance left of the pair's own end boxes (here the two node bodies at x 0), which the hull starts from, since a run outside the pair must clear them too.
     expect(path(facingColumn({ id: 'x', bounds: { x: 10, y: 70, width: 40, height: 20 } })))
-      .toEqual([{ x: 30, y: 53 }, { x: 30, y: 57 }, { x: -4, y: 57 }, { x: -4, y: 103 },
-        { x: 30, y: 103 }, { x: 30, y: 107 }]);
+      .toEqual([{ x: 30, y: 53 }, { x: 30, y: 60.75 }, { x: -7.75, y: 60.75 }, { x: -7.75, y: 99.25 },
+        { x: 30, y: 99.25 }, { x: 30, y: 107 }]);
   });
 
   it('keeps clear of the two pills when a node body blocks every way round', () => {
@@ -222,8 +222,8 @@ describe('overlay paths', () => {
         { node: 'j', name: 'west', side: 'left', anchor: { x: 100, y: 50 } }],
       links: [{ id: 'flow', from: 'i', to: 'j', layer: 'overlay',
         points: [{ x: 200, y: 50 }, { x: 100, y: 50 }] }],
-    })).toEqual([{ x: 187, y: 50 }, { x: 183, y: 50 }, { x: 183, y: 26 },
-      { x: 83, y: 26 }, { x: 83, y: 50 }, { x: 87, y: 50 }]);
+    })).toEqual([{ x: 187, y: 50 }, { x: 179.25, y: 50 }, { x: 179.25, y: 22.25 },
+      { x: 79.25, y: 22.25 }, { x: 79.25, y: 50 }, { x: 87, y: 50 }]);
   });
 
   it('never walks back the way it came, and reads the same both ways round', () => {
@@ -274,7 +274,7 @@ describe('overlay paths', () => {
   });
 
   it('stays one straight segment when a facing pair is closer than its two clearances', () => {
-    // The two pill faces are 4 px apart and each clearance is 4 px, so the cleared ends cross: the
+    // The two pill faces are 4 px apart and each clearance is 7.75 px (ticket 23), so the cleared ends cross: the
     // old candidate test let a way round win and it drew two stubs over each other. The axis between
     // the two faces is clear, so the pair keeps the one segment the maintainer's direct-line rule asks
     // for — exactly what it draws when the gap is wide.
@@ -287,7 +287,7 @@ describe('overlay paths', () => {
     // route then rides each face outward, goes over both pills one clearance above them, and comes
     // back down: it enters no box and no run covers another.
     expect(path(facingPair({ id: 'c', bounds: { x: 74, y: 112, width: 2, height: 16 } })))
-      .toEqual([{ x: 73, y: 120 }, { x: 73, y: 111 }, { x: 77, y: 111 }, { x: 77, y: 120 }]);
+      .toEqual([{ x: 73, y: 120 }, { x: 73, y: 107.25 }, { x: 77, y: 107.25 }, { x: 77, y: 120 }]);
   });
 
   it('runs body edge to body edge for two ports that draw no pill', () => {

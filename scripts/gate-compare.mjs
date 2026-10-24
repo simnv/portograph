@@ -1,6 +1,6 @@
 /**
  * Compare two corpus TSVs (`corpus.mjs` output): the changed cells, side by side, and a flag on
- * every sheet that is worse on bends, removed, gates, crossings (X), canvas (W) or labelBorder, in that order.
+ * every sheet that is worse on bends, removed, gates, crossings (X), canvas (W), labelBorder or track, in that order.
  * A changed `hash` is printed as a changed cell, never judged; the last line counts the sheets whose hash changed.
  *
  * Usage: npm run gate:compare -- <base.tsv> <head.tsv>
@@ -10,15 +10,15 @@
  * base and fails in the head is flagged `error`, before the other flags.
  *
  * Worse means: more bends; more removed links; a gate id with a violation that the base did not
- * have; more crossings; a larger canvas area.
+ * have; more crossings; a larger canvas area; more label border crossings; more overlay run pairs on one track.
  */
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import { COLUMNS } from './gate-lib.mjs';
 
-const JUDGED = ['bends', 'removed', 'gates', 'crossings', 'canvas', 'labelBorder'];
+const JUDGED = ['bends', 'removed', 'gates', 'crossings', 'canvas', 'labelBorder', 'track'];
 /** The columns in print order: the judged ones first, in judgement order, then the rest as the TSV has them. */
-const PRINT_ORDER = ['bends', 'removed', 'gates', 'X', 'W', 'labelBorder', ...COLUMNS.filter((column) => !['file', 'bends', 'removed', 'gates', 'X', 'W', 'labelBorder'].includes(column))];
+const PRINT_ORDER = ['bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track', ...COLUMNS.filter((column) => !['file', 'bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track'].includes(column))];
 
 class ParseError extends Error {}
 
@@ -48,7 +48,7 @@ function parseTsv(path) {
     }
     if (fields.length !== columns.length) throw new ParseError(`${path}:${index + 2}: ${fields.length} fields, header has ${columns.length}`);
     const cells = Object.fromEntries(columns.map((column, position) => [column, fields[position]]));
-    for (const column of ['bends', 'removed', 'X', 'labelBorder']) {
+    for (const column of ['bends', 'removed', 'X', 'labelBorder', 'track']) {
       if (column in cells && !/^\d+$/.test(cells[column])) throw new ParseError(`${path}:${index + 2}: ${column} is not a count: ${cells[column]}`);
     }
     if ('W' in cells && cells.W !== '-' && !/^\d+x\d+$/.test(cells.W)) throw new ParseError(`${path}:${index + 2}: W is not <width>x<height> or -: ${cells.W}`);
@@ -70,6 +70,7 @@ function flags(base, head) {
   if (both('X') && Number(head.X) > Number(base.X)) worse.push('crossings');
   if (both('W') && head.W !== '-' && base.W !== '-' && area(head.W) > area(base.W)) worse.push('canvas');
   if (both('labelBorder') && Number(head.labelBorder) > Number(base.labelBorder)) worse.push('labelBorder');
+  if (both('track') && Number(head.track) > Number(base.track)) worse.push('track');
   return worse;
 }
 
@@ -100,7 +101,7 @@ function compare(base, head) {
     if (cells.some(([column]) => column === 'hash')) geometry++;
     for (const flag of sheetFlags) counts[flag]++;
     for (const [column, left, right] of cells) {
-      const flag = column === 'bends' ? 'bends' : column === 'removed' ? 'removed' : column === 'gates' ? 'gates' : column === 'X' ? 'crossings' : column === 'W' ? 'canvas' : column === 'labelBorder' ? 'labelBorder' : column === '(sheet)' ? 'error' : undefined;
+      const flag = column === 'bends' ? 'bends' : column === 'removed' ? 'removed' : column === 'gates' ? 'gates' : column === 'X' ? 'crossings' : column === 'W' ? 'canvas' : column === 'labelBorder' ? 'labelBorder' : column === 'track' ? 'track' : column === '(sheet)' ? 'error' : undefined;
       lines.push([file, column, left, right, flag !== undefined && sheetFlags.includes(flag) ? 'WORSE' : '']);
     }
   }

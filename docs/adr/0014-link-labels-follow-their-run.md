@@ -26,9 +26,10 @@ Three rules for link descriptions (stage 9 labels):
    title band reserves, below the title, the room that label needs beside the detour (title margin,
    label height, gap, stroke and the node clearance the run keeps). Every authored label on a drawn
    link counts — bars, and overlay links whose labels are not suppressed — except bundle members,
-   whose geometry 7e owns. Self-links, same-tier links through top/bottom ports, pairs whose ports do
-   not face each other across the gap, and links whose room lies beyond a reserved lane are diagnosed
-   rather than forced. Moves settle pills before the next link measures, any
+   whose geometry 7e owns. Self-links, same-tier links through top/bottom ports and pairs whose ports do
+   not face each other across the gap are diagnosed rather than forced. (Amended by architecture-2
+   ticket 23: room beyond a reserved lane is no longer diagnosed; it is inserted and the lane moves out
+   with it.) Moves settle pills before the next link measures, any
    movement replays the region producers, and publication and restore re-run the reservation on a
    copy and reject a model it would still change.
 3. **The best location is found automatically.** The stage 9 ladder keeps its order for the full
