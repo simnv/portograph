@@ -21,7 +21,8 @@ import { orderedNodeIds } from '../model/model.js';
  * stage 5 gave. Stage 5 orders a face before any overlay detour is derived: the side a detour goes round and the track it takes depend
  * on the geometry 7f settles and on the whole layer (the joint separation), so neither is known there. A trade made earlier would stand
  * under the judges of later moves, which read straight chords from the same anchors. `holds` (`roomHolds`) refuses a trade that would
- * need room 7f did not reserve: the reservations are done by then. The measure is the separation itself (`publishedOverlayPath`, the paths stage 8 draws and the scorer reads): one
+ * need room 7f did not reserve: the reservations are done by then. `quick` is a cheaper guard the trades run under first (no padding
+ * record forged, no track room short); `holds` then reads the result once, and refuses it back to a run with `holds` on every trade. The measure is the separation itself (`publishedOverlayPath`, the paths stage 8 draws and the scorer reads): one
  * derivation, no second predicate (R1). A trade is kept only when the layer is better by the user's order: no more shared tracks, then
  * no more bent links and turns (bends first), then fewer crossing points.
  *
@@ -34,7 +35,8 @@ import { orderedNodeIds } from '../model/model.js';
  * `engineOrder`), so no size and no spacing changes, as 7e bundles reorder their own ports. Faces in node order (`orderedNodeIds`),
  * sides in `SIDE_TIE_ORDER`, pairs in engine order; at most `NEST_PASSES` passes (R4).
  */
-export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel) => boolean = () => true): string[] {
+export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel) => boolean = () => true,
+  quick: (model: LayoutModel) => boolean = holds): string[] {
   const links = model.links.filter(link => (link.layer ?? link.family) === 'overlay' && link.technique !== 'stub' && link.removed !== true
     && link.meshBus === undefined && link.attachments !== undefined);
   if (links.length < 2) return [];
@@ -91,20 +93,34 @@ export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel)
     return overlayCrossingPairs([segments(pa), segments(pb)]) > 0
       || sharedTrackPairs([{ points: pa, strokeWidth: linkStrokeWidth(a) }, { points: pb, strokeWidth: linkStrokeWidth(b) }]).length > 0;
   };
-  const moved = new Set<string>();
-  let current = measure(), tried = false, trials = 0;
-  for (let pass = 0; pass < NEST_PASSES; pass++) {
-    let any = false;
-    for (const face of faces) for (let i = 0; i < face.ports.length; i++) for (let j = i + 1; j < face.ports.length; j++) {
-      const one = face.ports[i]!, two = face.ports[j]!;
-      if (!sameSize(one, two) || !meet(one, two) || trials >= NEST_TRIALS) continue;
-      tried = true; trials++;
-      trade(face.node, one, two);
-      const next = measure();
-      if (better(next, current) && holds(model)) { current = next; any = true; moved.add(portId(one.ref)).add(portId(two.ref)); }
-      else trade(face.node, one, two);
+  const slots = faces.flatMap(face => face.ports.map(port => ({ port, anchor: port.anchor!, order: port.engineOrder! })));
+  let tried = false;
+  const run = (guard: (model: LayoutModel) => boolean): Set<string> => {
+    const moved = new Set<string>();
+    let current = measure(), trials = 0;
+    for (let pass = 0; pass < NEST_PASSES; pass++) {
+      let any = false;
+      for (const face of faces) for (let i = 0; i < face.ports.length; i++) for (let j = i + 1; j < face.ports.length; j++) {
+        const one = face.ports[i]!, two = face.ports[j]!;
+        if (!sameSize(one, two) || !meet(one, two) || trials >= NEST_TRIALS) continue;
+        tried = true; trials++;
+        trade(face.node, one, two);
+        const next = measure();
+        if (better(next, current) && guard(model)) { current = next; any = true; moved.add(portId(one.ref)).add(portId(two.ref)); }
+        else trade(face.node, one, two);
+      }
+      if (!any) break;
     }
-    if (!any) break;
+    return moved;
+  };
+  // The trades run under the cheap guard, and the whole room replay (`holds`) reads the result once. When it refuses, every slot is
+  // restored and the trades run again with the replay on each one, as a guard of its own: the result is the same rule, at one replay
+  // where the cheap guard was right.
+  let moved = run(quick);
+  if (quick !== holds && moved.size > 0 && !holds(model)) {
+    for (const slot of slots) { slot.port.anchor = slot.anchor; slot.port.engineOrder = slot.order; }
+    rebuildNodeGeometry(model, [...new Set(faces.map(face => face.node))], 'current');
+    moved = run(holds);
   }
   // A trade rebuilt one node's pills and labels; the whole sheet is rebuilt in document order, as every other rebuild leaves it.
   if (tried) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');

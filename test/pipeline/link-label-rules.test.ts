@@ -919,3 +919,21 @@ it('labelWindowDeficit on a diagonal: the least growth after which a window hold
   // Rounded up to the grain, and no more: a growth one grain and a hair less does not hold.
   expect(holds(growth - 2 * LABEL_WINDOW_GRAIN)).toBe(false);
 });
+
+it('a mesh-bus riser beyond a labelled row link\'s split moves out with the room (ticket 23)', async () => {
+  const model = await run(fixture('a-riser-beyond-a-labelled-rows-split-moves-with-the-room'));
+  const bus = model.meshBuses!.find(item => item.riser !== undefined)!, riser = bus.riser!;
+  const lane = model.lanes.find(item => item.id === riser.lanes[0])!;
+  // The riser lane, the riser and its two ends stand at one x, beyond the label's run and left of `mid`.
+  expect(lane.x).toBe(riser.x);
+  expect(riser.from!.x).toBe(riser.x);
+  expect(riser.to!.x).toBe(riser.x);
+  const p2 = model.nodes.p2!.bounds!, mid = model.groups.mid!.bounds!;
+  expect(riser.x).toBeGreaterThan(p2.x + p2.width);
+  expect(riser.x).toBeLessThan(mid.x);
+  // The label is reserved and drawn on its run, not left to the ladder.
+  const label = model.labels.find(item => item.role === 'link')!.bounds!;
+  expect(label.x).toBeGreaterThan(model.nodes.p1!.bounds!.x + model.nodes.p1!.bounds!.width);
+  expect(label.x + label.width).toBeLessThan(p2.x);
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+}, 120000);

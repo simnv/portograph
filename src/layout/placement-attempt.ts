@@ -7,7 +7,7 @@ import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels, labelBorders, roomHolds } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels, labelBorders, roomHolds, roomLikelyHolds } from './bands.js';
 import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
@@ -329,7 +329,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   freezeFanKeepers(draft);
   // The overlay ports of a face nest (ticket 23) on the geometry that publishes, after every placement move was judged: a trade moves
   // no box and no other port, and one that would need room 7f did not reserve is not made (`roomHolds`).
-  nestOverlayPorts(draft, roomHolds);
+  nestOverlayPorts(draft, roomHolds, roomLikelyHolds);
   // A pair of labels on diagonal lines whose bands first meet on the geometry that publishes is decided here, once; a pair decided
   // earlier keeps its direction (`recordLabelYields`). Stage 9 and the validator read the record.
   recordLabelYields(draft, labelBorders(draft));

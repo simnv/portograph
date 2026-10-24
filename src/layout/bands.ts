@@ -1397,6 +1397,8 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
 export function roomHolds(model: LayoutModel): boolean {
   return labelPaddingFault(model) === undefined && !reserveLinkLabelRoom(clone(model));
 }
+/** The cheap part of `roomHolds`: no padding record forged and no track room short. A guard to try trades under before `roomHolds`. */
+export const roomLikelyHolds = (model: LayoutModel): boolean => labelPaddingFault(model) === undefined && !trackRoomShort(model);
 
 /** One labelled link whose run is shorter than the label it carries needs, and by how much. */
 export interface LinkLabelShortfall {
@@ -1418,6 +1420,15 @@ function insertRoomAt(model: LayoutModel, split: number, deficit: number, ownTie
     const centred = lane.bounds.x === lane.x - lane.bounds.width / 2;
     lane.x += deficit;
     lane.bounds.x = centred ? lane.x - lane.bounds.width / 2 : lane.bounds.x + deficit;
+  }
+  // A mesh-bus riser moves with its lanes, by the same sum, so each riser lane stays at the riser's x (`validateRiserLane` compares
+  // exactly); its ends move with it, and the bars that reach it are derived again from the riser (`busExtent`).
+  for (const bus of model.meshBuses ?? []) {
+    const riser = bus.riser;
+    if (riser === undefined || riser.x < split - PLACEMENT_EPS) continue;
+    riser.x += deficit;
+    if (riser.from) riser.from = { ...riser.from, x: riser.x };
+    if (riser.to) riser.to = { ...riser.to, x: riser.x };
   }
   for (const group of Object.values(model.groups)) {
     if (group.bounds!.x >= split - PLACEMENT_EPS) { moveGroup(model, group, deficit, 0); moved.push(...group.nodes); continue; }
@@ -1982,9 +1993,9 @@ export function replanGroupLabels(model: LayoutModel): void {
   const reserveAgain = (): void => { model.labelBands = reserved; produceGroupLabelBands(model); };
   if (syncBands(model)) { reserveAgain(); return; }
   // A move of groups can move a separated overlay track (ticket 23): the joint separation reads every path, so a run the room held before
-  // can need more after it, on any edge. A box that no longer holds a track's room is reserved again by the full producer, as the
-  // validator replays it.
-  if (trackRoomShort(model)) { reserveAgain(); return; }
+  // can need more after it, on any edge. A box that no longer holds a track's room gets the room again (`reserveLinkLabelRoom`, as the
+  // validator replays it); the title plan below reads the grown boxes. The full producer is not run for it: it plans the bands again.
+  if (trackRoomShort(model)) reserveLinkLabelRoom(model);
   const retained = model.labels.filter(label => label.role !== 'group');
   const spent = legSpentOf(model);
   let plan = planLabels({ ...model, labels: retained }, true, true, spent);

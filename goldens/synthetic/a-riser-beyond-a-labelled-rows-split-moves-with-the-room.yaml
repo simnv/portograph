@@ -1,0 +1,67 @@
+# Expected (architecture-2 ticket 23): label room wins over a lane, a mesh-bus riser too. The sync mesh over tiers 1 and 3 joins its
+# two buses with one riser that crosses tier 2 between `west` and `mid`. In `west`, `p1.r0` -> `p2.l0` is a labelled row link whose
+# run is too short for its label; 7f inserts the room at the split between p1 and p2, and everything beyond it moves out by the same
+# sum: p2, `mid`, the riser lane and the riser itself (x, and both ends). The riser lane stays at the riser's x, the bars still reach
+# it, and the label is drawn on its run. No LINK_LABEL_ROOM_UNRESERVED, no "Invalid riser lane".
+# Test-only input; test/pipeline/link-label-rules.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  g1: { tier: 1 }
+  g2: { tier: 1 }
+  g3: { tier: 1 }
+  west: { tier: 2, label: West }
+  mid: { tier: 2, label: Middle }
+  low: { tier: 3, label: Low }
+nodes:
+  core: { group: top, class: router, label: Core }
+  a1: { group: g1, class: router, label: A1 }
+  a2: { group: g2, class: router, label: A2 }
+  a3: { group: g3, class: router, label: A3 }
+  p1: { group: west, class: router, label: P1, ports: [{ name: r0, side: right }] }
+  p2: { group: west, class: router, label: P2, ports: [{ name: l0, side: left }] }
+  m1: { group: mid, class: router, label: M1 }
+  m2: { group: mid, class: router, label: M2 }
+  b1: { group: low, class: router, label: B1 }
+  b2: { group: low, class: router, label: B2 }
+  b3: { group: low, class: router, label: B3 }
+  b4: { group: low, class: router, label: B4 }
+  b5: { group: low, class: router, label: B5 }
+links:
+  - [core, a1]
+  - [core, a2]
+  - [core, a3]
+  - [a1, p1]
+  - [p1.r0, p2.l0, { label: a considerably longer description of this peering }]
+  - [a1, m1]
+  - [a3, m2]
+  - [m1, b1]
+  - [m2, b5]
+  - { from: a1, to: a2, class: sync }
+  - { from: a1, to: a3, class: sync }
+  - { from: a2, to: a3, class: sync }
+  - { from: b1, to: b2, class: sync }
+  - { from: b1, to: b3, class: sync }
+  - { from: b1, to: b4, class: sync }
+  - { from: b1, to: b5, class: sync }
+  - { from: b2, to: b3, class: sync }
+  - { from: b2, to: b4, class: sync }
+  - { from: b2, to: b5, class: sync }
+  - { from: b3, to: b4, class: sync }
+  - { from: b3, to: b5, class: sync }
+  - { from: b4, to: b5, class: sync }
+  - { from: a1, to: b1, class: sync }
+  - { from: a1, to: b2, class: sync }
+  - { from: a1, to: b3, class: sync }
+  - { from: a1, to: b4, class: sync }
+  - { from: a1, to: b5, class: sync }
+  - { from: a2, to: b1, class: sync }
+  - { from: a2, to: b2, class: sync }
+  - { from: a2, to: b3, class: sync }
+  - { from: a2, to: b4, class: sync }
+  - { from: a2, to: b5, class: sync }
+  - { from: a3, to: b1, class: sync }
+  - { from: a3, to: b2, class: sync }
+  - { from: a3, to: b3, class: sync }
+  - { from: a3, to: b4, class: sync }
+  - { from: a3, to: b5, class: sync }

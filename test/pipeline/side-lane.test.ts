@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { restoreLayoutModel, validateLanes, rebuildLaneExtents } from '../../src/internal.js';
 import type { Lane, LayoutModel } from '../../src/index.js';
-import { reseatLanes, sideLaneExtent } from '../../src/layout/lanes.js';
+import { reseatLanes, sideLaneExtent, sideLaneFindings } from '../../src/layout/lanes.js';
+import { reserveAcrossRunRoom } from '../../src/layout/bands.js';
+import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { LABEL_BORDER_REACH, LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
 import { measureText } from '../../src/text/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -126,4 +128,38 @@ describe('placement reserves a side lane into a lateral port (ticket 118)', () =
       expect(refusals(model)).toEqual([]);
       expect(model.links.flatMap(item => item.fixedSegments ?? []).every(segment => !segment.lane?.startsWith('side-lane:'))).toBe(true);
     }, 120000);
+});
+
+describe('a side lane beyond a right padding that grows moves out with the room (architecture-2 ticket 23)', () => {
+  it('moves the lane and every node beyond the edge by the room; the lateral node stays and the side shape holds', async () => {
+    // `outlet` stands alone in the plain group `wing`; its right port has a side lane beyond the box (the riser of the joined mesh
+    // stands left of `wing`). A labelled run 9.5 px inside the right border (beyond the border reach, nearer than the label) must grow
+    // the right padding: the lane and
+    // every node beyond the edge move out by the room; `outlet`, whose lateral face the lane serves, does not move.
+    const model = copy(await run(source('a-riser-keeps-out-of-a-side-lane')));
+    const [lane] = sideLanes(model);
+    const link = model.links.find(item => item.id === (lane!.owner as { id: string }).id)!;
+    model.document.links[link.sourceIndex]!.label = 'B'; // short: the window above the body holds it
+    const lateral = lane!.port!.node, group = model.groups[lane!.group]!, box = group.bounds!;
+    const riser = model.meshBuses!.find(bus => bus.riser !== undefined)!.riser!;
+    const before = { lane: lane!.x, lateral: model.nodes[lateral]!.bounds!.x };
+    expect(lane!.side).toBe('right');
+    expect(lane!.x).toBeGreaterThan(box.x + box.width);
+    const near = { from: { x: box.x + box.width - 9.5, y: box.y + 1 }, to: { x: box.x + box.width - 9.5, y: box.y + box.height - 1 },
+      owner: { kind: 'link' as const, id: link.id } };
+    const settle = (nodes: string[]): void => { if (nodes.length) rebuildNodeGeometry(model, nodes, 'current'); };
+    expect(reserveAcrossRunRoom(model, settle, [], (_, item) => item.id === link.id ? near : undefined)).toBe(true);
+    const grown = model.lanes.find(item => item.id === lane!.id)!, moved = grown.x - before.lane;
+    expect(moved).toBeGreaterThan(0);
+    expect(model.nodes[lateral]!.bounds!.x).toBe(before.lateral);
+    // The lane keeps beyond the grown box; the riser (left of `wing` here) keeps its lanes on its x.
+    expect(grown.x).toBeGreaterThan(model.groups[lane!.group]!.bounds!.x + model.groups[lane!.group]!.bounds!.width);
+    for (const id of riser.lanes) expect(model.lanes.find(item => item.id === id)!.x).toBe(riser.x);
+    expect(sideLaneFindings(model).filter(item => item.code === 'SIDE_SHAPE_LOST')).toEqual([]);
+    // The 7f mutation derives the lane extents and the fixed lane segments again after the producer; so does the test. The routed
+    // paths are stage 8's, which runs after 7f, so the copy drops them.
+    rebuildLaneExtents(model);
+    for (const item of model.links) if (item.layer === 'routed') delete item.path;
+    expect(() => validateLanes(model)).not.toThrow();
+  }, 60000);
 });
