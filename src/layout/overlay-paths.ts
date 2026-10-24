@@ -634,6 +634,8 @@ function overlayTracks(model: LayoutModel, shapes: ShapeQuery): ReadonlyMap<stri
  */
 const sharedTracks: { key: TrackKey; tracks: ReadonlyMap<string, Separated> }[] = [];
 const SHARED_TRACK_CACHE_SIZE = 16;
+// The print of a document is taken once, on the first read: it assumes the document does not change after that. A caller that edits a
+// document in place after a track read keeps a stale print, and may get the separation of the document as it was. Edit a copy.
 const documentPrints = new WeakMap<object, string>();
 /**
  * `trackKey` plus what a copy shares only by value: the document (labels, layout options, link order), each link's place in it, and
@@ -673,6 +675,8 @@ function trackKey(model: LayoutModel, links: readonly LayoutLink[]): TrackKey {
   for (const frame of model.frames ?? []) box(frame.box);
   for (const lane of model.lanes) key.push(lane.id, lane.kind, lane.x);
   for (const band of model.labelBands) key.push(band.host ?? band.group, band.side);
+  // The tier bands: the overlay courses read them (`course-lanes.ts`).
+  for (const band of model.tierBands) { key.push(band.tier); box(band.bounds); }
   // Few and nested: the overlay courses and the buses are read whole.
   key.push(JSON.stringify(model.courses?.filter(course => course.kind === 'overlay')), JSON.stringify(model.meshBuses?.map(bus => [bus.id, bus.bar, bus.stubs, bus.riser, bus.trunk])));
   return key;
@@ -747,8 +751,9 @@ export function overlayTrackRuns(model: LayoutModel, link: LayoutLink, blockers?
   // Only a movable detour has an entry (`separateTracks` keeps the movers), so the map answers whether the link moves.
   const separated = overlayTracks(model, blockers ?? sharedBlockers(model)).get(link.id);
   if (separated === undefined) return [];
+  // Copies: the separation is kept and shared across models (`sharedTracks`), so a caller may not hold its points.
   const { way, points } = separated;
-  return way.slice(1).map((point, index) => ({ base: [way[index]!, point], drawn: [points[index]!, points[index + 1]!] }));
+  return way.slice(1).map((point, index) => ({ base: [{ ...way[index]! }, { ...point }], drawn: [{ ...points[index]! }, { ...points[index + 1]! }] }));
 }
 
 /** Where an axis-aligned segment stands to a box: wholly inside it (closed), clear of it, or across its border. */

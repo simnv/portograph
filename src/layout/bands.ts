@@ -1995,10 +1995,11 @@ export function replanGroupLabels(model: LayoutModel): void {
   // A move of groups can move a separated overlay track (ticket 23): the joint separation reads every path, so a run the room held before
   // can need more after it, on any edge. A box that no longer holds a track's room gets it again (`reserveLinkLabelRoom`, as the
   // validator replays it); the nodes the room moves change the region paths (rows, flanks, bars), so the regions are replayed, and a
-  // band the moves leave out of step sends the replay to the full producer. The title plan below reads the result.
+  // band the moves leave out of step, or a track room still short after the replay, sends the replay to the full producer, which loops
+  // until nothing changes. The title plan below reads the result.
   if (trackRoomShort(model) && reserveLinkLabelRoom(model)) {
     rebuildRegionGeometry(model, undefined, undefined, true);
-    if (syncBands(model)) { reserveAgain(); return; }
+    if (syncBands(model) || trackRoomShort(model)) { reserveAgain(); return; }
   }
   const retained = model.labels.filter(label => label.role !== 'group');
   const spent = legSpentOf(model);
