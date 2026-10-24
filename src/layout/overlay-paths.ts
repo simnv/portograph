@@ -4,7 +4,7 @@ import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathS
 import { bottom, EPS, retracingRuns, right, samePoint, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, overlayPortClearance, overlayTrackPitch, pathStrokeWidth } from '../theme/geometry.js';
 import { overlayCrossingPairs } from './read/crossings.js';
-import { bodiesOf, paddingOf, reachBeyond, TrackIndex } from './overlay-tracks.js';
+import { bodiesOf, paddingOf, reachBeyond, sharedTrackPairs, TrackIndex } from './overlay-tracks.js';
 import type { TrackPath } from './overlay-tracks.js';
 import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';
@@ -727,60 +727,94 @@ function separateTracks(model: LayoutModel, links: readonly LayoutLink[], shapes
  * shares; two U's that leave one face need it the other way on one of the runs: the detour on the outer track over the row takes the
  * inner riser beside the face, so neither crosses the other. Nothing else changes: the bends stay (each neighbour keeps its direction),
  * and each moved run keeps the rules `shiftOff` keeps (`runRules`). The measure is the separation's own, in its order: shared tracks,
- * then crossing pairs, over the whole layer. One pass over the pairs in the movers' order, the runs in path order (R3: the movers are
- * ordered by geometry; finite, no cap).
+ * then crossing pairs, over the whole layer. A trade is tried only where the two then no longer cross each other, so one trade at most
+ * per pair. One pass over the pairs in the movers' order, the runs in path order (R3: the movers are ordered by geometry; finite, no
+ * cap).
  */
 function nestTracks(model: LayoutModel, placed: (Separated & { stroke: number })[], fixed: readonly TrackPath[], shapes: ShapeQuery,
   borders: readonly Border[]): void {
-  const measure = (paths: readonly TrackPath[], one: number, two: number): number[] => {
-    const others = new TrackIndex();
-    for (const path of fixed) others.add(path);
-    for (const [at, path] of paths.entries()) if (at !== one && at !== two) others.add(path);
-    const pair = new TrackIndex();
-    pair.add(paths[one]!);
-    const shares = others.sharesOf(paths[one]!).length + others.sharesOf(paths[two]!).length + pair.sharesOf(paths[two]!).length;
-    const crossings = [one, two].reduce((sum, at) => sum + others.paths.reduce((count, other) =>
-      count + overlayCrossingPairs([segmentsOf(paths[at]!.points), segmentsOf(other.points)]), 0), 0)
-      + overlayCrossingPairs([segmentsOf(paths[one]!.points), segmentsOf(paths[two]!.points)]);
-    return [shares, crossings];
+  // The layer as it stands: the held paths, then the movers (`placed.length` on). Two paths whose boxes stand more than a pitch apart
+  // share no track and cross nowhere, so a pair is measured against the paths near it only.
+  const layer: { path: TrackPath; box: Rect }[] = [...placed.map(item => ({ points: item.points, strokeWidth: item.stroke })), ...fixed]
+    .map(path => ({ path, box: boxOf(path.points) }));
+  const widest = Math.max(0, ...layer.map(item => item.path.strokeWidth)), reach = overlayTrackPitch(widest, widest);
+  const near = (one: Rect, two: Rect): boolean => !(one.x > right(two) + reach || two.x > right(one) + reach || one.y > bottom(two) + reach || two.y > bottom(one) + reach);
+  // Shared run pairs and crossing pairs of two paths. The sweeps run only where a run of each is near the other's on one axis (shares)
+  // and where the boxes meet (crossings); both answers are the same as without the filter.
+  const nearRuns = (one: readonly Point[], two: readonly Point[]): boolean => {
+    for (let a = 0; a + 1 < one.length; a++) for (let b = 0; b + 1 < two.length; b++) {
+      const p = one[a]!, q = one[a + 1]!, r = two[b]!, t = two[b + 1]!;
+      const vertical = Math.abs(p.x - q.x) <= EPS, other = Math.abs(r.x - t.x) <= EPS;
+      if (vertical !== other) continue;
+      const [at, low, high, at2, low2, high2] = vertical
+        ? [p.x, Math.min(p.y, q.y), Math.max(p.y, q.y), r.x, Math.min(r.y, t.y), Math.max(r.y, t.y)]
+        : [p.y, Math.min(p.x, q.x), Math.max(p.x, q.x), r.y, Math.min(r.x, t.x), Math.max(r.x, t.x)];
+      if (Math.abs(at - at2) < reach && low <= high2 + reach && low2 <= high + reach) return true;
+    }
+    return false;
   };
-  /** `points` with run `index` moved onto the line of `to` (its x for a vertical run, its y for a horizontal one), or `undefined` when the move breaks a rule. */
-  const moveRun = (item: Separated & { stroke: number }, index: number, to: Point): Point[] | undefined => {
-    const points = item.points, one = points[index]!, two = points[index + 1]!;
-    const horizontal = Math.abs(one.y - two.y) <= EPS;
+  const meets = (one: Rect, two: Rect): boolean => !(one.x > right(two) + EPS || two.x > right(one) + EPS || one.y > bottom(two) + EPS || two.y > bottom(one) + EPS);
+  const against = (one: TrackPath, oneBox: Rect, two: TrackPath, twoBox: Rect): number[] => [
+    nearRuns(one.points, two.points) ? sharedTrackPairs([one, two]).length : 0,
+    meets(oneBox, twoBox) ? overlayCrossingPairs([segmentsOf(one.points), segmentsOf(two.points)]) : 0];
+  /** Shared run pairs, then crossing pairs, of movers `i` and `j` drawn as `one` and `two`, with the rest of the layer and with each other. */
+  const measure = (i: number, j: number, one: TrackPath, two: TrackPath): number[] => {
+    const boxes = [boxOf(one.points), boxOf(two.points)];
+    const sum = against(one, boxes[0]!, two, boxes[1]!);
+    for (const [at, item] of layer.entries()) {
+      if (at === i || at === j) continue;
+      for (const [k, path] of [one, two].entries()) {
+        if (!near(boxes[k]!, item.box)) continue;
+        const [shares, crossings] = against(path, boxes[k]!, item.path, item.box);
+        sum[0]! += shares!; sum[1]! += crossings!;
+      }
+    }
+    return sum;
+  };
+  /** `points` with run `index` moved onto the line of `to` (its x for a vertical run, its y for a horizontal one). */
+  const shifted = (points: readonly Point[], index: number, to: Point): Point[] => {
+    const horizontal = Math.abs(points[index]!.y - points[index + 1]!.y) <= EPS;
     const shift = (point: Point): Point => horizontal ? { x: point.x, y: to.y } : { x: to.x, y: point.y };
-    const candidate = [...points.slice(0, index), shift(one), shift(two), ...points.slice(index + 2)];
-    if (!keepsDirection(points[index - 1]!, one, candidate[index - 1]!, candidate[index]!)
-      || !keepsDirection(two, points[index + 2]!, candidate[index + 1]!, candidate[index + 2]!)) return undefined;
-    if (retracingRuns(segmentsOf(candidate))) return undefined;
+    return [...points.slice(0, index), shift(points[index]!), shift(points[index + 1]!), ...points.slice(index + 2)];
+  };
+  /** Whether `candidate`, `item` with run `index` moved, keeps the rules `shiftOff` keeps: no bend appears or goes, and `runRules`. */
+  const holds = (item: Separated & { stroke: number }, index: number, candidate: Point[]): boolean => {
+    const points = item.points;
+    if (!keepsDirection(points[index - 1]!, points[index]!, candidate[index - 1]!, candidate[index]!)
+      || !keepsDirection(points[index + 1]!, points[index + 2]!, candidate[index + 1]!, candidate[index + 2]!)) return false;
+    if (retracingRuns(segmentsOf(candidate))) return false;
     const { keeps, growsFor } = runRules(model, item.way, item.stroke, shapes, borders);
-    const grows = horizontal ? growsFor(index, candidate[index]!) : undefined;
-    return [index - 1, index, index + 1].some(at => keeps(candidate, at, grows) === undefined) ? undefined : candidate;
+    const grows = Math.abs(candidate[index]!.y - candidate[index + 1]!.y) <= EPS ? growsFor(index, candidate[index]!) : undefined;
+    return [index - 1, index, index + 1].every(at => keeps(candidate, at, grows) !== undefined);
   };
   const runAxis = (points: readonly Point[], index: number): 'x' | 'y' | undefined => {
     const one = points[index]!, two = points[index + 1]!;
     const vertical = Math.abs(one.x - two.x) <= EPS, horizontal = Math.abs(one.y - two.y) <= EPS;
     return vertical === horizontal ? undefined : vertical ? 'x' : 'y';
   };
-  const paths = (): TrackPath[] => placed.map(item => ({ points: item.points, strokeWidth: item.stroke }));
   for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
-    if (overlayCrossingPairs([segmentsOf(placed[i]!.points), segmentsOf(placed[j]!.points)]) === 0) continue;
+    if (!near(layer[i]!.box, layer[j]!.box) || overlayCrossingPairs([segmentsOf(placed[i]!.points), segmentsOf(placed[j]!.points)]) === 0) continue;
+    let now: number[] | undefined;
     // Middle runs only: an end run leaves a port face (`shiftOff`).
-    for (let a = 1; a + 2 < placed[i]!.points.length; a++) for (let b = 1; b + 2 < placed[j]!.points.length; b++) {
+    trades: for (let a = 1; a + 2 < placed[i]!.points.length; a++) for (let b = 1; b + 2 < placed[j]!.points.length; b++) {
       const one = placed[i]!, two = placed[j]!;
       const axis = runAxis(one.points, a);
       if (axis === undefined || axis !== runAxis(two.points, b) || axis !== runAxis(one.way, a) || axis !== runAxis(two.way, b)) continue;
       // On one line in the ways round, apart now: the separation set them apart.
       if (Math.abs(one.way[a]![axis] - two.way[b]![axis]) > EPS || Math.abs(one.points[a]![axis] - two.points[b]![axis]) <= EPS) continue;
-      const first = moveRun(one, a, two.points[b]!), second = moveRun(two, b, one.points[a]!);
-      if (first === undefined || second === undefined) continue;
-      const now = measure(paths(), i, j);
-      const trial = paths();
-      trial[i] = { points: first, strokeWidth: one.stroke };
-      trial[j] = { points: second, strokeWidth: two.stroke };
-      if (!better(measure(trial, i, j), now)) continue;
+      const first = shifted(one.points, a, two.points[b]!), second = shifted(two.points, b, one.points[a]!);
+      // The trade is for the pair: the two must no longer cross. Then each moved run keeps its rules, and the whole layer shares and
+      // crosses less.
+      const fit = overlayCrossingPairs([segmentsOf(first), segmentsOf(second)]) === 0 && holds(one, a, first) && holds(two, b, second);
+      if (!fit) continue;
+      const moved = [{ points: first, strokeWidth: one.stroke }, { points: second, strokeWidth: two.stroke }] as const;
+      if (!better(measure(i, j, ...moved), now ??= measure(i, j, layer[i]!.path, layer[j]!.path))) continue;
       placed[i] = { ...one, points: first };
       placed[j] = { ...two, points: second };
+      layer[i] = { path: moved[0], box: boxOf(first) };
+      layer[j] = { path: moved[1], box: boxOf(second) };
+      // The two no longer cross: the pair is done.
+      break trades;
     }
   }
 }
@@ -885,6 +919,13 @@ function runRules(model: LayoutModel, base: readonly Point[], stroke: number, sh
   return { keeps, growsFor };
 }
 
+/** The bounding box of a polyline. */
+const boxOf = (points: readonly Point[]): Rect => {
+  const xs = points.map(point => point.x), ys = points.map(point => point.y);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+};
+
 /** The neighbour from `a` to `b`, moved to run from `c` to `d`, keeps its direction and a length: no bend appears or goes. */
 const keepsDirection = (a: Point, b: Point, c: Point, d: Point): boolean =>
   Math.sign(b.x - a.x) === Math.sign(d.x - c.x) && Math.sign(b.y - a.y) === Math.sign(d.y - c.y) && Math.hypot(d.x - c.x, d.y - c.y) > EPS;
@@ -915,12 +956,7 @@ function shiftOff(model: LayoutModel, base: Point[], stroke: number, held: Track
     const runs = held.sharesOf({ points, strokeWidth: stroke });
     return { count: runs.length, runs: new Set(runs) };
   };
-  // A held path whose box does not meet the candidate's box crosses it nowhere.
-  const boxOf = (points: readonly Point[]): Rect => {
-    const xs = points.map(point => point.x), ys = points.map(point => point.y);
-    const x = Math.min(...xs), y = Math.min(...ys);
-    return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
-  };
+  // A held path whose box does not meet the candidate's box crosses it nowhere (`boxOf`).
   const heldSegments = held.paths.map(path => ({ box: boxOf(path.points), segments: segmentsOf(path.points) }));
   const crossings = (points: readonly Point[]): number => {
     const mine = segmentsOf(points), box = boxOf(points);
