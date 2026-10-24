@@ -120,6 +120,11 @@ export interface NormalisedDocument {
      * `author` for it. Default true: a free row takes the order that the corridors through it cross least.
      */
     corridorRowOrder?: boolean;
+    /**
+     * When false, no member of a free row is pulled toward its link's far end (architecture-2 ticket 22, `pullTowardFarEnds`), and the
+     * corridor row order still runs. Default true. `corridorRowOrder: false` keeps every row as the skeleton gave it, with no pull either.
+     */
+    farEndPull?: boolean;
   };
   /** Paint-only settings, present only when the author wrote `render:` at the root. They never reach layout or score. */
   render?: {

@@ -2,9 +2,10 @@
 # far apart: one far to the left and one far to the right of a small provider node on tier 2 (a group of one node). Each router links to the provider (`dashed`).
 # On main the link from the far router keeps the orthogonal route: its shallow chord from the router's bottom face meets the provider group through the group's
 # side edge, not its top edge, so the link is refused (`ROUTED_CHORD_REFUSED`, reason `edge`). The side round gives the provider's port the lateral side that faces the
-# far router (`right`): the link is one segment that leaves the router's bottom face through the frame's bottom edge, at least the margin from each corner, and enters
-# the provider group through its side edge, the edge its port faces. Every gate passes. (The provider is the lower end: the ranking takes the lower end when both
-# ends give a clear chord.)
+# far router (`right`). Since ticket 22 the link is no chord: the router's bottom face and the provider's right face stand at 90 degrees, and the chord is long and
+# leaves the bottom face 81.3 degrees from its normal (at least `PERPENDICULAR_FLAT_ANGLE`, 80), so the link is an orthogonal L with one bend into the right face. The
+# east router's link joins bottom to top and stays a chord. Every gate passes. (The provider is the lower end: the ranking takes the lower end when both ends give a
+# clear chord.)
 # Test-only input owned by ticket 117; test/pipeline/routed-chord-lateral.test.ts reads the layout.
 portograph: 2
 profile: network

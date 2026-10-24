@@ -449,9 +449,10 @@ and is wanted); every long perpendicular chord at 75.8 degrees or less stood on 
 (two to six), and on `a-foreign-unit-with-routed-links-to-two-canton-groups` a G9. A crossing test (the L only
 when the chord crosses more than one link) changes nothing on the corpus and keeps the provider a chord.
 
-The freeze records the links the rule refuses (`model.perpendicularRefusals`, absent = none, R1); after it the
-record answers, not the geometry, and `validateGroupLabelBands` checks it (`perpendicularRefusalsFault`: links
-of the model, not frozen, on perpendicular faces, recorded with the freeze). One predicate
+Before the freeze the rule is derived from the geometry; from the freeze on, the held chords are the decision
+(`model.frozenChords`, R1), and the rule refuses nothing. A record of the refused links (`perpendicularRefusals`) was
+tried and deleted at review: a scan of every golden found it empty, because a link the rule refuses takes a side-lane
+hint before the freeze and is no chord candidate there. One predicate
 (`flatPerpendicularChord`, `frame-paths.ts`) is the first check of
 `chordVerdict`, so every chord decision reads it: the fixed point, the freeze, the fan, span and side
 measures. A side hint that would give a cross-frame chord a long, flat one to a lateral end no longer makes a chord. Between

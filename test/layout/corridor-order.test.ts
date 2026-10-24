@@ -232,6 +232,20 @@ describe('a row pulls a member toward its link\'s far end (architecture-2 ticket
     expect(decision.after.at(-1)).toBe('lb');
   }, 60000);
 
+  it('pulls nothing under its own key, farEndPull: false, and the corridor row order still decides the row', async () => {
+    const model = await skeletonOf(pulled.replace('portograph: 2\n', 'portograph: 2\nlayout: { farEndPull: false }\n'));
+    const decision = model.groups.front!.rowOrderDecision!;
+    expect(decision.rule).toBe('kept');
+    expect(decision.pulledFrom).toBeUndefined();
+    expect(decision.after.at(-1)).toBe('lb');
+    expect(validateRowOrderDecisions(model)).toEqual([]);
+    // A pull recorded under the setting is refused.
+    const forged = copy(model);
+    forged.groups.front!.rowOrderDecision = { ...decision, pulledFrom: [...decision.after], after: ['fe1', 'fe2', 'lb', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6'] };
+    forged.groups.front!.rowOrder = forged.groups.front!.rowOrderDecision.after;
+    expect(validateRowOrderDecisions(forged)).toContain('The row order decision of front records a far-end pull, and the document setting farEndPull is false');
+  }, 60000);
+
   it('refuses a pull record that moves a linked member past another, or names no move (R5)', async () => {
     const model = await skeletonOf(pulled);
     const swapped = copy(model);

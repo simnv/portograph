@@ -6,9 +6,7 @@
 # Wanted: the same four straight links. A rule that stops a declined feed from pulling the move bends the three links
 # to rA instead (measured: 3 bent links, not 1); it has to price the push of the sibling.
 # Test-only input owned by architecture-2 ticket 14; test/pipeline/declined-feed-growth.test.ts runs the whole pipeline on it.
-# The declared row order is pinned (ticket 22 far-end pull): rB stands at the left end of the row above and rA at its right end.
 portograph: 2
-layout: { corridorRowOrder: false }
 profile: network
 groups:
   top: {tier: 0, label: Top}

@@ -1,5 +1,7 @@
 # Expected: six planned parts across the tier gap and one link from the top port of r0 to s3. The port faces away from the gap
 # (residual, reason faces-away, TIER_GAP_PART_RESIDUAL; the label was u-turn before ticket 51). The diagram publishes and removes nothing.
+# Since ticket 22 the six links across the gap form four direct families (their orthogonal drawing crosses more than once): five are chords, and r1 to s3 stays
+# orthogonal, refused for a leg.
 # Test-only input owned by ranked-groups ticket 51; test/pipeline/residual-parts.test.ts reads the placed and the routed model.
 portograph: 2
 groups:

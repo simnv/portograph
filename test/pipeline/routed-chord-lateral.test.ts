@@ -172,6 +172,7 @@ describe('a chord is offered only when the fixed point of placement would hold i
     // the fixed point of placement (not the offer logic, not `chordVerdict`).
     const refused = events.filter(event => event['ev'] === 'attempt' && event['offered'] === false).map(event => event['why'] as string);
     const held = refused.filter(why => why.startsWith('the fixed point'));
+    expect(held.length).toBeGreaterThan(0);
     expect(held.every(why => why.endsWith(': chord'))).toBe(true);
   }, 60000);
 });

@@ -4,9 +4,9 @@
 # one turn and one side run (one bend). Its label stands on the side run, the longest run (stage 9 tries it first), so 7f reserves no window on the
 # vertical run (ticket 19). No `SIDE_SHAPE_LOST`.
 # Test-only input owned by ticket 119; test/pipeline/side-round-lane.test.ts reads it.
-# The declared row order is pinned (ticket 22 far-end pull): lb stands at the far end of its row, so its link needs the side lane.
+# The far-end pull is off (ticket 22, `layout.farEndPull: false`): lb stands at the far end of its row, so its link needs the side lane.
 portograph: 2
-layout: { corridorRowOrder: false }
+layout: { farEndPull: false }
 groups:
   front: { tier: 0, label: Front }
   bank: { tier: 1, label: Bank }

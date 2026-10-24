@@ -251,7 +251,8 @@ export function describedLink(model: LayoutModel, link: LayoutLink, suppressed =
 interface LabelledLine { link: LayoutLink; line: PathSegment; extent: number; across: number; band: LinkRun }
 
 /**
- * Every described overlay link (`describedLink`) whose longest run (`longestRun`) is a diagonal line (`isDiagonalRun`). Its label
+ * Every described overlay link (`describedLink`) whose longest run (`longestRun`) is a diagonal line (`isDiagonalRun`), and every described
+ * held routed chord (`model.frozenChords`, ticket 22) whose line is diagonal, read from its anchors (`straightChord`, geometry only). Its label
  * lies on that line, so wholly in the line's **band**: the line, with half the height of the label's turned box plus the halo as
  * clearance. The line is always the one placement derives (`overlayPath`), in 7f and in stage 9 alike (one source, R1): the record is
  * a placement decision, and under `layout.overlayOverBodies` the published path can differ from it.
@@ -260,9 +261,14 @@ function labelledLines(model: LayoutModel): LabelledLine[] {
   const suppressed = overlayLabelsSuppressed(model);
   const lines: LabelledLine[] = [];
   let blockers: ShapeQuery | undefined;
+  const held = new Set(model.frozenChords ?? []);
   for (const link of model.links) {
-    if (!describedLink(model, link, suppressed) || effectiveLayer(link) !== 'overlay') continue;
-    const line = longestRun(overlayPath(model, link, blockers ??= sharedBlockers(model)).segments);
+    if (!describedLink(model, link, suppressed)) continue;
+    // A held routed chord (ticket 22) carries its label on its one line, as a diagonal overlay line does: its line takes part in the yields.
+    const chord = held.has(link.id) && effectiveLayer(link) === 'routed' ? straightChord(model, link, undefined, true) : undefined;
+    if (effectiveLayer(link) !== 'overlay' && chord === undefined) continue;
+    const line = chord !== undefined ? { from: chord.from, to: chord.to, owner: { ...link.owner } }
+      : longestRun(overlayPath(model, link, blockers ??= sharedBlockers(model)).segments);
     if (line === undefined || !isDiagonalRun(line)) continue;
     const measured = measure(model.document.links[link.sourceIndex]!.label!), across = haloSize(measured).height;
     lines.push({ link, line, extent: measured.width, across,

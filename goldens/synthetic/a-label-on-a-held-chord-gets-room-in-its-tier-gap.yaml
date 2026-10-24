@@ -1,0 +1,26 @@
+# Expected: the label of a held routed chord lies on the chord, turned, and 7f reserves its room (architecture-2 ticket 22). The facing rows of
+# facing-rows-link-direct-as-families, with a long label on the link from r3 to s1. A labelled link is no family member, but the ordinary chord
+# rule holds its chord, which is diagonal. The label must lie between the group borders and clear of the chords that cross its line, so 7f grows
+# the tier gap until one window of the chord holds it (here by about 400 px: the crossings cut the line into short windows). The label crosses no
+# group border (`labelBorderCrossings` 0, no LINK_LABEL_ON_BORDER).
+# Test-only input owned by architecture-2 ticket 22; test/pipeline/direct-families.test.ts reads the layout.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+nodes:
+  r0: { group: src, class: router }
+  r1: { group: src, class: router }
+  r2: { group: src, class: router }
+  r3: { group: src, class: router }
+  s0: { group: access, class: switch }
+  s1: { group: access, class: switch }
+  s2: { group: access, class: switch }
+  s3: { group: access, class: switch }
+links:
+  - [r0, s1]
+  - [r1, s0]
+  - [r1, s3]
+  - [r2, s2]
+  - [r2, s0]
+  - [r3, s1, { label: Health checks reach the switch through this link }]

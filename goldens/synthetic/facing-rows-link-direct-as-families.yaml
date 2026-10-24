@@ -1,0 +1,25 @@
+# Expected: facing units link direct (architecture-2 ticket 22, routed-chords.md Section 15.2). Four routers on tier 0 link to four switches on tier 1,
+# in an order whose orthogonal drawing crosses more than once. The links split into one direct family per source node; each triggered family draws
+# its members as chords, decided together, each fan in peer order with no crossing inside it. A member that cannot stand so stays orthogonal, with
+# its reason in `directFamilies`. Every gate passes.
+# Test-only input owned by architecture-2 ticket 22; test/pipeline/direct-families.test.ts reads the record.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+nodes:
+  r0: { group: src, class: router }
+  r1: { group: src, class: router }
+  r2: { group: src, class: router }
+  r3: { group: src, class: router }
+  s0: { group: access, class: switch }
+  s1: { group: access, class: switch }
+  s2: { group: access, class: switch }
+  s3: { group: access, class: switch }
+links:
+  - [r0, s1]
+  - [r1, s0]
+  - [r1, s3]
+  - [r2, s2]
+  - [r2, s0]
+  - [r3, s1]

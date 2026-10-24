@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
-import { layout, parse } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
 import { validateGroupLabelBands } from '../../src/layout/bands.js';
 import { directFamiliesFault, planDirectFamilies, triggers } from '../../src/layout/direct-families.js';
-import { chordVerdict, flatPerpendicularChord, PERPENDICULAR_FLAT_ANGLE, perpendicularRefusalsFault, SIDE_EDGE_SLACK } from '../../src/layout/frame-paths.js';
+import { chordVerdict, fixedPointRefusal, flatPerpendicularChord, isRoutedChord, PERPENDICULAR_FLAT_ANGLE, SIDE_EDGE_SLACK } from '../../src/layout/frame-paths.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -69,6 +70,30 @@ describe('facing units link direct', () => {
     expect(verdicts(flipped)).toEqual(verdicts(plain));
   }, 120000);
 
+  it('refuses a held chord the decision did not judge when it stands within clearance of a refused member\'s new leg (review B1)', async () => {
+    const model = await run(fixture(DIRECT));
+    const draft = structuredClone(model);
+    delete draft.frozenChords; delete draft.directFamilies;
+    // A labelled link is no family member, so the decision does not judge its chord: r2 to s0 crosses the leg r1 to s3 keeps at r1.
+    const labelled = draft.links.find(link => link.attachments!.from.node === 'r2' && link.attachments!.to.node === 's0')!;
+    draft.document.links[labelled.sourceIndex]!.label = 'a labelled chord';
+    expect(isRoutedChord(draft, labelled)).toBe(true);
+    planDirectFamilies(draft);
+    const refusedLeg = draft.links.find(link => link.attachments!.from.node === 'r1' && link.attachments!.to.node === 's3')!;
+    expect(isRoutedChord(draft, refusedLeg)).toBe(false);
+    // The labelled chord fails the fixed point beside the new leg, so it is refused and stays orthogonal.
+    expect(isRoutedChord(draft, labelled)).toBe(false);
+    // No held chord stands within clearance of the leg of an orthogonal member: every one passes the fixed point.
+    const crossable = (id: string): Set<string> | undefined => {
+      const owner = draft.directFamilies?.find(family => family.members.some(member => member.link === id));
+      return owner === undefined ? undefined : new Set(draft.directFamilies!.filter(family => family !== owner && family.gap.above === owner.gap.above)
+        .flatMap(family => family.members.map(member => member.link)));
+    };
+    for (const chord of draft.links.filter(link => isRoutedChord(draft, link))) {
+      expect(fixedPointRefusal(draft, chord, chord.path!.segments[0]!, undefined, crossable(chord.id)), chord.id).toBeUndefined();
+    }
+  }, 120000);
+
   it('restores the record with the layout, and refuses a forged record (R5)', async () => {
     const model = await run(fixture(DIRECT));
     const restored = restoreLayoutModel(JSON.stringify(model));
@@ -89,6 +114,9 @@ describe('facing units link direct', () => {
       [forge(copy => { copy.directFamilies![other]!.members.push({ ...copy.directFamilies![one]!.members[direct]! }); }), /member of two families/],
       [forge(copy => { delete copy.directFamilies![one]!.members[refusedAt]!.reason; }), /refused with no reason/],
       [forge(copy => { copy.directFamilies![one]!.members[refusedAt]!.mode = 'unplanned'; }), /unplanned/],
+      // A witness its crossings do not count, and a member link between the units left out of the record (review item 7).
+      [forge(copy => { copy.directFamilies![one]!.witnesses.push({ links: ['link-1', 'link-2'], at: { x: 0, y: 0 } }); }), /witnesses for/],
+      [forge(copy => { copy.directFamilies![one]!.members.splice(refusedAt, 1); }), /leaves out/],
       // A record before the freeze.
       [forge(copy => { delete copy.frozenChords; }), /before the freeze/],
     ];
@@ -105,20 +133,17 @@ describe('a long, flat chord never joins perpendicular faces (ticket 22, rule 5)
     const link = model.links.find(item => item.attachments!.from.node === 'west-router' && item.attachments!.to.node === 'provider')!;
     return { model, link };
   };
-  it('draws the long, flat bottom-to-lateral link as an L, and after the freeze reads the record, not the geometry', async () => {
+  it('draws the long, flat bottom-to-lateral link as an L, and after the freeze the held chords are the decision', async () => {
     const { model, link } = await lateral();
     expect(link.technique).not.toBe('straight');
     expect(link.path!.segments.length).toBeGreaterThan(1);
-    // The side round refused the chord hint before placement; at the freeze the link has a lane, so the freeze records nothing (absent).
-    expect(model.perpendicularRefusals).toBeUndefined();
     const before = structuredClone(model);
     delete before.frozenChords;
     expect(flatPerpendicularChord(before, link)).toBe(true);
     expect(chordVerdict(before, link, SIDE_EDGE_SLACK)).toEqual({ reason: 'faces' });
-    expect(flatPerpendicularChord({ ...model, perpendicularRefusals: [link.id] }, link)).toBe(true);
     const east = model.links.find(item => item.attachments!.from.node === 'east-router' && item.attachments!.to.node === 'provider')!;
     expect(east.technique).toBe('straight');
-    // The record answers after the freeze (R1): an absent record refuses nothing, whatever the geometry says.
+    // From the freeze on the rule refuses nothing, whatever the geometry says (R1: the frozen chords are the decision).
     expect(flatPerpendicularChord(model, link)).toBe(false);
   }, 120000);
 
@@ -128,7 +153,7 @@ describe('a long, flat chord never joins perpendicular faces (ticket 22, rule 5)
     const from = router.ports.find(port => port.side === 'bottom')!.anchor!;
     const moved = (dx: number, dy: number): LayoutModel => {
       const copy = structuredClone(model);
-      delete copy.perpendicularRefusals; delete copy.frozenChords;
+      delete copy.frozenChords;
       copy.nodes['provider']!.ports = provider.ports.map(port => port.ref.ordinal === end.ordinal && (port.ref.name ?? null) === (end.name ?? null)
         ? { ...port, side: 'right' as const, anchor: { x: from.x + dx, y: from.y + dy } } : port);
       return copy;
@@ -142,20 +167,6 @@ describe('a long, flat chord never joins perpendicular faces (ticket 22, rule 5)
     expect(PERPENDICULAR_FLAT_ANGLE).toBe(80);
   }, 120000);
 
-  it('refuses a forged record (R5)', async () => {
-    const { model, link } = await lateral();
-    const east = model.links.find(item => item.attachments!.from.node === 'east-router' && item.attachments!.to.node === 'provider')!;
-    expect(() => validateGroupLabelBands(model)).not.toThrow();
-    for (const [forged, why] of [
-      [{ ...model, perpendicularRefusals: ['link-99'] }, /not a link of the model/],
-      [{ ...model, perpendicularRefusals: [east.id] }, /holds a chord its perpendicular faces refused/],
-      [{ ...model, frozenChords: [], perpendicularRefusals: model.links.filter(item => item.attachments!.from.node === 'west-core').map(item => item.id) }, /does not join perpendicular faces/],
-    ] as [LayoutModel, RegExp][]) expect(() => validateGroupLabelBands(forged)).toThrow(why);
-    const early = structuredClone(model);
-    delete early.frozenChords; early.perpendicularRefusals = [link.id];
-    expect(perpendicularRefusalsFault(early)).toMatch(/before the freeze/);
-    expect(perpendicularRefusalsFault({ ...model, perpendicularRefusals: [link.id] })).toBeUndefined();
-  }, 120000);
 });
 
 describe('a crowded sheet after the user review of a-chord-hint (ticket 22, user 2026-10-24)', () => {
@@ -174,5 +185,40 @@ describe('a crowded sheet after the user review of a-chord-hint (ticket 22, user
     const rows = model.links.filter(link => link.attachments!.to.node === 'provider').map(flat);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toBeCloseTo(rows[1]!, 6);
+  }, 120000);
+});
+
+describe('the ticket 22 fixtures (review item 12)', () => {
+  const flat = (link: LayoutModel['links'][number]): number => link.path!.segments.find(item => Math.abs(item.from.y - item.to.y) < 1e-6)!.from.y;
+  const to = (model: LayoutModel, from: string, end: string) => model.links.find(link => link.attachments!.from.node === from && link.attachments!.to.node === end)!;
+
+  it('a long, flat chord to a lateral face is an L with one bend; the bottom-to-top chord stays', async () => {
+    const model = await run(fixture('a-long-flat-chord-to-a-lateral-face-is-an-l'));
+    const west = to(model, 'west-router', 'provider'), east = to(model, 'east-router', 'provider');
+    expect(west.technique).not.toBe('straight');
+    expect(findPort(model, west.attachments!.to)?.side).toBe('right');
+    expect(score(model).snapshot.counts.routed.turns).toBe(1);
+    expect(east.technique).toBe('straight');
+  }, 120000);
+
+  it('two runs from opposite sides of the provider\'s top face share one row', async () => {
+    const model = await run(fixture('runs-from-opposite-sides-share-one-row'));
+    const rows = ['west-router', 'east-router'].map(from => flat(to(model, from, 'provider')));
+    expect(rows[0]).toBeCloseTo(rows[1]!, 6);
+  }, 120000);
+
+  it('the label of a held chord lies on its chord, clear of every group border', async () => {
+    const model = await run(fixture('a-label-on-a-held-chord-gets-room-in-its-tier-gap'));
+    const labelled = to(model, 'r3', 's1');
+    expect(labelled.technique).toBe('straight');
+    expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER')).toEqual([]);
+    expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
+  }, 120000);
+
+  it('facing rows link direct as four families, every member a chord', async () => {
+    const model = await run(fixture('facing-rows-link-direct-as-families'));
+    expect(model.directFamilies!.map(item => item.id)).toEqual(['node:r0>node:s1', 'node:r1>row:access', 'node:r2>row:access', 'node:r3>node:s1']);
+    expect(verdicts(model).every(item => item.endsWith(' direct'))).toBe(true);
+    expect(directFamiliesFault(model)).toBeUndefined();
   }, 120000);
 });

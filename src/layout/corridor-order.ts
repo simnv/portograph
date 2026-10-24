@@ -50,6 +50,10 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
  *   routed links blocked on their row do not rise, and the routed crossings drop strictly. Among the accepted candidates the most
  *   straight links win, then the fewest blocked, then the fewest crossings; a tie keeps the first enumerated (the current order of
  *   each row comes first, then the orders in the lexicographic order of their positions). No candidate accepted: the order stands.
+ * - **The far-end pull (ticket 22).** After both sweeps, every free row, a row next to a frame cell included, pulls its members
+ *   toward their links' far ends (`pullTowardFarEnds`): declaration order is a hint. A pull stands only where the draft measure over
+ *   the regions the row reaches is no worse. The record keeps the order the search left (`pulledFrom`). `layout.farEndPull: false`
+ *   switches the pull off.
  *
  * Every free row of two or more nodes gets `rowOrderDecision`, also when the order stands; `validateRowOrderDecisions` reads it.
  * The document setting `layout.corridorRowOrder: false` keeps every row as the skeleton gave it (rule `author`), for a sheet whose
@@ -149,7 +153,8 @@ export function orderByCorridors(model: LayoutModel): void {
   const searched = new Map(free.map(group => [group, orderOf(group)]));
   // A row next to a frame cell takes it too: the frame column is later centred on its feeds, this member's link among them. A pull stands only
   // where the draft measure over the regions the row reaches is no worse: no straight overlay link lost, no routed link more blocked, no crossing more.
-  for (const group of free) {
+  // `layout.farEndPull: false` keeps the order the search left (a sheet whose subject needs a node where it is declared).
+  for (const group of model.document.layout?.farEndPull === false ? [] : free) {
     const [low, high] = reach([group]), now = measureRange(low, high, true), undo = saveGroups(model, [group]);
     if (!pullTowardFarEnds(model, group, tiers)) continue;
     const after = measureRange(low, high, true);
@@ -214,6 +219,9 @@ function pullTowardFarEnds(model: LayoutModel, group: LayoutGroup, tiers: readon
     if (Math.abs(centre(node) - goal) >= straightLengthLimit([model.nodes[node]!, model.nodes[other]!]) - 1e-6) target.set(node, goal);
   }
   let changed = false;
+  // R4: the bound is a guard the loop never meets. Each trade moves one linked member past one unlinked member, strictly nearer its goal,
+  // and the goal stays fixed. Trading back would put it where it was, which is not nearer, so a member passes each unlinked member at most
+  // once. A round that changes the row makes one trade at least, so there are at most linked × unlinked + 1 < n² rounds.
   for (let moved = true, rounds = 0; moved && rounds < group.nodes.length * group.nodes.length; rounds++) {
     moved = false;
     for (const node of [...(group.rowOrder ?? group.nodes)]) {
@@ -263,6 +271,7 @@ export function validateRowOrderDecisions(model: LayoutModel): string[] {
         errors.push(`The far-end pull of ${group.id} is recorded on orders it cannot give`);
       }
       if (decision.rule === 'author') errors.push(`The row order decision of ${group.id} is ${decision.rule}, and records a far-end pull`);
+      if (model.document.layout?.farEndPull === false) errors.push(`The row order decision of ${group.id} records a far-end pull, and the document setting farEndPull is false`);
     }
     if ((decision.rule === 'author') !== (model.document.layout?.corridorRowOrder === false)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and the document setting corridorRowOrder contradicts it`);
     if (!sameOrder(group.rowOrder ?? group.nodes, decision.after)) errors.push(`Group ${group.id} stands in an order its row order decision does not name`);

@@ -3,7 +3,7 @@ import type { DirectFamily, DirectMemberReason, DirectUnit, LayoutLink, LayoutMo
 import { EPS, intersection, samePoint, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
-import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, SIDE_EDGE_SLACK, strictCrossing } from './frame-paths.js';
+import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, orthogonalLeg, SIDE_EDGE_SLACK, strictCrossing } from './frame-paths.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
@@ -54,9 +54,10 @@ function sharedPort(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): b
 export interface Member { link: LayoutLink; upper: 'from' | 'to'; lower: 'from' | 'to'; upperGroup: string; lowerGroup: string }
 
 /**
- * The link as a member of slice 1, or undefined: routed and drawn, no bundle, no label, no authored route but `straight`, a chord
- * candidate, its two ports on no other routed link, both ends in `row` units on adjacent occupied sub-tier bands, the upper port on
- * `bottom` and the lower one on `top`. Topology and frozen sides only, so a validator reads the same answer.
+ * The link as a member of slice 1, or undefined: routed and drawn (not removed), no bundle, no stub, no mesh bus, no spanning hint, no
+ * label, no authored route but `straight`, a chord candidate (`chordKind`), two different end nodes, its two ports on no other drawn
+ * routed link, both ends in `row` units on adjacent occupied sub-tier bands, the upper port on `bottom` and the lower one on `top`.
+ * Topology and frozen sides only, so a validator reads the same answer.
  */
 function memberOf(model: LayoutModel, link: LayoutLink, next: ReadonlyMap<number, number>): Member | undefined {
   if (link.layer !== 'routed' || effectiveLayer(link) !== 'routed' || !link.attachments || link.bundle !== undefined || link.removed === true) return undefined;
@@ -263,8 +264,9 @@ function familyVerdict(model: LayoutModel, members: readonly Member[], crossable
     const segment = segments.get(link.id)!;
     return sum + Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y);
   }, 0);
-  // The last tie-break key: the semantic port keys of the set (R3).
-  const keyOf = (set: readonly LayoutLink[]): string => set.map(link => portId(link.attachments!.from) + portId(link.attachments!.to)).sort().join('\u0000');
+  // The last tie-break key: the semantic port keys of the set, upper port then lower port, so a link drawn the other way round keys the same (R3).
+  const oriented = new Map(members.map(member => [member.link.id, `${portId(member.link.attachments![member.upper])}|${portId(member.link.attachments![member.lower])}`]));
+  const keyOf = (set: readonly LayoutLink[]): string => set.map(link => oriented.get(link.id)!).sort().join('\u0000');
   const offer = (set: LayoutLink[]): void => {
     if (set.length < best.length) return;
     const c = cost(set), k = keyOf(set);
@@ -346,9 +348,44 @@ function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate
       }
     }
   }
+  // A refused member is orthogonal now, and its legs are new walls. A held chord the decision did not judge beside them (a labelled chord, a chord
+  // outside every family, a direct member of another family) may stand within the clearance of such a leg: G6 would fail it, and no later rule
+  // looks again. So every held chord near the leg of an orthogonal member takes the fixed point again (with its family's crossable legs), and a
+  // chord that fails is refused: orthogonal, and recorded as a refused member where it is one. Its own legs are walls in turn, until none fails.
+  refuseChordsNearNewLegs(model, families, settings);
   return { families, diagnostics };
 }
 const linkOf = (model: LayoutModel, id: string): LayoutLink => model.links.find(link => link.id === id)!;
+
+/** See the note at the end of `decide`: the held chords within the clearance of an orthogonal member's leg take the fixed point again. */
+function refuseChordsNearNewLegs(model: LayoutModel, families: DirectFamily[], settings: readonly { index: number; crossable: ReadonlySet<string> }[]): void {
+  const walls = new Set(families.filter(family => family.triggered).flatMap(family => family.members.filter(member => member.mode === 'orthogonal').map(member => member.link)));
+  const memberOf = (id: string): { family: DirectFamily; crossable: ReadonlySet<string> } | undefined => {
+    for (const { index, crossable } of settings) if (families[index]!.members.some(member => member.link === id)) return { family: families[index]!, crossable };
+    return undefined;
+  };
+  for (let changed = walls.size > 0; changed;) {
+    changed = false;
+    const legs = [...walls].sort().flatMap(id => {
+      const link = linkOf(model, id);
+      return (['from', 'to'] as const).flatMap(end => { const leg = orthogonalLeg(model, link, end); return leg ? [{ leg, link }] : []; });
+    });
+    // Link order is the model's; the outcome does not depend on it, because a chord is refused only for the legs, and a refusal adds walls that the next round reads.
+    for (const chord of model.links) {
+      if (!isRoutedChord(model, chord)) continue;
+      const segment = chord.path!.segments[0]!, stroke = linkStrokeWidth(chord);
+      if (!legs.some(({ leg, link }) => link.id !== chord.id && segmentDistance(segment, leg) - (stroke + linkStrokeWidth(link)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS)) continue;
+      const owner = memberOf(chord.id);
+      const reason = fixedPointRefusal(model, chord, segment, undefined, owner?.crossable);
+      if (reason === undefined) continue;
+      makeOrthogonal(model, chord);
+      walls.add(chord.id);
+      changed = true;
+      const entry = owner?.family.members.find(member => member.link === chord.id);
+      if (entry !== undefined) { entry.mode = 'orthogonal'; entry.reason = reason; }
+    }
+  }
+}
 
 /**
  * Decide every direct family of the draft, once, at the start of 7f and before `freezeChords` (R1), and record the triggered ones in
@@ -386,8 +423,8 @@ export const triggers = (crossings: number | 'unresolved', inverted: number): bo
 /**
  * What a validator checks on `model.directFamilies` (R5): it reads the record and the geometry, and never decides a family again.
  * Absent = no triggered family (or, before the freeze, not planned yet); a record before the freeze is a fault. Each family names member links of
- * the model between its units, its trigger agrees with its counts, a direct member is a held chord and a
- * refused one is not, and no two direct members of one fan touch.
+ * the model between its units, and every member link between its units (`memberOf`, topology only); its trigger agrees with its counts, and
+ * its witnesses with its crossings; a direct member is a held chord and a refused one is not; and no two direct members of one fan cross.
  */
 export function directFamiliesFault(model: LayoutModel): string | undefined {
   const record = model.directFamilies;
@@ -395,8 +432,10 @@ export function directFamiliesFault(model: LayoutModel): string | undefined {
   if (model.frozenChords === undefined) return 'a direct family is recorded before the freeze';
   const frozen = new Set(model.frozenChords ?? []);
   const seen = new Set<string>();
+  const next = nextBands(model);
   for (const family of record) {
     if (!family.triggered || !triggers(family.crossings, family.inversions)) return `${family.id} is recorded without a trigger its counts give`;
+    if (family.witnesses.length !== (family.crossings === 'unresolved' ? 0 : family.crossings)) return `${family.id} names ${family.witnesses.length} witnesses for ${family.crossings} crossings`;
     const units = family.units;
     const holds = (unit: DirectUnit, node: string): boolean => unit.kind === 'node' ? unit.id === node : unit.nodes.includes(node);
     const direct: { link: LayoutLink; segment: { from: Point; to: Point } }[] = [];
@@ -418,6 +457,13 @@ export function directFamiliesFault(model: LayoutModel): string | undefined {
         if (a && b) direct.push({ link, segment: { from: a, to: b } });
       }
     }
+    // Every member link between the two units is listed: the family is decided whole, so none may be left out of the record.
+    for (const link of model.links) {
+      const member = memberOf(model, link, next);
+      if (member === undefined) continue;
+      const upper = link.attachments![member.upper].node, lower = link.attachments![member.lower].node;
+      if (holds(units.upper, upper) && holds(units.lower, lower) && !family.members.some(item => item.link === link.id)) return `${family.id} leaves out ${link.id}, which joins its units`;
+    }
     for (let i = 0; i < direct.length; i++) for (let j = i + 1; j < direct.length; j++) {
       const one = direct[i]!, two = direct[j]!;
       const a = { ...one.segment, owner: one.link.owner }, b = { ...two.segment, owner: two.link.owner };
@@ -425,12 +471,6 @@ export function directFamiliesFault(model: LayoutModel): string | undefined {
     }
   }
   return undefined;
-}
-
-/** The ids of the members a recorded triggered family refused: no later rule may hold their chord (R1). */
-export function refusedMembers(model: LayoutModel): Set<string> {
-  return new Set((model.directFamilies ?? []).filter(family => family.triggered)
-    .flatMap(family => family.members.filter(member => member.mode === 'orthogonal').map(member => member.link)));
 }
 
 /**

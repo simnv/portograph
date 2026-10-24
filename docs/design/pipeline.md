@@ -340,8 +340,9 @@ nearer the far node's centre: an unlinked member ends no link, so the linked mem
 next to a frame cell takes the pull too, because the frame column is later centred on its feeds. A pull stands only
 where the draft measure over the regions the row reaches is no worse (straight overlay links, blocked routed links,
 crossings). The record keeps the order the search left (`rowOrderDecision.pulledFrom`), and the validator checks that
-the linked members kept their order. `layout.corridorRowOrder: false` keeps the declared order, with no pull: a test
-input whose subject needs a node at a fixed place pins it so.
+the linked members kept their order. `layout.farEndPull: false` switches the pull off and keeps the corridor row order: a
+test input whose subject needs a node where it is declared pins it so. `layout.corridorRowOrder: false` keeps the declared
+order of every row, with no pull either.
 
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the

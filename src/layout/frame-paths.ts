@@ -494,29 +494,16 @@ function derivedFlatPerpendicular(model: LayoutModel, link: LayoutLink): boolean
 }
 
 /**
- * A long, flat chord never joins perpendicular faces (architecture-2 ticket 22). Before the freeze the rule is derived from the geometry; the freeze
- * records the links it refused (`model.perpendicularRefusals`, R1; absent = none), and from then on the record answers: a later move in x does not take
- * the decision again. Every chord decision reads this one predicate (`chordVerdict`).
+ * A long, flat chord never joins perpendicular faces (architecture-2 ticket 22). Before the freeze the rule is derived from the geometry. From the
+ * freeze on, the held chords are the decision (`model.frozenChords`, R1), and the rule refuses nothing: a later move in x does not take the
+ * decision again. Every chord decision reads this one predicate (`chordVerdict`).
+ *
+ * The freeze recorded the links the rule refused until review (`perpendicularRefusals`). A scan of every golden found the record empty on every
+ * sheet: a link the rule refuses takes a side-lane hint before the freeze and is no chord candidate there. So the record changed no result, and
+ * it was deleted.
  */
 export function flatPerpendicularChord(model: LayoutModel, link: LayoutLink): boolean {
-  if (model.frozenChords !== undefined) return model.perpendicularRefusals?.includes(link.id) ?? false;
-  return derivedFlatPerpendicular(model, link);
-}
-
-/** What a validator checks on `model.perpendicularRefusals` (R5): recorded with the freeze, naming links of the model that hold no frozen chord. */
-export function perpendicularRefusalsFault(model: LayoutModel): string | undefined {
-  const record = model.perpendicularRefusals;
-  if (record === undefined) return undefined;
-  if (model.frozenChords === undefined) return 'the perpendicular refusals are recorded before the freeze';
-  const frozen = new Set(model.frozenChords);
-  for (const id of record) {
-    const link = model.links.find(item => item.id === id);
-    if (link?.attachments === undefined) return `${id} is not a link of the model`;
-    if (frozen.has(id)) return `${id} holds a chord its perpendicular faces refused`;
-    const one = findPort(model, link.attachments.from)?.side, two = findPort(model, link.attachments.to)?.side;
-    if (one === undefined || two === undefined || VERTICAL.has(one) === VERTICAL.has(two)) return `${id} does not join perpendicular faces`;
-  }
-  return undefined;
+  return model.frozenChords === undefined && derivedFlatPerpendicular(model, link);
 }
 
 /** The chord of the link when nothing that no other link can change refuses it. The fan rules ask this first. */
@@ -682,10 +669,6 @@ export function freezeChords(model: LayoutModel): void {
     model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
       message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
   }
-  // The links whose chord the perpendicular rule refuses at the freeze (R1): from now on the record answers, not the geometry.
-  // Absent after the freeze = none refused, so a sheet with none keeps its bytes.
-  const refusals = model.links.filter(link => !held.includes(link.id) && chordKind(model, link) !== undefined && derivedFlatPerpendicular(model, link)).map(link => link.id);
-  if (refusals.length) model.perpendicularRefusals = refusals; else delete model.perpendicularRefusals;
   // The freeze is a decision even when nothing is held: a link that was not straight here stays orthogonal. An absent field would let the replays of 7f
   // take a chord the freeze refused, on boxes that the grid then widens (a row path that the region rule derives differently once the geometry settles).
   model.frozenChords = held;
