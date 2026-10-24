@@ -1993,9 +1993,13 @@ export function replanGroupLabels(model: LayoutModel): void {
   const reserveAgain = (): void => { model.labelBands = reserved; produceGroupLabelBands(model); };
   if (syncBands(model)) { reserveAgain(); return; }
   // A move of groups can move a separated overlay track (ticket 23): the joint separation reads every path, so a run the room held before
-  // can need more after it, on any edge. A box that no longer holds a track's room is reserved again by the full producer, as the
-  // validator replays it. The room alone is not enough: the nodes it moves change the row paths, which the producer derives again.
-  if (trackRoomShort(model)) { reserveAgain(); return; }
+  // can need more after it, on any edge. A box that no longer holds a track's room gets it again (`reserveLinkLabelRoom`, as the
+  // validator replays it); the nodes the room moves change the region paths (rows, flanks, bars), so the regions are replayed, and a
+  // band the moves leave out of step sends the replay to the full producer. The title plan below reads the result.
+  if (trackRoomShort(model) && reserveLinkLabelRoom(model)) {
+    rebuildRegionGeometry(model, undefined, undefined, true);
+    if (syncBands(model)) { reserveAgain(); return; }
+  }
   const retained = model.labels.filter(label => label.role !== 'group');
   const spent = legSpentOf(model);
   let plan = planLabels({ ...model, labels: retained }, true, true, spent);
@@ -2064,7 +2068,8 @@ export function validateGroupLabelBands(model: LayoutModel): void {
         if (bar !== undefined && (Math.min(bar.from.x, bar.to.x) > bus.trunk.x! + PLACEMENT_EPS || Math.max(bar.from.x, bar.to.x) < bus.trunk.x! - PLACEMENT_EPS)) throw new Error(`The bar of ${id} does not reach the trunk of ${bus.id}`);
       }
     }
-    // The riser x is fixed in 7a and never moves; 7f sets its ends on the two bars, and both bars reach it.
+    // The riser x is set in 7a; only room 7f inserts left of it moves it, with its lanes (`insertRoomAt`). 7f sets its ends on the two
+    // bars, and both bars reach it.
     if (bus.riser !== undefined) {
       const ends = riserEnds(model, bus);
       if (!equal({ from: bus.riser.from, to: bus.riser.to }, { from: ends?.from, to: ends?.to })) throw new Error(`The riser of ${bus.id} contradicts the bars it joins`);

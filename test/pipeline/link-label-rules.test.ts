@@ -936,4 +936,19 @@ it('a mesh-bus riser beyond a labelled row link\'s split moves out with the room
   expect(label.x).toBeGreaterThan(model.nodes.p1!.bounds!.x + model.nodes.p1!.bounds!.width);
   expect(label.x + label.width).toBeLessThan(p2.x);
   expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+
+  // The riser moves by the deficit. Pull `p2` back 60 px over its own run: the reservation owes the room again, inserts it at the split,
+  // and `p2`, the riser, its lane and its ends all move by that one deficit.
+  const short = JSON.parse(JSON.stringify(model)) as LayoutModel;
+  const node = short.nodes.p2!;
+  node.bounds!.x -= 60;
+  for (const port of node.ports) { port.anchor!.x -= 60; if (port.pill) port.pill.bounds.x -= 60; }
+  const pulled = node.bounds!.x, upper = short.meshBuses!.find(item => item.riser !== undefined)!.riser!, before = upper.x;
+  expect(reserveLinkLabelRoom(short)).toBe(true);
+  const deficit = short.nodes.p2!.bounds!.x - pulled;
+  expect(deficit).toBeGreaterThan(0);
+  expect(upper.x - before).toBe(deficit);
+  expect(upper.from!.x).toBe(upper.x);
+  expect(upper.to!.x).toBe(upper.x);
+  expect(short.lanes.find(item => item.id === upper.lanes[0])!.x).toBe(upper.x);
 }, 120000);

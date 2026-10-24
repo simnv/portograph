@@ -614,10 +614,44 @@ function overlayTracks(model: LayoutModel, shapes: ShapeQuery): ReadonlyMap<stri
   if (kept === undefined) trackCache.set(model, kept = []);
   const held = kept.find(item => item.shapes === shapes && sameKey(item.key, key));
   if (held !== undefined) return held.tracks;
-  const tracks = separateTracks(model, links, shapes);
+  // A copy of the model (a trial, a replay on a clone) has the same geometry and a document equal by value: on the shared blocker index,
+  // the separation of an earlier copy is the same function of the same numbers (`sharedKey`), so it is read, not run again.
+  const shared = shapes === sharedBlockers(model) ? sharedKey(model, key) : undefined;
+  const found = shared === undefined ? undefined : sharedTracks.find(item => sameKey(item.key, shared));
+  const tracks = found?.tracks ?? separateTracks(model, links, shapes);
+  if (shared !== undefined && found === undefined) {
+    sharedTracks.unshift({ key: shared, tracks });
+    if (sharedTracks.length > SHARED_TRACK_CACHE_SIZE) sharedTracks.pop();
+  }
   kept.unshift({ key, shapes, tracks });
   if (kept.length > TRACK_CACHE_SIZE) kept.pop();
   return tracks;
+}
+
+/**
+ * The separations kept across models, by `sharedKey`. A reader never changes a separated path (each copies the points it publishes), so
+ * one result may serve every copy of a model. Bounded by count; it holds results, not models.
+ */
+const sharedTracks: { key: TrackKey; tracks: ReadonlyMap<string, Separated> }[] = [];
+const SHARED_TRACK_CACHE_SIZE = 16;
+const documentPrints = new WeakMap<object, string>();
+/**
+ * `trackKey` plus what a copy shares only by value: the document (labels, layout options, link order), each link's place in it, and
+ * every pill of every node (the shared blocker index holds them all, `sharedBlockers`).
+ */
+function sharedKey(model: LayoutModel, key: TrackKey): TrackKey {
+  let print = documentPrints.get(model.document);
+  if (print === undefined) documentPrints.set(model.document, print = JSON.stringify(model.document));
+  const full: TrackKey = [print, ...key];
+  for (const link of model.links) if (drawnOverlay(link)) full.push(link.sourceIndex);
+  for (const node of Object.values(model.nodes)) {
+    full.push(node.ports.length);
+    for (const port of node.ports) {
+      const pill = port.ref.anonymous === true ? undefined : port.pill?.bounds;
+      if (pill === undefined) full.push(undefined); else full.push(pill.x, pill.y, pill.width, pill.height);
+    }
+  }
+  return full;
 }
 
 const sameKey = (one: TrackKey, two: TrackKey): boolean => one.length === two.length && one.every((value, index) => value === two[index]);
@@ -710,7 +744,7 @@ interface Border { group: string | undefined; box: Rect }
  */
 export function overlayTrackRuns(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery): { base: [Point, Point]; drawn: [Point, Point] }[] {
   if (link.meshBus !== undefined || link.attachments === undefined) return [];
-  if (!derivedPoints(model, link, blockers).movable) return [];
+  // Only a movable detour has an entry (`separateTracks` keeps the movers), so the map answers whether the link moves.
   const separated = overlayTracks(model, blockers ?? sharedBlockers(model)).get(link.id);
   if (separated === undefined) return [];
   const { way, points } = separated;

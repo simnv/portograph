@@ -134,6 +134,24 @@ describe('two overlay detours never share a track (architecture-2 ticket 23)', (
     unnest(authored);
     portOf(authored, 'link-3').authorOrder = 1;
     expect(nestOverlayPorts(authored)).toEqual([]);
+
+    // The fallback: the cheap guard accepts the trade, the full check refuses the result. Every slot is restored and the trades run
+    // again under the full check on each one; here it refuses them all, so the ports stand as they were.
+    const refused = structuredClone(model);
+    unnest(refused);
+    const slots = (copy: LayoutModel) => ['link-3', 'link-5'].map(id => ({ anchor: portOf(copy, id).anchor, order: portOf(copy, id).engineOrder }));
+    const before = slots(refused);
+    let full = 0, cheap = 0;
+    expect(nestOverlayPorts(refused, () => { full++; return false; }, () => { cheap++; return true; })).toEqual([]);
+    expect(cheap).toBeGreaterThan(0);
+    expect(full).toBeGreaterThan(1);
+    expect(slots(refused)).toEqual(before);
+    // The full check refuses only the first result (the one under the cheap guard): the rerun with it on each trade nests the ports.
+    const second = structuredClone(model);
+    unnest(second);
+    let calls = 0;
+    expect(nestOverlayPorts(second, () => ++calls > 1, () => true).length).toBe(2);
+    expect(portOf(second, 'link-3').anchor).toEqual(portOf(model, 'link-3').anchor);
   }, 120000);
 
   it('the validator and the scorer read the separation: a detour put back on the shared track is refused and counted (R5)', async () => {

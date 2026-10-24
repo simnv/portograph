@@ -412,7 +412,8 @@ export interface MeshBus extends OwnedElement {
   /** On both buses of a join: the node count of the whole mesh (both buses), which the one label names. */
   meshNodes?: number;
   /**
-   * On the upper bus of a join, from stage 7a (mesh-bus.md, section 11.5): the riser, a vertical at one immutable `x` that joins the two bars;
+   * On the upper bus of a join, from stage 7a (mesh-bus.md, section 11.5): the riser, a vertical at one `x` that joins the two bars. 7a sets
+   * the `x`; only room 7f inserts at a split left of it moves it, with its lanes, by the room (`insertRoomAt`, architecture-2 ticket 23);
    * `lanes` are the riser lane ids in crossed sub-tier order (empty for adjacent rows); `from` and `to` are its ends on the upper and the lower bar, from 7f.
    */
   riser?: { x: number; lanes: string[]; from?: Point; to?: Point };

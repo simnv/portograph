@@ -114,8 +114,8 @@ export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel)
     return moved;
   };
   // The trades run under the cheap guard, and the whole room replay (`holds`) reads the result once. When it refuses, every slot is
-  // restored and the trades run again with the replay on each one, as a guard of its own: the result is the same rule, at one replay
-  // where the cheap guard was right.
+  // restored and the trades run again with the replay on each one, as a guard of its own. Either way the result holds the room 7f
+  // reserved; where the cheap guard was right, it costs one replay. The two runs may keep different trades.
   let moved = run(quick);
   if (quick !== holds && moved.size > 0 && !holds(model)) {
     for (const slot of slots) { slot.port.anchor = slot.anchor; slot.port.engineOrder = slot.order; }
