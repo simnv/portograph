@@ -98,7 +98,9 @@ describe('overlay-weighted order of frames', () => {
     expect(on.crossings.count).toBeLessThanOrEqual(off.metrics.crossings.count);
     expect(on.bends.total).toBeLessThanOrEqual(off.metrics.bends.total);
     expect(on.continuity.value).toBeGreaterThanOrEqual(off.metrics.continuity.value);
-    expect(bent(model).length).toBeLessThan(bent(off.model).length);
+    // Since ticket 23 the overlay ports of a face nest at the end of 7f, and in the arm without the rule a trade straightens a detour:
+    // both arms keep one bent overlay link.
+    expect(bent(model).length).toBeLessThanOrEqual(bent(off.model).length);
   }, 120000);
 
   it('refuses a re-order of frames that would raise the routed crossings, with one warning', async () => {

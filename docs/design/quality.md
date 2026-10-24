@@ -75,6 +75,14 @@ the snapshot block) layout time per stage. `labelBorderCrossings` counts the pai
 label and a drawn group or frame box whose border the label lies across (a turned label by its turned
 rectangle); it is present only when
 one does, and no gate reads it yet (stage 9 reports each such label as `LINK_LABEL_ON_BORDER`).
+`overlayTrackShares` counts the pairs of runs of two published overlay paths (mesh-bus members left out)
+that share a track: on one axis nearer than the overlay track pitch (half of each stroke plus 4 px) and
+overlapping or meeting end to end within it, where two paths out of one port that draw their common
+stretch once and fork are no pair (`sharedTrackPairs`, the reader the overlay path derivation separates
+tracks with; architecture-2 ticket 23). Two detours on one track read as one line, so the rule is that
+two overlay detours never share a track. Overlay links stay out of the clearance gates: it is present only
+when one pair is, and no gate reads it; the corpus prints it as `track`, and `gate:compare` judges a rise
+worse.
 
 `counts` gives the raw counts of each link family, beside Q and outside it (Q reads only the routed
 layer). For `routed` and for `overlay`: `links`, `bent` (links with at least one bend) and `turns`
@@ -193,6 +201,12 @@ command, the time is simply not a promise.
     `TIER_GAP_ROW_CYCLE`) and published with its gate findings, a G6 pair at worst (ADR-0021).
 12. A routed link inside one frame (including a group-link member) is one straight segment where
     its chord clears every body. It is orthogonal only where a body stands on the chord.
+13. Two overlay detours never share a track: no two overlay lines run on one line, overlapping or end
+    to end, unless they leave one port and fork. An overlay detour steps out of each port face clear of
+    the endpoint dot by a visible gap (the overlay port clearance) before it turns, and passes no
+    foreign port nearer than that. Detours that arrive at one face by parallel tracks nest: the outer
+    track takes the port nearer the side the tracks come from, so they do not cross there
+    (architecture-2 ticket 23).
 
 A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
 bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again

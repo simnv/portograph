@@ -7,7 +7,8 @@ import { LABEL_BORDER_REACH, LABEL_WINDOW_GRAIN, LINK_CUT_HAIR, LINK_LABEL_GEOME
 import { areaDistance, areaSegmentDistance } from '../../src/geometry/oriented.js';
 import { EPS } from '../../src/geometry/planar.js';
 import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
-import { DEFAULT_STROKE_WIDTHS } from '../../src/theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, overlayTrackPitch } from '../../src/theme/geometry.js';
+import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
 import { reserveAcrossRunRoom, reserveLinkLabelRoom, validateGroupLabelBands } from '../../src/layout/bands.js';
 import { fitRegionGroup } from '../../src/layout/regions.js';
 import { union } from '../../src/layout/skeleton-geometry.js';
@@ -110,12 +111,17 @@ links: [[flank.p, peer.p, {label: ${text}}]]`);
     layer: 'routed' as const, group: 'tier-group', tier: 9, side: 'right' as const, x,
     bounds: { x: x - 17, y: 0, width: 34, height: 10 } });
 
-  // A corridor at the split: the room lies beyond geometry that cannot move, so nothing is reserved.
+  // A corridor at the split: label room wins over the lane (architecture-2 ticket 23). The room is inserted and the corridor moves out
+  // with the peer, so it keeps its distance to it (R2); nothing is diagnosed.
   const beyond = copy(short);
   beyond.lanes.push(corridor(split));
-  expect(reserveLinkLabelRoom(beyond)).toBe(false);
-  expect(beyond.diagnostics.filter(d => d.code === 'LINK_LABEL_ROOM_UNRESERVED').map(d => d.message))
-    .toEqual([expect.stringMatching(/beyond a reserved lane/)]);
+  const peerBefore = beyond.nodes.peer!.bounds!.x;
+  expect(reserveLinkLabelRoom(beyond)).toBe(true);
+  const lane = beyond.lanes.find(item => item.id === 'lane:"transit":9')!;
+  expect(lane.x - split).toBeCloseTo(beyond.nodes.peer!.bounds!.x - peerBefore, 6);
+  expect(lane.x).toBeGreaterThan(split);
+  expect(lane.bounds.x).toBe(lane.x - lane.bounds.width / 2);
+  expect(beyond.diagnostics.filter(d => d.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
   // The same corridor one pixel to the left of the split, which is where the move takes it: reserved.
   const before = copy(short);
   before.lanes.push(corridor(split - 1));
@@ -593,25 +599,86 @@ for (const name of ['a-row-link-label-keeps-clear-of-both-group-borders', 'an-ov
   }, 120000);
 }
 
-// Ticket 21: room across a run. A detour over or under the row runs 4 px from the bodies in a group's padding; the label beside it
-// needs 20.25 px of padding and `GROUP_PADDING` is 20. 7f grows that edge by exactly the deficit and records the room and its link (R1).
-for (const [name, side, link] of [['a-row-mesh-with-another-label-draws-plain-links', 'top', 'link-8'],
-  ['a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border', 'bottom', 'link-5'],
-  ['a-label-beside-a-detour-grows-its-own-group-only', 'top', 'link-9']] as const) {
-  it(`a label beside a detour in a group padding stays clear of the border: ${name} (ticket 21)`, async () => {
+// Ticket 23, the user's report and the nesting rule: the detours out of `a` to `c` and to `d` no longer rise on one riser, and the two
+// detours under the row nest instead of crossing. `a`-`d` goes furthest round, so it takes the outer track and the port of `d` nearer
+// the side it comes from (the lower one); `b`-`d` takes the inner track and the upper port. No pair of overlay runs shares a track, and
+// the labels and tracks keep clear of the border.
+it('two detours under a row nest: the outer track takes the lower port (ticket 23)', async () => {
+  const model = await run(fixture('a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border'));
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+  const report = score(model).snapshot;
+  expect(report.counters.labelBorderCrossings).toBeUndefined();
+  expect(report.counters.overlayTrackShares).toBeUndefined();
+  expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
+  expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+  expect(() => validateGroupLabelBands(model)).not.toThrow();
+  const path = (id: string) => model.links.find(link => link.id === id)!.path!.segments;
+  const bottom = model.nodes.d!.bounds!.y + model.nodes.d!.bounds!.height;
+  const under = (id: string): number => Math.max(...path(id).map(segment => segment.from.y));
+  // link-3 is a-d, link-5 is b-d (the labelled one): both go under the row, a-d outside b-d.
+  expect(under('link-3')).toBeGreaterThan(bottom);
+  expect(under('link-5')).toBeGreaterThan(bottom);
+  expect(under('link-3') - under('link-5')).toBeCloseTo(overlayTrackPitch(DEFAULT_STROKE_WIDTHS.path, DEFAULT_STROKE_WIDTHS.path), 6);
+  const end = (id: string) => path(id).at(-1)!.to;
+  expect(end('link-3').y).toBeGreaterThan(end('link-5').y);
+  // The two detours do not cross.
+  const crosses = path('link-3').some(a => path('link-5').some(b => {
+    const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y, d = ax * by - ay * bx;
+    if (Math.abs(d) < 1e-9) return false;
+    const cx = b.from.x - a.from.x, cy = b.from.y - a.from.y, t = (cx * by - cy * bx) / d, u = (cx * ay - cy * ax) / d;
+    return t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6;
+  }));
+  expect(crosses).toBe(false);
+  // On the right face of `a`, the detour `a`-`c` (link-2) turns up and takes the port above the diagonal `a`-`b` (link-1): no two
+  // overlay links of the sheet cross (user, 2026-10-24).
+  const start = (id: string) => path(id)[0]!.from;
+  expect(start('link-2').y).toBeLessThan(start('link-1').y);
+  expect(report.counts.overlay.crossings.points).toBe(0);
+}, 120000);
+
+// Ticket 21: room across a run; ticket 23: the room of separated overlay tracks. Each row draws a full mesh as plain overlay links. The
+// detours over and under the row take separate tracks (ticket 23): the first one overlay port clearance from the bodies, each next one
+// track pitch further out. A labelled detour goes after the others and leaves its U outward, so its label stands beyond the outermost
+// track, or on the side of the bodies where that side is free. Where the tracks of one edge reach past the ordinary padding, 7f grows
+// that edge by exactly the deficit and records the room and its link (`labelPadding`, R1): the outermost track plus one track pitch to
+// the border, or plus the label (half the stroke, the normal gap, the text, half the border) when that track carries it.
+// Since the overlay ports of a face nest with their direct links (user, 2026-10-24), the two meshes of five keep two tracks over the row
+// and share none: the ordinary padding holds them, and 7f grows nothing.
+for (const [name, room] of [['a-row-mesh-with-another-label-draws-plain-links', { side: 'top', link: 'link-6', tracks: 2, label: false, shares: undefined }],
+  ['a-label-beside-a-detour-grows-its-own-group-only', { side: 'top', link: 'link-7', tracks: 2, label: false, shares: undefined }]] as const) {
+  it(`labels and overlay tracks in a group padding stay clear of the border: ${name} (tickets 21 and 23)`, async () => {
     const model = await run(fixture(name));
     expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
     const report = score(model).snapshot;
     expect(report.counters.labelBorderCrossings).toBeUndefined();
+    expect(report.counters.overlayTrackShares).toBe(room.shares);
     expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
-    // The growth is only as large as the label needs: the run's offset (4), half the stroke, the gap, the text height, half the border.
-    const text = model.labels.find(label => label.role === 'link')!.bounds!.height;
-    const need = 4 + DEFAULT_STROKE_WIDTHS.path / 2 + LINK_LABEL_GEOMETRY.normalGap + text + DEFAULT_STROKE_WIDTHS.group / 2;
-    expect(need).toBeGreaterThan(20);
-    expect(model.labelPadding).toEqual({ row: { [side]: { room: expect.closeTo(need, 3), links: [link] } } });
+    // The reservation is at its fixed point, and the validator accepts the record (R1).
+    expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+    expect(() => validateGroupLabelBands(model)).not.toThrow();
+    const { side, link } = room;
     const row = model.groups.row!;
-    const bodies = row.nodes.map(id => model.nodes[id]!.bounds!);
-    const held = side === 'top' ? Math.min(...bodies.map(box => box.y)) - row.bounds!.y : row.bounds!.y + row.bounds!.height - Math.max(...bodies.map(box => box.y + box.height));
+    const bodies = union(row.nodes.map(id => model.nodes[id]!.bounds!));
+    // The horizontal overlay runs on that side of the row, by their distance from the bodies: one track each, a track pitch apart.
+    const reach = (y: number): number => side === 'top' ? bodies.y - y : y - bodies.y - bodies.height;
+    const reaches = [...new Set(model.links.filter(item => item.layer === 'overlay').flatMap(item => item.path!.segments)
+      .filter(segment => Math.abs(segment.from.y - segment.to.y) < EPS && reach(segment.from.y) > 0)
+      .map(segment => Math.round(reach(segment.from.y) * 1e6) / 1e6))].sort((a, b) => a - b);
+    const pitch = overlayTrackPitch(DEFAULT_STROKE_WIDTHS.path, DEFAULT_STROKE_WIDTHS.path);
+    expect(reaches).toEqual(Array.from({ length: room.tracks }, (_, index) => expect.closeTo(OVERLAY_PILL_CLEARANCE + index * pitch, 6)));
+    const text = model.labels.find(label => label.role === 'link')!.bounds!.height;
+    const need = reaches.at(-1)! + (room.label
+      ? DEFAULT_STROKE_WIDTHS.path / 2 + LINK_LABEL_GEOMETRY.normalGap + text + DEFAULT_STROKE_WIDTHS.group / 2
+      : overlayTrackPitch(DEFAULT_STROKE_WIDTHS.path, DEFAULT_STROKE_WIDTHS.group));
+    const held = side === 'top' ? bodies.y - row.bounds!.y : row.bounds!.y + row.bounds!.height - bodies.y - bodies.height;
+    if (need <= 20) {
+      // The ordinary padding holds the tracks. 7f grew the edge for three tracks before the ports nested at the end of the attempt; a
+      // room only grows, so the record keeps it, and it holds what the two tracks need now.
+      expect(model.labelPadding?.row?.[side]?.room ?? 20).toBeGreaterThanOrEqual(need - 1e-6);
+      expect(held).toBeGreaterThanOrEqual(need - 1e-6);
+      return;
+    }
+    expect(model.labelPadding).toEqual({ row: { [side]: { room: expect.closeTo(need, 3), links: [link] } } });
     expect(held).toBeCloseTo(need, 3);
     // R2: a sibling group of the same tier does not move; its top and its padding stay as they were.
     const aside = model.groups.aside;
@@ -619,9 +686,6 @@ for (const [name, side, link] of [['a-row-mesh-with-another-label-draws-plain-li
       expect(aside.bounds!.y).toBeCloseTo(row.bounds!.y, 9);
       expect(model.nodes.s!.bounds!.y - aside.bounds!.y).toBeCloseTo(20, 9);
     }
-    // The reservation is at its fixed point, and the validator accepts the record (R1).
-    expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
-    expect(() => validateGroupLabelBands(model)).not.toThrow();
     // `groupPadding` reads the record: a box refitted from its bodies keeps the room. Every plain group holds a title band, and a band
     // group's refit keeps the extent it had, so the box is first collapsed to its bodies. Without the record the edge gets the ordinary
     // padding back, and the replay and the validator report the shortfall.
@@ -639,8 +703,8 @@ for (const [name, side, link] of [['a-row-mesh-with-another-label-draws-plain-li
     expect(lost.groups.row!.bounds!.height).toBeCloseTo(row.bounds!.height - (need - 20), 3);
     expect(reserveLinkLabelRoom(structuredClone(lost))).toBe(true);
     expect(() => validateGroupLabelBands(lost)).toThrow(/padding of row/);
-    // Geometry a legal later move changes is no fault: a listed link that carries no label on a run now (`link-1` is unlabelled), and a
-    // room the ordinary padding has reached (a padding row added later); the box still holds the room, so the replay finds no shortfall.
+    // Geometry a legal later move changes is no fault: a listed link that holds no track or label on that edge now (`link-1` is
+    // straight), and a room the ordinary padding has reached (a padding row added later); the box still holds the room.
     const entry = model.labelPadding!.row![side]!;
     for (const legal of [{ row: { [side]: { room: entry.room, links: ['link-1', link] } } }, { row: { [side]: { room: entry.room, links: ['link-1'] } } },
       { row: { [side]: { room: 20, links: ['link-1'] } } }]) {
@@ -855,3 +919,36 @@ it('labelWindowDeficit on a diagonal: the least growth after which a window hold
   // Rounded up to the grain, and no more: a growth one grain and a hair less does not hold.
   expect(holds(growth - 2 * LABEL_WINDOW_GRAIN)).toBe(false);
 });
+
+it('a mesh-bus riser beyond a labelled row link\'s split moves out with the room (ticket 23)', async () => {
+  const model = await run(fixture('a-riser-beyond-a-labelled-rows-split-moves-with-the-room'));
+  const bus = model.meshBuses!.find(item => item.riser !== undefined)!, riser = bus.riser!;
+  const lane = model.lanes.find(item => item.id === riser.lanes[0])!;
+  // The riser lane, the riser and its two ends stand at one x, beyond the label's run and left of `mid`.
+  expect(lane.x).toBe(riser.x);
+  expect(riser.from!.x).toBe(riser.x);
+  expect(riser.to!.x).toBe(riser.x);
+  const p2 = model.nodes.p2!.bounds!, mid = model.groups.mid!.bounds!;
+  expect(riser.x).toBeGreaterThan(p2.x + p2.width);
+  expect(riser.x).toBeLessThan(mid.x);
+  // The label is reserved and drawn on its run, not left to the ladder.
+  const label = model.labels.find(item => item.role === 'link')!.bounds!;
+  expect(label.x).toBeGreaterThan(model.nodes.p1!.bounds!.x + model.nodes.p1!.bounds!.width);
+  expect(label.x + label.width).toBeLessThan(p2.x);
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
+
+  // The riser moves by the deficit. Pull `p2` back 60 px over its own run: the reservation owes the room again, inserts it at the split,
+  // and `p2`, the riser, its lane and its ends all move by that one deficit.
+  const short = JSON.parse(JSON.stringify(model)) as LayoutModel;
+  const node = short.nodes.p2!;
+  node.bounds!.x -= 60;
+  for (const port of node.ports) { port.anchor!.x -= 60; if (port.pill) port.pill.bounds.x -= 60; }
+  const pulled = node.bounds!.x, upper = short.meshBuses!.find(item => item.riser !== undefined)!.riser!, before = upper.x;
+  expect(reserveLinkLabelRoom(short)).toBe(true);
+  const deficit = short.nodes.p2!.bounds!.x - pulled;
+  expect(deficit).toBeGreaterThan(0);
+  expect(upper.x - before).toBe(deficit);
+  expect(upper.from!.x).toBe(upper.x);
+  expect(upper.to!.x).toBe(upper.x);
+  expect(short.lanes.find(item => item.id === upper.lanes[0])!.x).toBe(upper.x);
+}, 120000);

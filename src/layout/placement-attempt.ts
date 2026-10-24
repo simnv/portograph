@@ -7,7 +7,8 @@ import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels, labelBorders } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels, labelBorders, roomHolds, roomLikelyHolds } from './bands.js';
+import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { growTierGaps } from './gap-room.js';
@@ -276,8 +277,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
     // placement as unfinished work. It also turns the run in the gap beside the corridor from a
     // column into a row, and the height rule has already measured that gap: a gap that cannot
     // seat the new row would owe room nothing reserves. And a corridor is an obstacle the link
-    // label reservation measures against — it decides whether a labelled row link detours, and
-    // whether the room it needs lies beyond a reserved lane — so a corridor that moves across one
+    // label reservation measures against — it decides whether a labelled row link detours and
+    // where the room it needs is inserted — so a corridor that moves across one
     // of those runs leaves a label a run 7e and 7f already reserved and did not get (stress ticket
     // 18). That third one has to be refused rather than settled again: re-reserving moves nodes,
     // and by here the corridors are fixed. The first three are compared as sets, not as counts: a
@@ -326,6 +327,9 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions): void {
   // The fan edge keepers (architecture-2 ticket 18) are taken on the boxes that publish: 7f centres and stretches frames, so the choice
   // is open until the last replay. From here the validator and a restore read the record, member and depth, and never choose again.
   freezeFanKeepers(draft);
+  // The overlay ports of a face nest (ticket 23) on the geometry that publishes, after every placement move was judged: a trade moves
+  // no box and no other port, and one that would need room 7f did not reserve is not made (`roomHolds`).
+  nestOverlayPorts(draft, roomHolds, roomLikelyHolds);
   // A pair of labels on diagonal lines whose bands first meet on the geometry that publishes is decided here, once; a pair decided
   // earlier keeps its direction (`recordLabelYields`). Stage 9 and the validator read the record.
   recordLabelYields(draft, labelBorders(draft));

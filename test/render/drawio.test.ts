@@ -15,6 +15,7 @@ import { NETWORK_THEME, linkClassStyle, washAssignment, washFill, washToken, por
 import { route } from '../../src/route/index.js';
 import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
+import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { flatCells, inFile } from './drawio-cells.js';
@@ -1183,8 +1184,8 @@ describe('connection grid, rotation and tiles', () => {
 });
 
 describe('maintainer edit principles', () => {
-  /** Twice the endpoint mark's radius, which is the stand-off `overlayPath` keeps off a pill head. */
-  const CLEARANCE = 2 * OVERLAY_ENDPOINT_RADIUS;
+  /** The overlay port clearance at the default stroke, the stand-off `overlayPath` keeps off a pill head (ticket 23). */
+  const CLEARANCE = OVERLAY_PILL_CLEARANCE;
 
   /** One pill of an overlay end, in page space: the side it sits on and the box placement reserved. */
   interface Pill { side: string; x: number; y: number; width: number; height: number }
@@ -1541,8 +1542,8 @@ describe('direct lines', () => {
     const model = await pipeline(fixture('drawio-direct-lines'));
     const all = cells(drawio(model));
     const origin = model.canvas!;
-    /** The clearance `overlayPath` keeps off a pill head: the endpoint mark's own diameter. */
-    const CLEARANCE = 2 * OVERLAY_ENDPOINT_RADIUS;
+    /** The clearance `overlayPath` keeps off a pill head: the overlay port clearance (ticket 23). */
+    const CLEARANCE = OVERLAY_PILL_CLEARANCE;
     /** The outward fraction of each side, which is what the exporter pins an endpoint with. */
     const OUTWARD: Readonly<Record<string, Point>> = {
       top: { x: 0.5, y: 0 }, bottom: { x: 0.5, y: 1 },

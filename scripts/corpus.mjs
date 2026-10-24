@@ -18,6 +18,7 @@
  *   side     SIDE_HINT_TAKEN diagnostics
  *   removed  the links stage 8 removed
  *   labelBorder  the scorer's labelBorderCrossings counter (0 when absent)
+ *   track    the scorer's overlayTrackShares counter: run pairs of two overlay paths on one track (0 when absent)
  *   hash     12 hex of sha256 of the layout JSON without runtime stages (what portograph render writes)
  *
  * Every geometry number is the scorer's (`score().snapshot`: `metrics`, `counts`, `counters`,
@@ -51,6 +52,7 @@ function row(file, model, snapshot, hash) {
     String(diagnostics('SIDE_HINT_TAKEN')),
     String(snapshot.counters.removedLinks),
     String(snapshot.counters.labelBorderCrossings ?? 0),
+    String(snapshot.counters.overlayTrackShares ?? 0),
     hash,
   ].join('\t');
 }

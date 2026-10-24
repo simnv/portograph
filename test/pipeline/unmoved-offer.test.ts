@@ -16,8 +16,9 @@ const source = (name: string): string => readFileSync(new URL(`../../goldens/syn
 
 interface Offer { ev: string; offer: SideOffer; kept7e: LayoutModel; unmoved: boolean; filtered: boolean | undefined }
 
+// `a-cross-link-with-another-label-keeps-two-buses` took this path too until architecture-2 ticket 23 (the overlay ports of a face nest
+// at the end of 7f): its side trace has no offer from the unmoved baseline any more, so it tests nothing here.
 it.each([
-  'a-cross-link-with-another-label-keeps-two-buses',
   'an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack',
 ])('the filter passes and the trial starts from the rebuilt baseline offer: %s', async name => {
   const offers: Offer[] = [];

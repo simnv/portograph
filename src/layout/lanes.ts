@@ -1504,7 +1504,7 @@ export function probeGapLane(model: LayoutModel, link: LayoutLink, course: Cours
   return admitGapLane({ ...model, courses: [course] }, link, course, pending, (group, item) => occupied(model, group, item, pending));
 }
 const endHasNaturalFace = (course: Course): boolean => endMode(course, 'from') === 'natural' || endMode(course, 'to') === 'natural';
-/** A riser lane: owned by the upper bus of a join, at the one immutable riser x, in a crossed sub-tier, clear of every body and lane. */
+/** A riser lane: owned by the upper bus of a join, at the riser x (set in 7a; moved only with room 7f inserts, `insertRoomAt`), in a crossed sub-tier, clear of every body and lane. */
 function validateRiserLane(model: LayoutModel, lane: Lane): void {
   const bus = model.meshBuses?.find(item => item.id === (lane.owner as { id: string }).id);
   if (bus?.riser === undefined || bus.cross === undefined || lane.layer !== 'overlay' || lane.id !== riserLaneId(bus.id, lane.tier)

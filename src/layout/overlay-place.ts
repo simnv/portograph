@@ -4,7 +4,7 @@ import { frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js'
 import { groupShape } from './grid.js';
 import { occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { holdsMove } from './move-reservations.js';
-import { crosses, sharedBlockers, overlayPath, straightChord } from './overlay-paths.js';
+import { crosses, sharedBlockers, overlayBasePath, straightChord } from './overlay-paths.js';
 import { saveGroups } from './overlay-order.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { orderedNodeIds } from '../model/model.js';
@@ -206,7 +206,7 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
     });
     const straightIds = (): Set<string> => {
       const blockers = sharedBlockers(model);
-      return new Set(spanning.filter(link => overlayPath(model, link, blockers).segments.length === 1).map(link => link.id));
+      return new Set(spanning.filter(link => overlayBasePath(model, link, blockers).segments.length === 1).map(link => link.id));
     };
     const nodesOfTier = groups.flatMap(group => group.nodes);
     const signature = (): string => JSON.stringify(groups.map(group => [group.bounds, group.rowOrder, group.nodes.map(node => model.nodes[node]!.bounds)]));
