@@ -4,7 +4,7 @@ import { courseGeometry, ringsOf } from './course-lanes.js';
 import { probeBypassLanes, probeGapLane } from './lanes.js';
 import { bypassGeometry } from './course-bypass.js';
 import { carriesTitle, GROUP_LABEL_GEOMETRY } from './bands.js';
-import { groupInsets } from './regions.js';
+import { contentBox } from './regions.js';
 import { gapGeometry, gapPolyline } from './course-gap.js';
 import { polylineCrossings, polylineTurns } from './course-plan.js';
 import { authoredSide, groupShape } from './grid.js';
@@ -204,19 +204,18 @@ function bypassCandidate(base: LayoutModel, link: LayoutLink, found: LinkFacts, 
 }
 
 /**
- * The x-extent a group has when stage 7a of the trial stands a course lane beside it: its nodes with the group insets, wide enough for its title, on the y-extent of its box.
+ * The x-extent a group has when stage 7a of the trial stands a course lane beside it: its content box (`contentBox`, as `fitRegionGroup` fits it) and its title with the title inset, on the y-extent of its box.
  * The 7f box of the baseline can be wider: the linked-group grid widens a box onto its partner's extent after the lanes, and refuses a widening that would cross a
  * reserved lane. A lane read off the widened box stands farther out than 7a will stand it, and the far end it could drop into straight is judged out of reach.
  */
 export function placedExtent(model: LayoutModel, group: LayoutGroup): Rect {
   const box = group.bounds!;
   if (group.nodes.length === 0) return box;
-  const nodes = group.nodes.map(id => model.nodes[id]!.bounds!), inset = groupInsets(model, group);
-  const left = Math.max(box.x, Math.min(...nodes.map(item => item.x)) - inset.left);
-  // The title holds its own width from the left edge of the box it stands in.
-  const title = model.labels.find(label => label.id === `label:group:${group.id}`)?.bounds?.width;
-  const end = Math.min(box.x + box.width, Math.max(Math.max(...nodes.map(item => item.x + item.width)) + inset.right,
-    title === undefined ? -Infinity : left + title + 2 * GROUP_LABEL_GEOMETRY.horizontalInset));
+  const content = contentBox(model, group), title = model.labels.find(label => label.id === `label:group:${group.id}`)?.bounds;
+  // The title keeps the inset to the box edge on each side, wherever 7f placed it.
+  const inset = GROUP_LABEL_GEOMETRY.horizontalInset;
+  const left = Math.max(box.x, Math.min(content.x, title === undefined ? Infinity : title.x - inset));
+  const end = Math.min(box.x + box.width, Math.max(content.x + content.width, title === undefined ? -Infinity : title.x + title.width + inset));
   return { x: left, y: box.y, width: end - left, height: box.height };
 }
 

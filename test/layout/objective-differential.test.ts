@@ -21,8 +21,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * grew from 4 to 7.75 px, so the per-link overlay paths the judges read (`overlayBasePath`; the separated tracks are stage 8's) and their
  * figures changed. No judge changed, and every call count is main's but one: on `three-continents` the trial asks `windowsHold` 54 times
  * (was 55).
- * Re-recorded again for architecture 2 ticket 22: no judge moved, but the inputs did. A chord never joins perpendicular faces, and a direct family reserves
- * gap height and may run the attempt again, so four fixtures place other geometry and call the judges on it. three-canton-groups-close-up-to-a-band-gap
+ * Re-recorded again for architecture 2 ticket 22: no judge moved, but the inputs did. A long flat chord to a lateral face (80 degrees or more from
+ * the normal) is an L, a direct family draws its members as chords decided at the start of 7f (they reserve no gap row), and a member that crowds a
+ * planned part runs the attempt again, so four fixtures place other geometry and call the judges on it. three-canton-groups-close-up-to-a-band-gap
  * was recorded once more when two runs from opposite sides of one face came to share a row of the tier gap: its gap plan, and so its geometry, changed. a-chord-hint-and-a-lane-hint-never-share-a-batch
  * was recorded once more for the far-end pull, which stands lb next to fe4.
  */

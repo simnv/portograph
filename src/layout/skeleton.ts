@@ -5,7 +5,7 @@ import { UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
 import { orderByOverlay, orderFramesByOverlay } from './overlay-order.js';
-import { orderByCorridors, validateRowOrderDecisions } from './corridor-order.js';
+import { orderByCorridors, validateRowOrderDecisions, withdrawPullsAcrossFlips } from './corridor-order.js';
 import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 export { buildSkeletonGraph } from './skeleton-graph.js';
 export { validateSkeletonBands } from './skeleton-geometry.js';
@@ -86,6 +86,8 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
     // The free rows then take the order the corridors through them cross least (ticket 17); the record is checked below.
     orderByCorridors(work);
     placeFlanksAndPeers(work, columns => { orderFramesByOverlay(work, columns); });
+    // A far-end pull whose far node the frame order then put on the other side is undone (ticket 22 review).
+    withdrawPullsAcrossFlips(work);
     const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work)];
     if (errors.length) throw new SkeletonError(errors.join('; '));
     work.stage = 'skeleton';

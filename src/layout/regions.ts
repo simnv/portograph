@@ -69,19 +69,19 @@ export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: numb
   for (const side of ['top', 'bottom'] as const) if (bus[side] > 0 && band?.side !== side) inset[side] = Math.max(padding[side], bus[side]);
   return inset;
 }
+/** The box a group's content asks for: its nodes and the group insets (the title band, padding rows and bus room among them). `fitRegionGroup` fits a group to it. */
+export function contentBox(model: LayoutModel, group: LayoutGroup): Rect {
+  const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), inset = groupInsets(model, group);
+  return { x: box.x - inset.left, y: box.y - inset.top, width: box.width + inset.left + inset.right, height: box.height + inset.top + inset.bottom };
+}
 export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
   if (!group.nodes.length) return;
-  const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), inset = groupInsets(model, group);
-  if (bandHeldBy(model, group.id) === undefined) {
-    group.bounds = { x: box.x - inset.left, y: box.y - inset.top,
-      width: box.width + inset.left + inset.right, height: box.height + inset.top + inset.bottom };
-    return;
-  }
+  const content = contentBox(model, group);
+  if (bandHeldBy(model, group.id) === undefined) { group.bounds = content; return; }
   // A band group keeps any extent placement granted it beyond its content: label widening and
   // the linked-group grid (7f) only ever grow a box, and content never leaves it.
-  const old = group.bounds!, x = Math.min(old.x, box.x - inset.left), y = Math.min(old.y, box.y - inset.top);
-  group.bounds = { x, y, width: Math.max(right(old), right(box) + inset.right) - x,
-    height: Math.max(bottom(old), bottom(box) + inset.bottom) - y };
+  const old = group.bounds!, x = Math.min(old.x, content.x), y = Math.min(old.y, content.y);
+  group.bounds = { x, y, width: Math.max(right(old), right(content)) - x, height: Math.max(bottom(old), bottom(content)) - y };
 }
 export function expandCanvas(model: LayoutModel): void {
   const boxes = [...Object.values(model.groups).map(group => group.bounds!), ...(model.frames ?? []).map(frame => frame.box), ...model.lanes.map(lane => lane.bounds)];
