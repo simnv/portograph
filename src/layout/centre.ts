@@ -586,7 +586,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const chosen = chosenFeeds(context, tier, own, yielded);
   const distinctParents = new Map(chosen.map(feed => [feed.key, feed.x]));
   const distinctChildren = new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x]));
-  const mean = (values: Iterable<number>) => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
+  // Summed in ascending order (R3): a floating-point sum taken in feed order, which is link order, moves the group by a different last bit when the links are listed otherwise.
+  const mean = (values: Iterable<number>) => { const xs = [...values].sort((a, b) => a - b); return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
   /** How far each wanted port is from the x its feed asks for, in the model as it now stands. */
   const misses = (): Map<string, number> => {
     // One index of the group's ports per reading, the first port of a key first, as `find` gave it.

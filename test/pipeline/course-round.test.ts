@@ -5,7 +5,7 @@ import { restoreLayoutModel } from '../../src/internal.js';
 import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
 import { naturalPolyline, polylineCrossings, polylineTurns, simplify } from '../../src/layout/course-plan.js';
-import { drawnCrossings, judgeCourseTrial, measureCourses, poorRoute, stepGain, stepRoute } from '../../src/layout/course-measure.js';
+import { drawnCrossings, judgeCourseTrial, measureCourses, placedExtent, poorRoute, stepGain, stepRoute } from '../../src/layout/course-measure.js';
 import { COURSE_VISITS, course as courseRound } from '../../src/pipeline/rounds.js';
 import type { Env } from '../../src/pipeline/env.js';
 import type { State } from '../../src/pipeline/state.js';
@@ -294,5 +294,26 @@ describe('the courses a placement run reserves', () => {
   it('refuses a course whose faces cannot join one lane', async () => {
     const bad: Course[] = [{ link: 'link-6', kind: 'skirt', side: 'right', from: { face: 'left' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] }];
     await expect(layout(parse(source(ACROSS)), { ...options, testCourses: bad })).rejects.toThrow();
+  }, 60000);
+});
+
+describe('a perimeter lane is read beside the box 7a stands it by (architecture-2 ticket 22)', () => {
+  it('a row order that lets the grid widen the upper group keeps the course into the natural face, with two turns', async () => {
+    const model = await layout(parse(source('a-course-lane-stands-beside-the-box-before-the-grid-widens-it')), options);
+    // link-5 is f1 to s1: it leaves f1 by a padding row, runs right over the row and drops into s1's top face.
+    expect(side(model, 5, 'to')).toBe('top');
+    expect(turns(model, 5)).toBe(2);
+    expect(model.diagnostics.find(item => item.code === 'COURSE_TAKEN')?.message).toContain('2 turns promised');
+    // The extent the measure reads: never past the box, and never short of the nodes.
+    for (const group of Object.values(model.groups)) {
+      const box = group.bounds!, extent = placedExtent(model, group);
+      expect(extent.x).toBeGreaterThanOrEqual(box.x - 1e-6);
+      expect(extent.x + extent.width).toBeLessThanOrEqual(box.x + box.width + 1e-6);
+      for (const id of group.nodes) {
+        const node = model.nodes[id]!.bounds!;
+        expect(extent.x).toBeLessThanOrEqual(node.x);
+        expect(extent.x + extent.width).toBeGreaterThanOrEqual(node.x + node.width);
+      }
+    }
   }, 60000);
 });

@@ -1,0 +1,23 @@
+# Expected: a member of a free row whose link would bend passes a linked peer toward its link's far end, when the peer's
+# links stay straight or chords one slot away (architecture-2 ticket 22; user, 2026-10-24: "move f1 to the right side of
+# container"). f1 is declared first and feeds s1, which stands right of the wide body n1. rA feeds n1 from above. The
+# pull moves f1 past rA to the right end of the row, over s1: its link drops straight. rA moves one slot and still stands
+# over n1, so its four links stay straight. Without the rule, f1 stays left of rA: its link to s1 bends and the four links of
+# rA jog (measured: all five links bent, against none).
+# Test-only input owned by architecture-2 ticket 22; test/layout/corridor-order.test.ts reads the row order decision.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Top }
+  low: { tier: 1, label: Low }
+nodes:
+  f1: { group: top, label: F1 }
+  rA: { group: top, class: router, label: RA, ports: [{ name: p1, side: bottom }, { name: p2, side: bottom }, { name: p3, side: bottom }, { name: p4, side: bottom }] }
+  n1: { group: low, label: N1, ports: [{ name: a1, side: top }, { name: a2, side: top }, { name: a3, side: top }, { name: a4, side: top }] }
+  s1: { group: low, label: S1 }
+links:
+- [rA.p1, n1.a1]
+- [rA.p2, n1.a2]
+- [rA.p3, n1.a3]
+- [rA.p4, n1.a4]
+- [f1, s1]

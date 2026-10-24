@@ -76,7 +76,9 @@ describe('columns hold their feed axis after rows and centre', () => {
     // `west-1` is in the anchor tier, so `placeOverlayFree` never moves it, and it is 8 nodes from the feed `west-9`
     // of `two`: no slide of the cells reaches both, so `two` keeps the place the overlay order gave it.
     const links = readFileSync(new URL('../../goldens/synthetic/overlay-ends-keep-the-feed-axis.yaml', import.meta.url), 'utf8').trimEnd().split('\n');
-    const stem = links.slice(0, -3).join('\n');
+    // The feeds stand where they are declared: the far-end pull (ticket 22) is off, or it moves the feed west-5 past the linked members to the row end.
+    const stem = links.slice(0, -3).join('\n').replace('portograph: 2\n', 'portograph: 2\nlayout: { farEndPull: false }\n');
+    expect(stem).toContain('farEndPull');
     const model = await run(`${stem}\n  - [west-1, two-s5, { route: overlay }]\n`);
     const held = model.diagnostics.filter(diagnostic => diagnostic.code === COLUMN_AXIS_HELD && diagnostic.owners?.some(owner => 'id' in owner && owner.id === 'two'));
     expect(held).toHaveLength(1);

@@ -131,9 +131,12 @@ export interface RowOrderDecision {
   after: string[];
   /**
    * The order the search left when the pull toward the far ends then moved the row (architecture-2 ticket 22, `pullTowardFarEnds`): a linked
-   * member passed unlinked members toward its links' far ends. Absent = the pull moved nothing; `rule` describes `before` against this order.
+   * member passed unlinked members toward its links' far ends, and a linked member whose links stay straight or chords one slot away. Absent =
+   * the pull moved nothing; `rule` describes `before` against this order.
    */
   pulledFrom?: string[];
+  /** The members the pull moved toward their far ends, in row order; present exactly with `pulledFrom`. */
+  pulled?: string[];
 }
 
 /**

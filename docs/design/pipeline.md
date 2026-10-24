@@ -338,12 +338,16 @@ routed and end on one node of a band that faces its row across one tier gap, no 
 and the node will stand farther off in x than the straight-link length limit of the two bodies: the pull serves a link
 that would bend, and a member whose link a chord can take keeps its place. Where the node will stand is predicted: 7c
 seats its siblings under their feeds, so it stands beyond the farthest feed of every sibling before it in its row and
-short of the nearest feed of every sibling after it. It trades places with an unlinked neighbour while that brings its centre strictly
-nearer the far node's centre: an unlinked member ends no link, so the linked members keep their relative order. A row
+short of the nearest feed of every sibling after it. It trades places with a neighbour while that brings its centre strictly
+nearer the far node's centre. The neighbour is an unlinked member, or a linked member that is no pull target, has not been
+passed yet, and whose links all stay straight or chords one slot away: its centre stands over the far node's box or nearer it
+than the straight-link length limit (user, 2026-10-24: "move f1 to the right side of container"). So a passed linked member
+moves one slot, and the pulled members keep their relative order. A row
 next to a frame cell takes the pull too, because the frame column is later centred on its feeds. A pull stands only
 where the draft measure over the regions the row reaches is no worse (straight overlay links, blocked routed links,
-crossings). The record keeps the order the search left (`rowOrderDecision.pulledFrom`), and the validator checks that
-the linked members kept their order. `layout.farEndPull: false` switches the pull off and keeps the corridor row order: a
+crossings). The record keeps the order the search left (`rowOrderDecision.pulledFrom`) and the members the pull served
+(`pulled`). The validator checks that the pulled members are linked and kept their relative order, that the other linked
+members kept theirs, and that each of those was passed by one pulled member at most. `layout.farEndPull: false` switches the pull off and keeps the corridor row order: a
 test input whose subject needs a node where it is declared pins it so. `layout.corridorRowOrder: false` keeps the declared
 order of every row, with no pull either.
 
