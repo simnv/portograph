@@ -1,0 +1,24 @@
+# Expected: two facing rows each pull members toward the other (architecture-2 ticket 22, review). x in Row 1 feeds q,
+# the last node of Row 2, and y feeds p, the first. Each row pulls its two members toward their far nodes, and the four
+# ends meet over each other: both links drop straight. A pull withdrawn in one row moves the far nodes of the other, so
+# `withdrawPullsAcrossFlips` judges the rows again until none changes. The reviewer's case: a single pass in group order
+# kept the pull of Row 1, withdrew the pull of Row 2, and left Row 1 standing across, which failed stage 4.
+# Test-only input owned by architecture-2 ticket 22; test/layout/corridor-order.test.ts reads the row order decisions.
+portograph: 2
+groups:
+  row-1: { tier: 0, label: Row 1 }
+  row-2: { tier: 1, label: Row 2 }
+nodes:
+  x: { group: row-1, label: X }
+  u1: { group: row-1, label: U1 }
+  u2: { group: row-1, label: U2 }
+  u3: { group: row-1, label: U3 }
+  y: { group: row-1, label: Y }
+  p: { group: row-2, label: P }
+  v1: { group: row-2, label: V1 }
+  v2: { group: row-2, label: V2 }
+  v3: { group: row-2, label: V3 }
+  q: { group: row-2, label: Q }
+links:
+  - [x, q]
+  - [y, p]
