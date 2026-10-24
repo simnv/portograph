@@ -351,7 +351,10 @@ members kept theirs, that each of those was passed by one pulled member at most,
 ends nearer the place its far node is predicted at than it stood in the order the search left. The prediction reads the
 far node's own row only: a node of another rank of its group stands on another sub-tier and pushes nothing. After the
 frames are ordered (`placeFlanksAndPeers`), the prediction is read again, and a pull that no longer brings its member
-nearer is undone (`withdrawPullsAcrossFlips`, recorded in `pullWithdrawn`). The test of a link that would bend is one
+nearer is undone with every pull of its row (`withdrawPullsAcrossFlips`, every member it had moved recorded in
+`pullWithdrawn`), rows in id order and again until none changes: a withdrawn row moves the far nodes of the row that
+faces it. The validator reads the prediction again, so its check holds on the stage-4 model right after the withdrawal,
+on the same geometry, and nowhere later. The test of a link that would bend is one
 function (`wouldBend`): a pull target reads the far node's predicted x, a passed linked member the draft box of its far
 node. `layout.farEndPull: false` switches the pull off and keeps the corridor row order: a
 test input whose subject needs a node where it is declared pins it so. `layout.corridorRowOrder: false` keeps the declared

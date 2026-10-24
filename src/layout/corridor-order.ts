@@ -4,6 +4,7 @@ import { orderTools, readDraft, reseatRow, saveGroups } from './overlay-order.js
 import { compareId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { straightLengthLimit } from './row-paths.js';
 import { rebuildBands } from './skeleton-geometry.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /** A row of at most this many nodes is judged in every order; a longer row in its adjacent swaps only. */
 export const ROW_ORDER_PERMUTED_NODES = 5;
@@ -321,19 +322,32 @@ function pullTowardFarEnds(model: LayoutModel, group: LayoutGroup): string[] {
  * The guard after the frames are ordered (`withdrawPullsAcrossFlips`, ticket 22 review): the frame columns are packed and ordered after the
  * pull (`placeFlanksAndPeers`), and a frame order that flips can put a far node on the other side of the member the pull moved toward it.
  * The prediction is read again on that model (`pullsAcross`): a pull that no longer brings a member nearer its far node's predicted place is
- * undone, the row takes the order the search left again, and the record names the members (`pullWithdrawn`). Returns whether a row changed.
+ * undone with every pull of its row: the row takes the order the search left again, and the record names every member the pull had moved
+ * (`pullWithdrawn`). Rows are judged again until none changes. Returns whether a row changed.
  */
 export function withdrawPullsAcrossFlips(model: LayoutModel): boolean {
-  let changed = false;
-  for (const group of Object.values(model.groups)) {
-    const decision = group.rowOrderDecision;
-    if (decision?.pulledFrom === undefined || decision.pulled === undefined) continue;
-    const crossed = pullsAcross(model, group, decision.pulledFrom, decision.after, decision.pulled);
-    if (!crossed.length || !reseatRow(model, group, [...decision.pulledFrom], true)) continue;
-    group.rowOrderDecision = { rule: decision.rule, before: decision.before, after: [...decision.pulledFrom], pullWithdrawn: crossed };
-    changed = true;
+  let changed = false, grew = false;
+  // Rows in id order (R3), again until a round withdraws nothing: a withdrawn row moves the far nodes of the rows that face it, and a pull
+  // kept in an earlier round can then stand across. R4: each round that goes on withdraws one pull at least, and a withdrawn row records no
+  // pull, so there are at most as many rounds as rows with a pull, and one more.
+  const rows = Object.values(model.groups).filter(group => group.rowOrderDecision?.pulledFrom !== undefined).sort((p, q) => compareId(p.id, q.id));
+  for (let round = 0, again = true; again && round <= rows.length; round++) {
+    again = false;
+    for (const group of rows) {
+      const decision = group.rowOrderDecision!;
+      if (decision.pulledFrom === undefined || decision.pulled === undefined) continue;
+      if (!pullsAcross(model, group, decision.pulledFrom, decision.after, decision.pulled).length) continue;
+      const width = group.bounds!.width;
+      if (!reseatRow(model, group, [...decision.pulledFrom], true)) continue;
+      // Every pull of the row is undone with its order, so every pulled member is named.
+      group.rowOrderDecision = { rule: decision.rule, before: decision.before, after: [...decision.pulledFrom], pullWithdrawn: [...decision.pulled] };
+      grew ||= group.bounds!.width > width + PLACEMENT_EPS;
+      changed = again = true;
+    }
   }
-  // The row takes a permutation of its own nodes in its own box (`reseatRow` keeps the width it has), so no band moves.
+  // `reseatRow` may widen the box (gaps differ by the strokes of the neighbours): the bands follow it then, as after the pull. A row that
+  // keeps its box moves no band, and the bands are left as `placeFlanksAndPeers` built them.
+  if (grew) rebuildBands(model, false);
   return changed;
 }
 /**
@@ -359,7 +373,8 @@ function pullsAcross(model: LayoutModel, group: LayoutGroup, from: readonly stri
  * A recorded row stands in the order the record names; `before` and `after` are orders of the row's own nodes; `kept` and `author`
  * name one order twice and `corridor-crossings` two different orders; `author` stands exactly when the document sets
  * `layout.corridorRowOrder: false`; only a free row carries a record, and every free row of two or more nodes carries one when the
- * sheet has an anchor tier.
+ * sheet has an anchor tier. A far-end pull is checked by reading the prediction again on the geometry as it stands (`pullsAcross`): the
+ * check is valid only on the stage-4 model right after `withdrawPullsAcrossFlips`, on the same geometry; later stages move the far nodes.
  */
 export function validateRowOrderDecisions(model: LayoutModel): string[] {
   const errors: string[] = [];

@@ -138,8 +138,9 @@ export interface RowOrderDecision {
   /** The members the pull moved toward their far ends, in row order; present exactly with `pulledFrom`. */
   pulled?: string[];
   /**
-   * The members whose pull was undone after the frames were ordered (`withdrawPullsAcrossFlips`): the frame order put their far node on the
-   * other side of the move. The row stands in the order the search left (`after`), and no `pulledFrom` is kept.
+   * The members whose pull was undone after the frames were ordered (`withdrawPullsAcrossFlips`): every member the pull had moved, because
+   * the row goes back whole once one of them no longer stands nearer its far node. The row stands in the order the search left (`after`),
+   * and no `pulledFrom` is kept.
    */
   pullWithdrawn?: string[];
 }

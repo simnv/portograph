@@ -290,6 +290,33 @@ describe('a row pulls a member toward its link\'s far end (architecture-2 ticket
     expect(withdrawPullsAcrossFlips(await skeletonOf(pulled))).toBe(false);
   }, 60000);
 
+  it('two facing rows each pull toward the other; a withdrawal judges the rows again until none changes (review, blocking A)', async () => {
+    const text = readFileSync(new URL('../../goldens/synthetic/two-facing-rows-pull-toward-each-other.yaml', import.meta.url), 'utf8');
+    const model = await skeletonOf(text);
+    expect(model.groups['row-1']!.rowOrderDecision!.pulled).toEqual(['x', 'y']);
+    expect(model.groups['row-2']!.rowOrderDecision!.pulled).toEqual(['p', 'q']);
+    expect(validateRowOrderDecisions(model)).toEqual([]);
+    // As if the search had left q at the left end of Row 2 (a flip after the pull): Row 1, judged first, still stands; Row 2 does not (p
+    // moved away from y's predicted place) and goes back, which takes q, the far node of x, to the left end. Row 1 now stands across, and
+    // only a second round sees it. A single pass left it, and the validator refused it.
+    const flipped = (from: LayoutModel): LayoutModel => {
+      const next = copy(from), decision = next.groups['row-2']!.rowOrderDecision!;
+      next.groups['row-2']!.rowOrderDecision = { ...decision, pulledFrom: ['q', 'v1', 'v2', 'p', 'v3'] };
+      return next;
+    };
+    const forward = flipped(model), backward = flipped(model);
+    backward.groups = Object.fromEntries(Object.entries(backward.groups).reverse());
+    expect(withdrawPullsAcrossFlips(forward)).toBe(true);
+    expect(withdrawPullsAcrossFlips(backward)).toBe(true);
+    expect(forward.groups['row-2']!.rowOrderDecision!.pullWithdrawn).toEqual(['p', 'q']);
+    expect(forward.groups['row-1']!.rowOrderDecision!.pullWithdrawn).toEqual(['x', 'y']);
+    // The forged order is no order the search gave (its rule check fails); the far-end pull checks pass.
+    expect(validateRowOrderDecisions(forward).filter(error => error.includes('far-end pull'))).toEqual([]);
+    for (const id of ['row-1', 'row-2']) expect(backward.groups[id]!.rowOrderDecision).toEqual(forward.groups[id]!.rowOrderDecision);
+    // A second call finds nothing left to withdraw.
+    expect(withdrawPullsAcrossFlips(forward)).toBe(false);
+  }, 60000);
+
   it('reads the far node\'s own row when it predicts where the node will stand: a lower rank of its group pushes nothing', async () => {
     const text = readFileSync(new URL('../../goldens/synthetic/a-pull-reads-the-far-node-row-and-not-its-other-ranks.yaml', import.meta.url), 'utf8');
     const decision = (await skeletonOf(text)).groups.top!.rowOrderDecision!;
