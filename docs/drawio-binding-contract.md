@@ -87,6 +87,7 @@ All attribute values are strings. A reader must parse numbers and booleans.
 | `pg-run` | link, split into runs only | the index of this run, from `0` |
 | `pg-runs` | link, split into runs only | the number of runs |
 | `pg-of` | link label, node icon | the `pg-id` of the link that owns the label, or of the node that owns the icon |
+| `pg-symbol` | node, only when the node is drawn with a symbol | the text after `symbol:` in the id of that symbol's legend row, with `%` and `~` escaped as `%25` and `%7e`. The legend cells of the symbol have the id `pg-legendRow~symbol:<value>`. A node has the attribute also when the sheet draws no legend. A node without a symbol has none. Optional: it does not change the schema version |
 | `pg-rules` | root cell `id="0"` | reserved, not written in version 1. It will hold binding rules as one YAML or JSON string, versioned with `pg-schema` |
 
 A link from `pg-from` to `pg-to` has the YAML direction. Use it to select the counter for each

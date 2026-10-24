@@ -132,15 +132,12 @@ export function diagramBounds(model: LayoutModel): Rect | undefined {
 }
 
 /**
- * The distinct symbol, line and port-role variants the diagram really draws, in the accepted order:
- * known profile classes by declaration order, then author classes by first use. A node without a
- * class contributes no symbol; a link without one contributes the profile's default line style,
- * because that style is what its line really uses; a drawn pill contributes one port variant per
- * role token of its `class`, and none for a status token or a port without a class.
+ * The legend row id of the symbol each drawn node uses, by node id; a node without a class has none.
+ * One function decides it, so the legend rows and the draw.io `pg-symbol` cannot drift apart (R1).
+ * A class drawn with two different icons needs two rows, so the icon qualifies the id then.
+ * `token` yields no separator-like ambiguity, so equal ids mean equal structured pairs.
  */
-export function legendVariants(model: LayoutModel): { symbols: Variant[]; lines: Variant[]; ports: Variant[] } {
-  const symbols: Variant[] = [], lines: Variant[] = [], ports: Variant[] = [];
-  // A class drawn with two different icons needs two rows, so the icon qualifies the id then.
+export function nodeSymbolIds(model: LayoutModel): Map<string, string> {
   const icons = new Map<string, Set<string>>();
   for (const id of orderedNodeIds(model.document)) {
     const node = model.document.nodes[id]!;
@@ -149,19 +146,38 @@ export function legendVariants(model: LayoutModel): { symbols: Variant[]; lines:
     set.add(resolveNodeIcon(node) ?? '');
     icons.set(node.class, set);
   }
+  const ids = new Map<string, string>();
+  for (const id of orderedNodeIds(model.document)) {
+    const node = model.document.nodes[id]!;
+    if (node.class === undefined || node.class === '' || !model.nodes[id]) continue;
+    const qualified = (icons.get(node.class)?.size ?? 0) > 1;
+    ids.set(id, `symbol:${token(node.class)}${qualified ? `:${token(resolveNodeIcon(node) ?? '')}` : ''}`);
+  }
+  return ids;
+}
+
+/**
+ * The distinct symbol, line and port-role variants the diagram really draws, in the accepted order:
+ * known profile classes by declaration order, then author classes by first use. A node without a
+ * class contributes no symbol; a link without one contributes the profile's default line style,
+ * because that style is what its line really uses; a drawn pill contributes one port variant per
+ * role token of its `class`, and none for a status token or a port without a class.
+ */
+export function legendVariants(model: LayoutModel): { symbols: Variant[]; lines: Variant[]; ports: Variant[] } {
+  const symbols: Variant[] = [], lines: Variant[] = [], ports: Variant[] = [];
+  const symbolOf = nodeSymbolIds(model);
   // Identity is the structured pair, never the joined string: two different pairs must not collide
   // into one entry, and an author class containing the separator must not impersonate another.
   const seen = new Set<string>();
   for (const id of orderedNodeIds(model.document)) {
     const node = model.document.nodes[id]!;
-    if (node.class === undefined || node.class === '' || !model.nodes[id]) continue;
+    const symbol = symbolOf.get(id);
+    if (symbol === undefined) continue;
+    if (seen.has(symbol)) continue;
+    seen.add(symbol);
     const icon = resolveNodeIcon(node) ?? '';
-    const qualified = (icons.get(node.class)?.size ?? 0) > 1;
-    const identity = JSON.stringify(['symbol', node.class, qualified ? icon : null]);
-    if (seen.has(identity)) continue;
-    seen.add(identity);
-    symbols.push({ id: `symbol:${token(node.class)}${qualified ? `:${token(icon)}` : ''}`,
-      kind: 'symbol', key: node.class, ...(icon ? { icon } : {}), order: symbols.length });
+    symbols.push({ id: symbol,
+      kind: 'symbol', key: node.class!, ...(icon ? { icon } : {}), order: symbols.length });
   }
   for (const link of model.links) {
     if (link.technique === 'stub') continue;
