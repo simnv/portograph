@@ -10,7 +10,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
 /** Feeds four nodes apart (`west-5`, `west-9`): the two frames can both stand under their feed. */
 const reachable = readFileSync(new URL('../../goldens/synthetic/two-locations-keep-their-feed-axis.yaml', import.meta.url), 'utf8');
 /** The same input with the feeds two nodes apart (`west-6`, `west-8`): the frames cannot both stand under theirs. */
-const forcedInput = reachable.replace('[west-5, one-gw]', '[west-6, one-gw]').replace('[west-9, two-gw]', '[west-8, two-gw]');
+// The feeds stand where the test puts them: the declared row order is pinned, or the far-end pull (ticket 22) would move them under their locations.
+const forcedInput = reachable.replace('[west-5, one-gw]', '[west-6, one-gw]').replace('[west-9, two-gw]', '[west-8, two-gw]')
+  .replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n');
 const run = (source: string): Promise<LayoutModel> => layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const portX = (model: LayoutModel, node: string, side: 'top' | 'bottom'): number => model.nodes[node]!.ports.find(port => port.side === side)!.anchor!.x;
 const jog = (model: LayoutModel, from: string, to: string): number => Math.abs(portX(model, from, 'bottom') - portX(model, to, 'top'));

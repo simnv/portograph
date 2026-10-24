@@ -4,7 +4,9 @@
 # their columns it would leave empty room on tier 2. Two overlay links join `mid` to `b-lab`, so the run of cantons holds more of its partners on
 # the right of its middle: `mid` goes after the run. No routed link crosses another in either order.
 # Test-only input owned by canton-groups ticket 57; test/pipeline/canton-order.test.ts reads the layout.
+# The declared row order is pinned (ticket 22 far-end pull): the foreign unit stands where ELK leaves it between the two cantons.
 portograph: 2
+layout: { corridorRowOrder: false }
 groups:
   ca: { label: Canton A }
   cb: { label: Canton B }

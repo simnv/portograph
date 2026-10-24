@@ -19,7 +19,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
  *
  * Re-recorded again for architecture 2 ticket 22: no judge moved, but the inputs did. A chord never joins perpendicular faces, and a direct family reserves
  * gap height and may run the attempt again, so four fixtures place other geometry and call the judges on it. three-canton-groups-close-up-to-a-band-gap
- * was recorded once more when two runs from opposite sides of one face came to share a row of the tier gap: its gap plan, and so its geometry, changed.
+ * was recorded once more when two runs from opposite sides of one face came to share a row of the tier gap: its gap plan, and so its geometry, changed. a-chord-hint-and-a-lane-hint-never-share-a-batch
+ * was recorded once more for the far-end pull, which stands lb next to fe4.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

@@ -1685,11 +1685,13 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       // and stage 9 decides. Every group below the upper tier moves down, so the split is the top of the highest of them. The run's
       // lower end moves with its node even when its pill stands out above that top (`farEndMoves`); no upper-tier box is taken as moved.
       const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
-      const longest = overlay ? overlayLongestRun(model, link) : undefined;
-      // A diagonal overlay run carries its label on the line, turned (ticket 20): its windows read the turned box's height.
+      // A held routed chord (ticket 22) is one diagonal line between its anchors, as an overlay line is: its label lies on it, turned.
+      const chord = !overlay && isRoutedChord(model, link) ? link.path!.segments[0]! : undefined;
+      const longest = overlay ? overlayLongestRun(model, link) : chord;
+      // A diagonal run carries its label on the line, turned (ticket 20): its windows read the turned box's height.
       const diagonal = longest !== undefined && isDiagonalRun(longest);
       const x = lane !== undefined ? lane.x : Math.abs(lowerPort.anchor!.x - upperPort.anchor!.x) <= PLACEMENT_EPS ? upperPort.anchor!.x : undefined;
-      const ridden: PathSegment | undefined = overlay
+      const ridden: PathSegment | undefined = overlay || diagonal
         ? (longest !== undefined && (diagonal || Math.abs(longest.to.x - longest.from.x) <= PLACEMENT_EPS) ? longest : undefined)
         : x === undefined || lowerEdge - upperEdge <= PLACEMENT_EPS ? undefined
           : { from: { x, y: upperEdge }, to: { x, y: lowerEdge }, owner: { ...link.owner } };

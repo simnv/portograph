@@ -158,10 +158,18 @@ describe('a long, flat chord never joins perpendicular faces (ticket 22, rule 5)
   }, 120000);
 });
 
-describe('two runs come to one face from opposite sides (ticket 22, user 2026-10-24)', () => {
-  it('brings the two provider runs of a-chord-hint to one row, opposite each other', async () => {
+describe('a crowded sheet after the user review of a-chord-hint (ticket 22, user 2026-10-24)', () => {
+  it('pulls lb next to fe4, draws every front link direct with its label clear of the borders, and brings the provider runs to one row', async () => {
     const model = await run(fixture('a-chord-hint-and-a-lane-hint-never-share-a-batch'));
-    // The two dashed runs come to the provider's top face from opposite sides, do not overlap, and share one horizontal height.
+    // Declaration order is a hint: the far-end pull stands lb next to fe4, so its link and the fan to spare are all chords.
+    expect(model.groups.front!.rowOrderDecision!.after.slice(0, 5)).toEqual(['fe', 'fe2', 'fe3', 'fe4', 'lb']);
+    const front = model.links.filter(link => model.document.nodes[link.attachments!.from.node]!.group === 'front');
+    expect(front.map(link => link.technique)).toEqual(['straight', 'straight', 'straight', 'straight', 'straight']);
+    // lb's label lies on its chord, turned, and 7f grew the tier gap until one window between the borders holds it.
+    const lb = front.find(link => link.attachments!.from.node === 'lb')!;
+    expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER' || item.code === 'LINK_LABEL_ROOM_UNRESERVED')
+      .filter(item => item.message.includes(`${lb.id} `))).toEqual([]);
+    // The two dashed runs come to the provider's top face from opposite sides and share one horizontal height.
     const flat = (link: LayoutModel['links'][number]): number => link.path!.segments.find(item => Math.abs(item.from.y - item.to.y) < 1e-6)!.from.y;
     const rows = model.links.filter(link => link.attachments!.to.node === 'provider').map(flat);
     expect(rows).toHaveLength(2);

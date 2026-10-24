@@ -2,6 +2,7 @@ import type { Diagnostic, LayoutGroup, LayoutModel, RowOrderDecision } from '../
 import { ownsTransitLanes, selectAnchorTier } from './lanes.js';
 import { orderTools, readDraft, reseatRow, saveGroups } from './overlay-order.js';
 import { compareId } from './skeleton-graph.js';
+import { straightLengthLimit } from './row-paths.js';
 import { rebuildBands } from './skeleton-geometry.js';
 
 /** A row of at most this many nodes is judged in every order; a longer row in its adjacent swaps only. */
@@ -144,9 +145,22 @@ export function orderByCorridors(model: LayoutModel): void {
   for (let k = at + 1; k < tiers.length; k++) step(k, k + 1 < tiers.length ? k + 1 : undefined);
   for (let k = at - 1; k >= 0; k--) step(k, k > 0 ? k - 1 : undefined);
 
+  // The pull toward the far ends (ticket 22): after the search, a linked member passes the unlinked members beside it toward its links' far ends.
+  const searched = new Map(free.map(group => [group, orderOf(group)]));
+  // A row next to a frame cell takes it too: the frame column is later centred on its feeds, this member's link among them. A pull stands only
+  // where the draft measure over the regions the row reaches is no worse: no straight overlay link lost, no routed link more blocked, no crossing more.
+  for (const group of free) {
+    const [low, high] = reach([group]), now = measureRange(low, high, true), undo = saveGroups(model, [group]);
+    if (!pullTowardFarEnds(model, group, tiers)) continue;
+    const after = measureRange(low, high, true);
+    if (after.straight < now.straight || after.blocked > now.blocked || after.crossings > now.crossings) { undo(); continue; }
+    moved = true;
+  }
+
   for (const [group, order] of before) {
-    const after = orderOf(group);
-    const decision: RowOrderDecision = { rule: frameBound.has(group) ? 'frame-columns' : sameOrder(order, after) ? 'kept' : 'corridor-crossings', before: order, after };
+    const found = searched.get(group)!, after = orderOf(group);
+    const decision: RowOrderDecision = { rule: frameBound.has(group) ? 'frame-columns' : sameOrder(order, found) ? 'kept' : 'corridor-crossings', before: order, after };
+    if (!sameOrder(found, after)) decision.pulledFrom = found;
     group.rowOrderDecision = decision;
   }
   for (const reason of caps) {
@@ -154,6 +168,68 @@ export function orderByCorridors(model: LayoutModel): void {
     model.diagnostics.push(note);
   }
   if (moved) rebuildBands(model, false);
+}
+
+/** The nodes of `group` that some drawn link ends on: the members whose place in the row changes a link. */
+function linkedMembers(model: LayoutModel, group: LayoutGroup): Set<string> {
+  const own = new Set(group.nodes);
+  const linked = new Set<string>();
+  for (const link of model.links) {
+    if (link.removed === true || !link.attachments) continue;
+    for (const end of [link.attachments.from.node, link.attachments.to.node]) if (own.has(end)) linked.add(end);
+  }
+  return linked;
+}
+
+/**
+ * A row pulls a member toward its link's far end (architecture-2 ticket 22; user, 2026-10-24: "LB should be moved closer to FE4"). A
+ * member is pulled when all its links are routed and end on one node of a band that faces its row across one tier gap, and that node
+ * stands farther off in x than the straight-link length limit of the two bodies (`straightLengthLimit`): a link no chord takes from
+ * here. The member trades places with an unlinked neighbour while that brings its centre strictly nearer the far node's centre. An
+ * unlinked member ends no link, so the linked members keep their relative order and no two links of the row change their end order.
+ * Members are taken in row order, again until none moves (R3: the row order, never the link order). Returns whether the row changed.
+ */
+function pullTowardFarEnds(model: LayoutModel, group: LayoutGroup, tiers: readonly number[]): boolean {
+  const linked = linkedMembers(model, group);
+  if (!linked.size || linked.size === group.nodes.length) return false;
+  const centre = (node: string): number => { const box = model.nodes[node]!.bounds!; return box.x + box.width / 2; };
+  // The bands that face this row across one tier gap: the occupied sub-tiers next to its own.
+  const at = tiers.indexOf(group.tier!), facing = new Set([tiers[at - 1], tiers[at + 1]].filter(tier => tier !== undefined));
+  const target = new Map<string, number>();
+  for (const node of linked) {
+    const far = new Set<string>();
+    let pulled = true;
+    for (const link of model.links) {
+      if (link.removed === true || !link.attachments) continue;
+      const { from, to } = link.attachments;
+      const other = from.node === node ? to.node : to.node === node ? from.node : undefined;
+      if (other === undefined) continue;
+      const tier = model.groups[model.document.nodes[other]?.group ?? '']?.tier;
+      // An overlay link keeps the place the overlay order gave; a link to a band farther off is not this gap's.
+      if (link.layer !== 'routed' || other === node || tier === undefined || !facing.has(tier) || model.nodes[other]?.bounds === undefined) { pulled = false; break; }
+      far.add(other);
+    }
+    if (!pulled || far.size !== 1) continue;
+    const other = [...far][0]!, goal = centre(other);
+    if (Math.abs(centre(node) - goal) >= straightLengthLimit([model.nodes[node]!, model.nodes[other]!]) - 1e-6) target.set(node, goal);
+  }
+  let changed = false;
+  for (let moved = true, rounds = 0; moved && rounds < group.nodes.length * group.nodes.length; rounds++) {
+    moved = false;
+    for (const node of [...(group.rowOrder ?? group.nodes)]) {
+      const goal = target.get(node);
+      if (goal === undefined) continue;
+      const order = [...(group.rowOrder ?? group.nodes)], at = order.indexOf(node);
+      const step = goal < centre(node) ? -1 : 1, next = order[at + step];
+      if (next === undefined || linked.has(next)) continue;
+      const before = Math.abs(centre(node) - goal);
+      const undo = saveGroups(model, [group]);
+      order[at] = next; order[at + step] = node;
+      if (!reseatRow(model, group, order, true) || Math.abs(centre(node) - goal) >= before - 1e-6) { undo(); continue; }
+      moved = changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
@@ -178,7 +254,16 @@ export function validateRowOrderDecisions(model: LayoutModel): string[] {
     }
     if (!freeRow(group) || group.nodes.length < 2) errors.push(`Group ${group.id} records a row order decision but is no free row`);
     if (!ofRow(group, decision.before) || !ofRow(group, decision.after)) errors.push(`The row order decision of ${group.id} names nodes that are not its own`);
-    if ((decision.rule !== 'corridor-crossings') !== sameOrder(decision.before, decision.after)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and its before and after orders contradict it`);
+    const searched = decision.pulledFrom ?? decision.after;
+    if ((decision.rule !== 'corridor-crossings') !== sameOrder(decision.before, searched)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and its before and after orders contradict it`);
+    if (decision.pulledFrom !== undefined) {
+      // The pull moves only unlinked members past linked ones: the linked members keep their relative order (R5: read, not searched again).
+      const linked = linkedMembers(model, group), keep = (order: readonly string[]): string[] => order.filter(node => linked.has(node));
+      if (!ofRow(group, decision.pulledFrom) || sameOrder(decision.pulledFrom, decision.after) || !sameOrder(keep(decision.pulledFrom), keep(decision.after))) {
+        errors.push(`The far-end pull of ${group.id} is recorded on orders it cannot give`);
+      }
+      if (decision.rule === 'author') errors.push(`The row order decision of ${group.id} is ${decision.rule}, and records a far-end pull`);
+    }
     if ((decision.rule === 'author') !== (model.document.layout?.corridorRowOrder === false)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and the document setting corridorRowOrder contradicts it`);
     if (!sameOrder(group.rowOrder ?? group.nodes, decision.after)) errors.push(`Group ${group.id} stands in an order its row order decision does not name`);
   }

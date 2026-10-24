@@ -211,3 +211,36 @@ links:
     expect(corridorSide(core, 180, 0)).toBe('left');
   });
 });
+
+describe('a row pulls a member toward its link\'s far end (architecture-2 ticket 22)', () => {
+  const pulled = readFileSync(new URL('../../goldens/synthetic/a-row-member-passes-unlinked-peers-toward-its-far-end.yaml', import.meta.url), 'utf8');
+
+  it('moves lb past the unlinked members to stand next to fe2, and records the order the search left', async () => {
+    const model = await skeletonOf(pulled);
+    const decision = model.groups.front!.rowOrderDecision!;
+    expect(decision.rule).toBe('kept');
+    expect(decision.pulledFrom).toEqual(['fe1', 'fe2', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'lb']);
+    expect(decision.after).toEqual(['fe1', 'fe2', 'lb', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6']);
+    expect(validateRowOrderDecisions(model)).toEqual([]);
+  }, 60000);
+
+  it('pulls nothing when the author keeps the declared order', async () => {
+    const model = await skeletonOf(pulled.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n'));
+    const decision = model.groups.front!.rowOrderDecision!;
+    expect(decision.rule).toBe('author');
+    expect(decision.pulledFrom).toBeUndefined();
+    expect(decision.after.at(-1)).toBe('lb');
+  }, 60000);
+
+  it('refuses a pull record that moves a linked member past another, or names no move (R5)', async () => {
+    const model = await skeletonOf(pulled);
+    const swapped = copy(model);
+    const order = ['fe2', 'fe1', 'lb', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6'];
+    swapped.groups.front!.rowOrder = order;
+    swapped.groups.front!.rowOrderDecision = { ...swapped.groups.front!.rowOrderDecision!, after: order };
+    expect(validateRowOrderDecisions(swapped)).toContain('The far-end pull of front is recorded on orders it cannot give');
+    const still = copy(model);
+    still.groups.front!.rowOrderDecision = { ...still.groups.front!.rowOrderDecision!, pulledFrom: [...still.groups.front!.rowOrderDecision!.after] };
+    expect(validateRowOrderDecisions(still)).toContain('The far-end pull of front is recorded on orders it cannot give');
+  }, 60000);
+});

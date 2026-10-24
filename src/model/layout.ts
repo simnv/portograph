@@ -129,6 +129,11 @@ export interface RowOrderDecision {
   rule: 'kept' | 'corridor-crossings' | 'author' | 'frame-columns';
   before: string[];
   after: string[];
+  /**
+   * The order the search left when the pull toward the far ends then moved the row (architecture-2 ticket 22, `pullTowardFarEnds`): a linked
+   * member passed unlinked members toward its links' far ends. Absent = the pull moved nothing; `rule` describes `before` against this order.
+   */
+  pulledFrom?: string[];
 }
 
 /**

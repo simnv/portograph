@@ -24,10 +24,9 @@
     "centreGroupStep": "1 123fd9e157a59830"
   },
   "a-chord-hint-and-a-lane-hint-never-share-a-batch": {
-    "centreGroupStep": "30 3d8eb7a019e285ca",
+    "centreGroupStep": "15 17075dd40be6a177",
     "fanRoundHolds": "1 0a22f04442a90cca",
-    "pullTier": "10 b06612ea32ad87db",
-    "settleKeepOut": "2 3d075ae4342c7142"
+    "pullTier": "10 b06612ea32ad87db"
   },
   "a-location-router-leaves-a-lateral-side-toward-a-far-provider": {
     "centreGroupStep": "11 8c069ab3fdc9ede5",

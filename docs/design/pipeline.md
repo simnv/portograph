@@ -332,6 +332,17 @@ the record without searching again; a free row of two or more nodes without a re
 `false` also switches the corridor cut off, so the overlay order measures as before ticket 17. The prediction is not 7a's answer: a later round (a course, a
 spanning chord, centring) can still move the link, so the corpus measures the rule.
 
+**A row pulls a member toward its link's far end (architecture-2 ticket 22, `pullTowardFarEnds`).** Declaration
+order is a hint (user, 2026-10-24). After the corridor search, a member of a free row is pulled when all its links are
+routed and end on one node of a band that faces its row across one tier gap, farther off in x than the straight-link
+length limit of the two bodies. It trades places with an unlinked neighbour while that brings its centre strictly
+nearer the far node's centre: an unlinked member ends no link, so the linked members keep their relative order. A row
+next to a frame cell takes the pull too, because the frame column is later centred on its feeds. A pull stands only
+where the draft measure over the regions the row reaches is no worse (straight overlay links, blocked routed links,
+crossings). The record keeps the order the search left (`rowOrderDecision.pulledFrom`), and the validator checks that
+the linked members kept their order. `layout.corridorRowOrder: false` keeps the declared order, with no pull: a test
+input whose subject needs a node at a fixed place pins it so.
+
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the
 fallback: one ELK run per tier band without partitioning, bands stacked in tier order with the
@@ -1127,7 +1138,8 @@ entry with no link, a link the model does not have, or a room short of what a na
 need); a named link with no labelled run now, or a room a later padding row reached, is no fault (both follow
 legal later geometry). The replay reports a box that no longer holds the room. The title edge is left
 to the title band; a rank cell's border is its frame's, and is not grown.
-**A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line lies on the line,
+**A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line, or on a held routed chord
+(ticket 22), lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
 (`labelRunWindows` with the turned box's height) are the line less the shorten margins, less every
 stretch where a cross-section of the turned box touches a border's stroke, grown by the border margin
