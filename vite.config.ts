@@ -3,6 +3,13 @@ import { createRequire } from 'node:module';
 import { dirname, join, relative as relativePath } from 'node:path';
 import { configDefaults, defineConfig } from 'vitest/config';
 import dts from 'vite-plugin-dts';
+import { heldLock } from './scripts/test-runner-lib.mjs';
+
+// Tests run only through scripts/test-runner.mjs (host-wide lock, one worker, group kill). A raw
+// `npx vitest`, `vitest` or startVitest call loads this config without the held lock and stops here.
+if ((process.env.VITEST !== undefined || /node_modules[\\/]vitest[\\/]/.test(process.argv[1] ?? '')) && heldLock() === undefined) {
+  throw new Error('vitest runs only through `npm test` (scripts/test-runner.mjs); see docs/agents/gates.md');
+}
 
 // Library build: one bundle of everything (`src/internal.ts`), ES + UMD, declarations from
 // tsconfig.json (src only). The public entry points `dist/index.js` and `dist/index.cjs` are
@@ -36,6 +43,23 @@ const slowFiles = [
   'test/cli/e2e.test.ts',
   'test/layout/regions-review.test.ts',
   'test/pipeline/frame-chord-leg.test.ts',
+];
+
+// Files with one test over 15 s in a loaded run (measured 2026-10-25). They run alone, after the default
+// project, with the default timeout; the parallel pool no longer starves them.
+const heavyFiles = [
+  'test/layout/centre-scale.test.ts',
+  'test/layout/constraints.test.ts',
+  'test/layout/move-reservations-oracle.test.ts',
+  'test/pipeline/canton-close-up.test.ts',
+  'test/pipeline/canton-walls.test.ts',
+  'test/pipeline/chord-clear.test.ts',
+  'test/pipeline/min-separation-writers.test.ts',
+  'test/pipeline/overlay-window.test.ts',
+  'test/pipeline/placement-attempt.test.ts',
+  'test/pipeline/side-round-l.test.ts',
+  'test/pipeline/three-continents.test.ts',
+  'test/pipeline/unmoved-rebuild.test.ts',
 ];
 
 export default defineConfig({
@@ -106,7 +130,9 @@ export default defineConfig({
     // Per-test timeouts larger than this stay in force.
     testTimeout: 30000,
     projects: [
-      { extends: true, test: { name: 'default', include: ['test/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slowFiles] } },
+      { extends: true, test: { name: 'default', include: ['test/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slowFiles, ...heavyFiles] } },
+      // Files with a test over 15 s: one at a time, same timeout as the default project.
+      { extends: true, test: { name: 'heavy', include: heavyFiles, poolOptions: { forks: { singleFork: true }, threads: { singleThread: true } } } },
       // Files that take minutes alone: run one at a time after the default project, so a loaded run cannot starve them.
       { extends: true, test: { name: 'slow', include: slowFiles, poolOptions: { forks: { singleFork: true }, threads: { singleThread: true } }, testTimeout: 600000 } },
     ],
