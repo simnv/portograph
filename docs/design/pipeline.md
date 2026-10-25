@@ -1552,7 +1552,7 @@ common stretch once and may fork there (`sharedTrackPairs`, `forks`). A middle r
 moves across its axis by one, two or three pitches; its two neighbours lengthen or shorten, so no bend
 appears. Every way round with the same bends is tried (a non-collinear alternative before an offset, and
 the way with fewer crossings where the bends are equal). A candidate walks back along nothing, enters no body or pill, keeps the overlay port
-clearance from each (or the distance the derived way kept, where less), stays out of the room of every label a held overlay path shows
+clearance from each (or the distance the derived way kept, where less), stays out of the room of every label an unmoved overlay path shows
 (the box beside its longest run that stage 9 tries and 7f reserves, `overlayLabelRoom`; ticket 24), and stands to every group and
 frame box as the derived run did; it may cross the padding edge of a plain group on a side no title
 holds, which 7f then grows. 7f reserves the room across a moved run (the track, and the label the link shows

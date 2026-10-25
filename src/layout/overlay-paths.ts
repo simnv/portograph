@@ -7,10 +7,10 @@ import { drawn, drawnCrossings, overlayCrossingPairs, portKey } from './read/cro
 import type { Drawn } from './read/crossings.js';
 import { bodiesOf, forks, onOneTrack, paddingOf, reachBeyond, sharedTrackPairs, TrackIndex, trackRuns } from './overlay-tracks.js';
 import type { TrackPath } from './overlay-tracks.js';
-import { besideRunLabelBox, describedLink, isDiagonalRun, labelBorders, linkLabelSize, longestRun, overlayLabelsSuppressed } from './link-labels.js';
 import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';
 import { courseGeometry, ringsOf } from './course-lanes.js';
+import { besideRunLabelBox, describedLink, isDiagonalRun, labelBorders, linkLabelSize, longestRun, overlayLabelsSuppressed } from './run-label-box.js';
 
 /**
  * The **overlay port clearance** at the default stroke: where the straight segment is refused and the
@@ -704,8 +704,11 @@ function separateTracks(model: LayoutModel, links: readonly LayoutLink[], shapes
   });
   const held = new TrackIndex();
   for (const item of items) if (!item.movable) held.add({ points: item.points, strokeWidth: item.stroke });
-  // The rooms of the labels the held paths show (`overlayLabelRoom`): a moved run keeps clear of each (`runRules`). A labelled detour
-  // adds its own when it has its tracks. The borders and the suppression are read once, and only when a label is shown.
+  // The rooms of the labels the overlay paths show (`overlayLabelRoom`): a moved run keeps clear of each (`runRules`). A detour moved off
+  // its tracks keeps clear of the labels of the paths that do not move; among the detours the separation order decides the sides (a
+  // labelled detour takes its tracks last, its label on the outer side, and 7f reserves the room beyond the track, `trackRoomNeed`). The
+  // trades of `nestTracks` come after every detour has its tracks, and keep clear of every label, a labelled detour's too. The borders
+  // and the suppression are read once, and only when a label is shown.
   let labelRead: { borders: Rect[]; suppressed: boolean } | undefined;
   const labels: Rect[] = [];
   const addLabel = (link: LayoutLink, points: readonly Point[]): void => {
@@ -713,6 +716,7 @@ function separateTracks(model: LayoutModel, links: readonly LayoutLink[], shapes
     if (room !== undefined) labels.push(room);
   };
   for (const item of items) if (!item.movable && item.labelled) addLabel(item.link, item.points);
+  const fixedLabels = [...labels];
   // A labelled detour goes after the unlabelled ones, so where no crossing decides it takes the outer track and its label the side away
   // from the other tracks.
   const movers = items.filter(item => item.movable).map(item => ({ ...item, length: polylineLength(item.points) }))
@@ -724,7 +728,7 @@ function separateTracks(model: LayoutModel, links: readonly LayoutLink[], shapes
     ...(model.frames ?? []).map(frame => ({ group: undefined, box: frame.box }))];
   const placed: (NestMover & { id: string })[] = [];
   for (const item of movers) {
-    const separated = separate(model, [item.points, ...item.ways], item.stroke, held, shapes, borders, item.labelled, labels);
+    const separated = separate(model, [item.points, ...item.ways], item.stroke, held, shapes, borders, item.labelled, fixedLabels);
     held.add({ points: separated.points, strokeWidth: item.stroke });
     placed.push({ ...separated, id: item.link.id, stroke: item.stroke, labelled: item.labelled, ports: item.ports, order: item.link.sourceIndex });
     if (item.labelled) addLabel(item.link, separated.points);
@@ -1008,7 +1012,7 @@ const keepsDirection = (a: Point, b: Point, c: Point, d: Point): boolean =>
  * - enters no node body and no pill, and keeps the link's overlay port clearance from each, or the distance the derived path kept
  *   where that was less (a run down a narrow gap), so it never passes nearer than the clearance beside a foreign port or a column of
  *   ports;
- * - stays out of the room of every label a held overlay path shows (`overlayLabelRoom`: the box stage 9 tries and 7f reserves),
+ * - stays out of the room of every label an overlay path that does not move shows (`overlayLabelRoom`: the box stage 9 tries and 7f reserves),
  *   by its half stroke, or by the distance the derived run kept where that was less (ticket 24);
  * - stands to every group and frame box as the derived run did (inside it, clear of it, or across its border), and keeps one track
  *   pitch from the border of a box it runs inside; it may cross the padding edge of a plain group that no title holds, when it moves
