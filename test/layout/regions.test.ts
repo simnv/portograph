@@ -401,7 +401,9 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     // Ticket 75: the blocked group holds its place on every pass; that is settled, not a stall.
     // (Q108: a link between two groups may name why it stays orthogonal, ROUTED_CHORD_REFUSED, an info.)
     // Ticket 15 (architecture-2): the jogs left (a parent move that would shift its group) are named, not silent: two links here.
-    expect(model.diagnostics.map(d => d.code).filter(code => code !== 'ROUTED_CHORD_REFUSED')).toEqual(['CENTRE_PARENT_MOVE_SHIFTS_GROUP', 'CENTRE_PARENT_MOVE_SHIFTS_GROUP']);
+    // Architecture-2 ticket 31 (R6): the window of `middle` cannot hold it aligned, and the declined step names its feed links.
+    expect(model.diagnostics.map(d => d.code).filter(code => code !== 'ROUTED_CHORD_REFUSED')).toEqual(['CENTRE_WINDOW_DECLINED', 'CENTRE_PARENT_MOVE_SHIFTS_GROUP', 'CENTRE_PARENT_MOVE_SHIFTS_GROUP']);
+    expect(model.diagnostics.find(d => d.code === 'CENTRE_WINDOW_DECLINED')!.message).toMatch(/^middle declines its alignment/);
     // No foreign group obstacle contains an attachment shape. Every group keeps the band gap.
     const plan = planRoute(model);
     for (const batch of plan.batches) expect(() => batchRequest(plan, batch, [])).not.toThrow();

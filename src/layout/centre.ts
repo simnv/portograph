@@ -1,10 +1,10 @@
-import type { LayoutGroup, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
+import type { AlignedExtentEdge, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { holdsMove } from './move-reservations.js';
 import { cellReach } from './frames.js';
-import { standsInCanton } from './read/canton.js';
+import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
 import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js';
@@ -96,6 +96,14 @@ function overlayStops(model: LayoutModel, node: LayoutNode): OverlayStops {
   return stops;
 }
 
+/**
+ * The two body edges a face of `count` ports at `pitch` needs when its port `index` stands at `x`: the ports keep their pitch on both sides,
+ * and the outer ones stand 10 + pitch / 2 inside the edges. The one statement of the alignment's edge arithmetic: `keptTargets`, `alignSide`
+ * and the aligned extent (`alignedExtentOf`) read it.
+ */
+function alignedEdges(index: number, x: number, count: number, pitch: number): { low: number; high: number } {
+  return { low: x - index * pitch - 10 - pitch / 2, high: x + (count - 1 - index) * pitch + 10 + pitch / 2 };
+}
 /** The keep decision of `alignSide` without its mutation: the targets a side keeps, none when the side is declined as a whole (architecture ticket 12). */
 function keptTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void = () => {}): { index: number; x: number; key: string }[] {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
@@ -104,18 +112,16 @@ function keptTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, 
   if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return [];
   const allowance = alignmentAllowance(node, side);
   /** The width the body ends with when the port at `index` is aligned to `x`. */
-  const reach = (index: number, x: number): number =>
-    Math.max(oldRight, x + (ports.length - 1 - index) * pitch + 10 + pitch / 2)
-    - Math.min(box.x, x - index * pitch - 10 - pitch / 2);
+  const reach = (index: number, x: number): number => { const edges = alignedEdges(index, x, ports.length, pitch); return Math.max(oldRight, edges.high) - Math.min(box.x, edges.low); };
   for (const [index, port] of ports.entries()) {
     const key = portId(port.ref), x = targets.get(key), last = kept[kept.length - 1];
-    if (x !== undefined && (x - index * pitch - 10 - pitch / 2 < limit.low - EPS
-      || x + (ports.length - 1 - index) * pitch + 10 + pitch / 2 > limit.high + EPS)) continue;
+    const edges = x === undefined ? undefined : alignedEdges(index, x, ports.length, pitch);
+    if (x !== undefined && (edges!.low < limit.low - EPS || edges!.high > limit.high + EPS)) continue;
     if (x !== undefined && reach(index, x) > allowance + EPS) continue;
     // The overlay cap comes last, so it is named only where it alone declines the target.
     if (x !== undefined) {
-      const beyondLow = x - index * pitch - 10 - pitch / 2 < stops.low - EPS;
-      if (beyondLow || x + (ports.length - 1 - index) * pitch + 10 + pitch / 2 > stops.high + EPS) {
+      const beyondLow = edges!.low < stops.low - EPS;
+      if (beyondLow || edges!.high > stops.high + EPS) {
         stopped((beyondLow ? stops.lowLink : stops.highLink)!);
         continue;
       }
@@ -124,8 +130,8 @@ function keptTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, 
   }
   if (!kept.length) return [];
   const first = kept[0]!, last = kept[kept.length - 1]!;
-  if (Math.max(oldRight, last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2)
-    - Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2) > allowance + EPS) return [];
+  if (Math.max(oldRight, alignedEdges(last.index, last.x, ports.length, pitch).high)
+    - Math.min(box.x, alignedEdges(first.index, first.x, ports.length, pitch).low) > allowance + EPS) return [];
   return kept;
 }
 
@@ -181,8 +187,8 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
     if (seats.some((x, index) => !kept.some(target => target.index === index) && Math.abs(x - ports[index]!.anchor!.x) > EPS
       && held.get(portId(ports[index]!.ref))?.(x) === false)) return new Set();
   }
-  const oldX = box.x, grown = last.x + (ports.length - 1 - last.index) * pitch + 10 + pitch / 2;
-  box.x = Math.min(box.x, first.x - first.index * pitch - 10 - pitch / 2);
+  const oldX = box.x, grown = alignedEdges(last.index, last.x, ports.length, pitch).high;
+  box.x = Math.min(box.x, alignedEdges(first.index, first.x, ports.length, pitch).low);
   box.width += (oldX - box.x) + Math.max(0, grown - oldRight);
   node.size!.width = box.width;
   for (const port of node.ports) {
@@ -339,8 +345,10 @@ function columnWindow(model: LayoutModel, context: CentreContext, tier: number, 
     const wall = context.walls.get(id) ?? { low: -Infinity, high: Infinity };
     // A member of a canton is walled by the canton frame box, not the column: a member that spent the slack would grow the box by it,
     // and every replay would read the grown box and spend it again (canton-groups ticket 56).
-    const column = own.wall ?? own;
-    return { low: Math.max(wall.low, column.x + inset + (box.x - reach.x)), high: Math.min(wall.high, column.x + column.width - inset - (reach.x + reach.width - (box.x + box.width))) };
+    // A member above the anchor tier may stand past the canton wall up to the aligned extent it reserved (architecture-2 ticket 31): the canton
+    // grows with it. `memberRoom` is the one reader of the member wall; the pull of 7f and the chord step call it too.
+    const room = own.wall === undefined ? { low: own.x + inset, high: own.x + own.width - inset } : memberRoom(model, own.wall, reach, [id], inset);
+    return { low: Math.max(wall.low, room.low + (box.x - reach.x)), high: Math.min(wall.high, room.high - (reach.x + reach.width - (box.x + box.width))) };
   }
   const window = { low: -Infinity, high: Infinity };
   if (!context.columns.some(column => column.from <= tier && tier <= column.to)) return window;
@@ -469,10 +477,88 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
   for (const [child, feed] of seats) wanted.set(child, feed.x);
   return { own, wanted, yielded, seats, conflicts };
 }
+/**
+ * The offset a group step centres on: the mean of the distinct parent x less the mean of the distinct child x of its chosen feeds. Summed in
+ * ascending order (R3): a floating-point sum taken in feed order, which is link order, moves the group by a different last bit when the links
+ * are listed otherwise.
+ */
+function centringOffset(chosen: readonly Feed[]): number {
+  const mean = (values: Iterable<number>): number => { const xs = [...values].sort((a, b) => a - b); return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
+  return mean(new Map(chosen.map(feed => [feed.key, feed.x])).values()) - mean(new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x])).values());
+}
 /** The feeds a group step centres on: the ones that may own an alignment. A fan remainder and a yielded transit would only pull the group away from the x its child is aligned to. */
 function chosenFeeds(context: CentreContext, tier: number, own: Feed[], yielded: ReadonlySet<Feed>): Feed[] {
   const vertical = own.filter(feed => context.winners.get(`${tier}:${feed.key}`) === portId(feed.child.ref) && !yielded.has(feed));
   return vertical.length ? vertical : own;
+}
+/**
+ * The aligned extent of each canton member just above the anchor tier (architecture-2 ticket 31, `LayoutModel.alignedExtents`). The canton
+ * column of such a member is only as wide as the anchor row of its canton, and the member aligned over that row needs its end-port insets
+ * and its side-face pills beyond the outer feeds. That room is known before the first step, so it is reserved here; the clamp of a step
+ * never discovers it. Decided once, in the centre rule only: a later run, a replay and the publication check read the record. A replay of a
+ * later rule that finds no record in a model with a canton reserves nothing (the canton walls hold) and says so (R6): it would decide on
+ * geometry the passes have moved.
+ */
+const CENTRE_RULE_INPUT: LayoutStage = 'flanks';
+function reserveAlignedExtents(model: LayoutModel, context: CentreContext): void {
+  if (model.alignedExtents !== undefined || !Object.values(model.document.frames ?? {}).some(frame => frame.kind === 'canton')) return;
+  // The centre rule runs on the model the flanks rule published: its stage marker is still `flanks` (`mutation.ts`, `stages`).
+  if (model.stage !== CENTRE_RULE_INPUT) {
+    if (!model.diagnostics.some(d => d.code === 'ALIGNED_EXTENTS_UNDECIDED')) {
+      placementWarning(model, 'ALIGNED_EXTENTS_UNDECIDED', `The centre rule recorded no aligned extents for the canton members; this centring at stage ${model.stage} reserves none and the canton walls hold.`, []);
+    }
+    return;
+  }
+  const anchor = model.anchorTier!, extents: NonNullable<LayoutModel['alignedExtents']> = {};
+  const step = context.steps.find(item => item.authority === anchor && item.tier < anchor);
+  if (step !== undefined) {
+    const list = centringFeeds(model, step.tier, anchor);
+    for (const id of context.groupOrder.get(step.tier)!) {
+      const extent = alignedExtentOf(model, context, step.tier, list, id);
+      if (extent !== undefined) extents[id] = extent;
+    }
+  }
+  model.alignedExtents = extents;
+}
+/**
+ * The box a step would give a canton member: the group moved under the mean of its feeds, as the main move of the step does, then each body
+ * grown to the targets the alignment keeps (`keptTargets`, the alignment's own bounds: the row siblings, `ALIGNMENT_MAX_GROWTH` and the
+ * overlay stops), with the margins and side-face pills the box has beyond its bodies. Each edge is stored against the outer feed port on its
+ * side. `undefined` for a group that is not a canton member, has a feed from outside its canton or a transit feed (those feeds do not move
+ * with the canton), or keeps no target.
+ */
+function alignedExtentOf(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string): { low: AlignedExtentEdge; high: AlignedExtentEdge } | undefined {
+  const group = model.groups[id]!, column = context.columns.find(item => item.cells.has(id));
+  if (column?.wall === undefined || model.document.groups[id]!.shape === 'bar') return undefined;
+  const { own, wanted, yielded, seats } = groupFeeds(model, context, tier, list, id, false);
+  if (!seats.size || [...seats.values()].some(feed => feed.transit || !column.cells.has(model.document.nodes[feed.parent.ref.node]!.group))) return undefined;
+  // The main move of the step, read with the step's own readers (`centringOffset`, `farthest`, `mainMove`). Precondition: this runs once, at the
+  // first centring run, before any step. No body has grown yet, so the overlay walls do not bound the move, and the move read here is the one
+  // the first step takes. A later run would read a group the passes have moved, and the record is not read again there.
+  const walls = new Map(group.rowOrder!.map(node => [node, overlayStops(model, model.nodes[node]!)]));
+  const { farthestLeft, farthestRight } = farthest(model, walls);
+  const dx = mainMove(model, group, farthestLeft, farthestRight, centringOffset(chosenFeeds(context, tier, own, yielded)));
+  let bodyLow = Infinity, bodyHigh = -Infinity, grownLow = Infinity, grownHigh = -Infinity, kept = false;
+  const box = group.bounds!;
+  for (const nodeId of group.rowOrder!) {
+    const node = model.nodes[nodeId]!, body = node.bounds!;
+    bodyLow = Math.min(bodyLow, body.x); bodyHigh = Math.max(bodyHigh, right(body));
+    const moved: LayoutNode = { ...node, bounds: { ...body, x: body.x + dx }, ports: node.ports.map(port => ({ ...port, anchor: { ...port.anchor!, x: port.anchor!.x + dx } })) };
+    const limit = siblingLimit(model, group, node);
+    const targets = keptTargets(moved, 'bottom', wanted, { low: limit.low + dx, high: limit.high + dx }, overlayStops(model, moved));
+    grownLow = Math.min(grownLow, body.x + dx); grownHigh = Math.max(grownHigh, right(body) + dx);
+    if (!targets.length) continue;
+    kept = true;
+    const pitch = node.sidePitch!.bottom!, count = node.ports.filter(port => port.side === 'bottom').length, first = targets[0]!, last = targets[targets.length - 1]!;
+    grownLow = Math.min(grownLow, alignedEdges(first.index, first.x, count, pitch).low);
+    grownHigh = Math.max(grownHigh, alignedEdges(last.index, last.x, count, pitch).high);
+  }
+  if (!kept) return undefined;
+  // The outer feeds by x; the port id breaks a tie (R3).
+  const feeds = [...seats.values()].sort((a, b) => a.x - b.x || portId(a.parent.ref).localeCompare(portId(b.parent.ref)));
+  const lowFeed = feeds[0]!, highFeed = feeds[feeds.length - 1]!;
+  return { low: { port: lowFeed.parent.ref, offset: grownLow - (bodyLow - box.x) - lowFeed.x },
+    high: { port: highFeed.parent.ref, offset: grownHigh + (right(box) - bodyHigh) - highFeed.x } };
 }
 /**
  * The overlay walls the main move of a group step stops at. The move carries a body an earlier pass grew toward its feeds, and a move that carries such a
@@ -514,7 +600,7 @@ function standingBox(model: LayoutModel, group: LayoutGroup): LayoutGroup {
  * Whether the step of group `id` leaves the box of the group where it is when its offset goes from `from` to `to` (architecture ticket 15, follow-up): the
  * group stands between walls that take the change of offset. Both readings must hold:
  * - the group fills the window of its frame column (`columnWindow`: a rank cell never leaves the column of its frame; a canton member never leaves the box
- *   of its canton). The column is as wide as the cell, so it holds no room for the cell to shift into, and a later replay that widens the cell widens the
+ *   of its canton, or the aligned extent it reserved, which the canton pass reads too, architecture-2 ticket 31). The column is as wide as the cell, so it holds no room for the cell to shift into, and a later replay that widens the cell widens the
  *   column with it. A wall that a lane of 7a, a neighbour, an overlay or a chord makes is a reading of geometry that a later replay moves (a lane limit
  *   that pinned a group at one replay let it shift 33 px at the next on `a-group-shift-leaves-a-chord-clear-of-a-lane`), so it is no proof.
  * - the step as it runs now puts the group at the same x for both offsets: the main move, stopped at the overlay walls, then the clamp into the step window.
@@ -577,17 +663,13 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
 }
 function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
   const group = model.groups[id]!;
-  const { own, wanted, yielded, conflicts } = groupFeeds(model, context, tier, list, id, warn);
+  const { own, wanted, yielded, conflicts, seats } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
   // away from the x its child is then aligned to.
   const chosen = chosenFeeds(context, tier, own, yielded);
-  const distinctParents = new Map(chosen.map(feed => [feed.key, feed.x]));
-  const distinctChildren = new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x]));
-  // Summed in ascending order (R3): a floating-point sum taken in feed order, which is link order, moves the group by a different last bit when the links are listed otherwise.
-  const mean = (values: Iterable<number>) => { const xs = [...values].sort((a, b) => a - b); return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
   /** How far each wanted port is from the x its feed asks for, in the model as it now stands. */
   const misses = (): Map<string, number> => {
     // One index of the group's ports per reading, the first port of a key first, as `find` gave it.
@@ -607,7 +689,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // has not grown moves as it always did; the wall then bounds only the growth that follows.
   const walls = new Map(group.rowOrder!.map(id => [id, overlayStops(model, model.nodes[id]!)]));
   const { farthestLeft, farthestRight } = farthest(model, walls);
-  const began = group.bounds!.x, toMean = mean(distinctParents.values()) - mean(distinctChildren.values());
+  const began = group.bounds!.x, toMean = centringOffset(chosen);
   moveGroup(model, group, mainMove(model, group, farthestLeft, farthestRight, toMean), 0);
   const aligned = new Set<string>();
   for (const nodeId of group.rowOrder!) {
@@ -644,6 +726,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // does, and the final clamp reads `low`. A bound that only moves the group first is undone.
   const { low, high } = stepWindow(model, context, tier, list, id, previous, tail);
   if (group.bounds!.width > high - low) {
+    // A declined step leaves every feed of the group off its x: it names them (R6, architecture-2 ticket 31).
+    if (warn && seats.size) {
+      recordWindowDecline(model, id, `aligned it is ${group.bounds!.width.toFixed(1)} px wide and its window holds ${Math.max(0, high - low).toFixed(1)} px`, [...seats.values()].map(feed => feed.link));
+    }
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     // The window cannot hold this group, but the group before it has already taken its space, so
@@ -737,6 +823,49 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     timed('centre-passes', () => centrePasses(model, budget));
     if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
   }
+  refreshWindowDeclines(model);
+}
+const WINDOW_DECLINED = 'CENTRE_WINDOW_DECLINED';
+/** The window decline of `group` naming `links`: the group is the first owner, the links follow in id order. */
+function windowDecline(group: string, sizes: string, links: readonly string[]): Diagnostic {
+  const sorted = [...links].sort(), one = sorted.length === 1;
+  return { stage: 'placement', severity: 'warning', code: WINDOW_DECLINED,
+    message: `${group} declines its alignment: ${sizes}, so ${sorted.join(', ')} ${one ? 'keeps' : 'keep'} a jog; routing completes ${one ? 'it' : 'them'}.`,
+    owners: [{ kind: 'group', id: group }, ...sorted.map(id => ({ kind: 'link' as const, id }))] };
+}
+const declinedGroup = (d: Diagnostic): string | undefined => (d.owners ?? []).flatMap(owner => owner.kind === 'group' && 'id' in owner ? [owner.id] : [])[0];
+const declinedLinks = (d: Diagnostic): string[] => (d.owners ?? []).flatMap(owner => owner.kind === 'link' && 'id' in owner ? [owner.id] : []);
+const declinedSizes = (d: Diagnostic): string => /^\S+ declines its alignment: (.*), so /.exec(d.message)?.[1] ?? '';
+/**
+ * One window decline per group (architecture-2 ticket 31): a later decline of the group with other seats adds its links to the warning the group has.
+ */
+function recordWindowDecline(model: LayoutModel, group: string, sizes: string, links: readonly string[]): void {
+  const at = model.diagnostics.findIndex(d => d.code === WINDOW_DECLINED && declinedGroup(d) === group);
+  if (at < 0) { model.diagnostics.push(windowDecline(group, sizes, links)); return; }
+  const known = declinedLinks(model.diagnostics[at]!), added = links.filter(link => !known.includes(link));
+  if (added.length) model.diagnostics[at] = windowDecline(group, declinedSizes(model.diagnostics[at]!), [...known, ...added]);
+}
+/**
+ * A window decline names the feed links of a step that a pass declined (architecture-2 ticket 31). A later pass, or a move of 7f, may still bring a
+ * child port to the x its seat wants (the parent port, or the lane of a transit). Read where the model stands, the warning names only the links whose
+ * child port stands off that x, and a warning that names none is withdrawn. A link whose seat cannot be read stays named. Run when centring ends and
+ * again after the last move of 7f.
+ */
+export function refreshWindowDeclines(model: LayoutModel): void {
+  const anchor = model.anchorTier;
+  if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor) || !model.diagnostics.some(d => d.code === WINDOW_DECLINED)) return;
+  const context = centreContext(model, anchor);
+  model.diagnostics = model.diagnostics.flatMap(d => {
+    if (d.code !== WINDOW_DECLINED) return [d];
+    const group = declinedGroup(d), tier = group === undefined ? undefined : model.groups[group]?.tier;
+    const step = context.steps.find(item => item.tier === tier);
+    if (group === undefined || step === undefined) return [d];
+    const { seats } = groupFeeds(model, context, step.tier, centringFeeds(model, step.tier, step.authority), group, false);
+    const byLink = new Map([...seats.values()].map(feed => [feed.link, feed]));
+    const named = declinedLinks(d), kept = named.filter(link => { const feed = byLink.get(link); return feed === undefined || Math.abs(feed.child.anchor!.x - feed.x) > 0.5; });
+    if (!kept.length) return [];
+    return kept.length === named.length ? [d] : [windowDecline(group, declinedSizes(d), kept)];
+  });
 }
 /** Reads the recorded wall moves again (`withdrawWallMoves`) on the anchor tier centring stored; whether a move was given back. */
 function withdrawRecorded(model: LayoutModel): boolean {
@@ -775,6 +904,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
   // of the passes below read (ticket 143). The runs after a pass of steps read the partners where centring left them.
   placeOverlayFree(model, columns, false);
   let context = centreContext(model, anchor, columns), built = geometry(model);
+  reserveAlignedExtents(model, context);
   let unresolved = new Set<string>(), ran = false;
   while (budget.remaining > 0) {
     ran = true;

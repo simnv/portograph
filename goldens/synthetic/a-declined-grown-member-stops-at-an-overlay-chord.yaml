@@ -1,7 +1,8 @@
 # Expected: A canton member that centring declines stands at the in-wall x nearest its feeds and clamps at an overlay chord as the main move does
 # (ranked-groups ticket 70, review). `providers` is a member of the canton `west`; `site-1` stands outside it, so the feeds of the provider ask for
 # more room than the canton column holds and centring declines the alignment. The sync link from `clock` to `lab` is one straight chord that the
-# provider row must not cross. Test-only input owned by ranked-groups ticket 70; test/pipeline/canton-walls.test.ts reads the layout.
+# provider row must not cross. A feed from outside the canton reserves no aligned extent, and the declined step names its four feed links
+# (`CENTRE_WINDOW_DECLINED`, architecture-2 ticket 31). Test-only input owned by ranked-groups ticket 70; test/pipeline/canton-walls.test.ts reads the layout.
 portograph: 2
 groups:
   clocks: { tier: 0, label: Clocks }

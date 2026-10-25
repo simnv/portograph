@@ -1,0 +1,46 @@
+# Expected: A drop from a wide parent stands vertical (architecture-2 ticket 31). The canton `site` holds `core` (tier 0, the
+# switch `sw`) above `edge` (tier 1, the anchor tier: six single-link children and `srv`, the child of a two-link bundle). The
+# switch aligns its eight linked ports over its children, and its unlinked port `spare` puts a pill on a side face, so the aligned
+# switch is wider than the row below it. The member reserves that aligned extent in placement, and centring and the canton pass
+# both read it: every drop stands at one x (before: six drops slanted 7.8 px, held by the canton wall).
+# Test-only input owned by architecture-2 ticket 31; test/pipeline/canton-walls.test.ts reads the layout.
+portograph: 2
+profile: network
+title: "A drop from a wide parent stands vertical"
+
+groups:
+  site: { label: "Site" }
+  core: { tier: 0, canton: site, label: "Core" }
+  edge: { tier: 1, canton: site, label: "Edge" }
+
+nodes:
+  sw:
+    group: core
+    label: sw
+    ports:
+      - { name: p1, class: downlink }
+      - { name: p2, class: downlink }
+      - { name: p3, class: downlink }
+      - { name: p4, class: downlink }
+      - { name: p5, class: downlink }
+      - { name: p6, class: downlink }
+      - { name: p7, class: downlink }
+      - { name: p8, class: downlink }
+      - { name: spare, class: "downlink admin-down" }
+  a: { group: edge, label: a, size: { width: 120, height: 40 }, ports: [{ name: eth }] }
+  b: { group: edge, label: b, ports: [{ name: eth }] }
+  c: { group: edge, label: c, ports: [{ name: eth }] }
+  srv: { group: edge, label: srv, ports: [{ name: n0 }, { name: n1 }] }
+  d: { group: edge, label: d, ports: [{ name: eth }] }
+  e: { group: edge, label: e, ports: [{ name: eth }] }
+  f: { group: edge, label: f, ports: [{ name: eth }] }
+
+links:
+  - [sw.p1, a.eth]
+  - [sw.p2, b.eth]
+  - [sw.p3, c.eth]
+  - [sw.p4, srv.n0]
+  - [sw.p5, srv.n1]
+  - [sw.p6, d.eth]
+  - [sw.p7, e.eth]
+  - [sw.p8, f.eth]

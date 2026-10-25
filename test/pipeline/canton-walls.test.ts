@@ -9,11 +9,20 @@ import { portKey } from '../../src/layout/sides-one.js';
 import { placeOverlayFree } from '../../src/layout/overlay-place.js';
 import { rows } from '../../src/layout/rows.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
+import { centreDraft, centreViolations, createCentreBudget } from '../../src/layout/centre.js';
+import { memberRoom } from '../../src/layout/read/canton.js';
+import { stepOverChords } from '../../src/layout/chord-clear.js';
+import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
+import { crosses } from '../../src/layout/overlay-paths.js';
+import { moveGroup } from '../../src/layout/skeleton-geometry.js';
+import { centringFeeds } from '../../src/layout/read/feeds.js';
+import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run2 = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const right = (box: Rect): number => box.x + box.width;
 const centreX = (box: Rect): number => box.x + box.width / 2;
 const frameOf = (model: LayoutModel, id: string) => model.frames!.find(frame => frame.id === id)!;
@@ -296,5 +305,120 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     'a-one-rank-member-beside-a-two-rank-member', 'a-foreign-unit-between-two-canton-groups', 'a-canton-with-a-tier-below', 'a-group-with-no-links-stands-beside-a-canton',
   ])('%s: with no hint the finished layout is the fixed point of the pack, the member walls and the column axes (ticket 136)', async name => {
     expect(settled(await run(name))).toEqual([false, false, false]);
+  }, 60000);
+});
+
+/** Every link from a bottom port to a top port, with how far its two ends stand apart in x. */
+const drops = (model: LayoutModel): { link: string; dx: number }[] => model.links.flatMap(link => {
+  if (!link.attachments || link.removed) return [];
+  const from = findPort(model, link.attachments.from)!, to = findPort(model, link.attachments.to)!;
+  return new Set([from.side, to.side]).size === 2 && [from.side, to.side].every(side => side === 'top' || side === 'bottom') ? [{ link: link.id, dx: to.anchor!.x - from.anchor!.x }] : [];
+});
+
+// Architecture-2 ticket 31: a canton member above the anchor tier reserves its aligned extent (the anchor-tier feed x, the end-port insets and the side-face
+// pills) once, in placement (`alignedExtents`); the 7c member window and the canton wall of the inner column pass read that one record.
+describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)', () => {
+  it.each(['a-drop-from-a-wide-parent-stands-vertical', 'a-drop-from-a-wide-parent-stands-vertical-over-a-narrow-row'])('%s: every drop stands at one x', async name => {
+    const model = await run(name);
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    const all = drops(model);
+    expect(all.map(item => item.link).sort()).toEqual(['link-1', 'link-2', 'link-3', 'link-4', 'link-5', 'link-6', 'link-7', 'link-8']);
+    expect(all.filter(item => Math.abs(item.dx) > 0.5)).toEqual([]);
+    // One answer: the offset step does not hold the parent ports, and the canton does not hold the member.
+    expect(model.diagnostics.filter(item => ['CENTRE_PARENT_MOVE_SHIFTS_GROUP', 'COLUMN_AXIS_HELD', 'CENTRE_WINDOW_DECLINED'].includes(item.code))).toEqual([]);
+    // The record: the member above the anchor tier reserves room, and the anchor member reserves none.
+    expect(Object.keys(model.alignedExtents ?? {})).toEqual(['core#0']);
+    // The layout is the fixed point of the publication check and of the member walls.
+    expect(centreViolations(model)).toEqual([]);
+    expect(holdMemberWalls(structuredClone(model) as LayoutModel)).toBe(false);
+  }, 60000);
+
+  it('a-drop-from-a-wide-parent-stands-vertical: the bundle seats, the ports beside the bundle and the wall-move replay stay as on main', async () => {
+    const model = await run('a-drop-from-a-wide-parent-stands-vertical');
+    const x = (node: string, port: string): number => model.nodes[node]!.ports.find(item => item.ref.name === port)!.anchor!.x;
+    // The bundle ends agree (tickets 08 and 09) at the x main gives them (measured on main 33c62c16), with its member gap.
+    expect([x('sw', 'p5'), x('sw', 'p4'), x('srv', 'n1'), x('srv', 'n0')]).toEqual([355.25, 372.75, 355.25, 372.75]);
+    expect(model.bundles.map(bundle => [bundle.id, bundle.memberGap, bundle.memberPitch])).toEqual([['bundle-1', 16, 17.5]]);
+    // The ports beside the bundle keep their side of it.
+    expect([x('sw', 'p3') < x('sw', 'p5'), x('sw', 'p4') < x('sw', 'p6')]).toEqual([true, true]);
+    // No parent-port move is taken at a frame-column wall, so the wall-move replay has nothing to give back (as on main).
+    expect(model.parentWallMoves).toBeUndefined();
+  }, 60000);
+
+  it('without the record the canton wall holds the member again: absent reserves nothing, and a later replay that finds it absent says so', async () => {
+    const model = structuredClone(await run('a-drop-from-a-wide-parent-stands-vertical')) as LayoutModel;
+    const bare = structuredClone(model) as LayoutModel;
+    delete bare.alignedExtents;
+    // The wall the anchor row alone makes (its member frame and the group margin): the member's room holds its frame on the record, and not without it.
+    const edge = frameOf(model, 'edge').box, core = frameOf(model, 'core').box, wall = { x: edge.x - 20, width: edge.width + 40 };
+    const holds = (room: { low: number; high: number }): boolean => room.low <= core.x + 1e-6 && core.x + core.width <= room.high + 1e-6;
+    expect(holds(memberRoom(model, wall, core, ['core#0'], 20))).toBe(true);
+    expect(holds(memberRoom(bare, wall, core, ['core#0'], 20))).toBe(false);
+    // Centring outside the centre rule does not decide: it reserves nothing and names the missing record (R6).
+    centreDraft(bare, createCentreBudget());
+    expect(bare.alignedExtents).toBeUndefined();
+    expect(bare.diagnostics.filter(item => item.code === 'ALIGNED_EXTENTS_UNDECIDED').length).toBe(1);
+  }, 60000);
+
+  it('a sheet with a canton and no member above its anchor tier records an empty decision, and a sheet with no canton records none', async () => {
+    const model = await run('a-narrow-tier-is-centred-in-its-canton-column');
+    const cantonCells = Object.values(model.groups).filter(group => group.frame !== undefined);
+    expect(cantonCells.length).toBeGreaterThan(0);
+    expect(cantonCells.every(group => group.tier! >= model.anchorTier!)).toBe(true);
+    expect(model.alignedExtents).toEqual({});
+    expect((await run('parent-two-children')).alignedExtents).toBeUndefined();
+  }, 60000);
+
+  it('a member above the anchor tier whose feeds stand outside its canton reserves nothing (a-canton-member-frame-slides-off-a-straight-chord)', async () => {
+    const model = await run('a-canton-member-frame-slides-off-a-straight-chord');
+    const tier = model.groups['loc-zone#1']!.tier!;
+    expect(tier).toBeLessThan(model.anchorTier!);
+    const feeds = centringFeeds(model, tier, model.anchorTier!).filter(feed => model.document.nodes[feed.child.ref.node]!.group === 'loc-zone#1');
+    expect(feeds.length).toBeGreaterThan(0);
+    expect(feeds.every(feed => model.groups[model.document.nodes[feed.parent.ref.node]!.group]!.frame === undefined)).toBe(true);
+    expect(model.alignedExtents).toEqual({});
+  }, 60000);
+
+  it('a member above the anchor tier with a transit feed reserves nothing (a-transit-inside-a-canton)', async () => {
+    const model = await run('a-transit-inside-a-canton');
+    const tier = model.groups['gate#0']!.tier!;
+    expect(tier).toBeLessThan(model.anchorTier!);
+    const feeds = centringFeeds(model, tier, model.anchorTier!).filter(feed => model.document.nodes[feed.child.ref.node]!.group === 'gate#0');
+    expect(feeds.some(feed => feed.transit)).toBe(true);
+    expect(model.alignedExtents).toEqual({});
+  }, 60000);
+
+  it('a member on its aligned extent that an overlay chord crosses keeps its x in the whole-group chord step (memberRoom, review re-check)', async () => {
+    // The fixture moved one tier down, between two free groups whose overlay link crosses the member's tier.
+    const yaml = fixture('a-drop-from-a-wide-parent-stands-vertical')
+      .replace('core: { tier: 0, canton: site', 'core: { tier: 1, canton: site').replace('edge: { tier: 1, canton: site', 'edge: { tier: 2, canton: site')
+      .replace('groups:\n', 'groups:\n  top: { tier: 0, label: Top }\n  bottom: { tier: 3, label: Bottom }\n')
+      .replace('nodes:\n', 'nodes:\n  t: { group: top, label: t }\n  u: { group: bottom, label: u }\n')
+      .trimEnd() + '\n  - [t, u, { class: sync }]\n';
+    const model = structuredClone(await run2(yaml)) as LayoutModel;
+    expect(Object.keys(model.alignedExtents ?? {})).toEqual(['core#0']);
+    // Stand the chord on the switch: both free ends over the middle of its body. They are then kept in place (history), so the step can only
+    // move the member, and a move would take its drops off their feeds.
+    const sw = model.nodes['sw']!.bounds!, middle = sw.x + sw.width / 2;
+    for (const id of ['top', 'bottom']) {
+      const group = model.groups[id]!;
+      moveGroup(model, group, middle - (group.bounds!.x + group.bounds!.width / 2), 0);
+      rebuildNodeGeometry(model, group.nodes, 'current');
+    }
+    const t = model.nodes['t']!.bounds!, u = model.nodes['u']!.bounds!;
+    expect(crosses({ x: t.x + t.width / 2, y: t.y + t.height }, { x: u.x + u.width / 2, y: u.y }, sw)).toBe(true);
+    const at = model.groups['core#0']!.bounds!.x;
+    stepOverChords(model, undefined, new Set(['top', 'bottom']));
+    expect(model.groups['core#0']!.bounds!.x).toBeCloseTo(at, 6);
+    expect(drops(model).filter(item => item.link !== 'link-9' && Math.abs(item.dx) > 0.5)).toEqual([]);
+  }, 60000);
+
+  it('a-declined-grown-member-stops-at-an-overlay-chord: a feed outside the canton reserves no room, and the declined step names its group and links', async () => {
+    const model = await run('a-declined-grown-member-stops-at-an-overlay-chord');
+    expect(model.alignedExtents).toEqual({});
+    const declined = model.diagnostics.filter(item => item.code === 'CENTRE_WINDOW_DECLINED');
+    expect(declined.length).toBe(1);
+    expect(declined[0]!.owners).toEqual([{ kind: 'group', id: 'providers#0' }, ...['link-1', 'link-2', 'link-3', 'link-4'].map(id => ({ kind: 'link', id }))]);
+    expect(declined[0]!.message).toMatch(/^providers#0 declines its alignment: .*, so link-1, link-2, link-3, link-4 keep a jog; routing completes them\.$/);
   }, 60000);
 });
