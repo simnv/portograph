@@ -25,7 +25,10 @@ const reporter = full ? ['--reporter=default'] : [];
 const make = (extra) => ({ command: process.execPath, args: [vitest, 'run', `--maxWorkers=${workers}`, ...reporter, ...extra] });
 const steps = rest.length > 0 ? [make(rest)] : ['default', 'heavy', 'slow'].map((project) => make(['--project', project]));
 
-const result = await runJob({ job: `${process.cwd()} vitest ${rest.join(' ') || 'all projects'}`, steps, limitMs, cwd: root });
+const result = await runJob({ job: `${process.cwd()} vitest ${rest.join(' ') || 'all projects'}`, steps, limitMs, cwd: root }).catch((error) => {
+  process.stderr.write(`[test-runner] ${error.message}\n`);
+  return process.exit(1);
+});
 if (result.reason === 'timeout') process.stderr.write(`[test-runner] wall-clock limit of ${limitMs} ms passed; the job was killed\n`);
 if (result.survivors > 0) process.stderr.write('[test-runner] processes of the job survive; the lock stays so the next job kills them\n');
 process.exit(result.code);

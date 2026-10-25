@@ -14,6 +14,9 @@ if (split < 1 || split === argv.length - 1) {
   process.exit(2);
 }
 const [command, ...args] = argv.slice(split + 1);
-const result = await runJob({ job: `${argv.slice(0, split).join(' ')} (${process.cwd()})`, steps: [{ command, args }], limitMs: Number(process.env.PORTOGRAPH_TEST_TIMEOUT_MS ?? 90 * 60_000), cwd: process.cwd(), maxOutput: 64 << 20 });
+const result = await runJob({ job: `${argv.slice(0, split).join(' ')} (${process.cwd()})`, steps: [{ command, args }], limitMs: Number(process.env.PORTOGRAPH_TEST_TIMEOUT_MS ?? 90 * 60_000), cwd: process.cwd(), maxOutput: 64 << 20 }).catch((error) => {
+  process.stderr.write(`[with-lock] ${error.message}\n`);
+  return process.exit(1);
+});
 if (result.reason === 'timeout') process.stderr.write('[with-lock] wall-clock limit passed; the job was killed\n');
 process.exit(result.code);

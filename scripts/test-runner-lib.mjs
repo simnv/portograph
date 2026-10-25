@@ -1,15 +1,19 @@
 /**
- * Heavy-job runner core: a host-wide admission lock, a child in its own process group, a wall-clock
- * limit, bounded output, a group kill that is verified, and a detached watchdog that cleans up when
- * the runner itself dies. `scripts/test-runner.mjs` is the one entry point; see docs/agents/gates.md.
+ * Heavy-job runner core. Admission is a kernel flock on the lock file, held through a `lockf` keeper
+ * child that lives while the runner's pipe is open, so the kernel frees it when the runner dies and
+ * nothing is ever unlinked or reclaimed. The file content is only a record of the holder's job
+ * (pid, start, group); the next flock holder, or the watchdog, kills and verifies the survivors of
+ * the previous record's group under the flock. Also: a child in its own process group, a wall-clock
+ * limit, bounded output and a verified group kill. `scripts/test-runner.mjs` is the one entry point;
+ * see docs/agents/gates.md.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, ftruncateSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
 export const LOCK_PATH = process.env.PORTOGRAPH_TEST_LOCK ?? '/tmp/portograph-test.lock';
-const LEGACY_GATE_LOCK = '/tmp/portograph-gate.lock';
+const LOCKF = '/usr/bin/lockf';
 const WATCHDOG = fileURLToPath(new URL('./test-watchdog.mjs', import.meta.url));
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -17,6 +21,16 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function ps(args) {
   const result = spawnSync('ps', args, { encoding: 'utf8', maxBuffer: 1 << 26, env: { PATH: process.env.PATH ?? '/bin:/usr/bin', LC_ALL: 'C', TZ: 'UTC' } });
   return { ok: !result.error && result.signal === null && result.status !== null && result.status <= 1, status: result.status, stdout: result.stdout ?? '' };
+}
+
+/** `ps` with retries: a transient failure must not fail a cleanup. Returns undefined after `tries` failures. */
+function psRetry(args, tries = 10) {
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    const result = ps(args);
+    if (result.ok && result.status === 0) return result;
+    spawnSync('sleep', ['0.2']);
+  }
+  return undefined;
 }
 
 /** True when a process (pid > 0) or a whole group (negative pid) has a live member. */
@@ -36,9 +50,9 @@ const startMs = (text) => Date.parse(`${text} UTC`);
 const startFloor = (ms) => Math.floor(ms / 1000) * 1000;
 
 /** Members of a process group as `{ pid, ppid, start (ms) }`, or undefined when `ps` failed. */
-export function groupMembers(pgid) {
-  const result = ps(['-axo', 'pid=,ppid=,pgid=,lstart=']);
-  if (!result.ok || result.status !== 0) return undefined;
+export function groupMembers(pgid, tries = 1) {
+  const result = psRetry(['-axo', 'pid=,ppid=,pgid=,lstart='], tries);
+  if (result === undefined) return undefined;
   const members = [];
   for (const line of result.stdout.split('\n')) {
     const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
@@ -61,11 +75,12 @@ export async function killPid(pid, graceMs = 3000) {
 
 /**
  * TERM the group, wait `graceMs`, KILL what remains, and report whether 0 members remain.
- * Without `since` the group is one this process started itself and is signalled as a group. With
+ * Without `recorded` the group is one this process started itself and is signalled as a group. With
  * `{ since, pgStart }` (ms; the job's start and the group leader's start) the pgid may be stale:
  * nothing is killed when the leader exists with another start time than `pgStart` (the id was
  * reused; without `pgStart`, a leader started outside `since` to `since + 5 s`), and only members
  * started at or after `since` are signalled and counted. A group with no leader cannot be reused.
+ * A failing `ps` is retried before the kill counts as unverified.
  */
 export async function killGroup(pgid, graceMs = 3000, recorded) {
   if (!Number.isInteger(pgid) || pgid <= 1) return true;
@@ -81,8 +96,8 @@ export async function killGroup(pgid, graceMs = 3000, recorded) {
     return waitGone(5000);
   }
   const ours = () => {
-    const members = groupMembers(pgid);
-    if (members === undefined) return undefined; // ps failed: cannot tell
+    const members = groupMembers(pgid, 10);
+    if (members === undefined) return undefined; // ps failed ten times: cannot tell
     const leader = members.find((member) => member.pid === pgid);
     const foreign = leader !== undefined && recorded.since > 0 && (recorded.pgStart === undefined ? !(leader.start >= recorded.since && leader.start <= recorded.since + 5000) : leader.start !== recorded.pgStart);
     if (foreign) return []; // pgid reused by an unrelated job
@@ -108,12 +123,13 @@ export async function killGroup(pgid, graceMs = 3000, recorded) {
 /**
  * Group ids of orphans of a job whose runner died before it wrote the group id: group leaders (pid ==
  * pgid) that `init` adopted (ppid 1), started at or after `since`, whose command line equals the one
- * recorded in the lock before the spawn. Best effort: a program that rewrites its title is missed.
+ * recorded before the spawn. Best effort: a program that rewrites its title is missed. Undefined when
+ * `ps` keeps failing.
  */
 export function orphanGroups(commandLine, since = 0) {
   if (typeof commandLine !== 'string' || commandLine === '') return [];
-  const result = ps(['-axo', 'pid=,ppid=,pgid=,command=']);
-  if (!result.ok || result.status !== 0) return [];
+  const result = psRetry(['-axo', 'pid=,ppid=,pgid=,command=']);
+  if (result === undefined) return undefined;
   const found = [];
   for (const line of result.stdout.split('\n')) {
     const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line);
@@ -122,11 +138,12 @@ export function orphanGroups(commandLine, since = 0) {
   return found.filter((pgid) => { const started = startTime(pgid); return started !== undefined && started !== '' && startMs(started) >= since; });
 }
 
-/** Kill every group a lock record names: its recorded one, or the orphans of its pending spawn. */
-export async function killJobGroups(lock, graceMs = 3000) {
-  const since = startFloor(Number(lock.since) || 0);
-  const pgStart = typeof lock.pgStart === 'string' && lock.pgStart !== '' ? startMs(lock.pgStart) : undefined;
-  const groups = Number.isInteger(lock.pgid) ? [lock.pgid] : orphanGroups(lock.pending, since);
+/** Kill every group a record names: its recorded one, or the orphans of its pending spawn. */
+export async function killJobGroups(record, graceMs = 3000) {
+  const since = startFloor(Number(record.since) || 0);
+  const pgStart = typeof record.pgStart === 'string' && record.pgStart !== '' ? startMs(record.pgStart) : undefined;
+  const groups = Number.isInteger(record.pgid) ? [record.pgid] : orphanGroups(record.pending, since);
+  if (groups === undefined) return false;
   const results = await Promise.all(groups.map((group) => killGroup(group, graceMs, { since, pgStart })));
   return results.every(Boolean);
 }
@@ -138,133 +155,134 @@ function ownGroup() {
   return result.ok && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
+/** The record in the lock file, or undefined when it is empty, garbage or being rewritten (one retry). */
 export function readLock(path) {
-  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return undefined; }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const value = JSON.parse(readFileSync(path, 'utf8'));
+      return value !== null && typeof value === 'object' ? value : undefined;
+    } catch { spawnSync('sleep', ['0.02']); }
+  }
+  return undefined;
+}
+
+/** Rewrite the record in place (same inode: the flock lives on it). Only the flock holder calls this. */
+function writeRecord(path, record) {
+  const text = JSON.stringify(record);
+  const fd = openSync(path, 'r+');
+  try {
+    writeSync(fd, text, 0);
+    ftruncateSync(fd, Buffer.byteLength(text));
+  } finally { closeSync(fd); }
+}
+
+/** 'live', 'dead' (provably gone) or 'unknown' (`ps` failed or no start time); unknown counts as live. */
+function ownerState(record) {
+  if (!Number.isInteger(record.pid) || !alive(record.pid)) return 'dead';
+  if (typeof record.start !== 'string' || record.start === '') return 'unknown';
+  const started = startTime(record.pid);
+  if (started === undefined) return 'unknown';
+  return started === record.start ? 'live' : 'dead';
 }
 
 /**
  * The holder's PID when this process runs inside a job that holds the lock (`PORTOGRAPH_LOCK_HELD`),
- * else undefined. The holder must be live and this process must stand in the holder's job group.
+ * else undefined. The holder must be live and this process must stand in the record's job group.
  */
 export function heldLock(path = LOCK_PATH) {
   const held = Number(process.env.PORTOGRAPH_LOCK_HELD);
-  const lock = readLock(path);
-  if (!Number.isInteger(held) || lock?.pid !== held || ownerState(lock) === 'dead') return undefined;
+  const record = readLock(path);
+  if (!Number.isInteger(held) || record?.pid !== held || ownerState(record) === 'dead') return undefined;
   const group = ownGroup();
-  return group === undefined || group === lock.pgid ? held : undefined;
+  return group === undefined || group === record.pgid ? held : undefined;
 }
-
-function writeLock(path, record) {
-  const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, JSON.stringify(record));
-  renameSync(temp, path);
-}
-
-let ownStart;
-/** The same owner: equal pid and start time (the job fields change while the job runs). */
-const sameOwner = (a, b) => a !== undefined && b !== undefined && a.pid === b.pid && a.start === b.start;
-
-/** Remove the lock file only while it still names this owner (pid and start time). */
-export function releaseLock(path, pid, start) {
-  if (start === undefined && pid === process.pid) { ownStart ??= startTime(process.pid); start = ownStart; }
-  const lock = readLock(path);
-  if (lock !== undefined && lock.pid === pid && (start === undefined || lock.start === start)) { try { unlinkSync(path); } catch { /* already removed */ } }
-}
-
-/** 'live', 'dead' (provably gone) or 'unknown' (`ps` failed or the record has no start time); unknown counts as live. */
-function ownerState(lock) {
-  if (!Number.isInteger(lock.pid) || !alive(lock.pid)) return 'dead';
-  if (typeof lock.start !== 'string' || lock.start === '') return 'unknown';
-  const started = startTime(lock.pid);
-  if (started === undefined) return 'unknown';
-  return started === lock.start ? 'live' : 'dead';
-}
-
-/** Take the sidecar that serializes the reclaim of a stale lock; false when another job holds it. */
-function takeReclaim(path) {
-  const side = `${path}.reclaim`;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const fd = openSync(side, 'wx');
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, start: startTime(process.pid) }));
-      closeSync(fd);
-      return true;
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-      const holder = readLock(side);
-      if (holder !== undefined && ownerState(holder) !== 'dead') return false;
-      if (holder === undefined) return false; // half-written; the next round decides
-      const claim = `${side}.${process.pid}`;
-      try { renameSync(side, claim); unlinkSync(claim); } catch { /* another job removed it */ }
-    }
-  }
-  return false;
-}
-
-const dropReclaim = (path) => { try { unlinkSync(`${path}.reclaim`); } catch { /* gone */ } };
 
 /**
- * Reclaim the lock of a dead owner `expected` (pid and start): under the `.reclaim` sidecar, re-read the
- * lock; only if it still names that owner and the owner is provably dead, kill and verify the job's
- * groups, then remove the file. Returns 'removed', 'busy' (another job reclaims) or 'changed' (the lock
- * is no longer that stale record). Throws when a group will not die.
+ * Take the kernel flock on `path`, blocking up to `timeoutMs`. The flock lives in a `lockf` keeper
+ * whose command waits on a pipe from this process; it ends, and the kernel frees the flock, when
+ * `release()` runs or this process dies. Throws on timeout.
  */
-export async function reclaimStale(path, expected, graceMs = 3000) {
-  if (!takeReclaim(path)) return 'busy';
-  try {
-    const lock = readLock(path);
-    if (!sameOwner(lock, expected) || ownerState(lock) !== 'dead') return 'changed';
-    if (!(await killJobGroups(lock, graceMs))) throw new Error(`stale lock owner ${lock.pid}: its job group will not die; see "stuck lock" in docs/agents/gates.md`);
-    unlinkSync(path);
-    return 'removed';
-  } finally {
-    dropReclaim(path);
+export async function takeFlock(path, { timeoutMs = Infinity, onWait = () => {} } = {}) {
+  const end = Date.now() + timeoutMs;
+  let announced = false;
+  for (;;) {
+    const keeper = spawn(LOCKF, ['-k', '-t', '1', path, '/bin/sh', '-c', 'echo locked; exec /bin/cat'], { stdio: ['pipe', 'pipe', 'ignore'], detached: true });
+    const outcome = await new Promise((resolve) => {
+      let seen = '';
+      keeper.stdout.on('data', (chunk) => { seen += chunk; if (seen.includes('locked')) resolve('locked'); });
+      keeper.on('exit', (code) => resolve(code === 75 ? 'busy' : `failed with exit ${code}`));
+      keeper.on('error', (error) => resolve(`failed: ${error.message}`));
+    });
+    if (outcome === 'locked') {
+      return {
+        async release() {
+          keeper.stdin.end();
+          const gone = new Promise((resolve) => (keeper.exitCode !== null ? resolve() : keeper.on('exit', resolve)));
+          await Promise.race([gone, sleep(2000)]);
+          if (keeper.exitCode === null) { try { process.kill(keeper.pid, 'SIGKILL'); } catch { /* gone */ } await gone; }
+          keeper.stdout.destroy();
+        },
+      };
+    }
+    if (outcome !== 'busy') throw new Error(`cannot take the lock ${path}: ${outcome}`);
+    if (Date.now() >= end) throw new Error(`the lock ${path} stays busy; see "stuck lock" in docs/agents/gates.md`);
+    if (!announced) { onWait(readLock(path) ?? {}); announced = true; }
   }
 }
 
-/** True while the old gate lock (a bare pid) names a live process; its runs must still queue behind this lock's. */
-function legacyGateLive() {
-  try {
-    const owner = Number(readFileSync(LEGACY_GATE_LOCK, 'utf8'));
-    return Number.isInteger(owner) && owner > 0 && alive(owner);
-  } catch { return false; }
+/**
+ * With the flock held: kill and verify the survivors of the previous record's group (the checks of
+ * `killGroup`), then clear the record. Throws when a survivor will not die; the record stays.
+ */
+export async function cleanupRecord(path, graceMs = 3000) {
+  const record = readLock(path);
+  if (record === undefined || (record.pgid == null && !record.pending)) return;
+  if (!(await killJobGroups(record, graceMs))) {
+    throw new Error(`processes of the previous job (pid ${record.pid}, group ${record.pgid}) will not die; see "stuck lock" in docs/agents/gates.md`);
+  }
+  writeRecord(path, {});
 }
 
+const held = new Map();
+
 /**
- * Take the lock. Waits while a live owner holds it (or `ps` cannot tell). A dead owner's job group is
- * killed and verified gone before the lock is reused; if it cannot be killed, this throws.
+ * Take the lock for `job`: the flock, then the cleanup of the previous record, then this job's record.
+ * Throws (and holds nothing) when the previous job's survivors will not die.
  */
 export async function acquireLock(job, { path = LOCK_PATH, graceMs = 3000, onWait = () => {} } = {}) {
   const start = startTime(process.pid);
   if (start === undefined || start === '') throw new Error('cannot read the start time of this process with ps; refusing to take the lock');
-  let announced = false;
-  for (;;) {
-    const waitFor = (lock) => { if (!announced) { onWait(lock); announced = true; } return sleep(100); };
-    if (legacyGateLive()) { await waitFor({ pid: 'legacy gate lock', job: LEGACY_GATE_LOCK }); continue; }
+  const flock = await takeFlock(path, { onWait });
+  try {
+    await cleanupRecord(path, graceMs);
     const record = { pid: process.pid, start, pgid: null, job, since: Date.now() };
-    try {
-      writeFileSync(path, JSON.stringify(record), { flag: 'wx' });
-      return record;
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-    }
-    const lock = readLock(path);
-    if (lock === undefined) { await sleep(50); continue; } // being replaced, or half-written
-    if (ownerState(lock) !== 'dead') { await waitFor(lock); continue; }
-    // Stale: the owner is gone. The reclaim is serialized and re-checks the record under the sidecar.
-    if ((await reclaimStale(path, lock, graceMs)) === 'busy') await sleep(50);
+    writeRecord(path, record);
+    held.set(path, flock);
+    return record;
+  } catch (error) {
+    await flock.release();
+    throw error;
   }
+}
+
+/** Free the lock. The record is cleared unless `keepRecord` (a group survives: the next holder kills it). */
+export async function releaseLock(path, pid, start, { keepRecord = false } = {}) {
+  const flock = held.get(path);
+  if (flock === undefined) return;
+  held.delete(path);
+  if (!keepRecord) { const record = readLock(path); if (record?.pid === pid) writeRecord(path, {}); }
+  await flock.release();
 }
 
 /**
  * Run `steps` (each `{ command, args }`) one after another as one job under the lock. Returns
- * `{ code, reason, survivors }`; `reason` is 'exit', 'timeout' or 'signal'. The lock is released only
- * after the job's process group is verified empty; if a group survives, the lock stays.
+ * `{ code, reason, survivors }`; `reason` is 'exit', 'timeout' or 'signal'. The record is cleared only
+ * after the job's process group is verified empty; if a group survives, it stays for the next holder.
  */
 export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = LOCK_PATH, maxOutput = 4 << 20, cwd, env, stdout = process.stdout, stderr = process.stderr, watchdogPollMs = 200 }) {
   // Inside a job that holds the lock: no second lock and no watchdog; the child stays in the holder's group so the holder's kill reaches it.
   const inherited = heldLock(lockPath) !== undefined;
-  const lock = inherited ? undefined : await acquireLock(job, { path: lockPath, graceMs, onWait: (owner) => stderr.write(`waiting for the test lock (pid ${owner.pid}, ${owner.job}); a stuck lock: see docs/agents/gates.md\n`) });
+  const lock = inherited ? undefined : await acquireLock(job, { path: lockPath, graceMs, onWait: (owner) => stderr.write(`waiting for the test lock (pid ${owner.pid ?? '?'}, ${owner.job ?? '?'}); a stuck lock: see docs/agents/gates.md\n`) });
   if (lock) {
     // Double fork: a short-lived node starts the watchdog and exits, so launchd adopts the watchdog.
     const launcher = spawn(process.execPath, ['-e', `const c = require('node:child_process').spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: 'ignore' }); c.on('error', () => {}); c.unref();`, WATCHDOG, String(process.pid), lock.start, lockPath, String(watchdogPollMs)], { stdio: 'ignore' });
@@ -306,15 +324,15 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
     for (const step of steps) {
       if (stopping) break;
       // A new process group: the whole job can be killed by one negative PID. Nothing else detaches.
-      // The command line goes into the lock first; the group id follows in the same tick as spawn() returns.
+      // The command line goes into the record first; the group id follows in the same tick as spawn() returns.
       const since = Date.now();
-      if (lock) writeLock(lockPath, { ...lock, pgid: null, since, pending: [step.command, ...step.args].join(' ') });
+      if (lock) writeRecord(lockPath, { ...lock, pgid: null, since, pending: [step.command, ...step.args].join(' ') });
       current = spawn(step.command, step.args, { cwd, env: { ...(env ?? process.env), ...(lock ? { PORTOGRAPH_LOCK_HELD: String(process.pid) } : {}) }, detached: !inherited, stdio: ['ignore', 'pipe', 'pipe'] });
       if (lock) {
-        writeLock(lockPath, { ...lock, pgid: current.pid, pending: null, since });
+        writeRecord(lockPath, { ...lock, pgid: current.pid, pending: null, since });
         // The leader's start time tells the group from a later process that reuses the id.
         const pgStart = startTime(current.pid);
-        if (pgStart) writeLock(lockPath, { ...lock, pgid: current.pid, pending: null, since, pgStart });
+        if (pgStart) writeRecord(lockPath, { ...lock, pgid: current.pid, pending: null, since, pgStart });
       }
       current.stdout.on('data', sink(stdout));
       current.stderr.on('data', sink(stderr));
@@ -335,6 +353,6 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
     for (const signal of signals) process.off(signal, onSignal);
   }
   const survivors = !inherited && (leaked || (current && alive(-current.pid))) ? 1 : 0;
-  if (lock && survivors === 0) releaseLock(lockPath, process.pid, lock.start);
+  if (lock) await releaseLock(lockPath, process.pid, lock.start, { keepRecord: survivors > 0 });
   return { code, reason, survivors };
 }

@@ -5,12 +5,14 @@
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { alive, runJob, sleep } from './test-runner-lib.mjs';
+import { alive, readLock, runJob, sleep } from './test-runner-lib.mjs';
+
+const held = (path) => readLock(path)?.pid !== undefined;
 
 const LIB = fileURLToPath(new URL('./test-runner-lib.mjs', import.meta.url));
 const LOCKJOB = fileURLToPath(new URL('./with-lock.mjs', import.meta.url));
@@ -28,11 +30,11 @@ test('a corpus-style job and a test job compete for one lock', async () => {
   const mark = (name) => `require('node:fs').appendFileSync(${JSON.stringify(log)}, '${name}\\n');`;
   const first = spawn(process.execPath, [LOCKJOB, 'corpus', '--', process.execPath, '-e', `${mark('corpus-start')} setTimeout(() => { ${mark('corpus-end')} }, 1200);`], { env: lockEnv(lock), stdio: 'ignore' });
   const end = Date.now() + 8000;
-  while (!existsSync(lock) && Date.now() < end) await sleep(25);
+  while (!held(lock) && Date.now() < end) await sleep(25);
   const second = spawn(process.execPath, [LOCKJOB, 'tests', '--', process.execPath, '-e', `${mark('test-start')} ${mark('test-end')}`], { env: lockEnv(lock), stdio: 'ignore' });
   await Promise.all([exited(first), exited(second)]);
   assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['corpus-start', 'corpus-end', 'test-start', 'test-end']);
-  assert.equal(existsSync(lock), false);
+  assert.equal(held(lock), false);
 });
 
 test('a gate job passes the lock down: no deadlock, and the inner child stays in the holder group', async () => {
@@ -58,7 +60,7 @@ test('a gate job passes the lock down: no deadlock, and the inner child stays in
   const [pid, childGroup, parentGroup] = readFileSync(out, 'utf8').split(' ').map(Number);
   assert.notEqual(childGroup, pid, 'the inner child did not start its own group');
   assert.equal(childGroup, parentGroup, 'the inner child shares the group of its parent, which the holder kills');
-  assert.equal(existsSync(lock), false);
+  assert.equal(held(lock), false);
 });
 
 test('a heavy script refuses to run without the lock', async () => {
@@ -88,5 +90,5 @@ test('a runner that died before it wrote the group id: the next job kills the or
   const end = Date.now() + 3000;
   while (alive(orphan) && Date.now() < end) await sleep(25);
   assert.equal(alive(orphan), false, 'the orphan is killed');
-  assert.equal(existsSync(lock), false);
+  assert.equal(held(lock), false);
 });
