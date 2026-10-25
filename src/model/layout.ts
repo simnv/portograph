@@ -561,11 +561,11 @@ export interface LayoutModel {
   /**
    * The aligned extent of each canton member that stands just above the anchor tier (architecture-2 ticket 31), by cell id: the low and the high
    * edge its box takes once its ports stand over their feeds, with the end-port insets and the side-face pills. Each edge is stored as an
-   * anchor-tier feed port and the distance from that port's x, so the record moves with the canton. Decided once, at the first centring run,
+   * anchor-tier feed port and the distance from that port's x, so the record moves with the canton. Decided once, in the centre rule,
    * by the keep rule of the alignment (`keptTargets`: the row siblings, `ALIGNMENT_MAX_GROWTH` and the overlay stops), and only for a member
-   * whose feeds all stand in its own canton. The 7c member window (`columnWindow`) and the canton wall of the inner column pass (`pullTier`)
-   * read it and let the member stand past the canton wall up to it. In a model with a canton: absent = not decided yet, `{}` = decided, no
-   * member reserves room. A model with no canton never has it.
+   * whose feeds all stand in its own canton. One reader, `memberRoom`, serves the 7c member window, the inner column pass and the chord step;
+   * the member may stand past the canton wall up to it. In a model with a canton: absent = not decided (a later replay reserves nothing and
+   * warns `ALIGNED_EXTENTS_UNDECIDED`), `{}` = decided, no member reserves room. A model with no canton never has it.
    */
   alignedExtents?: Record<string, { low: AlignedExtentEdge; high: AlignedExtentEdge }>;
   /**

@@ -18,7 +18,7 @@ import { bandGap } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { chordDecision, CANVAS_GROWTH_SHARE, edge, rankShare, SLIDE_GROWTH, type AdoptedCopy } from './decide.js';
 import { nodeTier } from './read/tier.js';
-import { standsInRootCanton } from './read/canton.js';
+import { memberRoom, standsInRootCanton } from './read/canton.js';
 import { overlayCourse } from './courses.js';
 
 /** The decision loop lives in `decide.ts`; these are re-exported for the callers and the tests that name them here. */
@@ -133,7 +133,10 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
     // A member of a canton stays inside the canton's wall, less the group margin, and 2 * GROUP_PADDING from the members that share a sub-tier.
     const wall = member ? column.wall : undefined;
     if (member && wall === undefined) continue;
-    const roomLow = wall === undefined ? column.x : wall.x + GROUP_PADDING, roomHigh = wall === undefined ? column.x + column.width : wall.x + wall.width - GROUP_PADDING;
+    // A member that reserved an aligned extent may already stand past the wall on it (architecture-2 ticket 31): `memberRoom`, the one reader
+    // of the member wall, gives the room the member window of 7c and the inner column pass give it.
+    const room = wall === undefined ? { low: column.x, high: column.x + column.width } : memberRoom(model, wall, box, ids, GROUP_PADDING);
+    const roomLow = room.low, roomHigh = room.high;
     // A slide of a canton member may pass the wall: the canton is derived from its members and grows with it, and the close-up packs its
     // neighbours again. The growth is capped for one slide and for all of them together.
     const budget = edge(model);

@@ -784,16 +784,19 @@ again after every replay.
 
 **A canton member above the anchor tier reserves its aligned extent** (architecture-2 ticket 31). The canton column of a
 member just above the anchor tier is only as wide as the anchor row of its canton, and the member aligned over that row needs
-its end-port insets and its side-face pills beyond the outer feeds. That room is known before centring, so the first centring
-run records it before any step (`alignedExtents`): the box the step would give the member, moved under the mean of its feeds
+its end-port insets and its side-face pills beyond the outer feeds. That room is known before centring, so the centre rule
+records it before its first step (`alignedExtents`): the box the step would give the member, moved by the step's own main move
 and grown to the targets `keptTargets` keeps (the alignment's own bounds: the row siblings, `ALIGNMENT_MAX_GROWTH` and the
 overlay stops), with the margins and pills the box has beyond its bodies. Each edge is stored against an anchor-tier feed port,
-so the record moves with the canton. A member with a feed from outside its canton, or a transit feed, reserves nothing. The
-member window of the step (`columnWindow`) and the canton wall of the inner column pass of 7f (`pullTier`) read the one
-record: the member may stand past the canton wall up to it, and the canton, derived from its members, grows with it. A step
-whose window still cannot hold the aligned group declines the alignment as a whole and names its feed links
-(`CENTRE_WINDOW_DECLINED`); when centring ends, the warning names only the links whose two ends still stand apart. Below
-the anchor tier nothing is reserved.
+so the record moves with the canton. A member with a feed from outside its canton, or a transit feed, reserves nothing. Only
+the centre rule decides; a later replay that finds no record in a model with a canton reserves nothing and warns
+`ALIGNED_EXTENTS_UNDECIDED`. One reader, `memberRoom`, gives a member its room: the member window of the step
+(`columnWindow`), the canton wall of the inner column pass of 7f (`pullTier`) and the slide of a member frame off a chord
+(`stepOverChords`) call it. The member may stand past the canton wall up to the record, and the canton, derived from its
+members, grows with it. A step whose window still cannot hold the aligned group declines the alignment as a whole and names
+its group and its feed links (`CENTRE_WINDOW_DECLINED`, one warning per group). When centring ends, and again after the last
+move of 7f, the warning names only the links whose child port still stands off the x its seat wants. Below the anchor tier
+nothing is reserved.
 
 **A group with no links steps out of an overlay chord** (ranked-groups ticket 76). `placeOverlayFree` ends with
 `stepOutOfChords`. A free group with no link of any member has no partner, so no target: it would stay a wall at ELK's
