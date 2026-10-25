@@ -2,7 +2,7 @@
 # "Anycast IP v6") is a labelled overlay diagonal across one tier gap. 7f's producer grows the gap until one window of the line, between
 # the group borders and clear of the frozen chords n0 -> n2 and n0 -> n5, holds the label (55.02 px, a tight reservation). The step over
 # a chord (7f round 0) then slides g1a, the upper end n1, right off those chords: the line turns steeper and its window falls to about
-# 53.2 px. Every settle round reserves the label room again on the geometry it settles (`settleRound`), so the chord trial judges, and
+# 53.2 px. Every settle round ends on the label room, reserved on the geometry it settles (`settleRoom`), so the chord trial judges, and
 # the draft adopts, a copy whose window holds the label. The run renders (it threw in `validateGroupLabelBands` before ticket 27), the
 # label lies on its line in that window, and a replay of the reservation reserves nothing more.
 # Test-only input owned by architecture-2 ticket 27; test/pipeline/label-room-settle.test.ts reads the layout.

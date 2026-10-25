@@ -33,8 +33,7 @@ const row = (name: string, counters: string | undefined, runs: number, attempts:
 
 const ROWS: Row[] = [
   // Phase 4 (the unified order): the base 7f of three-continents now moves a chord (before 0 moves) and loses 2 overlay links in the loop, and the attempt costs more work.
-  // Architecture 2, ticket 27: a settled chord or rank candidate the order lets through reads its label room on a candidate copy (`roomShort`): 54 to 62 copies.
-  row('three-continents', '23/74/62/5', 2, 2, 4, 0, 2, { preCentre: 2, baseChord: 1, base7f: '2/0/0' }),
+  row('three-continents', '23/74/54/5', 2, 2, 4, 0, 2, { preCentre: 2, baseChord: 1, base7f: '2/0/0' }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
   row('a-tier-gap-plan-orders-every-part', '2/56/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
   row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/7/7/3', 1, 1, 1, 0, 0),
@@ -61,8 +60,7 @@ const ROWS: Row[] = [
   // The phase-1 fixture: the base 7f chord step moves a group (before this, only NTP among the named sheets did).
   // Phase 3b of ticket 15: the base 7f moved a group and the kept result has no offer, so the unmoved 7f baseline is measured and its offer runs as one extra, refused side trial (3 attempts, 2 place runs; the settled copy 7f kept filters, the unmoved baseline is rebuilt).
   // Architecture 2, ticket 23: the grown overlay port clearance and the separated tracks cost this sheet one settle call, one centring pass and two candidate copies more (14/29/37 to 15/30/39).
-  // Architecture 2, ticket 27: the label room of the settled chord candidates is read on a candidate copy (`roomShort`): 39 to 49 copies.
-  row('a-chord-step-moves-a-group-off-a-straight-chord', '15/30/49/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
+  row('a-chord-step-moves-a-group-off-a-straight-chord', '15/30/39/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
 ];
 
 interface Reading { counters: string; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: string; probe: number; preChords: number; preCentre: number; base7f: string; events: AttemptTraceEvent[] }
