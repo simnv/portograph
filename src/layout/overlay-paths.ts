@@ -4,7 +4,8 @@ import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathS
 import { bottom, EPS, retracingRuns, right, samePoint, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, overlayPortClearance, overlayTrackPitch, pathStrokeWidth } from '../theme/geometry.js';
 import { overlayCrossingPairs } from './read/crossings.js';
-import { bodiesOf, paddingOf, reachBeyond, TrackIndex } from './overlay-tracks.js';
+import { bodiesOf, paddingOf, reachBeyond, sharedTrackPairs, TrackIndex } from './overlay-tracks.js';
+import type { TrackPath } from './overlay-tracks.js';
 import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';
 import { courseGeometry, ringsOf } from './course-lanes.js';
@@ -709,13 +710,116 @@ function separateTracks(model: LayoutModel, links: readonly LayoutLink[], shapes
       || a.link.sourceIndex - b.link.sourceIndex);
   const borders: Border[] = [...Object.entries(model.groups).flatMap(([id, group]) => group.bounds === undefined ? [] : [{ group: id, box: group.bounds }]),
     ...(model.frames ?? []).map(frame => ({ group: undefined, box: frame.box }))];
-  const tracks = new Map<string, Separated>();
+  const placed: (Separated & { id: string; stroke: number; labelled: boolean })[] = [];
   for (const item of movers) {
     const separated = separate(model, [item.points, ...item.ways], item.stroke, held, shapes, borders, item.labelled);
     held.add({ points: separated.points, strokeWidth: item.stroke });
-    tracks.set(item.link.id, separated);
+    placed.push({ ...separated, id: item.link.id, stroke: item.stroke, labelled: item.labelled });
   }
-  return tracks;
+  nestTracks(model, placed, items.filter(item => !item.movable).map(item => ({ points: item.points, strokeWidth: item.stroke })), shapes, borders);
+  return new Map(placed.map(({ id, points, way }) => [id, { points, way }]));
+}
+
+/**
+ * Separated tracks nest (architecture-2 ticket 24, the user's rule of ticket 23): two detours that cross, and that the separation moved
+ * apart off one track (a run of each on one line in the ways round the rule derived), trade the offsets of those two runs when the
+ * trade lowers what the layer shares and crosses. The greedy separation gives the later detour the outer offset on every run it
+ * shares; two U's that leave one face need it the other way on one of the runs: the detour on the outer track over the row takes the
+ * inner riser beside the face, so neither crosses the other. Nothing else changes: the bends stay (each neighbour keeps its direction),
+ * and each moved run keeps the rules `shiftOff` keeps (`runRules`). A labelled detour is not traded: its label keeps the outer side. The measure is the separation's own, in its order: shared tracks,
+ * then crossing pairs, over the whole layer. A trade is tried only where the two then no longer cross each other, so one trade at most
+ * per pair. One pass over the pairs in the movers' order, the runs in path order (R3: the movers are ordered by geometry; finite, no
+ * cap).
+ */
+function nestTracks(model: LayoutModel, placed: (Separated & { stroke: number; labelled: boolean })[], fixed: readonly TrackPath[], shapes: ShapeQuery,
+  borders: readonly Border[]): void {
+  // The layer as it stands: the held paths, then the movers (`placed.length` on). Two paths whose boxes stand more than a pitch apart
+  // share no track and cross nowhere, so a pair is measured against the paths near it only.
+  const layer: { path: TrackPath; box: Rect }[] = [...placed.map(item => ({ points: item.points, strokeWidth: item.stroke })), ...fixed]
+    .map(path => ({ path, box: boxOf(path.points) }));
+  const widest = Math.max(0, ...layer.map(item => item.path.strokeWidth)), reach = overlayTrackPitch(widest, widest);
+  const near = (one: Rect, two: Rect): boolean => !(one.x > right(two) + reach || two.x > right(one) + reach || one.y > bottom(two) + reach || two.y > bottom(one) + reach);
+  // Shared run pairs and crossing pairs of two paths. The sweeps run only where a run of each is near the other's on one axis (shares)
+  // and where the boxes meet (crossings); both answers are the same as without the filter.
+  const nearRuns = (one: readonly Point[], two: readonly Point[]): boolean => {
+    for (let a = 0; a + 1 < one.length; a++) for (let b = 0; b + 1 < two.length; b++) {
+      const p = one[a]!, q = one[a + 1]!, r = two[b]!, t = two[b + 1]!;
+      const vertical = Math.abs(p.x - q.x) <= EPS, other = Math.abs(r.x - t.x) <= EPS;
+      if (vertical !== other) continue;
+      const [at, low, high, at2, low2, high2] = vertical
+        ? [p.x, Math.min(p.y, q.y), Math.max(p.y, q.y), r.x, Math.min(r.y, t.y), Math.max(r.y, t.y)]
+        : [p.y, Math.min(p.x, q.x), Math.max(p.x, q.x), r.y, Math.min(r.x, t.x), Math.max(r.x, t.x)];
+      if (Math.abs(at - at2) < reach && low <= high2 + reach && low2 <= high + reach) return true;
+    }
+    return false;
+  };
+  const meets = (one: Rect, two: Rect): boolean => !(one.x > right(two) + EPS || two.x > right(one) + EPS || one.y > bottom(two) + EPS || two.y > bottom(one) + EPS);
+  const against = (one: TrackPath, oneBox: Rect, two: TrackPath, twoBox: Rect): number[] => [
+    nearRuns(one.points, two.points) ? sharedTrackPairs([one, two]).length : 0,
+    meets(oneBox, twoBox) ? overlayCrossingPairs([segmentsOf(one.points), segmentsOf(two.points)]) : 0];
+  /** Shared run pairs, then crossing pairs, of movers `i` and `j` drawn as `one` and `two`, with the rest of the layer and with each other. */
+  const measure = (i: number, j: number, one: TrackPath, two: TrackPath): number[] => {
+    const boxes = [boxOf(one.points), boxOf(two.points)];
+    const sum = against(one, boxes[0]!, two, boxes[1]!);
+    for (const [at, item] of layer.entries()) {
+      if (at === i || at === j) continue;
+      for (const [k, path] of [one, two].entries()) {
+        if (!near(boxes[k]!, item.box)) continue;
+        const [shares, crossings] = against(path, boxes[k]!, item.path, item.box);
+        sum[0]! += shares!; sum[1]! += crossings!;
+      }
+    }
+    return sum;
+  };
+  /** `points` with run `index` moved onto the line of `to` (its x for a vertical run, its y for a horizontal one). */
+  const shifted = (points: readonly Point[], index: number, to: Point): Point[] => {
+    const horizontal = Math.abs(points[index]!.y - points[index + 1]!.y) <= EPS;
+    const shift = (point: Point): Point => horizontal ? { x: point.x, y: to.y } : { x: to.x, y: point.y };
+    return [...points.slice(0, index), shift(points[index]!), shift(points[index + 1]!), ...points.slice(index + 2)];
+  };
+  /** Whether `candidate`, `item` with run `index` moved, keeps the rules `shiftOff` keeps: no bend appears or goes, and `runRules`. */
+  const holds = (item: Separated & { stroke: number }, index: number, candidate: Point[]): boolean => {
+    const points = item.points;
+    if (!keepsDirection(points[index - 1]!, points[index]!, candidate[index - 1]!, candidate[index]!)
+      || !keepsDirection(points[index + 1]!, points[index + 2]!, candidate[index + 1]!, candidate[index + 2]!)) return false;
+    if (retracingRuns(segmentsOf(candidate))) return false;
+    const { keeps, growsFor } = runRules(model, item.way, item.stroke, shapes, borders);
+    const grows = Math.abs(candidate[index]!.y - candidate[index + 1]!.y) <= EPS ? growsFor(index, candidate[index]!) : undefined;
+    return [index - 1, index, index + 1].every(at => keeps(candidate, at, grows) !== undefined);
+  };
+  const runAxis = (points: readonly Point[], index: number): 'x' | 'y' | undefined => {
+    const one = points[index]!, two = points[index + 1]!;
+    const vertical = Math.abs(one.x - two.x) <= EPS, horizontal = Math.abs(one.y - two.y) <= EPS;
+    return vertical === horizontal ? undefined : vertical ? 'x' : 'y';
+  };
+  for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
+    // A labelled detour keeps its offsets: it took its tracks last so that its label stands on the outer side (`separateTracks`), and
+    // 7f reserved the label's room on the run it draws.
+    if (placed[i]!.labelled || placed[j]!.labelled) continue;
+    if (!near(layer[i]!.box, layer[j]!.box) || overlayCrossingPairs([segmentsOf(placed[i]!.points), segmentsOf(placed[j]!.points)]) === 0) continue;
+    let now: number[] | undefined;
+    // Middle runs only: an end run leaves a port face (`shiftOff`).
+    trades: for (let a = 1; a + 2 < placed[i]!.points.length; a++) for (let b = 1; b + 2 < placed[j]!.points.length; b++) {
+      const one = placed[i]!, two = placed[j]!;
+      const axis = runAxis(one.points, a);
+      if (axis === undefined || axis !== runAxis(two.points, b) || axis !== runAxis(one.way, a) || axis !== runAxis(two.way, b)) continue;
+      // On one line in the ways round, apart now: the separation set them apart.
+      if (Math.abs(one.way[a]![axis] - two.way[b]![axis]) > EPS || Math.abs(one.points[a]![axis] - two.points[b]![axis]) <= EPS) continue;
+      const first = shifted(one.points, a, two.points[b]!), second = shifted(two.points, b, one.points[a]!);
+      // The trade is for the pair: the two must no longer cross. Then each moved run keeps its rules, and the whole layer shares and
+      // crosses less.
+      const fit = overlayCrossingPairs([segmentsOf(first), segmentsOf(second)]) === 0 && holds(one, a, first) && holds(two, b, second);
+      if (!fit) continue;
+      const moved = [{ points: first, strokeWidth: one.stroke }, { points: second, strokeWidth: two.stroke }] as const;
+      if (!better(measure(i, j, ...moved), now ??= measure(i, j, layer[i]!.path, layer[j]!.path))) continue;
+      placed[i] = { ...one, points: first };
+      placed[j] = { ...two, points: second };
+      layer[i] = { path: moved[0], box: boxOf(first) };
+      layer[j] = { path: moved[1], box: boxOf(second) };
+      // The two no longer cross: the pair is done.
+      break trades;
+    }
+  }
 }
 
 /** A separated detour: its drawn points, and the way round the rule derived that they were moved from, point for point. */
@@ -771,44 +875,15 @@ const better = (one: readonly number[], two: readonly number[]): boolean => {
 };
 
 /**
- * One detour moved off every track the held paths take (ticket 23). A **middle run** (both neighbours perpendicular to it) that
- * shares a track moves across its own axis by one, two or three track pitches, either way. Its two neighbours lengthen or shorten
- * and keep their direction, so the path keeps its bends and its turns (bends first, then turns). An end run leaves a port face and
- * does not move: that would add a jog. A candidate stands only when it
- * - walks back along no run it drew (`retracingRuns`);
- * - enters no node body and no pill, and keeps the link's overlay port clearance from each, or the distance the derived path kept
- *   where that was less (a run down a narrow gap), so it never passes nearer than the clearance beside a foreign port or a column of
- *   ports;
- * - stands to every group and frame box as the derived run did (inside it, clear of it, or across its border), and keeps one track
- *   pitch from the border of a box it runs inside; it may cross the padding edge of a plain group that no title holds, when it moves
- *   further from that group's bodies: 7f grows that edge for it (`trackRoomPadding`, `paddingOf`).
- * Of the candidates, the one that shares the fewest tracks wins; then one that needs no growth beyond the box as it stands (spacing is
- * spent only where no track is free, and a track the room 7f grew holds is no growth, so a replay after the growth keeps it); then the
- * fewest crossings with the held paths (overlay pairs: the tracks nest, the user's order puts crossings before a label's comfort); then,
- * for a labelled detour, the way out of its U (its label takes the outer side); then the nearest track; then the way out of a U (away
- * from its two neighbours); then the positive direction (last key). A run that no candidate
- * improves keeps its track, and the scorer's `overlayTrackShares` counts it.
+ * The rules a moved run of one detour keeps (ticket 23), against `base`, the way round the rule derived: `keeps` (its distance to every
+ * shape and its stand to every box; `true` when it holds only by a growth 7f makes) and `growsFor` (the group whose padding that growth
+ * is). `shiftOff` and the nesting of separated tracks (`nestTracks`, ticket 24) read the same rules.
  */
-function shiftOff(model: LayoutModel, base: Point[], stroke: number, held: TrackIndex, shapes: ShapeQuery, borders: readonly Border[],
-  labelled: boolean): { points: Point[]; shares: number; crossings: number } {
+function runRules(model: LayoutModel, base: readonly Point[], stroke: number, shapes: ShapeQuery, borders: readonly Border[]): {
+  keeps: (points: readonly Point[], index: number, grows: string | undefined) => boolean | undefined;
+  growsFor: (index: number, moved: Point) => string | undefined;
+} {
   const step = overlayPortClearance(stroke);
-  const pitch = overlayTrackPitch(stroke, Math.max(stroke, ...held.paths.map(path => path.strokeWidth)));
-  const shares = (points: readonly Point[]): { count: number; runs: Set<number> } => {
-    const runs = held.sharesOf({ points, strokeWidth: stroke });
-    return { count: runs.length, runs: new Set(runs) };
-  };
-  // A held path whose box does not meet the candidate's box crosses it nowhere.
-  const boxOf = (points: readonly Point[]): Rect => {
-    const xs = points.map(point => point.x), ys = points.map(point => point.y);
-    const x = Math.min(...xs), y = Math.min(...ys);
-    return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
-  };
-  const heldSegments = held.paths.map(path => ({ box: boxOf(path.points), segments: segmentsOf(path.points) }));
-  const crossings = (points: readonly Point[]): number => {
-    const mine = segmentsOf(points), box = boxOf(points);
-    return heldSegments.reduce((sum, other) => other.box.x > right(box) + EPS || box.x > right(other.box) + EPS || other.box.y > bottom(box) + EPS
-      || box.y > bottom(other.box) + EPS ? sum : sum + overlayCrossingPairs([mine, other.segments]), 0);
-  };
   const gap = (from: Point, to: Point, box: Rect): number => segmentRectDistance({ from, to } as PathSegment, box);
   // A track keeps one track pitch from a border it runs inside, as from another track.
   const edge = overlayTrackPitch(stroke, DEFAULT_STROKE_WIDTHS.group);
@@ -844,9 +919,54 @@ function shiftOff(model: LayoutModel, base: Point[], stroke: number, held: Track
     const bodies = bodiesOf(model, model.groups[held.group]!.nodes);
     return reachBeyond(bodies, held.side, moved) > reachBeyond(bodies, held.side, base[index]!) + EPS ? held.group : undefined;
   };
-  /** The neighbour from `a` to `b`, moved to run from `c` to `d`, keeps its direction and a length: no bend appears or goes. */
-  const keepsDirection = (a: Point, b: Point, c: Point, d: Point): boolean =>
-    Math.sign(b.x - a.x) === Math.sign(d.x - c.x) && Math.sign(b.y - a.y) === Math.sign(d.y - c.y) && Math.hypot(d.x - c.x, d.y - c.y) > EPS;
+  return { keeps, growsFor };
+}
+
+/** The bounding box of a polyline. */
+const boxOf = (points: readonly Point[]): Rect => {
+  const xs = points.map(point => point.x), ys = points.map(point => point.y);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+};
+
+/** The neighbour from `a` to `b`, moved to run from `c` to `d`, keeps its direction and a length: no bend appears or goes. */
+const keepsDirection = (a: Point, b: Point, c: Point, d: Point): boolean =>
+  Math.sign(b.x - a.x) === Math.sign(d.x - c.x) && Math.sign(b.y - a.y) === Math.sign(d.y - c.y) && Math.hypot(d.x - c.x, d.y - c.y) > EPS;
+
+/**
+ * One detour moved off every track the held paths take (ticket 23). A **middle run** (both neighbours perpendicular to it) that
+ * shares a track moves across its own axis by one, two or three track pitches, either way. Its two neighbours lengthen or shorten
+ * and keep their direction, so the path keeps its bends and its turns (bends first, then turns). An end run leaves a port face and
+ * does not move: that would add a jog. A candidate stands only when it
+ * - walks back along no run it drew (`retracingRuns`);
+ * - enters no node body and no pill, and keeps the link's overlay port clearance from each, or the distance the derived path kept
+ *   where that was less (a run down a narrow gap), so it never passes nearer than the clearance beside a foreign port or a column of
+ *   ports;
+ * - stands to every group and frame box as the derived run did (inside it, clear of it, or across its border), and keeps one track
+ *   pitch from the border of a box it runs inside; it may cross the padding edge of a plain group that no title holds, when it moves
+ *   further from that group's bodies: 7f grows that edge for it (`trackRoomPadding`, `paddingOf`).
+ * Of the candidates, the one that shares the fewest tracks wins; then one that needs no growth beyond the box as it stands (spacing is
+ * spent only where no track is free, and a track the room 7f grew holds is no growth, so a replay after the growth keeps it); then the
+ * fewest crossings with the held paths (overlay pairs: the tracks nest, the user's order puts crossings before a label's comfort); then,
+ * for a labelled detour, the way out of its U (its label takes the outer side); then the nearest track; then the way out of a U (away
+ * from its two neighbours); then the positive direction (last key). A run that no candidate
+ * improves keeps its track, and the scorer's `overlayTrackShares` counts it.
+ */
+function shiftOff(model: LayoutModel, base: Point[], stroke: number, held: TrackIndex, shapes: ShapeQuery, borders: readonly Border[],
+  labelled: boolean): { points: Point[]; shares: number; crossings: number } {
+  const pitch = overlayTrackPitch(stroke, Math.max(stroke, ...held.paths.map(path => path.strokeWidth)));
+  const shares = (points: readonly Point[]): { count: number; runs: Set<number> } => {
+    const runs = held.sharesOf({ points, strokeWidth: stroke });
+    return { count: runs.length, runs: new Set(runs) };
+  };
+  // A held path whose box does not meet the candidate's box crosses it nowhere (`boxOf`).
+  const heldSegments = held.paths.map(path => ({ box: boxOf(path.points), segments: segmentsOf(path.points) }));
+  const crossings = (points: readonly Point[]): number => {
+    const mine = segmentsOf(points), box = boxOf(points);
+    return heldSegments.reduce((sum, other) => other.box.x > right(box) + EPS || box.x > right(other.box) + EPS || other.box.y > bottom(box) + EPS
+      || box.y > bottom(other.box) + EPS ? sum : sum + overlayCrossingPairs([mine, other.segments]), 0);
+  };
+  const { keeps, growsFor } = runRules(model, base, stroke, shapes, borders);
   let points = base;
   let current = shares(points);
   for (let pass = 0; pass < OVERLAY_TRACK_PASSES && current.count > 0; pass++) {
