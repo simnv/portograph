@@ -38,6 +38,23 @@ const slowFiles = [
   'test/pipeline/frame-chord-leg.test.ts',
 ];
 
+// Files with one test over 15 s in a loaded run (measured 2026-10-25). They run alone, after the default
+// project, with the default timeout; the parallel pool no longer starves them.
+const heavyFiles = [
+  'test/layout/centre-scale.test.ts',
+  'test/layout/constraints.test.ts',
+  'test/layout/move-reservations-oracle.test.ts',
+  'test/pipeline/canton-close-up.test.ts',
+  'test/pipeline/canton-walls.test.ts',
+  'test/pipeline/chord-clear.test.ts',
+  'test/pipeline/min-separation-writers.test.ts',
+  'test/pipeline/overlay-window.test.ts',
+  'test/pipeline/placement-attempt.test.ts',
+  'test/pipeline/side-round-l.test.ts',
+  'test/pipeline/three-continents.test.ts',
+  'test/pipeline/unmoved-rebuild.test.ts',
+];
+
 export default defineConfig({
   plugins: [dts({ tsconfigPath: './tsconfig.json' }), {
     // After the declarations are written: make them stand without `elkjs` (a development
@@ -106,7 +123,9 @@ export default defineConfig({
     // Per-test timeouts larger than this stay in force.
     testTimeout: 30000,
     projects: [
-      { extends: true, test: { name: 'default', include: ['test/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slowFiles] } },
+      { extends: true, test: { name: 'default', include: ['test/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slowFiles, ...heavyFiles] } },
+      // Files with a test over 15 s: one at a time, same timeout as the default project.
+      { extends: true, test: { name: 'heavy', include: heavyFiles, poolOptions: { forks: { singleFork: true }, threads: { singleThread: true } } } },
       // Files that take minutes alone: run one at a time after the default project, so a loaded run cannot starve them.
       { extends: true, test: { name: 'slow', include: slowFiles, poolOptions: { forks: { singleFork: true }, threads: { singleThread: true } }, testTimeout: 600000 } },
     ],
