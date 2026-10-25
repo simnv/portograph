@@ -16,6 +16,9 @@ import { alive, readLock, runJob, sleep, startTime, takeFlock, writeRecord } fro
 const here = (name) => fileURLToPath(new URL(name, import.meta.url));
 const LIB = here('./test-runner-lib.mjs');
 const WATCHDOG = here('./test-watchdog.mjs');
+// The fixtures must not wait for the host: the admission limits are off unless a case sets them.
+process.env.PORTOGRAPH_MIN_FREE_PCT ??= '0';
+process.env.PORTOGRAPH_MAX_LOAD ??= '1e9';
 const dir = mkdtempSync(join(tmpdir(), 'pg-runner-hard-'));
 let counter = 0;
 const fresh = () => { counter += 1; return join(dir, `lock-${counter}`); };
