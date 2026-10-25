@@ -7,11 +7,12 @@
  * `npm run sweep` build `dist/` before they run, so the measurement is never of a stale build.
  */
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, openSync, readFileSync, readdirSync, unlinkSync, writeSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, relative, sep } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { heldLock } from './test-runner-lib.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -110,55 +111,12 @@ export function layoutHash(api, model) {
   return createHash('sha256').update(json).digest('hex').slice(0, 12);
 }
 
-/** The lock file the corpus and sweep runs of every worktree queue on. */
-export const LOCK_PATH = process.env.PORTOGRAPH_GATE_LOCK ?? '/tmp/portograph-gate.lock';
-
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error?.code === 'EPERM';
-  }
-}
-
-function unlinkQuiet(path) {
-  try { unlinkSync(path); } catch { /* already gone */ }
-}
-
-const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
- * Run `work` while holding the exclusive gate lock, so concurrent gate runs queue instead of competing
- * for CPU. The lock file holds the owner's PID; a file whose owner is gone is stale and removed.
+ * Run `work` inside a job that holds the host-wide lock (`scripts/with-lock.mjs`, set up by the npm
+ * scripts `corpus`, `sweep` and `gate:branch`). Without the lock it refuses, so no heavy run
+ * bypasses the one-heavy-job rule.
  */
-export async function withGateLock(work, path = LOCK_PATH) {
-  let announced = false;
-  for (;;) {
-    try {
-      const fd = openSync(path, 'wx');
-      writeSync(fd, String(process.pid));
-      closeSync(fd);
-      break;
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
-      let text;
-      try { text = readFileSync(path, 'utf8'); } catch { continue; } // released meanwhile
-      const owner = Number(text);
-      if (text === '') {
-        // its owner may sit between open and write; give it a moment before calling the file stale
-        await pause(200);
-        try { if (readFileSync(path, 'utf8') === '') unlinkQuiet(path); } catch { /* released */ }
-      } else if (Number.isInteger(owner) && owner > 0 && alive(owner)) {
-        if (!announced) process.stderr.write(`waiting for the gate lock (pid ${owner})\n`);
-        announced = true;
-        await pause(1000);
-      } else unlinkQuiet(path);
-    }
-  }
-  try {
-    return await work();
-  } finally {
-    unlinkQuiet(path);
-  }
+export async function withGateLock(work) {
+  if (heldLock() === undefined) throw new Error('run this through its npm script (npm run corpus, sweep or gate:branch); it takes the host-wide lock');
+  return work();
 }
