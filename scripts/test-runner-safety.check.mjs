@@ -210,7 +210,7 @@ test('N5: the watchdog is adopted by launchd, not left under the runner', async 
   let line;
   assert.equal(await until(() => {
     const listing = spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8', env: { PATH: process.env.PATH, LC_ALL: 'C' } }).stdout;
-    line = listing.split('\n').find((row) => row.includes('test-watchdog.mjs') && row.includes(lock));
+    line = listing.split('\n').find((row) => row.includes('test-watchdog.mjs') && row.includes(lock) && !row.includes(' -e '));
     return line !== undefined;
   }, 5000), true, 'watchdog running');
   assert.equal(line.trim().split(/\s+/)[1], '1', 'the watchdog parent is launchd');

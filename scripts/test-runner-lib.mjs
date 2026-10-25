@@ -8,14 +8,22 @@
  * see docs/agents/gates.md.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, ftruncateSync, openSync, readFileSync, writeSync } from 'node:fs';
+import { closeSync, ftruncateSync, openSync, readFileSync, statSync, writeSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
 export const LOCK_PATH = process.env.PORTOGRAPH_TEST_LOCK ?? '/tmp/portograph-test.lock';
-const LOCKF = '/usr/bin/lockf';
-const WATCHDOG = fileURLToPath(new URL('./test-watchdog.mjs', import.meta.url));
+// PORTOGRAPH_LOCKF and PORTOGRAPH_WATCHDOG replace the lockf binary and the watchdog script; the fixtures use them.
+const lockfPath = () => process.env.PORTOGRAPH_LOCKF ?? '/usr/bin/lockf';
+const watchdogPath = () => process.env.PORTOGRAPH_WATCHDOG ?? fileURLToPath(new URL('./test-watchdog.mjs', import.meta.url));
+const RECORD_SIZE = 4096;
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Wait for `promise` for at most `ms`; the timer is cleared, so it does not keep the process alive. */
+const within = (promise, ms) => new Promise((resolve) => {
+  const timer = setTimeout(resolve, ms);
+  promise.then(() => { clearTimeout(timer); resolve(); }, () => { clearTimeout(timer); resolve(); });
+});
 
 /** Every `ps` runs with a fixed locale and zone, so start times compare the same in every process. */
 function ps(args) {
@@ -166,14 +174,23 @@ export function readLock(path) {
   return undefined;
 }
 
-/** Rewrite the record in place (same inode: the flock lives on it). Only the flock holder calls this. */
-function writeRecord(path, record) {
-  const text = JSON.stringify(record);
+/** Like `readLock` but tells a record apart from a read error: `{ state: 'record', record }` or `{ state: 'unreadable' }`. */
+export function readRecord(path) {
+  const record = readLock(path);
+  return record === undefined ? { state: 'unreadable' } : { state: 'record', record };
+}
+
+/**
+ * Rewrite the record in place (same inode: the flock lives on it) as one fixed-length write padded
+ * with spaces, with no truncate, so no reader sees a torn record. Only the flock holder calls this.
+ * Long text fields are cut so the record fits.
+ */
+export function writeRecord(path, record) {
+  const cut = (value) => (typeof value === 'string' && value.length > 900 ? `${value.slice(0, 900)}...` : value);
+  const text = JSON.stringify({ ...record, job: cut(record.job), pending: cut(record.pending) });
+  if (Buffer.byteLength(text) > RECORD_SIZE) throw new Error('lock record is too long');
   const fd = openSync(path, 'r+');
-  try {
-    writeSync(fd, text, 0);
-    ftruncateSync(fd, Buffer.byteLength(text));
-  } finally { closeSync(fd); }
+  try { writeSync(fd, Buffer.from(text.padEnd(RECORD_SIZE - (Buffer.byteLength(text) - text.length), ' ')), 0, RECORD_SIZE, 0); } finally { closeSync(fd); }
 }
 
 /** 'live', 'dead' (provably gone) or 'unknown' (`ps` failed or no start time); unknown counts as live. */
@@ -200,33 +217,62 @@ export function heldLock(path = LOCK_PATH) {
 /**
  * Take the kernel flock on `path`, blocking up to `timeoutMs`. The flock lives in a `lockf` keeper
  * whose command waits on a pipe from this process; it ends, and the kernel frees the flock, when
- * `release()` runs or this process dies. Throws on timeout.
+ * `release()` runs or this process dies. Busy answers (exit 75) wait; `lockf` failing to run (exit 71,
+ * a signal, EAGAIN and the like) backs off and retries. Throws on timeout or after 8 such failures.
+ * The returned handle has `write(record)` (false once the lock is lost), `onLost(fn)` and `release()`.
+ * The lock is lost when the keeper exits before `release()` or the lock file's inode changes.
  */
 export async function takeFlock(path, { timeoutMs = Infinity, onWait = () => {} } = {}) {
   const end = Date.now() + timeoutMs;
   let announced = false;
+  let failures = 0;
   for (;;) {
-    const keeper = spawn(LOCKF, ['-k', '-t', '1', path, '/bin/sh', '-c', 'echo locked; exec /bin/cat'], { stdio: ['pipe', 'pipe', 'ignore'], detached: true });
+    let keeper;
     const outcome = await new Promise((resolve) => {
+      try { keeper = spawn(lockfPath(), ['-k', '-t', '1', path, '/bin/sh', '-c', 'echo locked; exec /bin/cat'], { stdio: ['pipe', 'pipe', 'ignore'], detached: true }); } catch (error) { resolve(`retry: ${error.message}`); return; }
       let seen = '';
       keeper.stdout.on('data', (chunk) => { seen += chunk; if (seen.includes('locked')) resolve('locked'); });
-      keeper.on('exit', (code) => resolve(code === 75 ? 'busy' : `failed with exit ${code}`));
-      keeper.on('error', (error) => resolve(`failed: ${error.message}`));
+      keeper.on('exit', (code, signal) => resolve(code === 75 ? 'busy' : `retry: lockf ended with ${signal ?? `exit ${code}`}`));
+      keeper.on('error', (error) => resolve(`retry: ${error.message}`));
     });
     if (outcome === 'locked') {
-      return {
+      const flock = {
+        inode: statSync(path).ino,
+        lost: undefined,
+        released: false,
+        handlers: [],
+        onLost(handler) { if (this.lost) handler(this.lost); else this.handlers.push(handler); },
+        markLost(why) { if (this.lost) return; this.lost = why; for (const handler of this.handlers) handler(why); },
+        write(record) {
+          if (this.lost) return false;
+          try {
+            if (statSync(path).ino !== this.inode) { this.markLost('the lock file was replaced'); return false; }
+            writeRecord(path, record);
+            return true;
+          } catch { this.markLost('the lock file cannot be written'); return false; }
+        },
         async release() {
+          this.released = true;
           keeper.stdin.end();
-          const gone = new Promise((resolve) => (keeper.exitCode !== null ? resolve() : keeper.on('exit', resolve)));
-          await Promise.race([gone, sleep(2000)]);
-          if (keeper.exitCode === null) { try { process.kill(keeper.pid, 'SIGKILL'); } catch { /* gone */ } await gone; }
+          const gone = new Promise((resolve) => (keeper.exitCode !== null || keeper.signalCode !== null ? resolve() : keeper.on('exit', resolve)));
+          await within(gone, 2000);
+          if (keeper.exitCode === null && keeper.signalCode === null) { try { process.kill(keeper.pid, 'SIGKILL'); } catch { /* gone */ } await gone; }
           keeper.stdout.destroy();
         },
       };
+      keeper.on('exit', () => { if (!flock.released) flock.markLost('the lock keeper exited'); });
+      if (keeper.exitCode !== null || keeper.signalCode !== null) flock.markLost('the lock keeper exited');
+      return flock;
     }
-    if (outcome !== 'busy') throw new Error(`cannot take the lock ${path}: ${outcome}`);
-    if (Date.now() >= end) throw new Error(`the lock ${path} stays busy; see "stuck lock" in docs/agents/gates.md`);
-    if (!announced) { onWait(readLock(path) ?? {}); announced = true; }
+    if (outcome === 'busy') {
+      failures = 0;
+      if (Date.now() >= end) throw new Error(`the lock ${path} stays busy; see "stuck lock" in docs/agents/gates.md`);
+      if (!announced) { onWait(readLock(path) ?? {}); announced = true; }
+      continue;
+    }
+    failures += 1;
+    if (failures >= 8) throw new Error(`cannot take the lock ${path}: ${outcome}`);
+    await sleep(Math.min(2000, 100 * 2 ** failures));
   }
 }
 
@@ -234,13 +280,13 @@ export async function takeFlock(path, { timeoutMs = Infinity, onWait = () => {} 
  * With the flock held: kill and verify the survivors of the previous record's group (the checks of
  * `killGroup`), then clear the record. Throws when a survivor will not die; the record stays.
  */
-export async function cleanupRecord(path, graceMs = 3000) {
+export async function cleanupRecord(path, graceMs = 3000, flock) {
   const record = readLock(path);
   if (record === undefined || (record.pgid == null && !record.pending)) return;
   if (!(await killJobGroups(record, graceMs))) {
     throw new Error(`processes of the previous job (pid ${record.pid}, group ${record.pgid}) will not die; see "stuck lock" in docs/agents/gates.md`);
   }
-  writeRecord(path, {});
+  if (flock) flock.write({}); else writeRecord(path, {});
 }
 
 const held = new Map();
@@ -254,9 +300,10 @@ export async function acquireLock(job, { path = LOCK_PATH, graceMs = 3000, onWai
   if (start === undefined || start === '') throw new Error('cannot read the start time of this process with ps; refusing to take the lock');
   const flock = await takeFlock(path, { onWait });
   try {
-    await cleanupRecord(path, graceMs);
+    await cleanupRecord(path, graceMs, flock);
     const record = { pid: process.pid, start, pgid: null, job, since: Date.now() };
-    writeRecord(path, record);
+    if (statSync(path).size > RECORD_SIZE) ftruncateSync(openSync(path, 'r+'), RECORD_SIZE); // a longer leftover file: cut it once, before the job
+    if (!flock.write(record)) throw new Error(`cannot write the lock record: ${flock.lost}`);
     held.set(path, flock);
     return record;
   } catch (error) {
@@ -270,7 +317,7 @@ export async function releaseLock(path, pid, start, { keepRecord = false } = {})
   const flock = held.get(path);
   if (flock === undefined) return;
   held.delete(path);
-  if (!keepRecord) { const record = readLock(path); if (record?.pid === pid) writeRecord(path, {}); }
+  if (!keepRecord) { const record = readLock(path); if (record?.pid === pid) flock.write({}); }
   await flock.release();
 }
 
@@ -282,12 +329,23 @@ export async function releaseLock(path, pid, start, { keepRecord = false } = {})
 export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = LOCK_PATH, maxOutput = 4 << 20, cwd, env, stdout = process.stdout, stderr = process.stderr, watchdogPollMs = 200 }) {
   // Inside a job that holds the lock: no second lock and no watchdog; the child stays in the holder's group so the holder's kill reaches it.
   const inherited = heldLock(lockPath) !== undefined;
+  // A stale or foreign PORTOGRAPH_LOCK_HELD must not queue behind a lock this process could never get.
+  if (!inherited && process.env.PORTOGRAPH_LOCK_HELD) throw new Error('PORTOGRAPH_LOCK_HELD is set but the held lock is not valid (the holder is gone, or this process stands outside its group); not queueing');
   const lock = inherited ? undefined : await acquireLock(job, { path: lockPath, graceMs, onWait: (owner) => stderr.write(`waiting for the test lock (pid ${owner.pid ?? '?'}, ${owner.job ?? '?'}); a stuck lock: see docs/agents/gates.md\n`) });
+  const flock = lock ? held.get(lockPath) : undefined;
   if (lock) {
-    // Double fork: a short-lived node starts the watchdog and exits, so launchd adopts the watchdog.
-    const launcher = spawn(process.execPath, ['-e', `const c = require('node:child_process').spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: 'ignore' }); c.on('error', () => {}); c.unref();`, WATCHDOG, String(process.pid), lock.start, lockPath, String(watchdogPollMs)], { stdio: 'ignore' });
+    // Double fork: a short-lived node starts the watchdog, prints its pid and exits, so launchd adopts the watchdog.
+    const launcher = spawn(process.execPath, ['-e', `const c = require('node:child_process').spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: 'ignore' }); c.on('error', () => {}); process.stdout.write(String(c.pid)); c.unref();`, watchdogPath(), String(process.pid), lock.start, lockPath, String(watchdogPollMs)], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let printed = '';
+    launcher.stdout.on('data', (chunk) => { printed += chunk; });
     launcher.on('error', () => {});
-    launcher.unref();
+    await within(new Promise((resolve) => launcher.on('exit', resolve)), 3000);
+    await sleep(150);
+    const watchdog = Number(printed);
+    if (!Number.isInteger(watchdog) || watchdog <= 1 || !alive(watchdog)) {
+      await releaseLock(lockPath, process.pid, lock.start);
+      throw new Error('the watchdog did not start; refusing to run a job nothing would clean up after');
+    }
   }
   let current;
   let reason = 'exit';
@@ -316,6 +374,7 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
     }
   };
   const stop = (why) => { reason = why; stopping ??= killStep(); return stopping; };
+  flock?.onLost(() => { code = 125; void stop('lock lost'); });
   const onSignal = (signal) => { code = signal === 'SIGINT' ? 130 : 143; void stop('signal'); };
   const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
   for (const signal of signals) process.on(signal, onSignal);
@@ -326,13 +385,13 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
       // A new process group: the whole job can be killed by one negative PID. Nothing else detaches.
       // The command line goes into the record first; the group id follows in the same tick as spawn() returns.
       const since = Date.now();
-      if (lock) writeRecord(lockPath, { ...lock, pgid: null, since, pending: [step.command, ...step.args].join(' ') });
+      if (flock && !flock.write({ ...lock, pgid: null, since, pending: [step.command, ...step.args].join(' ') })) break;
       current = spawn(step.command, step.args, { cwd, env: { ...(env ?? process.env), ...(lock ? { PORTOGRAPH_LOCK_HELD: String(process.pid) } : {}) }, detached: !inherited, stdio: ['ignore', 'pipe', 'pipe'] });
-      if (lock) {
-        writeRecord(lockPath, { ...lock, pgid: current.pid, pending: null, since });
+      if (flock) {
+        flock.write({ ...lock, pgid: current.pid, pending: null, since });
         // The leader's start time tells the group from a later process that reuses the id.
         const pgStart = startTime(current.pid);
-        if (pgStart) writeRecord(lockPath, { ...lock, pgid: current.pid, pending: null, since, pgStart });
+        if (pgStart) flock.write({ ...lock, pgid: current.pid, pending: null, since, pgStart });
       }
       current.stdout.on('data', sink(stdout));
       current.stderr.on('data', sink(stderr));
@@ -341,7 +400,7 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
       const status = await new Promise((resolve) => { current.on('exit', (c, s) => resolve(c ?? (s ? 128 : 1))); current.on('error', () => resolve(127)); });
       // Also reap anything the step left behind in its group, then drain and destroy the pipes.
       if (!stopping && !inherited && !(await killGroup(current.pid, graceMs))) leaked = true;
-      await Promise.race([closed, sleep(1000)]);
+      await within(closed, 1000);
       current.stdout.destroy();
       current.stderr.destroy();
       if (stopping || leaked) break;
@@ -353,6 +412,6 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
     for (const signal of signals) process.off(signal, onSignal);
   }
   const survivors = !inherited && (leaked || (current && alive(-current.pid))) ? 1 : 0;
-  if (lock) await releaseLock(lockPath, process.pid, lock.start, { keepRecord: survivors > 0 });
+  if (lock) await releaseLock(lockPath, process.pid, lock.start, { keepRecord: survivors > 0 || flock.lost !== undefined });
   return { code, reason, survivors };
 }
