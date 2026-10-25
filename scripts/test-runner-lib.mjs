@@ -325,8 +325,10 @@ export async function releaseLock(path, pid, start, { keepRecord = false } = {})
  * Run `steps` (each `{ command, args }`) one after another as one job under the lock. Returns
  * `{ code, reason, survivors }`; `reason` is 'exit', 'timeout' or 'signal'. The record is cleared only
  * after the job's process group is verified empty; if a group survives, it stays for the next holder.
+ * A failing step stops the job unless `continueOnFailure`; a timeout, a signal, a lost lock or a
+ * surviving group always stops it.
  */
-export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = LOCK_PATH, maxOutput = 4 << 20, cwd, env, stdout = process.stdout, stderr = process.stderr, watchdogPollMs = 200 }) {
+export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = LOCK_PATH, maxOutput = 4 << 20, cwd, env, stdout = process.stdout, stderr = process.stderr, watchdogPollMs = 200, continueOnFailure = false }) {
   // Inside a job that holds the lock: no second lock and no watchdog; the child stays in the holder's group so the holder's kill reaches it.
   const inherited = heldLock(lockPath) !== undefined;
   // A stale or foreign PORTOGRAPH_LOCK_HELD must not queue behind a lock this process could never get.
@@ -404,7 +406,11 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
       current.stdout.destroy();
       current.stderr.destroy();
       if (stopping || leaked) break;
-      if (status !== 0) { code = status; break; }
+      if (status !== 0) {
+        // With continueOnFailure the later steps still run; the first failing code is the job's code.
+        if (code === 0) code = status;
+        if (!continueOnFailure) break;
+      }
     }
     if (stopping) await stopping;
   } finally {
