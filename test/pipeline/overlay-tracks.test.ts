@@ -101,6 +101,28 @@ describe('two overlay detours never share a track (architecture-2 ticket 23)', (
     expect(drawn(two)).toEqual(drawn(one));
   }, 120000);
 
+  it('does not depend on the direction of a link: each overlay link reversed on the laid-out model draws the same line (R3, ticket 24)', async () => {
+    const model = await run(fixture('two-overlay-detours-never-share-a-track'));
+    // The line as its points read from the end nearer the origin, so the direction of the link does not show.
+    const line = (segments: readonly { from: Point; to: Point }[]) => {
+      const points = pointsOf(segments), back = [...points].reverse();
+      return (points[0]!.x - back[0]!.x || points[0]!.y - back[0]!.y) <= 0 ? points : back;
+    };
+    const ids = overlays(model).map(link => link.id);
+    // One link reversed at a time, then all of them: the port geometry stays, only `from` and `to` trade.
+    for (const reversedIds of [...ids.map(id => [id]), ids]) {
+      const reversed = structuredClone(model);
+      for (const link of reversed.links) {
+        if (!reversedIds.includes(link.id)) continue;
+        link.attachments = { from: link.attachments!.to, to: link.attachments!.from };
+      }
+      for (const link of overlays(model)) {
+        const other = reversed.links.find(item => item.id === link.id)!;
+        expect(line(overlayPath(reversed, other).segments), `${link.id} with ${reversedIds.join(', ')} reversed`).toEqual(line(link.path!.segments));
+      }
+    }
+  }, 120000);
+
   it('does not depend on the order of the nodes and groups of the model (R3)', async () => {
     for (const name of ['two-overlay-detours-never-share-a-track', 'a-label-beside-a-detour-in-a-group-padding-keeps-clear-of-the-border']) {
       const model = await run(fixture(name));

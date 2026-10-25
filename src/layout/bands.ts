@@ -22,8 +22,8 @@ import { closeCantons, columnShifts, keepOutShifts, holdColumnAxes, packBesideRo
 import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
-import { effectiveLayer, groupBoxes, labelCrossesBorder } from '../score/model.js';
-import { LINK_LABEL_GEOMETRY, describedLink, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, runLabelBox, tierGapSplit } from './link-labels.js';
+import { effectiveLayer } from '../score/model.js';
+import { LINK_LABEL_GEOMETRY, besideRunLabelBox, describedLink, labelBorders, linkLabelSize, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, tierGapSplit } from './link-labels.js';
 import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from './overlay-paths.js';
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
@@ -1489,16 +1489,10 @@ export function acrossRunPadding(model: LayoutModel, borders: readonly Rect[], r
   const held = paddingOf(model, run.from, run.to);
   if (held === undefined || held.title) return undefined;
   const id = held.group, side = held.side, group = model.groups[id]!, bodies = union(group.nodes.map(node => model.nodes[node]!.bounds!));
-  const second = side === 'bottom' || side === 'left';
-  if (second) {
-    // Stage 9 tries the side of the bodies first: when that box is free of bodies, pills and borders, the label stands there.
-    const first = runLabelBox(borders, run, half, size, false);
-    const taken = first === undefined || borders.some(item => labelCrossesBorder(first, item)) || Object.values(model.nodes).some(node =>
-      overlaps(first, node.bounds!) || node.ports.some(port => port.pill !== undefined && overlaps(first, port.pill.bounds)));
-    if (!taken) return undefined;
-  }
-  const label = runLabelBox(borders, run, half, size, second);
-  if (label === undefined) return undefined;
+  // The box stage 9 tries (`besideRunLabelBox`): on a bottom or left edge, a label that stands on the side of the bodies needs no room.
+  const placed = besideRunLabelBox(model, borders, run, size, half);
+  if (placed === undefined || (side === 'bottom' || side === 'left') && !placed.second) return undefined;
+  const label = placed.box;
   const reach = side === 'top' ? bodies.y - label.y : side === 'bottom' ? bottom(label) - bottom(bodies) : side === 'left' ? bodies.x - label.x : right(label) - right(bodies);
   return { group: id, side, padding: roomGrain(reach + stroke) };
 }
@@ -1537,8 +1531,6 @@ function heldEdge(model: LayoutModel, group: string, side: Side): number {
 /** Whether a separated overlay track needs more room than its edge holds now (`trackRooms`): what `reserveAcrossRunRoom` would grow (ticket 23). */
 export const trackRoomShort = (model: LayoutModel): boolean =>
   model.links.some(link => trackRooms(model, link).some(room => room.padding - heldEdge(model, room.group, room.side) > PLACEMENT_EPS));
-const overlaps = (a: Rect, b: Rect): boolean =>
-  a.x < right(b) - PLACEMENT_EPS && b.x < right(a) - PLACEMENT_EPS && a.y < bottom(b) - PLACEMENT_EPS && b.y < bottom(a) - PLACEMENT_EPS;
 
 /**
  * The checks a validator makes on `model.labelPadding` (R5). Every entry names a plain group (not a rank cell), one of its edges, a
@@ -1630,15 +1622,10 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
   return changed;
 }
 
-const labelSize = (model: LayoutModel, link: LayoutLink): { width: number; height: number } => {
-  const measured = measureText(model.document.links[link.sourceIndex]!.label!, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
-  return { width: measured.width, height: measured.height };
-};
+const labelSize = linkLabelSize;
 
-/** The drawn group and frame borders a link label stays clear of, read in placement with the frames derived afresh. */
-export function labelBorders(model: LayoutModel): Rect[] {
-  return groupBoxes({ ...model, frames: deriveFrames(model) ?? model.frames ?? [] }).map(item => item.bounds);
-}
+/** The borders a link label stays clear of (`labelBorders`, read by 7f and the overlay track separation). */
+export { labelBorders };
 
 /**
  * A link's description influences its length (ADR-0014): the run a label will follow must be long

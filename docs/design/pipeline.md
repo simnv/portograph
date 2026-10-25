@@ -1552,7 +1552,8 @@ common stretch once and may fork there (`sharedTrackPairs`, `forks`). A middle r
 moves across its axis by one, two or three pitches; its two neighbours lengthen or shorten, so no bend
 appears. Every way round with the same bends is tried (a non-collinear alternative before an offset, and
 the way with fewer crossings where the bends are equal). A candidate walks back along nothing, enters no body or pill, keeps the overlay port
-clearance from each (or the distance the derived way kept, where less), and stands to every group and
+clearance from each (or the distance the derived way kept, where less), stays out of the room of every label an unmoved overlay path shows
+(the box beside its longest run that stage 9 tries and 7f reserves, `overlayLabelRoom`; ticket 24), and stands to every group and
 frame box as the derived run did; it may cross the padding edge of a plain group on a side no title
 holds, which 7f then grows. 7f reserves the room across a moved run (the track, and the label the link shows
 beside it, `trackRoomNeed`); where a reserved lane stands beyond that edge, the room is inserted and the
@@ -1562,8 +1563,11 @@ grown room holds is no growth, so a replay after 7f keeps it), fewest crossings 
 tracks nest), for a labelled detour the way out of its U, the nearest track, out of the U, the positive direction. The
 greedy order gives the later detour the outer offset on every run it shares; two U's out of one face need the outer track over the
 row and the inner riser beside the face. So after the last detour, two detours that cross and that the separation moved apart off
-one track (a run of each on one line in the ways round) trade the offsets of those two runs, when each moved run keeps the rules
-above, the two then no longer cross, and the layer shares and crosses less, in that order (`nestTracks`, ticket 24). A labelled
+one track (a run of each on one track in the ways round, `onOneTrack`, no fork) trade the offsets of those two runs, when each moved
+run keeps the rules above, label rooms included, and the two then no longer cross. Every such trade of every pair is ranked
+together: by the change to the layer's shared tracks, then to its crossing points (the measure of the port trade), then by the two
+moved runs, last by the links' `sourceIndex`; no key reads the order of a path's points or a link's direction. The best one that
+lowers the layer is made, and the rest are ranked again; a pair trades once at most (`nestTracks`, ticket 24). A labelled
 detour is not traded: its label keeps the outer side and the room 7f reserved on its run. The port trade of 7f
 (`nestOverlayPorts`) measures this result. The
 result is a function of the frozen geometry, so nothing is recorded: stage 8 publishes it and
