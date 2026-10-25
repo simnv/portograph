@@ -32,7 +32,7 @@ Five canonical roles, each label string equal to its name. See `docs/agents/tria
 
 ### Gates
 
-`npm run gate:branch` is the one command before a merge request; `corpus`, `sweep` and `gate:compare` are its parts. See `docs/agents/gates.md`.
+`npm run gate:branch` is the one command before a merge request; `corpus`, `sweep` and `gate:compare` are its parts. Tests run only through `scripts/test-runner.mjs` (`npm test`); never call `vitest run` raw. See `docs/agents/gates.md`.
 
 ### Domain docs
 
