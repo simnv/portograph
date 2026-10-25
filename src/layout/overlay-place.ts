@@ -19,6 +19,7 @@ import { attemptCounters } from './attempt-counters.js';
 import { chooseStep } from './decide.js';
 import { drawnOverlays, gains, holds, lazyCount, profiles, read, reading, straightOf, tapVerdict, type Reading } from './objective.js';
 import { overlayCourse } from './courses.js';
+import { memberRoom } from './read/canton.js';
 
 /** A free group stands where its overlay chords are straight and not at the mean of its partners (ticket 143, info). */
 export const OVERLAY_WINDOW_TAKEN = 'OVERLAY_WINDOW_TAKEN';
@@ -541,7 +542,11 @@ function memberSpace(model: LayoutModel, column: FrameColumn, tier: number, move
       .map(id => ({ low: box.get(id)!.x, high: box.get(id)!.x + box.get(id)!.width, gap })),
     ...model.lanes.filter(lane => lane.tier === tier).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width, gap: 0 })),
   ].sort((a, b) => a.low - b.low);
-  return { box, gap, walls, low: column.wall!.x + GROUP_PADDING, high: column.wall!.x + column.wall!.width - GROUP_PADDING };
+  // The canton wall less the margin, widened to the aligned extent a moving member reserved (architecture-2 ticket 31): `memberRoom` is the
+  // one reader of the member wall. A free member has no routed feed and so reserves none; the reader is called so the rule has one statement.
+  const rooms = [...own].map(id => memberRoom(model, column.wall!, box.get(id)!, cellsOf(id), GROUP_PADDING));
+  const base = memberRoom(model, column.wall!, { ...column.wall!, y: 0, height: 0 }, [], GROUP_PADDING);
+  return { box, gap, walls, low: Math.min(base.low, ...rooms.map(room => room.low)), high: Math.max(base.high, ...rooms.map(room => room.high)) };
 }
 
 /**

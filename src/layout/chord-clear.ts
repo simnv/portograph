@@ -277,8 +277,9 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
           else {
             // A member of a canton stands inside the canton, less the group margin, and 2 * GROUP_PADDING from the other frames of its sub-tier.
             const cellsOf = (id: string): string[] => [...frames[id]!.cells, ...Object.keys(frames).filter(child => frames[child]!.parent === id).flatMap(cellsOf)];
-            const lead = box.x - frame.box.x, span = frame.box.width;
-            inside = { low: Math.max(world.low, cell.wall.x + GROUP_PADDING + lead), high: Math.min(world.high - box.width, cell.wall.x + cell.wall.width - GROUP_PADDING - span + lead) };
+            // A member on its reserved aligned extent may stand past the wall (architecture-2 ticket 31): `memberRoom` is the one reader of the member wall.
+            const lead = box.x - frame.box.x, span = frame.box.width, room = memberRoom(model, cell.wall, frame.box, cellsOf(group.frame), GROUP_PADDING);
+            inside = { low: Math.max(world.low, room.low + lead), high: Math.min(world.high - box.width, room.high - span + lead) };
             for (const other of derived!) {
               if (other.id === group.frame || frames[other.id]!.parent !== cell.id || !cellsOf(other.id).some(id => model.groups[id]!.tier === tier)) continue;
               walls.push({ low: other.box.x - FRAME_TO_FRAME_GAP - span + lead, high: other.box.x + other.box.width + FRAME_TO_FRAME_GAP + lead });

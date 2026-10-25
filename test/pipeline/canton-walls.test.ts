@@ -11,6 +11,10 @@ import { rows } from '../../src/layout/rows.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { centreDraft, centreViolations, createCentreBudget } from '../../src/layout/centre.js';
 import { memberRoom } from '../../src/layout/read/canton.js';
+import { stepOverChords } from '../../src/layout/chord-clear.js';
+import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
+import { crosses } from '../../src/layout/overlay-paths.js';
+import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { centringFeeds } from '../../src/layout/read/feeds.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
@@ -18,6 +22,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run2 = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const right = (box: Rect): number => box.x + box.width;
 const centreX = (box: Rect): number => box.x + box.width / 2;
 const frameOf = (model: LayoutModel, id: string) => model.frames!.find(frame => frame.id === id)!;
@@ -381,6 +386,31 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     const feeds = centringFeeds(model, tier, model.anchorTier!).filter(feed => model.document.nodes[feed.child.ref.node]!.group === 'gate#0');
     expect(feeds.some(feed => feed.transit)).toBe(true);
     expect(model.alignedExtents).toEqual({});
+  }, 60000);
+
+  it('a member on its aligned extent that an overlay chord crosses keeps its x in the whole-group chord step (memberRoom, review re-check)', async () => {
+    // The fixture moved one tier down, between two free groups whose overlay link crosses the member's tier.
+    const yaml = fixture('a-drop-from-a-wide-parent-stands-vertical')
+      .replace('core: { tier: 0, canton: site', 'core: { tier: 1, canton: site').replace('edge: { tier: 1, canton: site', 'edge: { tier: 2, canton: site')
+      .replace('groups:\n', 'groups:\n  top: { tier: 0, label: Top }\n  bottom: { tier: 3, label: Bottom }\n')
+      .replace('nodes:\n', 'nodes:\n  t: { group: top, label: t }\n  u: { group: bottom, label: u }\n')
+      .trimEnd() + '\n  - [t, u, { class: sync }]\n';
+    const model = structuredClone(await run2(yaml)) as LayoutModel;
+    expect(Object.keys(model.alignedExtents ?? {})).toEqual(['core#0']);
+    // Stand the chord on the switch: both free ends over the middle of its body. They are then kept in place (history), so the step can only
+    // move the member, and a move would take its drops off their feeds.
+    const sw = model.nodes['sw']!.bounds!, middle = sw.x + sw.width / 2;
+    for (const id of ['top', 'bottom']) {
+      const group = model.groups[id]!;
+      moveGroup(model, group, middle - (group.bounds!.x + group.bounds!.width / 2), 0);
+      rebuildNodeGeometry(model, group.nodes, 'current');
+    }
+    const t = model.nodes['t']!.bounds!, u = model.nodes['u']!.bounds!;
+    expect(crosses({ x: t.x + t.width / 2, y: t.y + t.height }, { x: u.x + u.width / 2, y: u.y }, sw)).toBe(true);
+    const at = model.groups['core#0']!.bounds!.x;
+    stepOverChords(model, undefined, new Set(['top', 'bottom']));
+    expect(model.groups['core#0']!.bounds!.x).toBeCloseTo(at, 6);
+    expect(drops(model).filter(item => item.link !== 'link-9' && Math.abs(item.dx) > 0.5)).toEqual([]);
   }, 60000);
 
   it('a-declined-grown-member-stops-at-an-overlay-chord: a feed outside the canton reserves no room, and the declined step names its group and links', async () => {
