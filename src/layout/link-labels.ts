@@ -17,6 +17,8 @@ import { PLACEMENT_EPS } from './tolerance.js';
 
 export { LINK_LABEL_GEOMETRY } from './link-label-geometry.js';
 import { LINK_LABEL_GEOMETRY } from './link-label-geometry.js';
+import { paddingOf } from './overlay-tracks.js';
+import { deriveFrames } from './frames.js';
 
 /** How far a border keeps a link label off along its run: the border margin beyond the border's half stroke. */
 export const LABEL_BORDER_REACH = LINK_LABEL_GEOMETRY.borderMargin + DEFAULT_STROKE_WIDTHS.group / 2;
@@ -471,6 +473,38 @@ function runCentre(windows: readonly { from: number; to: number }[] | undefined,
 export function runLabelBox(borders: readonly Rect[], run: PathSegment, half: number, size: { width: number; height: number }, second: boolean): Rect | undefined {
   const centre = runCentre(cutWindows(borders, run), run, size.width);
   return centre === null ? undefined : candidateBox(run, half, size, second, centre).bounds;
+}
+
+/**
+ * The box a label beside an axis-aligned run takes, as stage 9 tries it and 7f reserves its room (`acrossRunPadding`, ticket 21): the
+ * first side, except for a run in a group's bottom or left padding on an edge no title holds, whose first box meets a node body, a pill
+ * or a border; that label takes the second side, the side of the edge. `second` says which. `undefined` when no window of the run
+ * holds the label. 7f and the overlay track separation (`overlayLabelRoom`) read this one box (R1).
+ */
+export function besideRunLabelBox(model: LayoutModel, borders: readonly Rect[], run: PathSegment, size: { width: number; height: number },
+  half: number): { box: Rect; second: boolean } | undefined {
+  const first = runLabelBox(borders, run, half, size, false);
+  const held = paddingOf(model, run.from, run.to);
+  if (held === undefined || held.title || held.side === 'top' || held.side === 'right') return first === undefined ? undefined : { box: first, second: false };
+  // Stage 9 tries the side of the bodies first: when that box is free of bodies, pills and borders, the label stands there.
+  const taken = first === undefined || borders.some(item => labelCrossesBorder(first, item)) || Object.values(model.nodes).some(node =>
+    overlapsOpen(first, node.bounds!) || node.ports.some(port => port.pill !== undefined && overlapsOpen(first, port.pill.bounds)));
+  if (!taken) return { box: first, second: false };
+  const box = runLabelBox(borders, run, half, size, true);
+  return box === undefined ? undefined : { box, second: true };
+}
+const overlapsOpen = (a: Rect, b: Rect): boolean =>
+  a.x < right(b) - PLACEMENT_EPS && b.x < right(a) - PLACEMENT_EPS && a.y < bottom(b) - PLACEMENT_EPS && b.y < bottom(a) - PLACEMENT_EPS;
+
+/** The measured text of a link's authored label (no halo): what 7f reserves room for and the separation keeps clear of. */
+export function linkLabelSize(model: LayoutModel, link: LayoutLink): { width: number; height: number } {
+  const measured = measureText(model.document.links[link.sourceIndex]!.label!, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight });
+  return { width: measured.width, height: measured.height };
+}
+
+/** The drawn group and frame borders a link label stays clear of, read in placement with the frames derived afresh. */
+export function labelBorders(model: LayoutModel): Rect[] {
+  return groupBoxes({ ...model, frames: deriveFrames(model) ?? model.frames ?? [] }).map(item => item.bounds);
 }
 
 /** A direct line is a segment with no axis: its label lies on it (ticket 16). */
