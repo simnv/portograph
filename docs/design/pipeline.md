@@ -1211,8 +1211,14 @@ whose longest run lies wholly across the axis the room grows on are diagnosed `L
 Room that lies beyond a reserved lane is inserted, and the lane and everything beyond it move out
 with it (`insertRoomAt`; label room wins over an adjacent lane, architecture-2 ticket 23). Moves settle pills before the next link measures; the
 reservation re-runs after the grid inside the 7f loop and any movement replays the region producers. That group's band clearance also
-reserves the label's room beside the detour run under the title. Publication and restore re-run the
-reservation on a copy and reject a model it would still change.
+reserves the label's room beside the detour run under the title. **The room is reserved again in every settle round
+(architecture-2 ticket 27).** A later 7f move turns a labelled line (the step over a chord, a lower rank move, the canton
+close-up): the line turns, and its window shrinks below the room the producer reserved. `settleRound` therefore runs
+`reserveLinkLabelRoom` and the replay after the tier-gap growth, until a pass reserves nothing (`settleLabelRoom`, at most
+`LABEL_ROOM_PASSES` passes; a room still changing after them is named `LINK_LABEL_ROOM_UNSETTLED`). A chord trial (`trialSettle`) runs the
+same round on its copy, so the judges read, and the draft adopts, a copy whose rooms hold. Where no growth helps, the settled chord
+and rank judges refuse a move that names a link whose room a replay would still grow (`noNewFindings('room')`, as the lane reseat asks).
+Publication and restore re-run the reservation on a copy and reject a model it would still change.
 
 **Linked groups share a grid (ADR-0012).** Before labels are planned, groups joined by vertical
 ports take one x-extent and groups joined by horizontal ports take one y-extent — the union of the

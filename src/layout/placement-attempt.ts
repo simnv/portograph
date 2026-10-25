@@ -8,7 +8,7 @@ import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels, labelBorders, roomHolds, roomLikelyHolds } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds, type LinkLabelShortfall } from './bands.js';
 import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
@@ -27,7 +27,7 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
  *
  * The passes, in order, on the draft:
  *   1. `freezeChords`, then `produceGroupLabelBands`: the last confirmation of a chord becomes a wall, then the reservation of the label bands.
- *   2. Up to `CANTON_ROUNDS` rounds of `settleRound`, `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
+ *   2. Up to `CANTON_ROUNDS` rounds of `settleRound` (the tier-gap growth, the link label room again, the close-up, the keep-out), `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
  *      each move on a copy that `trialSettle` has run). The choices of the linkless step, the chord step and the lane reseat are all made by the
  *      decision loop of decide.ts, each judged by the profile `judges` names for its kind; a round that moved anything is followed by `replayRegions`, or, when the step kept
  *      a move, by taking the settled copy of the last kept move (the replay and the next round's settling are then done).
@@ -36,10 +36,14 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
  *   5. The diagnostics read once on the final geometry: blocked chords, side lanes, chords that leave a frame by a side edge.
  */
 
-/** Rounds of the tier-gap growth and the canton close-up in 7f (ranked-groups ticket 65). */
+/** Rounds of the tier-gap growth, the label room and the canton close-up in 7f (ranked-groups ticket 65). */
 const CANTON_ROUNDS = 4;
 /** The move of a close-up round, in px, under which the cantons stand a band gap apart for every purpose (ranked-groups ticket 65). */
 const CANTON_CREEP = 0.5;
+/** Passes of the label room and its replay in one settle round (architecture-2 ticket 27; R4: a count). The room only grows, so the passes end. */
+const LABEL_ROOM_PASSES = 4;
+/** The warning of a settle round whose label room still changed after `LABEL_ROOM_PASSES` passes: the validator then judges the room. */
+const LABEL_ROOM_UNSETTLED = 'LINK_LABEL_ROOM_UNSETTLED';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 /** One line of the opt-in trace: a pass, a short hash of the model after it, and what the pass decided. */
@@ -108,13 +112,39 @@ export function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnost
 }
 
 /**
+ * The label room of every described link (`reserveLinkLabelRoom`), reserved on `model` and followed by the replay a movement asks, until a
+ * pass reserves nothing (architecture-2 ticket 27). The producer reserved the room once; a later 7f move that turns a labelled line shrinks its
+ * window, so each settle round reserves it again on the geometry it has settled. Convergence: the room only grows, and a pass that reserves
+ * nothing ends the loop; `LABEL_ROOM_PASSES` bounds it (R4), and a room still changing after the last pass is named (`LINK_LABEL_ROOM_UNSETTLED`)
+ * and left to the validator. Returns whether any room was reserved.
+ */
+export function settleLabelRoom(model: LayoutModel): boolean {
+  if (model.diagnostics.some(item => item.code === LABEL_ROOM_UNSETTLED)) model.diagnostics = model.diagnostics.filter(item => item.code !== LABEL_ROOM_UNSETTLED);
+  let changed = false;
+  for (let pass = 0; pass < LABEL_ROOM_PASSES; pass++) {
+    if (!reserveLinkLabelRoom(model)) return changed;
+    changed = true;
+    replayRegions(model);
+    if (pass === LABEL_ROOM_PASSES - 1) {
+      const still: LinkLabelShortfall[] = [];
+      if (reserveLinkLabelRoom(clone(model), still)) {
+        const links = [...new Set(still.map(item => item.link))].sort();
+        model.diagnostics.push({ stage: 'placement', severity: 'warning', code: LABEL_ROOM_UNSETTLED, owners: links.map(id => ({ kind: 'link' as const, id })),
+          message: `The label room of ${links.join(', ')} still changed after ${LABEL_ROOM_PASSES} passes of the reservation and the replay in a settle round; the validator judges the room.` });
+      }
+    }
+  }
+  return changed;
+}
+
+/**
  * The growth of the tier gaps is measured on the columns as they stand, and the close-up of the cantons (ranked-groups ticket 65)
  * moves them in x after centring widened one in place: so the growth is measured again after every move, and the rounds end when
  * the close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it.
  * One round of the growth and the close-up, on any model: the loop runs it on the draft, and the step over a chord (ticket 77)
  * runs it on a copy to see what a move settles into. It returns the shift of the close-up.
  */
-export function settleRound(model: LayoutModel, tap?: (step: 'grow' | 'close-up' | 'keep-out', changed: boolean) => void): number {
+export function settleRound(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void): number {
   attemptCounters.settleCalls++;
   const trial: { trial?: LayoutModel; baseDiagnostics?: number; original?: ReadonlySet<Diagnostic> } = {};
   const grew = timed('grow-tier-gaps', () => growTierGaps(model, trial));
@@ -130,6 +160,11 @@ export function settleRound(model: LayoutModel, tap?: (step: 'grow' | 'close-up'
     replayRegions(model);
   }
   tap?.('grow', grew);
+  // The label room of every described link, reserved again on the geometry this round settled (architecture-2 ticket 27): a 7f move turns a
+  // labelled line (a chord step, a rank move) and its window shrinks below the room the producer reserved. A chord trial runs this round on its
+  // copy, so the judges read, and the draft adopts, a copy whose rooms hold; the draft rounds reserve on their own settled state the same way.
+  const reserved = timed('label-room', () => settleLabelRoom(model));
+  tap?.('room', reserved);
   const shift = timed('close-cantons', () => closeCantonsAndSettle(model));
   if (shift > 0) replayRegions(model);
   tap?.('close-up', shift > 0);
@@ -149,8 +184,10 @@ export function trialSettle(probe: LayoutModel): SettleReading {
     return { shift, steps };
   });
 }
+/** The steps of a round of `settleRound`, in order. */
+export type SettleStep = 'grow' | 'room' | 'close-up' | 'keep-out';
 /** What a round of `settleRound` found, with the steps it took in order: a copy that adopted it hands this on instead of settling again. */
-export interface SettleReading { shift: number; steps: ['grow' | 'close-up' | 'keep-out', boolean][] }
+export interface SettleReading { shift: number; steps: [SettleStep, boolean][] }
 
 /**
  * Run the 7f producer on the transaction's draft. The draft already stands on the stage before `bands` and has passed the callback checks;
@@ -217,7 +254,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     if (attemptTimings.on) attemptTimings.hooks.round?.(draft);
     // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
     const afterChords = again;
-    const tapped = (step: 'grow' | 'close-up' | 'keep-out', changed: boolean): void => {
+    const tapped = (step: SettleStep, changed: boolean): void => {
       if (step === 'grow' && changed && round > 0) attemptCounters.invalidations.gapRegrown++;
       account(`round-${round}:${step}`);
     };

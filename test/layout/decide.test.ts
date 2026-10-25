@@ -39,6 +39,18 @@ describe('the judges of the decision loop', () => {
     expect(gains({ ...fine, sets: { ...findings, disordered: new Set(['G5:n']) } }, base, judges.rankSettled)).toBe(false);
   });
 
+  // Architecture-2 ticket 27: a settled chord or rank move that leaves a link whose label room a replay would still grow is refused, as the
+  // lane reseat refuses it; a link the incumbent already names is no new finding.
+  it('holds a chord or rank move back that leaves a label room short', () => {
+    const base = mk(2, 0, 0, { drift: 0, growth: { width: 100, height: 0 }, sets: { ...findings, room: new Set(['link-1']) } });
+    const after = (room: string[]): Reading => ({ ...mk(1, 0, 0, { drift: 0, growth: { width: 100, height: 0 }, sets: { ...findings, room: new Set(room) } }), widthCap: 105 });
+    for (const judge of [judges.chordSettled, judges.rankSettled]) {
+      expect(gains(after([]), base, judge)).toBe(true);
+      expect(gains(after(['link-1']), base, judge)).toBe(true);
+      expect(gains(after(['link-4']), base, judge)).toBe(false);
+    }
+  });
+
   it('keeps a body off a frozen chord', () => {
     const before = mk(2, 0, 0, { sets: { blocked: new Set(['x']) } });
     expect(gains(mk(1, 0, 0, { sets: { blocked: new Set(['x']) } }), before, judges.chordCheap)).toBe(true);
