@@ -9,6 +9,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, ftruncateSync, openSync, readFileSync, statSync, writeSync } from 'node:fs';
+import { cpus, loadavg } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
@@ -16,6 +17,8 @@ export const LOCK_PATH = process.env.PORTOGRAPH_TEST_LOCK ?? '/tmp/portograph-te
 // PORTOGRAPH_LOCKF and PORTOGRAPH_WATCHDOG replace the lockf binary and the watchdog script; the fixtures use them.
 const lockfPath = () => process.env.PORTOGRAPH_LOCKF ?? '/usr/bin/lockf';
 const watchdogPath = () => process.env.PORTOGRAPH_WATCHDOG ?? fileURLToPath(new URL('./test-watchdog.mjs', import.meta.url));
+// PORTOGRAPH_HEALTH_PROBE replaces the memory and load probe: an executable that prints JSON {freePct, load1, swapUsedMb, cpus}.
+const probePath = () => process.env.PORTOGRAPH_HEALTH_PROBE;
 const RECORD_SIZE = 4096;
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -289,26 +292,117 @@ export async function cleanupRecord(path, graceMs = 3000, flock) {
   if (flock) flock.write({}); else writeRecord(path, {});
 }
 
+/** Run a command with a fixed locale; its trimmed stdout, or undefined when it fails. */
+function probeCommand(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 5000, env: { PATH: process.env.PATH ?? '/bin:/usr/bin:/usr/sbin:/sbin', LC_ALL: 'C' } });
+  return result.error || result.status !== 0 ? undefined : result.stdout.trim();
+}
+
+/**
+ * The host's memory and load: `{ freePct, load1, swapUsedMb, cpus, errors }`. A field is undefined when
+ * it cannot be read (unknown), and `errors` names what failed. On macOS: `sysctl kern.memorystatus_level`
+ * (percent of memory free) and `sysctl vm.swapusage`; elsewhere memory is unknown and not an error.
+ */
+export function readHealth() {
+  const hook = probePath();
+  if (hook !== undefined) {
+    try {
+      const value = JSON.parse(probeCommand(hook, []) ?? '');
+      if (value === null || typeof value !== 'object') throw new Error('not an object');
+      const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined);
+      return { freePct: num(value.freePct), load1: num(value.load1), swapUsedMb: num(value.swapUsedMb), cpus: num(value.cpus) ?? cpus().length, errors: [] };
+    } catch { return { freePct: undefined, load1: undefined, swapUsedMb: undefined, cpus: cpus().length, errors: ['the health probe'] }; }
+  }
+  const errors = [];
+  let freePct;
+  let swapUsedMb;
+  if (process.platform === 'darwin') {
+    const level = probeCommand('/usr/sbin/sysctl', ['-n', 'kern.memorystatus_level']);
+    if (level !== undefined && /^\d+$/.test(level) && Number(level) <= 100) freePct = Number(level); else errors.push('kern.memorystatus_level');
+    const swap = /used = ([\d.]+)([KMG])/.exec(probeCommand('/usr/sbin/sysctl', ['-n', 'vm.swapusage']) ?? '');
+    if (swap) swapUsedMb = Math.round(Number(swap[1]) * { K: 1 / 1024, M: 1, G: 1024 }[swap[2]]); else errors.push('vm.swapusage');
+  }
+  const load1 = loadavg()[0];
+  return { freePct, load1: Number.isFinite(load1) ? load1 : undefined, swapUsedMb, cpus: cpus().length, errors };
+}
+
+const envNumber = (name, fallback) => { const value = Number(process.env[name]); return process.env[name] !== undefined && process.env[name] !== '' && Number.isFinite(value) ? value : fallback; };
+
+/**
+ * One admission decision: `{ reading, admit, reason }`. `reason` is undefined when the host may run a
+ * job (an unknown reading passes); `admit` is the record of the readings. Limits: PORTOGRAPH_MIN_FREE_PCT
+ * (default 20) and PORTOGRAPH_MAX_LOAD (default 2 x CPU count).
+ */
+export function checkHealth() {
+  const reading = readHealth();
+  const minFree = envNumber('PORTOGRAPH_MIN_FREE_PCT', 20);
+  const maxLoad = envNumber('PORTOGRAPH_MAX_LOAD', 2 * reading.cpus);
+  const reasons = [];
+  if (reading.freePct !== undefined && reading.freePct < minFree) reasons.push(`free memory ${reading.freePct}% is below ${minFree}%`);
+  if (reading.load1 !== undefined && reading.load1 > maxLoad) reasons.push(`load ${reading.load1.toFixed(2)} is above ${maxLoad}`);
+  const admit = { freePct: reading.freePct ?? null, load1: reading.load1 === undefined ? null : Math.round(reading.load1 * 100) / 100, swapUsedMb: reading.swapUsedMb ?? null };
+  return { reading, admit, reason: reasons.length > 0 ? reasons.join(' and ') : undefined };
+}
+
+/**
+ * The wait for a healthy host. `check()` returns `{ admit }` when the host may run a job, else
+ * `{ reason }`; an unreadable probe warns once and counts as unknown. `pause(reason)` prints one waiting
+ * line, sleeps PORTOGRAPH_ADMIT_POLL_MS (default 15 s) and returns true, or returns false once
+ * PORTOGRAPH_ADMIT_WAIT_MS (default 15 min) of waiting has passed: the caller gives up.
+ */
+export function healthWaiter({ onWait = () => {}, onWarn = () => {} } = {}) {
+  const pollMs = envNumber('PORTOGRAPH_ADMIT_POLL_MS', 15_000);
+  const capMs = envNumber('PORTOGRAPH_ADMIT_WAIT_MS', 15 * 60_000);
+  const begin = Date.now();
+  let announced = false;
+  let warned = false;
+  return {
+    capMs,
+    check() {
+      const { reading, admit, reason } = checkHealth();
+      if (reading.errors.length > 0 && !warned) { warned = true; onWarn(`cannot read ${reading.errors.join(', ')}; counting it as unknown and going on`); }
+      return reason === undefined ? { admit } : { reason };
+    },
+    async pause(reason) {
+      const left = capMs - (Date.now() - begin);
+      if (left <= 0) return false;
+      if (!announced) { announced = true; onWait(`waiting for the host: ${reason}; polling every ${Math.round(pollMs / 1000)} s, giving up after ${Math.round(capMs / 6000) / 10} min`); }
+      await sleep(Math.max(1, Math.min(pollMs, left)));
+      return true;
+    },
+  };
+}
+
 const held = new Map();
 
 /**
  * Take the lock for `job`: the flock, then the cleanup of the previous record, then this job's record.
  * Throws (and holds nothing) when the previous job's survivors will not die.
  */
-export async function acquireLock(job, { path = LOCK_PATH, graceMs = 3000, onWait = () => {} } = {}) {
+export async function acquireLock(job, { path = LOCK_PATH, graceMs = 3000, onWait = () => {}, onHealthWait = () => {}, onWarn = () => {} } = {}) {
   const start = startTime(process.pid);
   if (start === undefined || start === '') throw new Error('cannot read the start time of this process with ps; refusing to take the lock');
-  const flock = await takeFlock(path, { onWait });
-  try {
-    await cleanupRecord(path, graceMs, flock);
-    const record = { pid: process.pid, start, pgid: null, job, since: Date.now() };
-    if (statSync(path).size > RECORD_SIZE) ftruncateSync(openSync(path, 'r+'), RECORD_SIZE); // a longer leftover file: cut it once, before the job
-    if (!flock.write(record)) throw new Error(`cannot write the lock record: ${flock.lost}`);
-    held.set(path, flock);
-    return record;
-  } catch (error) {
+  const waiter = healthWaiter({ onWait: onHealthWait, onWarn });
+  for (;;) {
+    const flock = await takeFlock(path, { onWait });
+    let verdict;
+    try {
+      await cleanupRecord(path, graceMs, flock);
+      verdict = waiter.check();
+      if (verdict.admit) {
+        const record = { pid: process.pid, start, pgid: null, job, since: Date.now(), admit: verdict.admit };
+        if (statSync(path).size > RECORD_SIZE) ftruncateSync(openSync(path, 'r+'), RECORD_SIZE); // a longer leftover file: cut it once, before the job
+        if (!flock.write(record)) throw new Error(`cannot write the lock record: ${flock.lost}`);
+        held.set(path, flock);
+        return record;
+      }
+    } catch (error) {
+      await flock.release();
+      throw error;
+    }
+    // The host is short of memory or busy: let go of the flock so others are not held up, and poll.
     await flock.release();
-    throw error;
+    if (!(await waiter.pause(verdict.reason))) throw new Error(`gave up waiting for the host after ${waiter.capMs / 60_000} min: ${verdict.reason}; PORTOGRAPH_MIN_FREE_PCT and PORTOGRAPH_MAX_LOAD change the limits`);
   }
 }
 
@@ -333,7 +427,7 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
   const inherited = heldLock(lockPath) !== undefined;
   // A stale or foreign PORTOGRAPH_LOCK_HELD must not queue behind a lock this process could never get.
   if (!inherited && process.env.PORTOGRAPH_LOCK_HELD) throw new Error('PORTOGRAPH_LOCK_HELD is set but the held lock is not valid (the holder is gone, or this process stands outside its group); not queueing');
-  const lock = inherited ? undefined : await acquireLock(job, { path: lockPath, graceMs, onWait: (owner) => stderr.write(`waiting for the test lock (pid ${owner.pid ?? '?'}, ${owner.job ?? '?'}); a stuck lock: see docs/agents/gates.md\n`) });
+  const lock = inherited ? undefined : await acquireLock(job, { path: lockPath, graceMs, onWait: (owner) => stderr.write(`waiting for the test lock (pid ${owner.pid ?? '?'}, ${owner.job ?? '?'}); a stuck lock: see docs/agents/gates.md\n`) , onHealthWait: (line) => stderr.write(`[test-runner] ${line}\n`), onWarn: (line) => stderr.write(`[test-runner] warning: ${line}\n`) });
   const flock = lock ? held.get(lockPath) : undefined;
   if (lock) {
     // Double fork: a short-lived node starts the watchdog, prints its pid and exits, so launchd adopts the watchdog.
@@ -381,9 +475,28 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
   const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
   for (const signal of signals) process.on(signal, onSignal);
   const timer = setTimeout(() => { code = 124; void stop('timeout'); }, limitMs);
+  const waiter = lock ? healthWaiter({ onWait: (line) => stderr.write(`[test-runner] ${line}\n`), onWarn: (line) => stderr.write(`[test-runner] warning: ${line}\n`) }) : undefined;
+  let stepsRun = 0;
   try {
     for (const step of steps) {
       if (stopping) break;
+      // Before each later step the host is checked again. The lock stays held (no other heavy job may start); the wait is capped.
+      if (waiter && stepsRun > 0) {
+        let verdict = waiter.check();
+        while (verdict.reason !== undefined && !stopping) {
+          if (!(await waiter.pause(verdict.reason))) {
+            stderr.write(`[test-runner] gave up waiting for the host before the next step: ${verdict.reason}\n`);
+            if (code === 0) code = 1;
+            reason = 'host busy';
+            stopping = Promise.resolve();
+            break;
+          }
+          verdict = waiter.check();
+        }
+        if (stopping) break;
+        lock.admit = verdict.admit;
+      }
+      stepsRun += 1;
       // A new process group: the whole job can be killed by one negative PID. Nothing else detaches.
       // The command line goes into the record first; the group id follows in the same tick as spawn() returns.
       const since = Date.now();
