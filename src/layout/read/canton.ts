@@ -1,4 +1,5 @@
 import type { LayoutGroup, LayoutModel, NormalisedDocument } from '../../model/index.js';
+import { findPort } from '../row-paths.js';
 
 /**
  * Shared readers: what is a canton. Three questions share the word and stay three named readers.
@@ -43,4 +44,16 @@ export function standsInRootCanton(model: LayoutModel, group: LayoutGroup): bool
   let at = group.frame;
   while (at !== undefined && all[at]?.parent !== undefined) at = all[at]!.parent;
   return at !== undefined && all[at]?.kind === 'canton';
+}
+
+/**
+ * The aligned extent a canton member reserved in placement (`LayoutModel.alignedExtents`, architecture-2 ticket 31): the low and the high
+ * edge of its box, read where its anchor-tier ports stand now. `undefined` when the member reserves none, or when a port of the record is
+ * not in the model: the member then keeps the canton wall.
+ */
+export function alignedExtent(model: LayoutModel, cell: string): { low: number; high: number } | undefined {
+  const record = model.alignedExtents?.[cell];
+  if (record === undefined) return undefined;
+  const low = findPort(model, record.low.port)?.anchor, high = findPort(model, record.high.port)?.anchor;
+  return low && high ? { low: low.x + record.low.offset, high: high.x + record.high.offset } : undefined;
 }

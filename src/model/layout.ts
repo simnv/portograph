@@ -559,6 +559,16 @@ export interface LayoutModel {
    */
   parentWallMoves?: { link: string; port: PortRef; fromLeft: number }[];
   /**
+   * The aligned extent of each canton member that stands just above the anchor tier (architecture-2 ticket 31), by cell id: the low and the high
+   * edge its box takes once its ports stand over their feeds, with the end-port insets and the side-face pills. Each edge is stored as an
+   * anchor-tier feed port and the distance from that port's x, so the record moves with the canton. Decided once, at the first centring run,
+   * by the keep rule of the alignment (`keptTargets`: the row siblings, `ALIGNMENT_MAX_GROWTH` and the overlay stops), and only for a member
+   * whose feeds all stand in its own canton. The 7c member window (`columnWindow`) and the canton wall of the inner column pass (`pullTier`)
+   * read it and let the member stand past the canton wall up to it. In a model with a canton: absent = not decided yet, `{}` = decided, no
+   * member reserves room. A model with no canton never has it.
+   */
+  alignedExtents?: Record<string, { low: AlignedExtentEdge; high: AlignedExtentEdge }>;
+  /**
    * Who yields among the labels on diagonal lines (architecture-2 ticket 20, `recordLabelYields`): a key for every described overlay
    * link whose label lies on a diagonal line, with the links whose label bands it keeps clear of ([] = none). Each pair is decided once,
    * in 7f, and never again; 7f and stage 9 read the record. Absent = no label on a diagonal line, or a model before 7f.
@@ -619,6 +629,8 @@ export interface DirectFamily {
 
 /** One edge's room across a run (`labelPadding`, tickets 21 and 23): the padding from the node bodies to the box edge, and the links (a label's or a track's) it holds. */
 export interface LabelPaddingEntry { room: number; links: string[] }
+/** One edge of an aligned extent (`LayoutModel.alignedExtents`): the edge stands at the x of the anchor-tier `port` plus `offset`. */
+export interface AlignedExtentEdge { port: PortRef; offset: number }
 
 /**
  * A placement promise: the shared run of `link` at `end` leaves the boxes in `exited` along the straight run `from` to `to`, and ends `clearance`

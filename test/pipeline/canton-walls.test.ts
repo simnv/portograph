@@ -9,6 +9,8 @@ import { portKey } from '../../src/layout/sides-one.js';
 import { placeOverlayFree } from '../../src/layout/overlay-place.js';
 import { rows } from '../../src/layout/rows.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
+import { centreViolations } from '../../src/layout/centre.js';
+import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -296,5 +298,45 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     'a-one-rank-member-beside-a-two-rank-member', 'a-foreign-unit-between-two-canton-groups', 'a-canton-with-a-tier-below', 'a-group-with-no-links-stands-beside-a-canton',
   ])('%s: with no hint the finished layout is the fixed point of the pack, the member walls and the column axes (ticket 136)', async name => {
     expect(settled(await run(name))).toEqual([false, false, false]);
+  }, 60000);
+});
+
+/** Every link from a bottom port to a top port, with how far its two ends stand apart in x. */
+const drops = (model: LayoutModel): { link: string; dx: number }[] => model.links.flatMap(link => {
+  if (!link.attachments || link.removed) return [];
+  const from = findPort(model, link.attachments.from)!, to = findPort(model, link.attachments.to)!;
+  return new Set([from.side, to.side]).size === 2 && [from.side, to.side].every(side => side === 'top' || side === 'bottom') ? [{ link: link.id, dx: to.anchor!.x - from.anchor!.x }] : [];
+});
+
+// Architecture-2 ticket 31: a canton member above the anchor tier reserves its aligned extent (the anchor-tier feed x, the end-port insets and the side-face
+// pills) once, in placement (`alignedExtents`); the 7c member window and the canton wall of the inner column pass read that one record.
+describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)', () => {
+  it.each(['a-drop-from-a-wide-parent-stands-vertical', 'a-drop-from-a-wide-parent-stands-vertical-over-a-narrow-row'])('%s: every drop stands at one x', async name => {
+    const model = await run(name);
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    const all = drops(model);
+    expect(all.map(item => item.link).sort()).toEqual(['link-1', 'link-2', 'link-3', 'link-4', 'link-5', 'link-6', 'link-7', 'link-8']);
+    expect(all.filter(item => Math.abs(item.dx) > 0.5)).toEqual([]);
+    // One answer: the offset step does not hold the parent ports, and the canton does not hold the member.
+    expect(model.diagnostics.filter(item => ['CENTRE_PARENT_MOVE_SHIFTS_GROUP', 'COLUMN_AXIS_HELD', 'CENTRE_WINDOW_DECLINED'].includes(item.code))).toEqual([]);
+    // The record: the member above the anchor tier reserves room, and the anchor member reserves none.
+    expect(Object.keys(model.alignedExtents ?? {})).toEqual(['core#0']);
+    // The layout is the fixed point of the publication check and of the member walls.
+    expect(centreViolations(model)).toEqual([]);
+    expect(holdMemberWalls(structuredClone(model) as LayoutModel)).toBe(false);
+  }, 60000);
+
+  it('a sheet with a canton and no member above its anchor tier records an empty decision, and a sheet with no canton records none', async () => {
+    expect((await run('a-canton-member-frame-slides-off-a-straight-chord')).alignedExtents).toEqual({});
+    expect((await run('parent-two-children')).alignedExtents).toBeUndefined();
+  }, 60000);
+
+  it('a-declined-grown-member-stops-at-an-overlay-chord: a feed outside the canton reserves no room, and the declined step names its links', async () => {
+    const model = await run('a-declined-grown-member-stops-at-an-overlay-chord');
+    expect(model.alignedExtents).toEqual({});
+    const declined = model.diagnostics.filter(item => item.code === 'CENTRE_WINDOW_DECLINED');
+    expect(declined.length).toBe(1);
+    expect(declined[0]!.owners!.map(owner => 'id' in owner ? owner.id : '').sort()).toEqual(['link-1', 'link-2', 'link-3', 'link-4']);
+    expect(declined[0]!.owners!.every(owner => owner.kind === 'link')).toBe(true);
   }, 60000);
 });

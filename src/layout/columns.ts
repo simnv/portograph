@@ -7,7 +7,7 @@ import { selectAnchorTier } from './lanes.js';
 import { holdsMove } from './move-reservations.js';
 import { findPort } from './row-paths.js';
 import { cellTier } from './read/tier.js';
-import { isCantonUnit } from './read/canton.js';
+import { alignedExtent, isCantonUnit } from './read/canton.js';
 import { columnPullFeeds, type UnitFeeds } from './read/feeds.js';
 import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
 import { straightFell, tapVerdict } from './objective.js';
@@ -825,7 +825,13 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     if (range !== undefined && scope !== undefined) {
       // The member frame stays inside the canton frame with the group margin to spare. A range wholly beyond the wall
       // ends at the wall, and the member is held by the canton.
-      const low = scope.wall.x + GROUP_PADDING, high = scope.wall.x + scope.wall.width - GROUP_PADDING - at.width;
+      let low = scope.wall.x + GROUP_PADDING, high = scope.wall.x + scope.wall.width - GROUP_PADDING - at.width;
+      // A member above the anchor tier may stand past the wall up to the aligned extent its cells reserved in 7c (architecture-2 ticket 31):
+      // the member window of centring reads the same record (`columnWindow`), so the pull and the step agree on where the member may stand.
+      for (const cell of unit.groups) {
+        const extent = alignedExtent(model, cell.id), bounds = model.groups[cell.id]!.bounds!, offset = bounds.x - at.x;
+        if (extent !== undefined) { low = Math.min(low, extent.low - offset); high = Math.max(high, extent.high - offset - bounds.width); }
+      }
       // The widest member fills the wall (`high` = `low`): the wall is its own box, and the canton pass already reports its feed.
       if (high - low >= PLACEMENT_EPS) {
         if (from > high + PLACEMENT_EPS || to < low - PLACEMENT_EPS) { held.set(unit, 'canton'); from = to = from > high ? high : low; }
