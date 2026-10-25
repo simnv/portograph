@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const allowed = new Set(['check-no-raw-vitest.mjs', 'test-runner.mjs', 'test-runner-lib.mjs', 'test-runner.check.mjs', 'test-runner-lock.check.mjs', 'with-lock.mjs']);
+const allowed = new Set(['check-no-raw-vitest.mjs', 'test-runner.mjs', 'test-runner-lib.mjs', 'test-runner.check.mjs', 'test-runner-lock.check.mjs', 'test-runner-safety.check.mjs', 'with-lock.mjs']);
 const files = ['package.json', ...readdirSync(join(root, 'scripts')).filter((name) => /\.(mjs|cjs|js|sh)$/.test(name) && !allowed.has(name)).map((name) => `scripts/${name}`)];
 const raw = /\bvitest(\.mjs)?['"]?\s*,?\s*['"]?(run|watch|bench|related)\b/;
 const bad = files.flatMap((file) => readFileSync(join(root, file), 'utf8').split('\n').flatMap((line, index) => (raw.test(line) ? [`${file}:${index + 1}: ${line.trim()}`] : [])));

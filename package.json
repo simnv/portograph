@@ -49,7 +49,7 @@
     "build": "vite build",
     "test": "node scripts/test-runner.mjs",
     "test:full": "node scripts/test-runner.mjs --full",
-    "test:runner": "node --test scripts/test-runner.check.mjs scripts/test-runner-lock.check.mjs",
+    "test:runner": "node --test scripts/test-runner.check.mjs scripts/test-runner-lock.check.mjs scripts/test-runner-safety.check.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.json --noEmit --module NodeNext --moduleResolution NodeNext",
     "lint": "eslint . && node scripts/check-no-raw-vitest.mjs",
     "hooks:install": "git config core.hooksPath .githooks",

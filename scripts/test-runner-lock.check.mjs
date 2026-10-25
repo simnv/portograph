@@ -70,6 +70,7 @@ test('a heavy script refuses to run without the lock', async () => {
 test('a runner that died before it wrote the group id: the next job kills the orphan by its recorded command line', async () => {
   const lock = fresh();
   const pidFile = join(dir, 'orphan-pid');
+  const since = Date.now();
   const marker = `setInterval(() => {}, 1000); /* orphan ${Date.now()} */`;
   // A short-lived parent starts the orphan as a group leader and exits, so init adopts it.
   const parent = spawn(process.execPath, ['-e', `
@@ -81,7 +82,7 @@ test('a runner that died before it wrote the group id: the next job kills the or
   assert.equal(alive(orphan), true);
   const dead = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   await exited(dead);
-  writeFileSync(lock, JSON.stringify({ pid: dead.pid, start: 'gone', pgid: null, pending: `${process.execPath} -e ${marker}`, job: 'dead' }));
+  writeFileSync(lock, JSON.stringify({ pid: dead.pid, start: 'gone', pgid: null, since, pending: `${process.execPath} -e ${marker}`, job: 'dead' }));
   const result = await runJob({ job: 'next', steps: [{ command: process.execPath, args: ['-e', 'setTimeout(() => {}, 200)'] }], limitMs: 10000, graceMs: 400, lockPath: lock, stdout: quiet, stderr: quiet });
   assert.equal(result.code, 0);
   const end = Date.now() + 3000;
