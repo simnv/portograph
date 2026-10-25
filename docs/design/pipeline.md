@@ -792,7 +792,8 @@ so the record moves with the canton. A member with a feed from outside its canto
 member window of the step (`columnWindow`) and the canton wall of the inner column pass of 7f (`pullTier`) read the one
 record: the member may stand past the canton wall up to it, and the canton, derived from its members, grows with it. A step
 whose window still cannot hold the aligned group declines the alignment as a whole and names its feed links
-(`CENTRE_WINDOW_DECLINED`). Below the anchor tier nothing is reserved.
+(`CENTRE_WINDOW_DECLINED`); when centring ends, the warning names only the links whose two ends still stand apart. Below
+the anchor tier nothing is reserved.
 
 **A group with no links steps out of an overlay chord** (ranked-groups ticket 76). `placeOverlayFree` ends with
 `stepOutOfChords`. A free group with no link of any member has no partner, so no target: it would stay a wall at ELK's

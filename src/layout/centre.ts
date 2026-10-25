@@ -804,6 +804,27 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     timed('centre-passes', () => centrePasses(model, budget));
     if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
   }
+  refreshWindowDeclines(model);
+}
+/**
+ * A window decline names the feed links of a step that a pass declined (architecture-2 ticket 31). A later pass may still bring a link's two ends to one
+ * x; once centring ends, the warning names only the links whose ends stand apart, and a warning that names none is withdrawn. It states a jog, so only
+ * the geometry of the link is read.
+ */
+function refreshWindowDeclines(model: LayoutModel): void {
+  if (!model.diagnostics.some(d => d.code === 'CENTRE_WINDOW_DECLINED')) return;
+  const byId = new Map(model.links.map(link => [link.id, link]));
+  const apart = (id: string): boolean => {
+    const ends = byId.get(id)?.attachments, one = ends && findPort(model, ends.from)?.anchor, two = ends && findPort(model, ends.to)?.anchor;
+    return !one || !two || Math.abs(one.x - two.x) > 0.5;
+  };
+  model.diagnostics = model.diagnostics.flatMap(d => {
+    if (d.code !== 'CENTRE_WINDOW_DECLINED') return [d];
+    const named = (d.owners ?? []).flatMap(owner => 'id' in owner ? [owner.id] : []), kept = named.filter(apart);
+    if (!kept.length) return [];
+    if (kept.length === named.length) return [d];
+    return [{ ...d, message: d.message.replace(/so .* keep a jog/, `so ${kept.join(', ')} keep a jog`), owners: kept.map(id => ({ kind: 'link' as const, id })) }];
+  });
 }
 /** Reads the recorded wall moves again (`withdrawWallMoves`) on the anchor tier centring stored; whether a move was given back. */
 function withdrawRecorded(model: LayoutModel): boolean {
