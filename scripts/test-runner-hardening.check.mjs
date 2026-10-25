@@ -141,3 +141,23 @@ test('F5: a stale PORTOGRAPH_LOCK_HELD throws at once and does not queue', async
     assert.ok(Date.now() - started < 3000, 'did not wait for the busy lock');
   } finally { await holder.release(); }
 });
+
+test('continueOnFailure: every step runs after a failure, the first failing code wins, a timeout still stops at once', async () => {
+  const lock = fresh();
+  const log = join(dir, 'steps-log');
+  writeFileSync(log, '');
+  const step = (name, exit) => ({ command: process.execPath, args: ['-e', `require('node:fs').appendFileSync(${JSON.stringify(log)}, '${name}\\n'); process.exit(${exit})`] });
+  const all = await job(lock, [step('a', 3), step('b', 0), step('c', 5)], { continueOnFailure: true });
+  assert.equal(all.code, 3);
+  assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['a', 'b', 'c']);
+  writeFileSync(log, '');
+  const stopped = await job(lock, [step('a', 3), step('b', 0)]);
+  assert.equal(stopped.code, 3);
+  assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['a'], 'without the option a failure stops the job');
+  writeFileSync(log, '');
+  const hang = { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'] };
+  const timed = await job(lock, [hang, step('late', 0)], { continueOnFailure: true, limitMs: 700 });
+  assert.equal(timed.reason, 'timeout');
+  assert.equal(readFileSync(log, 'utf8'), '', 'a timeout stops the later steps');
+  assert.equal(held(lock), false);
+});

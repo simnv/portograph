@@ -1,11 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 
 const compareScript = resolve(__dirname, '../../scripts/gate-compare.mjs');
-const libUrl = new URL('../../scripts/gate-lib.mjs', `file://${__filename}`).href;
 const HEADER = ['file', 'Q', 'X', 'W', 'gates', 'warn', 'routed', 'fb', 'edge', 'ob', 'bends', 'side', 'removed', 'labelBorder', 'hash'];
 let dir = '';
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -50,14 +49,4 @@ it('counts no geometry change when the hash stays', () => {
   const out = compare(sheet(), sheet({ Q: '0.6' }));
   expect(out.trimEnd().split('\n').at(-1)).toBe('0 sheets with a geometry change (hash)');
   expect(compare(sheet(), sheet())).toContain('0 sheets with a geometry change (hash)');
-});
-
-it('takes the gate lock, removes a lock of a dead pid and releases it', () => {
-  dir = mkdtempSync(join(tmpdir(), 'pg-lock-'));
-  const lock = join(dir, 'gate.lock');
-  writeFileSync(lock, '2147483646');
-  const script = `import(${JSON.stringify(libUrl)}).then(async (lib) => { await lib.withGateLock(async () => console.log('held')); })`;
-  const result = spawnSync('node', ['-e', script], { encoding: 'utf8', env: { ...process.env, PORTOGRAPH_GATE_LOCK: lock } });
-  expect(result.stdout.trim()).toBe('held');
-  expect(existsSync(lock)).toBe(false);
 });

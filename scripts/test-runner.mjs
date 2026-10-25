@@ -2,7 +2,8 @@
  * The one entry point of every test run (`npm test`, `test:full`, the gate's test step, targeted runs).
  * It takes the host-wide test lock, runs vitest in its own process group with a wall-clock limit and a
  * worker cap, and kills the group on any exit. Usage:
- *   node scripts/test-runner.mjs [--full]                  all three projects, one after another
+ *   node scripts/test-runner.mjs [--full]                  all three projects, one after another; a failing
+ *                                                          project does not stop the next ones, and the exit code is the first failure's
  *   node scripts/test-runner.mjs [--full] <vitest args>    one `vitest run` with those arguments
  * Env: PORTOGRAPH_TEST_WORKERS (default 1), PORTOGRAPH_TEST_TIMEOUT_MS (default 45 min),
  * PORTOGRAPH_TEST_LOCK (default /tmp/portograph-test.lock).
@@ -25,7 +26,7 @@ const reporter = full ? ['--reporter=default'] : [];
 const make = (extra) => ({ command: process.execPath, args: [vitest, 'run', `--maxWorkers=${workers}`, ...reporter, ...extra] });
 const steps = rest.length > 0 ? [make(rest)] : ['default', 'heavy', 'slow'].map((project) => make(['--project', project]));
 
-const result = await runJob({ job: `${process.cwd()} vitest ${rest.join(' ') || 'all projects'}`, steps, limitMs, cwd: root }).catch((error) => {
+const result = await runJob({ job: `${process.cwd()} vitest ${rest.join(' ') || 'all projects'}`, steps, limitMs, cwd: root, continueOnFailure: true }).catch((error) => {
   process.stderr.write(`[test-runner] ${error.message}\n`);
   return process.exit(1);
 });
