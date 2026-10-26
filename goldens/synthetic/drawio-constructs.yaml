@@ -2,14 +2,16 @@
 # the golden does not exercise together: a group whose title band the pipeline puts at the bottom,
 # a port role and a port status on one pill, a dotted and a dashed link class, a labelled link, and
 # an overlay link that the SVG masks and a draw.io file cannot. Both overlay ends sit on a top side
-# and their two faces are level, so the default branch of the 2026-09-16 rule (stress ticket 20)
-# states **one horizontal 95.26 px segment**, (50.75, 263.5) to (146.01, 263.5), which is the whole
-# path: face to face, with the endpoint marks at its two ends (stress ticket 30). The line runs
-# *along* both pills' outward edges and inside neither — a line that rides a face is clear of it,
-# which is the boundary `crosses` is written open for. It was a three-segment detour 4 px above the
-# two heads; the stub that lifted it there has gone with *"no point in stub then"*. The connector
-# stays `orthogonalEdgeStyle;jettySize=0` and now carries no waypoint of its own at all.
-# Every gate passes; Q is 0.7705517318633934.
+# and their two faces are level. Architecture-2 ticket 34 (user, 2026-10-25, "purple line looks
+# wrong, no margins"): an overlay never rides along a face or a foreign pill, so the overlay is a U,
+# (51.00, 263.5), (51.00, 255.75), (146.01, 255.75), (146.01, 263.5): up out of each own pill by the
+# overlay port clearance (7.75 px), one run 7.75 px above the pill tips of `b.alt`, `b.up` and
+# `c.up`, and down. It crosses the routed `link-1` once, at a right angle, clear of the `b.up` pill.
+# It was one horizontal segment on the three pill tips (stress tickets 20 and 30, "level counts as
+# leaving", 2026-09-16, reversed). Both overlay ends are shared ports (`SHARED_PORT`): the U legs lie
+# on the routed stems of `link-2` and `link-3` (one port; the user has not ruled on an offset). The
+# connector is `orthogonalEdgeStyle;jettySize=0` with the U's two waypoints.
+# Every gate passes; Q is 0.7613433643264863.
 # Test-only input owned by drawio-export ticket 01; the whole pipeline runs, so no stage
 # precondition is needed.
 portograph: 2
