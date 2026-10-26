@@ -100,6 +100,29 @@ describe('overlay paths', () => {
     expect(path(scenery(2), true)).toEqual([{ x: 73, y: 120 }, { x: 187, y: 120 }]);
   });
 
+  it('judges a weighted overlay by its own stroke in placement and in stage 8 alike (ticket 34 re-check, R1)', () => {
+    // A 3 px overlay stroke: its riding tolerance is 3 px and its clearance 8.5 px. A foreign pill tip 2 px below the line is within
+    // that stroke's width, so `straightChord` (placement: straight-chord ids, chord-clear, overlay-place, side-measure) and
+    // `overlayPath` (7f, stage 8, route/validate) both refuse the straight segment; 4 px below, both keep it. `straightChord` read the
+    // default 1.5 px stroke before and called the 2 px case straight while stage 8 drew a U.
+    const weighted = (gap: number): LayoutModel => scene({
+      nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
+        { id: 'b', bounds: { x: 200, y: 100, width: 60, height: 40 } },
+        { id: 'c', bounds: { x: 110, y: 133 + gap, width: 40, height: 40 } }],
+      ports: [{ node: 'a', name: 'p', side: 'right', anchor: { x: 60, y: 120 } },
+        { node: 'b', name: 'q', side: 'left', anchor: { x: 200, y: 120 } },
+        { node: 'c', name: 'up', side: 'top', anchor: { x: 130, y: 133 + gap } }],
+      links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay', strokeWidth: 3,
+        points: [{ x: 60, y: 120 }, { x: 200, y: 120 }] }],
+    });
+    for (const [gap, straight] of [[2, false], [4, true]] as const) {
+      const model = weighted(gap), link = model.links[0]!;
+      const drawnStraight = overlayPath(model, link).segments.length === 1;
+      expect(straightChord(model, link) !== undefined).toBe(straight);
+      expect(drawnStraight).toBe(straight);
+    }
+  });
+
   it('puts the U run one clearance beyond a taller pill between the two level ends (ticket 34 review)', () => {
     // A middle node whose pill tip stands 5 px above the two own tips. A run at one clearance above the own tips would pass 2.75 px
     // above that foreign pill; the run steps out to one clearance beyond the furthest shape across its span instead.

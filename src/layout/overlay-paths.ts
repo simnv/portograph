@@ -1240,12 +1240,11 @@ const faceRule = (link: LayoutLink): FaceRule => linkLayer(link) === 'overlay' ?
  * one frame (ticket 34), so the two families cannot state different faces or different blockers.
  */
 export function straightChord(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery, geometryOnly = false): { from: Point; to: Point } | undefined {
-  const ends = link.attachments;
-  if (!ends) return undefined;
-  const from = findPort(model, ends.from), to = findPort(model, ends.to);
-  const one = from && model.nodes[ends.from.node] && overlayEnd(model.nodes[ends.from.node]!, from);
-  const two = to && model.nodes[ends.to.node] && overlayEnd(model.nodes[ends.to.node]!, to);
-  if (!one || !two) return undefined;
+  // The ends carry the link's own stroke (`chordEnds`, as `derivedPoints` reads them): the riding tolerance and the clearance are that
+  // stroke's, so placement and stage 8 judge one link by one width (R1, ticket 34 review).
+  const read = chordEnds(model, link);
+  if (!read) return undefined;
+  const { head: one, tail: two } = read;
   if (!geometryOnly && !straightBetween(one, two, blockers ?? sharedBlockers(model), faceRule(link))) return undefined;
   return { from: { ...one.face }, to: { ...two.face } };
 }
