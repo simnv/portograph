@@ -6,7 +6,7 @@ import { PlacementRefusal } from './placement-refusal.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
 import { orderByOverlay, orderFramesByOverlay } from './overlay-order.js';
 import { orderByCorridors, validateRowOrderDecisions, withdrawPullsAcrossFlips } from './corridor-order.js';
-import { orderByFeeds, validateFeedOrders } from './feed-order.js';
+import { orderByFeeds, refreshFeedOrders, validateFeedOrders } from './feed-order.js';
 import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 export { buildSkeletonGraph } from './skeleton-graph.js';
 export { validateSkeletonBands } from './skeleton-geometry.js';
@@ -90,7 +90,8 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
     orderByFeeds(work);
     placeFlanksAndPeers(work, columns => { orderFramesByOverlay(work, columns); });
     // A far-end pull whose far node the frame order then put on the other side is undone (ticket 22 review).
-    withdrawPullsAcrossFlips(work);
+    // A withdrawn pull turns a free row that may feed a cell: the feed orders are read again (ticket 25 review).
+    if (withdrawPullsAcrossFlips(work)) refreshFeedOrders(work);
     const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work), ...validateFeedOrders(work)];
     if (errors.length) throw new SkeletonError(errors.join('; '));
     work.stage = 'skeleton';

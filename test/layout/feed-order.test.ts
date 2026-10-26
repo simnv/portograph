@@ -6,8 +6,10 @@ import { resolve } from '../../src/resolve/index.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';
 import { skeleton } from '../../src/layout/skeleton.js';
-import { validateFeedOrders } from '../../src/layout/feed-order.js';
-import { ofKind, rowOrderOf } from '../../src/layout/reservations.js';
+import { refreshFeedOrders, validateFeedOrders } from '../../src/layout/feed-order.js';
+import { reseatRow } from '../../src/layout/overlay-order.js';
+import { holds } from '../../src/layout/reservation-checks.js';
+import { feedingRowsOf, ofKind, rowOrderOf } from '../../src/layout/reservations.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -98,10 +100,97 @@ describe('the cells of a fan follow the order of the far ends (architecture-2 ti
     const reversed = [...lines.slice(0, at + 1), ...lines.slice(at + 1).filter(line => line.trim()).reverse(), ''].join('\n');
     const [one, two] = await Promise.all([skeletonOf(fan), skeletonOf(reversed)]);
     expect(ofKind(two.reservations ?? [], 'rowOrder')).toEqual(ofKind(one.reservations ?? [], 'rowOrder'));
-    expect(ofKind(one.reservations ?? [], 'rowOrder').map(entry => entry.payload)).toEqual([
-      { cell: 'east#0', order: ['x1', 'x2'] }, { cell: 'middle#0', order: ['m1', 'm2'] }, { cell: 'west#0', order: ['w1', 'w2'] },
-    ]);
+    expect(ofKind(one.reservations ?? [], 'rowOrder').map(entry => entry.payload)).toEqual(['east#0', 'middle#0', 'west#0'].map((cell, i) => ({
+      cell, order: [['x1', 'x2'], ['m1', 'm2'], ['w1', 'w2']][i], feeds: [{ row: 'core', order: ['hub1', 'hub2'] }],
+    })));
     for (const cell of ['east#0', 'middle#0', 'west#0']) expect(two.groups[cell]!.rowOrder).toEqual(one.groups[cell]!.rowOrder);
+  }, 60000);
+});
+
+describe('the feed order across later moves (ticket 25 review)', () => {
+  it('reads every unit\'s feeds from one row: feeds from two groups decide nothing', async () => {
+    const split = fan.replace('  east: { tier: 2, label: East }\n', '  east: { tier: 2, label: East }\n  alt: { tier: 1, label: Alt }\n')
+      .replace('  hub2: { group: core, class: provider, label: Hub two }\n', '  hub2: { group: core, class: provider, label: Hub two }\n  hub3: { group: alt, class: provider, label: Hub three }\n')
+      .replace('  - [w2, hub2]', '  - [w2, hub3]\n  - [up, hub3]');
+    expect(split).toContain('hub3: { group: alt');
+    const model = await skeletonOf(split);
+    expect(rowOrderOf(model.reservations, 'cell', 'west#0')).toBeUndefined();
+    expect(rowOrderOf(model.reservations, 'cell', 'middle#0')).toEqual(['m1', 'm2']);
+  }, 60000);
+
+  it('stores the feeding row as the premise: a turned feeding row fails the entry, and the refresh reads the cells again', async () => {
+    const model = await skeletonOf(fan);
+    expect([...feedingRowsOf(model.reservations)]).toEqual(['core']);
+    expect(validateFeedOrders(model)).toEqual([]);
+    // A later move turns the feeding row (as a withdrawn pull re-seats a free row): every fed cell's entry now reads a premise that is gone.
+    expect(reseatRow(model, model.groups.core!, ['hub2', 'hub1'], true)).toBe(true);
+    expect(validateFeedOrders(model)).toHaveLength(3);
+    expect(validateFeedOrders(model)[0]).toContain('the feeding row core no longer stands in the order the entry read');
+    expect(refreshFeedOrders(model)).toBe(true);
+    expect(validateFeedOrders(model)).toEqual([]);
+    for (const [cell, one, two] of [['west#0', 'w1', 'w2'], ['middle#0', 'm1', 'm2'], ['east#0', 'x1', 'x2']] as const) {
+      expect(model.groups[cell]!.rowOrder).toEqual([two, one]);
+      expect(rowOrderOf(model.reservations, 'cell', cell)).toEqual([two, one]);
+    }
+  }, 60000);
+
+  it('names a cell the refresh cannot seat (FEED_ORDER_REFUSED) and drops its entry', async () => {
+    const model = await skeletonOf(fan);
+    reseatRow(model, model.groups.core!, ['hub2', 'hub1'], true);
+    // A forged wall: west#0 keeps a 1 px box and middle#0 stands right after it, so the turned row has no room.
+    const west = model.groups['west#0']!.bounds!;
+    west.width = 1;
+    model.groups['middle#0']!.bounds!.x = west.x + 2;
+    refreshFeedOrders(model);
+    expect(model.diagnostics.filter(item => item.code === 'FEED_ORDER_REFUSED').map(item => item.owners)).toEqual([[{ kind: 'group', id: 'west#0' }]]);
+    expect(rowOrderOf(model.reservations, 'cell', 'west#0')).toBeUndefined();
+    expect(model.groups['west#0']!.rowOrder).toEqual(['w1', 'w2']);
+  }, 60000);
+
+  it('refuses through holds a later move that would turn a frame order', async () => {
+    const model = await run(child);
+    expect(holds(model.reservations ?? [], model)).toEqual([]);
+    const forged = copy(model);
+    forged.groups['zone#2']!.bounds!.x = forged.groups['loc#2']!.bounds!.x + 400;
+    expect(holds(forged.reservations ?? [], forged).map(item => [item.kind, item.why])).toEqual([['rowOrder', 'zone#2 does not stand left of loc#2, the order the feeds of loc give']]);
+  }, 120000);
+
+  it('orders a row of child frames with no cell of the parent beside them (the pure row of standOf)', async () => {
+    const model = await skeletonOf(`portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, label: Location }
+  za: { parent: loc, label: Zone A }
+  zb: { parent: loc, label: Zone B }
+nodes:
+  feed: { group: upstream, class: router, label: Feed }
+  c0: { group: loc, class: router, label: Core }
+  s1: { group: loc, class: switch, label: Switch one }
+  s2: { group: loc, class: switch, label: Switch two }
+  a1: { group: za, class: server, label: Zone A server }
+  b1: { group: zb, class: server, label: Zone B server }
+links:
+  - [feed, c0]
+  - [c0, s1]
+  - [c0, s2]
+  - [s1, b1]
+  - [s2, a1]
+`);
+    expect(model.groups['loc#1']!.rowOrder).toEqual(['s1', 's2']);
+    expect(rowOrderOf(model.reservations, 'frame', 'loc')).toEqual(['zb', 'za']);
+    expect(model.groups['zb#2']!.bounds!.x).toBeLessThan(model.groups['za#2']!.bounds!.x);
+    expect(validateFeedOrders(model)).toEqual([]);
+  }, 60000);
+
+  it('follows the hubs when the nodes are declared the other way round (R3)', async () => {
+    const lines = fan.split('\n'), from = lines.indexOf('nodes:'), to = lines.indexOf('links:');
+    const reversed = [...lines.slice(0, from + 1), ...lines.slice(from + 1, to).reverse(), ...lines.slice(to)].join('\n');
+    const model = await skeletonOf(reversed);
+    const [left, right] = centre(model, 'hub1') < centre(model, 'hub2') ? ['1', '2'] : ['2', '1'];
+    for (const prefix of ['w', 'm', 'x']) {
+      const cell = { w: 'west#0', m: 'middle#0', x: 'east#0' }[prefix]!;
+      expect(model.groups[cell]!.rowOrder).toEqual([prefix + left, prefix + right]);
+    }
   }, 60000);
 });
 

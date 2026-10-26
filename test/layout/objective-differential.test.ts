@@ -26,6 +26,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * planned part runs the attempt again, so four fixtures place other geometry and call the judges on it. three-canton-groups-close-up-to-a-band-gap
  * was recorded once more when two runs from opposite sides of one face came to share a row of the tier gap: its gap plan, and so its geometry, changed. a-chord-hint-and-a-lane-hint-never-share-a-batch
  * was recorded once more for the far-end pull, which stands lb next to fe4.
+ * three-canton-groups-close-up-to-a-band-gap was recorded once more for architecture-2 ticket 25: no judge moved, but the zones of canton `a`
+ * now stand under their feeds (routed crossings 12 to 4), so the judges are called on other geometry.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

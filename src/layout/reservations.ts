@@ -45,11 +45,14 @@ export interface ReservationPayload {
   /**
    * The order the feeds give a row (architecture-2 ticket 25, `feed-order.ts`): for `cell`, the nodes of a rank cell left to right; for
    * `frame`, the units that stand beside each other in the frame left to right, the frame's own cells named by the frame id and each
-   * child frame by its id. Stage 4 writes it after the free rows are ordered; an absent entry means the feeds decide nothing there.
+   * child frame by its id. `feeds` is the premise: each feeding row the order was read from, with the order it stood in. Stage 4 writes
+   * it after the free rows are ordered; an absent entry means the feeds decide nothing there.
    */
-  rowOrder: { cell: string; order: readonly string[] } | { frame: string; order: readonly string[] };
+  rowOrder: { cell: string; order: readonly string[]; feeds: readonly RowFeed[] } | { frame: string; order: readonly string[]; feeds: readonly RowFeed[] };
 }
 export type ReservationKind = keyof ReservationPayload;
+/** A feeding row of a `rowOrder` entry: the group, and the order its nodes stood in when the feeds were read. */
+export interface RowFeed { row: string; order: readonly string[] }
 
 export type Reservation = { [K in ReservationKind]: Readonly<{
   id: string;
@@ -217,6 +220,10 @@ export function rowOrderOf(ledger: Reservations | undefined, scope: 'cell' | 'fr
   for (const { payload } of ofKind(ledger ?? NO_RESERVATIONS, 'rowOrder')) if (scope === 'cell' ? 'cell' in payload && payload.cell === id : 'frame' in payload && payload.frame === id) return payload.order;
   return undefined;
 }
+/** The feeding rows the `rowOrder` entries read (their premises): a rule that would turn one of them leaves it alone. */
+export function feedingRowsOf(ledger: Reservations | undefined): Set<string> {
+  return new Set(ofKind(ledger ?? NO_RESERVATIONS, 'rowOrder').flatMap(({ payload }) => payload.feeds.map(feed => feed.row)));
+}
 
 /** Whether every face takes the turn order, and the links whose faces take it when not every face does. */
 export function turnOf(ledger: Reservations): { all: boolean; links: string[]; requireChanged: boolean } {
@@ -280,11 +287,16 @@ export function floorFailure(item: Reservation, model: LayoutModel): string | un
 
 /**
  * The predicate of a feed order against a placed model (architecture-2 ticket 25, R2): a cell stands in the reserved order, and of two units
- * of a frame entry the one named first stands left of the other on every sub-tier they share. Order only, so it holds at every stage after 4.
+ * of a frame entry the one named first stands left of the other on every sub-tier they share. The premise holds too: each feeding row
+ * stands in the order the entry read (a row that turned would make the reserved order cross). Order only, so it holds at every stage after 4.
  */
 export function rowOrderFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'rowOrder') return undefined;
   const payload = item.payload;
+  for (const feed of payload.feeds) {
+    const row = model.groups[feed.row];
+    if (row === undefined || !same(row.rowOrder ?? row.nodes, feed.order)) return `the feeding row ${feed.row} no longer stands in the order the entry read`;
+  }
   if ('cell' in payload) {
     const group = model.groups[payload.cell];
     if (group === undefined || group.frame === undefined) return `${payload.cell} is no rank cell`;
@@ -347,7 +359,9 @@ function shapeFailure(entry: unknown): string | undefined {
     }
     case 'rowOrder': {
       const order = payload['order'], one = isString(payload['cell']) !== isString(payload['frame']);
-      return one && Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length ? undefined : bad;
+      const feeds = payload['feeds'];
+      const feedsOk = Array.isArray(feeds) && feeds.length > 0 && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
+      return one && feedsOk && Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length ? undefined : bad;
     }
     default: {
       const scope = payload['scope'];

@@ -5,11 +5,7 @@
 # East leaves their facing sides and Middle stands on its chord, so that one link keeps the orthogonal route.
 # The uplinks from the ISP leave the frame and are unchanged.
 # Test-only input owned by ranked-groups ticket 34; test/pipeline/frame-straight.test.ts reads the layout.
-# The feed order is off (architecture-2 ticket 25, `layout.feedOrder: false`): the subject is Middle standing on the West-East
-# chord. With the feed order on, Middle stands first in its cell (fed by Gateways 1 and 2, before the West-East pair), the peer
-# link is a straight chord too, and the sheet gains (crossings 2 to 1, bends 4 to 0).
 portograph: 2
-layout: { feedOrder: false }
 groups:
   upstream: { tier: 0, label: Upstream }
   site: { tier: 1, label: Site }
