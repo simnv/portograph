@@ -9,6 +9,7 @@ import { findPort } from './row-paths.js';
 import { cellTier } from './read/tier.js';
 import { isCantonUnit, memberRoom } from './read/canton.js';
 import { columnPullFeeds, type UnitFeeds } from './read/feeds.js';
+import { rowOrderOf } from './reservations.js';
 import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
 import { straightFell, tapVerdict } from './objective.js';
 import { bandGap, compareId } from './skeleton-graph.js';
@@ -108,7 +109,7 @@ export function packFrameColumns(model: LayoutModel): Map<string, Column> {
 interface Stand { left: number; right: number; at: Map<string, number>; sides: Map<string, 'left' | 'right'> }
 
 /** The sub-tiers a frame occupies, its own cells and its child frames' cells, from the first to the last. */
-function tierRange(model: LayoutModel, id: string): [number, number] {
+export function tierRange(model: LayoutModel, id: string): [number, number] {
   const frames = model.document.frames!;
   const cells = frameSubtreeCells(frames, id);
   const tiers = cells.map(cell => model.groups[cell]!.tier!);
@@ -135,7 +136,7 @@ function partnerKey(model: LayoutModel, nodes: ReadonlySet<string>, inside: Read
  * range overlap, so members of two tiers never fold into one row: a child stands beside only the children of the sub-tiers it
  * shares, and apart from the others. A component of one child, with no cell of the frame beside it, stands apart.
  */
-function besideRows<T>(cells: readonly string[], tierOf: (cell: string) => number, items: readonly T[], range: (item: T) => [number, number]): { own: T[]; rows: T[][] } {
+export function besideRows<T>(cells: readonly string[], tierOf: (cell: string) => number, items: readonly T[], range: (item: T) => [number, number]): { own: T[]; rows: T[][] } {
   const touches = (a: T, b: T): boolean => range(a)[0] <= range(b)[1] && range(b)[0] <= range(a)[1];
   const onCells = (item: T): boolean => cells.some(cell => tierOf(cell) >= range(item)[0] && tierOf(cell) <= range(item)[1]);
   const seen = new Set<T>(), own = new Set<T>(), rows: T[][] = [];
@@ -171,22 +172,29 @@ function standOf(model: LayoutModel, id: string, memo: Map<string, Stand>): Stan
   const rest = width(frames[id]!.cells.filter(cell => !standing.includes(cell)));
   let left = Math.max(rest / 2, ...apart.map(block => block.left)), right = Math.max(rest / 2, ...apart.map(block => block.right));
   for (const block of apart) at.set(block.child, 0);
-  // A row of children with no cell of the frame beside it stands in declaration order, centred on the axis; each row on its own.
-  for (const row of pure) {
+  // A row of children with no cell of the frame beside it stands in the order its feeds give (architecture-2 ticket 25, the ledger's
+  // `rowOrder` of the frame), else in declaration order, centred on the axis; each row on its own.
+  const reserved = rowOrderOf(model.reservations, 'frame', id), slot = (unit: string): number => reserved?.indexOf(unit) ?? -1;
+  for (const unsorted of pure) {
+    const row = unsorted.every(block => slot(block.child) >= 0) ? [...unsorted].sort((a, b) => slot(a.child) - slot(b.child)) : unsorted;
     const total = row.reduce((sum, block) => sum + block.left + block.right, 0);
     let start = 0;
     for (const block of row) { at.set(block.child, start + block.left - total / 2); sides.set(block.child, 'right'); start += block.left + block.right; }
     left = Math.max(left, total / 2); right = Math.max(right, total / 2);
   }
   if (beside.length) {
-    // The child on the side its overlay partners favour: the mean x of the partners outside the frame against the
-    // mean x of the frame's cells in the row. Declaration order (the frame first, its children in order) on a tie.
+    // The child on the side its feeds give (architecture-2 ticket 25): the ledger's `rowOrder` of the frame names the frame (its own
+    // cells) and each child left to right. Where the feeds decide nothing, the side its overlay partners favour: the mean x of the
+    // partners outside the frame against the mean x of the frame's cells in the row. Declaration order (the frame first, its children
+    // in order) on a tie.
     const inside = new Set(frameNodes(model, id)), own = standing.map(cell => cellReach(model, cell)), ownX = own.length ? mean(own.map(reach => reach.x + reach.width / 2)) : undefined;
+    const fed = slot(id) >= 0 && beside.every(block => slot(block.child) >= 0);
     const order = Object.keys(frames), place = (block: typeof beside[number]): 'left' | 'right' => {
+      if (fed) return slot(block.child) < slot(id) ? 'left' : 'right';
       const key = ownX === undefined ? undefined : partnerKey(model, new Set(frameNodes(model, block.child)), inside);
       return key !== undefined && key < ownX! - PLACEMENT_EPS ? 'left' : 'right';
     };
-    const sorted = [...beside].sort((a, b) => order.indexOf(a.child) - order.indexOf(b.child));
+    const sorted = [...beside].sort((a, b) => (fed ? slot(a.child) - slot(b.child) : 0) || order.indexOf(a.child) - order.indexOf(b.child));
     const placed = new Map(sorted.map(block => [block, place(block)]));
     for (const block of sorted) sides.set(block.child, placed.get(block)!);
     const row: { child?: string; width: number; axis: number }[] = [

@@ -108,9 +108,10 @@ renderer draws frames and never cells.
 
 **Beside (ticket 28).** A leaf child shares sub-tiers with parent cells. In x the child frame is a
 column inside the parent frame, and the parent's cells of the child's ranks are a disjoint column
-next to it, `COLUMN_SLACK` (20 px) apart. The child goes on the side its overlay partners favour
-(the mean x of the partners outside the frame, against the mean x of those parent cells); a tie
-puts it on the right, in declaration order. `packFrameColumns` reads the stands of all frames
+next to it, `COLUMN_SLACK` (20 px) apart. The child goes on the side its feeds give (architecture-2
+ticket 25, the ledger's `rowOrder` of the frame, see `pipeline.md` stage 4). Where the feeds decide
+nothing, it goes on the side its overlay partners favour (the mean x of the partners outside the frame,
+against the mean x of those parent cells); a tie puts it on the right, in declaration order. `packFrameColumns` reads the stands of all frames
 before it moves a cell. `separateFrameColumns`, `columnShifts` and `holdColumnAxes` move the child
 frame and the parent cells as two columns of one parent, and centring keeps each cell inside its own
 column (`besideWalls`). A parent link that passes the child's ranks to reach a parent cell beside

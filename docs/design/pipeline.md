@@ -360,6 +360,23 @@ node. `layout.farEndPull: false` switches the pull off and keeps the corridor ro
 test input whose subject needs a node where it is declared pins it so. `layout.corridorRowOrder: false` keeps the declared
 order of every row, with no pull either.
 
+**Order follows the feeds (architecture-2 ticket 25, `feed-order.ts`).** After the free rows are ordered and before the frames
+are packed, the rank cells and the child frames take the order their feeds give. A unit is a node of a rank cell (a `row` cell of
+two or more nodes, no flank beside it), or the frame's own cells or a child frame among the units of a frame that stand beside each
+other (`besideRows`). Its **feed key** is the mean position, in the feeding row, of the far ends of its routed links into the sub-tier
+directly above its first sub-tier. The feeding row is one group, read in the order it stands in; the cells are judged top-down, so a
+cell reads the order this step gave the cell above it. Feeds from two groups are not comparable before the frames are packed, and
+decide nothing. A row is decided when two of its units have different keys: in a cell the keyed nodes take the keyed slots in key
+order, a node without a feed keeps its slot, and a tie keeps the order ELK gave (its input is the declaration order); in a frame
+every unit must have a key, and a tie keeps the declaration order (own cells first, then the children). Feed order beats declaration
+order. A canton is author-fixed (D1) and a free row keeps the corridor order. Each decided row is one **`rowOrder`** entry of the
+ledger, the one decision (R1; `rowOrderOf` is the one reader): a cell is re-seated in its order here, the replay of ELK's output (ELK
+gets no hint, because the feeding row's order is known only after ELK and the free-row orders, and the column pack, not ELK, places
+a child frame); `standOf` stands a child frame on the side its entry names; the overlay order of the frames does not chain the nodes
+of a reserved cell. `validateFeedOrders` checks every entry at the end of stage 4, and `validateReservations` on every later
+snapshot (R2). One sort per row, no search, so no cap. On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone
+of Location 4 stands under its feeds.
+
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the
 fallback: one ELK run per tier band without partitioning, bands stacked in tier order with the
