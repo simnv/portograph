@@ -79,7 +79,7 @@ describe('an overlay line keeps the overlay port clearance from every face it ru
     });
   }
 
-  it('the old straight segment ran along a foreign pill: the fixture still holds the case it tests', async () => {
+  it('guard, passes on main too: the fixture still holds the case it tests, a foreign pill tip level with the two ends', async () => {
     // `east.up` is a pill of a routed link between the two overlay ends, its tip level with theirs: the case the user called out.
     const model = await run(fixture('an-overlay-line-keeps-its-clearance-from-the-faces-it-runs-along'));
     const peer = (id: string) => model.nodes[id]!.ports.find(port => port.ref.name === 'peer')!.pill!.bounds;

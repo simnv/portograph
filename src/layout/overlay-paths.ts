@@ -9,6 +9,7 @@ import { bodiesOf, forks, onOneTrack, paddingOf, reachBeyond, sharedTrackPairs, 
 import type { TrackPath } from './overlay-tracks.js';
 import { RectangleIndex } from './rectangle-index.js';
 import { findPort } from './row-paths.js';
+import { linkLayer } from './link-layer.js';
 import { courseGeometry, ringsOf } from './course-lanes.js';
 import { besideRunLabelBox, describedLink, isDiagonalRun, labelBorders, linkLabelSize, longestRun, overlayLabelsSuppressed } from './run-label-box.js';
 
@@ -137,30 +138,37 @@ export function crosses(from: Point, to: Point, box: Rect): boolean {
 }
 
 /**
- * Whether an axis-aligned segment **rides a face** of a body or a pill (architecture-2 ticket 34, user 2026-10-25: "an overlay never
- * rides along a face or a foreign pill"): it lies on the line of one of the shape's faces (0 px across, within `EPS`) and overlaps
- * that face's span by more than `EPS`. The two ends' own pills and bodies are tested too: riding along one's own face is refused as
- * well. The segment that leaves its own pill perpendicular to the face meets that pill and its body only at its end point, so it
- * overlaps neither span on its axis and is not refused for them (the incident-segment exemption follows from the overlap, with no
- * list of exempt shapes). An angled segment is not read here (`false`): the ticket keeps its verdict, and `crosses` alone tests it.
+ * Whether a segment **rides a face** of a body or a pill (architecture-2 ticket 34, user 2026-10-25: "an overlay never rides along a
+ * face or a foreign pill"). Only a segment that runs along an axis is read: one whose drift across that axis over its whole length is
+ * at most `tolerance`, the link's stroke width (`OverlayEnd.stroke`), and whose length along it is more. Such a segment rides a face
+ * when, over a stretch of that face's span longer than `EPS`, it stands within `tolerance` of the face's line: a line on the tips, or
+ * a stroke's width off them, reads as lying on the face. The two ends' own pills and bodies are tested too: riding along one's own
+ * face is refused as well. The segment that leaves its own pill perpendicular to the face meets that pill and its body only at its
+ * end point, so it overlaps neither span on its axis and is not refused for them (the incident-segment exemption follows from the
+ * overlap, with no list of exempt shapes). A segment that drifts more than `tolerance` is angled and not read here (`false`): the
+ * ticket keeps its verdict, and `crosses` alone tests it.
  *
- * Riding, not nearness: a segment that passes a face at a gap smaller than the overlay port clearance but not on it stays straight.
- * Measured on the corpus (2026-10-26), refusing nearness bent straight lines whose detour then ran at the same gap (the orthogonal
- * branch tests `enters` only), and three sheets gained a shared track. That wider clause waits for a ruling.
+ * Riding, not nearness: a segment that passes a face further than one stroke width off, but nearer than the overlay port clearance,
+ * stays straight. Refusing nearness bent straight lines whose detour then ran at the same gap (the orthogonal branch tests `enters`
+ * only; the corpus, 2026-10-26), and three sheets gained a shared track. Architecture-2 ticket 41 holds that wider clause.
  */
-export function ridesAFace(from: Point, to: Point, blockers: ShapeQuery): boolean {
-  const horizontal = Math.abs(to.y - from.y) <= EPS, vertical = Math.abs(to.x - from.x) <= EPS;
-  if (horizontal === vertical) return false;
-  const low = horizontal ? Math.min(from.x, to.x) : Math.min(from.y, to.y);
-  const high = horizontal ? Math.max(from.x, to.x) : Math.max(from.y, to.y);
-  const at = horizontal ? from.y : from.x;
-  const window: Rect = horizontal ? { x: low, y: at - EPS, width: high - low, height: 2 * EPS }
-    : { x: at - EPS, y: low, width: 2 * EPS, height: high - low };
+export function ridesAFace(from: Point, to: Point, blockers: ShapeQuery, tolerance: number): boolean {
+  const dx = Math.abs(to.x - from.x), dy = Math.abs(to.y - from.y);
+  const horizontal = dy <= tolerance && dx > tolerance, vertical = dx <= tolerance && dy > tolerance;
+  if (!horizontal && !vertical) return false;
+  const along = (point: Point): number => horizontal ? point.x : point.y;
+  const across = (point: Point): number => horizontal ? point.y : point.x;
+  const [first, last] = along(from) <= along(to) ? [from, to] : [to, from];
+  /** The segment's coordinate across its axis at `at` along it. */
+  const acrossAt = (at: number): number => across(first) + (across(last) - across(first)) * (at - along(first)) / (along(last) - along(first));
+  const window: Rect = { x: Math.min(from.x, to.x) - tolerance, y: Math.min(from.y, to.y) - tolerance,
+    width: dx + 2 * tolerance, height: dy + 2 * tolerance };
   return blockers.some(window, box => {
-    const start = horizontal ? box.x : box.y, end = horizontal ? right(box) : bottom(box);
-    if (Math.min(high, end) - Math.max(low, start) <= EPS) return false;
-    const near = horizontal ? box.y : box.x, far = horizontal ? bottom(box) : right(box);
-    return Math.abs(at - near) <= EPS || Math.abs(at - far) <= EPS;
+    const low = Math.max(along(first), horizontal ? box.x : box.y), high = Math.min(along(last), horizontal ? right(box) : bottom(box));
+    if (high - low <= EPS) return false;
+    const one = acrossAt(low), two = acrossAt(high), near = Math.min(one, two), far = Math.max(one, two);
+    const faces = horizontal ? [box.y, bottom(box)] : [box.x, right(box)];
+    return faces.some(face => Math.max(near - face, face - far, 0) <= tolerance);
   });
 }
 
@@ -202,7 +210,7 @@ const polylineLength = (points: readonly Point[]): number => points.slice(1)
  * draws none: the straight branch drops its own two pills from the shapes it tests against, and a
  * node body is not one of them.
  */
-export interface OverlayEnd { anchor: Point; box: Rect; pill: Rect | undefined; face: Point; clear: Point; out: Point; step: number }
+export interface OverlayEnd { anchor: Point; box: Rect; pill: Rect | undefined; face: Point; clear: Point; out: Point; step: number; stroke: number }
 
 /** `strokeWidth` is the link's (`linkStrokeWidth`): the step out of the face is that link's overlay port clearance. */
 export function overlayEnd(node: LayoutNode, port: LayoutPort, strokeWidth: number = DEFAULT_STROKE_WIDTHS.path): OverlayEnd | undefined {
@@ -217,7 +225,7 @@ export function overlayEnd(node: LayoutNode, port: LayoutPort, strokeWidth: numb
   const outward = (by: number): Point => ({ x: port.anchor!.x + out.x * by, y: port.anchor!.y + out.y * by });
   const step = overlayPortClearance(strokeWidth);
   return { anchor: { ...port.anchor }, box, pill,
-    face: outward(depth), clear: outward(depth + step), out, step };
+    face: outward(depth), clear: outward(depth + step), out, step, stroke: strokeWidth };
 }
 
 /**
@@ -253,6 +261,41 @@ function tooClose(head: OverlayEnd, tail: OverlayEnd): boolean {
   const across = (head.anchor.x - tail.anchor.x) * head.out.y - (head.anchor.y - tail.anchor.y) * head.out.x;
   return head.out.x === -tail.out.x && head.out.y === -tail.out.y && Math.abs(across) <= EPS
     && along(head.anchor, tail.anchor) > EPS && along(head.clear, tail.clear) < -EPS;
+}
+
+/**
+ * The U between two cleared ends that face one way (`out`) and are level on it (ticket 34), or `undefined` when they are not level:
+ * the cleared ends, and between them the two corners of one run. The run starts on the line the cleared ends share, one clearance
+ * beyond the own tips, and steps out past every shape whose span along the run overlaps it by more than `EPS` and that reaches
+ * nearer than `step` to the run, to one clearance beyond that shape's outer edge. Each shape can push the run once, since the run
+ * then stands one clearance beyond it, so the loop ends within the number of shapes (a finite traversal, R4).
+ */
+function levelRun(from: Point, to: Point, out: Point, step: number, blockers: ShapeQuery): Point[] | undefined {
+  const across = (point: Point): number => point.x * out.x + point.y * out.y;
+  if (Math.abs(across(from) - across(to)) > EPS) return undefined;
+  const along = (point: Point): number => out.x !== 0 ? point.y : point.x;
+  const low = Math.min(along(from), along(to)), high = Math.max(along(from), along(to));
+  /** The extent of a box across the run's axis, measured outward. */
+  const extent = (box: Rect): [number, number] => {
+    const [a, b] = out.x !== 0 ? [box.x * out.x, right(box) * out.x] : [box.y * out.y, bottom(box) * out.y];
+    return [Math.min(a, b), Math.max(a, b)];
+  };
+  let at = across(from);
+  const reach = (): Rect => out.x !== 0
+    ? { x: Math.min((at - step) * out.x, (at + step) * out.x), y: low, width: 2 * step, height: high - low }
+    : { x: low, y: Math.min((at - step) * out.y, (at + step) * out.y), width: high - low, height: 2 * step };
+  for (let moved = true; moved;) {
+    moved = blockers.some(reach(), box => {
+      const start = out.x !== 0 ? box.y : box.x, end = out.x !== 0 ? bottom(box) : right(box);
+      if (Math.min(high, end) - Math.max(low, start) <= EPS) return false;
+      const [inner, outer] = extent(box);
+      if (outer <= at - step + EPS || inner >= at + step - EPS) return false;
+      at = outer + step;
+      return true;
+    });
+  }
+  const point = (end: Point): Point => out.x !== 0 ? { x: at * out.x, y: end.y } : { x: end.x, y: at * out.y };
+  return compact([from, point(from), point(to), to]);
 }
 
 /**
@@ -380,13 +423,14 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: ShapeQuery, colle
   const candidates = ways.map(way => compact([from, ...way, to]))
     .filter(points => axisAligned(points) && !retraces(whole(points)) && bends(points));
   // Ticket 34: two ends that face one way and are level on that side. The straight branch refused the segment along their faces, and
-  // every way above collapses onto the line the two cleared ends share, which `bends` refuses. That line is the U the user asked
-  // for: up out of each face by the clearance, one run beyond the pill tips, and down. It is taken only when it clears every shape
-  // and runs along no face; it is the shortest way there is, so nothing else can beat it, and the ends-only fall-backs never take it
-  // (a body between two level side ports keeps the way round of ticket 86).
-  const levelRun = head.out.x === tail.out.x && head.out.y === tail.out.y ? compact([from, to]) : undefined;
-  const level = levelRun !== undefined && levelRun.length === 2 && axisAligned(levelRun) && bends(whole(levelRun))
-    && !retraces(whole(levelRun)) && clearOfAll(levelRun) && !ridesAFace(from, to, blockers) ? levelRun : undefined;
+  // every way above collapses onto the line the two cleared ends share, which `bends` refuses. The U the user asked for goes up out
+  // of each face, along one run, and down. The run stands one clearance beyond the furthest shape across its span (`levelRun`), so
+  // a taller pill or body between the two ends is passed by the clearance too, not only the two own tips. It is taken only when it
+  // clears every shape and rides no face; it is then the shortest way, and the ends-only fall-backs never take it (a body between two
+  // level side ports keeps the way round of ticket 86).
+  const run = head.out.x === tail.out.x && head.out.y === tail.out.y ? levelRun(from, to, head.out, step, blockers) : undefined;
+  const level = run !== undefined && axisAligned(run) && bends(whole(run)) && !retraces(whole(run)) && clearOfAll(run)
+    && !ridesAFace(run[run.length > 2 ? 1 : 0]!, run[run.length > 2 ? 2 : 1]!, blockers, Math.max(head.stroke, tail.stroke)) ? run : undefined;
   const shortest = (clear: (points: readonly Point[]) => boolean): Point[] | undefined => {
     let best: { points: Point[]; length: number } | undefined;
     for (const points of candidates) {
@@ -466,7 +510,7 @@ export function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: Sh
   if (blockers.some(window, box => !own(box) && crosses(from, to, box))) return undefined;
   // Ticket 34: a segment that runs along a face, the own pills' and bodies' included, is not straight-clear. Two ports level on one
   // side take the orthogonal branch, a U one overlay port clearance beyond the pill tips (`between`, `levelRun`).
-  if (faces === 'refused' && ridesAFace(from, to, blockers)) return undefined;
+  if (faces === 'refused' && ridesAFace(from, to, blockers, Math.max(head.stroke, tail.stroke))) return undefined;
   // No retrace test: the branch publishes one segment, and one segment cannot walk back along a run
   // it already drew. The test this replaces read two stubs that could be stated the wrong way round,
   // and there are no stubs here.
@@ -645,7 +689,7 @@ const OVERLAY_TRACK_STEPS = 3;
 const OVERLAY_TRACK_PASSES = 2;
 
 /** The overlay links drawn on the layer: the set `route/plan` hands to stage 8 (`plan.overlay`). */
-const drawnOverlay = (link: LayoutLink): boolean => (link.layer ?? link.family ?? 'routed') === 'overlay'
+const drawnOverlay = (link: LayoutLink): boolean => linkLayer(link) === 'overlay'
   && link.technique !== 'stub' && link.removed !== true && link.attachments !== undefined;
 
 /**
@@ -1187,7 +1231,7 @@ export function busMemberPath(model: LayoutModel, link: LayoutLink): LayoutPath 
 
 /** Whether the straight test refuses a segment along a face (`ridesAFace`): an overlay link's does (ticket 34), a routed chord's does not. */
 export type FaceRule = 'refused' | 'ridden';
-const faceRule = (link: LayoutLink): FaceRule => (link.layer ?? link.family ?? 'routed') === 'overlay' ? 'refused' : 'ridden';
+const faceRule = (link: LayoutLink): FaceRule => linkLayer(link) === 'overlay' ? 'refused' : 'ridden';
 
 /**
  * The one straight segment an overlay link would draw between the two port faces, or `undefined`

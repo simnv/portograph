@@ -15,6 +15,7 @@ export { disjointShapes } from './containment.js';
 import { completedRouteObstacles, reservedRunObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
 import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, type RouteConnector, type RouteEndpoint, type RoutePin, type RouteShape } from './types.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
+import { linkLayer } from '../layout/link-layer.js';
 import { exitSide } from '../layout/group-exits.js';
 
 /** Shape buffer stays at zero; every obstacle already carries its exact clearance. */
@@ -109,7 +110,7 @@ export function routeParameters(model: LayoutModel): Record<string, number> {
   return { ...ROUTE_PARAMETERS, idealNudgingDistance: nudgingDistance(model) };
 }
 
-export const effectiveLayer = (link: LayoutLink): 'routed' | 'overlay' => link.layer ?? link.family ?? 'routed';
+export const effectiveLayer = linkLayer;
 const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.removed !== true && link.attachments !== undefined;
 
 /** Ports carrying more than one link end cannot hold an exclusive pin, fixed ends included. */

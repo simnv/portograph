@@ -1550,19 +1550,24 @@ condition is facing away from its partner, and the orthogonal branch answers it.
 is generous: a facing pair takes any angle short of the two faces being level.
 
 **No face is ridden (architecture-2 ticket 34, user 2026-10-25).** An overlay line never rides along
-a face or a foreign pill. An axis-aligned segment that lies on a face of any body or pill, its own
-included, over a stretch of that face's span, is not straight-clear (`ridesAFace`). A segment that
-passes a face at a gap smaller than the clearance without lying on it stays straight: refusing it bent
-lines whose detour then ran at the same gap, since the ways round test only `enters` (measured on the
-corpus, 2026-10-26); that wider clause waits for a ruling. Two ports level on one side are
-therefore not one segment along their tips: the orthogonal branch answers with a U, up out of each face
-by the clearance and one run beyond the pill tips (or the body edges of two anonymous ports), the run
-the two cleared ends share, taken when it clears every shape and rides no face. The segment that leaves
-its own pill perpendicular to the face meets that pill and its body only at its end point, so it is
-exempt. An angled segment keeps the outward test and `crosses`. This reverses the 2026-09-16 reading
-"level counts as leaving". The U is an ordinary detour: track separation reads it, 7f reserves its
-track and label room through `trackRoomPadding` and `acrossRunPadding`, and every reader asks the one
-`straightBetween`, so placement, 7f and stage 8 cannot disagree.
+a face or a foreign pill. A segment that runs along an axis (its drift across it is at most the link's
+stroke width) and lies within one stroke width of a face of any body or pill, its own included, over a
+stretch of that face's span, is not straight-clear (`ridesAFace`): a line on the tips, or a fraction of
+a pixel off them, reads as on them. A segment that passes a face further off than that, but nearer than
+the clearance, stays straight: refusing it bent lines whose detour then ran at the same gap, since the
+ways round test only `enters` (measured on the corpus, 2026-10-26); that wider clause is ticket 41. Two
+ports level on one side are therefore not one segment along their tips: the orthogonal branch answers
+with a U, up out of each face by the clearance and along one run one clearance beyond the furthest
+shape across its span (the two pill tips, a taller pill or body between them, or the body edges of two
+anonymous ports), taken when it clears every shape and rides no face. The segment that leaves its own
+pill perpendicular to the face meets that pill and its body only at its end point, so it is exempt. An
+angled segment keeps the outward test and `crosses`. This reverses the 2026-09-16 reading "level counts
+as leaving". The routed straight technique reads the same `straightBetween` through `straightChord`
+with faces ridden, since the ruling names the overlay alone. The U is an ordinary detour, and every
+reader asks the one `straightBetween`, so placement, 7f and stage 8 cannot disagree. A U that stays in
+place relies on the group padding (`GROUP_PADDING`) beyond the pill tips to hold its run; only a run
+that track separation moved out is reserved, through `trackRoomPadding`, and a label beside a run
+through `acrossRunPadding`.
 
 Because the condition holds, the segment's distance along each port's outward normal rises from zero
 and never falls, so it cannot re-enter the pill behind it. A link's **own two pills** therefore carry

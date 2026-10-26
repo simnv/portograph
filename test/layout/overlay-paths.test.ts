@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Point } from '../../src/model/index.js';
 import { OVERLAY_PILL_CLEARANCE, overlayEndpoint, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
 import { retraces } from '../../src/route/validate.js';
+import { linkLayer } from '../../src/layout/link-layer.js';
 import { scene, type Scene } from '../render/fixture.js';
 
 /**
@@ -75,26 +76,48 @@ describe('overlay paths', () => {
     })).toEqual([{ x: 20, y: 87 }, { x: 20, y: 87 - CLEARANCE }, { x: 140, y: 87 - CLEARANCE }, { x: 140, y: 87 }]);
   });
 
-  it('refuses a line on the edge of a foreign pill, and goes round it one clearance out (ticket 34)', () => {
+  it('refuses a line on, or a stroke width off, the edge of a foreign pill, and goes round it one clearance out (ticket 34)', () => {
     // Two ports that face each other on one horizontal line, and between them the pill of a third node whose top edge lies on that
-    // line. `crosses` is open, so the line on the edge entered nothing and the straight branch kept it, 0 px from a pill that is
-    // not its own. Ticket 34: a segment that rides along a face is not straight-clear, so the orthogonal
-    // branch answers, and its run stands one clearance above the two end pills.
-    const run = 115 - CLEARANCE;
-    expect(path({
+    // line, or 0.5 px or 1.5 px below it. `crosses` is open, so such a line entered nothing and the straight branch kept it, a
+    // fraction of a pixel from a pill that is not its own. Ticket 34: a segment that rides along a face, within one stroke width
+    // (1.5 px), is not straight-clear (review 2026-10-26: 0.5 px off the tip still reads as on it), so the orthogonal branch answers,
+    // and its run stands one clearance above the two end pills. 2 px off, the line stays straight (riding, not nearness; ticket 41).
+    const scenery = (gap: number): Scene => ({
       nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
         { id: 'b', bounds: { x: 200, y: 100, width: 60, height: 40 } },
-        { id: 'c', bounds: { x: 110, y: 133, width: 40, height: 40 } }],
+        { id: 'c', bounds: { x: 110, y: 133 + gap, width: 40, height: 40 } }],
       ports: [{ node: 'a', name: 'p', side: 'right', anchor: { x: 60, y: 120 } },
         { node: 'b', name: 'q', side: 'left', anchor: { x: 200, y: 120 } },
-        { node: 'c', name: 'up', side: 'top', anchor: { x: 130, y: 133 } }],
+        { node: 'c', name: 'up', side: 'top', anchor: { x: 130, y: 133 + gap } }],
       links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
         points: [{ x: 60, y: 120 }, { x: 200, y: 120 }] }],
-    })).toEqual([{ x: 73, y: 120 }, { x: 73 + CLEARANCE, y: 120 }, { x: 73 + CLEARANCE, y: run },
-      { x: 187 - CLEARANCE, y: run }, { x: 187 - CLEARANCE, y: 120 }, { x: 187, y: 120 }]);
+    });
+    const run = 115 - CLEARANCE;
+    for (const gap of [0, 0.5, 1.5]) {
+      expect(path(scenery(gap))).toEqual([{ x: 73, y: 120 }, { x: 73 + CLEARANCE, y: 120 }, { x: 73 + CLEARANCE, y: run },
+        { x: 187 - CLEARANCE, y: run }, { x: 187 - CLEARANCE, y: 120 }, { x: 187, y: 120 }]);
+    }
+    expect(path(scenery(2), true)).toEqual([{ x: 73, y: 120 }, { x: 187, y: 120 }]);
   });
 
-  it('exempts the segment that leaves its own pill, and keeps an angled line as it was (ticket 34)', () => {
+  it('puts the U run one clearance beyond a taller pill between the two level ends (ticket 34 review)', () => {
+    // A middle node whose pill tip stands 5 px above the two own tips. A run at one clearance above the own tips would pass 2.75 px
+    // above that foreign pill; the run steps out to one clearance beyond the furthest shape across its span instead.
+    expect(path({
+      nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
+        { id: 'b', bounds: { x: 120, y: 100, width: 60, height: 40 } },
+        { id: 'm', bounds: { x: 70, y: 95, width: 40, height: 45 } }],
+      ports: [{ node: 'a', name: 'p', side: 'top', anchor: { x: 20, y: 100 } },
+        { node: 'b', name: 'q', side: 'top', anchor: { x: 140, y: 100 } },
+        { node: 'm', name: 'up', side: 'top', anchor: { x: 90, y: 95 } }],
+      links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
+        points: [{ x: 20, y: 100 }, { x: 140, y: 100 }] }],
+    })).toEqual([{ x: 20, y: 87 }, { x: 20, y: 82 - CLEARANCE }, { x: 140, y: 82 - CLEARANCE }, { x: 140, y: 87 }]);
+  });
+
+  it('guard, passes on main too: the segment that leaves its own pill and an angled line stay straight (ticket 34)', () => {
+    // A guard against an over-wide rule, not a red test: main passed it too. The exemption cannot be broken by the face test as
+    // built (the leaving segment overlaps neither its own pill nor its body on its axis); this pins that.
     // The incident-segment exemption: the points just after an end are nearer than the clearance to their own pill and body, so the
     // segment that leaves its own pill perpendicular to the face is not refused for them; it meets them only at its end point. Here
     // the line runs 5 px from the flanks of both own pills (10 px wide) and stays the one segment.
@@ -117,10 +140,10 @@ describe('overlay paths', () => {
     }, true)).toEqual([{ x: 30, y: 153 }, { x: 150, y: 167 }]);
   });
 
-  it('refuses riding, not nearness, and leaves a routed chord along a face as it was (ticket 34)', () => {
+  it('guard, passes on main too: nearness is not refused, and a routed chord along a face is kept (ticket 34)', () => {
     // The same facing pair as above, with a third body whose bottom edge stands 5 px above the line: nearer than the clearance, but
     // not on it. The ruling refuses riding along a face; refusing nearness bent lines whose detour then ran at the same gap (the
-    // corpus, 2026-10-26), so that wider clause waits for a ruling and the line stays straight.
+    // corpus, 2026-10-26), so that wider clause is ticket 41 and the line stays straight.
     const near: Scene = {
       nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
         { id: 'b', bounds: { x: 200, y: 100, width: 60, height: 40 } },
@@ -141,7 +164,7 @@ describe('overlay paths', () => {
       links: [{ id: 'cable', from: 'a', to: 'b', points: [{ x: 20, y: 100 }, { x: 140, y: 100 }] }],
     });
     const routed = level.links[0]!;
-    expect(routed.layer ?? routed.family ?? 'routed').toBe('routed');
+    expect(linkLayer(routed)).toBe('routed');
     expect(straightChord(level, routed)).toEqual({ from: { x: 20, y: 87 }, to: { x: 140, y: 87 } });
     expect(straightChord(level, { ...routed, layer: 'overlay' })).toBeUndefined();
   });
@@ -208,29 +231,28 @@ describe('overlay paths', () => {
         points: [{ x: 30, y: 140 }, { x: x + 30, y }] }],
     }, true);
     expect(facing(5000, 260)).toEqual([{ x: 30, y: 153 }, { x: 5030, y: 247 }]);
-    // It stops before the two faces come level: the source's face is at y 153 and the target's is at
-    // y − 13, so y 166.1 still leaves both outward at an angle, while y 166 puts them level and the
-    // horizontal segment would run along both pills' faces, which ticket 34 refuses (user,
-    // 2026-10-25; it was the one segment under the 2026-09-16 reading "level counts as leaving").
-    // y 165.9 puts the target's face above the source's and the line would leave a downward port
-    // upward. Nothing is 0.02 px inside a pill here; the condition is the direction itself.
-    expect(facing(300, 166.1)).toEqual([{ x: 30, y: 153 }, { x: 330, y: 153.1 }]);
-    expect(path({
+    // It stops one stroke width before the two faces come level: the source's face is at y 153 and the
+    // target's is at y − 13. At y 168 the line drops 2 px over 300 and leaves both faces outward at an
+    // angle, so it stays the one segment. At y 167.4 it drops 1.4 px, less than the 1.5 px stroke, so it
+    // lies on both pills' faces within a stroke's width and ticket 34 refuses it (user, 2026-10-25;
+    // review 2026-10-26: a line a fraction of a pixel off the tips reads as on them). Level, at y 166,
+    // it was the one segment under the 2026-09-16 reading "level counts as leaving". y 165.9 puts the
+    // target's face above the source's and the line would leave a downward port upward. Each refused
+    // case takes the Z down the middle of the gap the two boxes leave on x.
+    expect(facing(300, 168)).toEqual([{ x: 30, y: 153 }, { x: 330, y: 155 }]);
+    const z = (y: number): Point[] => path({
       nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
-        { id: 'b', bounds: { x: 300, y: 166, width: 60, height: 40 } }],
+        { id: 'b', bounds: { x: 300, y, width: 60, height: 40 } }],
       ports: [{ node: 'a', name: 'p', side: 'bottom', anchor: { x: 30, y: 140 } },
-        { node: 'b', name: 'q', side: 'top', anchor: { x: 330, y: 166 } }],
+        { node: 'b', name: 'q', side: 'top', anchor: { x: 330, y } }],
       links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
-        points: [{ x: 30, y: 140 }, { x: 330, y: 166 } ] }],
-    })).toHaveLength(6);
-    expect(path({
-      nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
-        { id: 'b', bounds: { x: 300, y: 165.9, width: 60, height: 40 } }],
-      ports: [{ node: 'a', name: 'p', side: 'bottom', anchor: { x: 30, y: 140 } },
-        { node: 'b', name: 'q', side: 'top', anchor: { x: 330, y: 165.9 } }],
-      links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
-        points: [{ x: 30, y: 140 }, { x: 330, y: 165.9 } ] }],
-    })).toHaveLength(6);
+        points: [{ x: 30, y: 140 }, { x: 330, y }] }],
+    });
+    for (const y of [167.4, 166, 165.9]) {
+      const face = y - 13, run = face - CLEARANCE;
+      expect(z(y)).toEqual([{ x: 30, y: 153 }, { x: 30, y: 153 + CLEARANCE }, { x: 180, y: 153 + CLEARANCE },
+        { x: 180, y: run }, { x: 330, y: run }, { x: 330, y: face }]);
+    }
   });
 
   it('routes orthogonally when a node stands on that straight segment', () => {
