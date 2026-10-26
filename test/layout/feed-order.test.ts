@@ -77,6 +77,14 @@ describe('the cells of a fan follow the order of the far ends (architecture-2 ti
     expect(validateFeedOrders(model)).toEqual([]);
   }, 60000);
 
+  it('keeps the two ends of a peer link next to each other: the pair moves as one block (gate review, six-body collapse)', async () => {
+    // crt3 feeds srt1 and rrt1, crt4 feeds srt2 and rrt2; srt1-srt2 and rrt1-rrt2 are peer links. Node by node the feeds would interleave
+    // the pairs (srt1, rrt1, srt2, rrt2) and bend both peer links round a neighbour; as blocks the two pairs tie and stand as they were.
+    const model = await skeletonOf(read('a-peer-link-joins-members-of-equal-depth-six-bodies'));
+    expect(model.groups['loc#2']!.rowOrder).toEqual(['srt1', 'srt2', 'rrt1', 'rrt2']);
+    expect(model.groups['loc#3']!.rowOrder).toEqual(['ssw1', 'ssw2', 'rsw1', 'rsw2']);
+  }, 60000);
+
   it('decides nothing where the far ends tie, and keeps the order the row stands in', async () => {
     const tied = fan.replace('  - [w2, hub2]', '  - [w2, hub1]');
     const model = await skeletonOf(tied);

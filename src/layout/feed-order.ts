@@ -27,7 +27,9 @@ const SAME_KEY = 1e-9;
  *   stands: the cells are judged top-down, so a cell reads the order this step gave the cell above it.
  * - **The order.** A row is decided when two of its units have different keys. A cell: its keyed nodes take the keyed slots in key order;
  *   a node without a feed keeps its slot, and two nodes with one key keep the order ELK gave them (its input is the declaration order, so a
- *   tie is broken by declaration order unless ELK's crossing reduction swapped the pair for the rows below). A frame row: every unit must
+ *   tie is broken by declaration order unless ELK's crossing reduction swapped the pair for the rows below). The two ends of a peer link (a
+ *   routed link inside the cell) stay next to each other: they move as one block, keyed by the mean of its members' feeds, and ordered
+ *   inside by their own keys. A frame row: every unit must
  *   have a key, and a tie keeps declaration order (the frame's own cells first, then its children in declaration order).
  * - **The reservation.** Each decided row is one `rowOrder` entry (`rowOrderOf` is the one reader). A cell is re-seated in its order here
  *   (the replay of ELK's output); the column pack (`standOf`) stands a child frame on the side its entry names; the overlay order of the
@@ -97,8 +99,13 @@ export function orderByFeeds(model: LayoutModel): void {
       const order = [...(cell.rowOrder ?? cell.nodes)];
       const keys = keysOf(order.map(node => ({ id: node, top: tier, nodes: [node] })));
       if (keys === undefined || !decided(keys)) continue;
-      const queue = order.filter(node => keys.get(node) !== undefined).sort(byKey(keys, order));
-      const next = order.map(node => keys.get(node) === undefined ? node : queue.shift()!);
+      // A peer link keeps its two ends next to each other: the members a routed link inside the cell joins are one block, in the order
+      // the row gives its first member. The blocks take the order of their keys, the members of a block the order of their own keys.
+      const blocks = peerBlocks(order, ends);
+      const blockKeys = keysOf(blocks.map(block => ({ id: block[0]!, top: tier, nodes: block })))!;
+      const heads = blocks.map(block => block[0]!), inner = new Map(blocks.map(block => [block[0]!, slotSort(block, keys, byKey)]));
+      const next = slotSort(heads, blockKeys, byKey).flatMap(head => inner.get(head)!);
+      if (!decided(blockKeys) && !blocks.some(block => decided(new Map(block.map(node => [node, keys.get(node)]))))) continue;
       if (next.some((node, i) => node !== order[i])) {
         // The cell may grow to the right over its neighbour: the frame columns are packed after this step and lay the cells apart (ELK can
         // stack two linked members of a cell, which the rows stage lays side by side). R6: a refusal is named, never skipped.
@@ -140,6 +147,26 @@ export function orderByFeeds(model: LayoutModel): void {
   // A model placed without a ledger (a stage test) gets one only when a feed decides a row.
   if (model.reservations !== undefined || entries.length) model.reservations = [...kept, ...entries];
   if (moved) rebuildBands(model, false);
+}
+
+/**
+ * The members of a cell that its routed links inside the cell join (peer links), as blocks: each block in the order its members stand,
+ * the blocks in the order of their first members. A member with no peer link is a block of one.
+ */
+function peerBlocks(order: readonly string[], ends: ReadonlyMap<string, readonly string[]>): string[][] {
+  const own = new Set(order), root = new Map(order.map(node => [node, node]));
+  const find = (node: string): string => { let at = node; while (root.get(at) !== at) at = root.get(at)!; return at; };
+  for (const node of order) for (const other of ends.get(node) ?? []) if (own.has(other)) root.set(find(other), find(node));
+  const blocks = new Map<string, string[]>();
+  for (const node of order) blocks.set(find(node), [...(blocks.get(find(node)) ?? []), node]);
+  return [...blocks.values()];
+}
+
+/** `items` with the keyed ones in the keyed slots, in key order (`byKey`, last key the place in `items`); an item with no key keeps its slot. */
+function slotSort(items: readonly string[], keys: ReadonlyMap<string, number | undefined>,
+  byKey: (keys: ReadonlyMap<string, number | undefined>, order: readonly string[]) => (a: string, b: string) => number): string[] {
+  const queue = items.filter(item => keys.get(item) !== undefined).sort(byKey(keys, items));
+  return items.map(item => keys.get(item) === undefined ? item : queue.shift()!);
 }
 
 /** The stage-4 check of the feed orders (R2, R5): every `rowOrder` entry of the ledger holds on the model as it stands. Reads the record, decides nothing again. */
