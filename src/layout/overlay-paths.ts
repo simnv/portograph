@@ -134,6 +134,30 @@ export function crosses(from: Point, to: Point, box: Rect): boolean {
   return high - low > EPS;
 }
 
+/**
+ * Whether an axis-aligned segment **runs along a face** of a body or a pill (architecture-2 ticket 34, user 2026-10-25): it overlaps
+ * the shape's span on its own axis by more than `EPS` and stands nearer than `clearance` to the shape across that axis. The two ends'
+ * own pills and bodies are tested too: riding along one's own face is refused as well. The segment that leaves its own pill
+ * perpendicular to the face meets that pill and its body only at its end point, so it overlaps neither span on its axis and is not
+ * refused for them (the incident-segment exemption follows from the overlap, with no list of exempt shapes). An angled segment is
+ * not read here (`false`): the ticket keeps its verdict, and `crosses` alone tests it.
+ */
+export function runsAlongAFace(from: Point, to: Point, blockers: ShapeQuery, clearance: number): boolean {
+  const horizontal = Math.abs(to.y - from.y) <= EPS, vertical = Math.abs(to.x - from.x) <= EPS;
+  if (horizontal === vertical) return false;
+  const low = horizontal ? Math.min(from.x, to.x) : Math.min(from.y, to.y);
+  const high = horizontal ? Math.max(from.x, to.x) : Math.max(from.y, to.y);
+  const at = horizontal ? from.y : from.x;
+  const window: Rect = horizontal ? { x: low, y: at - clearance, width: high - low, height: 2 * clearance }
+    : { x: at - clearance, y: low, width: 2 * clearance, height: high - low };
+  return blockers.some(window, box => {
+    const start = horizontal ? box.x : box.y, end = horizontal ? right(box) : bottom(box);
+    if (Math.min(high, end) - Math.max(low, start) <= EPS) return false;
+    const near = horizontal ? box.y : box.x, far = horizontal ? bottom(box) : right(box);
+    return Math.max(near - at, at - far, 0) < clearance - EPS;
+  });
+}
+
 /** A polyline with no repeated point, so a degenerate corner leaves no zero-length segment. */
 const compact = (points: readonly Point[]): Point[] =>
   points.filter((point, index) => index === 0 || !samePoint(points[index - 1]!, point));
@@ -349,6 +373,14 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: ShapeQuery, colle
   // stubs are the port's own reserved outward reach and cross nothing else.
   const candidates = ways.map(way => compact([from, ...way, to]))
     .filter(points => axisAligned(points) && !retraces(whole(points)) && bends(points));
+  // Ticket 34: two ends that face one way and are level on that side. The straight branch refused the segment along their faces, and
+  // every way above collapses onto the line the two cleared ends share, which `bends` refuses. That line is the U the user asked
+  // for: up out of each face by the clearance, one run beyond the pill tips, and down. It is taken only when it clears every shape
+  // and runs along no face; it is the shortest way there is, so nothing else can beat it, and the ends-only fall-backs never take it
+  // (a body between two level side ports keeps the way round of ticket 86).
+  const levelRun = head.out.x === tail.out.x && head.out.y === tail.out.y ? compact([from, to]) : undefined;
+  const level = levelRun !== undefined && levelRun.length === 2 && axisAligned(levelRun) && bends(whole(levelRun))
+    && !retraces(whole(levelRun)) && clearOfAll(levelRun) && !runsAlongAFace(from, to, blockers, step) ? levelRun : undefined;
   const shortest = (clear: (points: readonly Point[]) => boolean): Point[] | undefined => {
     let best: { points: Point[]; length: number } | undefined;
     for (const points of candidates) {
@@ -359,10 +391,12 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: ShapeQuery, colle
     return best?.points;
   };
   // Every way that clears every shape, shortest first and then in the order listed: the ways track separation may take instead (ticket 23).
-  if (collect !== undefined) collect.push(...candidates.filter(clearOfAll).map((points, index) => ({ points, index, length: polylineLength(points) }))
+  // The level run, when it stands, is the shortest of them and comes first.
+  if (collect !== undefined) collect.push(...level === undefined ? [] : [level],
+    ...candidates.filter(clearOfAll).map((points, index) => ({ points, index, length: polylineLength(points) }))
     // Last key: the order the ways are listed in.
-    .sort((a, b) => a.length < b.length - EPS ? -1 : b.length < a.length - EPS ? 1 : a.index - b.index).map(item => item.points));
-  return shortest(clearOfAll) ?? shortest(clearOfPills) ?? shortest(clearOfEnds);
+      .sort((a, b) => a.length < b.length - EPS ? -1 : b.length < a.length - EPS ? 1 : a.index - b.index).map(item => item.points));
+  return level ?? shortest(clearOfAll) ?? shortest(clearOfPills) ?? shortest(clearOfEnds);
 }
 
 /**
@@ -419,6 +453,9 @@ export function straightBetween(head: OverlayEnd, tail: OverlayEnd, blockers: Sh
   const window: Rect = { x: Math.min(from.x, to.x), y: Math.min(from.y, to.y),
     width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) };
   if (blockers.some(window, box => !own(box) && crosses(from, to, box))) return undefined;
+  // Ticket 34: a segment that runs along a face, the own pills' and bodies' included, is not straight-clear. Two ports level on one
+  // side take the orthogonal branch, a U one overlay port clearance beyond the pill tips (`between`, `levelRun`).
+  if (runsAlongAFace(from, to, blockers, Math.max(head.step, tail.step))) return undefined;
   // No retrace test: the branch publishes one segment, and one segment cannot walk back along a run
   // it already drew. The test this replaces read two stubs that could be stated the wrong way round,
   // and there are no stubs here.
