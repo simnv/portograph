@@ -377,7 +377,9 @@ because the feeding row's order is known only after ELK and the free-row orders,
 `standOf` stands a child frame on the side its entry names; the overlay order of the frames chains neither a reserved cell nor a
 feeding row (`feedingRowsOf`). A pull that `withdrawPullsAcrossFlips` undoes turns a free row after the pack, so the feed orders are
 read again (`refreshFeedOrders`): a cell is re-seated inside the room its tier leaves or refused by name (`FEED_ORDER_REFUSED`), and a
-frame order the feeds no longer give is dropped by name (`FEED_ORDER_WITHDRAWN`). `validateFeedOrders` checks every entry and its
+frame order the feeds no longer give is dropped by name (`FEED_ORDER_WITHDRAWN`). A re-seated cell can move the far node of another
+pull, so the two steps repeat until no pull is withdrawn (`settlePullsAndFeeds`; a withdrawn row records no pull, so at most one round
+per row with a pull, and one more). `validateFeedOrders` checks every entry and its
 premise at the end of stage 4, and `validateReservations` on every later snapshot (R2). One sort per row, no search, so no cap.
 `layout.feedOrder: false` writes no entry: ELK's order and the overlay side stand (a test input whose subject needs the declared order
 pins it so). On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone of Location 4 stands under its feeds.

@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
-import { COLUMN_AXIS_HELD, closeCantons, holdColumnAxes } from '../../src/layout/columns.js';
+import { COLUMN_AXIS_HELD, COLUMN_SLACK, closeCantons, holdColumnAxes } from '../../src/layout/columns.js';
+import { centreViolations } from '../../src/layout/centre.js';
+import { findPort } from '../../src/layout/row-paths.js';
+import type { PortRef } from '../../src/model/document.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { overlayPath } from '../../src/layout/overlay-paths.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
@@ -45,7 +48,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     // No close-up is refused for a short gap: with the move that left a gap short refused, nothing is held open but by a straight link. Since
     // ticket 25 the zones of canton a stand under their feeds (routed crossings 12 to 4), and canton b keeps its gap open for a straight
     // overlay link, which outranks the close-up (user, 2026-10-04).
-    expect(closeUps(model).map(item => item.message)).toEqual(closeUps(model).map(() => expect.stringContaining('a straight overlay link would be bent')));
+    expect(closeUps(model).map(item => [item.owners, /a straight overlay link would be bent/.test(item.message)])).toEqual([[[{ kind: 'group', id: 'b' }], true]]);
     expect(model.canvas!.width).toBeLessThan(2049.3 - 100);
     // The block keeps its centre (the partner mean is not a stable target, ticket "Comments"); the tier packed against the canton
     // step, the MPLS row, stands centred on it within one column slack (measured 1.5 px).
@@ -53,10 +56,24 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     // centre is read on the layout with the round off; the gaps above are read on both.
     const plain = await layout(parse(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8')),
       { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
-    // Ticket 25: the zones of canton a stand under their feeds, so its location frames take other widths and the MPLS row, centred over its
-    // children by 7c, stands 95.3 px right of the block centre (it stood within one column slack before). Pinned, not a rule.
-    const block = (cantonBoxes(plain)[0]!.x + right(cantonBoxes(plain)[2]!)) / 2, mpls = plain.groups['mpls']!.bounds!;
-    expect(mpls.x + mpls.width / 2 - block).toBeCloseTo(95.3, 0);
+    // Ticket 25: the zones of canton a stand under their feeds, the location frames take other widths, and the MPLS row no longer stands
+    // over the block centre (95 px right of it; its children span centre is the block centre). 7c moves the parent ports, not the row, and
+    // names each of the four MPLS links (CENTRE_ALIGNMENT_INFEASIBLE, CENTRE_PARENT_MOVE_SHIFTS_GROUP): the gap of ticket 42. The 7c
+    // guarantee is pinned: the replay leaves every alignment where it stands, and a down link of the row whose two ports stand more than one
+    // column slack apart is named as infeasible.
+    expect(centreViolations(plain)).toEqual([]);
+    const infeasible = new Set(plain.diagnostics.filter(item => item.code === 'CENTRE_ALIGNMENT_INFEASIBLE').flatMap(item => (item.owners ?? []).flatMap(owner => owner.kind === 'link' ? [owner.id] : [])));
+    const anchorX = (end: PortRef): number => findPort(plain, end)!.anchor!.x;
+    const down = plain.links.filter(link => link.attachments && ['m1', 'm2', 'm3'].includes(link.attachments.from.node) && link.attachments.to.node.endsWith('-gw'));
+    expect(down).toHaveLength(4);
+    const apart = down.filter(link => Math.abs(anchorX(link.attachments!.from) - anchorX(link.attachments!.to)) > COLUMN_SLACK).map(link => link.id);
+    expect(apart.length).toBeGreaterThan(0);
+    expect(apart.filter(id => !infeasible.has(id))).toEqual([]);
+    // With the rule off the subject stands: the MPLS row is centred on the block within one column slack.
+    const off = await layout(parse(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8').replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
+    const block = (cantonBoxes(off)[0]!.x + right(cantonBoxes(off)[2]!)) / 2, mpls = off.groups['mpls']!.bounds!;
+    expect(Math.abs(mpls.x + mpls.width / 2 - block)).toBeLessThan(COLUMN_SLACK);
     expectIdempotent(model);
   }, 120000);
 

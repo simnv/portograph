@@ -6,7 +6,8 @@ import { resolve } from '../../src/resolve/index.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';
 import { skeleton } from '../../src/layout/skeleton.js';
-import { refreshFeedOrders, validateFeedOrders } from '../../src/layout/feed-order.js';
+import { refreshFeedOrders, settlePullsAndFeeds, validateFeedOrders } from '../../src/layout/feed-order.js';
+import { validateRowOrderDecisions, withdrawPullsAcrossFlips } from '../../src/layout/corridor-order.js';
 import { reseatRow } from '../../src/layout/overlay-order.js';
 import { holds } from '../../src/layout/reservation-checks.js';
 import { feedingRowsOf, ofKind, rowOrderOf } from '../../src/layout/reservations.js';
@@ -16,6 +17,28 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const read = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const child = read('a-child-frame-stands-under-its-feeds');
 const fan = read('a-fan-follows-the-order-of-its-hubs');
+/** A pull chain: Front feeds the cells of Bank, and BL in Back is linked to Spare in the lower cell. */
+const pullChain = `portograph: 2
+profile: network
+groups:
+  front: { tier: 0, label: Front }
+  bank: { tier: 1, label: Bank }
+  back: { tier: 2, label: Back }
+nodes:
+${['fe1', 'fe2', 'u1', 'u2', 'u3', 'u4', 'lb'].map(id => `  ${id}: { group: front, class: router, label: ${id.toUpperCase()} }`).join('\n')}
+  c1: { group: bank, class: switch, label: C1 }
+  c2: { group: bank, class: switch, label: C2 }
+  spare: { group: bank, class: server, label: Spare }
+  outlet: { group: bank, class: server, label: Outlet }
+${['b1', 'b2', 'b3', 'b4', 'bl'].map(id => `  ${id}: { group: back, class: router, label: ${id.toUpperCase()} }`).join('\n')}
+links:
+  - [fe1, c1]
+  - [fe2, c1]
+  - [lb, c2]
+  - [c1, spare]
+  - [c2, outlet]
+  - [bl, spare]
+`;
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 /** Stage 4 only: the skeleton with its feed orders. */
@@ -132,6 +155,44 @@ describe('the feed order across later moves (ticket 25 review)', () => {
       expect(model.groups[cell]!.rowOrder).toEqual([two, one]);
       expect(rowOrderOf(model.reservations, 'cell', cell)).toEqual([two, one]);
     }
+  }, 60000);
+
+  it('withdraws again a pull whose far node the refresh moved, until no pull is withdrawn (re-check, R2)', async () => {
+    // Front feeds C1 and C2 (bank#0), which feed Spare and Outlet (bank#1); BL in Back is linked to Spare.
+    const model = await skeletonOf(pullChain);
+    expect(model.groups['bank#1']!.rowOrder ?? model.groups['bank#1']!.nodes).toEqual(['spare', 'outlet']);
+    const shift = (node: string, dx: number): void => {
+      const body = model.nodes[node]!;
+      body.bounds!.x += dx;
+      for (const port of body.ports) if (port.anchor) port.anchor.x += dx;
+    };
+    // Forged: C2 stands left of C1, so the pull of LB in Front (toward C2) stands across and is withdrawn. The withdrawn order puts LB
+    // first, so the feeds of bank#1 (read in bank#0) turn it, and Spare moves right.
+    expect(reseatRow(model, model.groups['bank#0']!, ['c2', 'c1'], true)).toBe(true);
+    const front = model.groups.front!;
+    front.rowOrderDecision = { rule: 'frame-columns', before: ['lb', 'fe1', 'fe2', 'u1', 'u2', 'u3', 'u4'], after: [...(front.rowOrder ?? front.nodes)], pulledFrom: ['lb', 'fe1', 'fe2', 'u1', 'u2', 'u3', 'u4'], pulled: ['lb'] };
+    // Forged: Back stands left so that Spare is inside its span; BL's pull holds until Spare moves right.
+    const back = model.groups.back!;
+    expect(reseatRow(model, back, ['bl', 'b1', 'b2', 'b3', 'b4'], true)).toBe(true);
+    const dx = centre(model, 'spare') - 63 - centre(model, 'bl');
+    back.bounds!.x += dx;
+    for (const node of back.nodes) shift(node, dx);
+    back.rowOrderDecision = { rule: 'frame-columns', before: ['b1', 'b2', 'bl', 'b3', 'b4'], after: ['bl', 'b1', 'b2', 'b3', 'b4'], pulledFrom: ['b1', 'b2', 'bl', 'b3', 'b4'], pulled: ['bl'] };
+    // As after the frame order: Front's pull stands across, Back's holds.
+    expect(validateRowOrderDecisions(model)).toEqual(['The far-end pull of front is recorded on orders it cannot give']);
+    // One withdrawal and one refresh leave Back's pull across: the validator would throw.
+    const once = copy(model);
+    expect(withdrawPullsAcrossFlips(once)).toBe(true);
+    expect(refreshFeedOrders(once)).toBe(true);
+    expect(once.groups['bank#1']!.rowOrder).toEqual(['outlet', 'spare']);
+    expect(validateRowOrderDecisions(once)).toEqual(['The far-end pull of back is recorded on orders it cannot give']);
+    // The guard repeats: the second round withdraws Back's pull, the third withdraws nothing.
+    expect(settlePullsAndFeeds(model)).toBe(2);
+    expect(model.groups.front!.rowOrderDecision!.pullWithdrawn).toEqual(['lb']);
+    expect(model.groups.back!.rowOrderDecision!.pullWithdrawn).toEqual(['bl']);
+    expect(model.groups['bank#1']!.rowOrder).toEqual(['outlet', 'spare']);
+    expect(validateRowOrderDecisions(model)).toEqual([]);
+    expect(validateFeedOrders(model)).toEqual([]);
   }, 60000);
 
   it('names a cell the refresh cannot seat (FEED_ORDER_REFUSED) and drops its entry', async () => {

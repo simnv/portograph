@@ -2,6 +2,7 @@ import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { groupShape } from './grid.js';
 import { besideRows, tierRange } from './columns.js';
+import { withdrawPullsAcrossFlips } from './corridor-order.js';
 import { reseatRow } from './overlay-order.js';
 import { placementWarning } from './regions.js';
 import { cellTier } from './read/tier.js';
@@ -103,6 +104,23 @@ export function refreshFeedOrders(model: LayoutModel): boolean {
   model.reservations = [...kept, ...entries];
   if (moved) rebuildBands(model, false);
   return moved || JSON.stringify(entries) !== before;
+}
+
+/**
+ * The guard after the frame order (ticket 25 re-check, R2): withdraws the far-end pulls the frame order put across, reads the feed orders
+ * again, and repeats until a round withdraws no pull. A withdrawn pull turns a free row that may feed a cell, and the refresh can then
+ * re-seat a cell that holds the far node of another row's pull, so that pull can stand across in its turn. R4: a round goes on only when
+ * a pull was withdrawn, and a withdrawn row records no pull, so there are at most as many rounds as rows with a pull, and one more that
+ * withdraws nothing; that count is the cap. Returns the number of rounds that withdrew a pull.
+ */
+export function settlePullsAndFeeds(model: LayoutModel): number {
+  const budget = Object.values(model.groups).filter(group => group.rowOrderDecision?.pulledFrom !== undefined).length;
+  let rounds = 0;
+  while (rounds <= budget && withdrawPullsAcrossFlips(model)) {
+    rounds++;
+    refreshFeedOrders(model);
+  }
+  return rounds;
 }
 
 /** The stage-4 check of the feed orders (R2, R5): every `rowOrder` entry of the ledger and its premise hold on the model as it stands. Reads the record, decides nothing again. */
