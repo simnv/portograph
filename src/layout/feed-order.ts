@@ -33,6 +33,7 @@ const SAME_KEY = 1e-9;
  *   (the replay of ELK's output); the column pack (`standOf`) stands a child frame on the side its entry names; the overlay order of the
  *   frames leaves a reserved cell alone. `validateFeedOrders`, and `validateReservations` on every later snapshot, check the order holds.
  *
+ * `layout.feedOrder: false` switches the step off (a test input whose subject needs the declared order pins it so).
  * No search: one sort per row, a finite traversal (R4 needs no cap). Runs after the free-row orders of stage 4 and before the frames are
  * packed. The entries of an earlier run are replaced, so a placement re-run decides again on its own skeleton.
  */
@@ -84,10 +85,12 @@ export function orderByFeeds(model: LayoutModel): void {
     return Math.abs(d) > SAME_KEY ? d : order.indexOf(a) - order.indexOf(b);
   };
   let moved = false;
+  // `layout.feedOrder: false` keeps ELK's order of every cell and the overlay side of every child frame: no entry is written.
+  const off = model.document.layout?.feedOrder === false;
 
   // Cells, top-down: a cell reads the order this step gave the cell above it.
   const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
-  for (const tier of tiers) {
+  for (const tier of off ? [] : tiers) {
     const cells = placed.filter(group => group.tier === tier && group.frame !== undefined && group.nodes.length > 1 && isRow(group) && !flanked.has(group.id))
       .sort((a, b) => compareId(a.id, b.id));
     for (const cell of cells) {
@@ -112,7 +115,7 @@ export function orderByFeeds(model: LayoutModel): void {
   // Frame rows: the own cells and the child frames that stand beside each other, as the column pack lays them (`besideRows`).
   const frames = model.document.frames ?? {};
   const nodesAt = (cells: readonly string[], tier: number): string[] => cells.filter(cell => cellTier(model, cell) === tier).flatMap(cell => model.groups[cell]!.nodes);
-  for (const id of Object.keys(frames).sort(compareId)) {
+  for (const id of off ? [] : Object.keys(frames).sort(compareId)) {
     if (frames[id]!.kind === 'canton') continue;
     const children = Object.keys(frames).filter(child => frames[child]!.parent === id);
     if (!children.length) continue;

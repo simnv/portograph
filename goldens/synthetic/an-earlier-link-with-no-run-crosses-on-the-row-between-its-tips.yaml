@@ -7,7 +7,10 @@
 # names the same shape, where the endpoint chord hid it until ticket 37). The allocation now gives link-3, the
 # earlier link, the row midway between the two tip rows; link-4 crosses it once and every gate passes.
 # Test-only input owned by ranked-groups ticket 39; test/pipeline/interleaved-gap-links.test.ts reads the layout.
+# The feed order is off (architecture-2 ticket 25, `layout.feedOrder: false`): the subject is the crossing pair, which the order
+# of the feeds would take apart.
 portograph: 2
+layout: { feedOrder: false }
 groups:
   upstream: { tier: 0 }
   site: { tier: 1 }

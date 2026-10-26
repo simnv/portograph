@@ -374,7 +374,8 @@ ledger, the one decision (R1; `rowOrderOf` is the one reader): a cell is re-seat
 gets no hint, because the feeding row's order is known only after ELK and the free-row orders, and the column pack, not ELK, places
 a child frame); `standOf` stands a child frame on the side its entry names; the overlay order of the frames does not chain the nodes
 of a reserved cell. `validateFeedOrders` checks every entry at the end of stage 4, and `validateReservations` on every later
-snapshot (R2). One sort per row, no search, so no cap. On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone
+snapshot (R2). One sort per row, no search, so no cap. `layout.feedOrder: false` writes no entry: ELK's order and the
+overlay side stand (a test input whose subject needs the declared order pins it so). On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone
 of Location 4 stands under its feeds.
 
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at

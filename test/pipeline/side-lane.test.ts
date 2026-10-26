@@ -93,7 +93,8 @@ describe('placement reserves a side lane into a lateral port (ticket 118)', () =
 
   it('a body between the face and the lane gives no side lane (SIDE_LANE_REFUSED, body)', async () => {
     // A third node of the outlet's row stands beyond the outlet, between its face and the lane.
-    const yaml = source(FIXTURE).replace('  tail: {', '  extra: { group: bank, class: server, label: Extra }\n  tail: {')
+    // The feed order is off (ticket 25): fed by fe, extra would stand before the outlet, out of the place the test needs it in.
+    const yaml = source(FIXTURE).replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n').replace('  tail: {', '  extra: { group: bank, class: server, label: Extra }\n  tail: {')
       .replace('links:\n', 'links:\n  - [fe, extra]\n  - [extra, tail]\n');
     const model = await run(yaml);
     expect(sideLanes(model)).toEqual([]);

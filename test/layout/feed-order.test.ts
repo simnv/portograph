@@ -70,6 +70,13 @@ describe('the cells of a fan follow the order of the far ends (architecture-2 ti
     expect(errorGates(model)).toEqual([]);
   }, 120000);
 
+  it('writes no entry under layout.feedOrder: false, and ELK\'s order stands (an absent entry: the feeds decide nothing)', async () => {
+    const model = await skeletonOf(fan.replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n'));
+    expect(ofKind(model.reservations ?? [], 'rowOrder')).toEqual([]);
+    expect(model.groups['west#0']!.rowOrder).toEqual(['w2', 'w1']);
+    expect(validateFeedOrders(model)).toEqual([]);
+  }, 60000);
+
   it('decides nothing where the far ends tie, and keeps the order the row stands in', async () => {
     const tied = fan.replace('  - [w2, hub2]', '  - [w2, hub1]');
     const model = await skeletonOf(tied);

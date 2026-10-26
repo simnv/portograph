@@ -9,7 +9,11 @@
 # Test-only input owned by ranked-groups ticket 65; the ticket's test reads the layout.
 # Ticket 89: the links from the two switches to their zone nodes are authored `route: orthogonal`. As frame chords they would make the
 # switches spread their ports (a fan pitch) and widen the canvas, and this input is about the close-up, not about the fan.
+# The feed order is off (architecture-2 ticket 25, `layout.feedOrder: false`): the input is about the close-up, and its tests pin
+# measured geometry and verdicts. With the feed order on, the zones of canton `a` stand under their feeds (routed crossings
+# 12 to 4, Q 0.757 to 0.839) and canton b keeps its gap open for a straight overlay link.
 portograph: 2
+layout: { feedOrder: false }
 groups:
   a: { label: Canton A }
   b: { label: Canton B }
