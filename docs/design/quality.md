@@ -218,7 +218,10 @@ command, the time is simply not a promise.
     the endpoint dot by a visible gap (the overlay port clearance) before it turns, and passes no
     foreign port nearer than that. Detours that arrive at one face by parallel tracks nest: the outer
     track takes the port nearer the side the tracks come from and the inner riser beside that face, so
-    they do not cross there (architecture-2 tickets 23 and 24).
+    they do not cross there (architecture-2 tickets 23 and 24). A straight overlay line too touches a
+    pill or a node body only at its own endpoint and runs along no face, its own pills' included: two
+    ports level on one side are joined by a U whose run stands one overlay port clearance beyond the
+    pill tips, never by a line on the tips (architecture-2 ticket 34, user 2026-10-25).
 
 A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
 bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again

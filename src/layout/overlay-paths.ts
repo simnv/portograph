@@ -116,8 +116,10 @@ const enters = (from: Point, to: Point, box: Rect): boolean =>
  *
  * Why not `score/geometry`'s `segmentRect`: that one is the **closed** predicate and *expands* the
  * rectangle by `EPS`, so it counts a touch as a hit. This rule needs the open one — a path that
- * rides a pill face is clear of it, which is exactly what the `tooClose` reduction states and what
- * `enters` has always meant here. The two disagree only on that boundary, which is the point.
+ * rides a pill face does not enter it, which is exactly what the `tooClose` reduction states and what
+ * `enters` has always meant here. The two disagree only on that boundary, which is the point. Whether
+ * the straight branch may ride a face is a separate question, `runsAlongAFace` (ticket 34): it may not.
+ * The routed readers that share `crosses` keep the open predicate.
  */
 export function crosses(from: Point, to: Point, box: Rect): boolean {
   let low = 0, high = 1;
@@ -422,8 +424,9 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: ShapeQuery, colle
  *
  * **The segment must leave each port outward.** This is the branch's own condition, not a detail of
  * the test above: at both ends the segment's direction, taken *out of* that end, may not point back
- * along the port's own outward normal. Zero is allowed, and is what two ports level on one side
- * make — the line rides both faces, which is what a reader sees as leaving them. Strictly inward is
+ * along the port's own outward normal. Zero passes this test, and is what two ports level on one side
+ * make; but that line runs along both faces, and since ticket 34 (user, 2026-10-25, reversing "level
+ * counts as leaving") `runsAlongAFace` refuses it below, so the pair takes a U. Strictly inward is
  * a port that **faces away** from its partner, and a line leaving such a port runs back under that
  * port's own pill; the overlay layer is masked out of every pill, so the mask would cut the line
  * away from its own endpoint mark. The orthogonal branch answers those, stepping outward before it
@@ -432,7 +435,8 @@ function between(head: OverlayEnd, tail: OverlayEnd, blockers: ShapeQuery, colle
  * **So a link's own two pills are dropped from the shapes it is tested against** (maintainer,
  * 2026-09-16). They carry nothing the guard does not already have: leaving a face outward means the
  * segment's distance along that normal rises from zero and never falls, so it cannot re-enter the
- * pill behind it, and riding the face is the open boundary `crosses` already calls clear. Keeping
+ * pill behind it; riding the face is the open boundary `crosses` calls clear, and `runsAlongAFace`
+ * refuses it with every other shape (ticket 34). Keeping
  * them only restated the guard's job in sub-pixel arithmetic — a tilt reaching 0.02 px inside a pill
  * read as an obstruction. Every node **body** stays, the link's own two included: a port on the far
  * side of its own body still has that body in the way.
