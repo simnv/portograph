@@ -111,7 +111,12 @@ function diagonalWindows(boxes: readonly Rect[], run: PathSegment, across: numbe
       : ([[hit[0], inside[0]], [inside[1], hit[1]]] as Span[]).filter(([a, b]) => b >= a);
     for (const [a, b] of pieces) cuts.push([a - grow, b + grow]);
   }
+  // A link run farther from the line than the label's half height, the halo and its clearance (and `LINK_CUT_SKIP` to spare) has no
+  // stretch that reaches the run grown by the halo at each end: whatever `linkCut` finds lies beyond both ends and cuts no window. It is
+  // skipped without the search, so the windows are the same (architecture-2 ticket 27: 7f reads them in every settle round).
+  const reach = h + LINK_LABEL_GEOMETRY.halo + LINK_CUT_SKIP;
   for (const link of links) {
+    if (segmentDistance(run, { from: link.segment.from, to: link.segment.to, owner: run.owner }) >= reach + link.clearance) continue;
     const cut = linkCut(run, length, h, link);
     if (cut !== undefined) cuts.push([cut[0] - LINK_LABEL_GEOMETRY.halo, cut[1] + LINK_LABEL_GEOMETRY.halo]);
   }
@@ -121,6 +126,8 @@ function diagonalWindows(boxes: readonly Rect[], run: PathSegment, across: numbe
 /** A run of another link that placement reserved, and the clear distance a label keeps from it: its half stroke (G3). */
 export interface LinkRun { segment: { from: Point; to: Point }; clearance: number }
 
+/** The slack, in px, beyond which `diagonalWindows` skips a link run without the search of `linkCut`. */
+const LINK_CUT_SKIP = 1;
 /** Bisection and ternary steps of `linkCut` (R4: a count). */
 const LINK_CUT_STEPS = 60;
 

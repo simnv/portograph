@@ -1398,6 +1398,25 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
 export function roomHolds(model: LayoutModel): boolean {
   return labelPaddingFault(model) === undefined && !reserveLinkLabelRoom(clone(model));
 }
+/**
+ * What is wrong with the record of the label rooms 7f gave up (`labelRoomUnsettled`, ticket 27), or `undefined`: every name is a described
+ * link of the model, once, in link order (R5). Whether the room was short when 7f gave it up is not read again: the later 7f moves may
+ * lengthen the run, and a room given up stays given up (R1). The label placement decides: with no window the label may lie across a
+ * border (`LINK_LABEL_ON_BORDER`), and stage 9's collision test refuses a place on a link.
+ */
+export function labelRoomUnsettledFault(model: LayoutModel): string | undefined {
+  const record = model.labelRoomUnsettled;
+  if (record === undefined) return undefined;
+  if (!Array.isArray(record) || !record.length) return 'the record is empty or not a list';
+  const order = new Map(model.links.map((link, at) => [link.id, at])), suppressed = overlayLabelsSuppressed(model);
+  for (const [at, name] of record.entries()) {
+    const link = model.links[order.get(name) ?? -1];
+    if (link === undefined || !describedLink(model, link, suppressed)) return `${name} is not a described link of the model`;
+    if (at > 0 && order.get(record[at - 1]!)! >= order.get(name)!) return `${name} repeats a name or stands out of link order`;
+  }
+  return undefined;
+}
+
 /** The cheap part of `roomHolds`: no padding record forged and no track room short. A guard to try trades under before `roomHolds`. */
 export const roomLikelyHolds = (model: LayoutModel): boolean => labelPaddingFault(model) === undefined && !trackRoomShort(model);
 
@@ -1545,6 +1564,7 @@ export function labelPaddingFault(model: LayoutModel): string | undefined {
   const record = model.labelPadding;
   if (record === undefined) return undefined;
   const borders = labelBorders(model), suppressed = overlayLabelsSuppressed(model), byId = new Map(model.links.map(link => [link.id, link]));
+  const unsettled = new Set(model.labelRoomUnsettled ?? []);
   for (const [id, sides] of Object.entries(record)) {
     const group = model.groups[id];
     if (group === undefined || group.frame !== undefined || !group.nodes.length) return `${id} is not a group whose padding a label can grow`;
@@ -1554,6 +1574,8 @@ export function labelPaddingFault(model: LayoutModel): string | undefined {
       for (const name of entry.links) {
         const link = byId.get(name);
         if (link === undefined) return `${id} ${side} names ${name}, which is not a link of the model`;
+        // A room 7f gave up later (ticket 27) is the label placement's: its need is not checked against the record.
+        if (unsettled.has(name)) continue;
         const run = describedLink(model, link, suppressed) ? riddenRun(model, link) : undefined;
         const label = run === undefined ? undefined : acrossRunPadding(model, borders, run, labelSize(model, link), linkStrokeWidth(link) / 2);
         const tracks = trackRooms(model, link);
@@ -1589,7 +1611,10 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
   const suppressed = overlayLabelsSuppressed(model);
   // A label's room across its run (ticket 21), then the room of the link's separated overlay tracks (ticket 23); each is read on the
   // model as the growth before it left it. `only: 'tracks'` reads the tracks alone.
+  const unsettled = new Set(model.labelRoomUnsettled ?? []);
   const roomsOf = (link: LayoutLink): (AcrossRunRoom | undefined)[] => {
+    // A room 7f gave up (ticket 27, `labelRoomUnsettled`) asks for nothing across its run either.
+    if (unsettled.has(link.id)) return [];
     const run = only === undefined && describedLink(model, link, suppressed) ? runOf(model, link) : undefined;
     const label = run === undefined ? undefined : acrossRunPadding(model, labelBorders(model), run, labelSize(model, link), linkStrokeWidth(link) / 2);
     return [label, ...trackRooms(model, link)];
@@ -1665,9 +1690,16 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
   // The room of separated overlay tracks first (ticket 23): a track decided beyond the edge it grows stands inside the box before a
   // label window is read on its run.
   if (reserveAcrossRunRoom(model, settle, shortfalls, riddenRun, 'tracks')) changed = true;
+  const unsettled = new Set(model.labelRoomUnsettled ?? []);
   for (const link of model.links) {
     // A bus member's label goes to the bus tooltip (mesh-bus.md, section 6): it asks for no room.
     if (!describedLink(model, link, suppressed) || !link.attachments) continue;
+    // A room 7f gave up (ticket 27) is not reserved again: the label placement decides, and with no window the label may lie across a
+    // border (`LINK_LABEL_ON_BORDER`).
+    if (unsettled.has(link.id)) {
+      placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} did not hold its label room after the passes of a settle round (labelRoomUnsettled); its label room is not reserved and the label placement decides.`, [link.id]);
+      continue;
+    }
     const text = model.document.links[link.sourceIndex]!.label!;
     const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
     if (!from?.anchor || !to?.anchor) continue;
@@ -2021,6 +2053,8 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   if (family !== undefined) throw new Error(`The direct family record is forged: ${family}`);
   const padding = labelPaddingFault(model);
   if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
+  const unsettledRoom = labelRoomUnsettledFault(model);
+  if (unsettledRoom !== undefined) throw new Error(`The record of the label rooms 7f gave up is forged: ${unsettledRoom}`);
   const yields = clone(model);
   if (recordLabelYields(yields, labelBorders(yields))) throw new Error('The label yields leave a pair of labels on diagonal lines undecided');
   const shortfalls: LinkLabelShortfall[] = [];

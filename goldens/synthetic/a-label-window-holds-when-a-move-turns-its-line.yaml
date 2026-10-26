@@ -1,0 +1,26 @@
+# Expected (architecture-2 ticket 27): a 7f move that turns a labelled line keeps the window its label holds. link-4 (n1 -> n3,
+# "Anycast IP v6") is a labelled overlay diagonal across one tier gap. 7f's producer grows the gap until one window of the line, between
+# the group borders and clear of the frozen chords n0 -> n2 and n0 -> n5, holds the label (55.02 px, a tight reservation). The step over
+# a chord (7f round 0) then slides g1a, the upper end n1, right off those chords: the line turns steeper and its window falls to about
+# 53.2 px. Every settle round ends on the label room, reserved on the geometry it settles (`settleRoom`), so the chord trial judges, and
+# the draft adopts, a copy whose window holds the label. The run renders (it threw in `validateGroupLabelBands` before ticket 27), the
+# label lies on its line in that window, and a replay of the reservation reserves nothing more.
+# Test-only input owned by architecture-2 ticket 27; test/pipeline/label-room-settle.test.ts reads the layout.
+portograph: 2
+profile: network
+groups:
+  g0a: { tier: 0, label: Group 0a }
+  g1a: { tier: 1, label: Group 1a }
+  g2a: { tier: 2, label: Group 2a }
+  g2b: { tier: 2, label: Group 2b }
+nodes:
+  n0: { group: g0a, class: server, label: N0 }
+  n1: { group: g1a, class: server, label: N1 }
+  n2: { group: g2a, class: switch, label: N2 }
+  n3: { group: g2a, class: server, label: N3 }
+  n5: { group: g2b, class: switch, label: N5 }
+links:
+  - [n0, n5, { class: flow }]
+  - [n0, n1, { class: physical }]
+  - [n0, n2, { class: flow, label: a tunnel }]
+  - [n1, n3, { class: flow, label: Anycast IP v6 }]

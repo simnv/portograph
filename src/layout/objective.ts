@@ -369,7 +369,7 @@ export const widthWithin = (a: Reading, b: Reading, cap: number): boolean => a.g
  * | `fanRoundHolds` (fan-spread) | `fanRound` | | more routed straight (held chords); holds |
  * | `closeUp`, `pullTier` (by count), `settleKeepOut`, `centreGroupStep` | `keepCount` | | more overlay straight; holds |
  * | `pullTier` (by link), the held-column probe | `keepSet` | | fewer of the before-set lost; holds |
- * | the 7f decisions (`decide.ts`: chord-clear cheap and settled, the rank move, the best of the candidates, the linkless step, the lane reseat) | the `judges` table below | the hard limits (the width bound, the column rules, G6 crowded pairs, G5 disordered ports, the tier-gap parts, a body on a frozen chord; for the reseat also the centring, the short gaps, the link label room, the corridors at their child) | `unified` |
+ * | the 7f decisions (`decide.ts`: chord-clear cheap and settled, the rank move, the best of the candidates, the linkless step, the lane reseat) | the `judges` table below | the hard limits (the width bound, the column rules, G6 crowded pairs, G5 disordered ports, the tier-gap parts, a body on a frozen chord; for the settled chord and rank moves and the reseat also the link label room; for the reseat also the centring, the short gaps, the corridors at their child) | `unified` |
  * | the judges table | `unified` | | fewer bent over both layers, fewer turns over both, fewer crossings, tie |
  */
 const unifiedOrder = [keys.fewerBent('both'), keys.fewerTurns('both'), keys.fewerCrossings];
@@ -394,6 +394,11 @@ export const profiles = {
  */
 /** The findings a settled chord-clear candidate must not add (G6 crowded pairs, G5 disordered ports, tier-gap parts the plan declines). */
 const noNewPlacementFindings = [noNewFindings('crowded'), noNewFindings('disordered'), noNewFindings('residuals')];
+/**
+ * A settled chord-clear or rank candidate names no link whose label room a replay of the reservation would still grow (architecture-2 ticket 27,
+ * as the lane reseat asks). The settle round reserves the room, so the set is empty where growth helps; the gate refuses a move where it does not.
+ */
+const roomHeld = noNewFindings('room');
 
 export const judges = {
   /** A chord-clear candidate on the geometry after the move, against the geometry before it: fewer bent links over both layers, no new body on a frozen chord. */
@@ -404,10 +409,10 @@ export const judges = {
   rankMove: orderProfile('rankMove', unifiedOrder, [], [], true),
   /** The column rules (ticket 67) do not undo a lower rank move: the cheap test before a settled copy is paid for. */
   driftHeld: profiles.driftHeld,
-  /** A chord-clear candidate on its settled copy, against the settled copy without it: the order gains, and the column rules, the width bound and the findings hold. */
-  chordSettled: orderProfile('chordSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings, separationHeld], true),
+  /** A chord-clear candidate on its settled copy, against the settled copy without it: the order gains, and the column rules, the width bound, the findings and the link label room hold. */
+  chordSettled: orderProfile('chordSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings, roomHeld, separationHeld], true),
   /** The same for a lower rank cell. */
-  rankSettled: orderProfile('rankSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings, separationHeld], true),
+  rankSettled: orderProfile('rankSettled', unifiedOrder, [], [driftHeld, widthBound, ...noNewPlacementFindings, roomHeld, separationHeld], true),
   /** A group with no link steps out of a chord: the picture is no worse by the order, and G6 and G5 name nothing new. */
   linkless: orderProfile('linkless', unifiedOrder, [], [noNewFindings('crowded'), noNewFindings('disordered'), separationHeld], true),
   /** The lane reseat on its settled copy, against the incumbent with its lanes held. */
