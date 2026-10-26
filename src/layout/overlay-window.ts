@@ -112,7 +112,7 @@ interface Counted { link: LayoutLink; head: OverlayEnd; tail: OverlayEnd; moves:
 const shiftEnd = (end: OverlayEnd, dx: number): OverlayEnd => ({
   anchor: { x: end.anchor.x + dx, y: end.anchor.y }, box: { ...end.box, x: end.box.x + dx },
   pill: end.pill && { ...end.pill, x: end.pill.x + dx }, face: { x: end.face.x + dx, y: end.face.y },
-  clear: { x: end.clear.x + dx, y: end.clear.y }, out: end.out, step: end.step,
+  clear: { x: end.clear.x + dx, y: end.clear.y }, out: end.out, step: end.step, stroke: end.stroke,
 });
 
 export interface WindowInput {

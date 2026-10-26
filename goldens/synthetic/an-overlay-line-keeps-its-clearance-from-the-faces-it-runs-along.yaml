@@ -1,0 +1,38 @@
+# Expected (architecture-2 ticket 34, user 2026-10-25): an overlay line never rides along a face or a foreign pill; it takes a U
+# with the overlay port clearance. Two nodes stand in one row under a hub. `west.peer` and `east.peer` are on the top side and their faces are
+# level; between them, on the same top face line, stands the pill `east.up` of a routed uplink. The overlay `west.peer` to `east.peer`
+# used to be one horizontal segment on the three pill tips (0 px from `east.up`, a pill that is not its own). It is now a U: up out of
+# each own pill by the overlay port clearance (7.75 px at the 1.5 px stroke), and one run 7.75 px above the pill tips. The run crosses
+# the routed uplink to `east.up` once, at a right angle, clear of its pill. The segment that leaves its own pill is exempt from the
+# clearance to that pill. No two overlay runs share a track; every gate passes.
+# Test-only input; test/pipeline/overlay-face-clearance.test.ts reads it.
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  hub:
+    group: upper
+    class: router
+    label: Hub
+    ports:
+      - { name: west, side: bottom }
+      - { name: east, side: bottom }
+  west:
+    group: lower
+    class: router
+    label: West
+    ports:
+      - { name: peer, side: top }
+      - { name: up, side: top }
+  east:
+    group: lower
+    class: router
+    label: East
+    ports:
+      - { name: peer, side: top }
+      - { name: up, side: top }
+links:
+  - [hub.west, west.up]
+  - [hub.east, east.up]
+  - [west.peer, east.peer, { route: overlay }]

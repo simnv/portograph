@@ -1304,17 +1304,17 @@ describe('maintainer edit principles', () => {
     const model = await pipeline(fixture('drawio-constructs'));
     const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
     const square = cells(drawio(model)).get(id('link', stable(model, link.id)))!;
-    expect(square.style['edgeStyle']).toBe('none');
-    expect(square.style['jettySize']).toBeUndefined();
+    // Ticket 34: the overlay is a U, square from terminal to terminal, so it is a square connector.
+    expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
+    expect(square.points).toHaveLength(2);
     const skewed = structuredClone(model);
     const ref = link.attachments!.from;
-    // The pill grew outward, away from the face the model's one segment leaves from — a hand edit
-    // the model knows nothing about. Since stress ticket 30 the path starts on the face, so sliding
-    // the pill *along* its own side moves both the endpoint and the line it draws together and skews
-    // nothing; moving it **across** that side still moves the pinned endpoint off the line's axis,
+    // The pill moved — a hand edit the model knows nothing about. Since ticket 34 the path leaves the
+    // top pill by a vertical leg (the U), so moving the pill in y keeps the pinned endpoint on that
+    // leg's axis and skews nothing; moving it 12 px in x moves the pinned endpoint off the leg's axis,
     // which is the case this guard is for.
     skewed.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
-      && item.ref.ordinal === ref.ordinal)!.pill!.bounds.y += 12;
+      && item.ref.ordinal === ref.ordinal)!.pill!.bounds.x += 12;
     const cell = cells(drawio(skewed)).get(id('link', stable(model, link.id)))!;
     expect(cell.points).toEqual(square.points);
     expect(cell.style['edgeStyle']).toBe('none');
@@ -1358,21 +1358,24 @@ links:
       .toBe(id('port', 'c', 'lo', '1'));
   }, 60000);
 
-  it('runs an overlay link face to face, with no waypoint of its own', async () => {
+  it('runs an overlay link between two level top pills as a U with the two waypoints over the heads', async () => {
     // The SVG masks an overlay stroke out of every pill it crosses; mxGraph has no mask, so the
     // connector may not reach inside one. Both pills sit on a top side here and their two faces are
-    // level, so the one segment runs **along** both outward edges and inside neither — `crosses` is
-    // the open predicate and a line that rides a face is clear of it. The connector is that segment:
-    // two pinned terminals and no waypoint at all, where it used to carry the two of a detour over
-    // the heads (maintainer, 2026-09-16, *"no point in stub then"*, stress ticket 30).
+    // level. Architecture-2 ticket 34 (user, 2026-10-25, "purple line looks wrong, no margins"): an
+    // overlay never rides along a face, so the path is a U whose run stands one overlay port
+    // clearance above the pill tips. The connector is square and carries the U's two waypoints; it
+    // was one segment along both outward edges with no waypoint (stress ticket 30).
     const { cell, head, tail, path } = await overlayOf(fixture('drawio-constructs'));
-    expect(cell.style['edgeStyle']).toBe('none');
-    expect(cell.style['jettySize']).toBeUndefined();
+    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     expect([head.side, tail.side]).toEqual(['top', 'top']);
-    expect(cell.points).toEqual([]);
-    expect(path).toHaveLength(2);
+    expect(cell.points).toHaveLength(2);
+    expect(path).toHaveLength(4);
     expect(path[0]).toEqual({ x: head.x + head.width / 2, y: head.y });
-    expect(path[1]).toEqual({ x: tail.x + tail.width / 2, y: tail.y });
+    expect(path[1]!.x).toBeCloseTo(path[0]!.x, 6);
+    expect(path[1]!.y).toBeCloseTo(path[0]!.y - CLEARANCE, 6);
+    expect(path[2]!.x).toBeCloseTo(path[3]!.x, 6);
+    expect(path[2]!.y).toBeCloseTo(path[1]!.y, 6);
+    expect(path[3]).toEqual({ x: tail.x + tail.width / 2, y: tail.y });
     square(path, [head, tail]);
   }, 60000);
 

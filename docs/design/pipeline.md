@@ -1565,20 +1565,39 @@ the straight branch.
 
 The straight branch has a condition of its own before any shape is consulted: **the segment must
 leave each port outward.** At both ends the segment's direction, taken out of that end, may not point
-back along that port's own outward normal. Level counts as leaving — the line rides both faces, which
-is what a reader sees a line on a pill's edge doing — and strictly inward does not, because a line
+back along that port's own outward normal. Strictly inward does not leave, because a line
 leaving a port inward runs back **under that port's own pill**, and the overlay layer is masked out of
 every pill, so the mask would cut the line away from its own endpoint mark. A port that fails the
 condition is facing away from its partner, and the orthogonal branch answers it. The tilt this allows
-is generous and its limit is exact: a facing pair takes any angle up to and including the two faces
-being level, and stops there, not a fraction before.
+is generous: a facing pair takes any angle short of the two faces being level.
+
+**No face is ridden (architecture-2 ticket 34, user 2026-10-25).** An overlay line never rides along
+a face or a foreign pill. A segment that runs along an axis (its drift across it is at most the link's
+stroke width) and lies within one stroke width of a face of any body or pill, its own included, over a
+stretch of that face's span, is not straight-clear (`ridesAFace`): a line on the tips, or a fraction of
+a pixel off them, reads as on them. A segment that passes a face further off than that, but nearer than
+the clearance, stays straight: refusing it bent lines whose detour then ran at the same gap, since the
+ways round test only `enters` (measured on the corpus, 2026-10-26); that wider clause is ticket 41. Two
+ports level on one side are therefore not one segment along their tips: the orthogonal branch answers
+with a U, up out of each face by the clearance and along one run one clearance beyond the furthest
+shape across its span (the two pill tips, a taller pill or body between them, or the body edges of two
+anonymous ports), taken when it clears every shape and rides no face. The segment that leaves its own
+pill perpendicular to the face meets that pill and its body only at its end point, so it is exempt. An
+angled segment keeps the outward test and `crosses`. This reverses the 2026-09-16 reading "level counts
+as leaving". The routed straight technique reads the same `straightBetween` through `straightChord`
+with faces ridden, since the ruling names the overlay alone. The U is an ordinary detour, and every
+reader asks the one `straightBetween`, so placement, 7f and stage 8 cannot disagree. A U that stays in
+place relies on the group padding (`GROUP_PADDING`) beyond the pill tips to hold its run; only a run
+that track separation moved out is reserved, through `trackRoomPadding`, and a label beside a run
+through `acrossRunPadding`.
 
 Because the condition holds, the segment's distance along each port's outward normal rises from zero
 and never falls, so it cannot re-enter the pill behind it. A link's **own two pills** therefore carry
 nothing the condition does not already have, and are **not** among the shapes the segment is tested
 against (maintainer, 2026-09-16) — testing them only restated the condition in sub-pixel arithmetic,
 where a tilt reaching 0.02 px inside a pill read as an obstruction. The exception is read on that one
-segment against **every node body, the link's own two included, and every other drawn port pill**. Nothing else blocks: not another overlay line, which is drawn thin and translucent
+segment against **every node body, the link's own two included, and every other drawn port pill**,
+and the face test above reads every shape, the own pills included. Nothing else blocks: not another overlay line, which is drawn thin and translucent
 precisely so that overlays may cross each other and is exempt from the clearance gates, and not a
 group box, a lane, a routed path or a label. A blocked segment is answered by the orthogonal
 derivation: the shortest of eight ways read off the two end boxes — two single turns, four ways
