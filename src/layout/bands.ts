@@ -1401,7 +1401,8 @@ export function roomHolds(model: LayoutModel): boolean {
 /**
  * What is wrong with the record of the label rooms 7f gave up (`labelRoomUnsettled`, ticket 27), or `undefined`: every name is a described
  * link of the model, once, in link order (R5). Whether the room was short when 7f gave it up is not read again: the later 7f moves may
- * lengthen the run, and a room given up stays given up (R1); the label placement decides and the final gates judge the label.
+ * lengthen the run, and a room given up stays given up (R1). The label placement decides: with no window the label may lie across a
+ * border (`LINK_LABEL_ON_BORDER`), and stage 9's collision test refuses a place on a link.
  */
 export function labelRoomUnsettledFault(model: LayoutModel): string | undefined {
   const record = model.labelRoomUnsettled;
@@ -1693,7 +1694,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
   for (const link of model.links) {
     // A bus member's label goes to the bus tooltip (mesh-bus.md, section 6): it asks for no room.
     if (!describedLink(model, link, suppressed) || !link.attachments) continue;
-    // A room 7f gave up (ticket 27) is not reserved again: the label placement decides, and the final gates judge it.
+    // A room 7f gave up (ticket 27) is not reserved again: the label placement decides, and with no window the label may lie across a
+    // border (`LINK_LABEL_ON_BORDER`).
     if (unsettled.has(link.id)) {
       placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} did not hold its label room after the passes of a settle round (labelRoomUnsettled); its label room is not reserved and the label placement decides.`, [link.id]);
       continue;

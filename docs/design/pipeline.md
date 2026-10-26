@@ -1235,8 +1235,10 @@ it reserved, the replay, the close-up, the keep-out and the room again, until a 
 reading of the room. The linkless step of the last round and its replay are followed by the same `settleRoom`. No measure proves that the
 passes end (the reservation only grows the room, but the replay and the close-up move x), so `LABEL_ROOM_PASSES` (4) bounds them: after
 that many reservations the rooms a reservation would still grow are given up, recorded (`labelRoomUnsettled`) and named
-(`LINK_LABEL_ROOM_UNSETTLED`). The reservation then reserves nothing for those links (`LINK_LABEL_ROOM_UNRESERVED`), the label placement
-decides, and the final gates judge the label; the validator refuses a record that names no described link. A chord trial (`trialSettle`)
+(`LINK_LABEL_ROOM_UNSETTLED`). The reservation then reserves nothing for those links (`LINK_LABEL_ROOM_UNRESERVED`) and the label placement
+decides: with no window the label may lie across a border, with `LINK_LABEL_ON_BORDER`, and stage 9's collision test refuses a place on a
+link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that names no
+described link. A chord trial (`trialSettle`)
 runs the same round on its copy, so the judges read, and the draft adopts, a copy whose rooms hold. The settled chord and rank judges, as
 the lane reseat, refuse a move that names a new link in the room set (`noNewFindings('room')`, `roomFindings`): a room given up, and, for a
 copy that did not end a settle on its room, a room a reservation would still grow.

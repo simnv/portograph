@@ -577,7 +577,9 @@ export interface LayoutModel {
   /**
    * The described links whose label room 7f gave up (architecture-2 ticket 27): a settle round reserved the room and replayed
    * `LABEL_ROOM_PASSES` times and a pass still reserved more, so the room of the links still short then is left to the label placement
-   * (`LINK_LABEL_ROOM_UNRESERVED`, as for a room no growth can open) and the final gates judge the label. The reservation reads the record
+   * (`LINK_LABEL_ROOM_UNRESERVED`, as for a room no growth can open). No gate judges that label: G3 leaves out overlay labels and
+   * `labelBorderCrossings` is a counter. When no window holds it, stage 9 places it across a border with `LINK_LABEL_ON_BORDER`; its own
+   * collision test still refuses a place on a link. The reservation reads the record
    * and reserves nothing for a named link, along its run or across it; the validator refuses a name that is no described link, a repeat, or
    * a list out of link order. A name only joins. Absent = no room given up.
    */

@@ -131,7 +131,8 @@ function closeUpAndKeepOut(model: LayoutModel, tap?: (step: SettleStep, changed:
  * Convergence: the loop ends when a pass reserves nothing, so nothing moves after the last reading of the room. No measure proves that it ends:
  * the reservation only grows the room, but the replay and the close-up move x and can turn a line again. `passes` bounds it (R4): after that many
  * reservations the rooms a reservation would still grow are given up, not reserved (`labelRoomUnsettled`, named `LINK_LABEL_ROOM_UNSETTLED`; R6):
- * the label placement decides them and the final gates judge the labels. Returns the shift of the close-ups it ran.
+ * the label placement decides them: with no window a label may lie across a border (`LINK_LABEL_ON_BORDER`), and stage 9's collision test
+ * refuses a place on a link. No gate judges such a label (G3 leaves out overlay labels). Returns the shift of the close-ups it ran.
  */
 export function settleRoom(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void, passes = LABEL_ROOM_PASSES): number {
   let shift = 0;
@@ -148,7 +149,10 @@ export function settleRoom(model: LayoutModel, tap?: (step: SettleStep, changed:
   }
 }
 
-/** The rooms a reservation would still grow at the pass bound, given up: their links join `labelRoomUnsettled` in link order, and a warning names them. */
+/**
+ * The rooms a reservation would still grow at the pass bound, given up: their links join `labelRoomUnsettled` in link order, and a warning names
+ * them. Their labels may then lie across a border, with `LINK_LABEL_ON_BORDER` from stage 9.
+ */
 function giveUpRoom(model: LayoutModel, passes: number): void {
   const short = roomShort(model);
   if (!short.size) return;
@@ -157,7 +161,7 @@ function giveUpRoom(model: LayoutModel, passes: number): void {
   model.labelRoomUnsettled = [...new Set([...(model.labelRoomUnsettled ?? []), ...short])].sort(byOrder);
   const fresh = [...short].sort(byOrder);
   model.diagnostics.push({ stage: 'placement', severity: 'warning', code: LABEL_ROOM_UNSETTLED, owners: fresh.map(id => ({ kind: 'link' as const, id })),
-    message: `The label room of ${fresh.join(', ')} was still short after ${passes} passes of the reservation, the replay and the close-up; it is given up, the label placement decides, and the final gates judge the label.` });
+    message: `The label room of ${fresh.join(', ')} was still short after ${passes} passes of the reservation, the replay and the close-up; it is given up, and the label placement decides; with no window the label may lie across a border.` });
 }
 
 /**
