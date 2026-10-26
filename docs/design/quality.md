@@ -218,8 +218,8 @@ command, the time is simply not a promise.
     the endpoint dot by a visible gap (the overlay port clearance) before it turns, and passes no
     foreign port nearer than that. Detours that arrive at one face by parallel tracks nest: the outer
     track takes the port nearer the side the tracks come from and the inner riser beside that face, so
-    they do not cross there (architecture-2 tickets 23 and 24). A straight overlay line too touches a
-    pill or a node body only at its own endpoint and runs along no face, its own pills' included: two
+    they do not cross there (architecture-2 tickets 23 and 24). A straight overlay line rides along no
+    face of a pill or a node body, its own pills' included: two
     ports level on one side are joined by a U whose run stands one overlay port clearance beyond the
     pill tips, never by a line on the tips (architecture-2 ticket 34, user 2026-10-25).
 

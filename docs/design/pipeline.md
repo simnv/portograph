@@ -1549,10 +1549,12 @@ every pill, so the mask would cut the line away from its own endpoint mark. A po
 condition is facing away from its partner, and the orthogonal branch answers it. The tilt this allows
 is generous: a facing pair takes any angle short of the two faces being level.
 
-**No face is ridden (architecture-2 ticket 34, user 2026-10-25).** An overlay line touches a pill or a
-node body only at its own endpoint and runs along no face. An axis-aligned segment that runs parallel
-to a face of any body or pill, its own included, over a stretch of that face's span and nearer than the
-overlay port clearance, is not straight-clear (`runsAlongAFace`). Two ports level on one side are
+**No face is ridden (architecture-2 ticket 34, user 2026-10-25).** An overlay line never rides along
+a face or a foreign pill. An axis-aligned segment that lies on a face of any body or pill, its own
+included, over a stretch of that face's span, is not straight-clear (`ridesAFace`). A segment that
+passes a face at a gap smaller than the clearance without lying on it stays straight: refusing it bent
+lines whose detour then ran at the same gap, since the ways round test only `enters` (measured on the
+corpus, 2026-10-26); that wider clause waits for a ruling. Two ports level on one side are
 therefore not one segment along their tips: the orthogonal branch answers with a U, up out of each face
 by the clearance and one run beyond the pill tips (or the body edges of two anonymous ports), the run
 the two cleared ends share, taken when it clears every shape and rides no face. The segment that leaves

@@ -7,8 +7,8 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
- * Architecture-2 ticket 34 (user, 2026-10-25, on `drawio-constructs`: "purple line looks wrong, no margins"): an overlay line touches
- * a pill or a node body only at its own endpoint, and runs along no face. Two ports level on one side take a U whose run stands one
+ * Architecture-2 ticket 34 (user, 2026-10-25, on `drawio-constructs`: "purple line looks wrong, no margins"): an overlay line never
+ * rides along a face or a foreign pill. Two ports level on one side take a U whose run stands one
  * overlay port clearance beyond the pill tips; the segment that leaves its own pill is exempt from the clearance to that pill.
  */
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -25,8 +25,9 @@ function shapes(model: LayoutModel): { name: string; box: Rect }[] {
 }
 
 /**
- * The test's own reading of "runs along a face": an axis-aligned segment that overlaps a shape's span along its own axis by more than
- * a hair and stands nearer than the overlay port clearance to it across that axis. The segment that leaves its own pill meets that
+ * The test's own reading, stricter than the rule (`ridesAFace` refuses a segment that lies on a face): an axis-aligned segment that
+ * overlaps a shape's span along its own axis by more than a hair and stands nearer than the overlay port clearance to it across that
+ * axis. These two fixtures meet the stricter reading. The segment that leaves its own pill meets that
  * pill and its body only at its end point, so it overlaps neither span and needs no exemption here.
  */
 function facesRidden(model: LayoutModel, points: readonly Point[]): string[] {

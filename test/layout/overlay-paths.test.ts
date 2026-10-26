@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Point } from '../../src/model/index.js';
-import { OVERLAY_PILL_CLEARANCE, overlayEndpoint, overlayPath } from '../../src/layout/overlay-paths.js';
+import { OVERLAY_PILL_CLEARANCE, overlayEndpoint, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
 import { retraces } from '../../src/route/validate.js';
 import { scene, type Scene } from '../render/fixture.js';
 
@@ -78,7 +78,7 @@ describe('overlay paths', () => {
   it('refuses a line on the edge of a foreign pill, and goes round it one clearance out (ticket 34)', () => {
     // Two ports that face each other on one horizontal line, and between them the pill of a third node whose top edge lies on that
     // line. `crosses` is open, so the line on the edge entered nothing and the straight branch kept it, 0 px from a pill that is
-    // not its own. Ticket 34: a segment that runs along a face nearer than the clearance is not straight-clear, so the orthogonal
+    // not its own. Ticket 34: a segment that rides along a face is not straight-clear, so the orthogonal
     // branch answers, and its run stands one clearance above the two end pills.
     const run = 115 - CLEARANCE;
     expect(path({
@@ -115,6 +115,35 @@ describe('overlay paths', () => {
       links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
         points: [{ x: 30, y: 140 }, { x: 150, y: 180 }] }],
     }, true)).toEqual([{ x: 30, y: 153 }, { x: 150, y: 167 }]);
+  });
+
+  it('refuses riding, not nearness, and leaves a routed chord along a face as it was (ticket 34)', () => {
+    // The same facing pair as above, with a third body whose bottom edge stands 5 px above the line: nearer than the clearance, but
+    // not on it. The ruling refuses riding along a face; refusing nearness bent lines whose detour then ran at the same gap (the
+    // corpus, 2026-10-26), so that wider clause waits for a ruling and the line stays straight.
+    const near: Scene = {
+      nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
+        { id: 'b', bounds: { x: 200, y: 100, width: 60, height: 40 } },
+        { id: 'c', bounds: { x: 110, y: 75, width: 40, height: 40 } }],
+      ports: [{ node: 'a', name: 'p', side: 'right', anchor: { x: 60, y: 120 } },
+        { node: 'b', name: 'q', side: 'left', anchor: { x: 200, y: 120 } }],
+      links: [{ id: 'flow', from: 'a', to: 'b', layer: 'overlay',
+        points: [{ x: 60, y: 120 }, { x: 200, y: 120 }] }],
+    };
+    expect(path(near, true)).toEqual([{ x: 73, y: 120 }, { x: 187, y: 120 }]);
+    // The routed straight technique reads the same test through `straightChord`; the ruling names the overlay alone, so a routed
+    // link between two level top pills keeps the chord along their tips.
+    const level = scene({
+      nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },
+        { id: 'b', bounds: { x: 120, y: 100, width: 60, height: 40 } }],
+      ports: [{ node: 'a', name: 'p', side: 'top', anchor: { x: 20, y: 100 } },
+        { node: 'b', name: 'q', side: 'top', anchor: { x: 140, y: 100 } }],
+      links: [{ id: 'cable', from: 'a', to: 'b', points: [{ x: 20, y: 100 }, { x: 140, y: 100 }] }],
+    });
+    const routed = level.links[0]!;
+    expect(routed.layer ?? routed.family ?? 'routed').toBe('routed');
+    expect(straightChord(level, routed)).toEqual({ from: { x: 20, y: 87 }, to: { x: 140, y: 87 } });
+    expect(straightChord(level, { ...routed, layer: 'overlay' })).toBeUndefined();
   });
 
   it('turns once when the two ports face different ways, and clears the far node body', () => {
