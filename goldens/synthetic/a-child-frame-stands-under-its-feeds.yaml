@@ -1,0 +1,25 @@
+# Expected: a child frame takes the place the order of its feeds gives (architecture-2 ticket 25, order follows the feeds).
+# Location `loc` has a core c0 (rank 0) that feeds two switches, s1 and s2 (rank 1). s1 feeds the time server z2 of
+# the child frame `zone`, and s2 feeds the parent member p2; both stand in rank 2, so `zone` stands beside the
+# parent's own cell of rank 2. s1 stands left of s2, so the order of the feeds puts `zone` left of p2, and the two
+# links s1-z2 and s2-p2 do not cross. Declaration order alone (the frame's own cells first, its children after) put
+# `zone` right of p2, and the two links crossed once.
+# Test-only input owned by architecture-2 ticket 25; test/layout/feed-order.test.ts reads the layout.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc: { tier: 1, label: Location }
+  zone: { parent: loc, label: Zone }
+nodes:
+  feed: { group: upstream, class: router, label: Feed }
+  c0: { group: loc, class: router, label: Core }
+  s1: { group: loc, class: switch, label: Switch one }
+  s2: { group: loc, class: switch, label: Switch two }
+  p2: { group: loc, class: server, label: Parent time server }
+  z2: { group: zone, class: server, label: Zone time server }
+links:
+  - [feed, c0]
+  - [c0, s1]
+  - [c0, s2]
+  - [s1, z2]
+  - [s2, p2]

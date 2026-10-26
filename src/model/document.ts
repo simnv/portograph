@@ -125,6 +125,11 @@ export interface NormalisedDocument {
      * corridor row order still runs. Default true. `corridorRowOrder: false` keeps every row as the skeleton gave it, with no pull either.
      */
     farEndPull?: boolean;
+    /**
+     * When false, no rank cell or child frame takes the order its feeds give (architecture-2 ticket 25, `orderByFeeds`): the ledger
+     * holds no `rowOrder` entry, and ELK's order and the overlay partners stand. Default true.
+     */
+    feedOrder?: boolean;
   };
   /** Paint-only settings, present only when the author wrote `render:` at the root. They never reach layout or score. */
   render?: {

@@ -8,6 +8,7 @@
  */
 import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Side, Size } from '../model/index.js';
 import { portKey } from './sides-one.js';
+import { frameSubtreeCells } from '../model/model.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay';
 /** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
@@ -41,14 +42,23 @@ export interface ReservationPayload {
   spanCorridor: { link: string; allowedBreaches: readonly string[] };
   /** A move keeps each reserved group exit clear of every box and node but the ones it leaves, and keeps its end beyond the margin of the boxes it leaves (architecture ticket 13). */
   groupExit: { exits: readonly GroupExit[] };
+  /**
+   * The order the feeds give a row (architecture-2 ticket 25, `feed-order.ts`): for `cell`, the nodes of a rank cell left to right; for
+   * `frame`, the units that stand beside each other in the frame left to right, the frame's own cells named by the frame id and each
+   * child frame by its id. `feeds` is the premise: each feeding row the order was read from, with the order it stood in. Stage 4 writes
+   * it after the free rows are ordered; an absent entry means the feeds decide nothing there.
+   */
+  rowOrder: { cell: string; order: readonly string[]; feeds: readonly RowFeed[] } | { frame: string; order: readonly string[]; feeds: readonly RowFeed[] };
 }
 export type ReservationKind = keyof ReservationPayload;
+/** A feeding row of a `rowOrder` entry: the group, and the order its nodes stood in when the feeds were read. */
+export interface RowFeed { row: string; order: readonly string[] }
 
 export type Reservation = { [K in ReservationKind]: Readonly<{
   id: string;
   kind: K;
   owner: ReservationOwner;
-  producer: RoundId | 'lanes' | 'bands';
+  producer: RoundId | 'skeleton' | 'lanes' | 'bands';
   /** The measured baseline the reservation was made on: the number of placements the command had started. */
   revision: number;
   activeFrom: LayoutStage;
@@ -67,6 +77,7 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
   turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes',
+  rowOrder: 'skeleton',
 };
 
 /** A reservation that lives for one move check and is never stored: no clone of the payload, revision 0. */
@@ -200,6 +211,20 @@ export function spanEntries(links: Iterable<string>, producer: RoundId, revision
   return [...links].map(link => reservation('spanChord', { kind: 'link', id: link }, '', producer, revision, { link }));
 }
 
+/**
+ * The one reader of the feed order (architecture-2 ticket 25, R1): the order the ledger reserves for the rank cell or the frame `id`, or
+ * `undefined` when the feeds decide nothing there. A cell entry names the cell's nodes; a frame entry names the frame (its own cells) and
+ * child frames. The skeleton replay, the column pack, the overlay order of the frames and the validators all read it here.
+ */
+export function rowOrderOf(ledger: Reservations | undefined, scope: 'cell' | 'frame', id: string): readonly string[] | undefined {
+  for (const { payload } of ofKind(ledger ?? NO_RESERVATIONS, 'rowOrder')) if (scope === 'cell' ? 'cell' in payload && payload.cell === id : 'frame' in payload && payload.frame === id) return payload.order;
+  return undefined;
+}
+/** The feeding rows the `rowOrder` entries read (their premises): a rule that would turn one of them leaves it alone. */
+export function feedingRowsOf(ledger: Reservations | undefined): Set<string> {
+  return new Set(ofKind(ledger ?? NO_RESERVATIONS, 'rowOrder').flatMap(({ payload }) => payload.feeds.map(feed => feed.row)));
+}
+
 /** Whether every face takes the turn order, and the links whose faces take it when not every face does. */
 export function turnOf(ledger: Reservations): { all: boolean; links: string[]; requireChanged: boolean } {
   let all = false, requireChanged = false;
@@ -260,6 +285,37 @@ export function floorFailure(item: Reservation, model: LayoutModel): string | un
   return undefined;
 }
 
+/**
+ * The predicate of a feed order against a placed model (architecture-2 ticket 25, R2): a cell stands in the reserved order, and of two units
+ * of a frame entry the one named first stands left of the other on every sub-tier they share. The premise holds too: each feeding row
+ * stands in the order the entry read (a row that turned would make the reserved order cross). Order only, so it holds at every stage after 4.
+ */
+export function rowOrderFailure(item: Reservation, model: LayoutModel): string | undefined {
+  if (item.kind !== 'rowOrder') return undefined;
+  const payload = item.payload;
+  for (const feed of payload.feeds) {
+    const row = model.groups[feed.row];
+    if (row === undefined || !same(row.rowOrder ?? row.nodes, feed.order)) return `the feeding row ${feed.row} no longer stands in the order the entry read`;
+  }
+  if ('cell' in payload) {
+    const group = model.groups[payload.cell];
+    if (group === undefined || group.frame === undefined) return `${payload.cell} is no rank cell`;
+    return same(group.rowOrder ?? group.nodes, payload.order) ? undefined : `${payload.cell} does not stand in the order its feeds give`;
+  }
+  const frames = model.document.frames ?? {};
+  if (frames[payload.frame] === undefined) return `${payload.frame} is no frame`;
+  const cellsOf = (unit: string): string[] | undefined => unit === payload.frame ? frames[unit]!.cells
+    : frames[unit]?.parent === payload.frame ? frameSubtreeCells(frames, unit) : undefined;
+  const units = payload.order.map(cellsOf);
+  if (units.some(cells => cells === undefined)) return `the feed order of ${payload.frame} names a unit that is not its own`;
+  for (const [i, left] of units.entries()) for (const right of units.slice(i + 1)) for (const a of left!) for (const b of right!) {
+    const one = model.groups[a], two = model.groups[b];
+    if (one?.bounds === undefined || two?.bounds === undefined) return `a cell of ${payload.frame} has no box`;
+    if (one.tier === two.tier && one.bounds.x >= two.bounds.x) return `${a} does not stand left of ${b}, the order the feeds of ${payload.frame} give`;
+  }
+  return undefined;
+}
+
 /** The turn count each kept course promised, by link id: what the turn round's judgment compares a trial with. */
 export function promisedTurns(ledger: Reservations): Map<string, number> {
   return new Map(ofKind(ledger, 'course').flatMap(({ payload }) => payload.maxTurns === undefined ? [] : [[payload.course.link, payload.maxTurns] as const]));
@@ -269,8 +325,8 @@ const isString = (value: unknown): value is string => typeof value === 'string';
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isPort = (value: unknown): boolean => isObject(value) && isString(value['node']) && Number.isInteger(value['ordinal']) && (value['anonymous'] === true ? value['name'] === undefined : isString(value['name']));
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined']);
-const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'lanes', 'bands']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined', 'rowOrder']);
+const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'skeleton', 'lanes', 'bands']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
 function shapeFailure(entry: unknown): string | undefined {
@@ -300,6 +356,12 @@ function shapeFailure(entry: unknown): string | undefined {
       const scope = payload['scope'];
       const scopeOk = isObject(scope) && (scope['all'] === true || (Array.isArray(scope['links']) && scope['links'].every(isString)));
       return scopeOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
+    }
+    case 'rowOrder': {
+      const order = payload['order'], one = isString(payload['cell']) !== isString(payload['frame']);
+      const feeds = payload['feeds'];
+      const feedsOk = Array.isArray(feeds) && feeds.length > 0 && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
+      return one && feedsOk && Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length ? undefined : bad;
     }
     default: {
       const scope = payload['scope'];
@@ -370,9 +432,10 @@ export function validateReservations(model: LayoutModel): void {
     if ((turn.all || turn.links.length > 0) !== (model.turnOrder === true)) throw new Error('The reserved turn order differs from the turn order of the model');
     if (!turn.all && !same(turn.links, model.turnLinks ?? [])) throw new Error('The reserved turn links differ from the turn links of the model');
   }
-  // A floor is a promise about the placed geometry, which later stages may only grow; the kinds below are checked on every restored stage.
+  // A floor is a promise about the placed geometry, which later stages may only grow, and a feed order a promise no later stage may turn;
+  // the kinds below are checked on every restored stage.
   for (const item of ledger) {
-    const why = floorFailure(item, model);
+    const why = floorFailure(item, model) ?? rowOrderFailure(item, model);
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }

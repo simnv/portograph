@@ -64,8 +64,17 @@ describe('a stem blocks a chord only while its link stays orthogonal (ticket 88)
 });
 
 describe('a link inside one frame is a straight segment', () => {
-  it('takes the straight technique for a clear chord, vertical or diagonal, and keeps the blocked one orthogonal', async () => {
+  it('with the feed order on, Middle stands first (fed by Gateways 1 and 2) and every link is straight, the West-East peer link too (ticket 25)', async () => {
     const model = await run(source);
+    expect(model.groups['site#1']!.rowOrder).toEqual(['mid', 'west', 'east']);
+    expect(linkOf(model, 'west', 'east').technique).toBe('straight');
+    const { counts, metrics } = score(model).snapshot;
+    expect([counts.routed.bent, metrics.crossings.count]).toEqual([0, 1]);
+  }, 60000);
+
+  it('takes the straight technique for a clear chord, vertical or diagonal, and keeps the blocked one orthogonal', async () => {
+    // The feed order is off here (ticket 25): the subject is Middle standing on the West-East chord, which the feed order takes away.
+    const model = await run(source.replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n'));
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     const straight = [['gw1', 'west'], ['gw1', 'mid'], ['gw2', 'mid'], ['gw3', 'east'], ['mid', 'access']]
       .map(([from, to]) => linkOf(model, from!, to!));

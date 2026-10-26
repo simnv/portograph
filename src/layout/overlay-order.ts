@@ -16,6 +16,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { isCantonUnit } from './read/canton.js';
 import { overlayCourse } from './courses.js';
+import { feedingRowsOf, rowOrderOf } from './reservations.js';
 
 /** Two placed nodes that a link joins, and the link. */
 export interface Pair { from: string; to: string; link: LayoutLink }
@@ -253,9 +254,11 @@ export function readDraft(model: LayoutModel) {
 /**
  * Puts the nodes of a row group in the order `next`, left to right from the left edge of the row, and keeps the ports on their nodes.
  * With `grow` the box may grow to the right, as far as the group to its right leaves room; without it a row that needs more room than
- * it has is refused (a frame cell stands in a column whose width is fixed). Returns whether the row was seated.
+ * it has is refused (a frame cell stands in a column whose width is fixed). With `'column'` the box grows to the right over any group the
+ * column pack lays (a rank cell before the frame columns are packed, the feed order, ticket 25), and only a flank is a wall.
+ * Returns whether the row was seated.
  */
-export function reseatRow(model: LayoutModel, group: LayoutGroup, next: string[], grow: boolean): boolean {
+export function reseatRow(model: LayoutModel, group: LayoutGroup, next: string[], grow: boolean | 'column'): boolean {
   const order = group.rowOrder ?? group.nodes;
   const left = Math.min(...order.map(node => model.nodes[node]!.bounds!.x));
   let need = left;
@@ -266,8 +269,11 @@ export function reseatRow(model: LayoutModel, group: LayoutGroup, next: string[]
   if (grown > right + PLACEMENT_EPS) {
     // The least room the skeleton keeps between two groups of a tier: what ELK is given as node spacing.
     const minGap = spacing.nodeClearance + Math.max(DEFAULT_STROKE_WIDTHS.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node));
+    // With `'column'` only a group the column pack does not lay is a wall: a flank (every other group of a tier that holds a frame is a
+    // unit of the pack, and `placeFlanksAndPeers` pushes what still overlaps apart).
     const wall = Math.min(Infinity, ...Object.values(model.groups)
-      .filter(other => other !== group && other.tier === group.tier && other.bounds && other.bounds.x >= right - PLACEMENT_EPS).map(other => other.bounds!.x));
+      .filter(other => other !== group && other.tier === group.tier && other.bounds && other.bounds.x >= right - PLACEMENT_EPS && (grow !== 'column' || other.flank !== undefined))
+      .map(other => other.bounds!.x));
     if (!grow || grown > wall - minGap) return false;
   }
   let x = left;
@@ -756,7 +762,10 @@ export function orderFramesByOverlay(model: LayoutModel, columns: Map<string, Co
     for (const canton of tier.filter(unit => isCanton(unit) && free(unit))) {
       orderMembers(tier, canton, from, to, true);
     }
-    const cells = everyGroup.filter(group => group.nodes.length > 1 && free({ frame: true, groups: [group] }));
+    // A cell whose order its feeds give (ticket 25, the ledger's `rowOrder`) keeps it, and so does a cell an entry read its feeds from (the
+    // entry's premise): the partners of their rows are not chained.
+    const fixed = feedingRowsOf(model.reservations);
+    const cells = everyGroup.filter(group => group.nodes.length > 1 && free({ frame: true, groups: [group] }) && rowOrderOf(model.reservations, 'cell', group.id) === undefined && !fixed.has(group.id));
     gainful(() => {
       let changed = false;
       for (const cell of cells) {

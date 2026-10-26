@@ -6,7 +6,10 @@
 # With the rule the piece holds nothing, the gap grows 77.25 px for the other pair's rows, nothing is removed and every gate
 # passes.
 # Test-only input owned by ranked-groups ticket 42; test/pipeline/near-vertical-piece.test.ts reads the layout.
+# The feed order is off (architecture-2 ticket 25, `layout.feedOrder: false`): the subject is the crossing of link-7 over the
+# near-vertical piece, which the order of the feeds would take apart.
 portograph: 2
+layout: { feedOrder: false }
 groups:
   upstream: { tier: 0 }
   site: { tier: 1 }

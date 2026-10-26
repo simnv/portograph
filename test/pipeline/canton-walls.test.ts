@@ -278,9 +278,18 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const clone = structuredClone(model) as LayoutModel;
     return [packBesideRows(clone), holdMemberWalls(clone), holdColumnAxes(clone, 0)];
   };
+  it('three-canton-groups-close-up-to-a-band-gap with a side hint on m1 and the feed order on: the finished layout is the fixed point of the pack (ticket 25)', async () => {
+    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
+      testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
+    expect(settled(hinted)).toEqual([false, false, false]);
+    expect(hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_NON_CONVERGENCE')).toEqual([]);
+    expect(hinted.canvas!.width).toBeCloseTo(1905, -1);
+  }, 60000);
   it('three-canton-groups-close-up-to-a-band-gap with a side hint on m1: the finished layout is the fixed point of the pack (ticket 136)', async () => {
     // The hint frees link-4 to the left face of m1 (the port the side round offers); the wider node changes the grid of a linked pair after 7f packed the row.
-    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
+    // The feed order is off here (ticket 25): with it on, the zones of canton a stand under their feeds and the grid no longer meets the pack,
+    // so the subject is gone; the rule-on run is checked in the test below.
+    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap').replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
       testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
     // The hint took: the port is a hinted lateral port (the fixture is not the plain layout by another name).
     const port = hinted.nodes['m1']!.ports.find(item => portKey(item.ref) === portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never))!;

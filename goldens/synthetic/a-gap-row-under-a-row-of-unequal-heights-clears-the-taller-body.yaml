@@ -4,7 +4,10 @@
 # seats a row 10 px plus both half strokes below the lowest body edge of every node it passes under or beside (ranked-groups
 # ticket 90), so the room does not depend on a neighbour's stem.
 # Test-only input owned by ranked-groups ticket 90; test/pipeline/gap-row-body-clearance.test.ts reads the layout.
+# The feed order is off (architecture-2 ticket 25, `layout.feedOrder: false`): the subject is link 4's row under N3, which the
+# order of the feeds would take away.
 portograph: 2
+layout: { feedOrder: false }
 groups:
   upstream: { tier: 0, label: Upstream }
   site: { tier: 1, label: Site }

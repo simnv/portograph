@@ -5,7 +5,8 @@ import { UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
 import { orderByOverlay, orderFramesByOverlay } from './overlay-order.js';
-import { orderByCorridors, validateRowOrderDecisions, withdrawPullsAcrossFlips } from './corridor-order.js';
+import { orderByCorridors, validateRowOrderDecisions } from './corridor-order.js';
+import { orderByFeeds, settlePullsAndFeeds, validateFeedOrders } from './feed-order.js';
 import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 export { buildSkeletonGraph } from './skeleton-graph.js';
 export { validateSkeletonBands } from './skeleton-geometry.js';
@@ -85,10 +86,14 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
     orderByOverlay(work);
     // The free rows then take the order the corridors through them cross least (ticket 17); the record is checked below.
     orderByCorridors(work);
+    // The rank cells and the child frames then take the order their feeds give (ticket 25): the ledger's `rowOrder`, checked below.
+    orderByFeeds(work);
     placeFlanksAndPeers(work, columns => { orderFramesByOverlay(work, columns); });
-    // A far-end pull whose far node the frame order then put on the other side is undone (ticket 22 review).
-    withdrawPullsAcrossFlips(work);
-    const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work)];
+    // A far-end pull whose far node the frame order then put on the other side is undone (ticket 22 review). A withdrawn pull turns a
+    // free row that may feed a cell, so the feed orders are read again, and a re-seated cell may move the far node of another pull: the
+    // two repeat until no pull is withdrawn (ticket 25 re-check).
+    settlePullsAndFeeds(work);
+    const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work), ...validateFeedOrders(work)];
     if (errors.length) throw new SkeletonError(errors.join('; '));
     work.stage = 'skeleton';
     work.runtime.stages.push({ stage: 'skeleton', durationMs: clock.now() - started });
