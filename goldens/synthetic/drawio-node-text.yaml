@@ -1,6 +1,7 @@
 # Expected: Node text in each of the three shapes the draw.io exporter must place it in — a name
 # alone, a name with a description under it, and a description with no name at all. The exporter
 # takes its offset and its base font from the first block that draws, whichever block that is.
+# Expected: All text uses at least 9 px in the layout, SVG and draw.io output.
 # Test-only input owned by drawio-export ticket 01; the whole pipeline runs, so no stage
 # precondition is needed.
 portograph: 2

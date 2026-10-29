@@ -34,8 +34,8 @@ describe('font measurements', () => {
   });
 
   it('sizes pills to measured content while retaining the minimum', () => {
-    expect(measurePortPill('i')).toMatchObject({ width: 24, height: 10, radius: 2 });
-    expect(measurePortPill('100G')).toMatchObject({ width: 26, height: 10, radius: 2 });
+    expect(measurePortPill('i')).toMatchObject({ width: 24, height: 11, radius: 2 });
+    expect(measurePortPill('100G')).toMatchObject({ width: 29, height: 11, radius: 2 });
     const long = measurePortPill('100G-LONG-NAME');
     expect(long.width).toBeGreaterThan(60);
     expect(long.width - long.text.width).toBeGreaterThanOrEqual(6);

@@ -61,7 +61,7 @@ export function rebuildNodeGeometry(draft: LayoutModel, nodeIds: readonly string
         const width = horizontal ? measured.text.height : measured.text.width;
         const height = horizontal ? measured.text.width : measured.text.height;
         const label: LayoutLabel = { id: `pill:${JSON.stringify(port.ref)}`, owner, layer: port.layer,
-          role: 'pill', port: { ...port.ref }, text: port.ref.name, fontFamily: FONT_FAMILY, fontSize: 8,
+          role: 'pill', port: { ...port.ref }, text: port.ref.name, fontFamily: FONT_FAMILY, fontSize: 9,
           fontWeight: 400, lineHeight: measured.text.lineHeight, lines: measured.text.lines, textRotation: pill.textRotation,
           bounds: { x: point.x - width / 2, y: point.y - height / 2, width, height } };
         draft.labels.push(label);

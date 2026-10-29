@@ -98,7 +98,7 @@ const BASE_SPACING_TOP = 5;
 const NODE_NAME_SIZE = 9;
 
 /** The description size the profile uses when a label does not state its own. */
-const NODE_DESCRIPTION_SIZE = 7;
+const NODE_DESCRIPTION_SIZE = 9;
 
 /** `#rrggbb` to its three channels; anything else (a name, `none`) has no channels to mix. */
 function channels(colour: string): [number, number, number] | undefined {
@@ -792,7 +792,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
     // The node's name is the node's own label: a shape carries its text in draw.io, and a reader
     // who double-clicks the node expects to be renaming the node. The description is a second,
-    // unbound text cell inside the node. Plain text has one font per cell, and a 400-weight 7 px
+    // unbound text cell inside the node. Plain text has one font per cell, and a 400-weight 9 px
     // description in the name's cell would draw at the name's 700-weight 9 px. As a child of the
     // node it still moves and copies with it.
     const named = layout.labels.find(item => item.owner.kind === 'node' && item.owner.id === id

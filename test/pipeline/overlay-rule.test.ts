@@ -166,13 +166,12 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     // Stress ticket 20, question 2. `goldens/synthetic/overlay-ports-that-line-up.yaml`: two `sync`
     // ports facing each other on one x, with nothing between them. Both stubs are collinear with the
     // segment between them, `straighten` drops them, and the path is one segment. Stress ticket 30
-    // shortened that segment by a pill half-depth at each end — it now runs face to face, 119 to
-    // 220, where it ran anchor to anchor, 107 to 232 — and the 12 px it lost at each end were the
-    // 12 px the overlay mask cut out of the pill. Canvas and Q are identical to the last digit.
+    // shortened that segment by a pill half-depth at each end. With 9 px text, the segment runs
+    // face to face from y = 120 to y = 221. The font floor changes the pill geometry and Q.
     const model = await run(fixture('overlay-ports-that-line-up'));
     const points = pointsOf(overlayOf(model));
-    expect(points).toEqual([{ x: 57.336669921875, y: 119 }, { x: 57.336669921875, y: 220 }]);
-    expect(score(model).snapshot.Q).toBe(0.8335929892966935);
+    expect(points).toEqual([{ x: 56.836669921875, y: 120 }, { x: 56.836669921875, y: 221 }]);
+    expect(score(model).snapshot.Q).toBe(0.8335289975258895);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
@@ -183,15 +182,14 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     // *"no point in stub then"* (2026-09-16, stress ticket 30) the whole of the link.
     const model = await run(fixture('overlay-ports-that-do-not-line-up'));
     const link = overlayOf(model), points = faceToFace(model, link);
-    // One run of 126.11 px from (80.01, 119) to (155.52, 220). It was a 16 px stub, a 119.79 px
-    // diagonal and a 16 px stub: 12 px of each stub was pill the mask cut away and 4 px was drawn.
-    expect(span(points[0]!, points[1]!)).toBeCloseTo(126.1063, 3);
+    // One run of 125.51 px connects the pill faces at the 9 px font size.
+    expect(span(points[0]!, points[1]!)).toBeCloseTo(125.5101, 3);
     expect(axisAligned(points[0]!, points[1]!)).toBe(false);
     // And it really is clear: the segment enters no node body and no drawn pill — its own two pills
     // included, which it leaves outward at both ends and so only touches.
     for (const box of shapes(model)) expect(crosses(points[0]!, points[1]!, box)).toBe(false);
-    // Q is unchanged to the last digit, through both the endpoint move and the stub's removal.
-    expect(score(model).snapshot.Q).toBe(0.8391492903118092);
+    // The score includes the geometry measured at the 9 px font size.
+    expect(score(model).snapshot.Q).toBe(0.838808037038868);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
@@ -232,7 +230,7 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     const clear = label.bounds!.x - right(endBoxes(model, link)[0]!);
     expect(clear).toBeLessThanOrEqual(LINK_LABEL_GEOMETRY.shortenMargin - LINK_LABEL_GEOMETRY.halo + 1e-9);
     expect(clear).toBeGreaterThan(LINK_LABEL_GEOMETRY.shortenMargin - LINK_LABEL_GEOMETRY.halo - 1);
-    expect(score(model).snapshot.Q).toBe(0.7913523029318137);
+    expect(score(model).snapshot.Q).toBe(0.7906810009769131);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 

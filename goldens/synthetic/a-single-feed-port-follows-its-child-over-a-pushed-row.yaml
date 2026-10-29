@@ -30,6 +30,8 @@ nodes:
     - {name: u1}
     - {name: u2}
   core-sw:
+    # Reserve face space for the 9 px pills and the source-port move.
+    size: {width: 540, height: 0}
     group: core
     label: core-sw
     class: switch
@@ -42,8 +44,9 @@ nodes:
     - {name: p13}
     - {name: p6}
     - {name: p15}
-    - {name: p3}
-    - {name: p4}
+    # Keep the rack feeds on the same face when the links are reversed.
+    - {name: p3, side: bottom}
+    - {name: p4, side: bottom}
     - {name: p2}
     - {name: p5}
   edge-sw:

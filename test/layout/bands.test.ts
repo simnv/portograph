@@ -137,7 +137,7 @@ describe('group label bands', () => {
       .toEqual({ providers: 'top', datacenter: 'top', 'tbr-left': 'top', 'tbr-right': 'top', 'route-reflector': 'top', backbone: 'bottom' });
     // Datacenter keeps a top title with named top pills, so it reserves space beyond the complete pill.
     expect(Object.fromEntries(model.labelBands.map(band => [band.group, band.clearance])))
-      .toEqual({ providers: GROUP_PADDING, datacenter: GROUP_PADDING + 13.5, 'tbr-left': GROUP_PADDING, 'tbr-right': GROUP_PADDING,
+      .toEqual({ providers: GROUP_PADDING, datacenter: GROUP_PADDING + 15, 'tbr-left': GROUP_PADDING, 'tbr-right': GROUP_PADDING,
         'route-reflector': GROUP_PADDING, backbone: GROUP_PADDING });
 
     const produced = { ...model, links: model.links.filter(link => link.path !== undefined) };
@@ -525,7 +525,7 @@ links: [[a.p, z.p]]`;
     const lane = before.lanes.find(item => item.id === 'lane:"link-1":1')!;
     const pill = before.nodes.t!.ports[0]!.pill!;
     expect(lane.side).toBe('right');
-    expect([pill.bounds.x, right(pill.bounds)]).toEqual([342, 398]);
+    expect([pill.bounds.x, right(pill.bounds)]).toEqual([338.5, 401.5]);
     // The headroom allows one 16.609375 px reservation, but not two.
     expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeGreaterThan(16.609375);
     expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeLessThan(33.21875);

@@ -354,7 +354,7 @@ links: [[a.r, b.q]]`));
     expect(to.anchor!.y).toBe(from.anchor!.y);
     expect(to.anchor!.y).not.toBe(model.nodes.b!.bounds!.y + 45);
     expect(link.path!.segments).toHaveLength(1);
-    expect(model.nodes.a!.ports.map(p => p.anchor!.y)).toEqual([model.nodes.a!.bounds!.y + 31, model.nodes.a!.bounds!.y + 17]);
+    expect(model.nodes.a!.ports.map(p => p.anchor!.y)).toEqual([model.nodes.a!.bounds!.y + 32.5, model.nodes.a!.bounds!.y + 17.5]);
   });
   it('levels the shorter simple fixture inside its padding and pins it', async () => {
     const input = await placed(simple), model = rows(input);

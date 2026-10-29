@@ -28,6 +28,8 @@ nodes:
     description: west router
     ports: [{ name: up1 }, { name: up2 }, { name: up3 }]
   e:
+    # Keep the crossing-label window with the 9 px description and pills.
+    size: {width: 116, height: 0}
     group: east
     class: router
     icon: router

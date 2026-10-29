@@ -80,8 +80,8 @@ export interface PortPillMeasurement {
   text: TextMeasurement;
 }
 
-/** Unrotated dimensions. Port labels use 8px Arial, 3px horizontal padding and minimum 24×10. */
+/** Unrotated dimensions. Port labels use 9px Arial, 3px horizontal padding and minimum 24×10. */
 export function measurePortPill(label: string, style: TextStyle = {}): PortPillMeasurement {
-  const text = measureText(label, { ...style, fontSize: style.fontSize ?? 8 });
+  const text = measureText(label, { ...style, fontSize: style.fontSize ?? 9 });
   return { width: Math.max(24, Math.ceil(text.width + 6)), height: Math.max(10, text.height), radius: CORNER_RADII.pill, text };
 }

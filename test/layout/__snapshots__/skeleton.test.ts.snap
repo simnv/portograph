@@ -5,9 +5,9 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
   "groups": [
     {
       "bounds": {
-        "height": 63,
+        "height": 64.5,
         "width": 145.5,
-        "x": 247.2744140625,
+        "x": 251.7744140625,
         "y": 12,
       },
       "flank": undefined,
@@ -19,10 +19,10 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     },
     {
       "bounds": {
-        "height": 100,
-        "width": 338.5390625,
-        "x": 159.509765625,
-        "y": 135,
+        "height": 104,
+        "width": 347.5390625,
+        "x": 161.009765625,
+        "y": 136.5,
       },
       "flank": undefined,
       "id": "datacenter",
@@ -35,10 +35,10 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     },
     {
       "bounds": {
-        "height": 156,
-        "width": 87.509765625,
+        "height": 164,
+        "width": 89.009765625,
         "x": 12,
-        "y": 135,
+        "y": 136.5,
       },
       "flank": {
         "align": "left",
@@ -53,10 +53,10 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     },
     {
       "bounds": {
-        "height": 156,
-        "width": 87.509765625,
-        "x": 558.048828125,
-        "y": 135,
+        "height": 164,
+        "width": 89.009765625,
+        "x": 568.548828125,
+        "y": 136.5,
       },
       "flank": {
         "align": "right",
@@ -71,10 +71,10 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     },
     {
       "bounds": {
-        "height": 63,
+        "height": 64.5,
         "width": 145.5,
-        "x": 148.7744140625,
-        "y": 351,
+        "x": 153.2744140625,
+        "y": 360.5,
       },
       "flank": undefined,
       "id": "route-reflector",
@@ -85,10 +85,10 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     },
     {
       "bounds": {
-        "height": 98,
-        "width": 169.5,
-        "x": 127.2744140625,
-        "y": 474,
+        "height": 99.5,
+        "width": 175.5,
+        "x": 129.5244140625,
+        "y": 485,
       },
       "flank": undefined,
       "id": "backbone",
@@ -101,109 +101,109 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
   "nodes": [
     {
       "bounds": {
-        "height": 39,
+        "height": 40.5,
         "width": 50,
-        "x": 259.2744140625,
+        "x": 263.7744140625,
         "y": 24,
       },
       "id": "provider-1",
     },
     {
       "bounds": {
-        "height": 39,
+        "height": 40.5,
         "width": 50,
-        "x": 330.7744140625,
+        "x": 335.2744140625,
         "y": 24,
       },
       "id": "provider-2",
     },
     {
       "bounds": {
-        "height": 76,
-        "width": 59.009765625,
-        "x": 171.509765625,
-        "y": 147,
+        "height": 80,
+        "width": 60.509765625,
+        "x": 173.009765625,
+        "y": 148.5,
       },
       "id": "EAC-01",
     },
     {
       "bounds": {
-        "height": 76,
-        "width": 66.009765625,
-        "x": 252.01953125,
-        "y": 147,
+        "height": 80,
+        "width": 69.009765625,
+        "x": 255.01953125,
+        "y": 148.5,
       },
       "id": "EBR-01",
     },
     {
       "bounds": {
-        "height": 76,
-        "width": 66.009765625,
-        "x": 339.529296875,
-        "y": 147,
+        "height": 80,
+        "width": 69.009765625,
+        "x": 345.529296875,
+        "y": 148.5,
       },
       "id": "EBR-02",
     },
     {
       "bounds": {
-        "height": 76,
-        "width": 59.009765625,
-        "x": 427.0390625,
-        "y": 147,
+        "height": 80,
+        "width": 60.509765625,
+        "x": 436.0390625,
+        "y": 148.5,
       },
       "id": "EAC-02",
     },
     {
       "bounds": {
-        "height": 132,
-        "width": 63.509765625,
+        "height": 140,
+        "width": 65.009765625,
         "x": 24,
-        "y": 147,
+        "y": 148.5,
       },
       "id": "TBR-001",
     },
     {
       "bounds": {
-        "height": 132,
-        "width": 63.509765625,
-        "x": 570.048828125,
-        "y": 147,
+        "height": 140,
+        "width": 65.009765625,
+        "x": 580.548828125,
+        "y": 148.5,
       },
       "id": "TBR-002",
     },
     {
       "bounds": {
-        "height": 39,
+        "height": 40.5,
         "width": 50,
-        "x": 160.7744140625,
-        "y": 363,
+        "x": 165.2744140625,
+        "y": 372.5,
       },
       "id": "RR-01",
     },
     {
       "bounds": {
-        "height": 39,
+        "height": 40.5,
         "width": 50,
-        "x": 232.2744140625,
-        "y": 363,
+        "x": 236.7744140625,
+        "y": 372.5,
       },
       "id": "RR-02",
     },
     {
       "bounds": {
-        "height": 54,
-        "width": 62,
-        "x": 139.2744140625,
-        "y": 506,
+        "height": 55.5,
+        "width": 65,
+        "x": 141.5244140625,
+        "y": 517,
       },
       "id": "EBB-01",
     },
     {
       "bounds": {
-        "height": 54,
-        "width": 62,
-        "x": 222.7744140625,
-        "y": 506,
+        "height": 55.5,
+        "width": 65,
+        "x": 228.0244140625,
+        "y": 517,
       },
       "id": "EBB-02",
     },
@@ -211,9 +211,9 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
   "tierBands": [
     {
       "bounds": {
-        "height": 63,
+        "height": 64.5,
         "width": 145.5,
-        "x": 247.2744140625,
+        "x": 251.7744140625,
         "y": 12,
       },
       "groups": [
@@ -223,10 +223,10 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     },
     {
       "bounds": {
-        "height": 156,
-        "width": 633.55859375,
+        "height": 164,
+        "width": 645.55859375,
         "x": 12,
-        "y": 135,
+        "y": 136.5,
       },
       "groups": [
         "datacenter",
@@ -237,10 +237,10 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     },
     {
       "bounds": {
-        "height": 63,
+        "height": 64.5,
         "width": 145.5,
-        "x": 148.7744140625,
-        "y": 351,
+        "x": 153.2744140625,
+        "y": 360.5,
       },
       "groups": [
         "route-reflector",
@@ -249,10 +249,10 @@ exports[`stage 4 skeleton > lays out the golden, stores primary peers at outer e
     },
     {
       "bounds": {
-        "height": 98,
-        "width": 169.5,
-        "x": 127.2744140625,
-        "y": 474,
+        "height": 99.5,
+        "width": 175.5,
+        "x": 129.5244140625,
+        "y": 485,
       },
       "groups": [
         "backbone",

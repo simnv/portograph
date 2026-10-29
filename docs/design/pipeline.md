@@ -144,7 +144,8 @@ the skeleton. Stage 3 counts it as one port on that edge.
 
 Per node, per side: `pitch(side) = max(12, largest rendered pill extent along that side + 4)`.
 The unrotated pill width is measured text (font-metrics table) + 2×3 padding, at least 24 px;
-its height is at least 10 px. Top/bottom pills and their text rotate −90°; left/right pills
+its height is at least 10 px. All generated text uses at least 9 px, including descriptions and port pills.
+Placement measures the text at that size before it reserves space. Top/bottom pills and their text rotate −90°; left/right pills
 stay horizontal, matching the target JPEG and d3-fd. The extent used for pitch is the rotated
 box's width on top/bottom and its height on left/right. Then
 `height = max(minH, contentH, n_left|right × pitch + 2·pad)`, `width = max(minW, contentW,
