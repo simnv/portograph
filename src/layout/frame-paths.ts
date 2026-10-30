@@ -854,6 +854,17 @@ export function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, str
 }
 
 /**
+ * `blockedChords` on the frames the cells give now. A cross-frame chord reads the frame boxes, which follow the cells; the stored frames follow them
+ * only at the end of a transaction, so a guard that reads a move inside one (a proposed box, a centring step) derives them. `chordsHold` and the
+ * centring step read this one function.
+ */
+export function blockedChordsAt(model: LayoutModel): string[] {
+  if (!model.frozenChords?.length) return [];
+  const frames = model.frozenChords.some(id => chordKind(model, model.links.find(link => link.id === id)!) === 'cross') ? deriveFrames(model) : undefined;
+  return blockedChords(frames ? { ...model, frames } : model);
+}
+
+/**
  * Whether every frozen chord still clears every body and pill once the proposed groups take their boxes.
  * The 7f counterpart of `laneSidesHold`: a move that fails is refused for that unit, and the link is named
  * in a diagnostic. Nothing is held before 7f, so centring and the column rules pass through here unchanged.
@@ -876,10 +887,7 @@ export function chordsHold(model: LayoutModel, proposed: { group: { id?: string;
           ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x + dx, y: port.pill.bounds.y + dy } } } : {}) })) };
     }
   }
-  // A cross-frame chord reads the frame boxes, which follow the cells: the proposed cells give the frames the move would draw.
-  const moved = { ...model, nodes, groups };
-  const frames = model.frozenChords.some(id => chordKind(model, model.links.find(link => link.id === id)!) === 'cross') ? deriveFrames(moved) : undefined;
-  const held = blockedChords(frames ? { ...moved, frames } : moved);
+  const held = blockedChordsAt({ ...model, nodes, groups });
   // A caller that tries many candidates asks with `report` off and reports the final verdict itself (ticket 77).
   if (report) for (const id of held) {
     if (!model.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))) {

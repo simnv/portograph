@@ -13,6 +13,7 @@ import { resolve } from '../../src/resolve/index.js';
 import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { deriveFrames } from '../../src/layout/frames.js';
+import { blockedChordsAt } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -46,5 +47,16 @@ describe('columns hold their feed axis after 7f', () => {
     // The slack is spent after centring, so the pass that 7f runs is the one with none.
     expect(holdColumnAxes(model, 0)).toBe(false);
     expect(JSON.stringify(Object.values(model.groups).map(group => group.bounds))).toBe(before);
+  }, 60000);
+
+  // Snack-theme ticket 159. With card nodes the side round offers the left face of b-core for the chord link-2. The chord holds at 7e, and then the
+  // title room of 7f (the zone titles push Site B right, the feed title band moves tier 1 down) stands the frame of Site A on it: a move 7f cannot
+  // refuse, so the chord stayed straight through the frame and G2 failed. The judge reads the frozen chords now and refuses the trial.
+  it('refuses a side trial whose held chord 7f stands a foreign frame on, and publishes no blocked chord', async () => {
+    const model = await run();
+    expect(blockedChordsAt(model)).toEqual([]);
+    expect(model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_BLOCKED')).toEqual([]);
+    expect(model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED').map(item => item.message))
+      .toContainEqual(expect.stringContaining('stage 7f stood a body or a foreign frame on a held chord (link-2)'));
   }, 60000);
 });

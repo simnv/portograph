@@ -31,7 +31,7 @@ import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right 
 import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
-import { chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
+import { blockedChordsAt, chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -772,7 +772,7 @@ const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'e
  * content of the model alone; the one thing a replay does first is rebuild the nodes of its group. When that leaves the nodes as the model has them (`texts`),
  * the replay stands on the model itself and takes the readings of the first one that did, so they are read once per check and not once per replay.
  */
-interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>; breached?: Set<string> }
+interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>; breached?: Set<string>; blocked?: Set<string> }
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
   return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base));
 }
@@ -786,13 +786,16 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   rebuildNodeGeometry(model, group.nodes, 'current');
   const standing = base !== undefined && group.nodes.every(node => JSON.stringify(model.nodes[node]) === base.texts.get(node));
   const held = standing && base.held ? base.held : straightChordIds(model), breached = standing && base.breached ? base.breached : new Set([...keepOutShifts(model).keys()].map(item => item.id));
-  if (standing) { base.held = held; base.breached = breached; }
+  // A frozen chord is a wall from the freeze on (ticket 34): a step may not stand a body, a foreign pill or a foreign frame on one that was clear.
+  const blocked = standing && base.blocked ? base.blocked : new Set(blockedChordsAt(model));
+  if (standing) { base.held = held; base.breached = breached; base.blocked = blocked; }
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
-  const stands = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) && [...keepOutShifts(model).keys()].every(item => breached.has(item.id));
+  const stands = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) && [...keepOutShifts(model).keys()].every(item => breached.has(item.id))
+    && blockedChordsAt(model).every(id => blocked.has(id));
   tapVerdict('centreGroupStep', () => `${stands} ${now.size}/${held.size}`);
   if (stands) return result;
   model.groups[id] = snapshot.group;

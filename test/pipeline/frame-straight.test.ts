@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel, PathSegment } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { allocateGapRuns } from '../../src/internal.js';
-import { chordsHold } from '../../src/layout/frame-paths.js';
+import { blockedChordsAt, chordsHold } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -45,6 +45,16 @@ describe('a held chord is a wall from stage 7f on', () => {
     expect(draft.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))).toBe(true);
     // A move that leaves the chord clear is not refused.
     expect(chordsHold(structuredClone(model), [{ group: { nodes: [other.id], bounds: box }, bounds: { ...box, x: box.x + 1 } }])).toBe(true);
+  });
+
+  // Snack-theme ticket 159. The title of `beta` widens its cell in 7f and pushes `gamma` right, after the freeze. The centring replay that follows
+  // aligned one port of `srv` and grew the body, which put the frame of `beta` 9.9 px from the held chord link-6 (the margin is 10.75 px), and stood
+  // `lab` off the mean of its feeds. The step reads the frozen chords now (`blockedChordsAt`) and is declined: no frame stands on a held chord.
+  it('a centring step after the freeze stands no body and no foreign frame on a held chord (a-member-title-widens-a-beside-row)', async () => {
+    const model = await load('a-member-title-widens-a-beside-row');
+    expect(model.frozenChords).toContain('link-6');
+    expect(blockedChordsAt(model)).toEqual([]);
+    expect(model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_BLOCKED')).toEqual([]);
   });
 });
 
