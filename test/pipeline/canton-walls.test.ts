@@ -137,8 +137,11 @@ describe('canton member walls (canton-groups ticket 56)', () => {
   }, 60000);
 
   // Table fixture 5: held-lane parity with tickets 04, 14 and 23.
+  // Snack-theme ticket 159: the old premise was `a-transit-inside-a-canton` with long node labels. With card nodes that sheet is so wide that the
+  // course round sends link-4 and link-5 round the outside on perimeter lanes, so no lane is held in the canton. The new premise is the same sheet
+  // with short labels (`a-transit-inside-a-canton-of-card-nodes`): link-4 keeps its transit lane inside `west`, and link-5 passes outside at one x.
   it('a held lane inside the column grows the canton box, and the foreign lane stands outside it at one x', async () => {
-    const name = 'a-transit-inside-a-canton';
+    const name = 'a-transit-inside-a-canton-of-card-nodes';
     const packed = await placed(fixture(name)), model = await run(name);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     const west = frameOf(model, 'west');
@@ -287,14 +290,19 @@ describe('canton member walls (canton-groups ticket 56)', () => {
       testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
     expect(settled(hinted)).toEqual([false, false, false]);
     expect(hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_NON_CONVERGENCE')).toEqual([]);
-    // Verdana metrics (snack-theme ticket 157): 1996 px wide, 1905 with Arial.
-    expect(hinted.canvas!.width).toBeCloseTo(1996, -1);
+    // Verdana metrics (snack-theme ticket 157): 1996 px wide, 1905 with Arial. Card nodes (snack-theme ticket 159): 2281 px wide; the
+    // fixed point and the grid convergence hold as before, only the node widths grew.
+    expect(hinted.canvas!.width).toBeCloseTo(2281, -1);
   }, 60000);
   it('three-canton-groups-close-up-to-a-band-gap with a side hint on m1: the finished layout is the fixed point of the pack (ticket 136)', async () => {
     // The hint frees link-4 to the left face of m1 (the port the side round offers); the wider node changes the grid of a linked pair after 7f packed the row.
     // The feed order is off here (ticket 25): with it on, the zones of canton a stand under their feeds and the grid no longer meets the pack,
     // so the subject is gone; the rule-on run is checked in the test below.
-    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap').replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
+    // Snack-theme ticket 159: the old premise was `three-canton-groups-close-up-to-a-band-gap` itself. With card nodes its icon tiles widen the
+    // top and MPLS rows so far that the grid of `mpls` and `loc-a2` no longer meets the packed row, and GROUP_GRID_YIELDS_TO_PACK (the witness
+    // below) is gone. The new premise is the same sheet with no class on the top and MPLS nodes, so they are cards with no tile
+    // (`three-canton-groups-whose-grid-yields-to-the-pack`); the yield names the same pair as before.
+    const hinted = await layout(parse(fixture('three-canton-groups-whose-grid-yields-to-the-pack').replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
       testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
     // The hint took: the port is a hinted lateral port (the fixture is not the plain layout by another name).
     const port = hinted.nodes['m1']!.ports.find(item => portKey(item.ref) === portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never))!;
@@ -309,8 +317,9 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     // wide (1921 with Arial). Measured again with the widening allowed (the ticket 136 refusal off): loc-a2 at x 1131.2, 235.5 wide, and the
     // canvas 2019.7 px wide, also a fixed point of the pack. With Arial the canvas told the two apart (1921 against 2182, a bound of 2100);
     // with Verdana the widening is the narrower one, so the extent of loc-a2 and the yield below are the witnesses, not a canvas bound.
-    expect([loc.x, loc.width]).toEqual([expect.closeTo(1050.3, 1), expect.closeTo(345.7, 1)]);
-    expect(hinted.canvas!.width).toBeCloseTo(2094, -1);
+    // Snack-theme ticket 159, card nodes on the re-forged sheet: loc-a2 stands at x 1159.1, 444.2 wide, and the canvas is 2343 px wide.
+    expect([loc.x, loc.width]).toEqual([expect.closeTo(1159.1, 1), expect.closeTo(444.2, 1)]);
+    expect(hinted.canvas!.width).toBeCloseTo(2343, -1);
     const yields = hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_YIELDS_TO_PACK');
     expect(yields.length).toBeGreaterThan(0);
     expect(yields.every(item => item.severity === 'info' && item.owners!.length >= 2)).toBe(true);
@@ -396,8 +405,10 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     expect(model.alignedExtents).toEqual({});
   }, 60000);
 
-  it('a member above the anchor tier with a transit feed reserves nothing (a-transit-inside-a-canton)', async () => {
-    const model = await run('a-transit-inside-a-canton');
+  // Snack-theme ticket 159: the old premise (`a-transit-inside-a-canton`) lost its transit feed with card nodes, as the test of table fixture 5
+  // above did; the sheet with short labels has it again.
+  it('a member above the anchor tier with a transit feed reserves nothing (a-transit-inside-a-canton-of-card-nodes)', async () => {
+    const model = await run('a-transit-inside-a-canton-of-card-nodes');
     const tier = model.groups['gate#0']!.tier!;
     expect(tier).toBeLessThan(model.anchorTier!);
     const feeds = centringFeeds(model, tier, model.anchorTier!).filter(feed => model.document.nodes[feed.child.ref.node]!.group === 'gate#0');
