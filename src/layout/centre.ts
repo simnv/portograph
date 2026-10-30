@@ -817,12 +817,18 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass
   // is read on geometry that a later step moves.
   if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
-  // The seated faces and the overlay barycentre above can widen a column after the moves were taken. Read once more; a move given back is settled by the
-  // passes the budget has left (none left: the publication check judges it, ADR-0010).
-  if (withdrawRecorded(model)) {
+  // The seated faces and the overlay barycentre above can widen a column after the moves were taken, and a window can move a group that walled another
+  // (a canton member: its sibling's step then has room it did not have). Read once more; a move given back, or an alignment the publication check
+  // finds the step would now take, is settled by the passes the budget has left (none left: the publication check judges it, ADR-0010). Each round
+  // spends a pass of the budget, so the rounds end (R4); a check still failing once the budget is spent is the stall ADR-0010 reports.
+  let again = withdrawRecorded(model) || (budget.remaining > 0 && centreViolations(model).length > 0), rounds = 0;
+  while (again) {
+    rounds++;
     timed('centre-passes', () => centrePasses(model, budget));
     if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+    again = budget.remaining > 0 && centreViolations(model).length > 0;
   }
+  if (rounds > 0 && budget.remaining <= 0 && centreViolations(model).length > 0) reportStall(model, []);
   refreshWindowDeclines(model);
 }
 const WINDOW_DECLINED = 'CENTRE_WINDOW_DECLINED';
