@@ -652,7 +652,8 @@ export interface LabelPaddingEntry { room: number; links: string[] }
 export interface AlignedExtentEdge { port: PortRef; offset: number }
 /**
  * One parent spread (`LayoutModel.parentSpreads`): the body `width` it grew to, the offset of each of its bottom ports from the left edge of
- * the body, and the distance its row neighbours moved away from it, those before it to the left (`low`) and those after it to the right (`high`).
+ * the body, and the net distance its row neighbours moved, the clamp into the window included: those before it to the left (`low`) and those
+ * after it to the right (`high`). A record of the decision for diagnostics and tests; the rules read only that the entry is there.
  */
 export interface ParentSpread { width: number; ports: { port: PortRef; offset: number }[]; shift: { low: number; high: number } }
 

@@ -830,22 +830,27 @@ closer together than the top ports of its children, the drops slanted, and the c
 centre rule therefore spreads such a parent once, at its first run, before its first step and before the aligned extents
 (`reserveParentSpreads`): each fed port goes to the spacing of its child, about the mean of the fed ports, so a block centred on its
 face stays centred (ticket 10). The body grows by the deficit and no further (`alignSide`, bounded by `ALIGNMENT_MAX_GROWTH` and the
-overlay stops, with no sibling bound), and the nodes of its row before it move left by the growth on the left, the ones after it
-right by the growth on the right. Its group must then fit the window the step of the parent's tier gives it (`stepWindow`: the lanes
-and flanks of 7a, the frame columns, the group before it and the room the groups after it reserve), and the move reservations must
-hold (`holdsMove`: the lane sides, the riser keep-out, the span corridors); a spread that fails any bound is undone whole and named
-(`PARENT_SPREAD_DECLINED`). A feed spreads only when
-it is adjacent, no bundle member or mesh bus, its parent port feeds no other child of the step, and no other parent feeds its child
-node: a child of a complete block (the X) cannot stand under two parents, so neither parent spreads over it. A parent spreads at least
-two feeds, into one child group, whose children stand in the order of its ports; a parent in a bar, a flank or a grid keeps its
-ports. The deepest parent tier spreads first, because a spread moves the row that holds the children of the tier above. The decision
-is stored once (`parentSpreads`). While the centre rule runs, `{}` records that no parent spreads, so its later runs and its wide twin
-do not decide again; the rule drops an empty record when it ends, so a sheet that spreads nothing keeps its bytes, and after the rule
-absent means no spread. Later runs, replays and the publication check read the geometry the spread left and never decide again: a
-replay outside the centre rule spreads nothing. The spread is an optional move: it asks the move reservations (`holdsMove`) of the box
-it gives the group. One reader, `parentSpread`, holds a spread face where the spread put it in the face recentring
-(`recentreSeatedFaces`). A `CENTRE_ALIGNMENT_INFEASIBLE` whose link stands vertical after the last move of 7f is withdrawn
-(`refreshAlignmentDeclines`).
+overlay stops, with no sibling bound), the nodes of its row before it move left by the growth on the left, the ones after it right
+by the growth on the right, and the group is clamped into the window the step of the parent's tier gives it (`stepWindow`: the lanes
+and flanks of 7a, the frame columns, the group before it and the room the groups after it reserve). A resize is no translation: the
+group box can come back to its x while its nodes have moved. So the spread is made on the model and judged where it stands
+(`resizeHolds`, `move-reservations.ts`): every reserved lane window and span corridor meets the new box no more than the old one,
+every lane keeps its side, no facing port goes deeper in a riser keep-out, no new wall stands in a corridor or across a trunk
+extension, and every far port that stood on its side lane still does. The child side must hold too: the child group, centred under
+the spread ports, stays inside its own reserved window. A spread that fails any bound is undone whole and named
+(`PARENT_SPREAD_DECLINED`, with the reason). A feed spreads only when it is adjacent, no bundle member or mesh bus, its parent port
+feeds no other child of the step, and no other parent feeds its child node: a child of a complete block (the X) cannot stand under
+two parents, so neither parent spreads over it. A parent in a bar, a flank or a grid keeps its ports. A parent with two or more such
+feeds whose children stand further apart than its ports spreads when the children stand in one group and in the order of its ports;
+otherwise it keeps its ports and is named. The deepest parent tier spreads first, because a spread moves the row that holds the
+children of the tier above. The decision is stored once (`parentSpreads`). While the centre rule runs, `{}` records that no parent
+spreads, so the later runs of the passes on that model (after a wall move is given back) do not decide again; the wide twin of the
+rule is a copy taken before the first run and decides once on its own copy, from the same geometry. The rule drops an empty record
+when it ends, so a sheet that spreads nothing keeps its bytes, and after the rule absent means no spread. Later runs, replays and the
+publication check read the geometry the spread left and never decide again: a replay outside the centre rule spreads nothing. One
+reader, `parentSpread`, holds a spread face where the spread put it in the face recentring (`recentreSeatedFaces`); the width, port
+offsets and net row shift of an entry are a record for diagnostics and tests, read by no rule. A `CENTRE_ALIGNMENT_INFEASIBLE` whose
+link stands vertical after the last move of 7f is withdrawn (`refreshAlignmentDeclines`).
 
 **A group with no links steps out of an overlay chord** (ranked-groups ticket 76). `placeOverlayFree` ends with
 `stepOutOfChords`. A free group with no link of any member has no partner, so no target: it would stay a wall at ELK's

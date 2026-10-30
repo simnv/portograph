@@ -1,11 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { LayoutModel } from '../../src/index.js';
+import type { Lane, LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import { centreDraft, createCentreBudget, refreshAlignmentDeclines } from '../../src/layout/centre.js';
 import { recentreSeatedFaces } from '../../src/layout/face-centre.js';
+import { flanks } from '../../src/layout/flanks.js';
+import { lanes } from '../../src/layout/lanes.js';
+import { resizeEvidence, resizeHolds } from '../../src/layout/move-reservations.js';
 import { parentSpread } from '../../src/layout/read/parent-spread.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { rows } from '../../src/layout/rows.js';
+import { moveGroup } from '../../src/layout/skeleton-geometry.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const NAME = 'a-parent-below-the-anchor-spreads-its-ports-over-its-children';
@@ -20,6 +25,16 @@ const ends = (model: LayoutModel, id: string): [number, number] => {
 };
 const dx = (model: LayoutModel, id: string): number => { const [one, two] = ends(model, id); return Math.abs(one - two); };
 const codes = (model: LayoutModel, code: string) => model.diagnostics.filter(item => item.code === code);
+/** The model the centre rule reads (stage `flanks`), as a plain copy a test may change. */
+const input = async (yaml: string): Promise<LayoutModel> => JSON.parse(JSON.stringify(flanks(lanes(rows(await placed(yaml)))))) as LayoutModel;
+/** A forged routed lane of `tier`, centred on `x`, owned by `link`, across the band of the tier. */
+const lane = (model: LayoutModel, id: string, link: string, tier: number, group: string, side: 'left' | 'right', x: number, extra: Partial<Lane> = {}): Lane => {
+  const band = model.tierBands.find(item => item.tier === tier)!.bounds!;
+  return { id, owner: { kind: 'link', id: link }, layer: 'routed', kind: 'transit', group, tier, side, x, bounds: { x: x - 17, y: band.y, width: 34, height: band.height }, ...extra };
+};
+/** The geometry of every node: its box and the x of its ports. */
+const picture = (model: LayoutModel) => Object.fromEntries(Object.entries(model.nodes).map(([id, node]) =>
+  [id, { bounds: node.bounds, xs: node.ports.map(port => port.anchor!.x).sort((a, b) => a - b) }]));
 
 // Architecture-2 ticket 32 (Q120): a parent below the anchor tier spreads its fed bottom ports to the spacing of its children, once, before the
 // first step of the centre rule; its body grows by the deficit and its row neighbours move away by the same amount (`parentSpreads`).
@@ -75,6 +90,16 @@ describe('a parent below the anchor tier spreads its ports over its children (ar
     const block = await run(fixture(NAME).trimEnd() + '\n  - [west, ap]\n  - [west, vm-host]\n');
     expect(block.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(block.parentSpreads).toBeUndefined();
+  }, 60000);
+
+  it('a parent whose children stand in two groups keeps its ports and is named (R6)', async () => {
+    const yaml = fixture(NAME).replace('  low: { tier: 2, label: Low }\n', '  low: { tier: 2, label: Low }\n  low-two: { tier: 2, label: Low two }\n')
+      .replace('ap: { group: low,', 'ap: { group: low-two,');
+    const model = await run(yaml);
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(model.parentSpreads).toBeUndefined();
+    expect(codes(model, 'PARENT_SPREAD_DECLINED').map(item => item.message))
+      .toEqual(['sw keeps its ports at pitch over its children: its children stand in more than one group; link-4, link-5 align on the child side.']);
   }, 60000);
 
   it('a spread past the alignment allowance is declined whole and named', async () => {
@@ -136,13 +161,97 @@ describe('a parent below the anchor tier spreads its ports over its children (ar
 
   it('the spread does not follow the order of the links or of the nodes (R3)', async () => {
     const base = await run(fixture(NAME));
-    const [head, links] = fixture(NAME).split('links:\n');
-    const reversed = await run(`${head}links:\n${links!.trimEnd().split('\n').reverse().join('\n')}\n`);
-    // The link ids and the ordinals of anonymous ports follow the link list; the geometry may not.
-    const picture = (model: LayoutModel) => Object.fromEntries(Object.entries(model.nodes).map(([id, node]) =>
-      [id, { bounds: node.bounds, xs: node.ports.map(port => port.anchor!.x).sort((a, b) => a - b) }]));
-    expect(picture(reversed)).toEqual(picture(base));
-    const spread = (model: LayoutModel) => { const item = parentSpread(model, 'sw')!; return { width: item.width, shift: item.shift, offsets: item.ports.map(port => port.offset).sort((a, b) => a - b) }; };
-    expect(spread(reversed)).toEqual(spread(base));
+    const [top, rest] = fixture(NAME).split('nodes:\n'), [nodes, links] = rest!.split('links:\n');
+    const reverse = (block: string): string => `${block.trimEnd().split('\n').reverse().join('\n')}\n`;
+    // The decision: the grown width, the face and the two shifts (as a pair: a mirrored row swaps them).
+    const spread = (model: LayoutModel) => {
+      const item = parentSpread(model, 'sw')!;
+      return { width: item.width.toFixed(6), shifts: [item.shift.low, item.shift.high].map(value => value.toFixed(6)).sort(), offsets: item.ports.map(port => port.offset.toFixed(6)).sort() };
+    };
+    // Links reversed: the link ids and the ordinals of anonymous ports follow the link list; the geometry may not.
+    const links2 = await run(`${top}nodes:\n${nodes}links:\n${reverse(links!)}`);
+    expect(picture(links2)).toEqual(picture(base));
+    expect(spread(links2)).toEqual(spread(base));
+    // Nodes reversed: the declaration order is the order of the row (a meaningful order, R3), so the row is mirrored. The decision is the same, and
+    // both drops stand vertical.
+    for (const yaml of [`${top}nodes:\n${reverse(nodes!)}links:\n${links}`, `${top}nodes:\n${reverse(nodes!)}links:\n${reverse(links!)}`]) {
+      const reversed = await run(yaml);
+      expect(spread(reversed)).toEqual(spread(base));
+      const drops = reversed.links.filter(link => link.attachments!.from.node === 'sw' || link.attachments!.to.node === 'sw').filter(link => link.attachments!.to.node !== 'sw');
+      expect(drops.length).toBe(2);
+      for (const link of drops) expect(dx(reversed, link.id)).toBeLessThanOrEqual(0.5);
+    }
+  }, 60000);
+
+  it('a {} record stops a second decision inside the centre rule, and a second run on a spread model spreads nothing more (R1)', async () => {
+    // The first run decides: `sw` spreads.
+    const model = await input(fixture(NAME));
+    expect(model.stage).toBe('flanks');
+    centreDraft(model, createCentreBudget());
+    const record = structuredClone(model.parentSpreads), width = model.nodes['sw']!.bounds!.width;
+    expect(Object.keys(record ?? {})).toEqual(['sw']);
+    // A later run of the passes at the same stage (as after a wall move is given back) reads the record and does not spread again.
+    centreDraft(model, createCentreBudget());
+    expect(model.parentSpreads).toEqual(record);
+    expect(model.nodes['sw']!.bounds!.width).toBeCloseTo(width, 6);
+    // `{}` is a decision too: a run that finds it at the centre rule's own stage spreads nothing, and the drops keep their slant.
+    const none = await input(fixture(NAME));
+    none.parentSpreads = {};
+    centreDraft(none, createCentreBudget());
+    expect(none.parentSpreads).toEqual({});
+    expect(Math.max(dx(none, 'link-4'), dx(none, 'link-5'))).toBeGreaterThan(0.5);
+  }, 60000);
+
+  it('a spread its window cannot hold is undone after it was made: the layout is the one with no spread', async () => {
+    // Two lanes of tier 1 close the group of `sw` in: the spread makes the group wider than the room between them.
+    const fenced = async (decided?: Record<string, never>): Promise<LayoutModel> => {
+      const model = await input(fixture(NAME)), box = model.groups['middle']!.bounds!;
+      model.lanes.push(lane(model, 'lane:test-left', 'link-1', 1, 'middle', 'left', box.x - 20), lane(model, 'lane:test-right', 'link-3', 1, 'middle', 'right', box.x + box.width + 20));
+      if (decided) model.parentSpreads = decided;
+      centreDraft(model, createCentreBudget());
+      return model;
+    };
+    const declined = await fenced(), plain = await fenced({});
+    expect(declined.parentSpreads).toEqual({});
+    const named = codes(declined, 'PARENT_SPREAD_DECLINED');
+    expect(named.length).toBe(1);
+    expect(named[0]!.message).toMatch(/^sw keeps its ports at pitch over its children: spread it is [0-9.]+ px wide and the window of its group holds [0-9.]+ px; link-4, link-5 align on the child side\.$/);
+    // The undo restores every box and port the spread moved: the passes then run on the model a run with no spread has.
+    expect(picture(declined)).toEqual(picture(plain));
+  }, 60000);
+
+  it('a spread whose children cannot stand under its ports is declined: the child side is checked (a lane fences the child group)', async () => {
+    const model = await input(fixture(NAME)), low = model.groups['low']!;
+    // The child row stands far to the left, and a lane of its tier stands just right of it: the row cannot move under `sw`.
+    moveGroup(model, low, -200, 0);
+    model.lanes.push(lane(model, 'lane:test-child', 'link-1', 2, 'low', 'right', low.bounds!.x + low.bounds!.width + 20));
+    const width = model.nodes['sw']!.bounds!.width;
+    centreDraft(model, createCentreBudget());
+    expect(model.parentSpreads).toEqual({});
+    const named = codes(model, 'PARENT_SPREAD_DECLINED');
+    expect(named.length).toBe(1);
+    expect(named[0]!.message).toMatch(/^sw keeps its ports at pitch over its children: its children cannot stand under the spread ports: low would stand at /);
+    expect(model.nodes['sw']!.bounds!.width).toBeCloseTo(width, 6);
+  }, 60000);
+
+  it('a resize is judged where its nodes stand: a far port the row move takes off its side lane refuses it, though the group box keeps its x', async () => {
+    const model = await input(fixture(NAME)), group = model.groups['middle']!;
+    // `east` is the right neighbour of `sw`; its top port is the far end of a side lane of link-3 (t5 to east), seated on the port's x.
+    const link = model.links.find(item => item.id === 'link-3')!, far = model.nodes['east']!.ports.find(port => port.side === 'top')!;
+    const side = lane(model, 'side-lane:link-3', 'link-3', 1, 'middle', 'right', far.anchor!.x, { kind: 'side', port: { ...link.attachments!.from } });
+    const resize = (target: LayoutModel): boolean => {
+      const evidence = resizeEvidence(target, target.groups['middle']!), box = { ...target.groups['middle']!.bounds! };
+      // The spread: `sw` grows 30 px to the right, `east` moves right by the same 30 px; the group box keeps its left edge.
+      target.nodes['sw']!.bounds!.width += 30;
+      for (const port of target.nodes['east']!.ports) port.anchor!.x += 30;
+      target.nodes['east']!.bounds!.x += 30;
+      target.groups['middle']!.bounds = { ...box, width: box.width + 30 };
+      expect(target.groups['middle']!.bounds!.x).toBe(box.x);
+      return resizeHolds(target, target.groups['middle']!, evidence);
+    };
+    expect(resize(structuredClone(model) as LayoutModel)).toBe(true);
+    model.lanes.push(side);
+    expect(group.nodes).toContain('east');
+    expect(resize(model)).toBe(false);
   }, 60000);
 });
