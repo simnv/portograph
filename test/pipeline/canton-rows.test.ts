@@ -10,7 +10,6 @@ const fixture = (name: string): string => readFileSync(new URL(`../../goldens/sy
 const run = (name: string): Promise<LayoutModel> => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const frame = (model: LayoutModel, id: string): Rect => model.frames!.find(item => item.id === id)!.box;
 const right = (box: Rect): number => box.x + box.width;
-const centreX = (box: Rect): number => box.x + box.width / 2;
 
 // Canton-groups tickets 61 and 63: the rows of a canton's members, read on the placed model.
 describe('rows of canton members', () => {
@@ -21,10 +20,12 @@ describe('rows of canton members', () => {
     const row = (a: Rect, b: Rect): number => Math.max(right(a), right(b)) - Math.min(a.x, b.x);
     const widest = Math.max(row(na, nb), row(sa, sb));
     expect(west.width).toBeLessThanOrEqual(widest + 40 + 1e-6);
-    // Each tier-2 member stands under its tier-1 partner, and each row is 40 px apart.
-    // Verdana metrics (snack-theme ticket 157): 5.13 px off, bound 5 with Arial; wider labels shift a member by a few px, still under its partner.
-    expect(Math.abs(centreX(sa) - centreX(na))).toBeLessThan(7);
-    expect(Math.abs(centreX(sb) - centreX(nb))).toBeLessThan(7);
+    // Each tier-2 member stands under its tier-1 partner: inside its partner's span, and each row is 40 px apart. Snack-theme ticket 157: the
+    // members share an edge, so the centres differ by half the difference of the two node labels (3.5 px under a bound of 5 px with Arial,
+    // 5.1 px with Verdana); the span is the rule, the centre distance is the font's.
+    const under = (child: Rect, parent: Rect): boolean => child.x >= parent.x - 1e-6 && right(child) <= right(parent) + 1e-6;
+    expect(under(sa, na) || under(na, sa)).toBe(true);
+    expect(under(sb, nb) || under(nb, sb)).toBe(true);
     expect(Math.abs(nb.x - right(na) - 40)).toBeLessThan(1);
     expect(Math.abs(sb.x - right(sa) - 40)).toBeLessThan(1);
     // The canton is judged once, both rows together: no turn of one row alone is refused for the crossings it would raise.
