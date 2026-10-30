@@ -444,6 +444,16 @@ function laneReservation(model: LayoutModel, link: LayoutLink): PathSegment[] | 
   owned.sort((a, b) => order.indexOf(a.tier) - order.indexOf(b.tier));
   return owned.length ? owned.map(lane => reservation(model, link, lane)) : undefined;
 }
+/**
+ * Put the lanes of an earlier reading back, and with them everything derived from lanes: their extents (`rebuildLaneExtents`) and the frames, which hold the
+ * lanes of their own links (`heldLaneReach`). A trial that moved a corridor derived the frames again (`reseatLanes`); the restore that refuses it derives them
+ * again too, or a frame edge stands at the refused corridor and stage 8 reads frames that contradict the cells.
+ */
+export function restoreLanes(model: LayoutModel, held: LayoutModel['lanes']): void {
+  model.lanes = held;
+  rebuildLaneExtents(model);
+  rebuildFrames(model);
+}
 /** Extent-only replay. Never allocates, moves, renames, or changes the owner of a lane. */
 export function rebuildLaneExtents(model: LayoutModel): void {
   for (const lane of model.lanes) {
