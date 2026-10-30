@@ -4,7 +4,7 @@ import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFami
 import { refuseFanMembers, refuseStemCrowded, titleCrowdedFanMembers } from './fan-admission.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
-import { centreContext, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
+import { centreContext, centreViolations, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
 import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
@@ -440,8 +440,11 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // is open until the last replay. From here the validator and a restore read the record, member and depth, and never choose again.
   freezeFanKeepers(draft);
   // The overlay ports of a face nest (ticket 23) on the geometry that publishes, after every placement move was judged: a trade moves
-  // no box and no other port, and one that would need room 7f did not reserve is not made (`roomHolds`).
-  nestOverlayPorts(draft, roomHolds, roomLikelyHolds);
+  // no box and no other port, and one that would need room 7f did not reserve is not made (`roomHolds`). A trade can also undo the excuse of a
+  // centring the attempt declined (a replay that bent a chord no longer bends it), so the result keeps the centring findings it had or fewer, the
+  // set test `chooseReseat` makes too (R2; snack-theme ticket 159).
+  const centring = new Set(centreViolations(draft));
+  nestOverlayPorts(draft, model => roomHolds(model) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
   // A pair of labels on diagonal lines whose bands first meet on the geometry that publishes is decided here, once; a pair decided
   // earlier keeps its direction (`recordLabelYields`). Stage 9 and the validator read the record.
   recordLabelYields(draft, labelBorders(draft));
