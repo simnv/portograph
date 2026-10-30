@@ -1,0 +1,30 @@
+# Expected: A parent below the anchor tier spreads its ports over its children (architecture-2 ticket 32, Q120). The anchor
+# tier, `top`, is a row of five nodes. Tier 1, `middle`, stands below it: a narrow switch `sw` between two wider neighbours. The
+# switch feeds two children in tier 2, `low`, one link each. The two bottom ports of `sw` stand at the 16 px port pitch, but the
+# top ports of the two children cannot stand closer than about 80 px. Before the rule both drops slanted (29.6 and 48.7 px) and
+# the child row stood half under the neighbours of the switch. The centre rule now spreads the two ports of `sw` to the spacing of its children, once,
+# before its first step: the body of `sw` grows by the deficit and its row neighbours move apart by the same amount. Both drops
+# stand vertical, and the child row stands under the switch.
+# Test-only input owned by architecture-2 ticket 32; test/pipeline/parent-spread.test.ts reads the layout.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  middle: { tier: 1, label: Middle }
+  low: { tier: 2, label: Low }
+nodes:
+  t1: { group: top, class: router, label: Top one }
+  t2: { group: top, class: router, label: Top two }
+  t3: { group: top, class: router, label: Top three }
+  t4: { group: top, class: router, label: Top four }
+  t5: { group: top, class: router, label: Top five }
+  west: { group: middle, class: switch, label: West distribution switch }
+  sw: { group: middle, class: switch, label: sw }
+  east: { group: middle, class: switch, label: East distribution switch }
+  vm-host: { group: low, class: server, label: Virtual host }
+  ap: { group: low, class: access, label: Access point }
+links:
+  - [t1, west]
+  - [t3, sw]
+  - [t5, east]
+  - [sw, vm-host]
+  - [sw, ap]
