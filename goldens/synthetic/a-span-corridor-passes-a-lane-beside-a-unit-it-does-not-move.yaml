@@ -1,0 +1,40 @@
+# Expected: a span corridor judges against the earlier lanes of its band only the units it pushes (architecture-2 ticket 35, part 1).
+# `ranked` has two ranks on document tier 1: `r-head` and `r-side` on sub-tier 1, `r-tail` on sub-tier 2. The two dashed links from
+# `r-head` and `r-side` end on one port (`x-shared.in`), so they are no chord candidates and keep transit lanes in sub-tier 2. The lane
+# of `link-8` stands right of `ranked#1` and reaches into the frame margin that the unit's wall (`spanWall`) holds. `branch`
+# has one rank; its two links to `exits` cross sub-tier 2 right of `ranked` and are spanning-chord candidates. Their corridors stand
+# clear of `ranked#1` and move no unit of the band. Before the fix, 7a judged the unmoved `ranked#1` against the earlier lanes too,
+# found the overlap and refused the corridor ("cannot be opened in tier 2"), so the span trial failed and both links kept their
+# transit lanes. Now a unit the push does not move crosses no lane it did not cross before, the corridors are taken
+# (`SPAN_CHORD_TAKEN` for link-4 and link-5), both draw straight, and every gate passes. The wide `r-tail` sets the overlap: with a
+# narrow one the lane stands clear of the margin and the old rule refuses nothing.
+# Test-only input owned by architecture-2 ticket 35; test/pipeline/one-gap-span.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  entry: { tier: 0, label: Entry }
+  ranked: { tier: 1, label: Ranked }
+  branch: { tier: 1, label: Branch }
+  tails: { tier: 2, label: Tails }
+  exits: { tier: 2, label: Exits }
+nodes:
+  e-two: { group: entry, class: router, label: Entry router two }
+  e-one: { group: entry, class: router, label: Entry router one }
+  r-head: { group: ranked, class: router, label: Ranked head of the first rank, ports: [up, down, cf] }
+  r-side: { group: ranked, class: router, label: Ranked side, ports: [up, cf] }
+  r-tail: { group: ranked, class: router, label: Ranked tail node of the rank, ports: [up, out] }
+  b-main: { group: branch, class: router, label: Branch selector with two exits, ports: [up, m1, m2] }
+  x-tail: { group: tails, class: router, label: Exit of the tail, ports: [in] }
+  x-shared: { group: tails, class: router, label: Exit shared by two, ports: [in] }
+  x-one: { group: exits, class: router, label: Exit one, ports: [in] }
+  x-two: { group: exits, class: router, label: Exit two, ports: [in] }
+links:
+  - [e-one, b-main.up]
+  - [e-two, r-head.up]
+  - [r-head.down, r-tail.up]
+  - [b-main.m1, x-one.in, { class: dashed }]
+  - [b-main.m2, x-two.in, { class: dashed }]
+  - [r-tail.out, x-tail.in]
+  - [e-two, r-side.up]
+  - [r-head.cf, x-shared.in, { class: dashed }]
+  - [r-side.cf, x-shared.in, { class: dashed }]
