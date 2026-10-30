@@ -8,7 +8,7 @@ import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
 import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js';
-import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
+import { besideWalls, frameColumns, frameSeparation, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
 import { timed } from './attempt-timings.js';
@@ -335,7 +335,8 @@ function frameDepth(model: LayoutModel, id: string): number {
  * The window the columns of the frames of a tier leave a group (ranked-groups ticket 09). A rank cell
  * stays inside the column of its frame: the box of the cell, and the reach `cellReach` gives its
  * bodies and pills, lie between the column edges. Any other group stays out of the column of every
- * frame that spans its sub-tier, on the side it stands on. Unbounded for a tier with no frame.
+ * frame that spans its sub-tier, on the side it stands on, by the separation the gate judges (`frameSeparation`).
+ * Unbounded for a tier with no frame.
  */
 function columnWindow(model: LayoutModel, context: CentreContext, tier: number, id: string): WideningLimit {
   const group = model.groups[id]!, box = group.bounds!;
@@ -353,7 +354,9 @@ function columnWindow(model: LayoutModel, context: CentreContext, tier: number, 
   }
   const window = { low: -Infinity, high: Infinity };
   if (!context.columns.some(column => column.from <= tier && tier <= column.to)) return window;
-  const reach = occupiedOverhang(model, group), centre = box.x + box.width / 2, gap = bandGap(model);
+  // The separation the final gate judges between a frame box and a plain group, kept from the column edge: the column spends its slack
+  // toward this group only beyond that separation (`frameColumns`), so a frame at its column edge still stands that far from the group.
+  const reach = occupiedOverhang(model, group), centre = box.x + box.width / 2, gap = frameSeparation(model, false);
   for (const column of context.columns.filter(item => item.from <= tier && tier <= item.to)) {
     if (centre < column.x + column.width / 2) window.high = Math.min(window.high, column.x - gap - reach.right);
     else window.low = Math.max(window.low, column.x + column.width + gap + reach.left);
