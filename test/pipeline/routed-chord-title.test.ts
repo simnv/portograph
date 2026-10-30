@@ -145,15 +145,20 @@ describe('a cross-frame chord crosses the title band of its own end', () => {
     gates(model);
   }, 60000);
 
-  it('keeps the orthogonal route where the title has no room beside the crossing (title)', async () => {
+  it('takes the chord where the title has no room beside the crossing but its host can widen for it (ticket 35, part 2)', async () => {
     const model = await run(fixture(NO_ROOM));
     const link = linkOf(model, 'upstream-router', 'provider-1');
     expect(chordKind(model, link)).toBe('cross');
-    expect(link.technique).toBe('orthogonal');
-    expect(refusals(model)).toEqual([`${link.id}:title`]);
+    expect(link.technique).toBe('straight');
+    expect(refusals(model)).toEqual([]);
+    expect(model.diagnostics.some(item => item.code === 'ROUTED_CHORD_TITLE')).toBe(false);
+    // The title stands beside the crossing, 8 px clear: the host widened by the shortfall.
+    const band = model.labelBands.find(item => item.group === 'providers')!;
+    const crossing = crossingRect(link.path!.segments[0]!, band.bounds.y, band.bounds.y + band.bounds.height, 0)!;
+    expect(gap(label(model, 'Providers of the upstream transit service'), crossing)).toBeGreaterThanOrEqual(-1e-6);
     expect(model.removedLinks ?? []).toEqual([]);
     gates(model);
-    // The same input with a short title holds the chord: the refusal is the room, not the strip.
+    // The same input with a short title holds the chord too: no widening is needed.
     const short = await run(fixture(NO_ROOM).replace('Providers of the upstream transit service', 'P'));
     expect(linkOf(short, 'upstream-router', 'provider-1').technique).toBe('straight');
     expect(refusals(short)).toEqual([]);

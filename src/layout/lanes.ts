@@ -668,9 +668,11 @@ function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; wid
  * Plan outward pushes from the insertion gap, not from a corridor's centre. The gap partitions
  * the original group order even when a wide corridor contains an entire neighboring group.
  * Propagate each push through its neighbors and retain their existing occupied separation.
+ * `stillStays`: a unit the push does not move is not judged against the prior lanes (a span corridor, ticket 35): it crosses no lane it did not
+ * cross before, and the corridor itself is judged against every prior lane at its own x (first line).
  */
 function marginTranslations(read: (group: LayoutGroup) => Rect, groups: LayoutGroup[], split: number, x: number, width: number,
-  prior: Lane[], fixedSources: Set<string>, framed = false): number[] | undefined {
+  prior: Lane[], fixedSources: Set<string>, framed = false, stillStays = false): number[] | undefined {
   if (prior.some(lane => Math.abs(x - lane.x) < (width + lane.bounds.width) / 2 - PLACEMENT_EPS)) return undefined;
   const boxes = groups.map(read), shifts = groups.map(() => 0);
   let boundary = x - width / 2;
@@ -692,6 +694,7 @@ function marginTranslations(read: (group: LayoutGroup) => Rect, groups: LayoutGr
     // A push of one sub-tier alone would move it off the axis, so only the frame pass, which checks that
     // every cell of a frame root moves by one dx, may push a cell.
     if (dx && group.frame !== undefined && !framed) return undefined;
+    if (!dx && stillStays) continue;
     for (const lane of prior) {
       // A lane of a link that ends in this cell's frame stands inside the box: the frame grows to hold it,
       // so the cell cannot move away from it (ticket 14).
@@ -1245,7 +1248,7 @@ function reserveSpanCorridors(model: LayoutModel, pending: Lane[], occ: (group: 
       const prior = pending.filter(lane => lane.tier === tier && !isSpanLane(lane));
       // The groups the lane-stage guard holds (`heldSourceGroups`) do not move here either: a push of one is refused as the
       // corridor that cannot be opened, not thrown by the guard later (ticket 17 found a span trial that pushed one).
-      const shifts = groups.slice(0, split).every(isLeft) ? marginTranslations(group => spanWall(model, group, link), groups, split, x, width, prior, heldSourceGroups(model)) : undefined;
+      const shifts = groups.slice(0, split).every(isLeft) ? marginTranslations(group => spanWall(model, group, link), groups, split, x, width, prior, heldSourceGroups(model), false, true) : undefined;
       if (shifts === undefined) throw new SpanReservationRefusal(`The corridor of ${link.id} cannot be opened in tier ${tier}: a unit or a lane stands in it and cannot move aside`);
       shift(link, groups, shifts);
       const host = [...groups].sort((a, b) => Math.abs(x - (a.bounds!.x + a.bounds!.width / 2)) - Math.abs(x - (b.bounds!.x + b.bounds!.width / 2)))[0]!;

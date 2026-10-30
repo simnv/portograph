@@ -90,7 +90,14 @@ export const span: Round<SpanOffer> = {
   // A forced hint (the test option) is the whole of the span round; otherwise the round runs here, before the course round.
   enabled: env => env.options.testCourses === undefined && env.options.testSpanHints === undefined,
   gain: () => [0, 0, 0],
-  skip(env, _s, o) { env.options.testSideTrace?.({ ev: 'span-refused', links: o.links, why: 'budget' }); },
+  // No start is left for the offer (the re-runs are spent, or kept for the rounds this one protects): no hint is placed, each offered link keeps its lane, and the
+  // freeze names it with `transit` as before. One note names the budget, so a sheet that would draw the chords with more re-runs says so (ticket 35).
+  skip(env, s, o, left) {
+    env.options.testSideTrace?.({ ev: 'span-refused', links: o.links, why: 'budget' });
+    const why = left <= 0 ? `the command has made its ${env.maxReruns} placement re-runs` : `the ${left} placement re-run${left === 1 ? ' left is' : 's left are'} kept for the course, side and turn rounds`;
+    s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SPAN_ROUND_SKIPPED', owners: o.links.map(id => ({ kind: 'link' as const, id })),
+      message: `A span round was skipped: ${why}. The links ${o.links.join(', ')} keep their lanes.` });
+  },
   // Only the placement's own refusals, as in every other round: the command deadline (also an ELK deadline) and a defect (a TypeError) end the command.
   tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal : refusedAtBands(error),
   async measure(env, s) {

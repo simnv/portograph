@@ -72,7 +72,9 @@ sub-tiers (the anchor rule puts an end that links down on its group's last rank,
 links up on rank 0), and the chord crosses one tier gap. Where a group has fewer ranks than its
 tier, a sub-tier band can stand between the ends; the band guard of Section 4 then refuses the
 chord (`transit`), because such a link needs a lane, and a lane is reserved in 7a before the chord
-is final (Section 9).
+is final (Section 9). Since architecture-2 ticket 35 (Q122) such a link is a spanning-chord candidate
+(Section 14.1): the span round decides its chord on a placed baseline, and the re-run reserves a span
+corridor in the band instead of the lane. `transit` then refuses only a link with no span hint.
 
 ## 4. What the chord must clear
 
@@ -140,7 +142,8 @@ stub does the same, Q106):
 - **Decision.** The chord is refused (`title`) unless the band still holds the title: after the
   legs of `legRects`, the crossing rectangles of the held chords and this crossing are taken out of
   the band's x-range, one free interval is at least the measured title width plus the 8 px inset on
-  each side. No growth is assumed.
+  each side, or the title host can widen by the shortfall (architecture-2 ticket 35, part 2; see
+  *As built (ticket 35)* below).
 - **Split.** The fit with this crossing alone (no legs, no other chord) is part of
   `standaloneChord`, so the batch pass offers only a chord that can hold alone. The fit with the
   legs and the held chords' crossings is part of `expectedFramePath`. A new chord checks every
@@ -160,6 +163,20 @@ stub does the same, Q106):
 chord, so the x growth is (half stroke + 8) / cos of the angle to the vertical (a vertical chord gives 8 px). Measured: a title 8 px from the bounding box stood
 7.8 px from a 52 degree chord, and G3 failed. The margin is in the rectangle; the planner adds no clearance to it. A held chord's child port owes it no place under
 its feed, so `centreViolations` excuses it (a cross-frame chord only; ADR-0010 amendment, ticket 130).
+
+*As built (architecture-2 ticket 35, part 2).* "No growth is assumed" is withdrawn. At the decision (the fixed point, before 7f) a
+title band is usually narrower than its title, because 7f widens a title host only after the freeze. The orthogonal fallback of the same
+link crosses the same band by a leg, and 7f widens the host for that leg (ticket 66). So the strip no longer refuses a chord for room that
+7f gives: a shortfall `d` of the last free interval (a widening of the host to the right opens no other) is admitted when (1) the host can
+widen by `d` now, read by the planner's own decision (`growthPlan`, through `titleGrowthFeasible`; the lane-side and other move guards
+answer, and a refused widening refuses the chord), and (2) the chord costs no more than its lean over the fallback: `d` exceeds the
+shortfall the vertical leg at its own port would leave by at most the x the chord's crossing takes beyond that leg's. A canton band has no
+host cell and keeps the old rule. 7f reserves the widening before it plans a title: the first step (`reserveInitialSpace`) ends with
+`reserveChordTitleRoom`, which widens each host by the shortfall its held cross-frame chords leave, outside the shared pass budget, as it
+widens a host to its title's width. A later 7f move can turn a chord by a fraction of a pixel; the planner then widens the host again under
+the leg allowance (`LEG_PASSES_PER_TITLE`): the crossing of a held chord in its own band is a leg for the title, so the allowance test
+plans without those crossings. Where 7f still cannot hold the title, `ROUTED_CHORD_TITLE` names the link and G3 judges, as before.
+Measured on L4 (a private sheet): links 2 and 3 (the IPv4 and IPv6 feeds into `sel-hm`) draw straight; routed bends 24 to 20.
 
 A foreign title band stands inside its foreign frame box, so the foreign-frame wall covers it.
 
@@ -261,7 +278,9 @@ to reach this; ticket 103 measures it.
 - **No chord through a sub-tier band.** A link between non-adjacent sub-tiers keeps its lane and
   the orthogonal route, as today. A reserved slot through the band would need the chord decided
   before 7a and never withdrawn after it, while every move after 7a can block it. None of the 12
-  links needs it (each joins adjacent sub-tiers).
+  links needs it (each joins adjacent sub-tiers). *Superseded:* Section 14 decides such a chord on a
+  placed baseline and enacts it by a placement re-run (the span hint), for ends two or more document
+  tiers apart (ticket 22) and, since architecture-2 ticket 35, for ends on consecutive document tiers.
 - **No placement move for a routed chord in the first version.** Ticket 77 and ticket 80 move a
   node or a frame off an overlay chord. The refusals on the private sheet are the candidate rule
   and the title strips, not bodies. Ticket 104 extends the step only if ticket 103 reports links
@@ -328,16 +347,23 @@ contradiction 7 of `ref/hand-solves/ANALYSIS.md`.
 A **spanning chord** is a cross-frame chord whose ends stand on document tiers `t` and `t + N`, `N` of 2 or more.
 No cap on `N`. It is one straight segment from face to face, as every routed chord.
 
-A link is a spanning-chord candidate when Section 3 items 1, 2 and 4 hold, and its end groups are on document
-tiers that are not consecutive. Item 3 changes: "consecutive" becomes "different".
+A link is a spanning-chord candidate when Section 3 items 1, 2 and 4 hold, and its end sub-tiers are not adjacent:
+its end groups are on document tiers that are not consecutive (item 3: "consecutive" becomes "different"), or they are
+on consecutive document tiers and a rank band of an end's own tier stands between the end sub-tiers (architecture-2
+ticket 35, part 1; `rankBandBetween`). Both are topology: the sub-tiers are stage 1's. A link on a fan port is no
+candidate (it keeps its lane in the shared stem tree).
 
 A **transited band** is a sub-tier band strictly between the end sub-tiers. Section 4 refuses every such band
 (`transit`). For a spanning chord a transited band is no refusal by itself. The band must leave the chord's
 **corridor** clear: the part of the segment between the band's top and bottom y, grown by the gate clearances.
 
-Not in this version (user, 2026-10-11): the same test does not replace the `transit` refusal of a cross-frame chord on
-consecutive document tiers, where a rank band of an end's own tier stands between the ends (Section 3, last
-paragraph). A follow-up may measure it.
+Reopened (user, 2026-10-25, Q122; architecture-2 ticket 35, part 1). The decision of 2026-10-11 ("not in this version")
+is withdrawn: a link across one document tier gap is straight when its chord crosses no body, pill, lane or title. The
+refusal reads that geometry, not the band's tier: a rank band that stands between the ends but out of the corridor refuses
+nothing. The link goes through the same offer, hint, corridor, guard and judge as a link over two or more document tiers
+(Sections 14.3 and 14.4); `chordVerdict` keeps `transit` for a link with no hint. Measured on L4 (a private sheet): the
+three links from the one-rank group to the exit row are offered; the trial is refused by the judge (`gate`: a G6 of another
+link, whose title room the narrower frame of the trial loses), so the sheet keeps its lanes there.
 
 ### 14.2 The walls
 
@@ -398,7 +424,10 @@ A pipeline round on the pattern of the course round (ticket 15, phase 4).
    only when it is strictly better. A trial that one chord spoils is refused whole.
 4. **Order and budget.** The span round runs before the course round, the side round and the overlay course round,
    because a chord changes which routes are poor. It shares `MAX_RERUNS` and takes a re-run only when it offers
-   something. A refused round leaves the sheet byte-identical (trace only).
+   something. A refused round leaves the sheet byte-identical (trace only). When no start is left for the offer (the
+   re-runs are spent, or kept for the course, side and turn rounds it protects), the round does not run: no hint is
+   placed, each offered link keeps its lane and its `transit` refusal, and one `SPAN_ROUND_SKIPPED` (info) names the
+   links and the budget (architecture-2 ticket 35).
 
 A spanning chord adds crossings where it replaces a lane. That is P6, and Q108 decision 2 ("straight anyway"). The
 judge reads crossings last.
@@ -426,6 +455,7 @@ judge reads crossings last.
 |---|---|---|
 | `SPAN_CHORD_TAKEN` | info | Placement, the kept run: one per spanning chord, with the gaps it spans and its transited bands. |
 | `SPAN_CHORD_BLOCKED` | warning | 7f: a move that 7f cannot refuse puts a wall into a held span corridor. The span round refuses the trial. |
+| `SPAN_ROUND_SKIPPED` | info | Placement: the span round had an offer and no start was left (ticket 35). Names the offered links; they keep their lanes. |
 
 The offer, the refused trial and its reason are in the trace only. `ROUTED_CHORD_REFUSED` does not change: a link
 with no hint is no spanning-chord candidate at the freeze.

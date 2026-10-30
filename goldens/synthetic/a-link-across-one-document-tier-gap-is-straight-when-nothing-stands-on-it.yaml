@@ -1,0 +1,33 @@
+# Expected: a link across one document tier gap is straight when nothing stands on it (architecture-2 ticket 35, part 1; Q122).
+# `ranked` and `branch` stand on document tier 1. `ranked` has two ranks (`r-head` links up to the entry, `r-tail` hangs under it), so tier 1
+# expands to sub-tiers 1 and 2, and the rank band of sub-tier 2 holds `ranked#1` alone. `branch` has one rank. Its two links to the exit
+# row (sub-tier 3) pass the rank band of sub-tier 2 beside `ranked#1`: no body, pill, lane or title stands on their chords. Each is a
+# spanning-chord candidate; the span round places them with span hints (a span corridor in sub-tier 2, no transit lane), names each with
+# `SPAN_CHORD_TAKEN`, and both draw straight: routed bent 0, every gate passes. Without the round (`testSpanHints: []`) both keep their
+# transit lanes, draw orthogonal and are named by `ROUTED_CHORD_REFUSED` with `transit`. The wall case (a body of the band in the corridor)
+# is pinned on this sheet's geometry by test/pipeline/one-gap-span.test.ts. A third link from `branch` whose chord crosses the `ranked` frame
+# keeps its lane, but its fallback leg then crowds the two chords (`leg`, ticket 29 part B): it is not on this sheet.
+# Test-only input owned by architecture-2 ticket 35; test/pipeline/one-gap-span.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  entry: { tier: 0, label: Entry }
+  ranked: { tier: 1, label: Ranked }
+  branch: { tier: 1, label: Branch }
+  exits: { tier: 2, label: Exits }
+nodes:
+  e-two: { group: entry, class: router, label: Entry router two }
+  e-one: { group: entry, class: router, label: Entry router one }
+  r-head: { group: ranked, class: router, label: Ranked head, ports: [up, down] }
+  r-tail: { group: ranked, class: router, label: Ranked tail, ports: [up, out] }
+  b-main: { group: branch, class: router, label: Branch selector with two exits, ports: [up, m1, m2] }
+  x-tail: { group: exits, class: router, label: Exit of the tail, ports: [in] }
+  x-one: { group: exits, class: router, label: Exit one, ports: [in] }
+  x-two: { group: exits, class: router, label: Exit two, ports: [in] }
+links:
+  - [e-one, b-main.up]
+  - [e-two, r-head.up]
+  - [r-head.down, r-tail.up]
+  - [b-main.m1, x-one.in, { class: dashed }]
+  - [b-main.m2, x-two.in, { class: dashed }]
+  - [r-tail.out, x-tail.in]
