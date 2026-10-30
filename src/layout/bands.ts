@@ -5,7 +5,8 @@ import type { LabelBand, LabelPaddingEntry, LayoutGroup, LayoutLabel, LayoutLink
 import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
-import { FONT_FAMILY, measureText } from '../text/index.js';
+import { measureText } from '../text/index.js';
+import { GROUP_LABEL_GEOMETRY, LABEL_CLEARANCE_STEP, measureTitle, titleRoom } from './title-room.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
 import { isSideLane, rebuildLaneExtents, riserKeepOutBreaches } from './lanes.js';
@@ -28,6 +29,7 @@ import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from '.
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { directFamiliesFault } from './direct-families.js';
+import { fanAdmissionsFault } from './fan-admission.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry, trunkJoins } from './bus.js';
@@ -40,20 +42,7 @@ import { frameTitleEdge, groupTitleEdge } from './read/title-edge.js';
 import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
 import { straightFell, tapVerdict } from './objective.js';
 
-export const GROUP_LABEL_GEOMETRY = {
-  fontFamily: FONT_FAMILY,
-  fontSize: 12,
-  fontWeight: 700 as const,
-  horizontalInset: 8,
-  verticalInset: 4,
-  bandExtra: 8,
-  /** Shortest outward routing checkpoint stage 8 may use for an ordinary attachment. */
-  routerStem: 15,
-  /** G6 node clearance; stage 8 expands each node obstacle by this plus the two half strokes. */
-  nodeClearance: 10,
-  /** Keeps a required entry point strictly outside a stroke-aware obstacle, not on its boundary. */
-  entryTolerance: 0.25,
-} as const;
+export { GROUP_LABEL_GEOMETRY } from './title-room.js';
 const OUTWARD: Record<Side, Point> = {
   top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
 };
@@ -75,9 +64,7 @@ export interface RouterEntryPoint {
   outward: number;
 }
 
-function measurement(label: string) {
-  return measureText(label, { fontSize: GROUP_LABEL_GEOMETRY.fontSize, weight: GROUP_LABEL_GEOMETRY.fontWeight });
-}
+const measurement = measureTitle;
 
 /** One title: a group's own, or a frame's, held by the one rank cell `host` (ranked-groups spec, section 2). */
 interface Title { id: string; host: string; frame?: string; label: string; side: 'top' | 'bottom' }
@@ -604,20 +591,7 @@ function intervals(model: LayoutModel, placed: LayoutLabel[], y: number, height:
   return merged;
 }
 
-/**
- * How far past a forbidden range a label's left edge is placed to be clear of it. The filter below
- * refuses an x within one tolerance of a range, so clearing one costs two: at `high + PLACEMENT_EPS`
- * the range is still a hit.
- *
- * It is one constant because `planLabels` has two producers of the same x — the candidate list and
- * the `firstFree` walk — and a value produced by one and re-derived by the other then differs by
- * exactly one tolerance, which is the difference `equal` refused on the Enterprise NTP sheet (stress
- * ticket 19). `firstFree` also sets the width a blocked group asks to grow to, so the two stepping
- * one tolerance apart made the producer ask for a box one tolerance narrower than the x it then
- * emitted needs, and the label came to rest that far outside its own inset.
- */
-const LABEL_CLEARANCE_STEP = 2 * PLACEMENT_EPS;
-
+/** The first left edge at or after `start` that every forbidden range leaves clear, stepped `LABEL_CLEARANCE_STEP` (`title-room.ts`) past each range it meets. */
 function firstFree(start: number, ranges: ForbiddenInterval[]): number {
   let candidate = start;
   for (const range of ranges) {
@@ -1084,7 +1058,7 @@ function reserveInitialSpace(model: LayoutModel): void {
     }
     group.bounds!.height += down + shift.bottom;
     pushFollowingGroups(model, group, Math.max(group.bounds!.width,
-      band === undefined ? 0 : measurement(titleText(model, band)).width + 2 * GROUP_LABEL_GEOMETRY.horizontalInset));
+      band === undefined ? 0 : titleRoom(titleText(model, band))));
   }
   holdColumnsAfterPush(model);
   rebuildBands(model);
@@ -1254,7 +1228,8 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
       const refuse = (): void => { heldOff.add(held); decided.set(key, { members, pos, len }); };
       if (!holdsMove(model, proposed)) { heldOff.add(held); if (axis === 'y') decided.set(key, { members, pos, len }); continue; }
       if (!growthHolds(model, proposed)) { refuse(); continue; }
-      // A widening that would stand a box closer than the band gap to a group that is not part of it is refused: the gap is kept where the box is sized (ticket 19).
+      // A widening that would stand a box, or the frame it grows, closer than the band gap to a group or frame that is not part of it is refused: the gap is kept where the box
+      // is sized (ticket 19; the frames are derived from the proposed boxes, ticket 157).
       // The pack of the beside rows that follows the grid in a sheet with frames seats frame cells only, so a plain group beside the box is held by this guard too. Seating the
       // neighbour by the push of a label's widening instead was measured and loses straight overlay links on two sheets (the ticket's review record).
       if (axis === 'x' && separationsBrokenBy(model, proposed).length > 0) continue;
@@ -2051,6 +2026,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   // The direct families are read from their record and the geometry, never decided again (ticket 22, R1/R5).
   const family = directFamiliesFault(model);
   if (family !== undefined) throw new Error(`The direct family record is forged: ${family}`);
+  // The fan admissions are read from their record and the geometry, never admitted again (architecture-2 ticket 40, R1/R5).
+  const fan = fanAdmissionsFault(model);
+  if (fan !== undefined) throw new Error(`The fan admission record is forged: ${fan}`);
   const padding = labelPaddingFault(model);
   if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
   const unsettledRoom = labelRoomUnsettledFault(model);

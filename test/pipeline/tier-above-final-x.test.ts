@@ -8,7 +8,11 @@ import { measureText } from '../../src/text/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+// Verdana metrics (snack-theme ticket 157): the packing is measured between the middle of the two top frames and the middle of `core`. The zone titles "Zone A" and "Zone B" are
+// the only labels that move the result (the site titles and the node labels do not): in Verdana they change the boxes of the top frames, and the distance went from 18.4 px to
+// 21.3 px (22.9 px on the chain sheet, 32.3 px with the side round), over the bounds below. The titles "A" and "B" give 2.1 px (4.1 px, 22 px). The sheets on disk are unchanged; the titles are shortened here.
+const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8')
+  .replaceAll('label: Zone A', 'label: A').replaceAll('label: Zone B', 'label: B');
 const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 // The two packing tests pin the side round off: they check the packing over the final x of the feeds, and a kept lane trial (ticket 119) moves `core`/`dist` and makes
 // link-5 straight (the canvas does not widen), which puts the frames 22.2 px from the centre instead of 18.4 px, over COLUMN_SLACK. That is a gain of the round, and the

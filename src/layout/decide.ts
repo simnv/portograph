@@ -4,7 +4,7 @@ import { linkStrokeWidth } from '../theme/geometry.js';
 import type { Segment } from '../score/model.js';
 import { columnShifts, holdColumnAxes, holdMemberWalls, packBesideRows } from './columns.js';
 import { blockedChords } from './frame-paths.js';
-import { lanesHoldTheirChild, rebuildLaneExtents, spanBreaches, type LaneFollow } from './lanes.js';
+import { lanesHoldTheirChild, restoreLanes, spanBreaches, type LaneFollow } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { saveGroups } from './overlay-order.js';
 import { moveGroup } from './skeleton-geometry.js';
@@ -385,7 +385,7 @@ export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes']
     facts: { lanesHold: lanesHoldTheirChild(settled, followed), chordsClear: blockedChords(settled).length === 0 } };
   // The held reading is the one without the source ports the reseat moved with its corridors (architecture ticket 15).
   standHeld();
-  draft.lanes = heldLanes; rebuildLaneExtents(draft);
+  restoreLanes(draft, heldLanes);
   // A reseat may not put a wall in a span corridor that was clear (architecture ticket 22).
   const heldBreaches = spanBreaches(draft);
   if ([...spanBreaches(settled)].some(key => !heldBreaches.has(key))) return false;

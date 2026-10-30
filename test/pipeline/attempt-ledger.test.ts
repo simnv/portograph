@@ -34,7 +34,9 @@ const row = (name: string, counters: string | undefined, runs: number, attempts:
 const ROWS: Row[] = [
   // Phase 4 (the unified order): the base 7f of three-continents now moves a chord (before 0 moves) and loses 2 overlay links in the loop, and the attempt costs more work.
   // Verdana metrics (snack-theme ticket 157): the wider text moves three-continents to 21/99/62/5 with 3 place runs and 3 overlay links lost in the base 7f loop (23/74/54/5, 2 runs, 2 lost with Arial).
-  row('three-continents', '21/99/62/5', 3, 2, 4, 0, 2, { preCentre: 2, baseChord: 1, base7f: '3/0/0' }),
+  // Ticket 157 review: the rounds of `centreDraft` after the overlay windows stop on a stall (a round that changes neither the geometry nor what the
+  // check finds) and keep the rest of the shared budget; the replays of the stages after 7c spend it, so the centring passes are 117 (99 before the stop).
+  row('three-continents', '21/117/62/5', 3, 2, 4, 0, 2, { preCentre: 2, baseChord: 1, base7f: '3/0/0' }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
   row('a-tier-gap-plan-orders-every-part', '2/56/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
   row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/7/7/3', 1, 1, 1, 0, 0),

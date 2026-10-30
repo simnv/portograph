@@ -316,6 +316,13 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
 export const nodeClassStyle = (value: string | undefined): NodeClassStyle | undefined =>
   NETWORK_NODE_CLASSES.find(([key]) => key === value)?.[1];
 
+/**
+ * Whether a link class draws faint (CONTEXT.md, *salience*): a class the profile names with a dash pattern (`dashed`, `dotted`). An unknown class,
+ * or none, draws as the default solid link. The fan family (architecture-2 ticket 40) reads it: its 0.09 crossing price assumes faint lines.
+ */
+export const faintLinkClass = (value: string | undefined): boolean =>
+  value !== undefined && NETWORK_LINK_CLASSES.some(([key, style]) => key === value && style.dash !== undefined);
+
 /** Display label for a legend entry; an unknown author class falls back to its literal name. */
 export function classDisplayLabel(kind: 'symbol' | 'line' | 'port', key: string): string {
   const known = kind === 'symbol' ? nodeClassStyle(key)?.label

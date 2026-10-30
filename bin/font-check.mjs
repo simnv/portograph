@@ -2,7 +2,7 @@
 // pure function of the document, and the text is measured from the checked-in Verdana advances either way.
 // The check is cheap and best effort: it looks in the usual font directories of macOS, Linux and Windows,
 // three levels deep, for a file named like Verdana. A font that only a font server or an application knows is missed.
-import { readdirSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,6 +23,15 @@ export function fontDirectories(platform = process.platform, env = process.env, 
   return ['/usr/share/fonts', '/usr/local/share/fonts', join(home, '.fonts'), join(home, '.local/share/fonts')];
 }
 
+function linksToFile(path) {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    // A broken link holds no font.
+    return false;
+  }
+}
+
 function hasVerdana(directory, depth) {
   let entries;
   try {
@@ -33,6 +42,8 @@ function hasVerdana(directory, depth) {
   }
   for (const entry of entries) {
     if (entry.isFile() && FILE.test(entry.name)) return true;
+    // A font manager (Homebrew casks, Nix, fontconfig setups) can link a font file into the directory; the link counts when it ends at a file.
+    if (entry.isSymbolicLink() && FILE.test(entry.name) && linksToFile(join(directory, entry.name))) return true;
     if (entry.isDirectory() && depth > 1 && hasVerdana(join(directory, entry.name), depth - 1)) return true;
   }
   return false;

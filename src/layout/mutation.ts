@@ -82,10 +82,12 @@ function protect(model: LayoutModel, baseline: LayoutModel, intermediate = false
 }
 function semantics(model: LayoutModel) {
   return {
-    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'strokeWidth'])),
+    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'fanFamily', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
     meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross', 'meshNodes', 'mesh', 'labelled'])),
+    // Stage 1 decides the fan families from the document alone; a stored record must be the one the document gives (architecture-2 ticket 40, R1).
+    fanFamilies: model.fanFamilies ?? [],
   };
 }
 function topology(model: LayoutModel) {
@@ -685,8 +687,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   const unriser = (value: LayoutModel): LayoutModel => unfaced(rule === 'lanes' && value.meshBuses ? { ...value, meshBuses: value.meshBuses.map(bus => omit(bus, ['riser', 'trunk']) as MeshBus) } : value);
   const declared = ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks',
     // The centre rule decides the aligned extents of the canton members once (architecture-2 ticket 31); every later rule keeps them.
-    // It also records and withdraws the parent port moves it took at a frame-column wall (`parentWallMoves`, `standPortsOverChildren`).
-    ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves'] : [])];
+    // It also records and withdraws the parent port moves it took at a frame-column wall (`parentWallMoves`, `standPortsOverChildren`),
+    // and decides once which parents below the anchor tier spread their ports over their children (`parentSpreads`, architecture-2 ticket 32).
+    ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads'] : [])];
   same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');

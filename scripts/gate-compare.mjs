@@ -1,7 +1,9 @@
 /**
  * Compare two corpus TSVs (`corpus.mjs` output): the changed cells, side by side, and a flag on
  * every sheet that is worse on bends, removed, gates, crossings (X), canvas (W), labelBorder or track, in that order.
- * A changed `hash` is printed as a changed cell, never judged; the last line counts the sheets whose hash changed.
+ * A changed `hash` is printed as a changed cell, never judged; the last line counts the sheets whose hash changed. `X` counts the crossings that
+ * are not faint; `Xf` (the faint crossings of a fan family, architecture-2 ticket 40) is printed and never judged. Two files of which one has no
+ * `Xf` column measure crossings two ways, so they are not compared (exit 2): measure the base again.
  *
  * Usage: npm run gate:compare -- <base.tsv> <head.tsv>
  *
@@ -48,7 +50,7 @@ function parseTsv(path) {
     }
     if (fields.length !== columns.length) throw new ParseError(`${path}:${index + 2}: ${fields.length} fields, header has ${columns.length}`);
     const cells = Object.fromEntries(columns.map((column, position) => [column, fields[position]]));
-    for (const column of ['bends', 'removed', 'X', 'labelBorder', 'track']) {
+    for (const column of ['bends', 'removed', 'X', 'Xf', 'labelBorder', 'track']) {
       if (column in cells && !/^\d+$/.test(cells[column])) throw new ParseError(`${path}:${index + 2}: ${column} is not a count: ${cells[column]}`);
     }
     if ('W' in cells && cells.W !== '-' && !/^\d+x\d+$/.test(cells.W)) throw new ParseError(`${path}:${index + 2}: W is not <width>x<height> or -: ${cells.W}`);
@@ -122,7 +124,12 @@ function format({ lines, changed, counts, total, geometry }) {
 function main(argv) {
   const [basePath, headPath, ...rest] = argv;
   if (basePath === undefined || headPath === undefined || rest.length > 0) throw new ParseError('usage: npm run gate:compare -- <base.tsv> <head.tsv>');
-  process.stdout.write(format(compare(parseTsv(basePath), parseTsv(headPath))));
+  const base = parseTsv(basePath), head = parseTsv(headPath);
+  // Without `Xf`, `X` counts the faint crossings too: a pair that mixes the two meanings would judge a fan's own crossings (ticket 40).
+  for (const [path, file] of [[basePath, base], [headPath, head]]) {
+    if (!file.columns.includes('Xf')) throw new ParseError(`${path}: no Xf column; X there counts faint crossings too, so it cannot be compared (measure it again)`);
+  }
+  process.stdout.write(format(compare(base, head)));
 }
 
 try {

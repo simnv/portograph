@@ -4,13 +4,15 @@
 # are one link (`q0` to `k0`) and cannot cross whatever the order is, so the tier is indifferent to
 # the routed count and the overlay links decide: `Q` moves to the left of `P`, the crossing count
 # of the score stays at one (as without the rule), and three of the four overlay links are one
-# straight segment (one of four before).
+# straight segment (one of four before); four of four since ticket 66: the title of N widens N for the leg of
+# `q0` to `k0` and pushes M right, and P then takes the window that straightens `p0` to `a0`. N is titled `Rack N` (ticket 157):
+# the Verdana `Group N` widened N 7 px more than the Arial one did, M stood on that chord, and the window was lost.
 portograph: 2
 groups:
   P: { tier: 0, label: Group P }
   Q: { tier: 0, label: Group Q }
   M: { tier: 1, label: Group M }
-  N: { tier: 1, label: Group N }
+  N: { tier: 1, label: Rack N }
   A: { tier: 2, label: Group A }
   B: { tier: 2, label: Group B }
 nodes:

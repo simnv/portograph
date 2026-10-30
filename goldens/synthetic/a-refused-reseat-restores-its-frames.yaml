@@ -1,0 +1,51 @@
+# Expected: A refused lane reseat restores everything derived from the lanes it moved, the frames included.
+# The sheet is a-held-lane-is-reserved-before-a-foreign-lane with `layout.corridorRowOrder: false`, the access
+# servers renamed shorter, and the nodes l1 and l2 declared in the other order. 7f moves a corridor onto
+# its child's port (`reseatLanes`), which also derives the frames again, because a frame holds the lanes of its own
+# links. The trial is then refused (`chooseReseat`) and the lanes stand where they stood. The frames are derived
+# from those lanes, so they stand where they stood too: a frame edge left at the refused corridor contradicts the
+# cell geometry, and stage 8 threw `Frames contradict the cell geometry they derive from`. After a refusal the
+# published frames equal the frames derived from the cells.
+# Test-only input owned by the review of ticket 157 (cluster D); test/layout/refused-reseat-frames.test.ts reads the model.
+portograph: 2
+layout: { corridorRowOrder: false }
+groups:
+  up: { tier: 0, label: Up }
+  east: { tier: 1, label: East }
+  eastc: { parent: east, label: East access }
+  mid: { tier: 1, label: Mid }
+  midc: { parent: mid, label: Mid access }
+  west: { tier: 1, label: West }
+  westc: { parent: west, label: West access }
+  low: { tier: 2, label: Low }
+nodes:
+  u0: { group: up, class: provider, label: U0 }
+  u1: { group: up, class: provider, label: U1 }
+  u2: { group: up, class: provider, label: U2 }
+  eastg: { group: east, class: router, label: East gateway }
+  eastd: { group: east, class: switch, label: East distribution switch of the main building }
+  easta: { group: eastc, class: server, label: East access server }
+  midg: { group: mid, class: router, label: Mid gateway }
+  midd: { group: mid, class: switch, label: Mid distribution switch of the main building }
+  mida: { group: midc, class: server, label: Mid access server }
+  westg: { group: west, class: router, label: West gateway }
+  westd: { group: west, class: switch, label: West distribution switch of the main building }
+  westa: { group: westc, class: server, label: West access server }
+  l0: { group: low, class: server, label: L0 }
+  l2: { group: low, class: server, label: L2 }
+  l1: { group: low, class: server, label: L1 }
+links:
+  - [eastg, eastd]
+  - [eastg, easta]
+  - [midg, midd]
+  - [midg, mida]
+  - [westg, westd]
+  - [westg, westa]
+  - [u1, eastg]
+  - [u1, westg]
+  - [u1, l0]
+  - [u1, l1]
+  - [u0, l2]
+  - [u2, l2]
+  - [westg, l0]
+  - [eastg, l1]

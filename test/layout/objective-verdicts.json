@@ -8,7 +8,7 @@
   },
   "a-lower-rank-steps-off-the-chords-of-rank-0": {
     "attemptCheap": "8 d700632eef126e2a",
-    "centreGroupStep": "29 cddf0a3ce1e87882",
+    "centreGroupStep": "33 9ab31ef8a3fa2d7e",
     "holdsSettled": "4 9e12ce32cfeac7a0",
     "pickRankMove": "1 92642c38e827df96",
     "pickTarget": "8 be32ab79185603c8",
@@ -24,21 +24,21 @@
     "centreGroupStep": "1 123fd9e157a59830"
   },
   "a-chord-hint-and-a-lane-hint-never-share-a-batch": {
-    "centreGroupStep": "15 17075dd40be6a177",
+    "centreGroupStep": "17 2ad08917c70121da",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pullTier": "10 b06612ea32ad87db"
   },
   "a-location-router-leaves-a-lateral-side-toward-a-far-provider": {
-    "centreGroupStep": "11 8c069ab3fdc9ede5",
+    "centreGroupStep": "12 a622fea3b2b40907",
     "judgeTrial": "1 cbf69f5f691d95cd"
   },
   "a-fan-spreads-its-ports-so-its-chords-hold-clearance": {
-    "centreGroupStep": "9 b70ec2510a30ba71",
+    "centreGroupStep": "10 50c6bb56fab2345e",
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "three-canton-groups-close-up-to-a-band-gap": {
     "attemptCheap": "138 8d664f3664e2f607",
-    "centreGroupStep": "912 70b094a0b49bc21b",
+    "centreGroupStep": "1038 9d5ebc1390829dec",
     "closeUp": "11 b12da4205cd45c31",
     "holdsSettled": "5 f1b2a82dce452f84",
     "judgeTrial": "1 cbf69f5f691d95cd",
@@ -50,22 +50,22 @@
     "windowsHold": "18 848da8b910355030"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
-    "centreGroupStep": "33 227fed96160225f3",
+    "centreGroupStep": "41 92a0d1a04ec15523",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pullTier": "16 299c30ead527ebd0"
   },
   "three-continents": {
     "attemptCheap": "87 4b0116d2fe83df9a",
-    "centreGroupStep": "1583 52001d7a6dcbb896",
+    "centreGroupStep": "2171 91bef5ade4cb3533",
     "holdsSettled": "16 13f7119fa312a573",
     "judgeTrial": "1 cb3d96c934f37781",
-    "pickTarget": "222 8cdbf73ef9e07606",
+    "pickTarget": "282 510c412a49e6fd65",
     "pullTier": "711 1c59f34140b0b034",
     "sheetGains": "24 799a7e69a74954ba",
-    "windowsHold": "68 b2dfb025ab2c4c37"
+    "windowsHold": "88 a1292f89daf174ca"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
-    "centreGroupStep": "6 05a98be679fb1378",
+    "centreGroupStep": "8 a0aee1f9cf73c946",
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "a-linked-node-steps-out-of-a-straight-chord": {
@@ -75,28 +75,27 @@
     "pickTarget": "12 e6765e397995a2f5"
   },
   "overlay-links-reorder-two-locations": {
-    "centreGroupStep": "163 08d628ff8d8d37a7",
+    "centreGroupStep": "157 a8fe2c7c55c9e3cb",
     "judgeTrial": "1 b9449d780e1a4d74",
-    "pullTier": "13 5a8bfa8f27631a43",
-    "pullTierHeld": "4 2c28b238a87d01c9",
-    "settleKeepOut": "2 8fedf5b762a3177a"
+    "pullTier": "14 9d9bb08b1a72f0e0",
+    "pullTierHeld": "9 5805f81ec349b715"
   },
   "an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack": {
     "attemptCheap": "2 0d5ac49bf18f7073",
-    "centreGroupStep": "17 da3a51d317b0cf4e",
+    "centreGroupStep": "19 4511e80c152a0005",
     "holdsSettled": "1 b0e37b1079e63c37",
     "judgeTrial": "1 91bcbb903350cca7",
     "pickRankMove": "1 66eec4d604677902",
     "pullTier": "14 2001b63e774ad155"
   },
   "a-declined-grown-member-stops-at-an-overlay-chord": {
-    "centreGroupStep": "9 7831835520a204ed",
+    "centreGroupStep": "10 8a8354701d078875",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pickTarget": "5 45b174ea736f8515",
     "pullTier": "6 4aef7fb3deea9c91"
   },
   "a-held-lane-between-two-cantons-refuses-the-close-up": {
-    "centreGroupStep": "9 b70ec2510a30ba71",
+    "centreGroupStep": "11 8c069ab3fdc9ede5",
     "pullTier": "22 45013d47f795b44c",
     "pullTierHeld": "2 8441be4be830c9e3"
   }

@@ -13,6 +13,7 @@ import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
+import { verdictTap } from '../../src/layout/objective.js';
 
 const run = (name: string): Promise<LayoutModel> => layout(parse(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8')),
   { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -39,17 +40,20 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     const model = await run('three-canton-groups-close-up-to-a-band-gap');
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(cantonBoxes(model)).toHaveLength(3);
-    // Measured before the rule: 100 and 148 px on a canvas 2049.3 px wide.
+    // Measured before the rule: with Arial 100 and 148 px on a canvas 2049.3 px wide. Snack-theme ticket 157 measured it again with Verdana,
+    // with the close-up off (`closeUp` and `closeCantons` returning false): 118.9 and 118.9 px on a canvas 2099.7 px wide (with it on, 1996.2).
     // A straight link outranks the band-gap close-up (user, 2026-10-04), so a gap may stay wider than the band gap; a gap narrower than it is always a bug (ticket 17:
     // before the fix the chord step took a slide that left gap 1 23.9 px short, and the close-up could not restore it without bending a straight link).
     for (const [i, gap] of gaps(model).entries()) expect(gap, `gap ${i}`).toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
     // No tier-0 column warns for an overlay link to a canton.
     expect(heldOwners(model).filter(id => id.startsWith('top-'))).toEqual([]);
     // No close-up is refused for a short gap: with the move that left a gap short refused, nothing is held open but by a straight link. Since
-    // ticket 25 the zones of canton a stand under their feeds (routed crossings 12 to 4), and canton b keeps its gap open for a straight
-    // overlay link, which outranks the close-up (user, 2026-10-04).
-    expect(closeUps(model).map(item => [item.owners, /a straight overlay link would be bent/.test(item.message)])).toEqual([[[{ kind: 'group', id: 'b' }], true]]);
-    expect(model.canvas!.width).toBeLessThan(2049.3 - 100);
+    // ticket 25 the zones of canton a stand under their feeds (routed crossings 12 to 4). Snack-theme ticket 157: with Verdana the last
+    // close-up of the published run is taken, both gaps are the band gap, and no canton is held. (With Arial the published model kept a
+    // refusal for canton b, a straight overlay link, though its gaps were the band gap too.)
+    expect(closeUps(model)).toEqual([]);
+    for (const [i, gap] of gaps(model).entries()) expect(gap, `gap ${i}`).toBeCloseTo(bandGap(model), 6);
+    expect(model.canvas!.width).toBeLessThan(2099.7 - 100);
     // The block keeps its centre (the partner mean is not a stable target, ticket "Comments"); the tier packed against the canton
     // step, the MPLS row, stands centred on it within one column slack (measured 1.5 px).
     // With the side round on, m1 (in mpls) takes a lateral side (ticket 117, link-4 freed) and 7c drops that link's pull (side-faces.md, Section 7), so the
@@ -79,9 +83,11 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
 
   it('three continents stand a band gap apart, the equality of the earlier lower bound', async () => {
     const model = await run('three-continents');
-    // Measured before the rule: 86.4 and 100 px on a canvas 1372.7 px wide.
+    // Measured before the rule: with Arial 86.4 and 100 px on a canvas 1372.7 px wide. Snack-theme ticket 157 measured it again with Verdana,
+    // with the close-up off (`closeUp` and `closeCantons` returning false): the gaps are 60.1 and 59.9 px (the rows rule now packs them) on a
+    // canvas 1451.6 px wide; with the close-up on, the canvas is 1418.3 px wide.
     for (const [i, gap] of gaps(model).entries()) expect(Math.abs(gap - bandGap(model)), `gap ${i}`).toBeLessThan(1e-6);
-    expect(model.canvas!.width).toBeLessThan(1372.7 - 20);
+    expect(model.canvas!.width).toBeLessThan(1451.6 - 20);
     expectIdempotent(model);
   }, 120000);
 
@@ -102,13 +108,31 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
   // The refused close-up moves the nodes and puts them back: labels in node order and the geometry exact, or publication throws.
   it('a refused close-up leaves the node labels and the geometry whole', async () => {
     // The refused close-up needs the routed links orthogonal; Q108 gives them a chord (ticket 100), so the subject is the orthogonal variant.
-    const model = await layout(parse(orthogonalLinks(readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    // The refusals are read where they are made (the verdict tap of `closeUp`: `true` is a move that bent a straight overlay link and was put
+    // back), not on the published warning: that one says only how the last close-up of the published run ended. Snack-theme ticket 157:
+    // with Verdana the run refuses the close-up 8 times and takes the last one, so the published model holds no refusal.
+    const verdicts: string[] = [];
+    verdictTap.sink = (name, value) => { if (name === 'closeUp') verdicts.push(value); };
+    let model: LayoutModel;
+    try {
+      model = await layout(parse(orthogonalLinks(readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    } finally { delete verdictTap.sink; }
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
-    expect(closeUps(model).length).toBeGreaterThan(0);
-    expect(closeUps(model)[0]!.message).toContain('a straight overlay link would be bent');
+    expect(verdicts.filter(item => item.startsWith('true ')).length).toBeGreaterThan(0);
+    for (const item of closeUps(model)) expect(item.message).toContain('a straight overlay link would be bent');
     const order = model.labels.filter(label => label.owner.kind === 'node' && label.role === 'node').map(label => (label.owner as { id: string }).id);
     expect(order).toEqual(Object.keys(model.nodes).filter(id => order.includes(id)));
     expectIdempotent(model);
+  }, 120000);
+
+  // Snack-theme ticket 157: 7c places the overlay windows once after its passes (ticket 143). On the plain input the window moved cl-a3, and with it
+  // the end of the overlay chord link-61 that had stopped the growth of loc-a2-gw toward its feed; the passes had stood, so publication threw
+  // `Centring invariant violated: link-15`. A model the windows move is checked again and settled by the passes the budget has left.
+  it('the overlay windows placed after the centring passes leave no alignment the step would move', async () => {
+    const model = await layout(parse(readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toEqual([]);
+    expect(centreViolations(model)).toEqual([]);
   }, 120000);
 
   // Review 2: the close-up sites never pull a run that stands packed (one canton, or cantons already a band gap apart).

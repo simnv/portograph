@@ -29,6 +29,11 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * three-canton-groups-close-up-to-a-band-gap was recorded once more for architecture-2 ticket 25: no judge moved, but the zones of canton `a`
  * now stand under their feeds (routed crossings 12 to 4), so the judges are called on other geometry.
  * Eight fixtures were re-recorded for snack-theme ticket 157: the Verdana metrics changed every text width and line height, so the judges are called on other geometry.
+ * Twelve were re-recorded for the ticket 157 engine fixes (centring checked again after the overlay windows, its rounds, the title floor). No judge
+ * moved: the full streams were compared with the ones at e72e3a9e, and no figures that a judge was given before get another verdict now. On ten
+ * fixtures the only change is `centreGroupStep` calls added (the publication check replays each step after the windows); no call was dropped.
+ * `three-continents` also asks `windowsHold` and `pickTarget` more often and on other figures (the rounds place the windows again), and on
+ * `overlay-links-reorder-two-locations` the geometry differs: `pullTier` reads 0/0 overlay segments where it read 4/4, and `settleKeepOut` is not asked.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',
