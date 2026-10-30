@@ -91,8 +91,12 @@ describe('columns hold their feed axis after rows and centre', () => {
     // cells of `a` into it, so the plan is refused as a whole and the link stays one segment.
     // The side round is off: it gives a-core a lateral side (link-2, 2 bends to 0, routed bent links 2 to 1, ticket 117), 7c then drops that link's pull on `a`,
     // and the plan this test reads is never made. The test checks the column-axis pass on the layout it runs on.
-    const model = await layout(parse(readFileSync(new URL('../../goldens/synthetic/an-overlay-frame-reorder-is-refused-with-six-sync-links.yaml', import.meta.url), 'utf8')),
-      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
+    // Verdana metrics (snack-theme ticket 157): the reason in the warning is a fact of the widths. With the zone titles "Zone A" to "Zone C" at Verdana width, the warning
+    // for column `a` names its siblings, a band gap away, and not the overlay segment. The titles "A" to "C" give the widths of the Arial run, where the pull that would
+    // bend `ntp1` to `b-edge` is the reason named. The sheet on disk is unchanged; the titles are shortened here.
+    const sheet = readFileSync(new URL('../../goldens/synthetic/an-overlay-frame-reorder-is-refused-with-six-sync-links.yaml', import.meta.url), 'utf8')
+      .replaceAll('label: Zone A', 'label: A').replaceAll('label: Zone B', 'label: B').replaceAll('label: Zone C', 'label: C');
+    const model = await layout(parse(sheet), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
     const ntp = model.links.find(link => link.layer === 'overlay' && [link.attachments!.from.node, link.attachments!.to.node].sort().join() === 'b-edge,ntp1')!;
     expect(ntp.path!.segments).toHaveLength(1);
     const held = model.diagnostics.filter(diagnostic => diagnostic.code === COLUMN_AXIS_HELD && diagnostic.owners?.some(owner => 'id' in owner && owner.id === 'a'));
