@@ -110,6 +110,11 @@ export interface NormalisedDocument {
   nodeOrder?: string[];
   title?: string;
   css?: string;
+  /**
+   * The id of the theme that paints the sheet (ticket 158), present only when the author wrote `theme:` with an id other than the
+   * default `network`. A render input: no size, no position and no route reads it.
+   */
+  theme?: string;
   overlays?: Record<string, 'hidden' | 'visible'>;
   /** Document settings, present only when the author wrote `layout:` at the root (ticket 152). */
   layout?: {

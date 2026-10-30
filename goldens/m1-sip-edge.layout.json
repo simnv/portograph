@@ -2935,7 +2935,7 @@
         "height": 40
       },
       "icon": {
-        "icon": "router",
+        "icon": "server",
         "bounds": {
           "x": 205.14013671875,
           "y": 567.25,
@@ -3021,7 +3021,7 @@
         "height": 40
       },
       "icon": {
-        "icon": "router",
+        "icon": "server",
         "bounds": {
           "x": 276.64013671875,
           "y": 567.25,
@@ -10566,7 +10566,7 @@
             }
           ],
           "icon": {
-            "icon": "router",
+            "icon": "server",
             "bounds": {
               "x": 205.14013671875,
               "y": 567.25,
@@ -10646,7 +10646,7 @@
             }
           ],
           "icon": {
-            "icon": "router",
+            "icon": "server",
             "bounds": {
               "x": 276.64013671875,
               "y": 567.25,
@@ -13357,7 +13357,7 @@
         "id": "symbol:rr",
         "kind": "symbol",
         "key": "rr",
-        "icon": "router",
+        "icon": "server",
         "swatch": {
           "x": 245.08251953125,
           "y": 921.75,

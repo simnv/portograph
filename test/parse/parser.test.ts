@@ -108,6 +108,7 @@ describe('parse diagnostics', () => {
     ['BAD_ENDPOINT', { links: [['a.p#0', 'b']] }],
     ['GROUP_LINK_ENDPOINTS', { links: [['a', 'b', { route: 'group-link' }]] }],
     ['UNSUPPORTED_PROFILE', { profile: 'architecture' }],
+    ['UNKNOWN_THEME', { theme: 'nope' }],
     ['UNSUPPORTED_SHAPE', { groups: { g: { shape: 'ring' } } }],
     ['UNKNOWN_KEY', { groups: { g: { tiers: 2 } } }],
   ])('%s: %j', (code, value) => {
@@ -117,7 +118,7 @@ describe('parse diagnostics', () => {
   });
 
   it.each([
-    { groups: null }, { nodes: [] }, { links: {} }, { title: 3 }, { css: false }, { profile: 1 },
+    { groups: null }, { nodes: [] }, { links: {} }, { title: 3 }, { css: false }, { profile: 1 }, { theme: 1 },
     { groups: { g: null } }, { groups: { g: { tier: -1 } } }, { groups: { g: { tier: 1.5 } } },
     { groups: { g: { align: 'up' } } }, { groups: { g: { collapsed: 'yes' } } },
     { groups: { g: { layout: { x: [] } } } }, { nodes: { a: false } }, { nodes: { a: { group: 'g', ports: null } } },
