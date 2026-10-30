@@ -1254,7 +1254,8 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
       const refuse = (): void => { heldOff.add(held); decided.set(key, { members, pos, len }); };
       if (!holdsMove(model, proposed)) { heldOff.add(held); if (axis === 'y') decided.set(key, { members, pos, len }); continue; }
       if (!growthHolds(model, proposed)) { refuse(); continue; }
-      // A widening that would stand a box closer than the band gap to a group that is not part of it is refused: the gap is kept where the box is sized (ticket 19).
+      // A widening that would stand a box, or the frame it grows, closer than the band gap to a group or frame that is not part of it is refused: the gap is kept where the box
+      // is sized (ticket 19; the frames are derived from the proposed boxes, ticket 157).
       // The pack of the beside rows that follows the grid in a sheet with frames seats frame cells only, so a plain group beside the box is held by this guard too. Seating the
       // neighbour by the push of a label's widening instead was measured and loses straight overlay links on two sheets (the ticket's review record).
       if (axis === 'x' && separationsBrokenBy(model, proposed).length > 0) continue;
