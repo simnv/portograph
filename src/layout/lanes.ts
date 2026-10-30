@@ -19,7 +19,7 @@ import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withStageMutation } from './mutation.js';
 import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
-import { foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, frameNodes } from './frames.js';
+import { type ProposedBox, foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { nodeTier } from './read/tier.js';
@@ -126,7 +126,7 @@ function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect, link?:
  * immutable after allocation, so a movement that fails this is geometrically infeasible rather than
  * something an ordered replay can repair. This is the same occupied extent `validateLanes` measures.
  */
-export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true, frames = true): boolean {
+export function laneSidesHold(model: LayoutModel, proposed: ProposedBox[], report = true, frames = true): boolean {
   // From 7f on a straight link is a wall like a lane (ticket 34): the move is refused for that unit.
   if (!chordsHold(model, proposed, report)) return false;
   return proposed.every(({ group, bounds }) => {
@@ -158,7 +158,7 @@ function bypassLane(model: LayoutModel, lane: Lane): boolean {
  * proposed boxes (the cells' reach and every transit lane a frame holds, as `rebuildFrames` derives it) reaches deeper across the lane than the
  * frame box stands now: a frame that already crosses the lane is not made to cross it more, so the guard never stalls a layout.
  */
-function sideLaneFramesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
+function sideLaneFramesHold(model: LayoutModel, proposed: ProposedBox[]): boolean {
   // A side lane and a column-gap lane both serve a lateral port and stand beside the frames that hold its node (the alias: both are gap runs).
   const sides = model.lanes.filter(lane => isGapRun(lane) && lane.port !== undefined);
   if (!sides.length || !model.frames?.length || proposed.every(({ group, bounds }) => Math.abs(bounds.x - group.bounds!.x) <= PLACEMENT_EPS

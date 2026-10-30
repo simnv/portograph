@@ -1,5 +1,6 @@
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { FONT_FAMILY, measureText, type TextMeasurement } from '../text/index.js';
+import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 /** The group title type and the margins round it. `bands.ts` re-exports it; this leaf module lets `regions.ts` read it without an import cycle. */
@@ -38,13 +39,13 @@ export function measureTitle(label: string): TextMeasurement {
 export const LABEL_CLEARANCE_STEP = 2 * PLACEMENT_EPS;
 
 /**
- * The width a title asks of the box that holds it: the measured title, the horizontal inset on each side and one clearance step beyond
- * each inset. A lane stands on the box edge, and the title's link-free margin to it (`GROUP_LABEL_LINK_CLEARANCE`, 8 px) is the inset
- * itself, so a title in a box of exactly the title and both insets touches that margin, and `titleX` refuses an x within one tolerance
- * of a forbidden range: the step on each side is the room the refusal takes.
+ * The width a title asks of the box that holds it: the measured title, on each side the larger of the horizontal inset and the title's
+ * link-free margin (`GROUP_LABEL_LINK_CLEARANCE`; both are 8 px), and one clearance step beyond it. A lane stands on the box edge and the
+ * margin is kept to it, so the side takes whichever of the two is wider and the two constants cannot drift apart; `titleX` refuses an x
+ * within one tolerance of a forbidden range: the step on each side is the room the refusal takes.
  */
 export function titleRoom(label: string): number {
-  return measureTitle(label).width + 2 * (GROUP_LABEL_GEOMETRY.horizontalInset + LABEL_CLEARANCE_STEP);
+  return measureTitle(label).width + 2 * (Math.max(GROUP_LABEL_GEOMETRY.horizontalInset, GROUP_LABEL_LINK_CLEARANCE) + LABEL_CLEARANCE_STEP);
 }
 
 /**

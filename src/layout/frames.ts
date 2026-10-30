@@ -67,20 +67,29 @@ export function rebuildFrames(model: LayoutModel): void {
   if (frames !== undefined) model.frames = frames;
 }
 
-/** The frames `rebuildFrames` would store, read off the cells as they stand; `undefined` while a cell has no box. */
 /**
- * The frames as they would stand with the proposed group boxes: `deriveFrames` on a trial that has the groups and their bodies moved; the model is
- * not changed. The one derivation of the frames after a proposed move: the side-lane guard (lanes.ts) and `separationsBrokenBy` read it.
+ * A group box a stage proposes. `dx` is the shift the stage gives the group's bodies when it applies the box: a move (`moveGroup`) shifts them
+ * with the box, a widening sets the box and leaves them where they stand (`dx: 0`, the grid of linked groups). Without `dx` the bodies shift with
+ * the box's left edge (`bounds.x - group.bounds.x`), as every move does.
  */
-export function framesAfter(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): Frame[] | undefined {
+export interface ProposedBox { group: LayoutGroup; bounds: Rect; dx?: number }
+
+/**
+ * The frames as they would stand with the proposed group boxes: `deriveFrames` on a trial that has the groups and their bodies where the stage
+ * would put them (`ProposedBox.dx`); the model is not changed. A frame reaches the bodies of its cells (`cellReach`), so a body moved that the
+ * stage leaves in place would derive a frame the stage does not make. The one derivation of the frames after a proposed move: the side-lane
+ * guard (lanes.ts) and `separationsBrokenBy` read it.
+ */
+export function framesAfter(model: LayoutModel, proposed: readonly ProposedBox[]): Frame[] | undefined {
   const groups = { ...model.groups }, nodes = { ...model.nodes };
-  for (const { group, bounds } of proposed) {
-    const dx = bounds.x - group.bounds!.x;
+  for (const { group, bounds, dx = bounds.x - group.bounds!.x } of proposed) {
     groups[group.id] = { ...group, bounds };
+    if (dx === 0) continue;
     for (const id of group.nodes) nodes[id] = { ...model.nodes[id]!, bounds: { ...model.nodes[id]!.bounds!, x: model.nodes[id]!.bounds!.x + dx } };
   }
   return deriveFrames({ ...model, groups, nodes });
 }
+/** The frames `rebuildFrames` would store, read off the cells as they stand; `undefined` while a cell has no box. */
 export function deriveFrames(model: LayoutModel, withBands = true): Frame[] | undefined {
   const entries = Object.entries(model.document.frames ?? {});
   if (!entries.length) return undefined;

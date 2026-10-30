@@ -1,6 +1,5 @@
-import type { Rect } from '../../model/geometry.js';
-import type { LayoutGroup, LayoutModel } from '../../model/layout.js';
-import { framesAfter } from '../frames.js';
+import type { LayoutModel } from '../../model/layout.js';
+import { framesAfter, type ProposedBox } from '../frames.js';
 import { xCatalogue } from './catalogue.js';
 import { RESIDUAL_TOLERANCE, termValue } from './evaluate.js';
 
@@ -47,14 +46,14 @@ export function worseSeparations(now: ReadonlyMap<string, Shortfall>, then: Read
  * An entry that names a frame in a canton (the canton frame or a frame on a chain below one) is left to the close-up of 7f, which packs the cantons and
  * their members to the spacing again after the grid (`closeCantons`, `holdMemberWalls`); no later step packs any other frame.
  */
-export function separationsBrokenBy(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): string[] {
+export function separationsBrokenBy(model: LayoutModel, proposed: readonly ProposedBox[]): string[] {
   const published = model.frames;
   const saved = proposed.map(item => item.group.bounds!);
   const framed = (frames: typeof published): void => { if (frames !== undefined) model.frames = frames; };
   try {
     framed(framesAfter(model, []));
     const before = separationShortfalls(model);
-    // Derived before the boxes move: `framesAfter` reads each proposed box against the one the group has.
+    // Derived before the boxes move: `framesAfter` reads each proposed box against the one the group has, and moves the bodies by the shift the stage gives them.
     const after = framesAfter(model, proposed);
     for (const item of proposed) item.group.bounds = item.bounds;
     framed(after);

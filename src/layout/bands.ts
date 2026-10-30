@@ -590,8 +590,7 @@ function intervals(model: LayoutModel, placed: LayoutLabel[], y: number, height:
   return merged;
 }
 
-/** `LABEL_CLEARANCE_STEP` (`title-room.ts`): how far past a forbidden range a label's left edge is placed to be clear of it. */
-
+/** The first left edge at or after `start` that every forbidden range leaves clear, stepped `LABEL_CLEARANCE_STEP` (`title-room.ts`) past each range it meets. */
 function firstFree(start: number, ranges: ForbiddenInterval[]): number {
   let candidate = start;
   for (const range of ranges) {
