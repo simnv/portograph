@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutOptions } from '../../src/index.js';
 import { ElkDeadlineError } from '../../src/layout/elk-worker.js';
@@ -12,6 +12,20 @@ import { createAvoidAttempt } from '../route/fixture.js';
  */
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const SHEET = 'a-chord-and-a-lane-share-a-middle-tier';
+
+/**
+ * A span lane that contradicts its chord, forged inside the span trial: while `skew.on` is set, each replay of a span lane (`replaySpanLane`) stands
+ * the lane 1 px off the corridor its chord derives, so the lane validator (`validateSpanLane`) refuses the trial's placement.
+ */
+const skew = vi.hoisted(() => ({ on: false }));
+vi.mock('../../src/layout/span-lanes.js', async importOriginal => {
+  const original = await importOriginal<typeof import('../../src/layout/span-lanes.js')>();
+  return { ...original, replaySpanLane: (...args: Parameters<typeof original.replaySpanLane>): boolean => {
+    const placed = original.replaySpanLane(...args);
+    if (placed && skew.on) { const [, lane] = args; lane.x += 1; lane.bounds = { ...lane.bounds, x: lane.bounds.x + 1 }; }
+    return placed;
+  } };
+});
 
 /** Layout options that call `fault` at the first moment inside the span trial: after the span round has an offer, `place` and the judge are the span's. */
 const MESH = 'a-mesh-across-a-middle-tier-draws-straight-chords-beside-its-frame';
@@ -55,11 +69,22 @@ describe('the span round and the errors it does not own', () => {
     expect(refused.length).toBeGreaterThan(0);
   }, 60000);
 
+  // The contradiction is forged (snack-theme ticket 157). The sheet produced one by itself: its lane extents were replayed before the node geometry
+  // rebuilt the port pills, which the corridor reads, so a lane stood where the old pill put it. The replay now follows the pills, and that lane
+  // agrees with its chord. The rule pinned here is unchanged: a span lane that contradicts its chord is a typed refusal of the trial, and the sheet
+  // still publishes, without the span.
   it('refuses a trial whose span lane contradicts its chord (a typed refusal of the lane validator) and publishes the sheet', async () => {
     const refused: string[] = [];
-    const model = await layout(parse(source('a-tier-gap-grows-to-its-rows')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
-      testSideTrace: event => { if (event.ev === 'span-refused') refused.push(String(event.detail)); } });
+    let model;
+    try {
+      model = await layout(parse(source('a-tier-gap-grows-to-its-rows')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+        testSideTrace: event => {
+          if (event.ev === 'spans' && ((event.offer as { links: string[] }).links.length > 0)) skew.on = true;
+          if (event.ev === 'span-refused') { skew.on = false; refused.push(String(event.detail)); }
+        } });
+    } finally { skew.on = false; }
     expect(model.links.length).toBeGreaterThan(0);
     expect(refused.some(detail => detail.includes('contradicts the chord'))).toBe(true);
+    expect(model.lanes.some(lane => lane.kind === 'span')).toBe(false);
   }, 60000);
 });
