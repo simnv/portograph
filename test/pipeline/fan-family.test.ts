@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { segmentRect } from '../../src/geometry/planar.js';
-import { fanAdmissionsFault, titleCrowdedFanMembers } from '../../src/layout/fan-admission.js';
-import { orthogonalLeg, siblingStemCrowded } from '../../src/layout/frame-paths.js';
+import type { FanFallbackReason } from '../../src/model/index.js';
+import { admitFanFamilies, fanAdmissionsFault, refuseFanMembers, refuseStemCrowded, titleCrowdedFanMembers } from '../../src/layout/fan-admission.js';
+import { blockedChords, freezeChords, orthogonalLeg, siblingStemCrowded } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -41,8 +42,9 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     expect(fanAdmissionsFault(model)).toBeUndefined();
     const fallen = record.filter(item => item.mode === 'orthogonal');
     expect(fallen.map(item => [ends(model, item.link), item.reason])).toEqual([['d-1|hub-a', 'body']]);
+    // Every member but the one the vault refuses: seven straight.
     const straight = record.filter(item => item.mode === 'straight');
-    expect(straight.length).toBeGreaterThanOrEqual(6);
+    expect(straight).toHaveLength(7);
     for (const item of straight) {
       const link = model.links.find(other => other.id === item.link)!;
       expect(link.path!.segments, item.link).toHaveLength(1);
@@ -55,8 +57,11 @@ describe('a fan family draws straight and crosses itself faintly', () => {
   it('counts the crossings of members faint, keeps them out of X, and passes every gate', () => {
     const report = score(model);
     const crossings = report.snapshot.metrics.crossings;
-    expect(crossings.faint).toBeGreaterThanOrEqual(1);
-    expect(crossings.count).toBeGreaterThan(crossings.faint!);
+    // Two member pairs cross as an X (a-1 to Hub A with b-2 to Hub B, and the fallback Hub A to D 1 with Hub B to C 2); the fallback also
+    // crosses the solid drop from the vault to C 3, which is no member: X 1.
+    expect(crossings.faint).toBe(2);
+    expect(crossings.count).toBe(3);
+    expect(model.diagnostics.filter(item => item.code === 'FAN_SEARCH_TRUNCATED')).toEqual([]);
     // The crossings metric is 1 - c / m over the routed links, with each faint crossing weighed 0.09 in c.
     const weighted = crossings.count - crossings.faint! + 0.09 * crossings.faint!;
     expect(crossings.value).toBeCloseTo(1 - Math.min(1, weighted / crossings.routedLinks), 9);
@@ -101,6 +106,15 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     const far = segment.to.y > segment.from.y ? 'to' : 'from';
     segment[far] = { x: leg.from.x + 3, y: leg.from.y };
     expect(siblingStemCrowded(forged, chord)).toBe(true);
+    // At the freeze (`attemptBody`: `refuseStemCrowded`, then `freezeChords` with the reasons) the member falls back as `stem`, and the record holds.
+    delete forged.frozenChords;
+    delete forged.fanAdmissions;
+    const reasons = refuseStemCrowded(forged);
+    expect([...reasons]).toEqual([[chord.id, 'stem']]);
+    freezeChords(forged, reasons);
+    expect(forged.fanAdmissions!.find(item => item.link === chord.id)).toMatchObject({ mode: 'orthogonal', reason: 'stem' });
+    expect(forged.fanAdmissions!.filter(item => item.mode === 'straight')).toHaveLength(6);
+    expect(fanAdmissionsFault(forged)).toBeUndefined();
     // The Site D title moved onto the same member's chord.
     const titled = clone(model);
     const target = titled.links.find(link => ends(model, link.id) === 'd-1|hub-b')!, member = target.path!.segments[0]!;
@@ -125,8 +139,48 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     const through = (candidate: LayoutModel): boolean => score(candidate).snapshot.gates.G2!.violations
       .some(violation => violation.code === 'through-group' && violation.elements.includes(straight.link) && violation.elements.includes('site-c'));
     expect(through(grown)).toBe(true);
+    // The validator refuses the record that leaves the box out; after the freeze the chord is blocked (`fanBoxRefusal`, read by `blockedChords`).
+    expect(fanAdmissionsFault(grown)).toMatch(/crosses site-c, which its record does not name/);
+    expect(blockedChords(grown)).toContain(straight.link);
     grown.fanAdmissions!.find(item => item.link === straight.link)!.crosses = ['site-c'];
     expect(through(grown)).toBe(false);
+    expect(fanAdmissionsFault(grown)).toBeUndefined();
+    expect(blockedChords(grown)).not.toContain(straight.link);
+  });
+
+  it('names a search the budget cut short (FAN_SEARCH_TRUNCATED, R4)', () => {
+    const draft = clone(model);
+    const members = draft.links.filter(link => link.fanFamily !== undefined && link.path?.segments.length === 1);
+    admitFanFamilies(draft, members, 1);
+    const named = draft.diagnostics.filter(item => item.code === 'FAN_SEARCH_TRUNCATED');
+    expect(named).toHaveLength(1);
+    expect(named[0]!.message).toMatch(/stopped at 1 tested configurations/);
+  });
+
+  it('drops the cascade of a refusal round by round, whatever the order of the links (R3)', () => {
+    // Hub B's bottom face holds the ports of the members to C 2 (refused here) and to D 1. The member to D 1 is led 4 px beside the leg of the
+    // member to C 2, so it falls back in the first round; the member from B 2 to Hub B is led 5 px beside the leg of the member to D 1 at its
+    // hub port, so it falls back in the second round only.
+    const run = (reverse: boolean): { reasons: [string, FanFallbackReason][]; chords: string[] } => {
+      const draft = clone(model);
+      const link = (key: string) => draft.links.find(item => ends(model, item.id) === key)!;
+      const toC = link('c-2|hub-b'), toD = link('d-1|hub-b'), fromB = link('b-2|hub-b');
+      const legC = orthogonalLeg(draft, toC, toC.attachments!.from.node === 'hub-b' ? 'from' : 'to')!;
+      const hubD = toD.attachments!.from.node === 'hub-b' ? toD.attachments!.from : toD.attachments!.to;
+      const portD = draft.nodes['hub-b']!.ports.find(port => port.ref.ordinal === hubD.ordinal)!.anchor!;
+      const low = Math.max(legC.from.y, legC.to.y);
+      toD.path!.segments[0] = { ...toD.path!.segments[0]!, from: { x: legC.from.x + 4, y: legC.from.y }, to: { x: legC.from.x + 4, y: low } };
+      fromB.path!.segments[0] = { ...fromB.path!.segments[0]!, from: { x: portD.x + 5, y: portD.y }, to: { x: portD.x + 5, y: portD.y + 40 } };
+      if (reverse) draft.links.reverse();
+      const reasons = [...refuseFanMembers(draft, new Map([[toC.id, 'title' as const]]))].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+      const chords = draft.links.filter(item => item.fanFamily !== undefined && item.path?.segments.length === 1).map(item => item.id).sort();
+      return { reasons, chords };
+    };
+    const forward = run(false);
+    expect(forward.reasons.map(([id]) => ends(model, id)).sort()).toEqual(['b-2|hub-b', 'c-2|hub-b', 'd-1|hub-b']);
+    expect(forward.reasons.find(([id]) => ends(model, id) === 'c-2|hub-b')![1]).toBe('title');
+    for (const [id, reason] of forward.reasons) if (ends(model, id) !== 'c-2|hub-b') expect(['leg', 'chord'], id).toContain(reason);
+    expect(run(true)).toEqual(forward);
   });
 
   it('draws the same admissions with the links and the nodes in reverse order (R3)', async () => {

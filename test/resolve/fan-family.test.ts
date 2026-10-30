@@ -77,6 +77,25 @@ describe('the fan family is decided in stage 1', () => {
     expect(model.links.filter(link => link.attachments?.from.node === 'e1').every(link => link.fanFamily === undefined)).toBe(true);
   });
 
+  it('declines both families that claim one link, and names the member links (FAN_FAMILY_DECLINED)', () => {
+    // A (a1, a2) fans to B, C and D below; B (b1, b2) fans to A, P and Q above. The links a1-b1 and a2-b2 belong to both.
+    const text = ['portograph: 2', 'groups:', '  ga: { tier: 1 }', '  gp: { tier: 1 }', '  gq: { tier: 1 }', '  gb: { tier: 2 }', '  gc: { tier: 2 }', '  gd: { tier: 2 }',
+      'nodes:', ...['a1: ga', 'a2: ga', 'p1: gp', 'q1: gq', 'b1: gb', 'b2: gb', 'c1: gc', 'd1: gd'].map(item => `  ${item.replace(': ', ': { group: ')} }`),
+      'links:', ...['a1, b1', 'a2, b2', 'a1, c1', 'a2, c1', 'a1, d1', 'a2, d1', 'b1, p1', 'b2, p1', 'b1, q1', 'b2, q1'].map(pair => `  - [${pair}, { class: dashed }]`)].join('\n');
+    const model = resolve(parse(`${text}\n`));
+    expect(model.fanFamilies).toBeUndefined();
+    expect(model.links.some(link => link.fanFamily !== undefined)).toBe(false);
+    const declined = model.diagnostics.filter(item => item.code === 'FAN_FAMILY_DECLINED');
+    expect(declined.map(item => item.message.match(/fan:\w+:dashed/)![0])).toEqual(['fan:ga:dashed', 'fan:gb:dashed']);
+    const id = (a: string, b: string): string => model.links.find(link => link.attachments?.from.node === a && link.attachments.to.node === b)!.id;
+    const shared = [id('a1', 'b1'), id('a2', 'b2')];
+    for (const item of declined) {
+      expect(item.owners).toHaveLength(6);
+      for (const link of shared) expect(item.owners!.map(owner => (owner as { id: string }).id)).toContain(link);
+      expect(item.message).toContain(shared.sort().join(', '));
+    }
+  });
+
   it('writes nothing on a sheet with no family, so its model keeps its bytes', () => {
     const model = resolve(parse(sheet(2)));
     expect('fanFamilies' in model).toBe(false);

@@ -536,25 +536,35 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   member drawn as a chord (a fallback only adds legs). A title can refuse more as more chords cross it, so it stops no
   branch; the end of the walk tests the set with every refusal. It tests at most `FAN_SEARCH_BUDGET` (512) configurations per family and states
   `FAN_SEARCH_TRUNCATED` when it stops (R4). The settle loop then runs again around the chosen chords.
-- **What a member may cross.** Foreign frame, group and canton boxes (no corridor wall) and the own far end's title
-  strip (the title moves beside the chord: `planLabels` reads the held chord's crossing as an obstacle and the
-  frame grows if it must). Any other crossed title strip keeps the fit-beside test. A body refuses the member
-  (`body`): it falls back alone, orthogonal and dashed. The admission lets a member cross the leg of a sibling that
-  falls back (the crossing is faint); that leg's side is final only at the freeze, so there a member that passes a
-  sibling's stem (no strict crossing beyond the stem with the clearance, `siblingStemCrowded`) falls back
-  (`refuseStemCrowded`, reason `crowds`), and the crowding retry reads the same test at the end of 7f.
+- **What a member may cross.** Foreign frame, group and canton boxes (no corridor wall) and the title strip of its own
+  far frame on the edge it leaves through. Slice 1 builds no growth for that title: the title planner of 7f reads the
+  held chord's crossing as an obstacle, and where it finds no room beside it the retry of 7f refuses the member
+  (`title`, `titleCrowdedFanMembers`). After `DIRECT_RETRIES` retries a member a title still meets stays straight over
+  the title, `FAN_MEMBER_CROWDED` names it, and G3 fails; on the corpus and the sweep this does not happen (the two fan
+  sheets publish no `FAN_MEMBER_CROWDED`). The title of the hub's own frame keeps the fit-beside test of a cross-frame
+  chord, and the title of a third frame refuses the member, as it refuses any cross-frame chord. Slice 2: the far
+  frame's title, and by the user's ruling of 2026-10-30 the hub frame's title too, moves aside and its frame grows. A
+  body refuses the member (`body`): it falls back alone, orthogonal and dashed. The admission lets a member cross the
+  leg of a sibling that falls back (the crossing is faint); that leg's side is final only at the freeze, so there a
+  member that passes a sibling's stem (no strict crossing beyond the stem with the clearance, `siblingStemCrowded`)
+  falls back (`refuseStemCrowded`, reason `stem`), and the crowding retry reads the same test at the end of 7f.
 - **Reservation.** The tier-gap plan reads the straight members of a gap (`PlanFrame.slants`): a row moves down
   until its legs and run cross a chord strictly or keep the clearance (`clearOfSlants`), and the gap grows for it.
-  The crowding retry of 7f refuses a member that a moved part comes within the clearance of
-  (`crowdedFanMembers`), that passes a sibling's stem, or that a group title placed in 7f still meets
-  (`titleCrowdedFanMembers`: the title planner found no room beside it). The reason is `crowds`; after
-  `DIRECT_RETRIES` the rest is named in `FAN_MEMBER_CROWDED`. `refuseFanMembers` re-checks the held chords near the
-  new legs.
+  A row moves at most `SLANT_LOWERING_KEEPS` (4) run clearances; where no candidate within that clears, it keeps its
+  seat and `TIER_GAP_SLANT_LIMIT` names it. The rows read the chords where they stand when the plan runs; the growth
+  the plan asks for then moves the band below and the chords' lower ends, which the rows do not read again (slice 2).
+  The crowding retry of 7f refuses a member that a moved part comes within the clearance of (`crowds`,
+  `crowdedFanMembers`), that passes a sibling's stem (`stem`), or that a group title placed in 7f still meets
+  (`title`, `titleCrowdedFanMembers`: the title planner found no room beside it). After `DIRECT_RETRIES` the rest
+  stay straight and `FAN_MEMBER_CROWDED` names each with its reason. `refuseFanMembers` re-reads the held chords near
+  the new legs, all of one round before any falls back (R3), and each chord that falls back there names its own
+  fixed-point refusal (`leg`, `chord` or `title`), never `family`.
 - **Record.** `model.fanAdmissions`, set at the freeze, one entry per member in family order: `straight` with
   `crosses` (the foreign boxes its chord crosses, sorted), or `orthogonal` with a reason. After the freeze a
   member that crosses a box missing from `crosses` falls back (`frame`).
 - **Validator.** `validateGroupLabelBands` reads the record (`fanAdmissionsFault`, R5): order, a straight member is
-  frozen and names only foreign boxes, an orthogonal one is not frozen and names a reason.
+  frozen, names only foreign boxes and crosses no box it does not name, an orthogonal one is not frozen and names
+  a reason.
 - **Score.** G2 `through-group` excuses a straight member's one segment in the boxes its record names, and no other
   box. G6 stays geometric. A crossing of two members of one family is faint: Q weighs it 0.09 (CONTEXT.md,
   *salience*), `metrics.crossings.faint` counts it, and the corpus TSV writes it in `Xf`, outside `X`.
