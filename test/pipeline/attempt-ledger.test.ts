@@ -36,36 +36,48 @@ const ROWS: Row[] = [
   // Verdana metrics (snack-theme ticket 157): the wider text moves three-continents to 21/99/62/5 with 3 place runs and 3 overlay links lost in the base 7f loop (23/74/54/5, 2 runs, 2 lost with Arial).
   // Ticket 157 review: the rounds of `centreDraft` after the overlay windows stop on a stall (a round that changes neither the geometry nor what the
   // check finds) and keep the rest of the shared budget; the replays of the stages after 7c spend it, so the centring passes are 117 (99 before the stop).
-  row('three-continents', '21/117/62/5', 3, 2, 4, 0, 2, { preCentre: 2, baseChord: 1, base7f: '3/0/0' }),
+  // Card nodes (snack-theme ticket 159): one 7f attempt of 2 rounds, one chord move, no overlay link lost in the base loop (21/117/62/5, 2 attempts, 4 rounds, 3 lost with stacked nodes).
+  row('three-continents', '8/28/21/3', 3, 1, 2, 0, 1, { preCentre: 2, baseChord: 1 }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
-  row('a-tier-gap-plan-orders-every-part', '2/56/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
-  row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/7/7/3', 1, 1, 1, 0, 0),
+  // Card nodes (snack-theme ticket 159): 6 routed chords lost before 7f (1 with stacked nodes) and 1 routed aligned link lost in the base 7f loop.
+  row('a-tier-gap-plan-orders-every-part', '2/56/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 6, base7f: '0/1/0' }),
+  // Card nodes (snack-theme ticket 159): one centring pass fewer (1/7/7/3 with stacked nodes).
+  row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/6/7/3', 1, 1, 1, 0, 0),
   row('a-tier-gap-grows-to-its-rows', '1/5/7/3', 1, 1, 1, 0, 0),
   row('a-re-seated-band-carries-its-bar-and-flank', '1/5/7/3', 1, 1, 1, 0, 0),
   row('sync-links-do-not-stack-a-tier', '1/4/7/3', 1, 1, 1, 0, 0),
   row('an-overlay-leaves-a-lateral-side-past-a-sibling-body', '2/7/12/5', 2, 2, 2, 0, 0),
   // Ticket 22: a long, flat chord never joins perpendicular faces, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
   // The far-end pull (ticket 22) stands lb next to fe4, so its link is a chord (1/14/7/3 before).
-  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/13/7/3', 4, 1, 1, 0, 0, { probe: 1 }),
-  row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/7/7/3', 2, 1, 1, 0, 0),
+  // Card nodes (snack-theme ticket 159): 2 place runs and 8 centring passes (4 runs, 1/13/7/3 with stacked nodes).
+  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/8/7/3', 2, 1, 1, 0, 0, { probe: 1 }),
+  // Card nodes (snack-theme ticket 159): 21 centring passes and 6 routed chords lost before 7f (1/7/7/3 and none with stacked nodes).
+  row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/21/7/3', 2, 1, 1, 0, 0, { preChords: 6 }),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
-  row('a-canton-member-frame-slides-off-a-straight-chord', '1/10/7/3', 2, 1, 1, 0, 0),
-  row('columns-hold-their-axis-after-7f', '1/19/7/3', 3, 1, 1, 0, 0),
+  // Card nodes (snack-theme ticket 159): the base 7f moves a chord in a second round, and 1 routed chord is lost before 7f (1/10/7/3, 1 round, no move with stacked nodes).
+  row('a-canton-member-frame-slides-off-a-straight-chord', '3/11/11/3', 2, 1, 2, 0, 1, { baseChord: 1, preChords: 1 }),
+  // Card nodes (snack-theme ticket 159): 2 place runs, 2 attempts of 1 round each (3 runs, 1 attempt, 1/19/7/3 with stacked nodes).
+  row('columns-hold-their-axis-after-7f', '2/24/12/5', 2, 2, 2, 0, 0),
   row('a-canton-band-holds-the-rows-off', '1/7/7/3', 2, 1, 1, 0, 0),
   // Verdana metrics (snack-theme ticket 157): one centring pass fewer (1/7/7/3 with Arial).
-  row('a-member-title-widens-a-beside-row', '1/6/7/3', 1, 1, 1, 0, 0, { base7f: '0/1/0' }),
+  // Card nodes (snack-theme ticket 159): 11 centring passes, the held-axis probe moves a column, and the base 7f loop stands a body on a frozen chord where it lost
+  // an aligned link with stacked nodes (1/6/7/3, base7f 0/1/0).
+  row('a-member-title-widens-a-beside-row', '1/11/7/3', 1, 1, 1, 0, 0, { probe: 1, base7f: '0/0/1' }),
   // The cost counters (settle, centring passes, copies, replays) of this sheet move with every change to the sweep that seats a flank beside a frame (architecture ticket 19: the
   // centring passes 15 to 13); what the sheet pins is its behaviour: the runs, the attempts, the rounds, no open round, no chord move, and the findings below.
   // Architecture 2, ticket 03: the side trial on this sheet (link-3, a lane hint on up-1.100G#3) is refused at its 7e now, because the far port of the lane is 65 px off the lane x
   // (the reservation `laneOwner` reads the anchor, not the flag), where it was refused after 7f for no fewer bends. The second 7f attempt never starts: attempts and rounds 2 to 1. The published layout and score are the same.
-  row('a-canton-column-is-not-pulled-into-a-flank', undefined, 4, 1, 1, 0, 0),
+  // Card nodes (snack-theme ticket 159): a second 7f attempt (2 attempts, 2 rounds; 1 and 1 with stacked nodes).
+  row('a-canton-column-is-not-pulled-into-a-flank', undefined, 4, 2, 2, 0, 0),
   row('a-flank-link-around-a-neighbour-runs-along-the-core-edge', '1/4/7/3', 1, 1, 1, 0, 0),
-  row('m1-sip-edge', '1/5/7/3', 1, 1, 1, 0, 0),
+  // Card nodes (snack-theme ticket 159): one centring pass fewer (1/5/7/3 with stacked nodes).
+  row('m1-sip-edge', '1/4/7/3', 1, 1, 1, 0, 0),
   // The phase-1 fixture: the base 7f chord step moves a group (before this, only NTP among the named sheets did).
   // Phase 3b of ticket 15: the base 7f moved a group and the kept result has no offer, so the unmoved 7f baseline is measured and its offer runs as one extra, refused side trial (3 attempts, 2 place runs; the settled copy 7f kept filters, the unmoved baseline is rebuilt).
   // Architecture 2, ticket 23: the grown overlay port clearance and the separated tracks cost this sheet one settle call, one centring pass and two candidate copies more (14/29/37 to 15/30/39).
   // Verdana metrics (snack-theme ticket 157): 13/28/35/6 (15/30/39/6 with Arial).
-  row('a-chord-step-moves-a-group-off-a-straight-chord', '13/28/35/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
+  // Card nodes (snack-theme ticket 159): 14/29/37/6 (13/28/35/6 with stacked nodes).
+  row('a-chord-step-moves-a-group-off-a-straight-chord', '14/29/37/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
 ];
 
 interface Reading { counters: string; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: string; probe: number; preChords: number; preCentre: number; base7f: string; events: AttemptTraceEvent[] }
@@ -107,12 +119,13 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     expect(found.events.find(event => event.pass === 'ledger:round-0:chords')?.verdict).toMatch(/^overlay -\d+\/\+\d+ aligned -\d+ blocked \+\d+$/);
   }, 60000);
 
+  // Card nodes (snack-theme ticket 159): three-continents 7/7/8 (19/19/24 stacked), canton-member frame 2/2/4 (0/0/2), a-chord-step 11/11/14 (10/10/13).
   // Verdana metrics (snack-theme ticket 157): three-continents 19/19/24 (21/21/31 with Arial), a-chord-step 10/10/13 (12/12/15 with Arial).
   // Phase 2: the replays, the settled copies the chord step judged on, and the rounds of the gap fixed point, where they dropped. Before the phase:
   // Phase 4 raised three-continents to 21/21/31 (more candidates pass the gate of the unified order, each one settled). Ticket 22: a-tier-gap-plan gap rounds 3 to 5 (the crowding round of the direct family). Ticket 23 (the overlay port clearance, separated tracks) raised the chord-step fixture 11/11/14 to 12/12/15. Before it: three-continents 8/7/10, a-tier-gap-plan 1/0/3, two-interleaved 1/0/2, a-tier-gap-grows 1/0/2, canton-member-frame 1/0/2, chord-step fixture 5/4/6.
   it.each([
-    ['three-continents', 19, 19, 24], ['a-tier-gap-plan-orders-every-part', 0, 0, 5], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
-    ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 2], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 13],
+    ['three-continents', 7, 7, 8], ['a-tier-gap-plan-orders-every-part', 0, 0, 5], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
+    ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 2, 2, 4], ['a-chord-step-moves-a-group-off-a-straight-chord', 11, 11, 14],
   ] as const)('derives once: %s replays %i, settled copies %i, gap rounds %i', async (name, replays, trials, gapRounds) => {
     resetAttemptCounters();
     await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
@@ -124,8 +137,9 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     await layout(parse(golden('a-member-title-widens-a-beside-row')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     const i = attemptCounters.invalidations;
     // The cheap counters run; the ones that need a read of the links stay at zero and the logs hold no entry. (With the ledger on this fixture loses 1 routed aligned link.)
-    // Two 7f runs: the baseline and the course trial that gives link-3 the L of a step (architecture-2 ticket 09, follow-up; one trial, kept).
-    expect(attemptCounters.attempts).toBe(2);
+    // One 7f run with card nodes (snack-theme ticket 159): the course round offers no trial. With stacked nodes there were two, the baseline and the
+    // course trial that gave link-3 the L of a step (architecture-2 ticket 09, follow-up; one trial, kept).
+    expect(attemptCounters.attempts).toBe(1);
     expect([i.routedAlignedLost, i.overlayStraightLost, i.preOverlayStraightLost, i.shortGapsAfterRounds]).toEqual([0, 0, 0, 0]);
     expect(attemptCounters.placements).toEqual([]);
     expect(attemptCounters.attemptLog).toEqual([]);

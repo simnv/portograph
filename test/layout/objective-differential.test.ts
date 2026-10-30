@@ -34,6 +34,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * fixtures the only change is `centreGroupStep` calls added (the publication check replays each step after the windows); no call was dropped.
  * `three-continents` also asks `windowsHold` and `pickTarget` more often and on other figures (the rounds place the windows again), and on
  * `overlay-links-reorder-two-locations` the geometry differs: `pullTier` reads 0/0 overlay segments where it read 4/4, and `settleKeepOut` is not asked.
+ * Thirteen were re-recorded for snack-theme ticket 159: card nodes (tile, 11 px title, asymmetric insets) changed every node width, so the judges are
+ * called on other geometry and the call counts move (three-continents asks `centreGroupStep` 393 times, was 2171). No judge moved, and all 16 fixtures
+ * publish with every gate clean under the new digests.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',
