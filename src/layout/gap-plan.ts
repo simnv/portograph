@@ -118,6 +118,50 @@ export interface PlanFrame {
    * high y. A Z part's middle drop keeps `keep` from the whole span of a chord in the gap. A chord asks for no height and a planned row may cross it.
    */
   chords?: readonly { low: number; high: number }[];
+  /**
+   * The held chords of fan members that cross the gap (architecture-2 ticket 40). A fan member crosses the fallback legs of its own family
+   * (`fixedPointRefusal`), so where such a leg ends on its row is not known when the chord is admitted: the plan seats every row so that its
+   * legs and its run either cross each of these chords strictly or keep the run clearance from it (G6), lower where it must. Absent on a sheet
+   * with no fan family, so no other plan changes.
+   */
+  slants?: readonly PathSegment[];
+}
+
+/** One planned path piece of a unit at row `y`: its upper leg, its run and its lower leg (a U part's two legs both rise to its boundary). */
+function unitPieces(unit: { part: PlanInput; half: 0 | 1 | 2; xu: number; xl: number }, y: number): PathSegment[] {
+  const owner = { kind: 'link' as const, id: unit.part.link };
+  const at = (x: number, level: number): Point => ({ x, y: level });
+  const pieces: PathSegment[] = [{ from: at(Math.min(unit.xu, unit.xl), y), to: at(Math.max(unit.xu, unit.xl), y), owner }];
+  if (unit.half !== 2) pieces.push({ from: at(unit.xu, unit.part.upper.y), to: at(unit.xu, y), owner });
+  if (unit.part.u === true) pieces.push({ from: at(unit.xl, unit.part.lower.y), to: at(unit.xl, y), owner });
+  else if (unit.half !== 1) pieces.push({ from: at(unit.xl, y), to: at(unit.xl, unit.part.lower.y), owner });
+  return pieces.filter(piece => !samePoint(piece.from, piece.to));
+}
+
+/**
+ * The highest row at `from` or below it where no piece of the unit stands within `keep` of a fan chord without crossing it strictly (G6 excuses
+ * only a strict crossing). Where a chord passes a corner of the unit (an end of its run), the corner keeps `keep` from it, so the row steps past the
+ * band of y around the chord's crossing of that corner's x. The candidates are `from` and the far edge of each such band, tried in order (a
+ * finite list, R4); with none clear the row stays at `from`, and the plan's crowding note and the 7f retry judge it.
+ */
+function clearOfSlants(unit: { part: PlanInput; half: 0 | 1 | 2; xu: number; xl: number }, from: number, slants: readonly PathSegment[], keep: number): number {
+  const clear = (y: number): boolean => unitPieces(unit, y).every(piece => slants.every(chord => {
+    const point = intersection(piece, chord);
+    const strict = point !== undefined && ![piece.from, piece.to, chord.from, chord.to].some(end => samePoint(end, point));
+    return strict || segmentDistance(piece, chord) >= keep - EPS;
+  }));
+  if (clear(from)) return from;
+  const candidates: number[] = [];
+  for (const chord of slants) {
+    const dx = chord.to.x - chord.from.x, dy = chord.to.y - chord.from.y, span = Math.hypot(dx, dy);
+    if (Math.abs(dx) < EPS || span < EPS) continue;
+    for (const x of [unit.xu, unit.xl]) {
+      const t = (x - chord.from.x) / dx;
+      if (t < 0 || t > 1) continue;
+      candidates.push(chord.from.y + t * dy + keep * span / Math.abs(dx) + 2 * EPS);
+    }
+  }
+  return candidates.filter(y => y > from).sort((a, b) => a - b).find(clear) ?? from;
 }
 
 export type PartShape = 'drop' | 'stepped' | 'z' | 'u';
@@ -636,6 +680,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
       const ordered = edges.some(item => item.above === earlier.id && item.below === unit.id);
       if (ordered || !shareRow(earlier, unit)) y = Math.max(y, rows.get(earlier.id)! + earlier.part.after);
     }
+    if (frame.slants?.length) y = clearOfSlants(unit, y, frame.slants, keep);
     rows.set(unit.id, y);
     order.push(unit);
     for (const item of edges) {
@@ -921,7 +966,8 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
     lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual,
     verticals: (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined
       && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x),
-    chords: heldChordsAcross(model, gap).map(item => ({ low: item.low, high: item.high })) });
+    chords: heldChordsAcross(model, gap).map(item => ({ low: item.low, high: item.high })),
+    ...(model.fanFamilies !== undefined ? { slants: heldChordsAcross(model, gap).filter(item => item.link.fanFamily !== undefined).map(item => item.segment) } : {}) });
 }
 
 /**

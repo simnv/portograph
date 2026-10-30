@@ -321,6 +321,13 @@ export const linkClassStyle = (value: string | undefined): LinkClassStyle =>
   NETWORK_LINK_CLASSES.find(([key]) => key === (value ?? LEGEND_DEFAULT_CLASS))?.[1]
   ?? NETWORK_LINK_CLASSES[0]![1];
 
+/**
+ * Whether a link class draws faint (CONTEXT.md, *salience*): a class the profile names with a dash pattern (`dashed`, `dotted`). An unknown class,
+ * or none, draws as the default solid link. The fan family (architecture-2 ticket 40) reads it: its 0.09 crossing price assumes faint lines.
+ */
+export const faintLinkClass = (value: string | undefined): boolean =>
+  value !== undefined && NETWORK_LINK_CLASSES.some(([key, style]) => key === value && style.dash !== undefined);
+
 export const portRoleStyle = (value: string | undefined): PortRoleStyle | undefined =>
   NETWORK_PORT_ROLES.find(([key]) => key === value)?.[1];
 

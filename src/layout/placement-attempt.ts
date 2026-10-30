@@ -1,6 +1,7 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
-import { crowdedDirectMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
+import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
+import { refuseFanMembers } from './fan-admission.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
 import { centreContext, refreshWindowDeclines } from './centre.js';
@@ -224,12 +225,17 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
     for (let retry = 0; ; retry++) {
       attemptBody(draft, options, refused);
       const crowded = crowdedDirectMembers(draft).filter(id => !refused.has(id));
-      if (!crowded.length) break;
+      // A straight fan member is crowded the same way, and refused the same way (architecture-2 ticket 40): it falls back alone, as `crowds`.
+      const fans = draft.fanAdmissions === undefined ? [] : crowdedFanMembers(draft).filter(id => !refused.has(id));
+      if (!crowded.length && !fans.length) break;
       if (retry >= DIRECT_RETRIES) {
-        draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
+        if (crowded.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
           message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
+        if (fans.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_MEMBER_CROWDED', owners: fans.map(id => ({ kind: 'link' as const, id })),
+          message: `The fan ${fans.length === 1 ? 'member' : 'members'} ${fans.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
         break;
       }
+      for (const id of fans) refused.add(id);
       for (const id of crowded) refused.add(id);
       for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
       Object.assign(draft, clone(start));
@@ -255,9 +261,11 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // touched, exactly as a reservation change does anywhere else in 7f.
   // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
   abortAt?.();
+  // The fan members a retry refused fall back before anything else is decided on their legs (architecture-2 ticket 40).
+  if (draft.fanFamilies !== undefined) refuseFanMembers(draft, refused);
   planDirectFamilies(draft, refused);
   note('direct-families', String(draft.directFamilies?.length ?? 0));
-  freezeChords(draft);
+  freezeChords(draft, refused);
   note('freeze-chords', 'done');
   produceGroupLabelBands(draft);
   note('group-label-bands', 'done');

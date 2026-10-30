@@ -499,3 +499,42 @@ What it changes on the corpus without the floor (2026-10-24): `a-port-facing-awa
 v7 sweep sheets the crowding retry trades the G6 of `link-5~link-6` for 2 bends.
 
 Not in slice 1: bundles, shared ports, grid rows, labelled chords.
+
+## 16. Fan families (architecture-2 ticket 40)
+
+Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
+
+- **Trigger (stage 1).** `detectFanFamilies` (`src/resolve/fan-family.ts`). A candidate is a routed link of a faint
+  class (a class with a dash pattern: `dashed`, `dotted`), not in a bundle, a group-link or a mesh bus, with no
+  route or `route: straight`, no shared port, no flank or bar end, and its ends on adjacent document tiers in two
+  different units (a unit is the outermost frame, canton or free group of an end). A cohort is one tier group of
+  hubs and one class. It is a family when it has `FAN_MIN_HUBS` (2) hubs or more, `FAN_MIN_UNITS` (3) units or more,
+  and every hub links to every unit. A link two families claim declines both (`FAN_FAMILY_DECLINED`). Solid links
+  form no family. Recorded as `model.fanFamilies` and `link.fanFamily`; absent on a sheet with no family, so no fan
+  code runs there (R4). A direct-family member is never a fan member: the fan takes the link first.
+- **Admission (before the freeze, once per placed model).** In `rebuildRowPaths` every member starts orthogonal, the
+  settle loop runs for the other links, then `admitFanFamilies` searches each family. Each member must pass
+  `chordVerdict` alone; the search then takes the largest set whose chords keep `chordsApart` pairwise and pass
+  `fixedPointRefusal` together. Ties: larger set, shorter total length, port keys (R3). The walk includes a member
+  before it excludes it, and stops a branch where a chord or a leg refuses a chosen member even with every undecided
+  member drawn as a chord (a fallback only adds legs). A title can refuse more as more chords cross it, so it stops no
+  branch; the end of the walk tests the set with every refusal. It tests at most `FAN_SEARCH_BUDGET` (512) configurations per family and states
+  `FAN_SEARCH_TRUNCATED` when it stops (R4). The settle loop then runs again around the chosen chords.
+- **What a member may cross.** Foreign frame, group and canton boxes (no corridor wall) and the own far end's title
+  strip (the title moves beside the chord: `planLabels` reads the held chord's crossing as an obstacle and the
+  frame grows if it must). Any other crossed title strip keeps the fit-beside test. A body refuses the member
+  (`body`): it falls back alone, orthogonal and dashed. The leg of a sibling member is crossable only beyond its
+  stem (`crossesLegBeyondStem`), so two chords never crowd one port.
+- **Reservation.** The tier-gap plan reads the straight members of a gap (`PlanFrame.slants`): a row moves down
+  until its legs and run cross a chord strictly or keep the clearance (`clearOfSlants`), and the gap grows for it.
+  The crowding retry of 7f (`crowdedFanMembers`) refuses a member a moved part comes within the clearance of
+  (`crowds`, `FAN_MEMBER_CROWDED`); `refuseFanMembers` re-checks the held chords near its new legs.
+- **Record.** `model.fanAdmissions`, set at the freeze, one entry per member in family order: `straight` with
+  `crosses` (the foreign boxes its chord crosses, sorted), or `orthogonal` with a reason. After the freeze a
+  member that crosses a box missing from `crosses` falls back (`frame`).
+- **Validator.** `validateGroupLabelBands` reads the record (`fanAdmissionsFault`, R5): order, a straight member is
+  frozen and names only foreign boxes, an orthogonal one is not frozen and names a reason.
+- **Score.** G2 `through-group` excuses a straight member's one segment in the boxes its record names, and no other
+  box. G6 stays geometric. A crossing of two members of one family is faint: Q weighs it 0.09 (CONTEXT.md,
+  *salience*), `metrics.crossings.faint` counts it, and the corpus TSV writes it in `Xf`, outside `X`.
+  `gate-compare` prints `Xf` and never judges it, and refuses a pair of TSV files where one lacks the column.

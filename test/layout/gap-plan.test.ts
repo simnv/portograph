@@ -547,3 +547,36 @@ describe('two runs from opposite sides of one face (architecture-2 ticket 22)', 
     expect(row(near, 'W')).not.toBeCloseTo(row(near, 'E'), 6);
   });
 });
+
+describe('the rows keep off the chords of a fan family (architecture-2 ticket 40)', () => {
+  // A held fan member crosses the gap from (-50, 200) to (50, 330); A's run would turn at (0, 263), right on the chord. The fallback's leg is
+  // crossed by the chord, so the row must cross it strictly with its legs clear of it, or keep the run clearance: the plan seats it lower.
+  type P = { x: number; y: number };
+  const chord = { from: { x: -50, y: 200 }, to: { x: 50, y: 330 }, owner: { kind: 'link' as const, id: 'F' } };
+  const side = (a: P, b: P, c: P): number => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const distance = (p: P, a: P, b: P): number => {
+    const dx = b.x - a.x, dy = b.y - a.y, t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+  };
+  const strictOrClear = (segment: { from: P; to: P }): boolean => {
+    const strict = side(segment.from, segment.to, chord.from) * side(segment.from, segment.to, chord.to) < 0
+      && side(chord.from, chord.to, segment.from) * side(chord.from, chord.to, segment.to) < 0;
+    const gap = Math.min(distance(segment.from, chord.from, chord.to), distance(segment.to, chord.from, chord.to),
+      distance(chord.from, segment.from, segment.to), distance(chord.to, segment.from, segment.to));
+    return strict || gap >= 11.5 - 1e-6;
+  };
+
+  it('seats the row as before when no fan chord crosses the gap', () => {
+    expect(planGap([part('A', 0, 0, 100)], frame()).parts[0]!.rows[0]).toBeCloseTo(263, 6);
+    expect(planGap([part('A', 0, 0, 100)], { ...frame(), slants: [] }).parts[0]!.rows[0]).toBeCloseTo(263, 6);
+  });
+
+  it('lowers the row until its legs and its run cross the chord strictly or keep the clearance, and the gap asks for it', () => {
+    const before = planGap([part('A', 0, 0, 100)], frame());
+    const plan = planGap([part('A', 0, 0, 100)], { ...frame(), slants: [chord] });
+    const [planned] = plan.parts;
+    expect(planned!.rows[0]).toBeGreaterThan(263);
+    for (const segment of plannedSegments(planned!, { low: 248, high: 308 })) expect(strictOrClear(segment), JSON.stringify(segment)).toBe(true);
+    expect(plan.height).toBeGreaterThanOrEqual(before.height);
+  });
+});

@@ -28,6 +28,7 @@ import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from '.
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { directFamiliesFault } from './direct-families.js';
+import { fanAdmissionsFault } from './fan-admission.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry, trunkJoins } from './bus.js';
@@ -2051,6 +2052,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   // The direct families are read from their record and the geometry, never decided again (ticket 22, R1/R5).
   const family = directFamiliesFault(model);
   if (family !== undefined) throw new Error(`The direct family record is forged: ${family}`);
+  // The fan admissions are read from their record and the geometry, never admitted again (architecture-2 ticket 40, R1/R5).
+  const fan = fanAdmissionsFault(model);
+  if (fan !== undefined) throw new Error(`The fan admission record is forged: ${fan}`);
   const padding = labelPaddingFault(model);
   if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
   const unsettledRoom = labelRoomUnsettledFault(model);
