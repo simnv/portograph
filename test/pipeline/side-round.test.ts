@@ -84,8 +84,10 @@ describe('a diagram with no side candidate is the layout main makes', () => {
 
   it('a link that 7f straightens by itself is no candidate: same bytes as with no side round (review M1)', async () => {
     const off = await run(TWO_TIERS, { testMaxReruns: 0 }), on = await run(TWO_TIERS);
-    expect(on.places).toBe(1);
     expect(hash(on.model)).toBe(hash(off.model));
+    // Two places since ticket 162: the hub's two feeds are cross-frame chords over the canton titles, and the fan round (ticket 89) places
+    // once more to measure their pitch. The side round adds none, and the bytes are those of a run with no rounds.
+    expect(on.places).toBe(2);
     expect(codes(on.model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
 

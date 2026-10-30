@@ -65,6 +65,18 @@ export function separationsBrokenBy(model: LayoutModel, proposed: readonly Propo
   }
 }
 
+/** The hard separations short on the frames derived from the group boxes as they stand (not the published frames, which a move leaves stale). */
+export function derivedShortfalls(model: LayoutModel): Map<string, Shortfall> {
+  const published = model.frames;
+  const frames = framesAfter(model, []);
+  try {
+    if (frames !== undefined) model.frames = frames;
+    return separationShortfalls(model);
+  } finally {
+    if (published === undefined) delete model.frames; else model.frames = published;
+  }
+}
+
 /** Whether the frame `id` is a canton or stands on a chain of parents below one. */
 function inCanton(model: LayoutModel, id: string): boolean {
   const frames = model.document.frames;

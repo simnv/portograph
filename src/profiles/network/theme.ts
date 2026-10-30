@@ -89,6 +89,18 @@ export function mixHex(base: string, over: string, amount: number): string {
 }
 
 /**
+ * The colour behind text that stands on `depth` drawn group boxes (ticket 162): the page, with each group fill laid over it at
+ * the group's fill opacity, as a reader sees it. A fill that is no `#rrggbb` colour (`none` in print) leaves the page. The SVG halo
+ * and the draw.io label backdrop read this one function (R1).
+ */
+export function backdropColour(paint: ThemePaint, depth: number): string {
+  let colour = paint.background;
+  if (!/^#[0-9a-f]{6}$/i.test(paint.group.fill) || !/^#[0-9a-f]{6}$/i.test(colour)) return colour;
+  for (let level = 0; level < depth; level++) colour = mixHex(colour, paint.group.fill, paint.group.fillOpacity);
+  return colour;
+}
+
+/**
  * The body fill of a node of one class in one mode: a faint wash of the class hue (paint only; the
  * icon tile keeps the full role colour). Light mixes the hue's 200 step into white, dark mixes the
  * 800 step into the dark body, print a light grey of the class's greyscale tile. A class the profile

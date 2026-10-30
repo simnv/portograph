@@ -4,7 +4,8 @@
 # and its last turn must fall outside the 10 px group-edge link-margin of ADR-0013. The overlay link
 # from `n2` to `n3` only puts `g10` left of `g11`, which puts the 60 px corridor beside the edge of
 # `g11` on the way of the drop. Before the fix the drop ran 5.6 px beside that edge: G6
-# `segment-group-edge`. No warning is expected.
+# `segment-group-edge`. No warning is expected. `n0 -> n4` is authored `route: orthogonal` (ticket 162): a diagonal may
+# cross a title, so as a cross-frame chord it would cross the title of `g11` and never drop.
 portograph: 2
 groups:
   g00: { tier: 0, label: Row above }
@@ -21,7 +22,7 @@ nodes:
   n7: { group: g20, class: server, label: n7 }
   n8: { group: g20, class: server, label: n8 }
 links:
-  - [n0, n4]
+  - [n0, n4, { route: orthogonal }]
   - [n3, n7]
   - [n5, n8]
   - [n2, n3, { route: overlay }]

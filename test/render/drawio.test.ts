@@ -301,13 +301,14 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(label).toBeDefined();
     // The claim: `on-run` moves a label onto the segment stage 9 says carries it, and nothing else.
     // A label centred on a line has to hide the line behind its glyphs, so it takes the colour that
-    // is really behind it; `measured` keeps the box stage 9 placed and needs no fill at all.
+    // is really behind it; `measured` keeps the box stage 9 placed, and takes that colour too: draw.io
+    // has no outline for a plain-text label, so the backdrop stands in for the SVG halo (ticket 162).
     // The label is the connector's own, so it is the edge cell that carries it.
     const owner = (label.owner as { id: string }).id;
     const on = cells(drawio(model, { labels: 'on-run' })).get(id('link', stable(model, owner)))!;
     const measured = cells(drawio(model, { labels: 'measured' })).get(id('link', stable(model, owner)))!;
     expect(on.value).toBe(label.text);
-    expect(measured.style['labelBackgroundColor']).toBe('none');
+    expect(measured.style['labelBackgroundColor']).toMatch(/^(#[0-9a-f]{6}|light-dark\(#[0-9a-f]{6},#[0-9a-f]{6}\))$/);
     expect(on.style['labelBackgroundColor']).toMatch(/^(#[0-9a-f]{6}|light-dark\(#[0-9a-f]{6},#[0-9a-f]{6}\))$/);
     // The claim: a label is stated in the edge's own relative terms — `x` arc length along it, `y`
     // signed perpendicular — so it follows its connector when a shape moves. `offset` is absolute

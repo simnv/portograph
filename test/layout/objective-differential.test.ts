@@ -34,6 +34,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * fixtures the only change is `centreGroupStep` calls added (the publication check replays each step after the windows); no call was dropped.
  * `three-continents` also asks `windowsHold` and `pickTarget` more often and on other figures (the rounds place the windows again), and on
  * `overlay-links-reorder-two-locations` the geometry differs: `pullTier` reads 0/0 overlay segments where it read 4/4, and `settleKeepOut` is not asked.
+ * Two were re-recorded for ticket 162 (a diagonal may cross a title): no judge moved, but on `a-canton-member-frame-slides-off-a-straight-chord` and
+ * `overlay-links-reorder-two-locations` feeds that a title refused are chords now, so the judges are called on other geometry.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

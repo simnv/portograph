@@ -14,8 +14,8 @@ import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { dotEnds } from './anonymous-end.js';
-import { groupShapes } from './frame-order.js';
-import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
+import { boxesBehind, groupShapes } from './frame-order.js';
+import { GeometryLocks, HALO_CLASS, haloCss, haloDepthClass, sheetClassWashCss, themeCss } from './theme.js';
 import { legendKeyRadius, themeById } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
@@ -281,7 +281,7 @@ function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean)
   }
   for (const label of model.labels) {
     if (label.omitted || !label.bounds) continue;
-    if (label.role === 'group') boxes.push({ box: label.bounds });
+    // A group title is not cut out (ticket 162): a line may cross it, and its halo breaks the line under its letters.
     // A hidden link's label is not drawn, so masking it would leave an unexplained gap.
     if (label.role === 'link' && labelDrawn(model, label, visible)) boxes.push(onLineCutout(model, label) ?? turnedCutout(label) ?? { box: label.bounds });
     // The bus label is cut out of the overlay layer as a link label is: the bar and stubs are overlay strokes.
@@ -326,7 +326,16 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
 
   // A frame is drawn in its cells' place: a cell never is (ranked-groups spec, section 2). A parent
   // frame is painted before its children, and a box that lies on another after it (frame-order.ts).
-  const boxes = groupShapes(layout).map(shape => shape.frame
+  const shapes = groupShapes(layout);
+  // Every text outside a node body carries a halo in the colour behind it (ticket 162): the class names the depth of group fills behind
+  // its centre, and `haloCss` states the colour of each depth used, in every mode.
+  const haloDepths: number[] = [];
+  const halo = (label: LayoutLabel): string => {
+    const depth = boxesBehind(shapes, centre(label.bounds!));
+    haloDepths.push(depth);
+    return classes(HALO_CLASS, haloDepthClass(depth));
+  };
+  const boxes = shapes.map(shape => shape.frame
     ? { id: shape.id, bounds: shape.bounds, class: layout.frames!.find(frame => frame.id === shape.id)!.class,
       nodes: frameNodes(layout, shape.id) }
     : { id: shape.id, bounds: shape.bounds, class: layout.document.groups[shape.id]!.class, nodes: layout.groups[shape.id]!.nodes });
@@ -472,7 +481,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       const group = label.owner.kind === 'group' ? layout.groups[label.owner.id] : undefined;
       const frame = group || label.owner.kind === 'group' ? frameTitled(layout, label) : undefined;
       const uniform = frame ? uniformNodeClass(layout, frameNodes(layout, frame.id)) : group ? uniformNodeClass(layout, group.nodes) : undefined;
-      return textElement(label, locks, 'group-label', label.owner.kind === 'barCross' ? label.owner.node : (frame?.id ?? label.owner.id),
+      return textElement(label, locks, classes('group-label', halo(label)), label.owner.kind === 'barCross' ? label.owner.node : (frame?.id ?? label.owner.id),
         classes(frame ? authorClass(frame.class) : group ? authorClass(layout.document.groups[group.id]!.class) : undefined, uniform));
     }).join('');
   const linkLabels = layout.labels.filter(label => label.role === 'link' && labelDrawn(layout, label, visible))
@@ -480,14 +489,14 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       const owner = label.owner.kind === 'barCross' ? label.owner.link : label.owner.id;
       const link = byId.get(owner);
       const multiplicity = label.support?.kind === 'merge-run';
-      return textElement(label, locks, classes('link-label', multiplicity ? 'multiplicity-label' : undefined),
+      return textElement(label, locks, classes('link-label', multiplicity ? 'multiplicity-label' : undefined, halo(label)),
         owner, link ? linkClassToken(layout, link) : undefined);
     }).join('');
 
   const busLabels = buses.flatMap(bus => {
     const label = layout.labels.find(item => item.id === bus.label);
     return label === undefined || label.omitted || label.bounds === undefined ? []
-      : [textElement(label, locks, classes('link-label', 'mesh-bus-label'), bus.id, authorClass(bus.class))];
+      : [textElement(label, locks, classes('link-label', 'mesh-bus-label', halo(label)), bus.id, authorClass(bus.class))];
   });
   // A link end on an anonymous port (ADR-0002: no geometry, no pill) is closed by a dot in the link stroke, so it does not look
   // unfinished beside a pill. `dotEnds` is the predicate draw.io shares. Paint only. A routed dot stands in a group after the nodes,
@@ -544,7 +553,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     layout.legend.entries.map(entry => {
       const label = layout.labels.find(item => item.id === entry.label);
       return element('g', { class: classes('legend-entry', `legend-${entry.kind}`, authorClass(entry.key)), 'data-id': entry.id },
-        legendSwatch(entry) + (label ? textElement(label, locks, 'legend-label', entry.id) : ''));
+        legendSwatch(entry) + (label && label.bounds ? textElement(label, locks, classes('legend-label', halo(label)), entry.id) : ''));
     }).join('')) : '';
 
   const overlayVisible = drawn.some(link => effectiveLayer(link) === 'overlay') || buses.length > 0;
@@ -567,7 +576,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
   const documentCss = layout.document.css ?? '';
   const style = element('style', { type: 'text/css' },
-    escapeStyle([themeCss(theme), sheetClassWashCss(nodeClassAttrs, theme), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
+    escapeStyle([themeCss(theme), sheetClassWashCss(nodeClassAttrs, theme), haloCss(haloDepths, theme), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
 
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)

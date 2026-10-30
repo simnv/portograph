@@ -429,10 +429,11 @@ describe('overlay layer', () => {
     const hidden = elements(mask, 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
     for (const box of [model.nodes['a']!.bounds!, model.nodes['b']!.bounds!,
       model.nodes['a']!.ports[0]!.pill!.bounds,
-      model.labels.find(label => label.role === 'group')!.bounds!,
       model.labels.find(label => label.role === 'link')!.bounds!]) {
       expect(hidden.some(item => sameRect(item, box))).toBe(true);
     }
+    // A group title is no cutout (ticket 162): its halo breaks a crossing line under its letters.
+    expect(hidden.some(item => sameRect(item, model.labels.find(label => label.role === 'group')!.bounds!))).toBe(false);
     // The 2 px endpoint marks live above the protected elements, outside the masked group.
     const marks = elements(svg, 'circle');
     expect(marks.map(item => [item['data-owner'], item['data-end'], Number(item['cx']), Number(item['cy']), Number(item['r'])]))
@@ -562,8 +563,7 @@ describe('internal overlay mask', () => {
       elements(svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>')), 'rect').map(rect);
     expect(boxes(styled)).toEqual(boxes(plain));
     const model = masked();
-    for (const box of [model.nodes['b']!.bounds!, model.nodes['a']!.ports[0]!.pill!.bounds,
-      model.labels[0]!.bounds!]) {
+    for (const box of [model.nodes['b']!.bounds!, model.nodes['a']!.ports[0]!.pill!.bounds]) {
       expect(boxes(styled).some(item => sameRect(item, box))).toBe(true);
     }
   });

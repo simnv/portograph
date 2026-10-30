@@ -9,6 +9,7 @@ import { LINK_LABEL_GEOMETRY } from './link-label-geometry.js';
 import { paddingOf } from './overlay-tracks.js';
 import { deriveFrames } from './frames.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { isDiagonal } from './diagonal-text.js';
 
 /**
  * Where a link label stands beside a run, read off the geometry alone: the windows of a run, the box stage 9 tries on one side of
@@ -181,7 +182,7 @@ export function longestRun(segments: readonly PathSegment[]): PathSegment | unde
 
 /** A run with no axis: a diagonal line, whose label lies on it (ticket 16). */
 export function isDiagonalRun(run: PathSegment): boolean {
-  return Math.abs(run.to.x - run.from.x) > PLACEMENT_EPS && Math.abs(run.to.y - run.from.y) > PLACEMENT_EPS;
+  return isDiagonal(run);
 }
 
 /**

@@ -2,7 +2,8 @@
 # sibling-frames-keep-the-band-gap.yaml: three two-rank locations A, B and C in tier 1 under one feed group, each
 # with a zone whose title is wider than the zone's one node. Stage 7f widens a zone cell to hold its title and
 # moves the frames after it as wholes, so a frame the rows stage had put under its feed (`hub` to `a-core`,
-# `b-core`, `c-core` are links 1, 2, 3) was left standing where the push put it and the feed link jogged.
+# `b-core`, `c-core` are links 1, 2, 3) was left standing where the push put it and the feed link jogged. The feeds are
+# authored `route: orthogonal` (ticket 162): a diagonal may cross a title, so as chords they would not jog at all.
 # Test-only input owned by ranked-groups ticket 17; test/pipeline/columns-hold-their-axis-after-7f.test.ts reads it.
 portograph: 2
 groups:
@@ -26,9 +27,9 @@ nodes:
   c-core: { group: c, class: router, label: C core }
   c-sync1: { group: c-zone, class: switch, label: C sync }
 links:
-  - [hub, a-core]
-  - [hub, b-core]
-  - [hub, c-core]
+  - [hub, a-core, { route: orthogonal }]
+  - [hub, b-core, { route: orthogonal }]
+  - [hub, c-core, { route: orthogonal }]
   - [a-core, a-sync1]
   - [b-core, b-edge]
   - [c-core, c-sync1]
