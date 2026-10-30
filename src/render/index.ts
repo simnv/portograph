@@ -11,11 +11,13 @@ import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
 import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, labelArea, validate } from '../score/model.js';
 import { measureText } from '../text/index.js';
-import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { dotEnds } from './anonymous-end.js';
 import { groupShapes } from './frame-order.js';
 import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
+import { legendKeyRadius, themeById } from '../profiles/network/themes.js';
+import type { Theme } from '../profiles/network/themes.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 
 export { OVERLAY_ENDPOINT_RADIUS };
@@ -169,11 +171,11 @@ function textElement(label: LayoutLabel, locks: GeometryLocks, structural: strin
   }, title + spans);
 }
 
-function iconElement(icon: { icon: string; bounds: Rect }, locks: GeometryLocks, authored: string | undefined): string {
+function iconElement(icon: { icon: string; bounds: Rect }, locks: GeometryLocks, authored: string | undefined, radius: number): string {
   const box = icon.bounds;
   const inset = Math.min(ICON_INSET, box.width / 4, box.height / 4);
   return element('rect', { class: classes('icon-tile', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
-    x: box.x, y: box.y, width: box.width, height: box.height, rx: CORNER_RADII.tile, ry: CORNER_RADII.tile })
+    x: box.x, y: box.y, width: box.width, height: box.height, rx: radius, ry: radius })
     + element('use', { class: classes('node-icon', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.glyph)),
       href: `#pg-icon-${iconKey(icon.icon)}`,
       x: box.x + inset, y: box.y + inset, width: box.width - 2 * inset, height: box.height - 2 * inset });
@@ -317,6 +319,8 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
   const canvas = layout.canvas;
   if (!canvas) throw new Error('Render requires a final canvas');
   const locks = new GeometryLocks();
+  // The theme is paint: it picks colours and corner radii, and no size or position (ticket 158).
+  const theme: Theme = themeById(layout.document.theme);
   const visible = (link: LayoutLink): boolean => linkVisible(layout, link, options);
   const icons = new Set<string>();
 
@@ -332,7 +336,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       ...(uniform ? { 'data-node-class': uniform } : {}) },
     element('rect', { class: classes('group-box', authored, uniform, locks.stroke(DEFAULT_STROKE_WIDTHS.group)),
       x: box.bounds.x, y: box.bounds.y, width: box.bounds.width, height: box.bounds.height,
-      rx: CORNER_RADII.group, ry: CORNER_RADII.group }));
+      rx: theme.radii.group, ry: theme.radii.group }));
   }).join('');
 
   /**
@@ -432,7 +436,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     const node = layout.nodes[id]!, authored = authorClass(layout.document.nodes[id]!.class);
     const crossed = crossedBars.has(id);
     const body = element('rect', { class: classes('node-body', authored, washClass(authored, washes), locks.stroke(nodeStroke(node))),
-      x: node.bounds!.x, y: node.bounds!.y, width: node.bounds!.width, height: node.bounds!.height, rx: CORNER_RADII.node, ry: CORNER_RADII.node });
+      x: node.bounds!.x, y: node.bounds!.y, width: node.bounds!.width, height: node.bounds!.height, rx: theme.radii.node, ry: theme.radii.node });
     // The detached body is the same rectangle, in a container of the same kind, inside a second
     // node layer, so what a document styles by name still reaches it: the theme, the geometry locks
     // and a `css:` rule naming the body, the class, the container or the layer. What it cannot
@@ -440,7 +444,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     // container carries `data-owner`; the node's one `data-id` stays on its content group.
     if (crossed) crossedBodies.push(element('g', { class: classes('node', authored), 'data-owner': id }, body));
     if (node.icon) icons.add(iconKey(node.icon.icon));
-    const icon = node.icon ? iconElement(node.icon, locks, authored) : '';
+    const icon = node.icon ? iconElement(node.icon, locks, authored, theme.radii.tile) : '';
     const text = layout.labels.filter(label => label.owner.kind === 'node' && label.owner.id === id
       && (label.role === 'node' || label.role === 'description'))
       .map(label => textElement(label, locks, label.role === 'node' ? 'node-label' : 'node-description', id, authored)).join('');
@@ -533,8 +537,8 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     // The key shows the class's body wash behind its tile, as a node of the class shows it.
     const at = entry.swatch, grow = 2;
     const wash = element('rect', { class: classes('node-body', authorClass(entry.key), washClass(authorClass(entry.key), washes), locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
-      x: at.x - grow, y: at.y - grow, width: at.width + 2 * grow, height: at.height + 2 * grow, rx: CORNER_RADII.node, ry: CORNER_RADII.node });
-    return wash + iconElement({ icon: entry.icon, bounds: entry.swatch }, locks, authorClass(entry.key));
+      x: at.x - grow, y: at.y - grow, width: at.width + 2 * grow, height: at.height + 2 * grow, rx: legendKeyRadius(theme, grow), ry: legendKeyRadius(theme, grow) });
+    return wash + iconElement({ icon: entry.icon, bounds: entry.swatch }, locks, authorClass(entry.key), theme.radii.tile);
   };
   const legend = layout.legend ? element('g', { class: 'legend', 'data-id': layout.legend.id },
     layout.legend.entries.map(entry => {
@@ -563,7 +567,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
   const documentCss = layout.document.css ?? '';
   const style = element('style', { type: 'text/css' },
-    escapeStyle([themeCss(), sheetClassWashCss(nodeClassAttrs), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
+    escapeStyle([themeCss(theme), sheetClassWashCss(nodeClassAttrs, theme), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
 
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)

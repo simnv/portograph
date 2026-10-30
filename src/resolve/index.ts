@@ -9,6 +9,7 @@ import { expandRankedGroups } from '../layout/rank-cells.js';
 import { detectMeshBuses } from './mesh-bus.js';
 import { detectFanFamilies } from './fan-family.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { findTheme, unknownThemeMessage } from '../profiles/network/themes.js';
 
 export interface ResolveOptions {
   /** Pass parseWithDiagnostics().diagnostics here at the orchestrator boundary. */
@@ -356,6 +357,7 @@ export function resolveBeforeExpansion(input: NormalisedDocument, options: Resol
   const model = createLayoutModel(input);
   model.diagnostics = JSON.parse(JSON.stringify(options.diagnostics ?? []));
   if (input.profile !== 'network') report(model, 'UNSUPPORTED_PROFILE', `Profile ${input.profile} is not supported; use network`, []);
+  if (findTheme(input.theme) === undefined) report(model, 'UNKNOWN_THEME', unknownThemeMessage(input.theme!), []);
   stopOnErrors(model);
   const groupOrder = new Map(orderedGroupIds(model.document).map((id, index) => [id, index]));
   for (const id of groupOrder.keys()) {

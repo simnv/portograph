@@ -61,7 +61,7 @@ const classStyle = (hue: HueRamp, label: string, print: { fill: string; glyph: s
 export const NETWORK_NODE_CLASSES: readonly (readonly [string, NodeClassStyle])[] = [
   ['provider', classStyle(SLATE, 'Provider', { fill: NEUTRAL[300], glyph: NEUTRAL[900] })],
   ['router', classStyle(TEAL, 'Router', { fill: NEUTRAL[700], glyph: WHITE })],
-  ['tbr', classStyle(INDIGO, 'Transit border router', { fill: NEUTRAL[500], glyph: WHITE })],
+  ['tbr', classStyle(INDIGO, 'Transit border router', { fill: NEUTRAL[600], glyph: WHITE })],
   ['rr', classStyle(WARM, 'Route reflector', { fill: NEUTRAL[900], glyph: WHITE })],
 ];
 
@@ -112,7 +112,7 @@ export function nodeBodyFill(style: NodeClassStyle | undefined, mode: ThemeMode)
 export const WASH_PALETTE: readonly { light: string; dark: string; print: string }[] = [
   { light: SLATE[200], dark: SLATE[800], print: NEUTRAL[300] },
   { light: TEAL[200], dark: TEAL[800], print: NEUTRAL[700] },
-  { light: INDIGO[200], dark: INDIGO[800], print: NEUTRAL[500] },
+  { light: INDIGO[200], dark: INDIGO[800], print: NEUTRAL[600] },
   { light: WARM[200], dark: WARM[800], print: NEUTRAL[900] },
   { light: '#d9ecd6', dark: '#2c4a2b', print: NEUTRAL[400] },
   { light: '#f3dce0', dark: '#5a2c36', print: NEUTRAL[600] },
@@ -157,13 +157,6 @@ export const washClass = (classAttr: string | undefined, assignment: WashAssignm
   const token = washToken(classAttr), at = token === undefined ? undefined : assignment.get(token);
   return at === undefined ? undefined : `pg-wash-${at}`;
 };
-
-/** Body fill for one class token in one mode; no token, the plain body. */
-export function washFill(token: string | undefined, mode: ThemeMode, assignment: WashAssignment): string {
-  const known = nodeClassStyle(token);
-  const at = token === undefined ? undefined : assignment.get(token);
-  return known || at === undefined ? nodeBodyFill(known, mode) : washFillAt(at, mode);
-}
 
 /** Body fill of one palette entry in one mode. */
 export function washFillAt(at: number, mode: ThemeMode): string {
@@ -275,7 +268,8 @@ export interface ThemePaint {
   pill: PillPaint;
   link: { stroke: string; label: string; multiplicity: string };
   legend: { text: string };
-  overlay: { stroke: string; opacity: number; mark: string };
+  /** An overlay link; `dash` (absent: solid) tells it from a routed link where colour cannot, as in a greyscale print. */
+  overlay: { stroke: string; opacity: number; mark: string; dash?: string };
 }
 
 export const NETWORK_THEME: Modal<ThemePaint> = {
@@ -283,7 +277,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     background: '#f2f2f3',
     group: { fill: STEEL[100], fillOpacity: 0.55, stroke: STEEL[400], dash: 'none', text: STEEL[700] },
     node: { fill: WHITE, stroke: STEEL[500], text: INK, description: NEUTRAL[700] },
-    tile: { fill: STEEL[500], stroke: STEEL[700] },
+    tile: { fill: STEEL[600], stroke: STEEL[700] },
     glyph: WHITE,
     pill: { fill: STEEL[200], stroke: STEEL[500], text: STEEL[800] },
     link: { stroke: STEEL[800], label: NEUTRAL[700], multiplicity: STEEL[700] },
@@ -294,7 +288,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     background: STEEL[900],
     group: { fill: STEEL[800], fillOpacity: 0.55, stroke: STEEL[600], dash: 'none', text: STEEL[300] },
     node: { fill: STEEL[900], stroke: STEEL[400], text: STEEL[100], description: STEEL[300] },
-    tile: { fill: STEEL[500], stroke: STEEL[300] },
+    tile: { fill: STEEL[600], stroke: STEEL[300] },
     glyph: WHITE,
     pill: { fill: STEEL[800], stroke: STEEL[400], text: STEEL[200] },
     link: { stroke: STEEL[300], label: STEEL[300], multiplicity: STEEL[200] },
@@ -317,10 +311,6 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
 export const nodeClassStyle = (value: string | undefined): NodeClassStyle | undefined =>
   NETWORK_NODE_CLASSES.find(([key]) => key === value)?.[1];
 
-export const linkClassStyle = (value: string | undefined): LinkClassStyle =>
-  NETWORK_LINK_CLASSES.find(([key]) => key === (value ?? LEGEND_DEFAULT_CLASS))?.[1]
-  ?? NETWORK_LINK_CLASSES[0]![1];
-
 /**
  * Whether a link class draws faint (CONTEXT.md, *salience*): a class the profile names with a dash pattern (`dashed`, `dotted`). An unknown class,
  * or none, draws as the default solid link. The fan family (architecture-2 ticket 40) reads it: its 0.09 crossing price assumes faint lines.
@@ -328,14 +318,11 @@ export const linkClassStyle = (value: string | undefined): LinkClassStyle =>
 export const faintLinkClass = (value: string | undefined): boolean =>
   value !== undefined && NETWORK_LINK_CLASSES.some(([key, style]) => key === value && style.dash !== undefined);
 
-export const portRoleStyle = (value: string | undefined): PortRoleStyle | undefined =>
-  NETWORK_PORT_ROLES.find(([key]) => key === value)?.[1];
-
 /** Display label for a legend entry; an unknown author class falls back to its literal name. */
 export function classDisplayLabel(kind: 'symbol' | 'line' | 'port', key: string): string {
   const known = kind === 'symbol' ? nodeClassStyle(key)?.label
     : kind === 'line' ? NETWORK_LINK_CLASSES.find(([name]) => name === key)?.[1].label
-      : portRoleStyle(key)?.label;
+      : NETWORK_PORT_ROLES.find(([name]) => name === key)?.[1].label;
   return known ?? key;
 }
 

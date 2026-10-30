@@ -1,0 +1,27 @@
+# Expected: `theme: snack` is a render input. The layout of this sheet is byte-identical to the layout of the
+# same sheet without the `theme:` line (the echoed document apart), and so is the score. Only the paint
+# differs: neutral node bodies, a class hue on the icon tile and on the pills (blue provider, violet router,
+# pink tbr, orange rr), slate for the two sheet classes (`distribution`, `firewall`), radii 8/8/4. Each of the
+# four profile classes has its own glyph, its own legend name and its own grey tile in print. An overlay link
+# is the snack blue (print: a grey dash-dot line). An unknown id is an error that lists the known ids. Test `theme-id.test.ts` and, for the contrast of every theme, `theme-contrast.test.ts` (ticket 158).
+portograph: 2
+theme: snack
+title: Theme demo
+groups:
+  upstream: { tier: 0, label: Upstream }
+  core: { tier: 1, label: Core }
+  access: { tier: 2, label: Access }
+nodes:
+  isp: { group: upstream, class: provider, label: Provider, description: Transit, ports: [{ name: u1, class: uplink }, { name: f1 }] }
+  r1: { group: core, class: router, label: Router, description: Core, ports: [{ name: d1, class: downlink }, { name: p1, class: peer }, { name: m1, class: mgmt }] }
+  b1: { group: core, class: tbr, label: Border, description: Edge, ports: [{ name: u1, class: uplink }, { name: p1, class: peer }] }
+  rr1: { group: access, class: rr, label: Reflector, description: Control, ports: [{ name: u1, class: uplink }, { name: l1, class: lag }] }
+  sw1: { group: access, class: distribution, label: Distribution, description: Switch, ports: [{ name: u1, class: "uplink down" }] }
+  fw1: { group: access, class: firewall, label: Firewall, ports: [{ name: u1, class: uplink }, { name: f1 }] }
+links:
+  - [isp.u1, r1.d1]
+  - [r1.p1, b1.p1, { class: dashed }]
+  - [r1.m1, rr1.u1]
+  - [b1.u1, sw1.u1]
+  - [rr1.l1, fw1.u1, { class: dotted }]
+  - [isp.f1, fw1.f1, { class: flow }]
