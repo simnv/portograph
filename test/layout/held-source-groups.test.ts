@@ -58,7 +58,11 @@ it('a span corridor does not push the group of a transit source', async () => {
 it('a corridor that follows its child derives the frames again', async () => {
   // The held-lane sheet with `l2` declared before `l1` (main lays it out the same way): 7f's last step moves a corridor that a frame holds,
   // the frame `east` kept its old edge, and the route stage refused the model ("Frames contradict the cell geometry they derive from").
-  const lines = read('a-held-lane-is-reserved-before-a-foreign-lane').split('\n');
+  // Verdana metrics (snack-theme ticket 157): with the long labels of the sheet ("... of the main building") the Verdana boxes are wide enough that 7f makes no corridor
+  // follow its child (the reseat has nothing to do). Shortened to "... of the building" the boxes are as wide as the Arial ones were, and the reseat is adopted again.
+  // The sheet stays as it is on disk; the labels are shortened here. A mere shortening is not enough everywhere: other widths make the reseat refuse, and then the frames are
+  // left stale (reported on ticket 157), which this test does not reach.
+  const lines = read('a-held-lane-is-reserved-before-a-foreign-lane').replaceAll(' of the main building', ' of the building').split('\n');
   const at = lines.findIndex(line => line.startsWith('  l1:'));
   [lines[at], lines[at + 1]] = [lines[at + 1]!, lines[at]!];
   const model = await layout(parse(lines.join('\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
