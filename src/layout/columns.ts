@@ -1195,8 +1195,12 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
     const place = (item: typeof children[number], x: number): void => {
       const delta = x - item.box.x;
       // A child with a cell that the caller may not move (the anchor tier or a flank in centring) stays; its edge still bounds the next.
-      if (Math.abs(delta) <= PLACEMENT_EPS || !cellsOf(item.child).every(movable)) return;
-      for (const cell of cellsOf(item.child)) moveGroup(model, model.groups[cell]!, delta, 0);
+      const cells = cellsOf(item.child);
+      if (Math.abs(delta) <= PLACEMENT_EPS || !cells.every(movable)) return;
+      // The pack is a later write to boxes (R2): a reservation it would break, such as a held lane or a mesh-bus riser that stands where the
+      // child would, keeps the child where it is. Card nodes (ticket 159) made 7f's pack reach a riser lane on the NTP sheet.
+      if (!holdsMove(model, cells.map(cell => ({ group: model.groups[cell]!, bounds: { ...model.groups[cell]!.bounds!, x: model.groups[cell]!.bounds!.x + delta } })), false)) return;
+      for (const cell of cells) moveGroup(model, model.groups[cell]!, delta, 0);
       item.box = { ...item.box, x };
       moved = true;
     };
