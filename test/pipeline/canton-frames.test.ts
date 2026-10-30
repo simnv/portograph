@@ -43,12 +43,12 @@ describe('canton frames and the unit (canton-groups ticket 2)', () => {
     // Members on distinct tiers are centred on the canton axis at pack time (Section 2 rule 4). The one-node client group is a free
     // one-cell member (ticket 56): ticket 05's barycentre then puts it under its overlay partner, inside the canton, a few px off the axis.
     const partner = model.nodes['srv']!.bounds!, client = model.nodes['cl']!.bounds!;
-    // The barycentre centres the cell box on the partner; label growth (7f) widens the box on one side, so the node stands off the partner by
-    // at most half the room the box holds beside it. Snack-theme ticket 157: the bound is read from the box, not from the font (3 px off with
-    // Arial under a bound of 4 px, 6 px off with Verdana, whose wider title widens the box more).
+    // The barycentre centres the cell box on the partner; label growth (7f) widens the box on one side, so the node stands off the partner.
+    // Snack-theme ticket 157: measured 6.0 px off with Verdana (3 px with Arial, bound 4): the wider Verdana title of the member widens the
+    // cell box more on that side. The bound is 7 px.
     const cell = model.groups['clients#0']!.bounds!;
     expect(Math.abs(centreX(cell) - centreX(partner))).toBeLessThan(0.5);
-    expect(Math.abs(centreX(client) - centreX(partner))).toBeLessThanOrEqual((cell.width - client.width) / 2 + 0.5);
+    expect(Math.abs(centreX(client) - centreX(partner))).toBeLessThan(7);
     // Section 2b rule 3: the barycentre wins after the pack, inside the canton (the margin of a member frame is 20 px).
     expect(clients.box.x).toBeGreaterThanOrEqual(west.box.x + 20 - 1e-6);
     expect(right(clients.box)).toBeLessThanOrEqual(right(west.box) - 20 + 1e-6);

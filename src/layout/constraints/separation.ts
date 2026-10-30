@@ -1,6 +1,6 @@
 import type { Rect } from '../../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../../model/layout.js';
-import { deriveFrames } from '../frames.js';
+import { framesAfter } from '../frames.js';
 import { xCatalogue } from './catalogue.js';
 import { RESIDUAL_TOLERANCE, termValue } from './evaluate.js';
 
@@ -42,7 +42,7 @@ export function worseSeparations(now: ReadonlyMap<string, Shortfall>, then: Read
  * The hard separations a proposed set of group boxes would break or deepen, read on the model with the boxes in place; the boxes are put back before this
  * returns. A move that is a stage's own choice (the linked-group grid) asks this before it widens a box, so the gap is kept where the box is first sized
  * and no later pass has to find it short (ticket 19). A frame box is derived from its cells, so both readings derive the frames from the boxes they read
- * (`deriveFrames`), and an entry that names a frame is judged too: a cell of a child frame that the grid widens grows its top-level frame into the band
+ * (`framesAfter`), and an entry that names a frame is judged too: a cell of a child frame that the grid widens grows its top-level frame into the band
  * gap of the next frame, and a reading that kept the published frame box would accept that widening and let G9 find the gap short (ticket 157).
  * An entry that names a frame in a canton (the canton frame or a frame on a chain below one) is left to the close-up of 7f, which packs the cantons and
  * their members to the spacing again after the grid (`closeCantons`, `holdMemberWalls`); no later step packs any other frame.
@@ -50,12 +50,14 @@ export function worseSeparations(now: ReadonlyMap<string, Shortfall>, then: Read
 export function separationsBrokenBy(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): string[] {
   const published = model.frames;
   const saved = proposed.map(item => item.group.bounds!);
-  const derive = (): void => { const frames = deriveFrames(model); if (frames !== undefined) model.frames = frames; };
+  const framed = (frames: typeof published): void => { if (frames !== undefined) model.frames = frames; };
   try {
-    derive();
+    framed(framesAfter(model, []));
     const before = separationShortfalls(model);
+    // Derived before the boxes move: `framesAfter` reads each proposed box against the one the group has.
+    const after = framesAfter(model, proposed);
     for (const item of proposed) item.group.bounds = item.bounds;
-    derive();
+    framed(after);
     const judged = new Map([...separationShortfalls(model)].filter(([, item]) => item.owners.every(owner => !owner.startsWith('frame:') || !inCanton(model, owner.slice('frame:'.length)))));
     return worseSeparations(judged, before);
   } finally {

@@ -1,6 +1,6 @@
 import { frameSubtreeCells } from '../model/model.js';
 import type { Rect } from '../model/geometry.js';
-import type { Frame, Lane, LayoutLink, LayoutModel } from '../model/layout.js';
+import type { Frame, Lane, LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { GROUP_PADDING, groupPadding } from './regions.js';
 import { union } from './skeleton-geometry.js';
 import { laneRunKind } from './lane-kind.js';
@@ -68,6 +68,19 @@ export function rebuildFrames(model: LayoutModel): void {
 }
 
 /** The frames `rebuildFrames` would store, read off the cells as they stand; `undefined` while a cell has no box. */
+/**
+ * The frames as they would stand with the proposed group boxes: `deriveFrames` on a trial that has the groups and their bodies moved; the model is
+ * not changed. The one derivation of the frames after a proposed move: the side-lane guard (lanes.ts) and `separationsBrokenBy` read it.
+ */
+export function framesAfter(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): Frame[] | undefined {
+  const groups = { ...model.groups }, nodes = { ...model.nodes };
+  for (const { group, bounds } of proposed) {
+    const dx = bounds.x - group.bounds!.x;
+    groups[group.id] = { ...group, bounds };
+    for (const id of group.nodes) nodes[id] = { ...model.nodes[id]!, bounds: { ...model.nodes[id]!.bounds!, x: model.nodes[id]!.bounds!.x + dx } };
+  }
+  return deriveFrames({ ...model, groups, nodes });
+}
 export function deriveFrames(model: LayoutModel, withBands = true): Frame[] | undefined {
   const entries = Object.entries(model.document.frames ?? {});
   if (!entries.length) return undefined;

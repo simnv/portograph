@@ -545,8 +545,8 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
   const last = at(run[run.length - 1]!), extent = offsets[run.length - 1]! + last.width;
   // The block keeps its centre, inside the flank walls of its units (`flankRoom`, the wall `pullTier` keeps too): a close-up that centres the run
   // must not move its first unit into the band gap of a flank beside it (ticket 157). A run that no base fits between its walls is held.
-  const lowBase = Math.max(...run.map((unit, i) => flankRoom(model, unit, at(unit)).low - offsets[i]!));
-  const highBase = Math.min(...run.map((unit, i) => flankRoom(model, unit, at(unit)).high - offsets[i]!));
+  const rooms = run.map(unit => flankRoom(model, unit, at(unit)));
+  const lowBase = Math.max(...rooms.map((room, i) => room.low - offsets[i]!)), highBase = Math.min(...rooms.map((room, i) => room.high - offsets[i]!));
   const base = Math.min(Math.max((at(run[0]!).x + last.x + last.width) / 2 - extent / 2, lowBase), highBase);
   const walled = lowBase > highBase + PLACEMENT_EPS;
   const shifts = new Map<LayoutGroup, number>();
@@ -862,12 +862,10 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
         else { from = Math.max(from, low); to = Math.min(to, high); }
       } else { from = to = at.x; flush.add(unit); }
     }
-    // A flank's box is a wall the pull may not cross (`flankRoom`).
-    if (flanksBesideUnit(model, unit).length) {
-      const room = flankRoom(model, unit, at);
-      if (room.high < Infinity) to = Math.max(Math.min(to, room.high), at.x);
-      if (room.low > -Infinity) from = Math.min(Math.max(from, room.low), at.x);
-    }
+    // A flank's box is a wall the pull may not cross (`flankRoom`); a side with no flank has no wall.
+    const room = flankRoom(model, unit, at);
+    if (room.high < Infinity) to = Math.max(Math.min(to, room.high), at.x);
+    if (room.low > -Infinity) from = Math.min(Math.max(from, room.low), at.x);
     from = Math.min(from, to); to = Math.max(from, to);
     if (range !== undefined) wanting.add(unit);
     return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from, to };

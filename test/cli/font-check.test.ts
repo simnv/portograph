@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -17,6 +17,16 @@ describe('Verdana check of the CLI', () => {
     expect(verdanaInstalled([flat])).toBe(true);
     expect(verdanaInstalled([join(temp, 'nested')])).toBe(true);
     expect(verdanaInstalled([other])).toBe(false);
+  });
+
+  it('accepts a link to a Verdana file, and not a broken link', () => {
+    const store = join(temp, 'store'), linked = join(temp, 'linked'), broken = join(temp, 'broken');
+    for (const directory of [store, linked, broken]) mkdirSync(directory, { recursive: true });
+    writeFileSync(join(store, 'verdana-regular.ttf'), '');
+    symlinkSync(join(store, 'verdana-regular.ttf'), join(linked, 'Verdana.ttf'));
+    symlinkSync(join(store, 'absent.ttf'), join(broken, 'Verdana.ttf'));
+    expect(verdanaInstalled([linked])).toBe(true);
+    expect(verdanaInstalled([broken])).toBe(false);
   });
 
   it('reports a missing or unreadable directory as not installed', () => {

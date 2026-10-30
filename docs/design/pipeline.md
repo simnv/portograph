@@ -782,8 +782,10 @@ fixed point of a context built earlier is run again on a fresh context. The wind
 after the passes (ticket 143). A window that moves a partner moves the ends of its overlay chords, and a chord is an overlay
 stop of the alignment: it can free a growth the passes declined, or stop one they kept. A window can also move a group that
 walled another, and the step of its sibling then has room. So after the windows the publication check runs again. While it
-finds an alignment off its feed and budget is left, the passes run again and the windows are placed once more; each round
-spends a pass, so the rounds end. If the check still finds one when the budget is spent, the stall is reported
+finds an alignment off its feed and budget is left, the passes run again, then the parent ports, the seated faces and the
+windows, as after the first run. Each round spends a pass, so the rounds end. A round that changes neither the geometry nor
+what the check finds is a stall the passes cannot see: the rounds stop there and keep the rest of the shared budget for the
+stages after 7c. A check that still finds an alignment when the rounds stop is reported as the stall
 (`PLACEMENT_NON_CONVERGENCE`, ADR-0010) (snack-theme ticket 157). A step that keeps no target, and leaves every one of its feeds no
 nearer its x than it found it, puts its group back where it started and packs the tier instead: the
 passes are a solver, and a step that solves nothing only gives the next pass a new position to chase

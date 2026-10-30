@@ -805,34 +805,39 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   // passes centre on it (architecture ticket 15, follow-up).
   withdrawRecorded(model);
   const seated = seatedFaces(model);
-  timed('centre-passes', () => centrePasses(model, budget));
-  // The parent side of a single feed, after the last pass has moved the children (architecture ticket 15).
-  const anchorTier = model.anchorTier;
-  if (anchorTier !== undefined && model.tierBands.some(band => band.tier === anchorTier)) {
-    const context = centreContext(model, anchorTier);
-    standPortsOverChildren(model, context.steps, stepReader(model, context));
-  }
-  // A face centring left alone stands centred on the body it widened (architecture ticket 10, D3). Read before the overlay windows below.
-  recentreSeatedFaces(model, seated, feedPorts(model));
-  // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass
-  // is read on geometry that a later step moves.
-  if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+  // The parent side of a single feed, after the last pass has moved the children (architecture ticket 15). A face centring left alone stands centred
+  // on the body it widened (architecture ticket 10, D3), read before the overlay windows. The windows of the overlay barycentre are read where
+  // centring has left the partners (ticket 143): a window read in a pass is read on geometry that a later step moves. All three follow every run
+  // of the passes below, the last one too.
+  const passes = (): void => {
+    timed('centre-passes', () => centrePasses(model, budget));
+    const anchorTier = model.anchorTier;
+    if (anchorTier !== undefined && model.tierBands.some(band => band.tier === anchorTier)) {
+      const context = centreContext(model, anchorTier);
+      standPortsOverChildren(model, context.steps, stepReader(model, context));
+    }
+    recentreSeatedFaces(model, seated, feedPorts(model));
+    if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+  };
+  passes();
   // The seated faces and the overlay barycentre above can widen a column after the moves were taken. A window that moves a partner also moves
   // the ends of its overlay chords, and a chord is an overlay stop of the alignment (7c): a chord that moves off a body frees a growth the passes
   // declined, and one that moves onto it stops a growth they kept; a window can also move a group that walled another (a canton member: its
   // sibling's step then has room it did not have). So read once more: a move given back, or an alignment the publication check (`centreViolations`,
-  // `ahead` as the passes read it) finds the step would now take, is settled by the passes the budget has left, and the windows are placed again.
-  // Each round spends a pass of the budget, so the rounds end (R4); a check still failing once the budget is spent is the stall ADR-0010 reports
-  // (snack-theme ticket 157).
-  const unsettled = (): boolean => budget.remaining > 0 && timed('centre-violations', () => centreViolations(model, true)).length > 0;
-  let again = withdrawRecorded(model) || unsettled(), rounds = 0;
-  while (again) {
+  // `ahead` as the passes read it) finds the step would now take, is settled by the passes the budget has left (snack-theme ticket 157).
+  // A round that changes neither the geometry nor what the check finds is a stall the passes cannot see: the rounds stop there and keep the
+  // rest of the shared budget for the stages after 7c (ADR-0010). Each round spends a pass, so the rounds end on the budget too (R4).
+  const check = (): string[] => timed('centre-violations', () => centreViolations(model, true));
+  let found = withdrawRecorded(model) ? undefined : budget.remaining > 0 ? check() : [];
+  let rounds = 0;
+  while (found === undefined || (found.length > 0 && budget.remaining > 0)) {
+    const before = geometry(model), was = found;
     rounds++;
-    timed('centre-passes', () => centrePasses(model, budget));
-    if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
-    again = unsettled();
+    passes();
+    found = check();
+    if (was !== undefined && found.join() === was.join() && geometry(model).every((value, i) => Math.abs(value - before[i]!) <= 0.5)) break;
   }
-  if (rounds > 0 && budget.remaining <= 0 && timed('centre-violations', () => centreViolations(model, true)).length > 0) {
+  if (rounds > 0 && found.length > 0) {
     reportStall(model, [], 'Centering left an alignment off its feed after the last overlay windows and the passes the budget allowed; routing and the final gates decide the retained geometry.');
   }
   refreshWindowDeclines(model);

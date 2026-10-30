@@ -21,9 +21,11 @@ describe('rows of canton members', () => {
     const widest = Math.max(row(na, nb), row(sa, sb));
     expect(west.width).toBeLessThanOrEqual(widest + 40 + 1e-6);
     // Each tier-2 member stands under its tier-1 partner: inside its partner's span, and each row is 40 px apart. Snack-theme ticket 157: the
-    // members share an edge, so the centres differ by half the difference of the two node labels (3.5 px under a bound of 5 px with Arial,
-    // 5.1 px with Verdana); the span is the rule, the centre distance is the font's.
+    // first members share an edge (with Verdana the right one: the left edges are 10.3 px apart), so the centres differ by half the difference
+    // of the two node labels (3.5 px under a bound of 5 px with Arial, 5.1 px with Verdana); the span and the shared edge are the rule, the
+    // centre distance is the font's.
     const under = (child: Rect, parent: Rect): boolean => child.x >= parent.x - 1e-6 && right(child) <= right(parent) + 1e-6;
+    expect(Math.min(Math.abs(sa.x - na.x), Math.abs(right(sa) - right(na)))).toBeLessThan(1);
     expect(under(sa, na) || under(na, sa)).toBe(true);
     expect(under(sb, nb) || under(nb, sb)).toBe(true);
     expect(Math.abs(nb.x - right(na) - 40)).toBeLessThan(1);

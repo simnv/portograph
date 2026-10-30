@@ -19,7 +19,7 @@ import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withStageMutation } from './mutation.js';
 import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
-import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, frameNodes } from './frames.js';
+import { foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { nodeTier } from './read/tier.js';
@@ -142,6 +142,7 @@ export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup
  * Whether a lane is a wall beside the groups of a sub-tier. A perimeter lane stands beside the sub-tiers of its span: its `tier` is the one of its upper end's
  * group, which the lane need not reach (a course that leaves the bottom face of a node drops through the tier gap first). Its x is derived from the outermost
  * box on that span (`rebuildLaneExtents`), so a box that widens takes the lane out with it; only an aligned lane, which stands on its far port's x, is a wall.
+ * `aligned` is the promise 7a records (`Lane.aligned`): the far natural end is a feed of 7c under the lane, so the lane stands on it from centring on.
  * Every other lane keeps its x and stands in its own sub-tier.
  */
 function wallBeside(lane: Lane, tier: number): boolean {
@@ -151,17 +152,6 @@ function wallBeside(lane: Lane, tier: number): boolean {
 /** Whether a lane is a stem of a row bypass: it stands in the gaps of its own group and is derived from the node boxes. */
 function bypassLane(model: LayoutModel, lane: Lane): boolean {
   return lane.kind === 'gap' && lane.owner.kind === 'link' && (model.courses ?? []).some(course => course.link === (lane.owner as { id: string }).id && isBypassCourse(course));
-}
-/** The frame boxes as they would stand with the proposed group boxes: `deriveFrames` on a trial that has the groups and their bodies moved. */
-function framesAfter(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): Map<string, Rect> | undefined {
-  const groups = { ...model.groups }, nodes = { ...model.nodes };
-  for (const { group, bounds } of proposed) {
-    const dx = bounds.x - group.bounds!.x;
-    groups[group.id] = { ...group, bounds };
-    for (const id of group.nodes) nodes[id] = { ...model.nodes[id]!, bounds: { ...model.nodes[id]!.bounds!, x: model.nodes[id]!.bounds!.x + dx } };
-  }
-  const derived = deriveFrames({ ...model, groups, nodes });
-  return derived === undefined ? undefined : new Map(derived.map(frame => [frame.id, frame.box]));
 }
 /**
  * A side lane stands outside every frame that holds its node (side-faces.md, Section 10). A move is refused when the frame box rebuilt from the
@@ -173,8 +163,9 @@ function sideLaneFramesHold(model: LayoutModel, proposed: { group: LayoutGroup; 
   const sides = model.lanes.filter(lane => isGapRun(lane) && lane.port !== undefined);
   if (!sides.length || !model.frames?.length || proposed.every(({ group, bounds }) => Math.abs(bounds.x - group.bounds!.x) <= PLACEMENT_EPS
     && Math.abs(bounds.width - group.bounds!.width) <= PLACEMENT_EPS)) return true;
-  const after = framesAfter(model, proposed);
-  if (after === undefined) return true;
+  const derived = framesAfter(model, proposed);
+  if (derived === undefined) return true;
+  const after = new Map(derived.map(frame => [frame.id, frame.box]));
   return sides.every(lane => model.frames!.filter(frame => frameNodes(model, frame.id).includes(lane.port!.node)).every(frame => {
     const reach = (box: Rect): number => lane.side === 'right' ? right(box) - lane.bounds.x : right(lane.bounds) - box.x;
     const next = after.get(frame.id);

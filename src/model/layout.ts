@@ -283,7 +283,12 @@ export interface Lane extends OwnedElement {
   ring?: number;
   /** A side or gap lane: the lateral port the lane serves. `tier` is that end's sub-tier, `side` the port's side, `group` its group. */
   port?: PortRef;
-  /** A side lane only: 7a seated the lane on the far port's x (`chosen === farX`), so its part is a drop. A lane that centring (7c) seated is recorded by `SIDE_LANE_SEATED`. `SIDE_SHAPE_LOST` reads both. */
+  /**
+   * A side lane: 7a seated the lane on the far port's x (`chosen === farX`), so its part is a drop. A lane that centring (7c) seated is recorded by `SIDE_LANE_SEATED`.
+   * `SIDE_SHAPE_LOST` reads both. A perimeter lane: its course has a natural end, and the lane promises that end a drop with no turn. 7a records the promise,
+   * not where the lane stood then: the natural end is a feed of 7c under the lane's x (`read/feeds.ts`), so centring brings the end under the lane and each
+   * replay of the lane (`courseGeometry`) stands it on that end's x. `wallBeside` (lanes.ts) reads it: only such a lane is a wall.
+   */
   aligned?: true;
   group: string;
   tier: number;
