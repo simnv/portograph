@@ -1175,7 +1175,9 @@ export function sweptUnits(model: LayoutModel): Map<string, string> {
  * the row is laid again at the start and at the end of centring, and after the rows rule. A child stays on the side
  * it stands on and moves toward the cells of its parent: its frame box ends `GROUP_PADDING` from the widest parent cell
  * on that side, and two children side by side end `2 * GROUP_PADDING` apart, the margin each block keeps. The
- * parent's cells stay where they are, and a child with a cell that `movable` refuses stays where it is. Idempotent:
+ * parent's cells stay where they are, and a child with a cell that `movable` refuses stays where it is. Every move asks the move guard
+ * (`holdsMove`, R2): a child that would break a reservation (a lane reserved in 7a, a straight link, an exit) stays where it is, and in a row
+ * of children the ones before it close up to it from the other side; `FRAME_PACK_HELD` names a child whose row still stands open. Idempotent:
  * a row that stands packed is not moved. Returns whether a cell moved.
  */
 export function packBesideRows(model: LayoutModel, movable: (cell: string) => boolean = () => true): boolean {
@@ -1192,24 +1194,41 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
     if (!beside.length && !pure.length) continue;
     const standing = frames[parent]!.cells.filter(cell => beside.some(item => tierOf(cell) >= item.range[0] && tierOf(cell) <= item.range[1])).map(cell => cellReach(model, cell));
     const centre = (item: typeof children[number]): number => item.box.x + item.box.width / 2;
-    const place = (item: typeof children[number], x: number): void => {
-      const delta = x - item.box.x;
+    /** Moves the child to `x`; true when the move guard holds it where it stands. */
+    const place = (item: typeof children[number], x: number): boolean => {
+      const delta = x - item.box.x, cells = cellsOf(item.child);
       // A child with a cell that the caller may not move (the anchor tier or a flank in centring) stays; its edge still bounds the next.
-      const cells = cellsOf(item.child);
-      if (Math.abs(delta) <= PLACEMENT_EPS || !cells.every(movable)) return;
-      // The pack is a later write to boxes (R2): a reservation it would break, such as a held lane or a mesh-bus riser that stands where the
-      // child would, keeps the child where it is. Card nodes (ticket 159) made 7f's pack reach a riser lane on the NTP sheet.
-      if (!holdsMove(model, cells.map(cell => ({ group: model.groups[cell]!, bounds: { ...model.groups[cell]!.bounds!, x: model.groups[cell]!.bounds!.x + delta } })), false)) return;
+      if (!cells.every(movable)) return false;
+      if (Math.abs(delta) <= PLACEMENT_EPS) { warnPackHeld(model, item.child, parent, 0); return false; }
+      // The pack is a later write to boxes (R2): it asks the move guard, as every column move does. A child that would cross a lane, a straight link or
+      // an exit reserved before it stays where it stands, and its edge bounds the next; `FRAME_PACK_HELD` names it while its row stands open.
+      if (!holdsMove(model, cells.map(cell => ({ group: model.groups[cell]!, bounds: { ...model.groups[cell]!.bounds!, x: model.groups[cell]!.bounds!.x + delta } })), false)) {
+        warnPackHeld(model, item.child, parent, delta);
+        return true;
+      }
+      warnPackHeld(model, item.child, parent, 0);
       for (const cell of cells) moveGroup(model, model.groups[cell]!, delta, 0);
       item.box = { ...item.box, x };
       moved = true;
+      return false;
     };
     // `GROUP_PADDING` below is `CELL_TO_CHILD_FRAME_GAP` from the reach of a parent cell (the first child of a side) and the margin of the frame
     // before it (every next child), so two children end `FRAME_TO_FRAME_GAP` apart. The sums stay as they were written: the order of the additions is the output.
     const closeUp = (row: typeof children): void => {
       const sorted = [...row].sort((a, b) => centre(a) - centre(b));
-      let edge = sorted[0]!.box.x + sorted[0]!.box.width + GROUP_PADDING;
-      for (const item of sorted.slice(1)) { place(item, edge + GROUP_PADDING); edge = item.box.x + item.box.width + GROUP_PADDING; }
+      let edge = sorted[0]!.box.x + sorted[0]!.box.width + GROUP_PADDING, held = -1;
+      for (const [i, item] of sorted.entries()) {
+        if (i === 0) continue;
+        if (place(item, edge + GROUP_PADDING)) held = i;
+        edge = item.box.x + item.box.width + GROUP_PADDING;
+      }
+      if (held < 0) return;
+      // A child the guard holds stands where it is, as the first child does: the children before it close up to it from the other side, each
+      // asking the guard again. The last held child is the anchor, so a child held before it bounds the ones before it in turn.
+      let low = sorted[held]!.box.x - GROUP_PADDING;
+      for (let i = held - 1; i >= 0; i--) { const item = sorted[i]!; place(item, low - GROUP_PADDING - item.box.width); low = item.box.x - GROUP_PADDING; }
+      // The row stands packed when each held child stands its gap from the one before it: its warning is withdrawn.
+      for (const [i, item] of sorted.entries()) if (i > 0 && Math.abs(item.box.x - (sorted[i - 1]!.box.x + sorted[i - 1]!.box.width + 2 * GROUP_PADDING)) <= PLACEMENT_EPS) warnPackHeld(model, item.child, parent, 0);
     };
     if (standing.length) {
       const low = Math.min(...standing.map(reach => reach.x)), high = Math.max(...standing.map(reach => reach.x + reach.width)), middle = (low + high) / 2;
@@ -1224,6 +1243,19 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
     for (const row of pure) closeUp(row);
   }
   return moved;
+}
+
+const FRAME_PACK_HELD = 'FRAME_PACK_HELD';
+/**
+ * Withdraws the `FRAME_PACK_HELD` warning of a child frame, and raises it again when the pack had to leave the child `delta` from its packed place (R6). A later pack
+ * that finds the child packed, or moves it, withdraws it, so the warning names only a child that stands unpacked in the published model.
+ */
+function warnPackHeld(model: LayoutModel, child: string, parent: string, delta: number): void {
+  const prefix = `Frame ${child} cannot be packed beside its row in ${parent}`;
+  model.diagnostics = model.diagnostics.filter(item => !(item.code === FRAME_PACK_HELD && item.message.startsWith(prefix)));
+  if (Math.abs(delta) <= PLACEMENT_EPS) return;
+  model.diagnostics.push({ stage: 'placement', severity: 'warning', code: FRAME_PACK_HELD, owners: [{ kind: 'group', id: child }],
+    message: `${prefix}: the move of ${Math.round(Math.abs(delta) * 100) / 100} px would break a reservation made before it (a lane, a straight link or an exit), so it stays where it stands.` });
 }
 
 /** A window `[low, high]` on the x of a cell box; a cell of a frame that stands beside another column keeps inside it. */
