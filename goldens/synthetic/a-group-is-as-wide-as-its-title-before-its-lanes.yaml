@@ -1,0 +1,24 @@
+# Expected: `relay` holds two small nodes, and its title is wider than they are. The box takes the
+# title width plus both 8 px insets when group sizes are fixed (stage 5), before 7a reserves the
+# lanes of the two links that pass its tier. The lanes stand beside the wider box, so 7f finds the
+# room for the title already there: no widening is refused (no GROUP_LABEL_GAP_INFEASIBLE) and the
+# title stands inside its insets. Before the fix the box was as wide as its nodes, a lane stood
+# against it, and 7f refused the widening (snack-theme ticket 157, the route-reflector group of
+# m1-sip-edge).
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  relay: { tier: 1, label: "A relay title wider than its nodes" }
+  lower: { tier: 2, label: Lower }
+nodes:
+  up-a: { group: upper, label: "", ports: [{ name: p, side: bottom }, { name: q, side: bottom }] }
+  up-b: { group: upper, label: "", ports: [{ name: p, side: bottom }, { name: q, side: bottom }] }
+  relay-a: { group: relay, label: "", ports: [{ name: p, side: top }] }
+  relay-b: { group: relay, label: "", ports: [{ name: p, side: top }] }
+  low-a: { group: lower, label: "", ports: [{ name: p, side: top }] }
+  low-b: { group: lower, label: "", ports: [{ name: p, side: top }] }
+links:
+  - [up-a.p, relay-a.p]
+  - [up-b.p, relay-b.p]
+  - [up-a.q, low-a.p]
+  - [up-b.q, low-b.p]

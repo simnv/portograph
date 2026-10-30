@@ -412,6 +412,14 @@ rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy
 positions. Preserve signed keys and the relative physical order of unequal author keys, not an
 absolute slot number.
 
+**A group box holds its own title from here on** (snack-theme ticket 157). The box a group's content asks for (`contentBox`, which
+`fitRegionGroup` fits) is at least as wide as the group's measured title plus the 8 px title inset on each side and one clearance step
+beyond each (`ownTitleFloor`, `titleRoom`, `title-room.ts`, the same geometry 7f places the title with), centred on its nodes. The step is
+there because a lane stands on the box edge, its link-free margin to the title is the inset itself, and 7f refuses a title x within one
+tolerance of that margin. 7a therefore stands its lanes beside a box that already
+holds the title, and 7f only places it; a widening that 7f still asks (a title nudged off a leg) keeps the `growthPlan` refusal. A rank cell has
+no floor: its frame's title is placed in 7f.
+
 **The bus edge is read again here** (ticket 83). Once every routed port has its final side, and before the nodes are re-sized and the rows
 repacked, `busSide` counts the legs each horizontal edge of the row carries within the bar's span (the members' bus ports, first to last, at the
 skeleton's x) and fixes `bus.side` at the edge with fewer, the title edge on a tie. Term 1 is exact: the routed, non-stub ports on that edge of

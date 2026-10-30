@@ -21,6 +21,7 @@ import { score } from '../../src/score/index.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../../src/text/index.js';
 import { orderedGroupIds } from '../../src/model/model.js';
 import { generateScaleYaml } from '../../scripts/scale-input.mjs';
+import { titleRoom } from '../../src/layout/title-room.js';
 import { placed } from './phase-two-fixture.js';
 
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
@@ -125,12 +126,10 @@ describe('group label bands', () => {
         lines: measured.lines, textRotation: 0 });
       expect(label.bounds!.y).toBe(band.bounds.y + 4);
       expect(label.bounds!.x).toBeGreaterThanOrEqual(group.bounds!.x + 8);
-      // Verdana metrics (snack-theme ticket 157): `route-reflector` (161.5 px) is narrower than its title plus both insets (166.7 px) and a lane stands
-      // 1.2 px beyond its right edge, so the widening is refused (`GROUP_LABEL_GAP_INFEASIBLE`) and the title keeps its first-free place, inside the box
-      // but over the inset. Placement did not reserve the title width before the lane (open defect, reported on ticket 157); no other group may do this.
-      const refused = model.diagnostics.some(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE' && item.owners?.some(owner => 'id' in owner && owner.id === id));
-      expect(refused, id).toBe(id === 'route-reflector');
-      expect(right(label.bounds!)).toBeLessThanOrEqual(right(group.bounds!) - (refused ? 0 : 8) + 1e-6);
+      // Every box holds its title and both insets before 7a reserves its lanes (`ownTitleFloor`, snack-theme ticket 157): under Verdana the
+      // `route-reflector` title (150.7 px + 2 x 8 px) is wider than its two nodes and their padding, and no widening may be refused.
+      expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE' && item.owners?.some(owner => 'id' in owner && owner.id === id)), id).toEqual([]);
+      expect(right(label.bounds!)).toBeLessThanOrEqual(right(group.bounds!) - 8 + 1e-6);
       // The nearest node on the band's side sits exactly one clearance away from it.
       const gaps = group.nodes.map(nodeId => side === 'top' ? model.nodes[nodeId]!.bounds!.y - bottom(band.bounds)
         : band.bounds.y - bottom(model.nodes[nodeId]!.bounds!));
@@ -356,14 +355,16 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     const model = run(before);
 
     // Every blocked group is fed from above, so its title takes the bottom edge (ADR-0011): the
-    // long label meets no link there, the initial reservation widens each group to the label in one
-    // pass, and no collision-growth replay spends the shared budget. The tied-title collision path is
+    // long label meets no link there. Sizing already gave each box the title room (`ownTitleFloor`, snack-theme ticket 157), so the
+    // initial reservation finds it, and no collision-growth replay spends the shared budget. The tied-title collision path is
     // covered by the widening test above; budget exhaustion by the lane-blocked test below.
     for (const i of pairs) {
       const group = model.groups[`blocked-${i}`]!, label = model.labels.find(item => item.id === `label:group:blocked-${i}`)!;
       expect(model.labelBands.find(item => item.group === `blocked-${i}`)!.side).toBe('bottom');
-      expect(group.bounds!.width).toBeCloseTo(label.bounds!.width + 16, 9);
-      expect(label.bounds!.x).toBe(group.bounds!.x + 8);
+      expect(before.groups[`blocked-${i}`]!.bounds!.width).toBeCloseTo(titleRoom(label.text!), 9);
+      expect(group.bounds!.width).toBeCloseTo(titleRoom(label.text!), 9);
+      // The box is the title room, one clearance step beyond each inset, so the label takes the centre: 8 px and one step from the left edge.
+      expect(label.bounds!.x).toBeCloseTo(group.bounds!.x + (group.bounds!.width - label.bounds!.width) / 2, 9);
       expect(groupLabelObstacles(model).some(item => overlaps(label.bounds!, item.bounds))).toBe(false);
     }
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toEqual([]);
@@ -524,6 +525,10 @@ links: [[a.p, z.p]]`;
       for (const [id, x] of Object.entries({ top: 447.5, first: 0, second: 150, third: 300, low: 447.5 })) {
         moveGroup(draft, draft.groups[id]!, x - draft.groups[id]!.bounds!.x, 0);
       }
+      // Sizing holds each title's width from stage 5 on (`ownTitleFloor`, snack-theme ticket 157), so a free group no longer reaches 7f
+      // narrower than its title. The stage input is forged with the 90 px boxes of the nodes and padding alone, the box a model sized
+      // before that rule carries, so the 7f producer still has two reservations to make in turn.
+      for (const id of ['first', 'second']) draft.groups[id]!.bounds!.width = 90;
     });
     const before = bundles(bars(centre(flanks(lanes(rowed)))));
 
