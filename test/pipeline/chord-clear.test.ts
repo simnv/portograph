@@ -5,6 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { overlayCrossings, spent, stepOverChords } from '../../src/layout/chord-clear.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { deriveFrames } from '../../src/layout/frames.js';
+import { columnShifts, holdColumnAxes, holdMemberWalls, packBesideRows } from '../../src/layout/columns.js';
 import { crosses, overlayBlockers, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -101,7 +102,8 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     // Main 6757da1 moves `row-11` by 0 here. The first try moved it -25, +82, +0.5 and +0.7 px in four rounds and kept nothing after the first.
     // 1587.4 before ticket 78 ordered the tier-6 row by its partners; 1489.1 before architecture-2 ticket 23 inserted the track and label
     // room beside zone-7b and the room on row-14 and zone-1, which push the lanes and the row beyond them out (label room wins over a lane).
-    expect(Math.abs(model.groups['row-11']!.bounds!.x - 1807.8)).toBeLessThan(30);
+    // 1748.7 since ticket 157 (Verdana metrics; 1807.8 under Arial): the step of round 0 moves the row by -7.2 px, from 1755.9, and no later round moves it.
+    expect(Math.abs(model.groups['row-11']!.bounds!.x - 1748.7)).toBeLessThan(30);
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE' && d.message.startsWith('The cantons'))).toEqual([]);
     // The centring warning on main stands; the step adds none.
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
@@ -252,8 +254,15 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
   it('a slide the column rules would undo is refused in a real layout (three-canton-groups-close-up-to-a-band-gap)', async () => {
     const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
     // A slide of a member frame by 63 px straightened two chords in an earlier build and left the finished layout off the fixed point of the
-    // column rules: `packBesideRows` moved it back. The canvas is the one of main (1921.3), not the widened one (1984.5).
-    expect(model.canvas!.width).toBeLessThan(1930);
+    // column rules: `packBesideRows` moved it back. The published layout is their fixed point: asked again on a copy (as `drift` in decide.ts
+    // asks them), they move no group. The canvas is the one of main under Verdana (1996.2; 1921.3 under Arial), not one widened by such a
+    // slide (1984.5 under Arial, ticket 157).
+    const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    const before = new Map(Object.values(copy.groups).map(group => [group.id, { ...group.bounds! }]));
+    columnShifts(copy, 0); packBesideRows(copy); holdMemberWalls(copy); holdColumnAxes(copy, 0);
+    const drift = Math.max(0, ...Object.values(copy.groups).map(group => Math.abs(group.bounds!.x - before.get(group.id)!.x)));
+    expect(drift).toBeLessThan(0.5);
+    expect(model.canvas!.width).toBeLessThan(2005);
   }, 120000);
 });
 
