@@ -4,7 +4,7 @@ import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFami
 import { refuseFanMembers, refuseStemCrowded, titleCrowdedFanMembers } from './fan-admission.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
-import { centreContext, refreshWindowDeclines } from './centre.js';
+import { centreContext, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
 import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
@@ -457,5 +457,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // The window declines of 7c name the links still off their seat on the geometry that publishes: the close-up, the chord step and the replays of 7f
   // move groups after the last centring run (architecture-2 ticket 31).
   refreshWindowDeclines(draft);
+  // The same for an alignment a step could not make: a link that stands vertical on that geometry is no longer named (architecture-2 ticket 32).
+  refreshAlignmentDeclines(draft);
   note('diagnostics', 'done');
 }

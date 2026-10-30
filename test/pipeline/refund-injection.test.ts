@@ -32,6 +32,7 @@ vi.mock('../../src/layout/lanes.js', async importOriginal => {
 
 const SHEET = 'goldens/synthetic/a-chord-and-a-lane-share-a-middle-tier.yaml';
 const SPAN_SHEET = 'goldens/synthetic/a-chord-over-three-tier-gaps-passes-two-middle-tiers.yaml';
+const FAN_SHEET = 'goldens/synthetic/a-fan-spreads-its-ports-so-its-chords-hold-clearance.yaml'; // one fan re-run
 const run = async (at: number, sheet = SHEET, bundlesAt = 0): Promise<{ starts: number; runs: number; stage: string | undefined }> => {
   injected.at = at; injected.calls = 0; injected.bundlesAt = bundlesAt; injected.bundlesCalls = 0;
   resetAttemptCounters();
@@ -60,10 +61,13 @@ describe('a placement that stage 7a refuses is still a start', () => {
   it('counts a span trial refused at stage 7e', async () => {
     const plain = await run(0, SPAN_SHEET);
     expect(plain.stage).toBe('link-labels');
-    expect(plain.starts).toBe(3);
-    // The span trial is the third placement (the second is a fan re-run); its 7e refuses. The start is spent, and the command ends with the sheet as the baseline made it.
-    expect(await run(0, SPAN_SHEET, 3)).toEqual({ starts: 3, runs: 3, stage: 'link-labels' });
-    // Refused at the fan re-run (the second placement): a fan re-run does not catch a refusal, so the command ends with it, after two starts.
-    expect(await run(0, SPAN_SHEET, 2)).toEqual({ starts: 2, runs: 2, stage: undefined });
+    // Since architecture-2 ticket 32 the parent `n` spreads its two ports over its children, both drops stand vertical, and the sheet makes no fan re-run:
+    // the span trial is the second placement.
+    expect(plain.starts).toBe(2);
+    // The span trial's 7e refuses. The start is spent, and the command ends with the sheet as the baseline made it.
+    expect(await run(0, SPAN_SHEET, 2)).toEqual({ starts: 2, runs: 2, stage: 'link-labels' });
+    // Refused at the fan re-run (the second placement of a sheet that makes one): a fan re-run does not catch a refusal, so the command ends with it,
+    // after two starts.
+    expect(await run(0, FAN_SHEET, 2)).toEqual({ starts: 2, runs: 2, stage: undefined });
   }, 240000);
 });
