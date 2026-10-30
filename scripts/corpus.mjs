@@ -6,7 +6,8 @@
  * Columns, after a header line:
  *   file     the sheet, relative to the repository root
  *   Q        the score (printed for the reader; `gate:compare` never judges it)
- *   X        routed crossings
+ *   X        routed crossings that are not faint (all of them on a sheet with no fan family)
+ *   Xf       faint crossings: two members of one fan family cross (architecture-2 ticket 40); printed, never judged
  *   W        canvas, `<width>x<height>` in whole pixels
  *   gates    the error-severity gate ids with a violation, comma-separated, or `-`
  *   warn     the warning-severity gate ids with a violation, or `-` (printed, never judged)
@@ -40,7 +41,8 @@ function row(file, model, snapshot, hash) {
   return [
     file,
     snapshot.Q.toFixed(4),
-    String(snapshot.metrics.crossings.count),
+    String(snapshot.metrics.crossings.count - (snapshot.metrics.crossings.faint ?? 0)),
+    String(snapshot.metrics.crossings.faint ?? 0),
     canvas,
     failed('error'),
     failed('warning'),

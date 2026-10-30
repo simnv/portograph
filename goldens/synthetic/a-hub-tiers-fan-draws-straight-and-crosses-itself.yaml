@@ -1,0 +1,46 @@
+# Expected: The dashed links of two hubs on one tier to four framed sites, two above and two below, form one fan family (architecture-2
+# ticket 40; user rulings Q124 to Q126). Each member is one straight segment from face to face, and members of the family cross each other as
+# an X; those crossings are faint (0.09 each, the Xf column) and X counts the others only. The member from Hub A to D 1 would pass the
+# tall vault between the hubs: it falls back alone, orthogonal and dashed, and names `body`. D 1 sends three links down to the clients, so
+# the Site D title stands on its top edge, where the member from Hub B enters on a slant: the title stands beside the chord. The solid link
+# from the vault to C 3 is no member and drops straight.
+portograph: 2
+profile: network
+groups:
+  site-a: { tier: 1, label: Site A }
+  site-b: { tier: 1, label: Site B }
+  core: { tier: 2, label: Core }
+  site-c: { tier: 3, label: Site C }
+  site-d: { tier: 3, label: Site D }
+  clients: { tier: 4, label: Clients }
+nodes:
+  a-1: { group: site-a, class: router, label: A 1 }
+  a-2: { group: site-a, class: router, label: A 2 }
+  b-1: { group: site-b, class: router, label: B 1 }
+  b-2: { group: site-b, class: router, label: B 2 }
+  hub-a: { group: core, class: provider, label: Hub A }
+  vault: { group: core, class: server, label: Vault, size: { width: 60, height: 110 } }
+  hub-b: { group: core, class: provider, label: Hub B }
+  c-1: { group: site-c, class: router, label: C 1 }
+  c-2: { group: site-c, class: router, label: C 2 }
+  c-3: { group: site-c, class: switch, label: C 3 }
+  d-1: { group: site-d, class: router, label: D 1 }
+  p-1: { group: clients, class: server, label: P 1 }
+  p-2: { group: clients, class: server, label: P 2 }
+  p-3: { group: clients, class: server, label: P 3 }
+links:
+  - [a-1, a-2]
+  - [b-1, b-2]
+  - [c-1, c-2]
+  - [a-1, hub-a, { class: dashed }]
+  - [b-1, hub-a, { class: dashed }]
+  - [hub-a, c-1, { class: dashed }]
+  - [hub-a, d-1, { class: dashed }]
+  - [a-2, hub-b, { class: dashed }]
+  - [b-2, hub-b, { class: dashed }]
+  - [hub-b, c-2, { class: dashed }]
+  - [hub-b, d-1, { class: dashed }]
+  - [vault, c-3]
+  - [d-1, p-1]
+  - [d-1, p-2]
+  - [d-1, p-3]
