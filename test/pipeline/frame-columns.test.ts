@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, render, score } from '../../src/index.js';
 import { alignLinkedGroupGrid } from '../../src/layout/bands.js';
+import { frameColumns, frameSeparation } from '../../src/layout/columns.js';
 import { deriveFrames } from '../../src/layout/frames.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -109,6 +110,25 @@ describe('frame columns', () => {
     const box = (id: string) => model.frames!.find(item => item.id === id)!.box;
     expect(box('c').x - right(box('a')), 'a and c stand no more than a band gap apart').toBeLessThanOrEqual(bandGap(model) + 1e-6);
   }, 60000);
+
+  // Snack-theme ticket 159: a column spent its slack toward a plain group, so a cell that slid to the column edge took the frame box
+  // inside the separation G9 judges (bandGap + COLUMN_SLACK), and the plain group was only kept a band gap from the column edge.
+  // The slack toward a plain group is now what it leaves beyond that separation, and the group keeps the separation from the edge.
+  it.each(['a-link-across-one-document-tier-gap-is-straight-when-nothing-stands-on-it', 'a-foreign-unit-between-two-canton-groups'])(
+    '%s: a frame column reaches no plain group of its sub-tiers closer than the separation the gate judges', async name => {
+      const model = await run(name), separation = frameSeparation(model, false);
+      let pairs = 0;
+      for (const column of frameColumns(model)) {
+        for (const group of Object.values(model.groups)) {
+          if (group.frame !== undefined || !group.bounds || group.tier === undefined || group.tier < column.from || group.tier > column.to) continue;
+          const between = Math.max(group.bounds.x - (column.x + column.width), column.x - right(group.bounds));
+          expect(between, `${column.id} and ${group.id}`).toBeGreaterThanOrEqual(separation - 1e-6);
+          pairs++;
+        }
+      }
+      expect(pairs).toBeGreaterThan(0);
+      expect(score(model).snapshot.gates.G9!.violations).toEqual([]);
+    }, 60000);
 
   it('a widening that a lane forbids is refused: the title keeps its box and the layout reports it', async () => {
     const yaml = fixture('an-own-frame-lane-stands-beside-a-neighbour-frame').replace('label: East }', 'label: East frame with a long title }');

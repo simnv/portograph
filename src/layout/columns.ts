@@ -1331,6 +1331,15 @@ export function besideWalls(model: LayoutModel): Map<string, CellWindow> {
   return walls;
 }
 
+/**
+ * The separation the final gate judges between the box of a top-level frame and its neighbour in the root scope (`separation-root-frames`,
+ * `separation-root-frame-group`): a band gap from a frame, a band gap and `COLUMN_SLACK` from a plain group (a flank, a grid, a bar or a row
+ * group). A reader that spends room beside a frame column reads it here, before the move.
+ */
+export function frameSeparation(model: LayoutModel, frame: boolean): number {
+  return bandGap(model) + (frame ? 0 : COLUMN_SLACK);
+}
+
 /** The column of one top-level frame as it stands: its x extent, the sub-tiers it spans, and its cells. */
 export interface FrameColumn extends Column {
   id: string; from: number; to: number; cells: ReadonlySet<string>;
@@ -1340,10 +1349,11 @@ export interface FrameColumn extends Column {
 
 /**
  * The columns of a model's top-level frames, read off the geometry as it stands. A parent's frame box
- * holds its children, so the box of a top-level frame, with up to `COLUMN_SLACK` on each side that the next frame leaves beyond a band gap, is its column, and every cell of a child frame
+ * holds its children, so the box of a top-level frame, with up to `COLUMN_SLACK` on each side that the neighbours leave beyond the separation
+ * the gate judges (`frameSeparation`), is its column, and every cell of a child frame
  * stands in the column of the top-level frame above it. Centring reads them once, before its first
  * step, and treats them as walls: a cell stays inside its column, and a group that is not in a frame
- * stays out of the column of every frame whose sub-tiers it shares.
+ * stays that separation out of the column of every frame whose sub-tiers it shares.
  */
 export function frameColumns(model: LayoutModel): FrameColumn[] {
   const frames = model.document.frames, derived = deriveFrames(model);
@@ -1354,16 +1364,23 @@ export function frameColumns(model: LayoutModel): FrameColumn[] {
     const cells = cellsOf(frame.id), tiers = cells.map(cell => model.groups[cell]!.tier!);
     return { frame, cells, from: Math.min(...tiers), to: Math.max(...tiers) };
   });
-  const gap = bandGap(model);
+  const plain = Object.values(model.groups).filter(group => group.frame === undefined && group.bounds !== undefined && group.tier !== undefined);
   return tops.map(({ frame, cells, from, to }) => {
-    // The slack is what the boxes of the neighbour frames leave beyond a band gap, shared between the
-    // two; read off the boxes as they stand, so a replay of centring cannot spend it a second time.
+    // The slack is what the neighbours leave beyond the separation the final gate judges (`frameSeparation`), read off the boxes as they
+    // stand, so a replay of centring cannot spend it a second time. A neighbour frame shares it: each frame may spend half. A plain group
+    // does not spend it, and its window keeps the separation from the column edge (`centre.ts` `columnWindow`), so the frame spends it all.
     const room = (side: 1 | -1): number => {
       let free = Infinity;
+      const near = (x: number, width: number): number => side > 0 ? x - (frame.box.x + frame.box.width) : frame.box.x - (x + width);
       for (const other of tops) {
         if (other.frame === frame || other.from > to || other.to < from) continue;
-        const between = side > 0 ? other.frame.box.x - (frame.box.x + frame.box.width) : frame.box.x - (other.frame.box.x + other.frame.box.width);
-        if (between >= 0) free = Math.min(free, Math.max(0, between - gap) / 2);
+        const between = near(other.frame.box.x, other.frame.box.width);
+        if (between >= 0) free = Math.min(free, Math.max(0, between - frameSeparation(model, true)) / 2);
+      }
+      for (const group of plain) {
+        if (group.tier! < from || group.tier! > to) continue;
+        const between = near(group.bounds!.x, group.bounds!.width);
+        if (between >= 0) free = Math.min(free, Math.max(0, between - frameSeparation(model, false)));
       }
       return Math.min(COLUMN_SLACK, free);
     };
