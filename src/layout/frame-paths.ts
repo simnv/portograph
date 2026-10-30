@@ -673,8 +673,8 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
       if (crossable?.has(other.id) && spans) continue;
       // A fan member crosses the fallback legs of its own family (architecture-2 ticket 40, user ruling Q126): the crossing is faint, and read as
       // a direct member reads a fallback leg. The tier-gap plan seats the fallback's row across the chord or clear of it (`slants`, gap-plan.ts).
-      // A fallback's leg is not final before 7f (a side round or a retry can move it), so its stem is judged at the end of 7f: a chord that
-      // still passes a sibling's stem there is refused (`siblingStemCrowded`, the crowding retry).
+      // A fallback's leg is not final before the freeze (a side round can move it), so its stem is judged there: a chord that still passes a
+      // sibling's stem falls back (`refuseStemCrowded`), and the crowding retry reads the same test at the end of 7f (`siblingStemCrowded`).
       if (spans && fanSiblings(link, other)) continue;
       if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }

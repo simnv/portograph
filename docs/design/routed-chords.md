@@ -524,8 +524,9 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   strip (the title moves beside the chord: `planLabels` reads the held chord's crossing as an obstacle and the
   frame grows if it must). Any other crossed title strip keeps the fit-beside test. A body refuses the member
   (`body`): it falls back alone, orthogonal and dashed. The admission lets a member cross the leg of a sibling that
-  falls back (the crossing is faint); that leg's stem is final only at the end of 7f, so there a member that passes a
-  sibling's stem (no strict crossing beyond the stem with the clearance, `siblingStemCrowded`) is crowded.
+  falls back (the crossing is faint); that leg's side is final only at the freeze, so there a member that passes a
+  sibling's stem (no strict crossing beyond the stem with the clearance, `siblingStemCrowded`) falls back
+  (`refuseStemCrowded`, reason `crowds`), and the crowding retry reads the same test at the end of 7f.
 - **Reservation.** The tier-gap plan reads the straight members of a gap (`PlanFrame.slants`): a row moves down
   until its legs and run cross a chord strictly or keep the clearance (`clearOfSlants`), and the gap grows for it.
   The crowding retry of 7f refuses a member that a moved part comes within the clearance of
