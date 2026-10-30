@@ -570,6 +570,8 @@ translations and expand the canvas. Preserve transit source anchors and the grou
 The held groups are one set, `heldSourceGroups`: the group of the authored source of every routed link
 that crosses a tier, a link with a course or a spanning chord included. The lane plans, the span
 corridors and the lane-stage guard read it, so a plan refuses the push the guard would throw on.
+A span corridor judges against the prior lanes of its band only the units it pushes: a unit that does not move crosses no lane it did not
+cross before, and the corridor itself is judged against every prior lane at its own x (architecture-2 ticket 35).
 Plan displacement outward from the insertion gap and propagate it through neighboring groups.
 Repeated pushes publish node positions and anchors from their original coordinates plus the
 final group delta, avoiding accumulated rounding under the exact translation guard.
