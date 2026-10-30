@@ -21,7 +21,7 @@ const node = (extra: Partial<NormalisedNode> = {}): NormalisedNode => ({ group: 
 describe('card content measurement', () => {
   it('takes its width from the text: inset + tile + gap + the wider of title and subtitle + inset', () => {
     const text = node({ class: 'router', label: 'Distribution switch of the east wing', description: 'Rack 14, row B' });
-    const content = measureNodeContent(text, plain);
+    const content = measureNodeContent(text, {}, plain);
     expect(content.style).toBe('card');
     const wide = Math.max(title(text.label).width, subtitle(text.description!).width);
     expect(wide).toBe(title(text.label).width);
@@ -30,14 +30,14 @@ describe('card content measurement', () => {
 
   it('takes its width from a long subtitle when it is wider than the title', () => {
     const text = node({ class: 'router', label: 'A', description: 'a description that is much wider than the title' });
-    expect(measureNodeContent(text, plain).width).toBe(10 + card.tileSize + card.tileGap + subtitle(text.description!).width + 10);
+    expect(measureNodeContent(text, {}, plain).width).toBe(10 + card.tileSize + card.tileGap + subtitle(text.description!).width + 10);
   });
 
   it('is as high as the text block when that is higher than the tile, with the 2 px gap between title and subtitle', () => {
     const text = node({ class: 'router', description: 'one line' });
     const block = title(text.label).height + card.subtitleGap + subtitle('one line').height;
     expect(block).toBeGreaterThan(card.tileSize);
-    expect(measureNodeContent(text, plain).height).toBe(10 + block + 10);
+    expect(measureNodeContent(text, {}, plain).height).toBe(10 + block + 10);
     // The line heights are the text module's: 14 at 11 px, 11 at 9 px.
     expect(title('X').lineHeight).toBe(Math.ceil(1.215 * card.titleFontSize));
     expect(subtitle('x').lineHeight).toBe(Math.ceil(1.215 * card.subtitleFontSize));
@@ -45,32 +45,32 @@ describe('card content measurement', () => {
 
   it('keeps the lines the author wrote and does not wrap them', () => {
     const text = node({ class: 'router', description: 'PoE-powered by p8\nspare on p9' });
-    const content = measureNodeContent(text, plain);
+    const content = measureNodeContent(text, {}, plain);
     const sub = content.blocks.find(block => block.kind === 'description')!;
     expect(sub.kind === 'description' && sub.lines).toEqual(['PoE-powered by p8', 'spare on p9']);
     expect(content.height).toBe(10 + title(text.label).height + card.subtitleGap + 2 * subtitle('x').lineHeight + 10);
   });
 
   it('has no 2 px gap and no subtitle line when there is no description', () => {
-    const none = measureNodeContent(node({ class: 'router' }), plain);
+    const none = measureNodeContent(node({ class: 'router' }), {}, plain);
     expect(none.blocks.map(block => block.kind)).toEqual(['icon', 'node']);
     // The title (14) is shorter than the tile (24): the tile sets the height.
     expect(none.height).toBe(10 + Math.max(card.tileSize, title('Flex Mini').height) + 10);
-    const empty = measureNodeContent(node({ class: 'router', description: '' }), plain);
+    const empty = measureNodeContent(node({ class: 'router', description: '' }), {}, plain);
     expect(empty.height).toBe(none.height);
     // With no icon either, the title alone sets the height and nothing adds a gap to it.
-    expect(measureNodeContent(node({ icon: '' }), plain).height).toBe(10 + title('Flex Mini').height + 10);
+    expect(measureNodeContent(node({ icon: '' }), {}, plain).height).toBe(10 + title('Flex Mini').height + 10);
   });
 
   it('has no tile and no gap when the card has no icon', () => {
     const bare = node({ class: 'router', icon: '', description: 'label only' });
-    const content = measureNodeContent(bare, plain);
+    const content = measureNodeContent(bare, {}, plain);
     expect(content.blocks.map(block => block.kind)).toEqual(['node', 'description']);
     expect(content.width).toBe(10 + Math.max(title('Flex Mini').width, subtitle('label only').width) + 10);
   });
 
   it('sets the tile at 24 x 24 with radius 4 and glyph inset 3, and the text start-aligned', () => {
-    const content = measureNodeContent(node({ class: 'router', description: 'x' }), plain);
+    const content = measureNodeContent(node({ class: 'router', description: 'x' }), {}, plain);
     expect(content.blocks[0]).toEqual({ kind: 'icon', icon: 'router', width: 24, height: 24, inset: 3, radius: 4 });
     for (const block of content.blocks.slice(1)) expect(block.kind !== 'icon' && block.textAlign).toBe('start');
   });
@@ -79,16 +79,16 @@ describe('card content measurement', () => {
     const pill = measurePortPill('l1');
     const left = { ...plain, left: Math.max(10, pill.width / 2 + 4) };
     const text = node({ class: 'router' });
-    const base = measureNodeContent(text, plain), moved = measureNodeContent(text, { ...plain, left: 30 });
+    const base = measureNodeContent(text, {}, plain), moved = measureNodeContent(text, {}, { ...plain, left: 30 });
     expect(moved.width - base.width).toBe(20);
     expect(moved.height).toBe(base.height);
-    expect(measureNodeContent(text, left).width).toBe(left.left + card.tileSize + card.tileGap + title(text.label).width + 10);
+    expect(measureNodeContent(text, {}, left).width).toBe(left.left + card.tileSize + card.tileGap + title(text.label).width + 10);
   });
 });
 
 describe('card placement', () => {
   const text = node({ class: 'router', description: '.170 · 5p · PoE-powered by p8' });
-  const content = measureNodeContent(text, plain);
+  const content = measureNodeContent(text, {}, plain);
 
   it('stands the tile and the text block side by side, 8 px apart, on one centre line', () => {
     const box = { x: 100, y: 50, width: content.width, height: content.height };
@@ -103,7 +103,7 @@ describe('card placement', () => {
 
   it('centres the tile and the text block together in the inset interior of a wider box', () => {
     const insets = { top: 10, bottom: 10, left: 30, right: 12 };
-    const inner = measureNodeContent(text, insets);
+    const inner = measureNodeContent(text, {}, insets);
     const box = { x: 0, y: 0, width: inner.width + 40, height: inner.height };
     const placed = placeNodeContent(inner, box, insets);
     const left = placed[0]!.bounds.x, last = placed[placed.length - 1]!.bounds;
@@ -116,25 +116,34 @@ describe('card placement', () => {
 describe('the content style resolver', () => {
   it('gives the profile default (card) to every node, also one without a description or a class', () => {
     expect(NETWORK_NODE_CONTENT_DEFAULT).toBe('card');
-    expect(resolveNodeContentStyle({})).toBe('card');
-    expect(resolveNodeContentStyle({ class: 'router' })).toBe('card');
-    expect(resolveNodeContentStyle({ class: 'rr tbr' })).toBe('card');
+    expect(resolveNodeContentStyle({ group: 'g' }, {})).toBe('card');
+    expect(resolveNodeContentStyle({ group: 'g', class: 'router' }, {})).toBe('card');
+    expect(resolveNodeContentStyle({ group: 'g', class: 'rr tbr' }, {})).toBe('card');
   });
 
   it('gives a sheet class the profile default', () => {
-    expect(resolveNodeContentStyle({ class: 'my-sheet-class' })).toBe('card');
+    expect(resolveNodeContentStyle({ group: 'g', class: 'my-sheet-class' }, {})).toBe('card');
   });
 
   it('lets a profile class override the default with a stacked style, and no other class follows it', () => {
     const lookup = (token: string | undefined) => token === 'rr' ? { content: 'stacked' as const } : undefined;
-    expect(resolveNodeContentStyle({ class: 'rr' }, lookup)).toBe('stacked');
-    expect(resolveNodeContentStyle({ class: 'router' }, lookup)).toBe('card');
-    expect(resolveNodeContentStyle({}, lookup)).toBe('card');
+    expect(resolveNodeContentStyle({ group: 'g', class: 'rr' }, {}, lookup)).toBe('stacked');
+    expect(resolveNodeContentStyle({ group: 'g', class: 'router' }, {}, lookup)).toBe('card');
+    expect(resolveNodeContentStyle({ group: 'g' }, {}, lookup)).toBe('card');
+  });
+
+  it('gives a node of a bar group the stacked style, whatever its class: its own drops cross the bar body', () => {
+    const groups = { bus: { shape: 'bar' as const }, edge: { shape: 'ranked' as const } };
+    const lookup = (token: string | undefined) => token === 'rr' ? { content: 'card' as const } : undefined;
+    expect(resolveNodeContentStyle({ group: 'bus', class: 'router' }, groups)).toBe('stacked');
+    expect(resolveNodeContentStyle({ group: 'bus', class: 'rr' }, groups, lookup)).toBe('stacked');
+    expect(resolveNodeContentStyle({ group: 'edge', class: 'router' }, groups)).toBe('card');
+    expect(measureNodeContent(node({ group: 'bus', class: 'router', description: 'x' }), groups, plain).style).toBe('stacked');
   });
 
   it('measures the stacked style exactly as before: one centred column, the same size for the same text', () => {
     const text = node({ class: 'router', label: 'Content', description: 'one\ntwo' });
-    const stacked = measureNodeContent(text, plain, 'stacked');
+    const stacked = measureNodeContent(text, {}, plain, 'stacked');
     expect(stacked.style).toBe('stacked');
     expect(stacked.blocks.map(block => block.kind)).toEqual(['icon', 'node', 'description']);
     expect(stacked.blocks[0]).toEqual({ kind: 'icon', icon: 'router', width: 12, height: 12 });
@@ -153,7 +162,7 @@ describe('a card holds its ports on every face (fixture)', () => {
     for (const [id, placed] of Object.entries(model.nodes)) {
       const box = placed.bounds!, authored = model.document.nodes[id]!;
       // One decision: the stored content size is what the resolver's style measures with the stored insets.
-      const again = measureNodeContent(authored, placed.contentInsets!);
+      const again = measureNodeContent(authored, model.document.groups, placed.contentInsets!);
       expect(again.style, id).toBe('card');
       expect({ width: again.width, height: again.height }, id).toEqual(placed.contentSize);
       expect(box.width, id).toBeGreaterThanOrEqual(placed.contentSize!.width - 1e-6);
