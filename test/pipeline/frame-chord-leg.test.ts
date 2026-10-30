@@ -35,8 +35,9 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
     const { model } = await crowded(0);
     const transit = model.links.find(link => link.attachments!.to.node === 'deep' && link.attachments!.from.node === 'core')!;
     const leg = orthogonalLeg(model, transit, 'from')!;
-    // The transit leaves by a lane, so its part ends at the lane mouth, a stem short of the lane top (330 - 10.75 - 15).
-    expect(leg.to.y).toBeCloseTo(304.25, 6);
+    // The transit leaves by a lane, so its part ends at the lane mouth, a stem short of the lane top (332 - 10.75 - 15; 330 with Arial).
+    // Verdana metrics (snack-theme ticket 157): 304.25 with Arial.
+    expect(leg.to.y).toBeCloseTo(306.25, 6);
     expect(leg.to.x).toBe(leg.from.x);
   });
 

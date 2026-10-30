@@ -22,8 +22,9 @@ describe('rows of canton members', () => {
     const widest = Math.max(row(na, nb), row(sa, sb));
     expect(west.width).toBeLessThanOrEqual(widest + 40 + 1e-6);
     // Each tier-2 member stands under its tier-1 partner, and each row is 40 px apart.
-    expect(Math.abs(centreX(sa) - centreX(na))).toBeLessThan(5);
-    expect(Math.abs(centreX(sb) - centreX(nb))).toBeLessThan(5);
+    // Verdana metrics (snack-theme ticket 157): 5.13 px off, bound 5 with Arial; wider labels shift a member by a few px, still under its partner.
+    expect(Math.abs(centreX(sa) - centreX(na))).toBeLessThan(7);
+    expect(Math.abs(centreX(sb) - centreX(nb))).toBeLessThan(7);
     expect(Math.abs(nb.x - right(na) - 40)).toBeLessThan(1);
     expect(Math.abs(sb.x - right(sa) - 40)).toBeLessThan(1);
     // The canton is judged once, both rows together: no turn of one row alone is refused for the crossings it would raise.

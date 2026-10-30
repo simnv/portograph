@@ -40,7 +40,7 @@ describe('stage 4 skeleton', () => {
     expect(model.groups.datacenter?.rowOrder?.[0]).toBe('EAC-01');
     expect(model.groups.datacenter?.rowOrder?.at(-1)).toBe('EAC-02');
     expect({ groups: Object.values(model.groups).map(({ id, bounds, rowOrder, flank }) => ({ id, bounds, rowOrder, flank })),
-      nodes: Object.values(model.nodes).map(({ id, bounds }) => ({ id, bounds })), tierBands: model.tierBands }).toMatchSnapshot();
+      nodes: Object.values(model.nodes).map(({ id, bounds }) => ({ id, bounds })), tierBands: model.tierBands }).toMatchSnapshot(); // Verdana metrics (snack-theme ticket 157): the snapshot geometry changed, as the Arial snapshot had it.
     expect(model.links.every(link => link.path === undefined)).toBe(true);
     expect(Object.values(model.nodes).map(node => node.ports.map(port => [port.ref, port.side, port.authorOrder]))).toEqual(topology);
     for (const node of Object.values(model.nodes)) {

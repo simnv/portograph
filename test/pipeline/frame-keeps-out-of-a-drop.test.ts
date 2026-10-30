@@ -91,12 +91,12 @@ describe('a frame keeps out of the clearance of a foreign drop (ticket 75)', () 
   it('a canton warning that states no jog is left as it is when its column reaches its feed (ticket 77)', async () => {
     const model = structuredClone(await layout(parse(readFileSync(new URL('../../goldens/synthetic/a-held-lane-between-two-cantons-refuses-the-close-up.yaml', import.meta.url), 'utf8')),
       { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt })) as LayoutModel;
-    // `east` is held 59.64 px from its feed. Stand it on its feed, and the residual the refresh reads is 0: a warning that states a jog is withdrawn,
+    // `east` is held 65.7 px from its feed (Verdana metrics, snack-theme ticket 157: 59.64 px with Arial). Stand it on its feed, and the residual the refresh reads is 0: a warning that states a jog is withdrawn,
     // and one that states none (a canton that cannot close up) stays.
     const cells = (id: string): string[] => [...model.document.frames![id]!.cells, ...Object.keys(model.document.frames!).filter(child => model.document.frames![child]!.parent === id).flatMap(cells)];
     for (const cell of cells('east')) {
       const group = model.groups[cell]!;
-      moveGroup(model, group, -59.64263916015631, 0);
+      moveGroup(model, group, -65.7, 0);
       rebuildNodeGeometry(model, group.nodes, 'current');
     }
     model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'COLUMN_AXIS_HELD', owners: [{ kind: 'group', id: 'east' }],

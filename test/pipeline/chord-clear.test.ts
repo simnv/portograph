@@ -316,16 +316,18 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     // On main the two ranks stand under one another (0.5 px apart and 0).
     expect(Math.abs(a)).toBeGreaterThan(20);
     expect(Math.abs(a)).toBeLessThanOrEqual(40.5);
-    expect(a - b).toBeCloseTo(-0.5, 1);
+    // Verdana metrics (snack-theme ticket 157): -0.5 with Arial.
+    expect(a - b).toBeCloseTo(-0.835, 2);
     expect(x(model, 'low-b') - (x(model, 'low-a') + model.nodes['low-a']!.bounds!.width)).toBeCloseTo(21.5, 1);
     expect(crossingsOf(model)).toBe(0);
   }, 60000);
 
   it('rank 0 and its parent keep their x (no rank 0 moves by this rule)', async () => {
     const model = await run(fixture(NAME));
-    expect(x(model, 'gw')).toBeCloseTo(84.0, 0);
-    expect(x(model, 'up-a')).toBeCloseTo(72.5, 0);
-    expect(x(model, 'up-b')).toBeCloseTo(149.0, 0);
+    // Verdana metrics (snack-theme ticket 157): 84.0, 72.5 and 149.0 with Arial.
+    expect(x(model, 'gw')).toBeCloseTo(87.0, 0);
+    expect(x(model, 'up-a')).toBeCloseTo(72.8, 0);
+    expect(x(model, 'up-b')).toBeCloseTo(154.7, 0);
   }, 60000);
 
   it('one node of a lower rank moves into the room the step gives it, and the step says so', async () => {
@@ -496,7 +498,8 @@ links:
     const model = await run(yaml);
     // Architecture ticket 13, phase 4: a crossing added is no veto any more. The move straightens two links and adds one crossing: fewer bent links decide.
     expect(model.diagnostics.filter(d => d.code === 'RANK_STEPPED_OFF_CHORD').map(d => d.message)).toEqual([
-      'The lower rank zone#3 moved -28.4 px off the overlay chords of the ranks above: 2 more straight overlay links, overlay crossings 0 to 1.']);
+      // Verdana metrics (snack-theme ticket 157): -28.4 px and 2 more straight overlay links with Arial.
+      'The lower rank zone#3 moved -32 px off the overlay chords of the ranks above: 3 more straight overlay links, overlay crossings 0 to 1.']);
     expect(overlays(model).filter(link => link.path!.segments.length > 1)).toHaveLength(1);
   }, 60000);
 

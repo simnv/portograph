@@ -434,7 +434,7 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     const band = model.labelBands.find(item => item.group === 'mid')!;
     // `mid` is fed from above, so its band is the bottom edge with the plain bottom padding below m.
     expect(band.side).toBe('bottom');
-    expect(band.bounds).toEqual({ x: mid.bounds!.x, y: bottom(mid.bounds!) - 22, width: mid.bounds!.width, height: 22 });
+    expect(band.bounds).toEqual({ x: mid.bounds!.x, y: bottom(mid.bounds!) - 23, width: mid.bounds!.width, height: 23 }); // Verdana metrics (snack-theme ticket 157): 22 with Arial (the 15 px line height plus 8).
     expect(band.clearance).toBe(GROUP_PADDING);
     expect(bottom(model.nodes.m!.bounds!)).toBe(band.bounds.y - GROUP_PADDING);
     const member = model.links.find(link => link.id === 'link-1')!;
@@ -848,13 +848,13 @@ it('stress ticket 19: a grown group label lands inside the inset the growth aske
 
 it('stress ticket 18: a corridor that would cross a labelled row link\'s split does not move', async () => {
   // The corridor `link-16` owns across tier 2 stands at x 231, beyond `link-17`'s split. Label room wins over the lane (architecture-2
-  // ticket 23): 7f inserts the row's room at the split and the corridor moves out with it, by the same 197.61279296875 px, so it keeps
+  // ticket 23): 7f inserts the row's room at the split and the corridor moves out with it, by the same 197.61279296875 px with Arial (a different distance under Verdana), so it keeps
   // its distance to what it serves (R2). 7f's last step would take that corridor to its child's port, on the far side of the split, and
   // the publication replay would reserve room the published model does not have; the corridors are fixed by then, so that move is
   // still refused.
   const model = run(await throughBundles(corridorCrossesSplit));
   expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(false);
-  expect(model.lanes.map(lane => lane.x)).toEqual([95.5, 428.61279296875]);
+  expect(model.lanes.map(lane => lane.x)).toEqual([98.22314453125, 458.58203125]); // Verdana metrics (snack-theme ticket 157): [95.5, 428.61279296875] with Arial.
   // The claim itself: the replay asks for nothing more.
   const shortfalls: LinkLabelShortfall[] = [];
   expect(reserveLinkLabelRoom(copy(model), shortfalls)).toBe(false);

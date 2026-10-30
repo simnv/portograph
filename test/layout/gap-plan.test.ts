@@ -48,7 +48,7 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     const { plan, gap } = first!;
     expect(plan.residual).toEqual([]);
     expect(plan.order.map(short)).toEqual(['8', '5', '6', '7', '4']);
-    expectRows(plan, { 8: [263], 5: [292], 6: [303.5], 7: [315], 4: [326.5] });
+    expectRows(plan, { 8: [264], 5: [293], 6: [304.5], 7: [316], 4: [327.5] }); // Verdana metrics (snack-theme ticket 157): 263, 292, 303.5, 315 and 326.5 with Arial.
     // The O1 and O2 edges of the spec: 5 above 4 and 6 above 7 (same way), 8 above 5 and 7 above 4 (shared vertical).
     expect(plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort())
       .toEqual(['5>4:O1', '6>7:O1', '7>4:O2', '8>5:O2']);
@@ -65,34 +65,34 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     expect(plan.growth).toBe(0);
   });
 
-  it('gives the ticket 41 shape a Z part: 4a 263, 3 274.5, 4b 286, one crossing on the middle drop, no growth', async () => {
+  it('gives the ticket 41 shape a Z part: 4a 264, 3 275.5, 4b 287, one crossing on the middle drop, no growth', async () => {
     const [{ plan }] = busy(await place('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips')).filter(({ plan }) => plan.order.length) as [Busy];
     expect(plan.residual).toEqual([]);
     expect(plan.order.map(short)).toEqual(['4a', '3', '4b']);
-    expectRows(plan, { 4: [263, 286], 3: [274.5] });
+    expectRows(plan, { 4: [264, 287], 3: [275.5] }); // Verdana metrics (snack-theme ticket 157): 263, 286 and 274.5 with Arial.
     expect(plan.parts.find(part => part.shape === 'z')!.middle).toBeCloseTo(92.75, 6);
     expect(plan.crossings).toHaveLength(1);
     expect(plan.crossings[0]).toMatchObject({ run: 'link-3#0', vertical: 'link-4#0', kind: 'middle-drop' });
     expect(plan.crossings[0]!.at.x).toBeCloseTo(92.75, 6);
-    expect(plan.crossings[0]!.at.y).toBeCloseTo(274.5, 6);
-    // The spec quotes the term: 286 + 15 - 248 = 53, under the 60 px band gap.
+    expect(plan.crossings[0]!.at.y).toBeCloseTo(275.5, 6); // Verdana metrics (snack-theme ticket 157): 274.5 with Arial.
+    // The spec quotes the term: 286 + 15 - 248 = 53 (287 + 15 - 249 under Verdana, the same), under the 60 px band gap.
     expect(plan.demand).toBeCloseTo(53, 6);
     expect(plan.height).toBe(BAND_GAP);
     expect(plan.growth).toBe(0);
   });
 
-  it('seats the ticket 43 shape, tips in the group padding, on rows of its own: 2a 131.75, 1 143.25, 2b 154.75', async () => {
+  it('seats the ticket 43 shape, tips in the group padding, on rows of its own: 2a 132.75, 1 144.25, 2b 155.75', async () => {
     const [{ plan, gap }] = busy(await place('a-plain-tip-in-the-group-padding-holds-its-row')).filter(({ plan }) => plan.order.length) as [Busy];
     expect(plan.residual).toEqual([]);
     expect(plan.order.map(short)).toEqual(['2a', '1', '2b']);
     // The first row stands one group-edge margin (10 + stroke / 2) below the low boundary, past the tip row in the padding.
-    expect(gap.low).toBe(121);
-    expectRows(plan, { 2: [131.75, 154.75], 1: [143.25] });
+    expect(gap.low).toBe(122); // Verdana metrics (snack-theme ticket 157): 121 with Arial.
+    expectRows(plan, { 2: [132.75, 155.75], 1: [144.25] }); // Verdana metrics (snack-theme ticket 157): 131.75, 154.75 and 143.25 with Arial.
     expect(plan.parts.find(part => part.shape === 'z')!.middle).toBeCloseTo(97.75, 6);
     expect(plan.crossings).toHaveLength(1);
     expect(plan.crossings[0]).toMatchObject({ run: 'link-1#0', vertical: 'link-2#0', kind: 'middle-drop' });
     expect(plan.crossings[0]!.at.x).toBeCloseTo(97.75, 6);
-    // 154.75 + e - 121, with the lower tip 5 px into the padding of the band below.
+    // 155.75 + e - 122, with the lower tip 5 px into the padding of the band below.
     expect(plan.demand).toBeCloseTo(44.5, 6);
     expect(plan.growth).toBe(0);
   });
@@ -106,7 +106,7 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     expect(lower!.plan.residual).toEqual([]);
 
     expect(upper!.plan.order.map(short)).toEqual(['11', '1', '5', '2', '3']);
-    expectRows(upper!.plan, { 11: [145], 1: [156.5], 5: [156.5], 2: [168], 3: [179.5] });
+    expectRows(upper!.plan, { 11: [146], 1: [157.5], 5: [157.5], 2: [169], 3: [180.5] }); // Verdana metrics (snack-theme ticket 157): 145, 156.5, 156.5, 168 and 179.5 with Arial.
     expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['11>1:O2', '5>2:O2', '5>3:O1']);
     // The seven interleaved pairs of the spec, link-3's included, and two on link-4's drop.
     expect(pairs(upper!.plan)).toEqual(['11x2', '11x3', '11x4', '11x5', '2x3', '2x5', '4x5']);
@@ -116,14 +116,14 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     expect(upper!.plan.setBy).toBe('link-3#0');
 
     expect(lower!.plan.order.map(short)).toEqual(['12.1', '10', '8', '7', '9']);
-    expectRows(lower!.plan, { '12.1': [313], 10: [324.5], 8: [336], 7: [347.5], 9: [359] });
+    expectRows(lower!.plan, { '12.1': [315], 10: [326.5], 8: [338], 7: [349.5], 9: [361] }); // Verdana metrics (snack-theme ticket 157): 313, 324.5, 336, 347.5 and 359 with Arial.
     expect(lower!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort())
       .toEqual(['10>7:O1', '10>8:O1', '10>9:O1', '12.1>10:O1', '12.1>7:O2', '12.1>8:O1', '8>7:O1']);
     // 7x9 and 8x9, and four on link-11's drop.
     expect(pairs(lower!.plan)).toEqual(['10x11.1', '11.1x7', '11.1x8', '11.1x9', '7x9', '8x9']);
-    // The lanes overhang from the band above: the plan measures from the clipped low boundary (298, the 9.25 px of the upper gap later); the spec quotes
+    // The lanes overhang from the band above: the plan measures from the clipped low boundary (300 under Verdana, 298 with Arial; the 9.25 px of the upper gap later); the spec quotes
     // 82.5 from the band bottom (278), the same 10.75 px further. 7f grew the gap to H (71.75 from the clipped low), so it asks for nothing more.
-    expect(lower!.gap.low).toBeCloseTo(298, 6);
+    expect(lower!.gap.low).toBeCloseTo(300, 6); // Verdana metrics (snack-theme ticket 157): 298 with Arial.
     expect(lower!.plan.height).toBeCloseTo(71.75, 6);
     expect(lower!.plan.bandTop - lower!.gap.low).toBeCloseTo(71.75, 6);
     expect(lower!.plan.growth).toBe(0);

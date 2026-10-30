@@ -58,7 +58,8 @@ describe('overlay window rule (ticket 143)', () => {
     expect(bentTo(model, 'lower-clients').length).toBeLessThanOrEqual(1);
     const lower = groupOf(model, 'lower-clients');
     expect(Math.abs(centreX(lower.bounds!) - 239.5)).toBeGreaterThan(20);
-    expect(centreX(lower.bounds!)).toBeCloseTo(354.1, 0);
+    // Verdana metrics (snack-theme ticket 157): 354.1 with Arial.
+    expect(centreX(lower.bounds!)).toBeCloseTo(353.5, 0);
   }, 60000);
 
   // Guards.

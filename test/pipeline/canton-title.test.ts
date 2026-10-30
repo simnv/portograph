@@ -87,7 +87,8 @@ describe('canton title band (canton-groups ticket 3)', () => {
       expect(at).toBeLessThanOrEqual(bottom(band.bounds) + title.bounds!.height);
       const xml = drawio(model);
       // The band spans the canton edge to edge and holds the centred title, so it is a swimlane head on that edge.
-      expect(xml).toMatch(/swimlane[^"]*startSize=22/);
+      // Verdana metrics (snack-theme ticket 157): startSize=23 (the band is one 15 px line plus 8), 22 with Arial.
+      expect(xml).toMatch(/swimlane[^"]*startSize=23/);
       expect(xml).toContain('West');
       if (band.side === 'bottom') expect(xml).toContain('flipV=1');
     }
