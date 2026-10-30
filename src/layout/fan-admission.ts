@@ -1,7 +1,7 @@
-import type { FanFamily, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
+import type { FanFallbackReason, FanFamily, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { EPS, segmentDistance, segmentRectDistance } from '../geometry/planar.js';
 import { GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
-import { chordsApart, chordVerdict, fixedPointRefusal, foreignBox, isRoutedChord, orthogonalLeg, siblingStemCrowded, SIDE_EDGE_SLACK } from './frame-paths.js';
+import { chordsApart, chordVerdict, fanCrossedBoxes, fixedPointRefusal, foreignBox, isRoutedChord, orthogonalLeg, siblingStemCrowded, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 
@@ -42,7 +42,7 @@ interface FamilyVerdict { straight: LayoutLink[]; segments: Map<string, PathSegm
  * members in the order of their port keys (hub port, then far port), larger sets first, then the shorter total length, then the port keys.
  * Leaves every member orthogonal; the caller draws the chosen set.
  */
-function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly LayoutLink[]): FamilyVerdict {
+function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly LayoutLink[], budget: number): FamilyVerdict {
   for (const link of members) makeFanOrthogonal(model, link);
   const hubOf = new Map(family.members.map(member => [member.link, member.hub]));
   const keyOf = (link: LayoutLink): string => {
@@ -98,7 +98,7 @@ function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly 
   // Include before exclude, so the first set reached is a large one; a branch whose chords cannot hold, or that cannot beat the best, is not walked.
   const walk = (index: number, set: LayoutLink[]): void => {
     if (truncated || set.length + (open.length - index) < best.length) return;
-    if (tested >= FAN_SEARCH_BUDGET) { truncated = true; return; }
+    if (tested >= budget) { truncated = true; return; }
     if (!canHold(set, index)) return;
     if (index === open.length) { if (set.length > 0) offer(set); return; }
     const link = open[index]!;
@@ -112,7 +112,8 @@ function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly 
 /**
  * What a validator checks on `model.fanAdmissions` (R5): it reads the record and the geometry, and never admits a member again. Absent on a sheet with
  * no fan family, and before the freeze; present after it. One entry per member of every family, in the order of `fanFamilies`. A straight member is a
- * frozen chord, and every box it names holds neither of its ends (G2 excuses no other); an orthogonal member is no frozen chord and names its reason.
+ * frozen chord, every box it names holds neither of its ends, and its chord as it stands crosses no box it does not name (G2 excuses no other);
+ * an orthogonal member is no frozen chord and names its reason.
  */
 export function fanAdmissionsFault(model: LayoutModel): string | undefined {
   const record = model.fanAdmissions;
@@ -132,6 +133,10 @@ export function fanAdmissionsFault(model: LayoutModel): string | undefined {
       if (crosses.some((id, index) => index > 0 && crosses[index - 1]! >= id)) return `${item.link} names its boxes out of order`;
       const own = crosses.find(id => !foreignBox(model, link, id));
       if (own !== undefined) return `${item.link} names ${own}, which is no foreign box of it`;
+      // The chord as it stands crosses no box its record does not name (G2 excuses those only).
+      const segment = link.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
+      const extra = segment === undefined ? undefined : fanCrossedBoxes(model, link, segment).find(id => !crosses.includes(id));
+      if (extra !== undefined) return `${item.link} crosses ${extra}, which its record does not name`;
     } else {
       if (frozen.has(item.link)) return `${item.link} holds a chord its admission refused`;
       if (item.reason === undefined) return `${item.link} is refused with no reason`;
@@ -142,49 +147,54 @@ export function fanAdmissionsFault(model: LayoutModel): string | undefined {
 }
 
 /**
- * A retry of 7f (`placementAttempt`) refuses the fan members that the last attempt's moves brought within the clearance of a planned part
- * (`crowds`): before the freeze they are made orthogonal, and their legs are walls again. A held chord within the clearance of such a leg takes
- * the fixed point again and falls back where it fails, its own legs then walls in turn, until none fails (R2: nothing held stands beside a leg it
- * was not judged against). Bounded: a chord falls back at most once.
+ * Before the freeze, the fan members a retry of 7f refused (`placementAttempt`) or a sibling's stem refuses (`refuseStemCrowded`) fall back: they
+ * are made orthogonal, and their legs are walls again. Every held chord within the clearance of such a leg takes the fixed point again; the ones
+ * that fail fall back together, after all of the round were read (R3: no chord of a round sees a leg of its own round), and their legs are the
+ * walls of the next round, until none fails (R2: nothing held stands beside a leg it was not judged against). Bounded: a chord falls back at
+ * most once. Returns the reason of every fan member that fell back: the given one for a refused member, the fixed-point refusal for one of the
+ * cascade (so the freeze never records it as `family`, which would say the search left it out).
  */
-export function refuseFanMembers(draft: LayoutModel, refused: ReadonlySet<string>): void {
+export function refuseFanMembers(draft: LayoutModel, refused: ReadonlyMap<string, FanFallbackReason>): Map<string, FanFallbackReason> {
+  const reasons = new Map<string, FanFallbackReason>();
   const walls = draft.links.filter(link => refused.has(link.id) && link.fanFamily !== undefined && link.path !== undefined);
-  for (const link of walls) makeFanOrthogonal(draft, link);
+  for (const link of walls) { makeFanOrthogonal(draft, link); reasons.set(link.id, refused.get(link.id)!); }
   for (let fresh = walls; fresh.length;) {
     const legs = fresh.flatMap(link => (['from', 'to'] as const).flatMap(end => { const leg = orthogonalLeg(draft, link, end); return leg ? [{ leg, link }] : []; }));
-    const next: LayoutLink[] = [];
-    for (const chord of draft.links) {
-      if (!isRoutedChord(draft, chord)) continue;
+    const failed = draft.links.flatMap(chord => {
+      if (!isRoutedChord(draft, chord)) return [];
       const segment = chord.path!.segments[0]!, stroke = linkStrokeWidth(chord);
       const near = legs.some(({ leg, link }) => link.id !== chord.id && segmentDistance(segment, leg) - (stroke + linkStrokeWidth(link)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS);
-      if (!near || fixedPointRefusal(draft, chord, segment) === undefined) continue;
+      const refusal = near ? fixedPointRefusal(draft, chord, segment) : undefined;
+      return refusal === undefined ? [] : [{ chord, refusal }];
+    });
+    for (const { chord, refusal } of failed) {
       makeFanOrthogonal(draft, chord);
-      next.push(chord);
+      if (chord.fanFamily !== undefined) reasons.set(chord.id, refusal);
     }
-    fresh = next;
+    fresh = failed.map(item => item.chord);
   }
+  return reasons;
 }
 
 /**
- * Before the freeze (architecture-2 ticket 40): the held fan members that pass the stem of a sibling fallback (`siblingStemCrowded`) fall back,
- * all of those at once, and their legs are walls in turn (`refuseFanMembers`), until none passes a stem. The admission let them cross the legs,
- * since a fallback's side is not final inside the rows fixed point; at the freeze it is. Returns the members refused here, in id order, which
- * the freeze records as `crowds`. Bounded: each round makes at least one chord fall back.
+ * Before the freeze (architecture-2 ticket 40): the held fan members that pass the stem of a sibling fallback (`siblingStemCrowded`) fall back
+ * as `stem`, all of those at once, and their legs are walls in turn (`refuseFanMembers`), until none passes a stem. The admission let them cross
+ * the legs, since a fallback's side is not final inside the rows fixed point; at the freeze it is. Returns the reason of every member that fell
+ * back here. Bounded: each round makes at least one chord fall back.
  */
-export function refuseStemCrowded(draft: LayoutModel): string[] {
-  const refused: string[] = [];
+export function refuseStemCrowded(draft: LayoutModel): Map<string, FanFallbackReason> {
+  const reasons = new Map<string, FanFallbackReason>();
   for (;;) {
-    const crowded = draft.links.filter(link => link.fanFamily !== undefined && isRoutedChord(draft, link) && siblingStemCrowded(draft, link)).map(link => link.id);
-    if (!crowded.length) return refused.sort();
-    refuseFanMembers(draft, new Set(crowded));
-    refused.push(...crowded);
+    const crowded = draft.links.filter(link => link.fanFamily !== undefined && isRoutedChord(draft, link) && siblingStemCrowded(draft, link)).map(link => link.id).sort();
+    if (!crowded.length) return reasons;
+    for (const [id, reason] of refuseFanMembers(draft, new Map(crowded.map(id => [id, 'stem' as const])))) reasons.set(id, reason);
   }
 }
 
 /**
  * The straight fan members whose chord stands within the link-free margin of a group title where 7f placed it (what G3 would fail): the title
- * planner reads a held chord as a wall, so a title that still meets one found no room beside it. A retry of 7f refuses those members (`crowds`),
- * as it refuses the ones 7f brought near a planned part. In id order.
+ * planner reads a held chord as a wall, so a title that still meets one found no room beside it. A retry of 7f refuses those members (`title`),
+ * as it refuses the ones 7f brought near a planned part (`crowds`). In id order.
  */
 export function titleCrowdedFanMembers(model: LayoutModel): string[] {
   const titles = model.labels.filter(label => label.role === 'group' && !label.omitted && label.bounds !== undefined);
@@ -202,17 +212,18 @@ export function titleCrowdedFanMembers(model: LayoutModel): string[] {
 /**
  * Admit every fan family of the draft, in family id order (R3): each family's verdict is drawn before the next family is read, so a later family
  * reads the earlier one's chords as held and its fallbacks' legs as walls. `members` are the draft's member links that are chord candidates.
- * Before the freeze only; a truncated search is named once per family (`FAN_SEARCH_TRUNCATED`).
+ * Before the freeze only; a truncated search is named once per family (`FAN_SEARCH_TRUNCATED`). `budget` is the count of tested configurations
+ * per family (`FAN_SEARCH_BUDGET`; a test passes a smaller one).
  */
-export function admitFanFamilies(draft: LayoutModel, members: readonly LayoutLink[]): void {
+export function admitFanFamilies(draft: LayoutModel, members: readonly LayoutLink[], budget = FAN_SEARCH_BUDGET): void {
   for (const family of draft.fanFamilies ?? []) {
     const own = members.filter(link => link.fanFamily === family.id);
     if (!own.length) continue;
-    const verdict = familyVerdict(draft, family, own);
+    const verdict = familyVerdict(draft, family, own, budget);
     for (const link of verdict.straight) makeChord(draft, link, verdict.segments.get(link.id)!);
     if (verdict.truncated && !draft.diagnostics.some(item => item.code === 'FAN_SEARCH_TRUNCATED' && item.owners?.some(owner => owner.kind === 'link' && owner.id === own[0]!.id))) {
       draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_SEARCH_TRUNCATED',
-        message: `The member search of the fan family ${family.id} stopped at ${FAN_SEARCH_BUDGET} sets; the best set found is kept.`,
+        message: `The member search of the fan family ${family.id} stopped at ${budget} tested configurations; the best set found is kept.`,
         owners: own.map(link => ({ kind: 'link' as const, id: link.id })) });
     }
   }

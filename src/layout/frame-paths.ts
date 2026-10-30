@@ -361,13 +361,16 @@ function titleRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment
   const kind = chordKind(model, link), strips = titleStrips(model);
   const crossed = strips.filter(strip => segmentRectDistance(segment, strip.rect) === 0);
   if (kind !== 'cross') return crossed.length > 0;
-  // A fan member (architecture-2 ticket 40, user ruling Q125): the title of its far end's own frame moves aside, beside the chord, and 7f grows the
-  // frame where it must (`planLabels` reads the crossing as a hard obstacle), so that title refuses nothing. Every other title it crosses, its hub's
-  // own and a foreign one alike, must still fit beside the crossings.
+  // A fan member (architecture-2 ticket 40, user ruling Q125): the title strip of its far end's own frame, on the edge the chord leaves through,
+  // refuses nothing here. Slice 1 builds no growth for it: the title planner of 7f reads the held chord as an obstacle, and when it finds no room
+  // beside it the retry of 7f refuses the member (`title`, `titleCrowdedFanMembers`). After the last retry the member stays straight over the
+  // title, `FAN_MEMBER_CROWDED` names it, and G3 fails. A title that moves aside, its frame grown, is slice 2. The member's other own strip (its
+  // hub's) must fit beside the crossings as for any cross-frame chord, and a third frame's title refuses it.
   const far = fanFarEnd(model, link);
-  if (far !== undefined) return crossed.filter(strip => !ownEndStrip(model, link, far, strip)).some(strip => !titleFitsBeside(model, link, segment, strip, others));
-  if (crossed.some(strip => !ownStrip(model, link, strip))) return true;
-  return crossed.some(strip => !titleFitsBeside(model, link, segment, strip, others));
+  const exempt = (strip: TitleStrip): boolean => far !== undefined && ownEndStrip(model, link, far, strip);
+  const rest = crossed.filter(strip => !exempt(strip));
+  if (rest.some(strip => !ownStrip(model, link, strip))) return true;
+  return rest.some(strip => !titleFitsBeside(model, link, segment, strip, others));
 }
 
 /** Whether the strip's title still fits beside the chord's crossing (and, with `others`, beside the legs of its band's ports and the held chords' crossings). */
@@ -773,14 +776,15 @@ export function freezeRefusal(model: LayoutModel, link: LayoutLink): ChordRefusa
  * The chords held at the start of 7f: the links that are straight now. Every cross-frame candidate that is not held is named once
  * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it.
  */
-export function freezeChords(model: LayoutModel, crowded: ReadonlySet<string> = new Set()): void {
+export function freezeChords(model: LayoutModel, refusals: ReadonlyMap<string, FanFallbackReason> = new Map()): void {
   const held = model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
   const reasons = new Map<string, FanFallbackReason>();
   for (const link of model.links) {
     if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
-    // A fan member that a retry of 7f refused names `crowds`; one its family's joint search left out names `family` when no check of its own refuses it.
+    // A fan member refused before the freeze (a retry of 7f, a sibling's stem, or the cascade after either) names the reason it was refused for;
+    // one its family's joint search left out names `family` when no check of its own refuses it.
     const fan = fanFamilyOf(model, link) !== undefined;
-    const reason: FanFallbackReason | undefined = fan && crowded.has(link.id) ? 'crowds' : freezeRefusal(model, link) ?? (fan ? 'family' : undefined);
+    const reason: FanFallbackReason | undefined = (fan ? refusals.get(link.id) : undefined) ?? freezeRefusal(model, link) ?? (fan ? 'family' : undefined);
     // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
     if (reason === undefined) continue;
     if (fan) reasons.set(link.id, reason);

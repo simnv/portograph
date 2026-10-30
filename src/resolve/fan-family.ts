@@ -118,8 +118,12 @@ export function detectFanFamilies(model: LayoutModel): void {
   for (const family of families) for (const member of family.members) claims.set(member.link, [...(claims.get(member.link) ?? []), family.id]);
   const declined = new Set([...claims.values()].filter(ids => ids.length > 1).flat());
   for (const id of [...declined].sort()) {
+    // Owned by the family's member links; the message names the ones another family claims too.
+    const family = families.find(item => item.id === id)!;
+    const shared = family.members.map(member => member.link).filter(link => claims.get(link)!.length > 1);
     model.diagnostics.push({ stage: 'model', severity: 'warning', code: 'FAN_FAMILY_DECLINED',
-      message: `The fan family ${id} is declined: a member link belongs to another fan family too.`, owners: [] });
+      message: `The fan family ${id} is declined: ${shared.join(', ')} ${shared.length === 1 ? 'belongs' : 'belong'} to another fan family too.`,
+      owners: family.members.map(member => ({ kind: 'link' as const, id: member.link })) });
   }
   const kept = families.filter(family => !declined.has(family.id));
   if (!kept.length) return;

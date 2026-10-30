@@ -138,19 +138,25 @@ function unitPieces(unit: { part: PlanInput; half: 0 | 1 | 2; xu: number; xl: nu
   return pieces.filter(piece => !samePoint(piece.from, piece.to));
 }
 
+/** How far below its row a unit may be lowered to clear a fan chord, in units of `keep` (architecture-2 ticket 40): four run clearances. */
+export const SLANT_LOWERING_KEEPS = 4;
+
 /**
  * The highest row at `from` or below it where no piece of the unit stands within `keep` of a fan chord without crossing it strictly (G6 excuses
  * only a strict crossing). Where a chord passes a corner of the unit (an end of its run), the corner keeps `keep` from it, so the row steps past the
- * band of y around the chord's crossing of that corner's x. The candidates are `from` and the far edge of each such band, tried in order (a
- * finite list, R4); with none clear the row stays at `from`, and the plan's crowding note and the 7f retry judge it.
+ * band of y around the chord's crossing of that corner's x. The candidates are `from` and the far edge of each such band no more than
+ * `SLANT_LOWERING_KEEPS` x `keep` below `from`, tried in order (a finite list, R4). With none clear the row stays at `from` and `limited` is set:
+ * the plan names the unit (`slantLimited`, `TIER_GAP_SLANT_LIMIT`), and the 7f retry judges the chord. The chords are read where they stand
+ * when the plan runs; the growth the plan then asks for moves the band below and with it the chords' lower ends, which the rows do not read
+ * again (slice 2).
  */
-function clearOfSlants(unit: { part: PlanInput; half: 0 | 1 | 2; xu: number; xl: number }, from: number, slants: readonly PathSegment[], keep: number): number {
+function clearOfSlants(unit: { part: PlanInput; half: 0 | 1 | 2; xu: number; xl: number }, from: number, slants: readonly PathSegment[], keep: number): { y: number; limited: boolean } {
   const clear = (y: number): boolean => unitPieces(unit, y).every(piece => slants.every(chord => {
     const point = intersection(piece, chord);
     const strict = point !== undefined && ![piece.from, piece.to, chord.from, chord.to].some(end => samePoint(end, point));
     return strict || segmentDistance(piece, chord) >= keep - EPS;
   }));
-  if (clear(from)) return from;
+  if (clear(from)) return { y: from, limited: false };
   const candidates: number[] = [];
   for (const chord of slants) {
     const dx = chord.to.x - chord.from.x, dy = chord.to.y - chord.from.y, span = Math.hypot(dx, dy);
@@ -161,7 +167,8 @@ function clearOfSlants(unit: { part: PlanInput; half: 0 | 1 | 2; xu: number; xl:
       candidates.push(chord.from.y + t * dy + keep * span / Math.abs(dx) + 2 * EPS);
     }
   }
-  return candidates.filter(y => y > from).sort((a, b) => a - b).find(clear) ?? from;
+  const found = candidates.filter(y => y > from && y <= from + SLANT_LOWERING_KEEPS * keep + EPS).sort((a, b) => a - b).find(clear);
+  return found === undefined ? { y: from, limited: true } : { y: found, limited: false };
 }
 
 export type PartShape = 'drop' | 'stepped' | 'z' | 'u';
@@ -208,6 +215,8 @@ export interface GapPlan {
   residual: ResidualPart[];
   /** Parts planned with a leg within `keep` of another node's leg: the gate reports them (spec 2.2 prefers that to a removed link). */
   crowded: { id: string; link: string; with: string }[];
+  /** The units whose row no candidate within `SLANT_LOWERING_KEEPS` clears of a fan chord (architecture-2 ticket 40); absent when none. */
+  slantLimited?: { id: string; link: string }[];
   edges: PlanEdge[];
   /** The units that take a row, in the topological order they were packed. */
   order: string[];
@@ -652,7 +661,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   edges = [...edges, ...nestingEdges(live, units, edges, need), ...uEdges(units, edges)];
   const waiting = new Map(units.map(unit => [unit.id, edges.filter(item => item.below === unit.id).length]));
   const ready = units.filter(unit => waiting.get(unit.id) === 0);
-  const rows = new Map<string, number>(), order: Unit[] = [];
+  const rows = new Map<string, number>(), order: Unit[] = [], slantLimited: { id: string; link: string }[] = [];
   const rank = (unit: Unit): number => unit.part.order * 4 + unit.half;
   const spread = (a: Unit, b: Unit): number => Math.max(a.lo, b.lo) - Math.min(a.hi, b.hi);
   /** The leg a unit's run turns into at `x`, one of its two ends: up to the band above, down to the band below, or a Z part's middle drop. */
@@ -680,7 +689,11 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
       const ordered = edges.some(item => item.above === earlier.id && item.below === unit.id);
       if (ordered || !shareRow(earlier, unit)) y = Math.max(y, rows.get(earlier.id)! + earlier.part.after);
     }
-    if (frame.slants?.length) y = clearOfSlants(unit, y, frame.slants, keep);
+    if (frame.slants?.length) {
+      const seat = clearOfSlants(unit, y, frame.slants, keep);
+      y = seat.y;
+      if (seat.limited) slantLimited.push({ id: unit.id, link: unit.part.link });
+    }
     rows.set(unit.id, y);
     order.push(unit);
     for (const item of edges) {
@@ -759,7 +772,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const height = Math.max(frame.floor, demand);
   return { low, bandTop, parts: planned.sort((a, b) => a.order - b.order), residual, crowded, order: order.map(unit => unit.id), crossings, height,
     demand: Number.isFinite(demand) ? demand : 0, growth: Math.max(0, height - (bandTop - low)), setBy,
-    edges: edges.map(item => ({ ...item })) };
+    edges: edges.map(item => ({ ...item })), ...(slantLimited.length ? { slantLimited } : {}) };
 }
 
 /** The height of a label's room below its row: the label, `normalGap` either side of it, and the stroke. */
@@ -1021,6 +1034,10 @@ export function chordGapNotes(model: LayoutModel, plans: readonly { gap: TierGap
         message: `${link} is left to the router in the tier gap above tier ${gap.below}, over the x-span of the straight link ${held.link.id}.`,
         owners: [{ kind: 'link', id: link }, { kind: 'link', id: held.link.id }] });
     }
+    // A row the plan could not lower clear of a fan chord within its bound (architecture-2 ticket 40): named once per unit; the 7f retry judges.
+    for (const item of plan.slantLimited ?? []) notes.push({ stage: 'placement', severity: 'info', code: 'TIER_GAP_SLANT_LIMIT',
+      message: `The row of ${item.link} in the tier gap above tier ${gap.below} clears no fan chord within ${SLANT_LOWERING_KEEPS} x ${keep} px below its seat; it keeps its seat.`,
+      owners: [{ kind: 'link', id: item.link }] });
   }
   return notes;
 }

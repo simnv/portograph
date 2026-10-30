@@ -487,9 +487,10 @@ export function crowdedDirectMembers(model: LayoutModel): string[] {
 
 /**
  * The straight fan members (architecture-2 ticket 40) that 7f brought within the chord clearance of a planned part of their gap, or of another
- * held chord, crossing it nowhere strictly: what G6 would fail. The gap is the one between the sub-tiers of the member's two ends.
+ * held chord, crossing it nowhere strictly (`crowds`: what G6 would fail), or that pass the stem of a sibling fallback (`stem`). The gap is the one
+ * between the sub-tiers of the member's two ends. A member both crowd names `crowds`.
  */
-export function crowdedFanMembers(model: LayoutModel): string[] {
+export function crowdedFanMembers(model: LayoutModel): Map<string, 'crowds' | 'stem'> {
   const straight = (model.fanAdmissions ?? []).filter(item => item.mode === 'straight').flatMap(item => {
     const link = model.links.find(other => other.id === item.link);
     if (link?.attachments === undefined) return [];
@@ -497,8 +498,10 @@ export function crowdedFanMembers(model: LayoutModel): string[] {
     return [{ id: link.id, gap: { above: Math.min(...tiers), below: Math.max(...tiers) } }];
   });
   // A member that still passes a sibling fallback's stem is crowded too: the admission let it cross the leg, the leg's stem is final only now.
-  const stems = straight.filter(({ id }) => siblingStemCrowded(model, model.links.find(other => other.id === id)!)).map(({ id }) => id);
-  return [...new Set([...crowdedChords(model, straight), ...stems])];
+  const found = new Map<string, 'crowds' | 'stem'>();
+  for (const { id } of straight) if (siblingStemCrowded(model, model.links.find(other => other.id === id)!)) found.set(id, 'stem');
+  for (const id of crowdedChords(model, straight)) found.set(id, 'crowds');
+  return found;
 }
 
 /** The held chords of `entries` that stand within the chord clearance of a planned part of their gap or of another held chord, crossing it nowhere strictly. */
