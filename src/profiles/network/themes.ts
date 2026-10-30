@@ -25,8 +25,8 @@ export interface Theme {
   readonly radii: { readonly node: number; readonly group: number; readonly tile: number };
   /** Paint of a profile node class; `undefined` for a class the profile does not know. */
   classPaint(name: string | undefined, mode: ThemeMode): ClassPaint | undefined;
-  /** Body fill of the palette entry a sheet-defined class took; `undefined` when the theme keeps a sheet class's body plain. */
-  sheetWash(at: number, mode: ThemeMode): string | undefined;
+  /** Body fill of the palette entry a sheet-defined class took. Absent: the theme keeps a sheet class's body plain (the one statement of that). */
+  readonly sheetWash?: (at: number, mode: ThemeMode) => string;
   readonly linkClasses: readonly (readonly [string, LinkClassStyle])[];
   readonly portRoles: readonly (readonly [string, PortRoleStyle])[];
   readonly portStatus: readonly (readonly [string, PortStatusStyle])[];
@@ -40,7 +40,7 @@ const NETWORK: Theme = {
     const style = nodeClassStyle(name);
     return style && { ...nodeClassPaint(style, mode), body: nodeBodyFill(style, mode) };
   },
-  sheetWash: (at, mode) => washFillAt(at, mode),
+  sheetWash: washFillAt,
   linkClasses: NETWORK_LINK_CLASSES,
   portRoles: NETWORK_PORT_ROLES,
   portStatus: NETWORK_PORT_STATUS,
@@ -54,8 +54,7 @@ const SNACK: Theme = {
     const hue = name !== undefined && Object.hasOwn(SNACK_CLASS_HUES, name) ? SNACK_CLASS_HUES[name] : undefined;
     return hue && { ...snackHuePaint(hue, mode), body: SNACK_PAINT[mode].node.fill };
   },
-  // The class hue goes on the tile and the pills only; a sheet class keeps the neutral body.
-  sheetWash: () => undefined,
+  // The class hue goes on the tile and the pills only: no `sheetWash`, a sheet class keeps the neutral body.
   linkClasses: SNACK_LINK_CLASSES,
   portRoles: SNACK_PORT_ROLES,
   portStatus: SNACK_PORT_STATUS,
@@ -64,7 +63,7 @@ const SNACK: Theme = {
 /** Every theme, in the order the error message lists them. The first is the default. */
 export const THEMES: readonly Theme[] = [NETWORK, SNACK];
 export const THEME_IDS: readonly string[] = THEMES.map(theme => theme.id);
-export const DEFAULT_THEME_ID = 'network';
+export const DEFAULT_THEME_ID: string = THEMES[0]!.id;
 
 /** The theme of an id; `undefined` for an id no theme has. The parser and stage 1 report that; render throws. */
 export const findTheme = (id: string | undefined): Theme | undefined =>
@@ -81,14 +80,15 @@ export const unknownThemeMessage = (id: string): string => `Theme ${id} is not k
 
 /**
  * The body fill for one class token in one mode: a profile class takes its theme body, a sheet class the wash its
- * palette entry gives (a theme may give none), any other body the plain one. The one resolution the SVG and the draw.io
- * export share.
+ * palette entry gives (a theme may give none), any other body the plain one. The draw.io export resolves a fill here, since a
+ * cell carries its own colours. The SVG states the same cascade as CSS rules (`themeRules`, `sheetClassWashCss` in
+ * `render/theme.ts`), and both read `Theme.classPaint` and `Theme.sheetWash`, so the two agree.
  */
 export function themeWashFill(theme: Theme, token: string | undefined, mode: ThemeMode, assignment: WashAssignment): string {
   const known = theme.classPaint(token, mode);
   if (known) return known.body;
   const at = token === undefined ? undefined : assignment.get(token);
-  return (at === undefined ? undefined : theme.sheetWash(at, mode)) ?? theme.paint[mode].node.fill;
+  return (at === undefined ? undefined : theme.sheetWash?.(at, mode)) ?? theme.paint[mode].node.fill;
 }
 
 /** The link class a theme paints for an authored class; an unknown class, or none, takes the default link. */
@@ -98,3 +98,10 @@ export const themeLinkClass = (theme: Theme, value: string | undefined): LinkCla
 /** The port role a theme paints for a `port.class` token; `undefined` for a token that is no role. */
 export const themePortRole = (theme: Theme, value: string | undefined): PortRoleStyle | undefined =>
   theme.portRoles.find(([key]) => key === value)?.[1];
+
+/**
+ * The corner radius of the swatch that keys a node class in the legend: the node's radius, but not more than the tile's radius
+ * plus the `grow` the swatch stands out by, so a small key is never a circle (a 16 px key with the snack node radius 8 would be).
+ * The SVG and the draw.io export both ask this (R1).
+ */
+export const legendKeyRadius = (theme: Theme, grow: number): number => Math.min(theme.radii.node, theme.radii.tile + grow);

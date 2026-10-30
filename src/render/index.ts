@@ -16,7 +16,7 @@ import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { dotEnds } from './anonymous-end.js';
 import { groupShapes } from './frame-order.js';
 import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
-import { themeById } from '../profiles/network/themes.js';
+import { legendKeyRadius, themeById } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 
@@ -537,7 +537,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     // The key shows the class's body wash behind its tile, as a node of the class shows it.
     const at = entry.swatch, grow = 2;
     const wash = element('rect', { class: classes('node-body', authorClass(entry.key), washClass(authorClass(entry.key), washes), locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
-      x: at.x - grow, y: at.y - grow, width: at.width + 2 * grow, height: at.height + 2 * grow, rx: theme.radii.node, ry: theme.radii.node });
+      x: at.x - grow, y: at.y - grow, width: at.width + 2 * grow, height: at.height + 2 * grow, rx: legendKeyRadius(theme, grow), ry: legendKeyRadius(theme, grow) });
     return wash + iconElement({ icon: entry.icon, bounds: entry.swatch }, locks, authorClass(entry.key), theme.radii.tile);
   };
   const legend = layout.legend ? element('g', { class: 'legend', 'data-id': layout.legend.id },

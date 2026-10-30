@@ -65,7 +65,7 @@ import type { ThemeMode } from '../profiles/network/theme.js';
 import {
   LEGEND_DEFAULT_CLASS, washAssignment, washToken, type WashAssignment, portRolePaint,
 } from '../profiles/network/theme.js';
-import { themeById, themeLinkClass, themePortRole, themeWashFill } from '../profiles/network/themes.js';
+import { legendKeyRadius, themeById, themeLinkClass, themePortRole, themeWashFill } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
@@ -1266,7 +1266,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         strokeColor: dual(of => overlay && !themed ? theme.paint[of].overlay.stroke : klass.strokes[of]),
         strokeWidth: linkStrokeWidth(link),
         opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
-        ...dashEntries(klass.dash),
+        ...dashEntries(overlay && !themed ? theme.paint[mode].overlay.dash : klass.dash),
         ...(source ? dotMarker(link, 'from') : {}),
         ...(target ? dotMarker(link, 'to') : {}),
         ...(source?.style ?? {}),
@@ -1329,7 +1329,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       strokeColor: dual(of => !themed ? theme.paint[of].overlay.stroke : klass.strokes[of]),
       strokeWidth: linkStrokeWidth(first),
       opacity: Math.round(paint.overlay.opacity * 100),
-      ...dashEntries(klass.dash),
+      ...dashEntries(!themed ? theme.paint[mode].overlay.dash : klass.dash),
       ...extra,
     });
     // Every end of the bus geometry is a joint: a 2 px invisible, locked vertex, a child of a member's node or pill and
@@ -1526,7 +1526,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // The key shows the class's body wash behind its tile, as a node of the class shows it.
         const body = swatch, grow = 2;
         vertex(cellId('legendBody', entry.id), cellId('legendRow', entry.id), styleString([], {
-          rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.node * 2,
+          rounded: 1, absoluteArcSize: 1, arcSize: legendKeyRadius(theme, grow) * 2,
           fillColor: dual(of => themeWashFill(theme, washToken(authorClass(entry.key)), of, washes)), strokeColor: paint.node.stroke,
           strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
         }), { x: body.x - grow, y: body.y - grow, width: body.width + 2 * grow, height: body.height + 2 * grow });

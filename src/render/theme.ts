@@ -77,7 +77,7 @@ export function themeRules(mode: ThemeMode, theme: Theme = themeById(undefined))
     `.link-label{fill:${paint.link.label}}`,
     `.multiplicity-label{fill:${paint.link.multiplicity}}`,
     `.legend-label{fill:${paint.legend.text}}`,
-    `.overlay-line{stroke:${paint.overlay.stroke};stroke-opacity:${paint.overlay.opacity}}`,
+    `.overlay-line{stroke:${paint.overlay.stroke};stroke-opacity:${paint.overlay.opacity}${paint.overlay.dash ? `;stroke-dasharray:${paint.overlay.dash}` : ''}}`,
     `.overlay-endpoint{fill:${paint.overlay.mark};stroke:none}`,
   ];
   // The role colour lives on the icon tile; the pill takes the class hue. The body takes a faint wash of the class hue.
@@ -138,10 +138,11 @@ export function sheetClassWashCss(classAttrs: readonly (string | undefined)[], t
   const assignment = washAssignment(classAttrs);
   const used = [...new Set(classAttrs.map(attr => washToken(attr)).filter((token): token is string => token !== undefined)
     .map(token => assignment.get(token)).filter((at): at is number => at !== undefined))].sort((a, b) => a - b);
-  // A theme that keeps a sheet class's body plain (snack) states no wash.
-  if (!used.length || theme.sheetWash(used[0]!, 'light') === undefined) return '';
+  // A theme that keeps a sheet class's body plain (snack) has no `sheetWash` and states no wash.
+  const wash = theme.sheetWash;
+  if (!used.length || wash === undefined) return '';
   const rules = (mode: ThemeMode): string[] => used.map(at =>
-    `.node-body:where(.pg-wash-${at}){fill:${theme.sheetWash(at, mode)}}`);
+    `.node-body:where(.pg-wash-${at}){fill:${wash(at, mode)}}`);
   return [...rules('light'),
     '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
     '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');

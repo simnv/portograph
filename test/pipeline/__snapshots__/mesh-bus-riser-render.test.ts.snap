@@ -13,7 +13,7 @@ exports[`the riser publishes paths, renders and exports (ticket 97) > snapshots 
 .node-body{fill:#ffffff;stroke:#749dc4}
 .node-label{fill:#1d1f20}
 .node-description{fill:#5d5d60;fill-opacity:1}
-.icon-tile{fill:#749dc4;stroke:#416180}
+.icon-tile{fill:#597ea3;stroke:#416180}
 .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
 .pill{fill:#d6ebff;stroke:#749dc4}
 .pill-label{fill:#2c455d}
@@ -70,7 +70,7 @@ exports[`the riser publishes paths, renders and exports (ticket 97) > snapshots 
   .node-body{fill:#1d2d3d;stroke:#94bce3}
   .node-label{fill:#eef6ff}
   .node-description{fill:#b5d9fd;fill-opacity:1}
-  .icon-tile{fill:#749dc4;stroke:#b5d9fd}
+  .icon-tile{fill:#597ea3;stroke:#b5d9fd}
   .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
   .pill{fill:#2c455d;stroke:#94bce3}
   .pill-label{fill:#d6ebff}
@@ -203,7 +203,7 @@ exports[`the riser publishes paths, renders and exports (ticket 97) > snapshots 
 .node-body{fill:#ffffff;stroke:#749dc4}
 .node-label{fill:#1d1f20}
 .node-description{fill:#5d5d60;fill-opacity:1}
-.icon-tile{fill:#749dc4;stroke:#416180}
+.icon-tile{fill:#597ea3;stroke:#416180}
 .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
 .pill{fill:#d6ebff;stroke:#749dc4}
 .pill-label{fill:#2c455d}
@@ -260,7 +260,7 @@ exports[`the riser publishes paths, renders and exports (ticket 97) > snapshots 
   .node-body{fill:#1d2d3d;stroke:#94bce3}
   .node-label{fill:#eef6ff}
   .node-description{fill:#b5d9fd;fill-opacity:1}
-  .icon-tile{fill:#749dc4;stroke:#b5d9fd}
+  .icon-tile{fill:#597ea3;stroke:#b5d9fd}
   .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
   .pill{fill:#2c455d;stroke:#94bce3}
   .pill-label{fill:#d6ebff}
@@ -399,7 +399,7 @@ exports[`the riser publishes paths, renders and exports (ticket 97) > snapshots 
 .node-body{fill:#ffffff;stroke:#749dc4}
 .node-label{fill:#1d1f20}
 .node-description{fill:#5d5d60;fill-opacity:1}
-.icon-tile{fill:#749dc4;stroke:#416180}
+.icon-tile{fill:#597ea3;stroke:#416180}
 .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
 .pill{fill:#d6ebff;stroke:#749dc4}
 .pill-label{fill:#2c455d}
@@ -456,7 +456,7 @@ exports[`the riser publishes paths, renders and exports (ticket 97) > snapshots 
   .node-body{fill:#1d2d3d;stroke:#94bce3}
   .node-label{fill:#eef6ff}
   .node-description{fill:#b5d9fd;fill-opacity:1}
-  .icon-tile{fill:#749dc4;stroke:#b5d9fd}
+  .icon-tile{fill:#597ea3;stroke:#b5d9fd}
   .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
   .pill{fill:#2c455d;stroke:#94bce3}
   .pill-label{fill:#d6ebff}
@@ -596,7 +596,7 @@ exports[`the riser publishes paths, renders and exports (ticket 97) > snapshots 
 .node-body{fill:#ffffff;stroke:#749dc4}
 .node-label{fill:#1d1f20}
 .node-description{fill:#5d5d60;fill-opacity:1}
-.icon-tile{fill:#749dc4;stroke:#416180}
+.icon-tile{fill:#597ea3;stroke:#416180}
 .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
 .pill{fill:#d6ebff;stroke:#749dc4}
 .pill-label{fill:#2c455d}
@@ -653,7 +653,7 @@ exports[`the riser publishes paths, renders and exports (ticket 97) > snapshots 
   .node-body{fill:#1d2d3d;stroke:#94bce3}
   .node-label{fill:#eef6ff}
   .node-description{fill:#b5d9fd;fill-opacity:1}
-  .icon-tile{fill:#749dc4;stroke:#b5d9fd}
+  .icon-tile{fill:#597ea3;stroke:#b5d9fd}
   .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
   .pill{fill:#2c455d;stroke:#94bce3}
   .pill-label{fill:#d6ebff}

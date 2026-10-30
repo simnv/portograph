@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NETWORK_NODE_CLASSES, portRolePaint } from '../../src/profiles/network/theme.js';
+import { NETWORK_NODE_CLASSES, WASH_PALETTE, portRolePaint } from '../../src/profiles/network/theme.js';
 import type { ThemeMode } from '../../src/profiles/network/theme.js';
 import { THEMES, themeLinkClass, themeById } from '../../src/profiles/network/themes.js';
 import type { Theme } from '../../src/profiles/network/themes.js';
@@ -108,7 +108,6 @@ const failures = (theme: Theme, mode: ThemeMode): { label: string; detail: strin
  */
 const NETWORK_SHORTFALLS: Record<ThemeMode, readonly string[]> = {
   light: [
-    'glyph: default glyph on tile',
     'stroke: default pill stroke on body', 'stroke: provider pill stroke on body', 'stroke: router pill stroke on body', 'stroke: rr pill stroke on body',
     'stroke: node border on page', 'stroke: node border on group', 'stroke: node border on body',
     'stroke: group border on page', 'stroke: group border on group',
@@ -120,7 +119,7 @@ const NETWORK_SHORTFALLS: Record<ThemeMode, readonly string[]> = {
     'stroke: admin-down status on body',
   ],
   dark: [
-    'glyph: default glyph on tile', 'stroke: group border on group',
+    'stroke: group border on group',
     'stroke: overlay on page', 'stroke: overlay on group', 'stroke: overlay on body',
     'text: uplink role text',
   ],
@@ -132,6 +131,29 @@ const NETWORK_SHORTFALLS: Record<ThemeMode, readonly string[]> = {
   ],
 };
 
+/**
+ * The overlay rule: an overlay link is told from a routed link by hue or by dash, since a stroke 1.2:1 from the link in lightness
+ * is the same line to the eye (ticket 158 review). A hue is told apart when the overlay has a colour (chroma 30 or more) and the
+ * link has none, or the two hues are 25 degrees or more apart. A dash is told apart when the overlay states one and the link is
+ * solid. Colour alone cannot carry a greyscale print, so a grey overlay there needs the dash.
+ */
+function hueAndChroma(hex: string): { hue: number; chroma: number } {
+  const [r, g, b] = channels(hex), max = Math.max(r!, g!, b!), min = Math.min(r!, g!, b!), chroma = max - min;
+  if (chroma === 0) return { hue: 0, chroma };
+  const hue = max === r ? ((g! - b!) / chroma + 6) % 6 : max === g ? (b! - r!) / chroma + 2 : (r! - g!) / chroma + 4;
+  return { hue: hue * 60, chroma };
+}
+export function overlayApartFromLink(theme: Theme, mode: ThemeMode): boolean {
+  const { overlay, link } = theme.paint[mode];
+  if (overlay.dash !== undefined && overlay.dash !== 'none') return true;
+  const one = hueAndChroma(overlay.stroke), other = hueAndChroma(link.stroke);
+  if (one.chroma < 30) return false;
+  const apart = Math.abs(one.hue - other.hue);
+  return other.chroma < 30 || Math.min(apart, 360 - apart) >= 25;
+}
+/** The one theme and mode that tells no overlay from a link: the delivered network print (a grey overlay of neutral-600 beside a black link). */
+const NETWORK_OVERLAY_SHORTFALLS: readonly string[] = ['network print'];
+
 describe('every theme keeps the contrast rules in every mode', () => {
   for (const theme of THEMES) {
     for (const mode of ['light', 'dark', 'print'] as const) {
@@ -142,6 +164,28 @@ describe('every theme keeps the contrast rules in every mode', () => {
       });
     }
   }
+
+  it('tells an overlay link from a routed link by hue or by dash, in every theme and mode', () => {
+    const apart = THEMES.flatMap(theme => (['light', 'dark', 'print'] as const).filter(mode => !overlayApartFromLink(theme, mode)).map(mode => `${theme.id} ${mode}`));
+    expect(apart).toEqual([...NETWORK_OVERLAY_SHORTFALLS]);
+    expect(themeById('snack').paint.print.overlay.dash).toBeDefined();
+  });
+
+  it('keeps 4.5:1 for title and subtitle on every wash a theme gives a sheet class', () => {
+    for (const theme of THEMES) {
+      for (const mode of ['light', 'dark', 'print'] as const) {
+        const paint = theme.paint[mode];
+        // A theme with no sheetWash keeps the plain body, which the pairs above check.
+        for (let at = 0; theme.sheetWash !== undefined && at < WASH_PALETTE.length; at += 1) {
+          const fill = theme.sheetWash(at, mode);
+          expect(ratio(paint.node.text, fill), `${theme.id} ${mode} wash ${at} title`).toBeGreaterThanOrEqual(4.5);
+          expect(ratio(paint.node.description, fill), `${theme.id} ${mode} wash ${at} subtitle`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+    expect(themeById('network').sheetWash).toBeDefined();
+    expect(themeById('snack').sheetWash).toBeUndefined();
+  });
 
   it('gives a white glyph 3:1 on every tile of the snack print sheet', () => {
     const snack = themeById('snack');

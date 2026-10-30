@@ -92,6 +92,17 @@ export const SNACK_PORT_STATUS: readonly (readonly [string, PortStatusStyle])[] 
 export const SNACK_LINK_CLASSES: readonly (readonly [string, LinkClassStyle])[] = NETWORK_LINK_CLASSES.map(([name, style]) =>
   [name, { ...style, stroke: ACCENT.light, strokes: ACCENT }] as const);
 
+/**
+ * An overlay link must differ from a routed link. In colour it takes the Snack blue (`sys-blue-accent-default`, the hue of the
+ * first class), as the network sheet gives it its indigo: `#5388d1` is 3.15:1 on the light page and `#749eda` 5.6:1 on the dark
+ * body. It is solid: at 0.8 opacity the light blue falls to 2.4:1 on the page, under the 3:1 a stroke keeps. A print has no hue, so
+ * the overlay is a grey line with its own dash (`8 2 2 2`), apart from the dashed (`4 4`) and dotted (`1 3`) link classes.
+ */
+const overlay = (mode: ThemeMode): ThemePaint['overlay'] => {
+  const stroke = mode === 'print' ? '#707070' : HUES.blue.tile[mode];
+  return { stroke, opacity: 1, mark: stroke, ...(mode === 'print' ? { dash: '8 2 2 2' } : {}) };
+};
+
 const paint = (mode: ThemeMode): ThemePaint => {
   const slate = snackHuePaint('slate', mode);
   return {
@@ -104,7 +115,7 @@ const paint = (mode: ThemeMode): ThemePaint => {
     // A link label sits on the page or on a group, and `text-support` gives 4.3:1 on the page; the label takes `text-main`.
     link: { stroke: ACCENT[mode], label: TEXT_MAIN[mode], multiplicity: TEXT_MAIN[mode] },
     legend: { text: TEXT_MAIN[mode] },
-    overlay: { stroke: mode === 'print' ? '#707070' : TEXT_SUPPORT[mode], opacity: 1, mark: mode === 'print' ? '#707070' : TEXT_SUPPORT[mode] },
+    overlay: overlay(mode),
   };
 };
 

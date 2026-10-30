@@ -5,12 +5,13 @@ import type { NormalisedNode } from '../../model/document.js';
  * tile colour, has to separate the roles: `quality.md` requires the diagram to read without colour.
  * `tbr` therefore takes the distinct `switch` glyph recommended in `render-theme-notes.md`, which
  * also follows the target JPEG, where the transit border routers carry a different symbol from the
- * red routers. `rr` keeps the router glyph, as the JPEG does.
+ * red routers. `rr` takes the `server` glyph (ticket 158, spec decision 6): each class in the legend has its own glyph, so a
+ * greyscale sheet tells a route reflector from a router.
  */
 export const NETWORK_NODE_ICONS: Readonly<Record<string, string>> = {
   provider: 'cloud', internet: 'cloud', wan: 'cloud',
   tbr: 'switch',
-  router: 'router', rr: 'router', backbone: 'router', core: 'router',
+  router: 'router', rr: 'server', backbone: 'router', core: 'router',
 };
 
 /**

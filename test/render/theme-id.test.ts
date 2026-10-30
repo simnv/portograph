@@ -4,7 +4,7 @@ import { drawio, layout, parse, parseWithDiagnostics, render, score } from '../.
 import type { LayoutModel } from '../../src/index.js';
 import { resolveNodeIcon } from '../../src/profiles/network/icons.js';
 import { NETWORK_NODE_CLASSES, classDisplayLabel } from '../../src/profiles/network/theme.js';
-import { DEFAULT_THEME_ID, THEMES, THEME_IDS, findTheme, themeById } from '../../src/profiles/network/themes.js';
+import { DEFAULT_THEME_ID, THEMES, THEME_IDS, findTheme, legendKeyRadius, themeById } from '../../src/profiles/network/themes.js';
 import { resolve } from '../../src/resolve/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -33,6 +33,7 @@ describe('the document field theme', () => {
     expect(parse(fixture).theme).toBe('snack');
     expect(parse(without).theme).toBeUndefined();
     expect(parse(without.replace('title:', 'theme: network\ntitle:'))).toEqual(parse(without));
+    expect(DEFAULT_THEME_ID).toBe(THEMES[0]!.id);
     expect(DEFAULT_THEME_ID).toBe('network');
   });
 
@@ -87,6 +88,24 @@ describe('a theme is a render input and moves nothing', () => {
     expect(css).not.toContain('.node-body:where(.pg-wash');
   });
 
+  it('draws a legend key that is never a circle', async () => {
+    // The key stands 2 px out of a 12 px tile: 16 px square. A radius of 8 would be a circle.
+    expect(legendKeyRadius(themeById('snack'), 2)).toBe(6);
+    expect(legendKeyRadius(themeById('network'), 2)).toBe(4);
+    const svg = render(await run(fixture));
+    const keys = [...svg.matchAll(/<rect class="node-body[^>]*width="16"[^>]*>/g)].map(match => match[0]);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) expect(key).toContain('rx="6"');
+  });
+
+  it('paints the overlay in the snack blue, solid, and in print a grey line with its own dash', async () => {
+    const svg = render(await run(fixture));
+    expect(svg).toContain('.overlay-line{stroke:#5388d1;stroke-opacity:1}');
+    expect(svg).toContain('.overlay-line{stroke:#749eda;stroke-opacity:1}');
+    expect(svg).toContain('.overlay-line{stroke:#707070;stroke-opacity:1;stroke-dasharray:8 2 2 2}');
+    expect(render(await run(without))).not.toContain('stroke-dasharray:8 2 2 2');
+  });
+
   it('states the radii in the draw.io file and the paint of the same theme', async () => {
     const [on, off] = await Promise.all([run(fixture), run(without)]);
     const xml = drawio(on, { theme: 'light' }), other = drawio(off, { theme: 'light' });
@@ -100,15 +119,11 @@ describe('a theme is a render input and moves nothing', () => {
 
 describe('every profile class has its own glyph and legend name', () => {
   const classes = NETWORK_NODE_CLASSES.map(([name]) => name);
-  it('has a glyph for each; the router and the route reflector share one (a finding for the maintainer)', () => {
+  it('has a distinct glyph for each (spec decision 6)', () => {
     const icons = classes.map(name => resolveNodeIcon({ class: name }));
     expect(icons.every(icon => icon !== undefined)).toBe(true);
-    // Ticket 158 step 5 asks for one glyph per class. `rr` keeps the router glyph (`NETWORK_NODE_ICONS`, decided with the JPEG
-    // target), and the approved golden's layout JSON carries the icon name of every node, so a new glyph for `rr` is a
-    // golden change that the maintainer approves by hand. Until then the pairs below are the only ones that share a glyph; a new
-    // class that shares one fails here.
-    const shared = classes.flatMap((a, at) => classes.slice(at + 1).filter(b => resolveNodeIcon({ class: a }) === resolveNodeIcon({ class: b })).map(b => `${a}+${b}`));
-    expect(shared).toEqual(['router+rr']);
+    expect(new Set(icons).size).toBe(classes.length);
+    expect(resolveNodeIcon({ class: 'rr' })).toBe('server');
   });
   it('has a distinct legend name for each', () => {
     const names = classes.map(name => classDisplayLabel('symbol', name));
