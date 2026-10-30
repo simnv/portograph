@@ -2,7 +2,7 @@ import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
 import { EPS } from '../geometry/planar.js';
-import { frameColumns, frameSeparation, overlayFreeGroups } from './columns.js';
+import { frameColumns, overlayFreeGroups } from './columns.js';
 import { groupShape } from './grid.js';
 import { cellReach, deriveFrames, FRAME_TO_FRAME_GAP } from './frames.js';
 import { chordsHold } from './frame-paths.js';
@@ -294,7 +294,7 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
             const one = occupiedOverhang(model, item);
             wall(item.bounds!.x - one.left, item.bounds!.x + item.bounds!.width + one.right, gap);
           }
-          for (const column of columns.filter(item => item.from <= tier && tier <= item.to && !(cellOfFrame(group) && item.cells.has(group.id)))) wall(column.x, column.x + column.width, frameSeparation(model, group.frame !== undefined));
+          for (const column of columns.filter(item => item.from <= tier && tier <= item.to && !(cellOfFrame(group) && item.cells.has(group.id)))) wall(column.x, column.x + column.width, gap);
           for (const lane of model.lanes.filter(item => item.tier === tier)) wall(lane.bounds.x, lane.bounds.x + lane.bounds.width, 0);
         }
         if (!skip) {

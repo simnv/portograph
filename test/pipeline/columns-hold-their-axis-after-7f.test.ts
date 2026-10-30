@@ -53,7 +53,9 @@ describe('columns hold their feed axis after 7f', () => {
   // title room of 7f (the zone titles push Site B right, the feed title band moves tier 1 down) stands the frame of Site A on it: a move 7f cannot
   // refuse, so the chord stayed straight through the frame and G2 failed. The judge reads the frozen chords now and refuses the trial.
   // The premise holds with card nodes only (`layout.nodeContent: card`): the same sheet with stacked nodes offers no such side.
-  it('refuses a side trial whose held chord 7f stands a foreign frame on, and publishes no blocked chord', async () => {
+  // Ticket 164 (card default) owns the fix: the judge's use of `chordBlockedNew` broke the stacked canton-order sheet (G9), so it moved to
+  // `.scratch/snack-theme/164-chord-blocked-new.patch`. This test fails until 164 lands it; it then passes, and `it.fails` alerts.
+  it.fails('ticket 164: refuses a side trial whose held chord 7f stands a foreign frame on, and publishes no blocked chord', async () => {
     const model = await layout(parse(source.replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(blockedChordsAt(model)).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_BLOCKED')).toEqual([]);

@@ -1,6 +1,6 @@
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import type { Point } from '../model/geometry.js';
-import { frameColumns, frameSeparation, overlayFreeGroups, type FrameColumn } from './columns.js';
+import { frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
 import { occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { holdsMove } from './move-reservations.js';
@@ -379,7 +379,7 @@ export function standLinklessBeside(model: LayoutModel, tiers: readonly number[]
     const lanes = model.lanes.filter(lane => lane.tier === tier && !pending.some(item => item.id === lane.group)).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width }));
     const walls = (other: readonly LayoutGroup[]) => [
       ...other.map(item => ({ ...span(item), gap })),
-      ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap: frameSeparation(model, false) })),
+      ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap })),
       ...lanes.map(lane => ({ ...lane, gap: 0 })),
     ];
     const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments && !overlayCourse(model, link));
@@ -452,7 +452,7 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
           const one = occupiedOverhang(model, item);
           return { low: item.bounds!.x - one.left, high: item.bounds!.x + item.bounds!.width + one.right, gap };
         }),
-        ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap: frameSeparation(model, false) })),
+        ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap })),
         ...model.lanes.filter(lane => lane.tier === tier).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width, gap: 0 })),
       ];
       const width = box.width + reach.left + reach.right;
@@ -519,9 +519,8 @@ function tierWalls(model: LayoutModel, tier: number, groups: readonly LayoutGrou
       const reach = occupiedOverhang(model, group), low = group.bounds!.x - reach.left, high = group.bounds!.x + group.bounds!.width + reach.right;
       return { low, high, centre: (low + high) / 2, gap };
     }),
-    // A plain group keeps the separation the gate judges from a frame column (`frameSeparation`): the column spends its slack only beyond it.
     ...columns.filter(column => column.from <= tier && tier <= column.to).map((column): Wall => ({ low: column.x, high: column.x + column.width,
-      centre: column.x + column.width / 2, gap: frameSeparation(model, false) })),
+      centre: column.x + column.width / 2, gap })),
     ...model.lanes.filter(lane => lane.tier === tier).map((lane): Wall => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width,
       centre: lane.bounds.x + lane.bounds.width / 2, gap: 0 })),
   ].sort((a, b) => a.low - b.low);

@@ -1437,10 +1437,7 @@ each side. `packFrameColumns` (`src/layout/columns.ts`) runs in stage 4 after EL
 frames and the one-rank groups of a document tier left to right, anchor tier first. Each axis
 lands on the mean x of its routed feeds, and the columns stand a band gap apart
 (`packStep`). The column is a wall for the centring and the overlay sweeps. Centring spends the
-slack and never leaves less than a band gap between two frame boxes. Toward a group that is not in a
-frame the slack is only what that group leaves beyond a band gap plus `COLUMN_SLACK`, the separation
-G9 judges (`frameSeparation`), and the group keeps that separation from the column edge (snack-theme
-ticket 159). `separateFrameColumns` runs
+slack and never leaves less than a band gap between two frame boxes. `separateFrameColumns` runs
 in the `rows` rule, after every row group has its width, and moves each frame as a whole with one
 dx until the gap is a band gap again. `orderFramesByOverlay` re-packs the columns in the order the
 overlay links ask for.

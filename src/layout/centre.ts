@@ -8,7 +8,7 @@ import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
 import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js';
-import { besideWalls, frameColumns, frameSeparation, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
+import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
 import { timed } from './attempt-timings.js';
@@ -31,7 +31,7 @@ import { fitRegionGroup, GROUP_PADDING, placementWarning, rebuildRegions, right 
 import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
-import { blockedChordsAt, chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
+import { chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -335,8 +335,7 @@ function frameDepth(model: LayoutModel, id: string): number {
  * The window the columns of the frames of a tier leave a group (ranked-groups ticket 09). A rank cell
  * stays inside the column of its frame: the box of the cell, and the reach `cellReach` gives its
  * bodies and pills, lie between the column edges. Any other group stays out of the column of every
- * frame that spans its sub-tier, on the side it stands on, by the separation the gate judges (`frameSeparation`).
- * Unbounded for a tier with no frame.
+ * frame that spans its sub-tier, on the side it stands on. Unbounded for a tier with no frame.
  */
 function columnWindow(model: LayoutModel, context: CentreContext, tier: number, id: string): WideningLimit {
   const group = model.groups[id]!, box = group.bounds!;
@@ -354,9 +353,7 @@ function columnWindow(model: LayoutModel, context: CentreContext, tier: number, 
   }
   const window = { low: -Infinity, high: Infinity };
   if (!context.columns.some(column => column.from <= tier && tier <= column.to)) return window;
-  // The separation the final gate judges between a frame box and a plain group, kept from the column edge: the column spends its slack
-  // toward this group only beyond that separation (`frameColumns`), so a frame at its column edge still stands that far from the group.
-  const reach = occupiedOverhang(model, group), centre = box.x + box.width / 2, gap = frameSeparation(model, false);
+  const reach = occupiedOverhang(model, group), centre = box.x + box.width / 2, gap = bandGap(model);
   for (const column of context.columns.filter(item => item.from <= tier && tier <= item.to)) {
     if (centre < column.x + column.width / 2) window.high = Math.min(window.high, column.x - gap - reach.right);
     else window.low = Math.max(window.low, column.x + column.width + gap + reach.left);
@@ -775,7 +772,7 @@ const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'e
  * content of the model alone; the one thing a replay does first is rebuild the nodes of its group. When that leaves the nodes as the model has them (`texts`),
  * the replay stands on the model itself and takes the readings of the first one that did, so they are read once per check and not once per replay.
  */
-interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>; breached?: Set<string>; blocked?: Set<string> }
+interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>; breached?: Set<string> }
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
   return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base));
 }
@@ -789,16 +786,13 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   rebuildNodeGeometry(model, group.nodes, 'current');
   const standing = base !== undefined && group.nodes.every(node => JSON.stringify(model.nodes[node]) === base.texts.get(node));
   const held = standing && base.held ? base.held : straightChordIds(model), breached = standing && base.breached ? base.breached : new Set([...keepOutShifts(model).keys()].map(item => item.id));
-  // A frozen chord is a wall from the freeze on (ticket 34): a step may not stand a body, a foreign pill or a foreign frame on one that was clear.
-  const blocked = standing && base.blocked ? base.blocked : new Set(blockedChordsAt(model));
-  if (standing) { base.held = held; base.breached = breached; base.blocked = blocked; }
+  if (standing) { base.held = held; base.breached = breached; }
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
-  const stands = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) && [...keepOutShifts(model).keys()].every(item => breached.has(item.id))
-    && blockedChordsAt(model).every(id => blocked.has(id));
+  const stands = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) && [...keepOutShifts(model).keys()].every(item => breached.has(item.id));
   tapVerdict('centreGroupStep', () => `${stands} ${now.size}/${held.size}`);
   if (stands) return result;
   model.groups[id] = snapshot.group;

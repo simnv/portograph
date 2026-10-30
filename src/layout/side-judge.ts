@@ -5,7 +5,7 @@ import { crossingsOf } from './read/crossings.js';
 import { hintsFacingAway } from './side-hints.js';
 import { sharedBlockers } from './overlay-paths.js';
 import { plannedBends } from './side-measure.js';
-import { added as namesAdded, chordBlockedNew, constraintFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
+import { added as namesAdded, constraintFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { compare, pathBends, reading, refusal, routedBends, routedFamily, sideTrialProfile, tapVerdict } from './objective.js';
 
 /**
@@ -67,8 +67,6 @@ export function judgeTrial(input: TrialInput): Verdict {
   if (away.length > 0) return verdict(false, 'a hinted port faces away from its peer');
   const blocked = spanBlockedNew(input.routedBase, input.routedTrial);
   if (blocked.length > 0) return verdict(false, `a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})`);
-  const held = chordBlockedNew(input.routedBase, input.routedTrial);
-  if (held.length > 0) return verdict(false, `stage 7f stood a body or a foreign frame on a held chord (${held.join(', ')})`);
   // The hard entries of the x catalogue the baseline holds (a band gap between two root groups) stay held: the same check as the course judge's (ticket 17).
   const constraintNew = namesAdded(constraintFindings(input.routedTrial), constraintFindings(input.routedBase));
   if (constraintNew.length > 0) return verdict(false, `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);

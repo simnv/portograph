@@ -855,8 +855,8 @@ export function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, str
 
 /**
  * `blockedChords` on the frames the cells give now. A cross-frame chord reads the frame boxes, which follow the cells; the stored frames follow them
- * only at the end of a transaction, so a guard that reads a move inside one (a proposed box, a centring step) derives them. `chordsHold` and the
- * centring step read this one function.
+ * only at the end of a transaction, so a guard that reads a move inside one (a proposed box) derives them. `chordsHold` reads it, and the tests
+ * read it to find a body, a foreign pill or a foreign frame on a held chord.
  */
 export function blockedChordsAt(model: LayoutModel): string[] {
   if (!model.frozenChords?.length) return [];

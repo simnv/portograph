@@ -1,5 +1,5 @@
 import type { LayoutModel } from '../model/layout.js';
-import { blockedChordsAt, isRoutedChord } from './frame-paths.js';
+import { isRoutedChord } from './frame-paths.js';
 import { score } from '../score/index.js';
 import type { ScoreCounts } from '../score/types.js';
 import { evaluate, separationShortfalls, worseSeparations, xCatalogue } from './constraints/index.js';
@@ -45,14 +45,6 @@ export function spanBlockedNew(base: LayoutModel, trial: LayoutModel): string[] 
     ...model.links.filter(link => link.spanHint === true && !isRoutedChord(model, link)).map(link => link.id),
   ]);
   return added(owners(trial), owners(base));
-}
-
-/**
- * The frozen chords that a body, a foreign pill or a foreign frame stands on in the trial and not in the baseline (`blockedChordsAt`; snack-theme ticket 159). A move
- * 7f cannot refuse (a title's room) may leave one, and the chord stays straight through it: a trial whose chord 7f blocks is refused, not published.
- */
-export function chordBlockedNew(base: LayoutModel, trial: LayoutModel): string[] {
-  return added(new Set(blockedChordsAt(trial)), new Set(blockedChordsAt(base)));
 }
 
 /** The names in `now` that `then` does not have. */
