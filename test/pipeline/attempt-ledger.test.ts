@@ -62,7 +62,9 @@ const ROWS: Row[] = [
   // Verdana metrics (snack-theme ticket 157): one centring pass fewer (1/7/7/3 with Arial).
   // Card nodes (snack-theme ticket 159): 11 centring passes, the held-axis probe moves a column, and the base 7f loop stands a body on a frozen chord where it lost
   // an aligned link with stacked nodes (1/6/7/3, base7f 0/1/0).
-  row('a-member-title-widens-a-beside-row', '1/11/7/3', 1, 1, 1, 0, 0, { probe: 1, base7f: '0/0/1' }),
+  // Ticket 159 re-check: the centring step after the title push reads the frozen chords and is declined where it stood the frame of beta on link-6.
+  // The body stands on no frozen chord, the column rules move nothing (probe 0) and the centring passes are 7 (1/11/7/3, probe 1, base7f 0/0/1 before).
+  row('a-member-title-widens-a-beside-row', '1/7/7/3', 1, 1, 1, 0, 0),
   // The cost counters (settle, centring passes, copies, replays) of this sheet move with every change to the sweep that seats a flank beside a frame (architecture ticket 19: the
   // centring passes 15 to 13); what the sheet pins is its behaviour: the runs, the attempts, the rounds, no open round, no chord move, and the findings below.
   // Architecture 2, ticket 03: the side trial on this sheet (link-3, a lane hint on up-1.100G#3) is refused at its 7e now, because the far port of the lane is 65 px off the lane x
