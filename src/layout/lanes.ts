@@ -130,13 +130,23 @@ export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup
   // From 7f on a straight link is a wall like a lane (ticket 34): the move is refused for that unit.
   if (!chordsHold(model, proposed, report)) return false;
   return proposed.every(({ group, bounds }) => {
-    // A lane of either kind keeps the side of every group of its own sub-tier.
-    const sameTier = model.lanes.filter(lane => lane.tier === group.tier && !(lane.group === group.id && bypassLane(model, lane))).every(lane => {
+    // A lane of either kind keeps the side of every group of a sub-tier it stands beside.
+    const sameTier = model.lanes.filter(lane => wallBeside(lane, group.tier!) && !(lane.group === group.id && bypassLane(model, lane))).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));
       return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - PLACEMENT_EPS : right(box) <= lane.bounds.x + PLACEMENT_EPS;
     });
     return sameTier;
   }) && (!frames || sideLaneFramesHold(model, proposed));
+}
+/**
+ * Whether a lane is a wall beside the groups of a sub-tier. A perimeter lane stands beside the sub-tiers of its span: its `tier` is the one of its upper end's
+ * group, which the lane need not reach (a course that leaves the bottom face of a node drops through the tier gap first). Its x is derived from the outermost
+ * box on that span (`rebuildLaneExtents`), so a box that widens takes the lane out with it; only an aligned lane, which stands on its far port's x, is a wall.
+ * Every other lane keeps its x and stands in its own sub-tier.
+ */
+function wallBeside(lane: Lane, tier: number): boolean {
+  if (lane.kind !== 'perimeter') return lane.tier === tier;
+  return lane.aligned === true && lane.span !== undefined && lane.span.top <= tier && tier <= lane.span.bottom;
 }
 /** Whether a lane is a stem of a row bypass: it stands in the gaps of its own group and is derived from the node boxes. */
 function bypassLane(model: LayoutModel, lane: Lane): boolean {
