@@ -77,6 +77,10 @@ export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget,
       timed('lane-extents', () => rebuildLaneExtents(draft));
     }
     timed('node-geometry', () => rebuildNodeGeometry(draft, Object.keys(draft.nodes), 'current'));
+    // Centring moves port anchors, and the port pills follow them only in the node geometry above. A span corridor is derived from the pill faces
+    // at its chord's ends (`spanCorridor`, `overlayEnd`), so the replay before it read the pills where they stood before centring. The extents are
+    // replayed on the pills that stand (snack-theme ticket 157: with the Verdana metrics 7f published a span lane 13 px wider than its chord's corridor).
+    timed('lane-extents', () => rebuildLaneExtents(draft));
     timed('row-path-delete', () => { for (const link of draft.links) if (rowPathCandidate(draft, link) || flankPathCandidate(draft, link)) delete link.path; });
     timed('row-paths', () => rebuildRowPaths(draft));
     timed('flank-paths', () => rebuildFlankPaths(draft));

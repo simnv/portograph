@@ -6,6 +6,7 @@
  * fresh for every move, and the guard is the predicate of that reservation. The list is ordered as the guards were, and a failure stops the list, so a diagnostic
  * a guard reports is reported as before. These reservations are transaction-local: they are never stored on the model.
  */
+import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { transient, type Reservation, type Reservations } from './reservations.js';
 import { isSideLane, laneLink, laneSidesHold, riserNoDeeper, riserPenetrations, sideLaneSource, sideLanesHold, spanBreaches } from './lanes.js';
