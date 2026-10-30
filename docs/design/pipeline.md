@@ -1036,6 +1036,10 @@ title edge widened 39 of 178 sheets, 1513 px in all, against 8 sheets and 242 px
 widening on demand needs one growth pass, and centring has spent the shared eight-pass budget on every measured sheet that has such a leg. Each title
 therefore has `LEG_PASSES_PER_TITLE` (1) extra pass outside the shared budget; a widening past it is refused and reported as
 `GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED`, not as budget exhaustion.
+A perimeter lane is a wall to this widening (`laneSidesHold`) only on the sub-tiers of its span, not on the sub-tier of its upper end's group,
+and only when it is aligned on its far port's x. An unaligned perimeter lane derives its x from the boxes on its span, so the replay moves it out
+with the widened box (`a-mesh-across-a-tier-goes-round-the-outside`: the Core title widens Core past the drop of a course whose lane stands
+beside the tier below).
 
 **The mesh bus band** (ticket 83; `docs/design/mesh-bus.md`, section 4). A bus with a fixed side asks for a band of `BUS_STUB` (15 px) plus
 `4 px + label height + 4 px` (the label is `<class> mesh (<n> nodes)` at 9 px). Two placements reserve it.
