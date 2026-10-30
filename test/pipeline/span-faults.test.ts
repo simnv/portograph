@@ -70,8 +70,10 @@ describe('the span round and the errors it does not own', () => {
   }, 60000);
 
   // The contradiction is forged (snack-theme ticket 157). The sheet produced one by itself: its lane extents were replayed before the node geometry
-  // rebuilt the port pills, which the corridor reads, so a lane stood where the old pill put it. The replay now follows the pills, and that lane
-  // agrees with its chord. The rule pinned here is unchanged: a span lane that contradicts its chord is a typed refusal of the trial, and the sheet
+  // rebuilt the port pills, which the corridor reads, so a lane stood where the old pill put it. The replay now follows the pills (b1ab0774, ticket 157,
+  // "lane extents replay on the pills the node geometry rebuilds"), and that lane agrees with its chord. Measured on 2026-10-31: the unforged test passes
+  // with the src of b1ab0774~1 and fails with the src of 82f80e67 (the span trial is refused only for a wall in the corridor of link-1); no ticket 159 fix
+  // is involved. The rule pinned here is unchanged: a span lane that contradicts its chord is a typed refusal of the trial, and the sheet
   // still publishes, without the span.
   it('refuses a trial whose span lane contradicts its chord (a typed refusal of the lane validator) and publishes the sheet', async () => {
     const refused: string[] = [];

@@ -151,8 +151,10 @@ export const span: Round<SpanOffer> = {
  * The size a node is pinned at when a round moves some of its ports to other faces (`moved`, by `portKey`): its stage-3 size, never below the content it holds
  * with the ports on their new faces. A pill on a new face sets that face's inset (`contentInsets`), and a card counts both side insets in its width, so the
  * stage-3 size alone can be short of the content and the trial is refused at publication (snack-theme ticket 159). `undefined` when no stage-3 size is known.
+ * It does not read the port capacity of a new face (`count × pitch + 2 × padding`, `sizeNodes`): with it, the course of link-13 on
+ * a-group-shift-leaves-a-chord-clear-of-a-lane was lost (test/pipeline/course-round.test.ts), so that floor is left to a ticket that traces why.
  */
-const movedFloor = (env: Env, s: State, id: string, moved: ReadonlyMap<string, Side>): Size | undefined => {
+export const movedFloor = (env: Pick<Env, 'stage3Sizes'>, s: Pick<State, 'kept7e'>, id: string, moved: ReadonlyMap<string, Side>): Size | undefined => {
   const size = env.stage3Sizes.get(s.kept7e)?.get(id), node = s.kept7e.nodes[id];
   if (size === undefined || node === undefined) return undefined;
   const content = measureNodeContent(s.kept7e.document.nodes[id]!, s.kept7e.document, contentInsets(node.ports, port => moved.get(portKey(port.ref)) ?? port.side ?? port.sizingSide));
@@ -170,17 +172,23 @@ const keptFloors = (env: Env, s: State): Map<string, Size> => {
 };
 /**
  * The nodes whose end of a course changes face keep their size (P9): the capacity estimate of the face they leave must not re-size them. `skirtsU` leaves out an end
- * that leaves by a U part, whose content grows with its face. The pin is `movedFloor`: never below the content with the end on its new face.
+ * that leaves by a U part, whose content grows with its face. The pin is `movedFloor`, read once per node on every end the offer moves and every port the kept
+ * ledger hints: never below the content with all of them on their new faces, and never below the floor `floors` already holds for the node.
  */
-const pinMovedEnds = (env: Env, s: State, floors: Map<string, Size>, courses: readonly Course[], skirtsU: boolean): void => {
+export const pinMovedEnds = (env: Pick<Env, 'stage3Sizes'>, s: Pick<State, 'kept7e' | 'kept'>, floors: Map<string, Size>, courses: readonly Course[], skirtsU: boolean): void => {
+  const moved = new Map<string, Side>(sideHintsOf(s.kept)), nodes = new Set<string>();
   for (const course of courses) {
     const link = s.kept7e.links.find(item => item.id === course.link)!;
     for (const which of ['from', 'to'] as const) {
       const end = link.attachments![which];
       if ((skirtsU && endMode(course, which) === 'u') || course[which].face === s.kept7e.nodes[end.node]!.ports.find(port => portKey(port.ref) === portKey(end))?.side) continue;
-      const size = movedFloor(env, s, end.node, new Map([[portKey(end), course[which].face]]));
-      if (size !== undefined) floors.set(end.node, size);
+      moved.set(portKey(end), course[which].face);
+      nodes.add(end.node);
     }
+  }
+  for (const node of nodes) {
+    const size = movedFloor(env, s, node, moved), held = floors.get(node);
+    if (size !== undefined) floors.set(node, held ? { width: Math.max(held.width, size.width), height: Math.max(held.height, size.height) } : size);
   }
 };
 const promisedTurnsOf = (promised: ReadonlyMap<string, { turns: number }>): Map<string, number> => new Map([...promised].map(([id, item]) => [id, item.turns] as const));

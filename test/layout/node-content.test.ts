@@ -205,8 +205,11 @@ describe('a card holds its ports on every face (fixture)', () => {
     expect(wide.bounds!.width).toBeGreaterThanOrEqual(wide.contentSize!.width - 1e-6);
     expect(hub.bounds!.width).toBeGreaterThan(hub.contentSize!.width);
     expect(hub.bounds!.width).toBeGreaterThanOrEqual(5 * hub.sidePitch!.bottom! + 20);
-    // `plain` has no description: no subtitle line and no gap. `twoline` has two subtitle lines.
-    expect(plainNode.contentSize!.height).toBeLessThan(model.nodes.lateral!.contentSize!.height + 1);
+    // `plain` has no description: no subtitle line and no gap. `lateral` has the same top and bottom insets and one subtitle line, so the difference is
+    // the text block of `lateral` (title, 2 px, subtitle) less the taller of the tile and the one title line of `plain`. `twoline` has two subtitle lines.
+    const lateralBlock = title('Lateral').height + card.subtitleGap + subtitle('.170 · 4l').height, plainBlock = Math.max(card.tileSize, title('Flex Mini').height);
+    expect(lateralBlock, 'the premise: the text block of lateral is taller than the tile').toBeGreaterThan(card.tileSize);
+    expect(model.nodes.lateral!.contentSize!.height - plainNode.contentSize!.height).toBeCloseTo(lateralBlock - plainBlock, 9);
     expect(twoline.contentSize!.height).toBeGreaterThan(model.nodes.hub!.contentSize!.height);
     // Four left ports: the left inset is the pill's inward half-extent + 4, the other faces keep 10.
     const lateral = model.nodes.lateral!;
@@ -215,8 +218,14 @@ describe('a card holds its ports on every face (fixture)', () => {
     // Long pills on all four faces grow all four insets.
     const crowd = model.nodes.crowd!;
     for (const side of ['top', 'bottom', 'left', 'right'] as const) expect(crowd.contentInsets![side], side).toBeGreaterThan(40);
-    // No icon: no tile, and the text starts at the left inset when the box is as wide as its content.
-    expect(model.nodes.bare!.icon).toBeUndefined();
+    // No icon: no tile, and the text block alone is centred in the inset interior of the box.
+    const bare = model.nodes.bare!, box = bare.bounds!, insets = bare.contentInsets!;
+    expect(bare.icon).toBeUndefined();
+    const texts = model.labels.filter(label => label.owner.kind === 'node' && label.owner.id === 'bare' && (label.role === 'node' || label.role === 'description')).map(label => label.bounds!);
+    expect(texts).toHaveLength(2);
+    const left = Math.min(...texts.map(item => item.x)), right = Math.max(...texts.map(item => item.x + item.width));
+    expect(left - (box.x + insets.left)).toBeCloseTo(box.x + box.width - insets.right - right, 6);
+    expect(left - (box.x + insets.left)).toBeGreaterThanOrEqual(-1e-6);
   });
 
   it('is drawn start-aligned: text-anchor start at the left edge of the title, and a 24 px tile with radius 4', async () => {

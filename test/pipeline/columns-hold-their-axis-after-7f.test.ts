@@ -51,15 +51,14 @@ describe('columns hold their feed axis after 7f', () => {
 
   // Snack-theme ticket 159. With card nodes the side round offers the left face of b-core for the chord link-2. The chord holds at 7e, and then the
   // title room of 7f (the zone titles push Site B right, the feed title band moves tier 1 down) stands the frame of Site A on it: a move 7f cannot
-  // refuse, so the chord stayed straight through the frame and G2 failed. The judge reads the frozen chords now and refuses the trial.
+  // refuse, so the chord stayed straight through the frame and G2 failed. A judge that reads the frozen chords refuses the trial (ticket 164).
   // The premise holds with card nodes only (`layout.nodeContent: card`): the same sheet with stacked nodes offers no such side.
   // Ticket 164 (card default) owns the fix: the judge's use of `chordBlockedNew` broke the stacked canton-order sheet (G9), so it moved to
-  // `.scratch/snack-theme/164-chord-blocked-new.patch`. This test fails until 164 lands it; it then passes, and `it.fails` alerts.
-  it.fails('ticket 164: refuses a side trial whose held chord 7f stands a foreign frame on, and publishes no blocked chord', async () => {
+  // `.scratch/snack-theme/164-chord-blocked-new.patch`. Until 164 lands it, this test pins the defect as it stands: the trial is kept and link-2 is
+  // blocked. When it fails because the chord is clear, put back the assertions of the patch (no blocked chord, the trial refused for link-2).
+  it('ticket 164: a held chord that 7f stands a foreign frame on is still published blocked (card nodes)', async () => {
     const model = await layout(parse(source.replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-    expect(blockedChordsAt(model)).toEqual([]);
-    expect(model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_BLOCKED')).toEqual([]);
-    expect(model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED').map(item => item.message))
-      .toContainEqual(expect.stringContaining('stage 7f stood a body or a foreign frame on a held chord (link-2)'));
+    expect(model.document.layout?.nodeContent).toBe('card');
+    expect(blockedChordsAt(model)).toEqual(['link-2']);
   }, 60000);
 });

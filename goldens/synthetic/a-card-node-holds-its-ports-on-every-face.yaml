@@ -1,4 +1,5 @@
-# Expected (snack-theme ticket 159): a network node is a card. The icon tile (24 x 24) stands left of the title (11 px, bold) and the
+# Expected (snack-theme ticket 159): with `layout: { nodeContent: card }` (the default is `stacked`), every node is a card.
+# The icon tile (24 x 24) stands left of the title (11 px, bold) and the
 # subtitle (9 px, the node `description`, 2 px under the title), 8 px apart; the tile and the text block are centred together in the
 # inset interior. Each side inset is max(10, the inward half-extent of the pills on that face + 4), so a long pill name on a face moves
 # the content off that face only. Ports stay centred on their faces, whatever the text does. The size is the card's, measured before

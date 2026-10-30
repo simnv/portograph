@@ -52,14 +52,14 @@ describe('a held chord is a wall from stage 7f on', () => {
   // `lab` off the mean of its feeds. The step read the frozen chords (`blockedChordsAt`) and was declined: no frame stood on a held chord.
   // The premise holds with card nodes only (`layout.nodeContent: card`). Ticket 164 (card default) owns the fix: the centring guard threw on the
   // stacked a-corridor-moves-after-the-grid-settles ("Linked groups do not share the grid"), so it moved to
-  // `.scratch/snack-theme/164-centring-blocked-chords.patch`. This test fails until 164 lands it; it then passes, and `it.fails` alerts.
-  it.fails('ticket 164: a centring step after the freeze stands no body and no foreign frame on a held chord (a-member-title-widens-a-beside-row, card nodes)', async () => {
+  // `.scratch/snack-theme/164-centring-blocked-chords.patch`. Until 164 lands it, this test pins the defect as it stands: link-6 is blocked. When it
+  // fails because the chord is clear, put back the assertions of the patch (no blocked chord, no STRAIGHT_LINK_BLOCKED).
+  it('ticket 164: a centring step after the freeze still stands the frame of beta on the held chord link-6 (a-member-title-widens-a-beside-row, card nodes)', async () => {
     const yaml = readFileSync(new URL('../../goldens/synthetic/a-member-title-widens-a-beside-row.yaml', import.meta.url), 'utf8').replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n');
     expect(yaml).toContain('nodeContent: card');
     const model = await run(yaml);
     expect(model.frozenChords).toContain('link-6');
-    expect(blockedChordsAt(model)).toEqual([]);
-    expect(model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_BLOCKED')).toEqual([]);
+    expect(blockedChordsAt(model)).toEqual(['link-6']);
   });
 });
 

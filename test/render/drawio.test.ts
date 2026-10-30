@@ -541,6 +541,25 @@ describe('node text', () => {
       .toBeCloseTo(description.bounds!.y + ascentOf(description.fontSize!), 9);
   }, 60000);
 
+  // Snack-theme ticket 159: a card's name and subtitle are left-aligned and start at the left edge of their measured boxes. draw.io starts left-aligned
+  // text `spacing` (2) plus `spacingLeft` in from the cell's edge: the name cell is the node, so `spacingLeft` states the rest of the offset; the subtitle
+  // cell is its own measured box, so `spacingLeft` is -2. Checked with the drawio CLI (SVG export, 2026-10-31) on this input: both texts start at the measured x.
+  it('starts the name and the subtitle of a card at the left edges of their measured boxes', async () => {
+    const yaml = fixture('drawio-node-text').replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n');
+    expect(yaml).toContain('nodeContent: card');
+    const model = await pipeline(yaml);
+    const all = cells(drawio(model, { theme: 'light' }));
+    const name = nodeLabel(model, 'both', 'node')!, description = nodeLabel(model, 'both', 'description')!, origin = model.nodes['both']!.bounds!;
+    expect([name.textAlign, description.textAlign]).toEqual(['start', 'start']);
+    const node = all.get(id('node', 'both'))!, cell = all.get(id('nodeDescription', 'both'))!;
+    expect([node.style['align'], cell.style['align']]).toEqual(['left', 'left']);
+    expect(origin.x + 2 + Number(node.style['spacingLeft'])).toBeCloseTo(name.bounds!.x, 9);
+    expect(cell.style['spacingLeft']).toBe('-2');
+    expect(origin.x + box(cell).x + 2 + Number(cell.style['spacingLeft'])).toBeCloseTo(description.bounds!.x, 9);
+    // The subtitle starts where the name starts: one left edge for the text block.
+    expect(description.bounds!.x).toBeCloseTo(name.bounds!.x, 9);
+  }, 60000);
+
   it('leaves a node with a description and no name without a label of its own', async () => {
     const model = await pipeline(fixture('drawio-node-text'));
     const all = cells(drawio(model, { theme: 'light' }));

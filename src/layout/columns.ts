@@ -1254,7 +1254,8 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
       edge = low;
       for (const item of beside.filter(item => centre(item) < middle).sort((a, b) => centre(b) - centre(a))) { place(item, edge - GROUP_PADDING - item.box.width); edge = item.box.x - GROUP_PADDING; }
     } else if (beside.length) {
-      // Children with no cell of the parent between them: the first from the left stays, the rest close up to it.
+      // Children with no cell of the parent between them: the first from the left stays, the rest close up to it. A child the move guard holds
+      // stays too, and the children before it close up to it from the other side (`closeUp`).
       closeUp(beside);
     }
     for (const row of pure) closeUp(row);
@@ -1269,7 +1270,7 @@ const FRAME_PACK_HELD = 'FRAME_PACK_HELD';
  */
 function warnPackHeld(model: LayoutModel, child: string, parent: string, delta: number): void {
   const prefix = `Frame ${child} cannot be packed beside its row in ${parent}`;
-  model.diagnostics = model.diagnostics.filter(item => !(item.code === FRAME_PACK_HELD && item.message.startsWith(prefix)));
+  model.diagnostics = model.diagnostics.filter(item => !(item.code === FRAME_PACK_HELD && item.owners?.some(owner => owner.kind === 'group' && owner.id === child)));
   if (Math.abs(delta) <= PLACEMENT_EPS) return;
   model.diagnostics.push({ stage: 'placement', severity: 'warning', code: FRAME_PACK_HELD, owners: [{ kind: 'group', id: child }],
     message: `${prefix}: the move of ${Math.round(Math.abs(delta) * 100) / 100} px would break a reservation made before it (a lane, a straight link or an exit), so it stays where it stands.` });
