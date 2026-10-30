@@ -96,7 +96,7 @@ export const span: Round<SpanOffer> = {
     env.options.testSideTrace?.({ ev: 'span-refused', links: o.links, why: 'budget' });
     const why = left <= 0 ? `the command has made its ${env.maxReruns} placement re-runs` : `the ${left} placement re-run${left === 1 ? ' left is' : 's left are'} kept for the course, side and turn rounds`;
     s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SPAN_ROUND_SKIPPED', owners: o.links.map(id => ({ kind: 'link' as const, id })),
-      message: `A span round was skipped: ${why}. The links ${o.links.join(', ')} keep their lanes.` });
+      message: `A span round was skipped: ${why}. ${o.links.length === 1 ? `The link ${o.links[0]} keeps its lane` : `The links ${o.links.join(', ')} keep their lanes`}.` });
   },
   // Only the placement's own refusals, as in every other round: the command deadline (also an ELK deadline) and a defect (a TypeError) end the command.
   tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal : refusedAtBands(error),

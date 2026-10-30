@@ -347,8 +347,8 @@ is withdrawn: a link across one document tier gap is straight when its chord cro
 refusal reads that geometry, not the band's tier: a rank band that stands between the ends but out of the corridor refuses
 nothing. The link goes through the same offer, hint, corridor, guard and judge as a link over two or more document tiers
 (Sections 14.3 and 14.4); `chordVerdict` keeps `transit` for a link with no hint. Measured on L4 (a private sheet): the
-three links from the one-rank group to the exit row are offered; the trial is refused by the judge (`gate`: a G6 of another
-link, whose title room the narrower frame of the trial loses), so the sheet keeps its lanes there.
+three links from the one-rank group to the exit row are offered; the trial is refused by the judge (`gate`: a new G6
+segment-group-edge of another link), so the sheet keeps its lanes there.
 
 ### 14.2 The walls
 
