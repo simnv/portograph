@@ -667,7 +667,7 @@ export interface FanFamily {
   /** One entry per member link, sorted by link id: its hub end and the unit of its far end. */
   members: { link: string; hub: string; unit: string }[];
 }
-/** Why a fan member stays orthogonal: a chord refusal of its own, `family` (the joint search left it out) or `crowds` (7f brought it near a planned part). */
+/** Why a fan member stays orthogonal: a chord refusal of its own, `family` (the joint search left it out) or `crowds` (7f brought it near a planned part or a group title). */
 export type FanFallbackReason = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg' | 'family' | 'crowds';
 /** How the freeze drew one fan member (`LayoutModel.fanAdmissions`). */
 export interface FanAdmission {

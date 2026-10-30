@@ -1,7 +1,7 @@
 import type { FanFamily, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
-import { EPS, segmentDistance } from '../geometry/planar.js';
-import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
-import { chordsApart, chordVerdict, fixedPointRefusal, foreignBox, isRoutedChord, orthogonalLeg, SIDE_EDGE_SLACK } from './frame-paths.js';
+import { EPS, segmentDistance, segmentRectDistance } from '../geometry/planar.js';
+import { GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
+import { chordsApart, chordVerdict, fixedPointRefusal, foreignBox, isRoutedChord, orthogonalLeg, siblingStemCrowded, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 
@@ -163,6 +163,40 @@ export function refuseFanMembers(draft: LayoutModel, refused: ReadonlySet<string
     }
     fresh = next;
   }
+}
+
+/**
+ * Before the freeze (architecture-2 ticket 40): the held fan members that pass the stem of a sibling fallback (`siblingStemCrowded`) fall back,
+ * all of those at once, and their legs are walls in turn (`refuseFanMembers`), until none passes a stem. The admission let them cross the legs,
+ * since a fallback's side is not final inside the rows fixed point; at the freeze it is. Returns the members refused here, in id order, which
+ * the freeze records as `crowds`. Bounded: each round makes at least one chord fall back.
+ */
+export function refuseStemCrowded(draft: LayoutModel): string[] {
+  const refused: string[] = [];
+  for (;;) {
+    const crowded = draft.links.filter(link => link.fanFamily !== undefined && isRoutedChord(draft, link) && siblingStemCrowded(draft, link)).map(link => link.id);
+    if (!crowded.length) return refused.sort();
+    refuseFanMembers(draft, new Set(crowded));
+    refused.push(...crowded);
+  }
+}
+
+/**
+ * The straight fan members whose chord stands within the link-free margin of a group title where 7f placed it (what G3 would fail): the title
+ * planner reads a held chord as a wall, so a title that still meets one found no room beside it. A retry of 7f refuses those members (`crowds`),
+ * as it refuses the ones 7f brought near a planned part. In id order.
+ */
+export function titleCrowdedFanMembers(model: LayoutModel): string[] {
+  const titles = model.labels.filter(label => label.role === 'group' && !label.omitted && label.bounds !== undefined);
+  const found: string[] = [];
+  for (const item of model.fanAdmissions ?? []) {
+    if (item.mode !== 'straight') continue;
+    const link = model.links.find(other => other.id === item.link), chord = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
+    if (link === undefined || chord === undefined) continue;
+    const reach = linkStrokeWidth(link) / 2 + GROUP_LABEL_LINK_CLEARANCE - EPS;
+    if (titles.some(label => segmentRectDistance(chord, label.bounds!) < reach)) found.push(link.id);
+  }
+  return found.sort();
 }
 
 /**

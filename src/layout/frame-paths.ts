@@ -671,10 +671,11 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
       // x-span holds the leg's x strictly is taken as crossing it. Otherwise it keeps the clearance, as G6 measures it.
       const spans = Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS;
       if (crossable?.has(other.id) && spans) continue;
-      // A fan member crosses the fallback legs of its own family (architecture-2 ticket 40, user ruling Q126): the crossing is faint. It must cross
-      // the leg's line inside the leg and keep the clearance from the leg's stem, where the leg begins; the tier-gap plan seats the fallback's
-      // row across the chord or clear of it (`slants`, gap-plan.ts), so the leg's other end keeps the clearance too.
-      if (spans && fanSiblings(link, other) && crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other))) continue;
+      // A fan member crosses the fallback legs of its own family (architecture-2 ticket 40, user ruling Q126): the crossing is faint, and read as
+      // a direct member reads a fallback leg. The tier-gap plan seats the fallback's row across the chord or clear of it (`slants`, gap-plan.ts).
+      // A fallback's leg is not final before 7f (a side round or a retry can move it), so its stem is judged at the end of 7f: a chord that
+      // still passes a sibling's stem there is refused (`siblingStemCrowded`, the crowding retry).
+      if (spans && fanSiblings(link, other)) continue;
       if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }
@@ -685,6 +686,28 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
   // The title of an own end still fits beside this crossing, the held chords' crossings and the legs of the band's ports (ticket 100).
   if (chordKind(model, link) === 'cross' && titleRefusal(model, link, segment, true)) return 'title';
   return undefined;
+}
+
+/**
+ * Whether a held fan member passes the stem of a sibling that stays orthogonal (architecture-2 ticket 40), on the geometry at the end of 7f: its
+ * chord spans the sibling's leg and does not cross it strictly beyond the stem with the run clearance from it (`crossesLegBeyondStem`), or keeps
+ * the clearance from the leg. The crowding retry refuses such a member.
+ */
+export function siblingStemCrowded(model: LayoutModel, link: LayoutLink): boolean {
+  const segment = link.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
+  if (segment === undefined) return false;
+  const stroke = linkStrokeWidth(link);
+  for (const other of model.links) {
+    if (other.id === link.id || !fanSiblings(link, other) || isRoutedChord(model, other) || !other.attachments) continue;
+    for (const end of ['from', 'to'] as const) {
+      const leg = orthogonalLeg(model, other, end);
+      if (!leg) continue;
+      const spans = Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS;
+      if (!spans || crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other))) continue;
+      if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return true;
+    }
+  }
+  return false;
 }
 
 /**

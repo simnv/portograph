@@ -1,7 +1,7 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
 import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
-import { refuseFanMembers } from './fan-admission.js';
+import { refuseFanMembers, refuseStemCrowded, titleCrowdedFanMembers } from './fan-admission.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
 import { centreContext, refreshWindowDeclines } from './centre.js';
@@ -225,14 +225,16 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
     for (let retry = 0; ; retry++) {
       attemptBody(draft, options, refused);
       const crowded = crowdedDirectMembers(draft).filter(id => !refused.has(id));
-      // A straight fan member is crowded the same way, and refused the same way (architecture-2 ticket 40): it falls back alone, as `crowds`.
-      const fans = draft.fanAdmissions === undefined ? [] : crowdedFanMembers(draft).filter(id => !refused.has(id));
+      // A straight fan member is crowded the same way, and refused the same way (architecture-2 ticket 40): it falls back alone, as `crowds`. So is
+      // one that a group title placed in 7f still meets: the title found no room beside it.
+      const fans = draft.fanAdmissions === undefined ? []
+        : [...new Set([...crowdedFanMembers(draft), ...titleCrowdedFanMembers(draft)])].filter(id => !refused.has(id)).sort();
       if (!crowded.length && !fans.length) break;
       if (retry >= DIRECT_RETRIES) {
         if (crowded.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
           message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
         if (fans.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_MEMBER_CROWDED', owners: fans.map(id => ({ kind: 'link' as const, id })),
-          message: `The fan ${fans.length === 1 ? 'member' : 'members'} ${fans.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
+          message: `The fan ${fans.length === 1 ? 'member' : 'members'} ${fans.join(', ')} stand within the clearance of a planned part or a group title after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
         break;
       }
       for (const id of fans) refused.add(id);
@@ -263,9 +265,11 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   abortAt?.();
   // The fan members a retry refused fall back before anything else is decided on their legs (architecture-2 ticket 40).
   if (draft.fanFamilies !== undefined) refuseFanMembers(draft, refused);
+  // A member that passes the stem of a sibling fallback falls back before the freeze, where the fallbacks' legs stand as they will be drawn.
+  const stems = draft.fanFamilies !== undefined ? refuseStemCrowded(draft) : [];
   planDirectFamilies(draft, refused);
   note('direct-families', String(draft.directFamilies?.length ?? 0));
-  freezeChords(draft, refused);
+  freezeChords(draft, stems.length ? new Set([...refused, ...stems]) : refused);
   note('freeze-chords', 'done');
   produceGroupLabelBands(draft);
   note('group-label-bands', 'done');

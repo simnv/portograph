@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { segmentRect } from '../../src/geometry/planar.js';
-import { fanAdmissionsFault } from '../../src/layout/fan-admission.js';
+import { fanAdmissionsFault, titleCrowdedFanMembers } from '../../src/layout/fan-admission.js';
+import { orthogonalLeg, siblingStemCrowded } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -84,6 +85,29 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     const reordered = clone(model);
     reordered.fanAdmissions!.reverse();
     expect(fanAdmissionsFault(reordered)).toMatch(/in order/);
+  });
+
+  it('refuses at the end of 7f a member that passes the stem of a sibling fallback, and one a placed title still meets', () => {
+    // Nothing is crowded as drawn.
+    const straight = model.fanAdmissions!.filter(item => item.mode === 'straight').map(item => model.links.find(link => link.id === item.link)!);
+    expect(straight.filter(link => siblingStemCrowded(model, link)).map(link => link.id)).toEqual([]);
+    expect(titleCrowdedFanMembers(model)).toEqual([]);
+    // The member from Hub B to D 1 led to 3 px beside the port of the fallback from Hub A to D 1 passes its stem.
+    const fallback = model.links.find(link => ends(model, link.id) === 'd-1|hub-a')!;
+    const leg = orthogonalLeg(model, fallback, fallback.attachments!.from.node === 'd-1' ? 'from' : 'to')!;
+    const forged = clone(model);
+    const chord = forged.links.find(link => ends(model, link.id) === 'd-1|hub-b')!;
+    const segment = chord.path!.segments[0]!;
+    const far = segment.to.y > segment.from.y ? 'to' : 'from';
+    segment[far] = { x: leg.from.x + 3, y: leg.from.y };
+    expect(siblingStemCrowded(forged, chord)).toBe(true);
+    // The Site D title moved onto the same member's chord.
+    const titled = clone(model);
+    const target = titled.links.find(link => ends(model, link.id) === 'd-1|hub-b')!, member = target.path!.segments[0]!;
+    const title = titled.labels.find(label => label.role === 'group' && label.owner.kind === 'group' && label.owner.id === 'site-d')!;
+    const middle = { x: (member.from.x + member.to.x) / 2, y: (member.from.y + member.to.y) / 2 };
+    title.bounds = { ...title.bounds!, x: middle.x - title.bounds!.width / 2, y: middle.y - title.bounds!.height / 2 };
+    expect(titleCrowdedFanMembers(titled)).toEqual([target.id]);
   });
 
   it('lets G2 excuse a straight member only in the boxes its admission names', () => {

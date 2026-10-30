@@ -523,12 +523,16 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
 - **What a member may cross.** Foreign frame, group and canton boxes (no corridor wall) and the own far end's title
   strip (the title moves beside the chord: `planLabels` reads the held chord's crossing as an obstacle and the
   frame grows if it must). Any other crossed title strip keeps the fit-beside test. A body refuses the member
-  (`body`): it falls back alone, orthogonal and dashed. The leg of a sibling member is crossable only beyond its
-  stem (`crossesLegBeyondStem`), so two chords never crowd one port.
+  (`body`): it falls back alone, orthogonal and dashed. The admission lets a member cross the leg of a sibling that
+  falls back (the crossing is faint); that leg's stem is final only at the end of 7f, so there a member that passes a
+  sibling's stem (no strict crossing beyond the stem with the clearance, `siblingStemCrowded`) is crowded.
 - **Reservation.** The tier-gap plan reads the straight members of a gap (`PlanFrame.slants`): a row moves down
   until its legs and run cross a chord strictly or keep the clearance (`clearOfSlants`), and the gap grows for it.
-  The crowding retry of 7f (`crowdedFanMembers`) refuses a member a moved part comes within the clearance of
-  (`crowds`, `FAN_MEMBER_CROWDED`); `refuseFanMembers` re-checks the held chords near its new legs.
+  The crowding retry of 7f refuses a member that a moved part comes within the clearance of
+  (`crowdedFanMembers`), that passes a sibling's stem, or that a group title placed in 7f still meets
+  (`titleCrowdedFanMembers`: the title planner found no room beside it). The reason is `crowds`; after
+  `DIRECT_RETRIES` the rest is named in `FAN_MEMBER_CROWDED`. `refuseFanMembers` re-checks the held chords near the
+  new legs.
 - **Record.** `model.fanAdmissions`, set at the freeze, one entry per member in family order: `straight` with
   `crosses` (the foreign boxes its chord crosses, sorted), or `orthogonal` with a reason. After the freeze a
   member that crosses a box missing from `crosses` falls back (`frame`).

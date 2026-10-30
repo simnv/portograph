@@ -3,7 +3,7 @@ import type { DirectFamily, DirectMemberReason, DirectUnit, LayoutLink, LayoutMo
 import { EPS, intersection, samePoint, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
-import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, orthogonalLeg, SIDE_EDGE_SLACK, strictCrossing } from './frame-paths.js';
+import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, orthogonalLeg, SIDE_EDGE_SLACK, siblingStemCrowded, strictCrossing } from './frame-paths.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
@@ -496,7 +496,9 @@ export function crowdedFanMembers(model: LayoutModel): string[] {
     const tiers = [link.attachments.from.node, link.attachments.to.node].map(node => model.groups[model.document.nodes[node]!.group]!.tier!);
     return [{ id: link.id, gap: { above: Math.min(...tiers), below: Math.max(...tiers) } }];
   });
-  return crowdedChords(model, straight);
+  // A member that still passes a sibling fallback's stem is crowded too: the admission let it cross the leg, the leg's stem is final only now.
+  const stems = straight.filter(({ id }) => siblingStemCrowded(model, model.links.find(other => other.id === id)!)).map(({ id }) => id);
+  return [...new Set([...crowdedChords(model, straight), ...stems])];
 }
 
 /** The held chords of `entries` that stand within the chord clearance of a planned part of their gap or of another held chord, crossing it nowhere strictly. */
