@@ -543,7 +543,12 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
   const offsets = runSpacing(model, run, at, slack);
   if (!run.some((unit, i) => i > 0 && Math.abs(at(unit).x - at(run[i - 1]!).x - (offsets[i]! - offsets[i - 1]!)) > PLACEMENT_EPS)) return false;
   const last = at(run[run.length - 1]!), extent = offsets[run.length - 1]! + last.width;
-  const base = (at(run[0]!).x + last.x + last.width) / 2 - extent / 2;
+  // The block keeps its centre, inside the flank walls of its units (`flankRoom`, the wall `pullTier` keeps too): a close-up that centres the run
+  // must not move its first unit into the band gap of a flank beside it (ticket 157). A run that no base fits between its walls is held.
+  const lowBase = Math.max(...run.map((unit, i) => flankRoom(model, unit, at(unit)).low - offsets[i]!));
+  const highBase = Math.min(...run.map((unit, i) => flankRoom(model, unit, at(unit)).high - offsets[i]!));
+  const base = Math.min(Math.max((at(run[0]!).x + last.x + last.width) / 2 - extent / 2, lowBase), highBase);
+  const walled = lowBase > highBase + PLACEMENT_EPS;
   const shifts = new Map<LayoutGroup, number>();
   const packed = run.map((_, i) => base + offsets[i]!);
   for (const [i, unit] of run.entries()) {
@@ -552,7 +557,7 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
   }
   if (!shifts.size) return false;
   const named = run.find(unit => isCanton(unit) && unit.groups.some(group => shifts.has(group))) ?? run.find(isCanton)!;
-  let cause = stepBlock(model, tier, run, at, isCanton);
+  let cause = walled ? 'a flank beside the run holds it' : stepBlock(model, tier, run, at, isCanton);
   const proposed = [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
   if (cause === undefined && !holdsMove(model, proposed)) cause = 'a reserved lane it would cross holds it';
   if (cause === undefined) {
@@ -803,6 +808,21 @@ function flanksBesideUnit(model: LayoutModel, unit: Unit): LayoutGroup[] {
   return Object.values(model.groups).filter(group => group.flank !== undefined && group.bounds !== undefined && group.tier !== undefined && group.tier >= unit.low && group.tier <= unit.high);
 }
 
+/**
+ * The flank walls of a unit that stands at `at` (ticket 19). A flank stands where it stands: its box is a wall a move of the unit may not cross. A frame column keeps a
+ * band gap and its slack from a plain group (`runSpacing`), boxes measured, so the flank is that wall too. `low` is the least left edge the unit may take and `high`
+ * the greatest; a unit already past a wall stays where it is, and nothing here moves it back, so each bound admits `at.x`. `pullTier` and `closeUp` read it.
+ */
+function flankRoom(model: LayoutModel, unit: Unit, at: Rect): { low: number; high: number } {
+  const wall = bandGap(model) + (unit.frame ? COLUMN_SLACK : 0);
+  let low = -Infinity, high = Infinity;
+  for (const flank of flanksBesideUnit(model, unit)) {
+    if (flank.flank!.align === 'right') high = Math.min(high, flank.bounds!.x - wall - at.width);
+    else low = Math.max(low, flank.bounds!.x + flank.bounds!.width + wall);
+  }
+  return { low: Math.min(low, at.x), high: Math.max(high, at.x) };
+}
+
 /** The members of one canton that the inner pass may move, and the canton frame box that walls them. */
 interface MemberScope { units: ReadonlySet<Unit>; wall: Column; canton: string }
 
@@ -842,12 +862,11 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
         else { from = Math.max(from, low); to = Math.min(to, high); }
       } else { from = to = at.x; flush.add(unit); }
     }
-    // A flank stands where it stands: its box is a wall the pull may not cross. A frame column keeps a band gap and its slack from a plain group
-    // (`runSpacing`), boxes measured, so the flank is that wall too (ticket 19). A unit already past the wall stays where it is, and nothing here moves it back.
-    for (const flank of flanksBesideUnit(model, unit)) {
-      const wall = gap + (unit.frame ? COLUMN_SLACK : 0);
-      if (flank.flank!.align === 'right') to = Math.max(Math.min(to, flank.bounds!.x - wall - at.width), at.x);
-      else from = Math.min(Math.max(from, flank.bounds!.x + flank.bounds!.width + wall), at.x);
+    // A flank's box is a wall the pull may not cross (`flankRoom`).
+    if (flanksBesideUnit(model, unit).length) {
+      const room = flankRoom(model, unit, at);
+      if (room.high < Infinity) to = Math.max(Math.min(to, room.high), at.x);
+      if (room.low > -Infinity) from = Math.min(Math.max(from, room.low), at.x);
     }
     from = Math.min(from, to); to = Math.max(from, to);
     if (range !== undefined) wanting.add(unit);
