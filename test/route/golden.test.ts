@@ -49,8 +49,9 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
   // The Q of the golden before ticket 100 gave its two provider links their chord (the variant keeps them orthogonal).
   // Verdana metrics (snack-theme ticket 157): 0.8993975066491852 with Arial.
   // 0.9009381525844952 before the title floor of ticket 157 (a free group is as wide as its own title from stage 5 on): the golden's
-  // geometry moved, and with the floor off the Q is that value again.
-  expect(report.Q).toBeCloseTo(0.9009520813026273, 12);
+  // geometry moved, and with the floor off the Q is that value again. 0.9009520813026273 before the card nodes of ticket 159 (a bar keeps
+  // the stacked content).
+  expect(report.Q).toBeCloseTo(0.8965823202316215, 12);
 
   // Placement is frozen: stage 8 adds paths only, and the result restores byte-equal.
   expect(model.freeze!.placement).toEqual(before.freeze!.placement);

@@ -1,4 +1,4 @@
-import type { NormalisedNode } from '../../model/document.js';
+import type { NormalisedGroup, NormalisedNode } from '../../model/document.js';
 import { nodeClassStyle, washToken } from './theme.js';
 import type { NodeClassStyle } from './theme.js';
 
@@ -16,11 +16,16 @@ export const NETWORK_NODE_CONTENT_DEFAULT: NodeContentStyle = 'card';
 
 /**
  * The one resolver of a node's content style (R1). Stage 3 and stage 5 both reach it through `measureNodeContent`, so the size that
- * placement reserves and the blocks that placement draws come from one decision. The class that decides is the one that paints the
- * body (`washToken`): the profile class declared last. A node of a sheet class, or of no class, takes the profile default.
- * `lookup` stands for the profile's class table and is replaced only by a test.
+ * placement reserves and the blocks that placement draws come from one decision.
+ *
+ * A node of a `bar` group is `stacked`, whatever its class: a bar is a line-like shape that its own drops cross (a drop may cross
+ * an upper bar to reach a lower one), so its label stays one centred column between them, as before cards. Any other node takes
+ * the class that paints the body (`washToken`): the profile class declared last. A node of a sheet class, or of no class, takes
+ * the profile default. `lookup` stands for the profile's class table and is replaced only by a test.
  */
-export function resolveNodeContentStyle(node: Pick<NormalisedNode, 'class'>,
+export function resolveNodeContentStyle(node: Pick<NormalisedNode, 'class' | 'group'>,
+  groups: Readonly<Record<string, Pick<NormalisedGroup, 'shape'>>>,
   lookup: (token: string | undefined) => Pick<NodeClassStyle, 'content'> | undefined = nodeClassStyle): NodeContentStyle {
+  if (groups[node.group]?.shape === 'bar') return 'stacked';
   return lookup(washToken(node.class))?.content ?? NETWORK_NODE_CONTENT_DEFAULT;
 }

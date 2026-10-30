@@ -1,5 +1,5 @@
 import { portPitch } from '../geometry/index.js';
-import type { NormalisedNode } from '../model/document.js';
+import type { NormalisedGroup, NormalisedNode } from '../model/document.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
@@ -31,9 +31,9 @@ export interface NodeContentMeasurement extends Size {
  * Padded bounds and renderable blocks; placement supplies absolute coordinates later (`placeNodeContent`). The content style comes
  * from `resolveNodeContentStyle` unless the caller states one, so stage 3 and stage 5 measure the same node the same way (R1).
  */
-export function measureNodeContent(node: NormalisedNode,
+export function measureNodeContent(node: NormalisedNode, groups: Readonly<Record<string, Pick<NormalisedGroup, 'shape'>>>,
   insets: Record<Side, number> = { top: theme.padding, right: theme.padding, bottom: theme.padding, left: theme.padding },
-  style: NodeContentStyle = resolveNodeContentStyle(node),
+  style: NodeContentStyle = resolveNodeContentStyle(node, groups),
 ): NodeContentMeasurement {
   const card = style === 'card';
   const blocks: NodeContentBlock[] = [];
@@ -212,7 +212,7 @@ export function sizeNodes(model: LayoutModel): LayoutModel {
     for (const side of SIDE_TIE_ORDER) pitch[side] = Math.max(portPitch(sides[side].pills), node.sidePitch?.[side] ?? 0);
     node.sidePitch = pitch;
     node.contentInsets = insets;
-    const content = measureNodeContent(authored, insets);
+    const content = measureNodeContent(authored, model.document.groups, insets);
     node.contentSize = { width: content.width, height: content.height };
     node.sizeFloor = {
       width: Math.max(theme.minWidth, node.contentSize.width, authored.size?.width ?? 0, node.sizeFloor?.width ?? 0),

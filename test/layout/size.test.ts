@@ -57,7 +57,7 @@ describe('measured node size', () => {
     expect(node.size!.width).toBeGreaterThanOrEqual(node.contentSize!.width);
     expect(node.sidePitch?.left).toBe(14);
     // Card geometry (ticket 159): the title is 11 px, line height 14.
-    const measured = measureNodeContent(model.document.nodes.a!, node.contentInsets);
+    const measured = measureNodeContent(model.document.nodes.a!, model.document.groups, node.contentInsets);
     expect(measured.blocks).toEqual([expect.objectContaining({ kind: 'node', text: 'Content', lines: ['Content'], fontSize: 11, fontWeight: 700, lineHeight: 14 })]);
     expect(measured.width).toBe(node.contentSize!.width);
   });
