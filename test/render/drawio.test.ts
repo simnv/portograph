@@ -505,9 +505,15 @@ describe('node text', () => {
       const size = name.fontSize!;
       const baseline = node.bounds!.y + DRAWIO_TOP + Number(cell.style['spacingTop']) + size - 1;
       expect(baseline).toBeCloseTo(name.bounds!.y + ascentOf(size), 9);
-      // Centred on its own measured box, which may stand off the node's centre.
-      const across = (Number(cell.style['spacingLeft'] ?? 0) - Number(cell.style['spacingRight'] ?? 0)) / 2;
-      expect(node.bounds!.x + node.bounds!.width / 2 + across).toBeCloseTo(name.bounds!.x + name.bounds!.width / 2, 9);
+      if (cell.style['align'] === 'left') {
+        // A card's name (ticket 159) starts at the left edge of its measured box: draw.io starts it `spacing` (2) plus `spacingLeft` in from the shape's edge.
+        expect(name.textAlign).toBe('start');
+        expect(node.bounds!.x + 2 + Number(cell.style['spacingLeft'] ?? 0)).toBeCloseTo(name.bounds!.x, 9);
+      } else {
+        // Centred on its own measured box, which may stand off the node's centre.
+        const across = (Number(cell.style['spacingLeft'] ?? 0) - Number(cell.style['spacingRight'] ?? 0)) / 2;
+        expect(node.bounds!.x + node.bounds!.width / 2 + across).toBeCloseTo(name.bounds!.x + name.bounds!.width / 2, 9);
+      }
       checked += 1;
     }
     expect(checked).toBeGreaterThan(0);

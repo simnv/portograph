@@ -17,7 +17,8 @@ describe('stage 5 sides and geometry', () => {
     expect(model.nodes['EBR-02']!.ports.slice(0, 2).map(p => p.side)).toEqual(['left', 'left']);
     expect(model.links.every(link => link.path === undefined)).toBe(true);
     expect(model.labels.filter(label => label.role === 'pill')).toHaveLength(52);
-    expect(model.nodes['EBR-01']!.icon?.bounds.width).toBe(12);
+    // Card geometry (ticket 159): the icon tile is 24 px (it was 12 px stacked).
+    expect(model.nodes['EBR-01']!.icon?.bounds.width).toBe(24);
     expect(Object.isFrozen(model.nodes['EBR-01']!.ports)).toBe(true);
   });
   it('protects direct writes, transactions and restored snapshots', async () => {

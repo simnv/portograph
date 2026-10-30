@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse } from '../../src/index.js';
+import { layout, parse, render } from '../../src/index.js';
 import type { NormalisedNode } from '../../src/model/document.js';
 import type { Side } from '../../src/model/geometry.js';
 import { measureNodeContent, placeNodeContent } from '../../src/layout/size.js';
@@ -195,5 +195,14 @@ describe('a card holds its ports on every face (fixture)', () => {
     for (const side of ['top', 'bottom', 'left', 'right'] as const) expect(crowd.contentInsets![side], side).toBeGreaterThan(40);
     // No icon: no tile, and the text starts at the left inset when the box is as wide as its content.
     expect(model.nodes.bare!.icon).toBeUndefined();
+  });
+
+  it('is drawn start-aligned: text-anchor start at the left edge of the title, and a 24 px tile with radius 4', async () => {
+    const model = await layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const svg = render(model);
+    const title = model.labels.find(label => label.role === 'node' && label.owner.kind === 'node' && label.owner.id === 'hub')!;
+    expect(svg).toMatch(/<text class="[^"]*node-label[^"]*"[^>]*text-anchor="start"/);
+    expect(svg).toContain(`<tspan x="${title.bounds!.x}"`);
+    expect(svg).toMatch(/<rect class="icon-tile[^"]*"[^>]*width="24" height="24" rx="4" ry="4"/);
   });
 });
