@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import postcss from 'postcss';
 import { describe, expect, it } from 'vitest';
 import { sheetClassWashCss, themeCss, themeRules } from '../../src/render/theme.js';
-import { NETWORK_NODE_CLASSES, NETWORK_THEME, WASH_PALETTE, nodeBodyFill, washAssignment, washFill, washToken } from '../../src/profiles/network/theme.js';
+import { NETWORK_NODE_CLASSES, NETWORK_THEME, WASH_PALETTE, nodeBodyFill, washAssignment, washToken } from '../../src/profiles/network/theme.js';
+import { themeById, themeWashFill } from '../../src/profiles/network/themes.js';
 
 /** Every rule as `[at-rule, selector, declarations]`, in source order, comments and spacing aside. */
 function rules(css: string): [string, string, string[]][] {
@@ -24,7 +25,7 @@ describe('the default theme is the designed sheet', () => {
   const BODY: Record<string, Record<string, string>> = {
     '': { provider: '#e7eaf4', router: '#dbeff1', tbr: '#e8e9f8', rr: '#eeebe5' },
     '@media (prefers-color-scheme: dark)': { provider: '#283448', router: '#1e3945', tbr: '#28324f', rr: '#2f363c' },
-    '@media print': { provider: '#f7f7f8', router: '#e2e2e2', tbr: '#ececed', rr: '#d9d9d9' },
+    '@media print': { provider: '#f7f7f8', router: '#e2e2e2', tbr: '#e7e7e8', rr: '#d9d9d9' },
   };
   const PRINT = '@media print', DARK = '@media (prefers-color-scheme: dark)';
   const rule = (at: string, selector: string, declarations: string): Rule => [at, selector, declarations.split(';')];
@@ -33,14 +34,15 @@ describe('the default theme is the designed sheet', () => {
    * The delivered sheet with every review amendment applied in place, as one ordered sequence.
    * Amendments are recorded in `ref/theme-handoff/README.md`, "Amendments found in review":
    * 1 print restates the class pills and the role text; 2 dark role fills; 3 print role steps;
-   * 4 degraded dash per mode; 5 admin-down text. A rule's position in the cascade matters as much
+   * 4 degraded dash per mode; 5 admin-down text; 8 the print tbr tile; 9 the default tile. A rule's position in the cascade matters as much
    * as its declarations — `.pill.mgmt` must follow `.pill.router` for a `router mgmt` pill to be
    * warm — so the whole sequence is compared, duplicates included.
    */
   function amendedHandoff(): Rule[] {
     const replaced: Record<string, Record<string, string>> = {
-      '': { '.overlay-line': 'stroke:#7b7fc4;stroke-opacity:0.7', '.overlay-endpoint': 'fill:#7b7fc4;stroke:none', '.pill-label.admin-down': 'fill:#5d5d60', '.pill.degraded': 'stroke:#1d1f20;stroke-dasharray:none' },
+      '': { '.icon-tile': 'fill:#597ea3;stroke:#416180', '.overlay-line': 'stroke:#7b7fc4;stroke-opacity:0.7', '.overlay-endpoint': 'fill:#7b7fc4;stroke:none', '.pill-label.admin-down': 'fill:#5d5d60', '.pill.degraded': 'stroke:#1d1f20;stroke-dasharray:none' },
       [DARK]: {
+        '.icon-tile': 'fill:#597ea3;stroke:#b5d9fd',
         '.overlay-line': 'stroke:#7b7fc4;stroke-opacity:0.6', '.overlay-endpoint': 'fill:#7b7fc4;stroke:none',
         '.pill.uplink': 'fill:#597ea3', '.pill.downlink': 'fill:#2c455d', '.pill.peer': 'fill:#363966',
         '.pill-label.peer': 'fill:#e0e1f6', '.pill.mgmt': 'fill:#46413a', '.pill-label.mgmt': 'fill:#e8e4dc',
@@ -50,6 +52,8 @@ describe('the default theme is the designed sheet', () => {
         '.overlay-line': 'stroke:#7a7a7d;stroke-opacity:0.55', '.overlay-endpoint': 'fill:#7a7a7d;stroke:none',
         '.pill.downlink': 'fill:#f5f5f8', '.pill.mgmt': 'fill:#e7e7ea', '.pill.lag': 'fill:#98989b',
         '.pill.degraded': 'stroke:#000000;stroke-dasharray:3 1',
+        // Amendment 8 (ticket 158): white on the delivered #98989b tile is 2.88:1; the print tbr tile takes neutral-600 (4.2:1).
+        '.icon-tile.tbr': 'fill:#7a7a7d;stroke:#2b2b2d',
       },
     };
     const out: Rule[] = [];
@@ -75,10 +79,10 @@ describe('the default theme is the designed sheet', () => {
   it('emits the delivered sheet with the recorded amendments, as one ordered sequence', () => {
     const actual = rules(themeCss()), expected = amendedHandoff();
     expect(actual).toEqual(expected);
-    // The amendments are the whole difference: 21 rules replaced and 28 added against the delivered file.
+    // The amendments are the whole difference: 24 rules replaced and 28 added against the delivered file.
     const delivered = rules(handoff);
     const same = actual.filter(item => delivered.some(other => other[0] === item[0] && other[1] === item[1] && other[2].join(';') === item[2].join(';')));
-    expect(actual.length - same.length).toBe(47);
+    expect(actual.length - same.length).toBe(50);
     expect(actual.length - delivered.length).toBe(28);
   });
 
@@ -130,7 +134,7 @@ describe('the default theme is the designed sheet', () => {
     expect(new Set(washAssignment(['a', 'b', 'c', 'd', 'e', 'f', 'g']).values()).size).toBe(7);
     for (const name of names) {
       for (const mode of ['light', 'dark', 'print'] as const) {
-        const fill = washFill(name, mode, washes);
+        const fill = themeWashFill(themeById(undefined), name, mode, washes);
         expect(ratio(NETWORK_THEME[mode].node.text, fill), `${mode} ${name}`).toBeGreaterThanOrEqual(4.5);
         expect(ratio(NETWORK_THEME[mode].node.description, fill), `${mode} ${name} description`).toBeGreaterThanOrEqual(4.5);
       }

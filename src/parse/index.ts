@@ -1,6 +1,7 @@
 import type { Endpoint, GroupContent, Meta, NormalisedDocument, NormalisedLink, NormalisedNode, NormalisedPort, Side } from '../model/index.js';
 import { orderedGroupIds, orderedNodeIds, unsupportedMessage } from '../model/index.js';
 import { BOTTOM_CLASSES, TOP_CLASSES } from '../profiles/network/tiers.js';
+import { DEFAULT_THEME_ID, findTheme, unknownThemeMessage } from '../profiles/network/themes.js';
 import { filterCss } from './css.js';
 import { own, ParseError, put, Validation } from './validation.js';
 import type { LocateDiagnostic, SourceDiagnostic, SourceLocation } from './validation.js';
@@ -398,7 +399,7 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
     return withLocate({ ok: false, diagnostics: v.diagnostics }, v.locate);
   }
   const root = v.map(parsedYaml, '$');
-  v.keys(root, ['portograph', 'profile', 'title', 'css', 'layout', 'render', 'meta', 'groups', 'nodes', 'links', 'overlays'], '$');
+  v.keys(root, ['portograph', 'profile', 'title', 'css', 'theme', 'layout', 'render', 'meta', 'groups', 'nodes', 'links', 'overlays'], '$');
   if (root.get('portograph') !== 2) v.report('VERSION', '$.portograph', 'portograph: 2 is required');
   if (root.has('profile')) {
     const profile = v.string(root.get('profile'), '$.profile');
@@ -407,6 +408,12 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
   const doc: NormalisedDocument = { portograph: 2, profile: 'network', groups: {}, nodes: {}, links: [] };
   optionalStrings(root, doc, ['title'], '$', v);
   if (root.has('css')) { const css = v.string(root.get('css'), '$.css'); if (css !== undefined) doc.css = filterCss(css, v); }
+  if (root.has('theme')) {
+    // A render input (ticket 158). The default id is not stored, so a document that states it is the document that does not.
+    const theme = v.string(root.get('theme'), '$.theme');
+    if (theme !== undefined && findTheme(theme) === undefined) v.report('UNKNOWN_THEME', '$.theme', unknownThemeMessage(theme));
+    else if (theme !== undefined && theme !== DEFAULT_THEME_ID) doc.theme = theme;
+  }
   if (root.has('overlays')) {
     doc.overlays = {};
     for (const [key, value] of v.map(root.get('overlays'), '$.overlays')) {

@@ -11,7 +11,11 @@ export const DEFAULT_STROKE_WIDTHS = {
   glyph: 1.5,
 } as const;
 
-/** Corner radii. Industry's radius token is 4 px (ticket 34: node from 8, group from 10, pill from 3). */
+/**
+ * Corner radii. Industry's radius token is 4 px (ticket 34: node from 8, group from 10, pill from 3). `pill` is the layout's (the pill
+ * geometry stores it) and is the same in every theme; `node`, `group` and `tile` are the radii of the `network` theme, and a theme states
+ * its own as paint (`Theme.radii`, ticket 158).
+ */
 export const CORNER_RADII = {
   node: 4,
   group: 4,
