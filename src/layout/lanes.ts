@@ -22,7 +22,7 @@ import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
 import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
-import { nodeTier } from './read/tier.js';
+import { nodeTier, transitTiers } from './read/tier.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { orderPortsByLanes } from './turn-order.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkRing } from './trunk.js';
@@ -44,7 +44,7 @@ export function lanesHoldTheirChild(model: LayoutModel, followed: LaneFollow[]):
   });
 }
 
-export { nodeTier };
+export { nodeTier, transitTiers };
 /** Anchor tier = most main-tier nodes, bars included, flanks excluded; ties: lowest tier (7c). */
 export function selectAnchorTier(model: LayoutModel): number | undefined {
   const counts = new Map<number, number>();
@@ -62,11 +62,6 @@ export function laneSource(model: LayoutModel, link: LayoutLink): PortRef {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return ends.from;
   return Math.abs(nodeTier(model, ends.to.node) - anchor) < Math.abs(nodeTier(model, ends.from.node) - anchor) ? ends.to : ends.from;
-}
-export function transitTiers(model: LayoutModel, link: LayoutLink): number[] {
-  if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) return [];
-  const a = nodeTier(model, link.attachments.from.node), b = nodeTier(model, link.attachments.to.node);
-  return model.tierBands.map(band => band.tier).filter(tier => tier > Math.min(a, b) && tier < Math.max(a, b)).sort((u, v) => a < b ? u - v : v - u);
 }
 /** Measured normal pill extent plus 10 px gap, or the stroke-aware node clearance diameter. */
 export function laneWidth(model: LayoutModel, link?: LayoutLink): number {

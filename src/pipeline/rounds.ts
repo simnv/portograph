@@ -8,7 +8,7 @@ import { endMode } from '../layout/course-rows.js';
 import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
 import { TrunkBlocked } from '../layout/placement-refusal.js';
 import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
-import { freezeRefusal } from '../layout/frame-paths.js';
+import { documentTierDistance, freezeRefusal } from '../layout/frame-paths.js';
 import { transitTiers } from '../layout/lanes.js';
 import { measureSpans } from '../layout/span-measure.js';
 import { judgeSpanTrial } from '../layout/span-judge.js';
@@ -78,8 +78,8 @@ export const turnRoundOn = (env: Env): boolean => env.options.testCourses === un
 
 type SpanOffer = ReturnType<typeof measureSpans>;
 /**
- * The span round (architecture ticket 22, phase 3). It reads the 7f baseline and its routed result, offers a spanning chord to every link between document tiers that
- * are not consecutive whose corridor is clear, places again with the span hints, and keeps the trial only on its routed result (`judgeSpanTrial`). It runs before the
+ * The span round (architecture ticket 22, phase 3). It reads the 7f baseline and its routed result, offers a spanning chord to every link whose end sub-tiers
+ * are not adjacent (`spanCandidate`: document tiers not consecutive, or consecutive with a rank band between, ticket 35) whose corridor is clear, places again with the span hints, and keeps the trial only on its routed result (`judgeSpanTrial`). It runs before the
  * course, side and overlay-course rounds, because a chord changes which routes are poor, and it shares their re-runs. A refused round leaves the sheet as it was.
  */
 export const span: Round<SpanOffer> = {
@@ -133,8 +133,10 @@ export const span: Round<SpanOffer> = {
     for (const id of o.links) {
       const link = t.trial.links.find(item => item.id === id)!;
       const crossed = transitTiers(t.trial, link);
+      // Two counts: the document tier gaps (1 for a link across one gap with a rank band between its ends, ticket 35) and the sub-tier gaps the chord crosses.
+      const gaps = documentTierDistance(t.trial, link) ?? crossed.length + 1;
       s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SPAN_CHORD_TAKEN', owners: [{ kind: 'link', id }],
-        message: `The link ${id} takes a spanning chord over ${crossed.length + 1} tier gaps, through ${crossed.length} transited ${crossed.length === 1 ? 'band' : 'bands'} (sub-tier ${crossed.join(', ')}).` });
+        message: `The link ${id} takes a spanning chord over ${gaps} document tier ${gaps === 1 ? 'gap' : 'gaps'} (${crossed.length + 1} sub-tier gaps), through ${crossed.length} transited ${crossed.length === 1 ? 'band' : 'bands'} (sub-tier ${crossed.join(', ')}).` });
     }
   },
   refuse(env, _s, o, r) {

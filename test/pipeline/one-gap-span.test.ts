@@ -14,6 +14,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
  */
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const ONE_GAP = 'a-link-across-one-document-tier-gap-is-straight-when-nothing-stands-on-it';
+const STILL = 'a-span-corridor-passes-a-lane-beside-a-unit-it-does-not-move';
+const KEPT = 'a-shared-end-reads-its-port-order';
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 interface Run { model: LayoutModel; offer: SpanOffer | undefined; base: LayoutModel | undefined; routedBase: LayoutModel | undefined }
 const run = async (name: string, extra: Record<string, unknown> = {}): Promise<Run> => {
@@ -93,5 +95,32 @@ describe('part 1: a link across one document tier gap with a rank band between i
     expect(skipped[0]!.severity).toBe('info');
     expect(skipped[0]!.owners).toEqual(SPANS.map(id => ({ kind: 'link', id })));
     expect(skipped[0]!.message).toMatch(/0 placement re-runs|made its 0 placement re-runs/);
+  }, 60000);
+
+  it('when re-runs are left but kept for the later rounds: the skip says so and names the offered link', async () => {
+    // The shared-end sheet offers link-15 (over two document tier gaps); its course, side and turn rounds hold the re-runs that are left.
+    const { model } = await run(KEPT);
+    expect(model.links.some(item => item.spanHint !== undefined)).toBe(false);
+    const skipped = model.diagnostics.filter(item => item.code === 'SPAN_ROUND_SKIPPED');
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]!.severity).toBe('info');
+    expect(skipped[0]!.owners).toEqual([{ kind: 'link', id: 'link-15' }]);
+    expect(skipped[0]!.message).toMatch(/the [12] placement re-runs? left (is|are) kept for the course, side and turn rounds\. The link link-15 keeps its lane\./);
+  }, 60000);
+
+  it('opens a corridor beside a unit it does not move, though an earlier lane reaches into that unit\'s wall: both chords taken, every gate passes', async () => {
+    // Before the fix 7a judged the unmoved `ranked#1` against the lane of link-8 and refused the corridor (span-refused, placement).
+    const { model } = await run(STILL);
+    for (const id of SPANS) {
+      const item = link(model, id);
+      expect(item.spanHint, id).toBe(true);
+      expect(isRoutedChord(model, item), id).toBe(true);
+      expect(pathBends(item), id).toBe(0);
+      expect(model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === id).map(lane => [lane.kind, lane.tier])).toEqual([['span', 2]]);
+    }
+    expect(model.diagnostics.filter(item => item.code === 'SPAN_CHORD_TAKEN').map(item => item.owners)).toEqual(SPANS.map(id => [{ kind: 'link', id }]));
+    // The two links into one port keep their transit lanes in sub-tier 2.
+    for (const id of ['link-8', 'link-9']) expect(model.lanes.some(lane => lane.owner.kind === 'link' && lane.owner.id === id && lane.tier === 2 && lane.kind !== 'span'), id).toBe(true);
+    gates(model);
   }, 60000);
 });

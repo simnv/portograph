@@ -19,6 +19,7 @@ import { groupBoxes, groupConsumers } from '../score/model.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { deriveFrames } from './frames.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { transitTiers } from './read/tier.js';
 
 /**
  * The **straight** technique of a routed link inside one frame (ticket 34).
@@ -142,30 +143,27 @@ export function spanCandidate(model: LayoutModel, link: LayoutLink): boolean {
   return ![ends.from, ends.to].some(end => model.links.some(other => other.id !== link.id && other.layer === 'routed' && other.attachments
     && [other.attachments.from, other.attachments.to].some(ref => portId(ref) === portId(end))));
 }
-/** How many document tiers lie between the ends of the link, when it is two or more; otherwise undefined. */
-export function documentTierGap(model: LayoutModel, link: LayoutLink): number | undefined {
+/** How many document tier gaps lie between the ends of the link (0 on one document tier), or undefined when an end has no document tier. */
+export function documentTierDistance(model: LayoutModel, link: LayoutLink): number | undefined {
   const ends = link.attachments;
   if (ends === undefined) return undefined;
   const a = model.document.nodes[ends.from.node]?.group, b = model.document.nodes[ends.to.node]?.group;
   if (a === undefined || b === undefined) return undefined;
   const one = documentTier(model, a), two = documentTier(model, b);
-  return one === undefined || two === undefined || Math.abs(one - two) < 2 ? undefined : Math.abs(one - two);
+  return one === undefined || two === undefined ? undefined : Math.abs(one - two);
+}
+/** How many document tiers lie between the ends of the link, when it is two or more; otherwise undefined. */
+export function documentTierGap(model: LayoutModel, link: LayoutLink): number | undefined {
+  const distance = documentTierDistance(model, link);
+  return distance === undefined || distance < 2 ? undefined : distance;
 }
 /**
- * Whether the ends stand on consecutive document tiers and a sub-tier lies strictly between their sub-tiers: a group with fewer ranks than its tier
- * leaves a rank band of that tier between the ends (Section 3, last paragraph). Topology only: the sub-tiers are stage 1's, and every sub-tier that
- * holds a group has a tier band (`validateDocument`).
+ * Whether the ends stand on consecutive document tiers and a tier band stands strictly between their sub-tiers: a group with fewer ranks than its
+ * tier leaves a rank band of that tier between the ends (Section 3, last paragraph). The band is read by `transitTiers`, the reader of the lanes and
+ * of the `transit` refusal, so one function answers whether a link transits a band.
  */
 export function rankBandBetween(model: LayoutModel, link: LayoutLink): boolean {
-  const ends = link.attachments;
-  if (ends === undefined) return false;
-  const a = model.document.nodes[ends.from.node]?.group, b = model.document.nodes[ends.to.node]?.group;
-  if (a === undefined || b === undefined) return false;
-  const one = documentTier(model, a), two = documentTier(model, b);
-  if (one === undefined || two === undefined || Math.abs(one - two) !== 1) return false;
-  const low = model.groups[a]?.tier, high = model.groups[b]?.tier;
-  if (low === undefined || high === undefined) return false;
-  return Object.values(model.groups).some(group => group.tier !== undefined && group.tier > Math.min(low, high) && group.tier < Math.max(low, high));
+  return documentTierDistance(model, link) === 1 && transitTiers(model, link).length > 0;
 }
 
 function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): ChordKind | undefined {
@@ -466,7 +464,7 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
   // orthogonal route, so that no move after stage 7a can leave a transit without its reservation.
   const tiers = [link.attachments!.from.node, link.attachments!.to.node].map(id => model.groups[model.document.nodes[id]!.group]!.tier!);
   // A spanning chord (ticket 22) has no lane: the bands it crosses leave a corridor, which the checks below read as walls.
-  if (link.spanHint !== true && model.tierBands.some(band => band.tier > Math.min(...tiers) && band.tier < Math.max(...tiers))) return { reason: 'transit' };
+  if (link.spanHint !== true && transitTiers(model, link).length > 0) return { reason: 'transit' };
   const line: PathSegment = { from: geometry.from, to: geometry.to, owner: { ...link.owner } };
   if (kind === 'cross') {
     // The port sides say which end is upper; the faces must agree, or the chord leaves a port inward.

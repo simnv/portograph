@@ -329,7 +329,8 @@ contradiction 7 of `ref/hand-solves/ANALYSIS.md`.
 
 ### 14.1 Rule
 
-A **spanning chord** is a cross-frame chord whose ends stand on document tiers `t` and `t + N`, `N` of 2 or more.
+A **spanning chord** is a cross-frame chord whose end sub-tiers are not adjacent: its ends stand on document tiers `t`
+and `t + N`, `N` of 2 or more, or `N` is 1 and a rank band stands between the end sub-tiers (architecture-2 ticket 35).
 No cap on `N`. It is one straight segment from face to face, as every routed chord.
 
 A link is a spanning-chord candidate when Section 3 items 1, 2 and 4 hold, and its end sub-tiers are not adjacent:
