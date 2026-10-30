@@ -155,6 +155,16 @@ content insets so placement centres the icon/text blocks in the remaining interi
 asymmetric; a long port name can therefore grow the normal node dimension without changing pitch.
 Author `size:` is a floor. Undecided ports count on their most likely side. Bars are sized in 7d.
 
+**Content style** (ticket 159). The profile names how a node's content stands: `card` or `stacked`. The network default is `card`,
+for every node; a class style may override it (`NodeClassStyle.content`), and a sheet class takes the default. One resolver
+(`resolveNodeContentStyle`) is read inside `measureNodeContent`, so stage 3 and stage 5 (`rebuildNodeGeometry`) measure and place the
+same style. A `card` is the 24×24 icon tile (radius 4, glyph inset 3), 8 px, then a left-aligned text block: the title (11 px, 700) and,
+only when the node has a description, 2 px and the subtitle (9 px, 400). Line heights are the text module's (14 and 11). Authored
+newlines stay; nothing wraps. A card with no icon has no tile and no gap. `contentW = tile + gap + max(title, subtitle)`, `contentH =
+max(tile, text block)`, each plus the insets above; the minimums and the port-capacity rule are unchanged. The tile and the text block
+are centred together in the inset interior. Ports stay centred on their faces. `stacked` is the column above: icon (12 px), label (9 px),
+description (7 px), centred.
+
 ## Stage 4 — skeleton (ELK)
 
 One `elkjs` `layered` run. Options set explicitly (all verified to exist, 2026-09-10):

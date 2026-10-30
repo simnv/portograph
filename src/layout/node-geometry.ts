@@ -1,8 +1,7 @@
 import { placePortPill, portAnchor } from '../geometry/index.js';
 import type { LayoutModel, LayoutLabel } from '../model/layout.js';
 import { FONT_FAMILY, measurePortPill } from '../text/index.js';
-import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
-import { measureNodeContent } from './size.js';
+import { measureNodeContent, placeNodeContent } from './size.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
@@ -17,18 +16,16 @@ export function rebuildNodeGeometry(draft: LayoutModel, nodeIds: readonly string
     const owner = { kind: 'node', id } as const;
     const content = measureNodeContent(draft.document.nodes[id]!, insets);
     if (content.width > box.width + PLACEMENT_EPS || content.height > box.height + PLACEMENT_EPS) throw new Error(`Content exceeds node ${id}`);
-    const centreX = box.x + insets.left + (box.width - insets.left - insets.right) / 2;
-    let y = box.y + insets.top + (box.height - content.height) / 2;
     delete node.icon;
-    for (const block of content.blocks) {
-      const bounds = { x: centreX - block.width / 2, y, width: block.width, height: block.height };
-      if (block.kind === 'icon') node.icon = { icon: block.icon, bounds };
-      else {
+    for (const { block, bounds } of placeNodeContent(content, box, insets)) {
+      if (block.kind === 'icon') {
+        node.icon = { icon: block.icon, bounds, ...(block.inset === undefined ? {} : { inset: block.inset }),
+          ...(block.radius === undefined ? {} : { radius: block.radius }) };
+      } else {
         const { kind, width: _width, height: _height, ...text } = block;
         void _width; void _height;
         draft.labels.push({ id: `node:${JSON.stringify(id)}:${kind}`, owner, layer: node.layer, role: kind, bounds, ...text });
       }
-      y += block.height + theme.contentGap;
     }
     // The ports of a face are centred over the whole box at the face's pitch, in engine order. A face that lost a port to a side hint (ADR-0022)
     // keeps the box width its size floor holds, so the ports left on it keep their order and their pitch, with an equal margin at both ends.

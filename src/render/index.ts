@@ -159,21 +159,23 @@ function textElement(label: LayoutLabel, locks: GeometryLocks, structural: strin
   const lineHeight = label.lineHeight ?? (rotated && !quarter ? font.lineHeight : height / lines.length);
   const top = middle.y - height / 2;
   const first = top + font.ascent;
+  // A card's title and subtitle (ticket 159) start at the left edge of their measured box; every other label is centred on its box.
+  const start = label.textAlign === 'start';
   const spans = lines.map((line, index) => element('tspan',
-    { x: middle.x, y: first + index * lineHeight }, escapeText(line))).join('');
+    { x: start ? box.x : middle.x, y: first + index * lineHeight }, escapeText(line))).join('');
   const title = label.tooltip !== undefined && label.tooltip !== label.text
     ? element('title', {}, escapeText(label.tooltip)) : '';
   return element('text', {
     class: classes(structural, extra, locks.font(label.fontFamily ?? FONT_FAMILY, label.fontSize ?? 9, label.fontWeight ?? 400)),
     'data-owner': owner,
-    'text-anchor': 'middle',
+    'text-anchor': start ? 'start' : 'middle',
     ...(rotated ? { transform: `rotate(${num(angle)} ${num(middle.x)} ${num(middle.y)})` } : {}),
   }, title + spans);
 }
 
-function iconElement(icon: { icon: string; bounds: Rect }, locks: GeometryLocks, authored: string | undefined, radius: number): string {
-  const box = icon.bounds;
-  const inset = Math.min(ICON_INSET, box.width / 4, box.height / 4);
+function iconElement(icon: { icon: string; bounds: Rect; inset?: number; radius?: number }, locks: GeometryLocks, authored: string | undefined, themeRadius: number): string {
+  const box = icon.bounds, radius = icon.radius ?? themeRadius;
+  const inset = Math.min(icon.inset ?? ICON_INSET, box.width / 4, box.height / 4);
   return element('rect', { class: classes('icon-tile', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
     x: box.x, y: box.y, width: box.width, height: box.height, rx: radius, ry: radius })
     + element('use', { class: classes('node-icon', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.glyph)),

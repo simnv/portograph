@@ -1,0 +1,31 @@
+# Expected (snack-theme ticket 159): a network node is a card. The icon tile (24 x 24) stands left of the title (11 px, bold) and the
+# subtitle (9 px, the node `description`, 2 px under the title), 8 px apart; the tile and the text block are centred together in the
+# inset interior. Each side inset is max(10, the inward half-extent of the pills on that face + 4), so a long pill name on a face moves
+# the content off that face only. Ports stay centred on their faces, whatever the text does. The size is the card's, measured before
+# placement (stage 3) and kept by stage 5. Cases, in node order:
+#   wide     the width comes from the text (a long title and a long subtitle);
+#   hub      the width comes from 5 bottom ports and a short subtitle (5 x 12 px pitch + 20 beats the text);
+#   twoline  a subtitle of two authored lines (kept, never wrapped);
+#   lateral  4 left ports, so the left inset grows with the pill and the card shifts right;
+#   crowd    long pills on all four faces: every inset grows, the card is still one block;
+#   plain    no description: no subtitle line and no 2 px gap, so the card is shorter;
+#   bare     no icon (`icon: ""`): no tile and no gap, the text block alone is centred.
+# The ticket's eighth case, a profile class overridden to `stacked`, is not a document field: the shipped profile carries no override
+# until the owner decides after the full-set measure, so test/layout/node-content.test.ts covers it with a stated class table.
+# Test-only input owned by snack-theme ticket 159; test/layout/node-content.test.ts reads it.
+portograph: 2
+groups:
+  edge: { tier: 0, label: Edge }
+  access: { tier: 1, label: Access }
+nodes:
+  wide: { group: edge, class: router, label: Distribution switch of the east wing, description: "Rack 14, row B, uplinks to both cores", ports: [{ name: p1, side: bottom }] }
+  hub: { group: edge, class: tbr, label: Hub, description: 5p, ports: [{ name: a1, side: bottom }, { name: a2, side: bottom }, { name: a3, side: bottom }, { name: a4, side: bottom }, { name: a5, side: bottom }] }
+  twoline: { group: edge, class: rr, label: Reflector, description: "PoE-powered by p8\nspare on p9", ports: [{ name: p1, side: bottom }] }
+  lateral: { group: access, class: router, label: Lateral, description: ".170 · 4l", ports: [{ name: l1, side: left }, { name: l2, side: left }, { name: l3, side: left }, { name: l4, side: left }, { name: u1, side: top }] }
+  crowd: { group: access, class: tbr, label: Crowd, description: ".171", ports: [{ name: GigabitEthernet0-0-0-1, side: left }, { name: GigabitEthernet0-0-0-2, side: right }, { name: TenGigabitEthernet1-0-1, side: top }, { name: TenGigabitEthernet1-0-2, side: bottom }] }
+  plain: { group: access, class: router, label: Flex Mini, ports: [{ name: u1, side: top }] }
+  bare: { group: access, class: router, icon: "", label: No icon, description: label only, ports: [{ name: u1, side: top }] }
+links:
+  - [wide.p1, plain.u1]
+  - [hub.a1, bare.u1]
+  - [twoline.p1, lateral.u1]

@@ -1,45 +1,114 @@
 import { portPitch } from '../geometry/index.js';
 import type { NormalisedNode } from '../model/document.js';
-import type { Side, Size } from '../model/geometry.js';
+import type { Rect, Side, Size } from '../model/geometry.js';
 import type { LayoutModel, LayoutNode } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
+import { resolveNodeContentStyle } from '../profiles/network/content.js';
+import type { NodeContentStyle } from '../profiles/network/content.js';
 import { resolveNodeIcon } from '../profiles/network/icons.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../text/index.js';
-import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
+import { CARD_CONTENT_GEOMETRY as cardTheme, NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { gridChains } from './grid.js';
 import { barLabelFloor, barPortsFloor } from './bar-width.js';
 
 export type NodeContentBlock =
-  | (Size & { kind: 'icon'; icon: string })
+  | (Size & { kind: 'icon'; icon: string; inset?: number; radius?: number })
   | (Size & { kind: 'node' | 'description'; text: string; lines: string[]; fontFamily: string;
-    fontSize: number; fontWeight: 400 | 700; lineHeight: number });
+    fontSize: number; fontWeight: 400 | 700; lineHeight: number; textAlign?: 'start' });
 
 export interface NodeContentMeasurement extends Size {
-  /** Stack in this order with contentGap; centre in the interior defined by contentInsets. */
+  /** The style the one resolver gave this node (R1). `placeNodeContent` reads it; nothing else decides it again. */
+  style: NodeContentStyle;
+  /**
+   * `stacked`: stack in this order with contentGap; centre in the interior defined by contentInsets.
+   * `card`: the icon tile (if any), then the title and the subtitle as one left-aligned block beside it; see `placeNodeContent`.
+   */
   blocks: NodeContentBlock[];
 }
 
-/** Padded bounds and renderable blocks; placement supplies absolute coordinates later. */
+/**
+ * Padded bounds and renderable blocks; placement supplies absolute coordinates later (`placeNodeContent`). The content style comes
+ * from `resolveNodeContentStyle` unless the caller states one, so stage 3 and stage 5 measure the same node the same way (R1).
+ */
 export function measureNodeContent(node: NormalisedNode,
   insets: Record<Side, number> = { top: theme.padding, right: theme.padding, bottom: theme.padding, left: theme.padding },
+  style: NodeContentStyle = resolveNodeContentStyle(node),
 ): NodeContentMeasurement {
+  const card = style === 'card';
   const blocks: NodeContentBlock[] = [];
   const icon = resolveNodeIcon(node);
-  if (icon !== undefined) blocks.push({ kind: 'icon', icon, width: theme.iconWidth, height: theme.iconHeight });
+  if (icon !== undefined) {
+    blocks.push(card
+      ? { kind: 'icon', icon, width: cardTheme.tileSize, height: cardTheme.tileSize, inset: cardTheme.glyphInset, radius: cardTheme.tileRadius }
+      : { kind: 'icon', icon, width: theme.iconWidth, height: theme.iconHeight });
+  }
   const appendText = (kind: 'node' | 'description', text: string, fontSize: number, fontWeight: 400 | 700): void => {
     const measured = measureText(text, { fontSize, weight: fontWeight });
     if (measured.height > 0) blocks.push({ kind, text, lines: measured.lines, fontFamily: FONT_FAMILY,
-      fontSize, fontWeight, lineHeight: measured.lineHeight, width: measured.width, height: measured.height });
+      fontSize, fontWeight, lineHeight: measured.lineHeight, width: measured.width, height: measured.height,
+      ...(card ? { textAlign: 'start' as const } : {}) });
   };
+  if (card) {
+    appendText('node', node.label, cardTheme.titleFontSize, cardTheme.titleFontWeight);
+    appendText('description', node.description ?? '', cardTheme.subtitleFontSize, cardTheme.subtitleFontWeight);
+    const { width, height } = cardBlocks(blocks);
+    return { style, blocks, width: width + insets.left + insets.right, height: height + insets.top + insets.bottom };
+  }
   appendText('node', node.label, theme.labelFontSize, theme.labelFontWeight);
   appendText('description', node.description ?? '', theme.descriptionFontSize, theme.descriptionFontWeight);
   return {
+    style, blocks,
     width: Math.max(0, ...blocks.map(block => block.width)) + insets.left + insets.right,
     height: blocks.reduce((sum, block) => sum + block.height, 0)
       + Math.max(0, blocks.length - 1) * theme.contentGap + insets.top + insets.bottom,
-    blocks,
   };
+}
+
+/** The parts of a card and the size of the whole, before insets: tile, then `tileGap` (only with both), then the wider of title and subtitle. */
+function cardBlocks(blocks: readonly NodeContentBlock[]): { tile?: NodeContentBlock; text: NodeContentBlock[]; width: number; height: number;
+  textWidth: number; textHeight: number } {
+  const tile = blocks.find(block => block.kind === 'icon');
+  const text = blocks.filter(block => block.kind !== 'icon');
+  const textWidth = Math.max(0, ...text.map(block => block.width));
+  const textHeight = text.reduce((sum, block) => sum + block.height, 0) + Math.max(0, text.length - 1) * cardTheme.subtitleGap;
+  const width = (tile?.width ?? 0) + (tile !== undefined && text.length > 0 ? cardTheme.tileGap : 0) + textWidth;
+  return { ...(tile === undefined ? {} : { tile }), text, width, height: Math.max(tile?.height ?? 0, textHeight), textWidth, textHeight };
+}
+
+/**
+ * Where each block of a measured node stands inside its box: the one placement rule of both content styles (stage 5 and every
+ * rebuild after it). Ports are not placed here: they stay centred on their faces whatever the content does.
+ *
+ * `stacked`: one centred column in the inset interior. `card`: the tile and the text block, side by side, form one block that is
+ * centred in the inset interior on both axes; the tile is centred on that block's height, the text block too, and the title and
+ * the subtitle share the text block's left edge.
+ */
+export function placeNodeContent(content: NodeContentMeasurement, box: Rect, insets: Record<Side, number>):
+{ block: NodeContentBlock; bounds: Rect }[] {
+  const interior = { x: box.x + insets.left, y: box.y + insets.top,
+    width: box.width - insets.left - insets.right, height: box.height - insets.top - insets.bottom };
+  if (content.style === 'card') {
+    const { tile, text, width, textHeight } = cardBlocks(content.blocks);
+    const left = interior.x + (interior.width - width) / 2, middle = interior.y + interior.height / 2;
+    const placed: { block: NodeContentBlock; bounds: Rect }[] = [];
+    if (tile !== undefined) placed.push({ block: tile, bounds: { x: left, y: middle - tile.height / 2, width: tile.width, height: tile.height } });
+    const textLeft = left + (tile === undefined ? 0 : tile.width + cardTheme.tileGap);
+    let y = middle - textHeight / 2;
+    for (const block of text) {
+      placed.push({ block, bounds: { x: textLeft, y, width: block.width, height: block.height } });
+      y += block.height + cardTheme.subtitleGap;
+    }
+    return placed;
+  }
+  const centreX = interior.x + interior.width / 2;
+  const stack = content.height - insets.top - insets.bottom;
+  let y = interior.y + (interior.height - stack) / 2;
+  return content.blocks.map(block => {
+    const bounds = { x: centreX - block.width / 2, y, width: block.width, height: block.height };
+    y += block.height + theme.contentGap;
+    return { block, bounds };
+  });
 }
 
 /**
