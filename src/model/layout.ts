@@ -572,9 +572,9 @@ export interface LayoutModel {
    * The parents below the anchor tier that spread their fed bottom ports over their children (architecture-2 ticket 32, Q120), by node id: the
    * width the body grew to, the x of each bottom port from the left edge of the body, and how far the row neighbours moved away. Decided once,
    * in the centre rule, before its first step, by `ALIGNMENT_MAX_GROWTH`, the overlay stops and the window of the parent's tier step (the
-   * reserved lanes, the flanks, the frame columns and the groups after it). One reader, `parentSpread` (`read/parent-spread.ts`). In a model
-   * with a parent tier below the anchor tier: absent = not decided (a later replay spreads nothing and warns `PARENT_SPREADS_UNDECIDED`),
-   * `{}` = decided, no parent spreads. A model with no such tier never has it.
+   * reserved lanes, the flanks, the frame columns and the groups after it). One reader, `parentSpread` (`read/parent-spread.ts`). While the
+   * centre rule runs, `{}` = decided, no parent spreads (its later runs do not decide again); the rule drops an empty record when it ends, so
+   * after it absent = no parent spread. No later rule decides a spread: a replay reads the geometry the spread left.
    */
   parentSpreads?: Record<string, ParentSpread>;
   /**

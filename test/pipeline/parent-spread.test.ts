@@ -70,11 +70,11 @@ describe('a parent below the anchor tier spreads its ports over its children (ar
     // `west` feeds `ap` too: `sw` has one child of its own left, and spreads over none.
     const shared = await run(fixture(NAME).trimEnd() + '\n  - [west, ap]\n');
     expect(shared.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
-    expect(shared.parentSpreads).toEqual({});
+    expect(shared.parentSpreads).toBeUndefined();
     // The complete block, the X: `west` and `sw` both feed both children.
     const block = await run(fixture(NAME).trimEnd() + '\n  - [west, ap]\n  - [west, vm-host]\n');
     expect(block.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
-    expect(block.parentSpreads).toEqual({});
+    expect(block.parentSpreads).toBeUndefined();
   }, 60000);
 
   it('a spread past the alignment allowance is declined whole and named', async () => {
@@ -82,20 +82,24 @@ describe('a parent below the anchor tier spreads its ports over its children (ar
     const wide = 'Access point with a label long enough to stand far beyond twelve times the width of the narrow switch that feeds it and more';
     const model = await run(fixture(NAME).replace('label: Access point', `label: ${wide} ${wide}`).replace('label: Virtual host', `label: ${wide}`));
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
-    expect(model.parentSpreads).toEqual({});
+    expect(model.parentSpreads).toBeUndefined();
     const declined = codes(model, 'PARENT_SPREAD_DECLINED');
     expect(declined.length).toBe(1);
     expect(declined[0]!.owners).toEqual([{ kind: 'node', id: 'sw' }, { kind: 'link', id: 'link-4' }, { kind: 'link', id: 'link-5' }]);
   }, 60000);
 
-  it('the decision is the centre rule\'s alone: a replay that finds no record spreads nothing and says so; a sheet with no parent tier below the anchor has none', async () => {
+  it('the decision is the centre rule\'s alone: a replay spreads nothing, and a sheet that spreads nothing keeps no record', async () => {
     const model = structuredClone(await run(fixture(NAME))) as LayoutModel;
-    const width = model.nodes['sw']!.bounds!.width;
-    delete model.parentSpreads;
-    centreDraft(model, createCentreBudget());
-    expect(model.parentSpreads).toBeUndefined();
-    expect(codes(model, 'PARENT_SPREADS_UNDECIDED').length).toBe(1);
-    expect(model.nodes['sw']!.bounds!.width).toBeCloseTo(width, 6);
+    const width = model.nodes['sw']!.bounds!.width, xs = model.nodes['sw']!.ports.map(port => port.anchor!.x);
+    // A replay after the centre rule (stage `link-labels` here) reads the geometry the spread left: with or without the record it decides nothing.
+    for (const record of [true, false]) {
+      const copy = structuredClone(model) as LayoutModel;
+      if (!record) delete copy.parentSpreads;
+      centreDraft(copy, createCentreBudget());
+      expect(copy.parentSpreads).toEqual(record ? model.parentSpreads : undefined);
+      expect(copy.nodes['sw']!.bounds!.width).toBeCloseTo(width, 6);
+      expect(copy.nodes['sw']!.ports.map(port => port.anchor!.x)).toEqual(xs);
+    }
     // Tier 0 is the anchor and tier 1 the lowest: no parent stands below the anchor tier.
     const two = 'portograph: 2\ngroups:\n  top: { tier: 0, label: Top }\n  low: { tier: 1, label: Low }\nnodes:\n'
       + '  t1: { group: top, label: T1 }\n  t2: { group: top, label: T2 }\n  c1: { group: low, label: C1 }\n  c2: { group: low, label: C2 }\n'

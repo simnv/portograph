@@ -561,27 +561,22 @@ function alignedExtentOf(model: LayoutModel, context: CentreContext, tier: numbe
   return { low: { port: lowFeed.parent.ref, offset: grownLow - (bodyLow - box.x) - lowFeed.x },
     high: { port: highFeed.parent.ref, offset: grownHigh + (right(box) - bodyHigh) - highFeed.x } };
 }
-const SPREADS_UNDECIDED = 'PARENT_SPREADS_UNDECIDED';
 const SPREAD_DECLINED = 'PARENT_SPREAD_DECLINED';
 /**
  * A parent below the anchor tier spreads its ports over its children (architecture-2 ticket 32, Q120). Below the anchor tier a child group
  * is centred under its feeds, and its ports align under the parent ports. Where the fed bottom ports of a parent stand closer together than
  * the top ports of its children can, the child side alone cannot align: its nodes cannot stand closer than a row gap. The parent therefore
  * moves its ports, once, before the first step: each fed port goes to the spacing of its child, about the mean of the fed ports. The body
- * grows by the deficit and no further, and the row neighbours move away by the growth on their side. The decision is stored
- * (`parentSpreads`), also when no parent spreads; a later run, a replay and the publication check read the geometry it left and never
- * decide again. A replay outside the centre rule that finds no record in a model with a parent tier below the anchor tier spreads nothing
- * and warns (R6). Returns whether a parent spread.
+ * grows by the deficit and no further, and the row neighbours move away by the growth on their side.
+ *
+ * Decided once, in the centre rule only (its input stage, `flanks`), and stored (`parentSpreads`). While the centre rule runs, `{}` says it
+ * decided that no parent spreads, so its later runs and its wide twin do not decide again; `centre` drops an empty record when it ends, so
+ * after the centre rule absent and `{}` both mean that no parent spread (a sheet that spreads nothing keeps the bytes it had). A later run,
+ * a replay and the publication check read the geometry the spread left and never decide again. Returns whether a parent spread.
  */
 function reserveParentSpreads(model: LayoutModel, context: CentreContext, columns: readonly FrameColumn[]): boolean {
   const anchor = model.anchorTier!, below = context.steps.filter(step => step.authority > anchor);
-  if (model.parentSpreads !== undefined || !below.length) return false;
-  if (model.stage !== CENTRE_RULE_INPUT) {
-    if (!model.diagnostics.some(d => d.code === SPREADS_UNDECIDED)) {
-      placementWarning(model, SPREADS_UNDECIDED, `The centre rule recorded no parent spreads; this centring at stage ${model.stage} spreads no parent over its children.`, []);
-    }
-    return false;
-  }
+  if (model.parentSpreads !== undefined || !below.length || model.stage !== CENTRE_RULE_INPUT) return false;
   const spreads: NonNullable<LayoutModel['parentSpreads']> = {};
   // The deepest parent tier first: a spread moves the row of its parent, and that row holds the children the tier above spreads over.
   for (const { tier, authority } of [...below].sort((a, b) => b.authority - a.authority)) {
@@ -632,7 +627,7 @@ function spreadPlans(model: LayoutModel, tier: number, authority: number): { nod
  * window or a lane refuses, is undone whole and named (`PARENT_SPREAD_DECLINED`, R6): the feeds then align as before, on the child side.
  */
 function spreadParent(model: LayoutModel, context: CentreContext, authority: number, plan: { node: string; feeds: Feed[] }): ParentSpread | undefined {
-  const node = model.nodes[plan.node]!, group = model.groups[model.document.nodes[plan.node]!.group]!, box = node.bounds!;
+  const node = model.nodes[plan.node]!, group = model.groups[model.document.nodes[plan.node]!.group]!;
   // The ports as the model holds them now: a spread before this one, or its undoing, moved or replaced the nodes of its row.
   const feeds = plan.feeds.map(feed => ({ key: feed.key, link: feed.link, parent: findPort(model, feed.parent.ref)!, child: findPort(model, feed.child.ref)! }));
   const links = feeds.map(feed => feed.link);
@@ -651,33 +646,45 @@ function spreadParent(model: LayoutModel, context: CentreContext, authority: num
   const targets = new Map(feeds.map(feed => [feed.key, parents + feed.child.anchor!.x - children]));
   const unbounded = { low: -Infinity, high: Infinity }, stops = overlayStops(model, node);
   if (keptTargets(node, 'bottom', targets, unbounded, stops).length !== feeds.length) return decline('the body would grow past its alignment allowance or onto an overlay link');
-  const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(id => model.nodes[id]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
-  const restore = (): void => { model.groups[group.id] = saved.group; for (const item of saved.nodes) model.nodes[item.id] = item; };
-  const oldX = box.x, oldRight = right(box);
-  if (alignSide(node, 'bottom', targets, unbounded, stops, () => {}, riserAvoidance(model, authority, 'bottom')).size !== feeds.length) {
+  const saved = JSON.stringify({ group, nodes: group.nodes.map(id => model.nodes[id]!) });
+  const restore = (): void => {
+    const copy = JSON.parse(saved) as { group: LayoutGroup; nodes: LayoutNode[] };
+    model.groups[group.id] = copy.group;
+    for (const item of copy.nodes) model.nodes[item.id] = item;
+  };
+  /** The spread on the model as it stands: the face, the body and the row. The growth on each side, or none when the riser keep-out declines a port. */
+  const apply = (): { low: number; high: number } | undefined => {
+    const at = model.nodes[plan.node]!, oldX = at.bounds!.x, oldRight = right(at.bounds!);
+    if (alignSide(at, 'bottom', targets, unbounded, stops, () => {}, riserAvoidance(model, authority, 'bottom')).size !== feeds.length) return undefined;
+    const grown = { low: oldX - at.bounds!.x, high: right(at.bounds!) - oldRight }, row = packRowsOf(model, model.groups[group.id]!).find(item => item.includes(plan.node))!;
+    for (const id of row.slice(0, row.indexOf(plan.node))) shiftNode(model.nodes[id]!, -grown.low);
+    for (const id of row.slice(row.indexOf(plan.node) + 1)) shiftNode(model.nodes[id]!, grown.high);
+    fitRegionGroup(model, model.groups[group.id]!);
+    return grown;
+  };
+  const shift = apply();
+  if (shift === undefined) {
     restore();
     return decline('a port would stand on the keep-out of a mesh-bus riser');
   }
-  const shift = { low: oldX - node.bounds!.x, high: right(node.bounds!) - oldRight };
-  const row = packRowsOf(model, group).find(item => item.includes(plan.node))!, at = row.indexOf(plan.node);
-  for (const id of row.slice(0, at)) shiftNode(model.nodes[id]!, -shift.low);
-  for (const id of row.slice(at + 1)) shiftNode(model.nodes[id]!, shift.high);
-  fitRegionGroup(model, group);
+  const spread = model.groups[group.id]!;
   const order = context.groupOrder.get(authority)!, index = order.indexOf(group.id), step = context.steps.find(item => item.tier === authority)!;
   const previous = index > 0 ? standingBox(model, model.groups[order[index - 1]!]!) : undefined;
   const window = stepWindow(model, context, authority, centringFeeds(model, authority, step.authority), group.id, previous, tailReservation(model, context, authority, order));
-  if (group.bounds!.width > window.high - window.low + EPS) {
-    restore();
-    return decline(`spread it is ${group.bounds!.width.toFixed(1)} px wide and the window of its group holds ${Math.max(0, window.high - window.low).toFixed(1)} px`);
+  const width = spread.bounds!.width, dx = Math.max(window.low, Math.min(spread.bounds!.x, window.high - width)) - spread.bounds!.x;
+  const bounds = { ...spread.bounds!, x: spread.bounds!.x + dx };
+  restore();
+  if (width > window.high - window.low + EPS) {
+    return decline(`spread it is ${width.toFixed(1)} px wide and the window of its group holds ${Math.max(0, window.high - window.low).toFixed(1)} px`);
   }
-  moveGroup(model, group, Math.max(window.low, Math.min(group.bounds!.x, window.high - group.bounds!.width)) - group.bounds!.x, 0);
-  if (!laneSidesHold(model, [{ group, bounds: group.bounds! }], false)) {
-    restore();
-    return decline('its group would cross a reserved lane');
-  }
-  rebuildNodeGeometry(model, group.nodes, 'current');
-  const left = node.bounds!.x;
-  return { width: node.bounds!.width, ports: node.ports.filter(port => port.side === 'bottom').map(port => ({ port: { ...port.ref }, offset: port.anchor!.x - left })), shift };
+  // An optional move: it asks the move reservations (the lane sides, the riser keep-out, the span corridors), on the model before the spread, of the box the
+  // spread gives the group.
+  if (!holdsMove(model, [{ group: model.groups[group.id]!, bounds }], false)) return decline('its group would break a reserved lane, riser or corridor');
+  apply();
+  moveGroup(model, model.groups[group.id]!, dx, 0);
+  rebuildNodeGeometry(model, model.groups[group.id]!.nodes, 'current');
+  const parent = model.nodes[plan.node]!, left = parent.bounds!.x;
+  return { width: parent.bounds!.width, ports: parent.ports.filter(port => port.side === 'bottom').map(port => ({ port: { ...port.ref }, offset: port.anchor!.x - left })), shift };
 }
 /**
  * The overlay walls the main move of a group step stops at. The move carries a body an earlier pass grew toward its feeds, and a move that carries such a
@@ -943,7 +950,6 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
   }
   refreshWindowDeclines(model);
-  refreshAlignmentDeclines(model);
 }
 /** Whether the link stands vertical: its two ports face each other, one on a bottom face and one on a top face, within half a pixel in x. */
 function standsVertical(model: LayoutModel, id: string): boolean {
@@ -956,7 +962,8 @@ function standsVertical(model: LayoutModel, id: string): boolean {
 /**
  * A `CENTRE_ALIGNMENT_INFEASIBLE` names a feed that a step, or the parent stand, could not put on one x. A later pass, a parent spread, the parent
  * stand or a move of 7f may still stand the link vertical (architecture-2 ticket 32). Read where the model stands, a warning whose links all stand
- * vertical is withdrawn; a warning that names a link it cannot read stays. Run when centring ends and again after the last move of 7f.
+ * vertical is withdrawn; a warning that names a link it cannot read stays. Run once, after the last move of 7f, on the geometry that publishes: run
+ * when centring ends, it would change the diagnostics the later replays compare, and they would run again for it.
  */
 export function refreshAlignmentDeclines(model: LayoutModel): void {
   model.diagnostics = model.diagnostics.filter(d => {
@@ -1260,6 +1267,10 @@ function hasRivals(model: LayoutModel): boolean {
   }
   return false;
 }
+/** After the centre rule an empty spread record and an absent one both mean that no parent spread (`reserveParentSpreads`): the empty one is dropped. */
+function dropEmptySpreads(model: LayoutModel): void {
+  if (model.parentSpreads !== undefined && !Object.keys(model.parentSpreads).length) delete model.parentSpreads;
+}
 export function centre(model: LayoutModel): LayoutModel {
   return withStageMutation(model, 'centre', draft => {
     // The wide twin: the seats of the first feeds with the conflicting feeds pulling, as before ticket 12. It is built only where a port has two parents.
@@ -1269,9 +1280,9 @@ export function centre(model: LayoutModel): LayoutModel {
       return copy;
     };
     const wideTwin = hasRivals(draft) ? twin() : undefined;
-    orderBundles(draft); normalizePrimaryBundlePorts(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft);
+    orderBundles(draft); normalizePrimaryBundlePorts(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); dropEmptySpreads(draft);
     if (!wideTwin) return;
-    centreDraft(wideTwin, createCentreBudget()); recordSeatedSideLanes(wideTwin);
+    centreDraft(wideTwin, createCentreBudget()); recordSeatedSideLanes(wideTwin); dropEmptySpreads(wideTwin);
     // Narrow only if free: a link that stands straight under the wide seat must stand straight under the narrow one, or the node keeps its wide seat.
     const narrow = straightLinks(draft);
     if ([...straightLinks(wideTwin)].every(id => narrow.has(id))) return;
