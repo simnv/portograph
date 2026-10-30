@@ -34,6 +34,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * fixtures the only change is `centreGroupStep` calls added (the publication check replays each step after the windows); no call was dropped.
  * `three-continents` also asks `windowsHold` and `pickTarget` more often and on other figures (the rounds place the windows again), and on
  * `overlay-links-reorder-two-locations` the geometry differs: `pullTier` reads 0/0 overlay segments where it read 4/4, and `settleKeepOut` is not asked.
+ * Ten were re-recorded for the snack-theme ticket 159 engine fixes (stacked nodes, the default; the card switch is not read here). The fixes are the beside-row pack
+ * move guard, the riser lane host, the bars, the frozen chords (`blockedChordsAt`, `chordBlockedNew`), the node floor of a moved port, and the frame separation
+ * (`frameSeparation`): the judges are called on other geometry and the call counts move. Six fixtures keep the ticket 157 digests.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

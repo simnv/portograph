@@ -2,10 +2,6 @@
 # A wide anchor tier `core` (tier 0) stands above two cantons of two tiers each: `west` holds `w-site` (tier 1) and `w-lab` (tier 2), `east` holds
 # `e-site` (tier 1) and `e-lab` (tier 2). A sync link joins `core2` to `far1` (tier 3) and runs as one straight segment through the gap between the
 # cantons, 20 px from the east-most body of `west`. Closing the cantons up to a band gap would put that body on the chord, so the run stays and `COLUMN_AXIS_HELD` names the canton.
-# Snack-theme ticket 159 re-forged the labels for card nodes (11 px title, 32 px of tile and gap): `w-sw` as "West switch of the main site office" grew
-# to 234 px and stood across the port of `core2`, so the chord went round the west canton and the gap closed. Now `w-sw` is "West switch of the main
-# site" (196 px) and `core1` is "Core one of the north", which moves `core2` right: the straight chord passes 8 px east of `w-sw` with the gap open
-# (100 px, a band gap and two column slacks), and the close-up would put `w-sw` on it.
 # Test-only input owned by architecture ticket 13, phase 4; test/pipeline/canton-close-up.test.ts reads the layout.
 portograph: 2
 groups:
@@ -18,12 +14,12 @@ groups:
   e-lab: { tier: 2, canton: east, label: East lab }
   far: { tier: 3, label: Far }
 nodes:
-  core1: { group: core, class: router, label: Core one of the north }
+  core1: { group: core, class: router, label: Core one }
   core2: { group: core, class: router, label: Core two }
   core3: { group: core, class: router, label: Core three }
   core4: { group: core, class: router, label: Core four }
   w-gw: { group: w-site, class: router, label: West gateway }
-  w-sw: { group: w-site, class: switch, label: West switch of the main site }
+  w-sw: { group: w-site, class: switch, label: West switch of the main site office }
   w-srv: { group: w-lab, class: server, label: West server }
   e-gw: { group: e-site, class: router, label: East gateway }
   e-sw: { group: e-site, class: switch, label: East switch }

@@ -6,8 +6,6 @@
 # from those lanes, so they stand where they stood too: a frame edge left at the refused corridor contradicts the
 # cell geometry, and stage 8 threw `Frames contradict the cell geometry they derive from`. After a refusal the
 # published frames equal the frames derived from the cells.
-# The link eastg to l0 is added for snack-theme ticket 159: with card nodes the reseat was taken (no new short gap), and no reseat was refused;
-# with the second gateway feed into `low` the trial is refused again.
 # Test-only input owned by the review of ticket 157 (cluster D); test/layout/refused-reseat-frames.test.ts reads the model.
 portograph: 2
 layout: { corridorRowOrder: false }
@@ -51,4 +49,3 @@ links:
   - [u2, l2]
   - [westg, l0]
   - [eastg, l1]
-  - [eastg, l0]

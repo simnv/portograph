@@ -110,7 +110,7 @@ describe('part 1: a link across one document tier gap with a rank band between i
 
   it('opens a corridor beside a unit it does not move, though an earlier lane reaches into that unit\'s wall: both chords taken, every gate passes', async () => {
     // Before the fix 7a judged the unmoved `ranked#1` against the lane of link-8 and refused the corridor (span-refused, placement).
-    const { model } = await run(STILL);
+    const { model, base } = await run(STILL);
     for (const id of SPANS) {
       const item = link(model, id);
       expect(item.spanHint, id).toBe(true);
@@ -119,8 +119,14 @@ describe('part 1: a link across one document tier gap with a rank band between i
       expect(model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === id).map(lane => [lane.kind, lane.tier])).toEqual([['span', 2]]);
     }
     expect(model.diagnostics.filter(item => item.code === 'SPAN_CHORD_TAKEN').map(item => item.owners)).toEqual(SPANS.map(id => [{ kind: 'link', id }]));
-    // The two links into one port keep their transit lanes in sub-tier 2.
-    for (const id of ['link-8', 'link-9']) expect(model.lanes.some(lane => lane.owner.kind === 'link' && lane.owner.id === id && lane.tier === 2 && lane.kind !== 'span'), id).toBe(true);
+    // The premise, read where the span round measures: the two links into one port hold transit lanes in sub-tier 2. Snack-theme ticket 159 (an engine
+    // fix, not the card: it holds with stacked nodes): the course round, after the span round, takes link-8 round the outside (the node floor of a
+    // moved end now holds its content, `movedFloor`), so the published model keeps the transit lane of link-9 only; before, the course trial was
+    // refused and both lanes published.
+    const transit = (model: LayoutModel, id: string): boolean => model.lanes.some(lane => lane.owner.kind === 'link' && lane.owner.id === id && lane.tier === 2 && lane.kind !== 'span');
+    for (const id of ['link-8', 'link-9']) expect(transit(base!, id), id).toBe(true);
+    expect(transit(model, 'link-9')).toBe(true);
+    expect(model.diagnostics.filter(item => item.code === 'COURSE_TAKEN').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-8' }]]);
     gates(model);
   }, 60000);
 });

@@ -52,8 +52,9 @@ describe('columns hold their feed axis after 7f', () => {
   // Snack-theme ticket 159. With card nodes the side round offers the left face of b-core for the chord link-2. The chord holds at 7e, and then the
   // title room of 7f (the zone titles push Site B right, the feed title band moves tier 1 down) stands the frame of Site A on it: a move 7f cannot
   // refuse, so the chord stayed straight through the frame and G2 failed. The judge reads the frozen chords now and refuses the trial.
+  // The premise holds with card nodes only (`layout.nodeContent: card`): the same sheet with stacked nodes offers no such side.
   it('refuses a side trial whose held chord 7f stands a foreign frame on, and publishes no blocked chord', async () => {
-    const model = await run();
+    const model = await layout(parse(source.replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(blockedChordsAt(model)).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_BLOCKED')).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED').map(item => item.message))
