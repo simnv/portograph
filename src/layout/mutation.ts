@@ -82,10 +82,12 @@ function protect(model: LayoutModel, baseline: LayoutModel, intermediate = false
 }
 function semantics(model: LayoutModel) {
   return {
-    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'strokeWidth'])),
+    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'fanFamily', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
     meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross', 'meshNodes', 'mesh', 'labelled'])),
+    // Stage 1 decides the fan families from the document alone; a stored record must be the one the document gives (architecture-2 ticket 40, R1).
+    fanFamilies: model.fanFamilies ?? [],
   };
 }
 function topology(model: LayoutModel) {

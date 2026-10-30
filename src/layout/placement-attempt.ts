@@ -1,6 +1,7 @@
-import type { Diagnostic, LayoutModel } from '../model/layout.js';
+import type { Diagnostic, FanFallbackReason, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
-import { crowdedDirectMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
+import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
+import { refuseFanMembers, refuseStemCrowded, titleCrowdedFanMembers } from './fan-admission.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
 import { centreContext, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
@@ -220,16 +221,30 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
   try {
     // A direct member that 7f's later moves bring within the clearance of a fallback's planned part is not unfrozen: the attempt is run again
     // from its start with that member refused (`crowds`, architecture-2 ticket 22). The refusals only grow, so the retries end (R2, R4).
-    const start = clone(draft), refused = new Set<string>();
+    const start = clone(draft), refused = new Set<string>(), fanRefused = new Map<string, FanFallbackReason>();
     for (let retry = 0; ; retry++) {
-      attemptBody(draft, options, refused);
+      attemptBody(draft, options, refused, fanRefused);
       const crowded = crowdedDirectMembers(draft).filter(id => !refused.has(id));
-      if (!crowded.length) break;
+      // A straight fan member is crowded the same way, and refused the same way (architecture-2 ticket 40): it falls back alone, as `crowds`, or
+      // as `stem` when it still passes a sibling fallback's stem. So is one that a group title placed in 7f still meets, as `title`: the title
+      // planner read the chord as a wall and found no room beside it (a title that moves aside, its frame grown, is slice 2).
+      const fans = new Map<string, FanFallbackReason>();
+      if (draft.fanAdmissions !== undefined) {
+        for (const id of titleCrowdedFanMembers(draft)) fans.set(id, 'title');
+        for (const [id, reason] of crowdedFanMembers(draft)) fans.set(id, reason);
+        for (const id of fanRefused.keys()) fans.delete(id);
+      }
+      if (!crowded.length && !fans.size) break;
       if (retry >= DIRECT_RETRIES) {
-        draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
+        if (crowded.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
           message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
+        // The members stay straight as frozen: one that a title still meets is drawn over the title, and G3 fails.
+        const ids = [...fans.keys()].sort(), named = ids.map(id => `${id} (${fans.get(id)})`);
+        if (fans.size) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_MEMBER_CROWDED', owners: ids.map(id => ({ kind: 'link' as const, id })),
+          message: `The fan ${ids.length === 1 ? 'member' : 'members'} ${named.join(', ')} still ${ids.length === 1 ? 'meets' : 'meet'} a planned part, a sibling's stem or a group title after ${DIRECT_RETRIES} retries of 7f and ${ids.length === 1 ? 'stays' : 'stay'} straight; the gates judge.` });
         break;
       }
+      for (const [id, reason] of fans) fanRefused.set(id, reason);
       for (const id of crowded) refused.add(id);
       for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
       Object.assign(draft, clone(start));
@@ -237,7 +252,7 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
   } finally { attemptCounters.in7f--; }
 }
 
-function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: ReadonlySet<string> = new Set()): void {
+function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: ReadonlySet<string> = new Set(), fanRefused: ReadonlyMap<string, FanFallbackReason> = new Map()): void {
   const { abortAt, trace } = options, moves = options.moves !== false;
   const note = (pass: string, verdict: string): void => { if (trace) trace({ pass, revision: revisionOf(draft), verdict }); };
   // The ledger (architecture ticket 13, phase 1): what each step loses and gains, read only when a test or the trace asks for it.
@@ -255,9 +270,14 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // touched, exactly as a reservation change does anywhere else in 7f.
   // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
   abortAt?.();
+  // The fan members a retry refused fall back before anything else is decided on their legs (architecture-2 ticket 40).
+  // A member that passes the stem of a sibling fallback falls back before the freeze too, where the fallbacks' legs stand as they will be drawn.
+  // Each names its own reason, and so does every member of the cascade that follows (`refuseFanMembers`).
+  const fanReasons = draft.fanFamilies === undefined ? new Map<string, FanFallbackReason>() : refuseFanMembers(draft, fanRefused);
+  if (draft.fanFamilies !== undefined) for (const [id, reason] of refuseStemCrowded(draft)) fanReasons.set(id, reason);
   planDirectFamilies(draft, refused);
   note('direct-families', String(draft.directFamilies?.length ?? 0));
-  freezeChords(draft);
+  freezeChords(draft, fanReasons);
   note('freeze-chords', 'done');
   produceGroupLabelBands(draft);
   note('group-label-bands', 'done');

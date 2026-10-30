@@ -56,6 +56,20 @@ export function labelCrossesBorder(label: Area, box: Rect): boolean {
     && label.y >= box.y + half - EPS && bottom(label) <= bottom(box) - half + EPS;
   return !outside && !inside;
 }
+/**
+ * The group boxes the freeze recorded for each straight fan member (architecture-2 ticket 40), keyed by link: G2 excuses these and no other. Only a
+ * member the record calls straight and the freeze holds (`frozenChords`) has an entry, so a record that says more than the geometry excuses nothing.
+ */
+export function fanCrossings(model: LayoutModel): Map<string, Set<string>> {
+  const frozen = new Set(model.frozenChords ?? []);
+  return new Map((model.fanAdmissions ?? []).filter(item => item.mode === 'straight' && frozen.has(item.link)).map(item => [item.link, new Set(item.crosses ?? [])] as const));
+}
+/** The salience of a fan member (CONTEXT.md, *salience*): its class draws faint. A crossing of two members of one family costs the product, 0.09. */
+export const FAINT_SALIENCE = 0.3;
+/** Whether a crossing of two links is faint: both are members of one fan family, straight or fallen back (user ruling Q126). */
+export function faintPair(a: LayoutLink, b: LayoutLink): boolean {
+  return a.fanFamily !== undefined && a.fanFamily === b.fanFamily;
+}
 /** Links a group's or frame's box does not obstruct: attached inside it, or owning a lane reserved in its margin. */
 export function groupConsumers(model: LayoutModel, groupId: string): string[] {
   const frames = model.document.frames ?? {};

@@ -18,7 +18,7 @@ interface Span { x: number; y: number; right: number; bottom: number; measurable
 const REJECT_LIMIT = 2 ** 26;
 const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
-import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, labelArea, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, fanCrossings, groupBoxes, groupConsumers, incident, junctionFan, labelArea, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
 import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../geometry/oriented.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
@@ -305,10 +305,14 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   // segment running along any group edge closer than the edge margin.
   // A frame stands in for its cells here: a cell is never an obstacle (ranked-groups spec, section 2).
   const obstacleBoxes = groupBoxes(model).map(({ id, bounds }) => ({ id, bounds, consumers: new Set(groupConsumers(model, id)) }));
+  const fanBoxes = fanCrossings(model);
   for (const s of routed) {
     for (const group of obstacleBoxes) {
       const box = group.bounds;
-      if (!group.consumers.has(s.link.id) && segmentRect(s.segment, box)) fail('G2', 'through-group', [s.link.id, group.id], 'Routed segment passes through a foreign group');
+      // A straight fan member crosses the boxes the freeze recorded for it, on its one chord only (architecture-2 ticket 40, R5: the record and
+      // the geometry, never a diagnostic); every other box stays a wall to it.
+      const excused = s.link.path?.segments.length === 1 && s.segment.straight === true && fanBoxes.get(s.link.id)?.has(group.id) === true;
+      if (!group.consumers.has(s.link.id) && segmentRect(s.segment, box) && !excused) fail('G2', 'through-group', [s.link.id, group.id], 'Routed segment passes through a foreign group');
       // Inside its own box a link turns in the group's padding; on or outside an edge it keeps the margin.
       const along = (edge: number, low: number, high: number, at: number, from: number, to: number, inner: [number, number]): boolean =>
         !(at > inner[0] + EPS && at < inner[1] - EPS)

@@ -71,6 +71,14 @@ For every link, in this fixed order, from the document only:
    model, after the ranked groups are cells, and reads the document only, so resolving
    `model.document` reproduces it. No geometry until tickets 83 and 84 (`docs/design/mesh-bus.md`,
    Q105, Q106).
+3b. **Fan family** — after the mesh buses, `detectFanFamilies` (`src/resolve/fan-family.ts`) groups the
+   dashed or dotted routed links (no bundle, group-link or bus member, no authored route but `straight`,
+   no shared port, no flank or bar end) whose ends stand on adjacent document tiers in two different
+   units (outermost frame, canton or free group), by the hub's tier group and the class. A cohort with
+   ≥ 2 hubs, ≥ 3 units and complete incidence is a family: `model.fanFamilies`, `link.fanFamily`,
+   `FAN_FAMILY`. A link two families claim declines both (`FAN_FAMILY_DECLINED`). Nothing is written on a
+   sheet with no family. It reads the document only, so resolving `model.document` reproduces it. The
+   admission, the reservation and the score are in `docs/design/routed-chords.md` Section 16 (ticket 40).
 4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ) that
    leave each shared node on one authored side; links whose authored sides differ at a shared node
    form separate cohorts, and a cohort of one stays routed with a `BUNDLE_MIXED_SIDES` warning

@@ -218,6 +218,8 @@ export interface LayoutLink {
   groupLink?: string;
   /** The mesh bus (`meshBuses`) this overlay link is a member of (docs/design/mesh-bus.md); its ends sit on the bus ports. */
   meshBus?: string;
+  /** The fan family (`fanFamilies`) this routed link is a member of (architecture-2 ticket 40); stage 1 sets it and nothing later changes it. */
+  fanFamily?: string;
   /** Routing must first resolve group endpoints to concrete port refs. */
   attachments?: { from: PortRef; to: PortRef };
   path?: LayoutPath;
@@ -546,6 +548,17 @@ export interface LayoutModel {
    */
   directFamilies?: DirectFamily[];
   /**
+   * The fan families of the sheet (architecture-2 ticket 40, CONTEXT.md *fan family*): decided in stage 1 from the document only, and never
+   * decided again. Absent = the document has none (a sheet with none keeps its bytes). Resolving `document` reproduces it.
+   */
+  fanFamilies?: FanFamily[];
+  /**
+   * How the freeze (the start of 7f) drew each member of every fan family: one entry per member, in the order of `fanFamilies`. Absent before the
+   * freeze, and on a sheet with no fan family. A straight member is in `frozenChords` and names the group boxes it crosses (the only boxes G2
+   * excuses for it); an orthogonal member names its reason, and no later rule offers it the chord.
+   */
+  fanAdmissions?: FanAdmission[];
+  /**
    * The fan edge keepers held when final placement freezes, after 7f (architecture-2 ticket 18): the fan's port id, the member's link
    * and the depth it turns at out of the port's side. From then on a replay takes the recorded member at the recorded depth or none, and
    * never derives either again from a box. Present only when a keeper is held. Before `freeze.placement` the field is not read and every
@@ -644,6 +657,40 @@ export interface DirectFamily {
   portPlan: { link: string; index: number; upper: { port: string; side: 'bottom' }; lower: { port: string; side: 'top' } }[];
   /** `direct`, or `orthogonal` with the reason (`unplanned` is never published: an untriggered family is not recorded). */
   members: { link: string; mode: 'direct' | 'orthogonal' | 'unplanned'; reason?: DirectMemberReason }[];
+}
+
+/**
+ * One fan family (`LayoutModel.fanFamilies`, architecture-2 ticket 40): the routed links of one faint (dashed or dotted) class that leave the
+ * hubs of one tier group for framed units elsewhere, when two hubs or more each reach every one of three units or more.
+ */
+export interface FanFamily {
+  /** `fan:<group>:<class>`. */
+  id: string;
+  /** The tier group (a document group) the hubs stand in. */
+  group: string;
+  class: string;
+  /** The hub nodes, sorted. */
+  hubs: string[];
+  /** The far units, sorted: the outermost frame, canton or free group that holds each far end. */
+  units: string[];
+  /** One entry per member link, sorted by link id: its hub end and the unit of its far end. */
+  members: { link: string; hub: string; unit: string }[];
+}
+/**
+ * Why a fan member stays orthogonal: a chord refusal of its own (at the freeze, or in the cascade after a sibling fell back: `chord`, `leg`,
+ * `title`), `family` (the joint search left it out), `stem` (it passes the stem of a sibling fallback, at the freeze or at the end of 7f),
+ * `crowds` (7f brought it within the clearance of a planned part) or `title` (a group title placed in 7f still meets it).
+ */
+export type FanFallbackReason = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg' | 'family' | 'stem' | 'crowds';
+/** How the freeze drew one fan member (`LayoutModel.fanAdmissions`). */
+export interface FanAdmission {
+  link: string;
+  family: string;
+  mode: 'straight' | 'orthogonal';
+  /** Only on an orthogonal member. */
+  reason?: FanFallbackReason;
+  /** Only on a straight member: the ids of the group boxes (`groupBoxes`) that hold neither end and that its chord crosses at the freeze, sorted. */
+  crosses?: string[];
 }
 
 /** One edge's room across a run (`labelPadding`, tickets 21 and 23): the padding from the node bodies to the box edge, and the links (a label's or a track's) it holds. */
