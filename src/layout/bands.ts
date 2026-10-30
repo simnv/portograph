@@ -2003,7 +2003,9 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
     // is known (ticket 66). Each title (keyed by the title that asked, not the cell that grows: one cell can host a member title and a canton title) has an allowance of `LEG_PASSES_PER_TITLE` passes outside the shared budget; a title past it keeps the soft rule.
     // The crossing of a held cross-frame chord in its own title band is a leg for the title (docs/design/routed-chords.md, Section 6): the verdict
     // admitted the chord on the proof that the title host can widen for it (ticket 35, part 2), so its widening takes the same allowance.
-    const legOnly = budget.remaining <= 0 && !planLabels(model, true, false, spent, false).growth;
+    // A spent title still asks for growth when a chord crossing (a hard obstacle) stands in its way, so it is no leg-only title any more: the
+    // budget rule below stalls the plan. Without this the loop would mark it spent again and again and never end.
+    const legOnly = budget.remaining <= 0 && !spentTitles.has(plan.growth.title) && !planLabels(model, true, false, spent, false).growth;
     if (legOnly && (legPasses.get(plan.growth.title) ?? 0) < LEG_PASSES_PER_TITLE) {
       legPasses.set(plan.growth.title, (legPasses.get(plan.growth.title) ?? 0) + 1);
       const stable = routerEntryPoints(model);
