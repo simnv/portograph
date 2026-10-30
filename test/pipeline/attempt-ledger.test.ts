@@ -33,7 +33,8 @@ const row = (name: string, counters: string | undefined, runs: number, attempts:
 
 const ROWS: Row[] = [
   // Phase 4 (the unified order): the base 7f of three-continents now moves a chord (before 0 moves) and loses 2 overlay links in the loop, and the attempt costs more work.
-  row('three-continents', '23/74/54/5', 2, 2, 4, 0, 2, { preCentre: 2, baseChord: 1, base7f: '2/0/0' }),
+  // Verdana metrics (snack-theme ticket 157): the wider text moves three-continents to 21/99/62/5 with 3 place runs and 3 overlay links lost in the base 7f loop (23/74/54/5, 2 runs, 2 lost with Arial).
+  row('three-continents', '21/99/62/5', 3, 2, 4, 0, 2, { preCentre: 2, baseChord: 1, base7f: '3/0/0' }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
   row('a-tier-gap-plan-orders-every-part', '2/56/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
   row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/7/7/3', 1, 1, 1, 0, 0),
@@ -49,7 +50,8 @@ const ROWS: Row[] = [
   row('a-canton-member-frame-slides-off-a-straight-chord', '1/10/7/3', 2, 1, 1, 0, 0),
   row('columns-hold-their-axis-after-7f', '1/19/7/3', 3, 1, 1, 0, 0),
   row('a-canton-band-holds-the-rows-off', '1/7/7/3', 2, 1, 1, 0, 0),
-  row('a-member-title-widens-a-beside-row', '1/7/7/3', 1, 1, 1, 0, 0, { base7f: '0/1/0' }),
+  // Verdana metrics (snack-theme ticket 157): one centring pass fewer (1/7/7/3 with Arial).
+  row('a-member-title-widens-a-beside-row', '1/6/7/3', 1, 1, 1, 0, 0, { base7f: '0/1/0' }),
   // The cost counters (settle, centring passes, copies, replays) of this sheet move with every change to the sweep that seats a flank beside a frame (architecture ticket 19: the
   // centring passes 15 to 13); what the sheet pins is its behaviour: the runs, the attempts, the rounds, no open round, no chord move, and the findings below.
   // Architecture 2, ticket 03: the side trial on this sheet (link-3, a lane hint on up-1.100G#3) is refused at its 7e now, because the far port of the lane is 65 px off the lane x
@@ -60,7 +62,8 @@ const ROWS: Row[] = [
   // The phase-1 fixture: the base 7f chord step moves a group (before this, only NTP among the named sheets did).
   // Phase 3b of ticket 15: the base 7f moved a group and the kept result has no offer, so the unmoved 7f baseline is measured and its offer runs as one extra, refused side trial (3 attempts, 2 place runs; the settled copy 7f kept filters, the unmoved baseline is rebuilt).
   // Architecture 2, ticket 23: the grown overlay port clearance and the separated tracks cost this sheet one settle call, one centring pass and two candidate copies more (14/29/37 to 15/30/39).
-  row('a-chord-step-moves-a-group-off-a-straight-chord', '15/30/39/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
+  // Verdana metrics (snack-theme ticket 157): 13/28/35/6 (15/30/39/6 with Arial).
+  row('a-chord-step-moves-a-group-off-a-straight-chord', '13/28/35/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
 ];
 
 interface Reading { counters: string; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: string; probe: number; preChords: number; preCentre: number; base7f: string; events: AttemptTraceEvent[] }
@@ -90,7 +93,8 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     // No fixture regrows a gap, leaves a gap short, stands a body on a frozen chord or fails to settle its cantons (section 2, "Findings").
     const i = attemptCounters.invalidations;
     // Phase 4: the unified order takes a chord move on three-continents that a later round has to regrow a gap for (1); the others stay at 0.
-    expect([i.gapRegrown, i.shortGapsAfterRounds, i.bodyOnFrozenChord, i.cantonNonConvergence]).toEqual([expected.name === 'three-continents' ? 1 : 0, 0, 0, 0]);
+    // Verdana metrics (snack-theme ticket 157): three-continents regrows no gap now (1 with Arial).
+    expect([i.gapRegrown, i.shortGapsAfterRounds, i.bodyOnFrozenChord, i.cantonNonConvergence]).toEqual([0, 0, 0, 0]);
   }, 60000);
 
   it('traces the step verdicts of the ledger only when a trace is asked for, and the chord step of the phase-1 fixture moves', async () => {
@@ -101,11 +105,12 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     expect(found.events.find(event => event.pass === 'ledger:round-0:chords')?.verdict).toMatch(/^overlay -\d+\/\+\d+ aligned -\d+ blocked \+\d+$/);
   }, 60000);
 
+  // Verdana metrics (snack-theme ticket 157): three-continents 19/19/24 (21/21/31 with Arial), a-chord-step 10/10/13 (12/12/15 with Arial).
   // Phase 2: the replays, the settled copies the chord step judged on, and the rounds of the gap fixed point, where they dropped. Before the phase:
   // Phase 4 raised three-continents to 21/21/31 (more candidates pass the gate of the unified order, each one settled). Ticket 22: a-tier-gap-plan gap rounds 3 to 5 (the crowding round of the direct family). Ticket 23 (the overlay port clearance, separated tracks) raised the chord-step fixture 11/11/14 to 12/12/15. Before it: three-continents 8/7/10, a-tier-gap-plan 1/0/3, two-interleaved 1/0/2, a-tier-gap-grows 1/0/2, canton-member-frame 1/0/2, chord-step fixture 5/4/6.
   it.each([
-    ['three-continents', 21, 21, 31], ['a-tier-gap-plan-orders-every-part', 0, 0, 5], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
-    ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 2], ['a-chord-step-moves-a-group-off-a-straight-chord', 12, 12, 15],
+    ['three-continents', 19, 19, 24], ['a-tier-gap-plan-orders-every-part', 0, 0, 5], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
+    ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 2], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 13],
   ] as const)('derives once: %s replays %i, settled copies %i, gap rounds %i', async (name, replays, trials, gapRounds) => {
     resetAttemptCounters();
     await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });

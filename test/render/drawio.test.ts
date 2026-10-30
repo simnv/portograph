@@ -473,9 +473,9 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
 });
 
 describe('node text', () => {
-  // Arial's own metrics, stated here rather than read from the font table, so the expected
+  // Verdana's own metrics, stated here rather than read from the font table, so the expected
   // positions are independent of the code that produces them.
-  const UNITS_PER_EM = 2048, ASCENT = 1854;
+  const UNITS_PER_EM = 2048, ASCENT = 2059;
   /** The first baseline, one ascent below the box stage 9 measured. */
   const ascentOf = (fontSize: number): number => ASCENT * fontSize / UNITS_PER_EM;
 

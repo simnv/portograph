@@ -462,7 +462,8 @@ const labelSize = (label: LayoutLabel): number => finite(label.fontSize ?? 9);
 /**
  * draw.io's own line pitch for plain text, `round(fontSize × 1.2)`. It takes no `lineHeight` from a
  * style, so a wrapped label keeps its first baseline exact and its further lines move by the
- * difference to the measured pitch: a pixel a line at 7 px type, nothing at 8, 9 or 12 px.
+ * difference to the measured pitch (Verdana: `ceil(1.215 × size)`): a pixel a line at 7, 10, 11 and
+ * 12 px type, nothing at 8 and 9 px.
  */
 const plainPitch = (fontSize: number): number => Math.round(fontSize * 1.2);
 

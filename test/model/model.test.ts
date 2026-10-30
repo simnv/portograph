@@ -55,7 +55,7 @@ function handBuiltModel(): LayoutModel {
   model.labels.push({
     id: 'a-label', owner: { kind: 'node', id: 'a' }, layer: 'routed',
     text: 'A', bounds: { x: 20, y: 10, width: 8, height: 12 },
-    role: 'node', fontFamily: 'Arial', fontSize: 12, fontWeight: 700,
+    role: 'node', fontFamily: 'Verdana', fontSize: 12, fontWeight: 700,
     lineHeight: 14, lines: ['A'], textRotation: 0,
   });
   model.labels.push({

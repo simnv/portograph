@@ -10,7 +10,7 @@ import { iconKey, iconPath } from '../profiles/network/icons.js';
 import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
 import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, labelArea, validate } from '../score/model.js';
-import { measureText } from '../text/index.js';
+import { FONT_FAMILY, measureText } from '../text/index.js';
 import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { dotEnds } from './anonymous-end.js';
@@ -162,7 +162,7 @@ function textElement(label: LayoutLabel, locks: GeometryLocks, structural: strin
   const title = label.tooltip !== undefined && label.tooltip !== label.text
     ? element('title', {}, escapeText(label.tooltip)) : '';
   return element('text', {
-    class: classes(structural, extra, locks.font(label.fontFamily ?? 'Arial, Helvetica, sans-serif', label.fontSize ?? 9, label.fontWeight ?? 400)),
+    class: classes(structural, extra, locks.font(label.fontFamily ?? FONT_FAMILY, label.fontSize ?? 9, label.fontWeight ?? 400)),
     'data-owner': owner,
     'text-anchor': 'middle',
     ...(rotated ? { transform: `rotate(${num(angle)} ${num(middle.x)} ${num(middle.y)})` } : {}),

@@ -1,64 +1,64 @@
 {
-  "fontFamily": "Arial",
+  "fontFamily": "Verdana",
   "fontKerning": "none",
   "fontVariantLigatures": "none",
-  "browser": "Google Chrome 153.0.8010.37",
+  "browser": "Google Chrome 156.0.8078.74",
   "samples": [
     {
       "text": "100G",
       "fontSize": 8,
       "weight": 400,
-      "width": 19.578125,
-      "height": 9
+      "width": 21.46875,
+      "height": 10
     },
     {
       "text": "100G",
       "fontSize": 8,
       "weight": 700,
-      "width": 19.578125,
-      "height": 9
+      "width": 23.5625,
+      "height": 10
     },
     {
       "text": "WWWiii",
       "fontSize": 12,
       "weight": 400,
-      "width": 41.984375,
-      "height": 14
+      "width": 45.484375,
+      "height": 15
     },
     {
       "text": "WWWiii",
       "fontSize": 12,
       "weight": 700,
-      "width": 43.984375,
-      "height": 14
+      "width": 52.9375,
+      "height": 15
     },
     {
       "text": "Провайдеры / Контрагенты",
       "fontSize": 12,
       "weight": 400,
-      "width": 151.640625,
-      "height": 14
+      "width": 171.125,
+      "height": 15
     },
     {
       "text": "Провайдеры / Контрагенты",
       "fontSize": 12,
       "weight": 700,
-      "width": 163.421875,
-      "height": 14
+      "width": 193.453125,
+      "height": 15
     },
     {
       "text": "AV",
       "fontSize": 12,
       "weight": 400,
-      "width": 16.033203125,
-      "height": 14
+      "width": 16.40625,
+      "height": 15
     },
     {
       "text": "AV",
       "fontSize": 12,
       "weight": 700,
-      "width": 16.671875,
-      "height": 14
+      "width": 18.484375,
+      "height": 15
     }
   ]
 }

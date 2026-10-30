@@ -4,7 +4,7 @@
  * Usage: npm run png -- <in.svg> [out.png] [--width N]
  *
  * The output defaults to the input path with `.png`; the width defaults to 1600 px.
- * System fonts load, so the render's `Arial, Helvetica, sans-serif` resolves to a real face.
+ * System fonts load, so the render's `Verdana` resolves to a real face.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
@@ -33,7 +33,7 @@ const output = given ?? input.replace(/\.svg$/i, '') + '.png';
 const resvg = new Resvg(readFileSync(input), {
   background: 'white',
   fitTo: { mode: 'width', value: width },
-  font: { loadSystemFonts: true, defaultFontFamily: 'Arial' },
+  font: { loadSystemFonts: true, defaultFontFamily: 'Verdana' },
 });
 writeFileSync(output, resvg.render().asPng());
 console.log(`wrote ${output}`);

@@ -172,7 +172,7 @@ describe('geometry is consumed, never recomputed', () => {
     const text = elements(block(svg, 'a.100G#1'), 'text')[0]!;
     const font = text['class']!.split(' ').find(token => token.startsWith('pg-f-'))!;
     expect(font).toBe('pg-f-8-400');
-    expect(svg).toContain(`.${font}{font-family:Arial, Helvetica, sans-serif!important;font-size:8px!important;font-weight:400!important;`);
+    expect(svg).toContain(`.${font}{font-family:Verdana!important;font-size:8px!important;font-weight:400!important;`);
   });
 
   it('uses the stroke width score measures, for every element', () => {
@@ -261,7 +261,7 @@ describe('geometry is consumed, never recomputed', () => {
     const model = scene({
       nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 60, height: 40 } }], title: hostile,
       labels: [{ id: 'node:a', owner: { kind: 'node', id: 'a' }, layer: 'routed', role: 'node',
-        text: hostile, lines: [hostile], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9,
+        text: hostile, lines: [hostile], fontFamily: 'Verdana', fontSize: 9,
         fontWeight: 700, lineHeight: 11, bounds: { x: 5, y: 15, width: 50, height: 11 } }],
     });
     const svg = render(model);
@@ -285,7 +285,7 @@ describe('geometry is consumed, never recomputed', () => {
       links: [{ id: 'l', from: 'a', to: 'b', points: [{ x: 40, y: 20 }, { x: 200, y: 20 }], label: 'Too long to fit' }],
       labels: [{ id: 'label:link:l', owner: { kind: 'link', id: 'l' }, layer: 'routed', role: 'link',
         text: 'Too long to fit', tooltip: 'Too long to fit', omitted: true,
-        fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 400, lineHeight: 11 }],
+        fontFamily: 'Verdana', fontSize: 9, fontWeight: 400, lineHeight: 11 }],
     });
     model.links[0]!.groupLink = 'group-link-1';
     model.groupLinks.push({ id: 'group-link-1', owner: { kind: 'group-link', id: 'group-link-1' },
@@ -314,7 +314,7 @@ describe('escaping', () => {
       nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 60, height: 40 }, label: hostile }],
       title: hostile,
       labels: [{ id: 'node:a', owner: { kind: 'node', id: 'a' }, layer: 'routed', role: 'node', text: hostile,
-        lines: [hostile], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 700, lineHeight: 11,
+        lines: [hostile], fontFamily: 'Verdana', fontSize: 9, fontWeight: 700, lineHeight: 11,
         bounds: { x: 5, y: 15, width: 50, height: 11 } }],
     });
     const svg = render(model);
@@ -382,7 +382,7 @@ describe('document CSS', () => {
     const model = scene({ nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 60, height: 40 }, class: 'router' }],
       css: filtered,
       labels: [{ id: 'node:a', owner: { kind: 'node', id: 'a' }, layer: 'routed', role: 'node', text: 'a',
-        lines: ['a'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 700, lineHeight: 11,
+        lines: ['a'], fontFamily: 'Verdana', fontSize: 9, fontWeight: 700, lineHeight: 11,
         bounds: { x: 5, y: 15, width: 20, height: 11 } }] });
     const svg = render(model);
     expect(svg).toContain('fill: #123456');
@@ -394,7 +394,7 @@ describe('document CSS', () => {
   it('rejects a stored font family that could break out of the style sheet', () => {
     const model = scene({ nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 60, height: 40 } }],
       labels: [{ id: 'node:a', owner: { kind: 'node', id: 'a' }, layer: 'routed', role: 'node', text: 'a',
-        lines: ['a'], fontFamily: 'Arial}.x{fill:red', fontSize: 9, fontWeight: 700, lineHeight: 11,
+        lines: ['a'], fontFamily: 'Verdana}.x{fill:red', fontSize: 9, fontWeight: 700, lineHeight: 11,
         bounds: { x: 5, y: 15, width: 20, height: 11 } }] });
     expect(() => render(model)).toThrow(/Font family/);
   });
@@ -411,11 +411,11 @@ describe('overlay layer', () => {
     links: [{ id: 'routed-1', from: 'a', to: 'b', points: [{ x: 40, y: 10 }, { x: 200, y: 10 }], label: 'wire' },
       { id: 'flow-1', from: 'a', to: 'b', points: [{ x: 40, y: 30 }, { x: 200, y: 30 }], class: 'flow', layer: 'overlay' }],
     labels: [{ id: 'label:link:routed-1', owner: { kind: 'link', id: 'routed-1' }, layer: 'routed', role: 'link',
-      text: 'wire', lines: ['wire'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 400,
+      text: 'wire', lines: ['wire'], fontFamily: 'Verdana', fontSize: 9, fontWeight: 400,
       lineHeight: 11, bounds: { x: 110, y: 0, width: 20, height: 11 },
       support: { kind: 'link-segment', link: 'routed-1', segment: 0 } },
     { id: 'label:group:row-group', owner: { kind: 'group', id: 'row-group' }, layer: 'routed', role: 'group',
-      text: 'Row group', lines: ['Row group'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 12,
+      text: 'Row group', lines: ['Row group'], fontFamily: 'Verdana', fontSize: 12,
       fontWeight: 700, lineHeight: 14, bounds: { x: -12, y: -16, width: 50, height: 14 } }],
     ...(overlays ? { overlays } : {}),
   });
@@ -501,7 +501,7 @@ describe('internal overlay mask', () => {
     links: [{ id: 'flow-1', from: 'a', to: 'c', class: 'flow', layer: 'overlay',
       points: [{ x: 40, y: 20 }, { x: 200, y: 20 }] }],
     labels: [{ id: 'label:group:row-group', owner: { kind: 'group', id: 'row-group' }, layer: 'routed',
-      role: 'group', text: 'Row group', lines: ['Row group'], fontFamily: 'Arial, Helvetica, sans-serif',
+      role: 'group', text: 'Row group', lines: ['Row group'], fontFamily: 'Verdana',
       fontSize: 12, fontWeight: 700, lineHeight: 14, bounds: { x: -12, y: -16, width: 50, height: 14 } }],
     ...(css === undefined ? {} : { css }),
   });
@@ -590,7 +590,7 @@ describe('counted merge runs', () => {
         path: { owner, layer: 'routed', fixed: true,
           segments: [{ from: { x: 30, y: 80 }, to: { x: 30, y: 160 }, owner }] } }] });
     model.labels.push({ id: 'label:multiplicity:merge:bundle-1:0', owner, layer: 'routed', role: 'link',
-      text: '2', lines: ['2'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 400,
+      text: '2', lines: ['2'], fontFamily: 'Verdana', fontSize: 9, fontWeight: 400,
       lineHeight: 11, bounds: { x: 36, y: 115, width: 6, height: 11 },
       support: { kind: 'merge-run', bundle: 'bundle-1', run: 'merge:bundle-1:0' } });
     return model;
@@ -691,7 +691,7 @@ describe('declared bar crossings', () => {
         { id: 'flow', from: 'upper', to: 'aside', class: 'flow', layer: 'overlay',
           points: [{ x: 300, y: 130 }, { x: 360, y: 130 }] }],
       labels: [{ id: 'label:node:upper', owner: { kind: 'node', id: 'upper' }, layer: 'routed', role: 'node',
-        text: 'EBB-01', lines: ['EBB-01'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 12,
+        text: 'EBB-01', lines: ['EBB-01'], fontFamily: 'Verdana', fontSize: 12,
         fontWeight: 700, lineHeight: 14, bounds: { x: 60, y: 113, width: 44, height: 14 } },
       pillLabel('upper', '100G', 1, { x: 35, y: 92, width: 10, height: 16 }, -90)],
     });
