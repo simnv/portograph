@@ -778,7 +778,12 @@ stable state: it neither keeps the run going nor raises `PLACEMENT_NON_CONVERGEN
 reported only when the last pass still changes geometry, or when the geometry stands and the check
 that publication runs (`centreViolations`, run on a context built where the model now stands) still finds a
 port the step would move. On non-convergence keep the last state and report. A run that stands at a
-fixed point of a context built earlier is run again on a fresh context. A step that keeps no target, and leaves every one of its feeds no
+fixed point of a context built earlier is run again on a fresh context. The windows of the overlay barycentre are placed once
+after the passes (ticket 143). A window that moves a partner moves the ends of its overlay chords, and a chord is an overlay
+stop of the alignment: it can free a growth the passes declined, or stop one they kept. So when the windows move geometry,
+the publication check runs again. An alignment it finds off its feed is settled by the passes the budget has left, and the
+windows are placed once more. If the check still finds one, the stall is reported (`PLACEMENT_NON_CONVERGENCE`, ADR-0010)
+(snack-theme ticket 157). A step that keeps no target, and leaves every one of its feeds no
 nearer its x than it found it, puts its group back where it started and packs the tier instead: the
 passes are a solver, and a step that solves nothing only gives the next pass a new position to chase
 the barycentre from. A transit feed is exempt, because its x is a reserved lane the child must reach

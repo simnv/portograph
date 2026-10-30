@@ -816,12 +816,24 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   recentreSeatedFaces(model, seated, feedPorts(model));
   // The windows of the overlay barycentre are read once, where centring has left the partners (ticket 143): a window read in a pass
   // is read on geometry that a later step moves.
-  if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
-  // The seated faces and the overlay barycentre above can widen a column after the moves were taken. Read once more; a move given back is settled by the
-  // passes the budget has left (none left: the publication check judges it, ADR-0010).
-  if (withdrawRecorded(model)) {
+  const overlayFinal = (): boolean => {
+    if (selectAnchorTier(model) === undefined) return false;
+    const before = geometry(model);
+    timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+    return geometry(model).some((value, i) => Math.abs(value - before[i]!) > 0.5);
+  };
+  // A partner the windows move carries the end of its overlay chords, and a chord is an overlay stop of the alignment (7c): a chord that moves
+  // off a body frees a growth the passes declined, and one that moves onto it stops a growth they kept. The passes stood at a fixed point
+  // the publication check confirmed; a model the windows moved is checked again (snack-theme ticket 157).
+  const unsettled = (moved: boolean): boolean => moved && timed('centre-violations', () => centreViolations(model, true)).length > 0;
+  let moved = overlayFinal();
+  // The seated faces and the overlay barycentre above can widen a column after the moves were taken. Read once more; a move given back, or an
+  // alignment the windows unsettled, is settled by the passes the budget has left (none left: the stall is reported, ADR-0010).
+  if (withdrawRecorded(model) || unsettled(moved)) {
     timed('centre-passes', () => centrePasses(model, budget));
-    if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+    moved = overlayFinal();
+    // The windows read once more after the passes; an alignment they unsettle again is a stall the passes cannot see (ADR-0010).
+    if (unsettled(moved)) reportStall(model, [], 'Centering left an alignment off its feed after the overlay windows moved a partner; routing and the final gates decide the retained geometry.');
   }
   refreshWindowDeclines(model);
 }
