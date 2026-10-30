@@ -6,7 +6,9 @@
 # The node labels are short (G1, M2, ...). With the long labels of `a-transit-inside-a-canton`, card nodes are so wide that the
 # course round sends link-4 and link-5 round the outside on perimeter lanes, and the held transit lane is gone.
 # Test-only input owned by canton-groups ticket 56; test/pipeline/canton-walls.test.ts reads the layout.
+# Card nodes (`layout.nodeContent: card`, snack-theme ticket 159): the premise was forged on the card geometry; a stacked document is narrower.
 portograph: 2
+layout: { nodeContent: card }
 groups:
   west: { label: West }
   top: { tier: 0, label: Top }

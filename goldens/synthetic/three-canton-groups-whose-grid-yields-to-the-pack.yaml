@@ -5,7 +5,9 @@
 # Re-forged for snack-theme ticket 159: the nodes of `top-1` to `top-3` and of `mpls` have no class, so they are cards with no icon
 # tile. With the tiles, card nodes widen those rows so far that the grid no longer meets the packed row, and the yield is gone.
 # Test-only input owned by canton-groups ticket 136; test/pipeline/canton-walls.test.ts reads the layout.
+# Card nodes (`layout.nodeContent: card`, snack-theme ticket 159): the premise was forged on the card geometry; a stacked document is narrower.
 portograph: 2
+layout: { nodeContent: card }
 groups:
   a: { label: Canton A }
   b: { label: Canton B }

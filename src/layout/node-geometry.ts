@@ -14,7 +14,7 @@ export function rebuildNodeGeometry(draft: LayoutModel, nodeIds: readonly string
     const node = draft.nodes[id]!, box = node.bounds!, insets = node.contentInsets!;
     if (!box || !insets) throw new Error(`Missing node geometry for ${id}`);
     const owner = { kind: 'node', id } as const;
-    const content = measureNodeContent(draft.document.nodes[id]!, draft.document.groups, insets);
+    const content = measureNodeContent(draft.document.nodes[id]!, draft.document, insets);
     if (content.width > box.width + PLACEMENT_EPS || content.height > box.height + PLACEMENT_EPS) throw new Error(`Content exceeds node ${id}`);
     delete node.icon;
     for (const { block, bounds } of placeNodeContent(content, box, insets)) {

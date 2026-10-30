@@ -5,7 +5,9 @@
 # (`riserHostGrowth`): `w-zone-a#2`, inside the `west` canton. Hosted by the nearer centre, the `east` canton grew across the canton gap to the
 # lane and the two canton frames overlapped (G9).
 # Test-only input owned by snack-theme ticket 159; test/pipeline/frame-pack-riser.test.ts reads it.
+# Card nodes (`layout.nodeContent: card`, snack-theme ticket 159): the premise was forged on the card geometry; a stacked document is narrower.
 portograph: 2
+layout: { nodeContent: card }
 groups:
   west: { label: West }
   east: { label: East }

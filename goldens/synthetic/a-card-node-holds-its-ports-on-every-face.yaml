@@ -10,10 +10,11 @@
 #   crowd    long pills on all four faces: every inset grows, the card is still one block;
 #   plain    no description: no subtitle line and no 2 px gap, so the card is shorter;
 #   bare     no icon (`icon: ""`): no tile and no gap, the text block alone is centred.
-# The ticket's eighth case, a profile class overridden to `stacked`, is not a document field: the shipped profile carries no override
-# until the owner decides after the full-set measure, so test/layout/node-content.test.ts covers it with a stated class table.
+# `layout: { nodeContent: card }` is the switch: without it the document is stacked. The ticket's eighth case, a profile class overridden to
+# `stacked`, is not a document field: the shipped profile carries no override, so test/layout/node-content.test.ts covers it with a stated class table.
 # Test-only input owned by snack-theme ticket 159; test/layout/node-content.test.ts reads it.
 portograph: 2
+layout: { nodeContent: card }
 groups:
   edge: { tier: 0, label: Edge }
   access: { tier: 1, label: Access }

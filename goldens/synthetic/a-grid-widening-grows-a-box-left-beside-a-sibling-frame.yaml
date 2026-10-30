@@ -6,7 +6,9 @@
 # 159): with card nodes the core and dist nodes widened, the two top frames stood 88 px apart, and the top core nodes, wider than the edge
 # switches, put the zone cell's box 14 px left of its body; neither premise held.
 # Test-only input; test/pipeline/min-separation-writers.test.ts reads the layout.
+# Card nodes (`layout.nodeContent: card`, snack-theme ticket 159): the premise was forged on the card geometry; a stacked document is narrower.
 portograph: 2
+layout: { nodeContent: card }
 groups:
   top-a: { tier: 0, label: Site A }
   top-a-zone: { parent: top-a, label: Zone A }

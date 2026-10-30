@@ -6,7 +6,9 @@
 # move guard: `w-site-b` stays, and `w-site-a` closes up to it from the left, so the two site frames stand 40 px apart, every gate passes and no
 # `FRAME_PACK_HELD` remains.
 # Test-only input owned by snack-theme ticket 159; test/pipeline/frame-pack-riser.test.ts reads it.
+# Card nodes (`layout.nodeContent: card`, snack-theme ticket 159): the premise was forged on the card geometry; a stacked document is narrower.
 portograph: 2
+layout: { nodeContent: card }
 groups:
   west: { label: West }
   east: { label: East }

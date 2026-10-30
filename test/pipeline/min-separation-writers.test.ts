@@ -51,11 +51,9 @@ it.each(SHEETS)('%s publishes no minimum-separation finding', async name => {
 // them with the box. A frame reaches the bodies of its cells (`cellReach`, 20 px past the outermost body), so `framesAfter` moves the bodies only by
 // the shift the stage gives them. On this sheet `top-b-zone#1` is a cell of frame `top-b`, which stands a band gap right of `top-a`: grown 10 px left
 // with its bodies in place, the frame keeps its edge (the bodies still reach farther than the box) and the widening is not refused. Moved 10 px with
-// its bodies, the frame would stand 10 px closer to `top-a`, and the guard says so. Snack-theme ticket 159: on a-chain-of-tiers-packs-over-its-feeds-final-x
-// the card nodes put `top-b` 88 px from `top-a` (old premise: a band gap) and the cell box 14 px left of its body (old premise: at its body), so neither
-// guard call broke a separation. The sheet is now a copy with short core, dist and top core labels, where both premises hold again.
+// its bodies, the frame would stand 10 px closer to `top-a`, and the guard says so.
 it('a grid widening that grows a box left is not refused while the frames keep their gap', async () => {
-  const yaml = readFileSync(new URL('../../goldens/synthetic/a-grid-widening-grows-a-box-left-beside-a-sibling-frame.yaml', import.meta.url), 'utf8');
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-chain-of-tiers-packs-over-its-feeds-final-x.yaml', import.meta.url), 'utf8');
   const model = JSON.parse(JSON.stringify(await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }))) as LayoutModel;
   const group = model.groups['top-b-zone#1']!, box = { ...group.bounds! };
   const bounds = { ...box, x: box.x - 10, width: box.width + 10 };

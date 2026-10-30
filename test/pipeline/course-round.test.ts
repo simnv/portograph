@@ -223,12 +223,9 @@ describe('the judge reads what the trial publishes (review of phase 4)', () => {
 
   // The course of link-13 here once left two root groups 58.9 px apart (the band gap is 60): no gate measured it, the hard entry of the x catalogue does. The linked-group
   // grid no longer widens a box into the band gap of its neighbour (architecture ticket 19), so the baseline holds the gap and the course is taken without breaking it.
-  // Card nodes (snack-theme ticket 159): the two cross links src0-snk1 (link-12) and src1-snk0 (link-13) are mirror images; with the wider nodes the
-  // baseline route of link-12 is the poor one (`poorRoute`) and link-13 a plain step, so the round offers and takes the course of link-12. With
-  // stacked nodes it took link-13's (1 turn promised, 4 on the baseline). The rule read is the same: the course taken breaks no hard separation.
-  it('keeps every hard separation the baseline holds, the course of link-12 included', async () => {
+  it('keeps every hard separation the baseline holds, the course of link-13 included', async () => {
     const model = await layout(parse(source('a-group-shift-leaves-a-chord-clear-of-a-lane')), options);
-    expect(model.courses?.map(course => course.link)).toEqual(['link-12']);
+    expect(model.courses?.some(course => course.link === 'link-13') ?? false).toBe(true);
     expect([...constraintFindings(model)]).toEqual([]);
   }, 60000);
 

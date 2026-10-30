@@ -155,7 +155,7 @@ export const span: Round<SpanOffer> = {
 const movedFloor = (env: Env, s: State, id: string, moved: ReadonlyMap<string, Side>): Size | undefined => {
   const size = env.stage3Sizes.get(s.kept7e)?.get(id), node = s.kept7e.nodes[id];
   if (size === undefined || node === undefined) return undefined;
-  const content = measureNodeContent(s.kept7e.document.nodes[id]!, s.kept7e.document.groups, contentInsets(node.ports, port => moved.get(portKey(port.ref)) ?? port.side ?? port.sizingSide));
+  const content = measureNodeContent(s.kept7e.document.nodes[id]!, s.kept7e.document, contentInsets(node.ports, port => moved.get(portKey(port.ref)) ?? port.side ?? port.sizingSide));
   return { width: Math.max(size.width, content.width), height: Math.max(size.height, content.height) };
 };
 /** The node floors a kept side or course ledger keeps: the size of each node with a hinted port (`movedFloor`), so a later trial does not re-size a node a kept trial moved. */

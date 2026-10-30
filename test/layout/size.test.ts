@@ -40,12 +40,10 @@ describe('measured node size', () => {
 
   it('includes multiline descriptions, explicit icons and gaps in content floors', () => {
     const nodes = sized(`{a: {group: g, label: A, description: "one\\ntwo\\nthree", icon: router}, b: {group: g, label: A, description: one, icon: router}, c: {group: g, label: A, description: "one\\ntwo\\nthree"}}`).nodes;
-    // Card geometry (ticket 159): the text block is title 14 + 2 + 11 per subtitle line, beside a 24 px tile, between insets of 10.
-    expect(nodes.a?.contentSize?.height).toBe(69);
-    expect(nodes.a?.size?.height).toBe(69);
-    expect(nodes.a!.contentSize!.height - nodes.b!.contentSize!.height).toBe(22);
-    // No icon: the three-line text block (49) is higher than the tile (24), so the tile adds no height.
-    expect(nodes.a!.contentSize!.height - nodes.c!.contentSize!.height).toBe(0);
+    expect(nodes.a?.contentSize?.height).toBe(78);
+    expect(nodes.a?.size?.height).toBe(78);
+    expect(nodes.a!.contentSize!.height - nodes.b!.contentSize!.height).toBe(18);
+    expect(nodes.a!.contentSize!.height - nodes.c!.contentSize!.height).toBe(16);
   });
 
   it('reserves an asymmetric content inset for inward pill protrusion', () => {
@@ -56,9 +54,8 @@ describe('measured node size', () => {
     expect(node.contentSize!.width).toBeGreaterThan(190);
     expect(node.size!.width).toBeGreaterThanOrEqual(node.contentSize!.width);
     expect(node.sidePitch?.left).toBe(14);
-    // Card geometry (ticket 159): the title is 11 px, line height 14.
-    const measured = measureNodeContent(model.document.nodes.a!, model.document.groups, node.contentInsets);
-    expect(measured.blocks).toEqual([expect.objectContaining({ kind: 'node', text: 'Content', lines: ['Content'], fontSize: 11, fontWeight: 700, lineHeight: 14 })]);
+    const measured = measureNodeContent(model.document.nodes.a!, model.document, node.contentInsets);
+    expect(measured.blocks).toEqual([expect.objectContaining({ kind: 'node', text: 'Content', lines: ['Content'], fontSize: 9, fontWeight: 700, lineHeight: 11 })]);
     expect(measured.width).toBe(node.contentSize!.width);
   });
 
@@ -97,8 +94,7 @@ describe('measured node size', () => {
 
   it('reserves class-default icons, allows explicit overrides and suppresses an empty icon', () => {
     const nodes = sized('{a: {group: g, class: router, label: A}, b: {group: g, class: router, label: A, icon: ""}, c: {group: g, class: custom, label: A, icon: custom}, d: {group: g, class: custom, label: A}}').nodes;
-    // Card geometry (ticket 159): the 24 px tile is 10 px higher than the 14 px title line.
-    expect(nodes.a!.contentSize!.height - nodes.b!.contentSize!.height).toBe(10);
+    expect(nodes.a!.contentSize!.height - nodes.b!.contentSize!.height).toBe(16);
     expect(nodes.c?.contentSize).toEqual(nodes.a?.contentSize);
     expect(nodes.d?.contentSize).toEqual(nodes.b?.contentSize);
     expect(resolveNodeIcon({ class: 'provider' })).toBe('cloud');

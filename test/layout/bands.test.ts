@@ -535,9 +535,7 @@ links: [[a.p, z.p]]`;
     const lane = before.lanes.find(item => item.id === 'lane:"link-1":1')!;
     const pill = before.nodes.t!.ports[0]!.pill!;
     expect(lane.side).toBe('right');
-    // Card nodes (snack-theme ticket 159): t holds an 11 px title and its right inset is the half pill plus 4, so its box is 0.911 px wider than the
-    // stacked node's and the pill stands at [338.10009765625, 404.10009765625] no more. The corridor stays where one widening fits (below).
-    expect([pill.bounds.x, right(pill.bounds)]).toEqual([339.01123046875, 405.01123046875]);
+    expect([pill.bounds.x, right(pill.bounds)]).toEqual([338.10009765625, 404.10009765625]);
     // The headroom allows one 34.328125 px reservation, but not two.
     expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeGreaterThan(34.328125);
     expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeLessThan(68.65625);
@@ -785,20 +783,10 @@ it('settles the linked-group grid again after the tier gap room replay', async (
   // `GROUP_GRID_MAX_GROWTH` rather than inflating the smaller box to the larger (ADR-0012). That
   // is the rule holding, which is what this test is about; before the allowance both boxes were
   // widened past 2 730 px and the union cost nothing.
-  //
-  // Card nodes (snack-theme ticket 159) made the 24-node fan's `sources` wider: the pair asked 0.317 of growth with stacked nodes, only just past the
-  // bound, and now stands within it, so the grid unites it as it unites `access` and `hubs`. The decline is read on the 26-node fan of the same
-  // generator, whose pair asks 0.356 under card nodes: the published model is still the grid's fixed point there, and the pair keeps two extents.
   const box = (id: string) => model.groups[id]!.bounds!;
-  expect(box('sinks').x).toBeCloseTo(box('sources').x, 9);
-  expect(width('sinks')).toBeCloseTo(width('sources'), 9);
-  const wider = run(await throughBundles(generateScaleYaml({ nodes: 26, multiplicity: 3 }).yaml));
-  expect(alignLinkedGroupGrid(copy(wider))).toBe(false);
-  const at = (id: string) => wider.groups[id]!.bounds!;
-  expect(at('access').width).toBeCloseTo(at('hubs').width, 9);
-  const extent = Math.max(right(at('sinks')), right(at('sources'))) - Math.min(at('sinks').x, at('sources').x);
-  expect((extent - Math.min(at('sinks').width, at('sources').width)) / extent).toBeGreaterThan(GROUP_GRID_MAX_GROWTH);
-}, 180000);
+  const extent = Math.max(right(box('sinks')), right(box('sources'))) - Math.min(box('sinks').x, box('sources').x);
+  expect((extent - Math.min(width('sinks'), width('sources'))) / extent).toBeGreaterThan(GROUP_GRID_MAX_GROWTH);
+}, 120000);
 
 it('holds the group that set a band edge exactly after the growth replay', async () => {
   // Stress ticket 13. A band kept `x` and `width = max(right) - x`; reading its right edge back as
@@ -876,9 +864,7 @@ it('stress ticket 18: a corridor that would cross a labelled row link\'s split d
   // still refused.
   const model = run(await throughBundles(corridorCrossesSplit));
   expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(false);
-  // Card nodes (snack-theme ticket 159): [103, 532.40771484375]. Stacked Verdana nodes gave [98.22314453125, 458.58203125] (ticket 157) and Arial
-  // [95.5, 428.61279296875]. The corridor of link-16 moves out by the same 224.859 px under card and stacked nodes: only where it starts moved.
-  expect(model.lanes.map(lane => lane.x)).toEqual([103, 532.40771484375]);
+  expect(model.lanes.map(lane => lane.x)).toEqual([98.22314453125, 458.58203125]); // Verdana metrics (snack-theme ticket 157): [95.5, 428.61279296875] with Arial.
   // The claim itself: the replay asks for nothing more.
   const shortfalls: LinkLabelShortfall[] = [];
   expect(reserveLinkLabelRoom(copy(model), shortfalls)).toBe(false);

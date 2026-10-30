@@ -6,7 +6,9 @@
 # with no error and no centring finding. Expected: the layout is produced, the close-up is refused at least once in the run (read on the
 # verdict of `closeUp`), the node labels stand in node order and a second pass moves nothing.
 # Test-only input owned by snack-theme ticket 159; test/pipeline/canton-close-up.test.ts reads the layout.
+# Card nodes (`layout.nodeContent: card`, snack-theme ticket 159): the premise was forged on the card geometry; a stacked document is narrower.
 portograph: 2
+layout: { nodeContent: card }
 groups:
   a: { label: Canton A }
   b: { label: Canton B }

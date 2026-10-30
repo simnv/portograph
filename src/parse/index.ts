@@ -1,5 +1,6 @@
 import type { Endpoint, GroupContent, Meta, NormalisedDocument, NormalisedLink, NormalisedNode, NormalisedPort, Side } from '../model/index.js';
 import { orderedGroupIds, orderedNodeIds, unsupportedMessage } from '../model/index.js';
+import { NODE_CONTENT_STYLES } from '../profiles/network/content.js';
 import { BOTTOM_CLASSES, TOP_CLASSES } from '../profiles/network/tiers.js';
 import { DEFAULT_THEME_ID, findTheme, unknownThemeMessage } from '../profiles/network/themes.js';
 import { filterCss } from './css.js';
@@ -426,7 +427,11 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
     // Document settings (ticket 152). Only written when the author states them, so a document without the key is unchanged.
     const settings: NonNullable<NormalisedDocument['layout']> = {};
     for (const [key, value] of v.map(root.get('layout'), '$.layout')) {
-      if (key !== 'overlayOverBodies' && key !== 'corridorRowOrder' && key !== 'farEndPull' && key !== 'feedOrder') v.report('UNKNOWN_KEY', `$.layout.${key}`, `Unknown key ${key}`);
+      if (key === 'nodeContent') {
+        const style = v.choice(value, NODE_CONTENT_STYLES, '$.layout.nodeContent');
+        if (style !== undefined) settings.nodeContent = style;
+      }
+      else if (key !== 'overlayOverBodies' && key !== 'corridorRowOrder' && key !== 'farEndPull' && key !== 'feedOrder') v.report('UNKNOWN_KEY', `$.layout.${key}`, `Unknown key ${key}`);
       else if (typeof value !== 'boolean') v.report('INVALID_TYPE', `$.layout.${key}`, 'Expected a boolean');
       else settings[key] = value;
     }

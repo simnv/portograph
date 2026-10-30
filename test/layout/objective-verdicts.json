@@ -1,69 +1,68 @@
 {
   "a-free-client-group-stands-where-its-overlay-links-cross-least": {
-    "attemptCheap": "20 2d8282d431b373bd",
+    "attemptCheap": "21 f9c3fd63787adb59",
     "centreGroupStep": "1 6e2b427c58a1e1e9",
-    "pickTarget": "6 b0f4f8d7d586edce",
-    "sheetGains": "3 daa8328b455f2032",
-    "windowsHold": "3 44eff630b234bd1a"
+    "pickTarget": "6 50ff7494650a87e4",
+    "sheetGains": "3 b9424f11f6b52537",
+    "windowsHold": "3 acefa63a7c5aadc3"
   },
   "a-lower-rank-steps-off-the-chords-of-rank-0": {
-    "attemptCheap": "8 f1d7e439f2bbb385",
-    "centreGroupStep": "22 9a78afe65992e727",
-    "holdsSettled": "2 639c0069003e44e0",
-    "pickRankMove": "1 841ac8915d694cde",
-    "pickTarget": "6 05e0cfe1b5881139",
-    "pullTier": "16 299c30ead527ebd0"
+    "attemptCheap": "8 d700632eef126e2a",
+    "centreGroupStep": "33 9ab31ef8a3fa2d7e",
+    "holdsSettled": "4 9e12ce32cfeac7a0",
+    "pickRankMove": "1 92642c38e827df96",
+    "pickTarget": "8 be32ab79185603c8",
+    "pullTier": "24 8dfd57517d5d3dc4"
   },
   "a-mover-takes-the-position-that-clears-most-chords": {
     "attemptCheap": "3 f26fec4a40bed0de",
     "centreGroupStep": "3 52618acacbccbbe8",
-    "holdsSettled": "1 bbdfd5224577eb85",
-    "pickTarget": "10 9f43aa2e04e91fc7",
-    "sheetGains": "5 9d4dc87d55ae68cd",
-    "windowsHold": "5 06eb3da0f7f66c55"
+    "holdsSettled": "1 753a417fc6b9821f",
+    "pickTarget": "10 ffb0041210a253ec"
   },
   "a-side-hint-moves-a-port-to-a-lateral-side": {
     "centreGroupStep": "1 123fd9e157a59830"
   },
   "a-chord-hint-and-a-lane-hint-never-share-a-batch": {
-    "centreGroupStep": "14 e10eea619c37c69b",
+    "centreGroupStep": "17 2ad08917c70121da",
     "fanRoundHolds": "1 0a22f04442a90cca",
-    "pullTier": "6 b9f09e1f799784b3"
+    "pullTier": "10 b06612ea32ad87db"
   },
   "a-location-router-leaves-a-lateral-side-toward-a-far-provider": {
-    "centreGroupStep": "3 47c1edb3d0dabfa4"
+    "centreGroupStep": "12 a622fea3b2b40907",
+    "judgeTrial": "1 cbf69f5f691d95cd"
   },
   "a-fan-spreads-its-ports-so-its-chords-hold-clearance": {
-    "centreGroupStep": "16 c9d6d88d4fd8c944",
-    "fanRoundHolds": "1 199aacd55f2a8811"
+    "centreGroupStep": "10 50c6bb56fab2345e",
+    "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "three-canton-groups-close-up-to-a-band-gap": {
-    "attemptCheap": "101 edc2f41af3afbe41",
-    "centreGroupStep": "1340 d32e8bcc6f3164fb",
-    "closeUp": "15 9b8e9bac6c90c8ed",
-    "holdsSettled": "16 9cca1f27ad6ea481",
-    "judgeTrial": "1 a1e6bf095e4725f5",
-    "pickRankMove": "2 6cba120d2f977bc6",
-    "pickTarget": "180 2835550eb9dd1951",
-    "pullTier": "396 77c0c9c1555b5891",
-    "sheetGains": "17 5903e7581fefc4cf",
-    "windowsHold": "27 9f160306e9149ea2"
+    "attemptCheap": "138 8d664f3664e2f607",
+    "centreGroupStep": "1038 9d5ebc1390829dec",
+    "closeUp": "11 b12da4205cd45c31",
+    "holdsSettled": "5 f1b2a82dce452f84",
+    "judgeTrial": "1 cbf69f5f691d95cd",
+    "pickRankMove": "4 a5b5aae501436369",
+    "pickTarget": "120 5c676a36c142543d",
+    "pullTier": "264 2154dda2089b1736",
+    "settleKeepOut": "1 c066627feb8e22b9",
+    "sheetGains": "14 3e2c1a0fcd276ca5",
+    "windowsHold": "18 848da8b910355030"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
-    "attemptCheap": "1 9ac80b778456b573",
-    "centreGroupStep": "72 26ee84bcabb1b398",
+    "centreGroupStep": "41 92a0d1a04ec15523",
     "fanRoundHolds": "1 0a22f04442a90cca",
-    "holdsSettled": "1 b597e85274d33f88",
-    "pullTier": "20 3cbe4414f851537f"
+    "pullTier": "16 299c30ead527ebd0"
   },
   "three-continents": {
-    "attemptCheap": "30 64067673083b62dc",
-    "centreGroupStep": "393 4dd1b98d7659810f",
-    "holdsSettled": "6 97fb5762263d6892",
-    "pickTarget": "96 b1101271fe09b4b0",
-    "pullTier": "209 ef0693651dcf0ebe",
-    "sheetGains": "13 8f7e57027e444355",
-    "windowsHold": "34 f378d54abe8d2c74"
+    "attemptCheap": "87 4b0116d2fe83df9a",
+    "centreGroupStep": "2171 91bef5ade4cb3533",
+    "holdsSettled": "16 13f7119fa312a573",
+    "judgeTrial": "1 cb3d96c934f37781",
+    "pickTarget": "282 510c412a49e6fd65",
+    "pullTier": "711 1c59f34140b0b034",
+    "sheetGains": "24 799a7e69a74954ba",
+    "windowsHold": "88 a1292f89daf174ca"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
     "centreGroupStep": "8 a0aee1f9cf73c946",
@@ -72,25 +71,25 @@
   "a-linked-node-steps-out-of-a-straight-chord": {
     "attemptCheap": "2 4c9158be6e09263a",
     "centreGroupStep": "4 e8ab5492e0d707d1",
-    "holdsSettled": "2 ee20896706087124",
-    "pickTarget": "12 e64569ad61d59fdc"
+    "holdsSettled": "2 47fc55890f8a1429",
+    "pickTarget": "12 e6765e397995a2f5"
   },
   "overlay-links-reorder-two-locations": {
-    "centreGroupStep": "152 f9d4b30f8e6f1493",
-    "judgeTrial": "1 cbf69f5f691d95cd",
-    "pullTier": "14 21db44bce8694bff",
-    "pullTierHeld": "13 f33f7b44a0d6c4b5"
+    "centreGroupStep": "157 a8fe2c7c55c9e3cb",
+    "judgeTrial": "1 b9449d780e1a4d74",
+    "pullTier": "14 9d9bb08b1a72f0e0",
+    "pullTierHeld": "9 5805f81ec349b715"
   },
   "an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack": {
     "attemptCheap": "2 0d5ac49bf18f7073",
-    "centreGroupStep": "20 0f107e72c0409d36",
+    "centreGroupStep": "19 4511e80c152a0005",
     "holdsSettled": "1 b0e37b1079e63c37",
     "judgeTrial": "1 91bcbb903350cca7",
     "pickRankMove": "1 66eec4d604677902",
     "pullTier": "14 2001b63e774ad155"
   },
   "a-declined-grown-member-stops-at-an-overlay-chord": {
-    "centreGroupStep": "11 dd35bed4f3dba520",
+    "centreGroupStep": "10 8a8354701d078875",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pickTarget": "5 45b174ea736f8515",
     "pullTier": "6 4aef7fb3deea9c91"

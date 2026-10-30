@@ -53,7 +53,7 @@ export interface NodeClassStyle {
   label: string;
   hue: HueRamp;
   print: { fill: string; glyph: string };
-  /** Overrides the profile's node content style for nodes of this class (ticket 159). Absent: the profile default. No class carries one yet. */
+  /** Overrides the profile's node content style for nodes of this class (ticket 159). Absent: the document's `layout.nodeContent`. No class carries one yet. */
   content?: NodeContentStyle;
 }
 
