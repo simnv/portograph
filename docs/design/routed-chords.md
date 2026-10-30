@@ -127,9 +127,9 @@ never "runs along" an edge. The facing-edge rule (Section 4) is the only edge ru
 
 ## 6. The own title band
 
-**Ticket 162 (ADR-0023) limits this section to an axis chord.** A diagonal chord may cross any group
-title: no strip refuses it, it takes no room from a title, and G3 does not count the crossing. Only a
-vertical (or horizontal) chord, one with no slant, reads the rules below.
+**Ticket 162 (ADR-0023) limits this section to an axis chord.** A diagonal chord (10 degrees or more
+from both axes) may cross any group title: no strip refuses it, it takes no room from a title, and G3
+does not count the crossing. Only a chord within 10 degrees of an axis reads the rules below.
 
 A frame chord refuses every title strip. A cross-frame chord changes one case: the title band of
 its **own end** on the edge the chord leaves through (the end frame's, the parent frame's, the

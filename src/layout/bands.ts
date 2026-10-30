@@ -927,7 +927,7 @@ const GRID_PACK_ROUNDS = 2;
  */
 export function settleKeepOut(model: LayoutModel): boolean {
   const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
-  const short = derivedShortfalls(model);
+  const short = derivedShortfalls(model), saved = geometrySnapshot(model);
   for (let round = 0; round < 8; round++) {
     // The frames after a moved one give way to the geometry the move made, so the sweep is read after the keep-out is applied and
     // both maps are applied together, until neither has anything left.
@@ -951,12 +951,33 @@ export function settleKeepOut(model: LayoutModel): boolean {
   // A sweep that ends with a hard separation (G9) broken or deepened is not made: a unit that does not give way, such as a flank beside the moved row,
   // keeps its band gap, and no close-up runs after this step. Judged once, on the sweep's end, as the frames after a moved one give way a round later
   // (ticket 162 measured a row that a keep-out pushed into its flank).
-  if (worseSeparations(derivedShortfalls(model), short).length > 0) {
-    const moved = [...before].filter(([group, x]) => group.bounds!.x !== x);
-    for (const [group, x] of moved) moveGroup(model, group, x - group.bounds!.x, 0);
-    rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+  const worse = worseSeparations(derivedShortfalls(model), short);
+  if (worse.length > 0) {
+    // Restored exactly as it stood, not moved back: an inverse translation leaves rounding in the boxes and the anchors.
+    const moved = [...before.keys()].filter(group => saved.groups.get(group.id)!.x !== group.bounds!.x).map(group => group.id);
+    restoreGeometry(model, saved);
+    placementWarning(model, 'KEEP_OUT_UNDONE', `The keep-out of 7f was undone: its sweep broke or deepened the hard separations ${worse.join(', ')}; the frames stay in the drop clearance.`,
+      moved, 'group');
   }
   return [...before].some(([group, x]) => group.bounds!.x !== x);
+}
+
+/** The group boxes, node boxes and port anchors as they stand, to restore exactly. */
+type GeometrySnapshot = { groups: Map<string, Rect>; nodes: Map<string, Rect>; anchors: Map<string, (Point | undefined)[]> };
+function geometrySnapshot(model: LayoutModel): GeometrySnapshot {
+  return {
+    groups: new Map(Object.values(model.groups).map(group => [group.id, { ...group.bounds! }])),
+    nodes: new Map(Object.values(model.nodes).map(node => [node.id, { ...node.bounds! }])),
+    anchors: new Map(Object.values(model.nodes).map(node => [node.id, node.ports.map(port => port.anchor && { ...port.anchor })])),
+  };
+}
+function restoreGeometry(model: LayoutModel, saved: GeometrySnapshot): void {
+  for (const group of Object.values(model.groups)) group.bounds = { ...saved.groups.get(group.id)! };
+  for (const node of Object.values(model.nodes)) {
+    node.bounds = { ...saved.nodes.get(node.id)! };
+    node.ports.forEach((port, index) => { const anchor = saved.anchors.get(node.id)![index]; if (anchor) port.anchor = { ...anchor }; });
+  }
+  rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
 }
 
 /**

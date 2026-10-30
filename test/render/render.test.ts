@@ -428,12 +428,13 @@ describe('overlay layer', () => {
     const mask = svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>'));
     const hidden = elements(mask, 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
     for (const box of [model.nodes['a']!.bounds!, model.nodes['b']!.bounds!,
-      model.nodes['a']!.ports[0]!.pill!.bounds,
-      model.labels.find(label => label.role === 'link')!.bounds!]) {
+      model.nodes['a']!.ports[0]!.pill!.bounds]) {
       expect(hidden.some(item => sameRect(item, box))).toBe(true);
     }
-    // A group title is no cutout (ticket 162): its halo breaks a crossing line under its letters.
-    expect(hidden.some(item => sameRect(item, model.labels.find(label => label.role === 'group')!.bounds!))).toBe(false);
+    // A group title and a link label cut no common cutout (ticket 162): each cuts the overlay line it meets, an orthogonal run only,
+    // and a diagonal runs on under the text's halo. Neither meets the overlay line here, so it has no mask of its own.
+    for (const role of ['group', 'link'] as const) expect(hidden.some(item => sameRect(item, model.labels.find(label => label.role === role)!.bounds!))).toBe(false);
+    expect(elements(svg, 'g').find(item => item['data-id'] === 'flow-1')!['mask']).toBeUndefined();
     // The 2 px endpoint marks live above the protected elements, outside the masked group.
     const marks = elements(svg, 'circle');
     expect(marks.map(item => [item['data-owner'], item['data-end'], Number(item['cx']), Number(item['cy']), Number(item['r'])]))
@@ -463,15 +464,19 @@ describe('overlay layer', () => {
 
   it('omits a hidden link label from the mask and from the drawing', () => {
     const model = overlaid();
+    // The label is moved onto the overlay line's level run, so it cuts that run where it meets it (ticket 162).
+    model.labels.find(item => item.role === 'link')!.bounds = { x: 110, y: 25, width: 20, height: 11 };
     const visible = render(model);
     const hidden = render(model, { layers: ['overlay'] });
     const boxOf = (svg: string): Rect[] => {
-      const mask = svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>'));
-      return elements(mask, 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
+      const id = /data-id="flow-1" mask="url\(#([^)]+)\)"/.exec(svg)?.[1];
+      if (id === undefined) return [];
+      const at = svg.indexOf(`<mask id="${id}"`);
+      return elements(svg.slice(at, svg.indexOf('</mask>', at)), 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
     };
-    const label = model.labels.find(item => item.role === 'link')!.bounds!;
-    expect(boxOf(visible).some(box => sameRect(box, label))).toBe(true);
-    expect(boxOf(hidden).some(box => sameRect(box, label))).toBe(false);
+    const half = DEFAULT_STROKE_WIDTHS.path / 2;
+    expect(boxOf(visible).some(box => sameRect(box, { x: 110, y: 30 - half, width: 20, height: 2 * half }))).toBe(true);
+    expect(boxOf(hidden)).toEqual([]);
     expect(hidden).not.toContain('class="link-label"');
     // A hidden routed label must not leave an unexplained gap in the overlay that is displayed.
     expect(hidden).toContain('class="overlay-links"');

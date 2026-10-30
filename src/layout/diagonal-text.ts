@@ -8,9 +8,20 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * It imports no producer, so every reader may import it.
  */
 
-/** A segment with no axis: a straight, non-orthogonal line (an overlay chord, a routed chord, a straight member). */
+/**
+ * The least angle, in degrees, between a diagonal and each axis (the coordinator's ruling on ticket 162). A segment nearer an axis
+ * reads as that axis and keeps the orthogonal rules, so a shallow chord never lies along a label's baseline or a title's letters.
+ */
+export const DIAGONAL_MIN_DEGREES = 10;
+const SLOPE = Math.tan(DIAGONAL_MIN_DEGREES * Math.PI / 180);
+
+/**
+ * A segment that is a diagonal for this rule: a straight line at least `DIAGONAL_MIN_DEGREES` from both axes (an overlay chord, a
+ * routed chord, a straight member).
+ */
 export function isDiagonal(segment: { from: Point; to: Point }): boolean {
-  return Math.abs(segment.to.x - segment.from.x) > PLACEMENT_EPS && Math.abs(segment.to.y - segment.from.y) > PLACEMENT_EPS;
+  const dx = Math.abs(segment.to.x - segment.from.x), dy = Math.abs(segment.to.y - segment.from.y);
+  return dx > PLACEMENT_EPS && dy > PLACEMENT_EPS && dy >= SLOPE * dx - PLACEMENT_EPS && dx >= SLOPE * dy - PLACEMENT_EPS;
 }
 
 /** The text a reader asks about: its role, and its owner where the role alone does not say whose it is. */

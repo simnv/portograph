@@ -16,7 +16,9 @@ line off text that a reader can still read when the line crosses it.
 ## Decision
 
 1. **One predicate.** `diagonalMayCross(segment, text)` in `src/layout/diagonal-text.ts`: the
-   segment is a diagonal (no axis, `isDiagonal`) and the text is a group title or a link's own label
+   segment is a diagonal (`isDiagonal`: at least `DIAGONAL_MIN_DEGREES`, 10 degrees, from both
+   axes; a segment nearer an axis keeps the orthogonal rules, so a shallow chord never lies along a
+   label's baseline; coordinator's ruling in the ticket 162 review) and the text is a group title or a link's own label
    (`crossableText`). Every place that refused, bent, moved or counted a diagonal for such text reads
    it (R1): the title planner (`linkRects`, `chordCrossings`), the chord checks (`titleRefusal`,
    `titleFitsBeside`), the fan admission (`titleCrowdedFanMembers`), the row-path corridor
@@ -26,12 +28,18 @@ line off text that a reader can still read when the line crosses it.
    router's label obstacles (stage 8 routes only orthogonal segments).
 3. **Stage 9 prefers clear space.** A diagonal stays an obstacle on the rungs that count overlays, so
    a label takes a place clear of it when one exists, and one across it before it is shortened.
+   Title placement keeps no such soft preference: the title planner reads no diagonal at all, so a
+   title stands where it would stand with no diagonal on the sheet.
 4. **The halo.** Every text outside node bodies (group titles, link and multiplicity labels, bus
    labels, legend labels) carries an SVG outline under its glyphs (`paint-order: stroke fill`,
    4 px) in the colour behind it: the page with each group fill behind the text laid over it at its
    opacity (`backdropColour`, one function for SVG and draw.io). One rule per depth, in light, dark
-   and print, for each theme. The overlay mask no longer cuts a title out; it still cuts a pill and a
-   link label box.
+   and print, for each theme.
+6. **Masks cut one line each.** A label on its own line cuts that line only (one mask per line,
+   `pg-line-mask-*`); a foreign line, routed or overlay, is not cut by it. A group title or a foreign
+   link label cuts an overlay line only where an orthogonal run of it meets the text: the text box
+   cut to the run's stroke rectangle. A diagonal is never cut by such text; the halo breaks it. The
+   common overlay mask keeps node bodies, pills, multiplicity labels and bus labels.
 5. **draw.io.** A plain-text label has no outline, and `textShadow` with no offset is a soft glow
    that a crossing line shows through (measured with the drawio CLI, 2026-10-31). A text in the
    labels layer takes `labelBackgroundColor` in the colour behind it instead. A group title lies in
@@ -44,4 +52,5 @@ line off text that a reader can still read when the line crosses it.
 - Fixtures whose premise was a title that refuses a slanted leg now mark those legs
   `route: orthogonal` to keep the premise (ticket 162 lists them).
 - The keep-out of 7f, which the new geometry reaches more often, now undoes a sweep that breaks or
-  deepens a hard separation (G9), judged on the frames derived from the moved boxes.
+  deepens a hard separation (G9), judged on the frames derived from the moved boxes. It restores the
+  boxes and anchors exactly as they stood and states `KEEP_OUT_UNDONE`.
