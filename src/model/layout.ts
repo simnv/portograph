@@ -569,6 +569,15 @@ export interface LayoutModel {
    */
   alignedExtents?: Record<string, { low: AlignedExtentEdge; high: AlignedExtentEdge }>;
   /**
+   * The parents below the anchor tier that spread their fed bottom ports over their children (architecture-2 ticket 32, Q120), by node id: the
+   * width the body grew to, the x of each bottom port from the left edge of the body, and how far the row neighbours moved away. Decided once,
+   * in the centre rule, before its first step, by `ALIGNMENT_MAX_GROWTH`, the overlay stops and the window of the parent's tier step (the
+   * reserved lanes, the flanks, the frame columns and the groups after it). One reader, `parentSpread` (`read/parent-spread.ts`). In a model
+   * with a parent tier below the anchor tier: absent = not decided (a later replay spreads nothing and warns `PARENT_SPREADS_UNDECIDED`),
+   * `{}` = decided, no parent spreads. A model with no such tier never has it.
+   */
+  parentSpreads?: Record<string, ParentSpread>;
+  /**
    * Who yields among the labels on diagonal lines (architecture-2 ticket 20, `recordLabelYields`): a key for every described overlay
    * link whose label lies on a diagonal line, with the links whose label bands it keeps clear of ([] = none). Each pair is decided once,
    * in 7f, and never again; 7f and stage 9 read the record. Absent = no label on a diagonal line, or a model before 7f.
@@ -641,6 +650,11 @@ export interface DirectFamily {
 export interface LabelPaddingEntry { room: number; links: string[] }
 /** One edge of an aligned extent (`LayoutModel.alignedExtents`): the edge stands at the x of the anchor-tier `port` plus `offset`. */
 export interface AlignedExtentEdge { port: PortRef; offset: number }
+/**
+ * One parent spread (`LayoutModel.parentSpreads`): the body `width` it grew to, the offset of each of its bottom ports from the left edge of
+ * the body, and the distance its row neighbours moved away from it, those before it to the left (`low`) and those after it to the right (`high`).
+ */
+export interface ParentSpread { width: number; ports: { port: PortRef; offset: number }[]; shift: { low: number; high: number } }
 
 /**
  * A placement promise: the shared run of `link` at `end` leaves the boxes in `exited` along the straight run `from` to `to`, and ends `clearance`
