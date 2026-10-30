@@ -63,6 +63,18 @@ const report = score(model);
 const svg = render(model);
 ```
 
+### Font: Verdana is required
+
+Every sheet is set in Verdana (weights 400 and 700), in the SVG and in the draw.io export, and all
+text is measured from Verdana's glyph advances (`src/text/font-metrics.ts`, numbers only, no font
+files). There is no fallback font, because a fallback has other widths and a label could leave its
+box. Install Verdana on every machine that views or converts a sheet: it ships with macOS and
+Windows; on Linux install it from the `ttf-mscorefonts-installer` package or copy the font files
+into `~/.local/share/fonts`. `portograph render` and `portograph layout` write a `FONT_MISSING`
+warning to stderr when they find no Verdana in the usual font directories. The check is the CLI's
+alone: the library does not read the machine's fonts, so its output depends on the document only.
+`uv run scripts/font-metrics.py` regenerates the table from the macOS font files.
+
 ## Read in this order
 
 1. [`CONTEXT.md`](CONTEXT.md) — the vocabulary and invariants. Everything else uses these words.
