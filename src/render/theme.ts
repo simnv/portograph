@@ -1,6 +1,7 @@
-import { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_ROLES, NETWORK_PORT_STATUS, NETWORK_THEME,
-  nodeBodyFill, nodeClassPaint, washAssignment, washFillAt, washToken, portRolePaint } from '../profiles/network/theme.js';
+import { LEGEND_DEFAULT_CLASS, NETWORK_NODE_CLASSES, washAssignment, washToken, portRolePaint } from '../profiles/network/theme.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
+import { themeById } from '../profiles/network/themes.js';
+import type { Theme } from '../profiles/network/themes.js';
 
 /**
  * Locked geometry properties. `schema.md` forbids a document from changing these, the parser strips
@@ -58,8 +59,8 @@ const token = (value: number): string => String(value).replace(/\./g, '_').repla
  * declarations are those of `ref/theme-handoff/portograph-theme.css` plus its recorded amendments,
  * which a test compares against.
  */
-export function themeRules(mode: ThemeMode): string[] {
-  const paint = NETWORK_THEME[mode];
+export function themeRules(mode: ThemeMode, theme: Theme = themeById(undefined)): string[] {
+  const paint = theme.paint[mode];
   const rules: string[] = [
     `.pg-canvas{fill:${paint.background}}`,
     `.group-box{fill:${paint.group.fill};fill-opacity:${paint.group.fillOpacity};stroke:${paint.group.stroke};stroke-dasharray:${paint.group.dash}}`,
@@ -80,29 +81,29 @@ export function themeRules(mode: ThemeMode): string[] {
     `.overlay-endpoint{fill:${paint.overlay.mark};stroke:none}`,
   ];
   // The role colour lives on the icon tile; the pill takes the class hue. The body takes a faint wash of the class hue.
-  for (const [name, style] of NETWORK_NODE_CLASSES) {
-    const { tile, glyph, pill } = nodeClassPaint(style, mode);
+  for (const [name] of NETWORK_NODE_CLASSES) {
+    const { tile, glyph, pill, body } = theme.classPaint(name, mode)!;
     // `:where()` keeps the wash at the specificity of `.node-body`, so a document `css:` rule on the body wins.
-    rules.push(`.node-body:where(.${name}){fill:${nodeBodyFill(style, mode)}}`);
+    rules.push(`.node-body:where(.${name}){fill:${body}}`);
     rules.push(`.icon-tile.${name}{fill:${tile.fill};stroke:${tile.stroke}}`);
     rules.push(`.node-icon.${name}{stroke:${glyph}}`);
     rules.push(`.pill.${name}{fill:${pill.fill};stroke:${pill.stroke}}`);
     rules.push(`.pill-label.${name}{fill:${pill.text}}`);
   }
-  for (const [name, style] of NETWORK_LINK_CLASSES) {
+  for (const [name, style] of theme.linkClasses) {
     if (name === LEGEND_DEFAULT_CLASS) continue;
     rules.push(`.link-line.${name}{stroke:${style.strokes[mode]}`
       + `${style.dash ? `;stroke-dasharray:${style.dash}` : ''}${style.cap ? `;stroke-linecap:${style.cap}` : ''}}`);
   }
   // A `port.class` role drives the pill fill (the outlined role its stroke); a status drives the
   // stroke; `unused` fades the whole port.
-  for (const [name, style] of NETWORK_PORT_ROLES) {
+  for (const [name, style] of theme.portRoles) {
     const paint = portRolePaint(style, mode);
     if (paint.stroke !== undefined) { rules.push(`.pill.${name}{fill:none;stroke:${paint.stroke}}`); continue; }
     rules.push(`.pill.${name}{fill:${paint.fill}}`);
     rules.push(`.pill-label.${name}{fill:${paint.text}}`);
   }
-  for (const [name, style] of NETWORK_PORT_STATUS) {
+  for (const [name, style] of theme.portStatus) {
     if (style.kind === 'fade') { rules.push(`.port.${name}{opacity:${style.opacity}}`); continue; }
     rules.push(`.pill.${name}{stroke:${style.stroke[mode]}`
       + `${style.dash ? `;stroke-dasharray:${style.dash[mode]}` : ''}${style.fill ? `;fill:${style.fill[mode]}` : ''}}`);
@@ -116,14 +117,14 @@ export function themeRules(mode: ThemeMode): string[] {
 }
 
 /**
- * The network profile theme: the light sheet, then the dark sheet behind `prefers-color-scheme`
+ * The paint sheet of one theme (the default is `network`): the light sheet, then the dark sheet behind `prefers-color-scheme`
  * and the greyscale print sheet behind `print`. A reader that honours neither sees light.
  */
-export function themeCss(): string {
+export function themeCss(theme: Theme = themeById(undefined)): string {
   return [
-    ...themeRules('light'),
-    '@media (prefers-color-scheme: dark){', ...themeRules('dark').map(rule => `  ${rule}`), '}',
-    '@media print{', ...themeRules('print').map(rule => `  ${rule}`), '}',
+    ...themeRules('light', theme),
+    '@media (prefers-color-scheme: dark){', ...themeRules('dark', theme).map(rule => `  ${rule}`), '}',
+    '@media print{', ...themeRules('print', theme).map(rule => `  ${rule}`), '}',
   ].join('\n');
 }
 
@@ -133,13 +134,14 @@ export function themeCss(): string {
  * export takes. `:where()` keeps the rule at the specificity of `.node-body`, and the rules come ahead
  * of the document's own `css:`, so an author rule on the body wins. Same three modes as the theme.
  */
-export function sheetClassWashCss(classAttrs: readonly (string | undefined)[]): string {
+export function sheetClassWashCss(classAttrs: readonly (string | undefined)[], theme: Theme = themeById(undefined)): string {
   const assignment = washAssignment(classAttrs);
   const used = [...new Set(classAttrs.map(attr => washToken(attr)).filter((token): token is string => token !== undefined)
     .map(token => assignment.get(token)).filter((at): at is number => at !== undefined))].sort((a, b) => a - b);
-  if (!used.length) return '';
+  // A theme that keeps a sheet class's body plain (snack) states no wash.
+  if (!used.length || theme.sheetWash(used[0]!, 'light') === undefined) return '';
   const rules = (mode: ThemeMode): string[] => used.map(at =>
-    `.node-body:where(.pg-wash-${at}){fill:${washFillAt(at, mode)}}`);
+    `.node-body:where(.pg-wash-${at}){fill:${theme.sheetWash(at, mode)}}`);
   return [...rules('light'),
     '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
     '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');

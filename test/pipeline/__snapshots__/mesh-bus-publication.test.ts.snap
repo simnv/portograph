@@ -148,8 +148,8 @@ exports[`the bus publishes member paths, scores, renders and exports (ticket 84)
   .node-icon.router{stroke:#ffffff}
   .pill.router{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.router{fill:#000000}
-  .node-body:where(.tbr){fill:#ececed}
-  .icon-tile.tbr{fill:#98989b;stroke:#2b2b2d}
+  .node-body:where(.tbr){fill:#e7e7e8}
+  .icon-tile.tbr{fill:#7a7a7d;stroke:#2b2b2d}
   .node-icon.tbr{stroke:#ffffff}
   .pill.tbr{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.tbr{fill:#000000}
@@ -345,8 +345,8 @@ exports[`the bus publishes member paths, scores, renders and exports (ticket 84)
   .node-icon.router{stroke:#ffffff}
   .pill.router{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.router{fill:#000000}
-  .node-body:where(.tbr){fill:#ececed}
-  .icon-tile.tbr{fill:#98989b;stroke:#2b2b2d}
+  .node-body:where(.tbr){fill:#e7e7e8}
+  .icon-tile.tbr{fill:#7a7a7d;stroke:#2b2b2d}
   .node-icon.tbr{stroke:#ffffff}
   .pill.tbr{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.tbr{fill:#000000}
@@ -534,8 +534,8 @@ exports[`the bus publishes member paths, scores, renders and exports (ticket 84)
   .node-icon.router{stroke:#ffffff}
   .pill.router{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.router{fill:#000000}
-  .node-body:where(.tbr){fill:#ececed}
-  .icon-tile.tbr{fill:#98989b;stroke:#2b2b2d}
+  .node-body:where(.tbr){fill:#e7e7e8}
+  .icon-tile.tbr{fill:#7a7a7d;stroke:#2b2b2d}
   .node-icon.tbr{stroke:#ffffff}
   .pill.tbr{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.tbr{fill:#000000}
@@ -724,8 +724,8 @@ exports[`the bus publishes member paths, scores, renders and exports (ticket 84)
   .node-icon.router{stroke:#ffffff}
   .pill.router{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.router{fill:#000000}
-  .node-body:where(.tbr){fill:#ececed}
-  .icon-tile.tbr{fill:#98989b;stroke:#2b2b2d}
+  .node-body:where(.tbr){fill:#e7e7e8}
+  .icon-tile.tbr{fill:#7a7a7d;stroke:#2b2b2d}
   .node-icon.tbr{stroke:#ffffff}
   .pill.tbr{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.tbr{fill:#000000}
@@ -913,8 +913,8 @@ exports[`the bus publishes member paths, scores, renders and exports (ticket 84)
   .node-icon.router{stroke:#ffffff}
   .pill.router{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.router{fill:#000000}
-  .node-body:where(.tbr){fill:#ececed}
-  .icon-tile.tbr{fill:#98989b;stroke:#2b2b2d}
+  .node-body:where(.tbr){fill:#e7e7e8}
+  .icon-tile.tbr{fill:#7a7a7d;stroke:#2b2b2d}
   .node-icon.tbr{stroke:#ffffff}
   .pill.tbr{fill:#f5f5f8;stroke:#7a7a7d}
   .pill-label.tbr{fill:#000000}

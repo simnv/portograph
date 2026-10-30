@@ -61,7 +61,7 @@ const classStyle = (hue: HueRamp, label: string, print: { fill: string; glyph: s
 export const NETWORK_NODE_CLASSES: readonly (readonly [string, NodeClassStyle])[] = [
   ['provider', classStyle(SLATE, 'Provider', { fill: NEUTRAL[300], glyph: NEUTRAL[900] })],
   ['router', classStyle(TEAL, 'Router', { fill: NEUTRAL[700], glyph: WHITE })],
-  ['tbr', classStyle(INDIGO, 'Transit border router', { fill: NEUTRAL[500], glyph: WHITE })],
+  ['tbr', classStyle(INDIGO, 'Transit border router', { fill: NEUTRAL[600], glyph: WHITE })],
   ['rr', classStyle(WARM, 'Route reflector', { fill: NEUTRAL[900], glyph: WHITE })],
 ];
 
@@ -112,7 +112,7 @@ export function nodeBodyFill(style: NodeClassStyle | undefined, mode: ThemeMode)
 export const WASH_PALETTE: readonly { light: string; dark: string; print: string }[] = [
   { light: SLATE[200], dark: SLATE[800], print: NEUTRAL[300] },
   { light: TEAL[200], dark: TEAL[800], print: NEUTRAL[700] },
-  { light: INDIGO[200], dark: INDIGO[800], print: NEUTRAL[500] },
+  { light: INDIGO[200], dark: INDIGO[800], print: NEUTRAL[600] },
   { light: WARM[200], dark: WARM[800], print: NEUTRAL[900] },
   { light: '#d9ecd6', dark: '#2c4a2b', print: NEUTRAL[400] },
   { light: '#f3dce0', dark: '#5a2c36', print: NEUTRAL[600] },

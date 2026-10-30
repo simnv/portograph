@@ -27,6 +27,9 @@ export { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWO
 export type { FullRamp, HueRamp, LinkClassStyle, Modal, NodeClassStyle, PillPaint, PortRoleStyle, PortStatusStyle, Ramp, ThemeMode,
   ThemePaint }
   from './profiles/network/theme.js';
+export { DEFAULT_THEME_ID, THEMES, THEME_IDS, findTheme, themeById, themeLinkClass, themePortRole, themeWashFill }
+  from './profiles/network/themes.js';
+export type { ClassPaint, Theme } from './profiles/network/themes.js';
 export { render, linkVisible, OVERLAY_ENDPOINT_RADIUS } from './render/index.js';
 export type { RenderOptions } from './render/index.js';
 export { drawio } from './render/drawio.js';
