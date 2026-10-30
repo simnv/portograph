@@ -54,9 +54,15 @@ sum to 0.95; normalising by that total preserves their relative importance. Each
 for every diagram, including empty ones (value 1 where the metric has no subject). Symmetry is
 reported separately and does not contribute to either sum.
 
+**Salience (architecture-2 ticket 40, user ruling Q126).** A fan family's members are dashed or dotted and draw faint
+(salience 0.3, CONTEXT.md). Two members of one family may cross: the crossing costs 0.3 × 0.3 = 0.09, and it is counted
+apart (`metrics.crossings.faint`, the corpus `Xf` column) and left out of `X`. A crossing of a member with any other link
+costs 1. In a PNG a fan member and an overlay line look alike: a fan member is routed, keeps every clearance gate and ends
+on a port face with no endpoint mark; an overlay line has the mark.
+
 | Metric | Formula | Empty-set value | Weight |
 |---|---|---|---|
-| Crossings | `1 − min(1, c / m)`; `c` = crossings outside bundles, `m` = routed links | 1 | 0.30 |
+| Crossings | `1 − min(1, c / m)`; `c` = crossings outside bundles, each weighted by salience (a crossing of two members of one fan family counts 0.09, every other 1), `m` = routed links | 1 | 0.30 |
 | Bends | `1 − min(1, mean bends per routed link / 3)` | 1 | 0.15 |
 | Path continuity | fraction of drawn routed links whose consecutive turns alternate direction (no U-turns); a one-segment link counts as continuous | 1 | 0.10 |
 | Compactness | `Σ node area / bbox area`, computed globally and per group, reported both, scored as the mean | 1 | 0.10 |

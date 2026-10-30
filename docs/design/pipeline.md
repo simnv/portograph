@@ -71,6 +71,14 @@ For every link, in this fixed order, from the document only:
    model, after the ranked groups are cells, and reads the document only, so resolving
    `model.document` reproduces it. No geometry until tickets 83 and 84 (`docs/design/mesh-bus.md`,
    Q105, Q106).
+3b. **Fan family** — after the mesh buses, `detectFanFamilies` (`src/resolve/fan-family.ts`) groups the
+   dashed or dotted routed links (no bundle, group-link or bus member, no authored route but `straight`,
+   no shared port, no flank or bar end) whose ends stand on adjacent document tiers in two different
+   units (outermost frame, canton or free group), by the hub's tier group and the class. A cohort with
+   ≥ 2 hubs, ≥ 3 units and complete incidence is a family: `model.fanFamilies`, `link.fanFamily`,
+   `FAN_FAMILY`. A link two families claim declines both (`FAN_FAMILY_DECLINED`). Nothing is written on a
+   sheet with no family. It reads the document only, so resolving `model.document` reproduces it. The
+   admission, the reservation and the score are in `docs/design/routed-chords.md` Section 16 (ticket 40).
 4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ) that
    leave each shared node on one authored side; links whose authored sides differ at a shared node
    form separate cohorts, and a cohort of one stays routed with a `BUNDLE_MIXED_SIDES` warning
@@ -578,6 +586,8 @@ translations and expand the canvas. Preserve transit source anchors and the grou
 The held groups are one set, `heldSourceGroups`: the group of the authored source of every routed link
 that crosses a tier, a link with a course or a spanning chord included. The lane plans, the span
 corridors and the lane-stage guard read it, so a plan refuses the push the guard would throw on.
+A span corridor judges against the prior lanes of its band only the units it pushes: a unit that does not move crosses no lane it did not
+cross before, and the corridor itself is judged against every prior lane at its own x (architecture-2 ticket 35).
 Plan displacement outward from the insertion gap and propagate it through neighboring groups.
 Repeated pushes publish node positions and anchors from their original coordinates plus the
 final group delta, avoiding accumulated rounding under the exact translation guard.
@@ -761,7 +771,9 @@ Its identity is still the parent port, so one parent port fanning through severa
 to its first child by x and the others fan, as for adjacent feeds. A transit feed never contests a child
 port another feed already owns: it yields with `CENTRE_FAN_REMAINDER` and is excluded from the
 centring barycentre, because contesting it would exhaust the shared budget. Bundle members are
-not transit feeds; 7e owns their geometry. **Parents are authoritative:** parent port x is fixed by stage 5/7a; G is centred
+not transit feeds; 7e owns their geometry. **Parents are authoritative during the steps:** a step never moves a parent port; parent
+port x is fixed by stage 5/7a, and below the anchor tier by the parent spread made once before the first step (below; Q120 reverses
+the old rule "parents are authoritative" there, architecture-2 ticket 32). G is centred
 horizontally under the barycentre of the feed set within the space between the lanes (7a) and
 neighbouring groups; then each child port x := its parent port x. A child port's x is feasible
 only if the child node can be widened to contain it without overlapping a sibling; if not, the
@@ -836,7 +848,35 @@ the centre rule decides; a later replay that finds no record in a model with a c
 members, grows with it. A step whose window still cannot hold the aligned group declines the alignment as a whole and names
 its group and its feed links (`CENTRE_WINDOW_DECLINED`, one warning per group). When centring ends, and again after the last
 move of 7f, the warning names only the links whose child port still stands off the x its seat wants. Below the anchor tier
-nothing is reserved.
+nothing is reserved by that record; a parent there spreads instead (next paragraph).
+
+**A parent below the anchor tier spreads its ports over its children** (architecture-2 ticket 32, Q120). Below the anchor tier the
+child side alone aligns, and a child row cannot put two ports closer than its row gap: where the fed bottom ports of a parent stand
+closer together than the top ports of its children, the drops slanted, and the child row stood under a neighbour of the parent. The
+centre rule therefore spreads such a parent once, at its first run, before its first step and before the aligned extents
+(`reserveParentSpreads`): each fed port goes to the spacing of its child, about the mean of the fed ports, so a block centred on its
+face stays centred (ticket 10). The body grows by the deficit and no further (`alignSide`, bounded by `ALIGNMENT_MAX_GROWTH` and the
+overlay stops, with no sibling bound), the nodes of its row before it move left by the growth on the left, the ones after it right
+by the growth on the right, and the group is clamped into the window the step of the parent's tier gives it (`stepWindow`: the lanes
+and flanks of 7a, the frame columns, the group before it and the room the groups after it reserve). A resize is no translation: the
+group box can come back to its x while its nodes have moved. So the spread is made on the model and judged where it stands
+(`resizeHolds`, `move-reservations.ts`): every reserved lane window and span corridor meets the new box no more than the old one,
+every lane keeps its side, no facing port goes deeper in a riser keep-out, no new wall stands in a corridor or across a trunk
+extension, and every far port that stood on its side lane still does. The child side must hold too: the child group, centred under
+the spread ports, stays inside its own reserved window. A spread that fails any bound is undone whole and named
+(`PARENT_SPREAD_DECLINED`, with the reason). A feed spreads only when it is adjacent, no bundle member or mesh bus, its parent port
+feeds no other child of the step, and no other parent feeds its child node: a child of a complete block (the X) cannot stand under
+two parents, so neither parent spreads over it. A parent in a bar, a flank or a grid keeps its ports. A parent with two or more such
+feeds whose children stand further apart than its ports spreads when the children stand in one group and in the order of its ports;
+otherwise it keeps its ports and is named. The deepest parent tier spreads first, because a spread moves the row that holds the
+children of the tier above. The decision is stored once (`parentSpreads`). While the centre rule runs, `{}` records that no parent
+spreads, so the later runs of the passes on that model (after a wall move is given back) do not decide again; the wide twin of the
+rule is a copy taken before the first run and decides once on its own copy, from the same geometry. The rule drops an empty record
+when it ends, so a sheet that spreads nothing keeps its bytes, and after the rule absent means no spread. Later runs, replays and the
+publication check read the geometry the spread left and never decide again: a replay outside the centre rule spreads nothing. One
+reader, `parentSpread`, holds a spread face where the spread put it in the face recentring (`recentreSeatedFaces`); the width, port
+offsets and net row shift of an entry are a record for diagnostics and tests, read by no rule. A `CENTRE_ALIGNMENT_INFEASIBLE` whose
+link stands vertical after the last move of 7f is withdrawn (`refreshAlignmentDeclines`).
 
 **A group with no links steps out of an overlay chord** (ranked-groups ticket 76). `placeOverlayFree` ends with
 `stepOutOfChords`. A free group with no link of any member has no partner, so no target: it would stay a wall at ELK's

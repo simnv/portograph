@@ -1,4 +1,4 @@
-import type { LayoutModel } from '../../model/layout.js';
+import type { LayoutLink, LayoutModel } from '../../model/layout.js';
 
 /**
  * Shared readers: which tier a node or a cell stands in. The sub-tier number lives on the group; a node reaches it through
@@ -20,4 +20,15 @@ export function nodeTierIfAny(model: LayoutModel, id: string): number | undefine
 /** The sub-tier of a cell (a group id). The cell must be tiered. */
 export function cellTier(model: LayoutModel, cell: string): number {
   return model.groups[cell]!.tier!;
+}
+
+/**
+ * The sub-tiers whose bands stand strictly between the ends of a routed link, in order from its authored source to its target: the tiers it
+ * transits. The one reader of that question: the lanes of 7a (`lanes.ts`), the `transit` refusal of `chordVerdict` and the span candidate on
+ * consecutive document tiers (`rankBandBetween`) all read it.
+ */
+export function transitTiers(model: LayoutModel, link: LayoutLink): number[] {
+  if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) return [];
+  const a = nodeTier(model, link.attachments.from.node), b = nodeTier(model, link.attachments.to.node);
+  return model.tierBands.map(band => band.tier).filter(tier => tier > Math.min(a, b) && tier < Math.max(a, b)).sort((u, v) => a < b ? u - v : v - u);
 }
