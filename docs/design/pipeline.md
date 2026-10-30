@@ -1013,13 +1013,6 @@ freeze holds the accepted members. When the
 centring after the freeze brings a member within the chord clearance of a leg or a held chord, the attempt runs again with that
 member refused (`DIRECT_RETRIES`, 2).
 
-**A held chord keeps its own title room** (architecture-2 ticket 35, part 2; `docs/design/routed-chords.md`, Section 6). The chord
-verdict admits a cross-frame chord through the title band of its own end when the title host can widen by the shortfall the crossing
-leaves (the planner's `growthPlan`, read through `titleGrowthFeasible`), and the chord costs no more than its lean over the fallback leg.
-The first step of 7f reserves that widening: `reserveInitialSpace` ends with `reserveChordTitleRoom`, which widens each title host, in x
-order, by the shortfall its held cross-frame chords leave, outside the shared pass budget. The planner reads the crossing of a held chord in
-its own band as a leg for the leg allowance, so a later move that turns the chord by a fraction of a pixel is answered by one more widening.
-
 **A frame keeps out of a foreign drop's clearance** (ticket 75). A routed link between a cell of a frame and a port of another tier
 drops to the x of that port from a row in the padding of the frame. When that x stands outside the frame, closer to a left or right
 edge than `GROUP_EDGE_LINK_CLEARANCE` plus half the routed stroke, the drop runs along the edge and G6 refuses it. Routing can only

@@ -1,10 +1,9 @@
-# Expected: A routed chord takes the room of its own title only where the title host can widen for it (ranked-groups ticket 100, Q108;
-# architecture-2 ticket 35, part 2). A location frame on tier 1 links its router to the only node of a provider group on tier 2, and a
-# frame on tier 3 links its router to the same node. The two edges carry one routed port each, so the tie keeps the title on the top
-# edge, where the chord enters. The group is as wide as its one node and the title is wider than either side of the crossing, plus the
-# 8 px inset on each side. Until ticket 35 the link was refused with `ROUTED_CHORD_REFUSED` reason `title` ("no growth is assumed").
-# Now the verdict proves the widening by the shortfall is lane-feasible, 7f reserves it (`reserveChordTitleRoom`), the link is a
-# straight drop, the title stands right of it 8 px clear, and every gate passes. The file keeps its name for its history.
+# Expected: A routed link keeps the orthogonal route where the chord would take the room of the title (ranked-groups ticket 100, Q108).
+# A location frame on tier 1 links its router to the only node of a provider group on tier 2, and a frame on tier 3 links its router
+# to the same node. The two edges carry one routed port each, so the tie keeps the title on the top edge, where the chord enters.
+# The group is as wide as its one node and the title is wider than either side of the crossing, plus the 8 px inset on each side, so the link is refused with
+# `ROUTED_CHORD_REFUSED` reason `title`. The link is orthogonal and every gate passes. No growth is assumed: the group could
+# widen later, but a widening the decision counted on would be a size discovered after the route (the pipeline's one rule).
 # Test-only input owned by ranked-groups ticket 100; test/pipeline/routed-chord-title.test.ts reads the layout.
 portograph: 2
 profile: network

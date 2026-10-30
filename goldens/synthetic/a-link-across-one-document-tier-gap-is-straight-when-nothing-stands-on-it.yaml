@@ -7,6 +7,8 @@
 # transit lanes, draw orthogonal and are named by `ROUTED_CHORD_REFUSED` with `transit`. The wall case (a body of the band in the corridor)
 # is pinned on this sheet's geometry by test/pipeline/one-gap-span.test.ts. A third link from `branch` whose chord crosses the `ranked` frame
 # keeps its lane, but its fallback leg then crowds the two chords (`leg`, ticket 29 part B): it is not on this sheet.
+# `r-head` has a long label, so its cell is wide and the `Ranked` title fits beside the chord of the entry feed: the title room of a
+# chord that leans is ticket 35 part 2, not this sheet.
 # Test-only input owned by architecture-2 ticket 35; test/pipeline/one-gap-span.test.ts reads it.
 portograph: 2
 profile: network
@@ -18,7 +20,7 @@ groups:
 nodes:
   e-two: { group: entry, class: router, label: Entry router two }
   e-one: { group: entry, class: router, label: Entry router one }
-  r-head: { group: ranked, class: router, label: Ranked head, ports: [up, down] }
+  r-head: { group: ranked, class: router, label: Ranked head of the first rank, ports: [up, down] }
   r-tail: { group: ranked, class: router, label: Ranked tail, ports: [up, out] }
   b-main: { group: branch, class: router, label: Branch selector with two exits, ports: [up, m1, m2] }
   x-tail: { group: exits, class: router, label: Exit of the tail, ports: [in] }

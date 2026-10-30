@@ -308,10 +308,8 @@ nodes:
   a: {group: up, ports: [{name: p, side: bottom}]}
   b: {group: low, ports: [{name: p, side: top}, {name: q, side: bottom}]}
   c: {group: lower, ports: [{name: p, side: top}]}
-links: [[a.p, b.p, {route: orthogonal}], [b.q, c.p]]`;
-    // The bottom link keeps `low`'s title on top (tie rule), above the wide-stroke top port. The top link is authored orthogonal: since
-    // architecture-2 ticket 35 (part 2) its chord would hold through the title band (the host can widen), and a chord draws no stem.
-    // This test is about the stem's checkpoint.
+links: [[a.p, b.p], [b.q, c.p]]`;
+    // The bottom link keeps `low`'s title on top (tie rule), above the wide-stroke top port.
     const draft = copy(await placed(yaml));
     draft.nodes.b!.strokeWidth = 44;
     rebuildBands(draft);

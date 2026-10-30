@@ -26,7 +26,7 @@ import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, besideRunLabelBox, describedLink, labelBorders, linkLabelSize, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, tierGapSplit } from './link-labels.js';
 import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from './overlay-paths.js';
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
-import { chordKind, crossingRect, isRoutedChord, titleShortfall } from './frame-paths.js';
+import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { directFamiliesFault } from './direct-families.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
@@ -418,7 +418,7 @@ function segmentRect(segment: PathSegment, stroke: number): Rect {
  * the mandatory outward shared runs of both ends. A complete bundle path repeats the runs it
  * consumed, so identical stroke-aware rectangles with identical ownership collapse to one entry.
  */
-function linkRects(model: LayoutModel, link: LayoutModel['links'][number], chords = true): ForbiddenRect[] {
+function linkRects(model: LayoutModel, link: LayoutModel['links'][number]): ForbiddenRect[] {
   const stroke = linkStrokeWidth(link) / 2;
   // A stage-8 remainder (`fixed: false`) is routed around this placement, so only the runs a rule
   // reserved count here; re-deriving a label against a later route would let routing move it.
@@ -427,8 +427,6 @@ function linkRects(model: LayoutModel, link: LayoutModel['links'][number], chord
   // own end beside the title (ticket 100, docs/design/routed-chords.md Section 6). A frame chord keeps its box.
   const crossings = chordCrossings(model, link);
   if (crossings) reserved = [];
-  // `chords: false` reads the plan without the crossings of held cross-frame chords: whether a title widens for them and legs alone (ticket 35).
-  if (crossings && !chords) return [];
   const sources: [string, PathSegment[]][] = [['path', reserved],
     ['fixed', link.fixedSegments ?? []], ['shared:from', link.sharedRuns?.from ?? []],
     ['shared:to', link.sharedRuns?.to ?? []]];
@@ -463,7 +461,7 @@ export function groupLabelObstacles(model: LayoutModel, placed: LayoutLabel[] = 
   return forbiddenRects(model, placed);
 }
 
-function forbiddenRects(model: LayoutModel, placed: LayoutLabel[], chords = true): ForbiddenRect[] {
+function forbiddenRects(model: LayoutModel, placed: LayoutLabel[]): ForbiddenRect[] {
   const result: ForbiddenRect[] = [];
   for (const node of Object.values(model.nodes)) {
     const half = (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) / 2;
@@ -491,7 +489,7 @@ function forbiddenRects(model: LayoutModel, placed: LayoutLabel[], chords = true
     }
   }
   for (const obstacle of model.obstacles) if (obstacle.layer !== 'overlay') result.push({ id: obstacle.id, bounds: obstacle.bounds, clearance: margin });
-  for (const link of model.links) result.push(...linkRects(model, link, chords), ...feedCorridorRects(model, link));
+  for (const link of model.links) result.push(...linkRects(model, link), ...feedCorridorRects(model, link));
   return result;
 }
 
@@ -592,9 +590,9 @@ export function legRectsFor(model: LayoutModel, owned: readonly LegBand[], skip?
   return result;
 }
 
-function intervals(model: LayoutModel, placed: LayoutLabel[], y: number, height: number, width: number, legs = false, chords = true): ForbiddenInterval[] {
+function intervals(model: LayoutModel, placed: LayoutLabel[], y: number, height: number, width: number, legs = false): ForbiddenInterval[] {
   // Link geometry keeps the title's link-free margin on every side; nodes, pills and labels do not.
-  const raw = [...forbiddenRects(model, placed, chords), ...(legs ? legRects(model) : [])].filter(item => intersectsY(item.bounds, y - (item.clearance ?? 0), height + 2 * (item.clearance ?? 0))).map(item => ({
+  const raw = [...forbiddenRects(model, placed), ...(legs ? legRects(model) : [])].filter(item => intersectsY(item.bounds, y - (item.clearance ?? 0), height + 2 * (item.clearance ?? 0))).map(item => ({
     low: item.bounds.x - width - (item.clearance ?? 0), high: right(item.bounds) + (item.clearance ?? 0), id: item.id,
   })).sort((a, b) => a.low - b.low || a.high - b.high || a.id.localeCompare(b.id));
   const merged: ForbiddenInterval[] = [];
@@ -643,7 +641,7 @@ function firstFree(start: number, ranges: ForbiddenInterval[]): number {
  * sub-tier, until the frame boxes stand a band gap apart (ranked-groups ticket 15). A sweep that needs
  * a move a lane forbids is infeasible like any other.
  */
-function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number, report = true): GroupPlacement[] | undefined {
+function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number): GroupPlacement[] | undefined {
   if (width <= grown.bounds!.width + PLACEMENT_EPS) return undefined;
   const tiers = new Map<number, { rows: GroupPlacement[]; gaps: number[] }>();
   const tierOf = (tier: number) => {
@@ -694,22 +692,7 @@ function growthPlan(model: LayoutModel, grown: LayoutGroup, width: number, repor
   }
   const plan = [...tiers.values()].flatMap(item => item.rows);
   return holdsMove(model, plan.map(item => ({ group: item.group,
-    bounds: { ...item.group.bounds!, x: item.x, width: item.width } })), report) ? plan : undefined;
-}
-
-/**
- * Whether the title host `host` can widen by `extra` px: the one decision `planLabels` takes when a title does not fit its edge (`growthPlan`). The chord
- * verdict reads it to admit a cross-frame chord whose lean costs its own title band that much room (architecture-2 ticket 35, part 2).
- */
-export function titleGrowthFeasible(model: LayoutModel, host: string, extra: number): boolean {
-  const group = model.groups[host];
-  if (group?.bounds === undefined) return false;
-  // `growthPlan` moves the groups of a sweep and puts them back; a published (frozen) model is read through a copy.
-  const frozen = Object.isFrozen(group.bounds) || group.nodes.some(id => Object.isFrozen(model.nodes[id]?.bounds));
-  const target = frozen ? JSON.parse(JSON.stringify(model)) as LayoutModel : model;
-  const copy = target.groups[host]!;
-  // A question, not a move: a guard that refuses it names nothing.
-  return growthPlan(target, copy, copy.bounds!.width + extra, false) !== undefined;
+    bounds: { ...item.group.bounds!, x: item.x, width: item.width } }))) ? plan : undefined;
 }
 
 /** `columnShifts` with no slack, for the geometry `plan` proposes; the model is put back before this returns. */
@@ -746,14 +729,14 @@ function cantonHost(model: LayoutModel, id: string, side: 'top' | 'bottom'): Lay
  * where it was, and the links go to the router.
  */
 function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: { width: number; height: number },
-  start: number, limit: number, centre: number, nudge: boolean, widenTo: (x: number) => boolean, chords = true): { x: number; failed: boolean } {
+  start: number, limit: number, centre: number, nudge: boolean, widenTo: (x: number) => boolean): { x: number; failed: boolean } {
   const pick = (ranges: ForbiddenInterval[]): number | undefined => [centre, start, limit,
     ...ranges.flatMap(range => [range.low - LABEL_CLEARANCE_STEP, range.high + LABEL_CLEARANCE_STEP])]
     .filter(x => x >= start - PLACEMENT_EPS && x <= limit + PLACEMENT_EPS && ranges.every(range => x < range.low - PLACEMENT_EPS || x > range.high + PLACEMENT_EPS))
     .sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre) || a - b)[0];
-  const hard = intervals(model, placed, y, measured.height, measured.width, false, chords);
+  const hard = intervals(model, placed, y, measured.height, measured.width);
   if (nudge) {
-    const soft = intervals(model, placed, y, measured.height, measured.width, true, chords), found = pick(soft);
+    const soft = intervals(model, placed, y, measured.height, measured.width, true), found = pick(soft);
     if (found !== undefined) return { x: found, failed: false };
     // Ticket 66: no position on the edge clears a leg, so the leg is a hard obstacle like a straight feed's: the title stands clear of
     // it and the group widens by the title plus the clearances beside the port, where the widening is lane-feasible.
@@ -770,16 +753,16 @@ function titleX(model: LayoutModel, placed: LayoutLabel[], y: number, measured: 
  * together. Nudging only some of them would plan some drops of a gap and leave the rest to the router, which lays them across the
  * planned rows.
  */
-function planLabels(model: LayoutModel, permitGrowth: boolean, legs = permitGrowth, spent: LegSpent = never, chords = true): LabelPlan {
-  const first = planLabelsOnce(model, permitGrowth, new Set(), legs, spent, chords);
+function planLabels(model: LayoutModel, permitGrowth: boolean, legs = permitGrowth, spent: LegSpent = never): LabelPlan {
+  const first = planLabelsOnce(model, permitGrowth, new Set(), legs, spent);
   // A growth asked by a title whose gap row failed is moot: the row is planned again without nudging, and the widening would serve legs that plan no longer avoids.
-  return first.failed.size && (!first.growth || first.failed.has(first.growth.row)) ? planLabelsOnce(model, permitGrowth, first.failed, legs, spent, chords) : first;
+  return first.failed.size && (!first.growth || first.failed.has(first.growth.row)) ? planLabelsOnce(model, permitGrowth, first.failed, legs, spent) : first;
 }
 
 /** The tier gap a title's edge faces: the bottom edge of tier t and the top edge of tier t + 1 face the same one. */
 const gapKey = (tier: number, side: 'top' | 'bottom'): string => String(side === 'bottom' ? tier : tier - 1);
 
-function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: ReadonlySet<string>, legs: boolean, spent: LegSpent, chords = true): LabelPlan & { failed: Set<string> } {
+function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: ReadonlySet<string>, legs: boolean, spent: LegSpent): LabelPlan & { failed: Set<string> } {
   const labels: LayoutLabel[] = [], blocked: string[] = [], failed = new Set<string>(), moves: string[] = [];
   const stubs = legs ? legRects(model).filter(item => item.id.includes(':stub:')) : [];
   for (const title of titles(model)) {
@@ -790,7 +773,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
     const limit = right(group.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset - measured.width;
     const centre = group.bounds!.x + (group.bounds!.width - measured.width) / 2;
     const row = gapKey(group.tier!, title.side), placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row),
-      x => legs && !spent(title.id, id) && growthPlan(model, group, x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x) !== undefined, chords);
+      x => legs && !spent(title.id, id) && growthPlan(model, group, x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - group.bounds!.x) !== undefined);
     if (placed.failed) failed.add(row);
     const x = placed.x;
     if (x > limit + PLACEMENT_EPS) {
@@ -819,7 +802,7 @@ function planLabelsOnce(model: LayoutModel, permitGrowth: boolean, still: Readon
     const tiers = cantonTiers(model, band.group), row = gapKey(band.side === 'top' ? tiers.first : tiers.last, band.side);
     const host = cantonHost(model, band.group, band.side);
     const placed = titleX(model, labels, y, measured, start, limit, centre, !still.has(row), x => legs && !spent(band.group, host?.id ?? '') && host !== undefined
-      && growthPlan(model, host, host.bounds!.width + (x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - box.x - box.width)) !== undefined, chords);
+      && growthPlan(model, host, host.bounds!.width + (x + measured.width + GROUP_LABEL_GEOMETRY.horizontalInset - box.x - box.width)) !== undefined);
     if (placed.failed) failed.add(row);
     const x = placed.x;
     if (x > limit + PLACEMENT_EPS) {
@@ -1125,48 +1108,6 @@ function reserveInitialSpace(model: LayoutModel): void {
   }
   rebuildBands(model);
   syncBands(model, entries);
-  if (reserveChordTitleRoom(model, entries)) {
-    holdColumnsAfterPush(model);
-    rebuildBands(model);
-    syncBands(model, entries);
-  }
-}
-
-/**
- * The room a title needs beside the held cross-frame chords that cross its own band (architecture-2 ticket 35, part 2). The chord verdict admitted each
- * such chord on the proof that the title host can widen by the shortfall (`titleGrowthFeasible`, `frame-paths.ts`); this first step of 7f makes that
- * widening, outside the shared pass budget, as it widens a host to its title's width above, so the planner finds the room and no later stage discovers it.
- * The hosts are read in x order, each on the geometry the earlier widenings left (a widening moves only the groups right of its host). A canton band is
- * held by its sub-tier, not by a cell, and is not widened here (the verdict refuses a chord for it). Returns whether a host widened.
- */
-function reserveChordTitleRoom(model: LayoutModel, entries: RouterEntryPoint[]): boolean {
-  const held = new Set(model.frozenChords ?? []);
-  const chords = model.links.filter(link => held.has(link.id) && chordKind(model, link) === 'cross');
-  if (chords.length === 0) return false;
-  // The bands above moved nodes down without their pills, and a chord ends on its pills' faces.
-  rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
-  const hosts = model.labelBands.filter(band => !isCantonFrame(model, band.group)).map(band => model.groups[band.host ?? band.group])
-    .filter((group): group is LayoutGroup => group?.bounds !== undefined)
-    // Last key: the id, so two hosts at one x keep one order.
-    .sort((a, b) => a.bounds!.x - b.bounds!.x || a.id.localeCompare(b.id));
-  let grown = false;
-  for (const host of hosts) {
-    syncBands(model, entries);
-    const band = model.labelBands.find(item => (item.host ?? item.group) === host.id);
-    if (band === undefined) continue;
-    const crossings: Rect[] = [];
-    for (const link of chords) {
-      const chord = straightChord(model, link, undefined, true);
-      const rect = chord && crossingRect({ ...chord, owner: { ...link.owner } }, band.bounds.y, bottom(band.bounds), linkStrokeWidth(link) / 2);
-      if (rect && rect.x <= right(band.bounds) && right(rect) >= band.bounds.x) crossings.push(rect);
-    }
-    const shortfall = crossings.length === 0 ? 0 : titleShortfall(titleText(model, band), band.bounds, crossings);
-    if (shortfall <= PLACEMENT_EPS) continue;
-    const before = host.bounds!.width;
-    pushFollowingGroups(model, host, before + shortfall);
-    grown ||= host.bounds!.width > before + PLACEMENT_EPS;
-  }
-  return grown;
 }
 
 
@@ -2001,11 +1942,7 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
     if (!plan.growth) { model.labels.push(...plan.labels); diagnoseBlocked(model, plan.blocked); return; }
     // A widening for a leg only (no hard obstacle asks for it) needs a pass the shared budget no longer has: centring spends it before any leg
     // is known (ticket 66). Each title (keyed by the title that asked, not the cell that grows: one cell can host a member title and a canton title) has an allowance of `LEG_PASSES_PER_TITLE` passes outside the shared budget; a title past it keeps the soft rule.
-    // The crossing of a held cross-frame chord in its own title band is a leg for the title (docs/design/routed-chords.md, Section 6): the verdict
-    // admitted the chord on the proof that the title host can widen for it (ticket 35, part 2), so its widening takes the same allowance.
-    // A spent title still asks for growth when a chord crossing (a hard obstacle) stands in its way, so it is no leg-only title any more: the
-    // budget rule below stalls the plan. Without this the loop would mark it spent again and again and never end.
-    const legOnly = budget.remaining <= 0 && !spentTitles.has(plan.growth.title) && !planLabels(model, true, false, spent, false).growth;
+    const legOnly = budget.remaining <= 0 && !planLabels(model, true, false, spent).growth;
     if (legOnly && (legPasses.get(plan.growth.title) ?? 0) < LEG_PASSES_PER_TITLE) {
       legPasses.set(plan.growth.title, (legPasses.get(plan.growth.title) ?? 0) + 1);
       const stable = routerEntryPoints(model);

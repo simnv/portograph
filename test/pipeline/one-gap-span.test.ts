@@ -1,22 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
-import type { Lane, LayoutLink, LayoutModel } from '../../src/index.js';
-import { chordSegment, chordVerdict, crossingRect, fixedPointRefusal, isRoutedChord, rankBandBetween, spanCandidate } from '../../src/layout/frame-paths.js';
+import type { LayoutLink, LayoutModel } from '../../src/index.js';
+import { chordSegment, isRoutedChord, rankBandBetween, spanCandidate } from '../../src/layout/frame-paths.js';
 import { measureSpans, type SpanOffer } from '../../src/layout/span-measure.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
- * Architecture-2 ticket 35 (docs/design/routed-chords.md, Sections 6 and 14.1). Part 1: a link across one document tier gap whose ends stand on
- * sub-tiers that are not adjacent is a spanning-chord candidate; the rank band between its ends refuses it only where a wall stands in its corridor.
- * Part 2: a chord through its own title band is admitted when the title host can widen by the shortfall, and 7f reserves that widening.
+ * Architecture-2 ticket 35, part 1 (docs/design/routed-chords.md, Section 14.1). A link across one document tier gap whose ends stand on sub-tiers
+ * that are not adjacent is a spanning-chord candidate; the rank band between its ends refuses it only where a wall stands in its corridor.
  */
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const ONE_GAP = 'a-link-across-one-document-tier-gap-is-straight-when-nothing-stands-on-it';
-const TITLE_ROOM = 'a-chord-through-its-own-title-band-reserves-the-title-room';
-const NO_ROOM = 'a-routed-chord-leaves-no-room-for-the-title';
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 interface Run { model: LayoutModel; offer: SpanOffer | undefined; base: LayoutModel | undefined; routedBase: LayoutModel | undefined }
 const run = async (name: string, extra: Record<string, unknown> = {}): Promise<Run> => {
@@ -96,53 +93,5 @@ describe('part 1: a link across one document tier gap with a rank band between i
     expect(skipped[0]!.severity).toBe('info');
     expect(skipped[0]!.owners).toEqual(SPANS.map(id => ({ kind: 'link', id })));
     expect(skipped[0]!.message).toMatch(/0 placement re-runs|made its 0 placement re-runs/);
-  }, 60000);
-});
-
-describe('part 2: a chord through its own title band reserves the title room', () => {
-  const CHORDS = ['link-2', 'link-3'];
-  it('holds both slanted chords; the title stands right of both crossings, 8 px clear, and every gate passes', async () => {
-    const { model } = await run(TITLE_ROOM);
-    for (const id of CHORDS) {
-      expect(isRoutedChord(model, link(model, id)), id).toBe(true);
-      const segment = link(model, id).path!.segments[0]!;
-      expect(Math.abs(segment.to.x - segment.from.x), id).toBeGreaterThan(5);
-    }
-    expect(refusals(model)).toEqual([]);
-    expect(model.diagnostics.some(item => item.code === 'ROUTED_CHORD_TITLE' || item.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toBe(false);
-    const band = model.labelBands.find(item => item.group === 'providers')!;
-    const title = model.labels.find(item => item.role === 'group' && item.text === 'Providers of the shared transit')!.bounds!;
-    for (const id of CHORDS) {
-      const crossing = crossingRect(link(model, id).path!.segments[0]!, band.bounds.y, band.bounds.y + band.bounds.height, 0)!;
-      expect(title.x - (crossing.x + crossing.width), id).toBeGreaterThanOrEqual(-1e-6);
-    }
-    expect(score(model).snapshot.counts.routed.bent).toBe(0);
-    gates(model);
-  }, 60000);
-
-  it('admits the chord only while the widening is lane-feasible: a lane beside the row refuses it (title)', async () => {
-    const { model } = await run(TITLE_ROOM);
-    // The row as narrow as before 7f widened it: its nodes and the padding.
-    const narrow = structuredClone(model), group = narrow.groups.providers!;
-    const last = Math.max(...group.nodes.map(id => narrow.nodes[id]!.bounds!.x + narrow.nodes[id]!.bounds!.width));
-    group.bounds!.width = last + 20 - group.bounds!.x;
-    const chord = link(narrow, 'link-2'), verdict = chordVerdict(narrow, chord);
-    expect('segment' in verdict).toBe(true);
-    const segment = (verdict as { segment: NonNullable<ReturnType<typeof chordSegment>> }).segment;
-    expect(fixedPointRefusal(narrow, chord, segment)).toBeUndefined();
-    // A transit lane of the row's sub-tier just beyond its right edge: the widening would cross it, so the title room is not proven.
-    const x = group.bounds!.x + group.bounds!.width + 30;
-    const lane: Lane = { id: 'lane:blocker', owner: { kind: 'link', id: 'link-5' }, layer: 'routed', group: 'providers', tier: group.tier!, side: 'right', x,
-      bounds: { x: x - 17, y: group.bounds!.y, width: 34, height: group.bounds!.height } };
-    narrow.lanes.push(lane);
-    expect(fixedPointRefusal(narrow, chord, segment)).toBe('title');
-  }, 60000);
-
-  it('the row whose title is wider than either side of a drop widens for it: the chord holds (no `title` refusal)', async () => {
-    const { model } = await run(NO_ROOM);
-    const item = model.links.find(entry => entry.attachments!.from.node === 'upstream-router' && entry.attachments!.to.node === 'provider-1')!;
-    expect(isRoutedChord(model, item)).toBe(true);
-    expect(refusals(model)).toEqual([]);
-    gates(model);
   }, 60000);
 });

@@ -142,8 +142,7 @@ stub does the same, Q106):
 - **Decision.** The chord is refused (`title`) unless the band still holds the title: after the
   legs of `legRects`, the crossing rectangles of the held chords and this crossing are taken out of
   the band's x-range, one free interval is at least the measured title width plus the 8 px inset on
-  each side, or the title host can widen by the shortfall (architecture-2 ticket 35, part 2; see
-  *As built (ticket 35)* below).
+  each side. No growth is assumed.
 - **Split.** The fit with this crossing alone (no legs, no other chord) is part of
   `standaloneChord`, so the batch pass offers only a chord that can hold alone. The fit with the
   legs and the held chords' crossings is part of `expectedFramePath`. A new chord checks every
@@ -163,20 +162,6 @@ stub does the same, Q106):
 chord, so the x growth is (half stroke + 8) / cos of the angle to the vertical (a vertical chord gives 8 px). Measured: a title 8 px from the bounding box stood
 7.8 px from a 52 degree chord, and G3 failed. The margin is in the rectangle; the planner adds no clearance to it. A held chord's child port owes it no place under
 its feed, so `centreViolations` excuses it (a cross-frame chord only; ADR-0010 amendment, ticket 130).
-
-*As built (architecture-2 ticket 35, part 2).* "No growth is assumed" is withdrawn. At the decision (the fixed point, before 7f) a
-title band is usually narrower than its title, because 7f widens a title host only after the freeze. The orthogonal fallback of the same
-link crosses the same band by a leg, and 7f widens the host for that leg (ticket 66). So the strip no longer refuses a chord for room that
-7f gives: a shortfall `d` of the last free interval (a widening of the host to the right opens no other) is admitted when (1) the host can
-widen by `d` now, read by the planner's own decision (`growthPlan`, through `titleGrowthFeasible`; the lane-side and other move guards
-answer, and a refused widening refuses the chord), and (2) the chord costs no more than its lean over the fallback: `d` exceeds the
-shortfall the vertical leg at its own port would leave by at most the x the chord's crossing takes beyond that leg's. A canton band has no
-host cell and keeps the old rule. 7f reserves the widening before it plans a title: the first step (`reserveInitialSpace`) ends with
-`reserveChordTitleRoom`, which widens each host by the shortfall its held cross-frame chords leave, outside the shared pass budget, as it
-widens a host to its title's width. A later 7f move can turn a chord by a fraction of a pixel; the planner then widens the host again under
-the leg allowance (`LEG_PASSES_PER_TITLE`): the crossing of a held chord in its own band is a leg for the title, so the allowance test
-plans without those crossings. Where 7f still cannot hold the title, `ROUTED_CHORD_TITLE` names the link and G3 judges, as before.
-Measured on L4 (a private sheet): links 2 and 3 (the IPv4 and IPv6 feeds into `sel-hm`) draw straight; routed bends 24 to 20.
 
 A foreign title band stands inside its foreign frame box, so the foreign-frame wall covers it.
 

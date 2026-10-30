@@ -3,7 +3,7 @@ import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { crosses, sharedBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
-import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance, titleGrowthFeasible } from './bands.js';
+import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance } from './bands.js';
 import { frameSubtreeCells } from '../model/model.js';
 import type { Point } from '../model/geometry.js';
 import { stopsOf } from './gap-runs.js';
@@ -239,18 +239,14 @@ function titleSides(model: LayoutModel): Map<string, 'top' | 'bottom' | undefine
  * detours.
  */
 /** One title strip: the rectangle `titleStrips` holds, the owner of the title, its edge, and the nodes whose ports on that edge draw a leg through it. */
-export interface TitleStrip {
-  id: string; side: 'top' | 'bottom'; label: string; rect: Rect; members: ReadonlySet<string>;
-  /** The layout group whose box is the strip and which 7f widens for a title that does not fit (`planLabels`); absent for a canton, whose band is its own. */
-  host?: string;
-}
+export interface TitleStrip { id: string; side: 'top' | 'bottom'; label: string; rect: Rect; members: ReadonlySet<string> }
 
 function titleStrips(model: LayoutModel): TitleStrip[] {
   const strips: TitleStrip[] = [], sides = titleSides(model);
-  const add = (id: string, label: string | undefined, side: 'top' | 'bottom' | undefined, box: Rect, members: readonly string[], host: string): void => {
+  const add = (id: string, label: string | undefined, side: 'top' | 'bottom' | undefined, box: Rect, members: readonly string[]): void => {
     if (!label || side === undefined) return;
     const height = measureText(label, { fontSize: 12, weight: 700 }).height + 8 + 2 * GROUP_LABEL_LINK_CLEARANCE;
-    strips.push({ id, side, label, members: new Set(members), host,
+    strips.push({ id, side, label, members: new Set(members),
       rect: { x: box.x, y: side === 'top' ? box.y - GROUP_LABEL_LINK_CLEARANCE : box.y + box.height - height + GROUP_LABEL_LINK_CLEARANCE, width: box.width, height } });
   };
   for (const [id, frame] of Object.entries(model.document.frames ?? {})) {
@@ -259,11 +255,11 @@ function titleStrips(model: LayoutModel): TitleStrip[] {
     const side = sides.get(id);
     if (cells.length) {
       const host = side === 'bottom' ? cells.at(-1)! : cells[0]!;
-      add(id, frame.label, side, host.bounds!, host.nodes, host.id);
+      add(id, frame.label, side, host.bounds!, host.nodes);
     }
   }
   for (const [id, group] of Object.entries(model.groups)) {
-    if (group.frame === undefined && group.bounds && group.nodes.length) add(id, model.document.groups[id]?.label, sides.get(id), group.bounds, group.nodes, id);
+    if (group.frame === undefined && group.bounds && group.nodes.length) add(id, model.document.groups[id]?.label, sides.get(id), group.bounds, group.nodes);
   }
   // A canton holds its title in a band of its sub-tier, not in a cell (canton-groups ticket 3). The band exists from 7f on; before it the
   // title edge is the strip outside the box the members give.
@@ -320,51 +316,19 @@ function ownStrip(model: LayoutModel, link: LayoutLink, strip: TitleStrip): bool
 }
 
 /**
- * How much wider the strip must be for its title to fit beside the given obstacles, each with the link-free margin already in it: 0 when some gap
- * between two of them, or between one and the strip end less the inset (8 px, as the margin), is as wide as the measured title. Otherwise the
- * shortfall of the last gap, the only one a widening of the host to the right opens (`growthPlan` keeps the x of the box).
+ * Whether the title still fits its strip beside the given obstacles, each with the link-free margin already in it: some gap between two of them, or
+ * between one and the strip end less the inset (8 px, as the margin), is as wide as the measured title. No growth is assumed.
  */
-function titleDeficit(strip: TitleStrip, obstacles: readonly Rect[]): number {
-  return titleShortfall(strip.label, strip.rect, obstacles);
-}
-/** `titleDeficit` for a title and the x-range of its band (the 7f reservation reads it on a label band, `reserveChordTitleRoom`). */
-export function titleShortfall(label: string, band: Pick<Rect, 'x' | 'width'>, obstacles: readonly Rect[]): number {
-  const width = measureText(label, { fontSize: 12, weight: 700 }).width;
-  const left = band.x + GROUP_LABEL_GEOMETRY.horizontalInset, end = band.x + band.width - GROUP_LABEL_GEOMETRY.horizontalInset;
+function titleFits(strip: TitleStrip, obstacles: readonly Rect[]): boolean {
+  const width = measureText(strip.label, { fontSize: 12, weight: 700 }).width;
+  const left = strip.rect.x + GROUP_LABEL_GEOMETRY.horizontalInset, end = strip.rect.x + strip.rect.width - GROUP_LABEL_GEOMETRY.horizontalInset;
   const spans = obstacles.map(rect => [rect.x, rect.x + rect.width] as const).sort((a, b) => a[0] - b[0]);
   let cursor = left;
   for (const [low, high] of spans) {
-    if (low - cursor >= width - EPS) return 0;
+    if (low - cursor >= width - EPS) return true;
     cursor = Math.max(cursor, high);
   }
-  return end - cursor >= width - EPS ? 0 : width - (end - cursor);
-}
-
-/**
- * The crossing a vertical leg at the chord's own port would make in the strip (the leg its orthogonal fallback draws through the band, as `legRectsFor`
- * reads it), with the same margin a crossing rectangle carries. Undefined when the link has no port of its own on the strip's edge.
- */
-function fallbackCrossing(model: LayoutModel, link: LayoutLink, strip: TitleStrip, half: number): Rect | undefined {
-  for (const end of ['from', 'to'] as const) {
-    const ref = link.attachments![end], port = findPort(model, ref);
-    if (port?.anchor === undefined || port.side !== strip.side || !holders(model, ref.node).has(strip.id)) continue;
-    const along = half + GROUP_LABEL_LINK_CLEARANCE;
-    return { x: port.anchor.x - along, y: strip.rect.y, width: 2 * along, height: strip.rect.height };
-  }
-  return undefined;
-}
-
-/**
- * Whether an own title band admits a chord whose crossing leaves its title `deficit` px short (architecture-2 ticket 35, part 2). The title gets the
- * room by a widening of its host to the right, which 7f makes (`planLabels`, as it widens a title for a leg, ticket 66). The admission proves that room:
- * the widening by the whole deficit is lane-feasible now (`titleGrowthFeasible`, the planner's own decision), and the chord costs no more than its
- * lean over the fallback: its deficit exceeds the deficit the fallback leg would leave by at most the x the chord's crossing takes beyond that leg's.
- * A canton band (no host), an infeasible widening or a larger cost refuse.
- */
-function leanReserved(model: LayoutModel, strip: TitleStrip, own: Rect, leg: Rect | undefined, rest: readonly Rect[], deficit: number): boolean {
-  if (strip.host === undefined || leg === undefined) return false;
-  const lean = Math.max(own.x + own.width, leg.x + leg.width) - Math.min(own.x, leg.x) - leg.width;
-  return deficit <= titleDeficit(strip, [leg, ...rest]) + lean + EPS && titleGrowthFeasible(model, strip.host, deficit);
+  return end - cursor >= width - EPS;
 }
 
 /**
@@ -380,21 +344,19 @@ function titleRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment
   const half = linkStrokeWidth(link) / 2;
   return crossed.some(strip => {
     const own = crossingRect(segment, strip.rect.y, strip.rect.y + strip.rect.height, half);
-    const rest: Rect[] = [];
+    const blocks: Rect[] = own ? [own] : [];
     if (others) {
       // A leg is a stroke: the link-free margin is added to it here (a crossing rectangle carries its own).
       const legs = legRectsFor(model, [{ id: strip.id, bounds: strip.rect, side: strip.side, members: strip.members }], link.id);
-      rest.push(...legs.map(item => item.bounds).filter(box => box.x >= strip.rect.x - EPS && box.x <= strip.rect.x + strip.rect.width + EPS)
+      blocks.push(...legs.map(item => item.bounds).filter(box => box.x >= strip.rect.x - EPS && box.x <= strip.rect.x + strip.rect.width + EPS)
         .map(box => ({ x: box.x - GROUP_LABEL_LINK_CLEARANCE, y: box.y, width: box.width + 2 * GROUP_LABEL_LINK_CLEARANCE, height: box.height })));
       for (const other of model.links) {
         if (other.id === link.id || !isRoutedChord(model, other) || chordKind(model, other) !== 'cross') continue;
         const rect = crossingRect(other.path!.segments[0]!, strip.rect.y, strip.rect.y + strip.rect.height, linkStrokeWidth(other) / 2);
-        if (rect) rest.push(rect);
+        if (rect) blocks.push(rect);
       }
     }
-    if (own === undefined) return titleDeficit(strip, rest) > 0;
-    const deficit = titleDeficit(strip, [own, ...rest]);
-    return deficit > 0 && !leanReserved(model, strip, own, fallbackCrossing(model, link, strip, half), rest, deficit);
+    return !titleFits(strip, blocks);
   });
 }
 
