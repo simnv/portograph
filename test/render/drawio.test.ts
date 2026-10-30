@@ -11,7 +11,8 @@ import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { linkLabels } from '../../src/layout/link-labels.js';
 import { rows } from '../../src/layout/rows.js';
-import { NETWORK_THEME, linkClassStyle, washAssignment, washFill, washToken, portRolePaint, portRoleStyle } from '../../src/profiles/network/theme.js';
+import { NETWORK_THEME, washAssignment, washToken, portRolePaint } from '../../src/profiles/network/theme.js';
+import { themeById, themeLinkClass, themePortRole, themeWashFill } from '../../src/profiles/network/themes.js';
 import { route } from '../../src/route/index.js';
 import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
@@ -1465,7 +1466,7 @@ links:
     const model = await pipeline(fixture('drawio-constructs'));
     const all = cells(drawio(model));
     const body = `light-dark(${NETWORK_THEME.light.node.fill},${NETWORK_THEME.dark.node.fill})`;
-    const loopback = portRoleStyle('loopback')!;
+    const loopback = themePortRole(themeById(undefined), 'loopback')!;
     let outlined = 0;
     for (const [key, node] of Object.entries(model.nodes)) {
       for (const port of node.ports) {
@@ -1475,7 +1476,7 @@ links:
         if (!(port.class ?? '').split(/\s+/).includes('loopback')) continue;
         const washes = washAssignment(Object.values(model.document.nodes).map(node => node.class));
         const token = washToken(model.document.nodes[key]!.class);
-        expect(cell.style['fillColor']).toBe(`light-dark(${washFill(token, 'light', washes)},${washFill(token, 'dark', washes)})`);
+        expect(cell.style['fillColor']).toBe(`light-dark(${themeWashFill(themeById(undefined), token, 'light', washes)},${themeWashFill(themeById(undefined), token, 'dark', washes)})`);
         expect(cell.style['strokeColor']).toBe(`light-dark(${portRolePaint(loopback, 'light').stroke!},`
           + `${portRolePaint(loopback, 'dark').stroke!})`);
         outlined += 1;
@@ -1671,7 +1672,7 @@ describe('signal links', () => {
   it('export dashed with the signal stroke and the overlay opacity, where sync and flow keep the overlay stroke (ticket 73)', async () => {
     const model = await pipeline(fixture('a-dashed-signal-feed-is-one-straight-segment'));
     const all = cells(drawio(model));
-    const signal = linkClassStyle('signal');
+    const signal = themeLinkClass(themeById(undefined), 'signal');
     const edges = model.links.filter(link => model.document.links[link.sourceIndex]!.class === 'signal');
     expect(edges).toHaveLength(4);
     for (const link of edges) {
