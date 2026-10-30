@@ -2,9 +2,10 @@
  * The six rounds as descriptors (architecture 2, ticket 04): fan, span, course, side, turn and overlay. Each one is a table of what it measures, reserves, checks, judges, commits and
  * says when it is refused; `open` and `close` (round.ts) run a trial from it. A descriptor holds the round's own rules and nothing about the order of the rounds.
  */
-import type { Course, Diagnostic, LayoutModel, Size } from '../model/index.js';
+import type { Course, Diagnostic, LayoutModel, Side, Size } from '../model/index.js';
 import { portKey } from '../layout/sides-one.js';
 import { endMode } from '../layout/course-rows.js';
+import { contentInsets, measureNodeContent } from '../layout/size.js';
 import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
 import { TrunkBlocked } from '../layout/placement-refusal.js';
 import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
@@ -146,23 +147,39 @@ export const span: Round<SpanOffer> = {
   },
 };
 
-/** The node floors a kept side or course ledger keeps: the stage-3 size of each node with a hinted port, so a later trial does not re-size a node a kept trial moved. */
+/**
+ * The size a node is pinned at when a round moves some of its ports to other faces (`moved`, by `portKey`): its stage-3 size, never below the content it holds
+ * with the ports on their new faces. A pill on a new face sets that face's inset (`contentInsets`), and a card counts both side insets in its width, so the
+ * stage-3 size alone can be short of the content and the trial is refused at publication (snack-theme ticket 159). `undefined` when no stage-3 size is known.
+ */
+const movedFloor = (env: Env, s: State, id: string, moved: ReadonlyMap<string, Side>): Size | undefined => {
+  const size = env.stage3Sizes.get(s.kept7e)?.get(id), node = s.kept7e.nodes[id];
+  if (size === undefined || node === undefined) return undefined;
+  const content = measureNodeContent(s.kept7e.document.nodes[id]!, contentInsets(node.ports, port => moved.get(portKey(port.ref)) ?? port.side ?? port.sizingSide));
+  return { width: Math.max(size.width, content.width), height: Math.max(size.height, content.height) };
+};
+/** The node floors a kept side or course ledger keeps: the size of each node with a hinted port (`movedFloor`), so a later trial does not re-size a node a kept trial moved. */
 const keptFloors = (env: Env, s: State): Map<string, Size> => {
-  const floors = new Map<string, Size>();
-  for (const key of sideHintsOf(s.kept).keys()) {
+  const floors = new Map<string, Size>(), hints = sideHintsOf(s.kept);
+  for (const key of hints.keys()) {
     const [node] = JSON.parse(key) as [string];
-    const size = env.stage3Sizes.get(s.kept7e)?.get(node);
-    if (size !== undefined) floors.set(node, { ...size });
+    const size = movedFloor(env, s, node, hints);
+    if (size !== undefined) floors.set(node, size);
   }
   return floors;
 };
-/** The nodes whose end of a course changes face keep their size (P9): the capacity estimate of the face they leave must not re-size them. `skirtsU` leaves out an end that leaves by a U part, whose content grows with its face. */
+/**
+ * The nodes whose end of a course changes face keep their size (P9): the capacity estimate of the face they leave must not re-size them. `skirtsU` leaves out an end
+ * that leaves by a U part, whose content grows with its face. The pin is `movedFloor`: never below the content with the end on its new face.
+ */
 const pinMovedEnds = (env: Env, s: State, floors: Map<string, Size>, courses: readonly Course[], skirtsU: boolean): void => {
   for (const course of courses) {
     const link = s.kept7e.links.find(item => item.id === course.link)!;
     for (const which of ['from', 'to'] as const) {
-      const size = env.stage3Sizes.get(s.kept7e)?.get(link.attachments![which].node);
-      if (size !== undefined && (!skirtsU || endMode(course, which) !== 'u') && course[which].face !== (s.kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side)) floors.set(link.attachments![which].node, { ...size });
+      const end = link.attachments![which];
+      if ((skirtsU && endMode(course, which) === 'u') || course[which].face === s.kept7e.nodes[end.node]!.ports.find(port => portKey(port.ref) === portKey(end))?.side) continue;
+      const size = movedFloor(env, s, end.node, new Map([[portKey(end), course[which].face]]));
+      if (size !== undefined) floors.set(end.node, size);
     }
   }
 };
@@ -318,12 +335,12 @@ export const side: Round<SideTrialOffer> = {
   },
   reserve(env, s, o) {
     s.sideRound++;
-    const nodeFloors = new Map<string, Size>();
-    for (const key of new Map([...sideHintsOf(s.kept), ...o.offer.hints]).keys()) {
+    const nodeFloors = new Map<string, Size>(), hints = new Map([...sideHintsOf(s.kept), ...o.offer.hints]);
+    for (const key of hints.keys()) {
       const [node] = JSON.parse(key) as [string];
       // The 7e model keys the size cache, never the baseline (a new object: the lookup would give undefined with no error).
-      const size = env.stage3Sizes.get(s.kept7e)?.get(node);
-      if (size !== undefined) nodeFloors.set(node, { ...size });
+      const size = movedFloor(env, s, node, hints);
+      if (size !== undefined) nodeFloors.set(node, size);
     }
     // The faces stay with the ledger when the trial is kept; the size floors of a side trial do not (a later round measures its own).
     o.faces = [...sideFaces(o.offer.hints, o.offer.promised, 'side', env.placements),

@@ -1,7 +1,7 @@
 import { portPitch } from '../geometry/index.js';
 import type { NormalisedNode } from '../model/document.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
-import type { LayoutModel, LayoutNode } from '../model/layout.js';
+import type { LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
 import { resolveNodeContentStyle } from '../profiles/network/content.js';
 import type { NodeContentStyle } from '../profiles/network/content.js';
@@ -178,6 +178,20 @@ export function alignmentAllowance(node: LayoutNode, side: Side): number {
   return Math.max(node.bounds?.width ?? 0, ALIGNMENT_MAX_GROWTH * ownSideWidth(node, side));
 }
 
+/**
+ * The content insets of a node whose ports stand on the faces `sideOf` names: on each face the padding, or half the widest named pill on it and
+ * the content gap, whichever is more (pill width follows the normal on all four sides after top/bottom rotation). The one inset rule: `sizeNodes`
+ * measures with it, and a round that moves a port to another face measures the content it will have there with it (snack-theme ticket 159).
+ */
+export function contentInsets(ports: readonly LayoutPort[], sideOf: (port: LayoutPort) => Side | undefined): Record<Side, number> {
+  const insets: Record<Side, number> = { top: theme.padding, right: theme.padding, bottom: theme.padding, left: theme.padding };
+  for (const port of ports) {
+    const side = sideOf(port);
+    if (side !== undefined && port.ref.anonymous !== true) insets[side] = Math.max(insets[side], measurePortPill(port.ref.name).width / 2 + theme.contentGap);
+  }
+  return insets;
+}
+
 /** Measure stage-3 floors and capacity in place; later resize passes may only grow sizes. */
 export function sizeNodes(model: LayoutModel): LayoutModel {
   for (const id of orderedNodeIds(model.document)) {
@@ -187,18 +201,13 @@ export function sizeNodes(model: LayoutModel): LayoutModel {
       bottom: { count: 0, pills: [] }, right: { count: 0, pills: [] },
       top: { count: 0, pills: [] }, left: { count: 0, pills: [] },
     };
-    const insets: Record<Side, number> = { top: theme.padding, right: theme.padding, bottom: theme.padding, left: theme.padding };
     for (const port of node.ports) {
       const side = port.side ?? port.sizingSide;
       if (side === undefined) throw new Error(`Node ${id} has a port without a side or capacity estimate`);
       sides[side].count++;
-      if (port.ref.anonymous !== true) {
-        const pill = measurePortPill(port.ref.name);
-        sides[side].pills.push(pill);
-        // Pill width follows the normal on all four sides after top/bottom rotation.
-        insets[side] = Math.max(insets[side], pill.width / 2 + theme.contentGap);
-      }
+      if (port.ref.anonymous !== true) sides[side].pills.push(measurePortPill(port.ref.name));
     }
+    const insets = contentInsets(node.ports, port => port.side ?? port.sizingSide);
     const pitch: Record<Side, number> = { bottom: 12, right: 12, top: 12, left: 12 };
     for (const side of SIDE_TIE_ORDER) pitch[side] = Math.max(portPitch(sides[side].pills), node.sidePitch?.[side] ?? 0);
     node.sidePitch = pitch;
