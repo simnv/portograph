@@ -74,7 +74,11 @@ describe('a link inside one frame is a straight segment', () => {
 
   it('takes the straight technique for a clear chord, vertical or diagonal, and keeps the blocked one orthogonal', async () => {
     // The feed order is off here (ticket 25): the subject is Middle standing on the West-East chord, which the feed order takes away.
-    const model = await run(source.replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n'));
+    // With the feed order off, ELK's order stands, and it depends on the widths of the nodes. Verdana metrics (snack-theme ticket 157): with the label "East" ELK put East before
+    // Middle, so Middle no longer stood on the West-East chord and that link went straight. The label "East switch" gives ELK the order of the Arial run again. The order is
+    // asserted, so that a later change of ELK's order fails here with its cause and not on the technique of the link.
+    const model = await run(source.replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n').replace('label: East,', 'label: East switch,'));
+    expect(model.groups['site#1']!.rowOrder).toEqual(['west', 'mid', 'east']);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     const straight = [['gw1', 'west'], ['gw1', 'mid'], ['gw2', 'mid'], ['gw3', 'east'], ['mid', 'access']]
       .map(([from, to]) => linkOf(model, from!, to!));
@@ -83,7 +87,7 @@ describe('a link inside one frame is a straight segment', () => {
       expect(link.path!.segments).toHaveLength(1);
       expect(link.path!.fixed).toBe(true);
     }
-    // Two are diagonal and two are vertical: the rule does not need the faces to line up.
+    // Three are diagonal and two are vertical: the rule does not need the faces to line up.
     expect(straight.filter(link => straightLine(link.path!.segments[0]!))).toHaveLength(3);
     expect(straight.filter(link => !straightLine(link.path!.segments[0]!))).toHaveLength(2);
     // The chord runs from one port face to the other, not from anchor to anchor.
