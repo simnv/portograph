@@ -780,23 +780,28 @@ export function freezeRefusal(model: LayoutModel, link: LayoutLink): ChordRefusa
 
 /**
  * The chords held at the start of 7f: the links that are straight now. Every cross-frame candidate that is not held is named once
- * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it.
+ * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it, and so is every chord a retry of 7f refused (`refusals`), a frame
+ * chord too.
  */
 export function freezeChords(model: LayoutModel, refusals: ReadonlyMap<string, FanFallbackReason> = new Map()): void {
   const held = model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
   const reasons = new Map<string, FanFallbackReason>();
   for (const link of model.links) {
-    if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
+    if (held.includes(link.id)) continue;
     // A chord refused before the freeze (a retry of 7f, a sibling's stem, or the cascade after either) names the reason it was refused for: a
-    // retry refuses a held chord that a group title met on an axis (`title`), whatever check the 7e geometry passed. A fan member its family's
-    // joint search left out names `family` when no check of its own refuses it.
+    // retry refuses a held chord that a group title met on an axis (`title`), whatever check the 7e geometry passed, a frame chord too. Any other
+    // frame chord the rows rule left orthogonal names nothing here, as before. A fan member its family's joint search left out names `family`
+    // when no check of its own refuses it.
+    const given = refusals.get(link.id), kind = chordKind(model, link);
+    if (kind === undefined || (kind !== 'cross' && given === undefined)) continue;
     const fan = fanFamilyOf(model, link) !== undefined;
-    const reason: FanFallbackReason | undefined = refusals.get(link.id) ?? freezeRefusal(model, link) ?? (fan ? 'family' : undefined);
+    const reason: FanFallbackReason | undefined = given ?? freezeRefusal(model, link) ?? (fan ? 'family' : undefined);
     // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
     if (reason === undefined) continue;
     if (fan) reasons.set(link.id, reason);
+    const route = kind === 'cross' ? 'the orthogonal route between frames' : 'the orthogonal route inside its frame';
     model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
-      message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
+      message: `The link ${link.id} keeps ${route}: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
   }
   // The freeze is a decision even when nothing is held: a link that was not straight here stays orthogonal. An absent field would let the replays of 7f
   // take a chord the freeze refused, on boxes that the grid then widens (a row path that the region rule derives differently once the geometry settles).

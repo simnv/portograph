@@ -20,10 +20,18 @@ vi.mock('../../src/layout/fan-admission.js', async importOriginal => {
 
 const FIXTURE = 'a-chord-that-turns-onto-an-axis-meets-a-title';
 const text = readFileSync(new URL(`../../goldens/synthetic/${FIXTURE}.yaml`, import.meta.url), 'utf8');
-const lay = (): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const layOf = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const lay = (): Promise<LayoutModel> => layOf(text);
+const sheet = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+/** The re-read as built, with these held chords named too whenever they are held (a title is forged onto them). */
+const forge = async (ids: readonly string[]): Promise<void> => {
+  const actual = await vi.importActual<typeof import('../../src/layout/fan-admission.js')>('../../src/layout/fan-admission.js');
+  vi.mocked(titleCrowdedChords).mockImplementation(model => [...new Set([...actual.titleCrowdedChords(model), ...ids.filter(id => model.frozenChords?.includes(id))])].sort());
+};
+const warned = (model: LayoutModel): string[] => model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_TITLE').flatMap(item => (item.owners ?? []).map(owner => (owner as { id: string }).id));
 const failed = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id);
 /** The feed from `w2` to `wb1`. */
-const feed = (model: LayoutModel) => model.links.find(link => link.from.node === 'w2' && link.to.node === 'wb1')!;
+const feed = (model: LayoutModel) => model.links.find(link => link.from.node === 'w2' && link.to.node === 'wb1');
 /** At the start of each attempt of 7f (the end of 7e): the feed's chord, and the reason the attempt refuses it with. */
 let starts: { chord: { from: { x: number; y: number }; to: { x: number; y: number } } | undefined; refused: string | undefined }[] = [];
 
@@ -33,7 +41,7 @@ beforeEach(async () => {
   starts = [];
   vi.mocked(refuseChords).mockImplementation((draft, refused) => {
     const link = feed(draft);
-    starts.push({ chord: link.path?.segments.length === 1 ? { ...link.path.segments[0]! } : undefined, refused: refused.get(link.id) });
+    if (link !== undefined) starts.push({ chord: link.path?.segments.length === 1 ? { ...link.path.segments[0]! } : undefined, refused: refused.get(link.id) });
     return actual.refuseChords(draft, refused);
   });
 });
@@ -47,7 +55,7 @@ describe('a held chord whose angle class 7f changes is judged again on the publi
     // The retry refuses it before the freeze, which names the reason.
     expect(starts).toHaveLength(2);
     expect(starts[1]!.refused).toBe('title');
-    const link = feed(model);
+    const link = feed(model)!;
     expect(model.frozenChords).not.toContain(link.id);
     expect(link.path!.segments.length).toBeGreaterThan(1);
     expect(model.diagnostics.some(item => item.code === 'ROUTED_CHORD_REFUSED' && item.message === `The link ${link.id} keeps the orthogonal route between frames: title.`)).toBe(true);
@@ -59,7 +67,7 @@ describe('a held chord whose angle class 7f changes is judged again on the publi
   it('publishes the feed on an axis across the title, and G3 fails, when the class is not read again (the premise)', async () => {
     vi.mocked(titleCrowdedChords).mockImplementation(() => []);
     const model = await lay();
-    const link = feed(model);
+    const link = feed(model)!;
     expect(model.frozenChords).toContain(link.id);
     expect(link.path!.segments).toHaveLength(1);
     expect(isDiagonal(link.path!.segments[0]!)).toBe(false);
@@ -67,3 +75,46 @@ describe('a held chord whose angle class 7f changes is judged again on the publi
     expect(g3.violations.map(item => item.elements)).toEqual([['label:group:w-site-b#0', link.id]]);
   }, 120000);
 });
+
+describe('the re-read names what it refuses and what it keeps (review of the re-read)', () => {
+  it('refuses a frame chord a title meets on an axis, and the freeze names it as kept inside its frame', async () => {
+    // `link-2` runs from WB1 to WB2 inside `w-site-b`: a frame chord.
+    await forge(['link-2']);
+    const model = await lay();
+    expect(model.frozenChords).not.toContain('link-2');
+    expect(model.diagnostics.some(item => item.code === 'ROUTED_CHORD_REFUSED' && item.message === 'The link link-2 keeps the orthogonal route inside its frame: title.')).toBe(true);
+    expect(warned(model)).toEqual([]);
+  }, 120000);
+
+  it('names a held chord a title still meets after the retries run out', async () => {
+    // Each attempt names the first held chord: the two retries refuse two, and the third attempt still names one, which stays.
+    const actual = await vi.importActual<typeof import('../../src/layout/fan-admission.js')>('../../src/layout/fan-admission.js');
+    vi.mocked(titleCrowdedChords).mockImplementation(model => [...new Set([...actual.titleCrowdedChords(model), ...(model.frozenChords ?? []).slice(0, 1)])].sort());
+    const model = await lay();
+    const kept = warned(model);
+    expect(kept).toHaveLength(1);
+    expect(model.frozenChords).toContain(kept[0]);
+    expect(model.diagnostics.filter(item => item.code === 'ROUTED_CHORD_REFUSED' && item.message.endsWith(': title.'))).toHaveLength(2);
+  }, 120000);
+
+  it('keeps a spanning chord a title meets, since 7a reserved no transit lanes for it, and names it', async () => {
+    // `link-4` takes a spanning chord (`SPAN_CHORD_TAKEN`).
+    await forge(['link-4']);
+    const model = await layOf(sheet('a-span-corridor-passes-a-lane-beside-a-unit-it-does-not-move'));
+    expect(model.links.find(link => link.id === 'link-4')!.spanHint).toBe(true);
+    expect(model.frozenChords).toContain('link-4');
+    expect(warned(model)).toEqual(['link-4']);
+    expect(model.diagnostics.some(item => item.code === 'ROUTED_CHORD_REFUSED' && item.message.startsWith('The link link-4 '))).toBe(false);
+  }, 120000);
+
+  it('refuses a direct member through its family, which records `title`', async () => {
+    // `link-6` is the one direct member of its family.
+    await forge(['link-6']);
+    const model = await layOf(sheet('a-port-facing-away-from-a-tier-gap-is-left-to-the-router'));
+    expect(model.frozenChords).not.toContain('link-6');
+    const member = model.directFamilies!.flatMap(family => family.members).find(item => item.link === 'link-6');
+    expect(member).toEqual({ link: 'link-6', mode: 'orthogonal', reason: 'title' });
+    expect(warned(model)).toEqual([]);
+  }, 120000);
+});
+

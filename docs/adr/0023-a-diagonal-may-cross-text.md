@@ -53,7 +53,8 @@ line off text that a reader can still read when the line crosses it.
   diagonal can become an axis chord under a title. The published geometry must satisfy the one
   predicate: at the end of each attempt of 7f `titleCrowdedChords` reads it again, and the retry of
   7f refuses every held chord that a title meets on an axis (`title`). The chord takes the
-  orthogonal route; after `DIRECT_RETRIES` retries G3 judges. Classifying with a margin
+  orthogonal route. A spanning chord is not refused (it has no transit lanes); it and any chord
+  left after `DIRECT_RETRIES` retries are named (`STRAIGHT_LINK_TITLE`), and G3 judges. Classifying with a margin
   (hysteresis) does not replace this: a 7f move can turn a chord by more than any margin (measured
   11.3 to 1.9 degrees on `a-chord-that-turns-onto-an-axis-meets-a-title`). Reserving the title room
   before 7e (ticket 163) would remove the cause; this re-check is the guard.

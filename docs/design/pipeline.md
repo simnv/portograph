@@ -1100,8 +1100,10 @@ The class is read on the geometry each reader sees, and 7f moves a held chord's 
 gap growth, the column moves), so a chord held as a diagonal can be published within 10 degrees of an axis. The published
 geometry must satisfy the predicate: at the end of each attempt of 7f, `titleCrowdedChords` names every held chord that a
 placed group title meets within its link-free margin where `diagonalMayCross` is false, and the retry of 7f refuses it
-(`ROUTED_CHORD_REFUSED`, reason `title`; a fan member as `title` in its admission, a direct member through its family). The
-chord takes the orthogonal route. After `DIRECT_RETRIES` retries a chord a title still meets stays, and G3 judges
+(`ROUTED_CHORD_REFUSED`, reason `title`, a frame chord too; a fan member as `title` in its admission, a direct member through its
+family). The chord takes the orthogonal route. A spanning chord (`spanHint`) is not refused: 7a reserved span corridors for it and no
+transit lanes. It stays, as does any chord a title still meets after `DIRECT_RETRIES` retries; `STRAIGHT_LINK_TITLE` (warning) names
+each, and G3 judges
 (`a-chord-that-turns-onto-an-axis-meets-a-title`).
 The rule applies to a frame and to a one-rank row group. A canton keeps its band gap (ticket 65) and is not moved for it. From 7f on (the replays of the bundled model), a centring replay also declines a step that leaves fewer
 overlay links straight, or that puts a frame inside a band it was not in: the group stays where it stood.

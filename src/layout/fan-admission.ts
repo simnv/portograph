@@ -1,10 +1,10 @@
 import type { FanFallbackReason, FanFamily, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { EPS, segmentDistance, segmentRectDistance } from '../geometry/planar.js';
-import { GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
+import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { chordsApart, chordVerdict, fanCrossedBoxes, fixedPointRefusal, foreignBox, isRoutedChord, orthogonalLeg, siblingStemCrowded, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
-import { diagonalMayCross } from './diagonal-text.js';
+import { diagonalMayCross, linkFreeMargin } from './diagonal-text.js';
 
 /**
  * The joint admission of a fan family (architecture-2 ticket 40, merged design Sections 2 and 3).
@@ -207,8 +207,8 @@ export function titleCrowdedChords(model: LayoutModel): string[] {
   for (const id of model.frozenChords ?? []) {
     const link = model.links.find(other => other.id === id), chord = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
     if (link === undefined || chord === undefined) continue;
-    const reach = linkStrokeWidth(link) / 2 + GROUP_LABEL_LINK_CLEARANCE - EPS;
-    if (titles.some(label => !diagonalMayCross(chord, label) && segmentRectDistance(chord, label.bounds!) < reach)) found.push(link.id);
+    // The reach G3 reads: half the stroke and the title's link-free margin (`linkFreeMargin`).
+    if (titles.some(label => !diagonalMayCross(chord, label) && segmentRectDistance(chord, label.bounds!) < linkStrokeWidth(link) / 2 + linkFreeMargin(label) - EPS)) found.push(link.id);
   }
   return found.sort();
 }

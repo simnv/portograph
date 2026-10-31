@@ -2,6 +2,7 @@ import type { Diagnostic, DirectMemberReason, FanFallbackReason, LayoutModel } f
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
 import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
 import { refuseChords, refuseStemCrowded, titleCrowdedChords, titleCrowdedFanMembers } from './fan-admission.js';
+import { DIAGONAL_MIN_DEGREES } from './diagonal-text.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
 import { centreContext, centreViolations, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
@@ -232,7 +233,11 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
       // (`diagonalMayCross`, in `titleCrowdedChords`), and the retry draws the chord orthogonal.
       const direct = new Set((draft.directFamilies ?? []).flatMap(family => family.members.map(member => member.link)));
       const fanMembers = new Set((draft.fanAdmissions ?? []).map(item => item.link));
-      const titled = titleCrowdedChords(draft).filter(id => !fanMembers.has(id) && !refused.has(id) && !chordRefused.has(id));
+      // A spanning chord (`spanHint`) is left out: 7a reserved span corridors for it and no transit lanes, so an orthogonal route would find no
+      // reservation (as the direct families leave it out). It stays, and the warning below names it; G3 judges.
+      const spans = new Set(draft.links.filter(link => link.spanHint === true).map(link => link.id));
+      const crowdedTitles = titleCrowdedChords(draft).filter(id => !fanMembers.has(id) && !refused.has(id) && !chordRefused.has(id));
+      const titled = crowdedTitles.filter(id => !spans.has(id)), kept = crowdedTitles.filter(id => spans.has(id));
       // A straight fan member is crowded the same way, and refused the same way (architecture-2 ticket 40): it falls back alone, as `crowds`, or
       // as `stem` when it still passes a sibling fallback's stem. So is one that a group title placed in 7f still meets, as `title`: the title
       // planner read the chord as a wall and found no room beside it (a title that moves aside, its frame grown, is slice 2).
@@ -242,7 +247,7 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
         for (const [id, reason] of crowdedFanMembers(draft)) fans.set(id, reason);
         for (const id of chordRefused.keys()) fans.delete(id);
       }
-      if (!crowded.length && !fans.size && !titled.length) break;
+      if (!crowded.length && !fans.size && !titled.length) { titleCrowdedWarning(draft, kept); break; }
       if (retry >= DIRECT_RETRIES) {
         if (crowded.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
           message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
@@ -251,16 +256,26 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
         const ids = [...fans.keys()].sort(), named = ids.map(id => `${id} (${fans.get(id)})`);
         if (fans.size) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_MEMBER_CROWDED', owners: ids.map(id => ({ kind: 'link' as const, id })),
           message: `The fan ${ids.length === 1 ? 'member' : 'members'} ${named.join(', ')} still ${ids.length === 1 ? 'meets' : 'meet'} a planned part, a sibling's stem or a group title after ${DIRECT_RETRIES} retries of 7f and ${ids.length === 1 ? 'stays' : 'stay'} straight; the gates judge.` });
-        // A held chord a title still meets stays straight too; the title planner named it (`ROUTED_CHORD_TITLE`), and G3 judges.
+        // A held chord a title still meets on an axis stays straight too, and is named; G3 judges.
+        titleCrowdedWarning(draft, [...titled, ...kept].sort());
         break;
       }
       for (const [id, reason] of fans) chordRefused.set(id, reason);
       for (const id of crowded) refused.set(id, 'crowds');
-      for (const id of titled) if (direct.has(id)) refused.set(id, 'title'); else chordRefused.set(id, 'title');
+      // A direct member is refused through its family's decision too, so the record names `title`; it falls back before the freeze either way,
+      // also when its family is not triggered again.
+      for (const id of titled) { chordRefused.set(id, 'title'); if (direct.has(id)) refused.set(id, 'title'); }
       for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
       Object.assign(draft, clone(start));
     }
   } finally { attemptCounters.in7f--; }
+}
+
+/** The warning for the held chords a group title still meets on an axis when 7f ends: a spanning chord, or any chord after the retries. */
+function titleCrowdedWarning(draft: LayoutModel, ids: readonly string[]): void {
+  if (!ids.length) return;
+  draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_TITLE', owners: ids.map(id => ({ kind: 'link' as const, id })),
+    message: `The straight ${ids.length === 1 ? 'link' : 'links'} ${ids.join(', ')} ${ids.length === 1 ? 'stands' : 'stand'} within ${DIAGONAL_MIN_DEGREES} degrees of an axis in the link-free margin of a group title when 7f ends (a spanning chord is not refused; any other after ${DIRECT_RETRIES} retries of 7f) and ${ids.length === 1 ? 'stays' : 'stay'} straight; G3 judges.` });
 }
 
 function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: ReadonlyMap<string, DirectMemberReason> = new Map(), chordRefused: ReadonlyMap<string, FanFallbackReason> = new Map()): void {

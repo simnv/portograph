@@ -165,8 +165,9 @@ stub does the same, Q106):
   leaves, is drawn orthogonal on the next attempt (a fan member as in Section 16, a direct member
   through its family's decision, any other chord before the freeze). This also covers a chord that
   was a diagonal at the end of 7e, which no strip refused, and that 7f turned within 10 degrees of
-  an axis (ticket 162 re-check, `a-chord-that-turns-onto-an-axis-meets-a-title`). After
-  `DIRECT_RETRIES` retries a chord a title still meets stays straight, and G3 judges.
+  an axis (ticket 162 re-check, `a-chord-that-turns-onto-an-axis-meets-a-title`). A spanning chord
+  is not refused (7a reserved no transit lanes for it). It stays straight, as does a chord a title
+  still meets after `DIRECT_RETRIES` retries; `STRAIGHT_LINK_TITLE` names each, and G3 judges.
 
 *As built (ticket 100).* The crossing rectangle is wider in x on a slanted chord: the half stroke and the 8 px margin are taken along the normal of the
 chord, so the x growth is (half stroke + 8) / cos of the angle to the vertical (a vertical chord gives 8 px). Measured: a title 8 px from the bounding box stood

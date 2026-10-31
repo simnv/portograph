@@ -1,6 +1,7 @@
 import type { Point } from '../model/geometry.js';
 import type { LayoutLabel } from '../model/layout.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 
 /**
  * A diagonal may cross text (ticket 162, ADR-0023, the owner's rule of 2026-10-31). This module holds the one predicate every
@@ -46,4 +47,12 @@ export function crossableText(text: CrossedText): boolean {
  */
 export function diagonalMayCross(segment: { from: Point; to: Point }, text: CrossedText): boolean {
   return crossableText(text) && isDiagonal(segment);
+}
+
+/**
+ * The link-free margin a text owns beyond its box: a group title keeps `GROUP_LABEL_LINK_CLEARANCE` clear of every link it may not be
+ * crossed by; any other text keeps none. G3 and the 7f re-check of the held chords (`titleCrowdedChords`) read it (R1).
+ */
+export function linkFreeMargin(text: CrossedText): number {
+  return text.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;
 }
