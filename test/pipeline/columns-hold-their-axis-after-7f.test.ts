@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
-import { layout, parse } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
 import { holdColumnAxes } from '../../src/layout/columns.js';
 import { rows } from '../../src/layout/rows.js';
 import { sidesTwo } from '../../src/layout/sides-two.js';
@@ -54,11 +54,14 @@ describe('columns hold their feed axis after 7f', () => {
   // refuse, so the chord stayed straight through the frame and G2 failed. A judge that reads the frozen chords refuses the trial (ticket 164).
   // The premise holds with card nodes only (`layout.nodeContent: card`): the same sheet with stacked nodes offers no such side.
   // Ticket 164 (card default) owns the fix: the judge's use of `chordBlockedNew` broke the stacked canton-order sheet (G9), so it moved to
-  // `.scratch/snack-theme/164-chord-blocked-new.patch`. Until 164 lands it, this test pins the defect as it stands: the trial is kept and link-2 is
-  // blocked. When it fails because the chord is clear, put back the assertions of the patch (no blocked chord, the trial refused for link-2).
-  it('ticket 164: a held chord that 7f stands a foreign frame on is still published blocked (card nodes)', async () => {
+  // `.scratch/snack-theme/164-chord-blocked-new.patch`. Since the merge of ticket 162 (a diagonal may cross a title) the premise is gone: with card
+  // nodes link-2 is published orthogonal, it is no held chord, and every gate passes. The patch's test of the judge needs another premise in ticket 164.
+  it('ticket 164: with card nodes link-2 is no held chord after the merge of ticket 162, and no chord is blocked', async () => {
     const model = await layout(parse(source.replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.document.layout?.nodeContent).toBe('card');
-    expect(blockedChordsAt(model)).toEqual(['link-2']);
+    expect(model.frozenChords ?? []).not.toContain('link-2');
+    expect(model.links.find(link => link.id === 'link-2')!.technique).toBe('orthogonal');
+    expect(blockedChordsAt(model)).toEqual([]);
+    expect(Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id)).toEqual([]);
   }, 60000);
 });

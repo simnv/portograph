@@ -40,6 +40,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * (the frame separation, the centring and side-judge reads of the frozen chords); the digests did not move with them.
  * Two were re-recorded for ticket 162 (a diagonal may cross a title): no judge moved, but on `a-canton-member-frame-slides-off-a-straight-chord` and
  * `overlay-links-reorder-two-locations` feeds that a title refused are chords now, so the judges are called on other geometry.
+ * The merge of tickets 159 and 162 re-recorded them together: only `centreGroupStep` differs from main. Eight fixtures take the ticket 159 digest, and
+ * `overlay-links-reorder-two-locations` has the calls of both (116 on main, 126 merged).
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',
