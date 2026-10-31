@@ -12,13 +12,17 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * Ticket 75. A centring run ends when a pass changes no geometry. A group whose alignment is infeasible has its
  * `CENTRE_ALIGNMENT_INFEASIBLE` warning and does not keep the run going, and it is not a stall.
  */
-const calls = vi.hoisted(() => [] as { stage: string; passes: number }[]);
+const calls = vi.hoisted(() => [] as { stage: string; passes: number; remaining?: number; off?: number; stall?: boolean }[]);
+// When `read.off` is set, each call also records what the publication check finds where the call left the model, and the budget it left.
+const read = vi.hoisted(() => ({ off: false }));
 vi.mock('../../src/layout/centre.js', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/layout/centre.js')>();
   return { ...original, centreDraft: (model: LayoutModel, budget: { remaining: number; passes: number }): void => {
     const before = budget.passes;
     original.centreDraft(model, budget);
-    calls.push({ stage: model.stage, passes: budget.passes - before });
+    calls.push({ stage: model.stage, passes: budget.passes - before, ...(read.off ? {
+      remaining: budget.remaining, off: original.centreViolations(model, true).length,
+      stall: model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE') } : {}) });
   } };
 });
 
@@ -75,4 +79,18 @@ links: [[a.p, c.q], [b.p, c.p]]`))));
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
     expect(model.diagnostics.map(item => item.code)).toContain('CENTRE_ALIGNMENT_INFEASIBLE');
   }, 60000);
+
+  // Snack-theme ticket 157. After the overlay windows, `centreDraft` runs the passes again while the publication check finds an alignment off its
+  // feed. A round that changes neither the geometry nor what the check finds is a stall the passes cannot see: the rounds stop there, report it,
+  // and keep the rest of the shared budget for the stages after 7c. On three-continents a replay at the bundles stage stands with link-26 7.2 px
+  // off its feed and a round moves nothing; the rounds stop with 2 passes left. Before the stop, each round spent a pass until the budget was gone.
+  it('a round that changes nothing stops the rounds, reports the stall and keeps the budget', async () => {
+    read.off = true;
+    try {
+      await layout(parse(golden('three-continents')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    } finally { read.off = false; }
+    const kept = calls.filter(call => call.off! > 0 && call.remaining! > 0);
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.every(call => call.stall)).toBe(true);
+  }, 120000);
 });

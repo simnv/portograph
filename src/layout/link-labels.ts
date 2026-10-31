@@ -19,10 +19,12 @@ export { LABEL_BORDER_REACH, labelRunWindows, type LinkRun, LINK_CUT_HAIR, longe
 import { LABEL_BORDER_REACH, OVERLAY_LABEL_DENSITY, candidateBox, cutWindows, describedLink, isDiagonalRun, labelRunWindows, longestRun, overlayDensity, overlayLabelsSuppressed, runCentre, segmentLength, windowHolds } from './run-label-box.js';
 import type { LinkRun } from './run-label-box.js';
 import { LINK_LABEL_GEOMETRY } from './link-label-geometry.js';
+import { type CrossedText, diagonalMayCross, LINK_LABEL } from './diagonal-text.js';
 
 /**
  * The link geometry placement reserved, as the runs a label on a diagonal line keeps clear of (ticket 20, user decision 2026-10-23):
- * every frozen chord (`model.frozenChords`, its straight segment between its two faces) and every routed lane (`model.lanes`: a
+ * every frozen chord on an axis (`model.frozenChords`, its straight segment between its two faces; a diagonal one may cross the label,
+ * ticket 162) and every routed lane (`model.lanes`: a
  * vertical run at the lane's x over its reserved extent; a span corridor is its chord's room, not a run), less the label's own
  * link, and the bands of the labels this label yields to (`labelBands`, read from `model.labelYields`). Placement (7f) and stage 9
  * pass the same runs to `labelRunWindows` (R1). A link placement did not reserve is left to stage 9's collision test.
@@ -39,7 +41,8 @@ function fixedLinkRuns(model: LayoutModel, own: string): LinkRun[] {
     const link = byId.get(id);
     if (link === undefined || id === own) continue;
     const chord = straightChord(model, link, undefined, true);
-    if (chord !== undefined) runs.push({ segment: chord, clearance: linkStrokeWidth(link) / 2 });
+    // A diagonal chord may cross a link label (ticket 162, ADR-0023): it cuts no window. Stage 9 still prefers a place clear of it.
+    if (chord !== undefined && !diagonalMayCross(chord, LINK_LABEL)) runs.push({ segment: chord, clearance: linkStrokeWidth(link) / 2 });
   }
   for (const lane of model.lanes) {
     if (lane.layer === 'overlay' || lane.kind === 'span' || lane.owner.kind === 'link' && lane.owner.id === own) continue;
@@ -372,10 +375,13 @@ function labelObstacle(label: Pick<LayoutLabel, 'bounds' | 'turnedSize' | 'textR
  * upright box, which holds the area.
  */
 function collides(index: ObstacleIndex, area: Area, support: LabelSupport | undefined,
-  overlayCounts = true, onLine = false): boolean {
+  overlayCounts = true, onLine = false, text: CrossedText = {}): boolean {
   return index.some(areaBounds(area), item => {
     if (item.overlay && !overlayCounts) return false;
     if (!item.segment) return areaDistance(area, item.area ?? item.bounds) < item.clearance + EPS;
+    // A diagonal may cross a link label (ticket 162, ADR-0023). It stays an obstacle on the rungs that count the overlay runs, so a
+    // place clear of it is still taken first, and is none on the rungs that let the label cross a line.
+    if (!overlayCounts && diagonalMayCross(item.segment, text)) return false;
     const supporting = support?.kind === 'link-segment' && support.link === item.link
       && item.index !== undefined && item.index >= support.segment && item.index <= (support.through ?? support.segment);
     // A label on a direct line lies on the very line it names (ticket 16): that line is no obstacle.
@@ -391,6 +397,8 @@ interface Placement {
 }
 interface Supported {
   segments: PathSegment[]; half: number; support: (index: number) => LabelSupport | undefined;
+  /** The label placed: whether a diagonal may cross it (`diagonalMayCross`) reads its role and owner. */
+  text: CrossedText;
   /** The link runs placement reserved that a label on a diagonal line keeps clear of (`reservedLinkRuns`). */
   links?: readonly LinkRun[];
   /** The bands of the labels this label yields to (`labelBands`): no candidate on its line meets one, on any rung. A candidate beside the line is left to the collision test. */
@@ -520,7 +528,7 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
         const measuredOn = onLine === undefined ? undefined : measure(onLine);
         const fits = measuredOn !== undefined && measuredOn.lines.length > 0
           && (shortened || !shortenable || measuredOn.width + 2 * LINK_LABEL_GEOMETRY.shortenMargin <= length + EPS);
-        const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts, borders, refusal, supported.links, supported.bands) : undefined;
+        const found = fits ? alongLine(index, segment, length, measuredOn, supported.support(at), overlayCounts, borders, refusal, supported.links, supported.bands, supported.text) : undefined;
         if (found && measuredOn) {
           const placement: Placement = { onLine: true, segment: at, bounds: found.bounds, textRotation: found.textRotation, turnedSize: found.turnedSize,
             text: onLine!, lines: measuredOn.lines, lineHeight: measuredOn.lineHeight };
@@ -545,7 +553,7 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
       const { bounds, textRotation, turnedSize } = candidateBox(segment, supported.half, { width: measured.width, height: measured.height }, second, centre);
       const area = labelArea({ bounds, textRotation, ...(turnedSize ? { turnedSize } : {}) });
       if (borders !== undefined && borders.some(box => labelCrossesBorder(area, box))) { refusal.border = true; continue; }
-      if (collides(index, area, supported.support(at), overlayCounts)) continue;
+      if (collides(index, area, supported.support(at), overlayCounts, false, supported.text)) continue;
       const placement: Placement = { segment: at, bounds, textRotation, ...(turnedSize ? { turnedSize } : {}), text: drawn, lines: measured.lines, lineHeight: measured.lineHeight };
       if (!shortened) return placement;
       if (!best || drawn.length > best.text.length) best = placement;
@@ -568,7 +576,7 @@ function placeLabel(index: ObstacleIndex, supported: Supported, text: string, sh
  */
 function alongLine(index: ObstacleIndex, segment: PathSegment, length: number, measured: { width: number; height: number },
   support: LabelSupport | undefined, overlayCounts: boolean, borders: readonly Rect[] | undefined,
-  refusal: { border: boolean }, links: readonly LinkRun[] = [], bands: readonly LinkRun[] = []): { bounds: Rect; textRotation: number; turnedSize: { width: number; height: number } } | undefined {
+  refusal: { border: boolean }, links: readonly LinkRun[] = [], bands: readonly LinkRun[] = [], text: CrossedText = {}): { bounds: Rect; textRotation: number; turnedSize: { width: number; height: number } } | undefined {
   const degrees = lineAngle(segment), size = haloSize(measured);
   const ux = (segment.to.x - segment.from.x) / length, uy = (segment.to.y - segment.from.y) / length;
   const reach = Math.min(length / 2, measured.width / 2 + LINK_LABEL_GEOMETRY.shortenMargin);
@@ -591,7 +599,7 @@ function alongLine(index: ObstacleIndex, segment: PathSegment, length: number, m
   for (const along of candidates) {
     const area: OrientedBox = { centre: { x: segment.from.x + ux * along, y: segment.from.y + uy * along }, ...size, degrees };
     if (borders !== undefined && borders.some(box => labelCrossesBorder(area, box))) { refusal.border = true; continue; }
-    if (!collides(index, area, support, overlayCounts, true) && !meetsBand(bands, area)) return { bounds: orientedBounds(area), textRotation: degrees, turnedSize: { ...size } };
+    if (!collides(index, area, support, overlayCounts, true, text) && !meetsBand(bands, area)) return { bounds: orientedBounds(area), textRotation: degrees, turnedSize: { ...size } };
   }
   return undefined;
 }
@@ -722,7 +730,7 @@ export function produceLinkLabels(model: LayoutModel): void {
     const label = baseLabel(`label:link:${link.id}`, link.owner, layer, text);
     const drawable = link.technique !== 'stub' && link.path !== undefined;
     const runs = drawable ? labelRuns(link.path!.segments) : [];
-    emit(label, drawable ? { segments: runs.map(run => run.segment), half: halfStroke(link.path),
+    emit(label, drawable ? { segments: runs.map(run => run.segment), half: halfStroke(link.path), text: label,
       support: at => ({ kind: 'link-segment', link: link.id, segment: runs[at]!.first,
         ...(runs[at]!.last > runs[at]!.first ? { through: runs[at]!.last } : {}) }),
       ...(runs.some(run => isDirect(run.segment)) ? linkRunsOf(link.id) : {}) } : undefined, true);
@@ -734,7 +742,7 @@ export function produceLinkLabels(model: LayoutModel): void {
     const label = baseLabel(`label:multiplicity:${run.id}`, bundle.owner, 'routed', String(run.count));
     // A counted trunk gets no segment exemption, and a decimal count has no meaningful prefix, so
     // the shortening rung cannot apply to it: it would replace the datum with an ellipsis.
-    emit(label, { segments: run.path.segments, half: halfStroke(run.path),
+    emit(label, { segments: run.path.segments, half: halfStroke(run.path), text: label,
       support: () => ({ kind: 'merge-run', bundle: bundle.id, run: run.id }) }, false);
   }
 

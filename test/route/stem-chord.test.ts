@@ -51,7 +51,8 @@ describe('the chord splits a batch but does not open a pending stem', () => {
     const plan = tierGapPlans(placedModel).find(item => item.plan.parts.length > 2)!.plan;
     expect(plan.residual).toEqual([]);
     expect(plan.order.map(id => id.replace('link-', '').replace('#0', ''))).toEqual(['11a', '10', '9', '4', '5', '6', '11b']);
-    expect(plan.parts.find(part => part.link === 'link-11')!.middle).toBeCloseTo(223.75, 6);
+    // Verdana metrics (snack-theme ticket 157): 223.75 with Arial.
+    expect(plan.parts.find(part => part.link === 'link-11')!.middle).toBeCloseTo(236.30517578125, 6);
     expect(model.removedLinks ?? []).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'ROUTE_CHECKPOINT_SKIPPED' || item.code === 'ROUTE_GAP_REJECTED')).toEqual([]);
     for (const link of model.links) expect(link.path, link.id).toBeDefined();

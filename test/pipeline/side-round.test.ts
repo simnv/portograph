@@ -76,15 +76,18 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // The hash moved from 6e2c23e8fd517290 with the message rewrite (ticket 02): the only difference in the layout JSON is the text of
     // the ROUTE_UNSUPPORTED message, 'M1 draws the members for group-link' now 'A group-link is drawn as its member links'.
     // Ticket 22: the fan is a triggered direct family, and its record is published (db0b5d006f05102c before).
-    expect(hash(model)).toBe('3dcf58b8a7c3c196');
+    // Verdana metrics (snack-theme ticket 157): 3dcf58b8a7c3c196 with Arial.
+    expect(hash(model)).toBe('f976911f2b2220a8');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
 
   it('a link that 7f straightens by itself is no candidate: same bytes as with no side round (review M1)', async () => {
     const off = await run(TWO_TIERS, { testMaxReruns: 0 }), on = await run(TWO_TIERS);
-    expect(on.places).toBe(1);
     expect(hash(on.model)).toBe(hash(off.model));
+    // Two places since ticket 162: the hub's two feeds are cross-frame chords over the canton titles, and the fan round (ticket 89) places
+    // once more to measure their pitch. The side round adds none, and the bytes are those of a run with no rounds.
+    expect(on.places).toBe(2);
     expect(codes(on.model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
 
@@ -93,7 +96,8 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     expect(model.links.find(item => item.layer === 'overlay')!.path!.segments.length).toBeGreaterThan(1);
     expect(places).toBe(1);
     // Re-baselined for architecture ticket 17 (a `rowOrderDecision` record) and ticket 23 (the overlay port clearance is 7.75 px, not 4).
-    expect(hash(model)).toBe('e21a79fe9f158ae7');
+    // Verdana metrics (snack-theme ticket 157): e21a79fe9f158ae7 with Arial.
+    expect(hash(model)).toBe('e78c0a9d3cded778');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);

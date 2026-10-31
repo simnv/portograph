@@ -21,9 +21,9 @@ describe('font measurements', () => {
   it('measures lines independently, normalizes newlines and expands tabs for the renderer', () => {
     const measured = measureText('WWW\r\ni\tI\rX', { fontSize: 12 });
     expect(measured.lines).toEqual(['WWW', 'i    I', 'X']);
-    expect(measured.width).toBeCloseTo(33.978515625);
-    expect(measured.lineHeight).toBe(14);
-    expect(measured.height).toBe(42);
+    expect(measured.width).toBeCloseTo(35.595703125);
+    expect(measured.lineHeight).toBe(15);
+    expect(measured.height).toBe(45);
     expect(measureText('').height).toBe(0);
   });
 
@@ -35,7 +35,7 @@ describe('font measurements', () => {
 
   it('sizes pills to measured content while retaining the minimum', () => {
     expect(measurePortPill('i')).toMatchObject({ width: 24, height: 10, radius: 2 });
-    expect(measurePortPill('100G')).toMatchObject({ width: 26, height: 10, radius: 2 });
+    expect(measurePortPill('100G')).toMatchObject({ width: 28, height: 10, radius: 2 });
     const long = measurePortPill('100G-LONG-NAME');
     expect(long.width).toBeGreaterThan(60);
     expect(long.width - long.text.width).toBeGreaterThanOrEqual(6);

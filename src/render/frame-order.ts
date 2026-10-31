@@ -11,6 +11,14 @@ export interface GroupShape {
   parent?: string;
 }
 
+/**
+ * How many boxes of the group layer (`groupShapes`) stand behind a point: the depth of the group fills a text there sits on
+ * (ticket 162). The SVG halo and the draw.io label backdrop read this one count with `backdropColour` (R1).
+ */
+export function boxesBehind(shapes: readonly GroupShape[], point: { x: number; y: number }): number {
+  return shapes.filter(({ bounds: box }) => point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height).length;
+}
+
 /** Overlap on both axes below this is a shared edge or float noise, not a frame lying on another. */
 const OVERLAP_MIN = 0.5;
 

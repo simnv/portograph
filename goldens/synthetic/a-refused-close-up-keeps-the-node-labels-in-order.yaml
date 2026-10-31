@@ -3,8 +3,11 @@
 # an all-to-all sync mesh from the top locations) with five more sync links from the top locations to nodes of the clients and of the
 # switches. Closing the cantons up would put node bodies into some straight links and leave fewer straight links than before, so the
 # close-up is refused in 7f and its move is undone: the node labels must stand in node order again, and the geometry exactly where it was, or
-# publication throws ("Node labels must match measured geometry"). Expected: the layout is produced, one warning names a canton
-# that cannot close up, and the gaps between the canton frames are those of the rows rule.
+# publication throws ("Node labels must match measured geometry"). Expected: the layout is produced, the close-up is refused at
+# least once in the run (read on the verdict of `closeUp`; the published warning names only how the last close-up ended, and with
+# the Verdana metrics of snack-theme ticket 157 the last one is taken), and the gaps between the canton frames are those of the rows rule.
+# Snack-theme ticket 157: on the plain input the overlay windows of 7c move cl-a3 after the centring passes, and the chord they move
+# frees a growth of loc-a2-gw; the centring check runs again on a model the windows moved (the input threw a centring violation before).
 # Test-only input owned by ranked-groups ticket 65; test/pipeline/canton-close-up.test.ts reads the layout.
 # Ticket 89: the links from the two switches to their zone nodes are authored `route: orthogonal`. As frame chords they would make the
 # switches spread their ports (a fan pitch) and widen the canvas, and this input is about the close-up, not about the fan.

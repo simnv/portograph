@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
-import type { Course, LayoutLink, LayoutModel } from '../../src/index.js';
+import type { Course, Lane, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
 import { naturalPolyline, polylineCrossings, polylineTurns, simplify } from '../../src/layout/course-plan.js';
 import { drawnCrossings, judgeCourseTrial, measureCourses, placedExtent, poorRoute, stepGain, stepRoute } from '../../src/layout/course-measure.js';
@@ -13,6 +13,8 @@ import type { LinkFacts } from '../../src/layout/read/courses.js';
 import { constraintFindings } from '../../src/layout/trial-findings.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { pathBends } from '../../src/layout/objective.js';
+import { laneSidesHold } from '../../src/layout/lanes.js';
+import { right } from '../../src/geometry/planar.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -154,6 +156,23 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
     expect([turns(model, 1), turns(model, 2)]).toEqual([2, 2]);
     expect(score(model).snapshot.counts.routed.crossings).toBeLessThanOrEqual(9);
     expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
+  }, 60000);
+
+  // The Core title (Verdana) does not fit beside the drop of N2-C1 into C1, so 7f widens Core past it. The perimeter lane of C1-S2 has Core as its
+  // upper end's group but stands beside South: it must not refuse that widening, or the title falls on the drop and the trial loses the course.
+  it('04: a perimeter lane walls the groups of its span when aligned, and gives way when its x is derived', async () => {
+    const model = await layout(parse(source(MESH)), options);
+    const lane = model.lanes.find(item => item.id === 'perimeter:link-2')!, core = model.groups.core!, south = model.groups.south!;
+    expect([lane.tier, lane.span, lane.aligned]).toEqual([core.tier, { top: south.tier, bottom: south.tier }, true]);
+    expect(core.bounds!.x).toBeLessThan(lane.x);
+    expect(right(core.bounds!)).toBeGreaterThan(right(lane.bounds));
+    expect(laneSidesHold(model, [{ group: core, bounds: { ...core.bounds!, width: core.bounds!.width + 20 } }], false)).toBe(true);
+    expect(laneSidesHold(model, [{ group: south, bounds: { ...south.bounds!, width: lane.bounds.x - south.bounds!.x + 1 } }], false)).toBe(false);
+    // The same lane unaligned derives its x from the boxes on its span: the replay moves it out with the widened box.
+    const unaligned: Lane = { ...lane };
+    delete unaligned.aligned;
+    const derived = { ...model, lanes: model.lanes.map(item => item === lane ? unaligned : item) };
+    expect(laneSidesHold(derived, [{ group: south, bounds: { ...south.bounds!, width: lane.bounds.x - south.bounds!.x + 1 } }], false)).toBe(true);
   }, 60000);
 
   it('a sheet with no poor route keeps its layout and takes no course', async () => {

@@ -38,10 +38,12 @@ describe('a title over a port\'s leg is nudged aside (ticket 62)', () => {
       { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     const two = await run('overlay-links-reorder-two-members-of-a-canton-group');
     const at = (model: LayoutModel, id: string): number => model.labels.find(label => label.id === `label:group:${id}`)!.bounds!.x;
-    expect(at(one, 'west')).toBeCloseTo(144.42626953125, 6);
-    expect(at(one, 'lab#0')).toBeCloseTo(148.09423828125, 6);
-    expect(at(two, 'west')).toBeCloseTo(243.45263671875, 6);
+    // Verdana metrics (snack-theme ticket 157): 144.42626953125, 148.09423828125, 243.45263671875 and 244.65380959375 with Arial.
+    // The canton titles still stand centred in their band (band centre 169.73 and 276.26).
+    expect(at(one, 'west')).toBeCloseTo(152.6865234375, 6);
+    expect(at(one, 'lab#0')).toBeCloseTo(157.7080078125, 6);
+    expect(at(two, 'west')).toBeCloseTo(259.212158203125, 6);
     // `lab#0` stood at 240.366 before ticket 66; its leg (a real one, not the phantom of B1) is a hard obstacle since, the group widens and the title stands 4.29 px further right.
-    expect(at(two, 'lab#0')).toBeCloseTo(244.65380959375, 6);
+    expect(at(two, 'lab#0')).toBeCloseTo(260.3521738515625, 6);
   }, 120000);
 });

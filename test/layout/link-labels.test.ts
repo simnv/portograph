@@ -32,7 +32,7 @@ const overlaps = (a: Rect, b: Rect): boolean => Math.min(a.x + a.width, b.x + b.
 /** The rulings this ticket implements, restated here so a changed constant fails a test. */
 const NORMAL_GAP = 4, SHORTEN_MARGIN = 8, ELLIPSIS = '...';
 it('keeps the theme and spacing rulings stage 9 was given', () => {
-  expect(LINK_LABEL_GEOMETRY).toEqual({ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9,
+  expect(LINK_LABEL_GEOMETRY).toEqual({ fontFamily: 'Verdana', fontSize: 9,
     fontWeight: 400, normalGap: NORMAL_GAP, ellipsis: ELLIPSIS, shortenMargin: SHORTEN_MARGIN, verticalRotation: -90, halo: 2, alongStep: 2, borderMargin: 8 });
   expect(OVERLAY_LABEL_DENSITY).toBe(3);
 });
@@ -367,24 +367,25 @@ links: [{from: a.p, to: {group: gb}, label: feed}]`;
 
   it('keeps the longest fitting prefix when a line break inside it narrows the box', () => {
     // A line break moves the ellipsis onto a new line, so the measured width can *fall* as the
-    // prefix grows: `MMM...` is 29.993 px but the longer `MMMM\nWW...` is 29.988 px.
-    const text = 'MMMM\nWWWWWWWWWWWW';
+    // prefix grows: `MMM...` is 32.577 px but the longer `MMM\nWW...` is 27.620 px (Verdana metrics).
+    const text = 'MMM\nWWWWWWWWWWWW';
     const model = bench(
       [{ id: 'source', bounds: { x: 60, y: 80, width: 40, height: 40 } },
         { id: 'target', bounds: { x: 138, y: 80, width: 40, height: 40 } }],
       [{ id: 'link-1', from: 'source', to: 'target', sides: ['right', 'left'],
         points: [{ x: 100, y: 100 }, { x: 138, y: 100 }], label: text }]);
     const segment = model.links[0]!.path!.segments[0]!, limit = 38 - SHORTEN_MARGIN;
-    expect(measure('MMM...').width).toBeLessThanOrEqual(limit);
-    expect(measure('MMMM\nWW...').width).toBeLessThanOrEqual(limit);
-    expect(measure('MMMM\nWW...').width).toBeLessThan(measure('MMM...').width);
-    expect(measure('MMMM\nWWW...').width).toBeGreaterThan(limit);
+    expect(measure('MM...').width).toBeLessThanOrEqual(limit);
+    expect(measure('MMM...').width).toBeGreaterThan(limit);
+    expect(measure('MMM\nWW...').width).toBeLessThanOrEqual(limit);
+    expect(measure('MMM\nWW...').width).toBeLessThan(measure('MMM...').width);
+    expect(measure('MMM\nWWW...').width).toBeGreaterThan(limit);
     produceLinkLabels(model);
     const label = linkLabelsOf(model)[0]!;
-    expect(label.text).toBe('MMMM\nWW...');
-    expect(label.lines).toEqual(['MMMM', 'WW...']);
+    expect(label.text).toBe('MMM\nWW...');
+    expect(label.lines).toEqual(['MMM', 'WW...']);
     expect(label.tooltip).toBe(text);
-    expect(label.bounds).toEqual(candidate(segment, 'MMMM\nWW...', false));
+    expect(label.bounds).toEqual(candidate(segment, 'MMM\nWW...', false));
   });
 
   it('indexes an obstacle at an unsafe coordinate instead of stepping through its cells', () => {

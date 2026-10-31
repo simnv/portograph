@@ -8,6 +8,9 @@
 # Test-only input owned by ticket 62; test/route/checkpoint-removal.test.ts, test/route/retrace-removal.test.ts and
 # test/pipeline/detoured-stem.test.ts read it.
 #
+# Five links are authored `route: orthogonal` (ticket 162): a diagonal may cross a title, so as cross-frame chords they would cross the
+# wide titles and leave no leg under them; the authored route keeps the legs the claim above is about.
+#
 # The rows keep their declared order (`layout.corridorRowOrder: false`, architecture-2 ticket 17): the claim above
 # needs the crossings that order makes, and the corridor row order would remove them.
 portograph: 2
@@ -40,17 +43,17 @@ nodes:
   n5_2: { group: t5, class: provider, label: N5_2, ports: [{ name: u0, side: top }] }
 links:
   - [n0_0.d0, n1_0.u0]
-  - [n0_1.d0, n1_1.u0]
-  - [n0_2.d0, n1_2.u0]
+  - [n0_1.d0, n1_1.u0, { route: orthogonal }]
+  - [n0_2.d0, n1_2.u0, { route: orthogonal }]
   - [n1_0.d0, n2_0.u0]
   - [n1_1.d0, n2_1.u0]
   - [n1_2.d0, n2_2.u0]
-  - [n2_0.d0, n3_0.u0]
+  - [n2_0.d0, n3_0.u0, { route: orthogonal }]
   - [n2_1.d0, n3_1.u0]
   - [n2_2.d0, n3_2.u0]
   - [n3_0.d0, n4_0.u0]
-  - [n3_1.d0, n4_1.u0]
-  - [n3_2.d0, n4_2.u0]
+  - [n3_1.d0, n4_1.u0, { route: orthogonal }]
+  - [n3_2.d0, n4_2.u0, { route: orthogonal }]
   - [n4_0.d0, n5_0.u0]
   - [n4_1.d0, n5_1.u0]
   - [n4_2.d0, n5_2.u0]

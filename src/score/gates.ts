@@ -22,6 +22,7 @@ import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, fa
 import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../geometry/oriented.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
+import { diagonalMayCross } from '../layout/diagonal-text.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { faceKey, plannedTurns, portTurn, turnOrderViolated, turnRanker, type TurnPort } from '../layout/turn-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
@@ -366,6 +367,8 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       const own = label.onLine === true && label.support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === label.support.link
         && label.support.link === s.link.id && s.index >= label.support.segment && s.index <= (label.support.through ?? label.support.segment);
       if (own && !horizontal(s.segment) && !vertical(s.segment)) continue;
+      // A diagonal may cross a group title or a link label (ticket 162, ADR-0023): no hit, the halo keeps the text readable.
+      if (diagonalMayCross(s.segment, label)) continue;
       // Text drawn across a routed segment is a hit whatever it claims to support.
       if (areaSegment(s.segment, area)) { hit(s.link.id); continue; }
       // Only the clearance zone of the one segment a link label was measured against is exempt.

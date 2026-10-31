@@ -87,7 +87,8 @@ it('moves a corridor to the child 7c could not seat under it', async () => {
   expect(other.x).toBeLessThan(lane.x);
   // Nothing moved for the corridor: the rule runs after the last centring replay, so the child's
   // node keeps the width and the canvas keeps the extent 7f published.
-  expect(model.nodes['node-ba002']!.bounds!.width).toBeCloseTo(145.775146484375, 6);
+  // Verdana metrics (snack-theme ticket 157): 145.775146484375 with Arial.
+  expect(model.nodes['node-ba002']!.bounds!.width).toBeCloseTo(161.87890625, 6);
   // The move turns the run in the gap above the corridor from a column into a row, and 7f measured
   // that gap before the move. No gap may end up owing more room than it has.
   for (const { gap, plan } of tierGapPlans(model)) expect([gap.below, plan.growth]).toEqual([gap.below, 0]);

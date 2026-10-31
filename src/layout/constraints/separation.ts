@@ -1,5 +1,5 @@
-import type { Rect } from '../../model/geometry.js';
-import type { LayoutGroup, LayoutModel } from '../../model/layout.js';
+import type { LayoutModel } from '../../model/layout.js';
+import { framesAfter, type ProposedBox } from '../frames.js';
 import { xCatalogue } from './catalogue.js';
 import { RESIDUAL_TOLERANCE, termValue } from './evaluate.js';
 
@@ -40,15 +40,46 @@ export function worseSeparations(now: ReadonlyMap<string, Shortfall>, then: Read
 /**
  * The hard separations a proposed set of group boxes would break or deepen, read on the model with the boxes in place; the boxes are put back before this
  * returns. A move that is a stage's own choice (the linked-group grid) asks this before it widens a box, so the gap is kept where the box is first sized
- * and no later pass has to find it short (ticket 19). A frame box is read as published, so only entries of group boxes answer here.
+ * and no later pass has to find it short (ticket 19). A frame box is derived from its cells, so both readings derive the frames from the boxes they read
+ * (`framesAfter`), and an entry that names a frame is judged too: a cell of a child frame that the grid widens grows its top-level frame into the band
+ * gap of the next frame, and a reading that kept the published frame box would accept that widening and let G9 find the gap short (ticket 157).
+ * An entry that names a frame in a canton (the canton frame or a frame on a chain below one) is left to the close-up of 7f, which packs the cantons and
+ * their members to the spacing again after the grid (`closeCantons`, `holdMemberWalls`); no later step packs any other frame.
  */
-export function separationsBrokenBy(model: LayoutModel, proposed: readonly { group: LayoutGroup; bounds: Rect }[]): string[] {
-  const before = separationShortfalls(model);
+export function separationsBrokenBy(model: LayoutModel, proposed: readonly ProposedBox[]): string[] {
+  const published = model.frames;
   const saved = proposed.map(item => item.group.bounds!);
-  for (const item of proposed) item.group.bounds = item.bounds;
+  const framed = (frames: typeof published): void => { if (frames !== undefined) model.frames = frames; };
   try {
-    // A frame box is read as published (it is derived from the cells later), so an entry that names a frame would compare a moved cell with a stale box.
-    const now = separationShortfalls(model);
-    return worseSeparations(new Map([...now].filter(([, item]) => item.owners.every(owner => owner.startsWith('group:')))), before);
-  } finally { proposed.forEach((item, index) => { item.group.bounds = saved[index]!; }); }
+    framed(framesAfter(model, []));
+    const before = separationShortfalls(model);
+    // Derived before the boxes move: `framesAfter` reads each proposed box against the one the group has, and moves the bodies by the shift the stage gives them.
+    const after = framesAfter(model, proposed);
+    for (const item of proposed) item.group.bounds = item.bounds;
+    framed(after);
+    const judged = new Map([...separationShortfalls(model)].filter(([, item]) => item.owners.every(owner => !owner.startsWith('frame:') || !inCanton(model, owner.slice('frame:'.length)))));
+    return worseSeparations(judged, before);
+  } finally {
+    proposed.forEach((item, index) => { item.group.bounds = saved[index]!; });
+    if (published === undefined) delete model.frames; else model.frames = published;
+  }
+}
+
+/** The hard separations short on the frames derived from the group boxes as they stand (not the published frames, which a move leaves stale). */
+export function derivedShortfalls(model: LayoutModel): Map<string, Shortfall> {
+  const published = model.frames;
+  const frames = framesAfter(model, []);
+  try {
+    if (frames !== undefined) model.frames = frames;
+    return separationShortfalls(model);
+  } finally {
+    if (published === undefined) delete model.frames; else model.frames = published;
+  }
+}
+
+/** Whether the frame `id` is a canton or stands on a chain of parents below one. */
+function inCanton(model: LayoutModel, id: string): boolean {
+  const frames = model.document.frames;
+  for (let at: string | undefined = id; at !== undefined && frames?.[at] !== undefined; at = frames[at]!.parent) if (frames[at]!.kind === 'canton') return true;
+  return false;
 }

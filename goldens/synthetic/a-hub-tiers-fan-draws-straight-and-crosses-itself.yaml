@@ -2,7 +2,8 @@
 # ticket 40; user rulings Q124 to Q126). Each member is one straight segment from face to face, and members of the family cross each other as
 # an X; those crossings are faint (0.09 each, the Xf column) and X counts the others only. The member from Hub A to D 1 would pass the
 # tall vault between the hubs: it falls back alone, orthogonal and dashed, and names `body`. D 1 sends three links down to the clients, so
-# the Site D title stands on its top edge, where the member from Hub B enters on a slant: the title stands beside the chord. The solid link
+# the Site D title stands on its top edge, where the member from Hub B enters on a slant: a diagonal may cross a title (ticket 162),
+# so the title takes its place on the edge whether the chord crosses it or not, and its halo keeps it readable. The solid link
 # from the vault to C 3 is no member and drops straight.
 portograph: 2
 profile: network

@@ -5,6 +5,7 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { rebuildBands, union } from './skeleton-geometry.js';
 import { heldBusRoom } from './bus-room.js';
 import { paddingRows, rowsInset, rowsInsetUnderTitle } from './course-rows.js';
+import { ownTitleFloor } from './title-room.js';
 
 export const right = (box: Rect): number => box.x + box.width;
 export const bottom = (box: Rect): number => box.y + box.height;
@@ -69,10 +70,15 @@ export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: numb
   for (const side of ['top', 'bottom'] as const) if (bus[side] > 0 && band?.side !== side) inset[side] = Math.max(padding[side], bus[side]);
   return inset;
 }
-/** The box a group's content asks for: its nodes and the group insets (the title band, padding rows and bus room among them). `fitRegionGroup` fits a group to it. */
+/**
+ * The box a group's content asks for: its nodes and the group insets (the title band, padding rows and bus room among them), at least as wide
+ * as its own title and the two title insets (`ownTitleFloor`), centred on the nodes. `fitRegionGroup` fits a group to it, so the title width is
+ * reserved from stage 5 on, before 7a stands a lane beside the box (snack-theme ticket 157).
+ */
 export function contentBox(model: LayoutModel, group: LayoutGroup): Rect {
   const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), inset = groupInsets(model, group);
-  return { x: box.x - inset.left, y: box.y - inset.top, width: box.width + inset.left + inset.right, height: box.height + inset.top + inset.bottom };
+  const width = box.width + inset.left + inset.right, extra = Math.max(0, ownTitleFloor(model, group) - width);
+  return { x: box.x - inset.left - extra / 2, y: box.y - inset.top, width: width + extra, height: box.height + inset.top + inset.bottom };
 }
 export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
   if (!group.nodes.length) return;

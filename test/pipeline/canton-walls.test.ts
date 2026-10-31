@@ -114,7 +114,11 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const west = frameOf(model, 'west'), clients = frameOf(model, 'clients');
     // At the mean x of its two overlay partners, to the left of the canton axis, inside the canton, which did not grow.
     const partners = ['h1', 'h2'].map(id => centreX(model.nodes[id]!.bounds!)), mean = (partners[0]! + partners[1]!) / 2;
-    expect(Math.abs(centreX(model.nodes['k1']!.bounds!) - mean)).toBeLessThan(4);
+    // The cell box stands at the mean; label growth (7f) widens the box on one side, so the node stands off it. Snack-theme ticket 157:
+    // measured 6.0 px off with Verdana (3 px with Arial, bound 4): the wider Verdana title widens the cell box more on that side. The bound is 7 px.
+    const cell = model.groups['clients#0']!.bounds!, k1 = model.nodes['k1']!.bounds!;
+    expect(Math.abs(centreX(cell) - mean)).toBeLessThan(0.5);
+    expect(Math.abs(centreX(k1) - mean)).toBeLessThan(7);
     expect(centreX(clients.box)).toBeLessThan(centreX(west.box) - 100);
     expect(inside(inner(west.box), clients.box)).toBe(true);
     expect(west.box.width).toBeCloseTo(boxOf(packed, 'west').width, 3);
@@ -283,7 +287,8 @@ describe('canton member walls (canton-groups ticket 56)', () => {
       testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
     expect(settled(hinted)).toEqual([false, false, false]);
     expect(hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_NON_CONVERGENCE')).toEqual([]);
-    expect(hinted.canvas!.width).toBeCloseTo(1905, -1);
+    // Verdana metrics (snack-theme ticket 157): 1996 px wide, 1905 with Arial.
+    expect(hinted.canvas!.width).toBeCloseTo(1996, -1);
   }, 60000);
   it('three-canton-groups-close-up-to-a-band-gap with a side hint on m1: the finished layout is the fixed point of the pack (ticket 136)', async () => {
     // The hint frees link-4 to the left face of m1 (the port the side round offers); the wider node changes the grid of a linked pair after 7f packed the row.
@@ -300,9 +305,12 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     // Pinned: the grid gives way to the pack. With the widening allowed, the pair takes one extent of 534.1 px at x 1070.3 and the canvas is 2182 px wide.
     const loc = hinted.groups['loc-a2#0']!.bounds!;
     // Ticket 143: the window rule stands cl-a3 at x 765.3 (gaining two straight overlay chords) and the pack that follows reads that place: loc-a2 stands at x 1084.9, 224.6 wide (main: 982.1, 372.4 wide) and the canvas is 118 px narrower. The price: the overlay bent count of this hinted run goes from 9 to 10: link-45 (`loc-a2-sw` to `cl-a3-2`) bends, because the pack that follows the window moves `loc-a2` and the 7f step does not repair it (ticket 143 review, finding 1).
-    expect([loc.x, loc.width]).toEqual([expect.closeTo(1084.9, 1), expect.closeTo(224.6, 1)]);
-    expect(hinted.canvas!.width).toBeCloseTo(1921, -1);
-    expect(hinted.canvas!.width).toBeLessThan(2100);
+    // Snack-theme ticket 157, Verdana metrics: loc-a2 stands at x 1050.3, 345.7 wide (1084.9 and 224.6 with Arial), and the canvas is 2094 px
+    // wide (1921 with Arial). Measured again with the widening allowed (the ticket 136 refusal off): loc-a2 at x 1131.2, 235.5 wide, and the
+    // canvas 2019.7 px wide, also a fixed point of the pack. With Arial the canvas told the two apart (1921 against 2182, a bound of 2100);
+    // with Verdana the widening is the narrower one, so the extent of loc-a2 and the yield below are the witnesses, not a canvas bound.
+    expect([loc.x, loc.width]).toEqual([expect.closeTo(1050.3, 1), expect.closeTo(345.7, 1)]);
+    expect(hinted.canvas!.width).toBeCloseTo(2094, -1);
     const yields = hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_YIELDS_TO_PACK');
     expect(yields.length).toBeGreaterThan(0);
     expect(yields.every(item => item.severity === 'info' && item.owners!.length >= 2)).toBe(true);

@@ -171,8 +171,9 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     // 12 px the overlay mask cut out of the pill. Canvas and Q are identical to the last digit.
     const model = await run(fixture('overlay-ports-that-line-up'));
     const points = pointsOf(overlayOf(model));
-    expect(points).toEqual([{ x: 57.336669921875, y: 119 }, { x: 57.336669921875, y: 220 }]);
-    expect(score(model).snapshot.Q).toBe(0.8335929892966935);
+    // Verdana metrics (snack-theme ticket 157): x 57.336669921875 and y 119 to 220 with Arial, Q 0.8335929892966935.
+    expect(points).toEqual([{ x: 60.99072265625, y: 121 }, { x: 60.99072265625, y: 222 }]);
+    expect(score(model).snapshot.Q).toBe(0.8347343982406342);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
@@ -185,13 +186,15 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     const link = overlayOf(model), points = faceToFace(model, link);
     // One run of 126.11 px from (80.01, 119) to (155.52, 220). It was a 16 px stub, a 119.79 px
     // diagonal and a 16 px stub: 12 px of each stub was pill the mask cut away and 4 px was drawn.
-    expect(span(points[0]!, points[1]!)).toBeCloseTo(126.1063, 3);
+    // Verdana metrics (snack-theme ticket 157): 126.1063 with Arial.
+    expect(span(points[0]!, points[1]!)).toBeCloseTo(130.8422636353567, 3);
     expect(axisAligned(points[0]!, points[1]!)).toBe(false);
     // And it really is clear: the segment enters no node body and no drawn pill — its own two pills
     // included, which it leaves outward at both ends and so only touches.
     for (const box of shapes(model)) expect(crosses(points[0]!, points[1]!, box)).toBe(false);
     // Q is unchanged to the last digit, through both the endpoint move and the stub's removal.
-    expect(score(model).snapshot.Q).toBe(0.8391492903118092);
+    // Verdana metrics (snack-theme ticket 157): 0.8391492903118092 with Arial.
+    expect(score(model).snapshot.Q).toBe(0.8417785081707049);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 
@@ -232,7 +235,8 @@ describe('an overlay link is straight, or orthogonal round a node', () => {
     const clear = label.bounds!.x - right(endBoxes(model, link)[0]!);
     expect(clear).toBeLessThanOrEqual(LINK_LABEL_GEOMETRY.shortenMargin - LINK_LABEL_GEOMETRY.halo + 1e-9);
     expect(clear).toBeGreaterThan(LINK_LABEL_GEOMETRY.shortenMargin - LINK_LABEL_GEOMETRY.halo - 1);
-    expect(score(model).snapshot.Q).toBe(0.7913523029318137);
+    // Verdana metrics (snack-theme ticket 157): 0.7913523029318137 with Arial.
+    expect(score(model).snapshot.Q).toBe(0.7897510828377542);
     expect(score(model).snapshot.passed).toBe(true);
   }, 60000);
 

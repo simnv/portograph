@@ -10,6 +10,7 @@ import { joinFanTrees } from './bundle-geometry.js';
 import { expectedFramePath, fanFamilyOf, isRoutedChord, routedChordCandidate, standaloneChord, withLinkFacts } from './frame-paths.js';
 import { nodeTierIfAny } from './read/tier.js';
 import { admitFanFamilies, makeFanOrthogonal } from './fan-admission.js';
+import { diagonalMayCross } from './diagonal-text.js';
 
 /**
  * Coordinate magnitude beyond which an obstacle is measured instead of rejected.
@@ -173,6 +174,8 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   for (const label of model.labels) {
     if (label.omitted || !label.bounds || label.layer === 'overlay' || beyond(label.bounds, labelReach) || ownsObstacle(label.owner)) continue;
     if (label.role === 'pill' && label.port && endPorts.has(portId(label.port))) continue;
+    // A diagonal may cross a group title or a link label (ticket 162, ADR-0023); an orthogonal corridor keeps clear of them.
+    if (diagonalMayCross(segment, label)) continue;
     if (segmentRectDistance(segment, label.bounds) < stroke / 2 + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0) - EPS) return refuse('corridor');
   }
   for (const lane of model.lanes) {

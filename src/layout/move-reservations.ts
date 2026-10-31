@@ -11,13 +11,15 @@ import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { transient, type Reservation, type Reservations } from './reservations.js';
 import { isSideLane, laneLink, laneSidesHold, riserNoDeeper, riserPenetrations, sideLaneSource, sideLanesHold, spanBreaches } from './lanes.js';
 import { groupExitsHold } from './group-exit-check.js';
+import type { ProposedBox } from './frames.js';
 import { foreignOverExtensions, trunkHeads, trunkXAfter } from './trunk.js';
 import { lanesHoldGrowth } from './growth-guard.js';
 import { findPort } from './row-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 const isSpanLane = (lane: { kind?: string }): boolean => lane.kind === 'span';
 
-export type ProposedMove = { group: LayoutGroup; bounds: Rect }[];
+/** The boxes a stage proposes; `ProposedBox.dx` says whether the bodies move with a box (a move) or stay (a widening). */
+export type ProposedMove = ProposedBox[];
 type Maker = (model: LayoutModel, proposed: ProposedMove) => Reservation[];
 /** The derived kinds a move is held to, in the order the guards were chained. */
 export type MoveKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'sideAlignment' | 'spanCorridor' | 'groupExit';

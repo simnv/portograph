@@ -20,7 +20,7 @@ const samples = SAMPLES;
 const svg = document.querySelector('svg');
 for (const sample of samples) {
   const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-  text.setAttribute('font-family', 'Arial');
+  text.setAttribute('font-family', 'Verdana');
   text.setAttribute('font-size', sample.fontSize);
   text.setAttribute('font-weight', sample.weight);
   text.style.fontKerning = 'none';
@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix="portograph-font-") as directory:
         raise RuntimeError("Chrome did not produce SVG measurements")
     measured = json.loads(match.group(1))
 version = subprocess.check_output([chrome, "--version"], text=True).strip()
-evidence = {"fontFamily": "Arial", "fontKerning": "none", "fontVariantLigatures": "none",
+evidence = {"fontFamily": "Verdana", "fontKerning": "none", "fontVariantLigatures": "none",
             "browser": version, "samples": measured}
 destination = Path("test/fixtures/text/chrome-reference.json")
 destination.parent.mkdir(parents=True, exist_ok=True)

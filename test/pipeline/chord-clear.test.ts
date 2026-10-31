@@ -5,6 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { overlayCrossings, spent, stepOverChords } from '../../src/layout/chord-clear.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { deriveFrames } from '../../src/layout/frames.js';
+import { columnShifts, holdColumnAxes, holdMemberWalls, packBesideRows } from '../../src/layout/columns.js';
 import { crosses, overlayBlockers, overlayPath, straightChord } from '../../src/layout/overlay-paths.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -101,7 +102,8 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     // Main 6757da1 moves `row-11` by 0 here. The first try moved it -25, +82, +0.5 and +0.7 px in four rounds and kept nothing after the first.
     // 1587.4 before ticket 78 ordered the tier-6 row by its partners; 1489.1 before architecture-2 ticket 23 inserted the track and label
     // room beside zone-7b and the room on row-14 and zone-1, which push the lanes and the row beyond them out (label room wins over a lane).
-    expect(Math.abs(model.groups['row-11']!.bounds!.x - 1807.8)).toBeLessThan(30);
+    // 1748.7 since ticket 157 (Verdana metrics; 1807.8 under Arial): the step of round 0 moves the row by -7.2 px, from 1755.9, and no later round moves it.
+    expect(Math.abs(model.groups['row-11']!.bounds!.x - 1748.7)).toBeLessThan(30);
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE' && d.message.startsWith('The cantons'))).toEqual([]);
     // The centring warning on main stands; the step adds none.
     expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
@@ -252,8 +254,15 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
   it('a slide the column rules would undo is refused in a real layout (three-canton-groups-close-up-to-a-band-gap)', async () => {
     const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
     // A slide of a member frame by 63 px straightened two chords in an earlier build and left the finished layout off the fixed point of the
-    // column rules: `packBesideRows` moved it back. The canvas is the one of main (1921.3), not the widened one (1984.5).
-    expect(model.canvas!.width).toBeLessThan(1930);
+    // column rules: `packBesideRows` moved it back. The published layout is their fixed point: asked again on a copy (as `drift` in decide.ts
+    // asks them), they move no group. The canvas is the one of main under Verdana (1996.2; 1921.3 under Arial), not one widened by such a
+    // slide (1984.5 under Arial, ticket 157).
+    const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    const before = new Map(Object.values(copy.groups).map(group => [group.id, { ...group.bounds! }]));
+    columnShifts(copy, 0); packBesideRows(copy); holdMemberWalls(copy); holdColumnAxes(copy, 0);
+    const drift = Math.max(0, ...Object.values(copy.groups).map(group => Math.abs(group.bounds!.x - before.get(group.id)!.x)));
+    expect(drift).toBeLessThan(0.5);
+    expect(model.canvas!.width).toBeLessThan(2005);
   }, 120000);
 });
 
@@ -316,16 +325,18 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     // On main the two ranks stand under one another (0.5 px apart and 0).
     expect(Math.abs(a)).toBeGreaterThan(20);
     expect(Math.abs(a)).toBeLessThanOrEqual(40.5);
-    expect(a - b).toBeCloseTo(-0.5, 1);
+    // Verdana metrics (snack-theme ticket 157): -0.5 with Arial.
+    expect(a - b).toBeCloseTo(-0.835, 2);
     expect(x(model, 'low-b') - (x(model, 'low-a') + model.nodes['low-a']!.bounds!.width)).toBeCloseTo(21.5, 1);
     expect(crossingsOf(model)).toBe(0);
   }, 60000);
 
   it('rank 0 and its parent keep their x (no rank 0 moves by this rule)', async () => {
     const model = await run(fixture(NAME));
-    expect(x(model, 'gw')).toBeCloseTo(84.0, 0);
-    expect(x(model, 'up-a')).toBeCloseTo(72.5, 0);
-    expect(x(model, 'up-b')).toBeCloseTo(149.0, 0);
+    // Verdana metrics (snack-theme ticket 157): 84.0, 72.5 and 149.0 with Arial.
+    expect(x(model, 'gw')).toBeCloseTo(87.0, 0);
+    expect(x(model, 'up-a')).toBeCloseTo(72.8, 0);
+    expect(x(model, 'up-b')).toBeCloseTo(154.7, 0);
   }, 60000);
 
   it('one node of a lower rank moves into the room the step gives it, and the step says so', async () => {
@@ -496,7 +507,8 @@ links:
     const model = await run(yaml);
     // Architecture ticket 13, phase 4: a crossing added is no veto any more. The move straightens two links and adds one crossing: fewer bent links decide.
     expect(model.diagnostics.filter(d => d.code === 'RANK_STEPPED_OFF_CHORD').map(d => d.message)).toEqual([
-      'The lower rank zone#3 moved -28.4 px off the overlay chords of the ranks above: 2 more straight overlay links, overlay crossings 0 to 1.']);
+      // Verdana metrics (snack-theme ticket 157): -28.4 px and 2 more straight overlay links with Arial.
+      'The lower rank zone#3 moved -32 px off the overlay chords of the ranks above: 3 more straight overlay links, overlay crossings 0 to 1.']);
     expect(overlays(model).filter(link => link.path!.segments.length > 1)).toHaveLength(1);
   }, 60000);
 

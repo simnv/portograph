@@ -420,6 +420,14 @@ rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy
 positions. Preserve signed keys and the relative physical order of unequal author keys, not an
 absolute slot number.
 
+**A group box holds its own title from here on** (snack-theme ticket 157). The box a group's content asks for (`contentBox`, which
+`fitRegionGroup` fits) is at least as wide as the group's measured title plus the 8 px title inset on each side and one clearance step
+beyond each (`ownTitleFloor`, `titleRoom`, `title-room.ts`, the same geometry 7f places the title with), centred on its nodes. The step is
+there because a lane stands on the box edge, its link-free margin to the title is the inset itself, and 7f refuses a title x within one
+tolerance of that margin. 7a therefore stands its lanes beside a box that already
+holds the title, and 7f only places it; a widening that 7f still asks (a title nudged off a leg) keeps the `growthPlan` refusal. A rank cell has
+no floor: its frame's title is placed in 7f.
+
 **The bus edge is read again here** (ticket 83). Once every routed port has its final side, and before the nodes are re-sized and the rows
 repacked, `busSide` counts the legs each horizontal edge of the row carries within the bar's span (the members' bus ports, first to last, at the
 skeleton's x) and fixes `bus.side` at the edge with fewer, the title edge on a tie. Term 1 is exact: the routed, non-stub ports on that edge of
@@ -790,7 +798,15 @@ stable state: it neither keeps the run going nor raises `PLACEMENT_NON_CONVERGEN
 reported only when the last pass still changes geometry, or when the geometry stands and the check
 that publication runs (`centreViolations`, run on a context built where the model now stands) still finds a
 port the step would move. On non-convergence keep the last state and report. A run that stands at a
-fixed point of a context built earlier is run again on a fresh context. A step that keeps no target, and leaves every one of its feeds no
+fixed point of a context built earlier is run again on a fresh context. The windows of the overlay barycentre are placed once
+after the passes (ticket 143). A window that moves a partner moves the ends of its overlay chords, and a chord is an overlay
+stop of the alignment: it can free a growth the passes declined, or stop one they kept. A window can also move a group that
+walled another, and the step of its sibling then has room. So after the windows the publication check runs again. While it
+finds an alignment off its feed and budget is left, the passes run again, then the parent ports, the seated faces and the
+windows, as after the first run. Each round spends a pass, so the rounds end. A round that changes neither the geometry nor
+what the check finds is a stall the passes cannot see: the rounds stop there and keep the rest of the shared budget for the
+stages after 7c. A check that still finds an alignment when the rounds stop is reported as the stall
+(`PLACEMENT_NON_CONVERGENCE`, ADR-0010) (snack-theme ticket 157). A step that keeps no target, and leaves every one of its feeds no
 nearer its x than it found it, puts its group back where it started and packs the tier instead: the
 passes are a solver, and a step that solves nothing only gives the next pass a new position to chase
 the barycentre from. A transit feed is exempt, because its x is a reserved lane the child must reach
@@ -1058,7 +1074,16 @@ discover that, so placement reserves it: the column plans (`pullTier`) leave a f
 band, and in the rounds of the close-up `settleKeepOut` moves a frame that a mover without a plan (the push of a widened neighbour, a
 lane reseated) left inside it, right by the smallest amount. The frames after it give way to the moved geometry (the sweep is read after
 the keep-out is applied, and both are applied together until neither has anything left); a lane that forbids the move, or a move that
-leaves fewer overlay links straight, refuses it.
+leaves fewer overlay links straight, refuses it. A sweep that ends with a hard separation (G9) broken or deepened, read on the frames
+derived from the moved boxes, is undone whole, the boxes and anchors restored exactly, and `KEEP_OUT_UNDONE` names the groups: a flank beside the moved row does not give way, and no close-up runs after this step
+(ticket 162).
+
+**A diagonal may cross text** (ticket 162, ADR-0023). A straight, non-orthogonal segment of a held chord, a straight member or an
+overlay chord takes no room from a group title or a link label: the title planner reads no rectangle from it (`linkRects`,
+`chordCrossings`), no title strip refuses it (`titleRefusal`) or reserves room beside it (`titleFitsBeside`), no title crowds a fan
+member (`titleCrowdedFanMembers`), the label room cuts no window of a label's line at it (`fixedLinkRuns`), and the row-path corridor
+reads no label against it. Each asks `diagonalMayCross` (`diagonal-text.ts`). A segment within 10 degrees of an axis
+(`DIAGONAL_MIN_DEGREES`) keeps every rule above. The title planner keeps no soft preference for space clear of a diagonal.
 The rule applies to a frame and to a one-rank row group. A canton keeps its band gap (ticket 65) and is not moved for it. From 7f on (the replays of the bundled model), a centring replay also declines a step that leaves fewer
 overlay links straight, or that puts a frame inside a band it was not in: the group stays where it stood.
 
@@ -1071,6 +1096,10 @@ title edge widened 39 of 178 sheets, 1513 px in all, against 8 sheets and 242 px
 widening on demand needs one growth pass, and centring has spent the shared eight-pass budget on every measured sheet that has such a leg. Each title
 therefore has `LEG_PASSES_PER_TITLE` (1) extra pass outside the shared budget; a widening past it is refused and reported as
 `GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED`, not as budget exhaustion.
+A perimeter lane is a wall to this widening (`laneSidesHold`) only on the sub-tiers of its span, not on the sub-tier of its upper end's group,
+and only when it is aligned on its far port's x. An unaligned perimeter lane derives its x from the boxes on its span, so the replay moves it out
+with the widened box (`a-mesh-across-a-tier-goes-round-the-outside`: the Core title widens Core past the drop of a course whose lane stands
+beside the tier below).
 
 **The mesh bus band** (ticket 83; `docs/design/mesh-bus.md`, section 4). A bus with a fixed side asks for a band of `BUS_STUB` (15 px) plus
 `4 px + label height + 4 px` (the label is `<class> mesh (<n> nodes)` at 9 px). Two placements reserve it.
@@ -1760,15 +1789,18 @@ leaves out every other overlay-layer label).
 Ticket 97: a joined pair has one label, `<class> mesh (<n> nodes)` with `n` the nodes of both buses, on the bar with more members (the upper on a tie); the other bus has no label and no label room.
 
 **A drawn overlay run is an obstacle for a label.** G3 measures a label against routed geometry
-only, and the renderer masks the overlay layer out of every drawn label, so a label over an overlay
-stays readable — but the mask cuts the *overlay* under it, and an overlay path goes round the shapes
+only, and the renderer masks an orthogonal overlay run out of every drawn label it meets (a diagonal
+runs on under the label's halo, ticket 162), so a label over an overlay stays readable — but the mask
+cuts the *overlay* under it, and an overlay path goes round the shapes
 it crosses precisely so that the line stays whole. The label is the thing that can move, and the path
 cannot dodge it in return: a link label's box is measured here, after stage 8 built the path. Where
 both sides of every segment are covered the ladder runs again with overlay runs ignored, because a
 label that is drawn beats a line that is whole; the mask then carries the crossing, as it always
 did. That second run comes **before** the shortened text, not after it: a truncated label is the
 last thing tried, because the mask gives the overlay back under a whole label and nothing gives a
-shortened label its characters back (synthetics review ticket 04 C). Node
+shortened label its characters back (synthetics review ticket 04 C). The second run also lets a link's own label lie across a
+diagonal of any layer (ticket 162, `diagonalMayCross`): the first run keeps the label clear of it where it can, and G3 does not count
+the crossing; the label's halo breaks the line under its letters. Node
 bodies and pills on the overlay *layer* stay out of the set: they are not drawn. Every placed label
 is in it, whatever layer its link is on.
 
@@ -1930,8 +1962,18 @@ or a shadow — is held by that one parser policy on both routes, not restated p
 The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
 one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
 
-The overlay `<g>` sits beneath the routed layer with node interiors, group labels, port pills and
-visible link labels masked out; a hidden link's label is left out of the mask so it cannot leave an
+**Every text outside node bodies carries a halo** (ticket 162, ADR-0023): group titles, link, multiplicity and bus labels and
+legend labels have the class `pg-halo` and a depth class `pg-halo-<n>`, where `n` counts the group boxes behind the text's centre
+(`boxesBehind`). The style states `paint-order: stroke fill` with a 4 px stroke, and per depth the colour behind the text
+(`backdropColour`: the page with each group fill laid over it at its opacity) in light, dark and print. draw.io has no outline for
+a plain-text label, so a text in its labels layer takes `labelBackgroundColor` in that colour; a group title lies under the links
+there and shows a line drawn over it.
+
+The overlay `<g>` sits beneath the routed layer with node interiors, port pills, multiplicity and bus
+labels masked out. A line that text cuts has a mask of its own (`pg-line-mask-*`, ticket 162): a link label
+cuts its own line (a routed one only where the label lies on a direct line, ticket 16), and a group title or
+a foreign link label cuts an overlay line where an orthogonal run of it meets the text, the text box cut to
+the run's stroke. A diagonal (`isDiagonal`, 10 degrees or more from both axes) is not cut; the halo breaks it; a hidden link's label is left out of the mask so it cannot leave an
 unexplained gap. Overlay endpoints keep a 2 px mark, drawn above the protected elements rather than
 inside the masked group. One counted merge trunk is painted once by its bundle, and the interval it
 covers is subtracted from each member's own path, which still draws its approach and departure.
