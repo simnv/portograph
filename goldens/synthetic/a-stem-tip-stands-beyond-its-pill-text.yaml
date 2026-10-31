@@ -1,0 +1,21 @@
+# Expected: every stem tip of a named port stands beyond the pill text of its side, so no run of the link starts or turns under the text (ticket 156). host-1's `trunk0` text is about 29 px long at 9 px, so it reaches 14.6 px out of the face; link-4 drops down its transit lane, and its tier-gap run ended at the plain 15 px tip, 0.4 px from the text, so gate G3 label-collision failed. All gates pass.
+# Source: ticket 156, reduced from a private sheet; names are invented.
+portograph: 2
+profile: network
+groups:
+  edge: { tier: 0, label: Edge }
+  access: { tier: 1, label: Access }
+  hosts: { tier: 2, label: Hosts }
+nodes:
+  gw-1: { group: edge, class: router, ports: [eth1] }
+  sw-1: { group: access, class: switch, ports: [p16, p8, p14, p9] }
+  sw-2: { group: access, class: switch, ports: [p1, p5] }
+  host-1: { group: hosts, class: server, ports: [trunk0] }
+  host-2: { group: hosts, class: router }
+  host-5: { group: hosts, class: router }
+links:
+  - [sw-1.p16, gw-1.eth1]
+  - [sw-1.p8, sw-2.p1]
+  - [sw-2.p5, host-5]
+  - [sw-1.p14, host-1.trunk0]
+  - [sw-1.p9, host-2]

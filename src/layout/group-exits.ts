@@ -5,7 +5,7 @@ import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js
 import { groupBoxes } from '../score/model.js';
 import { routeObstacles, type RouteObstacle } from '../route/obstacles.js';
 import { portId } from './skeleton-graph.js';
-import { routedStroke, stemReach } from './bands.js';
+import { portStemReach, routedStroke } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 /** Extra distance past the group's edge margin where a reserved exit stops, so the route turns clear of the gate's limit. */
@@ -120,7 +120,7 @@ export function reserveGroupExits(model: LayoutModel, searchBudget = SEARCH_BUDG
     (['from', 'to'] as const).flatMap(end => {
       const ref = item.attachments![end], port = model.nodes[ref.node]?.ports.find(one => portId(one.ref) === portId(ref));
       if (!port?.anchor || !port.side) return [];
-      const out = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] }[port.side], reach = stemReach(model, model.nodes[ref.node]!);
+      const out = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] }[port.side], reach = portStemReach(model, port);
       return [{ port: portId(ref), bounds: grow({ x: port.anchor.x + out[0]! * reach, y: port.anchor.y + out[1]! * reach, width: 0, height: 0 }, half + 4) }];
     }));
   const NORMAL: Record<Side, [number, number]> = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] };

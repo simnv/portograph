@@ -494,7 +494,7 @@ levelled here but remain unpinned for stage 7e.
 tier band; nodes move up only, and row group boxes fit the flattened nodes with the standard
 padding beyond the complete named pills (including their half stroke), not just node bodies. Repack pushes a row neighbour rightwards only when its stroke-aware clearance,
 measured facing-pill gap or pass-by stem (the stage-5 `rowGap`) is violated — the stem is the
-15 px checkpoint plus the neighbour's obstacle reach that a port needs when its link does not enter
+side's checkpoint (`sideStemReach`: 15 px, or beyond the side's pill text, ticket 156) plus the neighbour's obstacle reach that a port needs when its link does not enter
 the neighbour's facing side, whether it goes to a third node or to the neighbour's far side, top or
 bottom (ticket 29) — and, when links turn inside the gap (a pass-by, or a facing link
 that enters at another height and jogs), one stem on each side that contributes a leg plus one pitch
@@ -712,7 +712,8 @@ stem per port, and a leg travels along that side after it turns. Where the trave
 port of the same side, the two turns may not stand at one depth: the first route laid covers the
 second port's stem, and the second link is left with a reserved turn no route can reach. The order
 is forced there — the leg that reaches another port turns beyond it — so port `p` turns
-`stemReach + rank(p) * pitch` out of its node, `rank` being the longest chain of ports it must turn
+`base + rank(p) * pitch` out of its node, `base` being the side's ordinary reach (beyond the pill
+text of the side, ticket 156), `rank` being the longest chain of ports it must turn
 beyond and `pitch` the same `16 px + widest routed stroke`. That is the depth stage 8 gives the
 checkpoint and the depth `routerEntryPoints` reports, read from one rule, so the two cannot drift.
 
@@ -1384,7 +1385,11 @@ larger of the measured top padding (20 px beyond the complete named pill and its
 and the largest top-side routed outward reach plus the widest routed half stroke and a 0.25 px tolerance.
 The reach is the whole mandatory shared prefix when the port has one, otherwise the ordinary
 checkpoint `max(15, 10 + (node stroke + widest routed stroke) / 2 + 0.25)`, which follows the node
-obstacle when a wide stroke expands it past the 15 px stem. With the default 1.5 px node and 1.5 px
+obstacle when a wide stroke expands it past the 15 px stem. Every checkpoint on a side that holds a
+named port also stands beyond the pill text of that side (`sideStemReach`): half the longest pill text, half the widest routed stroke
+and 0.25 px (`portStemReach`, ticket 156). Pill text is centred on the anchor, so at 9 px a name of
+about five characters reaches past the 15 px stem, and a run that starts or turns at the plain tip
+crosses the text (G3). The fan rows of the side start at the same depth (`edgeAwareRows`). With the default 1.5 px node and 1.5 px
 routed strokes the entry requirement is 16 px; a default named pill instead reserves 24.5 px
 to retain its visible gutter. The rule reads frozen inputs only: measured port names, the constant
 stem and `sharedRuns`, which every publication at or after stage 7e rebuilds and compares, so

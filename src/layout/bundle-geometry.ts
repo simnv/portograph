@@ -11,6 +11,7 @@ import { rowGap } from './sides-two.js';
 import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
 import { gridChains } from './grid.js';
 import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
+import { sidePillTextReach } from './pill-reach.js';
 
 export const MEMBER_GAP = 16;
 export const MIN_STEM = 15;
@@ -146,7 +147,7 @@ export function bundleFanRows(model: LayoutModel, port: LayoutPort, fanLinks: re
 }
 
 /**
- * `count` row depths at `port`, a pitch apart from `MIN_STEM` out, each moved off a group edge it
+ * `count` row depths at `port`, a pitch apart from `MIN_STEM` out (or beyond the pill text of the side, `sidePillTextReach`), each moved off a group edge it
  * would run along (ADR-0013) together with every row after it. The one recurrence both fan kinds
  * read, so a change to the clearance cannot move one and leave the other behind.
  */
@@ -160,7 +161,8 @@ function edgeAwareRows(model: LayoutModel, port: LayoutPort, fanLinks: readonly 
   // draw their peel runs on the same lines (ADR-0018 rule 1, ticket 44). The side allocates its
   // rows as one sequence: a fan starts beyond the rows the fans before it have taken, ordered by
   // their own coordinate so the answer cannot depend on the order the producers happen to run in.
-  const base = MIN_STEM + priorSideRows(model, port) * q;
+  // The first row stands beyond the pill text of the side, at the depth of the side's stem tips (ticket 156).
+  const base = Math.max(MIN_STEM, sidePillTextReach(model, model.nodes[port.ref.node]!, port.side!)) + priorSideRows(model, port) * q;
   for (let i = 0; i < count; i++) rows.push(clearOfGroupEdges(Math.max(base + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin));
   return rows;
 }

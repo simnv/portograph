@@ -131,7 +131,7 @@ function portUsage(model: LayoutModel): Map<string, number> {
 /**
  * The point a route must reach outside every obstacle before it may turn. A port whose link is a
  * leg in a row gap reaches its own reserved slot (ADR-0015 rule 1); every other port keeps the
- * plain reach.
+ * plain reach, beyond the pill text of its side (`portStemReach`).
  */
 export function stemCheckpoint(model: LayoutModel, port: LayoutPort, cache?: StemCache): Point {
   const reach = stemPlan(model, port, cache).depth, delta = OUTWARD[port.side!];

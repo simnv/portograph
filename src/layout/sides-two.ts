@@ -13,7 +13,7 @@ import { COLUMN_SLACK, separateFrameColumns } from './columns.js';
 import { deriveFrames } from './frames.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { SideHintRefusal } from './placement-refusal.js';
-import { carriesTitle, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
+import { carriesTitle, nodeObstacleReach, nudgingDistance, portStemReach, routedStroke, sideStemReach, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, transitTiers } from './lanes.js';
 import { fitRegionGroup, placementWarning } from './regions.js';
@@ -312,7 +312,7 @@ function gapStem(model: LayoutModel, id: string, own: LayoutPort[],
   incoming: { ports: LayoutPort[]; links: Set<string> }, side: Side): number {
   const enters = incoming.ports.some(port => (unreservedPeers(model).get(key(port.ref)) ?? [])
     .some(item => incoming.links.has(item.link) && item.peer.node === id && findPort(model, item.peer)?.side === side));
-  return own.length || enters ? stemReach(model, model.nodes[id]!) : sideReach(model, id, side);
+  return own.length || enters ? sideStemReach(model, model.nodes[id]!, side) : sideReach(model, id, side);
 }
 
 /**
@@ -323,8 +323,8 @@ function gapStem(model: LayoutModel, id: string, own: LayoutPort[],
  * A leg travels along its own side after it turns. Where that travel reaches a second port of the
  * same side, the two turns cannot stand at one depth: the first route laid covers the second port's
  * stem, and the second link is left with a checkpoint no route can reach. The order is forced there
- * — the leg that reaches another port turns beyond it — so port `p` turns `stemReach + rank(p) *
- * pitch` out, `rank` being the longest chain of ports it must turn beyond. The travel is read to
+ * — the leg that reaches another port turns beyond it — so port `p` turns `base + rank(p) *
+ * pitch` out, `base` being the side's `portStemReach` and `rank` the longest chain of ports it must turn beyond. The travel is read to
  * the near edge of the other port's **strip**, not to its column, because a leg that stops between
  * the two still ends in a cover its own batch is no longer exempt from.
  *
@@ -415,7 +415,9 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
   };
   for (const id of legs.keys()) if (depthOf(id) === undefined) return undefined;
   if (![...rank.values()].some(value => value > 0)) return undefined;
-  const base = stemReach(model, owner), pitch = MEMBER_GAP + routedStroke(model);
+  // The first turn stands beyond the pill text of the side (ticket 156), as every flat stem of the side does.
+  const base = sideStemReach(model, owner, side);
+  const pitch = MEMBER_GAP + routedStroke(model);
   const outward = side === 'top' ? -1 : 1, depth = new Map<string, number>();
   for (const [id, steps] of rank) {
     const reach = base + steps * pitch;
@@ -440,7 +442,7 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
 
 /**
  * How far out of its node `port`'s stem reaches before stage 8 turns it. A port whose link is a leg
- * in a row gap reaches that leg's slot (`gapPlan`); every other port keeps the plain reach. Derived,
+ * in a row gap reaches that leg's slot (`gapPlan`); every other port keeps the plain reach, beyond the pill text of its side (`portStemReach`). Derived,
  * never stored, so the figure stage 7f reserves and the figure stage 8 receives are the same one.
  */
 /** One gap plan per row gap for a whole pass; placement does not move while any pass runs. */
@@ -467,10 +469,12 @@ export function sideNested(model: LayoutModel, node: string, side: Side, cache?:
 }
 
 export function stemPlan(model: LayoutModel, port: LayoutPort, cache?: StemCache): { depth: number; turn?: 'top' | 'bottom' } {
-  const node = model.nodes[port.ref.node]!, base = stemReach(model, node);
-  // The virtual port of an approach (phase 6) reaches out of the node's face, from the pill's edge: its stem is the plain reach beyond that face.
+  const node = model.nodes[port.ref.node]!;
+  // The virtual port of an approach (phase 6) reaches out of the node's face, from the pill's edge: its stem is the side's reach beyond that face.
   const inside = approachReach.get(port);
-  if (inside !== undefined) return { depth: base + inside };
+  if (inside !== undefined) return { depth: portStemReach(model, port) + inside };
+  // Every other stem reaches beyond the pill text of its side (ticket 156).
+  const base = portStemReach(model, port);
   const side = port.side;
   if ((side === 'top' || side === 'bottom') && node.bounds && port.anchor) {
     const reach = cachedSide(model, port.ref.node, side, cache)?.depth.get(key(port.ref));
@@ -494,7 +498,9 @@ export function stemPlan(model: LayoutModel, port: LayoutPort, cache?: StemCache
   const turn = own.every(item => item.run < -EPS) ? 'top' as const
     : own.every(item => item.run > EPS) ? 'bottom' as const : undefined;
   void turn;
-  return { depth: Math.max(base, depth) };
+  // A leg turns at the slot its row gap plan reserved, and `legReservation` draws it there. The plan seats its slots from `gapStem`, which reads
+  // `sideStemReach`, so a slot stands beyond the side's pill text whenever the plan fits; the floor stays the node's reach, as the leg's is.
+  return { depth: Math.max(stemReach(model, node), depth) };
 }
 
 /**
@@ -609,7 +615,7 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
     const blocked = owner.ports.some(port => port.side === side && port.anchor !== undefined
       && port.anchor.y >= top && port.anchor.y <= bottom
       && (peers.get(key(port.ref)) ?? []).some(({ peer }) => !entersNeighbour(peer)));
-    return blocked ? stemReach(model, owner) + reach(neighbour, facing) : 0;
+    return blocked ? sideStemReach(model, owner, side) + reach(neighbour, facing) : 0;
   };
   const left = protrusion(a, 'right'), right = protrusion(b, 'left');
   // Only a facing *pair* of pills needs the wire. One pill opposite a bare side has nothing to be

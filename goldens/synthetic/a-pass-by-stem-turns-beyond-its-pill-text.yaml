@@ -1,0 +1,14 @@
+# Expected: a right port whose link passes its row neighbour by turns beyond its own pill text, and the row gap reserves that depth (ticket 156). `uplink-001` text is about 49 px long at 9 px; before the fix the stem turned at the plain 15 px tip, inside the text, and gate G3 label-collision failed. With the turn moved and the pass-by room still at 15 px, the turn stood inside b's obstacle and G6 failed. All gates pass.
+# Source: ticket 156 review.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0 }
+  low: { tier: 1 }
+nodes:
+  a: { group: top, ports: [{ name: uplink-001, side: right }] }
+  b: { group: top, ports: [{ name: x, side: bottom }] }
+  c: { group: low, ports: [{ name: y, side: top }] }
+links:
+  - [a.uplink-001, c.y]
+  - [b.x, c.y]

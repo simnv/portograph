@@ -32,8 +32,8 @@ export function approachPoint(port: LayoutPort, approach: Side): Point | undefin
 }
 
 /**
- * The extra reach of a virtual port's stem: how far its anchor stands inside the node's own face on the approach side. The stem still ends one plain reach beyond
- * that face, as the stem of every top or bottom port does, so its tip stands where the tips of the node's other ports on that face stand.
+ * The extra reach of a virtual port's stem: how far its anchor stands inside the node's own face on the approach side. The stem still ends one side reach
+ * (`portStemReach`) beyond that face, as the stem of every top or bottom port does, so its tip stands where the tips of the node's other ports on that face stand.
  */
 export const approachReach = new WeakMap<LayoutPort, number>();
 
