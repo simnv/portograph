@@ -1,5 +1,8 @@
 import type { Side, Size } from './geometry.js';
 
+/** The two node content styles (ticket 159); `profiles/network/content.ts` resolves which one a node takes. */
+export type NodeContentStyle = 'card' | 'stacked';
+
 export type GroupShape = 'ranked' | 'row' | 'bar' | 'grid' | 'ring' | 'free';
 export type Route = 'orthogonal' | 'straight' | 'bundle' | 'merge' | 'overlay' | 'stub' | 'group-link';
 
@@ -135,6 +138,12 @@ export interface NormalisedDocument {
      * holds no `rowOrder` entry, and ELK's order and the overlay partners stand. Default true.
      */
     feedOrder?: boolean;
+    /**
+     * How a node's icon, title and description sit in its body (ticket 159): `stacked` (default), one centred column; `card`, the icon tile
+     * left and the text block right of it. A layout input: it changes node sizes, so it reaches stage 3 (unlike `theme:`). A node of a bar
+     * group stays `stacked`, and a profile class may override it.
+     */
+    nodeContent?: NodeContentStyle;
   };
   /** Paint-only settings, present only when the author wrote `render:` at the root. They never reach layout or score. */
   render?: {

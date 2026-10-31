@@ -42,6 +42,8 @@ export interface LayoutLabel extends OwnedElement {
   fontWeight?: 400 | 700;
   lineHeight?: number;
   lines?: string[];
+  /** `start` for the title and subtitle of a card (ticket 159): `bounds` is the text's own box and the text starts at its left edge. Absent: centred on `bounds`. */
+  textAlign?: 'start';
   /** Degrees, counter-clockwise negative; `-90` for a vertical run, any angle for a straight member. */
   textRotation?: number;
   /**
@@ -101,7 +103,8 @@ export interface LayoutNode extends OwnedElement {
   bounds?: Rect;
   sidePitch?: Partial<Record<Side, number>>;
   /** Final measured icon placement; inherits the node identity and layer. */
-  icon?: { icon: string; bounds: Rect };
+  /** `inset` and `radius` are set for a card tile (ticket 159); absent, the renderer's defaults stand. */
+  icon?: { icon: string; bounds: Rect; inset?: number; radius?: number };
 }
 
 export interface LayoutGroup extends OwnedElement {

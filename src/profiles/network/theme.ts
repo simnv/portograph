@@ -5,8 +5,11 @@
  * three modes — light, dark behind `prefers-color-scheme`, and a greyscale print sheet in which the
  * dash patterns carry the link and status meaning.
  *
- * Nothing here decides geometry. Sizes, positions, radii and stroke widths come from the layout model.
+ * Nothing here decides geometry, with one exception: `NodeClassStyle.content` names the content style of a class (ticket 159), and the
+ * layout reads it through `resolveNodeContentStyle`. Sizes, positions, radii and stroke widths come from the layout model.
  */
+
+import type { NodeContentStyle } from './content.js';
 
 export type ThemeMode = 'light' | 'dark' | 'print';
 
@@ -50,6 +53,8 @@ export interface NodeClassStyle {
   label: string;
   hue: HueRamp;
   print: { fill: string; glyph: string };
+  /** Overrides the profile's node content style for nodes of this class (ticket 159). Absent: the document's `layout.nodeContent`. No class carries one yet. */
+  content?: NodeContentStyle;
 }
 
 const classStyle = (hue: HueRamp, label: string, print: { fill: string; glyph: string }): NodeClassStyle => ({

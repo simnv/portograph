@@ -150,9 +150,7 @@ function transitLanes(model: LayoutModel, id: string): Rect[] {
     // A riser lane stands inside the frames that hold a member of either bus; the frame grows to hold it (mesh-bus.md, section 11.5).
     if (lane.kind === 'perimeter' || lane.kind === 'gap') continue;
     if (lane.owner.kind === 'mesh-bus' && cellsOf().has(lane.group)) {
-      const ownerId = lane.owner.id, bus = model.meshBuses?.find(item => item.id === ownerId);
-      const other = model.meshBuses?.find(item => item.id === bus?.joined);
-      if (bus && [...bus.nodes, ...(other?.nodes ?? [])].some(node => insideOf().has(node))) {
+      if (riserGrowsFrame(cellsOf(), insideOf(), lane.group, riserMembers(model, lane.owner.id))) {
         const box = model.groups[lane.group]!.bounds!;
         boxes.push({ x: lane.bounds.x, y: box.y, width: lane.bounds.width, height: box.height });
       }
@@ -167,6 +165,35 @@ function transitLanes(model: LayoutModel, id: string): Rect[] {
     boxes.push({ x: lane.bounds.x, y: box.y, width: lane.bounds.width, height: box.height });
   }
   return boxes;
+}
+
+/** The member nodes of a join, read from the id of its upper bus: the nodes of that bus and of the bus it is joined to. Empty for an unknown bus. */
+export function riserMembers(model: LayoutModel, bus: string): string[] {
+  const upper = model.meshBuses?.find(item => item.id === bus);
+  if (upper === undefined) return [];
+  const lower = model.meshBuses?.find(item => item.id === upper.joined);
+  return [...upper.nodes, ...(lower?.nodes ?? [])];
+}
+
+/**
+ * Whether a frame, given by its cells and its nodes, grows to hold a riser lane hosted in `cell` (mesh-bus.md, section 11.5): it holds the cell and a member of
+ * either bus. `transitLanes` grows the frame by this test, and `riserHostGrowth` measures the growth by it, so the host 7a picks is the one the frames read.
+ */
+export function riserGrowsFrame(cells: ReadonlySet<string>, nodes: ReadonlySet<string>, cell: string, members: readonly string[]): boolean {
+  return cells.has(cell) && members.some(node => nodes.has(node));
+}
+
+/**
+ * How far the frames grow when a riser lane at `lane` (its x extent) is hosted in `cell`: for each frame that `riserGrowsFrame` names, the distance from its box
+ * to the far side of the lane, summed. 0 when the lane stands inside every such frame, or when no frame holds the cell and a member.
+ */
+export function riserHostGrowth(model: LayoutModel, cell: string, members: readonly string[], lane: { x: number; width: number }): number {
+  let growth = 0;
+  for (const frame of model.frames ?? []) {
+    if (!riserGrowsFrame(new Set(frameCells(model, frame.id)), new Set(frameNodes(model, frame.id)), cell, members)) continue;
+    growth += Math.max(0, frame.box.x - lane.x) + Math.max(0, lane.x + lane.width - (frame.box.x + frame.box.width));
+  }
+  return growth;
 }
 
 /**

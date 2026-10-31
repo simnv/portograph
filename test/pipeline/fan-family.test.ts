@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import type { FanFallbackReason } from '../../src/model/index.js';
-import { admitFanFamilies, fanAdmissionsFault, refuseFanMembers, refuseStemCrowded, titleCrowdedFanMembers } from '../../src/layout/fan-admission.js';
+import { admitFanFamilies, fanAdmissionsFault, refuseChords, refuseStemCrowded, titleCrowdedFanMembers } from '../../src/layout/fan-admission.js';
 import { blockedChords, freezeChords, orthogonalLeg, siblingStemCrowded } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -176,7 +176,7 @@ describe('a fan family draws straight and crosses itself faintly', () => {
       toD.path!.segments[0] = { ...toD.path!.segments[0]!, from: { x: legC.from.x + 4, y: legC.from.y }, to: { x: legC.from.x + 4, y: low } };
       fromB.path!.segments[0] = { ...fromB.path!.segments[0]!, from: { x: portD.x + 5, y: portD.y }, to: { x: portD.x + 5, y: portD.y + 40 } };
       if (reverse) draft.links.reverse();
-      const reasons = [...refuseFanMembers(draft, new Map([[toC.id, 'title' as const]]))].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+      const reasons = [...refuseChords(draft, new Map([[toC.id, 'title' as const]]))].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
       const chords = draft.links.filter(item => item.fanFamily !== undefined && item.path?.segments.length === 1).map(item => item.id).sort();
       return { reasons, chords };
     };

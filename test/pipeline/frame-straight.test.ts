@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel, PathSegment } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { allocateGapRuns } from '../../src/internal.js';
-import { chordsHold } from '../../src/layout/frame-paths.js';
+import { blockedChordsAt, chordsHold } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -45,6 +45,21 @@ describe('a held chord is a wall from stage 7f on', () => {
     expect(draft.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))).toBe(true);
     // A move that leaves the chord clear is not refused.
     expect(chordsHold(structuredClone(model), [{ group: { nodes: [other.id], bounds: box }, bounds: { ...box, x: box.x + 1 } }])).toBe(true);
+  });
+
+  // Snack-theme ticket 159. The title of `beta` widens its cell in 7f and pushes `gamma` right, after the freeze. The centring replay that follows
+  // aligned one port of `srv` and grew the body, which put the frame of `beta` 9.9 px from the held chord link-6 (the margin is 10.75 px), and stood
+  // `lab` off the mean of its feeds. The step read the frozen chords (`blockedChordsAt`) and was declined: no frame stood on a held chord.
+  // The premise holds with card nodes only (`layout.nodeContent: card`). Ticket 164 (card default) owns the fix: the centring guard threw on the
+  // stacked a-corridor-moves-after-the-grid-settles ("Linked groups do not share the grid"), so it moved to
+  // `.scratch/snack-theme/164-centring-blocked-chords.patch`. Until 164 lands it, this test pins the defect as it stands: link-6 is blocked. When it
+  // fails because the chord is clear, put back the assertions of the patch (no blocked chord, no STRAIGHT_LINK_BLOCKED).
+  it('ticket 164: a centring step after the freeze still stands the frame of beta on the held chord link-6 (a-member-title-widens-a-beside-row, card nodes)', async () => {
+    const yaml = readFileSync(new URL('../../goldens/synthetic/a-member-title-widens-a-beside-row.yaml', import.meta.url), 'utf8').replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n');
+    expect(yaml).toContain('nodeContent: card');
+    const model = await run(yaml);
+    expect(model.frozenChords).toContain('link-6');
+    expect(blockedChordsAt(model)).toEqual(['link-6']);
   });
 });
 

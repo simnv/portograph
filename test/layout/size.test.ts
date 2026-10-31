@@ -54,7 +54,7 @@ describe('measured node size', () => {
     expect(node.contentSize!.width).toBeGreaterThan(190);
     expect(node.size!.width).toBeGreaterThanOrEqual(node.contentSize!.width);
     expect(node.sidePitch?.left).toBe(14);
-    const measured = measureNodeContent(model.document.nodes.a!, node.contentInsets);
+    const measured = measureNodeContent(model.document.nodes.a!, model.document, node.contentInsets);
     expect(measured.blocks).toEqual([expect.objectContaining({ kind: 'node', text: 'Content', lines: ['Content'], fontSize: 9, fontWeight: 700, lineHeight: 11 })]);
     expect(measured.width).toBe(node.contentSize!.width);
   });

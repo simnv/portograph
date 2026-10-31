@@ -34,8 +34,14 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * fixtures the only change is `centreGroupStep` calls added (the publication check replays each step after the windows); no call was dropped.
  * `three-continents` also asks `windowsHold` and `pickTarget` more often and on other figures (the rounds place the windows again), and on
  * `overlay-links-reorder-two-locations` the geometry differs: `pullTier` reads 0/0 overlay segments where it read 4/4, and `settleKeepOut` is not asked.
+ * Ten were re-recorded for one snack-theme ticket 159 engine fix (stacked nodes, the default; the card switch is not read here): the guard of the overlay port
+ * trades (`nestOverlayPorts` in `placement-attempt.ts`) reads `centreViolations` before and after the trades, and each read replays the centring steps, so
+ * `centreGroupStep` has more calls (one more on most fixtures). No other judge moved. Six fixtures keep the ticket 157 digests. Three fixes moved to ticket 164
+ * (the frame separation, the centring and side-judge reads of the frozen chords); the digests did not move with them.
  * Two were re-recorded for ticket 162 (a diagonal may cross a title): no judge moved, but on `a-canton-member-frame-slides-off-a-straight-chord` and
  * `overlay-links-reorder-two-locations` feeds that a title refused are chords now, so the judges are called on other geometry.
+ * The merge of tickets 159 and 162 re-recorded them together: only `centreGroupStep` differs from main. Eight fixtures take the ticket 159 digest, and
+ * `overlay-links-reorder-two-locations` has the calls of both (116 on main, 126 merged).
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

@@ -1,10 +1,11 @@
-import type { Diagnostic, FanFallbackReason, LayoutModel } from '../model/layout.js';
+import type { Diagnostic, DirectMemberReason, FanFallbackReason, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
 import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
-import { refuseFanMembers, refuseStemCrowded, titleCrowdedFanMembers } from './fan-admission.js';
+import { refuseChords, refuseStemCrowded, titleCrowdedChords, titleCrowdedFanMembers } from './fan-admission.js';
+import { DIAGONAL_MIN_DEGREES } from './diagonal-text.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
-import { centreContext, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
+import { centreContext, centreViolations, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
 import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
@@ -221,10 +222,22 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
   try {
     // A direct member that 7f's later moves bring within the clearance of a fallback's planned part is not unfrozen: the attempt is run again
     // from its start with that member refused (`crowds`, architecture-2 ticket 22). The refusals only grow, so the retries end (R2, R4).
-    const start = clone(draft), refused = new Set<string>(), fanRefused = new Map<string, FanFallbackReason>();
+    // `chordRefused` holds the fan members and the other held chords a retry refuses; a direct member is refused through its family (`refused`).
+    const start = clone(draft), refused = new Map<string, DirectMemberReason>(), chordRefused = new Map<string, FanFallbackReason>();
     for (let retry = 0; ; retry++) {
-      attemptBody(draft, options, refused, fanRefused);
+      attemptBody(draft, options, refused, chordRefused);
       const crowded = crowdedDirectMembers(draft).filter(id => !refused.has(id));
+      // Any other held chord that a group title placed in 7f meets on an axis is refused the same way, as `title` (ADR-0023). It was held on the
+      // geometry of 7e, where it may have been a diagonal, which no title refuses; 7f grows the gaps and moves the columns, so it can stand within
+      // `DIAGONAL_MIN_DEGREES` of an axis when it is published. The class is read again on the geometry 7f leaves, with the one predicate
+      // (`diagonalMayCross`, in `titleCrowdedChords`), and the retry draws the chord orthogonal.
+      const direct = new Set((draft.directFamilies ?? []).flatMap(family => family.members.map(member => member.link)));
+      const fanMembers = new Set((draft.fanAdmissions ?? []).map(item => item.link));
+      // A spanning chord (`spanHint`) is left out: 7a reserved span corridors for it and no transit lanes, so an orthogonal route would find no
+      // reservation (as the direct families leave it out). It stays, and the warning below names it; G3 judges.
+      const spans = new Set(draft.links.filter(link => link.spanHint === true).map(link => link.id));
+      const crowdedTitles = titleCrowdedChords(draft).filter(id => !fanMembers.has(id) && !refused.has(id) && !chordRefused.has(id));
+      const titled = crowdedTitles.filter(id => !spans.has(id)), kept = crowdedTitles.filter(id => spans.has(id));
       // A straight fan member is crowded the same way, and refused the same way (architecture-2 ticket 40): it falls back alone, as `crowds`, or
       // as `stem` when it still passes a sibling fallback's stem. So is one that a group title placed in 7f still meets, as `title`: the title
       // planner read the chord as a wall and found no room beside it (a title that moves aside, its frame grown, is slice 2).
@@ -232,9 +245,9 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
       if (draft.fanAdmissions !== undefined) {
         for (const id of titleCrowdedFanMembers(draft)) fans.set(id, 'title');
         for (const [id, reason] of crowdedFanMembers(draft)) fans.set(id, reason);
-        for (const id of fanRefused.keys()) fans.delete(id);
+        for (const id of chordRefused.keys()) fans.delete(id);
       }
-      if (!crowded.length && !fans.size) break;
+      if (!crowded.length && !fans.size && !titled.length) { titleCrowdedWarning(draft, kept); break; }
       if (retry >= DIRECT_RETRIES) {
         if (crowded.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
           message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
@@ -243,17 +256,29 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
         const ids = [...fans.keys()].sort(), named = ids.map(id => `${id} (${fans.get(id)})`);
         if (fans.size) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_MEMBER_CROWDED', owners: ids.map(id => ({ kind: 'link' as const, id })),
           message: `The fan ${ids.length === 1 ? 'member' : 'members'} ${named.join(', ')} still ${ids.length === 1 ? 'meets' : 'meet'} a planned part, a sibling's stem or a group title after ${DIRECT_RETRIES} retries of 7f and ${ids.length === 1 ? 'stays' : 'stay'} straight; the gates judge.` });
+        // A held chord a title still meets on an axis stays straight too, and is named; G3 judges.
+        titleCrowdedWarning(draft, [...titled, ...kept].sort());
         break;
       }
-      for (const [id, reason] of fans) fanRefused.set(id, reason);
-      for (const id of crowded) refused.add(id);
+      for (const [id, reason] of fans) chordRefused.set(id, reason);
+      for (const id of crowded) refused.set(id, 'crowds');
+      // A direct member is refused through its family's decision too, so the record names `title`; it falls back before the freeze either way,
+      // also when its family is not triggered again.
+      for (const id of titled) { chordRefused.set(id, 'title'); if (direct.has(id)) refused.set(id, 'title'); }
       for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
       Object.assign(draft, clone(start));
     }
   } finally { attemptCounters.in7f--; }
 }
 
-function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: ReadonlySet<string> = new Set(), fanRefused: ReadonlyMap<string, FanFallbackReason> = new Map()): void {
+/** The warning for the held chords a group title still meets on an axis when 7f ends: a spanning chord, or any chord after the retries. */
+function titleCrowdedWarning(draft: LayoutModel, ids: readonly string[]): void {
+  if (!ids.length) return;
+  draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_TITLE', owners: ids.map(id => ({ kind: 'link' as const, id })),
+    message: `The straight ${ids.length === 1 ? 'link' : 'links'} ${ids.join(', ')} ${ids.length === 1 ? 'stands' : 'stand'} within ${DIAGONAL_MIN_DEGREES} degrees of an axis in the link-free margin of a group title when 7f ends (a spanning chord is not refused; any other after ${DIRECT_RETRIES} retries of 7f) and ${ids.length === 1 ? 'stays' : 'stay'} straight; G3 judges.` });
+}
+
+function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: ReadonlyMap<string, DirectMemberReason> = new Map(), chordRefused: ReadonlyMap<string, FanFallbackReason> = new Map()): void {
   const { abortAt, trace } = options, moves = options.moves !== false;
   const note = (pass: string, verdict: string): void => { if (trace) trace({ pass, revision: revisionOf(draft), verdict }); };
   // The ledger (architecture ticket 13, phase 1): what each step loses and gains, read only when a test or the trace asks for it.
@@ -271,10 +296,10 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // touched, exactly as a reservation change does anywhere else in 7f.
   // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
   abortAt?.();
-  // The fan members a retry refused fall back before anything else is decided on their legs (architecture-2 ticket 40).
-  // A member that passes the stem of a sibling fallback falls back before the freeze too, where the fallbacks' legs stand as they will be drawn.
-  // Each names its own reason, and so does every member of the cascade that follows (`refuseFanMembers`).
-  const fanReasons = draft.fanFamilies === undefined ? new Map<string, FanFallbackReason>() : refuseFanMembers(draft, fanRefused);
+  // The fan members and the other held chords a retry refused fall back before anything else is decided on their legs (architecture-2 ticket 40,
+  // ADR-0023). A member that passes the stem of a sibling fallback falls back before the freeze too, where the fallbacks' legs stand as they will
+  // be drawn. Each names its own reason, and so does every fan member of the cascade that follows (`refuseChords`).
+  const fanReasons = refuseChords(draft, chordRefused);
   if (draft.fanFamilies !== undefined) for (const [id, reason] of refuseStemCrowded(draft)) fanReasons.set(id, reason);
   planDirectFamilies(draft, refused);
   note('direct-families', String(draft.directFamilies?.length ?? 0));
@@ -441,8 +466,11 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // is open until the last replay. From here the validator and a restore read the record, member and depth, and never choose again.
   freezeFanKeepers(draft);
   // The overlay ports of a face nest (ticket 23) on the geometry that publishes, after every placement move was judged: a trade moves
-  // no box and no other port, and one that would need room 7f did not reserve is not made (`roomHolds`).
-  nestOverlayPorts(draft, roomHolds, roomLikelyHolds);
+  // no box and no other port, and one that would need room 7f did not reserve is not made (`roomHolds`). A trade can also undo the excuse of a
+  // centring the attempt declined (a replay that bent a chord no longer bends it), so the result keeps the centring findings it had or fewer, the
+  // set test `chooseReseat` makes too (R2; snack-theme ticket 159).
+  const centring = new Set(centreViolations(draft));
+  nestOverlayPorts(draft, model => roomHolds(model) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
   // A pair of labels on diagonal lines whose bands first meet on the geometry that publishes is decided here, once; a pair decided
   // earlier keeps its direction (`recordLabelYields`). Stage 9 and the validator read the record.
   recordLabelYields(draft, labelBorders(draft));

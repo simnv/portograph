@@ -125,6 +125,18 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expectIdempotent(model);
   }, 120000);
 
+  // Snack-theme ticket 159: with card nodes (`layout.nodeContent: card`), the orthogonal input threw `Centring invariant violated: link-1` at publication. A centring replay of
+  // top-1 was declined in 7f because it bent a straight overlay chord, so port t1-1#1 was excused; the overlay port trades of `nestOverlayPorts`
+  // then reordered t1-1's bottom ports, the replay no longer bent the chord, and the excuse was gone. The trades now keep the centring findings
+  // they had (a subset, as `chooseReseat` reads them).
+  it('an overlay port trade does not undo the excuse of a declined centring (card nodes)', async () => {
+    const yaml = orthogonalLinks(readFileSync(new URL('../../goldens/synthetic/a-refused-close-up-keeps-the-node-labels-in-order.yaml', import.meta.url), 'utf8')).replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n');
+    expect(yaml).toContain('nodeContent: card');
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(centreViolations(model)).toEqual([]);
+  }, 120000);
+
   // Snack-theme ticket 157: 7c places the overlay windows once after its passes (ticket 143). On the plain input the window moved cl-a3, and with it
   // the end of the overlay chord link-61 that had stopped the growth of loc-a2-gw toward its feed; the passes had stood, so publication threw
   // `Centring invariant violated: link-15`. A model the windows move is checked again and settled by the passes the budget has left.

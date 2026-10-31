@@ -214,8 +214,8 @@ function shrink(box: Rect, by: number): Rect | undefined {
  * it. A badge replaces the tile and takes the whole of it; a silhouette sits on the tile and keeps
  * the glyph inset, which is what a tile thinner than `2 × ICON_INSET` cannot give it.
  */
-function glyphBox(tile: Rect, native: { kind: 'badge' | 'silhouette'; width: number; height: number }): Rect | undefined {
-  const box = native.kind === 'badge' ? (positive(tile) ? tile : undefined) : shrink(tile, ICON_INSET);
+function glyphBox(tile: Rect, native: { kind: 'badge' | 'silhouette'; width: number; height: number }, inset = ICON_INSET): Rect | undefined {
+  const box = native.kind === 'badge' ? (positive(tile) ? tile : undefined) : shrink(tile, inset);
   return box === undefined ? undefined : letterbox(box, native);
 }
 
@@ -597,7 +597,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // (ADR-0017), not to a quarter turn.
     // `spacingTop` turns with the text, so one value puts the first baseline where `render` does.
     vertex(id, parent, styleString(['text'], {
-      strokeColor: 'none', fillColor: 'none', align: 'center', verticalAlign: 'middle',
+      strokeColor: 'none', fillColor: 'none', align: label.textAlign === 'start' ? 'left' : 'center', verticalAlign: 'middle',
+      // A card's subtitle (ticket 159) starts at its box's left edge; draw.io starts left-aligned text `spacing` inside it.
+      spacingLeft: label.textAlign === 'start' ? -LABEL_SPACING : undefined,
       whiteSpace: 'nowrap', overflow: 'visible', points: '[]', resizable: 0,
       spacingTop: middleSpacing(label, size),
       fontFamily: FONT_FAMILY, fontSize: size, fontColor: colour,
@@ -804,6 +806,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const top = named === undefined ? undefined
       : finite(centre(named.bounds!).y + firstBaseline(named, nameSize) - node.bounds!.y
         - LABEL_SPACING - BASE_SPACING_TOP - (nameSize - 1));
+    const card = named?.textAlign === 'start';
     const across = named === undefined ? 0 : finite(centre(named.bounds!).x - centre(node.bounds!).x);
     vertex(cellId('node', id), group, styleString([], {
       // A node really does contain its ports and its icon, so it says so: a container moves,
@@ -814,14 +817,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
       points: `[${[...anchors].join(',')}]`,
       ...(named === undefined ? {} : {
-        align: 'center', verticalAlign: 'top', overflow: 'visible',
+        align: card ? 'left' : 'center', verticalAlign: 'top', overflow: 'visible',
         // The offset is signed. draw.io honours a negative `spacingTop` — measured — and a node
         // whose first line starts within 7 px of its top edge needs one.
         spacingTop: top,
         // A name may stand off the node's centre — clear of a pill on the same row — and `render`
         // centres it on its own measured box, as the description cell is. Centred text moves by
         // half of `spacingLeft − spacingRight`, and only the positive side is stated.
-        ...(across > 0 ? { spacingLeft: finite(2 * across) } : across < 0 ? { spacingRight: finite(-2 * across) } : {}),
+        // A card's name (ticket 159) is left-aligned: draw.io starts it `spacing` plus `spacingLeft` right of the shape's edge, so
+        // `spacingLeft` states the rest of the measured offset.
+        ...(card ? { spacingLeft: finite(named!.bounds!.x - node.bounds!.x - LABEL_SPACING) }
+          : across > 0 ? { spacingLeft: finite(2 * across) } : across < 0 ? { spacingRight: finite(-2 * across) } : {}),
         fontFamily: FONT_FAMILY, fontSize: nameSize, fontColor: paint.node.text,
         fontStyle: (named.fontWeight ?? 700) === 700 ? 1 : undefined,
       }),
@@ -839,6 +845,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
     if (node.icon) {
       const tile = relative(shiftRect(node.icon.bounds), shift(node.bounds!));
+      // A card tile (ticket 159) states its own glyph inset and radius; the stacked tile takes the renderer's and the theme's.
+      const glyphInset = node.icon.inset ?? ICON_INSET, tileRadius = node.icon.radius ?? theme.radii.tile;
       const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => {
         return theme.classPaint(authored, of) ?? { tile: theme.paint[of].tile, glyph: theme.paint[of].glyph };
       };
@@ -851,14 +859,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // A badge carries its own frame, so it replaces the tile; a silhouette keeps it.
         if (native.kind === 'silhouette' && positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
-            rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
+            rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
           }), tile);
         }
         // A tile with no room for the glyph inset leaves the glyph out. Subtracting the inset from
         // a tile thinner than it gives a negative width, which draw.io writes and then draws as
         // nothing at all — so the whole icon would go, silently, rather than just the inset.
-        const box = glyphBox(tile, native);
+        const box = glyphBox(tile, native, glyphInset);
         if (box) {
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
             sketch: 0, aspect: 'fixed', points: '[]',
@@ -873,14 +881,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       } else {
         if (positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
-            rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
+            rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
           }), tile);
         }
         // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
         // its own image. An embedded image is the one thing here that cannot adapt to dark — draw.io
         // has no way into it — which is the reason `cisco19` is the default.
-        const inner = shrink(tile, ICON_INSET);
+        const inner = shrink(tile, glyphInset);
         if (inner) {
           const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
             + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`

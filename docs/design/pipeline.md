@@ -163,6 +163,18 @@ content insets so placement centres the icon/text blocks in the remaining interi
 asymmetric; a long port name can therefore grow the normal node dimension without changing pitch.
 Author `size:` is a floor. Undecided ports count on their most likely side. Bars are sized in 7d.
 
+**Content style** (ticket 159). A node's content stands as `card` or `stacked`. The document field `layout: { nodeContent: card | stacked }` picks
+it; the default is `stacked`. It is a layout input, because it changes node sizes (unlike `theme:`, which only paints). One resolver
+(`resolveNodeContentStyle`) decides, in this order: a node of a `bar` group is `stacked` whatever its class and the document value (a bar is a
+line-like shape that its own drops cross, so its label stays one centred column between them); else a profile class that states a style
+(`NodeClassStyle.content`; the shipped profile states none); else the document's `nodeContent`. The resolver is read inside `measureNodeContent`, so
+stage 3 and stage 5 (`rebuildNodeGeometry`) measure and place the same style. A `card` is the 24×24 icon tile (radius 4, glyph inset 3), 8 px, then a
+left-aligned text block: the title (11 px, 700) and, only when the node has a description, 2 px and the subtitle (9 px, 400). Line heights are the
+text module's (14 and 11). Authored newlines stay; nothing wraps. A card with no icon has no tile and no gap. `contentW = tile + gap + max(title,
+subtitle)`, `contentH = max(tile, text block)`, each plus the insets above; the minimums and the port-capacity rule are unchanged. The tile and the
+text block are centred together in the inset interior. Ports stay centred on their faces. `stacked` is the column above: icon (12 px), label (9 px),
+description (7 px), centred.
+
 ## Stage 4 — skeleton (ELK)
 
 One `elkjs` `layered` run. Options set explicitly (all verified to exist, 2026-09-10):
@@ -1080,10 +1092,19 @@ derived from the moved boxes, is undone whole, the boxes and anchors restored ex
 
 **A diagonal may cross text** (ticket 162, ADR-0023). A straight, non-orthogonal segment of a held chord, a straight member or an
 overlay chord takes no room from a group title or a link label: the title planner reads no rectangle from it (`linkRects`,
-`chordCrossings`), no title strip refuses it (`titleRefusal`) or reserves room beside it (`titleFitsBeside`), no title crowds a fan
-member (`titleCrowdedFanMembers`), the label room cuts no window of a label's line at it (`fixedLinkRuns`), and the row-path corridor
+`chordCrossings`), no title strip refuses it (`titleRefusal`) or reserves room beside it (`titleFitsBeside`), no title crowds a held
+chord (`titleCrowdedChords`), the label room cuts no window of a label's line at it (`fixedLinkRuns`), and the row-path corridor
 reads no label against it. Each asks `diagonalMayCross` (`diagonal-text.ts`). A segment within 10 degrees of an axis
 (`DIAGONAL_MIN_DEGREES`) keeps every rule above. The title planner keeps no soft preference for space clear of a diagonal.
+The class is read on the geometry each reader sees, and 7f moves a held chord's ends after the freeze (the title bands, the
+gap growth, the column moves), so a chord held as a diagonal can be published within 10 degrees of an axis. The published
+geometry must satisfy the predicate: at the end of each attempt of 7f, `titleCrowdedChords` names every held chord that a
+placed group title meets within its link-free margin where `diagonalMayCross` is false, and the retry of 7f refuses it
+(`ROUTED_CHORD_REFUSED`, reason `title`, a frame chord too; a fan member as `title` in its admission, a direct member through its
+family). The chord takes the orthogonal route. A spanning chord (`spanHint`) is not refused: 7a reserved span corridors for it and no
+transit lanes. It stays, as does any chord a title still meets after `DIRECT_RETRIES` retries; `STRAIGHT_LINK_TITLE` (warning) names
+each, and G3 judges
+(`a-chord-that-turns-onto-an-axis-meets-a-title`).
 The rule applies to a frame and to a one-rank row group. A canton keeps its band gap (ticket 65) and is not moved for it. From 7f on (the replays of the bundled model), a centring replay also declines a step that leaves fewer
 overlay links straight, or that puts a frame inside a band it was not in: the group stays where it stood.
 

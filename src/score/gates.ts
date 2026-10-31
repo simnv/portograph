@@ -1,5 +1,5 @@
 import type { Frame, LayoutLink, LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 
 /** A rejection box kept by its far edges; see `gates`. `measurable` is false beyond `REJECT_LIMIT`. */
@@ -22,7 +22,7 @@ import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, fa
 import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../geometry/oriented.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
-import { diagonalMayCross } from '../layout/diagonal-text.js';
+import { diagonalMayCross, linkFreeMargin } from '../layout/diagonal-text.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { faceKey, plannedTurns, portTurn, turnOrderViolated, turnRanker, type TurnPort } from '../layout/turn-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
@@ -355,7 +355,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       }
     }
     // A group title owns a link-free margin beyond its stroke-aware edge.
-    const margin = label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;
+    const margin = linkFreeMargin(label);
     for (let k = 0; k < routed.length; k++) {
       const s = routed[k]!;
       if (apart(labelSpan, segmentSpans[k]!, s.stroke / 2 + margin + 1)) continue;

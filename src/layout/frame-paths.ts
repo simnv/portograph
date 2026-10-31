@@ -780,22 +780,28 @@ export function freezeRefusal(model: LayoutModel, link: LayoutLink): ChordRefusa
 
 /**
  * The chords held at the start of 7f: the links that are straight now. Every cross-frame candidate that is not held is named once
- * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it.
+ * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it, and so is every chord a retry of 7f refused (`refusals`), a frame
+ * chord too.
  */
 export function freezeChords(model: LayoutModel, refusals: ReadonlyMap<string, FanFallbackReason> = new Map()): void {
   const held = model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
   const reasons = new Map<string, FanFallbackReason>();
   for (const link of model.links) {
-    if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
-    // A fan member refused before the freeze (a retry of 7f, a sibling's stem, or the cascade after either) names the reason it was refused for;
-    // one its family's joint search left out names `family` when no check of its own refuses it.
+    if (held.includes(link.id)) continue;
+    // A chord refused before the freeze (a retry of 7f, a sibling's stem, or the cascade after either) names the reason it was refused for: a
+    // retry refuses a held chord that a group title met on an axis (`title`), whatever check the 7e geometry passed, a frame chord too. Any other
+    // frame chord the rows rule left orthogonal names nothing here, as before. A fan member its family's joint search left out names `family`
+    // when no check of its own refuses it.
+    const given = refusals.get(link.id), kind = chordKind(model, link);
+    if (kind === undefined || (kind !== 'cross' && given === undefined)) continue;
     const fan = fanFamilyOf(model, link) !== undefined;
-    const reason: FanFallbackReason | undefined = (fan ? refusals.get(link.id) : undefined) ?? freezeRefusal(model, link) ?? (fan ? 'family' : undefined);
+    const reason: FanFallbackReason | undefined = given ?? freezeRefusal(model, link) ?? (fan ? 'family' : undefined);
     // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
     if (reason === undefined) continue;
     if (fan) reasons.set(link.id, reason);
+    const route = kind === 'cross' ? 'the orthogonal route between frames' : 'the orthogonal route inside its frame';
     model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
-      message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
+      message: `The link ${link.id} keeps ${route}: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
   }
   // The freeze is a decision even when nothing is held: a link that was not straight here stays orthogonal. An absent field would let the replays of 7f
   // take a chord the freeze refused, on boxes that the grid then widens (a row path that the region rule derives differently once the geometry settles).
@@ -860,6 +866,17 @@ export function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, str
 }
 
 /**
+ * `blockedChords` on the frames the cells give now. A cross-frame chord reads the frame boxes, which follow the cells; the stored frames follow them
+ * only at the end of a transaction, so a guard that reads a move inside one (a proposed box) derives them. `chordsHold` reads it, and the tests
+ * read it to find a body, a foreign pill or a foreign frame on a held chord.
+ */
+export function blockedChordsAt(model: LayoutModel): string[] {
+  if (!model.frozenChords?.length) return [];
+  const frames = model.frozenChords.some(id => chordKind(model, model.links.find(link => link.id === id)!) === 'cross') ? deriveFrames(model) : undefined;
+  return blockedChords(frames ? { ...model, frames } : model);
+}
+
+/**
  * Whether every frozen chord still clears every body and pill once the proposed groups take their boxes.
  * The 7f counterpart of `laneSidesHold`: a move that fails is refused for that unit, and the link is named
  * in a diagnostic. Nothing is held before 7f, so centring and the column rules pass through here unchanged.
@@ -882,10 +899,7 @@ export function chordsHold(model: LayoutModel, proposed: { group: { id?: string;
           ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x + dx, y: port.pill.bounds.y + dy } } } : {}) })) };
     }
   }
-  // A cross-frame chord reads the frame boxes, which follow the cells: the proposed cells give the frames the move would draw.
-  const moved = { ...model, nodes, groups };
-  const frames = model.frozenChords.some(id => chordKind(model, model.links.find(link => link.id === id)!) === 'cross') ? deriveFrames(moved) : undefined;
-  const held = blockedChords(frames ? { ...moved, frames } : moved);
+  const held = blockedChordsAt({ ...model, nodes, groups });
   // A caller that tries many candidates asks with `report` off and reports the final verdict itself (ticket 77).
   if (report) for (const id of held) {
     if (!model.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))) {

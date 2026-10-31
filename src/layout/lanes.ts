@@ -13,13 +13,13 @@ import { gapEnds, gapGeometry, gapLaneId, gapReservation, isGapCourse } from './
 import { admitBypassLanes, bypassGeometry, bypassLaneExtent, bypassLaneId, isBypassCourse } from './course-bypass.js';
 import { RING_PITCH, endMode } from './course-rows.js';
 import { groupShape } from './grid.js';
-import { portId } from './skeleton-graph.js';
+import { compareId, portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withStageMutation } from './mutation.js';
 import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
-import { type ProposedBox, foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, frameNodes } from './frames.js';
+import { type ProposedBox, foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, riserHostGrowth, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
 import { nodeTier, transitTiers } from './read/tier.js';
@@ -817,7 +817,10 @@ export function reserveRisers(model: LayoutModel, pending: Lane[], occ: (group: 
       const groups = Object.values(model.groups).filter(item => item.tier === tier && item.bounds !== undefined);
       const outside = groups.filter(item => x < item.bounds!.x || x > right(item.bounds!));
       const near = (item: LayoutGroup): number => Math.abs(x - (item.bounds!.x + item.bounds!.width / 2));
-      const host = [...(outside.length ? outside : groups)].sort((a, b) => near(a) - near(b))[0];
+      // The host is the group whose frames grow least to hold the lane (`riserHostGrowth`, the test `transitLanes` grows them by): a lane in the gap between two
+      // cantons is held by the canton whose margin it stands in, and the frame across the gap is not stretched over the gap to it. Then the nearest centre, then the id.
+      const growth = new Map(groups.map(item => [item.id, riserHostGrowth(model, item.id, members, { x: x - half, width })]));
+      const host = [...(outside.length ? outside : groups)].sort((a, b) => growth.get(a.id)! - growth.get(b.id)! || near(a) - near(b) || compareId(a.id, b.id))[0];
       if (host === undefined) continue;
       const id = riserLaneId(upper.id, tier);
       ids.push(id);
