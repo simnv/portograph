@@ -30,7 +30,7 @@ along the normal; clearance checks still use the complete rendered pill bounds.
 `uv run scripts/font-reference.py` measures SVG `getBBox()` in a fresh temporary Chrome profile.
 It writes [the browser reference](../../test/fixtures/text/chrome-reference.json). Tests compare
 both weights for `100G`, proportional Latin text, an unkerned pair, and the Cyrillic provider
-label. The golden's only port label is `100G`; its Chrome width is 21.46875 px at weight 400 and 23.5625 px at weight 700.
+label. The browser reference tests `100G` at 8 px. Its Chrome width is 21.46875 px at weight 400 and 23.5625 px at weight 700.
 
 The browser probe and font extractor run outside `src`. The library has no browser or font-file
 runtime dependency.
