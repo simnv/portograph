@@ -478,9 +478,11 @@ run geometry and ownership checks. Plain `JSON.parse` does not resume placement.
 bundle and group-link semantics with `resolve(document)`. This proves serialized
 self-consistency, not historical authenticity. See ADR-0010.
 
+Width-budget trials reserve a **stagger** at the end of stage 5, before the topology freeze (ADR-0024, ticket 166). `staggerRows` holds the existing feed order, exit face, centre pitch and line step. Odd members stand away from the feeds. The pitch reserves same-line node and pill clearance and the router's stroke-expanded obstacle beside each passing vertical. Ordinary feeding faces take their child x positions before transit lanes are reserved; bar faces retain stage 7d's span rule. The containing frames and tier bands grow for both lines. The freeze stores the decision, and every publication and restore checks the two lines, pitch and current port corridors.
+
 ## Stage 6 — rows
 
-Per tier: all `row`-shape nodes share one top y. Repack horizontally again if the flattening
+Per tier: all unstaggered `row`-shape nodes share one top y. A reserved stagger keeps both lines and its pitch; each line is a row to later horizontal repacks. Repack horizontally again if the flattening
 created overlap (nodes ELK stacked at one x). After `flattenRows`, `reseatBands` seats the bands
 again: each band starts one band gap under the band above, and its groups, nodes and icons move by
 one vertical shift (flanks, bars and grids with it). One number, `bandGap`, serves the boundary

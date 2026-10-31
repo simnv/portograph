@@ -1,4 +1,5 @@
 import { validateReservations } from './reservations.js';
+import { validateStaggerRows } from './stagger.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
@@ -199,8 +200,12 @@ function validatePlacementStructure(model: LayoutModel): void {
     validateRect(group.bounds, `group ${group.id}`);
     same([...(group.rowOrder ?? [])].sort(), [...group.nodes].sort(), 'Invalid row order');
     if (groupShape(model, group.id) === 'row') {
+      const position = (id: string): number => {
+        const box = model.nodes[id]!.bounds!;
+        return box.x + (model.staggerRows?.some(row => row.group === group.id) ? box.width / 2 : 0);
+      };
       for (let i = 1; i < group.rowOrder!.length; i++) {
-        if (model.nodes[group.rowOrder![i - 1]!]!.bounds!.x > model.nodes[group.rowOrder![i]!]!.bounds!.x + PLACEMENT_EPS) throw new Error('Physical row order contradicts rowOrder');
+        if (position(group.rowOrder![i - 1]!) > position(group.rowOrder![i]!) + PLACEMENT_EPS) throw new Error('Physical row order contradicts rowOrder');
       }
     }
     if (group.flank) {
@@ -302,6 +307,7 @@ function validateJoins(model: LayoutModel): void {
 /** Every protected result passes this same boundary, including direct freeze and restore. */
 function validatePublication(model: LayoutModel, baseline: LayoutModel, intermediate = false): void {
   jsonValue(model);
+  validateStaggerRows(model);
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
   validateJoins(model);
@@ -518,6 +524,7 @@ function validateSpans(model: LayoutModel, frozen: readonly string[] | undefined
 function validateFreeze(model: LayoutModel): void {
   const freeze = model.freeze;
   if (!freeze || freeze.version !== 1) throw new Error('Missing or unsupported topology freeze');
+  same(model.staggerRows, freeze.staggerRows, 'Frozen stagger reservation changed');
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
   validateSpans(model, freeze.spans);
@@ -550,6 +557,7 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
     floors: orderedNodeIds(model.document).map(id => ({ node: id, size: { ...model.nodes[id]!.sizeFloor! } })) };
   const floored = orderedNodeIds(model.document).filter(id => nodeFloors?.has(id));
   if (model.courses !== undefined) result.freeze.courses = clone(model.courses);
+  if (model.staggerRows !== undefined) result.freeze.staggerRows = clone(model.staggerRows);
   const spans = model.links.filter(link => link.spanHint === true).map(link => link.id);
   if (spans.length) result.freeze.spans = spans;
   if (turnFaces.length) result.freeze.turnOrder = turnFaces.map(face => ({ ...face }));

@@ -63,6 +63,12 @@ const report = score(model);
 const svg = render(model);
 ```
 
+To set a width budget, add `layout: { nodeContent: card, maxWidth: 1500 }` to the document.
+If the published sheet is wider, portograph tries eligible rows widest first and puts alternate
+members on a second line. It preserves feed order and clear vertical drops. A budget it cannot
+meet produces `WIDTH_BUDGET_UNMET` with the narrowest valid result tried. Without `maxWidth`,
+the output stays unchanged.
+
 ### Font: Verdana is required
 
 Every sheet is set in Verdana (weights 400 and 700), in the SVG and in the draw.io export, and all

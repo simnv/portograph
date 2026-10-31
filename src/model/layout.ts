@@ -491,6 +491,8 @@ export interface LayoutRuntime {
 
 /** Geometry remains optional until the stage that produces it has completed. */
 export interface LayoutModel {
+  /** Ticket 166: stage-5 reservations. Absent means normal rows; kept across placement replays. */
+  staggerRows?: StaggerRow[];
   freeze?: LayoutFreeze;
   /**
    * What this placement run was told to keep (architecture 2, ticket 03): pitch and size floors, side faces, lane owners, courses, spanning chords, the turn
@@ -745,7 +747,17 @@ export interface PlacementSnapshot {
   labelBands: LabelBand[];
   labels: LayoutLabel[];
 }
+/** A row keeps feed order in x; odd members stand one line away from their feeds. */
+export interface StaggerRow {
+  group: string;
+  order: string[];
+  side: 'top' | 'bottom';
+  pitch: number;
+  step: number;
+}
 export interface LayoutFreeze {
+  /** Stage-5 stagger decision, including absence versus an explicit empty record (ticket 166). */
+  staggerRows?: StaggerRow[];
   version: 1;
   topology: { node: string; ports: FrozenPort[] }[];
   floors: { node: string; size: Size }[];

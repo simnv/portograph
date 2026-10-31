@@ -25,6 +25,7 @@ import { busOfPort, busSide, meshBuses } from './bus.js';
 import { planTrunks } from './trunk.js';
 import { plannedTurns, turnOrder, turnScope, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { routedLinksAt, unreservedPeers } from './peers.js';
+import { seatStaggerRows } from './stagger.js';
 const key = portId;
 
 /**
@@ -971,6 +972,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+  if (model.staggerRows?.length) seatStaggerRows(model);
   model.stage = 'sides-two';
   return freezePortTopology(model, nodeFloors, turned);
 }
