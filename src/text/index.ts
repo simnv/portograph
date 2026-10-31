@@ -2,11 +2,11 @@ import { CORNER_RADII } from '../theme/geometry.js';
 import { FONT_METRICS } from './font-metrics.js';
 
 /**
- * The one font every renderer writes, with kerning and discretionary ligatures disabled. It is Verdana and
- * nothing else: a fallback stack would measure differently from the checked-in advances, so the layout
- * could not promise that text fits its box. The CLI warns when Verdana is not installed.
+ * The font list every renderer writes, with kerning and discretionary ligatures disabled.
+ * Measurement always uses the checked-in Verdana advances. The fallbacks keep viewers without
+ * Verdana on a sans-serif face; their metrics can differ. The CLI warns when Verdana is absent.
  */
-export const FONT_FAMILY = 'Verdana';
+export const FONT_FAMILY = 'Verdana, DejaVu Sans, sans-serif';
 export type FontWeight = 400 | 700;
 
 export interface TextStyle {

@@ -15,7 +15,8 @@ const BLOCKED = 'an-overlay-keeps-its-natural-side-when-the-lateral-segment-is-b
 const TWO_TIERS = 'members-of-two-tiers-stand-as-two-rows';
 const FAN = 'a-fan-spreads-its-ports-so-its-chords-hold-clearance';
 // The `reservations` field (architecture 2, ticket 03) is the declared ledger of the run, not geometry: the bytes main made have none.
-const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
+// Normalize emitted font lists to keep the pre-fallback geometry hashes.
+const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : key === 'fontFamily' ? 'Verdana' : value);
 const hash = (model: LayoutModel): string => createHash('sha256').update(withoutRuntime(model)).digest('hex').slice(0, 16);
 interface Counted { model: LayoutModel; places: number }
 async function run(name: string, extra: Partial<Parameters<typeof layout>[1]> = {}): Promise<Counted> {

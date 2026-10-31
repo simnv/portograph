@@ -27,14 +27,17 @@ it('measures and emits fixture text at 9 px or larger in every content style and
       for (const theme of THEME_IDS) {
         const themed = { ...model, document: { ...model.document, theme } };
         for (const mode of ['light', 'dark', 'print'] as const) {
-          for (const [format, output, pattern] of [
-            ['SVG', render(themed), /font-size:([\d.]+)px/g],
-            ['draw.io', drawio(themed, { theme: mode }), /fontSize=([\d.]+)/g],
+          for (const [format, output, pattern, familyPattern] of [
+            ['SVG', render(themed), /font-size:([\d.]+)px/g, /font-family:([^;!}]+)/g],
+            ['draw.io', drawio(themed, { theme: mode }), /fontSize=([\d.]+)/g, /fontFamily=([^;]+)/g],
           ] as const) {
             const context = `${fixture}: ${nodeContent}: ${theme}: ${mode}: ${format}`;
             const sizes = [...output.matchAll(pattern)].map(match => Number(match[1]));
             expect(sizes.length, context).toBeGreaterThan(0);
             expect(Math.min(...sizes), context).toBeGreaterThanOrEqual(9);
+            const families = [...output.matchAll(familyPattern)].map(match => match[1]!);
+            expect(families.length, context).toBeGreaterThan(0);
+            for (const family of families) expect(family, context).toMatch(/(?:^|,)\s*(?:sans-serif|serif|monospace)\s*$/);
           }
         }
       }

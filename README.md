@@ -67,8 +67,9 @@ const svg = render(model);
 
 Every sheet is set in Verdana (weights 400 and 700), in the SVG and in the draw.io export, and all
 text is measured from Verdana's glyph advances (`src/text/font-metrics.ts`, numbers only, no font
-files). There is no fallback font, because a fallback has other widths and a label could leave its
-box. Install Verdana on every machine that views or converts a sheet: it ships with macOS and
+files). The emitted font list is `Verdana, DejaVu Sans, sans-serif`. The fallbacks prevent a default
+serif face when Verdana is absent. Their widths can differ from the measured widths.
+Install Verdana for the measured text fit on each viewer or converter: it ships with macOS and
 Windows; on Linux install it from the `ttf-mscorefonts-installer` package or copy the font files
 into `~/.local/share/fonts`. `portograph render` and `portograph layout` write a `FONT_MISSING`
 warning to stderr when they find no Verdana in the usual font directories. The check is the CLI's

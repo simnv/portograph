@@ -22,7 +22,8 @@ type Hints = ReadonlyMap<string, 'left' | 'right'>;
 interface Run { model: LayoutModel; graph: ElkNode }
 interface Forged { nodes: Record<string, { ports: { sideHint?: true; naturalSide?: string; side: string }[]; sizeFloor: { width: number; height: number } }>; freeze: { nodeFloors: { node: string; size: { width: number; height: number } }[] } }
 // The `reservations` field (architecture 2, ticket 03) is the declared ledger of the run, not geometry: the bytes main made have none.
-const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
+// Normalize emitted font lists to keep the pre-fallback geometry hashes.
+const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : key === 'fontFamily' ? 'Verdana' : value);
 async function run(yaml: string, hints?: Hints, floors?: ReadonlyMap<string, { width: number; height: number }>): Promise<Run> {
   const graphs: string[] = [];
   const createElkAttempt: CreateElkAttempt = () => {

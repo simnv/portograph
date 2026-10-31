@@ -4,8 +4,9 @@ Core measurements use checked-in numeric glyph advances from Verdana regular and
 400 and 700. The table covers printable ASCII, Latin-1 and the Cyrillic block. It contains no font
 outlines. Run `uv run scripts/font-metrics.py` on macOS to regenerate it from the installed fonts.
 
-Render with `Verdana`, `font-kerning: none`, and `font-variant-ligatures: none`. Verdana is the
-measured font and the only one: there is no fallback stack, because a fallback has other metrics.
+Render with `Verdana, DejaVu Sans, sans-serif`, `font-kerning: none`, and `font-variant-ligatures: none`.
+Measurement always uses the checked-in Verdana tables. The emitted fallbacks prevent a default serif
+face when Verdana is absent. Fallback metrics can differ; install Verdana for the measured text fit.
 The core does not inspect installed fonts; the CLI warns when Verdana is missing (`bin/font-check.mjs`).
 Unknown code points reserve one em each and are returned in `unsupportedCharacters` for a caller diagnostic. This is a sizing fallback, not
 full Unicode shaping. Tabs expand to four spaces. CRLF, CR and LF separate lines. The returned
