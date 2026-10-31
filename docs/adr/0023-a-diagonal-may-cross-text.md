@@ -21,7 +21,7 @@ line off text that a reader can still read when the line crosses it.
    label's baseline; coordinator's ruling in the ticket 162 review) and the text is a group title or a link's own label
    (`crossableText`). Every place that refused, bent, moved or counted a diagonal for such text reads
    it (R1): the title planner (`linkRects`, `chordCrossings`), the chord checks (`titleRefusal`,
-   `titleFitsBeside`), the fan admission (`titleCrowdedFanMembers`), the row-path corridor
+   `titleFitsBeside`), the title re-check of the held chords (`titleCrowdedChords`), the row-path corridor
    (`straightCorridorClear`), the label room and stage 9 (`fixedLinkRuns`, `collides`) and G3.
 2. **What keeps its rules.** Orthogonal segments; node bodies, the labels inside them and port pills;
    multiplicity labels (a bundle's) and bus labels; label-vs-label and label-vs-node rules; the
@@ -47,6 +47,16 @@ line off text that a reader can still read when the line crosses it.
    line over the title.
 
 ## Consequences
+
+- The class of a held chord is decided on the geometry of 7e and published on the geometry 7f
+  leaves. 7f moves the chord's ends (the title bands, the gap growth, the column moves), so a
+  diagonal can become an axis chord under a title. The published geometry must satisfy the one
+  predicate: at the end of each attempt of 7f `titleCrowdedChords` reads it again, and the retry of
+  7f refuses every held chord that a title meets on an axis (`title`). The chord takes the
+  orthogonal route; after `DIRECT_RETRIES` retries G3 judges. Classifying with a margin
+  (hysteresis) does not replace this: a 7f move can turn a chord by more than any margin (measured
+  11.3 to 1.9 degrees on `a-chord-that-turns-onto-an-axis-meets-a-title`). Reserving the title room
+  before 7e (ticket 163) would remove the cause; this re-check is the guard.
 
 - Chords that a title refused are straight; the bends and the tier-gap growth they cost are gone.
 - Fixtures whose premise was a title that refuses a slanted leg now mark those legs

@@ -1092,10 +1092,17 @@ derived from the moved boxes, is undone whole, the boxes and anchors restored ex
 
 **A diagonal may cross text** (ticket 162, ADR-0023). A straight, non-orthogonal segment of a held chord, a straight member or an
 overlay chord takes no room from a group title or a link label: the title planner reads no rectangle from it (`linkRects`,
-`chordCrossings`), no title strip refuses it (`titleRefusal`) or reserves room beside it (`titleFitsBeside`), no title crowds a fan
-member (`titleCrowdedFanMembers`), the label room cuts no window of a label's line at it (`fixedLinkRuns`), and the row-path corridor
+`chordCrossings`), no title strip refuses it (`titleRefusal`) or reserves room beside it (`titleFitsBeside`), no title crowds a held
+chord (`titleCrowdedChords`), the label room cuts no window of a label's line at it (`fixedLinkRuns`), and the row-path corridor
 reads no label against it. Each asks `diagonalMayCross` (`diagonal-text.ts`). A segment within 10 degrees of an axis
 (`DIAGONAL_MIN_DEGREES`) keeps every rule above. The title planner keeps no soft preference for space clear of a diagonal.
+The class is read on the geometry each reader sees, and 7f moves a held chord's ends after the freeze (the title bands, the
+gap growth, the column moves), so a chord held as a diagonal can be published within 10 degrees of an axis. The published
+geometry must satisfy the predicate: at the end of each attempt of 7f, `titleCrowdedChords` names every held chord that a
+placed group title meets within its link-free margin where `diagonalMayCross` is false, and the retry of 7f refuses it
+(`ROUTED_CHORD_REFUSED`, reason `title`; a fan member as `title` in its admission, a direct member through its family). The
+chord takes the orthogonal route. After `DIRECT_RETRIES` retries a chord a title still meets stays, and G3 judges
+(`a-chord-that-turns-onto-an-axis-meets-a-title`).
 The rule applies to a frame and to a one-rank row group. A canton keeps its band gap (ticket 65) and is not moved for it. From 7f on (the replays of the bundled model), a centring replay also declines a step that leaves fewer
 overlay links straight, or that puts a frame inside a band it was not in: the group stays where it stood.
 

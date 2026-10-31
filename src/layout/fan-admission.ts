@@ -148,16 +148,17 @@ export function fanAdmissionsFault(model: LayoutModel): string | undefined {
 }
 
 /**
- * Before the freeze, the fan members a retry of 7f refused (`placementAttempt`) or a sibling's stem refuses (`refuseStemCrowded`) fall back: they
- * are made orthogonal, and their legs are walls again. Every held chord within the clearance of such a leg takes the fixed point again; the ones
- * that fail fall back together, after all of the round were read (R3: no chord of a round sees a leg of its own round), and their legs are the
- * walls of the next round, until none fails (R2: nothing held stands beside a leg it was not judged against). Bounded: a chord falls back at
- * most once. Returns the reason of every fan member that fell back: the given one for a refused member, the fixed-point refusal for one of the
- * cascade (so the freeze never records it as `family`, which would say the search left it out).
+ * Before the freeze, the chords a retry of 7f refused (`placementAttempt`: a fan member, or any held chord a group title met on an axis) or a
+ * sibling's stem refuses (`refuseStemCrowded`) fall back: they are made orthogonal, and their legs are walls again. Every held chord within the
+ * clearance of such a leg takes the fixed point again; the ones that fail fall back together, after all of the round were read (R3: no chord of
+ * a round sees a leg of its own round), and their legs are the walls of the next round, until none fails (R2: nothing held stands beside a leg it
+ * was not judged against). Bounded: a chord falls back at most once. Returns the reason of every refused chord and of every fan member of the
+ * cascade: the given one for a refused chord, the fixed-point refusal for a member of the cascade (so the freeze never records it as `family`,
+ * which would say the search left it out). A chord of the cascade that is no fan member is named by the freeze's own checks.
  */
-export function refuseFanMembers(draft: LayoutModel, refused: ReadonlyMap<string, FanFallbackReason>): Map<string, FanFallbackReason> {
+export function refuseChords(draft: LayoutModel, refused: ReadonlyMap<string, FanFallbackReason>): Map<string, FanFallbackReason> {
   const reasons = new Map<string, FanFallbackReason>();
-  const walls = draft.links.filter(link => refused.has(link.id) && link.fanFamily !== undefined && link.path !== undefined);
+  const walls = draft.links.filter(link => refused.has(link.id) && link.path !== undefined);
   for (const link of walls) { makeFanOrthogonal(draft, link); reasons.set(link.id, refused.get(link.id)!); }
   for (let fresh = walls; fresh.length;) {
     const legs = fresh.flatMap(link => (['from', 'to'] as const).flatMap(end => { const leg = orthogonalLeg(draft, link, end); return leg ? [{ leg, link }] : []; }));
@@ -179,7 +180,7 @@ export function refuseFanMembers(draft: LayoutModel, refused: ReadonlyMap<string
 
 /**
  * Before the freeze (architecture-2 ticket 40): the held fan members that pass the stem of a sibling fallback (`siblingStemCrowded`) fall back
- * as `stem`, all of those at once, and their legs are walls in turn (`refuseFanMembers`), until none passes a stem. The admission let them cross
+ * as `stem`, all of those at once, and their legs are walls in turn (`refuseChords`), until none passes a stem. The admission let them cross
  * the legs, since a fallback's side is not final inside the rows fixed point; at the freeze it is. Returns the reason of every member that fell
  * back here. Bounded: each round makes at least one chord fall back.
  */
@@ -188,27 +189,34 @@ export function refuseStemCrowded(draft: LayoutModel): Map<string, FanFallbackRe
   for (;;) {
     const crowded = draft.links.filter(link => link.fanFamily !== undefined && isRoutedChord(draft, link) && siblingStemCrowded(draft, link)).map(link => link.id).sort();
     if (!crowded.length) return reasons;
-    for (const [id, reason] of refuseFanMembers(draft, new Map(crowded.map(id => [id, 'stem' as const])))) reasons.set(id, reason);
+    for (const [id, reason] of refuseChords(draft, new Map(crowded.map(id => [id, 'stem' as const])))) reasons.set(id, reason);
   }
 }
 
 /**
- * The straight fan members whose chord stands within the link-free margin of a group title where 7f placed it (what G3 would fail): the title
- * planner reads a held chord as a wall, so a title that still meets one found no room beside it. A retry of 7f refuses those members (`title`),
- * as it refuses the ones 7f brought near a planned part (`crowds`). In id order.
+ * The held chords (`frozenChords`) whose chord stands within the link-free margin of a group title where 7f placed it, read on the geometry as it
+ * stands (what G3 would fail). A diagonal may cross a title (ticket 162, ADR-0023); only a chord within `DIAGONAL_MIN_DEGREES` of an axis is
+ * crowded by one. The title planner reads such a chord as a wall, so a title that still meets one found no room beside it. The chord was held on
+ * the geometry of 7e, where it may have been a diagonal that no title refused; 7f grows the gaps and moves the columns, so the angle class read
+ * there does not hold for the published chord, and this is where the class is read again. A retry of 7f refuses those chords (`title`), as it
+ * refuses the fan and direct members 7f brought near a planned part (`crowds`). In id order.
  */
-export function titleCrowdedFanMembers(model: LayoutModel): string[] {
+export function titleCrowdedChords(model: LayoutModel): string[] {
   const titles = model.labels.filter(label => label.role === 'group' && !label.omitted && label.bounds !== undefined);
   const found: string[] = [];
-  for (const item of model.fanAdmissions ?? []) {
-    if (item.mode !== 'straight') continue;
-    const link = model.links.find(other => other.id === item.link), chord = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
+  for (const id of model.frozenChords ?? []) {
+    const link = model.links.find(other => other.id === id), chord = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
     if (link === undefined || chord === undefined) continue;
     const reach = linkStrokeWidth(link) / 2 + GROUP_LABEL_LINK_CLEARANCE - EPS;
-    // A diagonal member may cross a title (ticket 162, ADR-0023); only a member that stands on an axis is crowded by one.
     if (titles.some(label => !diagonalMayCross(chord, label) && segmentRectDistance(chord, label.bounds!) < reach)) found.push(link.id);
   }
   return found.sort();
+}
+
+/** The straight fan members that a group title crowds (`titleCrowdedChords`): the retry of 7f refuses them as fan members (`title`). In id order. */
+export function titleCrowdedFanMembers(model: LayoutModel): string[] {
+  const straight = new Set((model.fanAdmissions ?? []).filter(item => item.mode === 'straight').map(item => item.link));
+  return titleCrowdedChords(model).filter(id => straight.has(id));
 }
 
 /**

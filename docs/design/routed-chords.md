@@ -159,8 +159,14 @@ stub does the same, Q106):
   the chord's full x-span, so the fit test above and the planner would disagree. Ticket 100 replaces
   that box, for a cross-frame chord, by its crossing rectangles (a frame chord keeps today's box).
   Where the title has no room, the planner widens the group (`growthPlan`), as for a title that
-  does not fit. Where it cannot widen, `ROUTED_CHORD_TITLE` (warning) names the link and the group,
-  and G3 judges.
+  does not fit. Where it cannot widen, `ROUTED_CHORD_TITLE` (warning) names the link and the group.
+  The retry of 7f then refuses the chord (`title`, `titleCrowdedChords`): every held chord that a
+  placed title meets within its link-free margin, where `diagonalMayCross` is false on the geometry 7f
+  leaves, is drawn orthogonal on the next attempt (a fan member as in Section 16, a direct member
+  through its family's decision, any other chord before the freeze). This also covers a chord that
+  was a diagonal at the end of 7e, which no strip refused, and that 7f turned within 10 degrees of
+  an axis (ticket 162 re-check, `a-chord-that-turns-onto-an-axis-meets-a-title`). After
+  `DIRECT_RETRIES` retries a chord a title still meets stays straight, and G3 judges.
 
 *As built (ticket 100).* The crossing rectangle is wider in x on a slanted chord: the half stroke and the 8 px margin are taken along the normal of the
 chord, so the x growth is (half stroke + 8) / cos of the angle to the vertical (a vertical chord gives 8 px). Measured: a title 8 px from the bounding box stood
@@ -561,7 +567,7 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   The crowding retry of 7f refuses a member that a moved part comes within the clearance of (`crowds`,
   `crowdedFanMembers`), that passes a sibling's stem (`stem`), or that a group title placed in 7f still meets
   (`title`, `titleCrowdedFanMembers`: the title planner found no room beside it). After `DIRECT_RETRIES` the rest
-  stay straight and `FAN_MEMBER_CROWDED` names each with its reason. `refuseFanMembers` re-reads the held chords near
+  stay straight and `FAN_MEMBER_CROWDED` names each with its reason. `refuseChords` re-reads the held chords near
   the new legs, all of one round before any falls back (R3), and each chord that falls back there names its own
   fixed-point refusal (`leg`, `chord` or `title`), never `family`.
 - **Record.** `model.fanAdmissions`, set at the freeze, one entry per member in family order: `straight` with

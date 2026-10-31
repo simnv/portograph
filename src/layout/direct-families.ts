@@ -305,7 +305,7 @@ interface Decided { families: DirectFamily[]; diagnostics: LayoutModel['diagnost
  * The decision on the draft: every triggered member is made orthogonal, then each triggered family takes
  * its verdict in family order, its chords held for the families after it. Writes the paths; returns the records.
  */
-function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate; family: DirectFamily }[], refused: ReadonlySet<string>): Decided {
+function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate; family: DirectFamily }[], refused: ReadonlyMap<string, DirectMemberReason>): Decided {
   const diagnostics: LayoutModel['diagnostics'] = [];
   for (const { candidate, family } of plans) if (family.triggered) for (const member of candidate.members) makeOrthogonal(model, linkOf(model, member.link.id));
   const families: DirectFamily[] = [];
@@ -316,7 +316,7 @@ function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate
     const own = new Set(members.map(member => member.link.id));
     const crossable = new Set(candidate.pairMembers.map(member => member.link.id).filter(id => !own.has(id)));
     const verdict = familyVerdict(model, members.filter(member => !refused.has(member.link.id)), crossable);
-    for (const member of members) if (refused.has(member.link.id)) verdict.reasons.set(member.link.id, 'crowds');
+    for (const member of members) if (refused.has(member.link.id)) verdict.reasons.set(member.link.id, refused.get(member.link.id)!);
     for (const member of members) if (verdict.direct.has(member.link.id)) makeChord(model, member.link, verdict.segments.get(member.link.id)!);
     if (verdict.truncated) diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_SEARCH_TRUNCATED',
       message: `The member search of the direct family ${family.id} stopped at ${DIRECT_SEARCH_BUDGET} sets; the best set found is kept.`,
@@ -392,8 +392,9 @@ function refuseChordsNearNewLegs(model: LayoutModel, families: DirectFamily[], s
 /**
  * Decide every direct family of the draft, once, at the start of 7f and before `freezeChords` (R1), and record the triggered ones in
  * `model.directFamilies` (absent = none triggered). A family whose orthogonal drawing crosses once or never is not recorded and is left as the other rules make it.
+ * `refused`: the members a retry of 7f refuses, each with its reason (`crowds`, or `title` for a member a group title met on an axis).
  */
-export function planDirectFamilies(draft: LayoutModel, refused: ReadonlySet<string> = new Set()): void {
+export function planDirectFamilies(draft: LayoutModel, refused: ReadonlyMap<string, DirectMemberReason> = new Map()): void {
   const candidates = familyCandidates(draft);
   const counted = new Map<string, ReturnType<typeof orthogonalCounterfactual>>();
   const plans = candidates.map(candidate => {

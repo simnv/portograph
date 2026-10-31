@@ -787,10 +787,11 @@ export function freezeChords(model: LayoutModel, refusals: ReadonlyMap<string, F
   const reasons = new Map<string, FanFallbackReason>();
   for (const link of model.links) {
     if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
-    // A fan member refused before the freeze (a retry of 7f, a sibling's stem, or the cascade after either) names the reason it was refused for;
-    // one its family's joint search left out names `family` when no check of its own refuses it.
+    // A chord refused before the freeze (a retry of 7f, a sibling's stem, or the cascade after either) names the reason it was refused for: a
+    // retry refuses a held chord that a group title met on an axis (`title`), whatever check the 7e geometry passed. A fan member its family's
+    // joint search left out names `family` when no check of its own refuses it.
     const fan = fanFamilyOf(model, link) !== undefined;
-    const reason: FanFallbackReason | undefined = (fan ? refusals.get(link.id) : undefined) ?? freezeRefusal(model, link) ?? (fan ? 'family' : undefined);
+    const reason: FanFallbackReason | undefined = refusals.get(link.id) ?? freezeRefusal(model, link) ?? (fan ? 'family' : undefined);
     // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
     if (reason === undefined) continue;
     if (fan) reasons.set(link.id, reason);
