@@ -37,8 +37,10 @@ describe('overlay-weighted order', () => {
     // ELK stands P left of Q; the overlay links of q0 and p0 reach the tiers below over the bodies of tier 1.
     expect(left(model, 'Q')).toBeLessThan(left(model, 'P'));
     // One straight link of four without the rule; three of four with it, and four of four since ticket 66 (a hard leg under a title widens its group).
+    // Three of four again since ticket 162: the feed q0 to k0 is a chord over the title of Rack N, so no leg widens the group, Group M stands
+    // further left, and m2 stands on the line from q0 to a1. The routed feed lost its two bends; the overlay link took two.
     expect(overlays(model)).toHaveLength(4);
-    expect(straight(model)).toBe(4);
+    expect(straight(model)).toBe(3);
     // The score counts one crossing with the rule and one without it: the swap does not raise it.
     expect(score(model).snapshot.metrics.crossings.count).toBe(1);
     expect(refusals(model)).toEqual([]);

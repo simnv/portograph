@@ -238,7 +238,8 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
       if (retry >= DIRECT_RETRIES) {
         if (crowded.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
           message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
-        // The members stay straight as frozen: one that a title still meets is drawn over the title, and G3 fails.
+        // The members stay straight as frozen: an axis member that a title still meets is drawn over the title, and G3 fails (a diagonal one may
+        // cross the title, ticket 162, and is never crowded by it).
         const ids = [...fans.keys()].sort(), named = ids.map(id => `${id} (${fans.get(id)})`);
         if (fans.size) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_MEMBER_CROWDED', owners: ids.map(id => ({ kind: 'link' as const, id })),
           message: `The fan ${ids.length === 1 ? 'member' : 'members'} ${named.join(', ')} still ${ids.length === 1 ? 'meets' : 'meet'} a planned part, a sibling's stem or a group title after ${DIRECT_RETRIES} retries of 7f and ${ids.length === 1 ? 'stays' : 'stay'} straight; the gates judge.` });

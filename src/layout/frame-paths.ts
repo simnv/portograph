@@ -20,6 +20,7 @@ import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { deriveFrames } from './frames.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { transitTiers } from './read/tier.js';
+import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 
 /**
  * The **straight** technique of a routed link inside one frame (ticket 34).
@@ -358,13 +359,16 @@ function titleFits(strip: TitleStrip, obstacles: readonly Rect[]): boolean {
  * chords too (the fit of the fixed point); without it the chord's own crossing alone is read (the fit of the standalone chord).
  */
 function titleRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, others: boolean): boolean {
+  // A diagonal may cross a title (ticket 162, ADR-0023): no strip refuses it, and the title stands over it. A vertical chord keeps the rules below.
+  if (diagonalMayCross(segment, GROUP_TITLE)) return false;
   const kind = chordKind(model, link), strips = titleStrips(model);
   const crossed = strips.filter(strip => segmentRectDistance(segment, strip.rect) === 0);
   if (kind !== 'cross') return crossed.length > 0;
   // A fan member (architecture-2 ticket 40, user ruling Q125): the title strip of its far end's own frame, on the edge the chord leaves through,
   // refuses nothing here. Slice 1 builds no growth for it: the title planner of 7f reads the held chord as an obstacle, and when it finds no room
   // beside it the retry of 7f refuses the member (`title`, `titleCrowdedFanMembers`). After the last retry the member stays straight over the
-  // title, `FAN_MEMBER_CROWDED` names it, and G3 fails. A title that moves aside, its frame grown, is slice 2. The member's other own strip (its
+  // title, `FAN_MEMBER_CROWDED` names it, and G3 fails. A slanted member returns above (ticket 162), so all of this reads an axis member.
+  // A title that moves aside, its frame grown, is slice 2. The member's other own strip (its
   // hub's) must fit beside the crossings as for any cross-frame chord, and a third frame's title refuses it.
   const far = fanFarEnd(model, link);
   const exempt = (strip: TitleStrip): boolean => far !== undefined && ownEndStrip(model, link, far, strip);
@@ -384,6 +388,8 @@ function titleFitsBeside(model: LayoutModel, link: LayoutLink, segment: PathSegm
       .map(box => ({ x: box.x - GROUP_LABEL_LINK_CLEARANCE, y: box.y, width: box.width + 2 * GROUP_LABEL_LINK_CLEARANCE, height: box.height })));
     for (const other of model.links) {
       if (other.id === link.id || !isRoutedChord(model, other) || chordKind(model, other) !== 'cross') continue;
+      // A held diagonal takes no room from the title (ticket 162): the title may stand over it.
+      if (diagonalMayCross(other.path!.segments[0]!, GROUP_TITLE)) continue;
       const rect = crossingRect(other.path!.segments[0]!, strip.rect.y, strip.rect.y + strip.rect.height, linkStrokeWidth(other) / 2);
       if (rect) blocks.push(rect);
     }

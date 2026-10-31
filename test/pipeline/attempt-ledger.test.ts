@@ -49,8 +49,11 @@ const ROWS: Row[] = [
   row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/13/7/3', 4, 1, 1, 0, 0, { probe: 1 }),
   row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/7/7/3', 2, 1, 1, 0, 0),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
-  row('a-canton-member-frame-slides-off-a-straight-chord', '1/10/7/3', 2, 1, 1, 0, 0),
-  row('columns-hold-their-axis-after-7f', '1/19/7/3', 3, 1, 1, 0, 0),
+  // Ticket 162 (a diagonal may cross a title): the two feeds the canton titles refused are chords before centring, which takes them off (pre-7f chords
+  // lost 2), and the sheet needs two centring passes less (1/10/7/3 before).
+  row('a-canton-member-frame-slides-off-a-straight-chord', '1/8/7/3', 2, 1, 1, 0, 0, { preChords: 2 }),
+  // Ticket 162: the feeds are authored `route: orthogonal` (as chords they would cross the titles), so no fan or side round places again (1/19/7/3, 3 runs before).
+  row('columns-hold-their-axis-after-7f', '1/10/7/3', 1, 1, 1, 0, 0),
   row('a-canton-band-holds-the-rows-off', '1/7/7/3', 2, 1, 1, 0, 0),
   // Verdana metrics (snack-theme ticket 157): one centring pass fewer (1/7/7/3 with Arial).
   row('a-member-title-widens-a-beside-row', '1/6/7/3', 1, 1, 1, 0, 0, { base7f: '0/1/0' }),
@@ -65,7 +68,8 @@ const ROWS: Row[] = [
   // Phase 3b of ticket 15: the base 7f moved a group and the kept result has no offer, so the unmoved 7f baseline is measured and its offer runs as one extra, refused side trial (3 attempts, 2 place runs; the settled copy 7f kept filters, the unmoved baseline is rebuilt).
   // Architecture 2, ticket 23: the grown overlay port clearance and the separated tracks cost this sheet one settle call, one centring pass and two candidate copies more (14/29/37 to 15/30/39).
   // Verdana metrics (snack-theme ticket 157): 13/28/35/6 (15/30/39/6 with Arial).
-  row('a-chord-step-moves-a-group-off-a-straight-chord', '13/28/35/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
+  // Ticket 162: two feeds a title refused are chords before centring, which takes them off (pre-7f chords lost 2, 0 before).
+  row('a-chord-step-moves-a-group-off-a-straight-chord', '13/28/35/6', 2, 3, 5, 0, 2, { baseChord: 1, preChords: 2 }),
 ];
 
 interface Reading { counters: string; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: string; probe: number; preChords: number; preCentre: number; base7f: string; events: AttemptTraceEvent[] }
@@ -108,11 +112,12 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
   }, 60000);
 
   // Verdana metrics (snack-theme ticket 157): three-continents 19/19/24 (21/21/31 with Arial), a-chord-step 10/10/13 (12/12/15 with Arial).
+  // Ticket 162: the canton-member frame needs one gap round (2 before): its feeds are chords over the canton titles and grow no gap.
   // Phase 2: the replays, the settled copies the chord step judged on, and the rounds of the gap fixed point, where they dropped. Before the phase:
   // Phase 4 raised three-continents to 21/21/31 (more candidates pass the gate of the unified order, each one settled). Ticket 22: a-tier-gap-plan gap rounds 3 to 5 (the crowding round of the direct family). Ticket 23 (the overlay port clearance, separated tracks) raised the chord-step fixture 11/11/14 to 12/12/15. Before it: three-continents 8/7/10, a-tier-gap-plan 1/0/3, two-interleaved 1/0/2, a-tier-gap-grows 1/0/2, canton-member-frame 1/0/2, chord-step fixture 5/4/6.
   it.each([
     ['three-continents', 19, 19, 24], ['a-tier-gap-plan-orders-every-part', 0, 0, 5], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
-    ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 2], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 13],
+    ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 1], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 13],
   ] as const)('derives once: %s replays %i, settled copies %i, gap rounds %i', async (name, replays, trials, gapRounds) => {
     resetAttemptCounters();
     await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });

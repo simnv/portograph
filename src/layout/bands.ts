@@ -4,7 +4,7 @@ import type { PortRef } from '../model/document.js';
 import type { LabelBand, LabelPaddingEntry, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
+import { frameSubtreeCells, orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { measureText } from '../text/index.js';
 import { GROUP_LABEL_GEOMETRY, LABEL_CLEARANCE_STEP, measureTitle, titleRoom } from './title-room.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
@@ -28,13 +28,14 @@ import { LINK_LABEL_GEOMETRY, besideRunLabelBox, describedLink, labelBorders, li
 import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from './overlay-paths.js';
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
+import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 import { directFamiliesFault } from './direct-families.js';
 import { fanAdmissionsFault } from './fan-admission.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry, trunkJoins } from './bus.js';
 import { reportTrunkCrossings } from './trunk.js';
-import { separationsBrokenBy } from './constraints/separation.js';
+import { derivedShortfalls, separationsBrokenBy, worseSeparations } from './constraints/separation.js';
 import { attemptCounters } from './attempt-counters.js';
 import type { AttemptTraceEvent } from './placement-attempt.js';
 import { isCantonFrame } from './read/canton.js';
@@ -411,7 +412,8 @@ function linkRects(model: LayoutModel, link: LayoutModel['links'][number]): Forb
   // reserved count here; re-deriving a label against a later route would let routing move it.
   let reserved = link.path?.fixed === false ? [] : link.path?.segments ?? [];
   // A cross-frame chord reserves the part of its run inside each title band it crosses, not the box of the whole run: it crosses the band of its
-  // own end beside the title (ticket 100, docs/design/routed-chords.md Section 6). A frame chord keeps its box.
+  // own end beside the title (ticket 100, docs/design/routed-chords.md Section 6). A diagonal segment, a chord's or a straight member's,
+  // reserves nothing from a title (ticket 162); an orthogonal one keeps its box.
   const crossings = chordCrossings(model, link);
   if (crossings) reserved = [];
   const sources: [string, PathSegment[]][] = [['path', reserved],
@@ -419,6 +421,8 @@ function linkRects(model: LayoutModel, link: LayoutModel['links'][number]): Forb
     ['shared:to', link.sharedRuns?.to ?? []]];
   const seen = new Set<string>(), result: ForbiddenRect[] = [];
   for (const [kind, segments] of sources) for (const [index, segment] of segments.entries()) {
+    // A diagonal may cross a title (ticket 162, ADR-0023): the title stands over it, and its halo keeps it readable.
+    if (diagonalMayCross(segment, GROUP_TITLE)) continue;
     const bounds = segmentRect(segment, stroke), key = ownedRectKey(bounds, segment.owner);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -433,6 +437,8 @@ function linkRects(model: LayoutModel, link: LayoutModel['links'][number]): Forb
 function chordCrossings(model: LayoutModel, link: LayoutModel['links'][number]): { band: LabelBand; bounds: Rect }[] | undefined {
   if (link.technique !== 'straight' || !isRoutedChord(model, link) || chordKind(model, link) !== 'cross') return undefined;
   const segment = link.path!.segments[0]!, half = linkStrokeWidth(link) / 2, result: { band: LabelBand; bounds: Rect }[] = [];
+  // A diagonal chord may cross a title (ticket 162, ADR-0023): it takes no room in any band. A vertical one keeps its crossings.
+  if (diagonalMayCross(segment, GROUP_TITLE)) return result;
   for (const band of model.labelBands) {
     const bounds = crossingRect(segment, band.bounds.y, bottom(band.bounds), half);
     if (bounds && bounds.x <= right(band.bounds) && right(bounds) >= band.bounds.x) result.push({ band, bounds });
@@ -921,13 +927,15 @@ const GRID_PACK_ROUNDS = 2;
  */
 export function settleKeepOut(model: LayoutModel): boolean {
   const before = new Map(Object.values(model.groups).map(group => [group, group.bounds!.x]));
+  const short = derivedShortfalls(model), saved = geometrySnapshot(model);
   for (let round = 0; round < 8; round++) {
     // The frames after a moved one give way to the geometry the move made, so the sweep is read after the keep-out is applied and
     // both maps are applied together, until neither has anything left.
     const shifts = keepOutShifts(model);
     for (const [group, dx] of columnShifts(model, 0)) shifts.set(group, Math.max(shifts.get(group) ?? 0, dx));
     if (!shifts.size) break;
-    if (!holdsMove(model, [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } })))) break;
+    const proposed = [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
+    if (!holdsMove(model, proposed)) break;
     const straight = straightOverlays(model), nodes = [...shifts.keys()].flatMap(group => group.nodes);
     for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
     rebuildNodeGeometry(model, nodes, 'current');
@@ -940,7 +948,36 @@ export function settleKeepOut(model: LayoutModel): boolean {
       break;
     }
   }
+  // A sweep that ends with a hard separation (G9) broken or deepened is not made: a unit that does not give way, such as a flank beside the moved row,
+  // keeps its band gap, and no close-up runs after this step. Judged once, on the sweep's end, as the frames after a moved one give way a round later
+  // (ticket 162 measured a row that a keep-out pushed into its flank).
+  const worse = worseSeparations(derivedShortfalls(model), short);
+  if (worse.length > 0) {
+    // Restored exactly as it stood, not moved back: an inverse translation leaves rounding in the boxes and the anchors.
+    const moved = [...before.keys()].filter(group => saved.groups.get(group.id)!.x !== group.bounds!.x).map(group => group.id);
+    restoreGeometry(model, saved);
+    placementWarning(model, 'KEEP_OUT_UNDONE', `The keep-out of 7f was undone: its sweep broke or deepened the hard separations ${worse.join(', ')}; the frames stay in the drop clearance.`,
+      moved, 'group');
+  }
   return [...before].some(([group, x]) => group.bounds!.x !== x);
+}
+
+/** The group boxes, node boxes and port anchors as they stand, to restore exactly. */
+type GeometrySnapshot = { groups: Map<string, Rect>; nodes: Map<string, Rect>; anchors: Map<string, (Point | undefined)[]> };
+function geometrySnapshot(model: LayoutModel): GeometrySnapshot {
+  return {
+    groups: new Map(Object.values(model.groups).map(group => [group.id, { ...group.bounds! }])),
+    nodes: new Map(Object.values(model.nodes).map(node => [node.id, { ...node.bounds! }])),
+    anchors: new Map(Object.values(model.nodes).map(node => [node.id, node.ports.map(port => port.anchor && { ...port.anchor })])),
+  };
+}
+function restoreGeometry(model: LayoutModel, saved: GeometrySnapshot): void {
+  for (const group of Object.values(model.groups)) group.bounds = { ...saved.groups.get(group.id)! };
+  for (const node of Object.values(model.nodes)) {
+    node.bounds = { ...saved.nodes.get(node.id)! };
+    node.ports.forEach((port, index) => { const anchor = saved.anchors.get(node.id)![index]; if (anchor) port.anchor = { ...anchor }; });
+  }
+  rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
 }
 
 /**

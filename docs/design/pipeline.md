@@ -1086,7 +1086,16 @@ discover that, so placement reserves it: the column plans (`pullTier`) leave a f
 band, and in the rounds of the close-up `settleKeepOut` moves a frame that a mover without a plan (the push of a widened neighbour, a
 lane reseated) left inside it, right by the smallest amount. The frames after it give way to the moved geometry (the sweep is read after
 the keep-out is applied, and both are applied together until neither has anything left); a lane that forbids the move, or a move that
-leaves fewer overlay links straight, refuses it.
+leaves fewer overlay links straight, refuses it. A sweep that ends with a hard separation (G9) broken or deepened, read on the frames
+derived from the moved boxes, is undone whole, the boxes and anchors restored exactly, and `KEEP_OUT_UNDONE` names the groups: a flank beside the moved row does not give way, and no close-up runs after this step
+(ticket 162).
+
+**A diagonal may cross text** (ticket 162, ADR-0023). A straight, non-orthogonal segment of a held chord, a straight member or an
+overlay chord takes no room from a group title or a link label: the title planner reads no rectangle from it (`linkRects`,
+`chordCrossings`), no title strip refuses it (`titleRefusal`) or reserves room beside it (`titleFitsBeside`), no title crowds a fan
+member (`titleCrowdedFanMembers`), the label room cuts no window of a label's line at it (`fixedLinkRuns`), and the row-path corridor
+reads no label against it. Each asks `diagonalMayCross` (`diagonal-text.ts`). A segment within 10 degrees of an axis
+(`DIAGONAL_MIN_DEGREES`) keeps every rule above. The title planner keeps no soft preference for space clear of a diagonal.
 The rule applies to a frame and to a one-rank row group. A canton keeps its band gap (ticket 65) and is not moved for it. From 7f on (the replays of the bundled model), a centring replay also declines a step that leaves fewer
 overlay links straight, or that puts a frame inside a band it was not in: the group stays where it stood.
 
@@ -1792,15 +1801,18 @@ leaves out every other overlay-layer label).
 Ticket 97: a joined pair has one label, `<class> mesh (<n> nodes)` with `n` the nodes of both buses, on the bar with more members (the upper on a tie); the other bus has no label and no label room.
 
 **A drawn overlay run is an obstacle for a label.** G3 measures a label against routed geometry
-only, and the renderer masks the overlay layer out of every drawn label, so a label over an overlay
-stays readable — but the mask cuts the *overlay* under it, and an overlay path goes round the shapes
+only, and the renderer masks an orthogonal overlay run out of every drawn label it meets (a diagonal
+runs on under the label's halo, ticket 162), so a label over an overlay stays readable — but the mask
+cuts the *overlay* under it, and an overlay path goes round the shapes
 it crosses precisely so that the line stays whole. The label is the thing that can move, and the path
 cannot dodge it in return: a link label's box is measured here, after stage 8 built the path. Where
 both sides of every segment are covered the ladder runs again with overlay runs ignored, because a
 label that is drawn beats a line that is whole; the mask then carries the crossing, as it always
 did. That second run comes **before** the shortened text, not after it: a truncated label is the
 last thing tried, because the mask gives the overlay back under a whole label and nothing gives a
-shortened label its characters back (synthetics review ticket 04 C). Node
+shortened label its characters back (synthetics review ticket 04 C). The second run also lets a link's own label lie across a
+diagonal of any layer (ticket 162, `diagonalMayCross`): the first run keeps the label clear of it where it can, and G3 does not count
+the crossing; the label's halo breaks the line under its letters. Node
 bodies and pills on the overlay *layer* stay out of the set: they are not drawn. Every placed label
 is in it, whatever layer its link is on.
 
@@ -1962,8 +1974,18 @@ or a shadow — is held by that one parser policy on both routes, not restated p
 The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
 one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
 
-The overlay `<g>` sits beneath the routed layer with node interiors, group labels, port pills and
-visible link labels masked out; a hidden link's label is left out of the mask so it cannot leave an
+**Every text outside node bodies carries a halo** (ticket 162, ADR-0023): group titles, link, multiplicity and bus labels and
+legend labels have the class `pg-halo` and a depth class `pg-halo-<n>`, where `n` counts the group boxes behind the text's centre
+(`boxesBehind`). The style states `paint-order: stroke fill` with a 4 px stroke, and per depth the colour behind the text
+(`backdropColour`: the page with each group fill laid over it at its opacity) in light, dark and print. draw.io has no outline for
+a plain-text label, so a text in its labels layer takes `labelBackgroundColor` in that colour; a group title lies under the links
+there and shows a line drawn over it.
+
+The overlay `<g>` sits beneath the routed layer with node interiors, port pills, multiplicity and bus
+labels masked out. A line that text cuts has a mask of its own (`pg-line-mask-*`, ticket 162): a link label
+cuts its own line (a routed one only where the label lies on a direct line, ticket 16), and a group title or
+a foreign link label cuts an overlay line where an orthogonal run of it meets the text, the text box cut to
+the run's stroke. A diagonal (`isDiagonal`, 10 degrees or more from both axes) is not cut; the halo breaks it; a hidden link's label is left out of the mask so it cannot leave an
 unexplained gap. Overlay endpoints keep a 2 px mark, drawn above the protected elements rather than
 inside the masked group. One counted merge trunk is painted once by its bundle, and the interval it
 covers is subtracted from each member's own path, which still draws its approach and departure.

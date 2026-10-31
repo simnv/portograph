@@ -1,0 +1,19 @@
+# Expected: a diagonal may cross a link label (ticket 162, ADR-0023). Two routers on tier 1 feed two servers on tier 2 crosswise,
+# so the two dashed links are cross-frame chords that cross at the middle of the tier gap. The chord to the far server carries a
+# long label on its own line. The other chord crosses that label: 7f cuts no window of the label's line at a diagonal, so the
+# tier gap grows only for the label's length, and stage 9 places the whole label on its line across the other chord. G3 does
+# not count the crossing, and the label carries a halo in the colour behind it, so the crossing line breaks under its
+# letters. Before the rule 7f grew the tier gap until the label's window cleared the crossing chord. Every gate passes.
+# Test-only input owned by ticket 162; test/pipeline/diagonal-crosses-text.test.ts reads it.
+portograph: 2
+groups:
+  upper: { tier: 1, label: Upper }
+  lower: { tier: 2, label: Lower }
+nodes:
+  a: { group: upper, class: router, label: Router A }
+  b: { group: upper, class: router, label: Router B }
+  c: { group: lower, class: server, label: Server C }
+  d: { group: lower, class: server, label: Server D }
+links:
+  - { from: a, to: d, class: dashed, label: Primary transit to the far server }
+  - { from: b, to: c, class: dashed }

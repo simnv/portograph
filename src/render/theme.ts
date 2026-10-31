@@ -1,4 +1,4 @@
-import { LEGEND_DEFAULT_CLASS, NETWORK_NODE_CLASSES, washAssignment, washToken, portRolePaint } from '../profiles/network/theme.js';
+import { LEGEND_DEFAULT_CLASS, NETWORK_NODE_CLASSES, backdropColour, washAssignment, washToken, portRolePaint } from '../profiles/network/theme.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 import { themeById } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
@@ -144,6 +144,31 @@ export function sheetClassWashCss(classAttrs: readonly (string | undefined)[], t
   const rules = (mode: ThemeMode): string[] => used.map(at =>
     `.node-body:where(.pg-wash-${at}){fill:${wash(at, mode)}}`);
   return [...rules('light'),
+    '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
+    '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');
+}
+
+/** The class every text outside a node body carries: its halo (ticket 162). */
+export const HALO_CLASS = 'pg-halo';
+/** The class that gives a halo the colour behind its text, by the count of group boxes behind it (`boxesBehind`). */
+export const haloDepthClass = (depth: number): string => `pg-halo-${depth}`;
+/**
+ * The halo's width. The stroke is painted under the fill (`paint-order`), so half of it shows round each glyph: the clear space stage 9
+ * keeps round a label on its line (`LINK_LABEL_GEOMETRY.halo`, 2 px), so a line that crosses the text breaks under its letters.
+ */
+export const HALO_WIDTH = 4;
+
+/**
+ * The halo of the text outside node bodies (ticket 162, ADR-0023): an outline in the colour behind the text (`backdropColour`), painted
+ * under the glyphs. One rule per depth of group fills the sheet uses, in every mode of the theme, as the theme's own sheet states its modes.
+ */
+export function haloCss(depths: readonly number[], theme: Theme = themeById(undefined)): string {
+  if (!depths.length) return '';
+  const used = [...new Set(depths)].sort((a, b) => a - b);
+  const rules = (mode: ThemeMode): string[] => used.map(depth =>
+    `.${HALO_CLASS}.${haloDepthClass(depth)}{stroke:${backdropColour(theme.paint[mode], depth)}}`);
+  return [`.${HALO_CLASS}{paint-order:stroke fill;stroke-width:${HALO_WIDTH}px;stroke-linejoin:round;stroke-opacity:1;stroke-dasharray:none}`,
+    ...rules('light'),
     '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
     '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');
 }

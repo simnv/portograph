@@ -4,6 +4,7 @@ import { GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, pathStrokeWidth } from '..
 import { chordsApart, chordVerdict, fanCrossedBoxes, fixedPointRefusal, foreignBox, isRoutedChord, orthogonalLeg, siblingStemCrowded, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
+import { diagonalMayCross } from './diagonal-text.js';
 
 /**
  * The joint admission of a fan family (architecture-2 ticket 40, merged design Sections 2 and 3).
@@ -204,7 +205,8 @@ export function titleCrowdedFanMembers(model: LayoutModel): string[] {
     const link = model.links.find(other => other.id === item.link), chord = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
     if (link === undefined || chord === undefined) continue;
     const reach = linkStrokeWidth(link) / 2 + GROUP_LABEL_LINK_CLEARANCE - EPS;
-    if (titles.some(label => segmentRectDistance(chord, label.bounds!) < reach)) found.push(link.id);
+    // A diagonal member may cross a title (ticket 162, ADR-0023); only a member that stands on an axis is crowded by one.
+    if (titles.some(label => !diagonalMayCross(chord, label) && segmentRectDistance(chord, label.bounds!) < reach)) found.push(link.id);
   }
   return found.sort();
 }

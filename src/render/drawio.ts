@@ -70,7 +70,8 @@ import type { Theme } from '../profiles/network/themes.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
-import { groupShapes } from './frame-order.js';
+import { boxesBehind, groupShapes } from './frame-order.js';
+import { backdropColour } from '../profiles/network/theme.js';
 import { linkVisible } from './index.js';
 import { authorClass, element, num } from './svg.js';
 
@@ -100,22 +101,6 @@ const NODE_NAME_SIZE = 9;
 
 /** The description size the profile uses when a label does not state its own. */
 const NODE_DESCRIPTION_SIZE = 7;
-
-/** `#rrggbb` to its three channels; anything else (a name, `none`) has no channels to mix. */
-function channels(colour: string): [number, number, number] | undefined {
-  const hex = /^#([0-9a-f]{6})$/i.exec(colour.trim());
-  if (!hex) return undefined;
-  const value = Number.parseInt(hex[1]!, 16);
-  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-}
-
-/** `over` painted at `alpha` on `under`, as one opaque colour: what a reader actually sees. */
-function composite(over: string, under: string, alpha: number): string {
-  const a = channels(over), b = channels(under);
-  if (!a || !b) return over;
-  const mix = a.map((value, index) => Math.round(value * alpha + b[index]! * (1 - alpha)));
-  return `#${mix.map(value => value.toString(16).padStart(2, '0')).join('')}`;
-}
 
 /** The point on `segment` nearest `at`: where a label sits when it sits on its run. */
 function project(at: Point, segment: { from: Point; to: Point }): Point {
@@ -603,7 +588,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
   const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect, colour: string,
-    size = labelSize(label)): void => {
+    size = labelSize(label), backdrop?: string): void => {
     // draw.io turns a cell's own rectangle about its centre. A turned label (ticket 20) records its
     // text rectangle (`turnedSize`), so the cell is that rectangle about the box centre, and draw.io
     // turns the rectangle the text really occupies. Any other label's `bounds` is its box: a quarter
@@ -620,6 +605,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       fontFamily: FONT_FAMILY, fontSize: size, fontColor: colour,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       rotation: label.textRotation ? label.textRotation : undefined,
+      labelBackgroundColor: backdrop,
     }), turnedCell(label, box), plainText(labelLines(label)));
   };
 
@@ -696,6 +682,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // A frame is drawn in its cells' place, and a cell never is (ranked-groups spec, section 2). A parent
   // frame comes before its child, and a box that lies on another after it (frame-order.ts).
   const shapes = groupShapes(layout);
+  /**
+   * The halo of a text outside node bodies (ticket 162), as draw.io can state it. A plain-text label has no outline: `textShadow` with no
+   * offset draws a soft glow through which a crossing line still shows (measured with the drawio CLI, 2026-10-31), so a text in the
+   * labels layer takes a backdrop in the colour behind it instead (`backdropColour`, the SVG halo's colour). A group title lies in the
+   * diagram layer, under the links, and no backdrop of its own can cover a line drawn above it.
+   */
+  const backdrop = (point: Point): string => dual(of => backdropColour(theme.paint[of], boxesBehind(shapes, point)));
   // A frame nests as the model nests it: a zone in a location, a location in a continent. Its cell is a
   // child of its parent frame's cell, stated from that cell's top-left, so a parent moved by hand carries
   // its children; a group that no frame holds stays on the diagram layer. `startSize` shifts nothing here.
@@ -1119,19 +1112,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const segment = label.support?.kind === 'link-segment' ? link.path?.segments[label.support.segment] : undefined;
     const on = label.support?.kind === 'link-segment' && (placement === 'on-run' || label.onLine === true && segment !== undefined && isDirect(segment));
     const multiplicity = label.support?.kind === 'merge-run';
-    const inside = [...Object.values(layout.groups).filter(group => group.frame === undefined && group.bounds).map(group => group.bounds!),
-      ...(layout.frames ?? []).map(frame => frame.box)].some(bounds =>
-      at.x >= bounds.x - canvas.x && at.x <= bounds.x - canvas.x + bounds.width
-      && at.y >= bounds.y - canvas.y && at.y <= bounds.y - canvas.y + bounds.height);
     return {
-      // A label on the line must hide the line behind its glyphs, and the honest colour to do that
-      // with is whatever is really behind it: the group's tint composited over the canvas, or the
-      // canvas. Sitting clear of its run, it fills nothing and needs no margin either.
-      labelBackgroundColor: on
-        ? dual(of => inside
-          ? composite(theme.paint[of].group.fill, theme.paint[of].background, theme.paint[of].group.fillOpacity)
-          : theme.paint[of].background)
-        : 'none',
+      // A label hides a line behind its glyphs (ticket 16 on its own line, ticket 162 under a diagonal that crosses it), and the honest
+      // colour to do that with is whatever is really behind it: the group fills composited over the canvas, or the canvas (`backdrop`).
+      labelBackgroundColor: backdrop({ x: at.x + canvas.x, y: at.y + canvas.y }),
       ...(on ? { spacing: LABEL_MARGIN } : {}),
       align: 'center', verticalAlign: 'middle',
       fontFamily: FONT_FAMILY, fontSize: labelSize(label),
@@ -1434,7 +1418,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
     const label = layout.labels.find(item => item.id === bus.label);
     if (label !== undefined && !label.omitted && label.bounds !== undefined) {
-      textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds), paint.link.label);
+      textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds), paint.link.label, undefined, backdrop(centre(label.bounds)));
     }
   }
 
@@ -1458,7 +1442,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const bundle = label.owner.id;
       if (!drawn.some(item => item.bundle === bundle)) continue;
       textCell(cellId('linkLabel', label.id), layerId('labels'), label, shiftRect(label.bounds),
-        paint.link.multiplicity);
+        paint.link.multiplicity, undefined, backdrop(centre(label.bounds)));
       continue;
     }
     const run = ids[runFor(label, link, ids)]!;

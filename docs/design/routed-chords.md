@@ -127,6 +127,10 @@ never "runs along" an edge. The facing-edge rule (Section 4) is the only edge ru
 
 ## 6. The own title band
 
+**Ticket 162 (ADR-0023) limits this section to an axis chord.** A diagonal chord (10 degrees or more
+from both axes) may cross any group title: no strip refuses it, it takes no room from a title, and G3
+does not count the crossing. Only a chord within 10 degrees of an axis reads the rules below.
+
 A frame chord refuses every title strip. A cross-frame chord changes one case: the title band of
 its **own end** on the edge the chord leaves through (the end frame's, the parent frame's, the
 canton frame's). There the chord crosses the band as a leg does (ticket 62, Q103; the mesh bus
@@ -537,7 +541,8 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   branch; the end of the walk tests the set with every refusal. It tests at most `FAN_SEARCH_BUDGET` (512) configurations per family and states
   `FAN_SEARCH_TRUNCATED` when it stops (R4). The settle loop then runs again around the chosen chords.
 - **What a member may cross.** Foreign frame, group and canton boxes (no corridor wall) and the title strip of its own
-  far frame on the edge it leaves through. Slice 1 builds no growth for that title: the title planner of 7f reads the
+  far frame on the edge it leaves through. A diagonal member may cross every title (ticket 162, ADR-0023): no title
+  refuses or crowds it, and the rest of this item reads an axis member only. Slice 1 builds no growth for that title: the title planner of 7f reads the
   held chord's crossing as an obstacle, and where it finds no room beside it the retry of 7f refuses the member
   (`title`, `titleCrowdedFanMembers`). After `DIRECT_RETRIES` retries a member a title still meets stays straight over
   the title, `FAN_MEMBER_CROWDED` names it, and G3 fails; on the corpus and the sweep this does not happen (the two fan

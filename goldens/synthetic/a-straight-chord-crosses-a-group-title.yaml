@@ -1,0 +1,30 @@
+# Expected: a diagonal may cross a group title (ticket 162, ADR-0023). Three core routers on tier 0 feed three distribution
+# switches on tier 1 in a crossed order, and the distribution group has a title wider than either side of the crossings. The
+# title stands on the top edge, where the chords enter. Each feed is one straight segment from face to face (a cross-frame
+# chord), and the title stays centred over them: no strip refuses a diagonal, the title planner reserves no room from one,
+# and G3 does not count the crossing. The title carries a halo in the colour behind it, so each line breaks under its
+# letters. Before the rule the title refused the three chords (`ROUTED_CHORD_REFUSED`, reason `title`), and they took three
+# stepped parts. Every gate passes.
+# Test-only input owned by ticket 162; test/pipeline/diagonal-crosses-text.test.ts reads it.
+portograph: 2
+groups:
+  t0: { tier: 0, label: Core }
+  t1: { tier: 1, label: Distribution east wing }
+  t2: { tier: 2, label: Access }
+nodes:
+  c0: { group: t0, class: router, label: C0, ports: [{ name: d0, side: bottom }] }
+  c1: { group: t0, class: router, label: C1, ports: [{ name: d0, side: bottom }] }
+  c2: { group: t0, class: router, label: C2, ports: [{ name: d0, side: bottom }] }
+  d0: { group: t1, class: switch, label: D0, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  d1: { group: t1, class: switch, label: D1, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  d2: { group: t1, class: switch, label: D2, ports: [{ name: u0, side: top }, { name: d0, side: bottom }] }
+  a0: { group: t2, class: server, label: A0, ports: [{ name: u0, side: top }] }
+  a1: { group: t2, class: server, label: A1, ports: [{ name: u0, side: top }] }
+  a2: { group: t2, class: server, label: A2, ports: [{ name: u0, side: top }] }
+links:
+  - [c0.d0, d1.u0]
+  - [c1.d0, d2.u0]
+  - [c2.d0, d0.u0]
+  - [d0.d0, a0.u0]
+  - [d1.d0, a1.u0]
+  - [d2.d0, a2.u0]
