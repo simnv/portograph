@@ -543,7 +543,12 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
   const offsets = runSpacing(model, run, at, slack);
   if (!run.some((unit, i) => i > 0 && Math.abs(at(unit).x - at(run[i - 1]!).x - (offsets[i]! - offsets[i - 1]!)) > PLACEMENT_EPS)) return false;
   const last = at(run[run.length - 1]!), extent = offsets[run.length - 1]! + last.width;
-  const base = (at(run[0]!).x + last.x + last.width) / 2 - extent / 2;
+  // The block keeps its centre, inside the flank walls of its units (`flankRoom`, the wall `pullTier` keeps too): a close-up that centres the run
+  // must not move its first unit into the band gap of a flank beside it (ticket 157). A run that no base fits between its walls is held.
+  const rooms = run.map(unit => flankRoom(model, unit, at(unit)));
+  const lowBase = Math.max(...rooms.map((room, i) => room.low - offsets[i]!)), highBase = Math.min(...rooms.map((room, i) => room.high - offsets[i]!));
+  const base = Math.min(Math.max((at(run[0]!).x + last.x + last.width) / 2 - extent / 2, lowBase), highBase);
+  const walled = lowBase > highBase + PLACEMENT_EPS;
   const shifts = new Map<LayoutGroup, number>();
   const packed = run.map((_, i) => base + offsets[i]!);
   for (const [i, unit] of run.entries()) {
@@ -552,7 +557,7 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
   }
   if (!shifts.size) return false;
   const named = run.find(unit => isCanton(unit) && unit.groups.some(group => shifts.has(group))) ?? run.find(isCanton)!;
-  let cause = stepBlock(model, tier, run, at, isCanton);
+  let cause = walled ? 'a flank beside the run holds it' : stepBlock(model, tier, run, at, isCanton);
   const proposed = [...shifts].map(([group, dx]) => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }));
   if (cause === undefined && !holdsMove(model, proposed)) cause = 'a reserved lane it would cross holds it';
   if (cause === undefined) {
@@ -803,6 +808,21 @@ function flanksBesideUnit(model: LayoutModel, unit: Unit): LayoutGroup[] {
   return Object.values(model.groups).filter(group => group.flank !== undefined && group.bounds !== undefined && group.tier !== undefined && group.tier >= unit.low && group.tier <= unit.high);
 }
 
+/**
+ * The flank walls of a unit that stands at `at` (ticket 19). A flank stands where it stands: its box is a wall a move of the unit may not cross. A frame column keeps a
+ * band gap and its slack from a plain group (`runSpacing`), boxes measured, so the flank is that wall too. `low` is the least left edge the unit may take and `high`
+ * the greatest; a unit already past a wall stays where it is, and nothing here moves it back, so each bound admits `at.x`. `pullTier` and `closeUp` read it.
+ */
+function flankRoom(model: LayoutModel, unit: Unit, at: Rect): { low: number; high: number } {
+  const wall = bandGap(model) + (unit.frame ? COLUMN_SLACK : 0);
+  let low = -Infinity, high = Infinity;
+  for (const flank of flanksBesideUnit(model, unit)) {
+    if (flank.flank!.align === 'right') high = Math.min(high, flank.bounds!.x - wall - at.width);
+    else low = Math.max(low, flank.bounds!.x + flank.bounds!.width + wall);
+  }
+  return { low: Math.min(low, at.x), high: Math.max(high, at.x) };
+}
+
 /** The members of one canton that the inner pass may move, and the canton frame box that walls them. */
 interface MemberScope { units: ReadonlySet<Unit>; wall: Column; canton: string }
 
@@ -842,13 +862,10 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
         else { from = Math.max(from, low); to = Math.min(to, high); }
       } else { from = to = at.x; flush.add(unit); }
     }
-    // A flank stands where it stands: its box is a wall the pull may not cross. A frame column keeps a band gap and its slack from a plain group
-    // (`runSpacing`), boxes measured, so the flank is that wall too (ticket 19). A unit already past the wall stays where it is, and nothing here moves it back.
-    for (const flank of flanksBesideUnit(model, unit)) {
-      const wall = gap + (unit.frame ? COLUMN_SLACK : 0);
-      if (flank.flank!.align === 'right') to = Math.max(Math.min(to, flank.bounds!.x - wall - at.width), at.x);
-      else from = Math.min(Math.max(from, flank.bounds!.x + flank.bounds!.width + wall), at.x);
-    }
+    // A flank's box is a wall the pull may not cross (`flankRoom`); a side with no flank has no wall.
+    const room = flankRoom(model, unit, at);
+    if (room.high < Infinity) to = Math.max(Math.min(to, room.high), at.x);
+    if (room.low > -Infinity) from = Math.min(Math.max(from, room.low), at.x);
     from = Math.min(from, to); to = Math.max(from, to);
     if (range !== undefined) wanting.add(unit);
     return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from, to };
@@ -1175,7 +1192,9 @@ export function sweptUnits(model: LayoutModel): Map<string, string> {
  * the row is laid again at the start and at the end of centring, and after the rows rule. A child stays on the side
  * it stands on and moves toward the cells of its parent: its frame box ends `GROUP_PADDING` from the widest parent cell
  * on that side, and two children side by side end `2 * GROUP_PADDING` apart, the margin each block keeps. The
- * parent's cells stay where they are, and a child with a cell that `movable` refuses stays where it is. Idempotent:
+ * parent's cells stay where they are, and a child with a cell that `movable` refuses stays where it is. Every move asks the move guard
+ * (`holdsMove`, R2): a child that would break a reservation (a lane reserved in 7a, a straight link, an exit) stays where it is, and in a row
+ * of children the ones before it close up to it from the other side; `FRAME_PACK_HELD` names a child whose row still stands open. Idempotent:
  * a row that stands packed is not moved. Returns whether a cell moved.
  */
 export function packBesideRows(model: LayoutModel, movable: (cell: string) => boolean = () => true): boolean {
@@ -1192,20 +1211,41 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
     if (!beside.length && !pure.length) continue;
     const standing = frames[parent]!.cells.filter(cell => beside.some(item => tierOf(cell) >= item.range[0] && tierOf(cell) <= item.range[1])).map(cell => cellReach(model, cell));
     const centre = (item: typeof children[number]): number => item.box.x + item.box.width / 2;
-    const place = (item: typeof children[number], x: number): void => {
-      const delta = x - item.box.x;
+    /** Moves the child to `x`; true when the move guard holds it where it stands. */
+    const place = (item: typeof children[number], x: number): boolean => {
+      const delta = x - item.box.x, cells = cellsOf(item.child);
       // A child with a cell that the caller may not move (the anchor tier or a flank in centring) stays; its edge still bounds the next.
-      if (Math.abs(delta) <= PLACEMENT_EPS || !cellsOf(item.child).every(movable)) return;
-      for (const cell of cellsOf(item.child)) moveGroup(model, model.groups[cell]!, delta, 0);
+      if (!cells.every(movable)) return false;
+      if (Math.abs(delta) <= PLACEMENT_EPS) { warnPackHeld(model, item.child, parent, 0); return false; }
+      // The pack is a later write to boxes (R2): it asks the move guard, as every column move does. A child that would cross a lane, a straight link or
+      // an exit reserved before it stays where it stands, and its edge bounds the next; `FRAME_PACK_HELD` names it while its row stands open.
+      if (!holdsMove(model, cells.map(cell => ({ group: model.groups[cell]!, bounds: { ...model.groups[cell]!.bounds!, x: model.groups[cell]!.bounds!.x + delta } })), false)) {
+        warnPackHeld(model, item.child, parent, delta);
+        return true;
+      }
+      warnPackHeld(model, item.child, parent, 0);
+      for (const cell of cells) moveGroup(model, model.groups[cell]!, delta, 0);
       item.box = { ...item.box, x };
       moved = true;
+      return false;
     };
     // `GROUP_PADDING` below is `CELL_TO_CHILD_FRAME_GAP` from the reach of a parent cell (the first child of a side) and the margin of the frame
     // before it (every next child), so two children end `FRAME_TO_FRAME_GAP` apart. The sums stay as they were written: the order of the additions is the output.
     const closeUp = (row: typeof children): void => {
       const sorted = [...row].sort((a, b) => centre(a) - centre(b));
-      let edge = sorted[0]!.box.x + sorted[0]!.box.width + GROUP_PADDING;
-      for (const item of sorted.slice(1)) { place(item, edge + GROUP_PADDING); edge = item.box.x + item.box.width + GROUP_PADDING; }
+      let edge = sorted[0]!.box.x + sorted[0]!.box.width + GROUP_PADDING, held = -1;
+      for (const [i, item] of sorted.entries()) {
+        if (i === 0) continue;
+        if (place(item, edge + GROUP_PADDING)) held = i;
+        edge = item.box.x + item.box.width + GROUP_PADDING;
+      }
+      if (held < 0) return;
+      // A child the guard holds stands where it is, as the first child does: the children before it close up to it from the other side, each
+      // asking the guard again. The last held child is the anchor, so a child held before it bounds the ones before it in turn.
+      let low = sorted[held]!.box.x - GROUP_PADDING;
+      for (let i = held - 1; i >= 0; i--) { const item = sorted[i]!; place(item, low - GROUP_PADDING - item.box.width); low = item.box.x - GROUP_PADDING; }
+      // The row stands packed when each held child stands its gap from the one before it: its warning is withdrawn.
+      for (const [i, item] of sorted.entries()) if (i > 0 && Math.abs(item.box.x - (sorted[i - 1]!.box.x + sorted[i - 1]!.box.width + 2 * GROUP_PADDING)) <= PLACEMENT_EPS) warnPackHeld(model, item.child, parent, 0);
     };
     if (standing.length) {
       const low = Math.min(...standing.map(reach => reach.x)), high = Math.max(...standing.map(reach => reach.x + reach.width)), middle = (low + high) / 2;
@@ -1214,12 +1254,26 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
       edge = low;
       for (const item of beside.filter(item => centre(item) < middle).sort((a, b) => centre(b) - centre(a))) { place(item, edge - GROUP_PADDING - item.box.width); edge = item.box.x - GROUP_PADDING; }
     } else if (beside.length) {
-      // Children with no cell of the parent between them: the first from the left stays, the rest close up to it.
+      // Children with no cell of the parent between them: the first from the left stays, the rest close up to it. A child the move guard holds
+      // stays too, and the children before it close up to it from the other side (`closeUp`).
       closeUp(beside);
     }
     for (const row of pure) closeUp(row);
   }
   return moved;
+}
+
+const FRAME_PACK_HELD = 'FRAME_PACK_HELD';
+/**
+ * Withdraws the `FRAME_PACK_HELD` warning of a child frame, and raises it again when the pack had to leave the child `delta` from its packed place (R6). A later pack
+ * that finds the child packed, or moves it, withdraws it, so the warning names only a child that stands unpacked in the published model.
+ */
+function warnPackHeld(model: LayoutModel, child: string, parent: string, delta: number): void {
+  const prefix = `Frame ${child} cannot be packed beside its row in ${parent}`;
+  model.diagnostics = model.diagnostics.filter(item => !(item.code === FRAME_PACK_HELD && item.owners?.some(owner => owner.kind === 'group' && owner.id === child)));
+  if (Math.abs(delta) <= PLACEMENT_EPS) return;
+  model.diagnostics.push({ stage: 'placement', severity: 'warning', code: FRAME_PACK_HELD, owners: [{ kind: 'group', id: child }],
+    message: `${prefix}: the move of ${Math.round(Math.abs(delta) * 100) / 100} px would break a reservation made before it (a lane, a straight link or an exit), so it stays where it stands.` });
 }
 
 /** A window `[low, high]` on the x of a cell box; a cell of a frame that stands beside another column keeps inside it. */

@@ -1,6 +1,6 @@
 import type { LayoutModel, Rect } from '../model/index.js';
 import { boundingBox, bounds, EPS, intersection, length, near, samePoint, vertical } from './geometry.js';
-import { bundlePair, endpoints, junctionFan } from './model.js';
+import { bundlePair, endpoints, FAINT_SALIENCE, faintPair, junctionFan } from './model.js';
 import type { Segment } from './model.js';
 import type { ScoreAdvisory, ScoreMetrics } from './types.js';
 
@@ -13,7 +13,7 @@ const compactness = (rects: Rect[]): number => {
 
 export function metrics(model: LayoutModel, routed: Segment[]): ScoreMetrics {
   const links = [...new Set(routed.map(s => s.link))], nodes = Object.values(model.nodes);
-  const crossings = new Set<string>();
+  const crossings = new Set<string>(), faint = new Set<string>();
   for (let i = 0; i < routed.length; i++) for (const b of routed.slice(i + 1)) {
     const a = routed[i]!;
     if (a.link === b.link) continue;
@@ -23,8 +23,13 @@ export function metrics(model: LayoutModel, routed: Segment[]): ScoreMetrics {
     if (atEnd(a) && atEnd(b) || junctionFan(model, a, b)) continue;
     const extent = { from: p, to: p, owner: a.segment.owner };
     if (bundlePair(model, a, b, extent)) continue;
-    crossings.add(JSON.stringify([[a.link.id, b.link.id].sort(), p.x, p.y]));
+    const key = JSON.stringify([[a.link.id, b.link.id].sort(), p.x, p.y]);
+    crossings.add(key);
+    if (faintPair(a.link, b.link)) faint.add(key);
   }
+  // A crossing of two members of one fan family is faint (architecture-2 ticket 40, Q123, Q126): it costs the product of their saliences, 0.09.
+  // The raw count stays `count`; `faint` is present only on a sheet with a fan family, so every other score keeps its bytes.
+  const weighted = crossings.size - faint.size + FAINT_SALIENCE * FAINT_SALIENCE * faint.size;
   const bendCounts: number[] = [];
   let eligible = 0, alternating = 0;
   for (const link of links) {
@@ -66,7 +71,7 @@ export function metrics(model: LayoutModel, routed: Segment[]): ScoreMetrics {
     && Math.abs(other.bounds!.y + other.bounds!.height / 2 - n.bounds!.y - n.bounds!.height / 2) <= 4 + EPS
     && Math.abs(other.bounds!.width - n.bounds!.width) <= 4 + EPS && Math.abs(other.bounds!.height - n.bounds!.height) <= 4 + EPS)).length;
   return {
-    crossings: { value: links.length ? 1 - Math.min(1, crossings.size / links.length) : 1, count: crossings.size, routedLinks: links.length, ratio: links.length ? crossings.size / links.length : 0 },
+    crossings: { value: links.length ? 1 - Math.min(1, weighted / links.length) : 1, count: crossings.size, ...(model.fanFamilies !== undefined ? { faint: faint.size } : {}), routedLinks: links.length, ratio: links.length ? crossings.size / links.length : 0 },
     bends: { value: 1 - Math.min(1, meanBends / 3), mean: meanBends, max: bendCounts.length ? Math.max(...bendCounts) : 0, total: bendCounts.reduce((sum, n) => sum + n, 0) },
     continuity: { value: eligible ? alternating / eligible : 1, eligible, alternating },
     compactness: { value: mean([global, ...Object.values(groups)]), global, groups },

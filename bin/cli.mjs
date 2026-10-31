@@ -12,6 +12,7 @@ import { existsSync, lstatSync, mkdtempSync, renameSync, rmSync, writeFileSync }
 import { dirname, join } from 'node:path';
 import * as nodeModule from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { VERDANA_WARNING, verdanaInstalled } from './font-check.mjs';
 
 // Node 22.1 and newer keep the compiled code of the library on disk between runs; older Node has no such call. The cache holds compiled code only.
 nodeModule.enableCompileCache?.();
@@ -215,6 +216,11 @@ export async function main(argv, io = { out: process.stdout, err: process.stderr
       io.err.write(`${formatStatus(command.diagnostics, 'error', 'STDIN_FAILED', `cannot read stdin: ${error.message}`)}\n`);
       return EXIT.inputError;
     }
+  }
+
+  // Only the CLI looks at the machine's fonts; the library output stays a pure function of the document.
+  if ((verb === 'render' || verb === 'layout') && !verdanaInstalled()) {
+    io.err.write(`${formatStatus(command.diagnostics, 'warning', 'FONT_MISSING', VERDANA_WARNING, true)}\n`);
   }
 
   const outcome = await compute(command, io, limitMs, inputText);

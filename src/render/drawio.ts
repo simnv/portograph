@@ -63,13 +63,15 @@ import { nodeSymbolIds } from '../layout/legend.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 import {
-  LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_PORT_STATUS, NETWORK_THEME,
-  linkClassStyle, nodeClassPaint, nodeClassStyle, washAssignment, washFill, washToken, type WashAssignment, portRolePaint, portRoleStyle,
+  LEGEND_DEFAULT_CLASS, washAssignment, washToken, type WashAssignment, portRolePaint,
 } from '../profiles/network/theme.js';
+import { legendKeyRadius, themeById, themeLinkClass, themePortRole, themeWashFill } from '../profiles/network/themes.js';
+import type { Theme } from '../profiles/network/themes.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
-import { groupShapes } from './frame-order.js';
+import { boxesBehind, groupShapes } from './frame-order.js';
+import { backdropColour } from '../profiles/network/theme.js';
 import { linkVisible } from './index.js';
 import { authorClass, element, num } from './svg.js';
 
@@ -99,22 +101,6 @@ const NODE_NAME_SIZE = 9;
 
 /** The description size the profile uses when a label does not state its own. */
 const NODE_DESCRIPTION_SIZE = 9;
-
-/** `#rrggbb` to its three channels; anything else (a name, `none`) has no channels to mix. */
-function channels(colour: string): [number, number, number] | undefined {
-  const hex = /^#([0-9a-f]{6})$/i.exec(colour.trim());
-  if (!hex) return undefined;
-  const value = Number.parseInt(hex[1]!, 16);
-  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-}
-
-/** `over` painted at `alpha` on `under`, as one opaque colour: what a reader actually sees. */
-function composite(over: string, under: string, alpha: number): string {
-  const a = channels(over), b = channels(under);
-  if (!a || !b) return over;
-  const mix = a.map((value, index) => Math.round(value * alpha + b[index]! * (1 - alpha)));
-  return `#${mix.map(value => value.toString(16).padStart(2, '0')).join('')}`;
-}
 
 /** The point on `segment` nearest `at`: where a label sits when it sits on its run. */
 function project(at: Point, segment: { from: Point; to: Point }): Point {
@@ -228,8 +214,8 @@ function shrink(box: Rect, by: number): Rect | undefined {
  * it. A badge replaces the tile and takes the whole of it; a silhouette sits on the tile and keeps
  * the glyph inset, which is what a tile thinner than `2 × ICON_INSET` cannot give it.
  */
-function glyphBox(tile: Rect, native: { kind: 'badge' | 'silhouette'; width: number; height: number }): Rect | undefined {
-  const box = native.kind === 'badge' ? (positive(tile) ? tile : undefined) : shrink(tile, ICON_INSET);
+function glyphBox(tile: Rect, native: { kind: 'badge' | 'silhouette'; width: number; height: number }, inset = ICON_INSET): Rect | undefined {
+  const box = native.kind === 'badge' ? (positive(tile) ? tile : undefined) : shrink(tile, inset);
   return box === undefined ? undefined : letterbox(box, native);
 }
 
@@ -462,7 +448,8 @@ const labelSize = (label: LayoutLabel): number => finite(label.fontSize ?? 9);
 /**
  * draw.io's own line pitch for plain text, `round(fontSize × 1.2)`. It takes no `lineHeight` from a
  * style, so a wrapped label keeps its first baseline exact and its further lines move by the
- * difference to the measured pitch: a pixel a line at 7 px type, nothing at 8, 9 or 12 px.
+ * difference to the measured pitch (Verdana: `ceil(1.215 × size)`): a pixel a line at 7, 10, 11 and
+ * 12 px type, nothing at 8 and 9 px.
  */
 const plainPitch = (fontSize: number): number => Math.round(fontSize * 1.2);
 
@@ -516,7 +503,7 @@ const svgImage = (svg: string): string => `data:image/svg+xml,${encodeURICompone
  * the colour the SVG reveals, the node body background of the same mode, and the two agree on what
  * a reader sees. Paired by `dual()` like every other colour, so both appearances stay exact.
  */
-const outlinedFill = (of: ThemeMode, washes: WashAssignment, nodeClass?: string): string => washFill(washToken(nodeClass), of, washes);
+const outlinedFill = (theme: Theme, of: ThemeMode, washes: WashAssignment, nodeClass?: string): string => themeWashFill(theme, washToken(nodeClass), of, washes);
 
 const centre = (box: Rect): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
 /** The cell of a label at `box`: the turned label's text rectangle about the box centre (`turnedSize`), or the box. */
@@ -555,7 +542,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const iconSet = options.icons ?? 'cisco19';
   /** One resolution of something the palette decides, adapted to both appearances when asked. */
   const dual = <T,>(pick: (of: ThemeMode) => T): T => adaptive ? adapt(pick('light'), pick('dark')) : pick(mode);
-  const paint = dual(of => NETWORK_THEME[of]);
+  // The document's theme (ticket 158); `--theme` picks the mode of it, never the theme.
+  const theme: Theme = themeById(layout.document.theme);
+  const paint = dual(of => theme.paint[of]);
   const washes = washAssignment(orderedNodeIds(layout.document).map(id => authorClass(layout.document.nodes[id]!.class)));
   const document = layout.document;
   const visible = (link: LayoutLink): boolean =>
@@ -599,7 +588,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
   const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect, colour: string,
-    size = labelSize(label)): void => {
+    size = labelSize(label), backdrop?: string): void => {
     // draw.io turns a cell's own rectangle about its centre. A turned label (ticket 20) records its
     // text rectangle (`turnedSize`), so the cell is that rectangle about the box centre, and draw.io
     // turns the rectangle the text really occupies. Any other label's `bounds` is its box: a quarter
@@ -608,12 +597,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // (ADR-0017), not to a quarter turn.
     // `spacingTop` turns with the text, so one value puts the first baseline where `render` does.
     vertex(id, parent, styleString(['text'], {
-      strokeColor: 'none', fillColor: 'none', align: 'center', verticalAlign: 'middle',
+      strokeColor: 'none', fillColor: 'none', align: label.textAlign === 'start' ? 'left' : 'center', verticalAlign: 'middle',
+      // A card's subtitle (ticket 159) starts at its box's left edge; draw.io starts left-aligned text `spacing` inside it.
+      spacingLeft: label.textAlign === 'start' ? -LABEL_SPACING : undefined,
       whiteSpace: 'nowrap', overflow: 'visible', points: '[]', resizable: 0,
       spacingTop: middleSpacing(label, size),
       fontFamily: FONT_FAMILY, fontSize: size, fontColor: colour,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       rotation: label.textRotation ? label.textRotation : undefined,
+      labelBackgroundColor: backdrop,
     }), turnedCell(label, box), plainText(labelLines(label)));
   };
 
@@ -627,19 +619,19 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   const pillPaintIn = (of: ThemeMode, nodeClass: string | undefined, port: LayoutPort):
   { fill: string; stroke: string; text: string; dash: string | undefined; opacity: number | undefined } => {
-    let result = { ...NETWORK_THEME[of].pill, dash: undefined as string | undefined, opacity: undefined as number | undefined };
-    const known = nodeClassStyle(nodeClass);
-    if (known) result = { ...result, ...nodeClassPaint(known, of).pill };
+    let result = { ...theme.paint[of].pill, dash: undefined as string | undefined, opacity: undefined as number | undefined };
+    const known = theme.classPaint(nodeClass, of);
+    if (known) result = { ...result, ...known.pill };
     for (const token of portTokens(port)) {
-      const role = portRoleStyle(token);
+      const role = themePortRole(theme, token);
       if (!role) continue;
       const rolePaint = portRolePaint(role, of);
       result = rolePaint.stroke === undefined
         ? { ...result, fill: rolePaint.fill, text: rolePaint.text }
-        : { ...result, fill: outlinedFill(of, washes, nodeClass), stroke: rolePaint.stroke };
+        : { ...result, fill: outlinedFill(theme, of, washes, nodeClass), stroke: rolePaint.stroke };
     }
     for (const token of portTokens(port)) {
-      const status = NETWORK_PORT_STATUS.find(([name]) => name === token)?.[1];
+      const status = theme.portStatus.find(([name]) => name === token)?.[1];
       if (!status) continue;
       if (status.kind === 'fade') { result = { ...result, opacity: status.opacity }; continue; }
       result = {
@@ -690,6 +682,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // A frame is drawn in its cells' place, and a cell never is (ranked-groups spec, section 2). A parent
   // frame comes before its child, and a box that lies on another after it (frame-order.ts).
   const shapes = groupShapes(layout);
+  /**
+   * The halo of a text outside node bodies (ticket 162), as draw.io can state it. A plain-text label has no outline: `textShadow` with no
+   * offset draws a soft glow through which a crossing line still shows (measured with the drawio CLI, 2026-10-31), so a text in the
+   * labels layer takes a backdrop in the colour behind it instead (`backdropColour`, the SVG halo's colour). A group title lies in the
+   * diagram layer, under the links, and no backdrop of its own can cover a line drawn above it.
+   */
+  const backdrop = (point: Point): string => dual(of => backdropColour(theme.paint[of], boxesBehind(shapes, point)));
   // A frame nests as the model nests it: a zone in a location, a location in a continent. Its cell is a
   // child of its parent frame's cell, stated from that cell's top-left, so a parent moved by hand carries
   // its children; a group that no frame holds stays on the diagram layer. `startSize` shifts nothing here.
@@ -718,7 +717,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const style = swimlane
       ? styleString(['swimlane'], {
         whiteSpace: 'nowrap', container: 1, collapsible: 0, rounded: 1,
-        absoluteArcSize: 1, arcSize: CORNER_RADII.group * 2,
+        absoluteArcSize: 1, arcSize: theme.radii.group * 2,
         horizontal: 1, startSize: swimlane.bounds.height,
         // `flipV` mirrors the shape paths only — the label group is rendered outside the flip, so
         // a bottom band keeps upright text, which `direction=south` would not.
@@ -736,7 +735,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       })
       : styleString([], {
         container: 1, collapsible: 0, rounded: 1,
-        absoluteArcSize: 1, arcSize: CORNER_RADII.group * 2,
+        absoluteArcSize: 1, arcSize: theme.radii.group * 2,
         fillColor: paint.group.fill, strokeColor: paint.group.stroke,
         fillOpacity: Math.round(paint.group.fillOpacity * 100),
         verticalAlign: 'top', align: 'center',
@@ -807,24 +806,28 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const top = named === undefined ? undefined
       : finite(centre(named.bounds!).y + firstBaseline(named, nameSize) - node.bounds!.y
         - LABEL_SPACING - BASE_SPACING_TOP - (nameSize - 1));
+    const card = named?.textAlign === 'start';
     const across = named === undefined ? 0 : finite(centre(named.bounds!).x - centre(node.bounds!).x);
     vertex(cellId('node', id), group, styleString([], {
       // A node really does contain its ports and its icon, so it says so: a container moves,
       // copies and accepts a drop as one thing, which is what a node is.
       container: 1, collapsible: 0, recursiveResize: 0,
-      rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
-      whiteSpace: 'nowrap', fillColor: dual(of => washFill(washToken(authored), of, washes)), strokeColor: paint.node.stroke,
+      rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.node * 2,
+      whiteSpace: 'nowrap', fillColor: dual(of => themeWashFill(theme, washToken(authored), of, washes)), strokeColor: paint.node.stroke,
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
       points: `[${[...anchors].join(',')}]`,
       ...(named === undefined ? {} : {
-        align: 'center', verticalAlign: 'top', overflow: 'visible',
+        align: card ? 'left' : 'center', verticalAlign: 'top', overflow: 'visible',
         // The offset is signed. draw.io honours a negative `spacingTop` — measured — and a node
         // whose first line starts within 7 px of its top edge needs one.
         spacingTop: top,
         // A name may stand off the node's centre — clear of a pill on the same row — and `render`
         // centres it on its own measured box, as the description cell is. Centred text moves by
         // half of `spacingLeft − spacingRight`, and only the positive side is stated.
-        ...(across > 0 ? { spacingLeft: finite(2 * across) } : across < 0 ? { spacingRight: finite(-2 * across) } : {}),
+        // A card's name (ticket 159) is left-aligned: draw.io starts it `spacing` plus `spacingLeft` right of the shape's edge, so
+        // `spacingLeft` states the rest of the measured offset.
+        ...(card ? { spacingLeft: finite(named!.bounds!.x - node.bounds!.x - LABEL_SPACING) }
+          : across > 0 ? { spacingLeft: finite(2 * across) } : across < 0 ? { spacingRight: finite(-2 * across) } : {}),
         fontFamily: FONT_FAMILY, fontSize: nameSize, fontColor: paint.node.text,
         fontStyle: (named.fontWeight ?? 700) === 700 ? 1 : undefined,
       }),
@@ -842,9 +845,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
     if (node.icon) {
       const tile = relative(shiftRect(node.icon.bounds), shift(node.bounds!));
+      // A card tile (ticket 159) states its own glyph inset and radius; the stacked tile takes the renderer's and the theme's.
+      const glyphInset = node.icon.inset ?? ICON_INSET, tileRadius = node.icon.radius ?? theme.radii.tile;
       const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => {
-        const known = nodeClassStyle(authored);
-        return known ? nodeClassPaint(known, of) : { tile: NETWORK_THEME[of].tile, glyph: NETWORK_THEME[of].glyph };
+        return theme.classPaint(authored, of) ?? { tile: theme.paint[of].tile, glyph: theme.paint[of].glyph };
       };
       const resolved = dual(pick);
       const native = iconSet === 'cisco19' ? CISCO19[iconKey(node.icon.icon)] : undefined;
@@ -855,14 +859,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // A badge carries its own frame, so it replaces the tile; a silhouette keeps it.
         if (native.kind === 'silhouette' && positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
-            rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+            rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
           }), tile);
         }
         // A tile with no room for the glyph inset leaves the glyph out. Subtracting the inset from
         // a tile thinner than it gives a negative width, which draw.io writes and then draws as
         // nothing at all — so the whole icon would go, silently, rather than just the inset.
-        const box = glyphBox(tile, native);
+        const box = glyphBox(tile, native, glyphInset);
         if (box) {
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
             sketch: 0, aspect: 'fixed', points: '[]',
@@ -877,14 +881,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       } else {
         if (positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
-            rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+            rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
           }), tile);
         }
         // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
         // its own image. An embedded image is the one thing here that cannot adapt to dark — draw.io
         // has no way into it — which is the reason `cisco19` is the default.
-        const inner = shrink(tile, ICON_INSET);
+        const inner = shrink(tile, glyphInset);
         if (inner) {
           const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
             + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
@@ -1108,19 +1112,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const segment = label.support?.kind === 'link-segment' ? link.path?.segments[label.support.segment] : undefined;
     const on = label.support?.kind === 'link-segment' && (placement === 'on-run' || label.onLine === true && segment !== undefined && isDirect(segment));
     const multiplicity = label.support?.kind === 'merge-run';
-    const inside = [...Object.values(layout.groups).filter(group => group.frame === undefined && group.bounds).map(group => group.bounds!),
-      ...(layout.frames ?? []).map(frame => frame.box)].some(bounds =>
-      at.x >= bounds.x - canvas.x && at.x <= bounds.x - canvas.x + bounds.width
-      && at.y >= bounds.y - canvas.y && at.y <= bounds.y - canvas.y + bounds.height);
     return {
-      // A label on the line must hide the line behind its glyphs, and the honest colour to do that
-      // with is whatever is really behind it: the group's tint composited over the canvas, or the
-      // canvas. Sitting clear of its run, it fills nothing and needs no margin either.
-      labelBackgroundColor: on
-        ? dual(of => inside
-          ? composite(NETWORK_THEME[of].group.fill, NETWORK_THEME[of].background, NETWORK_THEME[of].group.fillOpacity)
-          : NETWORK_THEME[of].background)
-        : 'none',
+      // A label hides a line behind its glyphs (ticket 16 on its own line, ticket 162 under a diagonal that crosses it), and the honest
+      // colour to do that with is whatever is really behind it: the group fills composited over the canvas, or the canvas (`backdrop`).
+      labelBackgroundColor: backdrop({ x: at.x + canvas.x, y: at.y + canvas.y }),
       ...(on ? { spacing: LABEL_MARGIN } : {}),
       align: 'center', verticalAlign: 'middle',
       fontFamily: FONT_FAMILY, fontSize: labelSize(label),
@@ -1201,11 +1196,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   for (const link of drawn) {
     const layer = effectiveLayer(link) === 'overlay' ? layerId('overlay') : layerId('links');
     const authored = linkClass(link);
-    const klass = linkClassStyle(authored);
+    const klass = themeLinkClass(theme, authored);
     const overlay = effectiveLayer(link) === 'overlay';
     // An overlay link of a class the theme names (`signal`) states that class's stroke and dash, as the SVG's
     // `.link-line.<class>` rule beats `.overlay-line`; sync, flow and unknown classes keep the overlay stroke.
-    const themed = authored !== undefined && NETWORK_LINK_CLASSES.some(([key]) => key === authored);
+    const themed = authored !== undefined && theme.linkClasses.some(([key]) => key === authored);
     const runs = polylines(link.path!.segments);
     const from = link.attachments?.from, to = link.attachments?.to;
     const head = from ? terminal('exit', from) : undefined;
@@ -1261,10 +1256,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         edgeStyle: square ? 'orthogonalEdgeStyle' : 'none',
         jettySize: square ? 0 : undefined,
         rounded: 0, endArrow: 'none', startArrow: 'none',
-        strokeColor: dual(of => overlay && !themed ? NETWORK_THEME[of].overlay.stroke : klass.strokes[of]),
+        strokeColor: dual(of => overlay && !themed ? theme.paint[of].overlay.stroke : klass.strokes[of]),
         strokeWidth: linkStrokeWidth(link),
         opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
-        ...dashEntries(klass.dash),
+        ...dashEntries(overlay && !themed ? theme.paint[mode].overlay.dash : klass.dash),
         ...(source ? dotMarker(link, 'from') : {}),
         ...(target ? dotMarker(link, 'to') : {}),
         ...(source?.style ?? {}),
@@ -1319,15 +1314,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     if (bus.bar === undefined || bus.stubs === undefined) continue;
     const first = bus.members.map(id => byId.get(id)).find(link => link !== undefined && visible(link));
     if (first === undefined) continue;
-    const authored = linkClass(first), klass = linkClassStyle(authored);
-    const themed = authored !== undefined && NETWORK_LINK_CLASSES.some(([key]) => key === authored);
+    const authored = linkClass(first), klass = themeLinkClass(theme, authored);
+    const themed = authored !== undefined && theme.linkClasses.some(([key]) => key === authored);
     const stroke = (square: boolean, extra: Readonly<Record<string, StyleValue>> = {}): string => styleString([], {
       edgeStyle: square ? 'orthogonalEdgeStyle' : 'none', jettySize: square ? 0 : undefined,
       rounded: 0, endArrow: 'none', startArrow: 'none',
-      strokeColor: dual(of => !themed ? NETWORK_THEME[of].overlay.stroke : klass.strokes[of]),
+      strokeColor: dual(of => !themed ? theme.paint[of].overlay.stroke : klass.strokes[of]),
       strokeWidth: linkStrokeWidth(first),
       opacity: Math.round(paint.overlay.opacity * 100),
-      ...dashEntries(klass.dash),
+      ...dashEntries(!themed ? theme.paint[mode].overlay.dash : klass.dash),
       ...extra,
     });
     // Every end of the bus geometry is a joint: a 2 px invisible, locked vertex, a child of a member's node or pill and
@@ -1423,7 +1418,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
     const label = layout.labels.find(item => item.id === bus.label);
     if (label !== undefined && !label.omitted && label.bounds !== undefined) {
-      textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds), paint.link.label);
+      textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds), paint.link.label, undefined, backdrop(centre(label.bounds)));
     }
   }
 
@@ -1447,7 +1442,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const bundle = label.owner.id;
       if (!drawn.some(item => item.bundle === bundle)) continue;
       textCell(cellId('linkLabel', label.id), layerId('labels'), label, shiftRect(label.bounds),
-        paint.link.multiplicity);
+        paint.link.multiplicity, undefined, backdrop(centre(label.bounds)));
       continue;
     }
     const run = ids[runFor(label, link, ids)]!;
@@ -1496,7 +1491,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       }), row, shown ? plainText(labelLines(shown)) : undefined);
       const swatch = relative(shiftRect(entry.swatch), outer);
       if (entry.kind === 'line') {
-        const klass = entry.key === LEGEND_DEFAULT_CLASS ? linkClassStyle(undefined) : linkClassStyle(entry.key);
+        const klass = entry.key === LEGEND_DEFAULT_CLASS ? themeLinkClass(theme, undefined) : themeLinkClass(theme, entry.key);
         // `shape=line` draws the sample across its own box, so the swatch is a vertex like every
         // other one and sits in the row rather than floating over it.
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
@@ -1505,13 +1500,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           ...dashEntries(klass.dash),
         }), swatch);
       } else if (entry.kind === 'port') {
-        const role = portRoleStyle(entry.key);
+        const role = themePortRole(theme, entry.key);
         // The legend has to name what the diagram draws, so an outlined role's swatch takes the
         // same opaque body the pill takes; see `outlinedFill`.
         const resolved = role ? dual(of => {
           const rolePaint = portRolePaint(role, of);
           return rolePaint.stroke === undefined ? rolePaint
-            : { ...rolePaint, fill: outlinedFill(of, washes) };
+            : { ...rolePaint, fill: outlinedFill(theme, of, washes) };
         }) : undefined;
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
           rounded: 1, absoluteArcSize: 1,
@@ -1524,13 +1519,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // The key shows the class's body wash behind its tile, as a node of the class shows it.
         const body = swatch, grow = 2;
         vertex(cellId('legendBody', entry.id), cellId('legendRow', entry.id), styleString([], {
-          rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.node * 2,
-          fillColor: dual(of => washFill(washToken(authorClass(entry.key)), of, washes)), strokeColor: paint.node.stroke,
+          rounded: 1, absoluteArcSize: 1, arcSize: legendKeyRadius(theme, grow) * 2,
+          fillColor: dual(of => themeWashFill(theme, washToken(authorClass(entry.key)), of, washes)), strokeColor: paint.node.stroke,
           strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
         }), { x: body.x - grow, y: body.y - grow, width: body.width + 2 * grow, height: body.height + 2 * grow });
         const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => {
-          const known = nodeClassStyle(entry.key);
-          return known ? nodeClassPaint(known, of) : { tile: NETWORK_THEME[of].tile, glyph: NETWORK_THEME[of].glyph };
+          return theme.classPaint(entry.key, of) ?? { tile: theme.paint[of].tile, glyph: theme.paint[of].glyph };
         };
         const resolved = dual(pick);
         const native = iconSet === 'cisco19' ? CISCO19[iconKey(entry.icon)] : undefined;
@@ -1540,7 +1534,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           // rather than writing a negative box draw.io silently draws as nothing.
           if (native.kind === 'silhouette' && positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
-              rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+              rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
               fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
             }), swatch);
           }
@@ -1557,7 +1551,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         } else {
           if (positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
-              rounded: 1, absoluteArcSize: 1, arcSize: CORNER_RADII.tile * 2,
+              rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
               fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
             }), swatch);
           }
@@ -1588,7 +1582,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // colour — `light-dark()` belongs in a style string, which is where every other colour here
     // goes. So this one states the chosen palette's backdrop and lets draw.io's own inversion
     // darken it, which for a flat backdrop is exactly what inversion is good at.
-    math: 0, shadow: 0, background: NETWORK_THEME[mode].background,
+    math: 0, shadow: 0, background: theme.paint[mode].background,
   }, element('root', {}, cellElement({ id: claim('0') }, undefined, binding({ 'pg-schema': BINDING_SCHEMA }, document.meta))
     + layers + cells.join('')));
   const title = document.title ?? 'portograph';

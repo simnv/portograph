@@ -1,0 +1,87 @@
+# Expected: two cantons side by side. `west` holds two sites on tier 2, `w-site-a` and `w-site-b`, each with a zone of its own (a child frame), so the two
+# sites are frames side by side in one row of the canton; `east` holds one site with a zone. A full `sync` mesh joins the four tier-1 nodes and the four
+# tier-3 nodes and the two buses join, so 7a reserves a riser lane in each sub-tier of tier 2, flush against the right edge of `w-site-b`. Centring then
+# leaves the two sites closer than `FRAME_TO_FRAME_GAP` (40 px), and the beside-row pack (`packBesideRows`, in centring and in its 7f replays) moved the
+# whole of `w-site-b` right onto the riser lane: 7f publication threw "Lane riser:mesh-bus-1:1 crosses occupied group w-site-b#0". The pack asks the
+# move guard: `w-site-b` stays, and `w-site-a` closes up to it from the left, so the two site frames stand 40 px apart, every gate passes and no
+# `FRAME_PACK_HELD` remains.
+# Test-only input owned by snack-theme ticket 159; test/pipeline/frame-pack-riser.test.ts reads it.
+# Card nodes (`layout.nodeContent: card`, snack-theme ticket 159): the premise was forged on the card geometry; a stacked document is narrower.
+portograph: 2
+layout: { nodeContent: card }
+groups:
+  west: { label: West }
+  east: { label: East }
+  w-top-a: { tier: 1, canton: west }
+  w-top-b: { tier: 1, canton: west }
+  e-top-a: { tier: 1, canton: east }
+  e-top-b: { tier: 1, canton: east }
+  w-site-a: { tier: 2, canton: west, label: Site A }
+  w-zone-a: { parent: w-site-a, label: Zone A }
+  w-site-b: { tier: 2, canton: west, label: Site B }
+  w-zone-b: { parent: w-site-b, label: Zone B }
+  e-site: { tier: 2, canton: east, label: Site C }
+  e-zone: { parent: e-site, label: Zone C }
+  w-low: { tier: 3, canton: west }
+  e-low: { tier: 3, canton: east }
+nodes:
+  w1: { group: w-top-a, class: router, label: W1 }
+  w2: { group: w-top-b, class: router, label: W2 }
+  e1: { group: e-top-a, class: router, label: E1 }
+  e2: { group: e-top-b, class: router, label: E2 }
+  wa1: { group: w-site-a, class: router, label: WA1 }
+  wa2: { group: w-site-a, class: switch, label: WA2 }
+  wz1: { group: w-zone-a, class: server, label: WZ1 }
+  wb1: { group: w-site-b, class: router, label: WB1 }
+  wb2: { group: w-site-b, class: switch, label: WB2 }
+  wz2: { group: w-zone-b, class: server, label: WZ2 }
+  ec1: { group: e-site, class: router, label: EC1 }
+  ec2: { group: e-site, class: switch, label: EC2 }
+  ez1: { group: e-zone, class: server, label: EZ1 }
+  x1: { group: w-low, class: router, label: X1 }
+  x2: { group: w-low, class: router, label: X2 }
+  x3: { group: e-low, class: router, label: X3 }
+  x4: { group: e-low, class: router, label: X4 }
+links:
+  - [w1, wa1]
+  - [w2, wb1]
+  - [e1, ec1]
+  - [e2, ec1]
+  - [wa1, wa2]
+  - [wa2, wz1]
+  - [wb1, wb2]
+  - [wb2, wz2]
+  - [ec1, ec2]
+  - [ec2, ez1]
+  - [wz1, x1]
+  - [wz2, x2]
+  - [ez1, x3]
+  - [ez1, x4]
+  - { from: w1, to: w2, class: sync }
+  - { from: w1, to: e1, class: sync }
+  - { from: w1, to: e2, class: sync }
+  - { from: w2, to: e1, class: sync }
+  - { from: w2, to: e2, class: sync }
+  - { from: e1, to: e2, class: sync }
+  - { from: x1, to: x2, class: sync }
+  - { from: x1, to: x3, class: sync }
+  - { from: x1, to: x4, class: sync }
+  - { from: x2, to: x3, class: sync }
+  - { from: x2, to: x4, class: sync }
+  - { from: x3, to: x4, class: sync }
+  - { from: w1, to: x1, class: sync }
+  - { from: w1, to: x2, class: sync }
+  - { from: w1, to: x3, class: sync }
+  - { from: w1, to: x4, class: sync }
+  - { from: w2, to: x1, class: sync }
+  - { from: w2, to: x2, class: sync }
+  - { from: w2, to: x3, class: sync }
+  - { from: w2, to: x4, class: sync }
+  - { from: e1, to: x1, class: sync }
+  - { from: e1, to: x2, class: sync }
+  - { from: e1, to: x3, class: sync }
+  - { from: e1, to: x4, class: sync }
+  - { from: e2, to: x1, class: sync }
+  - { from: e2, to: x2, class: sync }
+  - { from: e2, to: x3, class: sync }
+  - { from: e2, to: x4, class: sync }

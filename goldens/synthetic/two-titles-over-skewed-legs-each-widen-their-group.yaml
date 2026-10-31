@@ -1,6 +1,7 @@
 # Expected: two one-node groups in one tier, each with a title over skewed legs (tickets 66 and 71); the second copies the first beside it. Unforced,
 # each title widens its own group for its legs. When the first spends its leg allowance (forged in the test), its failed row keeps the
-# whole gap on the soft rule, so the second does not widen for legs its plan no longer avoids.
+# whole gap on the soft rule, so the second does not widen for legs its plan no longer avoids. The feeds are authored
+# `route: orthogonal` (ticket 162): a diagonal may cross a title, so as chords they would leave no leg under the titles.
 # Test-only input owned by ticket 71; test/pipeline/leg-allowance-exhausted.test.ts reads it.
 portograph: 2
 groups:
@@ -32,11 +33,11 @@ nodes:
   t0: { group: side2, class: router, label: T0 }
   t1: { group: side2, class: router, label: T1 }
 links:
-  - [a1, m0]
-  - [a2, m0]
+  - [a1, m0, { route: orthogonal }]
+  - [a2, m0, { route: orthogonal }]
   - [m0, z1]
   - [m0, z2]
-  - [b1, n0]
-  - [b2, n0]
+  - [b1, n0, { route: orthogonal }]
+  - [b2, n0, { route: orthogonal }]
   - [n0, y1]
   - [n0, y2]

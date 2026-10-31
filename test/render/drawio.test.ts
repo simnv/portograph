@@ -11,7 +11,8 @@ import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { linkLabels } from '../../src/layout/link-labels.js';
 import { rows } from '../../src/layout/rows.js';
-import { NETWORK_THEME, linkClassStyle, washAssignment, washFill, washToken, portRolePaint, portRoleStyle } from '../../src/profiles/network/theme.js';
+import { NETWORK_THEME, washAssignment, washToken, portRolePaint } from '../../src/profiles/network/theme.js';
+import { themeById, themeLinkClass, themePortRole, themeWashFill } from '../../src/profiles/network/themes.js';
 import { route } from '../../src/route/index.js';
 import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
@@ -300,13 +301,14 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(label).toBeDefined();
     // The claim: `on-run` moves a label onto the segment stage 9 says carries it, and nothing else.
     // A label centred on a line has to hide the line behind its glyphs, so it takes the colour that
-    // is really behind it; `measured` keeps the box stage 9 placed and needs no fill at all.
+    // is really behind it; `measured` keeps the box stage 9 placed, and takes that colour too: draw.io
+    // has no outline for a plain-text label, so the backdrop stands in for the SVG halo (ticket 162).
     // The label is the connector's own, so it is the edge cell that carries it.
     const owner = (label.owner as { id: string }).id;
     const on = cells(drawio(model, { labels: 'on-run' })).get(id('link', stable(model, owner)))!;
     const measured = cells(drawio(model, { labels: 'measured' })).get(id('link', stable(model, owner)))!;
     expect(on.value).toBe(label.text);
-    expect(measured.style['labelBackgroundColor']).toBe('none');
+    expect(measured.style['labelBackgroundColor']).toMatch(/^(#[0-9a-f]{6}|light-dark\(#[0-9a-f]{6},#[0-9a-f]{6}\))$/);
     expect(on.style['labelBackgroundColor']).toMatch(/^(#[0-9a-f]{6}|light-dark\(#[0-9a-f]{6},#[0-9a-f]{6}\))$/);
     // The claim: a label is stated in the edge's own relative terms — `x` arc length along it, `y`
     // signed perpendicular — so it follows its connector when a shape moves. `offset` is absolute
@@ -473,9 +475,9 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
 });
 
 describe('node text', () => {
-  // Arial's own metrics, stated here rather than read from the font table, so the expected
+  // Verdana's own metrics, stated here rather than read from the font table, so the expected
   // positions are independent of the code that produces them.
-  const UNITS_PER_EM = 2048, ASCENT = 1854;
+  const UNITS_PER_EM = 2048, ASCENT = 2059;
   /** The first baseline, one ascent below the box stage 9 measured. */
   const ascentOf = (fontSize: number): number => ASCENT * fontSize / UNITS_PER_EM;
 
@@ -504,9 +506,15 @@ describe('node text', () => {
       const size = name.fontSize!;
       const baseline = node.bounds!.y + DRAWIO_TOP + Number(cell.style['spacingTop']) + size - 1;
       expect(baseline).toBeCloseTo(name.bounds!.y + ascentOf(size), 9);
-      // Centred on its own measured box, which may stand off the node's centre.
-      const across = (Number(cell.style['spacingLeft'] ?? 0) - Number(cell.style['spacingRight'] ?? 0)) / 2;
-      expect(node.bounds!.x + node.bounds!.width / 2 + across).toBeCloseTo(name.bounds!.x + name.bounds!.width / 2, 9);
+      if (cell.style['align'] === 'left') {
+        // A card's name (ticket 159) starts at the left edge of its measured box: draw.io starts it `spacing` (2) plus `spacingLeft` in from the shape's edge.
+        expect(name.textAlign).toBe('start');
+        expect(node.bounds!.x + 2 + Number(cell.style['spacingLeft'] ?? 0)).toBeCloseTo(name.bounds!.x, 9);
+      } else {
+        // Centred on its own measured box, which may stand off the node's centre.
+        const across = (Number(cell.style['spacingLeft'] ?? 0) - Number(cell.style['spacingRight'] ?? 0)) / 2;
+        expect(node.bounds!.x + node.bounds!.width / 2 + across).toBeCloseTo(name.bounds!.x + name.bounds!.width / 2, 9);
+      }
       checked += 1;
     }
     expect(checked).toBeGreaterThan(0);
@@ -532,6 +540,25 @@ describe('node text', () => {
     expect(box(cell).x + origin.x).toBeCloseTo(description.bounds!.x, 9);
     expect(middleBaseline(cell, description.fontSize!) + origin.y)
       .toBeCloseTo(description.bounds!.y + ascentOf(description.fontSize!), 9);
+  }, 60000);
+
+  // Snack-theme ticket 159: a card's name and subtitle are left-aligned and start at the left edge of their measured boxes. draw.io starts left-aligned
+  // text `spacing` (2) plus `spacingLeft` in from the cell's edge: the name cell is the node, so `spacingLeft` states the rest of the offset; the subtitle
+  // cell is its own measured box, so `spacingLeft` is -2. Checked with the drawio CLI (SVG export, 2026-10-31) on this input: both texts start at the measured x.
+  it('starts the name and the subtitle of a card at the left edges of their measured boxes', async () => {
+    const yaml = fixture('drawio-node-text').replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n');
+    expect(yaml).toContain('nodeContent: card');
+    const model = await pipeline(yaml);
+    const all = cells(drawio(model, { theme: 'light' }));
+    const name = nodeLabel(model, 'both', 'node')!, description = nodeLabel(model, 'both', 'description')!, origin = model.nodes['both']!.bounds!;
+    expect([name.textAlign, description.textAlign]).toEqual(['start', 'start']);
+    const node = all.get(id('node', 'both'))!, cell = all.get(id('nodeDescription', 'both'))!;
+    expect([node.style['align'], cell.style['align']]).toEqual(['left', 'left']);
+    expect(origin.x + 2 + Number(node.style['spacingLeft'])).toBeCloseTo(name.bounds!.x, 9);
+    expect(cell.style['spacingLeft']).toBe('-2');
+    expect(origin.x + box(cell).x + 2 + Number(cell.style['spacingLeft'])).toBeCloseTo(description.bounds!.x, 9);
+    // The subtitle starts where the name starts: one left edge for the text block.
+    expect(description.bounds!.x).toBeCloseTo(name.bounds!.x, 9);
   }, 60000);
 
   it('leaves a node with a description and no name without a label of its own', async () => {
@@ -1465,7 +1492,7 @@ links:
     const model = await pipeline(fixture('drawio-constructs'));
     const all = cells(drawio(model));
     const body = `light-dark(${NETWORK_THEME.light.node.fill},${NETWORK_THEME.dark.node.fill})`;
-    const loopback = portRoleStyle('loopback')!;
+    const loopback = themePortRole(themeById(undefined), 'loopback')!;
     let outlined = 0;
     for (const [key, node] of Object.entries(model.nodes)) {
       for (const port of node.ports) {
@@ -1475,7 +1502,7 @@ links:
         if (!(port.class ?? '').split(/\s+/).includes('loopback')) continue;
         const washes = washAssignment(Object.values(model.document.nodes).map(node => node.class));
         const token = washToken(model.document.nodes[key]!.class);
-        expect(cell.style['fillColor']).toBe(`light-dark(${washFill(token, 'light', washes)},${washFill(token, 'dark', washes)})`);
+        expect(cell.style['fillColor']).toBe(`light-dark(${themeWashFill(themeById(undefined), token, 'light', washes)},${themeWashFill(themeById(undefined), token, 'dark', washes)})`);
         expect(cell.style['strokeColor']).toBe(`light-dark(${portRolePaint(loopback, 'light').stroke!},`
           + `${portRolePaint(loopback, 'dark').stroke!})`);
         outlined += 1;
@@ -1671,7 +1698,7 @@ describe('signal links', () => {
   it('export dashed with the signal stroke and the overlay opacity, where sync and flow keep the overlay stroke (ticket 73)', async () => {
     const model = await pipeline(fixture('a-dashed-signal-feed-is-one-straight-segment'));
     const all = cells(drawio(model));
-    const signal = linkClassStyle('signal');
+    const signal = themeLinkClass(themeById(undefined), 'signal');
     const edges = model.links.filter(link => model.document.links[link.sourceIndex]!.class === 'signal');
     expect(edges).toHaveLength(4);
     for (const link of edges) {

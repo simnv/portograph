@@ -3,7 +3,7 @@ import type { DirectFamily, DirectMemberReason, DirectUnit, LayoutLink, LayoutMo
 import { EPS, intersection, samePoint, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
-import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, orthogonalLeg, SIDE_EDGE_SLACK, strictCrossing } from './frame-paths.js';
+import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, orthogonalLeg, SIDE_EDGE_SLACK, siblingStemCrowded, strictCrossing } from './frame-paths.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
@@ -62,6 +62,8 @@ export interface Member { link: LayoutLink; upper: 'from' | 'to'; lower: 'from' 
 function memberOf(model: LayoutModel, link: LayoutLink, next: ReadonlyMap<number, number>): Member | undefined {
   if (link.layer !== 'routed' || effectiveLayer(link) !== 'routed' || !link.attachments || link.bundle !== undefined || link.removed === true) return undefined;
   if (link.technique === 'stub' || link.technique === 'mesh-bus' || link.spanHint === true) return undefined;
+  // A fan family is decided in stage 1 and draws its members by its own rule, crossings and all (architecture-2 ticket 40): the fan wins.
+  if (link.fanFamily !== undefined) return undefined;
   const source = model.document.links[link.sourceIndex];
   if (source?.label) return undefined;
   if (source?.route !== undefined && source.route !== 'straight') return undefined;
@@ -303,7 +305,7 @@ interface Decided { families: DirectFamily[]; diagnostics: LayoutModel['diagnost
  * The decision on the draft: every triggered member is made orthogonal, then each triggered family takes
  * its verdict in family order, its chords held for the families after it. Writes the paths; returns the records.
  */
-function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate; family: DirectFamily }[], refused: ReadonlySet<string>): Decided {
+function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate; family: DirectFamily }[], refused: ReadonlyMap<string, DirectMemberReason>): Decided {
   const diagnostics: LayoutModel['diagnostics'] = [];
   for (const { candidate, family } of plans) if (family.triggered) for (const member of candidate.members) makeOrthogonal(model, linkOf(model, member.link.id));
   const families: DirectFamily[] = [];
@@ -314,7 +316,7 @@ function decide(model: LayoutModel, plans: readonly { candidate: FamilyCandidate
     const own = new Set(members.map(member => member.link.id));
     const crossable = new Set(candidate.pairMembers.map(member => member.link.id).filter(id => !own.has(id)));
     const verdict = familyVerdict(model, members.filter(member => !refused.has(member.link.id)), crossable);
-    for (const member of members) if (refused.has(member.link.id)) verdict.reasons.set(member.link.id, 'crowds');
+    for (const member of members) if (refused.has(member.link.id)) verdict.reasons.set(member.link.id, refused.get(member.link.id)!);
     for (const member of members) if (verdict.direct.has(member.link.id)) makeChord(model, member.link, verdict.segments.get(member.link.id)!);
     if (verdict.truncated) diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_SEARCH_TRUNCATED',
       message: `The member search of the direct family ${family.id} stopped at ${DIRECT_SEARCH_BUDGET} sets; the best set found is kept.`,
@@ -390,8 +392,9 @@ function refuseChordsNearNewLegs(model: LayoutModel, families: DirectFamily[], s
 /**
  * Decide every direct family of the draft, once, at the start of 7f and before `freezeChords` (R1), and record the triggered ones in
  * `model.directFamilies` (absent = none triggered). A family whose orthogonal drawing crosses once or never is not recorded and is left as the other rules make it.
+ * `refused`: the members a retry of 7f refuses, each with its reason (`crowds`, or `title` for a member a group title met on an axis).
  */
-export function planDirectFamilies(draft: LayoutModel, refused: ReadonlySet<string> = new Set()): void {
+export function planDirectFamilies(draft: LayoutModel, refused: ReadonlyMap<string, DirectMemberReason> = new Map()): void {
   const candidates = familyCandidates(draft);
   const counted = new Map<string, ReturnType<typeof orthogonalCounterfactual>>();
   const plans = candidates.map(candidate => {
@@ -480,6 +483,30 @@ export function directFamiliesFault(model: LayoutModel): string | undefined {
  */
 export function crowdedDirectMembers(model: LayoutModel): string[] {
   const direct = (model.directFamilies ?? []).flatMap(family => family.members.filter(member => member.mode === 'direct').map(member => ({ id: member.link, gap: family.gap })));
+  return crowdedChords(model, direct);
+}
+
+/**
+ * The straight fan members (architecture-2 ticket 40) that 7f brought within the chord clearance of a planned part of their gap, or of another
+ * held chord, crossing it nowhere strictly (`crowds`: what G6 would fail), or that pass the stem of a sibling fallback (`stem`). The gap is the one
+ * between the sub-tiers of the member's two ends. A member both crowd names `crowds`.
+ */
+export function crowdedFanMembers(model: LayoutModel): Map<string, 'crowds' | 'stem'> {
+  const straight = (model.fanAdmissions ?? []).filter(item => item.mode === 'straight').flatMap(item => {
+    const link = model.links.find(other => other.id === item.link);
+    if (link?.attachments === undefined) return [];
+    const tiers = [link.attachments.from.node, link.attachments.to.node].map(node => model.groups[model.document.nodes[node]!.group]!.tier!);
+    return [{ id: link.id, gap: { above: Math.min(...tiers), below: Math.max(...tiers) } }];
+  });
+  // A member that still passes a sibling fallback's stem is crowded too: the admission let it cross the leg, the leg's stem is final only now.
+  const found = new Map<string, 'crowds' | 'stem'>();
+  for (const { id } of straight) if (siblingStemCrowded(model, model.links.find(other => other.id === id)!)) found.set(id, 'stem');
+  for (const id of crowdedChords(model, straight)) found.set(id, 'crowds');
+  return found;
+}
+
+/** The held chords of `entries` that stand within the chord clearance of a planned part of their gap or of another held chord, crossing it nowhere strictly. */
+function crowdedChords(model: LayoutModel, direct: readonly { id: string; gap: { above: number; below: number } }[]): string[] {
   if (!direct.length) return [];
   const plans = tierGapPlans(model);
   const crowded: string[] = [];

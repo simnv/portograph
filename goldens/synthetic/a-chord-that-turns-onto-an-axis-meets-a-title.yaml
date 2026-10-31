@@ -1,0 +1,33 @@
+# Expected: a held chord whose angle class 7f changes is judged again on the geometry 7f publishes (ADR-0023). `w2` feeds `wb1` across
+# the tier gap, into the frame `w-site-b` (a cell with a child zone). At the end of 7e the feed is a straight chord about 11 degrees off
+# the vertical, a diagonal, so no title strip refuses it and the freeze holds it. 7f then moves the columns and grows the gap: the chord
+# stands under 2 degrees off the vertical, an axis chord, across the title of `w-site-b`, which has no room beside it. Before the rule the
+# chord was published there and G3 failed (`label:group:w-site-b#0` on `link-1`). The retry of 7f reads the class again with the one
+# predicate (`diagonalMayCross`) and refuses the chord (`ROUTED_CHORD_REFUSED`, reason `title`): the feed takes the orthogonal route,
+# and every gate passes. Stacked nodes; the group ids are the titles.
+# Test-only input owned by ticket 162 (the re-read of its rule); test/pipeline/chord-class-reread.test.ts reads it.
+portograph: 2
+groups:
+  west: { label: West }
+  w-top-a: { tier: 1, canton: west }
+  w-top-b: { tier: 1, canton: west }
+  e-top-b: { tier: 1 }
+  w-site-a: { tier: 2, canton: west }
+  w-zone-a: { parent: w-site-a }
+  w-site-b: { tier: 2, canton: west }
+  w-zone-b: { parent: w-site-b }
+nodes:
+  w1: { group: w-top-a, label: W1 }
+  w2: { group: w-top-b, label: W2 }
+  e2: { group: e-top-b, label: E2 }
+  wz1: { group: w-zone-a, label: WZ1 }
+  wb1: { group: w-site-b, label: WB1 }
+  wb2: { group: w-site-b, label: WB2 }
+  wz2: { group: w-zone-b, label: WZ2 }
+links:
+  - [w2, wb1]
+  - [wb1, wb2]
+  - [wb2, wz2]
+  - { from: w1, to: w2, class: sync }
+  - { from: w1, to: e2, class: sync }
+  - { from: w2, to: e2, class: sync }

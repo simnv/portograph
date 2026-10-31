@@ -4,25 +4,29 @@ import type {
 } from '../model/layout.js';
 import { frameNodes } from '../layout/frames.js';
 import { isDirect } from '../layout/link-labels.js';
+import { crossableText, isDiagonal } from '../layout/diagonal-text.js';
 import { isOriented } from '../geometry/oriented.js';
 import { orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import { LEGEND_DEFAULT_CLASS } from '../profiles/network/theme.js';
 import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, labelArea, validate } from '../score/model.js';
-import { measureText } from '../text/index.js';
-import { CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
+import { FONT_FAMILY, measureText } from '../text/index.js';
+import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { dotEnds } from './anonymous-end.js';
-import { groupShapes } from './frame-order.js';
-import { GeometryLocks, sheetClassWashCss, themeCss } from './theme.js';
+import { boxesBehind, groupShapes } from './frame-order.js';
+import { GeometryLocks, HALO_CLASS, haloCss, haloDepthClass, sheetClassWashCss, themeCss } from './theme.js';
+import { legendKeyRadius, themeById } from '../profiles/network/themes.js';
+import type { Theme } from '../profiles/network/themes.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 
 export { OVERLAY_ENDPOINT_RADIUS };
 /** Inset of a scaled icon glyph inside its measured tile, so the tile keeps a visible border. */
 const ICON_INSET = 1.5;
 const MASK_ID = 'pg-overlay-mask';
-const ROUTED_MASK_ID = 'pg-routed-mask';
+/** The mask of one line that a text cuts (ticket 162; it replaced the routed layer's one mask of ticket 16). */
+const LINE_MASK_ID = 'pg-line-mask';
 
 /**
  * A mask id that names its cutouts: the base id plus a hash of the mask body. Two SVGs inlined on
@@ -157,23 +161,25 @@ function textElement(label: LayoutLabel, locks: GeometryLocks, structural: strin
   const lineHeight = label.lineHeight ?? (rotated && !quarter ? font.lineHeight : height / lines.length);
   const top = middle.y - height / 2;
   const first = top + font.ascent;
+  // A card's title and subtitle (ticket 159) start at the left edge of their measured box; every other label is centred on its box.
+  const start = label.textAlign === 'start';
   const spans = lines.map((line, index) => element('tspan',
-    { x: middle.x, y: first + index * lineHeight }, escapeText(line))).join('');
+    { x: start ? box.x : middle.x, y: first + index * lineHeight }, escapeText(line))).join('');
   const title = label.tooltip !== undefined && label.tooltip !== label.text
     ? element('title', {}, escapeText(label.tooltip)) : '';
   return element('text', {
-    class: classes(structural, extra, locks.font(label.fontFamily ?? 'Arial, Helvetica, sans-serif', label.fontSize ?? 9, label.fontWeight ?? 400)),
+    class: classes(structural, extra, locks.font(label.fontFamily ?? FONT_FAMILY, label.fontSize ?? 9, label.fontWeight ?? 400)),
     'data-owner': owner,
-    'text-anchor': 'middle',
+    'text-anchor': start ? 'start' : 'middle',
     ...(rotated ? { transform: `rotate(${num(angle)} ${num(middle.x)} ${num(middle.y)})` } : {}),
   }, title + spans);
 }
 
-function iconElement(icon: { icon: string; bounds: Rect }, locks: GeometryLocks, authored: string | undefined): string {
-  const box = icon.bounds;
-  const inset = Math.min(ICON_INSET, box.width / 4, box.height / 4);
+function iconElement(icon: { icon: string; bounds: Rect; inset?: number; radius?: number }, locks: GeometryLocks, authored: string | undefined, themeRadius: number): string {
+  const box = icon.bounds, radius = icon.radius ?? themeRadius;
+  const inset = Math.min(icon.inset ?? ICON_INSET, box.width / 4, box.height / 4);
   return element('rect', { class: classes('icon-tile', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
-    x: box.x, y: box.y, width: box.width, height: box.height, rx: CORNER_RADII.tile, ry: CORNER_RADII.tile })
+    x: box.x, y: box.y, width: box.width, height: box.height, rx: radius, ry: radius })
     + element('use', { class: classes('node-icon', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.glyph)),
       href: `#pg-icon-${iconKey(icon.icon)}`,
       x: box.x + inset, y: box.y + inset, width: box.width - 2 * inset, height: box.height - 2 * inset });
@@ -258,19 +264,56 @@ function onLineCutout(model: LayoutModel, label: LayoutLabel): Cutout | undefine
   return turnedCutout(label);
 }
 
+/** The link a link label belongs to: its owner, or the link of a bar crossing. */
+const labelLink = (label: LayoutLabel): string | undefined =>
+  label.owner.kind === 'link' ? label.owner.id : label.owner.kind === 'barCross' ? label.owner.link : undefined;
+
 /**
- * The cutouts of the routed layer: only the labels that lie on a direct routed line (ticket 16).
- * Every other routed link is kept clear of its labels by placement and is not masked.
+ * The cutouts of one link's own labels: the label that lies on a direct line of the link (ticket 16), else its turned rectangle,
+ * else its box. They mask that link's line only (ticket 162): a foreign line that crosses the label is not cut by them. A routed
+ * link is cut only under a label on a direct line; placement keeps its other labels clear of it.
  */
-function routedCutouts(model: LayoutModel, visible: (link: LayoutLink) => boolean): Cutout[] {
+function ownCutouts(model: LayoutModel, link: LayoutLink, visible: (link: LayoutLink) => boolean): Cutout[] {
+  const routed = effectiveLayer(link) === 'routed';
   return model.labels.flatMap(label => {
-    if (label.omitted || label.role !== 'link' || label.layer === 'overlay' || !labelDrawn(model, label, visible)) return [];
+    if (label.role !== 'link' || labelLink(label) !== link.id || !crossableText(label) || !labelDrawn(model, label, visible)) return [];
     const cut = onLineCutout(model, label);
-    return cut ? [cut] : [];
+    if (routed) return cut && label.layer !== 'overlay' ? [cut] : [];
+    return [cut ?? turnedCutout(label) ?? { box: label.bounds! }];
   });
 }
 
-/** Every rectangle the overlay layer is masked out of, per `pipeline.md` stage 11. */
+/**
+ * Where an orthogonal run of an overlay line meets a group title or a foreign link label (ticket 162): the text box cut to the run's
+ * stroke rectangle, so the run breaks under the text and nothing else is cut. A diagonal is not cut: it may cross the text, and the
+ * text's halo breaks it under the letters.
+ */
+function crossedTextCutouts(model: LayoutModel, lines: readonly { from: Point; to: Point }[], half: number, owner: string | undefined,
+  visible: (link: LayoutLink) => boolean): Cutout[] {
+  const runs = lines.filter(line => !isDiagonal(line)).map(line => ({
+    x: Math.min(line.from.x, line.to.x) - half, y: Math.min(line.from.y, line.to.y) - half,
+    width: Math.abs(line.to.x - line.from.x) + 2 * half, height: Math.abs(line.to.y - line.from.y) + 2 * half }));
+  if (!runs.length) return [];
+  return model.labels.flatMap(label => {
+    const text = label.role === 'group' ? !label.omitted && label.bounds !== undefined
+      : label.role === 'link' && crossableText(label) && labelLink(label) !== owner && labelDrawn(model, label, visible);
+    if (!text) return [];
+    return runs.flatMap(run => { const box = overlap(run, label.bounds!); return box ? [{ box }] : []; });
+  });
+}
+
+/** The common part of two rectangles, or undefined where they do not overlap. */
+function overlap(a: Rect, b: Rect): Rect | undefined {
+  const x = Math.max(a.x, b.x), y = Math.max(a.y, b.y);
+  const width = Math.min(a.x + a.width, b.x + b.width) - x, height = Math.min(a.y + a.height, b.y + b.height) - y;
+  return width > 0 && height > 0 ? { x, y, width, height } : undefined;
+}
+
+/**
+ * Every rectangle the whole overlay layer is masked out of, per `pipeline.md` stage 11: node bodies, pills, and the text a diagonal
+ * may not cross (a multiplicity label, a bus label). A group title and a link's own label cut one line each (`ownCutouts`,
+ * `crossedTextCutouts`, ticket 162).
+ */
 function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean): Cutout[] {
   const boxes: Cutout[] = [];
   for (const node of Object.values(model.nodes)) {
@@ -279,9 +322,8 @@ function maskedBoxes(model: LayoutModel, visible: (link: LayoutLink) => boolean)
   }
   for (const label of model.labels) {
     if (label.omitted || !label.bounds) continue;
-    if (label.role === 'group') boxes.push({ box: label.bounds });
     // A hidden link's label is not drawn, so masking it would leave an unexplained gap.
-    if (label.role === 'link' && labelDrawn(model, label, visible)) boxes.push(onLineCutout(model, label) ?? turnedCutout(label) ?? { box: label.bounds });
+    if (label.role === 'link' && !crossableText(label) && labelDrawn(model, label, visible)) boxes.push(turnedCutout(label) ?? { box: label.bounds });
     // The bus label is cut out of the overlay layer as a link label is: the bar and stubs are overlay strokes.
     if (label.role === 'mesh-bus') {
       const bus = model.meshBuses?.find(item => item.label === label.id);
@@ -317,12 +359,23 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
   const canvas = layout.canvas;
   if (!canvas) throw new Error('Render requires a final canvas');
   const locks = new GeometryLocks();
+  // The theme is paint: it picks colours and corner radii, and no size or position (ticket 158).
+  const theme: Theme = themeById(layout.document.theme);
   const visible = (link: LayoutLink): boolean => linkVisible(layout, link, options);
   const icons = new Set<string>();
 
   // A frame is drawn in its cells' place: a cell never is (ranked-groups spec, section 2). A parent
   // frame is painted before its children, and a box that lies on another after it (frame-order.ts).
-  const boxes = groupShapes(layout).map(shape => shape.frame
+  const shapes = groupShapes(layout);
+  // Every text outside a node body carries a halo in the colour behind it (ticket 162): the class names the depth of group fills behind
+  // its centre, and `haloCss` states the colour of each depth used, in every mode.
+  const haloDepths: number[] = [];
+  const halo = (label: LayoutLabel): string => {
+    const depth = boxesBehind(shapes, centre(label.bounds!));
+    haloDepths.push(depth);
+    return classes(HALO_CLASS, haloDepthClass(depth));
+  };
+  const boxes = shapes.map(shape => shape.frame
     ? { id: shape.id, bounds: shape.bounds, class: layout.frames!.find(frame => frame.id === shape.id)!.class,
       nodes: frameNodes(layout, shape.id) }
     : { id: shape.id, bounds: shape.bounds, class: layout.document.groups[shape.id]!.class, nodes: layout.groups[shape.id]!.nodes });
@@ -332,7 +385,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       ...(uniform ? { 'data-node-class': uniform } : {}) },
     element('rect', { class: classes('group-box', authored, uniform, locks.stroke(DEFAULT_STROKE_WIDTHS.group)),
       x: box.bounds.x, y: box.bounds.y, width: box.bounds.width, height: box.bounds.height,
-      rx: CORNER_RADII.group, ry: CORNER_RADII.group }));
+      rx: theme.radii.group, ry: theme.radii.group }));
   }).join('');
 
   /**
@@ -361,6 +414,22 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     for (const segment of segments) for (const id of segment.barCross ?? []) crossedBars.add(id);
   };
 
+  const maskElement = (id: string, inner: string): string => element('mask', { id, maskUnits: 'userSpaceOnUse',
+    // The mask means luminance: white shows the overlay, black cuts it out. Said here, on the
+    // element, so no rule can reinterpret the cutouts as opaque alpha.
+    style: 'mask-type:luminance!important',
+    x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height }, inner);
+  // One mask per line that a text cuts (ticket 162): a label cuts its own line, and a group title or a foreign link label cuts an
+  // orthogonal overlay run where it meets it. A foreign diagonal is not cut; the text's halo breaks it under the letters.
+  const lineMasks = new Map<string, string>();
+  const lineMask = (cuts: readonly Cutout[]): { mask: string } | undefined => {
+    if (!cuts.length) return undefined;
+    const inner = maskRect(true, canvas) + cuts.map(cut => maskRect(false, cut.box, cut.turn)).join('');
+    const id = maskId(LINE_MASK_ID, inner);
+    lineMasks.set(id, maskElement(id, inner));
+    return { mask: `url(#${id})` };
+  };
+
   const linkElement = (link: LayoutLink, bundle: Bundle | undefined): string => {
     const authored = linkClassToken(layout, link);
     const layer = effectiveLayer(link);
@@ -368,7 +437,9 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     const data = pathData(segments);
     if (!data) return '';
     noteCrossings(segments);
-    return element('g', { class: classes('link', layer === 'overlay' ? 'overlay' : undefined, authored), 'data-id': link.id },
+    const cuts = [...ownCutouts(layout, link, visible),
+      ...(layer === 'overlay' ? crossedTextCutouts(layout, segments, linkStrokeWidth(link) / 2, link.id, visible) : [])];
+    return element('g', { class: classes('link', layer === 'overlay' ? 'overlay' : undefined, authored), 'data-id': link.id, ...lineMask(cuts) },
       linkTooltip(link)
       + element('path', { class: classes('link-line', layer === 'overlay' ? 'overlay-line' : undefined,
         authored, locks.stroke(linkStrokeWidth(link))), d: data }));
@@ -401,8 +472,11 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       ...(bus.trunk === undefined ? [] : [`mesh: ${meshBuses.flatMap(item => item.nodes).join(', ')}`, `cross links: ${(bus.cross ?? []).join(', ')}`])];
     const lines = [`${bus.class ?? 'unclassed'} mesh: ${bus.nodes.join(', ')}`, `links: ${bus.members.join(', ')}`, ...joinLines, ...trunkLines,
       ...(bus.dissolved.length ? [`group-links: ${bus.dissolved.join(', ')}`] : []), ...authoredLabels];
+    const runs = [bus.bar!, ...bus.stubs!, ...(bus.riser?.from !== undefined && bus.riser.to !== undefined ? [{ from: bus.riser.from, to: bus.riser.to }] : []),
+      ...joins.slice(1).map((point, index) => ({ from: joins[index]!, to: point }))];
     return element('g', { class: classes('mesh-bus', 'overlay', authored), 'data-id': bus.id, 'data-members': bus.members.join(' '),
-      ...(bus.joined !== undefined ? { 'data-joined': bus.joined } : {}), ...(bus.mesh !== undefined ? { 'data-mesh': bus.mesh } : {}) },
+      ...(bus.joined !== undefined ? { 'data-joined': bus.joined } : {}), ...(bus.mesh !== undefined ? { 'data-mesh': bus.mesh } : {}),
+      ...lineMask(crossedTextCutouts(layout, runs, linkStrokeWidth(first) / 2, undefined, visible)) },
       element('title', {}, escapeText(lines.join('\n'))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join('') + riser + trunk);
   }).join('');
   const byId = new Map(layout.links.map(link => [link.id, link]));
@@ -432,7 +506,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     const node = layout.nodes[id]!, authored = authorClass(layout.document.nodes[id]!.class);
     const crossed = crossedBars.has(id);
     const body = element('rect', { class: classes('node-body', authored, washClass(authored, washes), locks.stroke(nodeStroke(node))),
-      x: node.bounds!.x, y: node.bounds!.y, width: node.bounds!.width, height: node.bounds!.height, rx: CORNER_RADII.node, ry: CORNER_RADII.node });
+      x: node.bounds!.x, y: node.bounds!.y, width: node.bounds!.width, height: node.bounds!.height, rx: theme.radii.node, ry: theme.radii.node });
     // The detached body is the same rectangle, in a container of the same kind, inside a second
     // node layer, so what a document styles by name still reaches it: the theme, the geometry locks
     // and a `css:` rule naming the body, the class, the container or the layer. What it cannot
@@ -440,7 +514,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     // container carries `data-owner`; the node's one `data-id` stays on its content group.
     if (crossed) crossedBodies.push(element('g', { class: classes('node', authored), 'data-owner': id }, body));
     if (node.icon) icons.add(iconKey(node.icon.icon));
-    const icon = node.icon ? iconElement(node.icon, locks, authored) : '';
+    const icon = node.icon ? iconElement(node.icon, locks, authored, theme.radii.tile) : '';
     const text = layout.labels.filter(label => label.owner.kind === 'node' && label.owner.id === id
       && (label.role === 'node' || label.role === 'description'))
       .map(label => textElement(label, locks, label.role === 'node' ? 'node-label' : 'node-description', id, authored)).join('');
@@ -468,7 +542,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       const group = label.owner.kind === 'group' ? layout.groups[label.owner.id] : undefined;
       const frame = group || label.owner.kind === 'group' ? frameTitled(layout, label) : undefined;
       const uniform = frame ? uniformNodeClass(layout, frameNodes(layout, frame.id)) : group ? uniformNodeClass(layout, group.nodes) : undefined;
-      return textElement(label, locks, 'group-label', label.owner.kind === 'barCross' ? label.owner.node : (frame?.id ?? label.owner.id),
+      return textElement(label, locks, classes('group-label', halo(label)), label.owner.kind === 'barCross' ? label.owner.node : (frame?.id ?? label.owner.id),
         classes(frame ? authorClass(frame.class) : group ? authorClass(layout.document.groups[group.id]!.class) : undefined, uniform));
     }).join('');
   const linkLabels = layout.labels.filter(label => label.role === 'link' && labelDrawn(layout, label, visible))
@@ -476,14 +550,14 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
       const owner = label.owner.kind === 'barCross' ? label.owner.link : label.owner.id;
       const link = byId.get(owner);
       const multiplicity = label.support?.kind === 'merge-run';
-      return textElement(label, locks, classes('link-label', multiplicity ? 'multiplicity-label' : undefined),
+      return textElement(label, locks, classes('link-label', multiplicity ? 'multiplicity-label' : undefined, halo(label)),
         owner, link ? linkClassToken(layout, link) : undefined);
     }).join('');
 
   const busLabels = buses.flatMap(bus => {
     const label = layout.labels.find(item => item.id === bus.label);
     return label === undefined || label.omitted || label.bounds === undefined ? []
-      : [textElement(label, locks, classes('link-label', 'mesh-bus-label'), bus.id, authorClass(bus.class))];
+      : [textElement(label, locks, classes('link-label', 'mesh-bus-label', halo(label)), bus.id, authorClass(bus.class))];
   });
   // A link end on an anonymous port (ADR-0002: no geometry, no pill) is closed by a dot in the link stroke, so it does not look
   // unfinished beside a pill. `dotEnds` is the predicate draw.io shares. Paint only. A routed dot stands in a group after the nodes,
@@ -533,45 +607,35 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     // The key shows the class's body wash behind its tile, as a node of the class shows it.
     const at = entry.swatch, grow = 2;
     const wash = element('rect', { class: classes('node-body', authorClass(entry.key), washClass(authorClass(entry.key), washes), locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
-      x: at.x - grow, y: at.y - grow, width: at.width + 2 * grow, height: at.height + 2 * grow, rx: CORNER_RADII.node, ry: CORNER_RADII.node });
-    return wash + iconElement({ icon: entry.icon, bounds: entry.swatch }, locks, authorClass(entry.key));
+      x: at.x - grow, y: at.y - grow, width: at.width + 2 * grow, height: at.height + 2 * grow, rx: legendKeyRadius(theme, grow), ry: legendKeyRadius(theme, grow) });
+    return wash + iconElement({ icon: entry.icon, bounds: entry.swatch }, locks, authorClass(entry.key), theme.radii.tile);
   };
   const legend = layout.legend ? element('g', { class: 'legend', 'data-id': layout.legend.id },
     layout.legend.entries.map(entry => {
       const label = layout.labels.find(item => item.id === entry.label);
       return element('g', { class: classes('legend-entry', `legend-${entry.kind}`, authorClass(entry.key)), 'data-id': entry.id },
-        legendSwatch(entry) + (label ? textElement(label, locks, 'legend-label', entry.id) : ''));
+        legendSwatch(entry) + (label && label.bounds ? textElement(label, locks, classes('legend-label', halo(label)), entry.id) : ''));
     }).join('')) : '';
 
   const overlayVisible = drawn.some(link => effectiveLayer(link) === 'overlay') || buses.length > 0;
-  const maskElement = (id: string, inner: string): string => element('mask', { id, maskUnits: 'userSpaceOnUse',
-    // The mask means luminance: white shows the overlay, black cuts it out. Said here, on the
-    // element, so no rule can reinterpret the cutouts as opaque alpha.
-    style: 'mask-type:luminance!important',
-    x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height }, inner);
   const overlayInner = overlayVisible
     ? maskRect(true, canvas) + maskedBoxes(layout, visible).map(cut => maskRect(false, cut.box, cut.turn)).join('') : '';
   const overlayMaskId = maskId(MASK_ID, overlayInner);
   const mask = overlayVisible ? maskElement(overlayMaskId, overlayInner) : '';
-  // The routed layer is masked only where a label lies on a direct routed line (ticket 16).
-  const routedCuts = routedCutouts(layout, visible);
-  const routedInner = routedCuts.length ? maskRect(true, canvas) + routedCuts.map(cut => maskRect(false, cut.box, cut.turn)).join('') : '';
-  const routedMaskId = maskId(ROUTED_MASK_ID, routedInner);
-  const routedMask = routedCuts.length ? maskElement(routedMaskId, routedInner) : '';
 
   const symbols = [...icons].sort().map(name => element('symbol',
     { id: `pg-icon-${name}`, viewBox: '0 0 24 24' }, element('path', { d: iconPath(name) }))).join('');
   const documentCss = layout.document.css ?? '';
   const style = element('style', { type: 'text/css' },
-    escapeStyle([themeCss(), sheetClassWashCss(nodeClassAttrs), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
+    escapeStyle([themeCss(theme), sheetClassWashCss(nodeClassAttrs, theme), haloCss(haloDepths, theme), locks.css(), documentCss].filter(part => part.trim()).join('\n')));
 
   const body = element('rect', { class: 'pg-canvas', x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height })
     + element('g', { class: 'groups' }, groups)
     + (overlayPaths ? element('g', { class: 'overlay-links', mask: `url(#${overlayMaskId})` }, overlayPaths) : '')
     + (crossedBodies.length ? element('g', { class: 'nodes crossed-bars' }, crossedBodies.join('')) : '')
-    + element('g', { class: 'links', ...(routedMask ? { mask: `url(#${routedMaskId})` } : {}) }, routedPaths + trunks)
+    + element('g', { class: 'links' }, routedPaths + trunks)
     + element('g', { class: 'nodes' }, nodes)
-    + (dots ? element('g', { class: 'link-dots', ...(routedMask ? { mask: `url(#${routedMaskId})` } : {}) }, dots) : '')
+    + (dots ? element('g', { class: 'link-dots' }, dots) : '')
     + element('g', { class: 'labels' }, groupLabels + linkLabels + busLabels.join(''))
     + (marks ? element('g', { class: 'overlay-marks' }, marks) : '')
     + legend;
@@ -582,5 +646,5 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     class: classes('portograph', authorClass(layout.document.profile)),
     viewBox: `${num(canvas.x)} ${num(canvas.y)} ${num(canvas.width)} ${num(canvas.height)}`,
     width: canvas.width, height: canvas.height,
-  }, title + element('defs', {}, style + symbols + mask + routedMask) + body) + '\n';
+  }, title + element('defs', {}, style + symbols + mask + [...lineMasks.values()].join('')) + body) + '\n';
 }

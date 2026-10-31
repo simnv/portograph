@@ -1,0 +1,119 @@
+# Expected: a linked-group grid widening that grows a cell box left, its body left in place (`dx: 0`), is not refused while the frames keep their
+# gap; the same box moved with its body (`dx: -10`) breaks `separation-root-frames` of `top-a` and `top-b` (ticket 157 re-check of `framesAfter`).
+# Premise: frame `top-b` stands exactly a band gap right of `top-a`, and the left edge of cell `top-b-zone#1` is the left edge of its body, so
+# the body's reach (20 px past it) stands farther left than the box grown by 10 px.
+# A copy of a-chain-of-tiers-packs-over-its-feeds-final-x (ranked-groups ticket 33) with short core, dist and top core labels (snack-theme ticket
+# 159): with card nodes the core and dist nodes widened, the two top frames stood 88 px apart, and the top core nodes, wider than the edge
+# switches, put the zone cell's box 14 px left of its body; neither premise held.
+# Test-only input; test/pipeline/min-separation-writers.test.ts reads the layout.
+# Card nodes (`layout.nodeContent: card`, snack-theme ticket 159): the premise was forged on the card geometry; a stacked document is narrower.
+portograph: 2
+layout: { nodeContent: card }
+groups:
+  top-a: { tier: 0, label: Site A }
+  top-a-zone: { parent: top-a, label: Zone A }
+  top-b: { tier: 0, label: Site B }
+  top-b-zone: { parent: top-b, label: Zone B }
+  core: { tier: 1, label: Core }
+  dist: { tier: 2, label: Dist }
+  side: { tier: 2, label: Side }
+  west: { tier: 3, label: West }
+  west-zone: { parent: west, label: West zone }
+  mid: { tier: 3, label: Middle }
+  mid-zone: { parent: mid, label: Middle zone }
+  east: { tier: 3, label: East }
+  east-zone: { parent: east, label: East zone }
+nodes:
+  a-core: { group: top-a, class: router, label: A }
+  a-edge: { group: top-a-zone, class: switch, label: A edge }
+  b-core: { group: top-b, class: router, label: B }
+  b-edge: { group: top-b-zone, class: switch, label: B edge }
+  core-1: { group: core, class: router, label: C1 }
+  dist-1: { group: dist, class: router, label: D1 }
+  core-2: { group: core, class: router, label: C2 }
+  dist-2: { group: dist, class: router, label: D2 }
+  side-1: { group: side, class: router, label: Side one }
+  west-gw: { group: west, class: router, label: West gateway }
+  west-1: { group: west-zone, class: switch, label: West one }
+  west-2: { group: west-zone, class: access, label: West 2 }
+  west-3: { group: west-zone, class: access, label: West 3 }
+  west-4: { group: west-zone, class: access, label: West 4 }
+  west-5: { group: west-zone, class: access, label: West 5 }
+  west-6: { group: west-zone, class: access, label: West 6 }
+  west-7: { group: west-zone, class: access, label: West 7 }
+  west-8: { group: west-zone, class: access, label: West 8 }
+  west-9: { group: west-zone, class: access, label: West 9 }
+  west-10: { group: west-zone, class: access, label: West 10 }
+  west-11: { group: west-zone, class: access, label: West 11 }
+  west-12: { group: west-zone, class: access, label: West 12 }
+  west-13: { group: west-zone, class: access, label: West 13 }
+  west-14: { group: west-zone, class: access, label: West 14 }
+  west-15: { group: west-zone, class: access, label: West 15 }
+  west-16: { group: west-zone, class: access, label: West 16 }
+  west-17: { group: west-zone, class: access, label: West 17 }
+  west-18: { group: west-zone, class: access, label: West 18 }
+  west-19: { group: west-zone, class: access, label: West 19 }
+  west-20: { group: west-zone, class: access, label: West 20 }
+  west-21: { group: west-zone, class: access, label: West 21 }
+  west-22: { group: west-zone, class: access, label: West 22 }
+  west-23: { group: west-zone, class: access, label: West 23 }
+  west-24: { group: west-zone, class: access, label: West 24 }
+  west-25: { group: west-zone, class: access, label: West 25 }
+  west-26: { group: west-zone, class: access, label: West 26 }
+  west-27: { group: west-zone, class: access, label: West 27 }
+  west-28: { group: west-zone, class: access, label: West 28 }
+  west-29: { group: west-zone, class: access, label: West 29 }
+  west-30: { group: west-zone, class: access, label: West 30 }
+  mid-gw: { group: mid, class: router, label: Middle gateway }
+  mid-1: { group: mid-zone, class: switch, label: Middle one }
+  mid-2: { group: mid-zone, class: access, label: Middle two }
+  east-gw: { group: east, class: router, label: East gateway }
+  east-1: { group: east-zone, class: switch, label: East one }
+  east-2: { group: east-zone, class: access, label: East two }
+links:
+  - [a-core, a-edge]
+  - [b-core, b-edge]
+  - [a-edge, core-1]
+  - [b-edge, core-2]
+  - [core-1, dist-1]
+  - [dist-1, west-gw]
+  - [core-2, dist-2]
+  - [dist-2, east-gw]
+  - [side-1, mid-gw]
+  - [west-gw, west-1]
+  - [west-1, west-2]
+  - [west-1, west-3]
+  - [west-1, west-4]
+  - [west-1, west-5]
+  - [west-1, west-6]
+  - [west-1, west-7]
+  - [west-1, west-8]
+  - [west-1, west-9]
+  - [west-1, west-10]
+  - [west-1, west-11]
+  - [west-1, west-12]
+  - [west-1, west-13]
+  - [west-1, west-14]
+  - [west-1, west-15]
+  - [west-1, west-16]
+  - [west-1, west-17]
+  - [west-1, west-18]
+  - [west-1, west-19]
+  - [west-1, west-20]
+  - [west-1, west-21]
+  - [west-1, west-22]
+  - [west-1, west-23]
+  - [west-1, west-24]
+  - [west-1, west-25]
+  - [west-1, west-26]
+  - [west-1, west-27]
+  - [west-1, west-28]
+  - [west-1, west-29]
+  - [west-1, west-30]
+  - [mid-gw, mid-1]
+  - [mid-1, mid-2]
+  - [east-gw, east-1]
+  - [east-1, east-2]
+  - [a-edge, mid-1, { route: overlay }]
+  - [b-edge, east-1, { route: overlay }]
+  - [a-edge, b-edge, { route: overlay }]

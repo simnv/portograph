@@ -184,11 +184,12 @@ links: [[a.p, b.p, {route: overlay}]]`);
     // the one segment runs face to face — from the bottom pill's outward edge to the top pill's,
     // 12 px inside each anchor (stress ticket 30). `overlayEndpoint` names both ends, and G7 below
     // reads that same pair.
+    // Verdana metrics (snack-theme ticket 157): the segment ran y 103 to 226 with Arial; the anchors stood at y 91 and 238.
     expect(path).toEqual({ owner: { kind: 'link', id: 'link-1' }, layer: 'overlay', fixed: false,
-      segments: [{ from: { x: 57, y: 103 }, to: { x: 57, y: 226 },
+      segments: [{ from: { x: 57, y: 104 }, to: { x: 57, y: 228 },
         owner: { kind: 'link', id: 'link-1' } }] });
-    expect(before.nodes.a!.ports[0]!.anchor).toEqual({ x: 57, y: 91 });
-    expect(before.nodes.b!.ports[0]!.anchor).toEqual({ x: 57, y: 238 });
+    expect(before.nodes.a!.ports[0]!.anchor).toEqual({ x: 57, y: 92 });
+    expect(before.nodes.b!.ports[0]!.anchor).toEqual({ x: 57, y: 240 });
     expect(model.links[0]!.technique).toBe('overlay');
     expect(model.links[0]!.stubCandidate).toBeUndefined();
     expect(score(model).snapshot.gates.G7.passed).toBe(true);

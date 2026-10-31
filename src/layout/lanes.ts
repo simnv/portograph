@@ -13,16 +13,16 @@ import { gapEnds, gapGeometry, gapLaneId, gapReservation, isGapCourse } from './
 import { admitBypassLanes, bypassGeometry, bypassLaneExtent, bypassLaneId, isBypassCourse } from './course-bypass.js';
 import { RING_PITCH, endMode } from './course-rows.js';
 import { groupShape } from './grid.js';
-import { portId } from './skeleton-graph.js';
+import { compareId, portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withStageMutation } from './mutation.js';
 import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
-import { deriveFrames, foreignReach, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, frameNodes } from './frames.js';
+import { type ProposedBox, foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, riserHostGrowth, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
-import { nodeTier } from './read/tier.js';
+import { nodeTier, transitTiers } from './read/tier.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { orderPortsByLanes } from './turn-order.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkRing } from './trunk.js';
@@ -44,7 +44,7 @@ export function lanesHoldTheirChild(model: LayoutModel, followed: LaneFollow[]):
   });
 }
 
-export { nodeTier };
+export { nodeTier, transitTiers };
 /** Anchor tier = most main-tier nodes, bars included, flanks excluded; ties: lowest tier (7c). */
 export function selectAnchorTier(model: LayoutModel): number | undefined {
   const counts = new Map<number, number>();
@@ -62,11 +62,6 @@ export function laneSource(model: LayoutModel, link: LayoutLink): PortRef {
   const anchor = selectAnchorTier(model);
   if (anchor === undefined) return ends.from;
   return Math.abs(nodeTier(model, ends.to.node) - anchor) < Math.abs(nodeTier(model, ends.from.node) - anchor) ? ends.to : ends.from;
-}
-export function transitTiers(model: LayoutModel, link: LayoutLink): number[] {
-  if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) return [];
-  const a = nodeTier(model, link.attachments.from.node), b = nodeTier(model, link.attachments.to.node);
-  return model.tierBands.map(band => band.tier).filter(tier => tier > Math.min(a, b) && tier < Math.max(a, b)).sort((u, v) => a < b ? u - v : v - u);
 }
 /** Measured normal pill extent plus 10 px gap, or the stroke-aware node clearance diameter. */
 export function laneWidth(model: LayoutModel, link?: LayoutLink): number {
@@ -126,45 +121,46 @@ function occupiedAt(model: LayoutModel, group: LayoutGroup, bounds: Rect, link?:
  * immutable after allocation, so a movement that fails this is geometrically infeasible rather than
  * something an ordered replay can repair. This is the same occupied extent `validateLanes` measures.
  */
-export function laneSidesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true, frames = true): boolean {
+export function laneSidesHold(model: LayoutModel, proposed: ProposedBox[], report = true, frames = true): boolean {
   // From 7f on a straight link is a wall like a lane (ticket 34): the move is refused for that unit.
   if (!chordsHold(model, proposed, report)) return false;
   return proposed.every(({ group, bounds }) => {
-    // A lane of either kind keeps the side of every group of its own sub-tier.
-    const sameTier = model.lanes.filter(lane => lane.tier === group.tier && !(lane.group === group.id && bypassLane(model, lane))).every(lane => {
+    // A lane of either kind keeps the side of every group of a sub-tier it stands beside.
+    const sameTier = model.lanes.filter(lane => wallBeside(lane, group.tier!) && !(lane.group === group.id && bypassLane(model, lane))).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));
       return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - PLACEMENT_EPS : right(box) <= lane.bounds.x + PLACEMENT_EPS;
     });
     return sameTier;
   }) && (!frames || sideLaneFramesHold(model, proposed));
 }
+/**
+ * Whether a lane is a wall beside the groups of a sub-tier. A perimeter lane stands beside the sub-tiers of its span: its `tier` is the one of its upper end's
+ * group, which the lane need not reach (a course that leaves the bottom face of a node drops through the tier gap first). Its x is derived from the outermost
+ * box on that span (`rebuildLaneExtents`), so a box that widens takes the lane out with it; only an aligned lane, which stands on its far port's x, is a wall.
+ * `aligned` is the promise 7a records (`Lane.aligned`): the far natural end is a feed of 7c under the lane, so the lane stands on it from centring on.
+ * Every other lane keeps its x and stands in its own sub-tier.
+ */
+function wallBeside(lane: Lane, tier: number): boolean {
+  if (lane.kind !== 'perimeter') return lane.tier === tier;
+  return lane.aligned === true && lane.span !== undefined && lane.span.top <= tier && tier <= lane.span.bottom;
+}
 /** Whether a lane is a stem of a row bypass: it stands in the gaps of its own group and is derived from the node boxes. */
 function bypassLane(model: LayoutModel, lane: Lane): boolean {
   return lane.kind === 'gap' && lane.owner.kind === 'link' && (model.courses ?? []).some(course => course.link === (lane.owner as { id: string }).id && isBypassCourse(course));
-}
-/** The frame boxes as they would stand with the proposed group boxes: `deriveFrames` on a trial that has the groups and their bodies moved. */
-function framesAfter(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): Map<string, Rect> | undefined {
-  const groups = { ...model.groups }, nodes = { ...model.nodes };
-  for (const { group, bounds } of proposed) {
-    const dx = bounds.x - group.bounds!.x;
-    groups[group.id] = { ...group, bounds };
-    for (const id of group.nodes) nodes[id] = { ...model.nodes[id]!, bounds: { ...model.nodes[id]!.bounds!, x: model.nodes[id]!.bounds!.x + dx } };
-  }
-  const derived = deriveFrames({ ...model, groups, nodes });
-  return derived === undefined ? undefined : new Map(derived.map(frame => [frame.id, frame.box]));
 }
 /**
  * A side lane stands outside every frame that holds its node (side-faces.md, Section 10). A move is refused when the frame box rebuilt from the
  * proposed boxes (the cells' reach and every transit lane a frame holds, as `rebuildFrames` derives it) reaches deeper across the lane than the
  * frame box stands now: a frame that already crosses the lane is not made to cross it more, so the guard never stalls a layout.
  */
-function sideLaneFramesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
+function sideLaneFramesHold(model: LayoutModel, proposed: ProposedBox[]): boolean {
   // A side lane and a column-gap lane both serve a lateral port and stand beside the frames that hold its node (the alias: both are gap runs).
   const sides = model.lanes.filter(lane => isGapRun(lane) && lane.port !== undefined);
   if (!sides.length || !model.frames?.length || proposed.every(({ group, bounds }) => Math.abs(bounds.x - group.bounds!.x) <= PLACEMENT_EPS
     && Math.abs(bounds.width - group.bounds!.width) <= PLACEMENT_EPS)) return true;
-  const after = framesAfter(model, proposed);
-  if (after === undefined) return true;
+  const derived = framesAfter(model, proposed);
+  if (derived === undefined) return true;
+  const after = new Map(derived.map(frame => [frame.id, frame.box]));
   return sides.every(lane => model.frames!.filter(frame => frameNodes(model, frame.id).includes(lane.port!.node)).every(frame => {
     const reach = (box: Rect): number => lane.side === 'right' ? right(box) - lane.bounds.x : right(lane.bounds) - box.x;
     const next = after.get(frame.id);
@@ -443,6 +439,16 @@ function laneReservation(model: LayoutModel, link: LayoutLink): PathSegment[] | 
   owned.sort((a, b) => order.indexOf(a.tier) - order.indexOf(b.tier));
   return owned.length ? owned.map(lane => reservation(model, link, lane)) : undefined;
 }
+/**
+ * Put the lanes of an earlier reading back, and with them everything derived from lanes: their extents (`rebuildLaneExtents`) and the frames, which hold the
+ * lanes of their own links (`heldLaneReach`). A trial that moved a corridor derived the frames again (`reseatLanes`); the restore that refuses it derives them
+ * again too, or a frame edge stands at the refused corridor and stage 8 reads frames that contradict the cells.
+ */
+export function restoreLanes(model: LayoutModel, held: LayoutModel['lanes']): void {
+  model.lanes = held;
+  rebuildLaneExtents(model);
+  rebuildFrames(model);
+}
 /** Extent-only replay. Never allocates, moves, renames, or changes the owner of a lane. */
 export function rebuildLaneExtents(model: LayoutModel): void {
   for (const lane of model.lanes) {
@@ -668,9 +674,11 @@ function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; wid
  * Plan outward pushes from the insertion gap, not from a corridor's centre. The gap partitions
  * the original group order even when a wide corridor contains an entire neighboring group.
  * Propagate each push through its neighbors and retain their existing occupied separation.
+ * `stillStays`: a unit the push does not move is not judged against the prior lanes (a span corridor, ticket 35): it crosses no lane it did not
+ * cross before, and the corridor itself is judged against every prior lane at its own x (first line).
  */
 function marginTranslations(read: (group: LayoutGroup) => Rect, groups: LayoutGroup[], split: number, x: number, width: number,
-  prior: Lane[], fixedSources: Set<string>, framed = false): number[] | undefined {
+  prior: Lane[], fixedSources: Set<string>, framed = false, stillStays = false): number[] | undefined {
   if (prior.some(lane => Math.abs(x - lane.x) < (width + lane.bounds.width) / 2 - PLACEMENT_EPS)) return undefined;
   const boxes = groups.map(read), shifts = groups.map(() => 0);
   let boundary = x - width / 2;
@@ -692,6 +700,7 @@ function marginTranslations(read: (group: LayoutGroup) => Rect, groups: LayoutGr
     // A push of one sub-tier alone would move it off the axis, so only the frame pass, which checks that
     // every cell of a frame root moves by one dx, may push a cell.
     if (dx && group.frame !== undefined && !framed) return undefined;
+    if (!dx && stillStays) continue;
     for (const lane of prior) {
       // A lane of a link that ends in this cell's frame stands inside the box: the frame grows to hold it,
       // so the cell cannot move away from it (ticket 14).
@@ -808,7 +817,10 @@ export function reserveRisers(model: LayoutModel, pending: Lane[], occ: (group: 
       const groups = Object.values(model.groups).filter(item => item.tier === tier && item.bounds !== undefined);
       const outside = groups.filter(item => x < item.bounds!.x || x > right(item.bounds!));
       const near = (item: LayoutGroup): number => Math.abs(x - (item.bounds!.x + item.bounds!.width / 2));
-      const host = [...(outside.length ? outside : groups)].sort((a, b) => near(a) - near(b))[0];
+      // The host is the group whose frames grow least to hold the lane (`riserHostGrowth`, the test `transitLanes` grows them by): a lane in the gap between two
+      // cantons is held by the canton whose margin it stands in, and the frame across the gap is not stretched over the gap to it. Then the nearest centre, then the id.
+      const growth = new Map(groups.map(item => [item.id, riserHostGrowth(model, item.id, members, { x: x - half, width })]));
+      const host = [...(outside.length ? outside : groups)].sort((a, b) => growth.get(a.id)! - growth.get(b.id)! || near(a) - near(b) || compareId(a.id, b.id))[0];
       if (host === undefined) continue;
       const id = riserLaneId(upper.id, tier);
       ids.push(id);
@@ -1245,7 +1257,7 @@ function reserveSpanCorridors(model: LayoutModel, pending: Lane[], occ: (group: 
       const prior = pending.filter(lane => lane.tier === tier && !isSpanLane(lane));
       // The groups the lane-stage guard holds (`heldSourceGroups`) do not move here either: a push of one is refused as the
       // corridor that cannot be opened, not thrown by the guard later (ticket 17 found a span trial that pushed one).
-      const shifts = groups.slice(0, split).every(isLeft) ? marginTranslations(group => spanWall(model, group, link), groups, split, x, width, prior, heldSourceGroups(model)) : undefined;
+      const shifts = groups.slice(0, split).every(isLeft) ? marginTranslations(group => spanWall(model, group, link), groups, split, x, width, prior, heldSourceGroups(model), false, true) : undefined;
       if (shifts === undefined) throw new SpanReservationRefusal(`The corridor of ${link.id} cannot be opened in tier ${tier}: a unit or a lane stands in it and cannot move aside`);
       shift(link, groups, shifts);
       const host = [...groups].sort((a, b) => Math.abs(x - (a.bounds!.x + a.bounds!.width / 2)) - Math.abs(x - (b.bounds!.x + b.bounds!.width / 2)))[0]!;

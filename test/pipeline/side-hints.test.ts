@@ -20,7 +20,7 @@ const fixture = (name: string): string => readFileSync(new URL(`../../goldens/sy
 type Hints = ReadonlyMap<string, 'left' | 'right'>;
 
 interface Run { model: LayoutModel; graph: ElkNode }
-interface Forged { nodes: Record<string, { ports: { sideHint?: true; naturalSide?: string; side: string }[] }>; freeze: { nodeFloors: { node: string; size: { width: number; height: number } }[] } }
+interface Forged { nodes: Record<string, { ports: { sideHint?: true; naturalSide?: string; side: string }[]; sizeFloor: { width: number; height: number } }>; freeze: { nodeFloors: { node: string; size: { width: number; height: number } }[] } }
 // The `reservations` field (architecture 2, ticket 03) is the declared ledger of the run, not geometry: the bytes main made have none.
 const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
 async function run(yaml: string, hints?: Hints, floors?: ReadonlyMap<string, { width: number; height: number }>): Promise<Run> {
@@ -258,7 +258,9 @@ describe('restore checks the stored hint against the document and the geometry (
     expect(() => restoreLayoutModel(forge(copy => { copy.freeze.nodeFloors[0]!.size.width = 1; }))).toThrow(/below its content/);
     expect(() => restoreLayoutModel(forge(copy => { copy.freeze.nodeFloors[0]!.size.width = 5000; }))).toThrow(/smaller than its node floor/);
     // A floor on a node without a hinted port.
-    expect(() => restoreLayoutModel(forge(copy => { copy.freeze.nodeFloors.push({ node: 'beside', size: { width: 50, height: 35 } }); }))).toThrow(/no hinted port/);
+    // Verdana metrics (snack-theme ticket 157): the floor was the literal 50 x 35 with Arial; Verdana lines are taller, so that floor fell below the content and the
+    // content check refused it first. The floor is now the node's own content floor, which passes the content check and leaves the missing hint as the reason.
+    expect(() => restoreLayoutModel(forge(copy => { copy.freeze.nodeFloors.push({ node: 'beside', size: { ...copy.nodes.beside!.sizeFloor } }); }))).toThrow(/no hinted port/);
   }, 120000);
 });
 
@@ -268,12 +270,13 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // 100-102: link-1 takes a routed chord across its own title band (technique straight, one segment, `frozenChords`; the `ROUTED_CHORD_REFUSED` note is gone),
   // and nothing else in its layout differs (diffed against main's src at 964d77f). It is re-baselined again for architecture ticket 23, phase 1: the `GROUP_SHAPE_DECLINED` message gains `(reason: authored-side)`, and nothing else in its layout differs. The other three fixtures are untouched by them. `a-bar-end-keeps-its-corridor` is re-baselined for architecture ticket 19 (the bar is seated at the width 7d gives it: the lanes stand 3 px further out). `a-group-holds-both-ends-of-a-bundle` and `a-linked-node-steps-out-of-a-straight-chord` are re-baselined for architecture ticket 17: their free rows gain a `rowOrderDecision` record (`kept`), and nothing else differs (the hash without that key equals the old one). Each also compares a
   // no-hint run with a run with empty hint and floor maps, which is the ticket 114 claim itself.
-  // Named pills use 9 px text. The hashes include the new pill size and the geometry that follows it.
+  // Verdana metrics (snack-theme ticket 157): the hashes were f98faf1ca584bd8d, 2bf7ca0b64536533, 4bf31e66a5f0601f and c47be7d6b65f7515 with Arial.
+  // The 9 px floor changes named pills and their reserved geometry.
   const main: Record<string, string> = {
-    'a-group-holds-both-ends-of-a-bundle': '4a9c29350b722fb8',
-    'a-bus-in-a-rank-gap-grows-the-gap': '2bf7ca0b64536533',
-    'a-linked-node-steps-out-of-a-straight-chord': '4bf31e66a5f0601f',
-    'a-bar-end-keeps-its-corridor': '3f50b23a8aa7440f',
+    'a-group-holds-both-ends-of-a-bundle': 'c8c03a7952dd5f13',
+    'a-bus-in-a-rank-gap-grows-the-gap': '6b813734f4667a13',
+    'a-linked-node-steps-out-of-a-straight-chord': '87acdee7504bf90c',
+    'a-bar-end-keeps-its-corridor': 'b77586f1d9edb49d',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {
     const { model } = await run(fixture(name));

@@ -7,8 +7,10 @@ import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { joinFanTrees } from './bundle-geometry.js';
-import { expectedFramePath, isRoutedChord, routedChordCandidate, standaloneChord, withLinkFacts } from './frame-paths.js';
+import { expectedFramePath, fanFamilyOf, isRoutedChord, routedChordCandidate, standaloneChord, withLinkFacts } from './frame-paths.js';
 import { nodeTierIfAny } from './read/tier.js';
+import { admitFanFamilies, makeFanOrthogonal } from './fan-admission.js';
+import { diagonalMayCross } from './diagonal-text.js';
 
 /**
  * Coordinate magnitude beyond which an obstacle is measured instead of rejected.
@@ -172,6 +174,8 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   for (const label of model.labels) {
     if (label.omitted || !label.bounds || label.layer === 'overlay' || beyond(label.bounds, labelReach) || ownsObstacle(label.owner)) continue;
     if (label.role === 'pill' && label.port && endPorts.has(portId(label.port))) continue;
+    // A diagonal may cross a group title or a link label (ticket 162, ADR-0023); an orthogonal corridor keeps clear of them.
+    if (diagonalMayCross(segment, label)) continue;
     if (segmentRectDistance(segment, label.bounds) < stroke / 2 + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0) - EPS) return refuse('corridor');
   }
   for (const lane of model.lanes) {
@@ -181,8 +185,10 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
   }
   // A foreign group box, with its edge margin, is closed to this link (ADR-0013): placement must
   // not reserve a straight corridor that stage 8 would then be forbidden to use. The consumer test
-  // reads every link, so it is asked only about a group near enough to close the corridor.
-  for (const [id, group] of Object.entries(model.groups)) {
+  // reads every link, so it is asked only about a group near enough to close the corridor. A fan member's whole chord crosses group boxes
+  // (architecture-2 ticket 40): `crossRefusal` and the freeze record judge the boxes for it, so they are not read here.
+  const fan = options.attached === undefined && fanFamilyOf(model, link) !== undefined;
+  if (!fan) for (const [id, group] of Object.entries(model.groups)) {
     if (!group.bounds || !group.nodes.length || beyond(group.bounds, groupReach)) continue;
     if (groupConsumers(model, id).includes(link.id)) continue;
     if (segmentRectDistance(segment, group.bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - EPS) return refuse('frame');
@@ -260,21 +266,35 @@ export function rebuildRowPaths(draft: LayoutModel): void {
     return path !== undefined;
   };
   withLinkFacts(draft, () => {
-    let open = candidates.filter(link => !decide(link) && routedChordCandidate(draft, link));
+    // The members of a fan family (architecture-2 ticket 40) are decided together, not one by one: first the other candidates, with every member
+    // orthogonal (its legs are walls), then each family's joint admission, then the other candidates again, which the members' chords may have
+    // freed. Every step only adds chords, and each new chord checks its own clearance to the held ones, so no step undoes another. After the
+    // freeze every candidate reads the frozen record alone.
+    const fans = draft.frozenChords === undefined && draft.fanFamilies !== undefined
+      ? candidates.filter(link => fanFamilyOf(draft, link) !== undefined && routedChordCandidate(draft, link)) : [];
+    for (const link of fans) makeFanOrthogonal(draft, link);
+    let open = candidates.filter(link => !fans.includes(link) && !decide(link) && routedChordCandidate(draft, link));
     // Two passes, repeated until neither changes anything (ticket 89). The add-only pass above holds a chord only once every stem that blocks
     // it has gone, so two chords that each wait for the other's stem never start. The batch pass offers the candidates left together: each is
     // taken as straight, and a chord that fails against the others leaves and puts its stem back. Only a link that can hold alone (no tier
     // transit, title strip, corridor or body refuses it whatever the others do) is offered, so a chord that never could hold cannot
     // take a neighbour down with it; and the reverted links go back to the add-only pass, where they may hold alone.
-    while (draft.frozenChords === undefined) {
-      while (open.length) {
-        const next = open.filter(link => !decide(link));
-        if (next.length === open.length) break;
-        open = next;
+    const settle = (): void => {
+      while (draft.frozenChords === undefined) {
+        while (open.length) {
+          const next = open.filter(link => !decide(link));
+          if (next.length === open.length) break;
+          open = next;
+        }
+        const held = open.length ? batchChords(draft, open, automatic) : [];
+        if (!held.length) break;
+        open = open.filter(link => !held.includes(link));
       }
-      const held = open.length ? batchChords(draft, open, automatic) : [];
-      if (!held.length) break;
-      open = open.filter(link => !held.includes(link));
+    };
+    settle();
+    if (fans.length) {
+      admitFanFamilies(draft, fans);
+      settle();
     }
   });
   // A straight link inside one frame is one chord between two faces, never a leaf of a fan tree.

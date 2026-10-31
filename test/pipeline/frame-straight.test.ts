@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel, PathSegment } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { allocateGapRuns } from '../../src/internal.js';
-import { chordsHold } from '../../src/layout/frame-paths.js';
+import { blockedChordsAt, chordsHold } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -46,6 +46,21 @@ describe('a held chord is a wall from stage 7f on', () => {
     // A move that leaves the chord clear is not refused.
     expect(chordsHold(structuredClone(model), [{ group: { nodes: [other.id], bounds: box }, bounds: { ...box, x: box.x + 1 } }])).toBe(true);
   });
+
+  // Snack-theme ticket 159. The title of `beta` widens its cell in 7f and pushes `gamma` right, after the freeze. The centring replay that follows
+  // aligned one port of `srv` and grew the body, which put the frame of `beta` 9.9 px from the held chord link-6 (the margin is 10.75 px), and stood
+  // `lab` off the mean of its feeds. The step read the frozen chords (`blockedChordsAt`) and was declined: no frame stood on a held chord.
+  // The premise holds with card nodes only (`layout.nodeContent: card`). Ticket 164 (card default) owns the fix: the centring guard threw on the
+  // stacked a-corridor-moves-after-the-grid-settles ("Linked groups do not share the grid"), so it moved to
+  // `.scratch/snack-theme/164-centring-blocked-chords.patch`. Until 164 lands it, this test pins the defect as it stands: link-6 is blocked. When it
+  // fails because the chord is clear, put back the assertions of the patch (no blocked chord, no STRAIGHT_LINK_BLOCKED).
+  it('ticket 164: a centring step after the freeze still stands the frame of beta on the held chord link-6 (a-member-title-widens-a-beside-row, card nodes)', async () => {
+    const yaml = readFileSync(new URL('../../goldens/synthetic/a-member-title-widens-a-beside-row.yaml', import.meta.url), 'utf8').replace('portograph: 2\n', 'portograph: 2\nlayout: { nodeContent: card }\n');
+    expect(yaml).toContain('nodeContent: card');
+    const model = await run(yaml);
+    expect(model.frozenChords).toContain('link-6');
+    expect(blockedChordsAt(model)).toEqual(['link-6']);
+  });
 });
 
 describe('a stem blocks a chord only while its link stays orthogonal (ticket 88)', () => {
@@ -74,7 +89,11 @@ describe('a link inside one frame is a straight segment', () => {
 
   it('takes the straight technique for a clear chord, vertical or diagonal, and keeps the blocked one orthogonal', async () => {
     // The feed order is off here (ticket 25): the subject is Middle standing on the West-East chord, which the feed order takes away.
-    const model = await run(source.replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n'));
+    // With the feed order off, ELK's order stands, and it depends on the widths of the nodes. Verdana metrics (snack-theme ticket 157): with the label "East" ELK put East before
+    // Middle, so Middle no longer stood on the West-East chord and that link went straight. The label "East switch" gives ELK the order of the Arial run again. The order is
+    // asserted, so that a later change of ELK's order fails here with its cause and not on the technique of the link.
+    const model = await run(source.replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n').replace('label: East,', 'label: East switch,'));
+    expect(model.groups['site#1']!.rowOrder).toEqual(['west', 'mid', 'east']);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     const straight = [['gw1', 'west'], ['gw1', 'mid'], ['gw2', 'mid'], ['gw3', 'east'], ['mid', 'access']]
       .map(([from, to]) => linkOf(model, from!, to!));
@@ -83,7 +102,7 @@ describe('a link inside one frame is a straight segment', () => {
       expect(link.path!.segments).toHaveLength(1);
       expect(link.path!.fixed).toBe(true);
     }
-    // Two are diagonal and two are vertical: the rule does not need the faces to line up.
+    // Three are diagonal and two are vertical: the rule does not need the faces to line up.
     expect(straight.filter(link => straightLine(link.path!.segments[0]!))).toHaveLength(3);
     expect(straight.filter(link => !straightLine(link.path!.segments[0]!))).toHaveLength(2);
     // The chord runs from one port face to the other, not from anchor to anchor.

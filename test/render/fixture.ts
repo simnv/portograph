@@ -117,6 +117,6 @@ export function scene(input: Scene): LayoutModel {
 
 export const pillLabel = (node: string, name: string, ordinal: number, bounds: Rect, rotation: -90 | 0): LayoutLabel => ({
   id: `pill:${JSON.stringify({ node, name, ordinal })}`, owner: { kind: 'node', id: node }, layer: 'routed',
-  role: 'pill', port: { node, name, ordinal }, text: name, fontFamily: 'Arial, Helvetica, sans-serif',
+  role: 'pill', port: { node, name, ordinal }, text: name, fontFamily: 'Verdana',
   fontSize: 8, fontWeight: 400, lineHeight: 10, lines: [name], textRotation: rotation, bounds: { ...bounds },
 });

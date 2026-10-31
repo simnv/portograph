@@ -17,7 +17,7 @@ import { heldLock } from './test-runner-lib.mjs';
 const require = createRequire(import.meta.url);
 
 /** The columns of a corpus TSV, in order; `corpus.mjs` writes them and `gate-compare.mjs` reads them. */
-export const COLUMNS = ['file', 'Q', 'X', 'W', 'gates', 'warn', 'routed', 'fb', 'edge', 'ob', 'bends', 'side', 'removed', 'labelBorder', 'track', 'hash'];
+export const COLUMNS = ['file', 'Q', 'X', 'Xf', 'W', 'gates', 'warn', 'routed', 'fb', 'edge', 'ob', 'bends', 'side', 'removed', 'labelBorder', 'track', 'hash'];
 
 /** The repository root, as a path. */
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));

@@ -1,5 +1,5 @@
 import type { Frame, LayoutLink, LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 
 /** A rejection box kept by its far edges; see `gates`. `measurable` is false beyond `REJECT_LIMIT`. */
@@ -18,10 +18,11 @@ interface Span { x: number; y: number; right: number; bottom: number; measurable
 const REJECT_LIMIT = 2 ** 26;
 const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
-import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, groupBoxes, groupConsumers, incident, junctionFan, labelArea, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, fanCrossings, groupBoxes, groupConsumers, incident, junctionFan, labelArea, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
 import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../geometry/oriented.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
+import { diagonalMayCross, linkFreeMargin } from '../layout/diagonal-text.js';
 import { portId } from '../layout/skeleton-graph.js';
 import { faceKey, plannedTurns, portTurn, turnOrderViolated, turnRanker, type TurnPort } from '../layout/turn-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
@@ -305,10 +306,14 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   // segment running along any group edge closer than the edge margin.
   // A frame stands in for its cells here: a cell is never an obstacle (ranked-groups spec, section 2).
   const obstacleBoxes = groupBoxes(model).map(({ id, bounds }) => ({ id, bounds, consumers: new Set(groupConsumers(model, id)) }));
+  const fanBoxes = fanCrossings(model);
   for (const s of routed) {
     for (const group of obstacleBoxes) {
       const box = group.bounds;
-      if (!group.consumers.has(s.link.id) && segmentRect(s.segment, box)) fail('G2', 'through-group', [s.link.id, group.id], 'Routed segment passes through a foreign group');
+      // A straight fan member crosses the boxes the freeze recorded for it, on its one chord only (architecture-2 ticket 40, R5: the record and
+      // the geometry, never a diagnostic); every other box stays a wall to it.
+      const excused = s.link.path?.segments.length === 1 && s.segment.straight === true && fanBoxes.get(s.link.id)?.has(group.id) === true;
+      if (!group.consumers.has(s.link.id) && segmentRect(s.segment, box) && !excused) fail('G2', 'through-group', [s.link.id, group.id], 'Routed segment passes through a foreign group');
       // Inside its own box a link turns in the group's padding; on or outside an edge it keeps the margin.
       const along = (edge: number, low: number, high: number, at: number, from: number, to: number, inner: [number, number]): boolean =>
         !(at > inner[0] + EPS && at < inner[1] - EPS)
@@ -350,7 +355,7 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       }
     }
     // A group title owns a link-free margin beyond its stroke-aware edge.
-    const margin = label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;
+    const margin = linkFreeMargin(label);
     for (let k = 0; k < routed.length; k++) {
       const s = routed[k]!;
       if (apart(labelSpan, segmentSpans[k]!, s.stroke / 2 + margin + 1)) continue;
@@ -362,6 +367,8 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       const own = label.onLine === true && label.support?.kind === 'link-segment' && label.owner.kind === 'link' && label.owner.id === label.support.link
         && label.support.link === s.link.id && s.index >= label.support.segment && s.index <= (label.support.through ?? label.support.segment);
       if (own && !horizontal(s.segment) && !vertical(s.segment)) continue;
+      // A diagonal may cross a group title or a link label (ticket 162, ADR-0023): no hit, the halo keeps the text readable.
+      if (diagonalMayCross(s.segment, label)) continue;
       // Text drawn across a routed segment is a hit whatever it claims to support.
       if (areaSegment(s.segment, area)) { hit(s.link.id); continue; }
       // Only the clearance zone of the one segment a link label was measured against is exempt.

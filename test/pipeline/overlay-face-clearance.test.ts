@@ -80,10 +80,10 @@ describe('an overlay line keeps the overlay port clearance from every face it ru
   }
 
   it('guard, passes on main too: the fixture still holds the case it tests, a foreign pill tip level with the two ends', async () => {
-    // `east.up-1` is a pill of a routed link between the two overlay ends, its tip level with theirs: the case the user called out.
+    // `east.peer-1` is a pill of a routed link between the two overlay ends, its tip level with theirs: the case the user called out.
     const model = await run(fixture('an-overlay-line-keeps-its-clearance-from-the-faces-it-runs-along'));
-    const peer = (id: string) => model.nodes[id]!.ports.find(port => port.ref.name === 'peer')!.pill!.bounds;
-    const foreign = model.nodes['east']!.ports.find(port => port.ref.name === 'up-1')!.pill!.bounds;
+    const peer = (id: string) => model.nodes[id]!.ports.find(port => port.ref.name === 'peer-2')!.pill!.bounds;
+    const foreign = model.nodes['east']!.ports.find(port => port.ref.name === 'peer-1')!.pill!.bounds;
     const [west, east] = [peer('west'), peer('east')];
     expect(foreign.y).toBeCloseTo(west.y, 9);
     expect(foreign.x).toBeGreaterThan(west.x + west.width);

@@ -22,11 +22,14 @@ export * from './score/index.js';
 export { CANVAS_MARGIN, DEFAULT_STROKE_WIDTHS } from './theme/geometry.js';
 export { LEGEND_GEOMETRY } from './theme/legend.js';
 export { LEGEND_DEFAULT_CLASS, NETWORK_LINK_CLASSES, NETWORK_NODE_CLASSES, NETWORK_PORT_LOOPBACK, NETWORK_PORT_ROLES,
-  NETWORK_PORT_STATUS, NETWORK_THEME, classDisplayLabel, classOrder, linkClassStyle, nodeClassPaint, nodeClassStyle,
-  portRolePaint, portRoleStyle } from './profiles/network/theme.js';
+  NETWORK_PORT_STATUS, NETWORK_THEME, classDisplayLabel, classOrder, nodeClassPaint, nodeClassStyle,
+  portRolePaint } from './profiles/network/theme.js';
 export type { FullRamp, HueRamp, LinkClassStyle, Modal, NodeClassStyle, PillPaint, PortRoleStyle, PortStatusStyle, Ramp, ThemeMode,
   ThemePaint }
   from './profiles/network/theme.js';
+export { DEFAULT_THEME_ID, THEMES, THEME_IDS, findTheme, legendKeyRadius, themeById, themeLinkClass, themePortRole, themeWashFill }
+  from './profiles/network/themes.js';
+export type { ClassPaint, Theme } from './profiles/network/themes.js';
 export { render, linkVisible, OVERLAY_ENDPOINT_RADIUS } from './render/index.js';
 export type { RenderOptions } from './render/index.js';
 export { drawio } from './render/drawio.js';

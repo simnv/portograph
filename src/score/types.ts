@@ -4,7 +4,8 @@ export type GateId = 'G1' | 'G2' | 'G3' | 'G4' | 'G5' | 'G6' | 'G7' | 'G8' | 'G9
 export interface GateViolation { code: string; elements: string[]; message: string }
 export interface GateResult { passed: boolean; severity: 'error' | 'warning'; violations: GateViolation[] }
 export interface ScoreMetrics {
-  crossings: { value: number; count: number; routedLinks: number; ratio: number };
+  /** `count` is every routed crossing; `faint` (present only with a fan family) those of two members of one family, which `value` weighs 0.09 each. */
+  crossings: { value: number; count: number; faint?: number; routedLinks: number; ratio: number };
   bends: { value: number; mean: number; max: number; total: number };
   continuity: { value: number; eligible: number; alternating: number };
   compactness: { value: number; global: number; groups: Record<string, number> };

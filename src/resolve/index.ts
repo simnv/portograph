@@ -7,7 +7,9 @@ import { enclosedBundle } from '../layout/grid.js';
 import { stackChains } from '../layout/grid-chains.js';
 import { expandRankedGroups } from '../layout/rank-cells.js';
 import { detectMeshBuses } from './mesh-bus.js';
+import { detectFanFamilies } from './fan-family.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { findTheme, unknownThemeMessage } from '../profiles/network/themes.js';
 
 export interface ResolveOptions {
   /** Pass parseWithDiagnostics().diagnostics here at the orchestrator boundary. */
@@ -355,6 +357,7 @@ export function resolveBeforeExpansion(input: NormalisedDocument, options: Resol
   const model = createLayoutModel(input);
   model.diagnostics = JSON.parse(JSON.stringify(options.diagnostics ?? []));
   if (input.profile !== 'network') report(model, 'UNSUPPORTED_PROFILE', `Profile ${input.profile} is not supported; use network`, []);
+  if (findTheme(input.theme) === undefined) report(model, 'UNKNOWN_THEME', unknownThemeMessage(input.theme!), []);
   stopOnErrors(model);
   const groupOrder = new Map(orderedGroupIds(model.document).map((id, index) => [id, index]));
   for (const id of groupOrder.keys()) {
@@ -391,5 +394,7 @@ export function resolve(input: NormalisedDocument, options: ResolveOptions = {})
   // the final model is searched for mesh buses: rows exist only once the groups are cells.
   const final = expanded === undefined ? model : resolveBeforeExpansion(expanded, options);
   detectMeshBuses(final, options.declinedTrunks);
+  // The fan families read the resolved links and the frames, so they are found on the final model too (architecture-2 ticket 40).
+  detectFanFamilies(final);
   return final;
 }

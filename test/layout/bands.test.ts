@@ -21,6 +21,7 @@ import { score } from '../../src/score/index.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../../src/text/index.js';
 import { orderedGroupIds } from '../../src/model/model.js';
 import { generateScaleYaml } from '../../scripts/scale-input.mjs';
+import { titleRoom } from '../../src/layout/title-room.js';
 import { placed } from './phase-two-fixture.js';
 
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
@@ -125,6 +126,9 @@ describe('group label bands', () => {
         lines: measured.lines, textRotation: 0 });
       expect(label.bounds!.y).toBe(band.bounds.y + 4);
       expect(label.bounds!.x).toBeGreaterThanOrEqual(group.bounds!.x + 8);
+      // Every box holds its title and both insets before 7a reserves its lanes (`ownTitleFloor`, snack-theme ticket 157): under Verdana the
+      // `route-reflector` title (150.7 px + 2 x 8 px) is wider than its two nodes and their padding, and no widening may be refused.
+      expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE' && item.owners?.some(owner => 'id' in owner && owner.id === id)), id).toEqual([]);
       expect(right(label.bounds!)).toBeLessThanOrEqual(right(group.bounds!) - 8 + 1e-6);
       // The nearest node on the band's side sits exactly one clearance away from it.
       const gaps = group.nodes.map(nodeId => side === 'top' ? model.nodes[nodeId]!.bounds!.y - bottom(band.bounds)
@@ -135,9 +139,9 @@ describe('group label bands', () => {
     // Backbone is fed from above, so its title moves to the bottom edge, where no pill needs room.
     expect(Object.fromEntries(model.labelBands.map(band => [band.group, band.side])))
       .toEqual({ providers: 'top', datacenter: 'top', 'tbr-left': 'top', 'tbr-right': 'top', 'route-reflector': 'top', backbone: 'bottom' });
-    // Datacenter keeps a top title with named top pills, so it reserves space beyond the complete pill.
+    // Datacenter keeps a top title with named top pills, so it reserves space beyond the complete 9 px Verdana pill.
     expect(Object.fromEntries(model.labelBands.map(band => [band.group, band.clearance])))
-      .toEqual({ providers: GROUP_PADDING, datacenter: GROUP_PADDING + 15, 'tbr-left': GROUP_PADDING, 'tbr-right': GROUP_PADDING,
+      .toEqual({ providers: GROUP_PADDING, datacenter: GROUP_PADDING + 16, 'tbr-left': GROUP_PADDING, 'tbr-right': GROUP_PADDING,
         'route-reflector': GROUP_PADDING, backbone: GROUP_PADDING });
 
     const produced = { ...model, links: model.links.filter(link => link.path !== undefined) };
@@ -233,7 +237,7 @@ links:
 
   it('treats the reserved shared runs of a pathless remainder as label obstacles', async () => {
     const yaml = `portograph: 2
-groups: {ga: {tier: 1, label: A moderately long label for the shared group}, gb: {tier: 0}, gc: {tier: 2}}
+groups: {ga: {tier: 1, label: A long label for the shared group}, gb: {tier: 0}, gc: {tier: 2}}
 nodes:
   a: {group: ga, size: {width: 500, height: 50}, ports: [{name: p, side: top}, {name: q, side: bottom}, {name: r, side: bottom}, {name: s, side: bottom}]}
   b: {group: gb, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}
@@ -351,14 +355,16 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     const model = run(before);
 
     // Every blocked group is fed from above, so its title takes the bottom edge (ADR-0011): the
-    // long label meets no link there, the initial reservation widens each group to the label in one
-    // pass, and no collision-growth replay spends the shared budget. The tied-title collision path is
+    // long label meets no link there. Sizing already gave each box the title room (`ownTitleFloor`, snack-theme ticket 157), so the
+    // initial reservation finds it, and no collision-growth replay spends the shared budget. The tied-title collision path is
     // covered by the widening test above; budget exhaustion by the lane-blocked test below.
     for (const i of pairs) {
       const group = model.groups[`blocked-${i}`]!, label = model.labels.find(item => item.id === `label:group:blocked-${i}`)!;
       expect(model.labelBands.find(item => item.group === `blocked-${i}`)!.side).toBe('bottom');
-      expect(group.bounds!.width).toBeCloseTo(label.bounds!.width + 16, 9);
-      expect(label.bounds!.x).toBe(group.bounds!.x + 8);
+      expect(before.groups[`blocked-${i}`]!.bounds!.width).toBeCloseTo(titleRoom(label.text!), 9);
+      expect(group.bounds!.width).toBeCloseTo(titleRoom(label.text!), 9);
+      // The box is the title room, one clearance step beyond each inset, so the label takes the centre: 8 px and one step from the left edge.
+      expect(label.bounds!.x).toBeCloseTo(group.bounds!.x + (group.bounds!.width - label.bounds!.width) / 2, 9);
       expect(groupLabelObstacles(model).some(item => overlaps(label.bounds!, item.bounds))).toBe(false);
     }
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toEqual([]);
@@ -434,7 +440,7 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     const band = model.labelBands.find(item => item.group === 'mid')!;
     // `mid` is fed from above, so its band is the bottom edge with the plain bottom padding below m.
     expect(band.side).toBe('bottom');
-    expect(band.bounds).toEqual({ x: mid.bounds!.x, y: bottom(mid.bounds!) - 22, width: mid.bounds!.width, height: 22 });
+    expect(band.bounds).toEqual({ x: mid.bounds!.x, y: bottom(mid.bounds!) - 23, width: mid.bounds!.width, height: 23 }); // Verdana metrics (snack-theme ticket 157): 22 with Arial (the 15 px line height plus 8).
     expect(band.clearance).toBe(GROUP_PADDING);
     expect(bottom(model.nodes.m!.bounds!)).toBe(band.bounds.y - GROUP_PADDING);
     const member = model.links.find(link => link.id === 'link-1')!;
@@ -513,22 +519,26 @@ nodes:
 links: [[a.p, z.p]]`;
     // A checked rows transaction places the three groups; every later stage runs normally.
     const rowed = withLayoutMutation(await placed(yaml), 'rows', draft => {
-      // With 20 px padding a 50 px node makes a 90 px group, so an eight-W label (90.609375 px) needs a
-      // 16.609375 px widening. Groups keep the 60 px band gap, and the corridor sits where exactly one
-      // such widening fits.
-      for (const [id, x] of Object.entries({ top: 413.5, first: 0, second: 150, third: 300, low: 413.5 })) {
+      // With 20 px padding a 50 px node makes a 90 px group, so an eight-W label (108.328125 px in Verdana; it was 90.609375 px
+      // in Arial) needs a 34.328125 px widening. Groups keep the 60 px band gap, and the corridor sits where exactly one
+      // such widening fits: top and low stand at 447.5 (they stood at 413.5 for the 16.609375 px widening of Arial).
+      for (const [id, x] of Object.entries({ top: 447.5, first: 0, second: 150, third: 300, low: 447.5 })) {
         moveGroup(draft, draft.groups[id]!, x - draft.groups[id]!.bounds!.x, 0);
       }
+      // Sizing holds each title's width from stage 5 on (`ownTitleFloor`, snack-theme ticket 157), so a free group no longer reaches 7f
+      // narrower than its title. The stage input is forged with the 90 px boxes of the nodes and padding alone, the box a model sized
+      // before that rule carries, so the 7f producer still has two reservations to make in turn.
+      for (const id of ['first', 'second']) draft.groups[id]!.bounds!.width = 90;
     });
     const before = bundles(bars(centre(flanks(lanes(rowed)))));
 
     const lane = before.lanes.find(item => item.id === 'lane:"link-1":1')!;
     const pill = before.nodes.t!.ports[0]!.pill!;
     expect(lane.side).toBe('right');
-    expect([pill.bounds.x, right(pill.bounds)]).toEqual([338.5, 401.5]);
-    // The headroom allows one 16.609375 px reservation, but not two.
-    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeGreaterThan(16.609375);
-    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeLessThan(33.21875);
+    expect([pill.bounds.x, right(pill.bounds)]).toEqual([338.10009765625, 412.10009765625]);
+    // The headroom allows one 34.328125 px reservation, but not two.
+    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeGreaterThan(34.328125);
+    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeLessThan(68.65625);
 
     const model = run(before);
     expect(model.groups.first!.bounds!.width).toBeGreaterThan(before.groups.first!.bounds!.width);
@@ -848,13 +858,13 @@ it('stress ticket 19: a grown group label lands inside the inset the growth aske
 
 it('stress ticket 18: a corridor that would cross a labelled row link\'s split does not move', async () => {
   // The corridor `link-16` owns across tier 2 stands at x 231, beyond `link-17`'s split. Label room wins over the lane (architecture-2
-  // ticket 23): 7f inserts the row's room at the split and the corridor moves out with it, by the same 197.61279296875 px, so it keeps
+  // ticket 23): 7f inserts the row's room at the split and the corridor moves out with it, by the same 197.61279296875 px with Arial (a different distance under Verdana), so it keeps
   // its distance to what it serves (R2). 7f's last step would take that corridor to its child's port, on the far side of the split, and
   // the publication replay would reserve room the published model does not have; the corridors are fixed by then, so that move is
   // still refused.
   const model = run(await throughBundles(corridorCrossesSplit));
   expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(false);
-  expect(model.lanes.map(lane => lane.x)).toEqual([95.5, 428.61279296875]);
+  expect(model.lanes.map(lane => lane.x)).toEqual([98.22314453125, 458.58203125]); // Verdana metrics (snack-theme ticket 157): [95.5, 428.61279296875] with Arial.
   // The claim itself: the replay asks for nothing more.
   const shortfalls: LinkLabelShortfall[] = [];
   expect(reserveLinkLabelRoom(copy(model), shortfalls)).toBe(false);

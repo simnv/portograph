@@ -296,7 +296,7 @@ describe('levelling and straight eligibility', () => {
     const after = endpoints(later, 'link-1');
     expect(later.links[0]!.path).toEqual({ owner: { kind: 'link', id: 'link-1' }, layer: 'routed', fixed: true,
       segments: [{ from: after.from.anchor, to: after.to.anchor, owner: { kind: 'link', id: 'link-1' } }] });
-    expect(after.from.anchor!.y - from.anchor!.y).toBe(22);
+    expect(after.from.anchor!.y - from.anchor!.y).toBe(23); // Verdana metrics (snack-theme ticket 157): 22 with Arial.
     expect(restoreLayoutModel(serializeLayoutModel(later)).links[0]!.path).toEqual(later.links[0]!.path);
   });
   it('orients a pinned path from the authored source even when it runs right to left', async () => {

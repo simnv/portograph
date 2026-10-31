@@ -228,7 +228,9 @@ inside the plan of `pullTier` (steps with an authority), spacing by `runSpacing`
 "a straight overlay link would be bent", each where it applies (decisions-log Q102): the **close-up reads the count** (the number of straight overlay
 links after the move is not below the number before, ADR-0019's wording), because a block move swaps chords and a per-link veto lets one chord hold
 the cantons apart; **`pullTier` reads each link** (a link that was straight and is not is a refusal) for its own small moves. The anchor step keeps
-its centre: the tiers above it stand over the routed feeds of the cantons, so a block moved to the mean of its overlay partners is chased by them.
+its centre: the tiers above it stand over the routed feeds of the cantons, so a block moved to the mean of its overlay partners is chased by them. The
+centre is clamped to the flank walls of the run's units (`flankRoom`, the wall `pullTier` keeps): a close-up never moves a unit into the band gap of a
+flank beside it, and a run that fits no wall is held (ticket 157).
 
 ## Section 3 — Frames
 

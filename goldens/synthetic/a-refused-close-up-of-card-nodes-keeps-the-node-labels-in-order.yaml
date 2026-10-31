@@ -1,0 +1,150 @@
+# Expected: a close-up that is tried and put back leaves the layout whole (ranked-groups ticket 65, label geometry), with card nodes.
+# Snack-theme ticket 159 re-forged a-refused-close-up-keeps-the-node-labels-in-order.yaml for the card content of the network profile:
+# with card nodes (11 px titles, 32 px of tile and gap) no close-up of that input is refused any more, so it no longer exercises the
+# undo. This copy has the same groups, nodes and links; only the client and server titles are short ("Client A3.1" is "CA3.1",
+# "Server A1.1" is "SA1.1"). Measured with the orthogonal links of the test: the close-up is refused 29 times of 38 and the run publishes
+# with no error and no centring finding. Expected: the layout is produced, the close-up is refused at least once in the run (read on the
+# verdict of `closeUp`), the node labels stand in node order and a second pass moves nothing.
+# Test-only input owned by snack-theme ticket 159; test/pipeline/canton-close-up.test.ts reads the layout.
+# Card nodes (`layout.nodeContent: card`, snack-theme ticket 159): the premise was forged on the card geometry; a stacked document is narrower.
+portograph: 2
+layout: { nodeContent: card }
+groups:
+  a: { label: Canton A }
+  b: { label: Canton B }
+  c: { label: Canton C }
+  top-1: { tier: 0, label: Top location 1 }
+  top-2: { tier: 0, label: Top location 2 }
+  top-3: { tier: 0, label: Top location 3 }
+  mpls: { tier: 1, label: MPLS }
+  loc-a1: { tier: 2, canton: a, label: Location A1 }
+  zone-a1: { parent: loc-a1, label: Zone A1 }
+  loc-a2: { tier: 2, canton: a, label: Location A2 }
+  zone-a2: { parent: loc-a2, label: Zone A2 }
+  loc-b: { tier: 2, canton: b, label: Location B }
+  loc-c: { tier: 2, canton: c, label: Location C }
+  cl-a3: { tier: 3, canton: a, label: Clients A3 }
+  cl-a4: { tier: 4, canton: a, label: Clients A4 }
+  cl-b3: { tier: 3, canton: b, label: Clients B3 }
+  cl-b4: { tier: 4, canton: b, label: Clients B4 }
+  cl-c3: { tier: 3, canton: c, label: Clients C3 }
+  cl-c4: { tier: 4, canton: c, label: Clients C4 }
+nodes:
+  t1-1: { group: top-1, class: router, label: Top 1.1 }
+  t1-2: { group: top-1, class: router, label: Top 1.2 }
+  t1-3: { group: top-1, class: server, label: Top 1.3 }
+  t1-4: { group: top-1, class: server, label: Top 1.4 }
+  t2-1: { group: top-2, class: router, label: Top 2.1 }
+  t2-2: { group: top-2, class: router, label: Top 2.2 }
+  t2-3: { group: top-2, class: server, label: Top 2.3 }
+  t3-1: { group: top-3, class: router, label: Top 3.1 }
+  t3-2: { group: top-3, class: router, label: Top 3.2 }
+  t3-3: { group: top-3, class: server, label: Top 3.3 }
+  m1: { group: mpls, class: provider, label: MPLS 1 }
+  m2: { group: mpls, class: provider, label: MPLS 2 }
+  m3: { group: mpls, class: provider, label: MPLS 3 }
+  loc-a1-gw: { group: loc-a1, class: router, label: Gateway A1 }
+  loc-a1-sw: { group: loc-a1, class: switch, label: Switch A1 }
+  loc-a1-ac1: { group: loc-a1, class: switch, label: Access A1.1 }
+  loc-a1-ac2: { group: loc-a1, class: switch, label: Access A1.2 }
+  zone-a1-1: { group: zone-a1, class: server, label: Zone A1 one }
+  zone-a1-2: { group: zone-a1, class: server, label: Zone A1 two }
+  zone-a1-3: { group: zone-a1, class: server, label: Zone A1 three }
+  zone-a1-4: { group: zone-a1, class: server, label: Zone A1 four }
+  loc-a1-srv1: { group: loc-a1, class: server, label: SA1.1 }
+  loc-a1-srv2: { group: loc-a1, class: server, label: SA1.2 }
+  loc-a2-gw: { group: loc-a2, class: router, label: Gateway A2 }
+  loc-a2-sw: { group: loc-a2, class: switch, label: Switch A2 }
+  loc-a2-ac1: { group: loc-a2, class: switch, label: Access A2.1 }
+  loc-a2-ac2: { group: loc-a2, class: switch, label: Access A2.2 }
+  zone-a2-1: { group: zone-a2, class: server, label: Zone A2 one }
+  zone-a2-2: { group: zone-a2, class: server, label: Zone A2 two }
+  zone-a2-3: { group: zone-a2, class: server, label: Zone A2 three }
+  zone-a2-4: { group: zone-a2, class: server, label: Zone A2 four }
+  loc-a2-srv1: { group: loc-a2, class: server, label: SA2.1 }
+  loc-a2-srv2: { group: loc-a2, class: server, label: SA2.2 }
+  loc-b-gw: { group: loc-b, class: router, label: Gateway B }
+  loc-b-sw: { group: loc-b, class: switch, label: Switch B }
+  loc-b-ac1: { group: loc-b, class: switch, label: Access B.1 }
+  loc-b-ac2: { group: loc-b, class: switch, label: Access B.2 }
+  loc-c-gw: { group: loc-c, class: router, label: Gateway C }
+  loc-c-sw: { group: loc-c, class: switch, label: Switch C }
+  loc-c-ac1: { group: loc-c, class: switch, label: Access C.1 }
+  loc-c-ac2: { group: loc-c, class: switch, label: Access C.2 }
+  cl-a3-1: { group: cl-a3, class: server, label: CA3.1 }
+  cl-a3-2: { group: cl-a3, class: server, label: CA3.2 }
+  cl-a3-3: { group: cl-a3, class: server, label: CA3.3 }
+  cl-a4-1: { group: cl-a4, class: server, label: CA4.1 }
+  cl-a4-2: { group: cl-a4, class: server, label: CA4.2 }
+  cl-b3-1: { group: cl-b3, class: server, label: CB3.1 }
+  cl-b3-2: { group: cl-b3, class: server, label: CB3.2 }
+  cl-b4-1: { group: cl-b4, class: server, label: CB4.1 }
+  cl-c3-1: { group: cl-c3, class: server, label: CC3.1 }
+  cl-c3-2: { group: cl-c3, class: server, label: CC3.2 }
+  cl-c3-3: { group: cl-c3, class: server, label: CC3.3 }
+  cl-c4-1: { group: cl-c4, class: server, label: CC4.1 }
+links:
+  - [t1-1, m1]
+  - [t2-1, m2]
+  - [t3-1, m3]
+  - [m1, loc-a1-gw]
+  - [m2, loc-a2-gw]
+  - [m3, loc-b-gw]
+  - [m1, loc-c-gw]
+  - [loc-a1-gw, loc-a1-sw]
+  - [loc-a2-gw, loc-a2-sw]
+  - [loc-b-gw, loc-b-sw]
+  - [loc-c-gw, loc-c-sw]
+  - [loc-a1-gw, loc-a1-ac1]
+  - [loc-a1-gw, loc-a1-ac2]
+  - [loc-a2-gw, loc-a2-ac1]
+  - [loc-a2-gw, loc-a2-ac2]
+  - [loc-b-gw, loc-b-ac1]
+  - [loc-b-gw, loc-b-ac2]
+  - [loc-c-gw, loc-c-ac1]
+  - [loc-c-gw, loc-c-ac2]
+  - { from: t1-2, to: loc-a1-gw, class: sync }
+  - { from: t1-2, to: loc-a2-gw, class: sync }
+  - { from: t1-2, to: loc-b-gw, class: sync }
+  - { from: t1-2, to: loc-c-gw, class: sync }
+  - { from: t2-2, to: loc-a1-gw, class: sync }
+  - { from: t2-2, to: loc-a2-gw, class: sync }
+  - { from: t2-2, to: loc-b-gw, class: sync }
+  - { from: t2-2, to: loc-c-gw, class: sync }
+  - { from: t3-2, to: loc-a1-gw, class: sync }
+  - { from: t3-2, to: loc-a2-gw, class: sync }
+  - { from: t3-2, to: loc-b-gw, class: sync }
+  - { from: t3-2, to: loc-c-gw, class: sync }
+  - { from: loc-a1-sw, to: zone-a1-1, route: orthogonal }
+  - { from: loc-a1-sw, to: zone-a1-2, route: orthogonal }
+  - [zone-a1-1, zone-a1-3]
+  - [zone-a1-2, zone-a1-4]
+  - [loc-a1-ac1, loc-a1-srv1]
+  - [loc-a1-ac2, loc-a1-srv2]
+  - { from: loc-a2-sw, to: zone-a2-1, route: orthogonal }
+  - { from: loc-a2-sw, to: zone-a2-2, route: orthogonal }
+  - [zone-a2-1, zone-a2-3]
+  - [zone-a2-2, zone-a2-4]
+  - [loc-a2-ac1, loc-a2-srv1]
+  - [loc-a2-ac2, loc-a2-srv2]
+  - { from: loc-a1-sw, to: cl-a3-1, class: flow }
+  - { from: loc-a2-sw, to: cl-a3-2, class: flow }
+  - { from: loc-a1-sw, to: cl-a3-3, class: flow }
+  - { from: loc-a1-sw, to: cl-a4-1, class: flow }
+  - { from: loc-a2-sw, to: cl-a4-2, class: flow }
+  - { from: loc-b-sw, to: cl-b3-1, class: flow }
+  - { from: loc-b-sw, to: cl-b3-2, class: flow }
+  - { from: loc-b-sw, to: cl-b4-1, class: flow }
+  - { from: loc-c-sw, to: cl-c3-1, class: flow }
+  - { from: loc-c-sw, to: cl-c3-2, class: flow }
+  - { from: loc-c-sw, to: cl-c3-3, class: flow }
+  - { from: loc-c-sw, to: cl-c4-1, class: flow }
+  - { from: loc-a1-sw, to: cl-b3-1, class: flow }
+  - { from: loc-b-sw, to: cl-c3-1, class: flow }
+  - { from: loc-c-sw, to: cl-a4-1, class: flow }
+  - { from: loc-a2-sw, to: cl-c4-1, class: flow }
+  - { from: t1-2, to: cl-a3-2, class: sync }
+  - { from: t1-1, to: loc-c-ac2, class: sync }
+  - { from: t1-1, to: loc-c-sw, class: sync }
+  - { from: t3-1, to: cl-b4-1, class: sync }
+  - { from: t1-1, to: cl-c3-2, class: sync }

@@ -1,8 +1,12 @@
 import { CORNER_RADII } from '../theme/geometry.js';
 import { FONT_METRICS } from './font-metrics.js';
 
-/** Renderers must use this font stack, with kerning and discretionary ligatures disabled. */
-export const FONT_FAMILY = 'Arial, Helvetica, sans-serif';
+/**
+ * The one font every renderer writes, with kerning and discretionary ligatures disabled. It is Verdana and
+ * nothing else: a fallback stack would measure differently from the checked-in advances, so the layout
+ * could not promise that text fits its box. The CLI warns when Verdana is not installed.
+ */
+export const FONT_FAMILY = 'Verdana';
 export type FontWeight = 400 | 700;
 
 export interface TextStyle {
@@ -80,7 +84,7 @@ export interface PortPillMeasurement {
   text: TextMeasurement;
 }
 
-/** Unrotated dimensions. Port labels use 9px Arial, 3px horizontal padding and minimum 24×10. */
+/** Unrotated dimensions. Port labels use 9px Verdana, 3px horizontal padding and minimum 24×10. */
 export function measurePortPill(label: string, style: TextStyle = {}): PortPillMeasurement {
   const text = measureText(label, { ...style, fontSize: style.fontSize ?? 9 });
   return { width: Math.max(24, Math.ceil(text.width + 6)), height: Math.max(10, text.height), radius: CORNER_RADII.pill, text };

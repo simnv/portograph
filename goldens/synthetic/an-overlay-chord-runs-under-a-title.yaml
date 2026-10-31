@@ -1,7 +1,8 @@
 # Expected: an overlay chord may lie under a group title, and the title is neither a blocker nor a mover (canton-groups ticket 60).
 # The two flow links leave the canton `west` through its bottom title band, and their straight segments pass under the
-# titles of `site`, `clients`, `west` and `edge`. The chord stays one straight segment from face to face, and the renderer's
-# overlay mask (pipeline stage 11) cuts the line out of every group title, so the text stays readable.
+# titles of `site`, `clients`, `west` and `edge`. The chord stays one straight segment from face to face, and every group
+# title carries a halo in the colour behind it (pipeline stage 11, ticket 162), so the line breaks under its letters and the
+# text stays readable. The overlay mask no longer cuts a title out.
 # Test-only input owned by canton-groups ticket 60; test/pipeline/overlay-under-title.test.ts reads it.
 portograph: 2
 groups:

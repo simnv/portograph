@@ -20,7 +20,7 @@ const scorePath = join(temp, 'golden.score.json');
 async function command(args: string[], env: Record<string, string> = {}) {
   try {
     const output = await run(process.execPath, [cli, ...args], { cwd: temp,
-      env: { ...process.env, ...env }, maxBuffer: 64 * 1024 * 1024, timeout: 40000 });
+      env: { ...process.env, PORTOGRAPH_FONT_DIRS: join(temp, 'fonts'), ...env }, maxBuffer: 64 * 1024 * 1024, timeout: 40000 });
     return { code: 0, ...output };
   } catch (error) {
     const failure = error as Error & { code: number; stdout: string; stderr: string };
@@ -29,6 +29,9 @@ async function command(args: string[], env: Record<string, string> = {}) {
 }
 
 beforeAll(async () => {
+  // A stand-in Verdana file, so the output of these tests does not depend on the fonts of the machine.
+  mkdirSync(join(temp, 'fonts'));
+  writeFileSync(join(temp, 'fonts', 'Verdana.ttf'), '');
   await run('npm', ['run', 'build'], { cwd: root, timeout: 30000 });
   const result = await command(['render', golden, '--output', svgPath]);
   expect(result.code, result.stderr).toBe(0);
@@ -266,6 +269,20 @@ links:
     const usage = await command(['layout', schema, '--diagnostics', 'json', '--nope']);
     expect(usage.code).toBe(2);
     expect(JSON.parse(usage.stderr.trim())).toMatchObject({ kind: 'status', severity: 'error', code: 'USAGE' });
+  }, 60000);
+
+  it('warns on stderr when Verdana is not installed, for render and layout, and not otherwise', async () => {
+    const empty = join(temp, 'no-fonts');
+    mkdirSync(empty);
+    for (const verb of ['render', 'layout']) {
+      const missing = await command([verb, golden, '--output', join(temp, `font-${verb}.out`)], { PORTOGRAPH_FONT_DIRS: empty });
+      expect(missing.code, missing.stderr).toBe(0);
+      expect(missing.stderr).toContain('Verdana is not installed');
+      const present = await command([verb, golden, '--output', join(temp, `font-${verb}.out`)]);
+      expect(present.stderr).not.toContain('Verdana');
+    }
+    const asJson = await command(['layout', golden, '--output', join(temp, 'font-json.out'), '--diagnostics=json'], { PORTOGRAPH_FONT_DIRS: empty });
+    expect(JSON.parse(asJson.stderr.trim().split('\n')[0]!)).toMatchObject({ kind: 'status', severity: 'warning', code: 'FONT_MISSING' });
   }, 60000);
 
   it('builds dist/index.js and dist/index.cjs with the export keys of src/index.ts', async () => {

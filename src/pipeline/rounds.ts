@@ -2,13 +2,14 @@
  * The six rounds as descriptors (architecture 2, ticket 04): fan, span, course, side, turn and overlay. Each one is a table of what it measures, reserves, checks, judges, commits and
  * says when it is refused; `open` and `close` (round.ts) run a trial from it. A descriptor holds the round's own rules and nothing about the order of the rounds.
  */
-import type { Course, Diagnostic, LayoutModel, Size } from '../model/index.js';
+import type { Course, Diagnostic, LayoutModel, Side, Size } from '../model/index.js';
 import { portKey } from '../layout/sides-one.js';
 import { endMode } from '../layout/course-rows.js';
+import { contentInsets, measureNodeContent } from '../layout/size.js';
 import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
 import { TrunkBlocked } from '../layout/placement-refusal.js';
 import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
-import { freezeRefusal } from '../layout/frame-paths.js';
+import { documentTierDistance, freezeRefusal } from '../layout/frame-paths.js';
 import { transitTiers } from '../layout/lanes.js';
 import { measureSpans } from '../layout/span-measure.js';
 import { judgeSpanTrial } from '../layout/span-judge.js';
@@ -78,8 +79,8 @@ export const turnRoundOn = (env: Env): boolean => env.options.testCourses === un
 
 type SpanOffer = ReturnType<typeof measureSpans>;
 /**
- * The span round (architecture ticket 22, phase 3). It reads the 7f baseline and its routed result, offers a spanning chord to every link between document tiers that
- * are not consecutive whose corridor is clear, places again with the span hints, and keeps the trial only on its routed result (`judgeSpanTrial`). It runs before the
+ * The span round (architecture ticket 22, phase 3). It reads the 7f baseline and its routed result, offers a spanning chord to every link whose end sub-tiers
+ * are not adjacent (`spanCandidate`: document tiers not consecutive, or consecutive with a rank band between, ticket 35) whose corridor is clear, places again with the span hints, and keeps the trial only on its routed result (`judgeSpanTrial`). It runs before the
  * course, side and overlay-course rounds, because a chord changes which routes are poor, and it shares their re-runs. A refused round leaves the sheet as it was.
  */
 export const span: Round<SpanOffer> = {
@@ -90,7 +91,14 @@ export const span: Round<SpanOffer> = {
   // A forced hint (the test option) is the whole of the span round; otherwise the round runs here, before the course round.
   enabled: env => env.options.testCourses === undefined && env.options.testSpanHints === undefined,
   gain: () => [0, 0, 0],
-  skip(env, _s, o) { env.options.testSideTrace?.({ ev: 'span-refused', links: o.links, why: 'budget' }); },
+  // No start is left for the offer (the re-runs are spent, or kept for the rounds this one protects): no hint is placed, each offered link keeps its lane, and the
+  // freeze names it with `transit` as before. One note names the budget, so a sheet that would draw the chords with more re-runs says so (ticket 35).
+  skip(env, s, o, left) {
+    env.options.testSideTrace?.({ ev: 'span-refused', links: o.links, why: 'budget' });
+    const why = left <= 0 ? `the command has made its ${env.maxReruns} placement re-runs` : `the ${left} placement re-run${left === 1 ? ' left is' : 's left are'} kept for the course, side and turn rounds`;
+    s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SPAN_ROUND_SKIPPED', owners: o.links.map(id => ({ kind: 'link' as const, id })),
+      message: `A span round was skipped: ${why}. ${o.links.length === 1 ? `The link ${o.links[0]} keeps its lane` : `The links ${o.links.join(', ')} keep their lanes`}.` });
+  },
   // Only the placement's own refusals, as in every other round: the command deadline (also an ELK deadline) and a defect (a TypeError) end the command.
   tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal : refusedAtBands(error),
   async measure(env, s) {
@@ -126,8 +134,10 @@ export const span: Round<SpanOffer> = {
     for (const id of o.links) {
       const link = t.trial.links.find(item => item.id === id)!;
       const crossed = transitTiers(t.trial, link);
+      // Two counts: the document tier gaps (1 for a link across one gap with a rank band between its ends, ticket 35) and the sub-tier gaps the chord crosses.
+      const gaps = documentTierDistance(t.trial, link) ?? crossed.length + 1;
       s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'SPAN_CHORD_TAKEN', owners: [{ kind: 'link', id }],
-        message: `The link ${id} takes a spanning chord over ${crossed.length + 1} tier gaps, through ${crossed.length} transited ${crossed.length === 1 ? 'band' : 'bands'} (sub-tier ${crossed.join(', ')}).` });
+        message: `The link ${id} takes a spanning chord over ${gaps} document tier ${gaps === 1 ? 'gap' : 'gaps'} (${crossed.length + 1} sub-tier gaps), through ${crossed.length} transited ${crossed.length === 1 ? 'band' : 'bands'} (sub-tier ${crossed.join(', ')}).` });
     }
   },
   refuse(env, _s, o, r) {
@@ -137,24 +147,48 @@ export const span: Round<SpanOffer> = {
   },
 };
 
-/** The node floors a kept side or course ledger keeps: the stage-3 size of each node with a hinted port, so a later trial does not re-size a node a kept trial moved. */
+/**
+ * The size a node is pinned at when a round moves some of its ports to other faces (`moved`, by `portKey`): its stage-3 size, never below the content it holds
+ * with the ports on their new faces. A pill on a new face sets that face's inset (`contentInsets`), and a card counts both side insets in its width, so the
+ * stage-3 size alone can be short of the content and the trial is refused at publication (snack-theme ticket 159). `undefined` when no stage-3 size is known.
+ * It does not read the port capacity of a new face (`count × pitch + 2 × padding`, `sizeNodes`): with it, the course of link-13 on
+ * a-group-shift-leaves-a-chord-clear-of-a-lane was lost (test/pipeline/course-round.test.ts), so that floor is left to a ticket that traces why.
+ */
+export const movedFloor = (env: Pick<Env, 'stage3Sizes'>, s: Pick<State, 'kept7e'>, id: string, moved: ReadonlyMap<string, Side>): Size | undefined => {
+  const size = env.stage3Sizes.get(s.kept7e)?.get(id), node = s.kept7e.nodes[id];
+  if (size === undefined || node === undefined) return undefined;
+  const content = measureNodeContent(s.kept7e.document.nodes[id]!, s.kept7e.document, contentInsets(node.ports, port => moved.get(portKey(port.ref)) ?? port.side ?? port.sizingSide));
+  return { width: Math.max(size.width, content.width), height: Math.max(size.height, content.height) };
+};
+/** The node floors a kept side or course ledger keeps: the size of each node with a hinted port (`movedFloor`), so a later trial does not re-size a node a kept trial moved. */
 const keptFloors = (env: Env, s: State): Map<string, Size> => {
-  const floors = new Map<string, Size>();
-  for (const key of sideHintsOf(s.kept).keys()) {
+  const floors = new Map<string, Size>(), hints = sideHintsOf(s.kept);
+  for (const key of hints.keys()) {
     const [node] = JSON.parse(key) as [string];
-    const size = env.stage3Sizes.get(s.kept7e)?.get(node);
-    if (size !== undefined) floors.set(node, { ...size });
+    const size = movedFloor(env, s, node, hints);
+    if (size !== undefined) floors.set(node, size);
   }
   return floors;
 };
-/** The nodes whose end of a course changes face keep their size (P9): the capacity estimate of the face they leave must not re-size them. `skirtsU` leaves out an end that leaves by a U part, whose content grows with its face. */
-const pinMovedEnds = (env: Env, s: State, floors: Map<string, Size>, courses: readonly Course[], skirtsU: boolean): void => {
+/**
+ * The nodes whose end of a course changes face keep their size (P9): the capacity estimate of the face they leave must not re-size them. `skirtsU` leaves out an end
+ * that leaves by a U part, whose content grows with its face. The pin is `movedFloor`, read once per node on every end the offer moves and every port the kept
+ * ledger hints: never below the content with all of them on their new faces, and never below the floor `floors` already holds for the node.
+ */
+export const pinMovedEnds = (env: Pick<Env, 'stage3Sizes'>, s: Pick<State, 'kept7e' | 'kept'>, floors: Map<string, Size>, courses: readonly Course[], skirtsU: boolean): void => {
+  const moved = new Map<string, Side>(sideHintsOf(s.kept)), nodes = new Set<string>();
   for (const course of courses) {
     const link = s.kept7e.links.find(item => item.id === course.link)!;
     for (const which of ['from', 'to'] as const) {
-      const size = env.stage3Sizes.get(s.kept7e)?.get(link.attachments![which].node);
-      if (size !== undefined && (!skirtsU || endMode(course, which) !== 'u') && course[which].face !== (s.kept7e.nodes[link.attachments![which].node]!.ports.find(port => portKey(port.ref) === portKey(link.attachments![which]))?.side)) floors.set(link.attachments![which].node, { ...size });
+      const end = link.attachments![which];
+      if ((skirtsU && endMode(course, which) === 'u') || course[which].face === s.kept7e.nodes[end.node]!.ports.find(port => portKey(port.ref) === portKey(end))?.side) continue;
+      moved.set(portKey(end), course[which].face);
+      nodes.add(end.node);
     }
+  }
+  for (const node of nodes) {
+    const size = movedFloor(env, s, node, moved), held = floors.get(node);
+    if (size !== undefined) floors.set(node, held ? { width: Math.max(held.width, size.width), height: Math.max(held.height, size.height) } : size);
   }
 };
 const promisedTurnsOf = (promised: ReadonlyMap<string, { turns: number }>): Map<string, number> => new Map([...promised].map(([id, item]) => [id, item.turns] as const));
@@ -309,12 +343,12 @@ export const side: Round<SideTrialOffer> = {
   },
   reserve(env, s, o) {
     s.sideRound++;
-    const nodeFloors = new Map<string, Size>();
-    for (const key of new Map([...sideHintsOf(s.kept), ...o.offer.hints]).keys()) {
+    const nodeFloors = new Map<string, Size>(), hints = new Map([...sideHintsOf(s.kept), ...o.offer.hints]);
+    for (const key of hints.keys()) {
       const [node] = JSON.parse(key) as [string];
       // The 7e model keys the size cache, never the baseline (a new object: the lookup would give undefined with no error).
-      const size = env.stage3Sizes.get(s.kept7e)?.get(node);
-      if (size !== undefined) nodeFloors.set(node, { ...size });
+      const size = movedFloor(env, s, node, hints);
+      if (size !== undefined) nodeFloors.set(node, size);
     }
     // The faces stay with the ledger when the trial is kept; the size floors of a side trial do not (a later round measures its own).
     o.faces = [...sideFaces(o.offer.hints, o.offer.promised, 'side', env.placements),

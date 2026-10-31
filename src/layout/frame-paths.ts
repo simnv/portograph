@@ -1,4 +1,4 @@
-import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
+import type { FanAdmission, FanFallbackReason, FanFamily, LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { crosses, sharedBlockers, straightChord } from './overlay-paths.js';
@@ -12,13 +12,15 @@ import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, straightLengt
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
 import { measureText } from '../text/index.js';
-import { EPS, intersection, samePoint, segmentDistance, segmentRectDistance } from '../geometry/planar.js';
+import { EPS, intersection, samePoint, segmentDistance, segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import type { Rect } from '../model/geometry.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { deriveFrames } from './frames.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { transitTiers } from './read/tier.js';
+import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 
 /**
  * The **straight** technique of a routed link inside one frame (ticket 34).
@@ -42,6 +44,24 @@ function parentFrame(model: LayoutModel, frame: string): string | undefined {
 /** Whether two frames are one frame for this rule: the same, or a parent and its direct child. */
 function sameFrame(model: LayoutModel, a: string, b: string): boolean {
   return a === b || parentFrame(model, a) === b || parentFrame(model, b) === a;
+}
+
+/**
+ * The fan family of a link (architecture-2 ticket 40): the stage-1 record, read and never decided again (R1). Undefined for a link of no family, and
+ * on every sheet without one, so no fan rule runs there.
+ */
+export function fanFamilyOf(model: LayoutModel, link: LayoutLink): FanFamily | undefined {
+  return link.fanFamily === undefined ? undefined : model.fanFamilies?.find(family => family.id === link.fanFamily);
+}
+/** Whether two links are members of one fan family: the fallback legs of one are crossed by the chord of the other, and their crossings are faint. */
+export function fanSiblings(a: LayoutLink, b: LayoutLink): boolean {
+  return a.fanFamily !== undefined && a.fanFamily === b.fanFamily;
+}
+/** The far end of a fan member: the end that is not its hub. */
+function fanFarEnd(model: LayoutModel, link: LayoutLink): 'from' | 'to' | undefined {
+  const member = fanFamilyOf(model, link)?.members.find(item => item.link === link.id);
+  if (member === undefined || !link.attachments) return undefined;
+  return link.attachments.from.node === member.hub ? 'to' : 'from';
 }
 
 /** What a routed chord joins: two ends in one frame (`frame`), or in two frames on consecutive document tiers (`cross`, Q108). */
@@ -130,25 +150,39 @@ export function withLinkFacts<T>(model: LayoutModel, run: () => T): T {
 }
 
 /**
- * The tiers of the ends differ by this much (2 or more) and the link would be a cross-frame chord if it carried a span hint (architecture ticket 22,
- * docs/design/routed-chords.md, Section 14.1): Section 3 items 1, 2 and 4 hold, item 3 reads "different" for "consecutive". Topology and the stage-5 faces only;
- * the corridor test is `chordVerdict`'s. A link that already carries the hint is a candidate too.
+ * A spanning-chord candidate (architecture ticket 22, docs/design/routed-chords.md, Section 14.1): Section 3 items 1, 2 and 4 hold, and the end
+ * sub-tiers are not adjacent: the document tiers of the ends differ by 2 or more (item 3 reads "different" for "consecutive"), or they are consecutive
+ * and a rank band of an end's own tier stands between the end sub-tiers (architecture-2 ticket 35, part 1; Q122). Topology and the stage-5 faces
+ * only; the corridor test is `chordVerdict`'s. A link that already carries the hint is a candidate too.
  */
 export function spanCandidate(model: LayoutModel, link: LayoutLink): boolean {
-  if (documentTierGap(model, link) === undefined || chordKindOf(model, link, true) !== 'cross') return false;
+  if ((documentTierGap(model, link) === undefined && !rankBandBetween(model, link)) || chordKindOf(model, link, true) !== 'cross') return false;
   // A fan (several routed links on one port) is one shared stem tree whose leaves are the lanes of its links (7e, ticket 20): a link in it keeps its lane.
   const ends = link.attachments!;
   return ![ends.from, ends.to].some(end => model.links.some(other => other.id !== link.id && other.layer === 'routed' && other.attachments
     && [other.attachments.from, other.attachments.to].some(ref => portId(ref) === portId(end))));
 }
-/** How many document tiers lie between the ends of the link, when it is two or more; otherwise undefined. */
-export function documentTierGap(model: LayoutModel, link: LayoutLink): number | undefined {
+/** How many document tier gaps lie between the ends of the link (0 on one document tier), or undefined when an end has no document tier. */
+export function documentTierDistance(model: LayoutModel, link: LayoutLink): number | undefined {
   const ends = link.attachments;
   if (ends === undefined) return undefined;
   const a = model.document.nodes[ends.from.node]?.group, b = model.document.nodes[ends.to.node]?.group;
   if (a === undefined || b === undefined) return undefined;
   const one = documentTier(model, a), two = documentTier(model, b);
-  return one === undefined || two === undefined || Math.abs(one - two) < 2 ? undefined : Math.abs(one - two);
+  return one === undefined || two === undefined ? undefined : Math.abs(one - two);
+}
+/** How many document tiers lie between the ends of the link, when it is two or more; otherwise undefined. */
+export function documentTierGap(model: LayoutModel, link: LayoutLink): number | undefined {
+  const distance = documentTierDistance(model, link);
+  return distance === undefined || distance < 2 ? undefined : distance;
+}
+/**
+ * Whether the ends stand on consecutive document tiers and a tier band stands strictly between their sub-tiers: a group with fewer ranks than its
+ * tier leaves a rank band of that tier between the ends (Section 3, last paragraph). The band is read by `transitTiers`, the reader of the lanes and
+ * of the `transit` refusal, so one function answers whether a link transits a band.
+ */
+export function rankBandBetween(model: LayoutModel, link: LayoutLink): boolean {
+  return documentTierDistance(model, link) === 1 && transitTiers(model, link).length > 0;
 }
 
 function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): ChordKind | undefined {
@@ -290,6 +324,11 @@ export function crossingRect(segment: PathSegment, top: number, floor: number, h
     width: Math.abs(two.x - one.x) + 2 * along, height: Math.abs(two.y - one.y) + 2 * half };
 }
 
+/** Whether the strip is the title of one given end's own frame (or a frame above it), on the edge that end's port faces. */
+function ownEndStrip(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', strip: TitleStrip): boolean {
+  const ref = link.attachments![end];
+  return findPort(model, ref)?.side === strip.side && holders(model, ref.node).has(strip.id);
+}
 /** Whether the strip is the title of the end the chord leaves, on the edge it leaves through (docs/design/routed-chords.md, Section 6). */
 function ownStrip(model: LayoutModel, link: LayoutLink, strip: TitleStrip): boolean {
   return (['from', 'to'] as const).some(end => {
@@ -320,27 +359,42 @@ function titleFits(strip: TitleStrip, obstacles: readonly Rect[]): boolean {
  * chords too (the fit of the fixed point); without it the chord's own crossing alone is read (the fit of the standalone chord).
  */
 function titleRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, others: boolean): boolean {
+  // A diagonal may cross a title (ticket 162, ADR-0023): no strip refuses it, and the title stands over it. A vertical chord keeps the rules below.
+  if (diagonalMayCross(segment, GROUP_TITLE)) return false;
   const kind = chordKind(model, link), strips = titleStrips(model);
   const crossed = strips.filter(strip => segmentRectDistance(segment, strip.rect) === 0);
   if (kind !== 'cross') return crossed.length > 0;
-  if (crossed.some(strip => !ownStrip(model, link, strip))) return true;
-  const half = linkStrokeWidth(link) / 2;
-  return crossed.some(strip => {
-    const own = crossingRect(segment, strip.rect.y, strip.rect.y + strip.rect.height, half);
-    const blocks: Rect[] = own ? [own] : [];
-    if (others) {
-      // A leg is a stroke: the link-free margin is added to it here (a crossing rectangle carries its own).
-      const legs = legRectsFor(model, [{ id: strip.id, bounds: strip.rect, side: strip.side, members: strip.members }], link.id);
-      blocks.push(...legs.map(item => item.bounds).filter(box => box.x >= strip.rect.x - EPS && box.x <= strip.rect.x + strip.rect.width + EPS)
-        .map(box => ({ x: box.x - GROUP_LABEL_LINK_CLEARANCE, y: box.y, width: box.width + 2 * GROUP_LABEL_LINK_CLEARANCE, height: box.height })));
-      for (const other of model.links) {
-        if (other.id === link.id || !isRoutedChord(model, other) || chordKind(model, other) !== 'cross') continue;
-        const rect = crossingRect(other.path!.segments[0]!, strip.rect.y, strip.rect.y + strip.rect.height, linkStrokeWidth(other) / 2);
-        if (rect) blocks.push(rect);
-      }
+  // A fan member (architecture-2 ticket 40, user ruling Q125): the title strip of its far end's own frame, on the edge the chord leaves through,
+  // refuses nothing here. Slice 1 builds no growth for it: the title planner of 7f reads the held chord as an obstacle, and when it finds no room
+  // beside it the retry of 7f refuses the member (`title`, `titleCrowdedFanMembers`). After the last retry the member stays straight over the
+  // title, `FAN_MEMBER_CROWDED` names it, and G3 fails. A slanted member returns above (ticket 162), so all of this reads an axis member.
+  // A title that moves aside, its frame grown, is slice 2. The member's other own strip (its
+  // hub's) must fit beside the crossings as for any cross-frame chord, and a third frame's title refuses it.
+  const far = fanFarEnd(model, link);
+  const exempt = (strip: TitleStrip): boolean => far !== undefined && ownEndStrip(model, link, far, strip);
+  const rest = crossed.filter(strip => !exempt(strip));
+  if (rest.some(strip => !ownStrip(model, link, strip))) return true;
+  return rest.some(strip => !titleFitsBeside(model, link, segment, strip, others));
+}
+
+/** Whether the strip's title still fits beside the chord's crossing (and, with `others`, beside the legs of its band's ports and the held chords' crossings). */
+function titleFitsBeside(model: LayoutModel, link: LayoutLink, segment: PathSegment, strip: TitleStrip, others: boolean): boolean {
+  const own = crossingRect(segment, strip.rect.y, strip.rect.y + strip.rect.height, linkStrokeWidth(link) / 2);
+  const blocks: Rect[] = own ? [own] : [];
+  if (others) {
+    // A leg is a stroke: the link-free margin is added to it here (a crossing rectangle carries its own).
+    const legs = legRectsFor(model, [{ id: strip.id, bounds: strip.rect, side: strip.side, members: strip.members }], link.id);
+    blocks.push(...legs.map(item => item.bounds).filter(box => box.x >= strip.rect.x - EPS && box.x <= strip.rect.x + strip.rect.width + EPS)
+      .map(box => ({ x: box.x - GROUP_LABEL_LINK_CLEARANCE, y: box.y, width: box.width + 2 * GROUP_LABEL_LINK_CLEARANCE, height: box.height })));
+    for (const other of model.links) {
+      if (other.id === link.id || !isRoutedChord(model, other) || chordKind(model, other) !== 'cross') continue;
+      // A held diagonal takes no room from the title (ticket 162): the title may stand over it.
+      if (diagonalMayCross(other.path!.segments[0]!, GROUP_TITLE)) continue;
+      const rect = crossingRect(other.path!.segments[0]!, strip.rect.y, strip.rect.y + strip.rect.height, linkStrokeWidth(other) / 2);
+      if (rect) blocks.push(rect);
     }
-    return !titleFits(strip, blocks);
-  });
+  }
+  return titleFits(strip, blocks);
 }
 
 /** The bare chord of the link between its two faces, or undefined when its ends coincide. Nothing is checked. */
@@ -378,6 +432,7 @@ function holders(model: LayoutModel, node: string): Set<string> {
  * faces, at least the margin from each corner. Reads `model.frames`, which equals the cells after every transaction.
  */
 function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): 'edge' | 'frame' | undefined {
+  if (link.fanFamily !== undefined && fanFamilyOf(model, link) !== undefined) return fanBoxRefusal(model, link, segment);
   const ends = link.attachments!, stroke = linkStrokeWidth(link);
   const from = holders(model, ends.from.node), to = holders(model, ends.to.node);
   const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
@@ -406,6 +461,33 @@ function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment
     if (!(t >= -EPS && t <= 1 + EPS) || x < bounds.x + margin || x > bounds.x + bounds.width - margin) return 'edge';
   }
   return undefined;
+}
+
+/**
+ * The group boxes (`groupBoxes`: free groups, frames, canton frames) that hold neither end of a fan member and do not consume it, and that its
+ * chord meets (G2's `through-group` test, `segmentRect`). Sorted by id.
+ */
+export function fanCrossedBoxes(model: LayoutModel, link: LayoutLink, segment: PathSegment): string[] {
+  return groupBoxes(model).filter(({ id, bounds }) => foreignBox(model, link, id) && segmentRect(segment, bounds)).map(({ id }) => id).sort();
+}
+/** Whether the group box `id` exists and holds neither end of the link, and the link does not consume it: a box G2 would judge it against. */
+export function foreignBox(model: LayoutModel, link: LayoutLink, id: string): boolean {
+  const ends = link.attachments;
+  if (ends === undefined || !groupBoxes(model).some(box => box.id === id)) return false;
+  return !holders(model, ends.from.node).has(id) && !holders(model, ends.to.node).has(id) && !groupConsumers(model, id).includes(link.id);
+}
+
+/**
+ * The walls a fan member reads among the group boxes (architecture-2 ticket 40, merged design Section 2): none before the freeze. A member leaves
+ * its end boxes by any edge, near any corner, and may cross a foreign frame or canton box; only bodies, pills, titles, lanes and the other walls of
+ * the corridor refuse it. The freeze records the boxes each straight member crosses (`fanAdmissions`), and from then on a box it did not cross
+ * then is a wall (`frame`), so a 7f move that would put a new box on it is refused (`blockedChords`) and G2 excuses only the recorded boxes.
+ */
+function fanBoxRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment): 'frame' | undefined {
+  const admission = model.fanAdmissions?.find(item => item.link === link.id);
+  if (admission === undefined) return undefined;
+  const allowed = new Set(admission.crosses ?? []);
+  return fanCrossedBoxes(model, link, segment).some(id => !allowed.has(id)) ? 'frame' : undefined;
 }
 
 /**
@@ -449,7 +531,7 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
   // orthogonal route, so that no move after stage 7a can leave a transit without its reservation.
   const tiers = [link.attachments!.from.node, link.attachments!.to.node].map(id => model.groups[model.document.nodes[id]!.group]!.tier!);
   // A spanning chord (ticket 22) has no lane: the bands it crosses leave a corridor, which the checks below read as walls.
-  if (link.spanHint !== true && model.tierBands.some(band => band.tier > Math.min(...tiers) && band.tier < Math.max(...tiers))) return { reason: 'transit' };
+  if (link.spanHint !== true && transitTiers(model, link).length > 0) return { reason: 'transit' };
   const line: PathSegment = { from: geometry.from, to: geometry.to, owner: { ...link.owner } };
   if (kind === 'cross') {
     // The port sides say which end is upper; the faces must agree, or the chord leaves a port inward.
@@ -611,8 +693,13 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
       // A direct member may cross the fallback leg of another source node's fan (ticket 22, user 2026-10-23). The leg reserved here runs to the far
       // stem tip, but the real one ends at a row the plan seats later, anywhere in the gap: so the chord crosses the leg's line, and a chord whose
       // x-span holds the leg's x strictly is taken as crossing it. Otherwise it keeps the clearance, as G6 measures it.
-      if (crossable?.has(other.id) && Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS
-        && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS) continue;
+      const spans = Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS;
+      if (crossable?.has(other.id) && spans) continue;
+      // A fan member crosses the fallback legs of its own family (architecture-2 ticket 40, user ruling Q126): the crossing is faint, and read as
+      // a direct member reads a fallback leg. The tier-gap plan seats the fallback's row across the chord or clear of it (`slants`, gap-plan.ts).
+      // A fallback's leg is not final before the freeze (a side round can move it), so its stem is judged there: a chord that still passes a
+      // sibling's stem falls back (`refuseStemCrowded`), and the crowding retry reads the same test at the end of 7f (`siblingStemCrowded`).
+      if (spans && fanSiblings(link, other)) continue;
       if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }
@@ -623,6 +710,42 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
   // The title of an own end still fits beside this crossing, the held chords' crossings and the legs of the band's ports (ticket 100).
   if (chordKind(model, link) === 'cross' && titleRefusal(model, link, segment, true)) return 'title';
   return undefined;
+}
+
+/**
+ * Whether a held fan member passes the stem of a sibling that stays orthogonal (architecture-2 ticket 40), on the geometry at the end of 7f: its
+ * chord spans the sibling's leg and does not cross it strictly beyond the stem with the run clearance from it (`crossesLegBeyondStem`), or keeps
+ * the clearance from the leg. The crowding retry refuses such a member.
+ */
+export function siblingStemCrowded(model: LayoutModel, link: LayoutLink): boolean {
+  const segment = link.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
+  if (segment === undefined) return false;
+  const stroke = linkStrokeWidth(link);
+  for (const other of model.links) {
+    if (other.id === link.id || !fanSiblings(link, other) || isRoutedChord(model, other) || !other.attachments) continue;
+    for (const end of ['from', 'to'] as const) {
+      const leg = orthogonalLeg(model, other, end);
+      if (!leg) continue;
+      const spans = Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS;
+      if (!spans || crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other))) continue;
+      if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether a chord crosses a vertical leg strictly, past the leg's stem: its crossing of the leg's line lies inside the leg, and it keeps the run
+ * clearance from the stem (the first `routerStem` px of the leg, from the port), which stands whatever row the plan seats the leg's link on.
+ */
+function crossesLegBeyondStem(chord: PathSegment, leg: PathSegment, stroke: number, legStroke: number): boolean {
+  const dx = chord.to.x - chord.from.x;
+  if (Math.abs(dx) < EPS) return false;
+  const y = chord.from.y + (leg.from.x - chord.from.x) / dx * (chord.to.y - chord.from.y);
+  if (y <= Math.min(leg.from.y, leg.to.y) + EPS || y >= Math.max(leg.from.y, leg.to.y) - EPS) return false;
+  const reach = Math.min(GROUP_LABEL_GEOMETRY.routerStem, Math.abs(leg.to.y - leg.from.y));
+  const stem: PathSegment = { from: leg.from, to: { x: leg.from.x, y: leg.from.y + Math.sign(leg.to.y - leg.from.y) * reach }, owner: leg.owner };
+  return segmentDistance(chord, stem) - (stroke + legStroke) / 2 >= STRAIGHT_PATH_CLEARANCE.path - EPS;
 }
 
 /** The chord this rule pins for the link, or undefined when a body stands on it or a gate would fail it. */
@@ -657,21 +780,48 @@ export function freezeRefusal(model: LayoutModel, link: LayoutLink): ChordRefusa
 
 /**
  * The chords held at the start of 7f: the links that are straight now. Every cross-frame candidate that is not held is named once
- * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it.
+ * (`ROUTED_CHORD_REFUSED`, info) with the first check that refuses it, and so is every chord a retry of 7f refused (`refusals`), a frame
+ * chord too.
  */
-export function freezeChords(model: LayoutModel): void {
+export function freezeChords(model: LayoutModel, refusals: ReadonlyMap<string, FanFallbackReason> = new Map()): void {
   const held = model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
+  const reasons = new Map<string, FanFallbackReason>();
   for (const link of model.links) {
-    if (held.includes(link.id) || chordKind(model, link) !== 'cross') continue;
-    const reason = freezeRefusal(model, link);
+    if (held.includes(link.id)) continue;
+    // A chord refused before the freeze (a retry of 7f, a sibling's stem, or the cascade after either) names the reason it was refused for: a
+    // retry refuses a held chord that a group title met on an axis (`title`), whatever check the 7e geometry passed, a frame chord too. Any other
+    // frame chord the rows rule left orthogonal names nothing here, as before. A fan member its family's joint search left out names `family`
+    // when no check of its own refuses it.
+    const given = refusals.get(link.id), kind = chordKind(model, link);
+    if (kind === undefined || (kind !== 'cross' && given === undefined)) continue;
+    const fan = fanFamilyOf(model, link) !== undefined;
+    const reason: FanFallbackReason | undefined = given ?? freezeRefusal(model, link) ?? (fan ? 'family' : undefined);
     // A candidate no check refuses is not refused: it names nothing (it has no reason to give).
     if (reason === undefined) continue;
+    if (fan) reasons.set(link.id, reason);
+    const route = kind === 'cross' ? 'the orthogonal route between frames' : 'the orthogonal route inside its frame';
     model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED',
-      message: `The link ${link.id} keeps the orthogonal route between frames: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
+      message: `The link ${link.id} keeps ${route}: ${reason}.`, owners: [{ kind: 'link', id: link.id }] });
   }
   // The freeze is a decision even when nothing is held: a link that was not straight here stays orthogonal. An absent field would let the replays of 7f
   // take a chord the freeze refused, on boxes that the grid then widens (a row path that the region rule derives differently once the geometry settles).
   model.frozenChords = held;
+  if (model.fanFamilies !== undefined) model.fanAdmissions = fanAdmissionsOf(model, held, reasons);
+}
+
+/**
+ * The record of the freeze for every fan member (architecture-2 ticket 40): straight with the boxes its chord crosses now, or orthogonal with its
+ * reason (a member that is no chord candidate at the freeze, its faces turned by a side rule, names `faces`).
+ */
+function fanAdmissionsOf(model: LayoutModel, held: readonly string[], reasons: ReadonlyMap<string, FanFallbackReason>): FanAdmission[] {
+  const admissions: FanAdmission[] = [];
+  for (const family of model.fanFamilies ?? []) for (const member of family.members) {
+    const link = model.links.find(item => item.id === member.link);
+    if (link !== undefined && held.includes(link.id)) {
+      admissions.push({ link: link.id, family: family.id, mode: 'straight', crosses: fanCrossedBoxes(model, link, link.path!.segments[0]!) });
+    } else admissions.push({ link: member.link, family: family.id, mode: 'orthogonal', reason: reasons.get(member.link) ?? 'faces' });
+  }
+  return admissions;
 }
 
 /**
@@ -709,10 +859,21 @@ export function strictCrossing(a: PathSegment, b: PathSegment): boolean {
   return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
 }
 /** Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing). */
-function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, strokeB: number): boolean {
+export function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, strokeB: number): boolean {
   const point = intersection(a, b);
   const strict = point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
   return strict || segmentDistance(a, b) - (strokeA + strokeB) / 2 >= STRAIGHT_PATH_CLEARANCE.path - EPS;
+}
+
+/**
+ * `blockedChords` on the frames the cells give now. A cross-frame chord reads the frame boxes, which follow the cells; the stored frames follow them
+ * only at the end of a transaction, so a guard that reads a move inside one (a proposed box) derives them. `chordsHold` reads it, and the tests
+ * read it to find a body, a foreign pill or a foreign frame on a held chord.
+ */
+export function blockedChordsAt(model: LayoutModel): string[] {
+  if (!model.frozenChords?.length) return [];
+  const frames = model.frozenChords.some(id => chordKind(model, model.links.find(link => link.id === id)!) === 'cross') ? deriveFrames(model) : undefined;
+  return blockedChords(frames ? { ...model, frames } : model);
 }
 
 /**
@@ -738,10 +899,7 @@ export function chordsHold(model: LayoutModel, proposed: { group: { id?: string;
           ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x + dx, y: port.pill.bounds.y + dy } } } : {}) })) };
     }
   }
-  // A cross-frame chord reads the frame boxes, which follow the cells: the proposed cells give the frames the move would draw.
-  const moved = { ...model, nodes, groups };
-  const frames = model.frozenChords.some(id => chordKind(model, model.links.find(link => link.id === id)!) === 'cross') ? deriveFrames(moved) : undefined;
-  const held = blockedChords(frames ? { ...moved, frames } : moved);
+  const held = blockedChordsAt({ ...model, nodes, groups });
   // A caller that tries many candidates asks with `report` off and reports the final verdict itself (ticket 77).
   if (report) for (const id of held) {
     if (!model.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))) {

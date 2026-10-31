@@ -172,7 +172,7 @@ describe('geometry is consumed, never recomputed', () => {
     const text = elements(block(svg, 'a.100G#1'), 'text')[0]!;
     const font = text['class']!.split(' ').find(token => token.startsWith('pg-f-'))!;
     expect(font).toBe('pg-f-8-400');
-    expect(svg).toContain(`.${font}{font-family:Arial, Helvetica, sans-serif!important;font-size:8px!important;font-weight:400!important;`);
+    expect(svg).toContain(`.${font}{font-family:Verdana!important;font-size:8px!important;font-weight:400!important;`);
   });
 
   it('uses the stroke width score measures, for every element', () => {
@@ -261,7 +261,7 @@ describe('geometry is consumed, never recomputed', () => {
     const model = scene({
       nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 60, height: 40 } }], title: hostile,
       labels: [{ id: 'node:a', owner: { kind: 'node', id: 'a' }, layer: 'routed', role: 'node',
-        text: hostile, lines: [hostile], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9,
+        text: hostile, lines: [hostile], fontFamily: 'Verdana', fontSize: 9,
         fontWeight: 700, lineHeight: 11, bounds: { x: 5, y: 15, width: 50, height: 11 } }],
     });
     const svg = render(model);
@@ -285,7 +285,7 @@ describe('geometry is consumed, never recomputed', () => {
       links: [{ id: 'l', from: 'a', to: 'b', points: [{ x: 40, y: 20 }, { x: 200, y: 20 }], label: 'Too long to fit' }],
       labels: [{ id: 'label:link:l', owner: { kind: 'link', id: 'l' }, layer: 'routed', role: 'link',
         text: 'Too long to fit', tooltip: 'Too long to fit', omitted: true,
-        fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 400, lineHeight: 11 }],
+        fontFamily: 'Verdana', fontSize: 9, fontWeight: 400, lineHeight: 11 }],
     });
     model.links[0]!.groupLink = 'group-link-1';
     model.groupLinks.push({ id: 'group-link-1', owner: { kind: 'group-link', id: 'group-link-1' },
@@ -314,7 +314,7 @@ describe('escaping', () => {
       nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 60, height: 40 }, label: hostile }],
       title: hostile,
       labels: [{ id: 'node:a', owner: { kind: 'node', id: 'a' }, layer: 'routed', role: 'node', text: hostile,
-        lines: [hostile], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 700, lineHeight: 11,
+        lines: [hostile], fontFamily: 'Verdana', fontSize: 9, fontWeight: 700, lineHeight: 11,
         bounds: { x: 5, y: 15, width: 50, height: 11 } }],
     });
     const svg = render(model);
@@ -382,7 +382,7 @@ describe('document CSS', () => {
     const model = scene({ nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 60, height: 40 }, class: 'router' }],
       css: filtered,
       labels: [{ id: 'node:a', owner: { kind: 'node', id: 'a' }, layer: 'routed', role: 'node', text: 'a',
-        lines: ['a'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 700, lineHeight: 11,
+        lines: ['a'], fontFamily: 'Verdana', fontSize: 9, fontWeight: 700, lineHeight: 11,
         bounds: { x: 5, y: 15, width: 20, height: 11 } }] });
     const svg = render(model);
     expect(svg).toContain('fill: #123456');
@@ -394,7 +394,7 @@ describe('document CSS', () => {
   it('rejects a stored font family that could break out of the style sheet', () => {
     const model = scene({ nodes: [{ id: 'a', bounds: { x: 0, y: 0, width: 60, height: 40 } }],
       labels: [{ id: 'node:a', owner: { kind: 'node', id: 'a' }, layer: 'routed', role: 'node', text: 'a',
-        lines: ['a'], fontFamily: 'Arial}.x{fill:red', fontSize: 9, fontWeight: 700, lineHeight: 11,
+        lines: ['a'], fontFamily: 'Verdana}.x{fill:red', fontSize: 9, fontWeight: 700, lineHeight: 11,
         bounds: { x: 5, y: 15, width: 20, height: 11 } }] });
     expect(() => render(model)).toThrow(/Font family/);
   });
@@ -411,11 +411,11 @@ describe('overlay layer', () => {
     links: [{ id: 'routed-1', from: 'a', to: 'b', points: [{ x: 40, y: 10 }, { x: 200, y: 10 }], label: 'wire' },
       { id: 'flow-1', from: 'a', to: 'b', points: [{ x: 40, y: 30 }, { x: 200, y: 30 }], class: 'flow', layer: 'overlay' }],
     labels: [{ id: 'label:link:routed-1', owner: { kind: 'link', id: 'routed-1' }, layer: 'routed', role: 'link',
-      text: 'wire', lines: ['wire'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 400,
+      text: 'wire', lines: ['wire'], fontFamily: 'Verdana', fontSize: 9, fontWeight: 400,
       lineHeight: 11, bounds: { x: 110, y: 0, width: 20, height: 11 },
       support: { kind: 'link-segment', link: 'routed-1', segment: 0 } },
     { id: 'label:group:row-group', owner: { kind: 'group', id: 'row-group' }, layer: 'routed', role: 'group',
-      text: 'Row group', lines: ['Row group'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 12,
+      text: 'Row group', lines: ['Row group'], fontFamily: 'Verdana', fontSize: 12,
       fontWeight: 700, lineHeight: 14, bounds: { x: -12, y: -16, width: 50, height: 14 } }],
     ...(overlays ? { overlays } : {}),
   });
@@ -428,11 +428,13 @@ describe('overlay layer', () => {
     const mask = svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>'));
     const hidden = elements(mask, 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
     for (const box of [model.nodes['a']!.bounds!, model.nodes['b']!.bounds!,
-      model.nodes['a']!.ports[0]!.pill!.bounds,
-      model.labels.find(label => label.role === 'group')!.bounds!,
-      model.labels.find(label => label.role === 'link')!.bounds!]) {
+      model.nodes['a']!.ports[0]!.pill!.bounds]) {
       expect(hidden.some(item => sameRect(item, box))).toBe(true);
     }
+    // A group title and a link label cut no common cutout (ticket 162): each cuts the overlay line it meets, an orthogonal run only,
+    // and a diagonal runs on under the text's halo. Neither meets the overlay line here, so it has no mask of its own.
+    for (const role of ['group', 'link'] as const) expect(hidden.some(item => sameRect(item, model.labels.find(label => label.role === role)!.bounds!))).toBe(false);
+    expect(elements(svg, 'g').find(item => item['data-id'] === 'flow-1')!['mask']).toBeUndefined();
     // The 2 px endpoint marks live above the protected elements, outside the masked group.
     const marks = elements(svg, 'circle');
     expect(marks.map(item => [item['data-owner'], item['data-end'], Number(item['cx']), Number(item['cy']), Number(item['r'])]))
@@ -462,15 +464,19 @@ describe('overlay layer', () => {
 
   it('omits a hidden link label from the mask and from the drawing', () => {
     const model = overlaid();
+    // The label is moved onto the overlay line's level run, so it cuts that run where it meets it (ticket 162).
+    model.labels.find(item => item.role === 'link')!.bounds = { x: 110, y: 25, width: 20, height: 11 };
     const visible = render(model);
     const hidden = render(model, { layers: ['overlay'] });
     const boxOf = (svg: string): Rect[] => {
-      const mask = svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>'));
-      return elements(mask, 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
+      const id = /data-id="flow-1" mask="url\(#([^)]+)\)"/.exec(svg)?.[1];
+      if (id === undefined) return [];
+      const at = svg.indexOf(`<mask id="${id}"`);
+      return elements(svg.slice(at, svg.indexOf('</mask>', at)), 'rect').filter(item => item['class'] === 'pg-mask-hide').map(rect);
     };
-    const label = model.labels.find(item => item.role === 'link')!.bounds!;
-    expect(boxOf(visible).some(box => sameRect(box, label))).toBe(true);
-    expect(boxOf(hidden).some(box => sameRect(box, label))).toBe(false);
+    const half = DEFAULT_STROKE_WIDTHS.path / 2;
+    expect(boxOf(visible).some(box => sameRect(box, { x: 110, y: 30 - half, width: 20, height: 2 * half }))).toBe(true);
+    expect(boxOf(hidden)).toEqual([]);
     expect(hidden).not.toContain('class="link-label"');
     // A hidden routed label must not leave an unexplained gap in the overlay that is displayed.
     expect(hidden).toContain('class="overlay-links"');
@@ -501,7 +507,7 @@ describe('internal overlay mask', () => {
     links: [{ id: 'flow-1', from: 'a', to: 'c', class: 'flow', layer: 'overlay',
       points: [{ x: 40, y: 20 }, { x: 200, y: 20 }] }],
     labels: [{ id: 'label:group:row-group', owner: { kind: 'group', id: 'row-group' }, layer: 'routed',
-      role: 'group', text: 'Row group', lines: ['Row group'], fontFamily: 'Arial, Helvetica, sans-serif',
+      role: 'group', text: 'Row group', lines: ['Row group'], fontFamily: 'Verdana',
       fontSize: 12, fontWeight: 700, lineHeight: 14, bounds: { x: -12, y: -16, width: 50, height: 14 } }],
     ...(css === undefined ? {} : { css }),
   });
@@ -562,8 +568,7 @@ describe('internal overlay mask', () => {
       elements(svg.slice(svg.indexOf('<mask'), svg.indexOf('</mask>')), 'rect').map(rect);
     expect(boxes(styled)).toEqual(boxes(plain));
     const model = masked();
-    for (const box of [model.nodes['b']!.bounds!, model.nodes['a']!.ports[0]!.pill!.bounds,
-      model.labels[0]!.bounds!]) {
+    for (const box of [model.nodes['b']!.bounds!, model.nodes['a']!.ports[0]!.pill!.bounds]) {
       expect(boxes(styled).some(item => sameRect(item, box))).toBe(true);
     }
   });
@@ -590,7 +595,7 @@ describe('counted merge runs', () => {
         path: { owner, layer: 'routed', fixed: true,
           segments: [{ from: { x: 30, y: 80 }, to: { x: 30, y: 160 }, owner }] } }] });
     model.labels.push({ id: 'label:multiplicity:merge:bundle-1:0', owner, layer: 'routed', role: 'link',
-      text: '2', lines: ['2'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, fontWeight: 400,
+      text: '2', lines: ['2'], fontFamily: 'Verdana', fontSize: 9, fontWeight: 400,
       lineHeight: 11, bounds: { x: 36, y: 115, width: 6, height: 11 },
       support: { kind: 'merge-run', bundle: 'bundle-1', run: 'merge:bundle-1:0' } });
     return model;
@@ -691,7 +696,7 @@ describe('declared bar crossings', () => {
         { id: 'flow', from: 'upper', to: 'aside', class: 'flow', layer: 'overlay',
           points: [{ x: 300, y: 130 }, { x: 360, y: 130 }] }],
       labels: [{ id: 'label:node:upper', owner: { kind: 'node', id: 'upper' }, layer: 'routed', role: 'node',
-        text: 'EBB-01', lines: ['EBB-01'], fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 12,
+        text: 'EBB-01', lines: ['EBB-01'], fontFamily: 'Verdana', fontSize: 12,
         fontWeight: 700, lineHeight: 14, bounds: { x: 60, y: 113, width: 44, height: 14 } },
       pillLabel('upper', '100G', 1, { x: 35, y: 92, width: 10, height: 16 }, -90)],
     });

@@ -54,7 +54,7 @@ describe('measured node size', () => {
     expect(node.contentSize!.width).toBeGreaterThan(190);
     expect(node.size!.width).toBeGreaterThanOrEqual(node.contentSize!.width);
     expect(node.sidePitch?.left).toBe(15);
-    const measured = measureNodeContent(model.document.nodes.a!, node.contentInsets);
+    const measured = measureNodeContent(model.document.nodes.a!, model.document, node.contentInsets);
     expect(measured.blocks).toEqual([expect.objectContaining({ kind: 'node', text: 'Content', lines: ['Content'], fontSize: 9, fontWeight: 700, lineHeight: 11 })]);
     expect(measured.width).toBe(node.contentSize!.width);
   });
@@ -98,7 +98,7 @@ describe('measured node size', () => {
     expect(nodes.c?.contentSize).toEqual(nodes.a?.contentSize);
     expect(nodes.d?.contentSize).toEqual(nodes.b?.contentSize);
     expect(resolveNodeIcon({ class: 'provider' })).toBe('cloud');
-    expect(resolveNodeIcon({ class: 'rr' })).toBe('router');
+    expect(resolveNodeIcon({ class: 'rr' })).toBe('server');
     expect(resolveNodeIcon({ class: 'provider', icon: 'custom' })).toBe('custom');
     expect(resolveNodeIcon({ class: 'provider', icon: '' })).toBeUndefined();
     expect(resolveNodeIcon({ class: 'constructor' })).toBeUndefined();
@@ -106,7 +106,7 @@ describe('measured node size', () => {
     // target does. The icon box is a fixed 12 x 12 whatever the glyph, so this moves no geometry.
     expect(resolveNodeIcon({ class: 'router' })).toBe('router');
     expect(resolveNodeIcon({ class: 'tbr' })).toBe('switch');
-    expect(new Set(['provider', 'router', 'tbr'].map(value => resolveNodeIcon({ class: value }))).size).toBe(3);
+    expect(new Set(['provider', 'router', 'tbr', 'rr'].map(value => resolveNodeIcon({ class: value }))).size).toBe(4);
     const glyphs = sized('{a: {group: g, class: router, label: A}, b: {group: g, class: tbr, label: A}}').nodes;
     expect(glyphs.b!.contentSize).toEqual(glyphs.a!.contentSize);
   });

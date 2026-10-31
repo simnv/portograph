@@ -26,8 +26,8 @@ const label = (model: LayoutModel, text: string) => model.labels.find(item => it
 const gap = (title: { x: number; width: number }, rect: { x: number; width: number }): number =>
   Math.max(rect.x - (title.x + title.width), title.x - (rect.x + rect.width));
 
-// A provider row of three under one router: the chord to the third provider is slanted, so its bounding box covers the title's x while its
-// crossing of the band does not.
+// A provider row of three under one router: the chord to the third provider is slanted, so it may cross the title (ticket 162) and holds no
+// room in the title band.
 const SLANTED = `portograph: 2
 profile: network
 groups:
@@ -100,23 +100,13 @@ describe('a cross-frame chord crosses the title band of its own end', () => {
     gates(model);
   }, 60000);
 
-  it('reserves the crossing rectangle of the chord for the label planner, not the box of the whole run', async () => {
+  it('reserves nothing from the label planner for a slanted chord: a diagonal may cross a title (ticket 162)', async () => {
     const model = await run(SLANTED);
     const slanted = linkOf(model, 'upstream-router', 'provider-3'), chord = slanted.path!.segments[0]!;
     expect(slanted.technique).toBe('straight');
     expect(Math.abs(chord.from.x - chord.to.x)).toBeGreaterThan(20);
-    const band = model.labelBands.find(item => item.group === 'providers')!;
-    const mine = groupLabelObstacles(model).filter(item => item.id.startsWith(`${slanted.id}:`));
-    expect(mine.map(item => item.id)).toEqual([`${slanted.id}:chord:providers`]);
-    const crossing = mine[0]!.bounds;
-    // The rectangle stands inside the band's y-range (grown by the half stroke), not over the whole run from port to port.
-    expect(crossing.y).toBeGreaterThanOrEqual(band.bounds.y - 1);
-    expect(crossing.y + crossing.height).toBeLessThanOrEqual(band.bounds.y + band.bounds.height + 1);
-    // The bounding box of the whole run would cover the title's x; the crossing does not.
-    const title = label(model, 'Providers');
-    const box = { x: Math.min(chord.from.x, chord.to.x), width: Math.abs(chord.to.x - chord.from.x) };
-    expect(gap(title, box)).toBeLessThan(0);
-    expect(gap(title, crossing)).toBeGreaterThanOrEqual(-1e-6);
+    // Before ticket 162 the planner held the crossing rectangle of the chord in the band; a diagonal now holds no room from any title.
+    expect(groupLabelObstacles(model).filter(item => item.id.startsWith(`${slanted.id}:`))).toEqual([]);
     expect(model.diagnostics.some(item => item.code === 'ROUTED_CHORD_TITLE')).toBe(false);
     gates(model);
   }, 60000);

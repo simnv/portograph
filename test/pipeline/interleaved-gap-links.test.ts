@@ -67,14 +67,15 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
     expect(model.removedLinks ?? []).toEqual([]);
     expect(model.diagnostics.filter(diagnostic => diagnostic.code === 'ROUTE_CHECKPOINT_SKIPPED')).toEqual([]);
     const earlier = model.links.find(link => link.id === 'link-4')!, later = model.links.find(link => link.id === 'link-7')!;
-    // Every part holds the row the plan gave it (spec 2.4: link-4 326.5, the last of five), and on no other.
+    // Every part holds the row the plan gave it (spec 2.4: link-4 327.5, the last of five), and on no other.
+    // Verdana metrics (snack-theme ticket 157): 326.5 with Arial.
     const plan = await planRows('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row');
-    expect(plan.get('link-4')).toEqual([expect.closeTo(326.5, 6)]);
+    expect(plan.get('link-4')).toEqual([expect.closeTo(327.5, 6)]);
     expect(horizontals(earlier)).toEqual([expect.closeTo(plan.get('link-4')![0]!, 6)]);
     // The pair crosses once, on link-4's run over link-7's lower leg (reserved by the plan, not discovered by the router).
     const crossings = strictCrossings(earlier, later);
     expect(crossings).toHaveLength(1);
-    expect(crossings[0]!.y).toBeCloseTo(326.5, 6);
+    expect(crossings[0]!.y).toBeCloseTo(327.5, 6);
     gatesPass(model);
   }, 60000);
 
@@ -84,14 +85,15 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
     const earlier = model.links.find(link => link.id === 'link-3')!, later = model.links.find(link => link.id === 'link-4')!;
     const [upper, lower] = tipRows(model, earlier);
     expect(lower - upper).toBeGreaterThan(23);
-    // The plan: link-3 274.5 between the halves of link-4, a Z part (4a 263, 4b 286); the pair crosses once, on link-4's middle drop.
+    // The plan: link-3 275.5 between the halves of link-4, a Z part (4a 264, 4b 287); the pair crosses once, on link-4's middle drop.
+    // Verdana metrics (snack-theme ticket 157): 274.5, 263 and 286 with Arial.
     const plan = await planRows('an-earlier-link-with-no-run-crosses-on-the-row-between-its-tips');
-    expect(plan.get('link-3')).toEqual([expect.closeTo(274.5, 6)]);
-    expect(plan.get('link-4')).toEqual([expect.closeTo(263, 6), expect.closeTo(286, 6)]);
-    expect(horizontals(earlier)).toEqual([expect.closeTo(274.5, 6)]);
+    expect(plan.get('link-3')).toEqual([expect.closeTo(275.5, 6)]);
+    expect(plan.get('link-4')).toEqual([expect.closeTo(264, 6), expect.closeTo(287, 6)]);
+    expect(horizontals(earlier)).toEqual([expect.closeTo(275.5, 6)]);
     const crossings = strictCrossings(earlier, later);
     expect(crossings).toHaveLength(1);
-    expect(crossings[0]!.y).toBeCloseTo(274.5, 6);
+    expect(crossings[0]!.y).toBeCloseTo(275.5, 6);
     // The later link does not ride the earlier link's row: no horizontal of theirs shares a y with an overlap in x.
     for (const one of earlier.path!.segments as Segment[]) {
       for (const other of later.path!.segments as Segment[]) {
@@ -124,19 +126,20 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
 });
 
 describe('a plain stem tip in the group padding holds its row (ranked-groups ticket 43)', () => {
-  // Ticket 50 (the tier-gap plan) lands it: link-2 is a Z part (2a 131.75, 2b 154.75), link-1 holds 143.25.
+  // Ticket 50 (the tier-gap plan) lands it: link-2 is a Z part (2a 132.75, 2b 155.75), link-1 holds 144.25.
+  // Verdana metrics (snack-theme ticket 157): 131.75, 154.75 and 143.25 with Arial.
   it('seats the earlier link of an interleaved pair whose tips stand in the padding, so the later link does not ride its tip row', async () => {
     const model = await routed('a-plain-tip-in-the-group-padding-holds-its-row');
     expect(model.removedLinks ?? []).toEqual([]);
     const earlier = model.links.find(link => link.id === 'link-1')!, later = model.links.find(link => link.id === 'link-2')!;
     const [upper, lower] = tipRows(model, earlier);
     const plan = await planRows('a-plain-tip-in-the-group-padding-holds-its-row');
-    expect(plan.get('link-1')).toEqual([expect.closeTo(143.25, 6)]);
+    expect(plan.get('link-1')).toEqual([expect.closeTo(144.25, 6)]);
     // The tips stand in the padding, outside the gap, and the earlier link holds the row of its own between the halves of the Z part.
     const bands = [...model.tierBands].sort((a, b) => a.bounds!.y - b.bounds!.y);
     expect(upper).toBeLessThan(bands[0]!.bounds!.y + bands[0]!.bounds!.height);
     expect(lower).toBeGreaterThan(bands[1]!.bounds!.y);
-    expect(horizontals(earlier)).toEqual([expect.closeTo(143.25, 6)]);
+    expect(horizontals(earlier)).toEqual([expect.closeTo(144.25, 6)]);
     // The tip row of the later link carries no run of another link.
     const [laterTip] = tipRows(model, later);
     for (const link of model.links) {
@@ -147,7 +150,7 @@ describe('a plain stem tip in the group padding holds its row (ranked-groups tic
     }
     const crossings = strictCrossings(earlier, later);
     expect(crossings).toHaveLength(1);
-    expect(crossings[0]!.y).toBeCloseTo(143.25, 6);
+    expect(crossings[0]!.y).toBeCloseTo(144.25, 6);
     gatesPass(model);
   }, 60000);
 });

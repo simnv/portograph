@@ -7,10 +7,12 @@
 # distance (stress ticket 19).
 #
 # `middle` carries two links up and one down, so the title takes the bottom edge (ADR-0011) — the
-# edge the downward corridor crosses. The build produces a group 330.489992234375 px wide holding a
-# label 239.361328125 px wide at x 106.63427934375: 75.128664109375 px of slack on the left and
-# **exactly 0 on the right**, the label's right edge on the inset the growth asked for. Before the
-# fix the two steps were one tolerance apart and the label came to rest 1e-6 px outside it.
+# edge the downward corridor crosses. Sizing gives the box the title room before the lanes
+# (snack-theme ticket 157), but the corridor still covers the window, so 7f still walks past it and
+# grows the box. The build (Verdana metrics) produces a group 452.7861368125 px wide holding a label
+# 285.357421875 px wide at x 113.9248066875: 151.4287149375 px of slack on the left and **exactly 0 on
+# the right**, the label's right edge on the inset the growth asked for. Before the fix the two steps
+# were one tolerance apart and the label came to rest 1e-6 px outside it.
 # Every gate passes.
 portograph: 2
 groups:

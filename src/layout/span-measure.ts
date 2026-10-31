@@ -6,7 +6,8 @@ import { pathBends } from './objective.js';
 
 /**
  * The span round's offer (architecture ticket 22, docs/design/routed-chords.md, Section 14.4). `measureSpans` reads the 7f baseline and its routed result and
- * names the links that may become a spanning chord: a routed link between two document tiers that are not consecutive, whose corridor (the chord over every
+ * names the links that may become a spanning chord: a routed link whose end sub-tiers are not adjacent (`spanCandidate`: document tiers not consecutive, or
+ * consecutive with a rank band between, architecture-2 ticket 35), whose corridor (the chord over every
  * transited band, grown by the gate clearances) is clear of every wall a cross-frame chord reads. Phase 1 runs it as a shadow, for the trace only.
  */
 

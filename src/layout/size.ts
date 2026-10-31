@@ -1,45 +1,114 @@
 import { portPitch } from '../geometry/index.js';
 import type { NormalisedNode } from '../model/document.js';
-import type { Side, Size } from '../model/geometry.js';
-import type { LayoutModel, LayoutNode } from '../model/layout.js';
+import type { Rect, Side, Size } from '../model/geometry.js';
+import type { LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
+import { resolveNodeContentStyle } from '../profiles/network/content.js';
+import type { NodeContentDocument, NodeContentStyle } from '../profiles/network/content.js';
 import { resolveNodeIcon } from '../profiles/network/icons.js';
 import { FONT_FAMILY, measurePortPill, measureText } from '../text/index.js';
-import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
+import { CARD_CONTENT_GEOMETRY as cardTheme, NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { gridChains } from './grid.js';
 import { barLabelFloor, barPortsFloor } from './bar-width.js';
 
 export type NodeContentBlock =
-  | (Size & { kind: 'icon'; icon: string })
+  | (Size & { kind: 'icon'; icon: string; inset?: number; radius?: number })
   | (Size & { kind: 'node' | 'description'; text: string; lines: string[]; fontFamily: string;
-    fontSize: number; fontWeight: 400 | 700; lineHeight: number });
+    fontSize: number; fontWeight: 400 | 700; lineHeight: number; textAlign?: 'start' });
 
 export interface NodeContentMeasurement extends Size {
-  /** Stack in this order with contentGap; centre in the interior defined by contentInsets. */
+  /** The style the one resolver gave this node (R1). `placeNodeContent` reads it; nothing else decides it again. */
+  style: NodeContentStyle;
+  /**
+   * `stacked`: stack in this order with contentGap; centre in the interior defined by contentInsets.
+   * `card`: the icon tile (if any), then the title and the subtitle as one left-aligned block beside it; see `placeNodeContent`.
+   */
   blocks: NodeContentBlock[];
 }
 
-/** Padded bounds and renderable blocks; placement supplies absolute coordinates later. */
-export function measureNodeContent(node: NormalisedNode,
+/**
+ * Padded bounds and renderable blocks; placement supplies absolute coordinates later (`placeNodeContent`). The content style comes
+ * from `resolveNodeContentStyle` unless the caller states one, so stage 3 and stage 5 measure the same node the same way (R1).
+ */
+export function measureNodeContent(node: NormalisedNode, document: NodeContentDocument,
   insets: Record<Side, number> = { top: theme.padding, right: theme.padding, bottom: theme.padding, left: theme.padding },
+  style: NodeContentStyle = resolveNodeContentStyle(node, document),
 ): NodeContentMeasurement {
+  const card = style === 'card';
   const blocks: NodeContentBlock[] = [];
   const icon = resolveNodeIcon(node);
-  if (icon !== undefined) blocks.push({ kind: 'icon', icon, width: theme.iconWidth, height: theme.iconHeight });
+  if (icon !== undefined) {
+    blocks.push(card
+      ? { kind: 'icon', icon, width: cardTheme.tileSize, height: cardTheme.tileSize, inset: cardTheme.glyphInset, radius: cardTheme.tileRadius }
+      : { kind: 'icon', icon, width: theme.iconWidth, height: theme.iconHeight });
+  }
   const appendText = (kind: 'node' | 'description', text: string, fontSize: number, fontWeight: 400 | 700): void => {
     const measured = measureText(text, { fontSize, weight: fontWeight });
     if (measured.height > 0) blocks.push({ kind, text, lines: measured.lines, fontFamily: FONT_FAMILY,
-      fontSize, fontWeight, lineHeight: measured.lineHeight, width: measured.width, height: measured.height });
+      fontSize, fontWeight, lineHeight: measured.lineHeight, width: measured.width, height: measured.height,
+      ...(card ? { textAlign: 'start' as const } : {}) });
   };
+  if (card) {
+    appendText('node', node.label, cardTheme.titleFontSize, cardTheme.titleFontWeight);
+    appendText('description', node.description ?? '', cardTheme.subtitleFontSize, cardTheme.subtitleFontWeight);
+    const { width, height } = cardBlocks(blocks);
+    return { style, blocks, width: width + insets.left + insets.right, height: height + insets.top + insets.bottom };
+  }
   appendText('node', node.label, theme.labelFontSize, theme.labelFontWeight);
   appendText('description', node.description ?? '', theme.descriptionFontSize, theme.descriptionFontWeight);
   return {
+    style, blocks,
     width: Math.max(0, ...blocks.map(block => block.width)) + insets.left + insets.right,
     height: blocks.reduce((sum, block) => sum + block.height, 0)
       + Math.max(0, blocks.length - 1) * theme.contentGap + insets.top + insets.bottom,
-    blocks,
   };
+}
+
+/** The parts of a card and the size of the whole, before insets: tile, then `tileGap` (only with both), then the wider of title and subtitle. */
+function cardBlocks(blocks: readonly NodeContentBlock[]): { tile?: NodeContentBlock; text: NodeContentBlock[]; width: number; height: number;
+  textWidth: number; textHeight: number } {
+  const tile = blocks.find(block => block.kind === 'icon');
+  const text = blocks.filter(block => block.kind !== 'icon');
+  const textWidth = Math.max(0, ...text.map(block => block.width));
+  const textHeight = text.reduce((sum, block) => sum + block.height, 0) + Math.max(0, text.length - 1) * cardTheme.subtitleGap;
+  const width = (tile?.width ?? 0) + (tile !== undefined && text.length > 0 ? cardTheme.tileGap : 0) + textWidth;
+  return { ...(tile === undefined ? {} : { tile }), text, width, height: Math.max(tile?.height ?? 0, textHeight), textWidth, textHeight };
+}
+
+/**
+ * Where each block of a measured node stands inside its box: the one placement rule of both content styles (stage 5 and every
+ * rebuild after it). Ports are not placed here: they stay centred on their faces whatever the content does.
+ *
+ * `stacked`: one centred column in the inset interior. `card`: the tile and the text block, side by side, form one block that is
+ * centred in the inset interior on both axes; the tile is centred on that block's height, the text block too, and the title and
+ * the subtitle share the text block's left edge.
+ */
+export function placeNodeContent(content: NodeContentMeasurement, box: Rect, insets: Record<Side, number>):
+{ block: NodeContentBlock; bounds: Rect }[] {
+  const interior = { x: box.x + insets.left, y: box.y + insets.top,
+    width: box.width - insets.left - insets.right, height: box.height - insets.top - insets.bottom };
+  if (content.style === 'card') {
+    const { tile, text, width, textHeight } = cardBlocks(content.blocks);
+    const left = interior.x + (interior.width - width) / 2, middle = interior.y + interior.height / 2;
+    const placed: { block: NodeContentBlock; bounds: Rect }[] = [];
+    if (tile !== undefined) placed.push({ block: tile, bounds: { x: left, y: middle - tile.height / 2, width: tile.width, height: tile.height } });
+    const textLeft = left + (tile === undefined ? 0 : tile.width + cardTheme.tileGap);
+    let y = middle - textHeight / 2;
+    for (const block of text) {
+      placed.push({ block, bounds: { x: textLeft, y, width: block.width, height: block.height } });
+      y += block.height + cardTheme.subtitleGap;
+    }
+    return placed;
+  }
+  const centreX = interior.x + interior.width / 2;
+  const stack = content.height - insets.top - insets.bottom;
+  let y = interior.y + (interior.height - stack) / 2;
+  return content.blocks.map(block => {
+    const bounds = { x: centreX - block.width / 2, y, width: block.width, height: block.height };
+    y += block.height + theme.contentGap;
+    return { block, bounds };
+  });
 }
 
 /**
@@ -109,6 +178,20 @@ export function alignmentAllowance(node: LayoutNode, side: Side): number {
   return Math.max(node.bounds?.width ?? 0, ALIGNMENT_MAX_GROWTH * ownSideWidth(node, side));
 }
 
+/**
+ * The content insets of a node whose ports stand on the faces `sideOf` names: on each face the padding, or half the widest named pill on it and
+ * the content gap, whichever is more (pill width follows the normal on all four sides after top/bottom rotation). The one inset rule: `sizeNodes`
+ * measures with it, and a round that moves a port to another face measures the content it will have there with it (snack-theme ticket 159).
+ */
+export function contentInsets(ports: readonly LayoutPort[], sideOf: (port: LayoutPort) => Side | undefined): Record<Side, number> {
+  const insets: Record<Side, number> = { top: theme.padding, right: theme.padding, bottom: theme.padding, left: theme.padding };
+  for (const port of ports) {
+    const side = sideOf(port);
+    if (side !== undefined && port.ref.anonymous !== true) insets[side] = Math.max(insets[side], measurePortPill(port.ref.name).width / 2 + theme.contentGap);
+  }
+  return insets;
+}
+
 /** Measure stage-3 floors and capacity in place; later resize passes may only grow sizes. */
 export function sizeNodes(model: LayoutModel): LayoutModel {
   for (const id of orderedNodeIds(model.document)) {
@@ -118,23 +201,18 @@ export function sizeNodes(model: LayoutModel): LayoutModel {
       bottom: { count: 0, pills: [] }, right: { count: 0, pills: [] },
       top: { count: 0, pills: [] }, left: { count: 0, pills: [] },
     };
-    const insets: Record<Side, number> = { top: theme.padding, right: theme.padding, bottom: theme.padding, left: theme.padding };
     for (const port of node.ports) {
       const side = port.side ?? port.sizingSide;
       if (side === undefined) throw new Error(`Node ${id} has a port without a side or capacity estimate`);
       sides[side].count++;
-      if (port.ref.anonymous !== true) {
-        const pill = measurePortPill(port.ref.name);
-        sides[side].pills.push(pill);
-        // Pill width follows the normal on all four sides after top/bottom rotation.
-        insets[side] = Math.max(insets[side], pill.width / 2 + theme.contentGap);
-      }
+      if (port.ref.anonymous !== true) sides[side].pills.push(measurePortPill(port.ref.name));
     }
+    const insets = contentInsets(node.ports, port => port.side ?? port.sizingSide);
     const pitch: Record<Side, number> = { bottom: 12, right: 12, top: 12, left: 12 };
     for (const side of SIDE_TIE_ORDER) pitch[side] = Math.max(portPitch(sides[side].pills), node.sidePitch?.[side] ?? 0);
     node.sidePitch = pitch;
     node.contentInsets = insets;
-    const content = measureNodeContent(authored, insets);
+    const content = measureNodeContent(authored, model.document, insets);
     node.contentSize = { width: content.width, height: content.height };
     node.sizeFloor = {
       width: Math.max(theme.minWidth, node.contentSize.width, authored.size?.width ?? 0, node.sizeFloor?.width ?? 0),
