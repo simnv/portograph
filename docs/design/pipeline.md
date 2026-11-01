@@ -931,7 +931,9 @@ is measured on the geometry that stands. `refreshHeldWarnings` withdraws only a 
 For each `bar` group, after 7c so all source ports are final: each node is a horizontal bar;
 stack order = declaration order, top to bottom. Bar port x := source port x, ordered by x; where
 two sources are closer than `pitch`, the later drop fans horizontally to the next free slot
-(a 2-bend jog) and is reported. Bar span = [min port x − 30, max port x + 30], floor = label + 60;
+(a 2-bend jog) and is reported. Bar span = [min port x − m_l, max port x + m_r], where each end
+margin m is at least 30 px and is raised to the end inset stored by the stage-3 corner reservation
+(ticket 156), so a long pill on the bar's side face keeps its clearance; floor = label + 60;
 spans of stacked bars are merged to their union transitively when any pair overlaps by > 50 % of
 the narrower; a bar with no ports spans the group's label only. A drop to a lower bar crosses the
 upper bar (`barCross`); a link entering a bar from **below** is the mirror case and also counted.

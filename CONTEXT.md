@@ -124,7 +124,7 @@ drew it. Network diagrams first; software architecture and electrical panels nex
 | Node minimum | 50 × 35 px | d3-fd |
 | Port pill | 24 × 10 px, r 2 (was 3) | d3-fd; ticket 34 |
 | Corner radii | `network` theme: node 4 px, group 4 px, pill 2 px, icon tile 2 px (Industry's 4 px token; was 8 / 10 / 3 from d3-fd). The `snack` theme paints node 8, group 8, icon tile 4; the pill stays 2 in every theme (the layout stores it). Node, group and tile radii are paint only (`Theme.radii`) | ticket 34, maintainer 2026-09-14; ticket 158 |
-| Bar padding beyond outermost port | 30 px | prototype `tall5` |
+| Bar padding beyond outermost port | 30 px minimum; raised to the stored corner end inset (ticket 156) | prototype `tall5` |
 | Bar span merge threshold | spans overlap > 50 % of the narrower → shared span | prototype `tall5` |
 | Lane width | port pill width + gap ≈ 34 px | prototype `tall3` |
 | Group label band | label height + 8 px; label centered when clear, otherwise nearest free gap | maintainer M1 visual review |
