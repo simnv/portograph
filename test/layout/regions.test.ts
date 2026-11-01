@@ -57,9 +57,9 @@ describe('real golden region stages', () => {
     expect(Object.values(model.nodes).flatMap(node => node.ports)).toHaveLength(52);
     const beforePairs = input.links.map(link => flankPair(input, link)).filter(pair => pair !== undefined);
     expect(beforePairs.filter(pair => pair.group.id === 'tbr-left').map(pair => pair.own.engineOrder)).toEqual([0, 2, 4, 6]);
-    // Ticket 08: the flank members read the slots the TBR bundle ports took when their face was sorted, not the skeleton's, so this stage-5 order is [0, 3, 4, 6] (it was
-    // [6, 4, 3, 1]). The published layout of this golden is byte-identical to main's (layout JSON compared), so the later flank stage reorders it as before.
-    expect(beforePairs.filter(pair => pair.group.id === 'tbr-right').map(pair => pair.own.engineOrder)).toEqual([0, 3, 4, 6]);
+    // Ticket 08 reads the slots the flank face took at stage 5, before the flank stage normalizes its primary block.
+    // Ticket 156: protected x separation retains the original far-end sort and primary alignment.
+    expect(beforePairs.filter(pair => pair.group.id === 'tbr-right').map(pair => pair.own.engineOrder)).toEqual([0, 2, 4, 6]);
     for (const id of ['TBR-001', 'TBR-002']) {
       const primaryPorts = new Set(beforePairs.filter(pair => pair.own.ref.node === id).map(pair => pair.own.ref.ordinal));
       const otherOrder = (m: LayoutModel) => [...m.nodes[id]!.ports].filter(port => !primaryPorts.has(port.ref.ordinal)).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.ref);
@@ -211,7 +211,7 @@ describe('stored flank primary and capacity', () => {
       a.ports[0]!.anchor!.y = a.bounds!.y + a.bounds!.height / 2;
       draft.groups.g!.bounds!.height = a.bounds!.height + 24;
     });
-    expect(input.nodes.a!.sidePitch!.left).toBe(24); expect(input.nodes.b!.sidePitch!.right).toBe(14);
+    expect(input.nodes.a!.sidePitch!.left).toBe(24); expect(input.nodes.b!.sidePitch!.right).toBe(15);
     const model = flanks(lanes(rows(input)));
     expect(model.nodes.a!.sidePitch!.left).toBe(24); expect(model.nodes.b!.sidePitch!.right).toBe(24);
     expect(ends(model).from.anchor!.y).toBe(ends(model).to.anchor!.y);

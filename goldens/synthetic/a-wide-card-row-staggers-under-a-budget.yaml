@@ -1,0 +1,143 @@
+# Expected (ticket 166): automatic alternate lines preserve feed order and straight vertical drops.
+# Snack cards, a sixteen-port bar, a five-port switch, and two leaf bands fit within 1500 px; G1-G9 pass.
+portograph: 2
+theme: snack
+layout:
+  nodeContent: card
+  maxWidth: 1500
+groups:
+  uplink:
+    tier: 0
+    label: Uplink
+  switches:
+    tier: 1
+    label: Distribution
+    shape: bar
+  sensors:
+    tier: 3
+    label: SENSORS
+  clients:
+    tier: 3
+    label: CLIENTS
+  extension:
+    tier: 2
+    label: Extension
+nodes:
+  gateway:
+    group: uplink
+    class: router
+    label: Border
+    description: Demo network gateway
+    ports:
+      - lan1
+      - lan2
+  main:
+    group: switches
+    class: switch
+    label: Distribution 16
+    description: Sixteen-port demo switch
+    ports:
+      - p1
+      - p2
+      - p3
+      - p4
+      - p5
+      - p6
+      - p7
+      - p8
+      - p9
+      - p10
+      - p11
+    icon: switch
+  mini:
+    group: extension
+    class: switch
+    label: Mini five
+    description: Five-port extension switch
+    ports:
+      - up
+      - p1
+      - p2
+    icon: switch
+  sensor1:
+    group: sensors
+    class: server
+    label: Sensor station 1
+    description: Demo observation endpoint
+    icon: cloud
+  sensor2:
+    group: sensors
+    class: server
+    label: Sensor station 2
+    description: Demo observation endpoint
+    icon: cloud
+  sensor3:
+    group: sensors
+    class: server
+    label: Sensor station 3
+    description: Demo observation endpoint
+    icon: cloud
+  sensor4:
+    group: sensors
+    class: server
+    label: Sensor station 4
+    description: Demo observation endpoint
+    icon: cloud
+  client1:
+    group: clients
+    class: router
+    label: Client 1
+    description: Demo attached endpoint unit
+  client2:
+    group: clients
+    class: router
+    label: Client 2
+    description: Demo attached endpoint unit
+  client3:
+    group: clients
+    class: router
+    label: Client 3
+    description: Demo attached endpoint unit
+  client4:
+    group: clients
+    class: iot
+    label: Client 4
+    description: Demo attached endpoint unit
+    icon: server
+  client5:
+    group: clients
+    class: router
+    label: Client 5
+    description: Demo attached endpoint unit
+  client6:
+    group: clients
+    class: router
+    label: Client 6
+    description: Demo attached endpoint unit
+links:
+  - - gateway.lan2
+    - main.p11
+  - - gateway.lan1
+    - main.p1
+  - - main.p2
+    - mini.up
+  - - main.p3
+    - sensor1
+  - - main.p4
+    - sensor2
+  - - main.p5
+    - sensor3
+  - - main.p6
+    - sensor4
+  - - mini.p1
+    - client1
+  - - mini.p2
+    - client2
+  - - main.p7
+    - client3
+  - - main.p8
+    - client4
+  - - main.p9
+    - client5
+  - - main.p10
+    - client6

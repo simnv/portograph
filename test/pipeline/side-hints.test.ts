@@ -22,7 +22,8 @@ type Hints = ReadonlyMap<string, 'left' | 'right'>;
 interface Run { model: LayoutModel; graph: ElkNode }
 interface Forged { nodes: Record<string, { ports: { sideHint?: true; naturalSide?: string; side: string }[]; sizeFloor: { width: number; height: number } }>; freeze: { nodeFloors: { node: string; size: { width: number; height: number } }[] } }
 // The `reservations` field (architecture 2, ticket 03) is the declared ledger of the run, not geometry: the bytes main made have none.
-const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
+// Normalize emitted font lists to keep the pre-fallback geometry hashes.
+const withoutRuntime = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : key === 'fontFamily' ? 'Verdana' : value);
 async function run(yaml: string, hints?: Hints, floors?: ReadonlyMap<string, { width: number; height: number }>): Promise<Run> {
   const graphs: string[] = [];
   const createElkAttempt: CreateElkAttempt = () => {
@@ -271,11 +272,13 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // and nothing else in its layout differs (diffed against main's src at 964d77f). It is re-baselined again for architecture ticket 23, phase 1: the `GROUP_SHAPE_DECLINED` message gains `(reason: authored-side)`, and nothing else in its layout differs. The other three fixtures are untouched by them. `a-bar-end-keeps-its-corridor` is re-baselined for architecture ticket 19 (the bar is seated at the width 7d gives it: the lanes stand 3 px further out). `a-group-holds-both-ends-of-a-bundle` and `a-linked-node-steps-out-of-a-straight-chord` are re-baselined for architecture ticket 17: their free rows gain a `rowOrderDecision` record (`kept`), and nothing else differs (the hash without that key equals the old one). Each also compares a
   // no-hint run with a run with empty hint and floor maps, which is the ticket 114 claim itself.
   // Verdana metrics (snack-theme ticket 157): the hashes were f98faf1ca584bd8d, 2bf7ca0b64536533, 4bf31e66a5f0601f and c47be7d6b65f7515 with Arial.
+  // The 9 px floor changes named pills and their reserved geometry.
+  // Ticket 156 adds only frozen portCorners records on the bundle fixture; a source diff confirms identical geometry.
   const main: Record<string, string> = {
-    'a-group-holds-both-ends-of-a-bundle': '9e6949deb42b188a',
+    'a-group-holds-both-ends-of-a-bundle': 'd5044bd379b1900d',
     'a-bus-in-a-rank-gap-grows-the-gap': '6b813734f4667a13',
     'a-linked-node-steps-out-of-a-straight-chord': '87acdee7504bf90c',
-    'a-bar-end-keeps-its-corridor': 'bb39ea4e9be5ae64',
+    'a-bar-end-keeps-its-corridor': 'b77586f1d9edb49d',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {
     const { model } = await run(fixture(name));
@@ -291,7 +294,7 @@ groups:
   top: {tier: 0}
   low: {tier: 1}
 nodes:
-  server: {group: top, ports: [{name: alpha}, {name: bravo}, {name: charlie}, {name: delta}, {name: echo}, {name: foxtrot}]}
+  server: {group: top, size: {width: 0, height: 80}, ports: [{name: alpha}, {name: bravo}, {name: charlie}, {name: delta}, {name: echo}, {name: foxtrot}]}
   c1: {group: low}
   c2: {group: low}
   c3: {group: low}
@@ -307,6 +310,7 @@ links:
   - [server.foxtrot, c6]
 `;
   it('a size floor keeps the width of the natural face, so the ELK graph is the same', async () => {
+    // Ticket 156: leave height for the hinted lateral pill's corner margins at 9 px. Only width is this test's premise.
     const plain = await run(wide);
     const { key } = port(plain.model, 'server', 5);
     const sizes = graphSizes(plain.graph, ['server']);

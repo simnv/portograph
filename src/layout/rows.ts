@@ -9,7 +9,8 @@ import { rowGap } from './sides-two.js';
 import { withStageMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { facingPair, type FacingPair } from './row-paths.js';
-import { NODE_CONTENT_GEOMETRY as theme } from '../theme/content.js';
+import { staggerOf } from './stagger.js';
+import { portEndInsets } from './port-insets.js';
 
 const right = (rect: Rect): number => rect.x + rect.width;
 const overlaps = (a: Rect, b: Rect): boolean => a.x < right(b) && b.x < right(a) && a.y < b.y + b.height && b.y < a.y + a.height;
@@ -32,7 +33,7 @@ function fitGroupBox(draft: LayoutModel, group: LayoutGroup): void {
 function flattenRows(draft: LayoutModel): void {
   for (const band of draft.tierBands) {
     const groups = rowGroups(draft, band);
-    const ids = groups.flatMap(group => group.nodes);
+    const ids = groups.filter(group => staggerOf(draft, group.id) === undefined).flatMap(group => group.nodes);
     if (!ids.length) continue;
     const top = Math.min(...ids.map(id => draft.nodes[id]!.bounds!.y));
     for (const id of ids) {
@@ -74,6 +75,7 @@ export function repackOverlaps(draft: LayoutModel): void {
   // wholes (ranked-groups ticket 12); only then does a sweep push what is left, a group with no frame.
   for (const band of draft.tierBands) {
     for (const group of rowGroups(draft, band)) {
+      if (staggerOf(draft, group.id) !== undefined) continue;
       const order = group.rowOrder ?? group.nodes;
       for (let i = 1; i < order.length; i++) {
         const prior = draft.nodes[order[i - 1]!]!.bounds!, node = draft.nodes[order[i]!]!;
@@ -116,7 +118,8 @@ interface SideTarget { port: string; y: number }
 function levelSide(node: LayoutNode, side: Side, targets: SideTarget[]): void {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, box = node.bounds!, count = ports.length;
-  const low = box.y + theme.padding + pitch / 2, high = box.y + box.height - theme.padding - pitch / 2;
+  const inset = portEndInsets(node, side, pitch);
+  const low = box.y + inset.low, high = box.y + box.height - inset.high;
   const wanted = new Map(targets.map(target => [target.port, target.y]));
   const kept: { index: number; y: number }[] = [];
   ports.forEach((port, index) => {

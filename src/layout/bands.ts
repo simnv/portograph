@@ -6,6 +6,7 @@ import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 import { frameSubtreeCells, orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { measureText } from '../text/index.js';
+import { sidePillTextReach } from './pill-reach.js';
 import { GROUP_LABEL_GEOMETRY, LABEL_CLEARANCE_STEP, measureTitle, titleRoom } from './title-room.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { createCentreBudget, type CentreBudget } from './centre.js';
@@ -219,12 +220,28 @@ export function stemReach(model: LayoutModel, node: LayoutModel['nodes'][string]
 }
 
 /**
+ * Outward distance of the ordinary checkpoint on one node side: the node's `stemReach`, or beyond the text of every pill of
+ * that side where that reaches further (`sidePillTextReach`, ticket 156). A run that starts or turns at a tip under pill text
+ * crosses it (G3). Ordinary stems and their row-gap room read this text depth. Fan peel rows and their nested base instead
+ * reserve `sidePillBodyReach`, beyond the pill bodies and strokes.
+ */
+export function sideStemReach(model: LayoutModel, node: LayoutNode, side: Side): number {
+  return Math.max(stemReach(model, node), sidePillTextReach(model, node, side));
+}
+
+/** `sideStemReach` at one port's side; a port with no side yet keeps the node's `stemReach`. */
+export function portStemReach(model: LayoutModel, port: LayoutPort): number {
+  const node = model.nodes[port.ref.node]!;
+  return port.side === undefined ? stemReach(model, node) : sideStemReach(model, node, port.side);
+}
+
+/**
  * Every outward point stage 8 must consume: the outward checkpoint of each routed attachment and
  * each vertex of its mandatory shared prefix. Neither input depends on whether the link already
  * carries a path, so completing a remainder in stage 8 cannot retire the reservation.
  *
  * The checkpoint is the one `stemCheckpoint` really asks for, not a flat 15 px: the ordinary stem,
- * unless the node's expanded obstacle reaches further, deeper still where a row gap gave the leg a
+ * unless the node's expanded obstacle or the pill text of the port's side reaches further (`portStemReach`), deeper still where a row gap gave the leg a
  * slot (ADR-0015 rule 1) or where a node side nested its stems (its twelfth amendment). Reading it
  * from one place is what keeps the figure `clearanceFor` reserves and the figure stage 8 receives
  * the same one. A nested side's depth is measurably inert here today — a side that carries its

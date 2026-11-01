@@ -40,6 +40,9 @@ export function centringFeeds(model: LayoutModel, tier: number, authority: numbe
       if (parentTier === undefined || (tier > authority ? parentTier > authority : parentTier < authority)) continue;
       if ([parentRef.node, childRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) continue;
       const parent = findPort(model, parentRef)!, child = findPort(model, childRef)!;
+      // A bar takes its slots from the reserved stagger, so it cannot also dictate the child's old x.
+      if (model.staggerRows?.some(row => row.group === model.document.nodes[childRef.node]!.group)
+        && model.document.groups[model.document.nodes[parentRef.node]!.group]!.shape === 'bar') continue;
       if (parent.side !== (tier > authority ? 'bottom' : 'top') || child.side !== (tier > authority ? 'top' : 'bottom')) continue;
       // A bundle member carries its lane only until 7e, which owns member geometry; only a
       // non-bundle transit with an owned lane in the authority tier fixes its child's x here.

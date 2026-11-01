@@ -12,12 +12,14 @@ import type { Reservations } from '../layout/reservations.js';
 import { route, ROUTE_BUDGET_MS } from '../route/index.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 import type { LayoutOptions } from './options.js';
+import type { StaggerRow } from '../model/layout.js';
 import { FAN_ROUNDS, MAX_RERUNS } from './limits.js';
 
 /** What stage 7f did to a model, with the copy of its first settled state (`lastAttempt`): phase 3b's trigger. */
 export interface Banded { model: LayoutModel; moved: boolean; unmoved: LayoutModel | undefined }
 
 export interface Env {
+  staggerRows?: StaggerRow[];
   readonly document: NormalisedDocument;
   readonly options: LayoutOptions;
   readonly budget: Budget;

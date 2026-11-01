@@ -6,7 +6,7 @@ import { MEMBER_GAP, axis, bundleFanRows, clone, coordinate, edgeMargin, facing,
 import { placementWarning } from './regions.js';
 import { STRAIGHT_PATH_CLEARANCE, findPort } from './row-paths.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
-import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke, stemReach } from './bands.js';
+import { GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, portStemReach, routedStroke } from './bands.js';
 import { stemCache, stemPlan } from './sides-two.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
 import { segmentDistance, segmentRectDistance } from '../geometry/planar.js';
@@ -138,7 +138,7 @@ function blockedTracks(model: LayoutModel, port: LayoutPort, band: { from: numbe
     for (const end of ['from', 'to'] as const) {
       const ref = link.attachments[end], at = findPort(model, ref);
       if (!at?.anchor || at.side === undefined || exempt.has(portId(ref))) continue;
-      const out = normal(at.side), reach = stemReach(model, model.nodes[ref.node]!);
+      const out = normal(at.side), reach = portStemReach(model, at);
       const tip = { x: at.anchor.x + out.x * reach, y: at.anchor.y + out.y * reach };
       span({ x: Math.min(at.anchor.x, tip.x) - margin, y: Math.min(at.anchor.y, tip.y) - margin,
         right: Math.max(at.anchor.x, tip.x) + margin, bottom: Math.max(at.anchor.y, tip.y) + margin });
@@ -352,7 +352,7 @@ export function crossBundleFans(model: LayoutModel): void {
      */
     const mine = new Set(items.map(one => one.link.id));
     const checkpoint = (port: LayoutPort): Point => {
-      const out = normal(port.side!), stem = stemReach(model, model.nodes[port.ref.node]!);
+      const out = normal(port.side!), stem = portStemReach(model, port);
       return { x: port.anchor!.x + out.x * stem, y: port.anchor!.y + out.y * stem };
     };
     const owed = (item: typeof items[number]): boolean => {
@@ -374,7 +374,7 @@ export function crossBundleFans(model: LayoutModel): void {
     const approach = (item: typeof items[number]): number => {
       const side = item.far.side!;
       if (axis(side) === tangent || blocked.has(item.link.id)) return item.far.anchor![tangent];
-      return item.far.anchor![tangent] + normal(side)[tangent] * stemReach(model, model.nodes[item.far.ref.node]!);
+      return item.far.anchor![tangent] + normal(side)[tangent] * portStemReach(model, item.far);
     };
     /** How deep out of this side a world point stands. */
     const depthOf = (p: Point): number => tangent === 'y' ? n.x * (p.x - port.anchor!.x) : n.y * (p.y - port.anchor!.y);
@@ -400,7 +400,7 @@ export function crossBundleFans(model: LayoutModel): void {
     const reachOf = (item: typeof items[number]): number => {
       const out = normal(item.far.side!);
       const facing = tangent === 'y' ? n.x * out.x : n.y * out.y;
-      return depthOf(item.far.anchor!) + facing * stemReach(model, model.nodes[item.far.ref.node]!);
+      return depthOf(item.far.anchor!) + facing * portStemReach(model, item.far);
     };
     const stop = (item: typeof items[number], row: number, track: number): number => {
       if (item.link.path?.fixed === true || blocked.has(item.link.id)) return end;
@@ -647,7 +647,7 @@ function releaseHemmedFans(model: LayoutModel): void {
   // widens what the router demands and would leave this pass looking at the wrong distance.
   const margin = nudgingDistance(model);
   // The outward depth stage 8 really asks for at a bare port, which is `stemCheckpoint`'s own: the
-  // 15 px stem, unless the node's expanded obstacle reaches further, and deeper still where a side's
+  // 15 px stem, unless the node's expanded obstacle or the pill text of the side reaches further, and deeper still where a side's
   // stems nest. One plan per row gap for the whole pass, because recomputing it per link end is
   // cubic in the size of a turning cohort.
   const gaps = stemCache();

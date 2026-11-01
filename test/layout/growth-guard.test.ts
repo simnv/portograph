@@ -129,7 +129,11 @@ it('a recorded refusal stands whatever skip would apply to its pair, and is forg
   flank.height = model.groups['core']!.bounds!.height * 0.4;
   expect(forgedRefusals(structuredClone(model), refusals)).toEqual([]);
   // A pair that shares an extent in the final model is a forged record; so is a pair that is not linked.
-  expect(forgedRefusals(structuredClone(await publish('a-grid-growth-stops-at-a-reserved-lane')), refusals)).toEqual(['y:core|side']);
+  // Establish equal extents directly; font size can leave the published grid short.
+  const aligned = structuredClone(await publish('a-grid-growth-stops-at-a-reserved-lane'));
+  aligned.groups['side']!.bounds!.y = aligned.groups['core']!.bounds!.y;
+  aligned.groups['side']!.bounds!.height = aligned.groups['core']!.bounds!.height;
+  expect(forgedRefusals(aligned, refusals)).toEqual(['y:core|side']);
   expect(forgedRefusals(structuredClone(model), new Set(['y:core|nobody']))).toEqual(['y:core|nobody']);
 });
 

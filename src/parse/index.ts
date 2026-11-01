@@ -427,7 +427,11 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
     // Document settings (ticket 152). Only written when the author states them, so a document without the key is unchanged.
     const settings: NonNullable<NormalisedDocument['layout']> = {};
     for (const [key, value] of v.map(root.get('layout'), '$.layout')) {
-      if (key === 'nodeContent') {
+      if (key === 'maxWidth') {
+        const width = v.number(value, '$.layout.maxWidth', false, Number.MIN_VALUE);
+        if (width !== undefined) settings.maxWidth = width;
+      }
+      else if (key === 'nodeContent') {
         const style = v.choice(value, NODE_CONTENT_STYLES, '$.layout.nodeContent');
         if (style !== undefined) settings.nodeContent = style;
       }

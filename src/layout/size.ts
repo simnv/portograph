@@ -11,6 +11,7 @@ import { CARD_CONTENT_GEOMETRY as cardTheme, NODE_CONTENT_GEOMETRY as theme } fr
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { gridChains } from './grid.js';
 import { barLabelFloor, barPortsFloor } from './bar-width.js';
+import { portSideCapacity, reservePortCorners } from './port-insets.js';
 
 export type NodeContentBlock =
   | (Size & { kind: 'icon'; icon: string; inset?: number; radius?: number })
@@ -144,7 +145,7 @@ export const ALIGNMENT_MAX_GROWTH = 12;
 /**
  * The width a node needs for itself on **one** side: the larger of its measured content and author
  * floor, and the room the ports of that side take at their reserved pitch — the same
- * `2 × padding + count × pitch` the port installers hold. It is the reference every alignment
+ * `2 × padding + count × pitch` the horizontal port installers hold. It is the reference every alignment
  * growth is measured against, so a body grown to reach a distant peer stays a body a reader can
  * still read as the node.
  *
@@ -218,7 +219,8 @@ export function sizeNodes(model: LayoutModel): LayoutModel {
       width: Math.max(theme.minWidth, node.contentSize.width, authored.size?.width ?? 0, node.sizeFloor?.width ?? 0),
       height: Math.max(theme.minHeight, node.contentSize.height, authored.size?.height ?? 0, node.sizeFloor?.height ?? 0),
     };
-    const capacity = (side: Side): number => sides[side].count * pitch[side] + 2 * theme.padding;
+    const capacity = (side: Side): number => portSideCapacity(node, side, sides[side].count, pitch[side]);
+    reservePortCorners(node, Math.max(node.sizeFloor.width, node.size?.width ?? 0, capacity('top'), capacity('bottom')));
     // From phase two on, a bar is as wide as the one bar rule asks at least (`bar-width.ts`); a bar with no ports reads the group label. Stage 3's estimate does not
     // carry it, so ELK's input stays as it was; centring reserves the span 7d will give the bar, where it first knows it.
     const bar = model.stage !== 'sides-one' && model.document.groups[authored.group]?.shape === 'bar'

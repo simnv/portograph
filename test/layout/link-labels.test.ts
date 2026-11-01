@@ -32,7 +32,7 @@ const overlaps = (a: Rect, b: Rect): boolean => Math.min(a.x + a.width, b.x + b.
 /** The rulings this ticket implements, restated here so a changed constant fails a test. */
 const NORMAL_GAP = 4, SHORTEN_MARGIN = 8, ELLIPSIS = '...';
 it('keeps the theme and spacing rulings stage 9 was given', () => {
-  expect(LINK_LABEL_GEOMETRY).toEqual({ fontFamily: 'Verdana', fontSize: 9,
+  expect(LINK_LABEL_GEOMETRY).toEqual({ fontFamily: 'Verdana, DejaVu Sans, sans-serif', fontSize: 9,
     fontWeight: 400, normalGap: NORMAL_GAP, ellipsis: ELLIPSIS, shortenMargin: SHORTEN_MARGIN, verticalRotation: -90, halo: 2, alongStep: 2, borderMargin: 8 });
   expect(OVERLAY_LABEL_DENSITY).toBe(3);
 });

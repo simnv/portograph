@@ -5,7 +5,7 @@
 # the content off that face only. Ports stay centred on their faces, whatever the text does. The size is the card's, measured before
 # placement (stage 3) and kept by stage 5. Cases, in node order:
 #   wide     the width comes from the text (a long title and a long subtitle);
-#   hub      the width comes from 5 bottom ports and a short subtitle (5 x 12 px pitch + 20 beats the text);
+#   hub      the width comes from 5 bottom ports and a short subtitle (5 measured port pitches + 20 px beat the text);
 #   twoline  a subtitle of two authored lines (kept, never wrapped);
 #   lateral  4 left ports, so the left inset grows with the pill and the card shifts right;
 #   crowd    long pills on all four faces: every inset grows, the card is still one block;

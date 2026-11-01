@@ -6,7 +6,7 @@ export const NODE_CONTENT_GEOMETRY = {
   padding: 10,
   labelFontSize: 9,
   labelFontWeight: 700,
-  descriptionFontSize: 7,
+  descriptionFontSize: 9,
   descriptionFontWeight: 400,
   iconWidth: 12,
   iconHeight: 12,

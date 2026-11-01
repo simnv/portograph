@@ -63,12 +63,19 @@ const report = score(model);
 const svg = render(model);
 ```
 
+To set a width budget, add `layout: { nodeContent: card, maxWidth: 1500 }` to the document.
+If the published sheet is wider, portograph tries eligible rows widest first and puts alternate
+members on a second line. It preserves feed order and clear vertical drops. A budget it cannot
+meet produces `WIDTH_BUDGET_UNMET` with the narrowest valid result tried. Without `maxWidth`,
+the output stays unchanged.
+
 ### Font: Verdana is required
 
 Every sheet is set in Verdana (weights 400 and 700), in the SVG and in the draw.io export, and all
 text is measured from Verdana's glyph advances (`src/text/font-metrics.ts`, numbers only, no font
-files). There is no fallback font, because a fallback has other widths and a label could leave its
-box. Install Verdana on every machine that views or converts a sheet: it ships with macOS and
+files). The emitted font list is `Verdana, DejaVu Sans, sans-serif`. The fallbacks prevent a default
+serif face when Verdana is absent. Their widths can differ from the measured widths.
+Install Verdana for the measured text fit on each viewer or converter: it ships with macOS and
 Windows; on Linux install it from the `ttf-mscorefonts-installer` package or copy the font files
 into `~/.local/share/fonts`. `portograph render` and `portograph layout` write a `FONT_MISSING`
 warning to stderr when they find no Verdana in the usual font directories. The check is the CLI's

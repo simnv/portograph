@@ -3,7 +3,7 @@ import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { crosses, sharedBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
-import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance } from './bands.js';
+import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance, portStemReach } from './bands.js';
 import { frameSubtreeCells } from '../model/model.js';
 import type { Point } from '../model/geometry.js';
 import { stopsOf } from './gap-runs.js';
@@ -613,7 +613,8 @@ export function orthogonalLeg(model: LayoutModel, link: LayoutLink, end: 'from' 
 function orthogonalLegOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): PathSegment | undefined {
   const port = findPort(model, link.attachments![end]), out = port?.side === undefined ? undefined : OUTWARD[port.side];
   if (!port?.anchor || !out) return undefined;
-  let length: number = GROUP_LABEL_GEOMETRY.routerStem;
+  // The leg is at least the stem the side really asks for (`portStemReach`, ticket 156).
+  let length: number = portStemReach(model, port);
   if (out.x === 0) {
     const y = port.anchor.y;
     const boxes = model.tierBands.flatMap(band => band.bounds ? [band.bounds] : []);
@@ -627,7 +628,7 @@ function orthogonalLegOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to
       // link runs on through the gap by a lane and the leg is the whole gap (ticket 91).
       const meets = far?.anchor !== undefined && far.side === (out.y > 0 ? 'top' : 'bottom')
         && far.anchor.y >= across.y - EPS && far.anchor.y <= across.y + across.height + EPS;
-      let reach = meets ? far!.anchor!.y - out.y * GROUP_LABEL_GEOMETRY.routerStem : edge;
+      let reach = meets ? far!.anchor!.y - out.y * portStemReach(model, far!) : edge;
       if (!meets) {
         // The gap the plan sees is the band gap clipped to the lanes that face it (`tierGaps`); values are compared here, not through `edgeOf`,
         // which reads an unset epsilon through the import cycle. A link whose next stop is a lane on that far boundary ends its part at the

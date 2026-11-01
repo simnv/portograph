@@ -526,7 +526,7 @@ x 429.375 … 488 at y 206.5 … 229.5, and `link-4`'s reserved turn at (479, 21
 share a port share it. The order is forced wherever one leg's travel along the side passes over
 another port's column — the leg that reaches across must turn beyond that port, or it crosses the
 port's own stem — which is the first amendment's rule read on a column instead of a row. Port `p`
-turns `stemReach + rank(p) * pitch` out, `rank` being the longest chain of ports it must turn
+turns `stemReach + rank(p) * pitch` (since ticket 156 the base is `sideStemReach`, beyond the side's pill text) out, `rank` being the longest chain of ports it must turn
 beyond, `pitch` the rule's own `16 px + widest routed stroke`. `link-3` turns at y 200.5 and
 `link-4` keeps y 218.
 
@@ -682,7 +682,7 @@ two crossing links leave one side of `h1`; nested, they stop running along each 
 `collinear-overlap` and three G6 `parallel-clearance` findings are gone, and the one left is
 `link-1` following the `hub` group edge, which no reservation on that side answers.
 
-**How deep it goes, measured.** Port `p` turns `stemReach + rank(p) * pitch` out, and a strip reaches
+**How deep it goes, measured.** Port `p` turns `stemReach + rank(p) * pitch` (since ticket 156 the base is `sideStemReach`, beyond the side's pill text) out, and a strip reaches
 11.5 px past its own turn. Nothing reserves that depth except the frozen-geometry and group-edge
 conditions above, which bound it by the room the leg's own group box has rather than by a number: a
 rank that lands its turn in the refused band declines the **whole** side, since the other ports are

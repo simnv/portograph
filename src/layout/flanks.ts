@@ -10,6 +10,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { joinFanTrees } from './bundle-geometry.js';
 import { fitRegionGroup, placementWarning, rebuildRegions } from './regions.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { portSideCapacity } from './port-insets.js';
 
 export interface FlankPair { link: LayoutLink; group: LayoutGroup; own: LayoutPort; peer: LayoutPort }
 /** Consume the stored primary only; geometry never reselects it. */
@@ -162,7 +163,7 @@ export function alignFlanks(model: LayoutModel): void {
     const node = model.nodes[id]!, box = node.bounds!;
     for (const [side, pitch] of pitches) {
       node.sidePitch![side] = pitch;
-      box.height = Math.max(box.height, node.ports.filter(port => port.side === side).length * pitch + 20);
+      box.height = Math.max(box.height, portSideCapacity(node, side, node.ports.filter(port => port.side === side).length, pitch));
     }
     node.size = { width: box.width, height: box.height };
     for (const port of node.ports) if (port.side === 'bottom') port.anchor!.y = box.y + box.height;

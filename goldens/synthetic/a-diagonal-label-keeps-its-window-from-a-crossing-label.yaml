@@ -6,6 +6,8 @@
 # in 7f's windows and in every stage 9 candidate. So stage 9 places link-10's label in the window 7f grew for it: no
 # LINK_LABEL_ON_BORDER, no `labelBorderCrossings` counter, every gate passes. Before the fix link-6's label took that window, and
 # link-10's label fell back across the border of `east` with the growth spent.
+# Ticket 156: 9 px descriptions widen P2; the 100 px Zone floor preserves the incidental straight
+# uplink beside it with the required 10 px body clearance, as well as the crossing-label window.
 # Test-only input; test/pipeline/link-label-rules.test.ts reads it.
 portograph: 2
 profile: network
@@ -15,7 +17,7 @@ groups:
   east: { tier: 1, label: East }
   below: { tier: 2, label: Below }
 nodes:
-  zone: { group: outside, label: Zone }
+  zone: { group: outside, label: Zone, size: {width: 100, height: 0} }
   p2: { group: outside, class: cloud, icon: cloud, label: P2, description: second peer }
   p1: { group: outside, class: cloud, icon: cloud, label: P1, description: first peer }
   p3: { group: outside, class: cloud, icon: cloud, label: P3, description: third peer }
@@ -28,6 +30,8 @@ nodes:
     description: west router
     ports: [{ name: up1 }, { name: up2 }, { name: up3 }]
   e:
+    # Keep the crossing-label window with the 9 px description and pills.
+    size: {width: 116, height: 0}
     group: east
     class: router
     icon: router

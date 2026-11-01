@@ -2,7 +2,6 @@ import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment, Point, Rect } from '../model/index.js';
 import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { equal } from '../model/json-equality.js';
-import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { nodeGap, portId } from './skeleton-graph.js';
 import { splitUnderJunctions, treeCohorts } from './bundle-geometry.js';
@@ -11,13 +10,14 @@ import { findPort } from './row-paths.js';
 import { withStageMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { BAR_PADDING, barLabelFloor } from './bar-width.js';
+import { portEndInsets, portSideCapacity } from './port-insets.js';
 
 const MIN_STEM = 15;
 const FOREIGN_NODE_CLEARANCE = 10;
 const right = (box: Rect): number => box.x + box.width;
 const bottom = (box: Rect): number => box.y + box.height;
 const horizontalCapacity = (node: LayoutNode): number => Math.max(...(['top', 'bottom'] as const).map(side =>
-  node.ports.filter(port => port.side === side).length * node.sidePitch![side]! + 2 * NODE_CONTENT_GEOMETRY.padding));
+  portSideCapacity(node, side, node.ports.filter(port => port.side === side).length)));
 const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= PLACEMENT_EPS && Math.abs(a.y - b.y) <= PLACEMENT_EPS;
 
 interface BarLink {
@@ -181,7 +181,10 @@ function barSpanPlan(model: LayoutModel, group: LayoutModel['groups'][string], a
     const capacity = horizontalCapacity(node);
     const floor = Math.max(node.sizeFloor!.width, barLabelFloor(labelText), capacity);
     const centre = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : node.bounds!.x + node.bounds!.width / 2;
-    const width = Math.max(floor, xs.length ? Math.max(...xs) - Math.min(...xs) + 2 * BAR_PADDING : 0);
+    const margin = Math.max(BAR_PADDING, ...(['top', 'bottom'] as const).flatMap(side => {
+      const inset = portEndInsets(node, side); return [inset.low, inset.high];
+    }));
+    const width = Math.max(floor, xs.length ? Math.max(...xs) - Math.min(...xs) + 2 * margin : 0);
     // Keep the exact floor: `max - min` of a centred span can lose a bit and fall under it.
     floors.set(node.id, floor);
     spans.set(node.id, { min: centre - width / 2, max: centre + width / 2 });

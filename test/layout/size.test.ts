@@ -19,12 +19,13 @@ describe('measured node size', () => {
     const original = JSON.stringify(model.document);
     expect(sizeNodes(model)).toBe(model);
     expect(model.stage).toBe('size');
-    expect(model.nodes['EAC-01']?.sidePitch).toEqual({ bottom: 12, right: 12, top: 14, left: 14 });
-    expect(model.nodes['EAC-01']?.size?.height).toBe(76);
+    expect(model.nodes['EAC-01']?.sidePitch).toEqual({ bottom: 12, right: 12, top: 15, left: 15 });
+    // Four lateral ports at pitch 15 plus 20 px padding; the perpendicular pills already clear in x.
+    expect(model.nodes['EAC-01']?.size?.height).toBe(80);
     expect(model.nodes['EAC-01']?.size?.width).toBeGreaterThanOrEqual(50);
-    expect(model.nodes['EAC-01']?.sizeFloor?.height).toBeLessThan(76);
-    expect(model.nodes['TBR-001']?.size?.height).toBe(132);
-    expect(model.nodes['EBR-01']?.sidePitch?.right).toBe(14);
+    expect(model.nodes['EAC-01']?.sizeFloor?.height).toBeLessThan(80);
+    expect(model.nodes['TBR-001']?.size?.height).toBe(140);
+    expect(model.nodes['EBR-01']?.sidePitch?.right).toBe(15);
     expect(model.nodes['EBR-01']?.ports[0]?.side).toBeUndefined();
     expect(JSON.stringify(model.document)).toBe(original);
     expect(Object.values(model.nodes).every(node => node.bounds === undefined && node.ports.every(port => port.anchor === undefined && port.pill === undefined))).toBe(true);
@@ -40,9 +41,9 @@ describe('measured node size', () => {
 
   it('includes multiline descriptions, explicit icons and gaps in content floors', () => {
     const nodes = sized(`{a: {group: g, label: A, description: "one\\ntwo\\nthree", icon: router}, b: {group: g, label: A, description: one, icon: router}, c: {group: g, label: A, description: "one\\ntwo\\nthree"}}`).nodes;
-    expect(nodes.a?.contentSize?.height).toBe(78);
-    expect(nodes.a?.size?.height).toBe(78);
-    expect(nodes.a!.contentSize!.height - nodes.b!.contentSize!.height).toBe(18);
+    expect(nodes.a?.contentSize?.height).toBe(84);
+    expect(nodes.a?.size?.height).toBe(84);
+    expect(nodes.a!.contentSize!.height - nodes.b!.contentSize!.height).toBe(22);
     expect(nodes.a!.contentSize!.height - nodes.c!.contentSize!.height).toBe(16);
   });
 
@@ -53,7 +54,7 @@ describe('measured node size', () => {
     expect(node.contentInsets?.right).toBe(10);
     expect(node.contentSize!.width).toBeGreaterThan(190);
     expect(node.size!.width).toBeGreaterThanOrEqual(node.contentSize!.width);
-    expect(node.sidePitch?.left).toBe(14);
+    expect(node.sidePitch?.left).toBe(15);
     const measured = measureNodeContent(model.document.nodes.a!, model.document, node.contentInsets);
     expect(measured.blocks).toEqual([expect.objectContaining({ kind: 'node', text: 'Content', lines: ['Content'], fontSize: 9, fontWeight: 700, lineHeight: 11 })]);
     expect(measured.width).toBe(node.contentSize!.width);
@@ -71,15 +72,15 @@ describe('measured node size', () => {
   it.each(['top', 'bottom', 'left', 'right'] as const)('long names protrude normally without expanding %s pitch', side => {
     const model = sized(`{a: {group: g, label: "", ports: [{name: "${'W'.repeat(40)}", side: ${side}}, {name: p, side: ${side}}, {name: q, side: ${side}}, {name: r, side: ${side}}]}}`);
     const node = model.nodes.a!;
-    expect(node.sidePitch?.[side]).toBe(14);
-    expect(side === 'left' || side === 'right' ? node.size?.height : node.size?.width).toBe(76);
+    expect(node.sidePitch?.[side]).toBe(15);
+    expect(side === 'left' || side === 'right' ? node.size?.height : node.size?.width).toBe(80);
     expect(side === 'left' || side === 'right' ? node.size?.width : node.size?.height).toBeGreaterThan(160);
   });
 
   it('reserves capacity for same-tier undecided named ports', () => {
     const model = sized('{a: {group: g, label: "", ports: [p, p, p, p]}, b: {group: g}}', '[[a.p#1, b], [a.p#2, b], [a.p#3, b], [a.p#4, b]]');
     expect(model.nodes.a?.ports.every(port => port.side === undefined && port.sizingSide === 'right')).toBe(true);
-    expect(model.nodes.a?.size).toEqual({ width: 50, height: 76 });
+    expect(model.nodes.a?.size).toEqual({ width: 50, height: 80 });
     expect(model.nodes.b?.size?.height).toBe(68);
   });
 

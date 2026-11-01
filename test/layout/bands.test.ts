@@ -139,9 +139,9 @@ describe('group label bands', () => {
     // Backbone is fed from above, so its title moves to the bottom edge, where no pill needs room.
     expect(Object.fromEntries(model.labelBands.map(band => [band.group, band.side])))
       .toEqual({ providers: 'top', datacenter: 'top', 'tbr-left': 'top', 'tbr-right': 'top', 'route-reflector': 'top', backbone: 'bottom' });
-    // Datacenter keeps a top title with named top pills, so it reserves space beyond the complete pill (14.5 px; 13.5 px with Arial, whose 8 px line is 9 px high, Verdana's 10 px).
+    // Datacenter keeps a top title with named top pills, so it reserves space beyond the complete 9 px Verdana pill.
     expect(Object.fromEntries(model.labelBands.map(band => [band.group, band.clearance])))
-      .toEqual({ providers: GROUP_PADDING, datacenter: GROUP_PADDING + 14.5, 'tbr-left': GROUP_PADDING, 'tbr-right': GROUP_PADDING,
+      .toEqual({ providers: GROUP_PADDING, datacenter: GROUP_PADDING + 16, 'tbr-left': GROUP_PADDING, 'tbr-right': GROUP_PADDING,
         'route-reflector': GROUP_PADDING, backbone: GROUP_PADDING });
 
     const produced = { ...model, links: model.links.filter(link => link.path !== undefined) };
@@ -535,7 +535,7 @@ links: [[a.p, z.p]]`;
     const lane = before.lanes.find(item => item.id === 'lane:"link-1":1')!;
     const pill = before.nodes.t!.ports[0]!.pill!;
     expect(lane.side).toBe('right');
-    expect([pill.bounds.x, right(pill.bounds)]).toEqual([338.10009765625, 404.10009765625]);
+    expect([pill.bounds.x, right(pill.bounds)]).toEqual([338.10009765625, 412.10009765625]);
     // The headroom allows one 34.328125 px reservation, but not two.
     expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeGreaterThan(34.328125);
     expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeLessThan(68.65625);

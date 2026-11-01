@@ -1,0 +1,27 @@
+# Expected: the named top and bottom pills clear the inward reach of the lateral pills, including their strokes, even after a bundle seats the bottom face (ticket 156). Every gate passes at 9 px.
+# Source: reduced corner collision from the ticket 156 canton/flank fixtures.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  lower: { tier: 1 }
+nodes:
+  core:
+    group: upper
+    ports:
+      - { name: 100G, side: top }
+      - { name: 100G, side: bottom }
+      - { name: 100G, side: bottom }
+      - { name: 100G, side: left }
+      - { name: 100G, side: right }
+      - { name: 100G, side: left }
+      - { name: 100G, side: right }
+      - { name: 100G, side: left }
+      - { name: 100G, side: right }
+      - { name: 100G, side: top }
+      - { name: 100G, side: top }
+      - { name: 100G, side: bottom }
+  leaf: { group: lower, ports: [{ name: 100G, side: top }, { name: 100G, side: top }] }
+links:
+  - [core.100G#2, leaf.100G#1]
+  - [core.100G#3, leaf.100G#2]

@@ -513,6 +513,8 @@ export function gridCells(model: LayoutModel, group: LayoutGroup): GridCells {
  * clear of the last node of the row above it — they do not share a line.
  */
 export function packRowsOf(model: LayoutModel, group: LayoutGroup): string[][] {
+  const stagger = model.staggerRows?.find(row => row.group === group.id);
+  if (stagger !== undefined) return [stagger.order.filter((_, i) => i % 2 === 0), stagger.order.filter((_, i) => i % 2 === 1)];
   return isGridGroup(model, group.id)
     ? gridCells(model, group).map(row => row.filter((id): id is string => id !== undefined))
     : [group.rowOrder ?? group.nodes];

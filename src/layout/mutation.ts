@@ -1,4 +1,5 @@
 import { validateReservations } from './reservations.js';
+import { validateStaggerRows } from './stagger.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
@@ -8,6 +9,7 @@ import { filterCss } from '../parse/css.js';
 import { Validation } from '../parse/validation.js';
 import { portKey, sidesOne, SIDE_TIE_ORDER } from './sides-one.js';
 import { sizeNodes } from './size.js';
+import { lateralPillInset, portSideCapacity, validatePortCorners } from './port-insets.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
@@ -94,7 +96,7 @@ function topology(model: LayoutModel) {
   return orderedNodeIds(model.document).map(id => ({ node: id, ports: model.nodes[id]!.ports.map(port => {
     if (!port.side) throw new Error(`Missing final side on ${id}`);
     return { ref: port.ref, side: port.side, ...pick(port, ['authorOrder', 'sideHint', 'laneHint', 'courseHint', 'naturalSide']) };
-  }) }));
+  }), ...pick(model.nodes[id]!, ['portCorners']) }));
 }
 /**
  * What may not change under a rule. `ordered` lifts the row order of a group: the centre rule may
@@ -104,7 +106,7 @@ function topology(model: LayoutModel) {
 function structure(model: LayoutModel, ordered = false) {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id, {
-      ...pick(node, ['id', 'owner', 'layer', 'strokeWidth']),
+      ...pick(node, ['id', 'owner', 'layer', 'strokeWidth', 'portCorners']),
       ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide', 'sideHint', 'laneHint', 'courseHint', 'naturalSide'])),
     }])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ordered ? ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank'] : ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank', 'rowOrder'])])),
@@ -117,7 +119,7 @@ function nodeLabels(model: LayoutModel) {
 function placement(model: LayoutModel): PlacementSnapshot {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id,
-      pick(node, ['bounds', 'size', 'sizeFloor', 'contentSize', 'contentInsets', 'sidePitch', 'ports', 'icon'])])),
+      pick(node, ['bounds', 'size', 'sizeFloor', 'contentSize', 'contentInsets', 'sidePitch', 'portCorners', 'ports', 'icon'])])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ['bounds', 'rowOrder', 'nodes', 'tier', 'flank'])])),
     tierBands: model.tierBands, regions: model.regions, lanes: model.lanes, labelBands: model.labelBands,
     sharedRuns: model.links.filter(link => link.sharedRuns !== undefined).map(link => ({ link: link.id, runs: link.sharedRuns! })),
@@ -199,8 +201,12 @@ function validatePlacementStructure(model: LayoutModel): void {
     validateRect(group.bounds, `group ${group.id}`);
     same([...(group.rowOrder ?? [])].sort(), [...group.nodes].sort(), 'Invalid row order');
     if (groupShape(model, group.id) === 'row') {
+      const position = (id: string): number => {
+        const box = model.nodes[id]!.bounds!;
+        return box.x + (model.staggerRows?.some(row => row.group === group.id) ? box.width / 2 : 0);
+      };
       for (let i = 1; i < group.rowOrder!.length; i++) {
-        if (model.nodes[group.rowOrder![i - 1]!]!.bounds!.x > model.nodes[group.rowOrder![i]!]!.bounds!.x + PLACEMENT_EPS) throw new Error('Physical row order contradicts rowOrder');
+        if (position(group.rowOrder![i - 1]!) > position(group.rowOrder![i]!) + PLACEMENT_EPS) throw new Error('Physical row order contradicts rowOrder');
       }
     }
     if (group.flank) {
@@ -302,6 +308,7 @@ function validateJoins(model: LayoutModel): void {
 /** Every protected result passes this same boundary, including direct freeze and restore. */
 function validatePublication(model: LayoutModel, baseline: LayoutModel, intermediate = false): void {
   jsonValue(model);
+  validateStaggerRows(model);
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
   validateJoins(model);
@@ -427,6 +434,7 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
   sizeNodes(expected);
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!, measured = expected.nodes[id]!, box = node.bounds;
+    validatePortCorners(node);
     if (!box || !node.size || !node.sizeFloor || box.width <= 0 || box.height <= 0) throw new Error(`Missing positive geometry on ${id}`);
     if (stages.indexOf(model.stage) >= stages.indexOf('bars') && model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar') {
       const group = model.document.groups[model.document.nodes[id]!.group]!;
@@ -453,12 +461,16 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
       if (pitch === undefined || pitch < measured.sidePitch![side]!) throw new Error(`Invalid measured pitch on ${id}.${side}`);
       const horizontal = side === 'top' || side === 'bottom';
       const length = horizontal ? box.width : box.height;
-      if (length + PLACEMENT_EPS < ports.length * pitch + 20) throw new Error(`Port capacity exceeds ${id}.${side}`);
+      if (length + PLACEMENT_EPS < portSideCapacity(node, side, ports.length, pitch)) throw new Error(`Port capacity exceeds ${id}.${side}`);
+      const corner = lateralPillInset(node, side);
       let prior = -Infinity, authored = -Infinity;
       for (const [index, port] of ports.entries()) {
         if (port.engineOrder !== index) throw new Error(`Invalid engine slots on ${id}.${side}`);
         if (!port.anchor) throw new Error(`Missing anchor on ${id}`);
         const coordinate = horizontal ? port.anchor.x : port.anchor.y;
+        if (!horizontal && (coordinate < box.y + corner - PLACEMENT_EPS || coordinate > box.y + box.height - corner + PLACEMENT_EPS)) {
+          throw new Error(`Port corner clearance violated on ${id}.${side}`);
+        }
         if (coordinate - prior < pitch - PLACEMENT_EPS) throw new Error(`Port spacing/order violates pitch on ${id}.${side}`);
         prior = coordinate;
         if (port.authorOrder !== undefined) {
@@ -518,6 +530,7 @@ function validateSpans(model: LayoutModel, frozen: readonly string[] | undefined
 function validateFreeze(model: LayoutModel): void {
   const freeze = model.freeze;
   if (!freeze || freeze.version !== 1) throw new Error('Missing or unsupported topology freeze');
+  same(model.staggerRows, freeze.staggerRows, 'Frozen stagger reservation changed');
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
   validateSpans(model, freeze.spans);
@@ -550,6 +563,7 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
     floors: orderedNodeIds(model.document).map(id => ({ node: id, size: { ...model.nodes[id]!.sizeFloor! } })) };
   const floored = orderedNodeIds(model.document).filter(id => nodeFloors?.has(id));
   if (model.courses !== undefined) result.freeze.courses = clone(model.courses);
+  if (model.staggerRows !== undefined) result.freeze.staggerRows = clone(model.staggerRows);
   const spans = model.links.filter(link => link.spanHint === true).map(link => link.id);
   if (spans.length) result.freeze.spans = spans;
   if (turnFaces.length) result.freeze.turnOrder = turnFaces.map(face => ({ ...face }));

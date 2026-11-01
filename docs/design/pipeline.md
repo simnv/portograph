@@ -152,11 +152,19 @@ the skeleton. Stage 3 counts it as one port on that edge.
 
 Per node, per side: `pitch(side) = max(12, largest rendered pill extent along that side + 4)`.
 The unrotated pill width is measured text (font-metrics table) + 2×3 padding, at least 24 px;
-its height is at least 10 px. Top/bottom pills and their text rotate −90°; left/right pills
+its height is at least 10 px. All generated text uses at least 9 px, including descriptions and port pills.
+Placement measures the text at that size before it reserves space. Top/bottom pills and their text rotate −90°; left/right pills
 stay horizontal, matching the target JPEG and d3-fd. The extent used for pitch is the rotated
 box's width on top/bottom and its height on left/right. Then
 `height = max(minH, contentH, n_left|right × pitch + 2·pad)`, `width = max(minW, contentW,
 n_top|bottom × pitch + 2·pad)`, `contentW/H` from the measured label, description and icon.
+Sizing stores a separation axis for every corner with perpendicular named faces (`portCorners`).
+When the centred horizontal face already clears the lateral pill bodies in x, protect that x margin.
+Otherwise reserve equal lateral end margins in y. Both choices include the two pill half-strokes.
+The face capacity is `(count - 1) × pitch + low inset + high inset` (`portEndInsets`).
+Stage 5 replaces provisional choices after final sides and pitches, before the topology freeze.
+All later face installers consume the stored insets; publication and restore guard the chosen axis,
+including after body growth. An unoccupied corner has no record. Routing discovers no corner room (ticket 156).
 The content interior reserves, on each side, the larger of the 10 px content padding and the
 largest named pill's inward half-extent plus 4 px. Anonymous ports add no such inset. Store those
 content insets so placement centres the icon/text blocks in the remaining interior, which may be
@@ -173,7 +181,7 @@ left-aligned text block: the title (11 px, 700) and, only when the node has a de
 text module's (14 and 11). Authored newlines stay; nothing wraps. A card with no icon has no tile and no gap. `contentW = tile + gap + max(title,
 subtitle)`, `contentH = max(tile, text block)`, each plus the insets above; the minimums and the port-capacity rule are unchanged. The tile and the
 text block are centred together in the inset interior. Ports stay centred on their faces. `stacked` is the column above: icon (12 px), label (9 px),
-description (7 px), centred.
+description (9 px), centred.
 
 ## Stage 4 — skeleton (ELK)
 
@@ -477,9 +485,11 @@ run geometry and ownership checks. Plain `JSON.parse` does not resume placement.
 bundle and group-link semantics with `resolve(document)`. This proves serialized
 self-consistency, not historical authenticity. See ADR-0010.
 
+Width-budget trials reserve a **stagger** at the end of stage 5, before the topology freeze (ADR-0024, ticket 166). `staggerRows` holds the existing feed order, exit face, centre pitch and line step. Odd members stand away from the feeds. The pitch reserves same-line node and pill clearance and the router's stroke-expanded obstacle beside each passing vertical. Ordinary feeding faces take their child x positions before transit lanes are reserved; bar faces retain stage 7d's span rule. The containing frames and tier bands grow for both lines. The freeze stores the decision, and every publication and restore checks the two lines, pitch and current port corridors.
+
 ## Stage 6 — rows
 
-Per tier: all `row`-shape nodes share one top y. Repack horizontally again if the flattening
+Per tier: all unstaggered `row`-shape nodes share one top y. A reserved stagger keeps both lines and its pitch; each line is a row to later horizontal repacks. Repack horizontally again if the flattening
 created overlap (nodes ELK stacked at one x). After `flattenRows`, `reseatBands` seats the bands
 again: each band starts one band gap under the band above, and its groups, nodes and icons move by
 one vertical shift (flanks, bars and grids with it). One number, `bandGap`, serves the boundary
@@ -493,7 +503,7 @@ levelled here but remain unpinned for stage 7e.
 tier band; nodes move up only, and row group boxes fit the flattened nodes with the standard
 padding beyond the complete named pills (including their half stroke), not just node bodies. Repack pushes a row neighbour rightwards only when its stroke-aware clearance,
 measured facing-pill gap or pass-by stem (the stage-5 `rowGap`) is violated — the stem is the
-15 px checkpoint plus the neighbour's obstacle reach that a port needs when its link does not enter
+side's checkpoint (`sideStemReach`: 15 px, or beyond the side's pill text, ticket 156) plus the neighbour's obstacle reach that a port needs when its link does not enter
 the neighbour's facing side, whether it goes to a third node or to the neighbour's far side, top or
 bottom (ticket 29) — and, when links turn inside the gap (a pass-by, or a facing link
 that enters at another height and jogs), one stem on each side that contributes a leg plus one pitch
@@ -711,7 +721,8 @@ stem per port, and a leg travels along that side after it turns. Where the trave
 port of the same side, the two turns may not stand at one depth: the first route laid covers the
 second port's stem, and the second link is left with a reserved turn no route can reach. The order
 is forced there — the leg that reaches another port turns beyond it — so port `p` turns
-`stemReach + rank(p) * pitch` out of its node, `rank` being the longest chain of ports it must turn
+`base + rank(p) * pitch` out of its node, `base` being the side's ordinary reach (beyond the pill
+text of the side, ticket 156), `rank` being the longest chain of ports it must turn
 beyond and `pitch` the same `16 px + widest routed stroke`. That is the depth stage 8 gives the
 checkpoint and the depth `routerEntryPoints` reports, read from one rule, so the two cannot drift.
 
@@ -920,7 +931,9 @@ is measured on the geometry that stands. `refreshHeldWarnings` withdraws only a 
 For each `bar` group, after 7c so all source ports are final: each node is a horizontal bar;
 stack order = declaration order, top to bottom. Bar port x := source port x, ordered by x; where
 two sources are closer than `pitch`, the later drop fans horizontally to the next free slot
-(a 2-bend jog) and is reported. Bar span = [min port x − 30, max port x + 30], floor = label + 60;
+(a 2-bend jog) and is reported. Bar span = [min port x − m_l, max port x + m_r], where each end
+margin m is at least 30 px and is raised to the end inset stored by the stage-3 corner reservation
+(ticket 156), so a long pill on the bar's side face keeps its clearance; floor = label + 60;
 spans of stacked bars are merged to their union transitively when any pair overlaps by > 50 % of
 the narrower; a bar with no ports spans the group's label only. A drop to a lower bar crosses the
 upper bar (`barCross`); a link entering a bar from **below** is the mirror case and also counted.
@@ -976,7 +989,10 @@ owner/corridor; a later lane never overwrites an earlier lane's identity. Public
 independently require every bundle lane's exact segment in authored traversal direction.
 
 Shared incidence uses explicit junction trees. A root has an outward perpendicular stem of at
-least 15 px. A child keeps the same port, starts at its parent point, and carries a strict subset
+least 15 px. Fan peel rows also clear the whole pill body on their face, half the pill stroke,
+half the widest routed stroke and the 0.25 px entry tolerance (`sidePillBodyReach`, ticket 156).
+This keeps a peel beyond the pill-face start of a neighbouring straight chord. Ordinary router
+stem tips retain the text-only depth, inside the node obstacle. A child keeps the same port, starts at its parent point, and carries a strict subset
 of its parent's members. Each member traverses its exact root-to-leaf chain. A port shared across
 bundles, between a bundle and an unclaimed remainder, or by a plain fan of routed links that no
 bundle claims, has one tree (ticket 20); only a port whose links all belong to one bundle is that
@@ -1383,7 +1399,12 @@ larger of the measured top padding (20 px beyond the complete named pill and its
 and the largest top-side routed outward reach plus the widest routed half stroke and a 0.25 px tolerance.
 The reach is the whole mandatory shared prefix when the port has one, otherwise the ordinary
 checkpoint `max(15, 10 + (node stroke + widest routed stroke) / 2 + 0.25)`, which follows the node
-obstacle when a wide stroke expands it past the 15 px stem. With the default 1.5 px node and 1.5 px
+obstacle when a wide stroke expands it past the 15 px stem. Every checkpoint on a side that holds a
+named port also stands beyond the pill text of that side (`sideStemReach`): half the longest pill text, half the widest routed stroke
+and 0.25 px (`portStemReach`, ticket 156). Pill text is centred on the anchor, so at 9 px a name of
+about five characters reaches past the 15 px stem, and a run that starts or turns at the plain tip
+crosses the text (G3). Fan rows also clear the whole pill bodies and their strokes (`edgeAwareRows`, `sidePillBodyReach`),
+so a peel stands beyond the pill-face start of a neighbouring straight chord. With the default 1.5 px node and 1.5 px
 routed strokes the entry requirement is 16 px; a default named pill instead reserves 24.5 px
 to retain its visible gutter. The rule reads frozen inputs only: measured port names, the constant
 stem and `sharedRuns`, which every publication at or after stage 7e rebuilds and compares, so
