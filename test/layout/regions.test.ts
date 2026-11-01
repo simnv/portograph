@@ -58,8 +58,8 @@ describe('real golden region stages', () => {
     const beforePairs = input.links.map(link => flankPair(input, link)).filter(pair => pair !== undefined);
     expect(beforePairs.filter(pair => pair.group.id === 'tbr-left').map(pair => pair.own.engineOrder)).toEqual([0, 2, 4, 6]);
     // Ticket 08 reads the slots the flank face took at stage 5, before the flank stage normalizes its primary block.
-    // Ticket 156: taller 9 px corner capacity changes the right face's far-end y sort; the primary block is still levelled below.
-    expect(beforePairs.filter(pair => pair.group.id === 'tbr-right').map(pair => pair.own.engineOrder)).toEqual([0, 2, 5, 6]);
+    // Ticket 156: protected x separation retains the original far-end sort and primary alignment.
+    expect(beforePairs.filter(pair => pair.group.id === 'tbr-right').map(pair => pair.own.engineOrder)).toEqual([0, 2, 4, 6]);
     for (const id of ['TBR-001', 'TBR-002']) {
       const primaryPorts = new Set(beforePairs.filter(pair => pair.own.ref.node === id).map(pair => pair.own.ref.ordinal));
       const otherOrder = (m: LayoutModel) => [...m.nodes[id]!.ports].filter(port => !primaryPorts.has(port.ref.ordinal)).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.ref);

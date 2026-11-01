@@ -1,3 +1,4 @@
+import { portEndInsets } from './port-insets.js';
 import type { LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { EPS } from '../geometry/planar.js';
@@ -38,10 +39,10 @@ function faces(model: LayoutModel) {
   const linkOf = new Map(model.links.map(link => [link.id, link]));
   /** The x range a port can take on its face without moving a neighbour or the body. */
   const room = (port: LayoutPort): { low: number; high: number } => {
-    const node = model.nodes[port.ref.node]!, side = port.side!, box = node.bounds!, pitch = node.sidePitch![side]!, inset = 10 + pitch / 2;
+    const node = model.nodes[port.ref.node]!, side = port.side!, box = node.bounds!, pitch = node.sidePitch![side]!, inset = portEndInsets(node, side, pitch);
     const ports = node.ports.filter(item => item.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
     const index = ports.findIndex(item => item === port);
-    return { low: index === 0 ? box.x + inset : ports[index - 1]!.anchor!.x + pitch, high: index === ports.length - 1 ? box.x + box.width - inset : ports[index + 1]!.anchor!.x - pitch };
+    return { low: index === 0 ? box.x + inset.low : ports[index - 1]!.anchor!.x + pitch, high: index === ports.length - 1 ? box.x + box.width - inset.high : ports[index + 1]!.anchor!.x - pitch };
   };
   return {
     linkOf,

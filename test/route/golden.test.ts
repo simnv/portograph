@@ -50,8 +50,8 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
   // Verdana metrics (snack-theme ticket 157): 0.8993975066491852 with Arial.
   // 0.9009381525844952 before the title floor of ticket 157 (a free group is as wide as its own title from stage 5 on): the golden's
   // geometry moved, and with the floor off the Q is that value again.
-  // Ticket 156: measured 9 px corner margins grow the lateral bodies and shift their dependent bands.
-  expect(report.Q).toBeCloseTo(0.8840445745699186, 12);
+  // Ticket 156: stored x separation retains the original 9 px geometry at wide corners.
+  expect(report.Q).toBeCloseTo(0.9020645227435721, 12);
 
   // Placement is frozen: stage 8 adds paths only, and the result restores byte-equal.
   expect(model.freeze!.placement).toEqual(before.freeze!.placement);

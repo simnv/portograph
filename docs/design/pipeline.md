@@ -158,11 +158,13 @@ stay horizontal, matching the target JPEG and d3-fd. The extent used for pitch i
 box's width on top/bottom and its height on left/right. Then
 `height = max(minH, contentH, n_left|right × pitch + 2·pad)`, `width = max(minW, contentW,
 n_top|bottom × pitch + 2·pad)`, `contentW/H` from the measured label, description and icon.
-Lateral named faces also reserve equal end margins that clear the inward half-length of the
-widest horizontal pill, half the lateral pill's height, and the two pill half-strokes. Their
-capacity is `(count - 1) × pitch + 2 × max(pad + pitch/2, corner margin)` (`portEndInsets`).
-The faces stay centred. Lateral levelling and bundle installers read the same margin, and publication and
-restore guard it; routing discovers no corner room (ticket 156).
+Sizing stores a separation axis for every corner with perpendicular named faces (`portCorners`).
+When the centred horizontal face already clears the lateral pill bodies in x, protect that x margin.
+Otherwise reserve equal lateral end margins in y. Both choices include the two pill half-strokes.
+The face capacity is `(count - 1) × pitch + low inset + high inset` (`portEndInsets`).
+Stage 5 replaces provisional choices after final sides and pitches, before the topology freeze.
+All later face installers consume the stored insets; publication and restore guard the chosen axis,
+including after body growth. An unoccupied corner has no record. Routing discovers no corner room (ticket 156).
 The content interior reserves, on each side, the larger of the 10 px content padding and the
 largest named pill's inward half-extent plus 4 px. Anonymous ports add no such inset. Store those
 content insets so placement centres the icon/text blocks in the remaining interior, which may be

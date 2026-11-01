@@ -891,6 +891,8 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       }
     }
   }
+  // Final sides and bundle pitches replace stage 3's provisional topology before corners freeze.
+  for (const node of Object.values(model.nodes)) delete node.portCorners;
   sizeNodes(model);
   for (const groupId of orderedGroupIds(model.document)) {
     const group = model.groups[groupId]!, order = group.rowOrder ?? group.nodes;

@@ -1,0 +1,16 @@
+# Expected: four lateral pills retain 80 px face capacity when the top pill already clears them in x, including both pill half-strokes (ticket 156).
+# Source: reduced unnecessary lateral corner reservation from M1.
+portograph: 2
+groups:
+  row: { tier: 0 }
+nodes:
+  core:
+    group: row
+    size: { width: 120, height: 0 }
+    ports:
+      - { name: 100G, side: top }
+      - { name: 100G, side: left }
+      - { name: 100G, side: left }
+      - { name: 100G, side: left }
+      - { name: 100G, side: left }
+links: []

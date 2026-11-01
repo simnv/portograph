@@ -102,6 +102,9 @@ export interface LayoutNode extends OwnedElement {
   size?: Size;
   bounds?: Rect;
   sidePitch?: Partial<Record<Side, number>>;
+  /** Occupied corners only. Absent before sizing, or when no perpendicular named faces meet.
+   * Sizing records the separating axis; later geometry must preserve it (R1/R2). */
+  portCorners?: { lateral: 'left' | 'right'; horizontal: 'top' | 'bottom'; axis: 'x' | 'y'; clearance: number }[];
   /** Final measured icon placement; inherits the node identity and layer. */
   /** `inset` and `radius` are set for a card tile (ticket 159); absent, the renderer's defaults stand. */
   icon?: { icon: string; bounds: Rect; inset?: number; radius?: number };
@@ -739,7 +742,7 @@ export interface FrozenPort {
 export interface PlacementSnapshot {
   sharedRuns: { link: string; runs: NonNullable<LayoutLink['sharedRuns']> }[];
   fixedSegments: { link: string; segments: PathSegment[] }[];
-  nodes: Record<string, Pick<LayoutNode, 'bounds' | 'size' | 'sizeFloor' | 'contentSize' | 'contentInsets' | 'sidePitch' | 'ports' | 'icon'>>;
+  nodes: Record<string, Pick<LayoutNode, 'bounds' | 'size' | 'sizeFloor' | 'contentSize' | 'contentInsets' | 'sidePitch' | 'portCorners' | 'ports' | 'icon'>>;
   groups: Record<string, Pick<LayoutGroup, 'bounds' | 'rowOrder' | 'nodes' | 'tier' | 'flank'>>;
   tierBands: TierBand[];
   regions: Region[];
@@ -759,7 +762,7 @@ export interface LayoutFreeze {
   /** Stage-5 stagger decision, including absence versus an explicit empty record (ticket 166). */
   staggerRows?: StaggerRow[];
   version: 1;
-  topology: { node: string; ports: FrozenPort[] }[];
+  topology: { node: string; ports: FrozenPort[]; portCorners?: LayoutNode['portCorners'] }[];
   floors: { node: string; size: Size }[];
   /** Present only when a run was given size floors for its hinted nodes (side-faces.md, Section 8): the stage-3 floor of each such node. */
   nodeFloors?: { node: string; size: Size }[];

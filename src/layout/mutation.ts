@@ -9,7 +9,7 @@ import { filterCss } from '../parse/css.js';
 import { Validation } from '../parse/validation.js';
 import { portKey, sidesOne, SIDE_TIE_ORDER } from './sides-one.js';
 import { sizeNodes } from './size.js';
-import { lateralPillInset, portSideCapacity } from './port-insets.js';
+import { lateralPillInset, portSideCapacity, validatePortCorners } from './port-insets.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
@@ -96,7 +96,7 @@ function topology(model: LayoutModel) {
   return orderedNodeIds(model.document).map(id => ({ node: id, ports: model.nodes[id]!.ports.map(port => {
     if (!port.side) throw new Error(`Missing final side on ${id}`);
     return { ref: port.ref, side: port.side, ...pick(port, ['authorOrder', 'sideHint', 'laneHint', 'courseHint', 'naturalSide']) };
-  }) }));
+  }), ...pick(model.nodes[id]!, ['portCorners']) }));
 }
 /**
  * What may not change under a rule. `ordered` lifts the row order of a group: the centre rule may
@@ -106,7 +106,7 @@ function topology(model: LayoutModel) {
 function structure(model: LayoutModel, ordered = false) {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id, {
-      ...pick(node, ['id', 'owner', 'layer', 'strokeWidth']),
+      ...pick(node, ['id', 'owner', 'layer', 'strokeWidth', 'portCorners']),
       ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide', 'sideHint', 'laneHint', 'courseHint', 'naturalSide'])),
     }])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ordered ? ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank'] : ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank', 'rowOrder'])])),
@@ -119,7 +119,7 @@ function nodeLabels(model: LayoutModel) {
 function placement(model: LayoutModel): PlacementSnapshot {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id,
-      pick(node, ['bounds', 'size', 'sizeFloor', 'contentSize', 'contentInsets', 'sidePitch', 'ports', 'icon'])])),
+      pick(node, ['bounds', 'size', 'sizeFloor', 'contentSize', 'contentInsets', 'sidePitch', 'portCorners', 'ports', 'icon'])])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ['bounds', 'rowOrder', 'nodes', 'tier', 'flank'])])),
     tierBands: model.tierBands, regions: model.regions, lanes: model.lanes, labelBands: model.labelBands,
     sharedRuns: model.links.filter(link => link.sharedRuns !== undefined).map(link => ({ link: link.id, runs: link.sharedRuns! })),
@@ -434,6 +434,7 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
   sizeNodes(expected);
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!, measured = expected.nodes[id]!, box = node.bounds;
+    validatePortCorners(node);
     if (!box || !node.size || !node.sizeFloor || box.width <= 0 || box.height <= 0) throw new Error(`Missing positive geometry on ${id}`);
     if (stages.indexOf(model.stage) >= stages.indexOf('bars') && model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar') {
       const group = model.document.groups[model.document.nodes[id]!.group]!;

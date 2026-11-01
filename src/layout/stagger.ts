@@ -8,6 +8,7 @@ import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { fitRegionGroup } from './regions.js';
 import { nodeObstacleReach, routedStroke } from './bands.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { portEndInsets } from './port-insets.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -129,7 +130,8 @@ function seatFeeds(model: LayoutModel): void {
       throw new PlacementRefusal('ledger', 'A feeding face cannot keep its authored order over the stagger');
     }
     const xs = [...targets.values()], low = Math.min(...xs), high = Math.max(...xs), old = node.bounds!;
-    const width = Math.max(old.width, high - low + 20 + node.sidePitch![side]!);
+    const inset = portEndInsets(node, side);
+    const width = Math.max(old.width, high - low + 2 * Math.max(inset.low, inset.high));
     const x = (low + high - width) / 2, dx = x - old.x;
     node.bounds = { ...old, x, width }; node.size = { ...node.size!, width };
     for (const port of node.ports) if (port.anchor) port.anchor.x += dx + (port.side === 'right' ? width - old.width : 0);

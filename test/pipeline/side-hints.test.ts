@@ -273,8 +273,9 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // no-hint run with a run with empty hint and floor maps, which is the ticket 114 claim itself.
   // Verdana metrics (snack-theme ticket 157): the hashes were f98faf1ca584bd8d, 2bf7ca0b64536533, 4bf31e66a5f0601f and c47be7d6b65f7515 with Arial.
   // The 9 px floor changes named pills and their reserved geometry.
+  // Ticket 156 adds only frozen portCorners records on the bundle fixture; a source diff confirms identical geometry.
   const main: Record<string, string> = {
-    'a-group-holds-both-ends-of-a-bundle': 'c8c03a7952dd5f13',
+    'a-group-holds-both-ends-of-a-bundle': 'd5044bd379b1900d',
     'a-bus-in-a-rank-gap-grows-the-gap': '6b813734f4667a13',
     'a-linked-node-steps-out-of-a-straight-chord': '87acdee7504bf90c',
     'a-bar-end-keeps-its-corridor': 'b77586f1d9edb49d',

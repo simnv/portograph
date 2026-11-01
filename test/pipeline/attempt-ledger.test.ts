@@ -64,8 +64,8 @@ const ROWS: Row[] = [
   // The 9 px pills need three placement runs instead of four; the other decisions are unchanged.
   row('a-canton-column-is-not-pulled-into-a-flank', undefined, 3, 1, 1, 0, 0),
   row('a-flank-link-around-a-neighbour-runs-along-the-core-edge', '1/4/7/3', 1, 1, 1, 0, 0),
-  // Ticket 156: the 9 px corner margins grow the lateral capacity; centring needs one more pass, with every other count unchanged.
-  row('m1-sip-edge', '1/6/7/3', 1, 1, 1, 0, 0),
+  // Ticket 156: protected x separation restores five centring passes; every other count is unchanged.
+  row('m1-sip-edge', '1/5/7/3', 1, 1, 1, 0, 0),
   // The phase-1 fixture: the base 7f chord step moves a group (before this, only NTP among the named sheets did).
   // Phase 3b of ticket 15: the base 7f moved a group and the kept result has no offer, so the unmoved 7f baseline is measured and its offer runs as one extra, refused side trial (3 attempts, 2 place runs; the settled copy 7f kept filters, the unmoved baseline is rebuilt).
   // Architecture 2, ticket 23: the grown overlay port clearance and the separated tracks cost this sheet one settle call, one centring pass and two candidate copies more (14/29/37 to 15/30/39).

@@ -222,7 +222,8 @@ export function stemReach(model: LayoutModel, node: LayoutModel['nodes'][string]
 /**
  * Outward distance of the ordinary checkpoint on one node side: the node's `stemReach`, or beyond the text of every pill of
  * that side where that reaches further (`sidePillTextReach`, ticket 156). A run that starts or turns at a tip under pill text
- * crosses it (G3). Every stem of the side, its fan rows, its nested base and the room a row gap reserves for it read this one depth.
+ * crosses it (G3). Ordinary stems and their row-gap room read this text depth. Fan peel rows and their nested base instead
+ * reserve `sidePillBodyReach`, beyond the pill bodies and strokes.
  */
 export function sideStemReach(model: LayoutModel, node: LayoutNode, side: Side): number {
   return Math.max(stemReach(model, node), sidePillTextReach(model, node, side));

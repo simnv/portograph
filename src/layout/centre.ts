@@ -1,3 +1,4 @@
+import { portEndInsets } from './port-insets.js';
 import type { AlignedExtentEdge, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
@@ -99,11 +100,12 @@ function overlayStops(model: LayoutModel, node: LayoutNode): OverlayStops {
 
 /**
  * The two body edges a face of `count` ports at `pitch` needs when its port `index` stands at `x`: the ports keep their pitch on both sides,
- * and the outer ones stand 10 + pitch / 2 inside the edges. The one statement of the alignment's edge arithmetic: `keptTargets`, `alignSide`
+ * and the outer ones retain the stored face insets inside the edges. The one statement of the alignment's edge arithmetic: `keptTargets`, `alignSide`
  * and the aligned extent (`alignedExtentOf`) read it.
  */
-function alignedEdges(index: number, x: number, count: number, pitch: number): { low: number; high: number } {
-  return { low: x - index * pitch - 10 - pitch / 2, high: x + (count - 1 - index) * pitch + 10 + pitch / 2 };
+function alignedEdges(node: LayoutNode, side: Side, index: number, x: number, count: number, pitch: number): { low: number; high: number } {
+  const inset = portEndInsets(node, side, pitch);
+  return { low: x - index * pitch - inset.low, high: x + (count - 1 - index) * pitch + inset.high };
 }
 /** The keep decision of `alignSide` without its mutation: the targets a side keeps, none when the side is declined as a whole (architecture ticket 12). */
 function keptTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void = () => {}): { index: number; x: number; key: string }[] {
@@ -113,10 +115,10 @@ function keptTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, 
   if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return [];
   const allowance = alignmentAllowance(node, side);
   /** The width the body ends with when the port at `index` is aligned to `x`. */
-  const reach = (index: number, x: number): number => { const edges = alignedEdges(index, x, ports.length, pitch); return Math.max(oldRight, edges.high) - Math.min(box.x, edges.low); };
+  const reach = (index: number, x: number): number => { const edges = alignedEdges(node, side, index, x, ports.length, pitch); return Math.max(oldRight, edges.high) - Math.min(box.x, edges.low); };
   for (const [index, port] of ports.entries()) {
     const key = portId(port.ref), x = targets.get(key), last = kept[kept.length - 1];
-    const edges = x === undefined ? undefined : alignedEdges(index, x, ports.length, pitch);
+    const edges = x === undefined ? undefined : alignedEdges(node, side, index, x, ports.length, pitch);
     if (x !== undefined && (edges!.low < limit.low - EPS || edges!.high > limit.high + EPS)) continue;
     if (x !== undefined && reach(index, x) > allowance + EPS) continue;
     // The overlay cap comes last, so it is named only where it alone declines the target.
@@ -131,8 +133,8 @@ function keptTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, 
   }
   if (!kept.length) return [];
   const first = kept[0]!, last = kept[kept.length - 1]!;
-  if (Math.max(oldRight, alignedEdges(last.index, last.x, ports.length, pitch).high)
-    - Math.min(box.x, alignedEdges(first.index, first.x, ports.length, pitch).low) > allowance + EPS) return [];
+  if (Math.max(oldRight, alignedEdges(node, side, last.index, last.x, ports.length, pitch).high)
+    - Math.min(box.x, alignedEdges(node, side, first.index, first.x, ports.length, pitch).low) > allowance + EPS) return [];
   return kept;
 }
 
@@ -188,8 +190,8 @@ function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, l
     if (seats.some((x, index) => !kept.some(target => target.index === index) && Math.abs(x - ports[index]!.anchor!.x) > EPS
       && held.get(portId(ports[index]!.ref))?.(x) === false)) return new Set();
   }
-  const oldX = box.x, grown = alignedEdges(last.index, last.x, ports.length, pitch).high;
-  box.x = Math.min(box.x, alignedEdges(first.index, first.x, ports.length, pitch).low);
+  const oldX = box.x, grown = alignedEdges(node, side, last.index, last.x, ports.length, pitch).high;
+  box.x = Math.min(box.x, alignedEdges(node, side, first.index, first.x, ports.length, pitch).low);
   box.width += (oldX - box.x) + Math.max(0, grown - oldRight);
   node.size!.width = box.width;
   for (const port of node.ports) {
@@ -551,8 +553,8 @@ function alignedExtentOf(model: LayoutModel, context: CentreContext, tier: numbe
     if (!targets.length) continue;
     kept = true;
     const pitch = node.sidePitch!.bottom!, count = node.ports.filter(port => port.side === 'bottom').length, first = targets[0]!, last = targets[targets.length - 1]!;
-    grownLow = Math.min(grownLow, alignedEdges(first.index, first.x, count, pitch).low);
-    grownHigh = Math.max(grownHigh, alignedEdges(last.index, last.x, count, pitch).high);
+    grownLow = Math.min(grownLow, alignedEdges(node, 'bottom', first.index, first.x, count, pitch).low);
+    grownHigh = Math.max(grownHigh, alignedEdges(node, 'bottom', last.index, last.x, count, pitch).high);
   }
   if (!kept) return undefined;
   // The outer feeds by x; the port id breaks a tie (R3).
