@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
-import { restoreLayoutModel } from '../../src/internal.js';
+import { restoreLayoutModel, resolve, sidesOne, sizeNodes, skeleton, sidesTwo } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -117,6 +117,22 @@ ${[1, 2, 3, 4, 5, 6].map(i => `  - [p, n${i}]`).join('\n')}
     expect(() => restoreLayoutModel(JSON.stringify(off))).toThrow(/autoArrange/);
   }, 60000);
 
+  it('a later placement run keeps what it is given and decides nothing (R1)', async () => {
+    const model = sizeNodes(sidesOne(resolve(parse(fixture(NAME)))));
+    await skeleton(model, { createAttempt });
+    const kept = sidesTwo(JSON.parse(JSON.stringify(model)) as LayoutModel, undefined, { mode: 'keep' });
+    expect(kept.groupArrangements).toBeUndefined();
+    expect(kept.staggerRows).toBeUndefined();
+    const decided = sidesTwo(model);
+    expect(decided.groupArrangements!.servers).toEqual({ chosen: 'stagger' });
+    // A group a later stage refused in an earlier attempt of the first run stays a row, with the refusal as its reason.
+    const again = sizeNodes(sidesOne(resolve(parse(fixture(NAME)))));
+    await skeleton(again, { createAttempt });
+    const declined = sidesTwo(again, undefined, { mode: 'decide', declined: new Map([['servers', 'Stagger placement lost its reserved pitch or lines']]) });
+    expect(declined.staggerRows).toBeUndefined();
+    expect(declined.groupArrangements!.servers).toEqual({ chosen: 'row', reason: 'a later stage of the first run refused the two lines: Stagger placement lost its reserved pitch or lines' });
+  }, 60000);
+
   it('writes no record when no group is a candidate row (R1: absent beside an all-row record)', async () => {
     const model = await run(`portograph: 2
 groups:
@@ -133,37 +149,31 @@ links: [[u, d1], [u, d2]]
   }, 60000);
 });
 
-// The five width-budget trials that stage 5 admitted and routing refused (kill experiment, class b1: drops not vertical). Four are now
-// stage-5 refusals with a named reason, so no trial reaches routing. The fifth (`hosts`) had two parents one pitch apart: the two-parent
-// gap now seats `sw-2` beside its own drop, and the trial keeps five straight vertical links.
+// The five width-budget trials that stage 5 admitted and routing refused (kill experiment, class b1: drops not vertical). Each is now a
+// stage-5 refusal with a named reason, so no trial reaches routing.
 describe('stage 5 refuses the stagger trials whose drops would bend (architecture-2 ticket 51)', () => {
   it.each([
     // (1) A wide parent's ports stood 100 px off the members: the centre rule moves the parent from the tier above, not over the row.
-    ['a-foreign-lane-stands-outside-the-frame', 'mid#1', /the centre rule \(7c\) aligns the row under a0/],
+    ['a-foreign-lane-stands-outside-the-frame', 'mid#1', /the centre rule \(7c\) aligns the row under its parents/],
     // (2) The far end of `lb` is a lateral face of `outlet`.
     ['a-link-drops-beside-a-frame-into-a-lateral-side', 'front', /link \S+ ends on the right face of outlet/],
     // (3) Two parents interleave: `edge-sw`, a body of the parent tier, stands in a drop corridor of `core-sw`.
     ['a-single-feed-port-follows-its-child-over-a-pushed-row', 'leaves', /the feeds of core-sw interleave/],
     // (3) The drops from `core-sw` run through the tiers between, past a foreign body.
     ['a-single-feed-port-follows-its-child-over-a-pushed-row', 'rack', /the drop of link \S+ to cam-1 meets a foreign body/],
+    // (3) A transit: `sw-1`'s drop to `host-2` crosses the tier of `sw-2` inside the box 7a keeps its lane out of.
+    ['a-stem-tip-stands-beyond-its-pill-text', 'hosts', /link \S+ crosses the box of access#1 between sw-1 and host-2/],
   ])('%s: %s', async (sheet, group, reason) => {
     const model = await run(withLayout(fixture(sheet), '{ maxWidth: 1 }'));
     const mine = model.diagnostics.filter(note => note.code === 'ROW_STAGGER_REFUSED' && note.owners?.some(owner => owner.kind === 'group' && owner.id === group)).map(note => note.message);
     expect(mine).toHaveLength(1);
     expect(mine[0]).toMatch(new RegExp(`Error: Stagger row ${group}: ${reason.source}`));
     expect(mine[0]).not.toMatch(/vertical drops/);
+    // Without a budget, stage 5 keeps the row too, and the record names why.
+    const unbudgeted = await run(fixture(sheet));
+    expect(unbudgeted.staggerRows?.some(row => row.group === group) ?? false).toBe(false);
+    const entry = unbudgeted.groupArrangements?.[group];
+    if (entry !== undefined) expect(entry.chosen).toBe('row');
   }, 120000);
 
-  it('a-stem-tip-stands-beyond-its-pill-text: hosts keeps straight drops with the two-parent gap', async () => {
-    const model = await run(withLayout(fixture('a-stem-tip-stands-beyond-its-pill-text'), '{ maxWidth: 1 }'));
-    expect(refusals(model)).toEqual([]);
-    const row = model.staggerRows!.find(item => item.group === 'hosts')!;
-    // host-2 (sw-1) and host-5 (sw-2) have different parents: their gap also holds both switches.
-    expect(row.pitches[1]!).toBeGreaterThan(row.pitches[0]!);
-    for (const link of model.links.filter(item => item.layer === 'routed' && row.order.some(id => [item.attachments!.from.node, item.attachments!.to.node].includes(id)))) {
-      expect(pathBends(link), link.id).toBe(0);
-      for (const segment of link.path!.segments) expect(segment.from.x, link.id).toBeCloseTo(segment.to.x, 6);
-    }
-    expect(failedGates(model)).toEqual([]);
-  }, 120000);
 });

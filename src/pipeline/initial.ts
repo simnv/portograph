@@ -4,6 +4,7 @@
  */
 import type { LayoutModel } from '../model/index.js';
 import { TrunkBlocked } from '../layout/placement-refusal.js';
+import { staggerRefusal } from '../layout/stagger.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
 import type { State } from './state.js';
@@ -26,13 +27,22 @@ for (;;) {
   // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
   if (env.reruns >= env.maxReruns) kept = addReservations(kept, declineTrunk(undefined, 'the placement budget is spent', env.placements));
   try { first = await env.timed('place', () => env.place(kept)); break; } catch (error) {
+    // A stagger stage 5 chose that a later stage of the same run cannot keep (ticket 51): the next attempt keeps those rows one line and
+    // records why. Each attempt declines at least one group, so the attempts end; they share `MAX_RERUNS`.
+    if (staggerRefusal(error) && env.arrangedRows?.length) {
+      env.declinedArrangements = new Map([...(env.declinedArrangements ?? []), ...env.arrangedRows.map(group => [group, error.message] as const)]);
+      env.reruns++;
+      continue;
+    }
     if (!(error instanceof TrunkBlocked) || declinedTrunksOf(kept).has(error.key)) throw error;
     kept = addReservations(kept, declineTrunk(error.key, error.why, env.placements));
     env.reruns++;
     options.testSideTrace?.({ ev: 'trunk-blocked', key: error.key, reruns: env.reruns, left: env.maxReruns - env.reruns });
   }
 }
-// Stage 5 of this run chose each group's arrangement (ticket 51). Every later placement run of the command keeps that choice, not a new one.
+// Stage 5 of this run chose each group's arrangement (ticket 51). Every later placement run of the command keeps that choice, not a new one,
+// also when this run chose nothing.
+env.arranged = true;
 if (first.groupArrangements !== undefined) {
   env.groupArrangements = JSON.parse(JSON.stringify(first.groupArrangements)) as typeof first.groupArrangements;
   if (first.staggerRows !== undefined) env.staggerRows = JSON.parse(JSON.stringify(first.staggerRows)) as typeof first.staggerRows;

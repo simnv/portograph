@@ -14,7 +14,8 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { rowGap } from './sides-two.js';
-import { selectAnchorTier } from './lanes.js';
+import { laneWidth, occupied, selectAnchorTier } from './lanes.js';
+import { nodeTier } from './read/tier.js';
 import { straightCorridorClear } from './row-paths.js';
 
 export const staggerOf = (model: LayoutModel, group: string): StaggerRow | undefined => model.staggerRows?.find(row => row.group === group);
@@ -144,6 +145,9 @@ function parentGaps(model: LayoutModel, plan: StaggerRow, pitch: number): number
   for (let i = 0; i + 1 < plan.order.length; i++) {
     for (const left of parents[i]!) for (const right of parents[i + 1]!) {
       if (left === right || runs.get(left)!.last !== i || runs.get(right)!.first !== i + 1) continue;
+      // `seatFeeds` seats ordinary parents only (7d spans a bar), and `rowGap` is the gap of one row: parents in two groups keep their own packing.
+      const groupOf = (id: string): string => model.document.nodes[id]!.group;
+      if (groupOf(left) !== groupOf(right) || [left, right].some(id => groupShape(model, groupOf(id)) === 'bar')) continue;
       const deficit = reach(left).high + rowGap(model, left, right) - reach(right).low;
       if (deficit > 0) pitches[i]! += deficit;
     }
@@ -251,7 +255,7 @@ export function seatStaggerRows(model: LayoutModel): void {
  * stage 5 admitted and routing refused). Each check names its refusal:
  * - the far end is the horizontal face over the member (a lateral face bends round its node);
  * - the vertical from the parent face to the member, at the clearances of a straight corridor, meets no foreign body, pill, title or group
- *   box, also where it crosses a tier between (a transit);
+ *   box; where it crosses a tier between (a transit), it clears every group box of that tier by half a lane, as 7a stands the lane;
  * - the parent port stands over the member, and the centre rule (7c) moves the parents over the row, not the row under the parents: the
  *   anchor tier is the row's tier or lies beyond it, away from the parents. A bar parent takes its span from the drops in 7d.
  */
@@ -268,11 +272,22 @@ function proveDrops(model: LayoutModel, plan: StaggerRow): void {
     if (!straightCorridorClear(model, link, drop, { refusal, attached: { nodes: [own.node, far.node], ports } })) {
       refuse(plan, `the drop of link ${link.id} to ${id} meets a foreign ${refusal.reason ?? 'shape'}`);
     }
+    // A transit: 7a stands the lane of a link beside the occupied box of every group of a tier it crosses, so the drop must clear each by half a lane.
+    const farTier = nodeTier(model, far.node), half = laneWidth(model, link) / 2, x = ownPort.anchor!.x;
+    const crossed = Object.values(model.groups).filter(group => group.bounds && group.nodes.length && (group.tier! - farTier) * (group.tier! - tier) < 0)
+      .filter(group => { const box = occupied(model, group, link); return x > box.x - half + PLACEMENT_EPS && x < box.x + box.width + half - PLACEMENT_EPS; })
+      .map(group => group.id).sort(compareId);
+    if (crossed.length) refuse(plan, `link ${link.id} crosses the box of ${crossed[0]} between ${far.node} and ${id}, where its lane must stand beside the box`);
     if (!bar && Math.abs(farPort.anchor!.x - ownPort.anchor!.x) > PLACEMENT_EPS) refuse(plan, `the port of ${far.node} does not stand over ${id}`);
-    if (anchor === undefined || (plan.side === 'top' ? anchor < tier : anchor > tier)) {
-      refuse(plan, `the centre rule (7c) aligns the row under ${far.node}: the anchor tier ${anchor ?? 'none'} lies on the parents' side`);
-    }
   }
+  if (anchor === undefined || (plan.side === 'top' ? anchor < tier : anchor > tier)) {
+    refuse(plan, `the centre rule (7c) aligns the row under its parents: the anchor tier ${anchor ?? 'none'} lies on the parents' side`);
+  }
+}
+
+/** A refusal of a stagger reservation, from the seat, its proof or its validator: the first run declines the row, and a fan re-run is cut. */
+export function staggerRefusal(error: unknown): error is PlacementRefusal {
+  return error instanceof PlacementRefusal && /stagger/i.test(error.message);
 }
 
 /** Publication and restore keep the two lines, pitch, feed order and passing corridors. Diagnostics grant no exception. */
@@ -336,17 +351,19 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
  * Stage 5 of the first placement run, before the seat (ticket 51): pick each group's arrangement when no budget gave the rows. A candidate
  * row is tried widest first on a draft; it staggers only when its band alone is the widest band, the seated draft passes `prove` (the
  * stage-5 refusals and the topology-freeze validation) and the sheet comes out at least one pitch narrower. A refused draft is dropped, the
- * row stays, and the record names the reason. Each candidate is tried once (a finite traversal). With no candidate row there is nothing
+ * row stays, and the record names the reason. Each candidate is tried once (a finite traversal). A `declined` group stays a row: a later
+ * stage of an earlier attempt of the first run could not keep its stagger. With no candidate row there is nothing
  * to choose and no record: an absent record and an all-`row` record are both "every group stays one row", told apart by the candidates.
  */
-export function arrangeGroups(model: LayoutModel, prove: (draft: LayoutModel) => void): void {
+export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, string>, prove: (draft: LayoutModel) => void): void {
   if (model.document.layout?.autoArrange === false || model.staggerRows !== undefined || model.groupArrangements !== undefined) return;
   // No candidate row (three or more members whose links all leave through one horizontal face): nothing to choose, no record.
   const candidates = staggerCandidates(model), ids = Object.keys(model.groups).sort(compareId);
   if (candidates.length === 0) return;
   const reasons = new Map<string, string>();
   for (const id of ids) {
-    const reason = rowReason(model, model.groups[id]!, candidates.some(row => row.group === id));
+    const reason = rowReason(model, model.groups[id]!, candidates.some(row => row.group === id))
+      ?? (declined.has(id) ? `a later stage of the first run refused the two lines: ${declined.get(id)!}` : undefined);
     if (reason !== undefined) reasons.set(id, reason);
   }
   const accepted: StaggerRow[] = [];

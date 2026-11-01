@@ -22,6 +22,12 @@ export interface Env {
   staggerRows?: StaggerRow[];
   /** Ticket 51: the arrangement stage 5 of the first placement run chose; every later run of the command keeps it (R1). */
   groupArrangements?: Record<string, GroupArrangement>;
+  /** Ticket 51: true once the first placement run has completed; every later run keeps its arrangement and decides none. */
+  arranged?: boolean;
+  /** Ticket 51: the groups an earlier attempt of the first run staggered and a later stage refused, with the refusal; they stay rows. */
+  declinedArrangements?: Map<string, string>;
+  /** Ticket 51: the groups stage 5 of the latest placement run staggered by its own choice (read when that run is refused). */
+  arrangedRows?: string[];
   readonly document: NormalisedDocument;
   readonly options: LayoutOptions;
   readonly budget: Budget;

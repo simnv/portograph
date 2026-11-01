@@ -7,7 +7,7 @@ import { portKey, sidesOne } from '../layout/sides-one.js';
 import { movesPort } from '../layout/course-rows.js';
 import { sizeNodes } from '../layout/size.js';
 import { skeleton } from '../layout/skeleton.js';
-import { sidesTwo } from '../layout/sides-two.js';
+import { sidesTwo, type Arrange } from '../layout/sides-two.js';
 import { rows } from '../layout/rows.js';
 import { lanes } from '../layout/lanes.js';
 import { flanks } from '../layout/flanks.js';
@@ -88,7 +88,10 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   attemptCounters.placeRuns++;
   // The ledger reads the routed chords and the straight overlay links after each stage, only when a test or the trace asked for it.
   const ledger = ledgerOn(env.options.attemptTrace !== undefined);
-  let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors.size > 0 ? nodeFloors : undefined));
+  env.arrangedRows = [];
+  const arrange: Arrange = env.arranged ? { mode: 'keep' } : { mode: 'decide', declined: env.declinedArrangements ?? new Map() };
+  let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors.size > 0 ? nodeFloors : undefined, arrange));
+  env.arrangedRows = arrange.mode === 'decide' && model.groupArrangements !== undefined ? (model.staggerRows ?? []).map(row => row.group) : [];
   let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(model) : undefined;
   const entry = ledger ? startPlacementEntry() : undefined;
   const account = (stage: string): void => { if (seen === undefined || entry === undefined) return; const now = ledgerSnapshot(model); countStage(stage, seen, now, entry); seen = now; };

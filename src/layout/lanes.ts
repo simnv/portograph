@@ -75,7 +75,7 @@ export function laneWidth(model: LayoutModel, link?: LayoutLink): number {
  * in that frame (ticket 14). `lanes` is the reservation read: the model's own once allocation is over,
  * the running list while it is under way (`allocateLanes` binds it once).
  */
-function occupied(model: LayoutModel, group: LayoutGroup, link?: LayoutLink, lanes: readonly Lane[] = model.lanes) {
+export function occupied(model: LayoutModel, group: LayoutGroup, link?: LayoutLink, lanes: readonly Lane[] = model.lanes) {
   // One routed-stroke lookup for the whole group: it reads every link, and a per-node call makes
   // this measurement cost the link count once for each node and pill.
   const routed = routedStrokeWidth(model), gap = (stroke.pill + routed) / 2;
