@@ -85,13 +85,14 @@ implementation:
 no render is committed. Each file starts with a header comment: source URL at a fixed commit,
 licence, author, date fetched and what was simplified. The structure of the source (nodes, groups,
 tiers, links) is kept as it is; no sheet was tuned to lay out better. `npm run corpus` lays out
-every `goldens/**/*.yaml`, so these sheets are in the corpus. `hybrid-platform` fails layout on
-this commit (`PIPELINE_FAILED`, group labels contradict the measured placement); its corpus row is an ERROR row.
+every `goldens/**/*.yaml`, so these sheets are in the corpus. `real/` holds 7 sheets. An eighth,
+`hybrid-platform`, fails layout (`PIPELINE_FAILED`, group labels contradict the measured placement).
+It waits in `.scratch/architecture-2/fixtures/hybrid-platform.yaml` for ticket 49 and moves into
+`real/` when it lays out.
 
 | File | Shape | Source and licence |
 |---|---|---|
 | [`real/ntp.yaml`](real/ntp.yaml) | multi-site, 106 nodes, 312 links | drawthe.net `examples/NTP.yaml` (converter output, unedited); MIT, Brad Thornton |
-| [`real/hybrid-platform.yaml`](real/hybrid-platform.yaml) | cloud entry, firewalls, spine, leaf row of 4, app row of 4, data | drawthe.net `examples/hybrid-platform-reference-blueprint.yaml`; MIT, Brad Thornton |
 | [`real/private-datacenter-spine-leaf.yaml`](real/private-datacenter-spine-leaf.yaml) | data-centre leaf/spine | drawthe.net `examples/private-datacenter-spine-leaf-blueprint.yaml`; MIT, Brad Thornton |
 | [`real/aws-nested-vpc.yaml`](real/aws-nested-vpc.yaml) | cloud VPC, zones and subnets | drawthe.net `examples/nested-groups.yaml`; MIT, Brad Thornton |
 | [`real/small-office.yaml`](real/small-office.yaml) | small site with named ports | drawthe.net `examples/sample.yaml`; MIT, Brad Thornton |
