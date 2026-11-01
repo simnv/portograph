@@ -56,8 +56,9 @@ describe('a wide leaf row staggers without a width budget (architecture-2 ticket
       expect(model.staggerRows).toBeUndefined();
       expect(lines(model, 'servers')).toBe(1);
     }
-    expect(authored.groupArrangements!.servers).toEqual({ chosen: 'row', reason: 'the author set shape row' });
-    // `autoArrange: false`: stage 5 chooses nothing, so there is no record (R1: absent, not an all-`row` record).
+    // Every group keeps its row before a draft (`servers` by the authored shape), and under `autoArrange: false` stage 5 chooses nothing:
+    // in both there is no record (R1: absent, not an all-`row` record).
+    expect(authored.groupArrangements).toBeUndefined();
     expect(off.groupArrangements).toBeUndefined();
     expect(picture(authored)).toEqual(picture(off));
   }, 60000);
@@ -133,7 +134,7 @@ ${[1, 2, 3, 4, 5, 6].map(i => `  - [p, n${i}]`).join('\n')}
     expect(declined.groupArrangements!.servers).toEqual({ chosen: 'row', reason: 'a later stage of the first run refused the two lines: Stagger placement lost its reserved pitch or lines' });
   }, 60000);
 
-  it('writes no record when no group is a candidate row (R1: absent beside an all-row record)', async () => {
+  it('writes no record when no group passes the rules before a draft (R1: absent beside an all-row record)', async () => {
     const model = await run(`portograph: 2
 groups:
   up: { tier: 0 }
@@ -173,7 +174,7 @@ describe('stage 5 refuses the stagger trials whose drops would bend (architectur
     const unbudgeted = await run(fixture(sheet));
     expect(unbudgeted.staggerRows?.some(row => row.group === group) ?? false).toBe(false);
     // Each of these groups is a rank cell, has fewer than four members, or leaves through a lateral far face: a record names it, or there is
-    // no candidate row and no record.
+    // no group passes the rules before a draft and there is no record.
     const entry = unbudgeted.groupArrangements?.[group];
     expect(entry === undefined ? unbudgeted.groupArrangements : entry.chosen).toBe(entry === undefined ? undefined : 'row');
   }, 120000);

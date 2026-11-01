@@ -45,7 +45,7 @@ when all of these hold: no authored `shape`; not a flank and not a rank cell; fo
 members; one plain routed link per member, all out through one horizontal face; its band is the
 one widest band; the seated draft passes the stage-5 proof and the freeze validation; and the
 sheet is at least one pitch narrower. `groupArrangements` records `stagger`, or `row` with the
-reason, for every group. There is no record when no group is a candidate row, or under
+reason, for every group. There is no record when no group passes the rules before a draft, or under
 `layout.autoArrange: false` (default true), which keeps every row. Later placement runs of the
 command keep the record and the rows. If a later stage of the first run refuses a chosen stagger,
 the run is placed again with that row declined, within the re-run budget.

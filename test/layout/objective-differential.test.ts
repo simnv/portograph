@@ -42,6 +42,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * `overlay-links-reorder-two-locations` feeds that a title refused are chords now, so the judges are called on other geometry.
  * The merge of tickets 159 and 162 re-recorded them together: only `centreGroupStep` differs from main. Eight fixtures take the ticket 159 digest, and
  * `overlay-links-reorder-two-locations` has the calls of both (116 on main, 126 merged).
+ * Two were re-recorded for architecture-2 ticket 51 (a wide leaf row staggers without a budget): on `a-group-with-routed-links-steps-off-a-straight-chord`
+ * and `a-linked-node-steps-out-of-a-straight-chord` the four-node `hosts` row stands on two lines with four straight drops, so the judges are called on
+ * other geometry. No other fixture moved.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

@@ -65,14 +65,14 @@
     "windowsHold": "88 a1292f89daf174ca"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
-    "centreGroupStep": "8 a0aee1f9cf73c946",
-    "fanRoundHolds": "1 0a22f04442a90cca"
+    "attemptCheap": "2 56b9d7afcb409531",
+    "centreGroupStep": "20 91d829e8114fc427",
+    "fanRoundHolds": "1 0a22f04442a90cca",
+    "holdsSettled": "2 95f48f8573a4e578"
   },
   "a-linked-node-steps-out-of-a-straight-chord": {
-    "attemptCheap": "2 4c9158be6e09263a",
-    "centreGroupStep": "4 e8ab5492e0d707d1",
-    "holdsSettled": "2 47fc55890f8a1429",
-    "pickTarget": "12 e6765e397995a2f5"
+    "centreGroupStep": "1 a56b0a078d36c0b8",
+    "pickTarget": "6 0ec74fbb20044ac6"
   },
   "overlay-links-reorder-two-locations": {
     "centreGroupStep": "126 373142bbdb8ec31f",

@@ -352,20 +352,21 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
  * row is tried widest first on a draft; it staggers only when its band alone is the widest band, the seated draft passes `prove` (the
  * stage-5 refusals and the topology-freeze validation) and the sheet comes out at least one pitch narrower. A refused draft is dropped, the
  * row stays, and the record names the reason. Each candidate is tried once (a finite traversal). A `declined` group stays a row: a later
- * stage of an earlier attempt of the first run could not keep its stagger. With no candidate row there is nothing
- * to choose and no record: an absent record and an all-`row` record are both "every group stays one row", told apart by the candidates.
+ * stage of an earlier attempt of the first run could not keep its stagger. When every group keeps its row by a rule before any draft there is
+ * nothing to choose and no record: an absent record and an all-`row` record both mean "every group stays one row"; the record exists
+ * only when stage 5 tried a group.
  */
 export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, string>, prove: (draft: LayoutModel) => void): void {
   if (model.document.layout?.autoArrange === false || model.staggerRows !== undefined || model.groupArrangements !== undefined) return;
-  // No candidate row (three or more members whose links all leave through one horizontal face): nothing to choose, no record.
   const candidates = staggerCandidates(model), ids = Object.keys(model.groups).sort(compareId);
-  if (candidates.length === 0) return;
   const reasons = new Map<string, string>();
   for (const id of ids) {
     const reason = rowReason(model, model.groups[id]!, candidates.some(row => row.group === id))
       ?? (declined.has(id) ? `a later stage of the first run refused the two lines: ${declined.get(id)!}` : undefined);
     if (reason !== undefined) reasons.set(id, reason);
   }
+  // No group the rule may try (every group keeps its row by a rule of `rowReason`): nothing to choose, no record. A declined group was tried.
+  if (declined.size === 0 && ids.every(id => reasons.has(id))) return;
   const accepted: StaggerRow[] = [];
   let base = model, width = sheetWidth(model);
   for (const row of candidates) {

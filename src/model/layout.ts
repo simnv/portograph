@@ -498,7 +498,7 @@ export interface LayoutModel {
   staggerRows?: StaggerRow[];
   /**
    * Ticket 51: the arrangement stage 5 of the first placement run chose for each group, `stagger` or `row` with the reason, and kept across
-   * placement replays. Absent = stage 5 chose nothing: no group is a candidate row, `layout.autoArrange: false`, or the width-budget search
+   * placement replays. Absent = stage 5 chose nothing: no group passed the rules before a draft, `layout.autoArrange: false`, the re-run budget was spent, or the width-budget search
    * gave the rows. Present = one entry per group, and a group is `stagger` exactly when `staggerRows` holds it.
    */
   groupArrangements?: Record<string, GroupArrangement>;

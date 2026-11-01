@@ -274,10 +274,12 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // Verdana metrics (snack-theme ticket 157): the hashes were f98faf1ca584bd8d, 2bf7ca0b64536533, 4bf31e66a5f0601f and c47be7d6b65f7515 with Arial.
   // The 9 px floor changes named pills and their reserved geometry.
   // Ticket 156 adds only frozen portCorners records on the bundle fixture; a source diff confirms identical geometry.
+  // Architecture-2 ticket 51: `a-linked-node-steps-out-of-a-straight-chord` re-baselined (87acdee7504bf90c before): stage 5 stands its four-node `hosts` row on two
+  // lines with straight drops and records `groupArrangements`; `src`, `mid`, `near` and `far` and their links are unchanged in role.
   const main: Record<string, string> = {
     'a-group-holds-both-ends-of-a-bundle': 'd5044bd379b1900d',
     'a-bus-in-a-rank-gap-grows-the-gap': '6b813734f4667a13',
-    'a-linked-node-steps-out-of-a-straight-chord': '87acdee7504bf90c',
+    'a-linked-node-steps-out-of-a-straight-chord': 'cd3a6b1092b221ba',
     'a-bar-end-keeps-its-corridor': 'b77586f1d9edb49d',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {
