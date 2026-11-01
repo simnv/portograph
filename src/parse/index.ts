@@ -79,7 +79,7 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     }
     if (fields.has('shape')) {
       const shape = v.choice(fields.get('shape'), ['ranked', 'row', 'bar', 'grid', 'ring', 'free'], `${path}.shape`);
-      if (shape === 'ranked' || shape === 'row' || shape === 'bar' || shape === 'grid') { content.shape = shape; content.shapeAuthored = true; }
+      if (shape === 'ranked' || shape === 'row' || shape === 'bar' || shape === 'grid') { content.shape = shape; if (shape === 'row') content.shapeAuthored = true; }
       else if (shape !== undefined) v.report('UNSUPPORTED_SHAPE', `${path}.shape`, `${shape} groups are not supported`);
     }
     if (fields.has('collapsed')) {

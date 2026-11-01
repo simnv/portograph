@@ -48,7 +48,11 @@ export interface GroupContent {
   canton?: string;
   /** Set by stage 1 on a rank cell: the document group whose frame the cell is part of. */
   frame?: string;
-  /** Present only when the author wrote `shape:` (ticket 51): an authored shape wins over the engine's arrangement. Rank cells copy it. */
+  /**
+   * Present only when the author wrote `shape: row` (ticket 51): an authored row stays one line, whatever stage 5 would choose. It is the one
+   * authored shape the engine could otherwise rearrange: `ranked` is the default (writing it changes nothing), and a `bar` or `grid` is never
+   * staggered. Rank cells copy it.
+   */
   shapeAuthored?: true;
   /** Set by stage 1 on an expanded document: the authored tier, which `tier` no longer is once a tier takes several sub-tiers (routed chords read it). */
   documentTier?: number;

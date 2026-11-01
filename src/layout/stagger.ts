@@ -329,7 +329,7 @@ function sheetWidth(model: LayoutModel): number {
 /** The first rule that keeps `group` one row before any draft (ticket 51), or undefined when stage 5 may try it. */
 function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): string | undefined {
   const source = model.document.groups[group.id];
-  if (source?.shapeAuthored) return `the author set shape ${source.shape}`;
+  if (source?.shapeAuthored) return 'the author set shape row';
   if (group.flank) return 'a flank group';
   if (group.frame !== undefined) return 'a rank cell of a ranked frame';
   if (groupShape(model, group.id) !== 'row') return `a ${groupShape(model, group.id)} group`;
