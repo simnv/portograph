@@ -121,6 +121,8 @@ it('keeps a feeding parent right-side port on its face when the reserved span gr
 it('stops after the widest row when that stagger already meets the budget', async () => {
   const document = parse(source);
   document.layout!.maxWidth = 1800;
+  // Ticket 51: without this, stage 5 staggers both rows itself before the search starts. `autoArrange: false` leaves the search its own.
+  document.layout!.autoArrange = false;
   const model = await layout(document, options);
   expect(model.canvas!.width).toBeLessThanOrEqual(1800);
   expect(model.staggerRows?.map(row => row.group)).toEqual(['clients']);

@@ -14,7 +14,7 @@ nodes:
 links: [[a, hub], [b, hub], [c, hub]]
 `))));
   await skeleton(model, { createAttempt });
-  model.staggerRows = [{ group: 'sources', order: [...model.groups.sources!.rowOrder!], side: 'bottom', pitch: 0, step: 0 }];
+  model.staggerRows = [{ group: 'sources', order: [...model.groups.sources!.rowOrder!], side: 'bottom', pitches: [], step: 0 }];
   return sidesTwo(model);
 }
 

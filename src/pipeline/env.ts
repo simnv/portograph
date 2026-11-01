@@ -12,7 +12,7 @@ import type { Reservations } from '../layout/reservations.js';
 import { route, ROUTE_BUDGET_MS } from '../route/index.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 import type { LayoutOptions } from './options.js';
-import type { StaggerRow } from '../model/layout.js';
+import type { GroupArrangement, StaggerRow } from '../model/layout.js';
 import { FAN_ROUNDS, MAX_RERUNS } from './limits.js';
 
 /** What stage 7f did to a model, with the copy of its first settled state (`lastAttempt`): phase 3b's trigger. */
@@ -20,6 +20,8 @@ export interface Banded { model: LayoutModel; moved: boolean; unmoved: LayoutMod
 
 export interface Env {
   staggerRows?: StaggerRow[];
+  /** Ticket 51: the arrangement stage 5 of the first placement run chose; every later run of the command keeps it (R1). */
+  groupArrangements?: Record<string, GroupArrangement>;
   readonly document: NormalisedDocument;
   readonly options: LayoutOptions;
   readonly budget: Budget;

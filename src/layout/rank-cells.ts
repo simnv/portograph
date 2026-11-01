@@ -135,7 +135,7 @@ export function expandRankedGroups(model: LayoutModel): NormalisedDocument | und
     }
     const withStyle = (owner: string) => {
       const item = source.groups[owner]!;
-      return { label: item.label, shape: 'row' as const, ...(item.class !== undefined ? { class: item.class } : {}), ...(item.layout !== undefined ? { layout: item.layout } : {}) };
+      return { label: item.label, shape: 'row' as const, ...(item.shapeAuthored ? { shapeAuthored: true as const } : {}), ...(item.class !== undefined ? { class: item.class } : {}), ...(item.layout !== undefined ? { layout: item.layout } : {}) };
     };
     for (const owner of [id, ...plan.children]) {
       const item = source.groups[owner]!;

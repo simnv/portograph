@@ -33,5 +33,31 @@ as ADR-0010 and the command-budget contract require.
 ## Consequences
 
 This spends height instead of reducing content sizes or fonts. There is no router grant,
-new routing technique, paint-dependent placement, or change to an unbudgeted sheet.
+new routing technique or paint-dependent placement.
 The search is greedy, widest first. It does not search combinations of individually refused rows.
+
+## Amendment (2026-11-02, architecture-2 ticket 51): an unbudgeted sheet may stagger
+
+The sentence "an absent budget takes the original pipeline path and records no stagger decision"
+no longer holds. Without a budget, stage 5 of the first placement run picks each group's
+arrangement right before the seat, on a draft, and spends no placement run. A row staggers only
+when all of these hold: no authored `shape`; not a flank and not a rank cell; four or more
+members; one plain routed link per member, all out through one horizontal face; its band is the
+one widest band; the seated draft passes the stage-5 proof and the freeze validation; and the
+sheet is at least one pitch narrower. `groupArrangements` records `stagger`, or `row` with the
+reason, for every group. There is no record when no group is a candidate row, or under
+`layout.autoArrange: false` (default true), which keeps every row. Later placement runs of the
+command keep the record and the rows.
+
+Two changes apply to both sources. One uniform pitch becomes a pitch per gap: a gap between the
+members of two parents also holds both parents, seated over their drops, a row gap apart, and
+the members of each parent are one run of the order. The seat also proves each drop, or refuses
+the row by name: the far end is the horizontal face over the member; the vertical from the
+parent face to the member meets no foreign body, pill or group box; the parent port stands over
+the member; and the anchor tier is the row's tier or lies beyond it, so the centre rule (7c)
+moves the parents and not the row. These came from the corpus run with a 1 px budget, where
+stage 5 admitted five trials that routing refused for bent drops.
+
+With `layout.maxWidth` the search stays as above: its first run is the unbudgeted run, with
+stage 5's own choice, and the search tries the remaining rows. The routed trial stays for that
+path.

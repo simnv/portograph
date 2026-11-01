@@ -496,6 +496,12 @@ export interface LayoutRuntime {
 export interface LayoutModel {
   /** Ticket 166: stage-5 reservations. Absent means normal rows; kept across placement replays. */
   staggerRows?: StaggerRow[];
+  /**
+   * Ticket 51: the arrangement stage 5 of the first placement run chose for each group, `stagger` or `row` with the reason, and kept across
+   * placement replays. Absent = stage 5 chose nothing: no group is a candidate row, `layout.autoArrange: false`, or the width-budget search
+   * gave the rows. Present = one entry per group, and a group is `stagger` exactly when `staggerRows` holds it.
+   */
+  groupArrangements?: Record<string, GroupArrangement>;
   freeze?: LayoutFreeze;
   /**
    * What this placement run was told to keep (architecture 2, ticket 03): pitch and size floors, side faces, lane owners, courses, spanning chords, the turn
@@ -755,9 +761,12 @@ export interface StaggerRow {
   group: string;
   order: string[];
   side: 'top' | 'bottom';
-  pitch: number;
+  /** The centre distance of each consecutive pair of members, `order.length - 1` entries (ticket 51: a gap between two parents is wider). */
+  pitches: number[];
   step: number;
 }
+/** Ticket 51: a group stands on two lines (`stagger`) or stays one row; a `row` names the first rule that kept it. */
+export type GroupArrangement = { chosen: 'stagger' } | { chosen: 'row'; reason: string };
 export interface LayoutFreeze {
   /** Stage-5 stagger decision, including absence versus an explicit empty record (ticket 166). */
   staggerRows?: StaggerRow[];

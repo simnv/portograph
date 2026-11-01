@@ -38,6 +38,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   const resolved = stepIn('resolve', () => resolve(env.document, { ...(env.options.diagnostics ? { diagnostics: env.options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
   resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
   if (env.staggerRows?.length) resolved.staggerRows = JSON.parse(JSON.stringify(env.staggerRows)) as typeof env.staggerRows;
+  if (env.groupArrangements !== undefined) resolved.groupArrangements = JSON.parse(JSON.stringify(env.groupArrangements)) as typeof env.groupArrangements;
   const courses = coursesOf(reservations), spans = spansOf(reservations);
   // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
   const courseFaces = new Map<string, Side>();

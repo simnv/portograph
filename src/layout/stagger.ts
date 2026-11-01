@@ -1,5 +1,6 @@
-/** Width-budget row reservations, made before stage 5 freezes port topology (ticket 166). */
-import type { LayoutModel, LayoutGroup } from '../model/layout.js';
+/** Two-line row reservations, made before stage 5 freezes port topology: the width-budget search (ticket 166) and stage 5's own choice (ticket 51). */
+import type { GroupArrangement, LayoutLink, LayoutModel, LayoutGroup } from '../model/layout.js';
+import type { PortRef } from '../model/document.js';
 import type { StaggerRow } from '../model/layout.js';
 import { groupShape } from './grid.js';
 import { findPort } from './row-paths.js';
@@ -13,6 +14,8 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { rowGap } from './sides-two.js';
+import { selectAnchorTier } from './lanes.js';
+import { straightCorridorClear } from './row-paths.js';
 
 export const staggerOf = (model: LayoutModel, group: string): StaggerRow | undefined => model.staggerRows?.find(row => row.group === group);
 
@@ -25,17 +28,32 @@ function obstacleX(model: LayoutModel, id: string): { low: number; high: number 
     high: Math.max(box.x + box.width + reach, ...pills.map(pill => pill.x + pill.width + pillGap)) };
 }
 
+/** The links a stagger seats for a member: routed, not stubs, attached. Every reader of a member's links calls this one (R1). */
+function memberLinks(model: LayoutModel, id: string): LayoutLink[] {
+  return model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments
+    && (link.attachments.from.node === id || link.attachments.to.node === id));
+}
+/** The member end and the far end of a member link. */
+function endsOf(link: LayoutLink, id: string): { own: PortRef; far: PortRef } {
+  const ends = link.attachments!;
+  return ends.from.node === id ? { own: ends.from, far: ends.to } : { own: ends.to, far: ends.from };
+}
+const opposite = (side: 'top' | 'bottom'): 'top' | 'bottom' => side === 'top' ? 'bottom' : 'top';
+const compareId = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0;
+/** A stage-5 refusal of one stagger row; the width-budget search and stage 5's own choice record its text. */
+function refuse(plan: StaggerRow, message: string): never {
+  throw new PlacementRefusal('ledger', `Stagger row ${plan.group}: ${message}`, { stage: 'sides-two', owners: [{ kind: 'group', id: plan.group }] });
+}
+
 /** All members have routed links, all exit through the same horizontal face, none stay inside the row. */
 function exitSide(model: LayoutModel, group: LayoutGroup): 'top' | 'bottom' | undefined {
   if (group.flank || groupShape(model, group.id) !== 'row' || group.nodes.length < 3) return undefined;
   let side: 'top' | 'bottom' | undefined;
   for (const id of group.nodes) {
-    const links = model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments
-      && (link.attachments.from.node === id || link.attachments.to.node === id));
+    const links = memberLinks(model, id);
     if (!links.length) return undefined;
     for (const link of links) {
-      const own = link.attachments!.from.node === id ? link.attachments!.from : link.attachments!.to;
-      const far = link.attachments!.from.node === id ? link.attachments!.to : link.attachments!.from;
+      const { own, far } = endsOf(link, id);
       if (group.nodes.includes(far.node)) return undefined;
       const face = findPort(model, own)?.side;
       if (face !== 'top' && face !== 'bottom') return undefined;
@@ -54,12 +72,14 @@ export function staggerCandidates(model: LayoutModel): StaggerRow[] {
     const side = exitSide(model, group);
     if (side === undefined || staggerOf(model, group.id) !== undefined) return [];
     const order = [...group.rowOrder!];
-    return [{ group: group.id, order, side, pitch: 0, step: 0 }];
-  }).sort((a, b) => model.groups[b.group]!.bounds!.width - model.groups[a.group]!.bounds!.width
-    || (a.group < b.group ? -1 : a.group > b.group ? 1 : 0));
+    return [{ group: group.id, order, side, pitches: [], step: 0 }];
+  }).sort((a, b) => model.groups[b.group]!.bounds!.width - model.groups[a.group]!.bounds!.width || compareId(a.group, b.group));
 }
 
-/** Reserve the least uniform centre pitch that clears the bodies, their pills and every passing vertical. */
+/**
+ * Reserve the least centre pitch that clears the bodies, their pills and every passing vertical. A gap between the members of two
+ * parents is wider (ticket 51): it also holds both parents, each seated over its drops by `seatFeeds`, a row gap apart.
+ */
 function measure(model: LayoutModel, plan: StaggerRow): void {
   const nodes = plan.order.map(id => model.nodes[id]!);
   let pitch = 0;
@@ -81,8 +101,54 @@ function measure(model: LayoutModel, plan: StaggerRow): void {
   }
   const topReach = Math.max(0, ...nodes.flatMap(node => node.ports.filter(port => port.pill !== undefined).map(port => node.bounds!.y - port.pill!.bounds.y)));
   const bottomReach = Math.max(0, ...nodes.flatMap(node => node.ports.filter(port => port.pill !== undefined).map(port => port.pill!.bounds.y + port.pill!.bounds.height - node.bounds!.y - node.bounds!.height)));
-  plan.pitch = pitch;
+  plan.pitches = parentGaps(model, plan, pitch);
   plan.step = Math.max(...nodes.map(node => node.bounds!.height)) + Math.max(...nodes.map(node => nodeGap(model, node.id, node.id))) + topReach + bottomReach;
+}
+
+/** The far nodes of a member, sorted by id. */
+const parentsOf = (model: LayoutModel, id: string): string[] => [...new Set(memberLinks(model, id).map(link => endsOf(link, id).far.node))].sort(compareId);
+
+/**
+ * The per-gap pitches: `pitch` between members of one parent, and between the last member of one parent and the first of the next as
+ * much more as both parents need, seated over their drops, to stand a row gap apart. The members of each parent must be one run of the
+ * order: interleaved feeds put a body of the parent tier in a drop corridor. One pass left to right; a gap only shifts the members right
+ * of it, so a parent seen once keeps its extent.
+ */
+function parentGaps(model: LayoutModel, plan: StaggerRow, pitch: number): number[] {
+  const parents = plan.order.map(id => parentsOf(model, id));
+  const runs = new Map<string, { first: number; last: number }>();
+  parents.forEach((list, i) => {
+    for (const parent of list) {
+      const run = runs.get(parent);
+      if (run !== undefined && run.last < i - 1) refuse(plan, `the feeds of ${parent} interleave with another parent's in the row`);
+      runs.set(parent, { first: run?.first ?? i, last: i });
+    }
+  });
+  const pitches = plan.order.slice(1).map(() => pitch), face = opposite(plan.side);
+  // The x a parent's body reaches, seated as `seatFeeds` seats it, on member centres that start at 0.
+  const reach = (parent: string): { low: number; high: number } => {
+    const run = runs.get(parent)!, node = model.nodes[parent]!, drops: number[] = [];
+    let centre = 0;
+    for (let i = 0; i <= run.last; i++) {
+      if (i > 0) centre += pitches[i - 1]!;
+      if (i < run.first) continue;
+      const member = model.nodes[plan.order[i]!]!, box = member.bounds!;
+      for (const link of memberLinks(model, member.id).filter(link => endsOf(link, member.id).far.node === parent)) {
+        drops.push(centre + findPort(model, endsOf(link, member.id).own)!.anchor!.x - box.x - box.width / 2);
+      }
+    }
+    const low = Math.min(...drops), high = Math.max(...drops), inset = portEndInsets(node, face);
+    const extra = (Math.max(node.bounds!.width, high - low + 2 * Math.max(inset.low, inset.high)) - (high - low)) / 2;
+    return { low: low - extra, high: high + extra };
+  };
+  for (let i = 0; i + 1 < plan.order.length; i++) {
+    for (const left of parents[i]!) for (const right of parents[i + 1]!) {
+      if (left === right || runs.get(left)!.last !== i || runs.get(right)!.first !== i + 1) continue;
+      const deficit = reach(left).high + rowGap(model, left, right) - reach(right).low;
+      if (deficit > 0) pitches[i]! += deficit;
+    }
+  }
+  return pitches;
 }
 
 /** Seat the feeding faces before lanes fix their x. An ordinary parent needs the same reservation a bar gets from its span. */
@@ -154,9 +220,10 @@ export function seatStaggerRows(model: LayoutModel): void {
     const nodes = plan.order.map(id => model.nodes[id]!);
     const min = Math.min(...nodes.map(node => node.bounds!.x));
     const y = Math.min(...nodes.map(node => node.bounds!.y));
-    const half = nodes[0]!.bounds!.width / 2;
+    let centre = min + nodes[0]!.bounds!.width / 2;
     nodes.forEach((node, i) => {
-      const x = min + half + i * plan.pitch - node.bounds!.width / 2;
+      if (i > 0) centre += plan.pitches[i - 1]!;
+      const x = centre - node.bounds!.width / 2;
       const top = y + ((plan.side === 'top' ? i % 2 : 1 - i % 2) * plan.step);
       const dx = x - node.bounds!.x, dy = top - node.bounds!.y;
       node.bounds!.x = x; node.bounds!.y = top;
@@ -176,22 +243,56 @@ export function seatStaggerRows(model: LayoutModel): void {
   seatFeeds(model);
   stackBands(model, true);
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
+  for (const plan of model.staggerRows ?? []) proveDrops(model, plan);
+}
+
+/**
+ * The stage-5 proof that each drop of a stagger is one straight vertical through to routing (ticket 51, from the width-budget trials that
+ * stage 5 admitted and routing refused). Each check names its refusal:
+ * - the far end is the horizontal face over the member (a lateral face bends round its node);
+ * - the vertical from the parent face to the member, at the clearances of a straight corridor, meets no foreign body, pill, title or group
+ *   box, also where it crosses a tier between (a transit);
+ * - the parent port stands over the member, and the centre rule (7c) moves the parents over the row, not the row under the parents: the
+ *   anchor tier is the row's tier or lies beyond it, away from the parents. A bar parent takes its span from the drops in 7d.
+ */
+function proveDrops(model: LayoutModel, plan: StaggerRow): void {
+  const tier = model.groups[plan.group]!.tier!, face = opposite(plan.side), anchor = selectAnchorTier(model);
+  for (const id of plan.order) for (const link of memberLinks(model, id)) {
+    const { own, far } = endsOf(link, id), ownPort = findPort(model, own)!, farPort = findPort(model, far)!;
+    if (farPort.side !== face) refuse(plan, `link ${link.id} ends on the ${farPort.side ?? 'unset'} face of ${far.node}, not on the face over ${id}`);
+    // A bar seats its ports over the drops in 7d, so its face ports are not yet where they will stand: the drop treats them as its own.
+    const bar = groupShape(model, model.document.nodes[far.node]!.group) === 'bar';
+    const ports = [portId(own), portId(far), ...(bar ? model.nodes[far.node]!.ports.filter(port => port.side === face).map(port => portId(port.ref)) : [])];
+    const refusal: { reason?: 'body' | 'pill' | 'lane' | 'frame' | 'corridor' } = {};
+    const drop = { from: { x: ownPort.anchor!.x, y: farPort.anchor!.y }, to: { ...ownPort.anchor! }, owner: { kind: 'link' as const, id: link.id } };
+    if (!straightCorridorClear(model, link, drop, { refusal, attached: { nodes: [own.node, far.node], ports } })) {
+      refuse(plan, `the drop of link ${link.id} to ${id} meets a foreign ${refusal.reason ?? 'shape'}`);
+    }
+    if (!bar && Math.abs(farPort.anchor!.x - ownPort.anchor!.x) > PLACEMENT_EPS) refuse(plan, `the port of ${far.node} does not stand over ${id}`);
+    if (anchor === undefined || (plan.side === 'top' ? anchor < tier : anchor > tier)) {
+      refuse(plan, `the centre rule (7c) aligns the row under ${far.node}: the anchor tier ${anchor ?? 'none'} lies on the parents' side`);
+    }
+  }
 }
 
 /** Publication and restore keep the two lines, pitch, feed order and passing corridors. Diagnostics grant no exception. */
 export function validateStaggerRows(model: LayoutModel): void {
+  validateArrangements(model);
   const seen = new Set<string>();
   for (const plan of model.staggerRows ?? []) {
     const group = model.groups[plan.group];
     if (seen.has(plan.group) || group === undefined || exitSide(model, group) !== plan.side
-      || JSON.stringify(group.rowOrder) !== JSON.stringify(plan.order) || !(plan.pitch > 0) || !(plan.step > 0)) throw new PlacementRefusal('ledger', 'Invalid stagger reservation');
+      || JSON.stringify(group.rowOrder) !== JSON.stringify(plan.order) || !Array.isArray(plan.pitches) || plan.pitches.length !== plan.order.length - 1
+      || !plan.pitches.every(pitch => pitch > 0 && Number.isFinite(pitch)) || !(plan.step > 0)) throw new PlacementRefusal('ledger', 'Invalid stagger reservation');
     seen.add(plan.group);
     const first = model.nodes[plan.order[0]!]!.bounds!;
+    let offset = 0;
     for (const [i, id] of plan.order.entries()) {
       const box = model.nodes[id]!.bounds!;
       const dy = (i % 2) * plan.step * (plan.side === 'top' ? 1 : -1);
+      if (i > 0) offset += plan.pitches[i - 1]!;
       if (Math.abs(box.y - first.y - dy) > PLACEMENT_EPS
-        || Math.abs(box.x + box.width / 2 - first.x - first.width / 2 - i * plan.pitch) > PLACEMENT_EPS) throw new PlacementRefusal('ledger', 'Stagger placement lost its reserved pitch or lines');
+        || Math.abs(box.x + box.width / 2 - first.x - first.width / 2 - offset) > PLACEMENT_EPS) throw new PlacementRefusal('ledger', 'Stagger placement lost its reserved pitch or lines');
       if (i % 2 === 0) continue;
       for (const port of model.nodes[id]!.ports.filter(port => port.side === plan.side && !port.unused)) {
         const x = port.anchor!.x;
@@ -200,6 +301,96 @@ export function validateStaggerRows(model: LayoutModel): void {
           if (x > obstacle.low + PLACEMENT_EPS && x < obstacle.high - PLACEMENT_EPS) throw new PlacementRefusal('ledger', 'Stagger vertical corridor enters a neighbouring obstacle');
         }
       }
+    }
+  }
+}
+
+/** The x extent of every group box and frame: the width the canvas takes from the groups. */
+function sheetWidth(model: LayoutModel): number {
+  const boxes = [...Object.values(model.groups).flatMap(group => group.bounds && group.nodes.length ? [group.bounds] : []), ...(model.frames ?? []).map(frame => frame.box)];
+  return boxes.length ? Math.max(...boxes.map(box => box.x + box.width)) - Math.min(...boxes.map(box => box.x)) : 0;
+}
+
+/** The first rule that keeps `group` one row before any draft (ticket 51), or undefined when stage 5 may try it. */
+function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): string | undefined {
+  const source = model.document.groups[group.id];
+  if (source?.shapeAuthored) return `the author set shape ${source.shape}`;
+  if (group.flank) return 'a flank group';
+  if (group.frame !== undefined) return 'a rank cell of a ranked frame';
+  if (groupShape(model, group.id) !== 'row') return `a ${groupShape(model, group.id)} group`;
+  if (group.nodes.length < 4) return 'fewer than four members';
+  if (!candidate) return 'its members do not all link out of the row through one horizontal face';
+  for (const id of group.nodes) {
+    const all = model.links.filter(link => link.attachments === undefined
+      ? [link.from, link.to].some(end => 'group' in end && end.group === group.id)
+      : link.attachments.from.node === id || link.attachments.to.node === id);
+    const links = memberLinks(model, id);
+    if (all.length !== 1 || links.length !== 1) return `member ${id} has ${all.length} links, not one`;
+    if (links[0]!.bundle !== undefined) return `the link of member ${id} is a bundle member`;
+    if (model.groups[model.document.nodes[endsOf(links[0]!, id).far.node]!.group]!.flank) return `member ${id} links to a flank`;
+  }
+  return undefined;
+}
+
+/**
+ * Stage 5 of the first placement run, before the seat (ticket 51): pick each group's arrangement when no budget gave the rows. A candidate
+ * row is tried widest first on a draft; it staggers only when its band alone is the widest band, the seated draft passes `prove` (the
+ * stage-5 refusals and the topology-freeze validation) and the sheet comes out at least one pitch narrower. A refused draft is dropped, the
+ * row stays, and the record names the reason. Each candidate is tried once (a finite traversal). With no candidate row there is nothing
+ * to choose and no record: an absent record and an all-`row` record are both "every group stays one row", told apart by the candidates.
+ */
+export function arrangeGroups(model: LayoutModel, prove: (draft: LayoutModel) => void): void {
+  if (model.document.layout?.autoArrange === false || model.staggerRows !== undefined || model.groupArrangements !== undefined) return;
+  // No candidate row (three or more members whose links all leave through one horizontal face): nothing to choose, no record.
+  const candidates = staggerCandidates(model), ids = Object.keys(model.groups).sort(compareId);
+  if (candidates.length === 0) return;
+  const reasons = new Map<string, string>();
+  for (const id of ids) {
+    const reason = rowReason(model, model.groups[id]!, candidates.some(row => row.group === id));
+    if (reason !== undefined) reasons.set(id, reason);
+  }
+  const accepted: StaggerRow[] = [];
+  let base = model, width = sheetWidth(model);
+  for (const row of candidates) {
+    if (reasons.has(row.group)) continue;
+    const band = base.tierBands.find(item => item.tier === base.groups[row.group]!.tier)!;
+    if (base.tierBands.some(other => other !== band && other.bounds!.width >= band.bounds!.width - PLACEMENT_EPS)) {
+      reasons.set(row.group, 'its band is not the one widest band of the sheet');
+      continue;
+    }
+    const draft = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    draft.staggerRows = JSON.parse(JSON.stringify([...accepted, row])) as StaggerRow[];
+    try { seatStaggerRows(draft); prove(draft); } catch (error) {
+      // A refused draft is the decision "row"; the record keeps the refusal text (R6). A defect of the code is no refusal and ends the run.
+      if (!(error instanceof Error) || error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError) throw error;
+      reasons.set(row.group, `stage 5 refused the two lines: ${error.message}`);
+      continue;
+    }
+    const pitch = Math.min(...draft.staggerRows.find(item => item.group === row.group)!.pitches), next = sheetWidth(draft);
+    if (next > width - pitch + PLACEMENT_EPS) {
+      reasons.set(row.group, `two lines give ${next.toFixed(2)} px, not one pitch (${pitch.toFixed(2)} px) less than ${width.toFixed(2)} px`);
+      continue;
+    }
+    accepted.push(row); base = draft; width = next;
+  }
+  const arrangements: Record<string, GroupArrangement> = {};
+  for (const id of ids) arrangements[id] = accepted.some(row => row.group === id) ? { chosen: 'stagger' } : { chosen: 'row', reason: reasons.get(id)! };
+  model.groupArrangements = arrangements;
+  if (accepted.length) model.staggerRows = accepted;
+}
+
+/** The record agrees with the rows and the document (R1, R5): one entry per group, `stagger` exactly for a reserved row, absent under `autoArrange: false`. */
+function validateArrangements(model: LayoutModel): void {
+  const record = model.groupArrangements;
+  if (record === undefined) return;
+  if (model.document.layout?.autoArrange === false) throw new PlacementRefusal('ledger', 'Group arrangements are recorded although layout.autoArrange is false');
+  const staggered = new Set((model.staggerRows ?? []).map(row => row.group));
+  const ids = Object.keys(model.groups).sort(compareId);
+  if (JSON.stringify(Object.keys(record).sort(compareId)) !== JSON.stringify(ids)) throw new PlacementRefusal('ledger', 'Group arrangements do not name each group once');
+  for (const id of ids) {
+    const entry = record[id]!;
+    if ((entry.chosen === 'stagger') !== staggered.has(id) || (entry.chosen === 'row' ? !(typeof entry.reason === 'string' && entry.reason.length > 0) : entry.chosen !== 'stagger')) {
+      throw new PlacementRefusal('ledger', `The arrangement of ${id} contradicts its stagger reservation`);
     }
   }
 }

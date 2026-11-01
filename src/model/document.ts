@@ -48,6 +48,8 @@ export interface GroupContent {
   canton?: string;
   /** Set by stage 1 on a rank cell: the document group whose frame the cell is part of. */
   frame?: string;
+  /** Present only when the author wrote `shape:` (ticket 51): an authored shape wins over the engine's arrangement. Rank cells copy it. */
+  shapeAuthored?: true;
   /** Set by stage 1 on an expanded document: the authored tier, which `tier` no longer is once a tier takes several sub-tiers (routed chords read it). */
   documentTier?: number;
 }
@@ -121,8 +123,13 @@ export interface NormalisedDocument {
   overlays?: Record<string, 'hidden' | 'visible'>;
   /** Document settings, present only when the author wrote `layout:` at the root (ticket 152). */
   layout?: {
-    /** Positive finite published canvas width budget. Automatic row stagger is tried only above it (ticket 166). */
+    /** Positive finite published canvas width budget. Above it, the width-budget search staggers more rows (ticket 166). */
     maxWidth?: number;
+    /**
+     * When false, stage 5 picks no arrangement of its own: every row stays one line and no `groupArrangements` record is written
+     * (ticket 51, the R9 escape). Default true. A `maxWidth` budget still runs its own search.
+     */
+    autoArrange?: boolean;
     /** When true, an overlay link blocked only by node bodies is drawn as the straight chord over them. Default false. */
     overlayOverBodies?: boolean;
     /**
