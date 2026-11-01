@@ -7,8 +7,8 @@ export const FAN_ROUNDS = 2;
 export const SIDE_ROUNDS = 2;
 /**
  * Most placement re-runs of one command, fan and side together (side-faces.md, Section 7, *Budget*). A count, never set by the clock.
- * 3 = the two fan rounds and one side trial. On the private sheet (about 23 s quiet, 3 re-runs) the command ends about 14 s before the 60 s
- * deadline at 2 times slower, and a fourth re-run (2.7 s + 6.5 s of 7f, quiet) would not fit. The clock never chooses between layouts (ticket 141).
+ * 3 = the two fan rounds and one side trial. On the private sheet (about 23 s quiet, 3 re-runs) the command ended about 14 s before the former 60 s
+ * deadline at 2 times slower (the deadline is 120 s since 2026-11-01), and a fourth re-run (2.7 s + 6.5 s of 7f, quiet) would not have fit the former deadline; the count stays 3. The clock never chooses between layouts (ticket 141).
  */
 export const MAX_RERUNS = 3;
 /** A round asked for a placement past the command's budget (`MAX_RERUNS` + 1). A round refuses its trial on it; the first run is never refused. */

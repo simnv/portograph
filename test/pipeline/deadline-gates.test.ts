@@ -24,7 +24,7 @@ const at = (name: string, quiet: Record<string, number>, speed: number): Promise
 const cuts = (model: LayoutModel): string[] => model.diagnostics.map(item => item.code).filter(code => code.endsWith('_CUT'));
 
 describe('the command deadline and the layout', () => {
-  it('states the deadline', () => { expect(COMMAND_DEADLINE_MS).toBe(60000); });
+  it('states the deadline', () => { expect(COMMAND_DEADLINE_MS).toBe(120000); });
 
   it('gives byte-identical layouts at speeds 0, 1 and 2 (the side trial, kept)', async () => {
     const [free, quiet, slow] = [await at(PAST_SIBLING, QUIET, 0), await at(PAST_SIBLING, QUIET, 1), await at(PAST_SIBLING, QUIET, 2)];

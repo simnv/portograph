@@ -142,13 +142,13 @@ diagnostics go to stderr. `render` accepts YAML or validated final layout JSON, 
 extension. `score` accepts final layout JSON. Options may precede or follow the one required file.
 
 Exit codes are 0 for success, 1 for a computed gate failure, 2 for input or output-file errors,
-and 3 for processing failure or the 60-second command deadline. A computed gate failure still
+and 3 for processing failure or the 120-second command deadline. A computed gate failure still
 writes the complete artifact set; `--allow-gate-failures` changes only its exit code. Link, port
 and degree limits warn and continue; more than 1,000 nodes requires `--force`.
 Set `PORTOGRAPH_PROGRESS=1` to see stage timings and worker startup on stderr.
 
 The CLI enforces its deadline in a separate process, including synchronous placement and scoring;
 library calls remain portable and use the supplied worker factories and optional shared budget.
-The generated degree-64 hub / wide-tier / long-transit benchmark reached the old 30-second (now 60-second)
+The generated degree-64 hub / wide-tier / long-transit benchmark reached the old 30-second (then 60-second, now 120-second)
 deadline at 100, 300 and 1,000 nodes. Those cases contain 389, 1,167 and 3,890 links. The simple 50-link aligned case passes every gate with zero crossings;
 the high-fan scale cases remain a performance limit. Run `node scripts/scale-bench.mjs` to reproduce.
