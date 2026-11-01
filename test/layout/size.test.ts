@@ -20,7 +20,8 @@ describe('measured node size', () => {
     expect(sizeNodes(model)).toBe(model);
     expect(model.stage).toBe('size');
     expect(model.nodes['EAC-01']?.sidePitch).toEqual({ bottom: 12, right: 12, top: 15, left: 15 });
-    expect(model.nodes['EAC-01']?.size?.height).toBe(80);
+    // Four lateral centres at pitch 15, plus two 22 px corner margins for 31 x 11 px pills and both strokes.
+    expect(model.nodes['EAC-01']?.size?.height).toBe(89);
     expect(model.nodes['EAC-01']?.size?.width).toBeGreaterThanOrEqual(50);
     expect(model.nodes['EAC-01']?.sizeFloor?.height).toBeLessThan(80);
     expect(model.nodes['TBR-001']?.size?.height).toBe(140);

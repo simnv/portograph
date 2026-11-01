@@ -5,10 +5,10 @@ import { drawio, layout, parse, render } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
-// These hashes pin the pre-fallback layout, with runtime and font family strings excluded.
+// These hashes exclude runtime and font family strings. Ticket 156 remeasures corner margins and fan rows at 9 px.
 const baselines = {
-  'm1-sip-edge': 'dc8812848890f96711d80797ddbb2081cf60f1feb0fdc11e3d31d56e74ccdfdf',
-  'synthetic/drawio-constructs': 'c2856e36284f8bcc0fe0ec7dfddf467092f7e167cbd6a9756868670b8fccd11c',
+  'm1-sip-edge': 'b78dcc5f09510025726dafc55327084c0f72e5118cf47c2938b2ab1993499d67',
+  'synthetic/drawio-constructs': 'b20890c87b6de0f2af1c627c91205e630a135f2e529940ad8d5cb64fc4a4e288',
 };
 
 for (const [fixture, baseline] of Object.entries(baselines)) {

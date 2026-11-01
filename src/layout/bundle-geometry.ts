@@ -11,7 +11,8 @@ import { rowGap } from './sides-two.js';
 import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
 import { gridChains } from './grid.js';
 import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
-import { sidePillTextReach } from './pill-reach.js';
+import { sidePillBodyReach } from './pill-reach.js';
+import { portEndInsets, portSideCapacity } from './port-insets.js';
 
 export const MEMBER_GAP = 16;
 export const MIN_STEM = 15;
@@ -127,7 +128,7 @@ export function fanPitch(links: readonly LayoutLink[]): number {
 }
 
 /**
- * Row depths of a fan tree at `port` for `links` members: 15 px out, then one pitch apart, each row
+ * Row depths of a fan tree at `port` for `links` members: at least 15 px out and beyond the face's pill bodies, then one pitch apart, each row
  * moved off a group edge it would run along (ADR-0013). `rows[i]` for `i < links.length` is the
  * depth of junction `i`; `rows[links.length]` is where the straight continuation ends.
  */
@@ -136,8 +137,8 @@ export function fanRows(model: LayoutModel, port: LayoutPort, links: readonly La
 }
 
 /**
- * Row depths of a bundle's own fan at `port` (`bundleFans`): `count` rows a pitch apart from 15 px
- * out, each moved off a group edge it would run along (ADR-0013), and the `distance` one further
+ * Row depths of a bundle's own fan at `port` (`bundleFans`): `count` rows a pitch apart from at least 15 px
+ * out and beyond the face's pill bodies, each moved off a group edge it would run along (ADR-0013), and the `distance` one further
  * pitch out where the members join the channel. The reservation in 7e and the producer read this
  * one function, so the room reserved is the room the fan takes.
  */
@@ -147,7 +148,7 @@ export function bundleFanRows(model: LayoutModel, port: LayoutPort, fanLinks: re
 }
 
 /**
- * `count` row depths at `port`, a pitch apart from `MIN_STEM` out (or beyond the pill text of the side, `sidePillTextReach`), each moved off a group edge it
+ * `count` row depths at `port`, a pitch apart from `MIN_STEM` out (or beyond the pill bodies of the side, `sidePillBodyReach`), each moved off a group edge it
  * would run along (ADR-0013) together with every row after it. The one recurrence both fan kinds
  * read, so a change to the clearance cannot move one and leave the other behind.
  */
@@ -161,8 +162,8 @@ function edgeAwareRows(model: LayoutModel, port: LayoutPort, fanLinks: readonly 
   // draw their peel runs on the same lines (ADR-0018 rule 1, ticket 44). The side allocates its
   // rows as one sequence: a fan starts beyond the rows the fans before it have taken, ordered by
   // their own coordinate so the answer cannot depend on the order the producers happen to run in.
-  // The first row stands beyond the pill text of the side, at the depth of the side's stem tips (ticket 156).
-  const base = Math.max(MIN_STEM, sidePillTextReach(model, model.nodes[port.ref.node]!, port.side!)) + priorSideRows(model, port) * q;
+  // A peel that passes another port clears its pill body and the start of its chord. Stem tips still clear text only (ticket 156).
+  const base = Math.max(MIN_STEM, sidePillBodyReach(model, model.nodes[port.ref.node]!, port.side!)) + priorSideRows(model, port) * q;
   for (let i = 0; i < count; i++) rows.push(clearOfGroupEdges(Math.max(base + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin));
   return rows;
 }
@@ -568,13 +569,15 @@ export function prepareBundleGeometry(model: LayoutModel): void {
       return model.nodes[port.ref.node]!.ports.filter(p => p.side === port.side && !inAnyBundle.has(portId(p.ref)) && p.engineOrder! < first).length;
     };
     const lead = new Map<string, number>(list.flatMap(m => [m.a, m.b]).map(p => [p.ref.node, leading(p)] as const));
-    const floorOf = (id: string): number => model.nodes[id]!.bounds![tangent] + 10 + spacing / 2 + (lead.get(id) ?? 0) * spacing;
+    const sideOf = (id: string): Side => list.flatMap(m => [m.a, m.b]).find(p => p.ref.node === id)!.side!;
+    const floorOf = (id: string): number => model.nodes[id]!.bounds![tangent] + portEndInsets(model.nodes[id]!, sideOf(id), spacing).low + (lead.get(id) ?? 0) * spacing;
     const commonStart = Math.max(lower ?? -Infinity, ...bundle.nodes.map(floorOf));
     for (const end of ['a', 'b'] as const) {
       const far = end === 'a' ? 'b' : 'a';
       const ordered = [...list].sort((a, b) => a[end].engineOrder! - b[end].engineOrder! || a[far].engineOrder! - b[far].engineOrder! || a.link.sourceIndex - b.link.sourceIndex);
       const ports = [...new Set(ordered.map(m => m[end]))];
       const node = model.nodes[ports[0]!.ref.node]!, dim = tangent === 'x' ? 'width' : 'height';
+      const inset = portEndInsets(node, ports[0]!.side!, spacing);
       let start = commonStart;
       if (tangent === 'x') {
         const group = model.groups[model.document.nodes[node.id]!.group]!;
@@ -600,12 +603,12 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         // Alignment is optional; capacity and immutable lanes are not. Leave a bundle bent when
         // projecting a distant peer's x would grow this node across a sibling or reserved lane.
         const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length - (lead.get(node.id) ?? 0);
-        if (start + (sideCount - 1) * spacing + 10 + spacing / 2 > limit) {
+        if (start + (sideCount - 1) * spacing + inset.high > limit) {
           start = floorOf(node.id);
         }
       }
       ports.forEach(port => set(port, start + ordered.findIndex(m => m[end] === port) * spacing));
-      node.bounds![dim] = Math.max(node.bounds![dim], start + (list.length - 1) * spacing + 10 + spacing / 2 - node.bounds![tangent]);
+      node.bounds![dim] = Math.max(node.bounds![dim], start + (list.length - 1) * spacing + inset.high - node.bounds![tangent]);
       node.size![dim] = node.bounds![dim];
     }
     if (tangent === 'x') for (const item of list) for (const port of [item.a, item.b]) {
@@ -614,8 +617,9 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         .sort((a, b) => Math.abs(a.tier - tier) - Math.abs(b.tier - tier))[0];
       if (!lane) continue;
       const node = model.nodes[port.ref.node]!, oldRight = right(node.bounds!);
-      node.bounds!.x = Math.min(node.bounds!.x, lane.x - 10 - spacing / 2);
-      node.bounds!.width = Math.max(oldRight, lane.x + 10 + spacing / 2) - node.bounds!.x;
+      const inset = portEndInsets(node, port.side!, spacing);
+      node.bounds!.x = Math.min(node.bounds!.x, lane.x - inset.low);
+      node.bounds!.width = Math.max(oldRight, lane.x + inset.high) - node.bounds!.x;
       node.size!.width = node.bounds!.width;
       set(port, lane.x);
     }
@@ -711,7 +715,8 @@ export function prepareBundleGeometry(model: LayoutModel): void {
       return low <= high ? Math.min(Math.max(coordinate(p), low), high) : coordinate(p);
     };
     const ports = sorted(node.ports.filter(p => p.side === side), seat, unrelated);
-    let prior = node.bounds![tangent] + 10 - spacing / 2;
+    const inset = portEndInsets(node, side, spacing);
+    let prior = node.bounds![tangent] + inset.low - spacing;
     // A free port that stands before a planned one gives way to it: the ports on its left move left by a pitch each, rather than
     // pushing the planned port right out of line with its peers. `floorOf` has reserved the room.
     const wanted = ports.map(seat);
@@ -721,7 +726,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
       port.engineOrder = engineOrder; port.anchor![tangent] = value; prior = value;
     });
     const dim = tangent === 'x' ? 'width' : 'height';
-    node.bounds![dim] = Math.max(node.bounds![dim], prior + 10 + spacing / 2 - node.bounds![tangent], 20 + ports.length * spacing);
+    node.bounds![dim] = Math.max(node.bounds![dim], prior + inset.high - node.bounds![tangent], portSideCapacity(node, side, ports.length, spacing));
     node.size![dim] = node.bounds![dim];
   }
   for (const node of Object.values(model.nodes)) for (const port of node.ports) {

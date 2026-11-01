@@ -293,7 +293,7 @@ groups:
   top: {tier: 0}
   low: {tier: 1}
 nodes:
-  server: {group: top, ports: [{name: alpha}, {name: bravo}, {name: charlie}, {name: delta}, {name: echo}, {name: foxtrot}]}
+  server: {group: top, size: {width: 0, height: 80}, ports: [{name: alpha}, {name: bravo}, {name: charlie}, {name: delta}, {name: echo}, {name: foxtrot}]}
   c1: {group: low}
   c2: {group: low}
   c3: {group: low}
@@ -309,6 +309,7 @@ links:
   - [server.foxtrot, c6]
 `;
   it('a size floor keeps the width of the natural face, so the ELK graph is the same', async () => {
+    // Ticket 156: leave height for the hinted lateral pill's corner margins at 9 px. Only width is this test's premise.
     const plain = await run(wide);
     const { key } = port(plain.model, 'server', 5);
     const sizes = graphSizes(plain.graph, ['server']);

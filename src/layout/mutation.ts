@@ -9,6 +9,7 @@ import { filterCss } from '../parse/css.js';
 import { Validation } from '../parse/validation.js';
 import { portKey, sidesOne, SIDE_TIE_ORDER } from './sides-one.js';
 import { sizeNodes } from './size.js';
+import { lateralPillInset, portSideCapacity } from './port-insets.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
@@ -459,12 +460,16 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
       if (pitch === undefined || pitch < measured.sidePitch![side]!) throw new Error(`Invalid measured pitch on ${id}.${side}`);
       const horizontal = side === 'top' || side === 'bottom';
       const length = horizontal ? box.width : box.height;
-      if (length + PLACEMENT_EPS < ports.length * pitch + 20) throw new Error(`Port capacity exceeds ${id}.${side}`);
+      if (length + PLACEMENT_EPS < portSideCapacity(node, side, ports.length, pitch)) throw new Error(`Port capacity exceeds ${id}.${side}`);
+      const corner = lateralPillInset(node, side);
       let prior = -Infinity, authored = -Infinity;
       for (const [index, port] of ports.entries()) {
         if (port.engineOrder !== index) throw new Error(`Invalid engine slots on ${id}.${side}`);
         if (!port.anchor) throw new Error(`Missing anchor on ${id}`);
         const coordinate = horizontal ? port.anchor.x : port.anchor.y;
+        if (!horizontal && (coordinate < box.y + corner - PLACEMENT_EPS || coordinate > box.y + box.height - corner + PLACEMENT_EPS)) {
+          throw new Error(`Port corner clearance violated on ${id}.${side}`);
+        }
         if (coordinate - prior < pitch - PLACEMENT_EPS) throw new Error(`Port spacing/order violates pitch on ${id}.${side}`);
         prior = coordinate;
         if (port.authorOrder !== undefined) {

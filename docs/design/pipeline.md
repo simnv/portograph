@@ -158,6 +158,11 @@ stay horizontal, matching the target JPEG and d3-fd. The extent used for pitch i
 box's width on top/bottom and its height on left/right. Then
 `height = max(minH, contentH, n_left|right × pitch + 2·pad)`, `width = max(minW, contentW,
 n_top|bottom × pitch + 2·pad)`, `contentW/H` from the measured label, description and icon.
+Lateral named faces also reserve equal end margins that clear the inward half-length of the
+widest horizontal pill, half the lateral pill's height, and the two pill half-strokes. Their
+capacity is `(count - 1) × pitch + 2 × max(pad + pitch/2, corner margin)` (`portEndInsets`).
+The faces stay centred. Lateral levelling and bundle installers read the same margin, and publication and
+restore guard it; routing discovers no corner room (ticket 156).
 The content interior reserves, on each side, the larger of the 10 px content padding and the
 largest named pill's inward half-extent plus 4 px. Anonymous ports add no such inset. Store those
 content insets so placement centres the icon/text blocks in the remaining interior, which may be
@@ -980,7 +985,10 @@ owner/corridor; a later lane never overwrites an earlier lane's identity. Public
 independently require every bundle lane's exact segment in authored traversal direction.
 
 Shared incidence uses explicit junction trees. A root has an outward perpendicular stem of at
-least 15 px. A child keeps the same port, starts at its parent point, and carries a strict subset
+least 15 px. Fan peel rows also clear the whole pill body on their face, half the pill stroke,
+half the widest routed stroke and the 0.25 px entry tolerance (`sidePillBodyReach`, ticket 156).
+This keeps a peel beyond the pill-face start of a neighbouring straight chord. Ordinary router
+stem tips retain the text-only depth, inside the node obstacle. A child keeps the same port, starts at its parent point, and carries a strict subset
 of its parent's members. Each member traverses its exact root-to-leaf chain. A port shared across
 bundles, between a bundle and an unclaimed remainder, or by a plain fan of routed links that no
 bundle claims, has one tree (ticket 20); only a port whose links all belong to one bundle is that
@@ -1391,7 +1399,8 @@ obstacle when a wide stroke expands it past the 15 px stem. Every checkpoint on 
 named port also stands beyond the pill text of that side (`sideStemReach`): half the longest pill text, half the widest routed stroke
 and 0.25 px (`portStemReach`, ticket 156). Pill text is centred on the anchor, so at 9 px a name of
 about five characters reaches past the 15 px stem, and a run that starts or turns at the plain tip
-crosses the text (G3). The fan rows of the side start at the same depth (`edgeAwareRows`). With the default 1.5 px node and 1.5 px
+crosses the text (G3). Fan rows also clear the whole pill bodies and their strokes (`edgeAwareRows`, `sidePillBodyReach`),
+so a peel stands beyond the pill-face start of a neighbouring straight chord. With the default 1.5 px node and 1.5 px
 routed strokes the entry requirement is 16 px; a default named pill instead reserves 24.5 px
 to retain its visible gutter. The rule reads frozen inputs only: measured port names, the constant
 stem and `sharedRuns`, which every publication at or after stage 7e rebuilds and compares, so
