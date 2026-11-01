@@ -8,6 +8,9 @@ does not use, or there is a real gap to record.
 (SVG), choosing the drawing technique per part of the diagram so the result reads like an engineer
 drew it. Network diagrams first; software architecture and electrical panels next.
 
+For short definitions grouped by topic, see [GLOSSARY.md](GLOSSARY.md).
+This document keeps the detailed vocabulary, invariants and geometry rules.
+
 ---
 
 ## Core vocabulary

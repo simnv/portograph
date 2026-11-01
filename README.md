@@ -85,6 +85,7 @@ alone: the library does not read the machine's fonts, so its output depends on t
 ## Read in this order
 
 1. [`CONTEXT.md`](CONTEXT.md) — the vocabulary and invariants. Everything else uses these words.
+   [`GLOSSARY.md`](GLOSSARY.md) gives short definitions grouped by topic.
 2. [`docs/design/decisions-log.md`](docs/design/decisions-log.md) — every design question, its
    answer, and what evidence amended it.
 3. [`docs/design/pipeline.md`](docs/design/pipeline.md) — the stages, in order, with the region
