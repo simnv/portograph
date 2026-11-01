@@ -47,13 +47,15 @@ one widest band; the seated draft passes the stage-5 proof and the freeze valida
 sheet is at least one pitch narrower. `groupArrangements` records `stagger`, or `row` with the
 reason, for every group. There is no record when no group is a candidate row, or under
 `layout.autoArrange: false` (default true), which keeps every row. Later placement runs of the
-command keep the record and the rows.
+command keep the record and the rows. If a later stage of the first run refuses a chosen stagger,
+the run is placed again with that row declined, within the re-run budget.
 
 Two changes apply to both sources. One uniform pitch becomes a pitch per gap: a gap between the
 members of two parents also holds both parents, seated over their drops, a row gap apart, and
 the members of each parent are one run of the order. The seat also proves each drop, or refuses
 the row by name: the far end is the horizontal face over the member; the vertical from the
-parent face to the member meets no foreign body, pill or group box; the parent port stands over
+parent face to the member meets no foreign body, pill or group box, and a transit clears the
+occupied box of each group of a tier it crosses by half a lane; the parent port stands over
 the member; and the anchor tier is the row's tier or lies beyond it, so the centre rule (7c)
 moves the parents and not the row. These came from the corpus run with a 1 px budget, where
 stage 5 admitted five trials that routing refused for bent drops.
