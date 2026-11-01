@@ -1,0 +1,1700 @@
+# Source: https://github.com/cidrblock/drawthe.net/blob/8aeeacccfa3ebea9dca7e7cdb0085e64e97061d6/examples/NTP.yaml
+# Licence: MIT (Copyright (c) 2021 Bradley Thornton, cidrblock/drawthe.net)
+# Author: Brad Thornton (cidrblock)
+# Fetched: 2026-11-02 (the converter output equals the copy kept outside the repo before this date)
+# Made by scripts/conversion/drawthe_net.py with --canton na --canton emea --canton apac. The file below
+# this header is the converter output, unedited. Simplified by the converter: duplicate and self-pair
+# connections combined or omitted (see scripts/conversion/README.md); icon art, coordinates and colours dropped.
+portograph: 2
+profile: network
+groups:
+  apac:
+    label: apac
+  emea:
+    label: emea
+  na:
+    label: na
+  row-00:
+    tier: 0
+    label: Row 0
+  key:
+    tier: 1
+    label: Key
+  loc1:
+    tier: 2
+    label: Location 1
+  loc2:
+    tier: 2
+    label: Location 2
+  loc3:
+    tier: 2
+    label: Location 3
+  row-07:
+    tier: 3
+    label: Row 7
+  loc4:
+    tier: 4
+    label: Location 4
+    canton: na
+  loc4ntp:
+    label: Zone 16
+    parent: loc4
+  loc5:
+    tier: 4
+    label: Location 5
+    canton: na
+  loc5ntp:
+    label: Zone 16
+    parent: loc5
+  loc6:
+    tier: 4
+    label: Location 6
+    canton: emea
+  loc6ntp:
+    label: Zone 16
+    parent: loc6
+  loc7:
+    tier: 4
+    label: Location 6
+    canton: apac
+  loc7ntp:
+    label: Zone 16
+    parent: loc7
+  apacntpclients:
+    tier: 5
+    label: APAC NTP Clients
+    canton: apac
+  emeantpclients:
+    tier: 5
+    label: NA NTP Clients
+    canton: emea
+  nantpclients:
+    tier: 5
+    label: NA NTP Clients
+    canton: na
+  apacsntpclients:
+    tier: 6
+    label: APAC SNTP Clients
+    canton: apac
+  emeasntpclients:
+    tier: 6
+    label: NA SNTP Clients
+    canton: emea
+  nasntpclients:
+    tier: 6
+    label: NA SNTP Clients
+    canton: na
+  apacoutlets:
+    tier: 7
+    label: APAC Outlets
+    canton: apac
+  emeaoutlets:
+    tier: 7
+    label: EMEA Outlets
+    canton: emea
+  naoutlets:
+    tier: 7
+    label: NA Outlets
+    canton: na
+nodes:
+  stratum-1-ntp:
+    group: key
+    class: ntp-stratum1
+    icon: server
+    label: Stratum 1 NTP
+  stratum-2-ntp:
+    group: key
+    class: ntp-stratum2
+    icon: server
+    label: Stratum 2 NTP
+  ntp-client:
+    group: key
+    class: ntp-client
+    icon: server
+    label: NTP Client
+  gpssat001:
+    group: row-00
+    class: satellite-router
+    icon: router
+    label: gpsSat001
+  gpssat002:
+    group: row-00
+    class: satellite-router
+    icon: router
+    label: gpsSat002
+  enterprise-mpls-1:
+    group: row-07
+    class: provider
+    icon: cloud
+    label: Enterprise MPLS 1
+  enterprise-mpls-2:
+    group: row-07
+    class: provider
+    icon: cloud
+    label: Enterprise MPLS 2
+  loc1wrt001:
+    group: loc1
+    class: router
+    icon: router
+    label: loc1wrt001
+  loc1wrt002:
+    group: loc1
+    class: router
+    icon: router
+    label: loc1wrt002
+  loc1wrt003:
+    group: loc1
+    class: switch
+    icon: switch
+    label: loc1wrt003
+  loc1wrt004:
+    group: loc1
+    class: switch
+    icon: switch
+    label: loc1wrt004
+  loc1wsw001:
+    group: loc1
+    class: switch
+    icon: switch
+    label: loc1wsw001
+  loc1ntp001:
+    group: loc1
+    class: ntp-stratum1
+    icon: server
+    label: loc1ntp001
+  loc1wan001:
+    group: loc1
+    class: antenna
+    icon: default
+    label: loc1wan001
+  loc2wrt001:
+    group: loc2
+    class: router
+    icon: router
+    label: loc2wrt001
+  loc2wrt002:
+    group: loc2
+    class: router
+    icon: router
+    label: loc2wrt002
+  loc2wrt003:
+    group: loc2
+    class: switch
+    icon: switch
+    label: loc2wrt003
+  loc2wrt004:
+    group: loc2
+    class: switch
+    icon: switch
+    label: loc2wrt004
+  loc2wsw001:
+    group: loc2
+    class: switch
+    icon: switch
+    label: loc2wsw001
+  loc2ntp001:
+    group: loc2
+    class: ntp-stratum1
+    icon: server
+    label: loc2ntp001
+  loc2wan001:
+    group: loc2
+    class: antenna
+    icon: default
+    label: loc2wan001
+  loc3wrt001:
+    group: loc3
+    class: router
+    icon: router
+    label: loc3wrt001
+  loc3wrt002:
+    group: loc3
+    class: router
+    icon: router
+    label: loc3wrt002
+  loc3wrt003:
+    group: loc3
+    class: switch
+    icon: switch
+    label: loc3wrt003
+  loc3wrt004:
+    group: loc3
+    class: switch
+    icon: switch
+    label: loc3wrt004
+  loc3wsw001:
+    group: loc3
+    class: switch
+    icon: switch
+    label: loc3wsw001
+  loc3ntp001:
+    group: loc3
+    class: ntp-stratum1
+    icon: server
+    label: loc3ntp001
+  loc3wan001:
+    group: loc3
+    class: antenna
+    icon: default
+    label: loc3wan001
+  loc4crt001:
+    group: loc4
+    class: router
+    icon: router
+    label: loc4crt001
+  loc4crt002:
+    group: loc4
+    class: router
+    icon: router
+    label: loc4crt002
+  loc4crt003:
+    group: loc4
+    class: switch
+    icon: switch
+    label: loc4crt003
+  loc4crt004:
+    group: loc4
+    class: switch
+    icon: switch
+    label: loc4crt004
+  loc4srt001:
+    group: loc4
+    class: switch
+    icon: switch
+    label: loc4srt001
+  loc4srt002:
+    group: loc4
+    class: switch
+    icon: switch
+    label: loc4srt002
+  loc4ssw001:
+    group: loc4
+    class: switch
+    icon: switch
+    label: loc4ssw001
+  loc4ssw002:
+    group: loc4
+    class: switch
+    icon: switch
+    label: loc4ssw002
+  loc4ntp001:
+    group: loc4ntp
+    class: ntp-stratum2
+    icon: server
+    label: loc4ntp001
+  loc4ntp002:
+    group: loc4ntp
+    class: ntp-stratum2
+    icon: server
+    label: loc4ntp002
+  loc4slb001:
+    group: loc4ntp
+    class: load-balancer
+    icon: default
+    label: loc4slb001
+  loc4slb002:
+    group: loc4ntp
+    class: load-balancer
+    icon: default
+    label: loc4slb002
+  loc4rrt001:
+    group: loc4
+    class: router
+    icon: router
+    label: loc4rrt001
+  loc4rrt002:
+    group: loc4
+    class: router
+    icon: router
+    label: loc4rrt002
+  loc4rsw001:
+    group: loc4
+    class: switch
+    icon: switch
+    label: loc4rsw001
+  loc4rsw002:
+    group: loc4
+    class: switch
+    icon: switch
+    label: loc4rsw002
+  loc4ntp003:
+    group: loc4
+    class: ntp-stratum2
+    icon: server
+    label: loc4ntp003
+  loc4ntp004:
+    group: loc4
+    class: ntp-stratum2
+    icon: server
+    label: loc4ntp004
+  loc4rlb001:
+    group: loc4
+    class: load-balancer
+    icon: default
+    label: loc4rlb001
+  loc4rlb002:
+    group: loc4
+    class: load-balancer
+    icon: default
+    label: loc4rlb002
+  loc5crt001:
+    group: loc5
+    class: router
+    icon: router
+    label: loc5crt001
+  loc5crt002:
+    group: loc5
+    class: router
+    icon: router
+    label: loc5crt002
+  loc5crt003:
+    group: loc5
+    class: switch
+    icon: switch
+    label: loc5crt003
+  loc5crt004:
+    group: loc5
+    class: switch
+    icon: switch
+    label: loc5crt004
+  loc5srt001:
+    group: loc5
+    class: switch
+    icon: switch
+    label: loc5srt001
+  loc5srt002:
+    group: loc5
+    class: switch
+    icon: switch
+    label: loc5srt002
+  loc5ssw001:
+    group: loc5
+    class: switch
+    icon: switch
+    label: loc5ssw001
+  loc5ssw002:
+    group: loc5
+    class: switch
+    icon: switch
+    label: loc5ssw002
+  loc5ntp001:
+    group: loc5ntp
+    class: ntp-stratum2
+    icon: server
+    label: loc5ntp001
+  loc5ntp002:
+    group: loc5ntp
+    class: ntp-stratum2
+    icon: server
+    label: loc5ntp002
+  loc5slb001:
+    group: loc5ntp
+    class: load-balancer
+    icon: default
+    label: loc5slb001
+  loc5slb002:
+    group: loc5ntp
+    class: load-balancer
+    icon: default
+    label: loc5slb002
+  loc5rrt001:
+    group: loc5
+    class: router
+    icon: router
+    label: loc5rrt001
+  loc5rrt002:
+    group: loc5
+    class: router
+    icon: router
+    label: loc5rrt002
+  loc5rsw001:
+    group: loc5
+    class: switch
+    icon: switch
+    label: loc5rsw001
+  loc5rsw002:
+    group: loc5
+    class: switch
+    icon: switch
+    label: loc5rsw002
+  loc5ntp003:
+    group: loc5
+    class: ntp-stratum2
+    icon: server
+    label: loc5ntp003
+  loc5ntp004:
+    group: loc5
+    class: ntp-stratum2
+    icon: server
+    label: loc5ntp004
+  loc5rlb001:
+    group: loc5
+    class: load-balancer
+    icon: default
+    label: loc5rlb001
+  loc5rlb002:
+    group: loc5
+    class: load-balancer
+    icon: default
+    label: loc5rlb002
+  loc6crt001:
+    group: loc6
+    class: router
+    icon: router
+    label: loc6crt001
+  loc6crt002:
+    group: loc6
+    class: router
+    icon: router
+    label: loc6crt002
+  loc6crt003:
+    group: loc6
+    class: switch
+    icon: switch
+    label: loc6crt003
+  loc6crt004:
+    group: loc6
+    class: switch
+    icon: switch
+    label: loc6crt004
+  loc6srt001:
+    group: loc6
+    class: switch
+    icon: switch
+    label: loc6srt001
+  loc6srt002:
+    group: loc6
+    class: switch
+    icon: switch
+    label: loc6srt002
+  loc6ssw001:
+    group: loc6
+    class: switch
+    icon: switch
+    label: loc6ssw001
+  loc6ssw002:
+    group: loc6
+    class: switch
+    icon: switch
+    label: loc6ssw002
+  loc6ntp001:
+    group: loc6ntp
+    class: ntp-stratum2
+    icon: server
+    label: loc6ntp001
+  loc6ntp002:
+    group: loc6ntp
+    class: ntp-stratum2
+    icon: server
+    label: loc6ntp002
+  loc6slb001:
+    group: loc6ntp
+    class: load-balancer
+    icon: default
+    label: loc6slb001
+  loc6slb002:
+    group: loc6ntp
+    class: load-balancer
+    icon: default
+    label: loc6slb002
+  loc7crt001:
+    group: loc7
+    class: router
+    icon: router
+    label: loc7crt001
+  loc7crt002:
+    group: loc7
+    class: router
+    icon: router
+    label: loc7crt002
+  loc7crt003:
+    group: loc7
+    class: switch
+    icon: switch
+    label: loc7crt003
+  loc7crt004:
+    group: loc7
+    class: switch
+    icon: switch
+    label: loc7crt004
+  loc7srt001:
+    group: loc7
+    class: switch
+    icon: switch
+    label: loc7srt001
+  loc7srt002:
+    group: loc7
+    class: switch
+    icon: switch
+    label: loc7srt002
+  loc7ssw001:
+    group: loc7
+    class: switch
+    icon: switch
+    label: loc7ssw001
+  loc7ssw002:
+    group: loc7
+    class: switch
+    icon: switch
+    label: loc7ssw002
+  loc7ntp001:
+    group: loc7ntp
+    class: ntp-stratum2
+    icon: server
+    label: loc7ntp001
+  loc7ntp002:
+    group: loc7ntp
+    class: ntp-stratum2
+    icon: server
+    label: loc7ntp002
+  loc7slb001:
+    group: loc7ntp
+    class: load-balancer
+    icon: default
+    label: loc7slb001
+  loc7slb002:
+    group: loc7ntp
+    class: load-balancer
+    icon: default
+    label: loc7slb002
+  na-server1:
+    group: nantpclients
+    class: ntp-client
+    icon: server
+    label: NA server1
+  na-server2:
+    group: nantpclients
+    class: ntp-client
+    icon: server
+    label: NA server2
+  network-devices:
+    group: nantpclients
+    class: ntp-client
+    icon: router
+    label: Network Devices
+  na-server4:
+    group: nasntpclients
+    class: ntp-client
+    icon: server
+    label: NA server4
+  na-server5:
+    group: nasntpclients
+    class: ntp-client
+    icon: server
+    label: NA server5
+  na-outlet1:
+    group: naoutlets
+    class: ntp-client
+    icon: default
+    label: NA outlet1
+  na-outlet2:
+    group: naoutlets
+    class: ntp-client
+    icon: default
+    label: NA outlet2
+  na-outlet3:
+    group: naoutlets
+    class: ntp-client
+    icon: default
+    label: NA outlet3
+  emea-server1:
+    group: emeantpclients
+    class: ntp-client
+    icon: server
+    label: EMEA server1
+  emea-server4:
+    group: emeasntpclients
+    class: ntp-client
+    icon: server
+    label: EMEA server4
+  emea-outlet1:
+    group: emeaoutlets
+    class: ntp-client
+    icon: default
+    label: EMEA outlet1
+  apac-server1:
+    group: apacntpclients
+    class: ntp-client
+    icon: server
+    label: APAC server1
+  apac-server4:
+    group: apacsntpclients
+    class: ntp-client
+    icon: server
+    label: APAC server4
+  apac-outlet1:
+    group: apacoutlets
+    class: ntp-client
+    icon: default
+    label: APAC outlet1
+links:
+- - loc1ntp001
+  - loc2ntp001
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc3ntp001
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc4ntp001
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc4ntp002
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc4ntp003
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc4ntp004
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc5ntp001
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc5ntp002
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc5ntp003
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc1ntp001
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc3ntp001
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc4ntp001
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc4ntp002
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc4ntp003
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc4ntp004
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc5ntp001
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc5ntp002
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc5ntp003
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc2ntp001
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc4ntp001
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc4ntp002
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc4ntp003
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc4ntp004
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc5ntp001
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc5ntp002
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc5ntp003
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc3ntp001
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc4ntp002
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc4ntp003
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc4ntp004
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc5ntp001
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc5ntp002
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc5ntp003
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc4ntp001
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc4ntp003
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc4ntp004
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc5ntp001
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc5ntp002
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc5ntp003
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc4ntp002
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc4ntp003
+  - loc4ntp004
+  - class: sync
+    label: sync
+- - loc4ntp003
+  - loc5ntp001
+  - class: sync
+    label: sync
+- - loc4ntp003
+  - loc5ntp002
+  - class: sync
+    label: sync
+- - loc4ntp003
+  - loc5ntp003
+  - class: sync
+    label: sync
+- - loc4ntp003
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc4ntp003
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc4ntp003
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc4ntp003
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc4ntp003
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc4ntp004
+  - loc5ntp001
+  - class: sync
+    label: sync
+- - loc4ntp004
+  - loc5ntp002
+  - class: sync
+    label: sync
+- - loc4ntp004
+  - loc5ntp003
+  - class: sync
+    label: sync
+- - loc4ntp004
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc4ntp004
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc4ntp004
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc4ntp004
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc4ntp004
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc5ntp001
+  - loc5ntp002
+  - class: sync
+    label: sync
+- - loc5ntp001
+  - loc5ntp003
+  - class: sync
+    label: sync
+- - loc5ntp001
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc5ntp001
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc5ntp001
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc5ntp001
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc5ntp001
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc5ntp002
+  - loc5ntp003
+  - class: sync
+    label: sync
+- - loc5ntp002
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc5ntp002
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc5ntp002
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc5ntp002
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc5ntp002
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc5ntp003
+  - loc5ntp004
+  - class: sync
+    label: sync
+- - loc5ntp003
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc5ntp003
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc5ntp003
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc5ntp003
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc5ntp004
+  - loc6ntp001
+  - class: sync
+    label: sync
+- - loc5ntp004
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc5ntp004
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc5ntp004
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc6ntp001
+  - loc6ntp002
+  - class: sync
+    label: sync
+- - loc6ntp001
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc6ntp001
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc6ntp002
+  - loc7ntp001
+  - class: sync
+    label: sync
+- - loc6ntp002
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc7ntp001
+  - loc7ntp002
+  - class: sync
+    label: sync
+- - loc1wrt001
+  - loc1wrt002
+  - class: physical
+- - loc1wrt001
+  - loc1wrt003
+  - class: physical
+- - loc1wrt001
+  - loc1wrt004
+  - class: physical
+- - loc1wrt002
+  - loc1wrt003
+  - class: physical
+- - loc1wrt002
+  - loc1wrt004
+  - class: physical
+- - loc1wrt003
+  - loc1wrt004
+  - class: physical
+- - loc1wrt003
+  - loc1wsw001
+  - class: physical
+- - loc1wsw001
+  - loc1ntp001
+  - class: physical
+- - loc1wan001
+  - loc1ntp001
+  - class: physical
+- - loc2wrt001
+  - loc2wrt002
+  - class: physical
+- - loc2wrt001
+  - loc2wrt003
+  - class: physical
+- - loc2wrt001
+  - loc2wrt004
+  - class: physical
+- - loc2wrt002
+  - loc2wrt003
+  - class: physical
+- - loc2wrt002
+  - loc2wrt004
+  - class: physical
+- - loc2wrt003
+  - loc2wrt004
+  - class: physical
+- - loc2wrt003
+  - loc2wsw001
+  - class: physical
+- - loc2wsw001
+  - loc2ntp001
+  - class: physical
+- - loc2wan001
+  - loc2ntp001
+  - class: physical
+- - loc3wrt001
+  - loc3wrt002
+  - class: physical
+- - loc3wrt001
+  - loc3wrt003
+  - class: physical
+- - loc3wrt001
+  - loc3wrt004
+  - class: physical
+- - loc3wrt002
+  - loc3wrt003
+  - class: physical
+- - loc3wrt002
+  - loc3wrt004
+  - class: physical
+- - loc3wrt003
+  - loc3wrt004
+  - class: physical
+- - loc3wrt003
+  - loc3wsw001
+  - class: physical
+- - loc3wsw001
+  - loc3ntp001
+  - class: physical
+- - loc3wan001
+  - loc3ntp001
+  - class: physical
+- - loc1wan001
+  - gpssat001
+  - class: signal
+- - loc1wan001
+  - gpssat002
+  - class: signal
+- - loc2wan001
+  - gpssat001
+  - class: signal
+- - loc2wan001
+  - gpssat002
+  - class: signal
+- - loc3wan001
+  - gpssat001
+  - class: signal
+- - loc3wan001
+  - gpssat002
+  - class: signal
+- - loc4crt001
+  - enterprise-mpls-1
+  - class: dashed
+- - loc5crt001
+  - enterprise-mpls-1
+  - class: dashed
+- - loc6crt001
+  - enterprise-mpls-1
+  - class: dashed
+- - loc7crt001
+  - enterprise-mpls-1
+  - class: dashed
+- - loc1wrt001
+  - enterprise-mpls-1
+  - class: dashed
+- - loc2wrt001
+  - enterprise-mpls-1
+  - class: dashed
+- - loc3wrt001
+  - enterprise-mpls-1
+  - class: dashed
+- - loc4crt002
+  - enterprise-mpls-2
+  - class: dashed
+- - loc5crt002
+  - enterprise-mpls-2
+  - class: dashed
+- - loc6crt002
+  - enterprise-mpls-2
+  - class: dashed
+- - loc7crt002
+  - enterprise-mpls-2
+  - class: dashed
+- - loc1wrt002
+  - enterprise-mpls-2
+  - class: dashed
+- - loc2wrt002
+  - enterprise-mpls-2
+  - class: dashed
+- - loc3wrt002
+  - enterprise-mpls-2
+  - class: dashed
+- - loc4rlb001
+  - na-outlet1
+  - class: flow
+    label: Anycast IP
+- - loc4rlb001
+  - na-outlet2
+  - class: flow
+    label: Anycast IP
+- - loc4rlb001
+  - na-outlet3
+  - class: flow
+    label: Anycast IP
+- - loc4rlb002
+  - na-outlet1
+  - class: flow
+    label: Anycast IP
+- - loc4rlb002
+  - na-outlet2
+  - class: flow
+    label: Anycast IP
+- - loc4rlb002
+  - na-outlet3
+  - class: flow
+    label: Anycast IP
+- - loc5rlb001
+  - na-outlet1
+  - class: flow
+    label: Anycast IP
+- - loc5rlb001
+  - na-outlet2
+  - class: flow
+    label: Anycast IP
+- - loc5rlb001
+  - na-outlet3
+  - class: flow
+    label: Anycast IP
+- - loc5rlb002
+  - na-outlet1
+  - class: flow
+    label: Anycast IP
+- - loc5rlb002
+  - na-outlet2
+  - class: flow
+    label: Anycast IP
+- - loc5rlb002
+  - na-outlet3
+  - class: flow
+    label: Anycast IP
+- - loc4ntp001
+  - na-server1
+  - class: flow
+- - loc4ntp001
+  - na-server2
+  - class: flow
+- - loc4ntp001
+  - network-devices
+  - class: flow
+- - loc4ntp002
+  - na-server1
+  - class: flow
+- - loc4ntp002
+  - na-server2
+  - class: flow
+- - loc4ntp002
+  - network-devices
+  - class: flow
+- - loc5ntp001
+  - na-server1
+  - class: flow
+- - loc5ntp001
+  - na-server2
+  - class: flow
+- - loc5ntp001
+  - network-devices
+  - class: flow
+- - loc5ntp002
+  - na-server1
+  - class: flow
+- - loc5ntp002
+  - na-server2
+  - class: flow
+- - loc5ntp002
+  - network-devices
+  - class: flow
+- - loc4slb001
+  - na-server4
+  - class: flow
+    label: Anycast IP
+- - loc4slb001
+  - na-server5
+  - class: flow
+    label: Anycast IP
+- - loc4slb002
+  - na-server4
+  - class: flow
+    label: Anycast IP
+- - loc4slb002
+  - na-server5
+  - class: flow
+    label: Anycast IP
+- - loc5slb001
+  - na-server4
+  - class: flow
+    label: Anycast IP
+- - loc5slb001
+  - na-server5
+  - class: flow
+    label: Anycast IP
+- - loc5slb002
+  - na-server4
+  - class: flow
+    label: Anycast IP
+- - loc5slb002
+  - na-server5
+  - class: flow
+    label: Anycast IP
+- - loc6slb001
+  - emea-outlet1
+  - class: flow
+    label: Anycast IP
+- - loc6slb002
+  - emea-outlet1
+  - class: flow
+    label: Anycast IP
+- - loc6ntp001
+  - emea-server1
+  - class: flow
+- - loc6ntp002
+  - emea-server1
+  - class: flow
+- - loc4ntp001
+  - emea-server1
+  - class: flow
+- - loc4ntp002
+  - emea-server1
+  - class: flow
+- - loc6slb001
+  - emea-server4
+  - class: flow
+    label: Anycast IP
+- - loc6slb002
+  - emea-server4
+  - class: flow
+    label: Anycast IP
+- - loc7slb001
+  - apac-outlet1
+  - class: flow
+    label: Anycast IP
+- - loc7slb002
+  - apac-outlet1
+  - class: flow
+    label: Anycast IP
+- - loc7ntp001
+  - apac-server1
+  - class: flow
+- - loc7ntp002
+  - apac-server1
+  - class: flow
+- - loc5ntp001
+  - apac-server1
+  - class: flow
+- - loc5ntp002
+  - apac-server1
+  - class: flow
+- - loc7slb001
+  - apac-server4
+  - class: flow
+    label: Anycast IP
+- - loc7slb002
+  - apac-server4
+  - class: flow
+    label: Anycast IP
+- - loc4crt001
+  - loc4crt002
+  - class: physical
+- - loc4crt001
+  - loc4crt003
+  - class: physical
+- - loc4crt001
+  - loc4crt004
+  - class: physical
+- - loc4crt002
+  - loc4crt003
+  - class: physical
+- - loc4crt002
+  - loc4crt004
+  - class: physical
+- - loc4crt003
+  - loc4crt004
+  - class: physical
+- - loc4crt003
+  - loc4srt001
+  - class: physical
+- - loc4crt003
+  - loc4srt002
+  - class: physical
+- - loc4crt003
+  - loc4rrt001
+  - class: physical
+- - loc4crt003
+  - loc4rrt002
+  - class: physical
+- - loc4crt004
+  - loc4srt001
+  - class: physical
+- - loc4crt004
+  - loc4srt002
+  - class: physical
+- - loc4crt004
+  - loc4rrt001
+  - class: physical
+- - loc4crt004
+  - loc4rrt002
+  - class: physical
+- - loc4srt001
+  - loc4srt002
+  - class: physical
+- - loc4srt001
+  - loc4ssw001
+  - class: physical
+- - loc4srt001
+  - loc4ssw002
+  - class: physical
+- - loc4srt002
+  - loc4ssw001
+  - class: physical
+- - loc4srt002
+  - loc4ssw002
+  - class: physical
+- - loc4rrt001
+  - loc4rsw001
+  - class: physical
+- - loc4rrt001
+  - loc4rsw002
+  - class: physical
+- - loc4rrt002
+  - loc4rsw001
+  - class: physical
+- - loc4rrt002
+  - loc4rsw002
+  - class: physical
+- - loc4ssw001
+  - loc4ntp001
+  - class: physical
+- - loc4ssw002
+  - loc4ntp002
+  - class: physical
+- - loc4rsw001
+  - loc4ntp003
+  - class: physical
+- - loc4rsw002
+  - loc4ntp004
+  - class: physical
+- - loc4slb001
+  - loc4ntp001
+  - class: physical
+- - loc4slb001
+  - loc4ntp002
+  - class: physical
+- - loc4slb002
+  - loc4ntp001
+  - class: physical
+- - loc4slb002
+  - loc4ntp002
+  - class: physical
+- - loc4rlb001
+  - loc4ntp003
+  - class: physical
+- - loc4rlb001
+  - loc4ntp004
+  - class: physical
+- - loc4rlb002
+  - loc4ntp003
+  - class: physical
+- - loc4rlb002
+  - loc4ntp004
+  - class: physical
+- - loc5crt001
+  - loc5crt002
+  - class: physical
+- - loc5crt001
+  - loc5crt003
+  - class: physical
+- - loc5crt001
+  - loc5crt004
+  - class: physical
+- - loc5crt002
+  - loc5crt003
+  - class: physical
+- - loc5crt002
+  - loc5crt004
+  - class: physical
+- - loc5crt003
+  - loc5crt004
+  - class: physical
+- - loc5crt003
+  - loc5srt001
+  - class: physical
+- - loc5crt003
+  - loc5srt002
+  - class: physical
+- - loc5crt003
+  - loc5rrt001
+  - class: physical
+- - loc5crt003
+  - loc5rrt002
+  - class: physical
+- - loc5crt004
+  - loc5srt001
+  - class: physical
+- - loc5crt004
+  - loc5srt002
+  - class: physical
+- - loc5crt004
+  - loc5rrt001
+  - class: physical
+- - loc5crt004
+  - loc5rrt002
+  - class: physical
+- - loc5srt001
+  - loc5srt002
+  - class: physical
+- - loc5srt001
+  - loc5ssw001
+  - class: physical
+- - loc5srt001
+  - loc5ssw002
+  - class: physical
+- - loc5srt002
+  - loc5ssw001
+  - class: physical
+- - loc5srt002
+  - loc5ssw002
+  - class: physical
+- - loc5rrt001
+  - loc5rsw001
+  - class: physical
+- - loc5rrt001
+  - loc5rsw002
+  - class: physical
+- - loc5rrt002
+  - loc5rsw001
+  - class: physical
+- - loc5rrt002
+  - loc5rsw002
+  - class: physical
+- - loc5ssw001
+  - loc5ntp001
+  - class: physical
+- - loc5ssw002
+  - loc5ntp002
+  - class: physical
+- - loc5rsw001
+  - loc5ntp003
+  - class: physical
+- - loc5rsw002
+  - loc5ntp004
+  - class: physical
+- - loc5slb001
+  - loc5ntp001
+  - class: physical
+- - loc5slb001
+  - loc5ntp002
+  - class: physical
+- - loc5slb002
+  - loc5ntp001
+  - class: physical
+- - loc5slb002
+  - loc5ntp002
+  - class: physical
+- - loc5rlb001
+  - loc5ntp003
+  - class: physical
+- - loc5rlb001
+  - loc5ntp004
+  - class: physical
+- - loc5rlb002
+  - loc5ntp003
+  - class: physical
+- - loc5rlb002
+  - loc5ntp004
+  - class: physical
+- - loc6crt001
+  - loc6crt002
+  - class: physical
+- - loc6crt001
+  - loc6crt003
+  - class: physical
+- - loc6crt001
+  - loc6crt004
+  - class: physical
+- - loc6crt002
+  - loc6crt003
+  - class: physical
+- - loc6crt002
+  - loc6crt004
+  - class: physical
+- - loc6crt003
+  - loc6crt004
+  - class: physical
+- - loc6crt003
+  - loc6srt001
+  - class: physical
+- - loc6crt003
+  - loc6srt002
+  - class: physical
+- - loc6crt004
+  - loc6srt001
+  - class: physical
+- - loc6crt004
+  - loc6srt002
+  - class: physical
+- - loc6srt001
+  - loc6srt002
+  - class: physical
+- - loc6srt001
+  - loc6ssw001
+  - class: physical
+- - loc6srt001
+  - loc6ssw002
+  - class: physical
+- - loc6srt002
+  - loc6ssw001
+  - class: physical
+- - loc6srt002
+  - loc6ssw002
+  - class: physical
+- - loc6ssw001
+  - loc6ntp001
+  - class: physical
+- - loc6ssw002
+  - loc6ntp002
+  - class: physical
+- - loc6slb001
+  - loc6ntp001
+  - class: physical
+- - loc6slb001
+  - loc6ntp002
+  - class: physical
+- - loc6slb002
+  - loc6ntp001
+  - class: physical
+- - loc6slb002
+  - loc6ntp002
+  - class: physical
+- - loc7crt001
+  - loc7crt002
+  - class: physical
+- - loc7crt001
+  - loc7crt003
+  - class: physical
+- - loc7crt001
+  - loc7crt004
+  - class: physical
+- - loc7crt002
+  - loc7crt003
+  - class: physical
+- - loc7crt002
+  - loc7crt004
+  - class: physical
+- - loc7crt003
+  - loc7crt004
+  - class: physical
+- - loc7crt003
+  - loc7srt001
+  - class: physical
+- - loc7crt003
+  - loc7srt002
+  - class: physical
+- - loc7crt004
+  - loc7srt001
+  - class: physical
+- - loc7crt004
+  - loc7srt002
+  - class: physical
+- - loc7srt001
+  - loc7srt002
+  - class: physical
+- - loc7srt001
+  - loc7ssw001
+  - class: physical
+- - loc7srt001
+  - loc7ssw002
+  - class: physical
+- - loc7srt002
+  - loc7ssw001
+  - class: physical
+- - loc7srt002
+  - loc7ssw002
+  - class: physical
+- - loc7ssw001
+  - loc7ntp001
+  - class: physical
+- - loc7ssw002
+  - loc7ntp002
+  - class: physical
+- - loc7slb001
+  - loc7ntp001
+  - class: physical
+- - loc7slb001
+  - loc7ntp002
+  - class: physical
+- - loc7slb002
+  - loc7ntp001
+  - class: physical
+- - loc7slb002
+  - loc7ntp002
+  - class: physical
+title: Enterprise NTP

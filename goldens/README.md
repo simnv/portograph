@@ -79,6 +79,31 @@ implementation:
 - Link-label coverage comes from ticket-owned synthetic inputs; adding labels to the golden would
   add text absent from the JPEG.
 
+## Real sheets
+
+`real/` holds diagrams from public sources with a licence that allows reuse. They are inputs only:
+no render is committed. Each file starts with a header comment: source URL at a fixed commit,
+licence, author, date fetched and what was simplified. The structure of the source (nodes, groups,
+tiers, links) is kept as it is; no sheet was tuned to lay out better. `npm run corpus` lays out
+every `goldens/**/*.yaml`, so these sheets are in the corpus. `hybrid-platform` fails layout on
+this commit (`PIPELINE_FAILED`, group labels contradict the measured placement); its corpus row is an ERROR row.
+
+| File | Shape | Source and licence |
+|---|---|---|
+| [`real/ntp.yaml`](real/ntp.yaml) | multi-site, 106 nodes, 312 links | drawthe.net `examples/NTP.yaml` (converter output, unedited); MIT, Brad Thornton |
+| [`real/hybrid-platform.yaml`](real/hybrid-platform.yaml) | cloud entry, firewalls, spine, leaf row of 4, app row of 4, data | drawthe.net `examples/hybrid-platform-reference-blueprint.yaml`; MIT, Brad Thornton |
+| [`real/private-datacenter-spine-leaf.yaml`](real/private-datacenter-spine-leaf.yaml) | data-centre leaf/spine | drawthe.net `examples/private-datacenter-spine-leaf-blueprint.yaml`; MIT, Brad Thornton |
+| [`real/aws-nested-vpc.yaml`](real/aws-nested-vpc.yaml) | cloud VPC, zones and subnets | drawthe.net `examples/nested-groups.yaml`; MIT, Brad Thornton |
+| [`real/small-office.yaml`](real/small-office.yaml) | small site with named ports | drawthe.net `examples/sample.yaml`; MIT, Brad Thornton |
+| [`real/avd-campus-fabric.yaml`](real/avd-campus-fabric.yaml) | campus: WAN, spines, distribution, six access switches | Arista AVD `examples/campus-fabric`; Apache-2.0, Arista Networks, Inc. |
+| [`real/avd-dual-dc-l3ls.yaml`](real/avd-dual-dc-l3ls.yaml) | two data centres, two cantons, gateway peerings | Arista AVD `examples/dual-dc-l3ls`; Apache-2.0, Arista Networks, Inc. |
+| [`real/avd-cv-pathfinder-wan.yaml`](real/avd-cv-pathfinder-wan.yaml) | multi-site WAN, four site cantons, two transports | Arista AVD `examples/cv-pathfinder`; Apache-2.0, Arista Networks, Inc. |
+
+The drawthe.net repository is `github.com/cidrblock/drawthe.net` (MIT, Copyright (c) 2021 Bradley
+Thornton), read at commit `8aeeacc`. The AVD repository is `github.com/aristanetworks/avd`
+(Apache-2.0), read at commit `6267989`. The AVD sheets are built by hand from inventory and group
+variables: only host names and links are kept; addresses, ASNs and interface names are not.
+
 ## Normalised model contract
 
 The expected JSON records document normalisation before placement and technique

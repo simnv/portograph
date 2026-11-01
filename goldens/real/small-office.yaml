@@ -1,0 +1,38 @@
+# Source: https://github.com/cidrblock/drawthe.net/blob/8aeeacccfa3ebea9dca7e7cdb0085e64e97061d6/examples/sample.yaml
+# Licence: MIT (Copyright (c) 2021 Bradley Thornton, cidrblock/drawthe.net)
+# Author: Brad Thornton (cidrblock)
+# Fetched: 2026-11-02
+# Converted by hand from the drawthe.net format. Kept: all 9 icons as nodes, the 3 groups, the connection endpoint
+# labels (eth0, 443, SNAT, ...) as named ports, and the 8 connections between icons.
+# Simplified: the note box ("redundant HA pair") and its connection to the firewall are dropped. Two icons
+# (slb005, srt001) are in no source group; each gets a group of its own without a label, because a node needs a group.
+# Group tiers follow the source rows from top to bottom (servers row 0 is the bottom).
+# The source draws every connection dashed (strokeDashArray 10,2); that is paint, not kept.
+portograph: 2
+profile: network
+title: "Sample Diagram"
+groups:
+  other: { tier: 0, label: "Other group" }
+  chandler: { tier: 1, label: Chandler }
+  edge-a: { tier: 2, label: "" }
+  edge-b: { tier: 3, label: "" }
+  servers: { tier: 4, label: Servers }
+nodes:
+  chddc1crt001: { group: other, class: router, icon: router, ports: [eth0, eth5] }
+  firewall: { group: other, class: firewall, ports: [eth1] }
+  chddc1crt004: { group: chandler, class: gateway, ports: [eth6] }
+  chddc1sfw005: { group: chandler, class: firewall, ports: [XXXXXX] }
+  chddc1srt001: { group: edge-a, class: gateway, ports: [YYYYY] }
+  chddc1slb005: { group: edge-b, class: loadbalancer, ports: ["443", SNAT, SNAT] }
+  lx12300: { group: servers, class: server, icon: server, ports: ["80"] }
+  lx12301: { group: servers, class: server, icon: server, ports: ["80"] }
+  lx12302: { group: servers, class: server, icon: server }
+links:
+  - [chddc1crt001.eth0, firewall.eth1]
+  - [chddc1crt001.eth5, chddc1crt004.eth6]
+  - [chddc1crt004, chddc1sfw005]
+  - [chddc1sfw005.XXXXXX, chddc1srt001.YYYYY]
+  - [chddc1srt001, chddc1slb005.443]
+  - [chddc1srt001, lx12302]
+  - [chddc1slb005.SNAT#1, lx12300.80]
+  - [chddc1slb005.SNAT#2, lx12301.80]

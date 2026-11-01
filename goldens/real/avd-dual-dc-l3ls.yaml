@@ -1,0 +1,67 @@
+# Source: https://github.com/aristanetworks/avd/tree/62679891063862e3c55bb9ca8cf125be6dee2490/ansible_collections/arista/avd/examples/dual-dc-l3ls
+# (inventory.yml and group_vars/DC1*.yml, DC2*.yml)
+# Licence: Apache-2.0 (Copyright Arista Networks, Inc., aristanetworks/avd)
+# Author: Arista Networks, Inc. (Arista Validated Design)
+# Fetched: 2026-11-02
+# Built by hand from the inventory and group variables; the source has no drawing in this form.
+# Kept: all 16 switches in two data centres, every leaf uplink to both spines, every L2 leaf uplink to its leaf pair,
+# and the two EVPN gateway peerings between the data centres (evpn_gateway.remote_peers).
+# Simplified: management addresses, ASNs and interface names are dropped. The gateway peerings are BGP
+# sessions, not cables, so they carry class flow. Each data centre is a canton over its three groups.
+# The leaf pairs of the source node groups (L3_LEAF1, L3_LEAF2) are not separate groups here.
+portograph: 2
+profile: network
+title: "AVD dual data centre, L3 leaf-spine"
+groups:
+  dc1-spines: { tier: 0, label: DC1_SPINES, canton: dc1 }
+  dc1-l3-leafs: { tier: 1, label: DC1_L3_LEAFS, canton: dc1 }
+  dc1-l2-leafs: { tier: 2, label: DC1_L2_LEAFS, canton: dc1 }
+  dc2-spines: { tier: 0, label: DC2_SPINES, canton: dc2 }
+  dc2-l3-leafs: { tier: 1, label: DC2_L3_LEAFS, canton: dc2 }
+  dc2-l2-leafs: { tier: 2, label: DC2_L2_LEAFS, canton: dc2 }
+  dc1: { label: DC1 }
+  dc2: { label: DC2 }
+nodes:
+  dc1-spine1: { group: dc1-spines, class: switch, icon: switch }
+  dc1-spine2: { group: dc1-spines, class: switch, icon: switch }
+  dc1-leaf1a: { group: dc1-l3-leafs, class: switch, icon: switch }
+  dc1-leaf1b: { group: dc1-l3-leafs, class: switch, icon: switch }
+  dc1-leaf2a: { group: dc1-l3-leafs, class: switch, icon: switch }
+  dc1-leaf2b: { group: dc1-l3-leafs, class: switch, icon: switch }
+  dc1-leaf1c: { group: dc1-l2-leafs, class: switch, icon: switch }
+  dc1-leaf2c: { group: dc1-l2-leafs, class: switch, icon: switch }
+  dc2-spine1: { group: dc2-spines, class: switch, icon: switch }
+  dc2-spine2: { group: dc2-spines, class: switch, icon: switch }
+  dc2-leaf1a: { group: dc2-l3-leafs, class: switch, icon: switch }
+  dc2-leaf1b: { group: dc2-l3-leafs, class: switch, icon: switch }
+  dc2-leaf2a: { group: dc2-l3-leafs, class: switch, icon: switch }
+  dc2-leaf2b: { group: dc2-l3-leafs, class: switch, icon: switch }
+  dc2-leaf1c: { group: dc2-l2-leafs, class: switch, icon: switch }
+  dc2-leaf2c: { group: dc2-l2-leafs, class: switch, icon: switch }
+links:
+  - [dc1-spine1, dc1-leaf1a]
+  - [dc1-spine2, dc1-leaf1a]
+  - [dc1-spine1, dc1-leaf1b]
+  - [dc1-spine2, dc1-leaf1b]
+  - [dc1-spine1, dc1-leaf2a]
+  - [dc1-spine2, dc1-leaf2a]
+  - [dc1-spine1, dc1-leaf2b]
+  - [dc1-spine2, dc1-leaf2b]
+  - [dc1-leaf1a, dc1-leaf1c]
+  - [dc1-leaf1b, dc1-leaf1c]
+  - [dc1-leaf2a, dc1-leaf2c]
+  - [dc1-leaf2b, dc1-leaf2c]
+  - [dc2-spine1, dc2-leaf1a]
+  - [dc2-spine2, dc2-leaf1a]
+  - [dc2-spine1, dc2-leaf1b]
+  - [dc2-spine2, dc2-leaf1b]
+  - [dc2-spine1, dc2-leaf2a]
+  - [dc2-spine2, dc2-leaf2a]
+  - [dc2-spine1, dc2-leaf2b]
+  - [dc2-spine2, dc2-leaf2b]
+  - [dc2-leaf1a, dc2-leaf1c]
+  - [dc2-leaf1b, dc2-leaf1c]
+  - [dc2-leaf2a, dc2-leaf2c]
+  - [dc2-leaf2b, dc2-leaf2c]
+  - [dc1-leaf2a, dc2-leaf2a, { class: flow }]
+  - [dc1-leaf2b, dc2-leaf2b, { class: flow }]

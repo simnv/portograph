@@ -1,0 +1,55 @@
+# Source: https://github.com/cidrblock/drawthe.net/blob/8aeeacccfa3ebea9dca7e7cdb0085e64e97061d6/examples/private-datacenter-spine-leaf-blueprint.yaml
+# Licence: MIT (Copyright (c) 2021 Bradley Thornton, cidrblock/drawthe.net)
+# Author: Brad Thornton (cidrblock)
+# Fetched: 2026-11-02
+# Converted by hand from the drawthe.net format. Kept: all 14 icons as nodes, the 4 groups, all 24 connections.
+# Simplified: the three text notes (build, routing, operations) and the title bar are dropped; the title text becomes `title`.
+# Group tiers follow the source rows from top to bottom. The storage node sits in the workload group with the compute racks, as in the source.
+portograph: 2
+profile: network
+title: "Private Datacenter: Spine-Leaf Blueprint"
+groups:
+  edge: { tier: 0, label: "1. WAN and security edge" }
+  spine: { tier: 1, label: "2. Spine layer: routed fabric core" }
+  leaf: { tier: 2, label: "3. Leaf layer: redundant access pairs" }
+  workloads: { tier: 3, label: "4. Attached workloads and storage" }
+nodes:
+  fw1: { group: edge, class: firewall, label: FW-A }
+  wan: { group: edge, class: router, icon: router, label: WAN }
+  fw2: { group: edge, class: firewall, label: FW-B }
+  spine1: { group: spine, class: switch, icon: switch, label: Spine-1 }
+  spine2: { group: spine, class: switch, icon: switch, label: Spine-2 }
+  leaf1: { group: leaf, class: switch, icon: switch, label: Leaf-1A }
+  leaf2: { group: leaf, class: switch, icon: switch, label: Leaf-1B }
+  leaf3: { group: leaf, class: switch, icon: switch, label: Leaf-2A }
+  leaf4: { group: leaf, class: switch, icon: switch, label: Leaf-2B }
+  storage: { group: workloads, class: storage, label: SAN }
+  rack1: { group: workloads, class: server, icon: server, label: Compute-1 }
+  rack2: { group: workloads, class: server, icon: server, label: Compute-2 }
+  rack3: { group: workloads, class: server, icon: server, label: Compute-3 }
+  rack4: { group: workloads, class: server, icon: server, label: Compute-4 }
+links:
+  - [wan, fw1]
+  - [wan, fw2]
+  - [fw1, spine1]
+  - [fw1, spine2]
+  - [fw2, spine1]
+  - [fw2, spine2]
+  - [spine1, leaf1]
+  - [spine1, leaf2]
+  - [spine1, leaf3]
+  - [spine1, leaf4]
+  - [spine2, leaf1]
+  - [spine2, leaf2]
+  - [spine2, leaf3]
+  - [spine2, leaf4]
+  - [leaf1, rack1]
+  - [leaf2, rack1]
+  - [leaf1, rack2]
+  - [leaf2, rack2]
+  - [leaf3, rack3]
+  - [leaf4, rack3]
+  - [leaf3, rack4]
+  - [leaf4, rack4]
+  - [leaf1, storage]
+  - [leaf2, storage]

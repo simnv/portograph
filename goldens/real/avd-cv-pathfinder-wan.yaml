@@ -1,0 +1,74 @@
+# Source: https://github.com/aristanetworks/avd/tree/62679891063862e3c55bb9ca8cf125be6dee2490/ansible_collections/arista/avd/examples/cv-pathfinder
+# (inventory.yml and group_vars/*.yml)
+# Licence: Apache-2.0 (Copyright Arista Networks, Inc., aristanetworks/avd)
+# Author: Arista Networks, Inc. (Arista Validated Design)
+# Fetched: 2026-11-02
+# Built by hand from the inventory and group variables; the source README draws the topology as an image.
+# Kept: 2 pathfinders, 2 transport clouds (MPLS, Internet), 4 sites with all 13 routers and switches, the WAN carrier
+# circuits, the WAN router uplinks to the site switches, the direct HA link of site 2 and every MLAG pair.
+# Simplified: addresses, ASNs, interface names and carrier names are dropped. Site 3 reaches the Internet
+# by a two-member port channel; it is one link here. An MLAG pair is one link with class peer.
+# Site 1 has HA over the LAN (no link of its own). Each site is a canton over its WAN routers and its LAN switches.
+portograph: 2
+profile: network
+title: "AVD CV Pathfinder WAN"
+groups:
+  pathfinders: { tier: 0, label: PATHFINDERS }
+  transports: { tier: 1, label: TRANSPORTS }
+  site1-wan: { tier: 2, label: SITE1 WAN, canton: site1 }
+  site1-lan: { tier: 3, label: SITE1 border, canton: site1 }
+  site2-wan: { tier: 2, label: SITE2 WAN, canton: site2 }
+  site2-lan: { tier: 3, label: SITE2 leaf, canton: site2 }
+  site3-wan: { tier: 2, label: SITE3 WAN, canton: site3 }
+  site3-lan: { tier: 3, label: SITE3 leaf, canton: site3 }
+  site4-wan: { tier: 2, label: SITE4 WAN, canton: site4 }
+  site4-lan: { tier: 3, label: SITE4 border, canton: site4 }
+  site1: { label: SITE1 }
+  site2: { label: SITE2 }
+  site3: { label: SITE3 }
+  site4: { label: SITE4 }
+nodes:
+  pf1: { group: pathfinders, class: router, icon: router }
+  pf2: { group: pathfinders, class: router, icon: router }
+  mpls-cloud: { group: transports, class: cloud, icon: cloud }
+  inet-cloud: { group: transports, class: cloud, icon: cloud }
+  site1-wan1: { group: site1-wan, class: router, icon: router }
+  site1-wan2: { group: site1-wan, class: router, icon: router }
+  site1-border1: { group: site1-lan, class: switch, icon: switch }
+  site1-border2: { group: site1-lan, class: switch, icon: switch }
+  site2-wan1: { group: site2-wan, class: router, icon: router }
+  site2-wan2: { group: site2-wan, class: router, icon: router }
+  site2-leaf1: { group: site2-lan, class: switch, icon: switch }
+  site2-leaf2: { group: site2-lan, class: switch, icon: switch }
+  site3-wan1: { group: site3-wan, class: router, icon: router }
+  site3-leaf1: { group: site3-lan, class: switch, icon: switch }
+  site4-wan1: { group: site4-wan, class: router, icon: router }
+  site4-border1: { group: site4-lan, class: switch, icon: switch }
+  site4-border2: { group: site4-lan, class: switch, icon: switch }
+links:
+  - [pf1, mpls-cloud]
+  - [pf1, inet-cloud]
+  - [pf2, mpls-cloud]
+  - [pf2, inet-cloud]
+  - [site1-wan1, mpls-cloud]
+  - [site1-wan1, inet-cloud]
+  - [site1-wan2, mpls-cloud]
+  - [site1-wan2, inet-cloud]
+  - [site2-wan1, mpls-cloud]
+  - [site2-wan2, inet-cloud]
+  - [site3-wan1, inet-cloud]
+  - [site4-wan1, mpls-cloud]
+  - [site4-wan1, inet-cloud]
+  - [site1-wan1, site1-border1]
+  - [site1-wan1, site1-border2]
+  - [site1-wan2, site1-border1]
+  - [site1-wan2, site1-border2]
+  - [site1-border1, site1-border2, { class: peer }]
+  - [site2-wan1, site2-leaf1]
+  - [site2-wan2, site2-leaf2]
+  - [site2-wan1, site2-wan2]
+  - [site2-leaf1, site2-leaf2, { class: peer }]
+  - [site3-wan1, site3-leaf1]
+  - [site4-wan1, site4-border1]
+  - [site4-wan1, site4-border2]
+  - [site4-border1, site4-border2, { class: peer }]

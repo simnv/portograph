@@ -1,0 +1,29 @@
+# Source: https://github.com/cidrblock/drawthe.net/blob/8aeeacccfa3ebea9dca7e7cdb0085e64e97061d6/examples/nested-groups.yaml
+# Licence: MIT (Copyright (c) 2021 Bradley Thornton, cidrblock/drawthe.net)
+# Author: Brad Thornton (cidrblock)
+# Fetched: 2026-11-02
+# Converted by hand from the drawthe.net format. Kept: the 5 icons as nodes, the 4 connections, the subnets and the two availability zones.
+# Simplified: the source nests three levels (VPC, zone, subnet). Schema v2 nests one level, so the
+# subnets are tier groups, each zone is a canton over its subnets, and the "Production VPC" box is dropped.
+# Subnet tiers follow the source rows (web 3, api 3, database 5), but the web and api subnets
+# stand side by side in the source; here they take tiers 0 and 1 because the links run web to api to database.
+portograph: 2
+profile: network
+title: "Nested Infrastructure Groups"
+groups:
+  web_subnet_a: { tier: 0, label: "Public subnet A", canton: az_a }
+  api_subnet_a: { tier: 1, label: "Private subnet A", canton: az_a }
+  data_subnet: { tier: 2, label: "Data subnet", canton: az_b }
+  az_a: { label: "Availability Zone A" }
+  az_b: { label: "Availability Zone B" }
+nodes:
+  web_a: { group: web_subnet_a, class: server, icon: server, label: Web-A }
+  web_b: { group: web_subnet_a, class: server, icon: server, label: Web-B }
+  api_a: { group: api_subnet_a, class: server, icon: server, label: API-A }
+  api_b: { group: api_subnet_a, class: server, icon: server, label: API-B }
+  database: { group: data_subnet, class: database, label: Database }
+links:
+  - [web_a, api_a]
+  - [web_b, api_b]
+  - [api_a, database]
+  - [api_b, database]

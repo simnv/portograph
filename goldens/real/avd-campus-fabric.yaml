@@ -1,0 +1,54 @@
+# Source: https://github.com/aristanetworks/avd/tree/62679891063862e3c55bb9ca8cf125be6dee2490/ansible_collections/arista/avd/examples/campus-fabric
+# (inventory.yml and group_vars/SITE1*.yml)
+# Licence: Apache-2.0 (Copyright Arista Networks, Inc., aristanetworks/avd)
+# Author: Arista Networks, Inc. (Arista Validated Design)
+# Fetched: 2026-11-02
+# Built by hand from the inventory and group variables; the source has no drawing in this form.
+# Kept: all 10 switches, the WAN edge, every uplink in the node groups and in core_interfaces, and every MLAG pair.
+# Simplified: management addresses, interface names and VLAN tags are dropped. An MLAG pair is one link with
+# class peer, whatever the number of member interfaces. Names are the source host names.
+# Tiers follow the uplink chain: WAN, then the spines, then the leaves that uplink to a spine, then the leaves that uplink to a leaf.
+portograph: 2
+profile: network
+title: "AVD campus fabric (SITE1)"
+groups:
+  wan: { tier: 0, label: WAN }
+  spines: { tier: 1, label: SITE1_SPINES }
+  idf1: { tier: 2, label: IDF1 }
+  idf2: { tier: 2, label: IDF2 }
+  idf3-agg: { tier: 2, label: IDF3_AGG }
+  idf3-3c: { tier: 3, label: IDF3_3C }
+  idf3-3d: { tier: 3, label: IDF3_3D }
+  idf3-3e: { tier: 3, label: IDF3_3E }
+nodes:
+  WAN: { group: wan, class: router, icon: router }
+  SITE1_SPINE1: { group: spines, class: switch, icon: switch }
+  SITE1_SPINE2: { group: spines, class: switch, icon: switch }
+  SITE1_LEAF1A: { group: idf1, class: switch, icon: switch }
+  SITE1_LEAF1B: { group: idf1, class: switch, icon: switch }
+  SITE1_LEAF2A: { group: idf2, class: switch, icon: switch }
+  SITE1_LEAF3A: { group: idf3-agg, class: switch, icon: switch }
+  SITE1_LEAF3B: { group: idf3-agg, class: switch, icon: switch }
+  SITE1_LEAF3C: { group: idf3-3c, class: switch, icon: switch }
+  SITE1_LEAF3D: { group: idf3-3d, class: switch, icon: switch }
+  SITE1_LEAF3E: { group: idf3-3e, class: switch, icon: switch }
+links:
+  - [WAN, SITE1_SPINE1]
+  - [WAN, SITE1_SPINE2]
+  - [SITE1_SPINE1, SITE1_SPINE2, { class: peer }]
+  - [SITE1_SPINE1, SITE1_LEAF1A]
+  - [SITE1_SPINE2, SITE1_LEAF1B]
+  - [SITE1_LEAF1A, SITE1_LEAF1B, { class: peer }]
+  - [SITE1_SPINE1, SITE1_LEAF2A]
+  - [SITE1_SPINE2, SITE1_LEAF2A]
+  - [SITE1_SPINE1, SITE1_LEAF3A]
+  - [SITE1_SPINE2, SITE1_LEAF3A]
+  - [SITE1_SPINE1, SITE1_LEAF3B]
+  - [SITE1_SPINE2, SITE1_LEAF3B]
+  - [SITE1_LEAF3A, SITE1_LEAF3B, { class: peer }]
+  - [SITE1_LEAF3A, SITE1_LEAF3C]
+  - [SITE1_LEAF3B, SITE1_LEAF3C]
+  - [SITE1_LEAF3A, SITE1_LEAF3D]
+  - [SITE1_LEAF3B, SITE1_LEAF3D]
+  - [SITE1_LEAF3A, SITE1_LEAF3E]
+  - [SITE1_LEAF3B, SITE1_LEAF3E]
