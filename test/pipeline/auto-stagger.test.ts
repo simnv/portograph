@@ -172,8 +172,10 @@ describe('stage 5 refuses the stagger trials whose drops would bend (architectur
     // Without a budget, stage 5 keeps the row too, and the record names why.
     const unbudgeted = await run(fixture(sheet));
     expect(unbudgeted.staggerRows?.some(row => row.group === group) ?? false).toBe(false);
+    // Each of these groups is a rank cell, has fewer than four members, or leaves through a lateral far face: a record names it, or there is
+    // no candidate row and no record.
     const entry = unbudgeted.groupArrangements?.[group];
-    if (entry !== undefined) expect(entry.chosen).toBe('row');
+    expect(entry === undefined ? unbudgeted.groupArrangements : entry.chosen).toBe(entry === undefined ? undefined : 'row');
   }, 120000);
 
 });

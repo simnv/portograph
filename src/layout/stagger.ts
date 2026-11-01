@@ -43,7 +43,7 @@ const opposite = (side: 'top' | 'bottom'): 'top' | 'bottom' => side === 'top' ? 
 const compareId = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0;
 /** A stage-5 refusal of one stagger row; the width-budget search and stage 5's own choice record its text. */
 function refuse(plan: StaggerRow, message: string): never {
-  throw new PlacementRefusal('ledger', `Stagger row ${plan.group}: ${message}`, { stage: 'sides-two', owners: [{ kind: 'group', id: plan.group }] });
+  throw new PlacementRefusal('stagger', `Stagger row ${plan.group}: ${message}`, { stage: 'sides-two', owners: [{ kind: 'group', id: plan.group }] });
 }
 
 /** All members have routed links, all exit through the same horizontal face, none stay inside the row. */
@@ -164,7 +164,7 @@ function seatFeeds(model: LayoutModel): void {
       if (!plan.order.includes(own.node)) continue;
       const side = findPort(model, far)!.side;
       if (side === 'top' || side === 'bottom') {
-        if (parents.has(far.node) && parents.get(far.node) !== side) throw new PlacementRefusal('ledger', 'A feeding node faces staggered rows in both directions');
+        if (parents.has(far.node) && parents.get(far.node) !== side) throw new PlacementRefusal('stagger', 'A feeding node faces staggered rows in both directions');
         parents.set(far.node, side);
       }
     }
@@ -184,7 +184,7 @@ function seatFeeds(model: LayoutModel): void {
       for (const [own, far] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]] as const) {
         if (own.node !== id || findPort(model, own)!.side !== side) continue;
         const key = portId(own), x = findPort(model, far)!.anchor!.x, prior = targets.get(key);
-        if (prior !== undefined && Math.abs(prior - x) > PLACEMENT_EPS) throw new PlacementRefusal('ledger', 'A shared feeding port cannot hold distinct vertical drops');
+        if (prior !== undefined && Math.abs(prior - x) > PLACEMENT_EPS) throw new PlacementRefusal('stagger', 'A shared feeding port cannot hold distinct vertical drops');
         targets.set(key, x);
       }
     }
@@ -192,12 +192,12 @@ function seatFeeds(model: LayoutModel): void {
     const wanted = ports.filter(port => targets.has(portId(port.ref))).sort((a, b) => targets.get(portId(a.ref))! - targets.get(portId(b.ref))! || a.engineOrder! - b.engineOrder!);
     for (let i = 1; i < wanted.length; i++) {
       if (targets.get(portId(wanted[i]!.ref))! - targets.get(portId(wanted[i - 1]!.ref))! < node.sidePitch![side]! - PLACEMENT_EPS) {
-        throw new PlacementRefusal('ledger', 'A feeding face cannot keep its pitch over the stagger');
+        throw new PlacementRefusal('stagger', 'A feeding face cannot keep its pitch over the stagger');
       }
     }
     const authored = wanted.filter(port => port.authorOrder !== undefined);
     if (authored.some((port, i) => i > 0 && port.authorOrder! < authored[i - 1]!.authorOrder!)) {
-      throw new PlacementRefusal('ledger', 'A feeding face cannot keep its authored order over the stagger');
+      throw new PlacementRefusal('stagger', 'A feeding face cannot keep its authored order over the stagger');
     }
     const xs = [...targets.values()], low = Math.min(...xs), high = Math.max(...xs), old = node.bounds!;
     const inset = portEndInsets(node, side);
@@ -218,7 +218,7 @@ export function seatStaggerRows(model: LayoutModel): void {
   for (const plan of model.staggerRows ?? []) {
     const group = model.groups[plan.group];
     if (group === undefined || exitSide(model, group) !== plan.side || JSON.stringify(group.rowOrder) !== JSON.stringify(plan.order)) {
-      throw new PlacementRefusal('ledger', `Stagger row ${plan.group} no longer has its reserved feed order and exit face`, { stage: 'sides-two' });
+      throw new PlacementRefusal('stagger', `Stagger row ${plan.group} no longer has its reserved feed order and exit face`, { stage: 'sides-two', owners: [{ kind: 'group', id: plan.group }] });
     }
     measure(model, plan);
     const nodes = plan.order.map(id => model.nodes[id]!);
@@ -287,7 +287,7 @@ function proveDrops(model: LayoutModel, plan: StaggerRow): void {
 
 /** A refusal of a stagger reservation, from the seat, its proof or its validator: the first run declines the row, and a fan re-run is cut. */
 export function staggerRefusal(error: unknown): error is PlacementRefusal {
-  return error instanceof PlacementRefusal && /stagger/i.test(error.message);
+  return error instanceof PlacementRefusal && error.code === 'stagger';
 }
 
 /** Publication and restore keep the two lines, pitch, feed order and passing corridors. Diagnostics grant no exception. */
@@ -298,7 +298,7 @@ export function validateStaggerRows(model: LayoutModel): void {
     const group = model.groups[plan.group];
     if (seen.has(plan.group) || group === undefined || exitSide(model, group) !== plan.side
       || JSON.stringify(group.rowOrder) !== JSON.stringify(plan.order) || !Array.isArray(plan.pitches) || plan.pitches.length !== plan.order.length - 1
-      || !plan.pitches.every(pitch => pitch > 0 && Number.isFinite(pitch)) || !(plan.step > 0)) throw new PlacementRefusal('ledger', 'Invalid stagger reservation');
+      || !plan.pitches.every(pitch => pitch > 0 && Number.isFinite(pitch)) || !(plan.step > 0)) throw new PlacementRefusal('stagger', 'Invalid stagger reservation');
     seen.add(plan.group);
     const first = model.nodes[plan.order[0]!]!.bounds!;
     let offset = 0;
@@ -307,13 +307,13 @@ export function validateStaggerRows(model: LayoutModel): void {
       const dy = (i % 2) * plan.step * (plan.side === 'top' ? 1 : -1);
       if (i > 0) offset += plan.pitches[i - 1]!;
       if (Math.abs(box.y - first.y - dy) > PLACEMENT_EPS
-        || Math.abs(box.x + box.width / 2 - first.x - first.width / 2 - offset) > PLACEMENT_EPS) throw new PlacementRefusal('ledger', 'Stagger placement lost its reserved pitch or lines');
+        || Math.abs(box.x + box.width / 2 - first.x - first.width / 2 - offset) > PLACEMENT_EPS) throw new PlacementRefusal('stagger', 'Stagger placement lost its reserved pitch or lines', { owners: [{ kind: 'group', id: plan.group }] });
       if (i % 2 === 0) continue;
       for (const port of model.nodes[id]!.ports.filter(port => port.side === plan.side && !port.unused)) {
         const x = port.anchor!.x;
         for (const even of plan.order.filter((_, index) => index % 2 === 0)) {
           const obstacle = obstacleX(model, even);
-          if (x > obstacle.low + PLACEMENT_EPS && x < obstacle.high - PLACEMENT_EPS) throw new PlacementRefusal('ledger', 'Stagger vertical corridor enters a neighbouring obstacle');
+          if (x > obstacle.low + PLACEMENT_EPS && x < obstacle.high - PLACEMENT_EPS) throw new PlacementRefusal('stagger', 'Stagger vertical corridor enters a neighbouring obstacle', { owners: [{ kind: 'group', id: plan.group }] });
         }
       }
     }
@@ -400,14 +400,14 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
 function validateArrangements(model: LayoutModel): void {
   const record = model.groupArrangements;
   if (record === undefined) return;
-  if (model.document.layout?.autoArrange === false) throw new PlacementRefusal('ledger', 'Group arrangements are recorded although layout.autoArrange is false');
+  if (model.document.layout?.autoArrange === false) throw new PlacementRefusal('stagger', 'Group arrangements are recorded although layout.autoArrange is false');
   const staggered = new Set((model.staggerRows ?? []).map(row => row.group));
   const ids = Object.keys(model.groups).sort(compareId);
-  if (JSON.stringify(Object.keys(record).sort(compareId)) !== JSON.stringify(ids)) throw new PlacementRefusal('ledger', 'Group arrangements do not name each group once');
+  if (JSON.stringify(Object.keys(record).sort(compareId)) !== JSON.stringify(ids)) throw new PlacementRefusal('stagger', 'Group arrangements do not name each group once');
   for (const id of ids) {
     const entry = record[id]!;
     if ((entry.chosen === 'stagger') !== staggered.has(id) || (entry.chosen === 'row' ? !(typeof entry.reason === 'string' && entry.reason.length > 0) : entry.chosen !== 'stagger')) {
-      throw new PlacementRefusal('ledger', `The arrangement of ${id} contradicts its stagger reservation`);
+      throw new PlacementRefusal('stagger', `The arrangement of ${id} contradicts its stagger reservation`);
     }
   }
 }
