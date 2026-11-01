@@ -124,7 +124,7 @@ failure, so the count is the only signal. Read it on every render.
 
 ## Size bands: gate enforcement and time
 
-The whole-command deadline is 60 s (`COMMAND_DEADLINE_MS` in `src/cli.ts`); it was 30 s until Q109a
+The whole-command deadline is 120 s (`COMMAND_DEADLINE_MS` in `src/cli.ts`); it was 60 s until 2026-11-01 (the real NTP sheet reached 60 s) and 30 s until Q109a
 (ticket 137). The band claim below moved separately. Three generated workloads, measured 2026-09-15 on the maintainer's machine:
 
 | Nodes | Links | Shape | Time | Measured outcome |
@@ -135,7 +135,7 @@ The whole-command deadline is 60 s (`COMMAND_DEADLINE_MS` in `src/cli.ts`); it w
 
 Evidence: `.scratch/stress/spec.md` for the first two rows, ticket 17 for the third. The first two
 are pipeline times measured with the deadline out of the way: the layout is produced, and the row
-says what it produced. Under the 60 s default command the 51 s row fits, with 9 s to spare on that machine; under the old
+says what it produced. Under the 120 s default command the 51 s row fits, with 69 s to spare on that machine (9 s under the former 60 s default); under the old
 30 s deadline it was a failure, and the CLI ended the run and wrote nothing. The third row was measured under the deadline and reached
 it.
 

@@ -763,6 +763,8 @@ publish route(base) (reuse routedBase or routedTrial; link labels, score)
 
 ### 19.5 Budget: a 60 s deadline (user decision)
 
+> **Amended 2026-11-01:** the shipped deadline is now 120 s (`COMMAND_DEADLINE_MS`). The 60 s figures below are the derivation as decided on 2026-09-30; at 120 s every margin below is 60 s larger.
+
 **Ticket 141 (2026-09-30) replaces the gates below.** The user rule: the layout never depends on machine speed. Ticket 137's `RERUN_GATE_MS`
 read the time left, so on a slow machine the same input could publish another layout. Now:
 

@@ -24,6 +24,8 @@ above that the tool warns and offers `collapsed:` groups; above 1,000 it refuses
 
 *Amendment (2026-09-30, Q109a, ticket 137):* the whole-command deadline is now 60 s (`COMMAND_DEADLINE_MS`), and "workable" moves to 60 s with it: layout under 60 s, renders, warnings not failures. The per-stage ELK deadlines above are unchanged.
 
+*Amendment (2026-11-01):* the whole-command deadline is now 120 s (`COMMAND_DEADLINE_MS`, user decision, "for now"): the real NTP sheet reached 60 s and wrote nothing. "Workable" follows: layout under 120 s. The per-stage ELK deadlines and `MAX_RERUNS` (3) are unchanged.
+
 ## Consequences
 - Two code paths for tiering, both tested at 100 / 300 / 1,000 synthetic nodes, with fallback
   exercised by injected failure — never by relying on a particular ELK crash.

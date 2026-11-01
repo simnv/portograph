@@ -12,7 +12,7 @@
  *
  * Run with: node scripts/scale-bench.mjs [nodes...]
  * PORTOGRAPH_BENCH_OUT   append one JSON line per case to this path
- * PORTOGRAPH_BENCH_LIMIT command deadline in ms (default 60000, the shipped limit)
+ * PORTOGRAPH_BENCH_LIMIT command deadline in ms (default 120000, the shipped limit)
  * PORTOGRAPH_BENCH_SHAPE `hub` (default) or `chain`; see `scale-input.mjs`
  */
 import { execFile } from 'node:child_process';
@@ -28,7 +28,7 @@ const run = promisify(execFile);
 const sizes = process.argv.slice(2).map(Number).filter(Number.isFinite);
 const cases = sizes.length ? sizes : [100, 300, 1000];
 const out = process.env.PORTOGRAPH_BENCH_OUT;
-const limitMs = Number(process.env.PORTOGRAPH_BENCH_LIMIT ?? 60000);
+const limitMs = Number(process.env.PORTOGRAPH_BENCH_LIMIT ?? 120000);
 const shape = process.env.PORTOGRAPH_BENCH_SHAPE ?? 'hub';
 const temp = mkdtempSync(path.join(tmpdir(), 'portograph-scale-'));
 
