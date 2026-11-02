@@ -100,3 +100,52 @@ describe('cellPadding', () => {
     await expect(checkReadCaches(async () => groupPadding(sheet, sheet.groups.c1!))).rejects.toThrow(/Stale read cache cellPadding/);
   });
 });
+
+describe('the keys beyond array identity', () => {
+  it('groupConsumers reads an array appended in place again (the length key)', () => {
+    const model = consumerModel();
+    expect(groupConsumers(model, 'g')).toEqual(['l1', 'd1', 'l9']);
+    model.barDrops.push({ link: 'd3', barCross: ['a'] } as unknown as LayoutModel['barDrops'][number]);
+    expect(groupConsumers(model, 'g')).toEqual(['l1', 'd1', 'd3', 'l9']);
+    model.links.push(link('l4', 'x', 'a') as unknown as LayoutModel['links'][number]);
+    expect(groupConsumers(model, 'g')).toEqual(['l1', 'l4', 'd1', 'd3', 'l9']);
+  });
+
+  it('groupConsumers reads a new document or bundles array again', () => {
+    const model = consumerModel();
+    model.lanes = [{ id: 'lane', group: 'g', kind: 'transit', owner: { kind: 'bundle', id: 'b' } }] as unknown as LayoutModel['lanes'];
+    model.bundles = [{ id: 'b', members: ['m1'] }] as unknown as LayoutModel['bundles'];
+    expect(groupConsumers(model, 'g')).toEqual(['l1', 'd1', 'm1']);
+    model.bundles = [{ id: 'b', members: ['m2'] }] as unknown as LayoutModel['bundles'];
+    expect(groupConsumers(model, 'g')).toEqual(['l1', 'd1', 'm2']);
+    // As a frame of one cell, `g` keeps only the lane links that end in it: m2 does not.
+    model.document = { frames: { g: { label: 'g', cells: ['g'] } } } as unknown as LayoutModel['document'];
+    expect(groupConsumers(model, 'g')).toEqual(['l1', 'd1']);
+  });
+
+  it('facingRoutedPorts reads a links array appended in place again', () => {
+    const sheet = {
+      document: { frames: {} },
+      meshBuses: [{ id: 'u', row: 1, riser: { x: 100 }, cross: ['x'] }],
+      groups: { g: { id: 'g', tier: 1, nodes: ['a'] } },
+      nodes: { a: { ports: [{ ref: ref('a', 'p'), side: 'bottom', anchor: { x: 100, y: 0 } }] } },
+      links: [link('l1', 'x', 'y')],
+    } as unknown as LayoutModel;
+    expect([...riserPenetrations(sheet, sheet.groups.g!).keys()]).toEqual([]);
+    sheet.links.push(link('l2', 'a', 'b') as unknown as LayoutModel['links'][number]);
+    expect([...riserPenetrations(sheet, sheet.groups.g!).keys()]).toEqual(['a:1']);
+  });
+
+  it('cellPadding does not store the span of a frame with a missing cell group', () => {
+    const sheet = {
+      document: { frames: { f: { label: 'f', cells: ['c1', 'gone'] } } },
+      groups: { c1: { id: 'c1', frame: 'f', tier: 1, nodes: [] }, c2: { id: 'c2', frame: 'f', tier: 2, nodes: [] } },
+      nodes: {}, links: [], lanes: [], labelBands: [],
+    } as unknown as LayoutModel;
+    // The missing cell reads the asking group's tier: asked by c2 the frame spans 1..2, asked by c1 it spans 1..1. A stored 1..2 would
+    // leave c1 without its bottom margin.
+    expect(groupPadding(sheet, sheet.groups.c2!).top).toBe(0);
+    expect(groupPadding(sheet, sheet.groups.c2!).bottom).toBeGreaterThan(0);
+    expect(groupPadding(sheet, sheet.groups.c1!).bottom).toBeGreaterThan(0);
+  });
+});

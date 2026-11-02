@@ -173,7 +173,7 @@ const riserKeepOut = (model: LayoutModel): number => BUS_RUN_CLEARANCE + routedS
 /**
  * The ports routed links attach to (stubs left out), by `portId`, per `model.links` array (architecture-2 ticket 60). The key is the array
  * identity and its length; the links' `layer` and `attachments` are written only in stage 2, and the in-place `technique` writers of stage 7
- * touch only links with no authored route, which are never stubs, so no later write changes the answer. `LayoutOptions.checkCaches` checks it.
+ * touch only links with no authored route, which are never stubs, or work on a fresh clone before any read, so no later write changes the answer. `LayoutOptions.checkCaches` checks it.
  */
 const routedPortReads = new WeakMap<readonly LayoutLink[], { count: number; ids: ReadonlySet<string> }>();
 const routedPortCache = readCache('facingRoutedPorts');
@@ -646,6 +646,7 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
     lane.bounds.x = anchor.x - lane.bounds.width / 2;
     lane.group = group.id;
     // The one in-place write of a lane's group: a new array, so a read cached by the identity of `model.lanes` (ticket 60) reads again.
+    // Only `model` gets it: no shallow copy of the model that shares these lanes may outlive a reseat (none does; drafts are deep copies).
     model.lanes = [...model.lanes];
     lane.side = anchor.x < group.bounds!.x ? 'left' : 'right';
     moved = true;
