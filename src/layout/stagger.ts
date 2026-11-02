@@ -5,11 +5,11 @@ import type { StaggerRow } from '../model/layout.js';
 import { groupShape } from './grid.js';
 import { findPort } from './row-paths.js';
 import { bandGap, nodeGap, portId } from './skeleton-graph.js';
-import { moveGroup, stackBands } from './skeleton-geometry.js';
+import { moveGroup, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 import { fitRegionGroup } from './regions.js';
 import { nodeObstacleReach, routedStroke } from './bands.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { portEndInsets } from './port-insets.js';
+import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -156,7 +156,7 @@ function parentGaps(model: LayoutModel, plan: StaggerRow, pitch: number): number
 }
 
 /** Seat the feeding faces before lanes fix their x. An ordinary parent needs the same reservation a bar gets from its span. */
-function seatFeeds(model: LayoutModel): void {
+function seatFeeds(model: LayoutModel): SeatedParent[] {
   const parents = new Map<string, 'top' | 'bottom'>();
   for (const plan of model.staggerRows ?? []) for (const link of model.links) {
     if (link.layer !== 'routed' || !link.attachments) continue;
@@ -177,7 +177,7 @@ function seatFeeds(model: LayoutModel): void {
   });
   const members = new Set((model.staggerRows ?? []).flatMap(plan => plan.order));
   // Per seated parent: the links on its feeding face that end on no staggered member (they are seated over their far ends too).
-  const seated: { id: string; others: string[] }[] = [];
+  const seated: SeatedParent[] = [];
   for (const [id, side] of ordered) {
     const node = model.nodes[id]!, group = model.groups[model.document.nodes[id]!.group]!;
     if (groupShape(model, group.id) === 'bar') continue; // 7d derives the bar's span from these same reserved drops.
@@ -192,7 +192,7 @@ function seatFeeds(model: LayoutModel): void {
         if (!members.has(far.node)) others.push(link.id);
       }
     }
-    seated.push({ id, others: others.sort(compareId) });
+    seated.push({ id, side, others: others.sort(compareId) });
     const ports = node.ports.filter(port => port.side === side);
     const wanted = ports.filter(port => targets.has(portId(port.ref))).sort((a, b) => targets.get(portId(a.ref))! - targets.get(portId(b.ref))! || a.engineOrder! - b.engineOrder!);
     for (let i = 1; i < wanted.length; i++) {
@@ -215,35 +215,61 @@ function seatFeeds(model: LayoutModel): void {
     rebuildNodeGeometry(model, [id], 'current');
     fitRegionGroup(model, group);
   }
-  for (const parent of seated) seatedParentFits(model, parent.id, parent.others);
+  for (const parent of seated) seatedParentFits(model, parent);
+  return seated;
+}
+
+/** A parent `seatFeeds` seated: its feeding face, and the links there that end on no staggered member, sorted by id. */
+interface SeatedParent { id: string; side: 'top' | 'bottom'; others: string[] }
+
+/** The named stage-5 refusal of a seated parent: the rows it feeds, and what the seat over its drops and its other links broke. */
+function refuseParent(model: LayoutModel, parent: SeatedParent, what: string): never {
+  const fed = (model.staggerRows ?? []).filter(plan => plan.order.some(member => memberLinks(model, member).some(link => endsOf(link, member).far.node === parent.id)));
+  const over = parent.others.length ? `its drops and its other links (${parent.others.join(', ')})` : 'its drops';
+  throw new PlacementRefusal('stagger', `Stagger row ${fed.map(plan => plan.group).join(', ')}: the feeding face of ${parent.id}, seated over ${over}, ${what}`,
+    { stage: 'sides-two', owners: fed.map(plan => ({ kind: 'group' as const, id: plan.group })) });
 }
 
 /**
- * A seated parent keeps its place in its own group (ticket 51, review finding 3b): `seatFeeds` widens it over every port of its feeding
- * face, the drops and any other link there, so it can reach a neighbour of its row. The freeze would refuse that with a generic message;
- * stage 5 refuses it here by name. The tests are the freeze's own: the node clearance and the physical row order of the group.
+ * A seated parent keeps the freeze's geometry (ticket 51, review finding 3b): `seatFeeds` widens it over every routed port of its feeding
+ * face, the drops and any other link there, so it can reach a neighbour of its row, and the ports it does not seat (an overlay port, an
+ * unused port) keep their old offset. The freeze would refuse each with a generic message; stage 5 refuses it here by name. The tests are
+ * the freeze's own (`validateGeometry`): the node clearance and the physical row order of the group, and the pitch, capacity and authored
+ * order of every port of the feeding face. The band test follows `stackBands` in `seatStaggerRows`.
  */
-function seatedParentFits(model: LayoutModel, id: string, others: readonly string[]): void {
-  const group = model.groups[model.document.nodes[id]!.group]!, box = model.nodes[id]!.bounds!;
-  const fed = (model.staggerRows ?? []).filter(plan => plan.order.some(member => memberLinks(model, member).some(link => endsOf(link, member).far.node === id)));
-  const fail = (what: string): never => {
-    const over = others.length ? `its drops and its other links (${others.join(', ')})` : 'its drops';
-    throw new PlacementRefusal('stagger', `Stagger row ${fed.map(plan => plan.group).join(', ')}: the feeding face of ${id}, seated over ${over}, ${what}`,
-      { stage: 'sides-two', owners: fed.map(plan => ({ kind: 'group' as const, id: plan.group })) });
-  };
+function seatedParentFits(model: LayoutModel, parent: SeatedParent): void {
+  const { id, side } = parent, node = model.nodes[id]!, group = model.groups[model.document.nodes[id]!.group]!, box = node.bounds!;
   for (const other of [...group.nodes].filter(item => item !== id).sort(compareId)) {
     const b = model.nodes[other]!.bounds!;
     const dx = Math.max(box.x - b.x - b.width, b.x - box.x - box.width, 0), dy = Math.max(box.y - b.y - b.height, b.y - box.y - box.height, 0);
-    if (Math.hypot(dx, dy) < nodeGap(model, id, other) - PLACEMENT_EPS) fail(`comes within clearance of ${other}`);
+    if (Math.hypot(dx, dy) < nodeGap(model, id, other) - PLACEMENT_EPS) refuseParent(model, parent, `comes within clearance of ${other}`);
+  }
+  const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!), pitch = node.sidePitch![side]!;
+  if (box.width + PLACEMENT_EPS < portSideCapacity(node, side, ports.length, pitch)) refuseParent(model, parent, `cannot hold its ${ports.length} ports`);
+  // A port is named by its link (the lowest id; R3), or as unlinked.
+  const named = (ref: PortRef): string => {
+    const ids = model.links.filter(link => link.attachments && [link.attachments.from, link.attachments.to].some(end => portId(end) === portId(ref))).map(link => link.id).sort(compareId);
+    return ids.length ? `the port of ${ids[0]!}` : 'an unlinked port';
+  };
+  let authored = -Infinity;
+  for (const [i, port] of ports.entries()) {
+    if (i > 0 && port.anchor!.x - ports[i - 1]!.anchor!.x < pitch - PLACEMENT_EPS) {
+      refuseParent(model, parent, `cannot keep its pitch between ${named(ports[i - 1]!.ref)} and ${named(port.ref)}`);
+    }
+    if (port.authorOrder !== undefined) {
+      if (port.authorOrder < authored) refuseParent(model, parent, `reverses the authored order at ${named(port.ref)}`);
+      authored = port.authorOrder;
+    }
   }
   if (groupShape(model, group.id) !== 'row') return;
   // The freeze reads a staggered row by member centres and any other row by left edges.
   const centred = staggerOf(model, group.id) !== undefined;
-  const position = (node: string): number => model.nodes[node]!.bounds!.x + (centred ? model.nodes[node]!.bounds!.width / 2 : 0);
+  const position = (item: string): number => model.nodes[item]!.bounds!.x + (centred ? model.nodes[item]!.bounds!.width / 2 : 0);
   const order = group.rowOrder!;
   for (let i = 1; i < order.length; i++) {
     if (order[i - 1] !== id && order[i] !== id) continue;
-    if (position(order[i - 1]!) > position(order[i]!) + PLACEMENT_EPS) fail(`passes ${order[i - 1] === id ? order[i]! : order[i - 1]!} in the row order of ${group.id}`);
+    // A backstop: a parent that passes a neighbour mostly comes within its clearance first.
+    if (position(order[i - 1]!) > position(order[i]!) + PLACEMENT_EPS) refuseParent(model, parent, `passes ${order[i - 1] === id ? order[i]! : order[i - 1]!} in the row order of ${group.id}`);
   }
 }
 
@@ -279,9 +305,19 @@ export function seatStaggerRows(model: LayoutModel): void {
     let x = groups[0]!.bounds!.x;
     for (const group of groups) { moveGroup(model, group, x - group.bounds!.x, 0); x += group.bounds!.width + bandGap(model); }
   }
-  seatFeeds(model);
+  const seated = seatFeeds(model);
   stackBands(model, true);
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
+  // The freeze's band test (`validateSkeletonBands`), by name: first each seated parent's band, whose group the seat widened, then every band.
+  for (const parent of seated) {
+    const errors = validateSkeletonBands(model, true, model.groups[model.document.nodes[parent.id]!.group]!.tier);
+    if (errors.length) refuseParent(model, parent, `leaves its band invalid: ${errors.join('; ')}`);
+  }
+  const bandErrors = validateSkeletonBands(model);
+  if (bandErrors.length) {
+    throw new PlacementRefusal('stagger', `Stagger rows ${(model.staggerRows ?? []).map(plan => plan.group).join(', ')}: the seat leaves the bands invalid: ${bandErrors.join('; ')}`,
+      { stage: 'sides-two', owners: (model.staggerRows ?? []).map(plan => ({ kind: 'group' as const, id: plan.group })) });
+  }
   for (const plan of model.staggerRows ?? []) proveDrops(model, plan);
 }
 

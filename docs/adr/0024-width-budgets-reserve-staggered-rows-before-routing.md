@@ -60,8 +60,9 @@ the members of each parent are one run of the order. The seat also proves each d
 the row by name: the far end is the horizontal face over the member; the vertical from the
 parent face to the member meets no foreign body, pill or group box, and a transit clears the
 occupied box of each group of a tier it crosses by half a lane; the parent port stands over
-the member; a parent seated over its drops and the other links of its feeding face keeps its
-clearance and its place in its row; and the anchor tier is the row's tier or lies beyond it, so the centre rule (7c)
+the member; a parent seated over its drops and the other links of its feeding face keeps the freeze's
+own tests (clearance and place in its row, the pitch and order of every port of that face,
+its band); and the anchor tier is the row's tier or lies beyond it, so the centre rule (7c)
 moves the parents and not the row. These came from the corpus run with a 1 px budget, where
 stage 5 admitted five trials that routing refused for bent drops.
 

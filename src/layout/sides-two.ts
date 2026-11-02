@@ -979,8 +979,9 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
-  // Final sides and bounds exist here, before the freeze: stage 5 picks the arrangement of each group on a draft (ticket 51). The proof
-  // of a draft is the freeze's own validation, so a draft that the freeze would refuse keeps its row.
+  // Final sides and bounds exist here, before the freeze: stage 5 picks the arrangement of each group on a draft (ticket 51). The seat
+  // refuses a draft by name (a stagger refusal), and the draft keeps its row. The freeze's own validation runs on the draft as a proof:
+  // a draft it refuses is a defect of the stage-5 checks and ends the run.
   if (arrange.mode === 'decide') arrangeGroups(model, arrange.declined, draft => { draft.stage = 'sides-two'; freezePortTopology(draft, nodeFloors, turned); });
   if (model.staggerRows?.length) seatStaggerRows(model);
   model.stage = 'sides-two';

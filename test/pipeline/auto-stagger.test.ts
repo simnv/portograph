@@ -230,6 +230,26 @@ ${[1, 2, 3, 4, 5, 6].map(i => `  - [p, n${i}]`).join('\n')}
     expect(entry.chosen === 'row' && entry.reason).toMatch(/Stagger row leaves: the feeding face of p, seated over its drops and its other links \(link-7\), comes within clearance of q$/);
   }, 60000);
 
+  it('refuses by name when the widened parent pushes its group into a neighbour group of its band', async () => {
+    // `q` in a group of its own, and `z` before `x`: `feeds`, grown round `p`, reaches `feeds2` (the freeze's band test).
+    const apart = crowded.replace('  feeds: { tier: 0 }\n', '  feeds: { tier: 0 }\n  feeds2: { tier: 0 }\n').replace('  q: { group: feeds,', '  q: { group: feeds2,')
+      .replace('  x: { group: side, class: server }\n  z: { group: side, class: server }\n', '  z: { group: side, class: server }\n  x: { group: side, class: server }\n');
+    const model = await run(apart);
+    expect(model.staggerRows).toBeUndefined();
+    const entry = model.groupArrangements!.leaves!;
+    expect(entry.chosen === 'row' && entry.reason).toMatch(/the feeding face of p, seated over its drops and its other links \(link-7\), leaves its band invalid: Groups feeds and feeds2 overlap$/);
+  }, 60000);
+
+  it('refuses by name when a port the seat does not move breaks the pitch of the feeding face', async () => {
+    // The overlay link to `x` keeps its port where it stood; the seated drops spread past it.
+    const overlay = crowded.replace('  q: { group: feeds, class: switch }\n', '').replace('  z: { group: side, class: server }\n', '').replace('  - [q, z]\n', '')
+      .replace('  - [p, x]\n', '  - [p, x, { class: sync }]\n');
+    const model = await run(overlay);
+    expect(model.staggerRows).toBeUndefined();
+    const entry = model.groupArrangements!.leaves!;
+    expect(entry.chosen === 'row' && entry.reason).toMatch(/the feeding face of p, seated over its drops, cannot keep its pitch between the port of link-7 and the port of link-\d+$/);
+  }, 60000);
+
   it('admits a parent whose other link fits beside the drops', async () => {
     const fits = crowded.replace('  q: { group: feeds, class: switch }\n', '').replace('  z: { group: side, class: server }\n', '').replace('  - [q, z]\n', '');
     const model = await run(fits);
