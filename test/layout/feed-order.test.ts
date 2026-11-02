@@ -11,7 +11,7 @@ import { validateRowOrderDecisions, withdrawPullsAcrossFlips } from '../../src/l
 import { reseatRow } from '../../src/layout/overlay-order.js';
 import { holds } from '../../src/layout/reservation-checks.js';
 import { feedingRowsOf, ofKind, rowOrderOf } from '../../src/layout/reservations.js';
-import { createAttempt } from './phase-two-fixture.js';
+import { createColdAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const read = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -40,11 +40,11 @@ links:
   - [bl, spare]
 `;
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
 /** Stage 4 only: the skeleton with its feed orders. */
 const skeletonOf = async (yaml: string): Promise<LayoutModel> => {
   const model = sizeNodes(sidesOne(resolve(parse(yaml))));
-  await skeleton(model, { createAttempt });
+  await skeleton(model, { createAttempt: createColdAttempt });
   return model;
 };
 const centre = (model: LayoutModel, node: string): number => model.nodes[node]!.bounds!.x + model.nodes[node]!.bounds!.width / 2;

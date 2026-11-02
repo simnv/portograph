@@ -8,7 +8,7 @@ import { holdsMove } from '../../src/layout/move-reservations.js';
 import { spanBreaches, validateLanes } from '../../src/layout/lanes.js';
 import { spanCorridor } from '../../src/layout/span-lanes.js';
 import { evaluate, xCatalogue } from '../../src/layout/constraints/index.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createColdAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
@@ -22,8 +22,8 @@ const THREE = 'a-chord-over-three-tier-gaps-passes-two-middle-tiers';
 const LABEL = 'a-labelled-chord-across-a-middle-tier-keeps-its-label-on-the-line';
 const MESH_LINKS = ['link-3', 'link-4', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10', 'link-11'];
 const forced = (name: string, hints: string[]): Promise<LayoutModel> =>
-  layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: hints });
-const plain = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: [] });
+  layout(parse(source(name)), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: hints });
+const plain = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: [] });
 
 describe('case 04 with the nine mesh links forced as spanning chords', () => {
   let model: LayoutModel, baseline: LayoutModel;

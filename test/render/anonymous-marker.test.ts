@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { drawio, layout, parse, parseWithDiagnostics, render, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { anonymousDotRadius } from '../../src/theme/geometry.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createColdAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/an-anonymous-end-is-closed-by-a-dot.yaml', import.meta.url), 'utf8');
 const withOption = (value: string): string => fixture.replace('portograph: 2\n', `portograph: 2\nrender: { anonymousPortMarker: ${value} }\n`);
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
 /** The layout JSON without the echoed document, which carries the option itself, and without the wall-clock timings. */
 const geometry = (model: LayoutModel): string => JSON.stringify({ ...model, document: undefined, runtime: undefined });
 const edgeStyle = (xml: string): string => /<mxCell [^>]*style="([^"]*)"[^>]*edge="1"/.exec(xml)![1]!;

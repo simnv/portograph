@@ -46,7 +46,7 @@ const slowFiles = [
 ];
 
 // Files with one test over 15 s in a loaded run (measured 2026-10-25). They run alone, after the default
-// project, with the default timeout; the parallel pool no longer starves them.
+// project, with a 180 s test timeout; the parallel pool no longer starves them.
 const heavyFiles = [
   'test/layout/centre-scale.test.ts',
   'test/layout/constraints.test.ts',
@@ -127,12 +127,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     // Default 5 s is too close to the slowest untimed tests (1-2.6 s quiet) when agents share the machine.
-    // Per-test timeouts larger than this stay in force.
+    // `default` 30 s, `heavy` 180 s, `slow` 600 s per test. A per-test timeout overrides all three.
     testTimeout: 30000,
     projects: [
       { extends: true, test: { name: 'default', include: ['test/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slowFiles, ...heavyFiles] } },
-      // Files with a test over 15 s: one at a time, same timeout as the default project.
-      { extends: true, test: { name: 'heavy', include: heavyFiles, poolOptions: { forks: { singleFork: true }, threads: { singleThread: true } } } },
+      // Files with a test over 15 s: one at a time, 180 s per test (a test without its own timeout does not fail at 30 s under load).
+      { extends: true, test: { name: 'heavy', include: heavyFiles, poolOptions: { forks: { singleFork: true }, threads: { singleThread: true } }, testTimeout: 180000 } },
       // Files that take minutes alone: run one at a time after the default project, so a loaded run cannot starve them.
       { extends: true, test: { name: 'slow', include: slowFiles, poolOptions: { forks: { singleFork: true }, threads: { singleThread: true } }, testTimeout: 600000 } },
     ],
