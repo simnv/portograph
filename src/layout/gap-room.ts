@@ -1,7 +1,7 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { centreViolations } from './centre.js';
-import { cantonTiers, reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
+import { cantonTiers, reserveLinkLabelRoom, tierGapShortfall, type LinkLabelShortfall } from './bands.js';
 import { chordGapNotes, tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
 import type { TierGap } from './gap-runs.js';
 import { rebuildLaneExtents } from './lanes.js';
@@ -125,7 +125,8 @@ export const LABEL_SOLVE_READS = 4;
  *    at the new height, at most `LABEL_SOLVE_READS` times; a room still rising then is given up to the label placement
  *    (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`), as a settle gives one up.
  * 4. Each gap grows by `max(0, H − room, label deficit)`; the bands below move down by the running total (`moveBands`), and the claims a
- *    move in y changes are rebuilt with no centring. Nothing moves in x: a rebuild that would move an x is a fault, and it throws.
+ *    move in y changes are rebuilt with no centring. Nothing moves in x, except by one centring replay when the growth broke an alignment
+ *    the centring had excused (`TIER_GAP_CENTRING_REPLAYED`); any other rebuild that would move an x is a fault, and it throws.
  * 5. Checks on the gaps as they stand, each named and none a growth: a stem record the grown geometry no longer calls for is decided again
  *    (`STEM_DEPTHS_REDECIDED`); a label room still short is given up; a plan that still asks names its gap (`TIER_GAP_SOLVE_SHORT`).
  *
@@ -171,38 +172,37 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel) 
       rebuild(model);
     });
     rebuilt();
+    // A growth can break an alignment the centring had excused: the excuse is a replay of its step, and the step reads the slopes and spans
+    // the growth changed (the card variant of a-refused-close-up-keeps-the-node-labels-in-order: 4.5 px above tier 2 left link-1 off its
+    // feed, and the publication check threw). The centring is then replayed once, and its x moves are the only ones the solve makes; the
+    // plan check below names a gap the replay leaves short. No sheet of the corpus takes this branch.
+    if (centreViolations(model).some(item => !centring.has(item))) {
+      timed('solve-rebuild', () => { rebuildRegionGeometry(model, undefined, undefined, true, true); rebuild(model); });
+      placementWarning(model, 'TIER_GAP_CENTRING_REPLAYED', 'a tier-gap growth broke an alignment the centring had excused; the centring was replayed once.', []);
+      const replayed = xCoordinates(model);
+      for (const key of before.keys()) before.set(key, replayed.get(key) ?? before.get(key)!);
+    }
     // A nested leg still reads the bundle envelopes, the obstacles and the reserved runs of the whole sheet (`legClear`), and the growth
-    // moves those below the gap away: a side declined in the shorter gap can nest in the grown one. The record is then decided again on the
-    // geometry that publishes, so the validator derives what stage 8 reads (R5), and the change is named (R6); the claims are rebuilt once
-    // more, and the plan check below names a gap the deeper stems leave short. No sheet of the corpus takes this branch.
+    // (and a centring replay) moves those: a side declined in the shorter gap can nest in the grown one. The record is then decided again on
+    // the geometry that publishes, so the validator derives what stage 8 reads (R5), and the change is named (R6); the claims are rebuilt
+    // once more in y, and the plan check below names a gap the deeper stems leave short. No sheet of the corpus takes this branch.
     const stale = stemDepthsFault(model);
     if (stale !== undefined) {
       recordStemDepths(model);
       placementWarning(model, 'STEM_DEPTHS_REDECIDED', `the stem depths were decided again after the tier gaps grew (${stale}).`, []);
       rebuilt();
     }
-    // A growth can break an alignment the centring had excused: the excuse is a replay of its step, and the step reads the slopes and spans
-    // the growth changed (the card variant of a-refused-close-up-keeps-the-node-labels-in-order: 4.5 px above tier 2 left link-1 off its
-    // feed, and the publication check threw). The centring is then replayed once, with the x moves it makes; the plan check below names a
-    // gap the replay leaves short. No sheet of the corpus takes this branch.
-    if (centreViolations(model).some(item => !centring.has(item))) {
-      const kept = model.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-      timed('solve-rebuild', () => { rebuildRegionGeometry(model, undefined, undefined, true, true); rebuild(model); });
-      for (const item of kept) if (!model.diagnostics.some(other => other.code === item.code && other.message === item.message)) model.diagnostics.push(item);
-      placementWarning(model, 'TIER_GAP_CENTRING_REPLAYED', 'a tier-gap growth broke an alignment the centring had excused; the centring was replayed once.', []);
-      const replayed = xCoordinates(model);
-      for (const key of before.keys()) before.set(key, replayed.get(key) ?? before.get(key)!);
-    }
     const after = xCoordinates(model);
     const moved = [...before].filter(([id, x]) => after.get(id) === undefined || Math.abs(after.get(id)! - x) > EPS).map(([id]) => id);
     if (moved.length) throw new Error(`The tier-gap solve moved ${moved.slice(0, 5).join(', ')} in x; a move in y may move no x`);
   }
-  // The label rooms are read once more on the gaps as they stand (R6): the growth turns a diagonal that spans a grown gap, and a deficit of
-  // a gap no plan reads (`tierGaps` skips it) grew nothing. A room still short is given up to the label placement, named, as a settle gives
-  // one up; nothing moves.
+  // The label rooms across a tier gap are read once more on the gaps as they stand (R6): the growth turns a diagonal that spans a grown gap,
+  // and a deficit of a gap no plan reads (`tierGaps` skips it) grew nothing. A room across a gap still short is given up to the label
+  // placement, named, as a settle gives one up; nothing moves. A room of another kind is no term of the solve: the validator judges it.
   const shortfalls: LinkLabelShortfall[] = [];
   timed('solve-labels', () => reserveLinkLabelRoom(JSON.parse(JSON.stringify(model)) as LayoutModel, shortfalls));
-  if (shortfalls.length) giveUpGapRooms(model, shortfalls.map(item => item.link), 'was still short on the gaps the tier-gap solve grew');
+  const gapShort = shortfalls.filter(tierGapShortfall);
+  if (gapShort.length) giveUpGapRooms(model, gapShort.map(item => item.link), 'was still short on the gaps the tier-gap solve grew');
   // A gap whose plan still asks for room after the solve is named here (R6); stage 8 then lays its parts as `unfitGaps` says.
   const now = grown.size ? tierGapPlans(model) : plans;
   for (const { gap, plan } of now) {

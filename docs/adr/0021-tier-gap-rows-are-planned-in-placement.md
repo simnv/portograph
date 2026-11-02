@@ -96,7 +96,10 @@ Amendment (2026-10-05, architecture ticket 15, phase 5): the plan has a **U part
    that moves an x throws. The 7f rounds (`settleRound`) and the chord trials grow no gap. A label shortfall across a tier gap in the
    rounds is recorded and not moved; the validator and the room check count it as a fault. The lane reseat judge (`chooseReseat`) reads no
    short gap, because the solve runs after the reseat. `TIER_GAP_GROWN` names what set each gap: a part of the plan, or "the label of
-   link-N". Stage 8 `unfitGaps` stays as a safety net (R6) and must not fire.
+   link-N". Stage 8 `unfitGaps` stays as a safety net (R6) and must not fire. After the growth the solve checks the gaps as they stand,
+   and each check is named: a centring replay when the growth broke an excused alignment (`TIER_GAP_CENTRING_REPLAYED`, its only x move),
+   a stem record decided again (`STEM_DEPTHS_REDECIDED`), a label room across a gap given up, and a gap that still asks
+   (`TIER_GAP_SOLVE_SHORT`). None of them fires on the corpus.
 3. **The label term.** The room of a link label across a gap is read on a copy at the growth the gap takes anyway
    (`reserveLinkLabelRoom` with `gapRoom`), at most `LABEL_SOLVE_READS` (4) times. A room that still rises is given up
    (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`).

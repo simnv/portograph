@@ -1201,8 +1201,14 @@ grows a gap, and no step reads the height of a gap to make a decision that the h
 4. Each gap grows by `max(0, H - room, label deficit)`. Every band below it moves down by the running total (`moveBands`), and a y-only
    rebuild follows (regions, node geometry, lanes, the grid and the label bands) with no centring. A rebuild that moves an x throws.
    `TIER_GAP_GROWN` names what set the gap: a part of the plan, or "the label of link-N".
+5. It checks the gaps as they stand. None of these checks grows a gap, and each one is named. None of them fires on the corpus (390 sheets).
+   - A growth that breaks an alignment the centring had excused replays the centring once (`TIER_GAP_CENTRING_REPLAYED`). This replay
+     is the only x move of the solve.
+   - A stem record that the grown geometry no longer calls for is decided again (`STEM_DEPTHS_REDECIDED`).
+   - A label room across a tier gap that is still short is given up.
+   - A plan that still asks for room names its gap (`TIER_GAP_SOLVE_SHORT`).
 
-Nothing moves horizontally and nothing moves up, so lane x, the groups' order and every reservation 7a to 7e made stay as they are. A gap
+Except for that one replay, nothing moves horizontally and nothing moves up, so lane x, the groups' order and every reservation 7a to 7e made stay as they are. A gap
 whose parts already fit grows by nothing. A part that the plan declines is named (`TIER_GAP_PART_RESIDUAL`, `TIER_GAP_ROW_CYCLE`) and left
 to the router.
 
