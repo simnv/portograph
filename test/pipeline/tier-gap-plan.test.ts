@@ -50,12 +50,13 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
     expect(failing(routed)).toEqual([]);
   }, 120000);
 
-  it('grows the v5-4-0 shape 9.25 px in its upper gap and 22.5 px in its lower, and removes nothing', async () => {
+  it('grows the v5-4-0 shape 22.5 px in its lower gap, and removes nothing', async () => {
     // The spec's 9.25 + 10: the upper 9.25 is link-3's row. Its leg to the nested tip stands under the `access` group label; since ticket 62
     // placement nudges that label off the leg, so link-3 is planned (it was residual, `leg-blocked`, before). The lower 10 is measured after
-    // the 12.5 px main grew (12.5 + 10 = 22.5).
+    // the 12.5 px main grew (12.5 + 10 = 22.5). Since ticket 57 the gaps are solved once, after the last move in x: link-3's row fits the
+    // upper gap as it stands there, and the upper gap grows nothing.
     const { placed: model, routed } = await whole('a-tier-gap-plan-orders-every-part');
-    expect(growth(model)).toEqual([9.25, 22.5]);
+    expect(growth(model)).toEqual([22.5]);
     expect(tierGapPlans(model).flatMap(({ plan }) => plan.residual.map(item => `${item.link}:${item.reason}`))).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_PART_RESIDUAL').map(item => item.message)).toEqual([]);
     expect(routed.removedLinks ?? []).toEqual([]);

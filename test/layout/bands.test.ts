@@ -721,15 +721,15 @@ it('keeps the tolerance on the band comparators that the producer repair no long
     .toEqual(['Groups a and b overlap']);
 });
 
-it('stress ticket 18: a corridor that would cross a labelled row link\'s split does not move', async () => {
+it('stress ticket 18: a corridor that crosses a labelled row link\'s split keeps the room the label reserved', async () => {
   // The corridor `link-16` owns across tier 2 stands at x 231, beyond `link-17`'s split. Label room wins over the lane (architecture-2
-  // ticket 23): 7f inserts the row's room at the split and the corridor moves out with it, by the same 197.61279296875 px with Arial (a different distance under Verdana), so it keeps
-  // its distance to what it serves (R2). 7f's last step would take that corridor to its child's port, on the far side of the split, and
-  // the publication replay would reserve room the published model does not have; the corridors are fixed by then, so that move is
-  // still refused.
+  // ticket 23): 7f inserts the row's room at the split and the corridor moves out with it, so it keeps its distance to what it serves (R2).
+  // 7f's last step then takes that corridor to its child's port. Until ticket 57 the move was refused, because it left the gap above
+  // tier 2 short of its rows after 7f had grown it; since ticket 57 the gaps are solved once after the move (`solveTierGaps`), so the
+  // move is judged on the rooms alone. The claim stays: the published model holds every label room it reserved.
   const model = run(await throughBundles(corridorCrossesSplit));
-  expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(false);
-  expect(model.lanes.map(lane => lane.x)).toEqual([98.22314453125, 458.58203125]); // Verdana metrics (snack-theme ticket 157): [95.5, 428.61279296875] with Arial.
+  expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(true);
+  expect(model.lanes.map(lane => lane.x)).toEqual([98.22314453125, -409.72432491004224]); // Verdana metrics (snack-theme ticket 157).
   // The claim itself: the replay asks for nothing more.
   const shortfalls: LinkLabelShortfall[] = [];
   expect(reserveLinkLabelRoom(copy(model), shortfalls)).toBe(false);

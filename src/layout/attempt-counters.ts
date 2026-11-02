@@ -26,6 +26,8 @@ export interface AttemptCounters {
   cheapTrials: number;
   /** Rounds of the fixed point of `growTierGaps` (each one settles a trial copy and reads the plans). */
   gapRounds: number;
+  /** Runs of the one tier-gap solve (`solveTierGaps`, architecture-2 ticket 57): one per 7f attempt body. */
+  gapSolves: number;
   /** Runs of the placement stages 1 to 7e (the first, the fan re-runs, the side re-run). */
   placeRuns: number;
   /** Starts of the stages 1 to 7e, counted at the entry of `place`, so a run that is refused before or after ELK is counted too (the cap is on starts, and a start is never given back). */
@@ -93,14 +95,14 @@ const zeroInvalidations = (): Invalidations => ({ closeUpReopened: 0, gapRegrown
   overlayWindowsKept: 0, fanReruns: 0, sideReruns: 0, cantonNonConvergence: 0 });
 
 export const attemptCounters: AttemptCounters = { settleCalls: 0, centringPasses: 0, candidateCopies: 0, validationReplays: 0, replays: 0, settledTrials: 0,
-  cheapTrials: 0, gapRounds: 0, placeRuns: 0, placeStarts: 0, attempts: 0, rounds: 0, openRounds: 0, chordRoundsMoved: 0, reseat: { adopted: 0, refused: 0, none: 0 },
+  cheapTrials: 0, gapRounds: 0, gapSolves: 0, placeRuns: 0, placeStarts: 0, attempts: 0, rounds: 0, openRounds: 0, chordRoundsMoved: 0, reseat: { adopted: 0, refused: 0, none: 0 },
   ledger: false, in7f: 0, invalidations: zeroInvalidations(), placements: [], attemptLog: [] };
 
 /** Zeroes every count. The `ledger` switch stays as the caller set it. */
 export function resetAttemptCounters(): void {
   const c = attemptCounters;
   c.settleCalls = 0; c.centringPasses = 0; c.candidateCopies = 0; c.validationReplays = 0;
-  c.replays = 0; c.settledTrials = 0; c.cheapTrials = 0; c.gapRounds = 0; c.placeRuns = 0; c.placeStarts = 0;
+  c.replays = 0; c.settledTrials = 0; c.cheapTrials = 0; c.gapRounds = 0; c.gapSolves = 0; c.placeRuns = 0; c.placeStarts = 0;
   c.attempts = 0; c.rounds = 0; c.openRounds = 0; c.chordRoundsMoved = 0;
   c.reseat = { adopted: 0, refused: 0, none: 0 }; c.in7f = 0; c.invalidations = zeroInvalidations();
   c.placements = []; c.attemptLog = [];

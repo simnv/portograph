@@ -12,7 +12,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
 import { separationShortfalls } from './constraints/separation.js';
 import { centreViolations } from './centre.js';
-import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
+import { reserveLinkLabelRoom, tierGapShortfall, type LinkLabelShortfall } from './bands.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
 import { attemptTimings, timed, timedTrial } from './attempt-timings.js';
 import { copyWithShared } from './trial-copy.js';
@@ -151,7 +151,8 @@ export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; origi
 export function roomShort(model: LayoutModel): Set<string> {
   const shortfalls: LinkLabelShortfall[] = [];
   reserveLinkLabelRoom(candidateCopy(model), shortfalls);
-  return new Set(shortfalls.map(item => item.link));
+  // A room across a tier gap is a term of the tier-gap solve, not a room a settle reserves (architecture-2 ticket 57).
+  return new Set(shortfalls.filter(item => !tierGapShortfall(item)).map(item => item.link));
 }
 
 /**

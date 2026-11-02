@@ -1220,7 +1220,9 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
  * runs after the last reservation and makes no trade that would need room 7f did not reserve.
  */
 export function roomHolds(model: LayoutModel): boolean {
-  return labelPaddingFault(model) === undefined && !reserveLinkLabelRoom(clone(model));
+  const shortfalls: LinkLabelShortfall[] = [];
+  // A tier-gap room counts: the solve would pay it with height, so a move that opens one is not taken for free (ticket 57).
+  return labelPaddingFault(model) === undefined && !reserveLinkLabelRoom(clone(model), shortfalls) && !shortfalls.some(tierGapShortfall);
 }
 /**
  * What is wrong with the record of the label rooms 7f gave up (`labelRoomUnsettled`, ticket 27), or `undefined`: every name is a described
@@ -1245,6 +1247,14 @@ export function labelRoomUnsettledFault(model: LayoutModel): string | undefined 
 export const roomLikelyHolds = (model: LayoutModel): boolean => labelPaddingFault(model) === undefined && !trackRoomShort(model);
 
 /** One labelled link whose run is shorter than the label it carries needs, and by how much. */
+/**
+ * The tier-gap term of the label room (architecture-2 ticket 57): `floors` is the growth each gap takes anyway, keyed by the sub-tier
+ * above it, and `deficits` collects, for each gap, the largest growth a label across it asks and the link that asks it.
+ */
+export interface TierGapLabelRoom { floors: ReadonlyMap<number, number>; deficits: Map<number, { deficit: number; link: string }> }
+/** Whether a shortfall is a label's room across a tier gap, which the tier-gap solve pays (architecture-2 ticket 57). */
+export const tierGapShortfall = (item: LinkLabelShortfall): boolean => item.axis === 'tier gap' || item.axis === 'tier gap window';
+
 export interface LinkLabelShortfall {
   link: string; axis: 'row' | 'row window' | 'tier gap' | 'tier gap window' | `${Side} padding of ${string}` | `overlay track in the ${Side} padding of ${string}`; required: number; room: number;
 }
@@ -1299,11 +1309,11 @@ function insertRoomAt(model: LayoutModel, split: number, deficit: number, ownTie
  * when no growth at the split gives a window that holds it: a box that moves with the far end cuts the run.
  */
 function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, extent: number, split: number, farEndMoves = false,
-  turned?: { across: number; axis: 'x' | 'y'; link: LayoutLink }): number | undefined {
+  turned?: { across: number; axis: 'x' | 'y'; link: LayoutLink }, atLeast = 0): number | undefined {
   if (run === undefined) return 0;
   const boxes = labelBorders(model);
-  if (turned === undefined) return labelWindowDeficit(boxes, run, extent, split, farEndMoves);
-  return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id) });
+  if (turned === undefined) return labelWindowDeficit(boxes, run, extent, split, farEndMoves, undefined, atLeast);
+  return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id) }, atLeast);
 }
 
 /** The grain, in px, the room across a run is rounded up to, so a replay on the grown box finds the label clear (ticket 21). */
@@ -1482,8 +1492,9 @@ export { labelBorders };
  * centres the label on the run's midpoint, so the room is measured symmetrically about that
  * midpoint: for a routed link the anchor midpoint out to the nearer pill face (or node edge); for
  * an overlay link the midpoint of the longest run of the path `overlayPath` will publish, since
- * that is the run the label follows. A link between two tiers moves every lower
- * tier down by the deficit. A link between two ends of one tier inserts the room at the gap itself:
+ * that is the run the label follows. A link between two tiers moves nothing: its deficit is a term of
+ * the height of the tier gap below the upper tier (`gapRoom`), which the one solve at the end of 7f sets
+ * (`solveTierGaps`, architecture-2 ticket 57). A link between two ends of one tier inserts the room at the gap itself:
  * every group starting at or beyond the split moves right, in every tier; in a straddling group a
  * node of the link's own tier moves when it starts beyond the split (a node the detour passes stays
  * by the left end) and a node of any other tier when any part of it lies beyond (a wide source moves
@@ -1496,7 +1507,7 @@ export { labelBorders };
  * and the lane moves out with it (`insertRoomAt`). A label also stays in one region (ticket 19): on every run a label rides, one window
  * between the borders the run crosses must hold it (`labelWindowRoom`), and the growth is the larger of the two.
  */
-export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = []): boolean {
+export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = [], gapRoom?: TierGapLabelRoom): boolean {
   let changed = false;
   // What each reservation was for. The replay that refuses a published model throws on the return
   // value alone, and the sentence named neither the link nor the amount: three rebuilds to find one
@@ -1590,9 +1601,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       // A label stays in one region: one window of the run it rides, between the drawn borders the run crosses, must hold it
       // (`labelWindowDeficit`). The run is the overlay path's longest run, the side lane's vertical run (at the lane's x, down to the
       // lateral port's y), or the straight drop between two level anchors; a routed drop between anchors that are not level bends,
-      // and stage 9 decides. Every group below the upper tier moves down, so the split is the top of the highest of them. The run's
-      // lower end moves with its node even when its pill stands out above that top (`farEndMoves`); no upper-tier box is taken as moved.
-      const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
+      // and stage 9 decides. The solve moves every group below the upper tier down, so the split is the top of the highest of them. The
+      // run's lower end moves with its node even when its pill stands out above that top (`farEndMoves`); no upper-tier box is taken as moved.
       // A held routed chord (ticket 22) is one diagonal line between its anchors, as an overlay line is: its label lies on it, turned. The line is
       // read from the anchors as they stand now (`straightChord`, geometry only), as stage 9 draws it, not from a path an earlier pass stored.
       const anchored = !overlay && isRoutedChord(model, link) ? straightChord(model, link, undefined, true) : undefined;
@@ -1615,19 +1625,23 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         : { from: { x: lane.x, y: lateral.y }, to: { x: lateral.x, y: lateral.y }, owner: { ...link.owner } };
       const onSide = sideRun !== undefined && ridden !== undefined && Math.abs(sideRun.to.x - sideRun.from.x) > Math.abs(ridden.to.y - ridden.from.y)
         && labelWindowRoom(model, sideRun, measured.width, Infinity) === 0;
+      // The window is read at the growth its gap takes anyway (the plan's, a label's before it, this run's symmetric room), never at
+      // none (architecture-2 ticket 57).
+      const base = Math.max(0, required - room, gapRoom?.floors.get(upperTier) ?? 0);
       const windowed = onSide ? 0 : labelWindowRoom(model, ridden, measured.width, split, true,
-        diagonal ? { across: haloSize(measured).height, axis: 'y', link } : undefined);
+        diagonal ? { across: haloSize(measured).height, axis: 'y', link } : undefined, base);
       if (windowed === undefined) unreserved(diagonal
         ? 'crosses a drawn box in its tier gap; no window between borders, clear of the reserved link runs and of the label bands it yields to, can be reserved for its label'
         : 'crosses a drawn box in its tier gap; no window between borders can be reserved for its label');
       const deficit = Math.max(required - room, windowed ?? 0);
       if (deficit <= PLACEMENT_EPS) continue;
-      for (const group of moved) moveGroup(model, group, 0, deficit);
-      settle(moved.flatMap(group => group.nodes));
-      // The record names the figure that drove the growth: the label width against its gap window, or the run against its symmetric room.
+      // The room across a tier gap is a term of the gap's height, which the one solve at the end of 7f sets (architecture-2 ticket 57):
+      // the deficit is handed to it for the gap below the upper tier, and nothing moves here. The rows of a group keep the row branch below.
+      const was = gapRoom?.deficits.get(upperTier);
+      if (gapRoom !== undefined && (was === undefined || deficit > was.deficit)) gapRoom.deficits.set(upperTier, { deficit, link: link.id });
+      // The record names the figure that asks the growth: the label width against its gap window, or the run against its symmetric room.
       if ((windowed ?? 0) > required - room) record(link, 'tier gap window', measured.width, measured.width - windowed!);
       else record(link, 'tier gap', required, room);
-      changed = true;
       continue;
     }
     const ends = sameTierEnds(from, fromNode, to, toNode);
@@ -1808,7 +1822,8 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   const yields = clone(model);
   if (recordLabelYields(yields, labelBorders(yields))) throw new Error('The label yields leave a pair of labels on diagonal lines undecided');
   const shortfalls: LinkLabelShortfall[] = [];
-  if (reserveLinkLabelRoom(clone(model), shortfalls)) {
+  // A label's room across a tier gap is no reservation the replay makes (the solve sets the gap), so a shortfall there is a fault too.
+  if (reserveLinkLabelRoom(clone(model), shortfalls) || shortfalls.some(tierGapShortfall)) {
     // A separated overlay track (ticket 23) is named as such: its room is the track's, not a label's.
     const tracks = shortfalls.filter(item => item.axis.startsWith('overlay track')), labels = shortfalls.filter(item => !item.axis.startsWith('overlay track'));
     throw new Error([

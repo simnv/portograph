@@ -1,6 +1,6 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
-import { alignLinkedGroupGridAndPack, cantonTiers, resyncLabelBands } from './bands.js';
+import { alignLinkedGroupGridAndPack, cantonTiers, reserveLinkLabelRoom, resyncLabelBands } from './bands.js';
 import { chordGapNotes, tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
 import type { TierGap } from './gap-runs.js';
 import { rebuildLaneExtents } from './lanes.js';
@@ -8,6 +8,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { placementWarning, rebuildRegions } from './regions.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { moveGroup } from './skeleton-geometry.js';
+import { recordStemDepths } from './sides-two.js';
 import { attemptCounters } from './attempt-counters.js';
 import { timed } from './attempt-timings.js';
 
@@ -199,4 +200,93 @@ export function moveBands(model: LayoutModel, extra: ReadonlyMap<number, number>
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);
   rebuildLaneExtents(model);
+}
+
+/** Reads of the label term in the solve (R4: a count). A label that raises its gap is read again with the others at the new height. */
+export const LABEL_SOLVE_READS = 4;
+
+/**
+ * The one solve of the tier gaps (architecture-2 ticket 57): **a tier gap is as high as its reservations need, and placement computes
+ * that height once.** It runs once per 7f attempt, after the last move in x (`nestOverlayPorts`) and before the titles are placed.
+ *
+ * 1. The stem depths are decided and recorded (`recordStemDepths`); a nested side reads no tier across its gap, so the growth below
+ *    cannot change them.
+ * 2. Every plan is read once (`tierGapPlans`): its height `H` covers the floor (`tierGapMin`, the bands in the gap: `gapBandDemand`),
+ *    the rows and drops of its parts with the stored stem depths, and the residual pockets.
+ * 3. The room of the link labels that ride across a gap is read at the growth the gap takes anyway (`reserveLinkLabelRoom` with
+ *    `gapRoom`): a label whose window holds unopened can break once the gap opens. A label that raises a gap is read again with the others
+ *    at the new height, at most `LABEL_SOLVE_READS` times; a room still rising then is given up to the label placement
+ *    (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`), as a settle gives one up.
+ * 4. Each gap grows by `max(0, H − room, label deficit)`; the bands below move down by the running total (`moveBands`), and the claims a
+ *    move in y changes are rebuilt with no centring. Nothing moves in x: a rebuild that would move an x is a fault, and it throws.
+ *
+ * No later step grows a gap. Stage 8 reads the plan again and names a gap that does not fit (`unfitGaps`), a safety net that must not
+ * fire. Returns whether a gap grew.
+ */
+export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel) => void): boolean {
+  attemptCounters.gapSolves++;
+  recordStemDepths(model);
+  const plans = timed('solve-plans', () => tierGapPlans(model));
+  const floors = new Map(plans.map(({ gap, plan }) => [gap.above, plan.growth]));
+  let deficits = new Map<number, { deficit: number; link: string }>(), rising: number[] = [];
+  for (let read = 0; read < LABEL_SOLVE_READS; read++) {
+    deficits = new Map();
+    timed('solve-labels', () => reserveLinkLabelRoom(JSON.parse(JSON.stringify(model)) as LayoutModel, [], { floors, deficits }));
+    rising = [...deficits].filter(([tier, item]) => item.deficit > (floors.get(tier) ?? 0) + EPS).map(([tier]) => tier);
+    for (const tier of rising) floors.set(tier, deficits.get(tier)!.deficit);
+    if (!rising.length) break;
+  }
+  // A room still rising after the last read is given up (R4, R6): the gap keeps the height the reads reached, and the label placement
+  // decides the label, as for a room a settle gave up.
+  if (rising.length) giveUpGapRooms(model, rising.map(tier => deficits.get(tier)!.link));
+  const grown = new Map<number, GapGrowth>();
+  for (const { gap, plan } of plans) {
+    const label = deficits.get(gap.above), extra = Math.max(0, floors.get(gap.above) ?? 0);
+    if (extra <= EPS) continue;
+    const byLabel = label !== undefined && label.deficit > plan.growth + EPS;
+    grown.set(gap.below, { extra, setBy: byLabel ? `the label of ${label.link}` : plan.setBy });
+  }
+  // A part the plan declines is named, with the reason: the router lays it among the reserved parts.
+  for (const { gap, plan } of plans) {
+    for (const item of plan.residual) {
+      placementWarning(model, item.reason === 'row-cycle' ? 'TIER_GAP_ROW_CYCLE' : 'TIER_GAP_PART_RESIDUAL',
+        `${item.link} is left to the router in the tier gap above tier ${gap.below}: ${REASONS[item.reason]}.`, [item.link]);
+    }
+  }
+  if (grown.size) {
+    grow(model, grown);
+    const before = xCoordinates(model);
+    timed('solve-rebuild', () => {
+      rebuildRegionGeometry(model, undefined, undefined, true, false);
+      rebuild(model);
+    });
+    const after = xCoordinates(model);
+    const moved = [...before].filter(([id, x]) => after.get(id) === undefined || Math.abs(after.get(id)! - x) > EPS).map(([id]) => id);
+    if (moved.length) throw new Error(`The tier-gap solve moved ${moved.slice(0, 5).join(', ')} in x; a move in y may move no x`);
+  }
+  // The notes on a held chord (ticket 101), once each, on the plans of the gaps as they stand now.
+  const now = grown.size ? tierGapPlans(model) : plans;
+  for (const note of chordGapNotes(model, now)) {
+    if (!model.diagnostics.some(item => item.code === note.code && item.message === note.message)) model.diagnostics.push(note);
+  }
+  return grown.size > 0;
+}
+
+/** The x of every node box, group box (left and right edge) and lane: what a move in y keeps. */
+function xCoordinates(model: LayoutModel): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const [id, node] of Object.entries(model.nodes)) if (node.bounds) result.set(`node ${id}`, node.bounds.x);
+  for (const [id, group] of Object.entries(model.groups)) if (group.bounds) { result.set(`group ${id}`, group.bounds.x); result.set(`group ${id} right`, group.bounds.x + group.bounds.width); }
+  for (const lane of model.lanes) result.set(`lane ${lane.id}`, lane.x);
+  return result;
+}
+
+/** The label rooms across a tier gap that still rose at the last read of the solve: given up, in link order, with one warning. */
+function giveUpGapRooms(model: LayoutModel, links: readonly string[]): void {
+  const order = new Map(model.links.map((link, at) => [link.id, at]));
+  const byOrder = (a: string, b: string): number => order.get(a)! - order.get(b)!;
+  const fresh = [...new Set(links)].sort(byOrder);
+  model.labelRoomUnsettled = [...new Set([...(model.labelRoomUnsettled ?? []), ...fresh])].sort(byOrder);
+  model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'LINK_LABEL_ROOM_UNSETTLED', owners: fresh.map(id => ({ kind: 'link' as const, id })),
+    message: `The label room of ${fresh.join(', ')} across its tier gap still rose after ${LABEL_SOLVE_READS} reads of the tier-gap solve; it is given up, and the label placement decides; with no window the label may lie across a border.` });
 }

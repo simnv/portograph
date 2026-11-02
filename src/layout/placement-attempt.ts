@@ -12,9 +12,8 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds } from './bands.js';
 import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
-import { recordStemDepths } from './sides-two.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
-import { growTierGaps } from './gap-room.js';
+import { solveTierGaps } from './gap-room.js';
 import { holds } from './reservation-checks.js';
 import { candidateCopy, chooseReseat, roomShort, shortGaps } from './decide.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
@@ -177,19 +176,6 @@ function giveUpRoom(model: LayoutModel, passes: number): void {
  */
 export function settleRound(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void, passes = LABEL_ROOM_PASSES): number {
   attemptCounters.settleCalls++;
-  const trial: { trial?: LayoutModel; baseDiagnostics?: number; original?: ReadonlySet<Diagnostic> } = {};
-  const grew = timed('grow-tier-gaps', () => growTierGaps(model, trial));
-  // The growth stopped on "no change": its last trial is the grown model after the replay below, so it is taken instead of replaying (ticket 13, phase 2).
-  // `adoptSettled` declines when the diagnostics would differ from the replay's; the replay then runs.
-  if (grew && !(trial.trial !== undefined && trial.original !== undefined && adoptSettled(model, trial.trial, trial.baseDiagnostics!, trial.original))) {
-    // The replay refits every group box to its content, so a linked pair the first step gave one
-    // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
-    // point — which is what `validateGroupLabelBands` demands. The grid is settled here, as part of
-    // the replay: it grows box extents onto edges that already exist, and moves a node only to pack beside rows that stood open
-    // before it (once, then the replay; ticket 136).
-    replayRegions(model);
-  }
-  tap?.('grow', grew);
   const shift = closeUpAndKeepOut(model, tap);
   // The label room last (architecture-2 ticket 27): a chord trial runs this round on its copy, so the judges read, and the draft adopts, a copy
   // whose rooms hold; the draft rounds reserve on their own settled state the same way.
@@ -445,8 +431,10 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // set test `chooseReseat` makes too (R2; snack-theme ticket 159).
   const centring = new Set(centreViolations(draft));
   nestOverlayPorts(draft, model => roomHolds(model) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
-  // The stem depths are decided once, after the last move in x (architecture-2 ticket 57): stage 8 and the validator read the record.
-  recordStemDepths(draft);
+  // The tier gaps are solved once, after the last move in x and before the titles (architecture-2 ticket 57): the stem depths are
+  // recorded, every plan and every label room across a gap is read once, the gaps grow, and the claims a move in y changes are rebuilt.
+  timed('solve-tier-gaps', () => solveTierGaps(draft, replayGridAndBands));
+  note('solve-tier-gaps', 'done');
   // The group titles are placed once, on the geometry that publishes, after the last move of a box, a lane or a port (architecture-2 ticket 54,
   // "titles last"): a title yields to every link, and nothing placed before reads it. The validator reads the record.
   placeGroupTitles(draft);

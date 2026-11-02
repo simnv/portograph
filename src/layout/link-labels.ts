@@ -209,7 +209,7 @@ export function labelYieldsFault(model: LayoutModel): string | undefined {
  * `LABEL_WINDOW_GRAIN` so that a replay on the grown geometry finds the window holding.
  */
 export function labelWindowDeficit(boxes: readonly Rect[], run: PathSegment, extent: number, split: number, farEndMoves = false,
-  turned?: { across: number; axis: 'x' | 'y'; links?: readonly LinkRun[] }): number | undefined {
+  turned?: { across: number; axis: 'x' | 'y'; links?: readonly LinkRun[] }, atLeast = 0): number | undefined {
   const vertical = Math.abs(run.to.x - run.from.x) <= EPS, horizontal = Math.abs(run.to.y - run.from.y) <= EPS;
   if (vertical && horizontal) return 0;
   const diagonal = !vertical && !horizontal;
@@ -227,10 +227,12 @@ export function labelWindowDeficit(boxes: readonly Rect[], run: PathSegment, ext
       turned?.across, links) ?? [];
   };
   const holds = (growth: number): boolean => windows(growth).some(window => windowHolds(window, extent));
-  if (holds(0)) return 0;
+  // `atLeast`: the growth the gap takes anyway (architecture-2 ticket 57). A window that holds unopened can break once the gap opens,
+  // since a diagonal turns and the lines that cross it move, so the window is read at that growth and above it, never below.
+  if (holds(atLeast)) return atLeast;
   if (diagonal) {
     const length = Math.hypot(run.to.x - run.from.x, run.to.y - run.from.y);
-    let high = length + extent + 4 * LABEL_BORDER_REACH + 2 * LINK_LABEL_GEOMETRY.shortenMargin + 2 * turned!.across, low = 0;
+    let high = atLeast + length + extent + 4 * LABEL_BORDER_REACH + 2 * LINK_LABEL_GEOMETRY.shortenMargin + 2 * turned!.across, low = atLeast;
     if (!holds(high)) return undefined;
     for (let step = 0; step < LABEL_WINDOW_BISECTIONS; step++) {
       const middle = (low + high) / 2;
@@ -244,7 +246,7 @@ export function labelWindowDeficit(boxes: readonly Rect[], run: PathSegment, ext
   const span = Math.abs(run.to[axis] - run.from[axis]), probe = span + extent + 4 * LABEL_BORDER_REACH + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
   const longest = Math.max(0, ...windows(probe).map(window => window.to - window.from));
   if (longest < extent - EPS) return undefined;
-  const growth = Math.max(0, extent - (longest - probe));
+  const growth = Math.max(atLeast, extent - (longest - probe));
   return windows(growth).some(window => windowHolds(window, extent)) ? growth : undefined;
 }
 
