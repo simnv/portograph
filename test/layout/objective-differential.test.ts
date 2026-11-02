@@ -51,8 +51,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * now; no round grows a gap, so the judges are called fewer times and on other geometry. The full streams were compared with main acad67cd: every
  * line the branch gives and main does not is a figure main never judged (40 `pickTarget`, 9 `windowsHold`, 5 `sheetGains` on `three-continents`;
  * one `pickRankMove` on the other), and the side trial of `three-continents` is refused on both (37 against 32 bends; main 36 against 32).
- * `a-chord-hint-and-a-lane-hint-never-share-a-batch` was re-recorded with them: the solve reads the centring before and after a growth (a growth
- * that breaks an excused alignment replays it once), and each read replays the steps, so `centreGroupStep` has two calls more (18 to 20).
+ * `a-chord-hint-and-a-lane-hint-never-share-a-batch` was re-recorded with them: after a growth the solve reads the centring once (a violation
+ * the publication would refuse replays it), and the read replays the steps, so `centreGroupStep` has one call more (18 to 19). Only
+ * `centreGroupStep` differs between the two recordings of this ticket (three-canton 890 to 872, three-continents 2155 to 2148).
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

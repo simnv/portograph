@@ -24,7 +24,7 @@
     "centreGroupStep": "1 123fd9e157a59830"
   },
   "a-chord-hint-and-a-lane-hint-never-share-a-batch": {
-    "centreGroupStep": "20 96537eeb5022f0d4",
+    "centreGroupStep": "19 ac7f866c9128d333",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pullTier": "10 b06612ea32ad87db"
   },
@@ -38,7 +38,7 @@
   },
   "three-canton-groups-close-up-to-a-band-gap": {
     "attemptCheap": "142 a0e441c1e4589897",
-    "centreGroupStep": "890 eb5176e7d90aead9",
+    "centreGroupStep": "872 6cb3ec4607d0c303",
     "closeUp": "10 bfb2eab7e78eb477",
     "holdsSettled": "4 af06a53353ac7514",
     "judgeTrial": "1 cbf69f5f691d95cd",
@@ -55,7 +55,7 @@
   },
   "three-continents": {
     "attemptCheap": "68 c1d6ed90784367bd",
-    "centreGroupStep": "2155 93a6adf8d26892e2",
+    "centreGroupStep": "2148 e3380753b7dbb2cc",
     "holdsSettled": "16 5f5344c4f7a7c14f",
     "judgeTrial": "1 42dd08f8c2a37c4c",
     "pickTarget": "306 167c2c4454e75150",
