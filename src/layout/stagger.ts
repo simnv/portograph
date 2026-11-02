@@ -310,8 +310,15 @@ export function seatStaggerRows(model: LayoutModel): void {
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   // The freeze's band test (`validateSkeletonBands`), by name: first each seated parent's band, whose group the seat widened, then every band.
   for (const parent of seated) {
-    const errors = validateSkeletonBands(model, true, model.groups[model.document.nodes[parent.id]!.group]!.tier);
+    const peer = model.groups[model.document.nodes[parent.id]!.group]!;
+    const errors = validateSkeletonBands(model, true, peer.tier);
     if (errors.length) refuseParent(model, parent, `leaves its band invalid: ${errors.join('; ')}`);
+    // The freeze's flank test: a flank of the parent's group keeps its authored side of the group's centre, also when the seat moved the group past it.
+    const centre = peer.bounds!.x + peer.bounds!.width / 2;
+    for (const flank of Object.values(model.groups).filter(group => group.flank?.of === peer.id).sort((a, b) => compareId(a.id, b.id))) {
+      const sides = [flank.bounds!, ...flank.nodes.map(id => model.nodes[id]!.bounds!)].map(box => box.x + box.width / 2);
+      if (sides.some(x => flank.flank!.align === 'left' ? x >= centre : x <= centre)) refuseParent(model, parent, `moves ${peer.id} past its ${flank.flank!.align} flank ${flank.id}`);
+    }
   }
   const bandErrors = validateSkeletonBands(model);
   if (bandErrors.length) {
