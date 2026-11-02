@@ -12,6 +12,7 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds } from './bands.js';
 import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
+import { recordStemDepths } from './sides-two.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { growTierGaps } from './gap-room.js';
 import { holds } from './reservation-checks.js';
@@ -444,6 +445,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // set test `chooseReseat` makes too (R2; snack-theme ticket 159).
   const centring = new Set(centreViolations(draft));
   nestOverlayPorts(draft, model => roomHolds(model) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
+  // The stem depths are decided once, after the last move in x (architecture-2 ticket 57): stage 8 and the validator read the record.
+  recordStemDepths(draft);
   // The group titles are placed once, on the geometry that publishes, after the last move of a box, a lane or a port (architecture-2 ticket 54,
   // "titles last"): a title yields to every link, and nothing placed before reads it. The validator reads the record.
   placeGroupTitles(draft);

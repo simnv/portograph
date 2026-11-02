@@ -1,5 +1,5 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
-import { stemCache, stemDepth } from './sides-two.js';
+import { stemCache, stemDepth, stemDepthsFault } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
 import type { LabelBand, LabelPaddingEntry, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
@@ -1800,6 +1800,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   if (fan !== undefined) throw new Error(`The fan admission record is forged: ${fan}`);
   const padding = labelPaddingFault(model);
   if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
+  // The stem depths are read from their record (architecture-2 ticket 57, R1); a record the geometry does not call for is refused (R5).
+  const stems = stemDepthsFault(model);
+  if (stems !== undefined) throw new Error(`The stem depth record is forged: ${stems}`);
   const unsettledRoom = labelRoomUnsettledFault(model);
   if (unsettledRoom !== undefined) throw new Error(`The record of the label rooms 7f gave up is forged: ${unsettledRoom}`);
   const yields = clone(model);

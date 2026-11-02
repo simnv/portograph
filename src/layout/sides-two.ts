@@ -1,6 +1,6 @@
 import type { PortRef } from '../model/document.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
-import type { LayoutGroup, LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
+import type { Lane, LayoutGroup, LayoutLink, LayoutModel, LayoutPort, PathSegment, StemDepth } from '../model/layout.js';
 import { frameSubtreeCells, orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { SIDE_TIE_ORDER, portKey, tiedPortComponents } from './sides-one.js';
 import { measurePortPill } from '../text/index.js';
@@ -265,7 +265,7 @@ export function gapPlan(model: LayoutModel, a: string, b: string): GapPlan | und
  * bundle's envelope or any other reserved obstacle. The pin is only worth making where the leg can
  * take it; anywhere else the checkpoint stays the minimum it always was.
  */
-function legClear(model: LayoutModel, owner: string, at: number, from: number, to: number): boolean {
+function legClear(model: LayoutModel, owner: string, at: number, from: number, to: number, tier?: number): boolean {
   const low = Math.min(from, to), high = Math.max(from, to);
   // Each kind is expanded by exactly what `routeObstacles` expands it by, and by nothing else. A
   // node's reach already carries the routed half stroke — `nodeObstacleReach` and the router's own
@@ -286,11 +286,18 @@ function legClear(model: LayoutModel, owner: string, at: number, from: number, t
     return { x, y, width: Math.max(...boxes.map(box => box.x + box.width)) - x, height: Math.max(...boxes.map(box => box.y + box.height)) - y };
   };
   const group = model.document.nodes[owner]!.group;
+  // With `tier` given (a nested stem, `sidePlan`), the nodes, group boxes and lanes of other sub-tiers are not read: the stem depth is
+  // decided before the gap has its height, and the tier across the gap moves with that height (architecture-2 ticket 57). The plan
+  // of the gap then makes the gap as high as the nested stems and the far tier's stems need.
+  const nodeTier = (id: string): number | undefined => model.groups[model.document.nodes[id]!.group]?.tier;
+  const own = (value: number | undefined): boolean => tier === undefined || value === undefined || value === tier;
+  const ownLane = (lane: Lane): boolean => tier === undefined
+    || (lane.span !== undefined ? lane.span.top <= tier && tier <= lane.span.bottom : lane.tier === tier);
   return !Object.values(model.nodes).some(node => node.id !== owner && node.bounds && node.layer !== 'overlay'
-      && hits(obstacleOf(node), 0))
+      && own(nodeTier(node.id)) && hits(obstacleOf(node), 0))
     && !Object.entries(model.groups).some(([id, item]) => id !== group && item.bounds && item.nodes.length
-      && hits(item.bounds, GROUP_EDGE_LINK_CLEARANCE + half))
-    && !model.lanes.some(lane => lane.layer !== 'overlay' && hits(lane.bounds, half))
+      && own(item.tier) && hits(item.bounds, GROUP_EDGE_LINK_CLEARANCE + half))
+    && !model.lanes.some(lane => lane.layer !== 'overlay' && ownLane(lane) && hits(lane.bounds, half))
     && !model.bundles.some(bundle => (bundle.envelopeParts ?? (bundle.envelope ? [bundle.envelope] : [])).some(part => hits(part, half)))
     && !model.obstacles.some(item => hits(item.bounds, half))
     // Geometry another rule already fixed is an obstacle to stage 8 exactly as a node is: a pinned
@@ -425,7 +432,7 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
     // Only a nested stem is measured: one at the plain reach is the stem every port already has.
     // `legClear` reads the same obstacles stage 8 does, so a nested slot is one the router can take.
     const anchor = legs.get(id)!.at, from = side === 'top' ? owner.bounds.y : owner.bounds.y + owner.bounds.height;
-    if (steps > 0 && !legClear(model, node, anchor, from, from + outward * reach)) return undefined;
+    if (steps > 0 && !legClear(model, node, anchor, from, from + outward * reach, tier(node))) return undefined;
     // The turn must also stand where G6 `segment-group-edge` lets the leg travel away from it, which
     // `legClear` passes over: it excludes the owner's own group so that a leg may cross its own box.
     // G6's own reading, on the run this turn starts: strictly inside the box a link turns in the
@@ -454,13 +461,61 @@ function cachedPlan(model: LayoutModel, a: string, b: string, cache?: StemCache)
   return plan;
 }
 
-/** One side plan per node side for a whole pass; see `cachedPlan`. */
+/**
+ * One side plan per node side for a whole pass; see `cachedPlan`. Once 7f has recorded the stem depths (`stemDepths`), the plan is the
+ * record (R1): a nested side is the one the record names, with its reaches, and no side the record leaves out nests.
+ */
 function cachedSide(model: LayoutModel, node: string, side: 'top' | 'bottom', cache?: StemCache): SidePlan | undefined {
   const at = `${node}|${side}`;
   if (cache?.sides.has(at)) return cache.sides.get(at);
-  const plan = sidePlan(model, node, side);
+  const plan = model.stemDepths !== undefined ? recordedSide(model.stemDepths, node, side) : sidePlan(model, node, side);
   cache?.sides.set(at, plan);
   return plan;
+}
+
+function recordedSide(record: readonly StemDepth[], node: string, side: 'top' | 'bottom'): SidePlan | undefined {
+  const entry = record.find(item => item.node === node && item.side === side);
+  return entry === undefined ? undefined : { depth: new Map(entry.ports.map(item => [key(item.port), item.depth])) };
+}
+
+/** Every nested node side as `sidePlan` decides it on the model as it stands, in node order, then top before bottom; ports in port order. */
+function derivedStemDepths(model: LayoutModel): StemDepth[] {
+  const derived = { ...model };
+  delete derived.stemDepths;
+  const result: StemDepth[] = [];
+  for (const id of orderedNodeIds(model.document)) {
+    const node = model.nodes[id]!;
+    for (const side of ['top', 'bottom'] as const) {
+      const plan = sidePlan(derived, id, side);
+      if (plan === undefined) continue;
+      const ports = node.ports.filter(port => plan.depth.has(key(port.ref))).map(port => ({ port: { ...port.ref }, depth: plan.depth.get(key(port.ref))! }));
+      result.push({ node: id, side, ports });
+    }
+  }
+  return result;
+}
+
+/**
+ * The stem depths, decided once (architecture-2 ticket 57): at the end of 7f, after the last move in x and before the tier gaps are
+ * solved, so the stems the gap plan reads are the stems stage 8 receives. A nested side reads no tier across its gap (`legClear`), so a
+ * growth of the gap cannot change it. Records [] where no side nests.
+ */
+export function recordStemDepths(model: LayoutModel): void {
+  model.stemDepths = derivedStemDepths(model);
+}
+
+/**
+ * What is wrong with the stem depth record, or `undefined` (R5): the record must be the one the published geometry calls for. An absent
+ * record is a model from before the end of 7f, and the readers derive.
+ */
+export function stemDepthsFault(model: LayoutModel): string | undefined {
+  const record = model.stemDepths;
+  if (record === undefined) return undefined;
+  if (!Array.isArray(record)) return 'the record is not a list';
+  const derived = derivedStemDepths(model);
+  if (JSON.stringify(record) === JSON.stringify(derived)) return undefined;
+  const name = (items: readonly StemDepth[]): string => items.map(item => `${item.node} ${item.side} [${item.ports.map(port => `${key(port.port)}:${port.depth}`).join(', ')}]`).join('; ') || 'none';
+  return `it names ${name(record)}, and the geometry nests ${name(derived)}`;
 }
 
 /** Whether placement nested the stems of one node side, so each of them stands in a corridor of its own. */
