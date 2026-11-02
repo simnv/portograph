@@ -497,9 +497,9 @@ export interface LayoutModel {
   /** Ticket 166: stage-5 reservations. Absent means normal rows; kept across placement replays. */
   staggerRows?: StaggerRow[];
   /**
-   * Ticket 51: the arrangement stage 5 of the first placement run chose for each group, `stagger` or `row` with the reason, and kept across
-   * placement replays. Absent = stage 5 chose nothing: no group passed the rules before a draft, `layout.autoArrange: false`, the re-run budget was spent, or the width-budget search
-   * gave the rows. Present = one entry per group, and a group is `stagger` exactly when `staggerRows` holds it.
+   * Tickets 51 and 52: the arrangement stage 5 of the first placement run chose for each group, `stagger`, `column` or `row` with the reason, and kept across
+   * placement replays. Absent = stage 5 chose nothing: no group passed the rules before a draft and no group took the column, `layout.autoArrange: false`, the re-run budget was spent, or the width-budget search
+   * gave the rows. Present = one entry per group, and a group is `stagger` exactly when `staggerRows` holds it; a `column` group stands one member on each line (`validateColumns`).
    */
   groupArrangements?: Record<string, GroupArrangement>;
   freeze?: LayoutFreeze;
@@ -766,7 +766,7 @@ export interface StaggerRow {
   step: number;
 }
 /** Ticket 51: a group stands on two lines (`stagger`) or stays one row; a `row` names the first rule that kept it. */
-export type GroupArrangement = { chosen: 'stagger' } | { chosen: 'row'; reason: string };
+export type GroupArrangement = { chosen: 'stagger' } | { chosen: 'column' } | { chosen: 'row'; reason: string };
 export interface LayoutFreeze {
   /** Stage-5 stagger decision, including absence versus an explicit empty record (ticket 166). */
   staggerRows?: StaggerRow[];

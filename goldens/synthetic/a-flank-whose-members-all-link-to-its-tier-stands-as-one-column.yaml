@@ -1,0 +1,22 @@
+# Expected (architecture-2 ticket 52): the right flank `guard` stands as one column, one member on each line.
+# Every member of `guard` has one link, a lateral link to `e1` of the tier it flanks. As one row only `g1` had a
+# free line to `e1`; the links to `g2` and `g3` were removed (`FLANK_PAIR_INCOMPATIBLE`, then `ROUTE_GAP_REJECTED`).
+# 4 of 4 links are kept, no `ROUTE_GAP_REJECTED`, crossings 0, G1-G9 pass.
+# `groupArrangements` records `guard` as `column`, and `core` and `edge` as `row` with a reason.
+# `shape: row`, `shape: grid` or `shape: ranked` on `guard`, or `layout.autoArrange: false`, keeps the row of main byte for byte.
+portograph: 2
+groups:
+  core: { tier: 0 }
+  edge: { tier: 1 }
+  guard: { align: right, of: edge }
+nodes:
+  r1: { group: core, class: router }
+  e1: { group: edge, class: switch }
+  g1: { group: guard, class: tbr }
+  g2: { group: guard, class: tbr }
+  g3: { group: guard, class: tbr }
+links:
+  - [r1, e1]
+  - [e1, g1]
+  - [e1, g2]
+  - [e1, g3]

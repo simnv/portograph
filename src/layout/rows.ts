@@ -10,6 +10,7 @@ import { withStageMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { facingPair, type FacingPair } from './row-paths.js';
 import { staggerOf } from './stagger.js';
+import { columnOf } from './read/arrangement.js';
 import { portEndInsets } from './port-insets.js';
 
 const right = (rect: Rect): number => rect.x + rect.width;
@@ -33,7 +34,7 @@ function fitGroupBox(draft: LayoutModel, group: LayoutGroup): void {
 function flattenRows(draft: LayoutModel): void {
   for (const band of draft.tierBands) {
     const groups = rowGroups(draft, band);
-    const ids = groups.filter(group => staggerOf(draft, group.id) === undefined).flatMap(group => group.nodes);
+    const ids = groups.filter(group => staggerOf(draft, group.id) === undefined && !columnOf(draft, group.id)).flatMap(group => group.nodes);
     if (!ids.length) continue;
     const top = Math.min(...ids.map(id => draft.nodes[id]!.bounds!.y));
     for (const id of ids) {
@@ -75,7 +76,7 @@ export function repackOverlaps(draft: LayoutModel): void {
   // wholes (ranked-groups ticket 12); only then does a sweep push what is left, a group with no frame.
   for (const band of draft.tierBands) {
     for (const group of rowGroups(draft, band)) {
-      if (staggerOf(draft, group.id) !== undefined) continue;
+      if (staggerOf(draft, group.id) !== undefined || columnOf(draft, group.id)) continue;
       const order = group.rowOrder ?? group.nodes;
       for (let i = 1; i < order.length; i++) {
         const prior = draft.nodes[order[i - 1]!]!.bounds!, node = draft.nodes[order[i]!]!;

@@ -36,6 +36,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
 import { placementAttempt, type AttemptTraceEvent } from './placement-attempt.js';
+import { columnOf } from './read/arrangement.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
@@ -203,7 +204,7 @@ function validatePlacementStructure(model: LayoutModel): void {
     if (groupShape(model, group.id) === 'row') {
       const position = (id: string): number => {
         const box = model.nodes[id]!.bounds!;
-        return box.x + (model.staggerRows?.some(row => row.group === group.id) ? box.width / 2 : 0);
+        return box.x + (model.staggerRows?.some(row => row.group === group.id) || columnOf(model, group.id) ? box.width / 2 : 0);
       };
       for (let i = 1; i < group.rowOrder!.length; i++) {
         if (position(group.rowOrder![i - 1]!) > position(group.rowOrder![i]!) + PLACEMENT_EPS) throw new Error('Physical row order contradicts rowOrder');

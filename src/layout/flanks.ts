@@ -11,6 +11,7 @@ import { joinFanTrees } from './bundle-geometry.js';
 import { fitRegionGroup, placementWarning, rebuildRegions } from './regions.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { portSideCapacity } from './port-insets.js';
+import { columnOf } from './read/arrangement.js';
 
 export interface FlankPair { link: LayoutLink; group: LayoutGroup; own: LayoutPort; peer: LayoutPort }
 /** Consume the stored primary only; geometry never reselects it. */
@@ -149,13 +150,16 @@ export function alignFlanks(model: LayoutModel): void {
   for (const pair of pairs) {
     const pitch = Math.max(model.nodes[pair.own.ref.node]!.sidePitch![pair.own.side!]!, model.nodes[pair.peer.ref.node]!.sidePitch![pair.peer.side!]!);
     for (const port of [pair.own, pair.peer]) {
+      // A member of a column (ticket 52) keeps its face: one port, and the column's centre pitch already equals the peer face's pitch.
+      if (columnOf(model, model.document.nodes[port.ref.node]!.group)) continue;
       const map = sides.get(port.ref.node) ?? new Map<Side, number>();
       map.set(port.side!, Math.max(map.get(port.side!) ?? 0, pitch)); sides.set(port.ref.node, map);
     }
   }
   // Propagate through shared facing sides so several flank nodes use the same larger pitch.
   for (let pass = 0; pass < pairs.length; pass++) for (const pair of pairs) {
-    const own = sides.get(pair.own.ref.node)!, peer = sides.get(pair.peer.ref.node)!;
+    const own = sides.get(pair.own.ref.node), peer = sides.get(pair.peer.ref.node);
+    if (own === undefined || peer === undefined) continue;
     const pitch = Math.max(own.get(pair.own.side!)!, peer.get(pair.peer.side!)!);
     own.set(pair.own.side!, pitch); peer.set(pair.peer.side!, pitch);
   }
