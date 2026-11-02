@@ -36,6 +36,11 @@ export interface LayoutOptions {
   routeBudgetMs?: number;
   /** Stage 8 throws on a skipped required checkpoint instead of removing the link; for tests of the router's reservations. */
   strictCheckpoints?: boolean;
+  /**
+   * Test only. Every hit of a read cache keyed by object identity (architecture-2 ticket 60) computes its answer again and throws on a
+   * difference. Its own option: `strictCheckpoints` changes stage 8 and throws on 7 corpus sheets for reasons that are not the caches.
+   */
+  checkCaches?: boolean;
   clock?: ElkClock;
   onProgress?: (progress: LayoutProgress) => void;
   /** Opt-in per-pass trace of the 7f placement attempt (pass, short model hash, verdict). Off by default; never written into the layout. */

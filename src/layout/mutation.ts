@@ -765,8 +765,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   delete derived.frames;
   rebuildFrames(derived);
   same(draft.frames, derived.frames, 'Frames contradict the cell geometry they derive from');
-  const flankOrder = clone(model);
-  if (rule === 'flanks') normalizePrimaryBundlePorts(flankOrder);
+  // Only the flanks rule reads the normalized order, so only it pays for the copy.
+  const flankOrder = rule === 'flanks' ? clone(model) : undefined;
+  if (flankOrder !== undefined) normalizePrimaryBundlePorts(flankOrder);
   const bundledPorts = new Set(model.links.filter(link => link.bundle).flatMap(link => [JSON.stringify(link.attachments!.from), JSON.stringify(link.attachments!.to)]));
   const flankSides = new Map<string, Set<string>>();
   for (const link of model.links) {
@@ -824,7 +825,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     same(node.sizeFloor, old.sizeFloor, 'Stored content floor changed');
     same(node.contentSize, old.contentSize, 'Measured content changed');
     same(node.contentInsets, old.contentInsets, 'Content insets changed');
-    if (rule === 'flanks') same(node.ports.map(port => port.engineOrder), flankOrder.nodes[id]!.ports.map(port => port.engineOrder), 'Flanks may reorder only the compatible primary bundle block');
+    if (flankOrder !== undefined) same(node.ports.map(port => port.engineOrder), flankOrder.nodes[id]!.ports.map(port => port.engineOrder), 'Flanks may reorder only the compatible primary bundle block');
     const seated = new Map<string, { x: number; y: number }>();
     if (!permission.reorder && rule === 'lanes' && model.turnOrder === true) {
       // Stage 7a reorders a face only to the order the turn order gives it (ticket 24, Section 5), and records the face.
