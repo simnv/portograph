@@ -7,6 +7,7 @@ import { heldBusRoom } from './bus-room.js';
 import { paddingRows, rowsInset, rowsInsetUnderTitle } from './course-rows.js';
 import { ownTitleFloor, titleRoom } from './title-room.js';
 import { frameSubtreeCells } from '../model/model.js';
+import { readCache } from '../model/read-cache.js';
 import { isCantonFrame } from './read/canton.js';
 import { frameTitleEdge } from './read/title-edge.js';
 
@@ -34,6 +35,39 @@ export function groupPadding(model: LayoutModel, group: LayoutGroup, withLabelRo
   return group.frame === undefined ? padding : cellPadding(model, group, padding);
 }
 /**
+ * The lowest and highest tier of the cells of a frame and its child frames, per model and frame (architecture-2 ticket 60). The key is the
+ * identity of `model.document`: a group's tier is written only while the model is built (parse, stage 2, `createLayoutModel`), and every later
+ * writer of `model.groups` copies the tier. A frame with a missing cell group reads the asking group's tier for it, so its span is not stored.
+ */
+const tierSpans = new WeakMap<LayoutModel, { document: LayoutModel['document']; spans: Map<string, { lowest: number; highest: number }> }>();
+const tierSpanCache = readCache('cellPadding');
+function frameTierSpan(model: LayoutModel, group: LayoutGroup): { lowest: number; highest: number } {
+  let known = tierSpans.get(model);
+  if (known === undefined || known.document !== model.document) tierSpans.set(model, known = { document: model.document, spans: new Map() });
+  const frame = group.frame!, span = known.spans.get(frame);
+  if (span !== undefined) return tierSpanCache.hit(model, span, () => computeTierSpan(model, group).span);
+  tierSpanCache.miss();
+  const computed = computeTierSpan(model, group);
+  if (computed.complete) known.spans.set(frame, computed.span);
+  return computed.span;
+}
+function computeTierSpan(model: LayoutModel, group: LayoutGroup): { span: { lowest: number; highest: number }; complete: boolean } {
+  const frames = model.document.frames!, frame = group.frame!;
+  let lowest = Infinity, highest = -Infinity, complete = true;
+  for (const id in frames) {
+    const item = frames[id]!;
+    if (id !== frame && item.parent !== frame) continue;
+    for (const cell of item.cells) {
+      const own = model.groups[cell]?.tier;
+      if (own === undefined) complete = false;
+      const tier = own ?? group.tier!;
+      lowest = Math.min(lowest, tier);
+      highest = Math.max(highest, tier);
+    }
+  }
+  return { span: { lowest, highest }, complete };
+}
+/**
  * A rank cell carries no padding of its own (ranked-groups spec, section 2): the frame grows around
  * its cells. Two margins are still held in the cell box, because tier bands, gap rows and lanes are
  * measured on cell boxes and must see them: the frame's margin on its top and bottom edge. An
@@ -42,17 +76,7 @@ export function groupPadding(model: LayoutModel, group: LayoutGroup, withLabelRo
  * margin; the frame adds the ordinary margin itself (`rebuildFrames`).
  */
 function cellPadding(model: LayoutModel, group: LayoutGroup, padding: Record<Side, number>): Record<Side, number> {
-  const frames = model.document.frames!, frame = group.frame!;
-  let lowest = Infinity, highest = -Infinity;
-  for (const id in frames) {
-    const item = frames[id]!;
-    if (id !== frame && item.parent !== frame) continue;
-    for (const cell of item.cells) {
-      const tier = model.groups[cell]?.tier ?? group.tier!;
-      lowest = Math.min(lowest, tier);
-      highest = Math.max(highest, tier);
-    }
-  }
+  const { lowest, highest } = frameTierSpan(model, group);
   return {
     top: group.tier! <= lowest ? padding.top : 0,
     bottom: group.tier! >= highest ? padding.bottom : 0,

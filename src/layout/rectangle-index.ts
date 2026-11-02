@@ -81,10 +81,13 @@ export class RectangleIndex<T> {
     const limit: Coordinates = [-point[2], -point[3], -point[0], -point[1]];
     const visit = (tree: Tree<T>): boolean => {
       if (work) work.nodes++;
-      if (tree.minimum.some((value, axis) => value > limit[axis]!)) return false;
+      // Four ordered compares, the order `.some` takes, without a closure per tree node and entry.
+      const minimum = tree.minimum;
+      if (minimum[0] > limit[0] || minimum[1] > limit[1] || minimum[2] > limit[2] || minimum[3] > limit[3]) return false;
       if (tree.entries) {
         for (const item of tree.entries) {
-          if (item.point.some((value, axis) => value > limit[axis]!)) continue;
+          const p = item.point;
+          if (p[0] > limit[0] || p[1] > limit[1] || p[2] > limit[2] || p[3] > limit[3]) continue;
           if (work) work.items++;
           if (predicate(item.value)) return true;
         }

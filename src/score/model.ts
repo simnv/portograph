@@ -1,6 +1,7 @@
 import type { Junction, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment, PortRef, Rect } from '../model/index.js';
 import { type Area, areaInside, areaOverlap, isOriented } from '../geometry/oriented.js';
 import { frameSubtreeCells } from '../model/index.js';
+import { readCache } from '../model/read-cache.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { overlayEndpoint } from '../layout/overlay-paths.js';
 import { endPort } from '../layout/approach.js';
@@ -70,12 +71,50 @@ export const FAINT_SALIENCE = 0.3;
 export function faintPair(a: LayoutLink, b: LayoutLink): boolean {
   return a.fanFamily !== undefined && a.fanFamily === b.fanFamily;
 }
-/** Links a group's or frame's box does not obstruct: attached inside it, or owning a lane reserved in its margin. */
-export function groupConsumers(model: LayoutModel, groupId: string): string[] {
+/**
+ * What one `groupConsumers` answer read (architecture-2 ticket 60): the arrays by identity and length (an append through an alias moves the
+ * length), the document, and per group id the group objects of its cells (`model.groups` entries are replaced in place, so the record's
+ * own identity is no key).
+ */
+interface ConsumerReads {
+  document: LayoutModel['document'];
+  links: readonly LayoutLink[]; linkCount: number;
+  lanes: LayoutModel['lanes']; laneCount: number;
+  barDrops: LayoutModel['barDrops']; dropCount: number;
+  bundles: LayoutModel['bundles']; bundleCount: number;
+  answers: Map<string, { ids: readonly string[]; groups: readonly (LayoutModel['groups'][string] | undefined)[]; result: readonly string[] }>;
+}
+const consumerReads = new WeakMap<LayoutModel, ConsumerReads>();
+const consumerCache = readCache('groupConsumers');
+/** Links a group's or frame's box does not obstruct: attached inside it, or owning a lane reserved in its margin. Frozen: callers share it. */
+export function groupConsumers(model: LayoutModel, groupId: string): readonly string[] {
+  let reads = consumerReads.get(model);
+  if (reads === undefined || reads.document !== model.document || reads.links !== model.links || reads.linkCount !== model.links.length
+    || reads.lanes !== model.lanes || reads.laneCount !== model.lanes.length || reads.barDrops !== model.barDrops || reads.dropCount !== model.barDrops.length
+    || reads.bundles !== model.bundles || reads.bundleCount !== model.bundles.length) {
+    reads = {
+      document: model.document, links: model.links, linkCount: model.links.length, lanes: model.lanes, laneCount: model.lanes.length,
+      barDrops: model.barDrops, dropCount: model.barDrops.length, bundles: model.bundles, bundleCount: model.bundles.length, answers: new Map(),
+    };
+    consumerReads.set(model, reads);
+  }
+  const known = reads.answers.get(groupId);
+  if (known !== undefined && known.ids.every((id, index) => model.groups[id] === known.groups[index])) {
+    return consumerCache.hit(model, known.result, () => computeGroupConsumers(model, groupId, consumerCells(model, groupId)));
+  }
+  consumerCache.miss();
+  const ids = consumerCells(model, groupId);
+  const result = computeGroupConsumers(model, groupId, ids);
+  reads.answers.set(groupId, { ids, groups: ids.map(id => model.groups[id]), result });
+  return result;
+}
+/** A frame owns its own cells and, for a parent, its child frames' cells; a group owns itself. */
+function consumerCells(model: LayoutModel, groupId: string): readonly string[] {
   const frames = model.document.frames ?? {};
-  // A frame owns its own cells and, for a parent, its child frames' cells.
-  const ids = Object.hasOwn(frames, groupId)
-    ? frameSubtreeCells(frames, groupId) : [groupId];
+  return Object.hasOwn(frames, groupId) ? frameSubtreeCells(frames, groupId) : [groupId];
+}
+function computeGroupConsumers(model: LayoutModel, groupId: string, ids: readonly string[]): readonly string[] {
+  const frames = model.document.frames ?? {};
   const members = new Set(ids.flatMap(id => model.groups[id]?.nodes ?? [])), owned = new Set(ids), result = new Set<string>();
   for (const link of model.links) {
     const ends = endpoints(link);
@@ -85,9 +124,13 @@ export function groupConsumers(model: LayoutModel, groupId: string): string[] {
   // A lane stands beside a cell for the link that owns it. For a plain group that link is a consumer of
   // the group. For a frame it is one only when the link ends in one of the frame's nodes (an own-frame
   // transit, ADR-0019): a foreign link's lane inside a frame stays an obstacle, so G2 sees it.
+  const frame = Object.hasOwn(frames, groupId);
+  let byId: Map<string, LayoutLink> | undefined;
   const consumes = (id: string): boolean => {
-    if (!Object.hasOwn(frames, groupId)) return true;
-    const link = model.links.find(item => item.id === id), ends = link ? endpoints(link) : undefined;
+    if (!frame) return true;
+    // The first link of an id, as `find` gave it.
+    if (byId === undefined) { byId = new Map(); for (const link of model.links) if (!byId.has(link.id)) byId.set(link.id, link); }
+    const link = byId.get(id), ends = link ? endpoints(link) : undefined;
     return ends !== undefined && (members.has(ends.from.node) || members.has(ends.to.node));
   };
   for (const lane of model.lanes) {
@@ -97,7 +140,7 @@ export function groupConsumers(model: LayoutModel, groupId: string): string[] {
     if (owner.kind === 'link') { if (consumes(owner.id)) result.add(owner.id); }
     else if (owner.kind === 'bundle') for (const id of model.bundles.find(bundle => bundle.id === owner.id)?.members ?? []) if (consumes(id)) result.add(id);
   }
-  return [...result];
+  return Object.freeze([...result]);
 }
 
 export function port(model: LayoutModel, ref: PortRef): LayoutPort | undefined { return model.nodes[ref.node]?.ports.find(candidate => refEqual(candidate.ref, ref)); }

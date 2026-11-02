@@ -6,12 +6,12 @@ import { resolveNodeIcon } from '../../src/profiles/network/icons.js';
 import { NETWORK_NODE_CLASSES, classDisplayLabel } from '../../src/profiles/network/theme.js';
 import { DEFAULT_THEME_ID, THEMES, THEME_IDS, findTheme, legendKeyRadius, themeById } from '../../src/profiles/network/themes.js';
 import { resolve } from '../../src/resolve/index.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createColdAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-theme-paints-and-moves-nothing.yaml', import.meta.url), 'utf8');
 const without = fixture.replace('theme: snack\n', '');
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
 /** The layout JSON without the echoed document, which carries the theme id itself, and without the wall-clock timings. */
 const geometry = (model: LayoutModel): string => JSON.stringify({ ...model, document: undefined, runtime: undefined });
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { pathBends } from '../../src/layout/objective.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createColdAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
@@ -14,7 +14,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * (a width that keeps links straight; a body the passes stretch past its sibling) are plain tests.
  */
 const text = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
 const linkTo = (model: LayoutModel, node: string, port: string) =>
   model.links.find(link => [link.attachments!.from, link.attachments!.to].some(end => end.node === node && end.name === port))!;
 /** The width four top ports need at their pitch: the body grows past it only for an alignment. */

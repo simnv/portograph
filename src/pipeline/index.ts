@@ -9,6 +9,7 @@
 import type { LayoutModel, NormalisedDocument } from '../model/index.js';
 import type { LayoutOptions } from './options.js';
 import { createEnv } from './env.js';
+import { checkReadCaches } from '../model/read-cache.js';
 import { firstState } from './initial.js';
 import { drive } from './driver.js';
 import { publish } from './publish.js';
@@ -25,8 +26,8 @@ export type { LayoutOptions, LayoutProgress } from './options.js';
  * the serialised layout JSON must all describe the same geometry.
  */
 export async function layout(document: NormalisedDocument, options: LayoutOptions = {}): Promise<LayoutModel> {
-  if (document.layout?.maxWidth !== undefined) return fitWidthBudget(document, options, layoutOnce);
-  return layoutOnce(document, options);
+  const run = (): Promise<LayoutModel> => document.layout?.maxWidth !== undefined ? fitWidthBudget(document, options, layoutOnce) : layoutOnce(document, options);
+  return options.checkCaches === true ? checkReadCaches(run) : run();
 }
 
 /** One complete pipeline run; the width-budget trials share the caller's command deadline. */
