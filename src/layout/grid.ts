@@ -1,4 +1,5 @@
 import type { GroupShape } from '../model/document.js';
+import { columnOf } from './read/arrangement.js';
 import type { Bundle, LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
@@ -515,6 +516,8 @@ export function gridCells(model: LayoutModel, group: LayoutGroup): GridCells {
 export function packRowsOf(model: LayoutModel, group: LayoutGroup): string[][] {
   const stagger = model.staggerRows?.find(row => row.group === group.id);
   if (stagger !== undefined) return [stagger.order.filter((_, i) => i % 2 === 0), stagger.order.filter((_, i) => i % 2 === 1)];
+  // A column (ticket 52) stands one member on each line.
+  if (columnOf(model, group.id)) return (group.rowOrder ?? group.nodes).map(id => [id]);
   return isGridGroup(model, group.id)
     ? gridCells(model, group).map(row => row.filter((id): id is string => id !== undefined))
     : [group.rowOrder ?? group.nodes];

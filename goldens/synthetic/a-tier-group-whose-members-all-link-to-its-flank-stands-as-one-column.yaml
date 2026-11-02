@@ -1,0 +1,21 @@
+# Expected (architecture-2 ticket 52): the tier group `cells` stands as one column beside its left flank `spine`.
+# Every member of `cells` has one link, a lateral link to `s` of the flank beside it. As one row the four links ran
+# round each other: 3 crossings, 10 bends, G4 (collinear overlap) and G6 (parallel clearance) failed.
+# 4 of 4 links are kept, crossings 0, bends at most 10, G4 and G6 pass.
+# `groupArrangements` records `cells` as `column`, and `spine` as `row` with a reason.
+# `shape: row` on `cells`, or `layout.autoArrange: false`, keeps the row of main byte for byte.
+portograph: 2
+groups:
+  cells: { tier: 0 }
+  spine: { align: left, of: cells }
+nodes:
+  s: { group: spine, class: switch }
+  c1: { group: cells, class: server }
+  c2: { group: cells, class: server }
+  c3: { group: cells, class: server }
+  c4: { group: cells, class: server }
+links:
+  - [s, c1]
+  - [s, c2]
+  - [s, c3]
+  - [s, c4]

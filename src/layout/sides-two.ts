@@ -26,6 +26,7 @@ import { planTrunks } from './trunk.js';
 import { plannedTurns, turnOrder, turnScope, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { routedLinksAt, unreservedPeers } from './peers.js';
 import { arrangeGroups, seatStaggerRows } from './stagger.js';
+import { reserveColumns, seatColumn } from './column-arrangement.js';
 const key = portId;
 
 /**
@@ -899,8 +900,14 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   // Final sides and bundle pitches replace stage 3's provisional topology before corners freeze.
   for (const node of Object.values(model.nodes)) delete node.portCorners;
   sizeNodes(model);
+  // The column arrangement (ticket 52) is decided here, on final sides: each facing face takes the column's pitch, so the nodes are sized
+  // again, and the repack below seats the column. Without a column nothing changes.
+  const columns = reserveColumns(model, arrange.mode, arrange.mode === 'decide' ? arrange.declined : undefined);
+  if (columns.plans.length) sizeNodes(model);
   for (const groupId of orderedGroupIds(model.document)) {
     const group = model.groups[groupId]!, order = group.rowOrder ?? group.nodes;
+    const column = columns.plans.find(plan => plan.group === groupId);
+    if (column !== undefined) { seatColumn(model, group, column, spacing.padding); continue; }
     // A grid repacks as a grid. The nodes have just been resized to their final port capacity, so
     // both the columns and the rows are laid out again from the new sizes at the gaps the rows rule
     // reserves — rather than pushed onto one line, which is what the loop below would do.
@@ -982,7 +989,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   // Final sides and bounds exist here, before the freeze: stage 5 picks the arrangement of each group on a draft (ticket 51). The seat
   // refuses a draft by name (a stagger refusal), and the draft keeps its row. The freeze's own validation runs on the draft as a proof:
   // a draft it refuses is a defect of the stage-5 checks and ends the run.
-  if (arrange.mode === 'decide') arrangeGroups(model, arrange.declined, draft => { draft.stage = 'sides-two'; freezePortTopology(draft, nodeFloors, turned); });
+  if (arrange.mode === 'decide') arrangeGroups(model, arrange.declined, draft => { draft.stage = 'sides-two'; freezePortTopology(draft, nodeFloors, turned); }, columns);
   if (model.staggerRows?.length) seatStaggerRows(model);
   model.stage = 'sides-two';
   return freezePortTopology(model, nodeFloors, turned);

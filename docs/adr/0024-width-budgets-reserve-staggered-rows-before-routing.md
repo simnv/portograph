@@ -69,3 +69,10 @@ stage 5 admitted five trials that routing refused for bent drops.
 With `layout.maxWidth` the search stays as above: its first run is the unbudgeted run, with
 stage 5's own choice, and the search tries the remaining rows. The routed trial stays for that
 path.
+
+Decision (2026-11-02, architecture-2 ticket 52): `groupArrangements` also records `column`. A
+flank, or a tier group with a flank beside it, whose members each have one plain routed lateral
+link to one node of the facing group stands one member on each line. Stage 5 of the first
+placement run decides it on final sides, before the nodes are sized again, and the facing face
+takes the column's centre pitch, so every link is level and straight. It spends no placement
+run, and the record exists when a group took the column or a stagger draft was tried.

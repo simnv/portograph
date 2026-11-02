@@ -17,6 +17,7 @@ import { rowGap } from './sides-two.js';
 import { laneWidth, occupied, selectAnchorTier } from './lanes.js';
 import { nodeTier } from './read/tier.js';
 import { straightCorridorClear } from './row-paths.js';
+import { validateColumns, type ColumnPlan } from './column-arrangement.js';
 
 export const staggerOf = (model: LayoutModel, group: string): StaggerRow | undefined => model.staggerRows?.find(row => row.group === group);
 
@@ -371,6 +372,7 @@ export function staggerRefusal(error: unknown): error is PlacementRefusal {
 /** Publication and restore keep the two lines, pitch, feed order and passing corridors. Diagnostics grant no exception. */
 export function validateStaggerRows(model: LayoutModel): void {
   validateArrangements(model);
+  validateColumns(model);
   const seen = new Set<string>();
   for (const plan of model.staggerRows ?? []) {
     const group = model.groups[plan.group];
@@ -442,14 +444,29 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
  * other error of the draft ends the run (a freeze validation that the stage-5 proof did not foresee is a defect, not a reason). Each candidate is tried once (a finite traversal). A `declined` group stays a row: a later
  * stage of an earlier attempt of the first run could not keep its stagger. When every group keeps its row by a rule before any draft there is
  * nothing to choose and no record: an absent record and an all-`row` record both mean "every group stays one row"; the record exists
- * only when stage 5 tried a group.
+ * only when stage 5 tried a group. `columns` are the columns stage 5 seated earlier (ticket 52): each is recorded `column`, and a group
+ * the column rule refused by name keeps that reason (the two filters are disjoint).
  */
-export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, string>, prove: (draft: LayoutModel) => void): void {
-  if (model.document.layout?.autoArrange === false || model.staggerRows !== undefined || model.groupArrangements !== undefined) return;
-  const candidates = staggerCandidates(model), ids = Object.keys(model.groups).sort(compareId);
+export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, string>, prove: (draft: LayoutModel) => void,
+  columns: { plans: readonly ColumnPlan[]; reasons: ReadonlyMap<string, string> } = { plans: [], reasons: new Map() }): void {
+  if (model.document.layout?.autoArrange === false || model.groupArrangements !== undefined) return;
+  const ids = Object.keys(model.groups).sort(compareId), column = new Set(columns.plans.map(plan => plan.group));
+  if (model.staggerRows !== undefined) {
+    // The width-budget search gave the rows: stage 5 chooses no stagger, but it seated its columns, or declined one, and the record says so (R1).
+    if (!column.size && declined.size === 0) return;
+    const given = new Set(model.staggerRows.map(row => row.group)), record: Record<string, GroupArrangement> = {};
+    for (const id of ids) record[id] = column.has(id) ? { chosen: 'column' } : given.has(id) ? { chosen: 'stagger' }
+      : { chosen: 'row', reason: columns.reasons.get(id) ?? 'the width-budget search gave the rows' };
+    model.groupArrangements = record;
+    return;
+  }
+  const candidates = staggerCandidates(model);
   const reasons = new Map<string, string>();
   for (const id of ids) {
-    const reason = rowReason(model, model.groups[id]!, candidates.some(row => row.group === id))
+    // The two filters are disjoint (ticket 52): a column group, and a group the column rule refused by name (a flank, or a tier group
+    // with a lateral link), never pass `rowReason`, so the column reason is the one recorded for them.
+    if (column.has(id)) continue;
+    const reason = columns.reasons.get(id) ?? rowReason(model, model.groups[id]!, candidates.some(row => row.group === id))
       ?? (declined.has(id) ? `a later stage of the first run refused the two lines: ${declined.get(id)!}` : undefined);
     if (reason !== undefined) reasons.set(id, reason);
   }
@@ -493,7 +510,7 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
     accepted.push(row); base = draft; width = next;
   }
   const arrangements: Record<string, GroupArrangement> = {};
-  for (const id of ids) arrangements[id] = accepted.some(row => row.group === id) ? { chosen: 'stagger' } : { chosen: 'row', reason: reasons.get(id)! };
+  for (const id of ids) arrangements[id] = column.has(id) ? { chosen: 'column' } : accepted.some(row => row.group === id) ? { chosen: 'stagger' } : { chosen: 'row', reason: reasons.get(id)! };
   model.groupArrangements = arrangements;
   if (accepted.length) model.staggerRows = accepted;
 }
@@ -508,7 +525,8 @@ function validateArrangements(model: LayoutModel): void {
   if (JSON.stringify(Object.keys(record).sort(compareId)) !== JSON.stringify(ids)) throw new PlacementRefusal('stagger', 'Group arrangements do not name each group once');
   for (const id of ids) {
     const entry = record[id]!;
-    if ((entry.chosen === 'stagger') !== staggered.has(id) || (entry.chosen === 'row' ? !(typeof entry.reason === 'string' && entry.reason.length > 0) : entry.chosen !== 'stagger')) {
+    if ((entry.chosen === 'stagger') !== staggered.has(id)
+      || (entry.chosen === 'row' ? !(typeof entry.reason === 'string' && entry.reason.length > 0) : entry.chosen !== 'stagger' && entry.chosen !== 'column')) {
       throw new PlacementRefusal('stagger', `The arrangement of ${id} contradicts its stagger reservation`);
     }
   }
