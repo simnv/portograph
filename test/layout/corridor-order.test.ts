@@ -9,18 +9,18 @@ import { skeleton } from '../../src/layout/skeleton.js';
 import { orderByCorridors, ROW_ORDER_PERMUTED_NODES, validateRowOrderDecisions, withdrawPullsAcrossFlips } from '../../src/layout/corridor-order.js';
 import { corridorSide } from '../../src/layout/lanes.js';
 import { readDraft, reseatRow } from '../../src/layout/overlay-order.js';
-import { createAttempt } from './phase-two-fixture.js';
+import { createColdAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-row-turns-to-clear-a-corridor.yaml', import.meta.url), 'utf8');
 /** The same sheet with every row in its declared order. */
 const declared = fixture.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n');
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
 /** Stage 4 only: the skeleton with its row order decisions. */
 const skeletonOf = async (yaml: string): Promise<LayoutModel> => {
   const model = sizeNodes(sidesOne(resolve(parse(yaml))));
-  await skeleton(model, { createAttempt });
+  await skeleton(model, { createAttempt: createColdAttempt });
   return model;
 };
 const bends = (model: LayoutModel): number => { const { routed, overlay } = score(model).snapshot.counts; return routed.turns + overlay.turns; };

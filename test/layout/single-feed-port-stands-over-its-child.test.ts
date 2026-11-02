@@ -7,7 +7,7 @@ import { seatLaneSources, standPortsOverChildren, withdrawWallMoves } from '../.
 import { findPort } from '../../src/layout/row-paths.js';
 import { centringFeeds } from '../../src/layout/read/feeds.js';
 import { nodeTier } from '../../src/layout/read/tier.js';
-import { createAttempt } from './phase-two-fixture.js';
+import { createColdAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 // Ticket 15 (architecture-2): a port with one link stands over the port it feeds. The row repack pushed `leaf-c` right of the corridor of link-6; the
@@ -18,7 +18,7 @@ const xs = (link: { path?: { segments: { from: { x: number }; to: { x: number } 
   new Set((link.path?.segments ?? []).flatMap(segment => [segment.from.x.toFixed(1), segment.to.x.toFixed(1)]));
 
 it('draws the link of the pushed child as one vertical segment, with the port order and the publication check unchanged', async () => {
-  const model = JSON.parse(JSON.stringify(await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }))) as Awaited<ReturnType<typeof layout>>;
+  const model = JSON.parse(JSON.stringify(await layout(parse(fixture), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt }))) as Awaited<ReturnType<typeof layout>>;
   const link = model.links.find(item => item.id === 'link-6')!;
   expect(xs(link).size).toBe(1);
   const bottom = model.nodes['core-sw']!.ports.filter(port => port.side === 'bottom').sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.anchor!.x);
@@ -27,7 +27,7 @@ it('draws the link of the pushed child as one vertical segment, with the port or
 }, 120000);
 
 it('keeps the jog of a port that has no room and names the link', async () => {
-  const model = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = await layout(parse(fixture), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
   const link = model.links.find(item => item.id === 'link-7')!;
   expect(xs(link).size).toBeGreaterThan(1);
   expect(model.diagnostics.some(item => item.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-7'))).toBe(true);
@@ -36,13 +36,13 @@ it('keeps the jog of a port that has no room and names the link', async () => {
 it('decides a face the same way whatever the order of the links', async () => {
   const flipped = fixture.replace(/(\nlinks:\n)([\s\S]*)$/, (_, head: string, body: string) => `${head}${body.trim().split(/\n(?=- )/).reverse().join('\n')}\n`);
   expect(flipped).not.toBe(fixture);
-  const [one, two] = await Promise.all([fixture, flipped].map(text => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt })));
+  const [one, two] = await Promise.all([fixture, flipped].map(text => layout(parse(text), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt })));
   const face = (model: Awaited<ReturnType<typeof layout>>): string[] => model.nodes['core-sw']!.ports.filter(port => port.side === 'bottom').map(port => `${port.ref.name}@${port.anchor!.x.toFixed(1)}`).sort();
   expect(face(two!)).toEqual(face(one!));
 }, 120000);
 
 it('puts a source port back when the corridor of its link did not follow', async () => {
-  const laid = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const laid = await layout(parse(fixture), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
   const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
   const link = model.links.find(item => item.id === 'link-6')!;
   const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-6')!;
@@ -60,7 +60,7 @@ it('puts a source port back when the corridor of its link did not follow', async
 }, 120000);
 
 it('adopts the reseat of a free corridor and takes back the port of a blocked one', async () => {
-  const laid = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const laid = await layout(parse(fixture), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
   const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
   const portOf = (link: string): NonNullable<typeof model.links[number]['attachments']>['from'] => model.links.find(item => item.id === link)!.attachments!.from;
   const sourceOf = (link: string) => model.nodes[portOf(link).node]!.ports.find(port => port.ref.name === portOf(link).name)!;
@@ -95,7 +95,7 @@ links:
 ${[1, 2, 3, 4, 5, 6].map(i => `- [t${i}.o, b${i}.i, {id: r${i}, route: orthogonal}]\n- [b${i}.o, c${i}.i, {id: s${i}, route: orthogonal}]`).join('\n')}
 `;
 async function displaced(count: number, shift: (n: number) => number) {
-  const laid = await layout(parse(row), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const laid = await layout(parse(row), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
   const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
   const context = centreContext(model, model.anchorTier!), steps = context.steps;
   const groupOf = (feed: { child: { ref: { node: string } } }): string => model.document.nodes[feed.child.ref.node]!.group;
@@ -132,7 +132,7 @@ it('takes moves in port order only while their sum stays within half a pixel', a
 // Since architecture-2 ticket 54 the plain `drawio-nested-groups` holds link-2 as a frame chord (no title refuses it), so the fixture authors it orthogonal.
 const nested = readFileSync(new URL('../../goldens/synthetic/a-feed-port-moves-over-its-child-at-a-wall.yaml', import.meta.url), 'utf8');
 it('takes a move that changes the offset when the group fills the column of its frame, and records it', async () => {
-  const model = await layout(parse(nested), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = await layout(parse(nested), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
   const link = model.links.find(item => item.id === 'link-2')!;
   expect(link.path!.segments.every(segment => Math.abs(segment.from.x - segment.to.x) <= 0.5)).toBe(true);
   expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_AT_WALL' && item.severity === 'info' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-2'))).toBe(true);
@@ -146,7 +146,7 @@ it('takes a move that changes the offset when the group fills the column of its 
 // A later replay reads the record first. While the column holds, the move stays; when a sibling cell of the canton grows, the canton box and so the column
 // of `site-zone` widen, the step would shift the group, and the move is given back with a decline in place of the record.
 it('gives a wall move back when a later replay widens the column, and keeps it while the column holds', async () => {
-  const laid = await layout(parse(nested), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const laid = await layout(parse(nested), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
   const replay = (widen: number, nodeShift = 0) => {
     const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
     const record = model.parentWallMoves![0]!, port = findPort(model, record.port)!, node = model.nodes[record.port.node]!;
@@ -172,7 +172,7 @@ it('gives a wall move back when a later replay widens the column, and keeps it w
 
 // The same through a real replay: `centreDraft` reads the record before its passes, so the widened column gives the move back and names the decline.
 it('withdraws a wall move in a centreDraft replay before the passes centre on it', async () => {
-  const laid = await layout(parse(nested), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const laid = await layout(parse(nested), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
   const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
   Object.values(model.groups).find(group => group.id.startsWith('clients'))!.bounds!.width += 200;
   // The record as the first pass begins: each pass counts itself on `attemptCounters.centringPasses`.
