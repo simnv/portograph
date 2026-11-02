@@ -452,8 +452,8 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
   if (model.document.layout?.autoArrange === false || model.groupArrangements !== undefined) return;
   const ids = Object.keys(model.groups).sort(compareId), column = new Set(columns.plans.map(plan => plan.group));
   if (model.staggerRows !== undefined) {
-    // The width-budget search gave the rows: stage 5 chooses no stagger, but it seated its columns, and the record says so (R1).
-    if (!column.size) return;
+    // The width-budget search gave the rows: stage 5 chooses no stagger, but it seated its columns, or declined one, and the record says so (R1).
+    if (!column.size && declined.size === 0) return;
     const given = new Set(model.staggerRows.map(row => row.group)), record: Record<string, GroupArrangement> = {};
     for (const id of ids) record[id] = column.has(id) ? { chosen: 'column' } : given.has(id) ? { chosen: 'stagger' }
       : { chosen: 'row', reason: columns.reasons.get(id) ?? 'the width-budget search gave the rows' };

@@ -34,6 +34,8 @@ for (;;) {
     if (staggerRefusal(error) && env.arrangedRows?.length) {
       // The refused groups when the refusal names them, else every row the attempt chose.
       const named = env.arrangedRows.filter(group => error.owners.some(owner => owner.kind === 'group' && owner.id === group));
+      // A refusal that names only groups stage 5 did not choose (a row the width-budget search gave) is not this run's choice: it stands.
+      if (!named.length && error.owners.some(owner => owner.kind === 'group')) throw error;
       const declined = named.length ? named : env.arrangedRows;
       env.declinedArrangements = new Map([...(env.declinedArrangements ?? []), ...declined.map(group => [group, error.message] as const)]);
       env.reruns++;
