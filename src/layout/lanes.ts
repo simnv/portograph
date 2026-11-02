@@ -1,5 +1,6 @@
 import { measurePortPill } from '../text/index.js';
 import { equal } from '../model/json-equality.js';
+import { readCache } from '../model/read-cache.js';
 import type { Rect } from '../model/geometry.js';
 import type { Course, Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, MeshBus, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
@@ -169,16 +170,34 @@ function sideLaneFramesHold(model: LayoutModel, proposed: ProposedBox[]): boolea
 }
 /** The x distance the riser keeps from a routed port on the facing edge of a member row: `k` plus half a stroke (mesh-bus.md, section 11.5). */
 const riserKeepOut = (model: LayoutModel): number => BUS_RUN_CLEARANCE + routedStrokeWidth(model) / 2;
+/**
+ * The ports routed links attach to (stubs left out), by `portId`, per `model.links` array (architecture-2 ticket 60). The key is the array
+ * identity and its length; the links' `layer` and `attachments` are written only in stage 2, and the in-place `technique` writers of stage 7
+ * touch only links with no authored route, which are never stubs, or work on a fresh clone before any read, so no later write changes the answer. `LayoutOptions.checkCaches` checks it.
+ */
+const routedPortReads = new WeakMap<readonly LayoutLink[], { count: number; ids: ReadonlySet<string> }>();
+const routedPortCache = readCache('facingRoutedPorts');
+function routedPortIds(model: LayoutModel): ReadonlySet<string> {
+  const known = routedPortReads.get(model.links);
+  if (known !== undefined && known.count === model.links.length) return routedPortCache.hit(model, known.ids, () => computeRoutedPortIds(model.links));
+  routedPortCache.miss();
+  const ids = computeRoutedPortIds(model.links);
+  routedPortReads.set(model.links, { count: model.links.length, ids });
+  return ids;
+}
+const computeRoutedPortIds = (links: readonly LayoutLink[]): ReadonlySet<string> => new Set(links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+  .flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
 /** The routed ports on the facing edge of a member row of a join, per join: the ports the riser keeps out of. */
 function facingRoutedPorts(model: LayoutModel, group: LayoutGroup): { riser: number; ports: { node: string; ordinal: number; x: number }[] }[] {
   const result: { riser: number; ports: { node: string; ordinal: number; x: number }[] }[] = [];
+  // Read once, and only when a join faces this group: no join means no read of the links.
+  let used: ReadonlySet<string> | undefined;
   for (const upper of (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined)) {
     const lower = model.meshBuses!.find(bus => bus.id === upper.joined);
     const side = group.tier === upper.row ? 'bottom' : lower !== undefined && group.tier === lower.row ? 'top' : undefined;
     if (side === undefined) continue;
-    const used = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
-      .flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
-    const ports = group.nodes.flatMap(id => model.nodes[id]!.ports.filter(port => port.side === side && port.anchor !== undefined && used.has(portId(port.ref)))
+    const routed = used ??= routedPortIds(model);
+    const ports = group.nodes.flatMap(id => model.nodes[id]!.ports.filter(port => port.side === side && port.anchor !== undefined && routed.has(portId(port.ref)))
       .map(port => ({ node: id, ordinal: port.ref.ordinal, x: port.anchor!.x })));
     result.push({ riser: upper.riser!.x, ports });
   }
@@ -626,6 +645,9 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
     lane.x = anchor.x;
     lane.bounds.x = anchor.x - lane.bounds.width / 2;
     lane.group = group.id;
+    // The one in-place write of a lane's group: a new array, so a read cached by the identity of `model.lanes` (ticket 60) reads again.
+    // Only `model` gets it: no shallow copy of the model that shares these lanes may outlive a reseat (none does; drafts are deep copies).
+    model.lanes = [...model.lanes];
     lane.side = anchor.x < group.bounds!.x ? 'left' : 'right';
     moved = true;
     followed?.push({ lane: lane.id, child });
