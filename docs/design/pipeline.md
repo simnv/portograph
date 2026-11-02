@@ -1131,12 +1131,13 @@ sees a title: no chord is refused for one, no fan or direct member is refused or
 (`legClear`), the corridor (`straightCorridorClear`) and the lane corridor keep no clearance from one. No box grows and no link bends for a
 title. At the end of 7f, after the last move of a box, a lane or a port (`nestOverlayPorts`), `placeGroupTitles` places each title once,
 per band in gap order then id order (R3): the left edge nearest the centre of its holder (the host cell's box, or a canton's band) where no
-blocker meets it (`titleBlockers`: the legs of the band's ports, bus stubs and risers, lanes, reserved runs, envelopes, feed corridors,
-nodes, pills, other text and the titles placed before it); a tie goes left. With no free span the title stands at the centre (or the
-nearest x clear of text, which stays hard) with the halo (`yield: 'halo'`) and records the routed links that cross it (`crossedBy`, id
+blocker meets it (`titleBlockers`: the legs of the band's ports, bus stubs and risers, the planned tier-gap geometry (`plannedSegments`,
+so a jogged drop's vertical counts), lanes, reserved runs, envelopes, feed corridors, nodes, pills, other text and the titles placed
+before it); a tie goes left. With no free span the title stands at the centre (or the nearest x clear of text, which stays hard; with
+none, it stands on the text with `GROUP_TITLE_ON_TEXT` and G3 judges) with the halo (`yield: 'halo'`) and records the routed links that cross it (`crossedBy`, id
 order). A slid title records `crossedBy: []`; an absent record means not placed (R1). It moves nothing and retries nothing. The validator
 reads the record (`groupTitlesFault`): one title per band, inside its band less the insets, on no text, a title with no yield meets no
-blocker, and `crossedBy` equals the links whose geometry crosses it (R5). G3 excuses a segment of a link in `crossedBy`; stage 8 lists those
+blocker, and `crossedBy` equals the links whose geometry crosses it (R5). G3 excuses a segment of a link in `crossedBy` (not a horizontal segment through the text); stage 8 lists those
 links as consumers of the title's obstacle and reservation and keeps the title an obstacle to every other link (`ROUTE_TITLE_DETOUR` names
 a routed link that turns beside a title it does not cross).
 

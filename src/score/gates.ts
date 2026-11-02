@@ -370,8 +370,12 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
       // A diagonal may cross a group title or a link label (ticket 162, ADR-0023): no hit, the halo keeps the text readable.
       if (diagonalMayCross(s.segment, label)) continue;
       // A group title yields to the links it records as crossing it (architecture-2 ticket 54, ADR-0023): their segments are no hit, the halo
-      // keeps the title readable. Every other link's crossing is a hit, as before.
-      if (label.role === 'group' && label.crossedBy?.includes(s.link.id) === true) continue;
+      // keeps the title readable. A horizontal segment drawn through the text runs along the title, which no record excuses (review of ticket 54).
+      // Every other link's crossing is a hit, as before.
+      if (label.role === 'group' && label.crossedBy?.includes(s.link.id) === true) {
+        if (horizontal(s.segment) && areaSegment(s.segment, area)) hit(s.link.id);
+        continue;
+      }
       // Text drawn across a routed segment is a hit whatever it claims to support.
       if (areaSegment(s.segment, area)) { hit(s.link.id); continue; }
       // Only the clearance zone of the one segment a link label was measured against is exempt.

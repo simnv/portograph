@@ -91,6 +91,26 @@ describe('a group title is placed last and yields to its links (architecture-2 t
     expect(forged(copy => { copy.labels = copy.labels.filter(label => label.id !== 'label:group:access'); })).toThrow(/group titles/);
   }, 120000);
 
+  it('a title on text is refused unless its record names it, and G3 hits a horizontal run through a crossed title (review of ticket 54)', async () => {
+    const model = await run(fixture('a-group-title-yields-with-a-halo'));
+    const access = title(model, 'access'), box = access.bounds!;
+    // Text over the title: a description label of a node, as wide as the title.
+    const onText = (named: boolean): LayoutModel => {
+      const copy = structuredClone(model);
+      copy.labels.push({ id: 'label:forged', owner: { kind: 'node', id: 'sw1' }, layer: 'routed', role: 'description', text: 'x', bounds: { ...box } });
+      if (named) copy.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'GROUP_TITLE_ON_TEXT', message: 'forged', owners: [{ kind: 'group', id: 'access' }] });
+      return copy;
+    };
+    expect(() => validateGroupLabelBands(onText(false))).toThrow(/stands on label:forged/);
+    expect(() => validateGroupLabelBands(onText(true))).not.toThrow(/stands on/);
+    // A link the title records may cross it; a horizontal segment of that link drawn through the text is a hit all the same.
+    const crossed = model.links.find(link => link.id === access.crossedBy![0])!;
+    const copy = structuredClone(model), link = copy.links.find(item => item.id === crossed.id)!, y = box.y + box.height / 2;
+    link.path!.segments.push({ from: { x: box.x - 4, y }, to: { x: right(box) + 4, y }, owner: { kind: 'link', id: link.id } });
+    expect(g3(model)).toEqual([]);
+    expect(g3(copy)).not.toEqual([]);
+  }, 120000);
+
   it('keeps the titles independent of the order of the links and the nodes (R3)', async () => {
     const yaml = fixture('a-group-title-yields-with-a-halo'), base = await run(yaml);
     const [top, rest] = yaml.split('nodes:\n'), [nodes, links] = rest!.split('links:\n');
