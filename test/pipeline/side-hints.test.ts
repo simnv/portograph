@@ -274,13 +274,15 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // Verdana metrics (snack-theme ticket 157): the hashes were f98faf1ca584bd8d, 2bf7ca0b64536533, 4bf31e66a5f0601f and c47be7d6b65f7515 with Arial.
   // The 9 px floor changes named pills and their reserved geometry.
   // Ticket 156 adds only frozen portCorners records on the bundle fixture; a source diff confirms identical geometry.
-  // Architecture-2 ticket 51: `a-linked-node-steps-out-of-a-straight-chord` re-baselined (87acdee7504bf90c before): stage 5 stands its four-node `hosts` row on two
-  // lines with straight drops and records `groupArrangements`; `src`, `mid`, `near` and `far` and their links are unchanged in role.
+  // Architecture-2 ticket 51 re-baselined three, with geometry unchanged: the hash without `shapeAuthored` and `groupArrangements` is main's
+  // (d5044bd379b1900d, 87acdee7504bf90c, b77586f1d9edb49d). The bundle fixture (`shape: grid`) and the bar fixture (`shape: bar`) gain only
+  // `shapeAuthored` in the document; `a-linked-node-steps-out-of-a-straight-chord` gains only the record that its `hosts` row stays a row
+  // (`aspect`: the sheet is taller than wide).
   const main: Record<string, string> = {
-    'a-group-holds-both-ends-of-a-bundle': 'd5044bd379b1900d',
+    'a-group-holds-both-ends-of-a-bundle': 'cb737393884981b3',
     'a-bus-in-a-rank-gap-grows-the-gap': '6b813734f4667a13',
-    'a-linked-node-steps-out-of-a-straight-chord': 'cd3a6b1092b221ba',
-    'a-bar-end-keeps-its-corridor': 'b77586f1d9edb49d',
+    'a-linked-node-steps-out-of-a-straight-chord': '2cb9f082ee2bcec1',
+    'a-bar-end-keeps-its-corridor': 'b2ef2a0daab9b5b5',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {
     const { model } = await run(fixture(name));

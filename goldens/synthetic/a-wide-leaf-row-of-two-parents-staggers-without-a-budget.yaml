@@ -1,5 +1,6 @@
 # Expected (architecture-2 ticket 51): with no width budget, stage 5 stands the nine-server row on two lines.
 # `sw1` feeds `a1` to `a5` and `sw2` feeds `a6` to `a9`; the gap between `a5` and `a6` also holds both switches, a row gap apart.
+# The sheet is wider than tall at stage 5, and the two lines bring it nearer square (the aspect rule).
 # All 11 links are straight and vertical, crossings 0, bends 0, the canvas is under 500 px (one line: 698 px), G1-G9 pass.
 # `groupArrangements` records `servers` as `stagger`, and `core` and `access` as `row` with a reason.
 # `shape: row` on `servers`, or `layout.autoArrange: false`, keeps the one-line row of main byte for byte.

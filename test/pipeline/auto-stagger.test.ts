@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel, resolve, sidesOne, sizeNodes, skeleton, sidesTwo } from '../../src/internal.js';
+import { arrangeGroups } from '../../src/layout/stagger.js';
+import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -147,6 +149,107 @@ links: [[u, d1], [u, d2]]
 `);
     expect(model.groupArrangements).toBeUndefined();
     expect(model.staggerRows).toBeUndefined();
+  }, 60000);
+});
+
+// Follow-up of 2026-11-02 (user decisions): any authored shape wins, the aspect rule, and the two open review findings 3b and 4.
+const oneParent = (leaves: number): string => `portograph: 2
+groups:
+  top: { tier: 0 }
+  feeds: { tier: 1 }
+  leaves: { tier: 2 }
+nodes:
+  t: { group: top, class: router }
+  p: { group: feeds, class: switch }
+${Array.from({ length: leaves }, (_, i) => `  n${i + 1}: { group: leaves, class: server }`).join('\n')}
+links:
+  - [t, p]
+${Array.from({ length: leaves }, (_, i) => `  - [p, n${i + 1}]`).join('\n')}
+`;
+const skeletonOf = async (yaml: string): Promise<LayoutModel> => {
+  const model = sizeNodes(sidesOne(resolve(parse(yaml))));
+  await skeleton(model, { createAttempt });
+  return model;
+};
+
+describe('stage 5 admits a stagger only toward a square sheet (ticket 51, aspect rule)', () => {
+  it.each(['a-linked-node-steps-out-of-a-straight-chord', 'a-group-with-routed-links-steps-off-a-straight-chord'])(
+    '%s: a sheet taller than wide keeps its row, and the record names the aspect', async sheet => {
+      const model = await run(fixture(sheet));
+      expect(model.staggerRows).toBeUndefined();
+      expect(lines(model, 'hosts')).toBe(1);
+      const entry = model.groupArrangements!.hosts!;
+      expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: the sheet is [\d.]+ x [\d.]+ px, not wider than tall$/);
+    }, 60000);
+
+  it('refuses two lines that leave a wide sheet further from square than one line', async () => {
+    const model = await run(oneParent(5));
+    expect(model.staggerRows).toBeUndefined();
+    expect(lines(model, 'leaves')).toBe(1);
+    const entry = model.groupArrangements!.leaves!;
+    expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: two lines give [\d.]+ x [\d.]+ px, not nearer square than [\d.]+ x [\d.]+ px$/);
+  }, 60000);
+});
+
+describe('any authored shape wins (ticket 51, user decision 2026-11-02)', () => {
+  it.each(['ranked', 'row', 'grid'])('shape: %s on the servers keeps the one-line row and writes no record', async shape => {
+    const yaml = fixture(NAME).replace('servers: { tier: 2 }', `servers: { tier: 2, shape: ${shape} }`);
+    expect(parse(yaml).groups.servers!.shapeAuthored).toBe(true);
+    const model = await run(yaml);
+    expect(model.staggerRows).toBeUndefined();
+    expect(model.groupArrangements).toBeUndefined();
+  }, 60000);
+
+  it('marks no shape the author did not write', () => {
+    expect(parse(fixture(NAME)).groups.servers!.shapeAuthored).toBeUndefined();
+  });
+});
+
+describe('a feeding parent seated over its other links (review finding 3b)', () => {
+  // `p` feeds n1 to n6 and also links to `x`; `q`, its row neighbour, links to `z`. Seated over the drops and `x`, `p` reaches `q`.
+  const crowded = `portograph: 2
+groups:
+  feeds: { tier: 0 }
+  leaves: { tier: 1 }
+  side: { tier: 1 }
+nodes:
+  p: { group: feeds, class: switch }
+  q: { group: feeds, class: switch }
+${[1, 2, 3, 4, 5, 6].map(i => `  n${i}: { group: leaves, class: server }`).join('\n')}
+  x: { group: side, class: server }
+  z: { group: side, class: server }
+links:
+${[1, 2, 3, 4, 5, 6].map(i => `  - [p, n${i}]`).join('\n')}
+  - [p, x]
+  - [q, z]
+`;
+  it('refuses by name when the widened parent comes within clearance of its row neighbour', async () => {
+    const model = await run(crowded);
+    expect(model.staggerRows).toBeUndefined();
+    const entry = model.groupArrangements!.leaves!;
+    expect(entry.chosen === 'row' && entry.reason).toMatch(/Stagger row leaves: the feeding face of p, seated over its drops and its other links \(link-7\), comes within clearance of q$/);
+  }, 60000);
+
+  it('admits a parent whose other link fits beside the drops', async () => {
+    const fits = crowded.replace('  q: { group: feeds, class: switch }\n', '').replace('  z: { group: side, class: server }\n', '').replace('  - [q, z]\n', '');
+    const model = await run(fits);
+    expect(model.groupArrangements!.leaves).toEqual({ chosen: 'stagger' });
+    expect(failedGates(model)).toEqual([]);
+  }, 60000);
+});
+
+describe('arrangeGroups records only a stagger refusal (review finding 4)', () => {
+  it('records a stagger refusal as the reason and rethrows every other error', async () => {
+    const model = await skeletonOf(fixture(NAME));
+    const refused = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    arrangeGroups(refused, new Map(), () => { throw new PlacementRefusal('stagger', 'Stagger row servers: a named refusal'); });
+    expect(refused.groupArrangements!.servers).toEqual({ chosen: 'row', reason: 'stage 5 refused the two lines: Stagger row servers: a named refusal' });
+    expect(refused.staggerRows).toBeUndefined();
+    const bug = new Error('Nodes sw1 and sw2 violate clearance');
+    expect(() => arrangeGroups(JSON.parse(JSON.stringify(model)) as LayoutModel, new Map(), () => { throw bug; })).toThrow(bug);
+    const ledger = new PlacementRefusal('ledger', 'a ledger refusal');
+    expect(() => arrangeGroups(JSON.parse(JSON.stringify(model)) as LayoutModel, new Map(), () => { throw ledger; })).toThrow(ledger);
+    expect(() => arrangeGroups(JSON.parse(JSON.stringify(model)) as LayoutModel, new Map(), () => { throw new TypeError('x is undefined'); })).toThrow(TypeError);
   }, 60000);
 });
 

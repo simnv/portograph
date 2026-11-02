@@ -150,7 +150,7 @@ It is a placement constraint, not a scale factor.
 **Stagger**:
 A reserved two-line arrangement of at least three nodes whose routed links all leave through one horizontal face.
 Alternate members stand away from their feeds while preserving horizontal feed order and clear vertical drops.
-A width budget asks for it; without one, stage 5 chooses it for a wide leaf row (`groupArrangements`).
+A width budget asks for it; without one, stage 5 chooses it for a wide leaf row on a sheet wider than tall, only toward square (`groupArrangements`).
 
 ### Reserved space and paths
 

@@ -175,10 +175,13 @@ function seatFeeds(model: LayoutModel): void {
     if (side !== otherSide) return side === 'top' ? -1 : 1;
     return (side === 'bottom' ? tier(b) - tier(a) : tier(a) - tier(b)) || (a < b ? -1 : a > b ? 1 : 0);
   });
+  const members = new Set((model.staggerRows ?? []).flatMap(plan => plan.order));
+  // Per seated parent: the links on its feeding face that end on no staggered member (they are seated over their far ends too).
+  const seated: { id: string; others: string[] }[] = [];
   for (const [id, side] of ordered) {
     const node = model.nodes[id]!, group = model.groups[model.document.nodes[id]!.group]!;
     if (groupShape(model, group.id) === 'bar') continue; // 7d derives the bar's span from these same reserved drops.
-    const targets = new Map<string, number>();
+    const targets = new Map<string, number>(), others: string[] = [];
     for (const link of model.links) {
       if (link.layer !== 'routed' || !link.attachments) continue;
       for (const [own, far] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]] as const) {
@@ -186,8 +189,10 @@ function seatFeeds(model: LayoutModel): void {
         const key = portId(own), x = findPort(model, far)!.anchor!.x, prior = targets.get(key);
         if (prior !== undefined && Math.abs(prior - x) > PLACEMENT_EPS) throw new PlacementRefusal('stagger', 'A shared feeding port cannot hold distinct vertical drops');
         targets.set(key, x);
+        if (!members.has(far.node)) others.push(link.id);
       }
     }
+    seated.push({ id, others: others.sort(compareId) });
     const ports = node.ports.filter(port => port.side === side);
     const wanted = ports.filter(port => targets.has(portId(port.ref))).sort((a, b) => targets.get(portId(a.ref))! - targets.get(portId(b.ref))! || a.engineOrder! - b.engineOrder!);
     for (let i = 1; i < wanted.length; i++) {
@@ -209,6 +214,36 @@ function seatFeeds(model: LayoutModel): void {
     ports.sort((a, b) => a.anchor!.x - b.anchor!.x || a.engineOrder! - b.engineOrder!).forEach((port, index) => { port.engineOrder = index; });
     rebuildNodeGeometry(model, [id], 'current');
     fitRegionGroup(model, group);
+  }
+  for (const parent of seated) seatedParentFits(model, parent.id, parent.others);
+}
+
+/**
+ * A seated parent keeps its place in its own group (ticket 51, review finding 3b): `seatFeeds` widens it over every port of its feeding
+ * face, the drops and any other link there, so it can reach a neighbour of its row. The freeze would refuse that with a generic message;
+ * stage 5 refuses it here by name. The tests are the freeze's own: the node clearance and the physical row order of the group.
+ */
+function seatedParentFits(model: LayoutModel, id: string, others: readonly string[]): void {
+  const group = model.groups[model.document.nodes[id]!.group]!, box = model.nodes[id]!.bounds!;
+  const fed = (model.staggerRows ?? []).filter(plan => plan.order.some(member => memberLinks(model, member).some(link => endsOf(link, member).far.node === id)));
+  const fail = (what: string): never => {
+    const over = others.length ? `its drops and its other links (${others.join(', ')})` : 'its drops';
+    throw new PlacementRefusal('stagger', `Stagger row ${fed.map(plan => plan.group).join(', ')}: the feeding face of ${id}, seated over ${over}, ${what}`,
+      { stage: 'sides-two', owners: fed.map(plan => ({ kind: 'group' as const, id: plan.group })) });
+  };
+  for (const other of [...group.nodes].filter(item => item !== id).sort(compareId)) {
+    const b = model.nodes[other]!.bounds!;
+    const dx = Math.max(box.x - b.x - b.width, b.x - box.x - box.width, 0), dy = Math.max(box.y - b.y - b.height, b.y - box.y - box.height, 0);
+    if (Math.hypot(dx, dy) < nodeGap(model, id, other) - PLACEMENT_EPS) fail(`comes within clearance of ${other}`);
+  }
+  if (groupShape(model, group.id) !== 'row') return;
+  // The freeze reads a staggered row by member centres and any other row by left edges.
+  const centred = staggerOf(model, group.id) !== undefined;
+  const position = (node: string): number => model.nodes[node]!.bounds!.x + (centred ? model.nodes[node]!.bounds!.width / 2 : 0);
+  const order = group.rowOrder!;
+  for (let i = 1; i < order.length; i++) {
+    if (order[i - 1] !== id && order[i] !== id) continue;
+    if (position(order[i - 1]!) > position(order[i]!) + PLACEMENT_EPS) fail(`passes ${order[i - 1] === id ? order[i]! : order[i - 1]!} in the row order of ${group.id}`);
   }
 }
 
@@ -326,10 +361,19 @@ function sheetWidth(model: LayoutModel): number {
   return boxes.length ? Math.max(...boxes.map(box => box.x + box.width)) - Math.min(...boxes.map(box => box.x)) : 0;
 }
 
+/** The stage-5 canvas, which `stackBands` sets from the band extents; undefined when it is not set or has no area (the aspect rule then refuses, R6). */
+function aspectOf(model: LayoutModel): { width: number; height: number } | undefined {
+  const canvas = model.canvas;
+  return canvas !== undefined && canvas.width > 0 && canvas.height > 0 ? { width: canvas.width, height: canvas.height } : undefined;
+}
+const size = (box: { width: number; height: number } | undefined): string => box === undefined ? 'unmeasured' : `${box.width.toFixed(2)} x ${box.height.toFixed(2)} px`;
+/** A stagger must bring |ln(W/H)| down by more than this to count as nearer square (a float tolerance, not a design margin). */
+const ASPECT_EPS = 1e-9;
+
 /** The first rule that keeps `group` one row before any draft (ticket 51), or undefined when stage 5 may try it. */
 function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): string | undefined {
   const source = model.document.groups[group.id];
-  if (source?.shapeAuthored) return 'the author set shape row';
+  if (source?.shapeAuthored) return 'the author set the shape';
   if (group.flank) return 'a flank group';
   if (group.frame !== undefined) return 'a rank cell of a ranked frame';
   if (groupShape(model, group.id) !== 'row') return `a ${groupShape(model, group.id)} group`;
@@ -349,9 +393,10 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
 
 /**
  * Stage 5 of the first placement run, before the seat (ticket 51): pick each group's arrangement when no budget gave the rows. A candidate
- * row is tried widest first on a draft; it staggers only when its band alone is the widest band, the seated draft passes `prove` (the
- * stage-5 refusals and the topology-freeze validation) and the sheet comes out at least one pitch narrower. A refused draft is dropped, the
- * row stays, and the record names the reason. Each candidate is tried once (a finite traversal). A `declined` group stays a row: a later
+ * row is tried widest first on a draft; it staggers only when its band alone is the widest band, the sheet is wider than tall, the seated
+ * draft passes `prove` (the stage-5 refusals and the topology-freeze validation), and the sheet comes out at least one pitch narrower and
+ * nearer square (aspect). A draft that a stage-5 stagger refusal refuses is dropped, the row stays, and the record names the reason; any
+ * other error of the draft ends the run (a freeze validation that the stage-5 proof did not foresee is a defect, not a reason). Each candidate is tried once (a finite traversal). A `declined` group stays a row: a later
  * stage of an earlier attempt of the first run could not keep its stagger. When every group keeps its row by a rule before any draft there is
  * nothing to choose and no record: an absent record and an all-`row` record both mean "every group stays one row"; the record exists
  * only when stage 5 tried a group.
@@ -376,17 +421,30 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
       reasons.set(row.group, 'its band is not the one widest band of the sheet');
       continue;
     }
+    // The aspect rule (user decision 2026-11-02): only a sheet wider than tall staggers, and only toward square. Both sizes are the stage-5
+    // canvas that `stackBands` sets from the band extents, before the stagger (`base`) and on the seated draft.
+    const before = aspectOf(base);
+    if (before === undefined || !(before.width > before.height + PLACEMENT_EPS)) {
+      reasons.set(row.group, `aspect: the sheet is ${size(before)}, not wider than tall`);
+      continue;
+    }
     const draft = JSON.parse(JSON.stringify(model)) as LayoutModel;
     draft.staggerRows = JSON.parse(JSON.stringify([...accepted, row])) as StaggerRow[];
     try { seatStaggerRows(draft); prove(draft); } catch (error) {
-      // A refused draft is the decision "row"; the record keeps the refusal text (R6). A defect of the code is no refusal and ends the run.
-      if (!(error instanceof Error) || error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError) throw error;
+      // A stage-5 stagger refusal (`staggerRefusal`) is the decision "row"; the record keeps its text (R6). Anything else, the freeze's
+      // validation included, is a defect that the stage-5 proof missed or a bug, and ends the run: it is never recorded as a reason.
+      if (!staggerRefusal(error)) throw error;
       reasons.set(row.group, `stage 5 refused the two lines: ${error.message}`);
       continue;
     }
     const pitch = Math.min(...draft.staggerRows.find(item => item.group === row.group)!.pitches), next = sheetWidth(draft);
     if (next > width - pitch + PLACEMENT_EPS) {
       reasons.set(row.group, `two lines give ${next.toFixed(2)} px, not one pitch (${pitch.toFixed(2)} px) less than ${width.toFixed(2)} px`);
+      continue;
+    }
+    const after = aspectOf(draft);
+    if (after === undefined || !(Math.abs(Math.log(after.width / after.height)) < Math.abs(Math.log(before!.width / before!.height)) - ASPECT_EPS)) {
+      reasons.set(row.group, `aspect: two lines give ${size(after)}, not nearer square than ${size(before)}`);
       continue;
     }
     accepted.push(row); base = draft; width = next;

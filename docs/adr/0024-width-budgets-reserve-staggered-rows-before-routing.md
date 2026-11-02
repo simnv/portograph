@@ -41,10 +41,14 @@ The search is greedy, widest first. It does not search combinations of individua
 The sentence "an absent budget takes the original pipeline path and records no stagger decision"
 no longer holds. Without a budget, stage 5 of the first placement run picks each group's
 arrangement right before the seat, on a draft, and spends no placement run. A row staggers only
-when all of these hold: no authored `shape`; not a flank and not a rank cell; four or more
+when all of these hold: no authored `shape` (any of `ranked`, `row`, `bar`, `grid`); not a flank and not a rank cell; four or more
 members; one plain routed link per member, all out through one horizontal face; its band is the
-one widest band; the seated draft passes the stage-5 proof and the freeze validation; and the
-sheet is at least one pitch narrower. `groupArrangements` records `stagger`, or `row` with the
+one widest band; the sheet is wider than tall; the seated draft passes the stage-5 proof and
+the freeze validation; and the sheet is at least one pitch narrower and nearer square
+(`|ln(W/H)|` strictly smaller, W and H the stage-5 canvas that the band extents set). The
+aspect rule (user decision 2026-11-02) keeps the small rows of tall sheets one line. A stage-5
+stagger refusal keeps the row and names the reason; any other error of a draft, the freeze
+validation included, is a defect and ends the run. `groupArrangements` records `stagger`, or `row` with the
 reason, for every group. There is no record when no group passes the rules before a draft, or under
 `layout.autoArrange: false` (default true), which keeps every row. Later placement runs of the
 command keep the record and the rows. If a later stage of the first run refuses a chosen stagger,
@@ -56,7 +60,8 @@ the members of each parent are one run of the order. The seat also proves each d
 the row by name: the far end is the horizontal face over the member; the vertical from the
 parent face to the member meets no foreign body, pill or group box, and a transit clears the
 occupied box of each group of a tier it crosses by half a lane; the parent port stands over
-the member; and the anchor tier is the row's tier or lies beyond it, so the centre rule (7c)
+the member; a parent seated over its drops and the other links of its feeding face keeps its
+clearance and its place in its row; and the anchor tier is the row's tier or lies beyond it, so the centre rule (7c)
 moves the parents and not the row. These came from the corpus run with a 1 px budget, where
 stage 5 admitted five trials that routing refused for bent drops.
 
