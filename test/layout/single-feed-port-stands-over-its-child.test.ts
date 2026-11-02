@@ -129,7 +129,8 @@ it('takes moves in port order only while their sum stays within half a pixel', a
 // Follow-up (codex option d): a move that changes the offset is free when the group fills the column of its frame. `site-zone`, a zone of a canton
 // member, is as wide as its column, so its step cannot shift it; the port of `gw` over `srv` moves, link-2 is one segment, and the move is recorded. A
 // group that stands in no frame column has no such wall (the row above): its moves stay declined.
-const nested = readFileSync(new URL('../../goldens/synthetic/drawio-nested-groups.yaml', import.meta.url), 'utf8');
+// Since architecture-2 ticket 54 the plain `drawio-nested-groups` holds link-2 as a frame chord (no title refuses it), so the fixture authors it orthogonal.
+const nested = readFileSync(new URL('../../goldens/synthetic/a-feed-port-moves-over-its-child-at-a-wall.yaml', import.meta.url), 'utf8');
 it('takes a move that changes the offset when the group fills the column of its frame, and records it', async () => {
   const model = await layout(parse(nested), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   const link = model.links.find(item => item.id === 'link-2')!;

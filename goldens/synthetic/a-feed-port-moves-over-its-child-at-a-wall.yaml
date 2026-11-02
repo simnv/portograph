@@ -1,0 +1,24 @@
+# Expected: a move that changes the offset is free when the group fills the column of its frame (architecture-2 ticket 15 follow-up, codex
+# option d). `site-zone`, a zone of a canton member, is as wide as its column, so its centring step cannot shift it: the port of `gw` over
+# `srv` moves, link-2 is one vertical segment, `CENTRE_PARENT_MOVE_AT_WALL` (info) names it, and `parentWallMoves` records it.
+# A copy of `drawio-nested-groups` with link-2 authored `route: orthogonal`: since architecture-2 ticket 54 no title refuses its frame chord,
+# so on the plain sheet link-2 is a held chord and centring does not move its port (follow-up: the 2 px lean of that chord).
+# Test-only input owned by architecture-2 ticket 54; test/layout/single-feed-port-stands-over-its-child.test.ts reads it.
+portograph: 2
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, canton: west, label: Site }
+  site-zone: { parent: site, label: Zone }
+  clients: { tier: 2, canton: west, label: Clients }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: Gateway }
+  srv: { group: site-zone, class: server, label: Server }
+  cl: { group: clients, class: server, label: Client }
+links:
+  - [isp, gw]
+  - [gw, srv, { route: orthogonal }]
+  - [srv, cl]
+  - [gw, cl, { route: overlay }]
+  - [isp, srv, { route: overlay }]
