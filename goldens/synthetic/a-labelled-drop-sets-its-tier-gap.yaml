@@ -1,0 +1,14 @@
+# Expected: the label of a straight drop sets the height of its tier gap (architecture-2 ticket 57). The one link from `c0` to `a0`
+# is a held chord with a label longer than the 60 px gap. Its room is a term of the one tier-gap solve, read once: the gap grows
+# 116.74 px (`TIER_GAP_GROWN`, set by the label of link-1), the turned label lies on the drop between the group borders, and the
+# validator replay reserves nothing more.
+# Test-only input owned by architecture-2 ticket 57; test/pipeline/gap-solve-fixtures.test.ts reads it.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  access: { tier: 1, label: Access }
+nodes:
+  c0: { group: core, class: router, label: C0 }
+  a0: { group: access, class: switch, label: A0 }
+links:
+  - [c0, a0, { label: Primary uplink to the access switch }]

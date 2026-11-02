@@ -1217,12 +1217,22 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
 /**
  * Whether the room 7f reserved still holds on `model` as the validator reads it (`validateGroupLabelBands`): the room-across-a-run record
  * holds every need it names, and a replay of the label room reserves nothing more. The overlay port trade (`nestOverlayPorts`, ticket 23)
- * runs after the last reservation and makes no trade that would need room 7f did not reserve.
+ * runs after the last reservation and makes no trade that would need room 7f did not reserve. A label room across a tier gap is the
+ * solve's, which runs after the trade (architecture-2 ticket 57): before it a shortfall there is normal, so a trade is measured against
+ * the incumbent's (`incumbent`, from `gapLabelDeficits`): it holds when no gap asks more of the solve for a label than it asked before.
  */
-export function roomHolds(model: LayoutModel): boolean {
-  const shortfalls: LinkLabelShortfall[] = [];
-  // A tier-gap room counts: the solve would pay it with height, so a move that opens one is not taken for free (ticket 57).
-  return labelPaddingFault(model) === undefined && !reserveLinkLabelRoom(clone(model), shortfalls) && !shortfalls.some(tierGapShortfall);
+export function roomHolds(model: LayoutModel, incumbent: ReadonlyMap<number, number> = new Map()): boolean {
+  if (labelPaddingFault(model) !== undefined) return false;
+  const shortfalls: LinkLabelShortfall[] = [], gapRoom: TierGapLabelRoom = { floors: new Map(), deficits: new Map() };
+  if (reserveLinkLabelRoom(clone(model), shortfalls, gapRoom)) return false;
+  return [...gapRoom.deficits].every(([tier, item]) => item.deficit <= (incumbent.get(tier) ?? 0) + PLACEMENT_EPS);
+}
+
+/** The label deficit each tier gap hands the solve on `model` (keyed by the tier above it), read with no growth: what `roomHolds` compares with. */
+export function gapLabelDeficits(model: LayoutModel): Map<number, number> {
+  const gapRoom: TierGapLabelRoom = { floors: new Map(), deficits: new Map() };
+  reserveLinkLabelRoom(clone(model), [], gapRoom);
+  return new Map([...gapRoom.deficits].map(([tier, item]) => [tier, item.deficit]));
 }
 /**
  * What is wrong with the record of the label rooms 7f gave up (`labelRoomUnsettled`, ticket 27), or `undefined`: every name is a described
@@ -1638,7 +1648,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       // The room across a tier gap is a term of the gap's height, which the one solve at the end of 7f sets (architecture-2 ticket 57):
       // the deficit is handed to it for the gap below the upper tier, and nothing moves here. The rows of a group keep the row branch below.
       const was = gapRoom?.deficits.get(upperTier);
-      if (gapRoom !== undefined && (was === undefined || deficit > was.deficit)) gapRoom.deficits.set(upperTier, { deficit, link: link.id });
+      // Equal deficits name the link with the smaller id, so the name does not depend on the link order (R3).
+      if (gapRoom !== undefined && (was === undefined || deficit > was.deficit || (deficit === was.deficit && link.id < was.link))) gapRoom.deficits.set(upperTier, { deficit, link: link.id });
       // The record names the figure that asks the growth: the label width against its gap window, or the run against its symmetric room.
       if ((windowed ?? 0) > required - room) record(link, 'tier gap window', measured.width, measured.width - windowed!);
       else record(link, 'tier gap', required, room);
@@ -1755,8 +1766,8 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
       consumeGrowthPass(budget, passes);
       continue;
     }
-    // A spent budget cannot replay a move, so the close-up is skipped here. Stage 7f closes the cantons again after the tier gaps grow
-    // (`mutation.ts`, with its own rounds), and says so there when they do not settle; a warning here would fire on a run it closes later.
+    // A spent budget cannot replay a move, so the close-up is skipped here. The 7f rounds close the cantons again
+    // (`settleRound`, with their own bound), and says so there when they do not settle; a warning here would fire on a run it closes later.
     // The titles are placed once, at the end of 7f (`placeGroupTitles`); none stands while placement moves.
     model.labels = model.labels.filter(label => label.role !== 'group');
     return;

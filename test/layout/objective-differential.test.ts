@@ -47,6 +47,12 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * `overlay-links-reorder-two-locations` place other geometry and call the judges on it. The full streams were compared with main 552ca5b2: no figures
  * get a verdict main never gave them (on `three-continents` main already gave both verdicts for the summary figures that differ, and the one side trial
  * is refused on both, 36 against 32 bends where main read 34).
+ * Two were re-recorded for architecture-2 ticket 57 (one tier-gap solve): no judge source changed but the lane reseat's, which reads no short gap
+ * now; no round grows a gap, so the judges are called fewer times and on other geometry. The full streams were compared with main acad67cd: every
+ * line the branch gives and main does not is a figure main never judged (40 `pickTarget`, 9 `windowsHold`, 5 `sheetGains` on `three-continents`;
+ * one `pickRankMove` on the other), and the side trial of `three-continents` is refused on both (37 against 32 bends; main 36 against 32).
+ * `a-chord-hint-and-a-lane-hint-never-share-a-batch` was re-recorded with them: the solve reads the centring before and after a growth (a growth
+ * that breaks an excused alignment replays it once), and each read replays the steps, so `centreGroupStep` has two calls more (18 to 20).
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

@@ -1,0 +1,31 @@
+# Expected: a held cross-frame chord spans a tier gap that the solve grows (architecture-2 ticket 57). The shape of
+# a-nested-stem-is-decided-before-its-gap-opens with one more link, `a0` to `u`, authored orthogonal: its row and the nested stems
+# of `t` and `u` ask 19 px more than the 60 px gap holds, and the solve grows the gap once, after the chords of `f0` (link-1 and
+# link-4) are frozen. Both chords stay held, one straight segment each, and no body stands on them (no `STRAIGHT_LINK_BLOCKED`).
+# Test-only input owned by architecture-2 ticket 57; test/pipeline/gap-solve-fixtures.test.ts reads it.
+portograph: 2
+groups:
+  access: { tier: 0, label: Access }
+  far: { tier: 1, label: Far }
+  near: { tier: 1, label: Near }
+  edge: { tier: 1, label: Edge }
+nodes:
+  a0: { group: access, class: switch, label: A0 }
+  a1: { group: access, class: switch, label: A1 }
+  a2: { group: access, class: switch, label: A2 }
+  a3: { group: access, class: switch, label: A3 }
+  a4: { group: access, class: switch, label: A4 }
+  a5: { group: access, class: switch, label: A5 }
+  a6: { group: access, class: switch, label: A6 }
+  f0: { group: far, class: server, label: F0 }
+  t: { group: near, class: server, label: T }
+  u: { group: edge, class: server, label: U }
+links:
+  - [a0, f0]
+  - [a1, t]
+  - [a2, t]
+  - [a3, f0]
+  - [a4, t]
+  - [a5, u]
+  - [a6, u]
+  - [a0, u, { route: orthogonal }]

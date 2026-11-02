@@ -24,7 +24,7 @@
     "centreGroupStep": "1 123fd9e157a59830"
   },
   "a-chord-hint-and-a-lane-hint-never-share-a-batch": {
-    "centreGroupStep": "18 9b0c061e0f48188b",
+    "centreGroupStep": "20 96537eeb5022f0d4",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pullTier": "10 b06612ea32ad87db"
   },
@@ -37,17 +37,16 @@
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "three-canton-groups-close-up-to-a-band-gap": {
-    "attemptCheap": "142 ebf052afc13eedd3",
-    "centreGroupStep": "1074 982b9078c787f8e5",
-    "closeUp": "11 b12da4205cd45c31",
-    "holdsSettled": "5 f1b2a82dce452f84",
+    "attemptCheap": "142 a0e441c1e4589897",
+    "centreGroupStep": "890 eb5176e7d90aead9",
+    "closeUp": "10 bfb2eab7e78eb477",
+    "holdsSettled": "4 af06a53353ac7514",
     "judgeTrial": "1 cbf69f5f691d95cd",
-    "pickRankMove": "4 a5b5aae501436369",
-    "pickTarget": "120 1210a6f6fb714edc",
-    "pullTier": "264 2154dda2089b1736",
-    "settleKeepOut": "1 c066627feb8e22b9",
-    "sheetGains": "14 3e2c1a0fcd276ca5",
-    "windowsHold": "18 848da8b910355030"
+    "pickRankMove": "4 ff0e7e5c98ed9ce5",
+    "pickTarget": "96 2f5e187d1d31af65",
+    "pullTier": "252 1d429b2f849547b7",
+    "sheetGains": "10 e7a15228f9fbb3c5",
+    "windowsHold": "13 41448175885d9227"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
     "centreGroupStep": "9 7831835520a204ed",
@@ -55,15 +54,15 @@
     "pullTier": "12 54cf982033f571d4"
   },
   "three-continents": {
-    "attemptCheap": "73 2564937cf7c7aec1",
-    "centreGroupStep": "2278 6cd1327021cf37a1",
-    "holdsSettled": "18 78d3c887a2f1e1ec",
-    "judgeTrial": "1 1606aef2f4eb400c",
-    "pickTarget": "324 b76658198ca10496",
-    "pullTier": "484 0c67d4dedea490c1",
-    "settleKeepOut": "12 de7e03b80d55e4f2",
-    "sheetGains": "52 edbb91ba518466b6",
-    "windowsHold": "86 67a203e27b3fd2ce"
+    "attemptCheap": "68 c1d6ed90784367bd",
+    "centreGroupStep": "2155 93a6adf8d26892e2",
+    "holdsSettled": "16 5f5344c4f7a7c14f",
+    "judgeTrial": "1 42dd08f8c2a37c4c",
+    "pickTarget": "306 167c2c4454e75150",
+    "pullTier": "445 5badae188fb033c5",
+    "settleKeepOut": "12 b02a552200e80000",
+    "sheetGains": "42 7923bbdd1a893e4f",
+    "windowsHold": "80 16bd888e668fdbff"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
     "centreGroupStep": "8 a0aee1f9cf73c946",

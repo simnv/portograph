@@ -9,7 +9,7 @@ import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds, gapLabelDeficits } from './bands.js';
 import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
@@ -90,7 +90,7 @@ const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|L
  * Take a settled copy as the state of `model`, which the caller still holds, when that is exactly what replaying `model` would give; otherwise
  * leave `model` alone and return false (the caller replays). The copy was taken at diagnostic count `baseDiagnostics`; `original` is its list then.
  * A replay filters the list and appends to it, so the copy's list is the authority: an entry of it that is in `original` survived, any other is new.
- * What `model` gained since the copy (`added`: the notes of the judge, the warnings of the gap growth) is where the replay would have found it:
+ * What `model` gained since the copy (`added`: the notes of the judge) is where the replay would have found it:
  * after the survivors, before the new entries. That holds when nothing of `original` was withdrawn (a withdrawn warning could have taken an added
  * one of its code with it, and a re-raised one is placed by the replay), the new entries come last, and no added entry has a code the replay reads
  * or writes. Then the result is the replay's, in its order. With nothing added the copy's list is the replay's result whatever the replay withdrew.
@@ -299,7 +299,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     attemptCounters.rounds++; entry.rounds++;
     if (!closed) { attemptCounters.openRounds++; entry.openRounds++; if (afterChords) attemptCounters.invalidations.closeUpReopened++; }
     note(`round-${round}:settle`, closed ? 'closed' : 'open');
-    // The growth and the close-up change the slope of a chord that spans a gap and the x of a column: a group with no links
+    // The close-up changes the slope of a chord that spans a gap and the x of a column: a group with no links
     // steps out of a chord again, after the replays (ticket 76 review). Cheap and idempotent.
     const linkless = moves && stepLinklessOutOfChords(draft);
     if (linkless) lastAttempt.moved = true;
@@ -369,17 +369,17 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   if (reseatLanes(draft, followedLanes)) {
     seated?.reconcile();
     rebuildLaneExtents(draft);
-    // Four things the move can spoil, and it is refused rather than allowed to. It may open an
+    // Three things the move can spoil, and it is refused rather than allowed to. It may open an
     // alignment 7c could not reach, and the centring invariant would then read the published
-    // placement as unfinished work. It also turns the run in the gap beside the corridor from a
-    // column into a row, and the height rule has already measured that gap: a gap that cannot
-    // seat the new row would owe room nothing reserves. And a corridor is an obstacle the link
+    // placement as unfinished work. (It may also turn the run in the gap beside the corridor from a
+    // column into a row: that is no refusal since architecture-2 ticket 57, as the one tier-gap solve
+    // runs after the move and seats the new row.) And a corridor is an obstacle the link
     // label reservation measures against — it decides whether a labelled row link detours and
     // where the room it needs is inserted — so a corridor that moves across one
     // of those runs leaves a label a run 7e and 7f already reserved and did not get (stress ticket
-    // 18). That third one has to be refused rather than settled again: re-reserving moves nodes,
-    // and by here the corridors are fixed. The first three are compared as sets, not as counts: a
-    // move that trades one unverified alignment, one short gap or one short run for another is not
+    // 18). That one has to be refused rather than settled again: re-reserving moves nodes,
+    // and by here the corridors are fixed. They are compared as sets, not as counts: a
+    // move that trades one unverified alignment or one short run for another is not
     // "no worse", it is a different diagram with the same tally.
     //
     // The settling below can move whole frames: where the grid widens a box beside rows that stood open, it packs them once (ticket 136), and a
@@ -427,8 +427,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // no box and no other port, and one that would need room 7f did not reserve is not made (`roomHolds`). A trade can also undo the excuse of a
   // centring the attempt declined (a replay that bent a chord no longer bends it), so the result keeps the centring findings it had or fewer, the
   // set test `chooseReseat` makes too (R2; snack-theme ticket 159).
-  const centring = new Set(centreViolations(draft));
-  nestOverlayPorts(draft, model => roomHolds(model) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
+  const centring = new Set(centreViolations(draft)), gapLabels = gapLabelDeficits(draft);
+  nestOverlayPorts(draft, model => roomHolds(model, gapLabels) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
   // The tier gaps are solved once, after the last move in x and before the titles (architecture-2 ticket 57): the stem depths are
   // recorded, every plan and every label room across a gap is read once, the gaps grow, and the claims a move in y changes are rebuilt.
   timed('solve-tier-gaps', () => solveTierGaps(draft, replayGridAndBands));
