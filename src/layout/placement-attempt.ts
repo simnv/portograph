@@ -29,17 +29,18 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
  * The passes, in order, on the draft:
  *   1. `freezeChords`, then `produceGroupLabelBands`: the last confirmation of a chord becomes a wall, then the reservation of the label bands
  *      (their height; no title is placed while placement moves).
- *   2. Up to `CANTON_ROUNDS` rounds of `settleRound` (the tier-gap growth, the link label room again, the close-up, the keep-out), `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
+ *   2. Up to `CANTON_ROUNDS` rounds of `settleRound` (the close-up, the keep-out, the link label room again), `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
  *      each move on a copy that `trialSettle` has run). The choices of the linkless step, the chord step and the lane reseat are all made by the
  *      decision loop of decide.ts, each judged by the profile `judges` names for its kind; a round that moved anything is followed by `replayRegions`, or, when the step kept
  *      a move, by taking the settled copy of the last kept move (the replay and the next round's settling are then done).
  *   3. The held-axis probe (`holdColumnAxes` on a copy), and the non-convergence warning for the cantons.
  *   4. `reseatLanes`, adopted only when its settled trial is no worse in the named respects (`chooseReseat`, decide.ts).
- *   5. `placeGroupTitles`: every group title, once, on the geometry that publishes (architecture-2 ticket 54).
- *   6. The diagnostics read once on the final geometry: blocked chords, side lanes, chords that leave a frame by a side edge.
+ *   5. `solveTierGaps`: each tier gap grows once to its plan and to the labels of its drops, y-only (architecture-2 ticket 57).
+ *   6. `placeGroupTitles`: every group title, once, on the geometry that publishes (architecture-2 ticket 54).
+ *   7. The diagnostics read once on the final geometry: blocked chords, side lanes, chords that leave a frame by a side edge.
  */
 
-/** Rounds of the tier-gap growth, the label room and the canton close-up in 7f (ranked-groups ticket 65). */
+/** Rounds of the canton close-up and the label room in 7f (ranked-groups ticket 65). */
 const CANTON_ROUNDS = 4;
 /** The move of a close-up round, in px, under which the cantons stand a band gap apart for every purpose (ranked-groups ticket 65). */
 const CANTON_CREEP = 0.5;
@@ -168,10 +169,10 @@ function giveUpRoom(model: LayoutModel, passes: number): void {
 }
 
 /**
- * The growth of the tier gaps is measured on the columns as they stand, and the close-up of the cantons (ranked-groups ticket 65)
- * moves them in x after centring widened one in place: so the growth is measured again after every move, and the rounds end when
- * the close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it.
- * One round of the growth, the close-up, the keep-out and the label room (last, `settleRoom`), on any model: the loop runs it on the draft, and the
+ * The close-up of the cantons (ranked-groups ticket 65) moves them in x after centring widened one in place, so the rounds end when the
+ * close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it. No round grows
+ * a tier gap: the one solve after the rounds does (architecture-2 ticket 57).
+ * One round of the close-up, the keep-out and the label room (last, `settleRoom`), on any model: the loop runs it on the draft, and the
  * step over a chord (ticket 77) runs it on a copy to see what a move settles into. It returns the shift of the close-ups.
  */
 export function settleRound(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void, passes = LABEL_ROOM_PASSES): number {
@@ -192,7 +193,7 @@ export function trialSettle(probe: LayoutModel): SettleReading {
   });
 }
 /** The steps of a round of `settleRound`, in order. */
-export type SettleStep = 'grow' | 'room' | 'close-up' | 'keep-out';
+export type SettleStep = 'room' | 'close-up' | 'keep-out';
 /**
  * What a round of `settleRound` found, with the steps it took in order: a copy that adopted it hands this on instead of settling again.
  * `roomSettled`: the round ended on the label room, which reserved nothing or was given up, and nothing moved after it (ticket 27); a judge
@@ -251,10 +252,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     note(`ledger:${pass}`, countStep(seen, now, entry));
     seen = now;
   };
-  // 7f reserves two things. A tier gap grows to the rows the plan must seat in it
-  // (ADR-0015 rule 1) before any label is placed, because the growth moves whole bands down and
-  // a label placed first would stay behind. The replay then rebuilds every claim the movement
-  // touched, exactly as a reservation change does anywhere else in 7f.
+  // A tier gap is no round's business (architecture-2 ticket 57): the rounds settle the cantons and the label rooms, and one solve after them
+  // grows each gap to its plan and to the labels of its drops, y-only, before any title is placed.
   // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
   abortAt?.();
   // The fan members and the other held chords a retry refused fall back before anything else is decided on their legs (architecture-2 ticket 40,
@@ -285,14 +284,13 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     if (attemptTimings.on) attemptTimings.hooks.round?.(draft);
     // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
     const afterChords = again;
-    const tapped = (step: SettleStep, changed: boolean): void => {
-      if (step === 'grow' && changed && round > 0) attemptCounters.invalidations.gapRegrown++;
+    const tapped = (step: SettleStep): void => {
       account(`round-${round}:${step}`);
     };
     let shift: number;
     if (taken !== undefined) {
       // The draft stands on the settled copy that judged the last chord move; that copy has run this round already.
-      for (const [step, changed] of taken.steps) tapped(step, changed);
+      for (const [step] of taken.steps) tapped(step);
       shift = taken.shift;
       taken = undefined;
     } else shift = settleRound(draft, tapped);

@@ -224,7 +224,7 @@ range. Known limit: the lone column of `a-canton-band-holds-the-rows-off` moves 
 0.7679, width 370 to 377.8), so none runs; an exact fixed point needs the pull and the widening solved together (ticket 68).
 
 **As built (ticket 65): the close-up.** Cantons close up to a band gap: `closeUp` (anchor step, in `holdColumnAxes` and again in 7f) and `closeRun`
-inside the plan of `pullTier` (steps with an authority), spacing by `runSpacing`, repeated after the tier-gap growth in `mutation.ts`. Two readings of
+inside the plan of `pullTier` (steps with an authority), spacing by `runSpacing`, repeated after the tier-gap growth in `mutation.ts` (as built; since architecture-2 ticket 57 the 7f rounds grow no tier gap, and the one solve at the end of 7f follows the close-ups). Two readings of
 "a straight overlay link would be bent", each where it applies (decisions-log Q102): the **close-up reads the count** (the number of straight overlay
 links after the move is not below the number before, ADR-0019's wording), because a block move swaps chords and a per-link veto lets one chord hold
 the cantons apart; **`pullTier` reads each link** (a link that was straight and is not is a refusal) for its own small moves. The anchor step keeps
@@ -259,16 +259,17 @@ with no own cell: the union of its member frames grown by 20 px, plus the label 
   **Decision: the canton band is held by the sub-tier.** The band is a `LabelBand` with no `host`.
   `syncBands` derives it from the members' box (`deriveFrames(model, false)`): as wide as that box, on the
   edge outside it (above it on the top edge, below it on the bottom edge). `deriveFrames(canton)` adds the
-  band to the canton box; `cellReach` is untouched; no cell hosts it and `frameHost` is not asked. The shift
-  loop of `reserveInitialSpace` requires the gap on the title edge to hold 20 + band + 20 and moves the lower
-  tiers by the shortfall. `topShift` is not used: it grows cell boxes, so it would put the band inside the
+  band to the canton box; `cellReach` is untouched; no cell hosts it and `frameHost` is not asked. The gap
+  on the title edge holds 20 + band + 20: stage 6 (`reseatBands`) seats it at `gapBandDemand` (architecture-2
+  ticket 57; before it, the shift loop of `reserveInitialSpace` moved the lower tiers by the shortfall in 7f). `topShift` is not used: it grows cell boxes, so it would put the band inside the
   member frames. A title wider than the canton grows the widest cell on the title edge (`growthPlan`) and the
   frame follows. The canton band is an O5 obstacle to the tier-gap row plan, anchored to the band on its
   edge, with the group-edge margin (`tier-gap-rows.md`, O5).
-  *Timing.* `produceGroupLabelBands` (`bands.ts:995`) calls `reserveInitialSpace` (`bands.ts:645`)
-  at the start of `bands`, before `growTierGaps` and the replay (`src/layout/mutation.ts:720-725`).
-  The bottom-edge push is the shift loop inside `reserveInitialSpace` (`bands.ts:689-695`), which
-  moves every lower tier band down by the grown height; it is not `pushFollowingGroups`
+  *Timing (amended by architecture-2 ticket 57).* The gap is seated in stage 6, so 7f moves no tier for a canton band.
+  `produceGroupLabelBands` calls `topUpBandClearance` at the start of `bands`, before the rounds and the solve of the
+  tier gaps (`solveTierGaps`). It reserves the heights of the other bands on the y axis only. Before ticket 57, the
+  bottom-edge push was the shift loop inside `reserveInitialSpace` (`bands.ts:689-695`), which
+  moved every lower tier band down by the grown height; it was not `pushFollowingGroups`
   (`bands.ts:599-611`, the horizontal widening plan). A canton fed from above (the NTP continents,
   whose routers reach the MPLS row) takes the bottom edge. With a tier below it, the gap must hold
   20 + 20 + about 23 px, more than the 60 px band gap, so the shift happens; on the NTP sheet only
@@ -386,7 +387,7 @@ so rule 3's feed union is exercised. Fixture 11 puts it inside.
 |---|---|---|
 | 1 | **Schema.** `canton:`; `NormalisedGroup.canton`; the eight codes of Section 1; `CONTEXT.md` terms and invariant 2. | `test/parse`: fixture 1 parses with the member's `canton`; one test per code; `NESTED_CHILD` still refuses a child of a child. |
 | 2 | **Frames and the unit.** Every member a frame; `kind: 'canton'`; `parent` on member frames; `deriveFrames` for a canton frame; transitive `frameCells` / `frameNodes`; G9 with the transitive skip; `columnTiers` untouched, the canton as the unit; the renderer and the drawio export draw the canton frame. | Fixtures 1, 2 and 11; G9 negative test (a member frame moved out on a clone fails `frame-contains`); goldens byte-identical. |
-| 3 | **Title band.** The canton band held by the sub-tier: the gap requirement (20 + band + 20) in the shift loop of `reserveInitialSpace`, `deriveFrames(canton)` adding the band, `cellReach` untouched, no host cell; no `FRAME_TITLE_UNHOSTED` for a canton. | Fixture 7; fixture 1 with the title forced to the top edge; a member's own top band and the canton's top band on one sub-tier do not collide. |
+| 3 | **Title band.** The canton band held by the sub-tier: the gap requirement (20 + band + 20), seated in stage 6 by `gapBandDemand` (ticket 57; first in the shift loop of `reserveInitialSpace`), `deriveFrames(canton)` adding the band, `cellReach` untouched, no host cell; no `FRAME_TITLE_UNHOSTED` for a canton. | Fixture 7; fixture 1 with the title forced to the top edge; a member's own top band and the canton's top band on one sub-tier do not collide. |
 | 4 | **Member-level walls** (Section 2b). Derived canton column; the new inner pass after `pullTier` and before centring; `overlayFreeGroups` for one-cell members; held-lane parity; idempotence. | Fixtures 3, 5, 6, 8 and 9, asserted after the whole layout. |
 | 5 | **Order and foreign units.** `orderFramesByOverlay` with cantons as units; the inner overlay order per canton per tier; foreign units moved before or after the run; the chord rule not extended; the tier-gap plan unchanged. | Fixtures 2 (the swap and the refusal) and 4 (from the ELK-between start); a member-to-member link across one gap keeps its planned row and takes no chord; the same gap with and without the canton has one row plan. |
 | 6 | **Converter and the NTP metric.** `--canton`, the one-pass rule, the warnings; measure the sheet. | A converter test on a synthetic drawthe.net document with two continents; fixture 10 renders with three canton frames; the NTP numbers (straight of 153, removed, canvas, Q) in the ticket's comments; the corpus differential byte-identical for every input without `canton:`. |

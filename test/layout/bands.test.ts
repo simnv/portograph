@@ -11,7 +11,8 @@ import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { laneSidesHold, lanes, transitTiers, validateLanes } from '../../src/layout/lanes.js';
 import { alignLinkedGroupGrid, bandEntryConflicts, GROUP_GRID_MAX_GROWTH, GROUP_LABEL_GEOMETRY, groupLabelObstacles, type LinkLabelShortfall, produceGroupLabelBands, resyncLabelBands, reserveLinkLabelRoom, routerEntryPoints } from '../../src/layout/bands.js';
-import { growTierGaps } from '../../src/layout/gap-room.js';
+import { solveTierGaps } from '../../src/layout/gap-room.js';
+import { replayGridAndBands } from '../../src/layout/placement-attempt.js';
 import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
@@ -627,7 +628,7 @@ it('carries the label bands where the tier gap room moved their groups, places n
   const bandY = new Map(model.labelBands.map(band => [band.group, band.bounds.y]));
   expect(model.labels.filter(label => label.role === 'group')).toEqual([]);
 
-  expect(growTierGaps(model)).toBe(true);
+  expect(solveTierGaps(model, replayGridAndBands)).toBe(true);
   rebuildRegionGeometry(model, undefined, undefined, true);
   const shifted = model.groups[orderedGroupIds(model.document)[0]!]!;
   moveGroup(model, shifted, 40, 0);

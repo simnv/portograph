@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
-import { bands, bars, bundles, centre, flanks, growTierGaps, lanes, planRoute, rows } from '../../src/internal.js';
+import { bands, bars, bundles, centre, flanks, lanes, planRoute, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { score } from '../../src/score/index.js';
@@ -79,7 +79,7 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
       'two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 'a-tier-gap-plan-orders-every-part']) {
       const model = await place(name);
       for (const { plan } of tierGapPlans(model)) expect([name, plan.growth]).toEqual([name, 0]);
-      expect([name, growTierGaps(structuredClone(model) as LayoutModel)]).toEqual([name, false]);
+      expect([name, tierGapPlans(model).every(({ plan }) => plan.growth <= 1e-6)]).toEqual([name, true]);
     }
   }, 120000);
 

@@ -2,10 +2,12 @@ import { goldenWithRemainders } from '../golden-remainders.js';
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { score } from '../../src/index.js';
-import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, linkLabels, planRoute, route, rows } from '../../src/internal.js';
+import { allocateGapRuns, bands, bars, bundles, centre, flanks, lanes, linkLabels, planRoute, route, rows } from '../../src/internal.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { ownedLanes } from '../../src/route/paths.js';
 import { produceGroupLabelBands, nudgingDistance, routedStroke, stemReach } from '../../src/layout/bands.js';
+import { solveTierGaps } from '../../src/layout/gap-room.js';
+import { replayGridAndBands } from '../../src/layout/placement-attempt.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
 import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
@@ -117,7 +119,7 @@ it('reserves the columns of a gap whose runs keep one x and leaves the golden wh
   expect(planRoute(before).obstacles.some(item => item.id.startsWith('gap:'))).toBe(false);
   // The plan seats no row, so 7f grows nothing and the approved geometry stands.
   for (const { plan } of tierGapPlans(before)) expect(plan.growth).toBe(0);
-  expect(growTierGaps(structuredClone(before) as LayoutModel)).toBe(false);
+  expect(tierGapPlans(before).every(({ plan }) => plan.growth <= 1e-6)).toBe(true);
 }, 60000);
 
 it('grows a tier gap to the rows it must seat', async () => {
@@ -146,7 +148,7 @@ it('grows a tier gap to the rows it must seat', async () => {
     if (other.plan.parts.every(part => part.shape === 'drop')) expect(other.plan.growth).toBe(0);
   }
   // The reservation is stable, so a second pass over it grows nothing.
-  expect(growTierGaps(structuredClone(model) as LayoutModel)).toBe(false);
+  expect(tierGapPlans(model).every(({ plan }) => plan.growth <= 1e-6)).toBe(true);
 
   const routed = linkLabels(await route(model, { createAttempt: createAvoidAttempt }));
   expect(Number.isFinite(score(routed).snapshot.Q)).toBe(true);
@@ -236,7 +238,7 @@ it('carries each group label band with the gap room move, and places no title in
   const groupY = new Map(Object.entries(model.groups).map(([id, group]) => [id, group.bounds!.y]));
   const bandY = new Map(model.labelBands.map(band => [band.group, band.bounds.y]));
 
-  expect(growTierGaps(model)).toBe(true);
+  expect(solveTierGaps(model, replayGridAndBands)).toBe(true);
   const shift = (id: string): number => model.groups[id]!.bounds!.y - groupY.get(id)!;
   expect(Object.keys(model.groups).filter(id => shift(id) > 1e-9).length).toBeGreaterThan(0);
   // Each band moved by exactly the shift of the group it belongs to.
@@ -260,7 +262,7 @@ it('plans a tier gap whose nested stems stand close without the 2k pocket a rout
   expect(plan.demand).toBeCloseTo(58.25, 9);
   expect(plan.height).toBe(60);
   // A second call asks for nothing more, and the router is asked for nothing at all: every gap of every link is reserved.
-  expect(growTierGaps(structuredClone(after) as LayoutModel)).toBe(false);
+  expect(tierGapPlans(after).every(({ plan }) => plan.growth <= 1e-6)).toBe(true);
   expect(planRoute(after).batches).toEqual([]);
   const routed = await route(after, { createAttempt: createAvoidAttempt });
   expect(routed.removedLinks ?? []).toEqual([]);
@@ -285,7 +287,7 @@ it('grows the gap of the band that sets the group edge to the rows of its 25 par
   expect(busy[0]!.plan.height).toBeCloseTo(236.25, 9);
   expect(busy[0]!.plan.growth).toBe(0);
   expect(busy[0]!.plan.residual).toEqual([]);
-  // The second measure is identical: no gap asks for more. (`growTierGaps` on a copy is not the test here: it replays the
+  // The second measure is identical: no gap asks for more. (A replay of the published model is not the test here: it replays the
   // published model first, and that replay is not idempotent on this fixture: it moves the x of the wide lower nodes by 42 px.)
   for (const { plan } of tierGapPlans(after)) expect(plan.growth).toBe(0);
 }, 120000);

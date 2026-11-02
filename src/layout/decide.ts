@@ -338,7 +338,10 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
   };
 }
 
-/** The tier gaps whose plan asks for more height than they have. 7f has already reserved the room every gap asks for. */
+/**
+ * The tier gaps whose plan asks for more height than they have. Before the one solve at the end of 7f a gap may ask (architecture-2 ticket 57);
+ * the ledger counts them after the rounds (`shortGapsAfterRounds`). No judge reads it: the solve after the reseat pays what a gap asks.
+ */
 export function shortGaps(model: LayoutModel): string[] {
   // A gap is short where the plan asks for more height than the gap has. A residual part is the router's and is planned no seat.
   return tierGapPlans(model).filter(({ plan }) => plan.growth > PLACEMENT_EPS).map(({ gap }) => `gap:${gap.above}:${gap.below}`);
@@ -371,16 +374,17 @@ export function chooseStep(model: LayoutModel, overlays: readonly LayoutLink[], 
  * candidate is derived once, on a copy that has the grid and the labels replayed (`settle`), and is judged there against the incumbent with its lanes
  * held. The settled copy is the state that stands when it is adopted: nothing is derived twice. Returns whether the draft took it.
  *
- * The four things the move can spoil: an alignment 7c could not reach (centring), a gap that cannot seat the new row (short gaps), a link label that
- * loses the room a run had reserved (room), and a corridor that no longer stands at the child it follows; and a body on a frozen chord. All are
- * measured on the settled model, as sets where a trade of one item for another is not "no worse".
+ * The three things the move can spoil: an alignment 7c could not reach (centring), a link label that loses the room a run had reserved (room),
+ * and a corridor that no longer stands at the child it follows; and a body on a frozen chord. All are measured on the settled model, as sets where
+ * a trade of one item for another is not "no worse". A gap that cannot seat the new row is no refusal since architecture-2 ticket 57: the
+ * one tier-gap solve runs after the reseat and grows it.
  */
 export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes'], followed: LaneFollow[], settle: (copy: LayoutModel) => void, standHeld: () => void = () => {}): boolean {
   const settled = candidateCopy(draft);
   settle(settled);
   /** The picture of a model in the order of the user: the overlay and the placed routed links, and the findings of G6 and G5 (one candidate, so one position). */
   const picture = (model: LayoutModel): Reading => ({ ...read(model, { overlays: drawnOverlays(model), routed: { straight: 'aligned' }, crossings: 'pairs' }), tie: [0] });
-  const after: Reading = { ...picture(settled), sets: { centring: new Set(centreViolations(settled)), gaps: new Set(shortGaps(settled)), room: roomFindings(settled, false),
+  const after: Reading = { ...picture(settled), sets: { centring: new Set(centreViolations(settled)), room: roomFindings(settled, false),
     crowded: crowded(settled), disordered: disordered(settled) },
     separation: lazySeparation(() => separationShortfalls(settled)),
     facts: { lanesHold: lanesHoldTheirChild(settled, followed), chordsClear: blockedChords(settled).length === 0 } };
@@ -390,7 +394,7 @@ export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes']
   // A reseat may not put a wall in a span corridor that was clear (architecture ticket 22).
   const heldBreaches = spanBreaches(draft);
   if ([...spanBreaches(settled)].some(key => !heldBreaches.has(key))) return false;
-  const held: Reading = { ...picture(draft), sets: { centring: new Set(centreViolations(draft)), gaps: new Set(shortGaps(draft)), room: roomFindings(draft, false),
+  const held: Reading = { ...picture(draft), sets: { centring: new Set(centreViolations(draft)), room: roomFindings(draft, false),
     crowded: crowded(draft), disordered: disordered(draft) },
     separation: lazySeparation(() => separationShortfalls(draft)) };
   if (!readingHolds(after, held, judges.laneReseat)) return false;

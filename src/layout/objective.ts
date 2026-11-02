@@ -84,7 +84,7 @@ export interface Reading {
   growth: { width: number; height: number };
   /** A candidate whose chords bend one that is straight at the mean (the overlay window). */
   bendsMean?: boolean;
-  /** Named finding sets that a gate compares, candidate against incumbent (the lane reseat: centring, short gaps, link label room). Absent reads as empty. */
+  /** Named finding sets that a gate compares, candidate against incumbent (the lane reseat: centring, link label room). Absent reads as empty. */
   sets?: Readonly<Record<string, ReadonlySet<string>>>;
   /** Named facts of the candidate alone that a gate asks (the lane reseat: the corridors stand at their child, no body on a frozen chord). Absent reads as false. */
   facts?: Readonly<Record<string, boolean>>;
@@ -369,7 +369,7 @@ export const widthWithin = (a: Reading, b: Reading, cap: number): boolean => a.g
  * | `fanRoundHolds` (fan-spread) | `fanRound` | | more routed straight (held chords); holds |
  * | `closeUp`, `pullTier` (by count), `settleKeepOut`, `centreGroupStep` | `keepCount` | | more overlay straight; holds |
  * | `pullTier` (by link), the held-column probe | `keepSet` | | fewer of the before-set lost; holds |
- * | the 7f decisions (`decide.ts`: chord-clear cheap and settled, the rank move, the best of the candidates, the linkless step, the lane reseat) | the `judges` table below | the hard limits (the width bound, the column rules, G6 crowded pairs, G5 disordered ports, the tier-gap parts, a body on a frozen chord; for the settled chord and rank moves and the reseat also the link label room; for the reseat also the centring, the short gaps, the corridors at their child) | `unified` |
+ * | the 7f decisions (`decide.ts`: chord-clear cheap and settled, the rank move, the best of the candidates, the linkless step, the lane reseat) | the `judges` table below | the hard limits (the width bound, the column rules, G6 crowded pairs, G5 disordered ports, the tier-gap parts, a body on a frozen chord; for the settled chord and rank moves and the reseat also the link label room; for the reseat also the centring and the corridors at their child; a tier gap the reseat leaves short is the solve's, architecture-2 ticket 57) | `unified` |
  * | the judges table | `unified` | | fewer bent over both layers, fewer turns over both, fewer crossings, tie |
  */
 const unifiedOrder = [keys.fewerBent('both'), keys.fewerTurns('both'), keys.fewerCrossings];
@@ -416,7 +416,7 @@ export const judges = {
   /** A group with no link steps out of a chord: the picture is no worse by the order, and G6 and G5 name nothing new. */
   linkless: orderProfile('linkless', unifiedOrder, [], [noNewFindings('crowded'), noNewFindings('disordered'), separationHeld], true),
   /** The lane reseat on its settled copy, against the incumbent with its lanes held. */
-  laneReseat: orderProfile('laneReseat', unifiedOrder, [], [noNewFindings('centring'), noNewFindings('gaps'), noNewFindings('room'), noNewFindings('crowded'), noNewFindings('disordered'), factHolds('lanesHold'), factHolds('chordsClear'), separationHeld], true),
+  laneReseat: orderProfile('laneReseat', unifiedOrder, [], [noNewFindings('centring'), noNewFindings('room'), noNewFindings('crowded'), noNewFindings('disordered'), factHolds('lanesHold'), factHolds('chordsClear'), separationHeld], true),
 } satisfies Record<string, Profile>;
 
 /**

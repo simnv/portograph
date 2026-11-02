@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
-import { allocateGapRuns, bands, bars, bundles, centre, flanks, growTierGaps, lanes, planRoute, restoreLayoutModel, route, rows } from '../../src/internal.js';
+import { allocateGapRuns, bands, bars, bundles, centre, flanks, lanes, planRoute, restoreLayoutModel, route, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { unfitGaps } from '../../src/layout/gap-room.js';
+import { solveTierGaps } from '../../src/layout/gap-room.js';
+import { replayGridAndBands } from '../../src/layout/placement-attempt.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { nudgingDistance, routedStroke } from '../../src/layout/bands.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
@@ -125,7 +127,7 @@ describe('shapes the placement stages do not build, on an edited placed model (t
       item.lanes = item.lanes.filter(lane => !(lane.owner.kind === 'link' && lane.owner.id === 'link-2'));
     });
     expect(residual(model).sort()).toEqual(['link-2:spans-two-gaps', 'link-2:spans-two-gaps']);
-    growTierGaps(model);
+    solveTierGaps(model, replayGridAndBands);
     const named = codes(model).filter(item => item.startsWith('TIER_GAP_PART_RESIDUAL')).map(item => item.replace(/tier \d/g, 'tier N'));
     expect(named).toEqual(Array(2).fill('TIER_GAP_PART_RESIDUAL|link-2 is left to the router in the tier gap above tier N: its part spans two tier gaps without a lane.'));
     // Stage 8 plans the edited model without throwing: the residual link has no planned part to reserve.

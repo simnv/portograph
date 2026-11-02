@@ -36,7 +36,7 @@ function narrowestGap(model: LayoutModel): number {
 describe('the gap between sibling frames, stage by stage', () => {
   // The skeleton and sides-two packings are ELK's, and rows repairs them (ticket 12); from centring on, the slack is
   // spent and every rule that moves or widens a cell owes the band gap. Ticket 15 found stage 7f's label widening
-  // (`reserveInitialSpace`, through `growthPlan`) keeping a band gap between cells and not between frames.
+  // (then `reserveInitialSpace`, through `growthPlan`; `topUpBandClearance` since ticket 57) keeping a band gap between cells and not between frames.
   it('never drops below the band gap from centring to the last stage before routing', async () => {
     const resolved = resolve(parse(fixture('sibling-frames-keep-the-band-gap')));
     sidesOne(resolved); sizeNodes(resolved);

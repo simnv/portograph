@@ -4,7 +4,8 @@ import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import { chordGapNotes, tierGapPlans } from '../../src/layout/gap-plan.js';
-import { growTierGaps } from '../../src/layout/gap-room.js';
+import { solveTierGaps } from '../../src/layout/gap-room.js';
+import { replayGridAndBands } from '../../src/layout/placement-attempt.js';
 import { intersection, samePoint } from '../../src/score/geometry.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -55,8 +56,8 @@ describe('the tier-gap plan and a held routed chord', () => {
     expect(crowded[0]!.severity).toBe('info');
     expect(crowded.some(item => item.owners?.some(owner => owner.kind === 'link' && owner.id === part.link))).toBe(true);
     // 7f reads the same plan after each move and puts the note on the model, once.
-    growTierGaps(model);
-    growTierGaps(model);
+    solveTierGaps(model, replayGridAndBands);
+    solveTierGaps(model, replayGridAndBands);
     expect(codes(model).filter(code => code === 'TIER_GAP_CHORD_CROWDED').length).toBeGreaterThan(0);
     expect(new Set(model.diagnostics.map(item => item.message)).size).toBe(model.diagnostics.length);
     // The same leg 20 px from the chord is not named.

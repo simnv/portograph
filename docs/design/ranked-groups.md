@@ -120,7 +120,7 @@ the child is foreign to the child and stays outside the child frame.
 **What cells are exempt from:** the label band (`bandFor` returns none for a cell; the frame owns
 one), ADR-0011 title placement, ADR-0012 linked-group grid (frames share the grid, cells do not),
 group padding, and the ADR-0013 obstacle. **What frames own:** the label band, whose room is
-reserved in the frame's first cell only (`reserveInitialSpace` shifts rank 0 alone); the title,
+reserved in the frame's host cell only, the rank cell on the title edge (`topUpBandClearance` reads the band from `bandHeldBy`, the host alone, and it moves no x; the other groups of that tier move their nodes down by the same shift, so the row stays level; until architecture-2 ticket 57 this was `reserveInitialSpace`); the title,
 placed by ADR-0011 from the frame's incident links; the foreign-group obstacle and the G2 / G6
 group-edge rules; the drawio export group.
 

@@ -24,8 +24,6 @@ export interface AttemptCounters {
   settledTrials: number;
   /** Cheap trials of the chord step: a move made and read before a settled copy is paid for. */
   cheapTrials: number;
-  /** Rounds of the fixed point of `growTierGaps` (each one settles a trial copy and reads the plans). */
-  gapRounds: number;
   /** Runs of the one tier-gap solve (`solveTierGaps`, architecture-2 ticket 57): one per 7f attempt body. */
   gapSolves: number;
   /** Runs of the placement stages 1 to 7e (the first, the fan re-runs, the side re-run). */
@@ -64,8 +62,6 @@ export interface AttemptEntry {
 export interface Invalidations {
   /** A round opened (the close-up moved 0.5 px or more) right after a round in which the chord step moved something. */
   closeUpReopened: number;
-  /** A tier gap grown in a round after the first. */
-  gapRegrown: number;
   /** Overlay links straight before a step of 7f (or of stages 7a to 7e, `pre`) and not after it, and the ones it made straight. */
   overlayStraightLost: number;
   overlayStraightGained: number;
@@ -90,19 +86,19 @@ export interface Invalidations {
   cantonNonConvergence: number;
 }
 
-const zeroInvalidations = (): Invalidations => ({ closeUpReopened: 0, gapRegrown: 0, overlayStraightLost: 0, overlayStraightGained: 0, routedAlignedLost: 0,
+const zeroInvalidations = (): Invalidations => ({ closeUpReopened: 0, overlayStraightLost: 0, overlayStraightGained: 0, routedAlignedLost: 0,
   preRoutedChordLost: 0, preOverlayStraightLost: 0, preOverlayStraightGained: 0, bodyOnFrozenChord: 0, heldProbeMoved: 0, shortGapsAfterRounds: 0,
   overlayWindowsKept: 0, fanReruns: 0, sideReruns: 0, cantonNonConvergence: 0 });
 
 export const attemptCounters: AttemptCounters = { settleCalls: 0, centringPasses: 0, candidateCopies: 0, validationReplays: 0, replays: 0, settledTrials: 0,
-  cheapTrials: 0, gapRounds: 0, gapSolves: 0, placeRuns: 0, placeStarts: 0, attempts: 0, rounds: 0, openRounds: 0, chordRoundsMoved: 0, reseat: { adopted: 0, refused: 0, none: 0 },
+  cheapTrials: 0, gapSolves: 0, placeRuns: 0, placeStarts: 0, attempts: 0, rounds: 0, openRounds: 0, chordRoundsMoved: 0, reseat: { adopted: 0, refused: 0, none: 0 },
   ledger: false, in7f: 0, invalidations: zeroInvalidations(), placements: [], attemptLog: [] };
 
 /** Zeroes every count. The `ledger` switch stays as the caller set it. */
 export function resetAttemptCounters(): void {
   const c = attemptCounters;
   c.settleCalls = 0; c.centringPasses = 0; c.candidateCopies = 0; c.validationReplays = 0;
-  c.replays = 0; c.settledTrials = 0; c.cheapTrials = 0; c.gapRounds = 0; c.gapSolves = 0; c.placeRuns = 0; c.placeStarts = 0;
+  c.replays = 0; c.settledTrials = 0; c.cheapTrials = 0; c.gapSolves = 0; c.placeRuns = 0; c.placeStarts = 0;
   c.attempts = 0; c.rounds = 0; c.openRounds = 0; c.chordRoundsMoved = 0;
   c.reseat = { adopted: 0, refused: 0, none: 0 }; c.in7f = 0; c.invalidations = zeroInvalidations();
   c.placements = []; c.attemptLog = [];
