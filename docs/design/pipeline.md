@@ -447,8 +447,10 @@ absolute slot number.
 beyond each (`ownTitleFloor`, `titleRoom`, `title-room.ts`, the same geometry 7f places the title with), centred on its nodes. The step is
 there because a lane stands on the box edge, its link-free margin to the title is the inset itself, and 7f refuses a title x within one
 tolerance of that margin. 7a therefore stands its lanes beside a box that already
-holds the title, and 7f only places it; a widening that 7f still asks (a title nudged off a leg) keeps the `growthPlan` refusal. A rank cell has
-no floor: its frame's title is placed in 7f.
+holds the title, and 7f only places it. The same floor holds the rank cell that hosts a frame's title (`frameHost`, on the edge
+`frameTitleSide` reads), and a canton's title holds its union through the widest cell of its title-edge sub-tier (`cantonTitleFloor`,
+`regions.ts`: the title room less the other cells of that sub-tier and the two margins). No stage widens a box for a title
+(architecture-2 ticket 54).
 
 **The bus edge is read again here** (ticket 83). Once every routed port has its final side, and before the nodes are re-sized and the rows
 repacked, `busSide` counts the legs each horizontal edge of the row carries within the bar's span (the members' bus ports, first to last, at the
@@ -1086,9 +1088,10 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 
 ### 7f — group label bands, tier gap room, group label bands again
 
-7f does four things, in this order: it places the group label bands, it grows each tier gap to the
-height its plan asks (`growTierGaps`, `gap-room.ts`), it places the group label bands again where a
-band moved, and it lets a corridor whose child 7c could not seat follow that child (§ 7a). The
+7f does five things, in this order: it reserves the group label bands, it grows each tier gap to the
+height its plan asks (`growTierGaps`, `gap-room.ts`), it carries the group label bands where a
+band moved (`resyncLabelBands`), it lets a corridor whose child 7c could not seat follow that child (§ 7a), and, last, it
+places every group title once (`placeGroupTitles`, architecture-2 ticket 54). The
 corridor move is last because every centring replay before it — 7c's own, the growth's and the label
 bands' — reads lane x as that feed's authoritative x and chases a corridor that has moved. It
 therefore reserves no room: the gap keeps the height this stage gave it, and a move whose new row
@@ -1113,36 +1116,30 @@ derived from the moved boxes, is undone whole, the boxes and anchors restored ex
 (ticket 162).
 
 **A diagonal may cross text** (ticket 162, ADR-0023). A straight, non-orthogonal segment of a held chord, a straight member or an
-overlay chord takes no room from a group title or a link label: the title planner reads no rectangle from it (`linkRects`,
-`chordCrossings`), no title strip refuses it (`titleRefusal`) or reserves room beside it (`titleFitsBeside`), no title crowds a held
-chord (`titleCrowdedChords`), the label room cuts no window of a label's line at it (`fixedLinkRuns`), and the row-path corridor
+overlay chord takes no room from a group title or a link label: the title placement reads no rectangle from it (`linkRects`,
+`chordCrossings`), the label room cuts no window of a label's line at it (`fixedLinkRuns`), and the row-path corridor
 reads no label against it. Each asks `diagonalMayCross` (`diagonal-text.ts`). A segment within 10 degrees of an axis
-(`DIAGONAL_MIN_DEGREES`) keeps every rule above. The title planner keeps no soft preference for space clear of a diagonal.
-The class is read on the geometry each reader sees, and 7f moves a held chord's ends after the freeze (the title bands, the
-gap growth, the column moves), so a chord held as a diagonal can be published within 10 degrees of an axis. The published
-geometry must satisfy the predicate: at the end of each attempt of 7f, `titleCrowdedChords` names every held chord that a
-placed group title meets within its link-free margin where `diagonalMayCross` is false, and the retry of 7f refuses it
-(`ROUTED_CHORD_REFUSED`, reason `title`, a frame chord too; a fan member as `title` in its admission, a direct member through its
-family). The chord takes the orthogonal route. A spanning chord (`spanHint`) is not refused: 7a reserved span corridors for it and no
-transit lanes. It stays, as does any chord a title still meets after `DIRECT_RETRIES` retries; `STRAIGHT_LINK_TITLE` (warning) names
-each, and G3 judges
+(`DIAGONAL_MIN_DEGREES`) keeps the rules of the label room and the corridor. Since ticket 54 no title refuses or crowds any
+chord, diagonal or not (below), so a chord that 7f turns onto an axis keeps its chord and the title yields to it
 (`a-chord-that-turns-onto-an-axis-meets-a-title`).
 The rule applies to a frame and to a one-rank row group. A canton keeps its band gap (ticket 65) and is not moved for it. From 7f on (the replays of the bundled model), a centring replay also declines a step that leaves fewer
 overlay links straight, or that puts a frame inside a band it was not in: the group stays where it stood.
 
-**A skewed leg under a title widens its group (ticket 66, Q103).** A title stands clear of the legs of the ports under it (ticket 62). Where no
-position on its edge clears them, the legs are hard obstacles like a straight feed's: the title is placed past them and the group widens by
-the title plus the clearances beside the port, on the growth path a straight feed takes, wherever `growthPlan` finds the widening lane-feasible;
-where it does not, the title keeps its old place and the links go to the router as `leg-blocked`. A skewed leg is a product of centring, so it is
-unknown before centring runs and cannot be reserved at `reserveInitialSpace` (measured: reserving room beside every one-node node with a port on the
-title edge widened 39 of 178 sheets, 1513 px in all, against 8 sheets and 242 px for the widening on demand, and added a G6 finding). The
-widening on demand needs one growth pass, and centring has spent the shared eight-pass budget on every measured sheet that has such a leg. Each title
-therefore has `LEG_PASSES_PER_TITLE` (1) extra pass outside the shared budget; a widening past it is refused and reported as
-`GROUP_LABEL_LEG_ALLOWANCE_EXHAUSTED`, not as budget exhaustion.
-A perimeter lane is a wall to this widening (`laneSidesHold`) only on the sub-tiers of its span, not on the sub-tier of its upper end's group,
-and only when it is aligned on its far port's x. An unaligned perimeter lane derives its x from the boxes on its span, so the replay moves it out
-with the widened box (`a-mesh-across-a-tier-goes-round-the-outside`: the Core title widens Core past the drop of a course whose lane stands
-beside the tier below).
+**Titles last: a group title yields to its links** (architecture-2 ticket 54, ADR-0023 amendment, user 2026-11-02). Stage 5 fixes the
+title edge (ADR-0011) and the width floor (`ownTitleFloor`); 7f reserves the band height once (`reserveInitialSpace`). No placement reader
+sees a title: no chord is refused for one, no fan or direct member is refused or crowded by one, and the gap plan, the leg clearance
+(`legClear`), the corridor (`straightCorridorClear`) and the lane corridor keep no clearance from one. No box grows and no link bends for a
+title. At the end of 7f, after the last move of a box, a lane or a port (`nestOverlayPorts`), `placeGroupTitles` places each title once,
+per band in gap order then id order (R3): the left edge nearest the centre of its holder (the host cell's box, or a canton's band) where no
+blocker meets it (`titleBlockers`: the legs of the band's ports, bus stubs and risers, lanes, reserved runs, envelopes, feed corridors,
+nodes, pills, other text and the titles placed before it); a tie goes left. With no free span the title stands at the centre (or the
+nearest x clear of text, which stays hard; with none, it stands on the text with `GROUP_TITLE_ON_TEXT`, G3 judges, and the validator
+proves that no x was clear) with the halo (`yield: 'halo'`) and records the routed links that cross it (`crossedBy`, id
+order). A slid title records `crossedBy: []`; an absent record means not placed (R1). It moves nothing and retries nothing. The validator
+reads the record (`groupTitlesFault`): one title per band, inside its band less the insets, on no text, a title with no yield meets no
+blocker, and `crossedBy` equals the links whose geometry crosses it (R5). G3 excuses a segment of a link in `crossedBy` (not a horizontal segment through the text); stage 8 lists those
+links as consumers of the title's obstacle and reservation and keeps the title an obstacle to every other link (`ROUTE_TITLE_DETOUR` names
+a routed link that turns beside a title it does not cross).
 
 **The mesh bus band** (ticket 83; `docs/design/mesh-bus.md`, section 4). A bus with a fixed side asks for a band of `BUS_STUB` (15 px) plus
 `4 px + label height + 4 px` (the label is `<class> mesh (<n> nodes)` at 9 px). Two placements reserve it.
@@ -1161,19 +1158,14 @@ of the members' cell in-frame, and the outermost edge on the bus side of every g
 included). A stub runs from its port's outward face straight to the bar. The label's room is the centre of the bar where no vertical crosses
 the band there, else the longest clear interval; a stub ends at the bar and the label stands beyond it, so a stub never blocks it.
 A stub of an across-frames bus leaves through the padding and the label band of its frame on the bus edge: `legRects` reads it as a leg of the
-band's ports, so `titleX` nudges the title clear of it and `growthPlan` widens the frame where no x clears it. Where neither holds, the title
-goes to the other edge (`titleMoves`, read by `bandSide` and `frameSide`; the bus reads ADR-0011's own edge through `rawBandSide` and
-`rawFrameSide`) and `MESH_BUS_TITLE_MOVED` (info) says so. The tier-gap plan reads an across-frames band as an O5 band (`tier-gap-rows.md`).
+band's ports, so the title slides clear of it, or takes the halo where no span is free (ticket 54; the edge flip of ticket 83 is gone). The tier-gap plan reads an across-frames band as an O5 band (`tier-gap-rows.md`).
 Bus members are neither straight nor bent: both `straightOverlays` and `stepOverChords` leave them out.
 Ticket 96 (`mesh-bus.md`, section 11.5): stage 7a, after the lanes of every routed link, fixes the riser x of a joined pair and reserves one overlay-layer riser lane in each sub-tier between the two rows (`riser:<bus>:<sub-tier>`); both bars run to the riser x; two facing bus bands in one gap are added (`cantonGapNeeds`); the tier-gap plan reads the riser as a vertical that a middle drop keeps `k` from.
 
-**A tier gap grows to the height of its plan (ADR-0021).** 7f places its group labels, then reads
-the plan of each gap, then places its group labels again. The middle step is the reservation, and it
-needs the labels in front of it: a group label is an obstacle in the tier gap beside it, so a gap
-measured before the labels can grow for rows the labels then refuse. The last step is needed
-because the growth moves whole bands down and a label placed first would stay behind;
-`produceGroupLabelBands` strips every group label and re-plans it on each call, so the third step
-costs a replay and nothing else. It runs only where the second step moved a band.
+**A tier gap grows to the height of its plan (ADR-0021).** 7f reserves its group label bands, then reads
+the plan of each gap, then carries the bands where the growth moved them (`resyncLabelBands`). No title
+stands in the gap plan: a title yields to the rows and drops (ticket 54), and is placed after them. The
+last step costs a replay and nothing else. It runs only where the second step moved a band.
 `bandGap` is one number for the whole diagram, chosen in stage 4 from the node clearance and the
 widest stroke. The height a tier gap needs is a property of that gap, and the plan (§ 7a) computes it
 from the rows of its parts, packed from the low boundary:
@@ -1233,14 +1225,12 @@ horizontal edge with fewer incident routed link ports, so a group fed from above
 at the bottom and no link routes around it; ties, including groups linked only sideways, keep the
 top (ADR-0011). A bottom band grows the group downward. Every group's nodes move down by the largest
 top-band shift of their tier, so mixed title edges and unequal clearances keep the tier's node row
-level and flanks stay level with their peers. Center the label when
-its measured box is clear. Otherwise choose the nearest free position within the horizontal
-insets, breaking equal-distance ties to the left. If none fits, retain the existing first-free
-widening rule and push row neighbours (which re-triggers 7c for groups whose parents moved,
-bounded by the same 8-pass limit). The label bbox becomes an obstacle, together with its **link-margin**: 8 px on every side that no
-link may enter. Placement keeps the label that far from every reserved link rectangle (paths, lane
-runs, shared runs, envelopes, feed corridors); stage 8 expands the label obstacle by it; G3 fails a
-routed segment closer than stroke/2 + 8 px to a group title.
+level and flanks stay level with their peers. The label is placed last (`placeGroupTitles`, above): centred when
+its measured box is clear, otherwise at the nearest free position within the horizontal
+insets, equal-distance ties to the left; with none free, centred with the halo, recording the links that cross it (`crossedBy`).
+No box grows for it. Its **link-margin** is 8 px on every side: a free position keeps that far from every reserved link rectangle (paths,
+lane runs, legs, shared runs, envelopes, feed corridors); stage 8 expands the label obstacle by it for every link not in `crossedBy`; G3
+fails a routed segment closer than stroke/2 + 8 px to a group title unless its link is in `crossedBy`.
 
 Measure group labels with the shared font table at 12 px, weight 700 and `FONT_FAMILY`. The band
 retains 4 px above and below the measured text, and the label has an 8 px horizontal inset. Convert

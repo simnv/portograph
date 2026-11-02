@@ -2,7 +2,7 @@ import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { CELL_TO_CHILD_FRAME_GAP, cellReach, deriveFrames, frameNodes } from './frames.js';
-import { GROUP_PADDING } from './regions.js';
+import { GROUP_PADDING } from './group-padding.js';
 import { selectAnchorTier } from './lanes.js';
 import { holdsMove } from './move-reservations.js';
 import { findPort } from './row-paths.js';
@@ -497,7 +497,7 @@ export function refreshHeldWarnings(model: LayoutModel): void {
  * The close-up alone, in 7f (slack 0), for every merged step that holds a canton: the anchor step by `closeUp`, a step with an
  * authority by the plan of `pullTier` (which closes its run and pulls it to its feeds). The centring replays after a push may widen a
  * canton in place, so stage 7f calls this again before it plans the labels and after the tier gaps grow. It moves groups in x and
- * nothing else: the caller replays the region producers, `syncBands` and `replanGroupLabels` after a move. Returns whether a canton moved.
+ * nothing else: the caller replays the region producers and `resyncLabelBands` after a move. Returns whether a canton moved.
  */
 export function closeCantons(model: LayoutModel): boolean {
   if (model.document.frames === undefined) return false;

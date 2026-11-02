@@ -1,9 +1,9 @@
-# Expected: a one-node group whose title stands over skewed legs (ticket 66). The group `mid` holds one router fed from two nodes of
-# `top` and leaving to two nodes of `low`; its two top ports stand 12 px apart, off the feeds they meet, so their legs are skewed, and
-# the title (as wide as the group's box less its insets) has no position on the edge that clears both. The legs are hard obstacles
-# like a straight feed's: the title stands clear of them and `mid` widens by the title plus the clearances beside the port, so the
-# tier-gap row plan holds both parts (no `leg-blocked`) and the router is asked for nothing. The two feeds are authored
-# `route: orthogonal`: since ticket 162 a diagonal may cross a title, so as chords they would cross it and leave no leg to clear.
+# Expected (architecture-2 ticket 54, titles last): a one-node group whose title stands over skewed legs. The group `mid` holds one router fed
+# from two nodes of `top` and leaving to two nodes of `low`; its two top ports stand 12 px apart, off the feeds they meet, so their legs are skewed,
+# and the title (as wide as the group's box less its insets) finds no free span on its edge. It stands at the centre with a halo and names both
+# links in `crossedBy`; `mid` does not widen for it. The tier-gap row plan holds both parts (no `leg-blocked`), and G3 excuses the two links.
+# Before ticket 54 the legs were hard obstacles to the title (ticket 66) and `mid` widened by the title plus the clearances beside the port.
+# The two feeds are authored `route: orthogonal`: since ticket 162 a diagonal may cross a title, so as chords they would leave no leg.
 # Test-only input owned by ticket 66; test/pipeline/hard-legs-under-a-title.test.ts reads it.
 portograph: 2
 groups:

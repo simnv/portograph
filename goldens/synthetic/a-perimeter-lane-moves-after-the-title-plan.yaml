@@ -1,0 +1,35 @@
+# Expected: architecture-2 tickets 49 and 54. The ticket 49 crash with the fewest nodes, reduced from the `hybrid-platform` sheet
+# by removal (each node and link left is needed) and renamed. Before ticket 54 placement planned the titles, 7f then moved boxes
+# and lanes (ticket 49: the grid widens a box with no lane replay, and a perimeter lane is read again after the last title plan),
+# and the validator planned the titles again on the moved geometry and threw: "Group labels contradict measured left-first
+# placement: label:group:access planned at x 53.89 and placed at x 79.04" (main 552ca5b2). With the titles placed once at the end
+# of 7f, after the last move, the sheet lays out and the validator reads the crossing record of each title. Test-only input owned
+# by architecture-2 ticket 54; test/pipeline/titles-last.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  core: { tier: 2, label: "3. Core fabric and routed spine" }
+  access: { tier: 3, label: "4. Access switches and workload fabric" }
+  services: { tier: 4, label: "5. Application services" }
+  storage: { tier: 5, label: "6. Storage and recovery" }
+nodes:
+  core2: { group: core, class: switch, icon: switch, label: Core-2 }
+  acc2: { group: access, class: switch, icon: switch, label: Access-B }
+  acc4: { group: access, class: switch, icon: switch, label: Access-D }
+  svc1: { group: services, class: server, icon: server, label: Svc-A }
+  svc2: { group: services, class: server, icon: server, label: Svc-B }
+  svc3: { group: services, class: server, icon: server, label: Svc-C }
+  svc4: { group: services, class: server, icon: server, label: Svc-D }
+  store: { group: storage, class: database, label: Main store }
+  memo: { group: storage, class: database, label: Memo }
+  vault: { group: storage, class: database, label: Vault }
+links:
+  - [core2, acc2]
+  - [acc4, svc4]
+  - [svc1, store]
+  - [svc2, store]
+  - [svc3, memo]
+  - [svc4, memo]
+  - [store, vault, { class: dashed }]
+  - [svc1, vault, { class: dashed }]
+  - [svc3, vault, { class: dashed }]

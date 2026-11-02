@@ -1,8 +1,9 @@
 # Expected: A member widened after the pack moves its sibling canton as a whole (canton-groups ticket 56, Section 2b rule 1).
 # The anchor tier `core` (tier 0) stands above two cantons. `west` holds `a` (tier 1, two ranks) with a zone whose title is wider
-# than the zone's one node, and `a-lab` (tier 2, one server); `east` holds `c` and its zone in the same way and `c-lab`. Stage 7f
-# widens a zone cell to hold its title, after the pack. The canton column follows the widened member, the sibling canton moves
-# right as a whole (one dx for every cell of every member on both tiers), and no member stands outside its canton. G9 is clean.
+# than the zone's one node, and `a-lab` (tier 2, one server); `east` holds `c` and its zone in the same way and `c-lab`. Since
+# architecture-2 ticket 54 stage 5 sizes a zone cell for its title, so 7f widens nothing after the pack and each canton keeps its
+# packed width; the test forges the 60 px widening on the packed model to read the rule: the sibling canton moves right as a
+# whole (one dx for every cell of every member on both tiers). No member stands outside its canton. G9 is clean.
 # Test-only input owned by canton-groups ticket 56; test/pipeline/canton-walls.test.ts reads the layout.
 portograph: 2
 groups:

@@ -46,7 +46,7 @@ function withoutLanes(model: LayoutModel, ids: ReadonlySet<string>): LayoutModel
  * baseline with the offered lanes removed and the chords accepted earlier in the pass held as pinned chords (`measureSpans` builds it): a held chord is a wall
  * at the chord clearance unless the two cross strictly, and the legs of the links that stay orthogonal are walls too (`fixedPointRefusal`, the rule 7f freezes by).
  */
-export function spanVerdict(model: LayoutModel, link: LayoutLink, undecided: ReadonlySet<string> = new Set()): { segment: PathSegment; near?: 'chord' | 'leg' | 'title' } | { reason: SpanRefusal } {
+export function spanVerdict(model: LayoutModel, link: LayoutLink, undecided: ReadonlySet<string> = new Set()): { segment: PathSegment; near?: 'chord' | 'leg' } | { reason: SpanRefusal } {
   const hinted = link.spanHint === true ? link : { ...link, spanHint: true as const };
   const verdict = chordVerdict(model, hinted);
   if (!('segment' in verdict)) return verdict;

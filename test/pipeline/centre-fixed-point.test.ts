@@ -87,7 +87,8 @@ links: [[a.p, c.q], [b.p, c.p]]`))));
   it('a round that changes nothing stops the rounds, reports the stall and keeps the budget', async () => {
     read.off = true;
     try {
-      await layout(parse(golden('three-continents')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      // Architecture-2 ticket 54: three-continents converges since titles are placed last, so the stall is read on a sheet whose centring still stalls (three calls).
+      await layout(parse(golden('a-frame-pack-stops-at-a-riser-lane')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     } finally { read.off = false; }
     const kept = calls.filter(call => call.off! > 0 && call.remaining! > 0);
     expect(kept.length).toBeGreaterThan(0);

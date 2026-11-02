@@ -17,3 +17,12 @@ Consequences: `LabelBand.side` is part of the placement projection; band bounds,
 group insets, initial space reservation and restore validation all read the side. Bottom bands grow
 the group downward without moving its nodes. Placement, publication and restore compute the side
 from the same topology, so it needs no separate persistence check.
+
+## Amendment (architecture-2 ticket 54, 2026-11-02)
+
+The edge is read on natural sides from stage 5 on (`groupTitleEdge`, `frameTitleSide`) and never changes after. The edge flip for a
+mesh-bus stub (`titleMoves`, `MESH_BUS_TITLE_MOVED`, `MESH_BUS_TITLE_ON_STUB`) is gone: a stub is one more span the title slides off,
+and with no free span the title takes the halo (ADR-0023). The title's width floor holds its host from stage 5 on (`ownTitleFloor`:
+a free group, the rank cell that hosts a frame's title; a canton's union, held by its widest cell on the title edge). The x of a title
+is chosen once, at the end of 7f (`placeGroupTitles`); no stage widens a box or bends a link for a title.
+

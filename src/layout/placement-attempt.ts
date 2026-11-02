@@ -1,8 +1,7 @@
 import type { Diagnostic, DirectMemberReason, FanFallbackReason, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
 import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
-import { refuseChords, refuseStemCrowded, titleCrowdedChords, titleCrowdedFanMembers } from './fan-admission.js';
-import { DIAGONAL_MIN_DEGREES } from './diagonal-text.js';
+import { refuseChords, refuseStemCrowded } from './fan-admission.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
 import { centreContext, centreViolations, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
@@ -10,7 +9,7 @@ import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, produceGroupLabelBands, replanGroupLabels, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds } from './bands.js';
 import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
@@ -28,14 +27,16 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
  * and comparison are those 7f has always had (ticket 02 of the architecture roadmap moved them here and changed none).
  *
  * The passes, in order, on the draft:
- *   1. `freezeChords`, then `produceGroupLabelBands`: the last confirmation of a chord becomes a wall, then the reservation of the label bands.
+ *   1. `freezeChords`, then `produceGroupLabelBands`: the last confirmation of a chord becomes a wall, then the reservation of the label bands
+ *      (their height; no title is placed while placement moves).
  *   2. Up to `CANTON_ROUNDS` rounds of `settleRound` (the tier-gap growth, the link label room again, the close-up, the keep-out), `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
  *      each move on a copy that `trialSettle` has run). The choices of the linkless step, the chord step and the lane reseat are all made by the
  *      decision loop of decide.ts, each judged by the profile `judges` names for its kind; a round that moved anything is followed by `replayRegions`, or, when the step kept
  *      a move, by taking the settled copy of the last kept move (the replay and the next round's settling are then done).
  *   3. The held-axis probe (`holdColumnAxes` on a copy), and the non-convergence warning for the cantons.
  *   4. `reseatLanes`, adopted only when its settled trial is no worse in the named respects (`chooseReseat`, decide.ts).
- *   5. The diagnostics read once on the final geometry: blocked chords, side lanes, chords that leave a frame by a side edge.
+ *   5. `placeGroupTitles`: every group title, once, on the geometry that publishes (architecture-2 ticket 54).
+ *   6. The diagnostics read once on the final geometry: blocked chords, side lanes, chords that leave a frame by a side edge.
  */
 
 /** Rounds of the tier-gap growth, the label room and the canton close-up in 7f (ranked-groups ticket 65). */
@@ -66,23 +67,23 @@ function revisionOf(model: LayoutModel): string {
   return hash.toString(16).padStart(8, '0');
 }
 
-/** The grid and the labels, settled again: the part of a replay that does not rebuild the regions. */
-export function replayGridAndLabels(model: LayoutModel): void {
+/** The grid and the label bands, settled again: the part of a replay that does not rebuild the regions. No title stands in 7f (ticket 54). */
+export function replayGridAndBands(model: LayoutModel): void {
   timed('grid-pack', () => alignLinkedGroupGridAndPack(model));
-  timed('labels', () => replanGroupLabels(model));
+  timed('bands', () => resyncLabelBands(model));
 }
 /**
- * The replay a move of groups is followed by: the regions, the grid and the labels. This is the one place that names it; `settleRound`,
+ * The replay a move of groups is followed by: the regions, the grid and the label bands. This is the one place that names it; `settleRound`,
  * the rounds below and the chord trials all call it.
  */
 export function replayRegions(model: LayoutModel): void {
   attemptCounters.replays++;
   rebuildRegionGeometry(model, undefined, undefined, true);
-  replayGridAndLabels(model);
+  replayGridAndBands(model);
 }
 
 /** The codes a replay reads from the list or writes to it: a diagnostic of one of these, added after the copy was taken, could change what the replay does. */
-const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|ROUTED_CHORD_TITLE|LINK_LABEL)/;
+const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|LINK_LABEL)/;
 
 /**
  * Take a settled copy as the state of `model`, which the caller still holds, when that is exactly what replaying `model` would give; otherwise
@@ -182,10 +183,9 @@ export function settleRound(model: LayoutModel, tap?: (step: SettleStep, changed
   if (grew && !(trial.trial !== undefined && trial.original !== undefined && adoptSettled(model, trial.trial, trial.baseDiagnostics!, trial.original))) {
     // The replay refits every group box to its content, so a linked pair the first step gave one
     // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
-    // point — which is what `validateGroupLabelBands` demands. The grid is settled here, before
-    // the labels are planned in these boxes, because it belongs to the replay and not to the
-    // third step: it grows box extents onto edges that already exist, and moves a node only to pack beside rows that stood open
-    // before it (once, then the replay; ticket 136), and a label planned in the narrower box would be centred on the box the grid then widens.
+    // point — which is what `validateGroupLabelBands` demands. The grid is settled here, as part of
+    // the replay: it grows box extents onto edges that already exist, and moves a node only to pack beside rows that stood open
+    // before it (once, then the replay; ticket 136).
     replayRegions(model);
   }
   tap?.('grow', grew);
@@ -227,55 +227,29 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
     for (let retry = 0; ; retry++) {
       attemptBody(draft, options, refused, chordRefused);
       const crowded = crowdedDirectMembers(draft).filter(id => !refused.has(id));
-      // Any other held chord that a group title placed in 7f meets on an axis is refused the same way, as `title` (ADR-0023). It was held on the
-      // geometry of 7e, where it may have been a diagonal, which no title refuses; 7f grows the gaps and moves the columns, so it can stand within
-      // `DIAGONAL_MIN_DEGREES` of an axis when it is published. The class is read again on the geometry 7f leaves, with the one predicate
-      // (`diagonalMayCross`, in `titleCrowdedChords`), and the retry draws the chord orthogonal.
-      const direct = new Set((draft.directFamilies ?? []).flatMap(family => family.members.map(member => member.link)));
-      const fanMembers = new Set((draft.fanAdmissions ?? []).map(item => item.link));
-      // A spanning chord (`spanHint`) is left out: 7a reserved span corridors for it and no transit lanes, so an orthogonal route would find no
-      // reservation (as the direct families leave it out). It stays, and the warning below names it; G3 judges.
-      const spans = new Set(draft.links.filter(link => link.spanHint === true).map(link => link.id));
-      const crowdedTitles = titleCrowdedChords(draft).filter(id => !fanMembers.has(id) && !refused.has(id) && !chordRefused.has(id));
-      const titled = crowdedTitles.filter(id => !spans.has(id)), kept = crowdedTitles.filter(id => spans.has(id));
       // A straight fan member is crowded the same way, and refused the same way (architecture-2 ticket 40): it falls back alone, as `crowds`, or
-      // as `stem` when it still passes a sibling fallback's stem. So is one that a group title placed in 7f still meets, as `title`: the title
-      // planner read the chord as a wall and found no room beside it (a title that moves aside, its frame grown, is slice 2).
+      // as `stem` when it still passes a sibling fallback's stem. No group title crowds a chord: a title yields to it (ticket 54).
       const fans = new Map<string, FanFallbackReason>();
       if (draft.fanAdmissions !== undefined) {
-        for (const id of titleCrowdedFanMembers(draft)) fans.set(id, 'title');
         for (const [id, reason] of crowdedFanMembers(draft)) fans.set(id, reason);
         for (const id of chordRefused.keys()) fans.delete(id);
       }
-      if (!crowded.length && !fans.size && !titled.length) { titleCrowdedWarning(draft, kept); break; }
+      if (!crowded.length && !fans.size) break;
       if (retry >= DIRECT_RETRIES) {
         if (crowded.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
           message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
-        // The members stay straight as frozen: an axis member that a title still meets is drawn over the title, and G3 fails (a diagonal one may
-        // cross the title, ticket 162, and is never crowded by it).
+        // The members stay straight as frozen.
         const ids = [...fans.keys()].sort(), named = ids.map(id => `${id} (${fans.get(id)})`);
         if (fans.size) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_MEMBER_CROWDED', owners: ids.map(id => ({ kind: 'link' as const, id })),
-          message: `The fan ${ids.length === 1 ? 'member' : 'members'} ${named.join(', ')} still ${ids.length === 1 ? 'meets' : 'meet'} a planned part, a sibling's stem or a group title after ${DIRECT_RETRIES} retries of 7f and ${ids.length === 1 ? 'stays' : 'stay'} straight; the gates judge.` });
-        // A held chord a title still meets on an axis stays straight too, and is named; G3 judges.
-        titleCrowdedWarning(draft, [...titled, ...kept].sort());
+          message: `The fan ${ids.length === 1 ? 'member' : 'members'} ${named.join(', ')} still ${ids.length === 1 ? 'meets' : 'meet'} a planned part or a sibling's stem after ${DIRECT_RETRIES} retries of 7f and ${ids.length === 1 ? 'stays' : 'stay'} straight; the gates judge.` });
         break;
       }
       for (const [id, reason] of fans) chordRefused.set(id, reason);
       for (const id of crowded) refused.set(id, 'crowds');
-      // A direct member is refused through its family's decision too, so the record names `title`; it falls back before the freeze either way,
-      // also when its family is not triggered again.
-      for (const id of titled) { chordRefused.set(id, 'title'); if (direct.has(id)) refused.set(id, 'title'); }
       for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
       Object.assign(draft, clone(start));
     }
   } finally { attemptCounters.in7f--; }
-}
-
-/** The warning for the held chords a group title still meets on an axis when 7f ends: a spanning chord, or any chord after the retries. */
-function titleCrowdedWarning(draft: LayoutModel, ids: readonly string[]): void {
-  if (!ids.length) return;
-  draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_TITLE', owners: ids.map(id => ({ kind: 'link' as const, id })),
-    message: `The straight ${ids.length === 1 ? 'link' : 'links'} ${ids.join(', ')} ${ids.length === 1 ? 'stands' : 'stand'} within ${DIAGONAL_MIN_DEGREES} degrees of an axis in the link-free margin of a group title when 7f ends (a spanning chord is not refused; any other after ${DIRECT_RETRIES} retries of 7f) and ${ids.length === 1 ? 'stays' : 'stay'} straight; G3 judges.` });
 }
 
 function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: ReadonlyMap<string, DirectMemberReason> = new Map(), chordRefused: ReadonlyMap<string, FanFallbackReason> = new Map()): void {
@@ -428,7 +402,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     // for the trial that follows it, and the fourth criterion reads the settled model.
     //
     // The fourth reads what the move is *for*. A corridor moves to stand at its child's port and
-    // buys that one alignment; the settling below can move a node under it — `replanGroupLabels`
+    // buys that one alignment; the settling below can move a node under it — `resyncLabelBands`
     // falls back to the full producer, which reserves room and pushes the groups after it — and a
     // corridor whose child has moved out from under it is a move that bought nothing and left a
     // jog nothing reserved. The first three cannot see that: after the fallback,
@@ -438,17 +412,16 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     // All four are measured on the **settled** model, not on the one the move leaves behind. A
     // corridor is geometry two of 7f's own plans are derived from — `laneSidesHold` decides which
     // linked pair may share an x-extent, so a corridor that leaves a group's window releases a
-    // merge the grid declined; and a lane rectangle is a forbidden range for a group label, so a
-    // corridor that moves changes where the label may stand — and both are therefore settled again
-    // against the corridors this move publishes, because `validateGroupLabelBands` re-derives both
-    // and the published model has to be their fixed point (ADR-0015: a derived plan a later stage
-    // re-derives may read only what is frozen when both readings happen). That settling is done on
-    // a trial *before* the decision, because all four criteria read what it changes:
-    // `straightCorridorClear` iterates the group boxes the grid widens and the labels the replan
-    // places, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
-    // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice.
-    // The candidate is derived once, on a copy that has the grid and the labels replayed, and judged there by `judges.laneReseat` (decide.ts, kind `lane-reseat`).
-    if (chooseReseat(draft, heldLanes, followedLanes, replayGridAndLabels, seated?.undo)) {
+    // merge the grid declined — and the grid is therefore settled again against the corridors this
+    // move publishes, because `validateGroupLabelBands` re-derives it and the published model has to
+    // be its fixed point (ADR-0015: a derived plan a later stage re-derives may read only what is
+    // frozen when both readings happen). That settling is done on a trial *before* the decision,
+    // because all four criteria read what it changes: `straightCorridorClear` iterates the group boxes
+    // the grid widens, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
+    // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice. No title
+    // stands yet: the titles are placed after this, and yield to the corridors (ticket 54).
+    // The candidate is derived once, on a copy that has the grid and the bands replayed, and judged there by `judges.laneReseat` (decide.ts, kind `lane-reseat`).
+    if (chooseReseat(draft, heldLanes, followedLanes, replayGridAndBands, seated?.undo)) {
       attemptCounters.reseat.adopted++;
       note('reseat-lanes', 'adopted');
     } else {
@@ -471,6 +444,10 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // set test `chooseReseat` makes too (R2; snack-theme ticket 159).
   const centring = new Set(centreViolations(draft));
   nestOverlayPorts(draft, model => roomHolds(model) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
+  // The group titles are placed once, on the geometry that publishes, after the last move of a box, a lane or a port (architecture-2 ticket 54,
+  // "titles last"): a title yields to every link, and nothing placed before reads it. The validator reads the record.
+  placeGroupTitles(draft);
+  note('group-titles', 'placed');
   // A pair of labels on diagonal lines whose bands first meet on the geometry that publishes is decided here, once; a pair decided
   // earlier keeps its direction (`recordLabelYields`). Stage 9 and the validator read the record.
   recordLabelYields(draft, labelBorders(draft));
@@ -485,7 +462,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   draft.diagnostics.push(...sideLaneFindings(draft));
   draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'SPAN_CHORD_BLOCKED');
   draft.diagnostics.push(...spanLaneFindings(draft));
-  // 7f may turn a held cross-frame chord shallow (a title widening pushes a column). The move is not refused, so the chord that now leaves its
+  // 7f may turn a held cross-frame chord shallow (a tier gap that grows, a column that moves). The move is not refused, so the chord that now leaves its
   // frame by a side edge, or inside the 10 px corner margin, is named (reason `edge`); the gates judge it.
   for (const id of edgeLeavers(draft)) {
     draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'STRAIGHT_LINK_EDGE',

@@ -1,7 +1,8 @@
-# Expected: a title band that stands over a port whose leg must pass through it is nudged along its edge to clear the leg (ticket 62,
-# ADR-0011's nudging distance), so the tier-gap row plan finds no `leg-blocked` part and the router is asked for nothing. The canton
-# `west` (one member `site`, three routers fed by two providers, so the band is at the bottom) stands above the plain group `edge`.
-# Three links leave the routers (`r0`, `r1`, `r2`), the last two crossing; the centred canton title covered the bottom port of `r1`.
+# Expected: a title band that stands over a port whose leg must pass through it stands clear of the leg, so the tier-gap row plan finds no
+# `leg-blocked` part and the router is asked for nothing. The canton `west` (one member `site`, three routers fed by two providers, so the band is
+# at the bottom) stands above the plain group `edge`. Three links leave the routers (`r0`, `r1`, `r2`), the last two crossing; the centred canton
+# title covered the bottom port of `r1`. Ticket 62 nudged the title before the row plan; since architecture-2 ticket 54 the title is placed last
+# and slides to the free span nearest the centre (`crossedBy: []`).
 # Test-only input owned by ticket 62; test/pipeline/title-over-a-leg.test.ts reads it.
 portograph: 2
 groups:

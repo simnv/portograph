@@ -1,6 +1,6 @@
 import type { Diagnostic, LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
-import { alignLinkedGroupGridAndPack, cantonTiers, replanGroupLabels } from './bands.js';
+import { alignLinkedGroupGridAndPack, cantonTiers, resyncLabelBands } from './bands.js';
 import { chordGapNotes, tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
 import type { TierGap } from './gap-runs.js';
 import { rebuildLaneExtents } from './lanes.js';
@@ -138,7 +138,7 @@ function settled(model: LayoutModel, extra: ReadonlyMap<number, number>): Layout
   moveBands(trial, extra);
   rebuildRegionGeometry(trial, undefined, undefined, true);
   alignLinkedGroupGridAndPack(trial);
-  replanGroupLabels(trial);
+  resyncLabelBands(trial);
   return trial;
 }
 
@@ -174,8 +174,8 @@ function grow(model: LayoutModel, grown: ReadonlyMap<number, GapGrowth>): boolea
 
 /**
  * Move every band down by the running total of the room the gaps above it gained. A group's label
- * band and its placed label sit in the group's own padding, so they travel with it: a label left
- * behind would stand in the gap the move just opened, as an obstacle nothing owns.
+ * band sits in the group's own padding, so it travels with it. No title stands yet: titles are placed
+ * at the end of 7f (architecture-2 ticket 54).
  */
 export function moveBands(model: LayoutModel, extra: ReadonlyMap<number, number>): void {
   let shift = 0;
@@ -187,16 +187,14 @@ export function moveBands(model: LayoutModel, extra: ReadonlyMap<number, number>
     for (const id of band.groups) {
       moveGroup(model, model.groups[id]!, 0, shift);
       for (const entry of model.labelBands) if ((entry.host ?? entry.group) === id) entry.bounds.y += shift;
-      for (const label of model.labels) if (label.role === 'group' && label.id === `label:group:${id}` && label.bounds) label.bounds.y += shift;
     }
   }
-  // A canton band is held by its sub-tier: it moves with the tier at the edge it stands on, and so does its title.
+  // A canton band is held by its sub-tier: it moves with the tier at the edge it stands on.
   for (const band of model.labelBands) {
     if (model.document.frames?.[band.group]?.kind !== 'canton') continue;
     const tiers = cantonTiers(model, band.group), by = shifts.get(band.side === 'top' ? tiers.first : tiers.last) ?? 0;
     if (by <= EPS) continue;
     band.bounds.y += by;
-    for (const label of model.labels) if (label.role === 'group' && label.id === `label:group:${band.group}` && label.bounds) label.bounds.y += by;
   }
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);

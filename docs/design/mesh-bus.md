@@ -5,6 +5,11 @@ ticket 93 for a mesh over two rows, Section 11). Decisions Q105, Q106 and Q107. 
 tickets 82 to 85, and 94, 96 and 97 for Section 11, under `.scratch/ranked-groups/issues/`.
 Section 12 (a trunk across three rows or more): architecture ticket 21, decided 2026-10-10.
 
+> **Amended by architecture-2 ticket 54 (2026-11-02, titles last).** A title no longer moves to the
+> other edge for a stub: `titleMoves`, `MESH_BUS_TITLE_MOVED` and `MESH_BUS_TITLE_ON_STUB` are gone. A
+> stub is one more span the title slides off at the end of 7f; with no free span the title stands at
+> the centre with a halo. The text below that mentions a title move is history. See ADR-0011.
+
 ## 1. The problem
 
 The overlay rule draws a link as one straight segment when no node body stands on it (Q64). On one

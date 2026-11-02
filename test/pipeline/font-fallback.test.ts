@@ -8,9 +8,11 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // These hashes exclude runtime and font family strings. Ticket 156 remeasures corner margins and fan rows at 9 px.
 // Architecture-2 ticket 51 re-baselined m1-sip-edge (8c7995ca... before): the document gains only `shapeAuthored` on `backbone`
 // (approved 2026-11-02); the hash without that key is the old one.
+// Architecture-2 ticket 54 re-baselined both: each group title gains only `crossedBy` (the hash without that key is the old one:
+// b19c42d7... and b20890c8...).
 const baselines = {
-  'm1-sip-edge': 'b19c42d770a14a84a28ae9da415ca7f0ff90fef8392f685d2f1bd5c7237e7f38',
-  'synthetic/drawio-constructs': 'b20890c87b6de0f2af1c627c91205e630a135f2e529940ad8d5cb64fc4a4e288',
+  'm1-sip-edge': '745d3f2f3c2e043e90912615e11ea2f616f508c2d51df838ddb60b30f5a822fd',
+  'synthetic/drawio-constructs': '0c8f01d534570b643c44f5675ea3c5d6265c447f3eda4a57fc9e57f1f7694a5a',
 };
 
 for (const [fixture, baseline] of Object.entries(baselines)) {

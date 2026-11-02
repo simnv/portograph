@@ -13,7 +13,9 @@ function rects(model: LayoutModel, bundle: Bundle, halfWidth: number): Rect[] {
   const own = new Set(bundle.nodes.map(id => model.document.nodes[id]!.group));
   for (const [id, group] of Object.entries(model.groups)) if (!own.has(id) && group.bounds && group.nodes.length) obstacles.push(inflate(group.bounds, halfWidth + GROUP_EDGE_LINK_CLEARANCE));
   for (const lane of model.lanes) obstacles.push(inflate(lane.bounds, halfWidth + 0.001));
-  for (const label of model.labels) if (label.bounds && !label.omitted && label.layer !== 'overlay') obstacles.push(inflate(label.bounds, halfWidth + 0.001));
+  // A group title is placed last and yields to the bundle (architecture-2 ticket 54): it is no obstacle, so the 7f rebuilds (no title yet) and
+  // the validator (titles placed) read the same channel.
+  for (const label of model.labels) if (label.bounds && !label.omitted && label.layer !== 'overlay' && label.role !== 'group') obstacles.push(inflate(label.bounds, halfWidth + 0.001));
   for (const link of model.links) {
     if (!link.path || link.bundle === bundle.id || link.layer !== 'routed') continue;
     for (const s of link.path.segments) obstacles.push(inflate(pathBounds([s]), halfWidth + 10 + linkStrokeWidth(link) / 2));

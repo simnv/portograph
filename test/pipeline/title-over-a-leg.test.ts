@@ -43,7 +43,9 @@ describe('a title over a port\'s leg is nudged aside (ticket 62)', () => {
     expect(at(one, 'west')).toBeCloseTo(152.6865234375, 6);
     expect(at(one, 'lab#0')).toBeCloseTo(157.7080078125, 6);
     expect(at(two, 'west')).toBeCloseTo(259.212158203125, 6);
-    // `lab#0` stood at 240.366 before ticket 66; its leg (a real one, not the phantom of B1) is a hard obstacle since, the group widens and the title stands 4.29 px further right.
-    expect(at(two, 'lab#0')).toBeCloseTo(260.3521738515625, 6);
+    // `lab#0` stood at 240.366 before ticket 66 and at 260.352 from ticket 66 to ticket 53, when its leg widened the group. Since ticket 54 (titles
+    // last) no title widens a group for a leg: the title stands at the centre of its band (221.086 + 94.922 / 2 - 24.053 / 2) and meets no link.
+    expect(at(two, 'lab#0')).toBeCloseTo(256.521240234375, 6);
+    expect(two.labels.find(label => label.id === 'label:group:lab#0')!.crossedBy).toEqual([]);
   }, 120000);
 });

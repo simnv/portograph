@@ -81,14 +81,17 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const packed = await placed(fixture(name)), model = await run(name);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     const west = frameOf(model, 'west'), east = frameOf(model, 'east');
-    // Stage 7f widened the zone cell for its title: the canton box follows the member.
-    expect(west.box.width).toBeGreaterThan(boxOf(packed, 'west').width + 10);
-    expect(east.box.width).toBeGreaterThan(boxOf(packed, 'east').width + 10);
-    // The rule that moves the sibling: on the packed model with the zone cell widened by 60 px (as 7f does for a title), `columnShifts`
+    // Architecture-2 ticket 54 (titles last): stage 5 sizes the zone cell for its title, so 7f widens nothing and each canton keeps its packed
+    // width (before, 7f widened the zone cell after the pack and the canton box followed it). The rule that moves the sibling is read below.
+    expect(west.box.width).toBeCloseTo(boxOf(packed, 'west').width, 6);
+    expect(east.box.width).toBeCloseTo(boxOf(packed, 'east').width, 6);
+    // The rule that moves the sibling: on the packed model with the zone body grown 60 px past its cell (as 7f did for a title before ticket 54), `columnShifts`
     // moves every cell of every member of `east`, on both tiers, by one dx, and no cell of `west`.
     const clone = structuredClone(await rows(await placed(fixture(name)))) as LayoutModel;
     const body = clone.nodes['a-sync']!;
-    body.bounds = { ...body.bounds!, width: body.bounds!.width + 60 };
+    // Since ticket 54 the zone cell is title-room wide at stage 5, so the forged growth first spends the slack of the cell, then 60 px more.
+    const slack = clone.groups['a-zone#1']!.bounds!.width - body.bounds!.width;
+    body.bounds = { ...body.bounds!, width: body.bounds!.width + slack + 60 };
     const shifts = columnShifts(clone, 0);
     const eastCells = ['c#0', 'c-zone#1', 'c-lab#0'], westCells = ['a#0', 'a-zone#1', 'a-lab#0'];
     expect(new Set(eastCells.map(cell => shifts.get(clone.groups[cell]!))).size).toBe(1);

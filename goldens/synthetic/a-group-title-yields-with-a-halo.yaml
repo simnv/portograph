@@ -1,0 +1,33 @@
+# Expected: architecture-2 ticket 54 (a group title yields to its links). `access` holds four switches under one parent; each switch
+# feeds two servers below, so the bottom edge has more link ports and ADR-0011 puts the title on the top edge, where the four drops from
+# `hub` enter. The title is wider than any span between two drops, so no span is free: the title stands at the centre of its band with
+# the halo, every drop stays one straight segment (0 bends), the title records the drops that cross it (`crossedBy`, `yield: halo`),
+# no box grows for it, and G3 passes. Test-only input owned by architecture-2 ticket 54; test/pipeline/titles-last.test.ts reads it.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  access: { tier: 1, label: Access switches of the north wing and the south wing }
+  servers: { tier: 2, label: Servers }
+nodes:
+  hub: { group: core, class: router, label: Hub }
+  sw1: { group: access, class: switch, label: SW-1 }
+  sw2: { group: access, class: switch, label: SW-2 }
+  sw3: { group: access, class: switch, label: SW-3 }
+  sw4: { group: access, class: switch, label: SW-4 }
+  s1: { group: servers, class: server, label: S-1 }
+  s2: { group: servers, class: server, label: S-2 }
+  s3: { group: servers, class: server, label: S-3 }
+  s4: { group: servers, class: server, label: S-4 }
+links:
+  - [hub, sw1]
+  - [hub, sw2]
+  - [hub, sw3]
+  - [hub, sw4]
+  - [sw1, s1]
+  - [sw1, s2]
+  - [sw2, s1]
+  - [sw2, s2]
+  - [sw3, s3]
+  - [sw3, s4]
+  - [sw4, s3]
+  - [sw4, s4]

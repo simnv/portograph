@@ -12,7 +12,7 @@ import { findPort } from '../row-paths.js';
  *   inside it and asks nothing of the title. Read for the title of a frame and of a canton.
  *
  * Both read frozen port topology (`naturalSide` first), so placement, publication and restore agree. A stub draws no path and
- * is not counted. Moving a title (`titleMoves`) is the caller's decision, not the reader's.
+ * is not counted.
  */
 
 type Edge = 'top' | 'bottom';

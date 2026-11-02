@@ -1,6 +1,8 @@
-# Expected: canton-groups ticket 61. The canton `west` holds `alpha`, `beta` and `gamma` on tier 1; the title of `beta` is wider than its bodies, so 7f widens
-# the cell of `beta` and pushes `gamma` by the growth. The frames are derived off the boxes and the beside row is packed again after 7f: 40 px between
-# every two member frames. Test-only input owned by canton-groups ticket 61; test/pipeline/canton-rows.test.ts reads the layout.
+# Expected: canton-groups ticket 61. The canton `west` holds `alpha`, `beta` and `gamma` on tier 1; the title of `beta` is wider than its bodies,
+# so stage 5 sizes the cell of `beta` for the title (its width floor) and `gamma` stands past it. The frames are derived off the boxes and the beside
+# row is packed again after 7f: 40 px between every two member frames. Since architecture-2 ticket 54 (titles last) 7f no longer widens the cell for
+# the title: link-2 keeps its chord, and the title of `beta` stands at the centre with a halo and names link-2 in `crossedBy`. Every link is straight.
+# Test-only input owned by canton-groups ticket 61; test/pipeline/canton-rows.test.ts reads the layout.
 portograph: 2
 groups:
   west: { label: West }

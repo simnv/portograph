@@ -2,6 +2,13 @@
 
 Ticket 98, Q108. Status: design. Tickets 99 to 104.
 
+> **Amended by architecture-2 ticket 54 (2026-11-02, titles last).** No group title refuses or crowds a
+> chord or a fan member. The title strips (`titleStrips`, `titleRefusal`, `titleFitsBeside`), the refusal
+> reason `title`, the 7f re-checks `titleCrowdedChords` and `titleCrowdedFanMembers`, and the codes
+> `ROUTED_CHORD_TITLE` and `STRAIGHT_LINK_TITLE` are gone. The title is placed last, at the end of 7f; with
+> no free span it stands at the centre with a halo and names the links that cross it (`crossedBy`), and
+> G3 excuses those links. The text below that mentions a title refusal is history. See ADR-0023.
+
 ## 1. Problem
 
 The maintainer said twice that orthogonal links must be rare: *"orthogonal links are not needed

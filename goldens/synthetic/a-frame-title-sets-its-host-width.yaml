@@ -1,0 +1,22 @@
+# Expected: architecture-2 ticket 54 (titles last, scope item 1). `site` spans two ranks, so it is a frame of the cells `site#0` (the
+# gateway) and `site#1` (the switch). Its links that cross the frame's boundary leave more ports on the bottom edge (two servers) than on
+# the top (the ISP), so ADR-0011 puts the frame title on the top edge, held by the cell `site#0`. The title is wider than that cell's
+# body and padding: stage 5 already sizes the cell to the title room (`ownTitleFloor`), so 7f widens nothing for the title and the title
+# stands inside its insets. It fills the band, so the drop from the ISP crosses it: halo, `crossedBy: [link-1]`, the drop straight. Test-only input owned by architecture-2 ticket 54; test/pipeline/titles-last.test.ts reads it.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site of the regional office with a long title }
+  zone: { parent: site, label: Zone }
+  hosts: { tier: 2, label: Hosts }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw: { group: site, class: router, label: GW }
+  sw: { group: zone, class: switch, label: SW }
+  h1: { group: hosts, class: server, label: H1 }
+  h2: { group: hosts, class: server, label: H2 }
+links:
+  - [isp, gw]
+  - [gw, sw]
+  - [sw, h1]
+  - [sw, h2]

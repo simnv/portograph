@@ -5,7 +5,7 @@ import { frameSubtreeCells, orderedNodeIds, orderedGroupIds } from '../model/mod
 import { SIDE_TIE_ORDER, portKey, tiedPortComponents } from './sides-one.js';
 import { measurePortPill } from '../text/index.js';
 import { EPS } from '../geometry/planar.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
@@ -261,7 +261,7 @@ export function gapPlan(model: LayoutModel, a: string, b: string): GapPlan | und
 
 /**
  * Nothing stage 8 must respect stands in the leg's way between its own row and the far end of its
- * travel: a foreign node with its obstacle reach, a foreign group box, a group title, a lane, a
+ * travel: a foreign node with its obstacle reach, a foreign group box, a lane, a
  * bundle's envelope or any other reserved obstacle. The pin is only worth making where the leg can
  * take it; anywhere else the checkpoint stays the minimum it always was.
  */
@@ -290,8 +290,6 @@ function legClear(model: LayoutModel, owner: string, at: number, from: number, t
       && hits(obstacleOf(node), 0))
     && !Object.entries(model.groups).some(([id, item]) => id !== group && item.bounds && item.nodes.length
       && hits(item.bounds, GROUP_EDGE_LINK_CLEARANCE + half))
-    && !model.labels.some(label => !label.omitted && label.bounds && label.layer !== 'overlay' && label.role === 'group'
-      && hits(label.bounds, GROUP_LABEL_LINK_CLEARANCE + half))
     && !model.lanes.some(lane => lane.layer !== 'overlay' && hits(lane.bounds, half))
     && !model.bundles.some(bundle => (bundle.envelopeParts ?? (bundle.envelope ? [bundle.envelope] : [])).some(part => hits(part, half)))
     && !model.obstacles.some(item => hits(item.bounds, half))

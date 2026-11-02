@@ -1,9 +1,11 @@
 # Expected: ranked-groups ticket 15, a frame gap never drops below the band gap. Three two-rank locations A, B and C
-# stand in tier 1 under one feed group, each with a zone whose title is wider than the zone's one node. Stage 7f
-# widens a zone cell to hold its title and moves the cells after it in the same sub-tier a band gap apart, but a
-# frame box is wider than its cells (the margin, and the cells of its other sub-tiers), so before the fix the
-# frames of A and C stood 48.7 px inside each other here, and 53.3 px apart (band gap 60) on the ticket 06b case
-# with short titles. The widening now moves a frame as a whole until the frame boxes are a band gap apart.
+# stand in tier 1 under one feed group, each with a zone whose title is wider than the zone's one node. Since
+# architecture-2 ticket 54 stage 5 sizes each zone cell for its title (its width floor) and 7f widens no cell for a
+# title; the frames stand a band gap apart. Before, 7f widened a zone cell to hold its title and moved the cells
+# after it, but a frame box is wider than its cells, so before ranked-groups ticket 15 the frames of A and C stood
+# 48.7 px inside each other here. With the course trial on, link-4 takes a course round the outside (its chord
+# would enter C by the side edge) and C stands under the course, 134 px after A; test/pipeline/frame-columns.test.ts
+# reads the push with no course.
 # The overlay link to `ntp1` and the two sync links between A and C put B at the left end and A beside C.
 # Test-only input owned by ranked-groups ticket 15; test/pipeline/frame-columns.test.ts reads the layout.
 portograph: 2

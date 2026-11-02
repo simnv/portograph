@@ -6929,7 +6929,8 @@
         "y": 16,
         "width": 193.44140625,
         "height": 15
-      }
+      },
+      "crossedBy": []
     },
     {
       "id": "label:group:datacenter",
@@ -6953,7 +6954,8 @@
         "y": 196.5,
         "width": 74.4375,
         "height": 15
-      }
+      },
+      "crossedBy": []
     },
     {
       "id": "label:group:tbr-left",
@@ -6977,7 +6979,8 @@
         "y": 196.5,
         "width": 58.060546875,
         "height": 15
-      }
+      },
+      "crossedBy": []
     },
     {
       "id": "label:group:tbr-right",
@@ -7001,7 +7004,8 @@
         "y": 196.5,
         "width": 58.060546875,
         "height": 15
-      }
+      },
+      "crossedBy": []
     },
     {
       "id": "label:group:route-reflector",
@@ -7025,7 +7029,8 @@
         "y": 524.25,
         "width": 150.708984375,
         "height": 15
-      }
+      },
+      "crossedBy": []
     },
     {
       "id": "label:group:backbone",
@@ -7049,7 +7054,8 @@
         "y": 895.25,
         "width": 65.4140625,
         "height": 15
-      }
+      },
+      "crossedBy": []
     },
     {
       "id": "label:legend:symbol:provider",
@@ -13290,7 +13296,8 @@
             "y": 16,
             "width": 193.44140625,
             "height": 15
-          }
+          },
+          "crossedBy": []
         },
         {
           "id": "label:group:datacenter",
@@ -13314,7 +13321,8 @@
             "y": 196.5,
             "width": 74.4375,
             "height": 15
-          }
+          },
+          "crossedBy": []
         },
         {
           "id": "label:group:tbr-left",
@@ -13338,7 +13346,8 @@
             "y": 196.5,
             "width": 58.060546875,
             "height": 15
-          }
+          },
+          "crossedBy": []
         },
         {
           "id": "label:group:tbr-right",
@@ -13362,7 +13371,8 @@
             "y": 196.5,
             "width": 58.060546875,
             "height": 15
-          }
+          },
+          "crossedBy": []
         },
         {
           "id": "label:group:route-reflector",
@@ -13386,7 +13396,8 @@
             "y": 524.25,
             "width": 150.708984375,
             "height": 15
-          }
+          },
+          "crossedBy": []
         },
         {
           "id": "label:group:backbone",
@@ -13410,7 +13421,8 @@
             "y": 895.25,
             "width": 65.4140625,
             "height": 15
-          }
+          },
+          "crossedBy": []
         }
       ]
     }

@@ -51,7 +51,7 @@ export function diagonalMayCross(segment: { from: Point; to: Point }, text: Cros
 
 /**
  * The link-free margin a text owns beyond its box: a group title keeps `GROUP_LABEL_LINK_CLEARANCE` clear of every link it may not be
- * crossed by; any other text keeps none. G3 and the 7f re-check of the held chords (`titleCrowdedChords`) read it (R1).
+ * crossed by; any other text keeps none. G3 reads it (R1).
  */
 export function linkFreeMargin(text: CrossedText): number {
   return text.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0;

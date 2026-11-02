@@ -20,9 +20,10 @@ line off text that a reader can still read when the line crosses it.
    axes; a segment nearer an axis keeps the orthogonal rules, so a shallow chord never lies along a
    label's baseline; coordinator's ruling in the ticket 162 review) and the text is a group title or a link's own label
    (`crossableText`). Every place that refused, bent, moved or counted a diagonal for such text reads
-   it (R1): the title planner (`linkRects`, `chordCrossings`), the chord checks (`titleRefusal`,
-   `titleFitsBeside`), the title re-check of the held chords (`titleCrowdedChords`), the row-path corridor
+   it (R1): the title placement (`linkRects`, `chordCrossings`), the row-path corridor
    (`straightCorridorClear`), the label room and stage 9 (`fixedLinkRuns`, `collides`) and G3.
+   (The chord checks `titleRefusal` and the re-check `titleCrowdedChords` were removed by ticket 54:
+   no title refuses any chord.)
 2. **What keeps its rules.** Orthogonal segments; node bodies, the labels inside them and port pills;
    multiplicity labels (a bundle's) and bus labels; label-vs-label and label-vs-node rules; the
    router's label obstacles (stage 8 routes only orthogonal segments).
@@ -42,22 +43,38 @@ line off text that a reader can still read when the line crosses it.
    common overlay mask keeps node bodies, pills, multiplicity labels and bus labels.
 5. **draw.io.** A plain-text label has no outline, and `textShadow` with no offset is a soft glow
    that a crossing line shows through (measured with the drawio CLI, 2026-10-31). A text in the
-   labels layer takes `labelBackgroundColor` in the colour behind it instead. A group title lies in
-   the diagram layer, under the links, so no backdrop of its own can cover a line; draw.io shows the
-   line over the title.
+   labels layer takes `labelBackgroundColor` in the colour behind it instead. A group title that no
+   link crosses lies in the diagram layer; a title with a non-empty `crossedBy` (ticket 54) is a text
+   cell on the labels layer with that backdrop, so it paints over the lines that cross it.
+
+## Amendment: a group title yields to every link (architecture-2 ticket 54, user 2026-11-02)
+
+A group title yields to any routed segment, not only a diagonal. The title is placed once, at the end of
+7f, after the last move of a box, a lane or a port (`placeGroupTitles`): it slides along its edge to the
+free span nearest the centre; where no span is free it stands at the centre across the links with its
+halo (`yield: 'halo'`) and records the routed links that cross it (`crossedBy`, in id order; `[]` for a
+title that slid clear; absent means not placed, R1). A straight vertical drop through the middle of a
+title is accepted. No placement reader sees a title: no chord is refused (`titleRefusal`), no fan or
+direct member is refused or crowded (`title`), no gap row, corridor, lane or leg keeps clear of a title,
+no box grows and no link bends for one. Text against text stays hard (pills, other titles, stage 9 link
+labels). The validator reads the record and checks it on the geometry (R5); it never places a title again.
+G3 reads the record: a segment of a link in the title's `crossedBy` is no hit, except a horizontal segment drawn
+through the text (a run along the title); any other crossing is. Where no x of the band is clear of text, the
+title stands on it with `GROUP_TITLE_ON_TEXT` (warning) and G3 judges; the validator accepts a title on text only
+where it proves that no candidate x of the band is clear of text.
+
+Stage 8 (a scope change of ticket 54's item 8, approved by the coordinator 2026-11-02): a title lists
+its `crossedBy` links as consumers of its router obstacle and its reservation (`obstacles.ts`,
+`reservations.ts`), the same rule as G3, so a planned leg through a title is not refused; the router
+reads `crossedBy` and never adds to it. For every other link the title stays a router obstacle and a
+reservation, and a routed link that turns beside a title it does not cross is named
+(`ROUTE_TITLE_DETOUR`, warning). Letting such a residual cross with the halo is a later slice.
+
+This replaces the 7f re-check of the held chords of ticket 162 (`titleCrowdedChords`, the retry reason
+`title`, `STRAIGHT_LINK_TITLE`): a chord that 7f turns onto an axis under a title keeps its chord, and the
+title yields to it.
 
 ## Consequences
-
-- The class of a held chord is decided on the geometry of 7e and published on the geometry 7f
-  leaves. 7f moves the chord's ends (the title bands, the gap growth, the column moves), so a
-  diagonal can become an axis chord under a title. The published geometry must satisfy the one
-  predicate: at the end of each attempt of 7f `titleCrowdedChords` reads it again, and the retry of
-  7f refuses every held chord that a title meets on an axis (`title`). The chord takes the
-  orthogonal route. A spanning chord is not refused (it has no transit lanes); it and any chord
-  left after `DIRECT_RETRIES` retries are named (`STRAIGHT_LINK_TITLE`), and G3 judges. Classifying with a margin
-  (hysteresis) does not replace this: a 7f move can turn a chord by more than any margin (measured
-  11.3 to 1.9 degrees on `a-chord-that-turns-onto-an-axis-meets-a-title`). Reserving the title room
-  before 7e (ticket 163) would remove the cause; this re-check is the guard.
 
 - Chords that a title refused are straight; the bends and the tier-gap growth they cost are gone.
 - Fixtures whose premise was a title that refuses a slanted leg now mark those legs

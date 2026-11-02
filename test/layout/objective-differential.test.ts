@@ -42,6 +42,11 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * `overlay-links-reorder-two-locations` feeds that a title refused are chords now, so the judges are called on other geometry.
  * The merge of tickets 159 and 162 re-recorded them together: only `centreGroupStep` differs from main. Eight fixtures take the ticket 159 digest, and
  * `overlay-links-reorder-two-locations` has the calls of both (116 on main, 126 merged).
+ * Four were re-recorded for architecture-2 ticket 54 (titles last): no judge source changed, but no title refuses a chord, pads a band or widens a
+ * cell in 7f, so `three-canton-groups-close-up-to-a-band-gap`, `a-canton-member-frame-slides-off-a-straight-chord`, `three-continents` and
+ * `overlay-links-reorder-two-locations` place other geometry and call the judges on it. The full streams were compared with main 552ca5b2: no figures
+ * get a verdict main never gave them (on `three-continents` main already gave both verdicts for the summary figures that differ, and the one side trial
+ * is refused on both, 36 against 32 bends where main read 34).
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

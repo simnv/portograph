@@ -149,6 +149,9 @@ describe('a frame of two cells steps off a straight overlay chord inside its col
   it('a node of a cell moves alone inside the cell box, and the frame stays as it is', async () => {
     const model = copy(await run(fixture(NAME)));
     const link = overlay(model), zone = model.groups['loc-zone#1']!, node = model.nodes['sw2']!;
+    // Architecture-2 ticket 54: the zone cell is its title floor wide (stage 5) and 7f no longer widens it for the title, so it keeps no slack
+    // right of `sw2`. The mechanism is read on forged slack: the cell grows 40 px to the right (the frame is read after the forge).
+    zone.bounds = { ...zone.bounds!, width: zone.bounds!.width + 40 };
     const chord = straightChord(model, link)!;
     const y = node.bounds!.y + node.bounds!.height / 2;
     const on = chord.from.x + (chord.to.x - chord.from.x) * (y - chord.from.y) / (chord.to.y - chord.from.y);

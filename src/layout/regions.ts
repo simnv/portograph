@@ -5,12 +5,15 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { rebuildBands, union } from './skeleton-geometry.js';
 import { heldBusRoom } from './bus-room.js';
 import { paddingRows, rowsInset, rowsInsetUnderTitle } from './course-rows.js';
-import { ownTitleFloor } from './title-room.js';
+import { ownTitleFloor, titleRoom } from './title-room.js';
+import { frameSubtreeCells } from '../model/model.js';
+import { isCantonFrame } from './read/canton.js';
+import { frameTitleEdge } from './read/title-edge.js';
 
 export const right = (box: Rect): number => box.x + box.width;
 export const bottom = (box: Rect): number => box.y + box.height;
-/** Group box beyond node bodies and named pills, all four sides (maintainer M1 visual review: 12 → 20). */
-export const GROUP_PADDING = 20;
+import { GROUP_PADDING } from './group-padding.js';
+export { GROUP_PADDING };
 /**
  * Label bands extend the top inset while ordinary group padding remains below and at both sides.
  * A band reserves its own clearance below itself; that reservation is at least the ordinary padding.
@@ -77,8 +80,33 @@ export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: numb
  */
 export function contentBox(model: LayoutModel, group: LayoutGroup): Rect {
   const box = union(group.nodes.map(id => model.nodes[id]!.bounds!)), inset = groupInsets(model, group);
-  const width = box.width + inset.left + inset.right, extra = Math.max(0, ownTitleFloor(model, group) - width);
+  const width = box.width + inset.left + inset.right, extra = Math.max(0, ownTitleFloor(model, group) - width, cantonTitleFloor(model, group) - width);
   return { x: box.x - inset.left - extra / 2, y: box.y - inset.top, width: width + extra, height: box.height + inset.top + inset.bottom };
+}
+/** The width of a group's nodes and insets, without a title floor. */
+function bareWidth(model: LayoutModel, group: LayoutGroup): number {
+  const inset = groupInsets(model, group);
+  return union(group.nodes.map(id => model.nodes[id]!.bounds!)).width + inset.left + inset.right;
+}
+/**
+ * The width floor a canton's title sets on its union (architecture-2 ticket 54), held by one cell: the widest cell of the canton's title-edge
+ * sub-tier (then the id), the cell a title too wide for the canton widens. The canton box holds every cell of that sub-tier and at least
+ * `GROUP_PADDING` beyond them on each side (`cellReach`, `deriveFrames`), so the floor is the title room less the other cells' bare widths
+ * and the two margins: the canton band then holds the title from stage 5 on. 0 for any other cell.
+ */
+function cantonTitleFloor(model: LayoutModel, group: LayoutGroup): number {
+  const frames = model.document.frames;
+  if (frames === undefined || group.frame === undefined || !group.nodes.length) return 0;
+  let id: string | undefined = group.frame;
+  while (id !== undefined && !isCantonFrame(model, id)) id = frames[id]?.parent;
+  const label = id === undefined ? undefined : frames[id]!.label;
+  if (id === undefined || !label) return 0;
+  const cells = frameSubtreeCells(frames, id).map(cell => model.groups[cell]!).filter(cell => cell.nodes.length && cell.tier !== undefined);
+  const tiers = cells.map(cell => cell.tier!), edge = frameTitleEdge(model, id) === 'top' ? Math.min(...tiers) : Math.max(...tiers);
+  const row = cells.filter(cell => cell.tier === edge).map(cell => ({ id: cell.id, width: bareWidth(model, cell) }))
+    .sort((a, b) => b.width - a.width || a.id.localeCompare(b.id));
+  if (row[0]?.id !== group.id) return 0;
+  return titleRoom(label) - 2 * GROUP_PADDING - row.slice(1).reduce((sum, cell) => sum + cell.width, 0);
 }
 export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
   if (!group.nodes.length) return;

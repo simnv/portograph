@@ -2,8 +2,9 @@
 # frame stands on tier 1 and links its router to both nodes of a provider row on tier 2, so two chords enter the row through its
 # top edge. A location frame on tier 3 links its router to both providers, so two more chords leave the row through its bottom
 # edge. The two edges carry the same number of routed ports and a tie keeps the title on the top edge (ADR-0011), so the two chords
-# that enter the row cross its title band. Each stays one straight segment, the title stands 8 px clear of every crossing, and
-# it stays in the gap between the two. The chords of the lower frame cross no band of the row. Every gate passes.
+# that enter the row cross its title band. Each stays one straight segment. Since architecture-2 ticket 54 the title is placed last: it finds
+# the free span between the two chords and stands there, 8 px clear of each (`crossedBy: []`). The chords of the lower frame cross no band of
+# the row. Every gate passes.
 # Test-only input owned by ranked-groups ticket 100; test/pipeline/routed-chord-title.test.ts reads the layout.
 portograph: 2
 profile: network

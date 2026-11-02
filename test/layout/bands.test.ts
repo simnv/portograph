@@ -1,6 +1,6 @@
 import { goldenWithRemainders as remaindersText } from '../golden-remainders.js';
 import { GROUP_PADDING } from '../../src/layout/regions.js';
-import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE } from '../../src/theme/geometry.js';
+import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as api from '../../src/internal.js';
@@ -10,7 +10,7 @@ import { bundles } from '../../src/layout/bundles.js';
 import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { laneSidesHold, lanes, transitTiers, validateLanes } from '../../src/layout/lanes.js';
-import { alignLinkedGroupGrid, bandEntryConflicts, GROUP_GRID_MAX_GROWTH, GROUP_LABEL_GEOMETRY, groupLabelObstacles, type LinkLabelShortfall, produceGroupLabelBands, replanGroupLabels, reserveLinkLabelRoom, routerEntryPoints } from '../../src/layout/bands.js';
+import { alignLinkedGroupGrid, bandEntryConflicts, GROUP_GRID_MAX_GROWTH, GROUP_LABEL_GEOMETRY, groupLabelObstacles, type LinkLabelShortfall, produceGroupLabelBands, resyncLabelBands, reserveLinkLabelRoom, routerEntryPoints } from '../../src/layout/bands.js';
 import { growTierGaps } from '../../src/layout/gap-room.js';
 import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
@@ -31,8 +31,6 @@ const goldenWithRemainders = remaindersText();
 const rowsOwed = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-grows-to-its-rows.yaml', import.meta.url), 'utf8');
 /** Stress ticket 13's fixture: a tier band whose rightmost group starts 1 624.76 px from its x. */
 const bandEdgeResidue = readFileSync(new URL('../../goldens/synthetic/a-band-holds-the-group-that-set-its-edge.yaml', import.meta.url), 'utf8');
-/** Stress ticket 19's fixture: the one shape whose label plan answers from the `firstFree` walk. */
-const grownLabel = readFileSync(new URL('../../goldens/synthetic/a-grown-label-lands-inside-its-inset.yaml', import.meta.url), 'utf8');
 /**
  * Stress ticket 18's fixture: a corridor would follow its child across a labelled row link's split. The claim needs the declared
  * row order, so the sheet is read with `layout: { corridorRowOrder: false }` (architecture-2 ticket 17 turns two rows by default).
@@ -188,7 +186,7 @@ describe('group label bands', () => {
     expect(bandEntryConflicts(routed)).toEqual([]);
   });
 
-  it('widens a blocked group, pushes its neighbour, and recentres the neighbour child through one replay', async () => {
+  it('keeps a blocked group at its stage-5 width and stands its title across the bundle with the halo (ticket 54)', async () => {
     const yaml = `portograph: 2
 groups:
   parents: {tier: 0}
@@ -209,28 +207,23 @@ links:
   - [blocked-node.r, sink.p, {route: orthogonal}]
   - [blocked-node.s, sink.q, {route: orthogonal}]`;
     // `blocked` feeds `sink` with as many bottom ports as it has top ports, so its title stays on top
-    // and the bundle from `parent` still enters beside that title (ADR-0011 tie rule).
+    // and the bundle from `parent` still enters beside that title (ADR-0011 tie rule). The title is wider than any span beside the
+    // bundle: stage 5 already sized the box to the title (ticket 54), and 7f neither widens it nor pushes the neighbour.
     const before = await throughBundles(yaml);
     const blockedWidth = before.groups.blocked!.bounds!.width;
     const neighbourX = before.groups.neighbour!.bounds!.x;
-    const childX = before.groups['child-group']!.bounds!.x;
     const laneIdentity = before.lanes.map(lane => [lane.id, lane.owner, lane.x, lane.bounds.width]);
-    const bundleIds = before.bundles.map(bundle => bundle.id);
     const model = run(before), label = model.labels.find(item => item.id === 'label:group:blocked')!;
 
-    expect(model.groups.blocked!.bounds!.width).toBeGreaterThan(blockedWidth);
-    expect(model.groups.neighbour!.bounds!.x).toBeGreaterThan(neighbourX);
-    expect(model.groups['child-group']!.bounds!.x).toBeGreaterThan(childX);
+    expect(blockedWidth).toBeCloseTo(titleRoom(model.document.groups.blocked!.label), 6);
+    expect(model.groups.blocked!.bounds!.width).toBeCloseTo(blockedWidth, 6);
+    expect(model.groups.neighbour!.bounds!.x).toBeCloseTo(neighbourX, 6);
     expect(model.lanes.map(lane => [lane.id, lane.owner, lane.x, lane.bounds.width])).toEqual(laneIdentity);
-    expect(model.bundles.map(bundle => bundle.id)).toEqual(bundleIds);
-    expect(model.links.filter(link => link.bundle).every(link => link.path?.segments.length)).toBe(true);
-    expect(label.bounds!.x).toBeGreaterThan(model.groups.blocked!.bounds!.x + 8);
-    const rightmostBlockingPath = Math.max(...model.links.filter(link => link.bundle)
-      .flatMap(link => link.path!.segments).filter(segment => segment.from.x === segment.to.x
-        && Math.min(segment.from.y, segment.to.y) <= label.bounds!.y
-        && Math.max(segment.from.y, segment.to.y) >= bottom(label.bounds!)).map(segment => segment.from.x));
-    expect(label.bounds!.x).toBeCloseTo(rightmostBlockingPath + 0.75 + GROUP_LABEL_LINK_CLEARANCE + 2e-6, 8);
-    expect(model.groups.blocked!.bounds!.width).toBeGreaterThan(label.bounds!.width + 16);
+    expect(label.yield).toBe('halo');
+    const bundled = new Set(model.links.filter(link => link.bundle).map(link => link.id));
+    expect(label.crossedBy!.length).toBeGreaterThan(0);
+    expect(label.crossedBy!.every(id => bundled.has(id))).toBe(true);
+    expect(label.bounds!.x).toBeGreaterThanOrEqual(model.groups.blocked!.bounds!.x + 8 - 1e-6);
     expect(right(label.bounds!)).toBeLessThanOrEqual(right(model.groups.blocked!.bounds!) - 8 + 1e-6);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   });
@@ -312,8 +305,9 @@ nodes:
   a: {group: up, ports: [{name: p, side: bottom}]}
   b: {group: low, ports: [{name: p, side: top}, {name: q, side: bottom}]}
   c: {group: lower, ports: [{name: p, side: top}]}
-links: [[a.p, b.p], [b.q, c.p]]`;
-    // The bottom link keeps `low`'s title on top (tie rule), above the wide-stroke top port.
+links: [[a.p, b.p, {route: orthogonal}], [b.q, c.p, {route: orthogonal}]]`;
+    // The bottom link keeps `low`'s title on top (tie rule), above the wide-stroke top port. Both links are authored orthogonal: as chords
+    // they would ask for no stem (a title refuses no chord since ticket 54).
     const draft = copy(await placed(yaml));
     draft.nodes.b!.strokeWidth = 44;
     rebuildBands(draft);
@@ -389,7 +383,7 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   });
 
-  it('refuses a label widening that would push a group across an immutable transit lane', async () => {
+  it('widens no group boxed in by immutable transit lanes; its title takes the halo (ticket 54)', async () => {
     const before = await throughBundles(enclosedByLanes);
     const laneIdentity = before.lanes.map(lane => [lane.id, lane.owner, lane.group, lane.side, lane.x, lane.bounds.width]);
     const midBox = { ...before.groups.mid!.bounds! }, lowWidth = before.groups.low!.bounds!.width;
@@ -410,16 +404,13 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(rightLane.bounds.x).toBe(right(mid.bounds!));
     expect([mid.bounds!.x, mid.bounds!.width]).toEqual([midBox.x, midBox.width]);
 
-    // The retained label is the ordinary left-first start. Its width was never the obstruction.
+    // No span is free: the title stands at the centre with the halo and records what crosses it (ticket 54). No box grows for it.
     const label = model.labels.find(item => item.id === 'label:group:mid')!;
-    expect(label.bounds!.x).toBe(mid.bounds!.x + 8);
+    expect(label.yield).toBe('halo');
+    expect(label.bounds!.x).toBeCloseTo(mid.bounds!.x + (mid.bounds!.width - label.bounds!.width) / 2, 9);
     expect(right(label.bounds!)).toBeLessThanOrEqual(right(mid.bounds!) - 8 + 1e-6);
     expect(groupLabelObstacles(model).some(item => overlaps(label.bounds!, item.bounds))).toBe(true);
-    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([{
-      stage: 'placement', severity: 'warning', code: 'GROUP_LABEL_GAP_INFEASIBLE',
-      message: 'Group mid has no free label gap between the reserved lanes of its tier; final gates decide the retained geometry.',
-      owners: [{ kind: 'group', id: 'mid' }],
-    }]);
+    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([]);
     // The refusal costs no centring pass: a budget-exhaustion diagnosis would be a different defect.
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(0);
 
@@ -434,7 +425,6 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(lowBox.width).toBeGreaterThanOrEqual(lowWidth);
     expect([lowBox.x, lowBox.width]).toEqual([topBox.x, topBox.width]);
     expect(lowLabel.bounds!.x).toBeCloseTo(lowBox.x + (lowBox.width - lowLabel.bounds!.width) / 2, 9);
-    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE').map(item => item.owners)).toEqual([[{ kind: 'group', id: 'mid' }]]);
 
     // The stroke-aware reservation and the mandatory shared prefix both survive the refusal.
     const band = model.labelBands.find(item => item.group === 'mid')!;
@@ -496,103 +486,22 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(model.groups.mid!.bounds!.width).toBe(mid.bounds!.width);
     expect(model.lanes.map(item => [item.id, item.owner, item.group, item.side, item.x, item.bounds.width]))
       .toEqual(before.lanes.map(item => [item.id, item.owner, item.group, item.side, item.x, item.bounds.width]));
-    expect(model.labels.find(item => item.id === 'label:group:mid')!.bounds!.x).toBe(model.groups.mid!.bounds!.x + 8);
+    const label = model.labels.find(item => item.id === 'label:group:mid')!;
+    expect(Array.isArray(label.crossedBy)).toBe(true);
+    expect(label.bounds!.x).toBeGreaterThanOrEqual(model.groups.mid!.bounds!.x + 8 - 1e-6);
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
   });
 
-  it('measures each consecutive initial reservation against the pills the previous push moved', async () => {
-    // Three tier-1 groups left of one corridor. Two of them reserve their label width in turn, and
-    // both pushes land on `third`, whose box includes its complete named pill.
-    const yaml = `portograph: 2
-groups:
-  top: {tier: 0}
-  first: {tier: 1, label: WWWWWWWW}
-  second: {tier: 1, label: WWWWWWWW}
-  third: {tier: 1}
-  low: {tier: 2}
-nodes:
-  a: {group: top, ports: [{name: p, side: bottom}]}
-  f: {group: first}
-  s: {group: second}
-  t: {group: third, ports: [{name: long-right-port, side: right}]}
-  z: {group: low, ports: [{name: p, side: top}]}
-links: [[a.p, z.p]]`;
-    // A checked rows transaction places the three groups; every later stage runs normally.
-    const rowed = withLayoutMutation(await placed(yaml), 'rows', draft => {
-      // With 20 px padding a 50 px node makes a 90 px group, so an eight-W label (108.328125 px in Verdana; it was 90.609375 px
-      // in Arial) needs a 34.328125 px widening. Groups keep the 60 px band gap, and the corridor sits where exactly one
-      // such widening fits: top and low stand at 447.5 (they stood at 413.5 for the 16.609375 px widening of Arial).
-      for (const [id, x] of Object.entries({ top: 447.5, first: 0, second: 150, third: 300, low: 447.5 })) {
-        moveGroup(draft, draft.groups[id]!, x - draft.groups[id]!.bounds!.x, 0);
-      }
-      // Sizing holds each title's width from stage 5 on (`ownTitleFloor`, snack-theme ticket 157), so a free group no longer reaches 7f
-      // narrower than its title. The stage input is forged with the 90 px boxes of the nodes and padding alone, the box a model sized
-      // before that rule carries, so the 7f producer still has two reservations to make in turn.
-      for (const id of ['first', 'second']) draft.groups[id]!.bounds!.width = 90;
-    });
-    const before = bundles(bars(centre(flanks(lanes(rowed)))));
-
-    const lane = before.lanes.find(item => item.id === 'lane:"link-1":1')!;
-    const pill = before.nodes.t!.ports[0]!.pill!;
-    expect(lane.side).toBe('right');
-    expect([pill.bounds.x, right(pill.bounds)]).toEqual([338.10009765625, 412.10009765625]);
-    // The headroom allows one 34.328125 px reservation, but not two.
-    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeGreaterThan(34.328125);
-    expect(lane.bounds.x - right(before.groups.third!.bounds!)).toBeLessThan(68.65625);
-
-    const model = run(before);
-    expect(model.groups.first!.bounds!.width).toBeGreaterThan(before.groups.first!.bounds!.width);
-    expect(model.groups.second!.bounds!.width).toBe(before.groups.second!.bounds!.width);
-    expect(right(model.nodes.t!.ports[0]!.pill!.bounds) + 1.25).toBeLessThanOrEqual(lane.bounds.x + 1e-6);
-    expect(model.lanes.map(item => [item.id, item.owner, item.group, item.side, item.x, item.bounds.width]))
-      .toEqual(before.lanes.map(item => [item.id, item.owner, item.group, item.side, item.x, item.bounds.width]));
-    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')
-      .map(item => item.owners)).toEqual([[{ kind: 'group', id: 'second' }]]);
-    expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
-  });
-
-  it('diagnoses every lane-blocked group even when the shared budget is exhausted first', async () => {
-    const pairs = [0, 1, 2, 3, 4];
-    const yaml = `portograph: 2
-groups:
-${pairs.map(i => `  parents-${i}: {tier: 0}\n  blocked-${i}: {tier: 1, label: A deliberately long reserved group label ${i} that cannot fit the initial band}`).join('\n')}
-  top-group: {tier: 2}
-  mid: {tier: 3}
-  low: {tier: 4, label: A moderately long label for the lower group}
-nodes:
-${pairs.map(i => `  parent-${i}: {group: parents-${i}, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}\n  child-${i}: {group: blocked-${i}, ports: [{name: p, side: top}, {name: q, side: top}]}`).join('\n')}
-  a: {group: top-group, ports: [{name: p, side: bottom}]}
-  m: {group: mid, ports: [{name: p, side: top}]}
-  b: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}
-  c: {group: low, ports: [{name: p, side: top}]}
-links:
-${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, child-${i}.q]`]).join('\n')}
-  - [a.p, b.p]
-  - [a.p, b.q]
-  - [a.p, c.p]
-  - [a.p, m.p]`;
-    const model = run(await throughBundles(yaml));
-
-    // The budget runs out on the five repairable pairs, but `mid` is boxed in by its tier's
-    // corridors: no budget could have repaired it, so it is still classified.
-    expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
-    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')
-      .map(item => item.owners)).toEqual([[{ kind: 'group', id: 'mid' }]]);
-    const mid = model.groups.mid!;
-    expect(model.labels.find(item => item.id === 'label:group:mid')!.bounds!.x).toBe(mid.bounds!.x + 8);
-    for (const lane of model.lanes.filter(item => item.tier === mid.tier)) {
-      expect(lane.side === 'left' ? lane.x < mid.bounds!.x : lane.x > right(mid.bounds!)).toBe(true);
-    }
-    expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
-  });
-
-  it('bounds label growth for node-free input even when centring has no anchor tier', async () => {
+  it('places the title of node-free input at its inset, with no growth, even when centring has no anchor tier', async () => {
     const model = run(await throughBundles(`portograph: 2
 groups: {empty: {tier: 0, label: A node-free group label wider than its initial group}}
 nodes: {}
 links: []`));
+    // A group with no nodes has no content box and no title floor; no stage widens it for its title (ticket 54): the title stands at the left
+    // inset and the warning names the group.
     const label = model.labels.find(item => item.role === 'group')!;
-    expect(model.groups.empty!.bounds!.width).toBeGreaterThanOrEqual(label.bounds!.width + 16);
+    expect(label.bounds!.x).toBe(model.groups.empty!.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset);
+    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE').map(item => item.owners)).toEqual([[{ kind: 'group', id: 'empty' }]]);
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(0);
   });
 
@@ -649,7 +558,7 @@ links: []`));
     draft.labelBands[0] = { clearance: band.clearance, side: band.side, layer: band.layer, bounds: { height: band.bounds.height,
       width: band.bounds.width, y: band.bounds.y, x: band.bounds.x }, owner: band.owner, group: band.group, id: band.id };
     const index = draft.labels.indexOf(label);
-    draft.labels[index] = { bounds: label.bounds!, textRotation: label.textRotation!, lines: label.lines!,
+    draft.labels[index] = { crossedBy: label.crossedBy!, bounds: label.bounds!, textRotation: label.textRotation!, lines: label.lines!,
       lineHeight: label.lineHeight!, fontWeight: label.fontWeight!, fontSize: label.fontSize!,
       fontFamily: label.fontFamily!, text: label.text, role: label.role!, layer: label.layer,
       owner: label.owner, id: label.id };
@@ -710,57 +619,34 @@ it('reserves a group label band once, however often 7f places its labels', async
   }
 }, 120000);
 
-it('plans a group label again where the tier gap room moved its band, and reserves nothing', async () => {
-  // The third step of 7f plans and does not reserve: the measurement that grew the gaps was taken
-  // against the reservation the first step made, so nothing it moved may move again. A model that
-  // owes no row never reaches the step, so this one owes four (stress ticket 05's fixture).
+it('carries the label bands where the tier gap room moved their groups, places no title, and reserves nothing', async () => {
+  // The bands of 7f follow their boxes after a move (`resyncLabelBands`); no title stands while placement moves (architecture-2 ticket 54).
+  // A model that owes no row never grows a gap, so this one owes four (stress ticket 05's fixture).
   const model = copy(await throughBundles(rowsOwed));
   produceGroupLabelBands(model);
   const bandY = new Map(model.labelBands.map(band => [band.group, band.bounds.y]));
-  const labelY = new Map(model.labels.filter(label => label.role === 'group').map(label => [label.id, label.bounds!.y]));
+  expect(model.labels.filter(label => label.role === 'group')).toEqual([]);
 
   expect(growTierGaps(model)).toBe(true);
-  // Exactly what 7f does between the two. The replay may move a group horizontally; this fixture's
-  // does not, so the move is made here as well — a carried label keeps the x of the box it left.
   rebuildRegionGeometry(model, undefined, undefined, true);
   const shifted = model.groups[orderedGroupIds(model.document)[0]!]!;
   moveGroup(model, shifted, 40, 0);
   rebuildNodeGeometry(model, shifted.nodes, 'current');
-  const carried = new Map(model.labels.filter(label => label.role === 'group').map(label => [label.id, { ...label.bounds! }]));
-  replanGroupLabels(model);
+  resyncLabelBands(model);
 
-  // At least one band really moved, or the step would be trivially satisfied.
+  // At least one band really moved, or the step would be trivially satisfied; every band stands on its group's box.
   expect(model.labelBands.some(band => Math.abs(band.bounds.y - bandY.get(band.group)!) > 1e-6)).toBe(true);
-  const labels = model.labels.filter(label => label.role === 'group');
-  expect(labels.length).toBe(model.labelBands.length);
-  expect(labels.some(label => Math.abs(label.bounds!.y - labelY.get(label.id)!) > 1e-6)).toBe(true);
-  // Every label sits its own inset inside the band the move left it in, and inside its group's box.
-  for (const label of labels) {
-    const group = label.id.slice('label:group:'.length);
-    const band = model.labelBands.find(item => item.group === group)!;
-    expect(label.bounds!.y).toBeCloseTo(band.bounds.y + GROUP_LABEL_GEOMETRY.verticalInset, 9);
-    expect(label.bounds!.x).toBeGreaterThanOrEqual(model.groups[group]!.bounds!.x + GROUP_LABEL_GEOMETRY.horizontalInset - 1e-6);
-    expect(right(label.bounds!)).toBeLessThanOrEqual(right(model.groups[group]!.bounds!) - GROUP_LABEL_GEOMETRY.horizontalInset + 1e-6);
-  }
-
-  // The label of the moved group was left behind by the move and is planned again inside its box;
-  // every other label is where it was, because the replan reserves nothing and moves nothing else.
-  const movedLabel = `label:group:${shifted.id}`;
-  expect(model.labels.find(label => label.id === movedLabel)!.bounds!.x)
-    .not.toBeCloseTo(carried.get(movedLabel)!.x, 9);
-  for (const label of labels) {
-    if (label.id === movedLabel) continue;
-    expect(label.bounds!.x).toBeCloseTo(carried.get(label.id)!.x, 9);
-  }
+  for (const band of model.labelBands) expect(band.bounds.x).toBeCloseTo(model.groups[band.host ?? band.group]!.bounds!.x, 9);
+  expect(model.labels.filter(label => label.role === 'group')).toEqual([]);
 
   // And the step is a fixed point: a second one reserves nothing and moves nothing.
   const shape = (): string => JSON.stringify([
     Object.entries(model.groups).map(([id, group]) => [id, group.bounds]),
     Object.entries(model.nodes).map(([id, node]) => [id, node.bounds, node.ports.map(port => port.anchor)]),
-    model.labelBands, model.labels.filter(label => label.role === 'group'),
+    model.labelBands,
   ]);
   const settled = shape();
-  replanGroupLabels(model);
+  resyncLabelBands(model);
   expect(shape()).toEqual(settled);
 }, 120000);
 
@@ -834,27 +720,6 @@ it('keeps the tolerance on the band comparators that the producer repair no long
   expect(validateSkeletonBands(model(box, { ...beside, x: 500 - 1e-3, width: 500 + 1e-3 }, span)))
     .toEqual(['Groups a and b overlap']);
 });
-
-it('stress ticket 19: a grown group label lands inside the inset the growth asked for', async () => {
-  // `planLabels` has two producers of a label's x: the candidate list, which steps `2 * EPS` clear
-  // of a forbidden range, and the `firstFree` walk, which stepped one. The walk is what sets the
-  // width a blocked group asks to grow to, and the candidate list is what places the label in the
-  // box that growth produced, so a group that goes down both paths asked for a box one tolerance
-  // narrower than the x it then emitted needs — and the label came to rest that far outside its own
-  // 8 px inset. Both now take `LABEL_CLEARANCE_STEP`.
-  //
-  // This fixture is the one shape that reaches the walk: the downward feed corridor of `middle`
-  // covers the whole window, so every candidate — centre, start, limit and both edges of the one
-  // merged range — is filtered and the list is empty.
-  const model = run(await throughBundles(grownLabel));
-  const group = model.groups['lower']!.bounds!;
-  const label = model.labels.find(item => item.id === 'label:group:lower')!.bounds!;
-  // The growth really happened: the box is wider than the label and its two insets.
-  expect(group.width).toBeGreaterThan(label.width + 2 * GROUP_LABEL_GEOMETRY.horizontalInset);
-  // And the label rests exactly on the inset, with no tolerance spent either way.
-  expect(right(group) - GROUP_LABEL_GEOMETRY.horizontalInset - right(label)).toBe(0);
-  expect(label.x).toBeGreaterThan(group.x + GROUP_LABEL_GEOMETRY.horizontalInset);
-}, 120000);
 
 it('stress ticket 18: a corridor that would cross a labelled row link\'s split does not move', async () => {
   // The corridor `link-16` owns across tier 2 stands at x 231, beyond `link-17`'s split. Label room wins over the lane (architecture-2

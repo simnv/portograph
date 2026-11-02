@@ -100,7 +100,10 @@ describe('frame columns', () => {
   }, 60000);
 
   it('a title-wide cell pushes the frame after it: three locations keep a band gap between frame boxes', async () => {
-    const model = await run('sibling-frames-keep-the-band-gap');
+    // Architecture-2 ticket 54: the zone cells are title-room wide at stage 5, so the flat chord hub -> c-core would enter `c` by its side edge and
+    // is refused (`edge`); the course trial then takes link-4 round the outside (one turn) and stands `c` under the course, 134 px after `a`.
+    // The claim here is the push, so the run takes no course.
+    const model = await layout(parse(fixture('sibling-frames-keep-the-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
     expectColumns(model, false);
     // Three locations in one tier: every pair is a sibling pair, and the assertion above ran on all three.
     expect(expectBandGapBetweenSiblings(model)).toBe(3);
@@ -110,11 +113,17 @@ describe('frame columns', () => {
     expect(box('c').x - right(box('a')), 'a and c stand no more than a band gap apart').toBeLessThanOrEqual(bandGap(model) + 1e-6);
   }, 60000);
 
-  it('a widening that a lane forbids is refused: the title keeps its box and the layout reports it', async () => {
+  it('a frame title wider than its host is held by the stage-5 width, so 7f widens nothing and reports nothing (architecture-2 ticket 54)', async () => {
+    // Before ticket 54, 7f widened the host for the title, a lane forbade it, and the layout reported GROUP_LABEL_GAP_INFEASIBLE.
     const yaml = fixture('an-own-frame-lane-stands-beside-a-neighbour-frame').replace('label: East }', 'label: East frame with a long title }');
     const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
     expect(model.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([]);
-    expect(model.diagnostics.map(diagnostic => diagnostic.code)).toContain('GROUP_LABEL_GAP_INFEASIBLE');
+    expect(model.diagnostics.map(diagnostic => diagnostic.code)).not.toContain('GROUP_LABEL_GAP_INFEASIBLE');
+    const title = model.labels.find(label => label.role === 'group' && label.text === 'East frame with a long title')!;
+    const frame = model.frames!.find(item => item.id === 'east')!.box;
+    expect(title.bounds!.x).toBeGreaterThanOrEqual(frame.x - 1e-6);
+    expect(right(title.bounds!)).toBeLessThanOrEqual(right(frame) + 1e-6);
+    expect(title.crossedBy).toEqual([]);
   }, 60000);
 
   // The linked-group grid (ADR-0012) widens a cell to the extent it shares with the group it is linked to. It

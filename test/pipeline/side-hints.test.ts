@@ -278,11 +278,14 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // (d5044bd379b1900d, 87acdee7504bf90c, b77586f1d9edb49d). The bundle fixture (`shape: grid`) and the bar fixture (`shape: bar`) gain only
   // `shapeAuthored` in the document; `a-linked-node-steps-out-of-a-straight-chord` gains only the record that its `hosts` row stays a row
   // (`aspect`: the sheet is taller than wide).
+  // Architecture-2 ticket 54 (titles last) re-baselined all four, with geometry unchanged: each placed group title gains only `crossedBy: []`
+  // (it slid clear of every link); a layout-JSON diff against main 552ca5b2 shows no other key. The hashes were cb737393884981b3,
+  // 6b813734f4667a13, 2cb9f082ee2bcec1 and b2ef2a0daab9b5b5.
   const main: Record<string, string> = {
-    'a-group-holds-both-ends-of-a-bundle': 'cb737393884981b3',
-    'a-bus-in-a-rank-gap-grows-the-gap': '6b813734f4667a13',
-    'a-linked-node-steps-out-of-a-straight-chord': '2cb9f082ee2bcec1',
-    'a-bar-end-keeps-its-corridor': 'b2ef2a0daab9b5b5',
+    'a-group-holds-both-ends-of-a-bundle': 'd3e780f62bdcd73f',
+    'a-bus-in-a-rank-gap-grows-the-gap': '4d110ee3c79e3a03',
+    'a-linked-node-steps-out-of-a-straight-chord': 'ec6ec0f9d56c0a2a',
+    'a-bar-end-keeps-its-corridor': '1ca0cc4576f1f62b',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {
     const { model } = await run(fixture(name));

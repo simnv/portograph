@@ -3,15 +3,13 @@ import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
 import { crosses, sharedBlockers, straightChord } from './overlay-paths.js';
 import { groupShape } from './grid.js';
-import { bandSide, frameSide, GROUP_LABEL_GEOMETRY, legRectsFor, nudgingDistance, portStemReach } from './bands.js';
-import { frameSubtreeCells } from '../model/model.js';
+import { GROUP_LABEL_GEOMETRY, nudgingDistance, portStemReach } from './bands.js';
 import type { Point } from '../model/geometry.js';
 import { stopsOf } from './gap-runs.js';
 import { portId } from './skeleton-graph.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, straightLengthLimit, type CorridorOptions } from './row-paths.js';
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
-import { measureText } from '../text/index.js';
 import { EPS, intersection, samePoint, segmentDistance, segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import type { Rect } from '../model/geometry.js';
@@ -20,7 +18,6 @@ import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { deriveFrames } from './frames.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { transitTiers } from './read/tier.js';
-import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 
 /**
  * The **straight** technique of a routed link inside one frame (ticket 34).
@@ -56,12 +53,6 @@ export function fanFamilyOf(model: LayoutModel, link: LayoutLink): FanFamily | u
 /** Whether two links are members of one fan family: the fallback legs of one are crossed by the chord of the other, and their crossings are faint. */
 export function fanSiblings(a: LayoutLink, b: LayoutLink): boolean {
   return a.fanFamily !== undefined && a.fanFamily === b.fanFamily;
-}
-/** The far end of a fan member: the end that is not its hub. */
-function fanFarEnd(model: LayoutModel, link: LayoutLink): 'from' | 'to' | undefined {
-  const member = fanFamilyOf(model, link)?.members.find(item => item.link === link.id);
-  if (member === undefined || !link.attachments) return undefined;
-  return link.attachments.from.node === member.hub ? 'to' : 'from';
 }
 
 /** What a routed chord joins: two ends in one frame (`frame`), or in two frames on consecutive document tiers (`cross`, Q108). */
@@ -231,75 +222,6 @@ export function isRoutedChord(model: LayoutModel, link: LayoutLink): boolean {
 }
 
 /**
- * The title sides of one link array. A title stands on the edge with fewer routed ports on links that
- * cross its group's boundary (ADR-0011), which the port sides stage 6 froze already decide; stage 7g
- * only places the label on that edge. Cached on the link array like the peer index of `sides-two`:
- * every checked transaction clones the array, and the answer reads it alone.
- */
-const sidesCache = new WeakMap<LayoutModel['links'], Map<string, 'top' | 'bottom' | undefined>>();
-function titleSides(model: LayoutModel): Map<string, 'top' | 'bottom' | undefined> {
-  const cached = sidesCache.get(model.links);
-  if (cached) return cached;
-  const sides = new Map<string, 'top' | 'bottom' | undefined>();
-  for (const id of Object.keys(model.document.frames ?? {})) sides.set(id, frameSide(model, id));
-  for (const [id, group] of Object.entries(model.groups)) if (group.frame === undefined) sides.set(id, bandSide(model, group));
-  sidesCache.set(model.links, sides);
-  return sides;
-}
-
-/**
- * The strips the titles stand in: the edge each titled group or frame keeps its label on, as tall as
- * the title's band, grown by the link-free margin. The label's x is chosen in 7g, after this rule pins
- * its chord, so the whole strip is held: a chord that crossed it would meet a title that no later stage
- * could move out of the way in a frame as narrow as its own label, and stage 9 would discover what
- * placement could have reserved. Such a link keeps the orthogonal route, which the title planner already
- * detours.
- */
-/** One title strip: the rectangle `titleStrips` holds, the owner of the title, its edge, and the nodes whose ports on that edge draw a leg through it. */
-export interface TitleStrip { id: string; side: 'top' | 'bottom'; label: string; rect: Rect; members: ReadonlySet<string> }
-
-function titleStrips(model: LayoutModel): TitleStrip[] {
-  const strips: TitleStrip[] = [], sides = titleSides(model);
-  const add = (id: string, label: string | undefined, side: 'top' | 'bottom' | undefined, box: Rect, members: readonly string[]): void => {
-    if (!label || side === undefined) return;
-    const height = measureText(label, { fontSize: 12, weight: 700 }).height + 8 + 2 * GROUP_LABEL_LINK_CLEARANCE;
-    strips.push({ id, side, label, members: new Set(members),
-      rect: { x: box.x, y: side === 'top' ? box.y - GROUP_LABEL_LINK_CLEARANCE : box.y + box.height - height + GROUP_LABEL_LINK_CLEARANCE, width: box.width, height } });
-  };
-  for (const [id, frame] of Object.entries(model.document.frames ?? {})) {
-    const cells = frame.cells.map(cell => model.groups[cell]).filter(group => group?.bounds !== undefined)
-      .sort((a, b) => a!.tier! - b!.tier!);
-    const side = sides.get(id);
-    if (cells.length) {
-      const host = side === 'bottom' ? cells.at(-1)! : cells[0]!;
-      add(id, frame.label, side, host.bounds!, host.nodes);
-    }
-  }
-  for (const [id, group] of Object.entries(model.groups)) {
-    if (group.frame === undefined && group.bounds && group.nodes.length) add(id, model.document.groups[id]?.label, sides.get(id), group.bounds, group.nodes);
-  }
-  // A canton holds its title in a band of its sub-tier, not in a cell (canton-groups ticket 3). The band exists from 7f on; before it the
-  // title edge is the strip outside the box the members give.
-  for (const [id, frame] of Object.entries(model.document.frames ?? {})) {
-    const box = frame.kind === 'canton' ? model.frames?.find(item => item.id === id)?.box : undefined, side = sides.get(id);
-    if (!box || side === undefined || !frame.label) continue;
-    const cells = frameSubtreeCells(model.document.frames ?? {}, id).map(cell => model.groups[cell]!);
-    const tiers = cells.map(cell => cell.tier!), edge = side === 'top' ? Math.min(...tiers) : Math.max(...tiers);
-    const members = cells.filter(cell => cell.tier === edge).flatMap(cell => cell.nodes);
-    const band = model.labelBands.find(item => item.group === id && item.host === undefined);
-    if (band) strips.push({ id, side, label: frame.label, members: new Set(members),
-      rect: { x: box.x, y: band.bounds.y - GROUP_LABEL_LINK_CLEARANCE, width: box.width, height: band.bounds.height + 2 * GROUP_LABEL_LINK_CLEARANCE } });
-    else {
-      const room = measureText(frame.label, { fontSize: 12, weight: 700 }).height + 8;
-      strips.push({ id, side, label: frame.label, members: new Set(members),
-        rect: { x: box.x, y: side === 'top' ? box.y - room - GROUP_LABEL_LINK_CLEARANCE : box.y + box.height - GROUP_LABEL_LINK_CLEARANCE,
-          width: box.width, height: room + 2 * GROUP_LABEL_LINK_CLEARANCE } });
-    }
-  }
-  return strips;
-}
-
-/**
  * The crossing rectangle of a chord through a title band (ticket 100): the part of the segment between two y values, as its bounding box grown by
  * `half` (the half stroke) in y. In x it is grown by the half stroke and by the link-free margin of the title (`GROUP_LABEL_LINK_CLEARANCE`), both taken
  * along the normal of the chord: a title that stands the margin from the rectangle in x stands that margin from a slanted line only when the rectangle
@@ -324,79 +246,6 @@ export function crossingRect(segment: PathSegment, top: number, floor: number, h
     width: Math.abs(two.x - one.x) + 2 * along, height: Math.abs(two.y - one.y) + 2 * half };
 }
 
-/** Whether the strip is the title of one given end's own frame (or a frame above it), on the edge that end's port faces. */
-function ownEndStrip(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', strip: TitleStrip): boolean {
-  const ref = link.attachments![end];
-  return findPort(model, ref)?.side === strip.side && holders(model, ref.node).has(strip.id);
-}
-/** Whether the strip is the title of the end the chord leaves, on the edge it leaves through (docs/design/routed-chords.md, Section 6). */
-function ownStrip(model: LayoutModel, link: LayoutLink, strip: TitleStrip): boolean {
-  return (['from', 'to'] as const).some(end => {
-    const ref = link.attachments![end];
-    return findPort(model, ref)?.side === strip.side && holders(model, ref.node).has(strip.id);
-  });
-}
-
-/**
- * Whether the title still fits its strip beside the given obstacles, each with the link-free margin already in it: some gap between two of them, or
- * between one and the strip end less the inset (8 px, as the margin), is as wide as the measured title. No growth is assumed.
- */
-function titleFits(strip: TitleStrip, obstacles: readonly Rect[]): boolean {
-  const width = measureText(strip.label, { fontSize: 12, weight: 700 }).width;
-  const left = strip.rect.x + GROUP_LABEL_GEOMETRY.horizontalInset, end = strip.rect.x + strip.rect.width - GROUP_LABEL_GEOMETRY.horizontalInset;
-  const spans = obstacles.map(rect => [rect.x, rect.x + rect.width] as const).sort((a, b) => a[0] - b[0]);
-  let cursor = left;
-  for (const [low, high] of spans) {
-    if (low - cursor >= width - EPS) return true;
-    cursor = Math.max(cursor, high);
-  }
-  return end - cursor >= width - EPS;
-}
-
-/**
- * Whether title strips refuse a chord. A frame chord refuses every strip. A cross-frame chord refuses a strip that is not its own end's on the edge
- * it leaves through, and an own strip whose title has no room. `others` reads the legs of the orthogonal links and the crossings of the held
- * chords too (the fit of the fixed point); without it the chord's own crossing alone is read (the fit of the standalone chord).
- */
-function titleRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, others: boolean): boolean {
-  // A diagonal may cross a title (ticket 162, ADR-0023): no strip refuses it, and the title stands over it. A vertical chord keeps the rules below.
-  if (diagonalMayCross(segment, GROUP_TITLE)) return false;
-  const kind = chordKind(model, link), strips = titleStrips(model);
-  const crossed = strips.filter(strip => segmentRectDistance(segment, strip.rect) === 0);
-  if (kind !== 'cross') return crossed.length > 0;
-  // A fan member (architecture-2 ticket 40, user ruling Q125): the title strip of its far end's own frame, on the edge the chord leaves through,
-  // refuses nothing here. Slice 1 builds no growth for it: the title planner of 7f reads the held chord as an obstacle, and when it finds no room
-  // beside it the retry of 7f refuses the member (`title`, `titleCrowdedFanMembers`). After the last retry the member stays straight over the
-  // title, `FAN_MEMBER_CROWDED` names it, and G3 fails. A slanted member returns above (ticket 162), so all of this reads an axis member.
-  // A title that moves aside, its frame grown, is slice 2. The member's other own strip (its
-  // hub's) must fit beside the crossings as for any cross-frame chord, and a third frame's title refuses it.
-  const far = fanFarEnd(model, link);
-  const exempt = (strip: TitleStrip): boolean => far !== undefined && ownEndStrip(model, link, far, strip);
-  const rest = crossed.filter(strip => !exempt(strip));
-  if (rest.some(strip => !ownStrip(model, link, strip))) return true;
-  return rest.some(strip => !titleFitsBeside(model, link, segment, strip, others));
-}
-
-/** Whether the strip's title still fits beside the chord's crossing (and, with `others`, beside the legs of its band's ports and the held chords' crossings). */
-function titleFitsBeside(model: LayoutModel, link: LayoutLink, segment: PathSegment, strip: TitleStrip, others: boolean): boolean {
-  const own = crossingRect(segment, strip.rect.y, strip.rect.y + strip.rect.height, linkStrokeWidth(link) / 2);
-  const blocks: Rect[] = own ? [own] : [];
-  if (others) {
-    // A leg is a stroke: the link-free margin is added to it here (a crossing rectangle carries its own).
-    const legs = legRectsFor(model, [{ id: strip.id, bounds: strip.rect, side: strip.side, members: strip.members }], link.id);
-    blocks.push(...legs.map(item => item.bounds).filter(box => box.x >= strip.rect.x - EPS && box.x <= strip.rect.x + strip.rect.width + EPS)
-      .map(box => ({ x: box.x - GROUP_LABEL_LINK_CLEARANCE, y: box.y, width: box.width + 2 * GROUP_LABEL_LINK_CLEARANCE, height: box.height })));
-    for (const other of model.links) {
-      if (other.id === link.id || !isRoutedChord(model, other) || chordKind(model, other) !== 'cross') continue;
-      // A held diagonal takes no room from the title (ticket 162): the title may stand over it.
-      if (diagonalMayCross(other.path!.segments[0]!, GROUP_TITLE)) continue;
-      const rect = crossingRect(other.path!.segments[0]!, strip.rect.y, strip.rect.y + strip.rect.height, linkStrokeWidth(other) / 2);
-      if (rect) blocks.push(rect);
-    }
-  }
-  return titleFits(strip, blocks);
-}
-
 /** The bare chord of the link between its two faces, or undefined when its ends coincide. Nothing is checked. */
 export function chordSegment(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
   const chord = straightChord(model, link);
@@ -411,7 +260,7 @@ export function chordSegment(model: LayoutModel, link: LayoutLink): PathSegment 
 export const SIDE_EDGE_SLACK = 4;
 
 /** The first check that refused a chord (`ROUTED_CHORD_REFUSED`, docs/design/routed-chords.md, Section 10). */
-export type ChordRefusal = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg';
+export type ChordRefusal = 'transit' | 'faces' | 'edge' | 'frame' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg';
 
 /** The ids of the groups, frames and parents above them that hold this node. */
 function holders(model: LayoutModel, node: string): Set<string> {
@@ -539,7 +388,6 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
     const reason = crossRefusal(model, link, line, sideSlack);
     if (reason) return { reason };
   }
-  if (titleRefusal(model, link, line, false)) return { reason: 'title' };
   const segment = chordSegment(model, link);
   if (!segment) return { reason: 'body' };
   // The chord must also hold every clearance the gates measure a routed segment against (G2, G6),
@@ -671,7 +519,7 @@ function mouthLegs(model: LayoutModel, link: LayoutLink): { leg: PathSegment; ot
  * The checks of the fixed point on a chord that stands alone: the chords already held and the vertical legs of the links that stay
  * orthogonal, mouth legs of the gap's lanes included. The first that fails names the refusal.
  */
-export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, undecided?: ReadonlySet<string>, crossable?: ReadonlySet<string>): 'chord' | 'leg' | 'title' | undefined {
+export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, undecided?: ReadonlySet<string>, crossable?: ReadonlySet<string>): 'chord' | 'leg' | undefined {
   // Two chords are no obstacle to each other for the router, but G6 still measures their clearance:
   // only a strict crossing excuses a pair that stands closer than 10 px (a shared end does not).
   const stroke = linkStrokeWidth(link);
@@ -708,8 +556,6 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
     if (other !== undefined && undecided?.has(other.id)) continue;
     if (segmentDistance(segment, leg) - (stroke + (other ? linkStrokeWidth(other) : stroke)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
   }
-  // The title of an own end still fits beside this crossing, the held chords' crossings and the legs of the band's ports (ticket 100).
-  if (chordKind(model, link) === 'cross' && titleRefusal(model, link, segment, true)) return 'title';
   return undefined;
 }
 

@@ -78,7 +78,8 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // the ROUTE_UNSUPPORTED message, 'M1 draws the members for group-link' now 'A group-link is drawn as its member links'.
     // Ticket 22: the fan is a triggered direct family, and its record is published (db0b5d006f05102c before).
     // Verdana metrics (snack-theme ticket 157): 3dcf58b8a7c3c196 with Arial.
-    expect(hash(model)).toBe('f976911f2b2220a8');
+    // Architecture-2 ticket 54: each group title gains only `crossedBy: []`, and nothing else in the layout differs (f976911f2b2220a8 before).
+    expect(hash(model)).toBe('80554445aba21345');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
@@ -98,7 +99,8 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     expect(places).toBe(1);
     // Re-baselined for architecture ticket 17 (a `rowOrderDecision` record) and ticket 23 (the overlay port clearance is 7.75 px, not 4).
     // Verdana metrics (snack-theme ticket 157): e21a79fe9f158ae7 with Arial.
-    expect(hash(model)).toBe('e78c0a9d3cded778');
+    // Architecture-2 ticket 54: each group title gains only `crossedBy: []`, and nothing else in the layout differs (e78c0a9d3cded778 before).
+    expect(hash(model)).toBe('84b1668cbefa3b25');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
