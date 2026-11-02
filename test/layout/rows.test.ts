@@ -208,13 +208,16 @@ describe('corridor predicate', () => {
       ['foreign node', m => { m.nodes.z = { id: 'z', owner: { kind: 'group', id: 'g' }, layer: 'routed', ports: [], bounds: { x: x - 5, y: y + 11.4, width: 10, height: 20 } }; }],
       ['foreign pill', m => { m.nodes.z = { id: 'z', owner: { kind: 'group', id: 'g' }, layer: 'routed', bounds: { x, y: y + 200, width: 10, height: 10 },
         ports: [{ ref: { node: 'z', name: 'p', ordinal: 1 }, owner: { kind: 'node', id: 'z' }, layer: 'routed', pill: { owner: { kind: 'node', id: 'z' }, layer: 'routed', size: { width: 24, height: 10 }, bounds: box, textRotation: 0, radius: 2 } }] }; }],
-      ['label', m => { m.labels.push({ id: 'x', owner: { kind: 'group', id: 'g' }, layer: 'routed', text: 't', role: 'group', bounds: box }); }],
+      // A link label (a group title yields to every link and blocks no corridor, architecture-2 ticket 54).
+      ['label', m => { m.labels.push({ id: 'x', owner: foreign, layer: 'routed', text: 't', role: 'link', bounds: box }); }],
       ['lane', m => { m.lanes.push({ id: 'lane', owner: foreign, layer: 'routed', group: 'g', tier: 0, side: 'left', x, bounds: { x: x - 17, y: y - 50, width: 34, height: 100 } }); }],
       ['fixed segment', m => { m.links.push({ ...m.links[0]!, id: 'other', owner: foreign, path: { owner: foreign, layer: 'routed', fixed: true, segments: [{ from: { x, y: y + 11 }, to: { x: x + 1, y: y + 11 }, owner: foreign }] } }); }],
       ['bundle envelope', m => { m.bundles.push({ id: 'bundle-x', owner: { kind: 'bundle', id: 'bundle-x' }, layer: 'routed', nodes: ['a', 'b'], members: [], envelope: box }); }],
       ['bundle rows', m => { m.bundles.push({ id: 'bundle-x', owner: { kind: 'bundle', id: 'bundle-x' }, layer: 'routed', nodes: ['a', 'b'], members: [], rows: box }); }],
       ['obstacle', m => { m.obstacles.push({ id: 'ob', owner: { kind: 'group', id: 'g' }, layer: 'routed', bounds: box }); }],
     ];
+    const title = probe(model, m => { m.labels.push({ id: 'x', owner: { kind: 'group', id: 'g' }, layer: 'routed', text: 't', role: 'group', bounds: box }); });
+    expect(straightCorridorClear(title, title.links[0]!, segment)).toBe(true);
     const emptyBand = probe(model, m => { m.labelBands.push({ id: 'band', owner: { kind: 'group', id: 'g' },
       layer: 'routed', group: 'g', side: 'top', bounds: box, clearance: 12 }); });
     expect(straightCorridorClear(emptyBand, emptyBand.links[0]!, segment)).toBe(true);

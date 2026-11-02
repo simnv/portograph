@@ -165,7 +165,8 @@ export function routeObstacles(model: LayoutModel): RouteObstacle[] {
     if (label.omitted || label.layer === 'overlay' || !label.bounds) continue;
     // A pill label sits inside its pill, and a node label inside its node, so both are already
     // covered; only a link's own label would ever need an exemption.
-    const consumers = label.owner.kind === 'link' ? [label.owner.id] : [];
+    // A group title is no obstacle to the links it yields to (`crossedBy`, architecture-2 ticket 54); it stays one to every other link.
+    const consumers = label.owner.kind === 'link' ? [label.owner.id] : label.role === 'group' ? [...label.crossedBy ?? []] : [];
     // A group title's link-free margin is part of its obstacle.
     push({ id: `label:${label.id}`, bounds: expand(label.bounds, half + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0)), consumers });
   }

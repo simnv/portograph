@@ -17,7 +17,7 @@ import { avoidAssets, spawnAvoidWorker } from './fixture.js';
  * declines three links as residual (`leg-blocked`, a leg under a group label), so several ownership batches
  * remain. The skipped-checkpoint case is forged in `route.test.ts`.
  */
-const fixture = readFileSync(new URL('../../goldens/synthetic/a-title-no-position-clears-leaves-the-leg-to-the-router.yaml', import.meta.url), 'utf8');
+const fixture = readFileSync(new URL('../../goldens/synthetic/three-lateral-legs-stay-with-the-router.yaml', import.meta.url), 'utf8');
 const REJECTED = 'link-8';
 const REASON = /Routed gap on link-8 does not meet its reserved endpoints/;
 

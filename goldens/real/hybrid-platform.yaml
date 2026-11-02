@@ -1,0 +1,73 @@
+# Source: https://github.com/cidrblock/drawthe.net/blob/8aeeacccfa3ebea9dca7e7cdb0085e64e97061d6/examples/hybrid-platform-reference-blueprint.yaml
+# Licence: MIT (Copyright (c) 2021 Bradley Thornton, cidrblock/drawthe.net)
+# Author: Brad Thornton (cidrblock)
+# Fetched: 2026-11-02
+# Converted by hand from the drawthe.net format. Kept: all 20 icons as nodes, the 6 groups, all 33 connections.
+# Simplified: the three text notes (assumptions, flow, operate) and the title bar are dropped; the title text becomes `title`.
+# Group tiers follow the source rows from top to bottom (row 14 is the top). The three dashed
+# connections are the source's `asyncConnection` (strokeDashArray 6,4) and carry `class: dashed`.
+portograph: 2
+profile: network
+title: "Hybrid Developer Platform"
+groups:
+  entry: { tier: 0, label: "1. Public entry and TLS" }
+  edge: { tier: 1, label: "2. Private security edge" }
+  spine: { tier: 2, label: "3. Spine fabric and routed core" }
+  leaf: { tier: 3, label: "4. Leaf access and workload fabric" }
+  apps: { tier: 4, label: "5. Application services" }
+  data: { tier: 5, label: "6. Data and resilience" }
+nodes:
+  users: { group: entry, class: cloud, icon: cloud, label: Users }
+  dns: { group: entry, class: cloud, icon: cloud, label: Route 53 }
+  cdn: { group: entry, class: cloud, icon: cloud, label: CloudFront }
+  certificate: { group: entry, class: cloud, icon: cloud, label: ACM }
+  api: { group: entry, class: cloud, icon: cloud, label: API Gateway }
+  fw1: { group: edge, class: firewall, label: Edge FW-A }
+  fw2: { group: edge, class: firewall, label: Edge FW-B }
+  spine1: { group: spine, class: switch, icon: switch, label: Spine-1 }
+  spine2: { group: spine, class: switch, icon: switch, label: Spine-2 }
+  leaf1: { group: leaf, class: switch, icon: switch, label: Leaf-A }
+  leaf2: { group: leaf, class: switch, icon: switch, label: Leaf-B }
+  leaf3: { group: leaf, class: switch, icon: switch, label: Leaf-C }
+  leaf4: { group: leaf, class: switch, icon: switch, label: Leaf-D }
+  app1: { group: apps, class: server, icon: server, label: App-A }
+  app2: { group: apps, class: server, icon: server, label: App-B }
+  app3: { group: apps, class: server, icon: server, label: App-C }
+  app4: { group: apps, class: server, icon: server, label: App-D }
+  primary_db: { group: data, class: database, label: Primary DB }
+  cache: { group: data, class: database, label: Cache }
+  backup: { group: data, class: database, label: Backup }
+links:
+  - [users, dns]
+  - [dns, cdn]
+  - [cdn, api]
+  - [certificate, cdn]
+  - [api, fw1]
+  - [api, fw2]
+  - [fw1, spine1]
+  - [fw1, spine2]
+  - [fw2, spine1]
+  - [fw2, spine2]
+  - [spine1, leaf1]
+  - [spine1, leaf2]
+  - [spine1, leaf3]
+  - [spine1, leaf4]
+  - [spine2, leaf1]
+  - [spine2, leaf2]
+  - [spine2, leaf3]
+  - [spine2, leaf4]
+  - [leaf1, app1]
+  - [leaf2, app1]
+  - [leaf1, app2]
+  - [leaf2, app2]
+  - [leaf3, app3]
+  - [leaf4, app3]
+  - [leaf3, app4]
+  - [leaf4, app4]
+  - [app1, primary_db]
+  - [app2, primary_db]
+  - [app3, cache]
+  - [app4, cache]
+  - [primary_db, backup, { class: dashed }]
+  - [app1, backup, { class: dashed }]
+  - [app3, backup, { class: dashed }]

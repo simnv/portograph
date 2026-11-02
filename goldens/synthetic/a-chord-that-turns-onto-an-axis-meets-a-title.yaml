@@ -1,11 +1,10 @@
-# Expected: a held chord whose angle class 7f changes is judged again on the geometry 7f publishes (ADR-0023). `w2` feeds `wb1` across
-# the tier gap, into the frame `w-site-b` (a cell with a child zone). At the end of 7e the feed is a straight chord about 11 degrees off
-# the vertical, a diagonal, so no title strip refuses it and the freeze holds it. 7f then moves the columns and grows the gap: the chord
-# stands under 2 degrees off the vertical, an axis chord, across the title of `w-site-b`, which has no room beside it. Before the rule the
-# chord was published there and G3 failed (`label:group:w-site-b#0` on `link-1`). The retry of 7f reads the class again with the one
-# predicate (`diagonalMayCross`) and refuses the chord (`ROUTED_CHORD_REFUSED`, reason `title`): the feed takes the orthogonal route,
-# and every gate passes. Stacked nodes; the group ids are the titles.
-# Test-only input owned by ticket 162 (the re-read of its rule); test/pipeline/chord-class-reread.test.ts reads it.
+# Expected: a held chord whose angle class 7f changes keeps its chord, and the title yields to it (architecture-2 ticket 54, ADR-0023).
+# `w2` feeds `wb1` across the tier gap, into the frame `w-site-b` (a cell with a child zone). At the end of 7e the feed is a straight
+# chord about 11 degrees off the vertical, a diagonal, and the freeze holds it. 7f then moves the columns and grows the gap: the chord
+# stands near the vertical, across the title edge of `w-site-b`. Before ticket 54 a retry of 7f refused it (`title`) and it took the
+# orthogonal route. Now no title refuses a chord: the title of `w-site-b` is placed last, finds no free span, takes the halo and records
+# the feed (`crossedBy`), the feed stays one segment, and every gate passes. Stacked nodes; the group ids are the titles.
+# Test-only input owned by ticket 162 and architecture-2 ticket 54; test/pipeline/chord-class-reread.test.ts reads it.
 portograph: 2
 groups:
   west: { label: West }

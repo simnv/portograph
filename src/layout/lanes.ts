@@ -3,7 +3,7 @@ import { equal } from '../model/json-equality.js';
 import type { Rect } from '../model/geometry.js';
 import type { Course, Diagnostic, Lane, LayoutGroup, LayoutLink, LayoutModel, MeshBus, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
-import { DEFAULT_STROKE_WIDTHS as stroke, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
+import { DEFAULT_STROKE_WIDTHS as stroke, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
@@ -576,15 +576,6 @@ function corridorFree(model: LayoutModel, lane: Lane, link: LayoutLink, child: P
     const runs = [...other.path?.fixed ? other.path.segments : [], ...other.fixedSegments ?? [],
       ...other.sharedRuns?.from ?? [], ...other.sharedRuns?.to ?? []];
     for (const segment of runs) if (segmentRectDistance(segment, span) < linkStrokeWidth(other) / 2 - PLACEMENT_EPS) return false;
-  }
-  // A group title keeps its link-free margin from every link, this link included (ADR-0013).
-  for (const label of model.labels) {
-    if (label.role !== 'group' || label.omitted || !label.bounds) continue;
-    const box = {
-      x: label.bounds.x - GROUP_LABEL_LINK_CLEARANCE, y: label.bounds.y - GROUP_LABEL_LINK_CLEARANCE,
-      width: label.bounds.width + 2 * GROUP_LABEL_LINK_CLEARANCE, height: label.bounds.height + 2 * GROUP_LABEL_LINK_CLEARANCE,
-    };
-    if (overlaps(box) && box.y < bottom(span) - PLACEMENT_EPS && bottom(box) > span.y + PLACEMENT_EPS) return false;
   }
   return true;
 }

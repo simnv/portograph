@@ -1,8 +1,9 @@
-# Expected: two one-node groups in one tier, each with a title over skewed legs (tickets 66 and 71); the second copies the first beside it. Unforced,
-# each title widens its own group for its legs. When the first spends its leg allowance (forged in the test), its failed row keeps the
-# whole gap on the soft rule, so the second does not widen for legs its plan no longer avoids. The feeds are authored
-# `route: orthogonal` (ticket 162): a diagonal may cross a title, so as chords they would leave no leg under the titles.
-# Test-only input owned by ticket 71; test/pipeline/leg-allowance-exhausted.test.ts reads it.
+# Expected (architecture-2 ticket 54, titles last): two one-node groups in one tier, each with a title over skewed legs (tickets 66 and 71); the
+# second copies the first beside it. Each title finds no free span, stands at the centre with a halo and names its two links in `crossedBy`
+# (`mid` link-1 and link-2, `mid2` link-5 and link-6); neither group widens for its legs. Before ticket 54 each title widened its own group,
+# and test/pipeline/leg-allowance-exhausted.test.ts (deleted with the leg allowance) forged the first title's spent allowance.
+# The feeds are authored `route: orthogonal` (ticket 162): as chords they would leave no leg under the titles.
+# Test-only input owned by ticket 71; test/pipeline/min-separation-writers.test.ts reads it.
 portograph: 2
 groups:
   top: { tier: 0, label: Top }

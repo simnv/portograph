@@ -7,8 +7,9 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
- * Ticket 83 review: a title that stands on the stub of a mesh bus, with no pass left to widen its frame or move it, stays and is reported
- * (`MESH_BUS_TITLE_ON_STUB`) instead of stopping the run. The budget of 7f is spent from the start here, which is the real path.
+ * Ticket 83 review, as architecture-2 ticket 54 changed it: a title never widens its frame or moves to its other edge for a bus stub. A stub
+ * is one more span the title slides off; with none free the title takes the halo. The budget of 7f is spent from the start here, and the run
+ * still finishes and restores.
  */
 const state = vi.hoisted(() => ({ spent: false }));
 vi.mock('../../src/layout/centre.js', async importOriginal => {
@@ -19,15 +20,16 @@ vi.mock('../../src/layout/centre.js', async importOriginal => {
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
-describe('a title on a bus stub with the budget spent (ticket 83 review)', () => {
-  it('finishes with the budget spent where the titles need a widening, and the published layout restores', async () => {
+describe('a title on a bus stub with the budget spent (ticket 83 review, ticket 54)', () => {
+  it('finishes with the budget spent, the wide titles placed without a widening or an edge move, and the published layout restores', async () => {
     state.spent = true;
     let model: LayoutModel;
     try { model = await run(fixture('a-mesh-across-frames-draws-one-bus').replace('label: West', `label: ${'West '.repeat(9).trim()}`).replace('label: East', `label: ${'East '.repeat(9).trim()}`)); } finally { state.spent = false; }
-    // The budget is spent where the titles need a widening: the run stalls and finishes with its diagnostics, and stops for nothing.
-    expect(model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toBe(true);
-    // A title that stays on a stub is reported, never thrown at; none is asserted here because no input reaches a stalled title on a stub.
-    expect(model.diagnostics.some(item => item.code === 'MESH_BUS_TITLE_MOVED')).toBe(false);
+    // Every title is placed and carries its crossing record; no title moved to its other edge.
+    const titles = model.labels.filter(item => item.role === 'group');
+    expect(titles.length).toBe(model.labelBands.length);
+    for (const title of titles) expect(Array.isArray(title.crossedBy), title.id).toBe(true);
+    expect(model.diagnostics.some(item => item.code.startsWith('MESH_BUS_TITLE'))).toBe(false);
     expect(JSON.stringify(restoreLayoutModel(JSON.stringify(model)))).toBe(JSON.stringify(model));
   }, 120000);
 });

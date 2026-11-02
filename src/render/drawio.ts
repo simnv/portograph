@@ -707,7 +707,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // band is only handed to draw.io when the reserved band really does hold a centred title:
     // otherwise the title keeps its measured box as a text cell and the container stays plain.
     // A frame's band sits in one of its cells, so it must also span the frame edge to edge.
-    const centred = band !== undefined && title !== undefined
+    // A title that links cross (`crossedBy`, architecture-2 ticket 54) must paint above them, with a backdrop for its halo: it goes to the
+    // labels layer as a text cell, never into its group's swimlane head, which paints under every link.
+    const crossed = (title?.crossedBy?.length ?? 0) > 0;
+    const centred = band !== undefined && title !== undefined && !crossed
       && Math.abs(centre(title.bounds!).x - centre(band.bounds).x) <= 0.5
       && Math.abs(centre(title.bounds!).y - centre(band.bounds).y) <= 0.5
       && (!frame || (Math.abs(band.bounds.x - bounds.x) <= 0.5 && Math.abs(band.bounds.width - bounds.width) <= 0.5
@@ -743,7 +746,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const holder = frame ? frameParent.get(id) : undefined;
     vertex(cellId('group', id), holder === undefined ? layerId('diagram') : cellId('group', holder), style,
       holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? plainText(labelLines(title!)) : undefined);
-    if (title && !swimlane) {
+    if (title && crossed) {
+      textCell(cellId('groupTitle', id), layerId('labels'), title, shiftRect(title.bounds!), paint.group.text, undefined, backdrop(centre(title.bounds!)));
+    } else if (title && !swimlane) {
       textCell(cellId('groupTitle', id), cellId('group', id), title,
         relative(shiftRect(title.bounds!), box), paint.group.text);
     }

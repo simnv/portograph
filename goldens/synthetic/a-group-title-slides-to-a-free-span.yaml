@@ -1,0 +1,18 @@
+# Expected: architecture-2 ticket 54 (a group title yields to its links). `lab` holds one router; it feeds two servers below, so ADR-0011
+# puts the title on the top edge, where the one drop from `uplink` enters at the centre of the box. The centre is taken, and a free span
+# beside the drop holds the title: it slides there (the nearer side, a tie going left), records `crossedBy: []` and no yield, and the
+# drop stays straight. Test-only input owned by architecture-2 ticket 54; test/pipeline/titles-last.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Uplink }
+  lab: { tier: 1, label: Lab }
+  rack: { tier: 2, label: Rack }
+nodes:
+  uplink: { group: top, class: router, label: Uplink router }
+  gw: { group: lab, class: router, label: Lab gateway router }
+  a: { group: rack, class: server, label: Server A }
+  b: { group: rack, class: server, label: Server B }
+links:
+  - [uplink, gw]
+  - [gw, a]
+  - [gw, b]

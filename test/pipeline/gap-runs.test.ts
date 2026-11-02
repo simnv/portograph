@@ -224,28 +224,22 @@ it('seats all four runs once the group label is nudged off the run it covered', 
 // Ticket 50: a planned row never stands half a pitch inside a boundary, so the claim on a cover edge (stress ticket 09) is tested on a gap the plan
 // does not fit, where the old allocation seats the rows: `test/pipeline/unfit-gap.test.ts` (ticket 51).
 
-it('carries a group label with the band the gap room moves', async () => {
-  // Stress ticket 06. 7f places its group labels, measures the gaps, and places them again: a group
-  // label is an obstacle in the tier gap beside it, so a gap measured before them grows for rows
-  // they then refuse. The measurement therefore moves each group's label band and label with it.
+it('carries each group label band with the gap room move, and places no title in 7f', async () => {
+  // Stress ticket 06, as architecture-2 ticket 54 changed it: 7f reserves its label bands, measures the gaps and moves each group's band with
+  // it. No title stands while placement moves: titles are placed once at the end of 7f.
   // A published model is frozen; 7f's own producers run on the transaction's draft.
   const model = structuredClone(await beforeBands(read('a-tier-gap-grows-to-its-rows.yaml'))) as LayoutModel;
   produceGroupLabelBands(model);
-  expect(model.labels.filter(label => label.role === 'group').length).toBeGreaterThan(0);
+  expect(model.labels.filter(label => label.role === 'group')).toEqual([]);
   expect(model.labelBands.length).toBeGreaterThan(0);
 
   const groupY = new Map(Object.entries(model.groups).map(([id, group]) => [id, group.bounds!.y]));
-  const labelY = new Map(model.labels.filter(item => item.role === 'group').map(item => [item.id, item.bounds!.y]));
   const bandY = new Map(model.labelBands.map(band => [band.group, band.bounds.y]));
 
   expect(growTierGaps(model)).toBe(true);
   const shift = (id: string): number => model.groups[id]!.bounds!.y - groupY.get(id)!;
   expect(Object.keys(model.groups).filter(id => shift(id) > 1e-9).length).toBeGreaterThan(0);
-  // Each label and each band moved by exactly the shift of the group it belongs to.
-  for (const label of model.labels.filter(item => item.role === 'group')) {
-    const id = label.id.slice('label:group:'.length);
-    expect(label.bounds!.y - labelY.get(label.id)!).toBeCloseTo(shift(id), 9);
-  }
+  // Each band moved by exactly the shift of the group it belongs to.
   for (const band of model.labelBands) {
     expect(band.bounds.y - bandY.get(band.group)!).toBeCloseTo(shift(band.group), 9);
   }

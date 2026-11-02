@@ -22,7 +22,8 @@ export function reservations(model: LayoutModel, link: LayoutLink): { id: string
   const half = routedStroke(model) / 2, result: { id: string; bounds: Rect }[] = [];
   const expand = (bounds: Rect): Rect => ({ x: bounds.x - half, y: bounds.y - half, width: bounds.width + 2 * half, height: bounds.height + 2 * half });
   for (const label of model.labels) {
-    if (label.role === 'group' && !label.omitted && label.bounds && label.layer !== 'overlay') {
+    // A group title is no reservation to a link it yields to (`crossedBy`, architecture-2 ticket 54).
+    if (label.role === 'group' && !label.omitted && label.bounds && label.layer !== 'overlay' && label.crossedBy?.includes(link.id) !== true) {
       const m = half + GROUP_LABEL_LINK_CLEARANCE, b = label.bounds;
       result.push({ id: label.id, bounds: { x: b.x - m, y: b.y - m, width: b.width + 2 * m, height: b.height + 2 * m } });
     }

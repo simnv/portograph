@@ -135,18 +135,17 @@ describe('a cross-frame chord crosses the title band of its own end', () => {
     gates(model);
   }, 60000);
 
-  it('keeps the orthogonal route where the title has no room beside the crossing (title)', async () => {
+  it('holds the chord where the title has no room beside the crossing: the title takes the halo (architecture-2 ticket 54)', async () => {
     const model = await run(fixture(NO_ROOM));
     const link = linkOf(model, 'upstream-router', 'provider-1');
     expect(chordKind(model, link)).toBe('cross');
-    expect(link.technique).toBe('orthogonal');
-    expect(refusals(model)).toEqual([`${link.id}:title`]);
+    expect(link.technique).toBe('straight');
+    expect(refusals(model)).toEqual([]);
+    const title = model.labels.find(item => item.role === 'group' && item.text === 'Providers of the upstream transit service')!;
+    expect(title.yield).toBe('halo');
+    expect(title.crossedBy).toContain(link.id);
     expect(model.removedLinks ?? []).toEqual([]);
     gates(model);
-    // The same input with a short title holds the chord: the refusal is the room, not the strip.
-    const short = await run(fixture(NO_ROOM).replace('Providers of the upstream transit service', 'P'));
-    expect(linkOf(short, 'upstream-router', 'provider-1').technique).toBe('straight');
-    expect(refusals(short)).toEqual([]);
   }, 60000);
 
   it('widens the crossing rectangle by the slant of the chord: the full layout of a canton band passes G3 (label-collision)', async () => {

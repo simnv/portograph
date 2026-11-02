@@ -55,6 +55,14 @@ export interface LayoutLabel extends OwnedElement {
   tooltip?: string;
   bounds?: Rect;
   omitted?: boolean;
+  /**
+   * A group title only (architecture-2 ticket 54): the routed links that cross it, decided once at the end of 7f, in id order. `[]` means
+   * the title slid to a span no link crosses; absent means the title is not placed. G3 and stage 8 read it: a segment of a link named here
+   * is no hit and no router obstacle.
+   */
+  crossedBy?: string[];
+  /** A group title only: `halo` when no free span held it and it stands across links (`crossedBy`), drawn over them with its halo. */
+  yield?: 'halo';
 }
 
 export interface PillGeometry extends OwnedElement {
@@ -541,8 +549,6 @@ export interface LayoutModel {
   declinedTrunks?: string[];
   /** Absent when no bus has a band; 7f publishes them. */
   busBands?: BusBand[];
-  /** The ids of the titles 7f moved to their other edge (`MESH_BUS_TITLE_MOVED`); absent when none. */
-  titleMoves?: string[];
   obstacles: Obstacle[];
   diagnostics: Diagnostic[];
   runtime: LayoutRuntime;

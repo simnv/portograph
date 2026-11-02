@@ -17,7 +17,7 @@ import { avoidAssets, spawnAvoidWorker } from './fixture.js';
  * fixture ticket 46 uses: it detours through the box of the group label of tier 3, which link-8 does not own.
  */
 const text = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8');
-const fixture = 'a-title-no-position-clears-leaves-the-leg-to-the-router.yaml';
+const fixture = 'three-lateral-legs-stay-with-the-router.yaml';
 
 /** start, first checkpoint, a jog left across the label of tier 3 (y 606..638), the second checkpoint, end. */
 const through = (start: Point, first: Point, second: Point, end: Point): Point[] =>
@@ -58,7 +58,7 @@ describe('a route through a foreign reservation removes its link and not the she
 
   it('rejects the forged answer, and one that leaves its port sideways, in tryStitch', async () => {
     const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(text(fixture)))))))));
-    const item = planRoute(model).links.find(candidate => candidate.pieces.some(piece => piece.kind === 'gap'))!;
+    const item = planRoute(model).links.find(candidate => candidate.link === 'link-8' && candidate.pieces.some(piece => piece.kind === 'gap'))!;
     const gap = item.pieces.find(piece => piece.kind === 'gap')!;
     if (gap.kind !== 'gap') throw new Error('unreachable');
     const [first, second] = item.connectors.find(connector => connector.id === gap.connector)!.checkpoints as unknown as [Point, Point];
@@ -67,14 +67,18 @@ describe('a route through a foreign reservation removes its link and not the she
     expect(routed(through(from, first, second, to))).toEqual({
       rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Routed path on ${item.link} enters reserved label:group:t3` },
     });
-    // Orthogonal detours clear of every reservation, so only the stem checks can refuse them.
-    const rest = [first, { x: first.x, y: 645 }, { x: second.x, y: 645 }, second, to];
+    // Orthogonal detours clear of every reservation, so only the stem checks can refuse them. The port of link-8 is lateral (`right`): the
+    // detour runs down right of the title of t3 and under it, to the second checkpoint.
+    const title = model.labels.find(label => label.id === 'label:group:t3')!.bounds!, clear = (title.y + title.height + 10 + second.y) / 2;
+    const side = title.x - 20;
+    const rest = (y: number): Point[] => [{ x: first.x, y }, first, { x: side, y: first.y }, { x: side, y: clear }, { x: second.x, y: clear }, second, to];
     // Out of the port along its side instead of away from it: the stem is not perpendicular.
-    expect(routed([from, { x: first.x + 20, y: from.y }, { x: first.x + 20, y: first.y }, ...rest])).toEqual({
+    expect(routed([from, { x: from.x, y: from.y + 20 }, ...rest(from.y + 20)])).toEqual({
       rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Port stem on ${item.link} does not leave its side perpendicular` },
     });
     // Away from the port, but 5 px before the jog: shorter than the reserved entry.
-    expect(routed([from, { x: from.x, y: from.y + 5 }, { x: first.x + 20, y: from.y + 5 }, { x: first.x + 20, y: first.y }, ...rest])).toEqual({
+    const below = [{ x: first.x, y: from.y + 30 }, { x: side, y: from.y + 30 }, { x: side, y: clear }, { x: second.x, y: clear }, second, to];
+    expect(routed([from, { x: from.x + 5, y: from.y }, { x: from.x + 5, y: from.y - 20 }, { x: first.x, y: from.y - 20 }, first, ...below])).toEqual({
       rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Port stem on ${item.link} is shorter than its reserved entry` },
     });
   }, 120000);

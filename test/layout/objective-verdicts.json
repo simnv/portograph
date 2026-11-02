@@ -37,32 +37,33 @@
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "three-canton-groups-close-up-to-a-band-gap": {
-    "attemptCheap": "138 8d664f3664e2f607",
+    "attemptCheap": "142 ebf052afc13eedd3",
     "centreGroupStep": "1074 982b9078c787f8e5",
     "closeUp": "11 b12da4205cd45c31",
     "holdsSettled": "5 f1b2a82dce452f84",
     "judgeTrial": "1 cbf69f5f691d95cd",
     "pickRankMove": "4 a5b5aae501436369",
-    "pickTarget": "120 5c676a36c142543d",
+    "pickTarget": "120 1210a6f6fb714edc",
     "pullTier": "264 2154dda2089b1736",
     "settleKeepOut": "1 c066627feb8e22b9",
     "sheetGains": "14 3e2c1a0fcd276ca5",
     "windowsHold": "18 848da8b910355030"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
-    "centreGroupStep": "18 e79d15aba252f364",
+    "centreGroupStep": "9 7831835520a204ed",
     "fanRoundHolds": "1 0a22f04442a90cca",
-    "pullTier": "14 2001b63e774ad155"
+    "pullTier": "12 54cf982033f571d4"
   },
   "three-continents": {
-    "attemptCheap": "87 4b0116d2fe83df9a",
-    "centreGroupStep": "2197 dd4ee3828a28ea3f",
-    "holdsSettled": "16 13f7119fa312a573",
-    "judgeTrial": "1 cb3d96c934f37781",
-    "pickTarget": "282 510c412a49e6fd65",
-    "pullTier": "711 1c59f34140b0b034",
-    "sheetGains": "24 799a7e69a74954ba",
-    "windowsHold": "88 a1292f89daf174ca"
+    "attemptCheap": "73 2564937cf7c7aec1",
+    "centreGroupStep": "2278 6cd1327021cf37a1",
+    "holdsSettled": "18 78d3c887a2f1e1ec",
+    "judgeTrial": "1 1606aef2f4eb400c",
+    "pickTarget": "324 b76658198ca10496",
+    "pullTier": "484 0c67d4dedea490c1",
+    "settleKeepOut": "12 de7e03b80d55e4f2",
+    "sheetGains": "52 edbb91ba518466b6",
+    "windowsHold": "86 67a203e27b3fd2ce"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
     "centreGroupStep": "8 a0aee1f9cf73c946",
@@ -75,9 +76,10 @@
     "pickTarget": "12 e6765e397995a2f5"
   },
   "overlay-links-reorder-two-locations": {
-    "centreGroupStep": "126 373142bbdb8ec31f",
+    "centreGroupStep": "71 d91595e143ce19f5",
+    "fanRoundHolds": "1 0a22f04442a90cca",
     "judgeTrial": "1 cbf69f5f691d95cd",
-    "pullTier": "11 4d73869d5d77d0f0",
+    "pullTier": "10 3153e5d325613dc4",
     "pullTierHeld": "6 631da579b5ce2b5b"
   },
   "an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack": {

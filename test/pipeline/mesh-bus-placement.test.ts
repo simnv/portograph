@@ -4,7 +4,6 @@ import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { busExtent, busGeometry, busLegCounts, busSide } from '../../src/layout/bus.js';
-import { bandSide, rawBandSide } from '../../src/layout/bands.js';
 import { resolve } from '../../src/resolve/index.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { sidesTwo } from '../../src/layout/sides-two.js';
@@ -151,7 +150,7 @@ describe('the bus band of a mesh across frames (ticket 83)', () => {
     expect(gates(model)).toEqual([]);
   }, 60000);
 
-  it('draws a stub through the centre of a one-node frame and nudges the title beside it', async () => {
+  it('draws a stub through the centre of a one-node frame; the title slides beside it or takes the halo', async () => {
     const yaml = fixture('a-mesh-of-one-node-groups-draws-one-bus');
     const model = await run(yaml);
     const bus = model.meshBuses![0]!;
@@ -159,8 +158,11 @@ describe('the bus band of a mesh across frames (ticket 83)', () => {
     const plain = await run(withoutBus(yaml));
     const widths = ['west', 'middle', 'east'].map(id => [group(plain, id).width, group(model, id).width]);
     console.log('one-node frame widths before and after', JSON.stringify(widths));
+    // A title slides off a stub where a span is free; where none is (a one-node frame narrower than its title and the stub's margin), it takes
+    // the halo (architecture-2 ticket 54). It never widens its frame or moves to its other edge.
     for (const label of model.labels.filter(item => item.role === 'group' && ['West', 'Middle', 'East'].includes(item.text))) {
-      for (const stub of bus.stubs!) expect(stub.from.x < label.bounds!.x || stub.from.x > label.bounds!.x + label.bounds!.width).toBe(true);
+      const clear = bus.stubs!.every(stub => stub.from.x < label.bounds!.x || stub.from.x > label.bounds!.x + label.bounds!.width);
+      expect(clear || label.yield === 'halo', label.id).toBe(true);
     }
     expect(gates(model)).toEqual([]);
   }, 60000);
@@ -333,16 +335,6 @@ describe('the side of a bus (ticket 83)', () => {
     expect(after.from >= x + 5 || after.to <= x - 5).toBe(true);
   }, 60000);
 
-  it('flips a title to its other edge once 7f has moved it (MESH_BUS_TITLE_MOVED)', async () => {
-    const model = JSON.parse(JSON.stringify(await run(fixture('a-mesh-of-one-node-groups-draws-one-bus')))) as LayoutModel;
-    const west = model.groups['west']!, before = bandSide(model, west);
-    expect(before).toBe('bottom');
-    model.titleMoves = ['west'];
-    expect(bandSide(model, west)).toBe('top');
-    expect(rawBandSide(model, west)).toBe('bottom');
-    // The bus reads the edge ADR-0011 gives, so a moved title never moves a bus.
-    expect(busSide(model, model.meshBuses![0]!)).toBe(model.meshBuses![0]!.side);
-  }, 60000);
 });
 
 describe('the published layout of a bus (ticket 83)', () => {

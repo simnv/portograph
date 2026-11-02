@@ -1,7 +1,8 @@
 import { frameSubtreeCells } from '../model/model.js';
 import type { Rect } from '../model/geometry.js';
 import type { Frame, Lane, LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
-import { GROUP_PADDING, groupPadding } from './regions.js';
+import { groupPadding } from './regions.js';
+import { GROUP_PADDING } from './group-padding.js';
 import { union } from './skeleton-geometry.js';
 import { laneRunKind } from './lane-kind.js';
 

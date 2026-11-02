@@ -1,15 +1,14 @@
-# Expected: two links stay with the router because no title position on its edge clears their legs and no lane-feasible widening of the group
-# frees one (ticket 62; since ticket 66 the leg of link-2, whose group widens lane-feasibly, is planned and the other two stay soft). The shape is
-# `a-claim-lies-on-a-cover-edge` (three transit links, six tiers) with the titles of tiers 1, 3 and 4 made wider. A title is nudged along its
-# edge to clear the legs of the ports under it (ADR-0011's nudging distance); these three are wide enough that no position on the edge
-# clears the leg of `link-2`, `link-8` and `link-11`, so the row plan declines each as `leg-blocked` (`TIER_GAP_PART_RESIDUAL`) and the
-# router lays it. Ticket 50 built the same three residuals out of the plain fixture's short titles; the tests that need a router-laid
-# link (a forged answer, a retracing route, the reserved stem checkpoints) read this one.
-# Test-only input owned by ticket 62; test/route/checkpoint-removal.test.ts, test/route/retrace-removal.test.ts and
-# test/pipeline/detoured-stem.test.ts read it.
+# Expected (architecture-2 ticket 54, titles last): the titles of tiers 1, 3 and 4 are placed last and yield to the legs under them.
+# None of the three finds a free span on its edge, so each stands at the centre with a halo and names the link whose leg crosses it in
+# `crossedBy` (`t1` link-2, `t3` link-8, `t4` link-11). The row plan reads no title, so it declines no part as `leg-blocked`.
+# The shape is `a-claim-lies-on-a-cover-edge` (three transit links, six tiers) with the titles of tiers 1, 3 and 4 made wider. G5 still fails, as on main.
+# Before ticket 54 a title was nudged along its edge to clear the legs (ticket 62) and the group widened for them (ticket 66); these three titles were
+# too wide, so the three links stayed with the router. The router tests that need a router-laid link now read
+# `three-lateral-legs-stay-with-the-router`.
+# Test-only input owned by ticket 62; test/pipeline/hard-legs-under-a-title.test.ts and test/pipeline/residual-parts.test.ts read it.
 #
-# Five links are authored `route: orthogonal` (ticket 162): a diagonal may cross a title, so as cross-frame chords they would cross the
-# wide titles and leave no leg under them; the authored route keeps the legs the claim above is about.
+# Five links are authored `route: orthogonal` (ticket 162): as cross-frame chords they would cross the wide titles and leave no leg under them;
+# the authored route keeps the legs the claim above is about.
 #
 # The rows keep their declared order (`layout.corridorRowOrder: false`, architecture-2 ticket 17): the claim above
 # needs the crossings that order makes, and the corridor row order would remove them.

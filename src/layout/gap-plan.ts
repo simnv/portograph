@@ -2,7 +2,7 @@ import type { Point, Rect } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { bottom, EPS, intersection, right, samePoint, segmentDistance } from '../geometry/planar.js';
 import { measureText } from '../text/index.js';
-import { GROUP_EDGE_LINK_CLEARANCE, GROUP_LABEL_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
+import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { cantonTiers, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke } from './bands.js';
 import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type NestedTip, type TierGap } from './gap-runs.js';
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
@@ -529,7 +529,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
       after: Math.max(pitch, input.labelRoom ?? 0) };
   };
   // The long vertical of a jogged drop that stands on its upper x runs down to one clearance above the lower tip, so an obstacle anchored to the
-  // band below (a group title, a lane box) that stands over that x stops it: the drop then stands on its lower x (whose leg `blocked` reads).
+  // band below (a lane box, a bundle envelope) that stands over that x stops it: the drop then stands on its lower x (whose leg `blocked` reads).
   const upperStandBlocked = (input: PlanInput): boolean => (frame.blocks ?? []).some(block => block.owner !== input.link && block.anchor === 'below'
     && input.upper.x > block.x0 + EPS && input.upper.x < block.x1 - EPS && frame.bandTop - (input.lower.y - keep) < block.bound - EPS);
   // A leg through a fixed obstacle (2.2, residual by constraint): an upper leg reaches down from its tip past the bottom of an
@@ -894,19 +894,6 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   }
   for (const obstacle of model.obstacles) {
     if (obstacle.layer !== 'overlay') rect(obstacle.bounds, keep, obstacle.owner.kind === 'link' ? obstacle.owner.id : undefined);
-  }
-  for (const label of model.labels) {
-    if (label.omitted || !label.bounds || label.layer === 'overlay' || label.role !== 'group') continue;
-    const middle = label.bounds.y + label.bounds.height / 2;
-    const clearance = GROUP_LABEL_LINK_CLEARANCE + half;
-    const span = { x0: label.bounds.x - clearance, x1: right(label.bounds) + clearance };
-    blocks.push(middle < (gap.low + gap.high) / 2 ? { ...span, anchor: 'above', bound: bottom(label.bounds) + clearance }
-      : { ...span, anchor: 'below', bound: clearance + bandTop - label.bounds.y });
-    if (middle < (gap.low + gap.high) / 2) {
-      if (bottom(label.bounds) + clearance > gap.low) obstacles.push({ x0: label.bounds.x - clearance, x1: right(label.bounds) + clearance, anchor: 'above', bound: bottom(label.bounds) + clearance });
-    } else if (clearance + bandTop - label.bounds.y > 0) {
-      obstacles.push({ x0: label.bounds.x - clearance, x1: right(label.bounds) + clearance, anchor: 'below', bound: clearance + bandTop - label.bounds.y });
-    }
   }
   for (const group of Object.values(model.groups)) {
     if (!group.bounds || !group.nodes.length) continue;

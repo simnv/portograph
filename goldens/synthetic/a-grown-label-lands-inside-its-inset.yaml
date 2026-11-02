@@ -1,19 +1,11 @@
-# Expected: `lower`'s title is wider than the gap its own geometry leaves, so 7f grows the box and
-# plans the label again inside it. That is the one path where `planLabels` answers from the
-# `firstFree` walk rather than the candidate list: the node's downward feed corridor covers the whole
-# window — centre, start, limit and both edges of the one merged range — so the candidate list is
-# empty. The walk sets the width the group asks to grow to, and the candidate list places the label
-# in the box that growth produced, so the two have to step out of a forbidden range by the same
-# distance (stress ticket 19).
+# Expected (architecture-2 ticket 54, titles last): `lower`'s title stands over the node's downward feed corridor. 7f no longer grows a box
+# for a title: the title is placed last, finds no free span, stands at the centre with a halo and names link-3 in `crossedBy`. The box keeps
+# the width stage 5 gives it (the title room, snack-theme ticket 157). Every gate passes.
 #
-# `middle` carries two links up and one down, so the title takes the bottom edge (ADR-0011) — the
-# edge the downward corridor crosses. Sizing gives the box the title room before the lanes
-# (snack-theme ticket 157), but the corridor still covers the window, so 7f still walks past it and
-# grows the box. The build (Verdana metrics) produces a group 452.7861368125 px wide holding a label
-# 285.357421875 px wide at x 113.9248066875: 151.4287149375 px of slack on the left and **exactly 0 on
-# the right**, the label's right edge on the inset the growth asked for. Before the fix the two steps
-# were one tolerance apart and the label came to rest 1e-6 px outside it.
-# Every gate passes.
+# History: before ticket 54, 7f grew the box and planned the label again inside it, the one path where `planLabels` answered from the
+# `firstFree` walk (stress ticket 19); the fixture pinned that the label came to rest on the inset and not 1e-6 px outside it.
+#
+# `middle` carries two links up and one down, so the title takes the bottom edge (ADR-0011), the edge the downward corridor crosses.
 portograph: 2
 groups:
   upper: { tier: 0, label: "Upper" }

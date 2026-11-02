@@ -1,10 +1,9 @@
 import type { FanFallbackReason, FanFamily, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
-import { EPS, segmentDistance, segmentRectDistance } from '../geometry/planar.js';
+import { EPS, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { chordsApart, chordVerdict, fanCrossedBoxes, fixedPointRefusal, foreignBox, isRoutedChord, orthogonalLeg, siblingStemCrowded, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
-import { diagonalMayCross, linkFreeMargin } from './diagonal-text.js';
 
 /**
  * The joint admission of a fan family (architecture-2 ticket 40, merged design Sections 2 and 3).
@@ -67,21 +66,16 @@ function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly 
   /**
    * Whether every chord of `set` can still hold once the members from `index` on are decided: the members from `index` on that keep apart from
    * the whole set are drawn as chords too, so they are no walls. A chord's refusals only grow as members fall back (each fallback adds legs, and a
-   * chord it keeps apart from adds no clearance), so a set that a chord or a leg refuses here fails in every completion: the walk stops there. A
-   * title is the one refusal that more chords can cause (it must fit beside every crossing), so before the end of the walk it stops nothing. At
-   * the end of the walk this is the test of the set itself, every refusal counted, so a set is drawn only when it holds as drawn. One call is one
-   * tested configuration of the budget.
+   * chord it keeps apart from adds no clearance), so a set that a chord or a leg refuses here fails in every completion: the walk stops there
+   * (no group title refuses a chord: a title yields to it, architecture-2 ticket 54). At the end of the walk this is the test of the set itself,
+   * so a set is drawn only when it holds as drawn. One call is one tested configuration of the budget.
    */
   const canHold = (set: readonly LayoutLink[], index: number): boolean => {
     if (!set.length) return true;
     tested++;
     const chords = [...set, ...open.slice(index).filter(link => set.every(other => apart.get(pair(link.id, other.id)) === true))];
     for (const link of chords) makeChord(model, link, segments.get(link.id)!);
-    const final = index === open.length;
-    const held = set.every(link => {
-      const refusal = fixedPointRefusal(model, link, segments.get(link.id)!);
-      return refusal === undefined || (!final && refusal === 'title');
-    });
+    const held = set.every(link => fixedPointRefusal(model, link, segments.get(link.id)!) === undefined);
     for (const link of chords) makeFanOrthogonal(model, link);
     return held;
   };
@@ -191,32 +185,6 @@ export function refuseStemCrowded(draft: LayoutModel): Map<string, FanFallbackRe
     if (!crowded.length) return reasons;
     for (const [id, reason] of refuseChords(draft, new Map(crowded.map(id => [id, 'stem' as const])))) reasons.set(id, reason);
   }
-}
-
-/**
- * The held chords (`frozenChords`) whose chord stands within the link-free margin of a group title where 7f placed it, read on the geometry as it
- * stands (what G3 would fail). A diagonal may cross a title (ticket 162, ADR-0023); only a chord within `DIAGONAL_MIN_DEGREES` of an axis is
- * crowded by one. The title planner reads such a chord as a wall, so a title that still meets one found no room beside it. The chord was held on
- * the geometry of 7e, where it may have been a diagonal that no title refused; 7f grows the gaps and moves the columns, so the angle class read
- * there does not hold for the published chord, and this is where the class is read again. A retry of 7f refuses those chords (`title`), as it
- * refuses the fan and direct members 7f brought near a planned part (`crowds`). In id order.
- */
-export function titleCrowdedChords(model: LayoutModel): string[] {
-  const titles = model.labels.filter(label => label.role === 'group' && !label.omitted && label.bounds !== undefined);
-  const found: string[] = [];
-  for (const id of model.frozenChords ?? []) {
-    const link = model.links.find(other => other.id === id), chord = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
-    if (link === undefined || chord === undefined) continue;
-    // The reach G3 reads: half the stroke and the title's link-free margin (`linkFreeMargin`).
-    if (titles.some(label => !diagonalMayCross(chord, label) && segmentRectDistance(chord, label.bounds!) < linkStrokeWidth(link) / 2 + linkFreeMargin(label) - EPS)) found.push(link.id);
-  }
-  return found.sort();
-}
-
-/** The straight fan members that a group title crowds (`titleCrowdedChords`): the retry of 7f refuses them as fan members (`title`). In id order. */
-export function titleCrowdedFanMembers(model: LayoutModel): string[] {
-  const straight = new Set((model.fanAdmissions ?? []).filter(item => item.mode === 'straight').map(item => item.link));
-  return titleCrowdedChords(model).filter(id => straight.has(id));
 }
 
 /**

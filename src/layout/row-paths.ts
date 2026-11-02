@@ -172,11 +172,12 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
     }
   }
   for (const label of model.labels) {
-    if (label.omitted || !label.bounds || label.layer === 'overlay' || beyond(label.bounds, labelReach) || ownsObstacle(label.owner)) continue;
+    // A group title yields to every link (architecture-2 ticket 54): it is no obstacle to a corridor.
+    if (label.omitted || !label.bounds || label.layer === 'overlay' || label.role === 'group' || beyond(label.bounds, labelReach) || ownsObstacle(label.owner)) continue;
     if (label.role === 'pill' && label.port && endPorts.has(portId(label.port))) continue;
-    // A diagonal may cross a group title or a link label (ticket 162, ADR-0023); an orthogonal corridor keeps clear of them.
+    // A diagonal may cross a link label (ticket 162, ADR-0023); an orthogonal corridor keeps clear of it.
     if (diagonalMayCross(segment, label)) continue;
-    if (segmentRectDistance(segment, label.bounds) < stroke / 2 + (label.role === 'group' ? GROUP_LABEL_LINK_CLEARANCE : 0) - EPS) return refuse('corridor');
+    if (segmentRectDistance(segment, label.bounds) < stroke / 2 - EPS) return refuse('corridor');
   }
   for (const lane of model.lanes) {
     // A span corridor (architecture ticket 22) is a reservation for its own chord: another chord crosses it strictly, and the chords' own clearance is `fixedPointRefusal`'s.

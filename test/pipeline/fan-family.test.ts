@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import type { FanFallbackReason } from '../../src/model/index.js';
-import { admitFanFamilies, fanAdmissionsFault, refuseChords, refuseStemCrowded, titleCrowdedFanMembers } from '../../src/layout/fan-admission.js';
+import { admitFanFamilies, fanAdmissionsFault, refuseChords, refuseStemCrowded } from '../../src/layout/fan-admission.js';
 import { blockedChords, freezeChords, orthogonalLeg, siblingStemCrowded } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -92,11 +92,10 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     expect(fanAdmissionsFault(reordered)).toMatch(/in order/);
   });
 
-  it('refuses at the end of 7f a member that passes the stem of a sibling fallback, and one on an axis a placed title still meets', () => {
+  it('refuses at the end of 7f a member that passes the stem of a sibling fallback (no title crowds a member, ticket 54)', () => {
     // Nothing is crowded as drawn.
     const straight = model.fanAdmissions!.filter(item => item.mode === 'straight').map(item => model.links.find(link => link.id === item.link)!);
     expect(straight.filter(link => siblingStemCrowded(model, link)).map(link => link.id)).toEqual([]);
-    expect(titleCrowdedFanMembers(model)).toEqual([]);
     // The member from Hub B to D 1 led to 3 px beside the port of the fallback from Hub A to D 1 passes its stem.
     const fallback = model.links.find(link => ends(model, link.id) === 'd-1|hub-a')!;
     const leg = orthogonalLeg(model, fallback, fallback.attachments!.from.node === 'd-1' ? 'from' : 'to')!;
@@ -115,17 +114,6 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     expect(forged.fanAdmissions!.find(item => item.link === chord.id)).toMatchObject({ mode: 'orthogonal', reason: 'stem' });
     expect(forged.fanAdmissions!.filter(item => item.mode === 'straight')).toHaveLength(6);
     expect(fanAdmissionsFault(forged)).toBeUndefined();
-    // The Site D title moved onto the same member's chord: a diagonal may cross a title (ticket 162), so nothing is crowded.
-    const titled = clone(model);
-    const target = titled.links.find(link => ends(model, link.id) === 'd-1|hub-b')!, member = target.path!.segments[0]!;
-    const title = titled.labels.find(label => label.role === 'group' && label.owner.kind === 'group' && label.owner.id === 'site-d')!;
-    const middle = { x: (member.from.x + member.to.x) / 2, y: (member.from.y + member.to.y) / 2 };
-    title.bounds = { ...title.bounds!, x: middle.x - title.bounds!.width / 2, y: middle.y - title.bounds!.height / 2 };
-    expect(titleCrowdedFanMembers(titled)).toEqual([]);
-    // The same member forged onto an axis keeps the rule: the title crowds it.
-    member.to = { ...member.to, x: member.from.x };
-    title.bounds = { ...title.bounds!, x: member.from.x - title.bounds!.width / 2 };
-    expect(titleCrowdedFanMembers(titled)).toContain(target.id);
   });
 
   it('lets G2 excuse a straight member only in the boxes its admission names', () => {
