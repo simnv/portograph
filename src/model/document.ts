@@ -129,8 +129,8 @@ export interface NormalisedDocument {
     /** Positive finite published canvas width budget. Above it, the width-budget search staggers more rows (ticket 166). */
     maxWidth?: number;
     /**
-     * When false, stage 5 picks no arrangement of its own: every row stays one line and no `groupArrangements` record is written
-     * (ticket 51, the R9 escape). Default true. A `maxWidth` budget still runs its own search.
+     * When false, stage 5 picks no arrangement of its own: every row stays one line, no group stands as a column, and no `groupArrangements`
+     * record is written (tickets 51 and 52, the R9 escape). Default true. A `maxWidth` budget still runs its own search.
      */
     autoArrange?: boolean;
     /** When true, an overlay link blocked only by node bodies is drawn as the straight chord over them. Default false. */

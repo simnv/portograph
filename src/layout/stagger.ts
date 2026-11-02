@@ -444,7 +444,8 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
  * other error of the draft ends the run (a freeze validation that the stage-5 proof did not foresee is a defect, not a reason). Each candidate is tried once (a finite traversal). A `declined` group stays a row: a later
  * stage of an earlier attempt of the first run could not keep its stagger. When every group keeps its row by a rule before any draft there is
  * nothing to choose and no record: an absent record and an all-`row` record both mean "every group stays one row"; the record exists
- * only when stage 5 tried a group.
+ * only when stage 5 tried a group. `columns` are the columns stage 5 seated earlier (ticket 52): each is recorded `column`, and a group
+ * the column rule refused by name keeps that reason (the two filters are disjoint).
  */
 export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, string>, prove: (draft: LayoutModel) => void,
   columns: { plans: readonly ColumnPlan[]; reasons: ReadonlyMap<string, string> } = { plans: [], reasons: new Map() }): void {
