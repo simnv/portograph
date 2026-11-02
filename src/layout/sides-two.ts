@@ -351,7 +351,7 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
   //
   // `bandSide` counts incident routed link ports over frozen port topology. Never read this from
   // `model.labelBands`: it does not exist before 7f, `syncBands` rewrites it inside 7f and
-  // `reserveInitialSpace` rewrites it again after moving tiers, so the decline would answer nothing
+  // `topUpBandClearance` rewrites it again after moving tiers, so the decline would answer nothing
   // before 7f, one thing during it and another on the re-derivation `validateGroupLabelBands` makes
   // at every stage from `bands` on. That is the `link.path` trap below, one layer up.
   const owning = model.groups[model.document.nodes[node]!.group];

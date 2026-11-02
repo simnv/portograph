@@ -33,7 +33,7 @@ import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 import { directFamiliesFault } from './direct-families.js';
 import { fanAdmissionsFault } from './fan-admission.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { busBandHeight, busRoom } from './bus-room.js';
+import { busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry, trunkJoins } from './bus.js';
 import { reportTrunkCrossings } from './trunk.js';
 import { derivedShortfalls, separationsBrokenBy, worseSeparations } from './constraints/separation.js';
@@ -351,6 +351,7 @@ function bandFor(model: LayoutModel, title: Title, entries: RouterEntryPoint[]):
       width: group.bounds!.width, height },
     clearance: clearanceFor(model, group, entries, side) };
 }
+
 
 /** Every band the current geometry calls for: the titles of groups and cells, then the canton titles. */
 function expectedBands(model: LayoutModel, entries: RouterEntryPoint[]): LabelBand[] {
@@ -875,71 +876,48 @@ function consumeGrowthPass(budget: CentreBudget, before: number): void {
 }
 
 /**
- * The gap each canton band needs beside a sub-tier: the frame margin, the band, and a margin more between the
- * band and what stands past it. `below` is keyed by the last sub-tier of a canton titled at the bottom, `above`
- * by the first sub-tier of one titled at the top. The margin past the band is the ordinary 20 px group
- * padding, so the room is 20 + band + 20.
+ * The title bands and in-frame bus bands, reserved at the start of 7f, before any round (architecture-2 ticket 57). Stage 5 decides each
+ * band's edge (ADR-0011) and height; this reserves the room by a move in y only: a top band pushes its nodes down, a bottom band grows
+ * the box down, and the tiers below move down by what their band grew, so every tier gap keeps the height stage 6 seated. Nodes of one
+ * tier keep one row: every group moves its nodes down by the largest top-band shift of its tier. A frame's band is held by one rank cell
+ * (`band.host`). The room a group already holds is read from the bands it carries, so a second call reserves only what is still missing
+ * (a deeper stem on the title edge, a detour label under the title: `clearanceFor`). Nothing moves in x. The bands that stand in a tier
+ * gap (a canton title, an across-frames bus) are the gap's: stage 6 seats them (`gapBandDemand`). Returns whether anything moved.
+ *
+ * A first version reserved the title bands in stage 5 itself, so 7a to 7e planned in the taller boxes; it cost 42 bends and 23 crossings
+ * on the corpus (branch `t57-step2-stage5`), and the user chose this one (ticket 57 Comments).
  */
-function cantonGapNeeds(model: LayoutModel): { below: Map<number, number>; above: Map<number, number>; busBelow: Set<number>; busAbove: Set<number> } {
-  const below = new Map<number, number>(), above = new Map<number, number>();
-  const busBelow = new Set<number>(), busAbove = new Set<number>();
-  for (const band of model.labelBands) {
-    if (!isCantonFrame(model, band.group)) continue;
-    const tiers = cantonTiers(model, band.group), need = GROUP_PADDING + band.bounds.height + GROUP_PADDING;
-    const map = band.side === 'top' ? above : below, tier = band.side === 'top' ? tiers.first : tiers.last;
-    map.set(tier, Math.max(map.get(tier) ?? 0, need));
-  }
-  // An across-frames bus band lies in the gap on its edge and belongs to no frame: it is held by the sub-tier, as a canton band is.
-  // On an edge that also carries a canton band the need is the sum, 20 + bus band + canton band + 20, and never the larger of the two.
-  for (const bus of model.meshBuses ?? []) {
-    if (bus.placement !== 'across-frames' || bus.side === undefined) continue;
-    const map = bus.side === 'top' ? above : below, height = busBandHeight(bus), known = map.get(bus.row);
-    map.set(bus.row, known === undefined ? GROUP_PADDING + height + GROUP_PADDING : known + height);
-    (bus.side === 'top' ? busAbove : busBelow).add(bus.row);
-  }
-  return { below, above, busBelow, busAbove };
-}
-
-function reserveInitialSpace(model: LayoutModel): void {
+export function topUpBandClearance(model: LayoutModel): boolean {
   const before = new Map(model.tierBands.map(band => [band.tier, { ...band.bounds! }]));
-  // The room each group already holds for a band on that side, from the reservation it carries now.
-  // 7f calls this producer twice — labels, tier gap room, labels again — so the shift has to be the
-  // room still missing, never the whole band again. The map is empty on the first call, where the
-  // group holds the ordinary padding and the shift is the whole band beyond it.
+  // The room each group holds for its band now: the band and the clearance it carries.
   const held = new Map(model.labelBands.map(band => [band.host ?? band.group, band]));
   const heldBus = new Map((model.busBands ?? []).filter(band => band.group !== undefined).map(band => [band.group!, band]));
   const entries = routerEntryPoints(model);
   syncBands(model, entries);
-  // The band replaces the ordinary padding on its side, and its clearance replaces that padding
-  // beside it. A top band pushes its nodes down; a bottom band only grows the box downward. Nodes
-  // of one tier keep one row: every group moves its nodes down by the largest top-band shift of its
-  // tier — a smaller clearance or a bottom title never breaks the row levelling of stage 6, and a
-  // flank stays level with the peer whose band grew more. A frame's band is held by one rank cell
-  // (`band.host`), so only that cell asks for room; the other cells of the frame hold no band and
-  // take the levelling shift of their sub-tier like any group without a title.
-  // An in-frame mesh bus band is held the same way (mesh-bus.md, section 4): on the title edge it is in the band's clearance;
-  // on the other edge it lies against the padding, and the group grows by the difference.
   const ids = orderedGroupIds(model.document);
   const shifts = new Map(ids.map(id => {
     const group = model.groups[id]!, band = bandHeldBy(model, id), result = { top: 0, bottom: 0 };
     if (band !== undefined) {
       const prior = held.get(id);
-      const room = prior !== undefined && prior.side === band.side
-        ? prior.bounds.height + prior.clearance : groupPadding(model, group)[band.side];
-      result[band.side] = band.bounds.height + band.clearance - room;
+      const room = prior !== undefined && prior.side === band.side ? prior.bounds.height + prior.clearance : groupPadding(model, group)[band.side];
+      result[band.side] = Math.max(0, band.bounds.height + band.clearance - room);
     }
+    // An in-frame bus band off the title edge lies against the padding, and the group grows by the difference (mesh-bus.md, section 4).
     const bus = busRoom(model, group), padding = groupPadding(model, group), prior = heldBus.get(id);
     for (const side of ['top', 'bottom'] as const) {
       if (bus[side] <= 0 || band?.side === side) continue;
       const have = prior !== undefined && prior.side === side ? Math.max(padding[side], prior.bounds.height) : padding[side];
-      result[side] = Math.max(padding[side], bus[side]) - have;
+      result[side] = Math.max(0, Math.max(padding[side], bus[side]) - have);
     }
     return [id, result];
   }));
   const topShift = (tier: number) => Math.max(0, ...ids.filter(id => model.groups[id]!.tier === tier).map(id => shifts.get(id)!.top));
+  let moved = false;
   for (const id of ids) {
     const group = model.groups[id]!, shift = shifts.get(id)!;
     const down = topShift(group.tier!);
+    if (down <= PLACEMENT_EPS && shift.bottom <= PLACEMENT_EPS) continue;
+    moved = true;
     for (const nodeId of group.nodes) {
       const node = model.nodes[nodeId]!;
       node.bounds!.y += down;
@@ -947,28 +925,17 @@ function reserveInitialSpace(model: LayoutModel): void {
     }
     group.bounds!.height += down + shift.bottom;
   }
-  holdColumnsAfterPush(model);
+  if (!moved) return false;
   rebuildBands(model);
-  // A canton band is held by the sub-tier, not by a cell (canton-groups spec, section 3): the gap on its edge
-  // holds the frame margin, the band and a margin more, and the tier bands past it move down by what is missing.
-  const need = cantonGapNeeds(model);
-  let shift = 0, previous: { tier: number; bottom: number; shift: number } | undefined;
+  // The tiers below a band that grew move down by its growth, so every tier gap keeps its height.
+  let shift = 0;
   for (const tierBand of [...model.tierBands].sort((a, b) => a.tier - b.tier)) {
-    if (previous !== undefined) {
-      const gap = tierBand.bounds!.y + shift - previous.bottom;
-      // Two bus bands that face each other in one gap (the bars of a join on adjacent rows) are added, never compared: 20 + upper band + lower band + 20
-      // (mesh-bus.md, section 11.5, *Two bands in one gap*). A canton band on either edge is already in that edge's need.
-      const both = need.busBelow.has(previous.tier) && need.busAbove.has(tierBand.tier);
-      const wanted = both ? need.below.get(previous.tier)! + need.above.get(tierBand.tier)! - 2 * GROUP_PADDING
-        : Math.max(need.below.get(previous.tier) ?? 0, need.above.get(tierBand.tier) ?? 0);
-      shift += Math.max(0, wanted - gap);
-    }
     if (shift) for (const group of Object.values(model.groups).filter(item => item.tier === tierBand.tier)) moveGroup(model, group, 0, shift);
-    previous = { tier: tierBand.tier, bottom: bottom(tierBand.bounds!) + shift, shift };
     shift += Math.max(0, tierBand.bounds!.height - (before.get(tierBand.tier)?.height ?? tierBand.bounds!.height));
   }
   rebuildBands(model);
   syncBands(model, entries);
+  return true;
 }
 
 
@@ -1736,7 +1703,8 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
       placementWarning(model, 'FRAME_TITLE_UNHOSTED', `Frame ${id} has no own cell on its top or bottom edge; its title is not drawn.`, [id], 'group');
     }
   }
-  reserveInitialSpace(model);
+  topUpBandClearance(model);
+  holdColumnsAfterPush(model);
   reserveLinkLabelRoom(model);
   const budget = createCentreBudget();
   rebuildRegionGeometry(model, budget, undefined, true);
@@ -1787,7 +1755,7 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
  * No title stands here: titles are placed once, at the end of 7f (`placeGroupTitles`, architecture-2 ticket 54).
  *
  * The fallback is given the bands the **first** step reserved, not the ones measured here.
- * `reserveInitialSpace` reads the room a group already holds from the bands the model carries, so a
+ * `topUpBandClearance` reads the room a group already holds from the bands the model carries, so a
  * model carrying the new bands would measure each of them against itself, reserve nothing for a
  * clearance that grew between the two steps, and leave the fit to box growth into the gap the
  * measurement has just opened.
