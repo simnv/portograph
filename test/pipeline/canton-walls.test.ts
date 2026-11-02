@@ -312,7 +312,9 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     // wide (1921 with Arial). Measured again with the widening allowed (the ticket 136 refusal off): loc-a2 at x 1131.2, 235.5 wide, and the
     // canvas 2019.7 px wide, also a fixed point of the pack. With Arial the canvas told the two apart (1921 against 2182, a bound of 2100);
     // with Verdana the widening is the narrower one, so the extent of loc-a2 and the yield below are the witnesses, not a canvas bound.
-    expect([loc.x, loc.width]).toEqual([expect.closeTo(1050.3, 1), expect.closeTo(345.7, 1)]);
+    // Architecture-2 ticket 57: stage 6 seats the tier gaps and one solve grows them after the last x move, so loc-a2 stands at x 1048.8,
+    // 348.8 wide (1050.3 and 345.7 before); the fixed point and the yield hold.
+    expect([loc.x, loc.width]).toEqual([expect.closeTo(1048.8, 1), expect.closeTo(348.8, 1)]);
     expect(hinted.canvas!.width).toBeCloseTo(2094, -1);
     const yields = hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_YIELDS_TO_PACK');
     expect(yields.length).toBeGreaterThan(0);

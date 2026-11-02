@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { expect, it, vi } from 'vitest';
+// The judges' module is loaded before the layout entry (architecture-2 ticket 57): the solve's imports (centre, bands) changed the order in which
+// the import cycle overlay-paths -> row-paths -> frame-paths -> bands -> objective -> overlay-paths is entered, and entered from the entry the
+// objective module bound the real path reader, not the mock below.
+import '../../src/layout/objective.js';
 import { layout, parse } from '../../src/index.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { stepOutOfChords } from '../../src/layout/overlay-place.js';

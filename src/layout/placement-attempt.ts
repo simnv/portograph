@@ -431,7 +431,9 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   nestOverlayPorts(draft, model => roomHolds(model, gapLabels) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
   // The tier gaps are solved once, after the last move in x and before the titles (architecture-2 ticket 57): the stem depths are
   // recorded, every plan and every label room across a gap is read once, the gaps grow, and the claims a move in y changes are rebuilt.
-  timed('solve-tier-gaps', () => solveTierGaps(draft, replayGridAndBands));
+  // After a growth the linkless step runs once more, as a round did after a growth before (ticket 76 review): a held chord whose slope the
+  // growth changed may now cross a group with no links.
+  timed('solve-tier-gaps', () => solveTierGaps(draft, replayGridAndBands, model => moves && stepLinklessOutOfChords(model)));
   note('solve-tier-gaps', 'done');
   // The group titles are placed once, on the geometry that publishes, after the last move of a box, a lane or a port (architecture-2 ticket 54,
   // "titles last"): a title yields to every link, and nothing placed before reads it. The validator reads the record.
