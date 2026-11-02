@@ -21,7 +21,22 @@ export function nodeGap(model: LayoutModel, a: string, b: string): number {
   return SKELETON_SPACING.nodeClearance
     + ((model.nodes[a]!.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node) + (model.nodes[b]!.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2;
 }
+/**
+ * The horizontal spacing between units: sibling columns, grid columns, flanks, rows of a grid and ELK's layer spacing. One number for
+ * the whole diagram, from the node clearance and the widest stroke. The vertical seat of a tier gap is `tierGapMin` (architecture-2
+ * ticket 57); today the two are equal.
+ */
 export function bandGap(model: LayoutModel): number {
+  const maxStroke = Math.max(DEFAULT_STROKE_WIDTHS.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node));
+  return Math.max(SKELETON_SPACING.tierGap, SKELETON_SPACING.nodeClearance + maxStroke);
+}
+
+/**
+ * The least height of a tier gap, body to body: stage 4 and stage 6 seat every band this far under the band above, and it is the
+ * floor of the tier-gap plan (`gap-plan.ts`). The reservations of a gap (its bands, its parts, its link labels) raise a gap above it,
+ * never below (architecture-2 ticket 57). Split from `bandGap`, which keeps every horizontal use; the value is the same today.
+ */
+export function tierGapMin(model: LayoutModel): number {
   const maxStroke = Math.max(DEFAULT_STROKE_WIDTHS.node, ...Object.values(model.nodes).map(node => node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node));
   return Math.max(SKELETON_SPACING.tierGap, SKELETON_SPACING.nodeClearance + maxStroke);
 }

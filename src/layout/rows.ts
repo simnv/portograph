@@ -1,7 +1,7 @@
 import type { Rect, Side } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel, LayoutNode } from '../model/layout.js';
 import { groupShape } from './grid.js';
-import { bandGap, compareId, portId } from './skeleton-graph.js';
+import { bandGap, compareId, portId, tierGapMin } from './skeleton-graph.js';
 import { moveGroup, rebuildBands, union } from './skeleton-geometry.js';
 import { groupInsets } from './regions.js';
 import { holdColumnAxes, packBesideRows, separateFrameColumns } from './columns.js';
@@ -49,15 +49,15 @@ function flattenRows(draft: LayoutModel): void {
  * Re-seat every band at the bottom of the band above plus the band gap (ranked-groups ticket 18).
  * `flattenRows` moves a tier's nodes to the top of the tier and leaves the freed height below them,
  * so a band that ELK layered deeper than its sub-tier needed keeps that height as gap. The gap
- * between two bands is one number: `bandGap`, which serves the boundary between the sub-tiers of one
- * document tier and the boundary between document tiers alike (both are the same 60 px floor today,
- * and no rule names a second constant). Room a later stage allocates (tier-gap rows, label bands)
- * is added on top of this seating by stage 7. Whole bands move by one vertical shift, flanks, bars
+ * between two bands is one number: `tierGapMin`, which serves the boundary between the sub-tiers of one
+ * document tier and the boundary between document tiers alike (architecture-2 ticket 57 split it from
+ * `bandGap`, the horizontal spacing; both are 60 px today). Room a later stage allocates (tier-gap rows,
+ * label bands) is added on top of this seating by stage 7. Whole bands move by one vertical shift, flanks, bars
  * and grids with them. The canvas is not touched: stage 9 refits it to what is drawn.
  */
 function reseatBands(draft: LayoutModel): void {
   rebuildBands(draft);
-  const gap = bandGap(draft);
+  const gap = tierGapMin(draft);
   let y = draft.tierBands[0]?.bounds!.y ?? 0;
   for (const band of draft.tierBands) {
     const dy = y - band.bounds!.y;

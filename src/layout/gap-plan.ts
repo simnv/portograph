@@ -11,7 +11,7 @@ import { endPort } from './approach.js';
 import { findPort } from './row-paths.js';
 import { courseOf } from './course-lanes.js';
 import { gapEnds, isGapCourse } from './course-gap.js';
-import { bandGap } from './skeleton-graph.js';
+import { tierGapMin } from './skeleton-graph.js';
 import { stemCache, stemPlan, type StemCache } from './sides-two.js';
 
 /**
@@ -793,7 +793,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   const margin = GROUP_EDGE_LINK_CLEARANCE + half, stem = GROUP_LABEL_GEOMETRY.routerStem;
   const bandOf = (tier: number): Rect => model.tierBands.find(band => band.tier === tier)!.bounds!;
   const above = bandOf(gap.above), bandTop = bandOf(gap.below).y;
-  const floor = Math.max(0, bandGap(model) - (gap.low - bottom(above)));
+  const floor = Math.max(0, tierGapMin(model) - (gap.low - bottom(above)));
   const chords = new Set(model.frozenChords ?? []);
 
   const inputs: PlanInput[] = [], residual: ResidualPart[] = [];
