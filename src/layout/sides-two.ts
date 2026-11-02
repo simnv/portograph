@@ -902,7 +902,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   sizeNodes(model);
   // The column arrangement (ticket 52) is decided here, on final sides: each facing face takes the column's pitch, so the nodes are sized
   // again, and the repack below seats the column. Without a column nothing changes.
-  const columns = reserveColumns(model, arrange.mode);
+  const columns = reserveColumns(model, arrange.mode, arrange.mode === 'decide' ? arrange.declined : undefined);
   if (columns.plans.length) sizeNodes(model);
   for (const groupId of orderedGroupIds(model.document)) {
     const group = model.groups[groupId]!, order = group.rowOrder ?? group.nodes;

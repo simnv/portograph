@@ -133,6 +133,36 @@ describe('a group whose members all link laterally stands as one column (archite
     expect(picture(replayed)).toEqual(picture(decided));
   }, 60000);
 
+  it('under a width budget the trial records the column it seats beside the rows the search gives (R1)', async () => {
+    const yaml = `portograph: 2
+layout: { maxWidth: 400 }
+groups:
+  edge: { tier: 0 }
+  guard: { align: right, of: edge }
+  mid: { tier: 1 }
+  leaves: { tier: 2 }
+nodes:
+  e1: { group: edge, class: switch }
+  g1: { group: guard, class: tbr }
+  g2: { group: guard, class: tbr }
+  g3: { group: guard, class: tbr }
+  e2: { group: mid, class: switch }
+${[1, 2, 3, 4, 5, 6, 7, 8].map(i => `  l${i}: { group: leaves, class: server }`).join('\n')}
+links:
+  - [e1, e2]
+  - [e1, g1]
+  - [e1, g2]
+  - [e1, g3]
+${[1, 2, 3, 4, 5, 6, 7, 8].map(i => `  - [e2, l${i}]`).join('\n')}
+`;
+    const model = await run(yaml);
+    expect(model.groupArrangements!.guard).toEqual({ chosen: 'column' });
+    expect(model.groupArrangements!.leaves).toEqual({ chosen: 'stagger' });
+    expect(model.diagnostics.filter(note => note.code === 'ROW_STAGGER_REFUSED' || note.code === 'WIDTH_BUDGET_UNMET')).toEqual([]);
+    expect(model.canvas!.width).toBeLessThanOrEqual(400);
+    expect(score(model).snapshot.counters.removedLinks).toBe(0);
+  }, 120000);
+
   describe('each refusal keeps the row and names its reason', () => {
     const cases: [string, string, string, string][] = [
       ['a member with a vertical link (side entry)', FLANK_HEAD + '  - [e1, g1]\n  - [e1, g2]\n  - [e1, g3]\n  - [r1, g2]\n', 'guard', 'member g2 has 2 links, not one'],
@@ -151,6 +181,32 @@ describe('a group whose members all link laterally stands as one column (archite
         expect(new Set(model.groups[group]!.nodes.map(id => model.nodes[id]!.bounds!.y)).size).toBe(1);
       }, 60000);
     }
+    it('a member with another port on its facing face', async () => {
+      const yaml = FLANK_HEAD.replace('  g2: { group: guard, class: tbr }', '  g2: { group: guard, class: tbr, ports: [{ name: p }, { name: x, side: left }] }')
+        + '  - [e1, g1]\n  - [e1, { node: g2, port: p }]\n  - [e1, g3]\n';
+      expect(await reasonOf(yaml, 'guard')).toBe('member g2 has other ports on its left face');
+    }, 60000);
+    it('a peer that is not the node of its row nearest the column', async () => {
+      const yaml = `portograph: 2
+groups:
+  cells: { tier: 0 }
+  spine: { align: left, of: cells }
+  low: { tier: 1 }
+nodes:
+  s: { group: spine, class: switch }
+  t: { group: spine, class: switch }
+  c1: { group: cells, class: server }
+  c2: { group: cells, class: server }
+  c3: { group: cells, class: server }
+  b1: { group: low, class: server }
+links:
+  - [s, c1]
+  - [s, c2]
+  - [s, c3]
+  - [t, b1]
+`;
+      expect(await reasonOf(yaml, 'cells')).toMatch(/^s is not the node of spine nearest the column$/);
+    }, 60000);
     it('a group with a flank on each side', async () => {
       const yaml = fixture(TIER).replace('  spine: { align: left, of: cells }', '  spine: { align: left, of: cells }\n  rack: { align: right, of: cells }')
         .replace('  s: { group: spine, class: switch }', '  s: { group: spine, class: switch }\n  t: { group: rack, class: switch }');

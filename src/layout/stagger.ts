@@ -449,9 +449,19 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
  */
 export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, string>, prove: (draft: LayoutModel) => void,
   columns: { plans: readonly ColumnPlan[]; reasons: ReadonlyMap<string, string> } = { plans: [], reasons: new Map() }): void {
-  if (model.document.layout?.autoArrange === false || model.staggerRows !== undefined || model.groupArrangements !== undefined) return;
-  const candidates = staggerCandidates(model), ids = Object.keys(model.groups).sort(compareId);
-  const reasons = new Map<string, string>(), column = new Set(columns.plans.map(plan => plan.group));
+  if (model.document.layout?.autoArrange === false || model.groupArrangements !== undefined) return;
+  const ids = Object.keys(model.groups).sort(compareId), column = new Set(columns.plans.map(plan => plan.group));
+  if (model.staggerRows !== undefined) {
+    // The width-budget search gave the rows: stage 5 chooses no stagger, but it seated its columns, and the record says so (R1).
+    if (!column.size) return;
+    const given = new Set(model.staggerRows.map(row => row.group)), record: Record<string, GroupArrangement> = {};
+    for (const id of ids) record[id] = column.has(id) ? { chosen: 'column' } : given.has(id) ? { chosen: 'stagger' }
+      : { chosen: 'row', reason: columns.reasons.get(id) ?? 'the width-budget search gave the rows' };
+    model.groupArrangements = record;
+    return;
+  }
+  const candidates = staggerCandidates(model);
+  const reasons = new Map<string, string>();
   for (const id of ids) {
     // The two filters are disjoint (ticket 52): a column group, and a group the column rule refused by name (a flank, or a tier group
     // with a lateral link), never pass `rowReason`, so the column reason is the one recorded for them.

@@ -59,6 +59,8 @@ function admit(model: LayoutModel, group: LayoutGroup, face: { facing: string[];
       && item.flank.primaryPeer !== undefined && item.flank.primaryPeer === group.flank!.primaryPeer).map(item => item.id).sort(compareId);
     if (shared.length) return `flank ${shared[0]!} shares the primary peer ${group.flank.primaryPeer!}`;
   }
+  const facingGroup = model.groups[other]!;
+  if (facingGroup.frame !== undefined || groupShape(model, other) !== 'row' || model.document.groups[other]?.shape === 'bar') return `the facing group ${other} is not a plain row`;
   const order = group.rowOrder ?? group.nodes;
   const fars: PortRef[] = [];
   for (const id of order) {
@@ -76,6 +78,7 @@ function admit(model: LayoutModel, group: LayoutGroup, face: { facing: string[];
     const ownPort = findPort(model, own), farPort = findPort(model, far);
     if (ownPort === undefined || farPort === undefined) return `a port of the link of member ${id} is not seated`;
     if (ownPort.side !== face.memberFace || farPort.side !== opposite(face.memberFace)) return `the link of member ${id} does not leave through the facing faces`;
+    if (model.nodes[id]!.ports.some(port => port.side === face.memberFace && portKey(port.ref) !== portKey(own))) return `member ${id} has other ports on its ${face.memberFace} face`;
     if ([own, far].some(ref => authoredSide(model, ref) !== undefined) || [ownPort, farPort].some(port => port.authorOrder !== undefined)) return `the author set the side or order of a port of member ${id}`;
     fars.push(far);
   }
@@ -84,6 +87,10 @@ function admit(model: LayoutModel, group: LayoutGroup, face: { facing: string[];
   if (new Set(fars.map(portKey)).size !== fars.length) return `members share a port of ${peers[0]!}`;
   const peerFace = opposite(face.memberFace), keys = new Set(fars.map(portKey));
   if (model.nodes[peers[0]!]!.ports.some(port => port.side === peerFace && !port.unused && !keys.has(portKey(port.ref)))) return `${peers[0]!} has other ports on its ${peerFace} face`;
+  // The peer has a free line to the column: it is the node of its row nearest the column (stage 4 stands a flank's primary peer at that
+  // end). The members face left exactly when the facing group stands to their left, so its nearest node is the last of its row.
+  const row = facingGroup.rowOrder ?? facingGroup.nodes;
+  if ((face.memberFace === 'left' ? row[row.length - 1] : row[0]) !== peers[0]!) return `${peers[0]!} is not the node of ${other} nearest the column`;
   return { group: group.id, peer: peers[0]!, face: peerFace, order: [...order] };
 }
 
@@ -111,13 +118,16 @@ export function columnPitch(model: LayoutModel, order: readonly string[]): numbe
 }
 
 /**
- * The plans this placement run seats: decided here in the first run, or read from the record in every later run (an admission the
+ * The plans this placement run seats: decided here in the first run (less the `declined` groups), or read from the record in every later run (an admission the
  * later run no longer passes refuses the run by name, R6). The facing face of each peer takes the column's pitch before the caller
  * re-sizes the nodes, so its ports stand one member apart.
  */
-export function reserveColumns(model: LayoutModel, mode: 'decide' | 'keep'): { plans: ColumnPlan[]; reasons: Map<string, string> } {
+export function reserveColumns(model: LayoutModel, mode: 'decide' | 'keep', declined: ReadonlyMap<string, string> = new Map()): { plans: ColumnPlan[]; reasons: Map<string, string> } {
   if (model.document.layout?.autoArrange === false) return { plans: [], reasons: new Map() };
   const found = columnCandidates(model);
+  // A column that a later stage of an earlier attempt of the first run refused stays a row (as a declined stagger does).
+  for (const plan of found.plans.filter(item => declined.has(item.group))) found.reasons.set(plan.group, `a later stage of the first run refused the column: ${declined.get(plan.group)!}`);
+  found.plans = found.plans.filter(plan => !declined.has(plan.group));
   if (mode === 'keep') {
     const recorded = Object.keys(model.groupArrangements ?? {}).filter(id => columnOf(model, id)).sort(compareId);
     for (const id of recorded) {
@@ -134,9 +144,10 @@ export function reserveColumns(model: LayoutModel, mode: 'decide' | 'keep'): { p
   return found;
 }
 
-/** Seat one column inside its group box: members centred on one x, from the row's top, their centres one pitch apart. */
+/** Seat one column inside its group box: members centred on one x, from the row's top, their centres one peer-face pitch apart. */
 export function seatColumn(model: LayoutModel, group: LayoutGroup, plan: ColumnPlan, padding: number): void {
-  const pitch = columnPitch(model, plan.order), widest = Math.max(...plan.order.map(id => model.nodes[id]!.size!.width));
+  // The pitch the peer face got (at least the column's own; a lane, bundle or pill floor may have made it larger), so every pair levels.
+  const pitch = model.nodes[plan.peer]!.sidePitch![plan.face]!, widest = Math.max(...plan.order.map(id => model.nodes[id]!.size!.width));
   const tallest = Math.max(...plan.order.map(id => model.nodes[id]!.size!.height));
   const top = Math.min(...plan.order.map(id => model.nodes[id]!.bounds!.y)), centreX = group.bounds!.x + padding + widest / 2;
   for (const [i, id] of plan.order.entries()) {
