@@ -1,0 +1,31 @@
+# Expected: the stems of a nested node side are decided before the tier gap opens (architecture-2 ticket 57). `t` takes three links
+# from `a1`, `a2` and `a4`, and the chords of `f0` stand between them, so the three legs on the top side of `t` nest: stems of 15,
+# 32.5 and 50 px, recorded in `stemDepths` (with the two nested stems of `u`). The nested stems and the 15 px stems of the access
+# row ask more than the 60 px gap holds: the one tier-gap solve of 7f grows the gap once, 7.5 px (`TIER_GAP_GROWN`, set by
+# link-2#0), and after it every plan asks 0.
+# Test-only input owned by architecture-2 ticket 57; test/pipeline/gap-solve-fixtures.test.ts reads it.
+portograph: 2
+groups:
+  access: { tier: 0, label: Access }
+  far: { tier: 1, label: Far }
+  near: { tier: 1, label: Near }
+  edge: { tier: 1, label: Edge }
+nodes:
+  a0: { group: access, class: switch, label: A0 }
+  a1: { group: access, class: switch, label: A1 }
+  a2: { group: access, class: switch, label: A2 }
+  a3: { group: access, class: switch, label: A3 }
+  a4: { group: access, class: switch, label: A4 }
+  a5: { group: access, class: switch, label: A5 }
+  a6: { group: access, class: switch, label: A6 }
+  f0: { group: far, class: server, label: F0 }
+  t: { group: near, class: server, label: T }
+  u: { group: edge, class: server, label: U }
+links:
+  - [a0, f0]
+  - [a1, t]
+  - [a2, t]
+  - [a3, f0]
+  - [a4, t]
+  - [a5, u]
+  - [a6, u]

@@ -309,26 +309,27 @@ other edge from then on, where the frame has a cell to host it. The bus reads AD
 
 **Who reserves it.** Three steps, all in placement, in pipeline order:
 
-1. Stage 7f `produceGroupLabelBands` calls `reserveInitialSpace`, which grows a group by the room
-   its label band still needs. For an in-frame bus it counts the bus band the same way on the bus
-   side (`groupInsets` gains it), so the group grows and the tiers below move before the tier-gap
-   growth. For an across-frames bus the band has no host: the shift loop of `reserveInitialSpace`
-   requires the gap on the bus side to hold 20 + band + 20 (the frame margins on both sides and
-   the band), and moves the lower tiers by the shortfall, as it does for a canton title band. Where
-   a canton title band stands on the same edge, the need is 20 + bus band + canton band + 20.
-   `cantonGapNeeds` takes the larger of the needs of one tier edge, and the loop the larger of the
-   two edges of a gap; a bus band adds to a band on its own edge and never takes the maximum with
-   it. The skeleton (stage 4)
-   reserves no band, for a title or for a bus.
-2. Stage 7f `produceBusBands` runs beside `produceGroupLabelBands`, before the tier-gap growth and
+1. For an in-frame bus, stage 7f `produceGroupLabelBands` calls `topUpBandClearance` at its start. It grows a group by the room
+   its label band still needs, on the y axis only, and counts the bus band the same way on the bus
+   side (`groupInsets` gains it), so the group grows and the tiers below move before the rounds and
+   before the solve of the tier gaps. (Until architecture-2 ticket 57 this was `reserveInitialSpace`.)
+   For an across-frames bus the band has no host. Stage 6 (`reseatBands`) seats the gap on the bus
+   side at `max(tierGapMin, gapBandDemand)`, and `gapBandDemand` holds 20 + band + 20 (the frame margins on
+   both sides and the band), as for a canton title band. Where a canton title band stands on the
+   same edge, the need is 20 + bus band + canton band + 20. `gapBandDemand` takes the larger of the
+   needs of one tier edge and the larger of the two edges of a gap; a bus band adds to a band on its own
+   edge and never takes the maximum with it. Stage 5 decides the inputs (the bus side, the title edge, the title text), so 7f moves
+   no tier for these bands. The skeleton (stage 4)
+   reserves no band, for a title or for a bus; it opens each gap to `tierGapMin` only.
+2. Stage 7f `produceBusBands` runs beside `produceGroupLabelBands`, before the solve of the tier gaps and
    again after it. It publishes the `BusBand` with its bounds and the bar and stub geometry read
    off the settled row and frames. `rebuildFrames` adds an in-frame band to the frame edge as it
    adds the label band, and a band on a canton's outer edge to the canton box; an across-frames
    band outside every frame is added to none.
 3. The tier-gap plan (ADR-0021) reads the bus band as an O5 band anchored to the row's sub-tier
    band over the bar's span, plus `k`. No planned row lies inside it. Every vertical of the leg
-   count crosses the bar as one vertical, and that crossing is accepted. `growTierGaps` grows the
-   gap by the formula and probes nothing.
+   count crosses the bar as one vertical, and that crossing is accepted. The solve (`solveTierGaps`) grows the
+   gap by the formula, once, and probes nothing.
 
 Publication and restore re-run the band on a copy and reject a model it would still change, as
 they do for label bands.
@@ -692,7 +693,7 @@ The extension is read on geometry that placement has settled, so nothing waits f
 
 **Two bands in one gap.** Where the rows are adjacent, the gap between them holds the band of the
 upper bar (anchored to the upper band) and the band of the lower bar (anchored to the lower band).
-The shift loop of `reserveInitialSpace` requires that gap to hold 20 + upper band + lower band + 20
+Stage 6 (`reseatBands`) seats that gap at `gapBandDemand`, which holds 20 + upper band + lower band + 20
 (the frame margins and both bands), more where a canton title band stands on either edge (Section
 4, *Who reserves it*). The two bands are added, never compared.
 
@@ -728,7 +729,7 @@ bar's band has no label room: it is the stub, the bar and the run clearance `k`.
 **What placement reserves, in order.** Stage 1: the join, the sides and the bus ports. Stage 2:
 the bus ports sized on the facing edges. Stage 7a: the riser x and the riser lanes. Stage 7f: the
 bars over their extended intervals, both bands, the titles clear of the stubs and the riser, the
-riser geometry (`riser.from`, `riser.to`) and the label room. `growTierGaps` reads the bands as O5
+riser geometry (`riser.from`, `riser.to`) and the label room. The solve (`solveTierGaps`) reads the bands as O5
 bands and the riser verticals as above. Routing reads all of it and finds nothing.
 
 ### 11.6 layout.json

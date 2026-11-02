@@ -1,5 +1,5 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
-import { stemCache, stemDepth } from './sides-two.js';
+import { stemCache, stemDepth, stemDepthsFault } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
 import type { LabelBand, LabelPaddingEntry, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
@@ -33,7 +33,7 @@ import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 import { directFamiliesFault } from './direct-families.js';
 import { fanAdmissionsFault } from './fan-admission.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { busBandHeight, busRoom } from './bus-room.js';
+import { busRoom } from './bus-room.js';
 import { busGeometry, expectedBusBands, riserEnds, syncBusGeometry, trunkJoins } from './bus.js';
 import { reportTrunkCrossings } from './trunk.js';
 import { derivedShortfalls, separationsBrokenBy, worseSeparations } from './constraints/separation.js';
@@ -351,6 +351,7 @@ function bandFor(model: LayoutModel, title: Title, entries: RouterEntryPoint[]):
       width: group.bounds!.width, height },
     clearance: clearanceFor(model, group, entries, side) };
 }
+
 
 /** Every band the current geometry calls for: the titles of groups and cells, then the canton titles. */
 function expectedBands(model: LayoutModel, entries: RouterEntryPoint[]): LabelBand[] {
@@ -875,71 +876,48 @@ function consumeGrowthPass(budget: CentreBudget, before: number): void {
 }
 
 /**
- * The gap each canton band needs beside a sub-tier: the frame margin, the band, and a margin more between the
- * band and what stands past it. `below` is keyed by the last sub-tier of a canton titled at the bottom, `above`
- * by the first sub-tier of one titled at the top. The margin past the band is the ordinary 20 px group
- * padding, so the room is 20 + band + 20.
+ * The title bands and in-frame bus bands, reserved at the start of 7f, before any round (architecture-2 ticket 57). Stage 5 decides each
+ * band's edge (ADR-0011) and height; this reserves the room by a move in y only: a top band pushes its nodes down, a bottom band grows
+ * the box down, and the tiers below move down by what their band grew, so every tier gap keeps the height stage 6 seated. Nodes of one
+ * tier keep one row: every group moves its nodes down by the largest top-band shift of its tier. A frame's band is held by one rank cell
+ * (`band.host`). The room a group already holds is read from the bands it carries, so a second call reserves only what is still missing
+ * (a deeper stem on the title edge, a detour label under the title: `clearanceFor`). Nothing moves in x. The bands that stand in a tier
+ * gap (a canton title, an across-frames bus) are the gap's: stage 6 seats them (`gapBandDemand`). Returns whether anything moved.
+ *
+ * A first version reserved the title bands in stage 5 itself, so 7a to 7e planned in the taller boxes; it cost 42 bends and 23 crossings
+ * on the corpus (branch `t57-step2-stage5`), and the user chose this one (ticket 57 Comments).
  */
-function cantonGapNeeds(model: LayoutModel): { below: Map<number, number>; above: Map<number, number>; busBelow: Set<number>; busAbove: Set<number> } {
-  const below = new Map<number, number>(), above = new Map<number, number>();
-  const busBelow = new Set<number>(), busAbove = new Set<number>();
-  for (const band of model.labelBands) {
-    if (!isCantonFrame(model, band.group)) continue;
-    const tiers = cantonTiers(model, band.group), need = GROUP_PADDING + band.bounds.height + GROUP_PADDING;
-    const map = band.side === 'top' ? above : below, tier = band.side === 'top' ? tiers.first : tiers.last;
-    map.set(tier, Math.max(map.get(tier) ?? 0, need));
-  }
-  // An across-frames bus band lies in the gap on its edge and belongs to no frame: it is held by the sub-tier, as a canton band is.
-  // On an edge that also carries a canton band the need is the sum, 20 + bus band + canton band + 20, and never the larger of the two.
-  for (const bus of model.meshBuses ?? []) {
-    if (bus.placement !== 'across-frames' || bus.side === undefined) continue;
-    const map = bus.side === 'top' ? above : below, height = busBandHeight(bus), known = map.get(bus.row);
-    map.set(bus.row, known === undefined ? GROUP_PADDING + height + GROUP_PADDING : known + height);
-    (bus.side === 'top' ? busAbove : busBelow).add(bus.row);
-  }
-  return { below, above, busBelow, busAbove };
-}
-
-function reserveInitialSpace(model: LayoutModel): void {
+export function topUpBandClearance(model: LayoutModel): boolean {
   const before = new Map(model.tierBands.map(band => [band.tier, { ...band.bounds! }]));
-  // The room each group already holds for a band on that side, from the reservation it carries now.
-  // 7f calls this producer twice — labels, tier gap room, labels again — so the shift has to be the
-  // room still missing, never the whole band again. The map is empty on the first call, where the
-  // group holds the ordinary padding and the shift is the whole band beyond it.
+  // The room each group holds for its band now: the band and the clearance it carries.
   const held = new Map(model.labelBands.map(band => [band.host ?? band.group, band]));
   const heldBus = new Map((model.busBands ?? []).filter(band => band.group !== undefined).map(band => [band.group!, band]));
   const entries = routerEntryPoints(model);
   syncBands(model, entries);
-  // The band replaces the ordinary padding on its side, and its clearance replaces that padding
-  // beside it. A top band pushes its nodes down; a bottom band only grows the box downward. Nodes
-  // of one tier keep one row: every group moves its nodes down by the largest top-band shift of its
-  // tier — a smaller clearance or a bottom title never breaks the row levelling of stage 6, and a
-  // flank stays level with the peer whose band grew more. A frame's band is held by one rank cell
-  // (`band.host`), so only that cell asks for room; the other cells of the frame hold no band and
-  // take the levelling shift of their sub-tier like any group without a title.
-  // An in-frame mesh bus band is held the same way (mesh-bus.md, section 4): on the title edge it is in the band's clearance;
-  // on the other edge it lies against the padding, and the group grows by the difference.
   const ids = orderedGroupIds(model.document);
   const shifts = new Map(ids.map(id => {
     const group = model.groups[id]!, band = bandHeldBy(model, id), result = { top: 0, bottom: 0 };
     if (band !== undefined) {
       const prior = held.get(id);
-      const room = prior !== undefined && prior.side === band.side
-        ? prior.bounds.height + prior.clearance : groupPadding(model, group)[band.side];
-      result[band.side] = band.bounds.height + band.clearance - room;
+      const room = prior !== undefined && prior.side === band.side ? prior.bounds.height + prior.clearance : groupPadding(model, group)[band.side];
+      result[band.side] = Math.max(0, band.bounds.height + band.clearance - room);
     }
+    // An in-frame bus band off the title edge lies against the padding, and the group grows by the difference (mesh-bus.md, section 4).
     const bus = busRoom(model, group), padding = groupPadding(model, group), prior = heldBus.get(id);
     for (const side of ['top', 'bottom'] as const) {
       if (bus[side] <= 0 || band?.side === side) continue;
       const have = prior !== undefined && prior.side === side ? Math.max(padding[side], prior.bounds.height) : padding[side];
-      result[side] = Math.max(padding[side], bus[side]) - have;
+      result[side] = Math.max(0, Math.max(padding[side], bus[side]) - have);
     }
     return [id, result];
   }));
   const topShift = (tier: number) => Math.max(0, ...ids.filter(id => model.groups[id]!.tier === tier).map(id => shifts.get(id)!.top));
+  let moved = false;
   for (const id of ids) {
     const group = model.groups[id]!, shift = shifts.get(id)!;
     const down = topShift(group.tier!);
+    if (down <= PLACEMENT_EPS && shift.bottom <= PLACEMENT_EPS) continue;
+    moved = true;
     for (const nodeId of group.nodes) {
       const node = model.nodes[nodeId]!;
       node.bounds!.y += down;
@@ -947,28 +925,17 @@ function reserveInitialSpace(model: LayoutModel): void {
     }
     group.bounds!.height += down + shift.bottom;
   }
-  holdColumnsAfterPush(model);
+  if (!moved) return false;
   rebuildBands(model);
-  // A canton band is held by the sub-tier, not by a cell (canton-groups spec, section 3): the gap on its edge
-  // holds the frame margin, the band and a margin more, and the tier bands past it move down by what is missing.
-  const need = cantonGapNeeds(model);
-  let shift = 0, previous: { tier: number; bottom: number; shift: number } | undefined;
+  // The tiers below a band that grew move down by its growth, so every tier gap keeps its height.
+  let shift = 0;
   for (const tierBand of [...model.tierBands].sort((a, b) => a.tier - b.tier)) {
-    if (previous !== undefined) {
-      const gap = tierBand.bounds!.y + shift - previous.bottom;
-      // Two bus bands that face each other in one gap (the bars of a join on adjacent rows) are added, never compared: 20 + upper band + lower band + 20
-      // (mesh-bus.md, section 11.5, *Two bands in one gap*). A canton band on either edge is already in that edge's need.
-      const both = need.busBelow.has(previous.tier) && need.busAbove.has(tierBand.tier);
-      const wanted = both ? need.below.get(previous.tier)! + need.above.get(tierBand.tier)! - 2 * GROUP_PADDING
-        : Math.max(need.below.get(previous.tier) ?? 0, need.above.get(tierBand.tier) ?? 0);
-      shift += Math.max(0, wanted - gap);
-    }
     if (shift) for (const group of Object.values(model.groups).filter(item => item.tier === tierBand.tier)) moveGroup(model, group, 0, shift);
-    previous = { tier: tierBand.tier, bottom: bottom(tierBand.bounds!) + shift, shift };
     shift += Math.max(0, tierBand.bounds!.height - (before.get(tierBand.tier)?.height ?? tierBand.bounds!.height));
   }
   rebuildBands(model);
   syncBands(model, entries);
+  return true;
 }
 
 
@@ -1250,10 +1217,22 @@ export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
 /**
  * Whether the room 7f reserved still holds on `model` as the validator reads it (`validateGroupLabelBands`): the room-across-a-run record
  * holds every need it names, and a replay of the label room reserves nothing more. The overlay port trade (`nestOverlayPorts`, ticket 23)
- * runs after the last reservation and makes no trade that would need room 7f did not reserve.
+ * runs after the last reservation and makes no trade that would need room 7f did not reserve. A label room across a tier gap is the
+ * solve's, which runs after the trade (architecture-2 ticket 57): before it a shortfall there is normal, so a trade is measured against
+ * the incumbent's (`incumbent`, from `gapLabelDeficits`): it holds when no gap asks more of the solve for a label than it asked before.
  */
-export function roomHolds(model: LayoutModel): boolean {
-  return labelPaddingFault(model) === undefined && !reserveLinkLabelRoom(clone(model));
+export function roomHolds(model: LayoutModel, incumbent: ReadonlyMap<number, number> = new Map()): boolean {
+  if (labelPaddingFault(model) !== undefined) return false;
+  const shortfalls: LinkLabelShortfall[] = [], gapRoom: TierGapLabelRoom = { floors: new Map(), deficits: new Map() };
+  if (reserveLinkLabelRoom(clone(model), shortfalls, gapRoom)) return false;
+  return [...gapRoom.deficits].every(([tier, item]) => item.deficit <= (incumbent.get(tier) ?? 0) + PLACEMENT_EPS);
+}
+
+/** The label deficit each tier gap hands the solve on `model` (keyed by the tier above it), read with no growth: what `roomHolds` compares with. */
+export function gapLabelDeficits(model: LayoutModel): Map<number, number> {
+  const gapRoom: TierGapLabelRoom = { floors: new Map(), deficits: new Map() };
+  reserveLinkLabelRoom(clone(model), [], gapRoom);
+  return new Map([...gapRoom.deficits].map(([tier, item]) => [tier, item.deficit]));
 }
 /**
  * What is wrong with the record of the label rooms 7f gave up (`labelRoomUnsettled`, ticket 27), or `undefined`: every name is a described
@@ -1278,6 +1257,14 @@ export function labelRoomUnsettledFault(model: LayoutModel): string | undefined 
 export const roomLikelyHolds = (model: LayoutModel): boolean => labelPaddingFault(model) === undefined && !trackRoomShort(model);
 
 /** One labelled link whose run is shorter than the label it carries needs, and by how much. */
+/**
+ * The tier-gap term of the label room (architecture-2 ticket 57): `floors` is the growth each gap takes anyway, keyed by the sub-tier
+ * above it, and `deficits` collects, for each gap, the largest growth a label across it asks and the link that asks it.
+ */
+export interface TierGapLabelRoom { floors: ReadonlyMap<number, number>; deficits: Map<number, { deficit: number; link: string }> }
+/** Whether a shortfall is a label's room across a tier gap, which the tier-gap solve pays (architecture-2 ticket 57). */
+export const tierGapShortfall = (item: LinkLabelShortfall): boolean => item.axis === 'tier gap' || item.axis === 'tier gap window';
+
 export interface LinkLabelShortfall {
   link: string; axis: 'row' | 'row window' | 'tier gap' | 'tier gap window' | `${Side} padding of ${string}` | `overlay track in the ${Side} padding of ${string}`; required: number; room: number;
 }
@@ -1332,11 +1319,11 @@ function insertRoomAt(model: LayoutModel, split: number, deficit: number, ownTie
  * when no growth at the split gives a window that holds it: a box that moves with the far end cuts the run.
  */
 function labelWindowRoom(model: LayoutModel, run: PathSegment | undefined, extent: number, split: number, farEndMoves = false,
-  turned?: { across: number; axis: 'x' | 'y'; link: LayoutLink }): number | undefined {
+  turned?: { across: number; axis: 'x' | 'y'; link: LayoutLink }, atLeast = 0): number | undefined {
   if (run === undefined) return 0;
   const boxes = labelBorders(model);
-  if (turned === undefined) return labelWindowDeficit(boxes, run, extent, split, farEndMoves);
-  return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id) });
+  if (turned === undefined) return labelWindowDeficit(boxes, run, extent, split, farEndMoves, undefined, atLeast);
+  return labelWindowDeficit(boxes, run, extent, split, farEndMoves, { across: turned.across, axis: turned.axis, links: reservedLinkRuns(model, turned.link.id) }, atLeast);
 }
 
 /** The grain, in px, the room across a run is rounded up to, so a replay on the grown box finds the label clear (ticket 21). */
@@ -1515,8 +1502,9 @@ export { labelBorders };
  * centres the label on the run's midpoint, so the room is measured symmetrically about that
  * midpoint: for a routed link the anchor midpoint out to the nearer pill face (or node edge); for
  * an overlay link the midpoint of the longest run of the path `overlayPath` will publish, since
- * that is the run the label follows. A link between two tiers moves every lower
- * tier down by the deficit. A link between two ends of one tier inserts the room at the gap itself:
+ * that is the run the label follows. A link between two tiers moves nothing: its deficit is a term of
+ * the height of the tier gap below the upper tier (`gapRoom`), which the one solve at the end of 7f sets
+ * (`solveTierGaps`, architecture-2 ticket 57). A link between two ends of one tier inserts the room at the gap itself:
  * every group starting at or beyond the split moves right, in every tier; in a straddling group a
  * node of the link's own tier moves when it starts beyond the split (a node the detour passes stays
  * by the left end) and a node of any other tier when any part of it lies beyond (a wide source moves
@@ -1529,7 +1517,7 @@ export { labelBorders };
  * and the lane moves out with it (`insertRoomAt`). A label also stays in one region (ticket 19): on every run a label rides, one window
  * between the borders the run crosses must hold it (`labelWindowRoom`), and the growth is the larger of the two.
  */
-export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = []): boolean {
+export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = [], gapRoom?: TierGapLabelRoom): boolean {
   let changed = false;
   // What each reservation was for. The replay that refuses a published model throws on the return
   // value alone, and the sentence named neither the link nor the amount: three rebuilds to find one
@@ -1623,9 +1611,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       // A label stays in one region: one window of the run it rides, between the drawn borders the run crosses, must hold it
       // (`labelWindowDeficit`). The run is the overlay path's longest run, the side lane's vertical run (at the lane's x, down to the
       // lateral port's y), or the straight drop between two level anchors; a routed drop between anchors that are not level bends,
-      // and stage 9 decides. Every group below the upper tier moves down, so the split is the top of the highest of them. The run's
-      // lower end moves with its node even when its pill stands out above that top (`farEndMoves`); no upper-tier box is taken as moved.
-      const moved = Object.values(model.groups).filter(group => group.tier! > upperTier);
+      // and stage 9 decides. The solve moves every group below the upper tier down, so the split is the top of the highest of them. The
+      // run's lower end moves with its node even when its pill stands out above that top (`farEndMoves`); no upper-tier box is taken as moved.
       // A held routed chord (ticket 22) is one diagonal line between its anchors, as an overlay line is: its label lies on it, turned. The line is
       // read from the anchors as they stand now (`straightChord`, geometry only), as stage 9 draws it, not from a path an earlier pass stored.
       const anchored = !overlay && isRoutedChord(model, link) ? straightChord(model, link, undefined, true) : undefined;
@@ -1648,19 +1635,24 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         : { from: { x: lane.x, y: lateral.y }, to: { x: lateral.x, y: lateral.y }, owner: { ...link.owner } };
       const onSide = sideRun !== undefined && ridden !== undefined && Math.abs(sideRun.to.x - sideRun.from.x) > Math.abs(ridden.to.y - ridden.from.y)
         && labelWindowRoom(model, sideRun, measured.width, Infinity) === 0;
+      // The window is read at the growth its gap takes anyway (the plan's, a label's before it, this run's symmetric room), never at
+      // none (architecture-2 ticket 57).
+      const base = Math.max(0, required - room, gapRoom?.floors.get(upperTier) ?? 0);
       const windowed = onSide ? 0 : labelWindowRoom(model, ridden, measured.width, split, true,
-        diagonal ? { across: haloSize(measured).height, axis: 'y', link } : undefined);
+        diagonal ? { across: haloSize(measured).height, axis: 'y', link } : undefined, base);
       if (windowed === undefined) unreserved(diagonal
         ? 'crosses a drawn box in its tier gap; no window between borders, clear of the reserved link runs and of the label bands it yields to, can be reserved for its label'
         : 'crosses a drawn box in its tier gap; no window between borders can be reserved for its label');
       const deficit = Math.max(required - room, windowed ?? 0);
       if (deficit <= PLACEMENT_EPS) continue;
-      for (const group of moved) moveGroup(model, group, 0, deficit);
-      settle(moved.flatMap(group => group.nodes));
-      // The record names the figure that drove the growth: the label width against its gap window, or the run against its symmetric room.
+      // The room across a tier gap is a term of the gap's height, which the one solve at the end of 7f sets (architecture-2 ticket 57):
+      // the deficit is handed to it for the gap below the upper tier, and nothing moves here. The rows of a group keep the row branch below.
+      const was = gapRoom?.deficits.get(upperTier);
+      // Equal deficits name the link with the smaller id, so the name does not depend on the link order (R3).
+      if (gapRoom !== undefined && (was === undefined || deficit > was.deficit || (deficit === was.deficit && link.id < was.link))) gapRoom.deficits.set(upperTier, { deficit, link: link.id });
+      // The record names the figure that asks the growth: the label width against its gap window, or the run against its symmetric room.
       if ((windowed ?? 0) > required - room) record(link, 'tier gap window', measured.width, measured.width - windowed!);
       else record(link, 'tier gap', required, room);
-      changed = true;
       continue;
     }
     const ends = sameTierEnds(from, fromNode, to, toNode);
@@ -1736,7 +1728,8 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
       placementWarning(model, 'FRAME_TITLE_UNHOSTED', `Frame ${id} has no own cell on its top or bottom edge; its title is not drawn.`, [id], 'group');
     }
   }
-  reserveInitialSpace(model);
+  topUpBandClearance(model);
+  holdColumnsAfterPush(model);
   reserveLinkLabelRoom(model);
   const budget = createCentreBudget();
   rebuildRegionGeometry(model, budget, undefined, true);
@@ -1773,8 +1766,8 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
       consumeGrowthPass(budget, passes);
       continue;
     }
-    // A spent budget cannot replay a move, so the close-up is skipped here. Stage 7f closes the cantons again after the tier gaps grow
-    // (`mutation.ts`, with its own rounds), and says so there when they do not settle; a warning here would fire on a run it closes later.
+    // A spent budget cannot replay a move, so the close-up is skipped here. The 7f rounds close the cantons again
+    // (`settleRound`, with their own bound), and says so there when they do not settle; a warning here would fire on a run it closes later.
     // The titles are placed once, at the end of 7f (`placeGroupTitles`); none stands while placement moves.
     model.labels = model.labels.filter(label => label.role !== 'group');
     return;
@@ -1787,7 +1780,7 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
  * No title stands here: titles are placed once, at the end of 7f (`placeGroupTitles`, architecture-2 ticket 54).
  *
  * The fallback is given the bands the **first** step reserved, not the ones measured here.
- * `reserveInitialSpace` reads the room a group already holds from the bands the model carries, so a
+ * `topUpBandClearance` reads the room a group already holds from the bands the model carries, so a
  * model carrying the new bands would measure each of them against itself, reserve nothing for a
  * clearance that grew between the two steps, and leave the fit to box growth into the gap the
  * measurement has just opened.
@@ -1832,12 +1825,16 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   if (fan !== undefined) throw new Error(`The fan admission record is forged: ${fan}`);
   const padding = labelPaddingFault(model);
   if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
+  // The stem depths are read from their record (architecture-2 ticket 57, R1); a record the geometry does not call for is refused (R5).
+  const stems = stemDepthsFault(model);
+  if (stems !== undefined) throw new Error(`The stem depth record is forged: ${stems}`);
   const unsettledRoom = labelRoomUnsettledFault(model);
   if (unsettledRoom !== undefined) throw new Error(`The record of the label rooms 7f gave up is forged: ${unsettledRoom}`);
   const yields = clone(model);
   if (recordLabelYields(yields, labelBorders(yields))) throw new Error('The label yields leave a pair of labels on diagonal lines undecided');
   const shortfalls: LinkLabelShortfall[] = [];
-  if (reserveLinkLabelRoom(clone(model), shortfalls)) {
+  // A label's room across a tier gap is no reservation the replay makes (the solve sets the gap), so a shortfall there is a fault too.
+  if (reserveLinkLabelRoom(clone(model), shortfalls) || shortfalls.some(tierGapShortfall)) {
     // A separated overlay track (ticket 23) is named as such: its room is the track's, not a label's.
     const tracks = shortfalls.filter(item => item.axis.startsWith('overlay track')), labels = shortfalls.filter(item => !item.axis.startsWith('overlay track'));
     throw new Error([

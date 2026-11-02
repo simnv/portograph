@@ -496,7 +496,7 @@ export function refreshHeldWarnings(model: LayoutModel): void {
 /**
  * The close-up alone, in 7f (slack 0), for every merged step that holds a canton: the anchor step by `closeUp`, a step with an
  * authority by the plan of `pullTier` (which closes its run and pulls it to its feeds). The centring replays after a push may widen a
- * canton in place, so stage 7f calls this again before it plans the labels and after the tier gaps grow. It moves groups in x and
+ * canton in place, so the 7f rounds call this again (`settleRound`); the tier-gap solve after them moves only y (architecture-2 ticket 57). It moves groups in x and
  * nothing else: the caller replays the region producers and `resyncLabelBands` after a move. Returns whether a canton moved.
  */
 export function closeCantons(model: LayoutModel): boolean {

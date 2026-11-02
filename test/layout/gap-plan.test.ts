@@ -105,25 +105,28 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     expect(upper!.plan.residual.map(item => `${short(item.id)}:${item.reason}`)).toEqual([]);
     expect(lower!.plan.residual).toEqual([]);
 
-    expect(upper!.plan.order.map(short)).toEqual(['11', '1', '5', '2', '3']);
-    expectRows(upper!.plan, { 11: [146], 1: [157.5], 5: [157.5], 2: [169], 3: [180.5] }); // Verdana metrics (snack-theme ticket 157): 145, 156.5, 156.5, 168 and 179.5 with Arial.
-    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['11>1:O2', '5>2:O2', '5>3:O1']);
+    // Ticket 57 (one tier-gap solve, no centring replay after it): src stays at x -124.65 (main's replay after its round-0 growth moved it to
+    // -203.47), so link-1 is a straight drop and link-4 takes a row. Main: order 11, 1, 5, 2, 3; rows 146, 157.5, 157.5, 169, 180.5; edges
+    // 11>1:O2, 5>2:O2, 5>3:O1; H 69.25 set by link-3#0, low of the lower gap 300. The spec numbers go to the centring follow-up ticket.
+    expect(upper!.plan.order.map(short)).toEqual(['11', '5', '3', '2', '4']);
+    expectRows(upper!.plan, { 11: [146], 5: [157.5], 3: [169], 2: [180.5], 4: [192] });
+    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['2>4:O1', '3>2:O2', '5>3:O1']);
     // The seven interleaved pairs of the spec, link-3's included, and two on link-4's drop.
     expect(pairs(upper!.plan)).toEqual(['11x2', '11x3', '11x4', '11x5', '2x3', '2x5', '4x5']);
-    // Link-3's row is the term that asks for 9.25 px above the band gap, the spec's H = 69.25; 7f grew the gap to it, so nothing more is asked.
-    expect(upper!.plan.height).toBeCloseTo(69.25, 6);
+    // Link-4's row is the term that sets H (the spec's link-3 row and H = 69.25 are main's, see above); 7f grew the gap to it, so nothing more is asked.
+    expect(upper!.plan.height).toBeCloseTo(107.25, 6);
     expect(upper!.plan.growth).toBe(0);
-    expect(upper!.plan.setBy).toBe('link-3#0');
+    expect(upper!.plan.setBy).toBe('link-4#0');
 
     expect(lower!.plan.order.map(short)).toEqual(['12.1', '10', '8', '7', '9']);
-    expectRows(lower!.plan, { '12.1': [315], 10: [326.5], 8: [338], 7: [349.5], 9: [361] }); // Verdana metrics (snack-theme ticket 157): 313, 324.5, 336, 347.5 and 359 with Arial.
+    expectRows(lower!.plan, { '12.1': [353], 10: [364.5], 8: [376], 7: [387.5], 9: [399] }); // Ticket 57: 38 px lower (main 315 to 361). // Verdana metrics (snack-theme ticket 157): 313, 324.5, 336, 347.5 and 359 with Arial.
     expect(lower!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort())
       .toEqual(['10>7:O1', '10>8:O1', '10>9:O1', '12.1>10:O1', '12.1>7:O2', '12.1>8:O1', '8>7:O1']);
     // 7x9 and 8x9, and four on link-11's drop.
     expect(pairs(lower!.plan)).toEqual(['10x11.1', '11.1x7', '11.1x8', '11.1x9', '7x9', '8x9']);
-    // The lanes overhang from the band above: the plan measures from the clipped low boundary (300 under Verdana, 298 with Arial; the 9.25 px of the upper gap later); the spec quotes
+    // The lanes overhang from the band above: the plan measures from the clipped low boundary (338 since ticket 57, 300 on main under Verdana, 298 with Arial); the spec quotes
     // 82.5 from the band bottom (278), the same 10.75 px further. 7f grew the gap to H (71.75 from the clipped low), so it asks for nothing more.
-    expect(lower!.gap.low).toBeCloseTo(300, 6); // Verdana metrics (snack-theme ticket 157): 298 with Arial.
+    expect(lower!.gap.low).toBeCloseTo(338, 6); // Ticket 57: 300 on main, the upper gap is 38 px higher. // Verdana metrics (snack-theme ticket 157): 298 with Arial.
     expect(lower!.plan.height).toBeCloseTo(71.75, 6);
     expect(lower!.plan.bandTop - lower!.gap.low).toBeCloseTo(71.75, 6);
     expect(lower!.plan.growth).toBe(0);
@@ -326,7 +329,10 @@ describe('the tier-gap plan on hand-built parts', () => {
 // upper gap, link-5 (38.9 to 245.5, row 156.5) over link-2's upper x 140 and the drop at 174, and link-3's lower leg; link-11 (-29.1 to 307.5, row 145) over the same and
 // over link-5's upper x 38.9. Lower gap, links 7 and 8 (rows 347.5 and 336) over link-9's upper x 174 and the drop at 307.5, link-9 (row
 // 359) and link-10 (row 324.5) over the drop.
-const KINDS_UPPER: string[] = ['11|2|upper-leg', '11|3|upper-leg', '11|4|drop', '11|5|upper-leg', '3|2|lower-leg', '5|2|upper-leg', '5|4|drop'];
+// Ticket 57 (one tier-gap solve, no centring replay after it): src stays at x -124.65 where the replay after main's round-0 growth moved it to
+// -203.47, so the upper gap plans other rows (main: ['11|2|upper-leg', '11|3|upper-leg', '11|4|drop', '11|5|upper-leg', '3|2|lower-leg', '5|2|upper-leg',
+// '5|4|drop']). The spec numbers go to the centring follow-up.
+const KINDS_UPPER: string[] = ['11|3|upper-leg', '11|5|upper-leg', '2|11|lower-leg', '2|3|lower-leg', '2|5|lower-leg', '4|11|lower-leg', '4|5|lower-leg'];
 const KINDS_LOWER: string[] = ['10|11.1|drop', '7|11.1|drop', '7|9|upper-leg', '8|11.1|drop', '8|9|upper-leg', '9|11.1|drop'];
 
 /** Three tiers, a transit lane for link-2 through tier 1, and planned parts in both gaps (the pipeline test `residual-parts.test.ts` reads the same text). */

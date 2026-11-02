@@ -264,7 +264,7 @@ inside a band, and would then have to re-cut geometry 7e had already fixed.
 
 ## Ninth amendment (2026-09-16, from the stress test; stress ticket 06): a refused position moves the search on, and the height is measured with the labels in front of it
 
-*Superseded by ADR-0021 for the tier gap: the search for a row is the plan's. The order of 7f (group labels, growth, group labels again) stands.*
+*Superseded by ADR-0021 for the tier gap: the search for a row is the plan's. The order of 7f (group labels, growth, group labels again) stands.* (Amended: the growth is one solve at the end of 7f, after the rounds, and the titles follow it; see the amendment of architecture-2 ticket 57 in ADR-0021.)
 
 Two items the seventh amendment left, both measured on the Enterprise NTP sheet.
 

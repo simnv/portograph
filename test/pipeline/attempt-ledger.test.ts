@@ -39,11 +39,14 @@ const ROWS: Row[] = [
   // Architecture-2 ticket 54 (titles last): no title refuses a chord or pads a band, so the published attempt converges (main 552ca5b2 published with
   // PLACEMENT_NON_CONVERGENCE) and its base 7f loop loses no overlay link (3 before); the unkept course trial ends 2 rounds open. 2 place runs, 5 rounds
   // (3 and 4 before), 24/105/54/5 (21/117/62/5 before).
-  row('three-continents', '24/105/54/5', 2, 2, 5, 2, 2, { preCentre: 2, baseChord: 1 }),
+  // Ticket 57 (the tier gaps solved once, after the rounds): no settle round grows a gap and replays for it. three-continents 22/100/50/5 (24/105/54/5
+  // before); a-tier-gap-plan 1/24/10/3, one round (2/56/14/3: its second round was the growth's); two-interleaved 1/6/7/3 and a-tier-gap-grows 1/4/7/3
+  // (one centring pass each, the replay after the growth).
+  row('three-continents', '22/100/50/5', 2, 2, 5, 2, 2, { preCentre: 2, baseChord: 1 }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
-  row('a-tier-gap-plan-orders-every-part', '2/56/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
-  row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/7/7/3', 1, 1, 1, 0, 0),
-  row('a-tier-gap-grows-to-its-rows', '1/5/7/3', 1, 1, 1, 0, 0),
+  row('a-tier-gap-plan-orders-every-part', '1/24/10/3', 1, 1, 1, 0, 0, { reseat: 'refused', preChords: 1 }),
+  row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/6/7/3', 1, 1, 1, 0, 0),
+  row('a-tier-gap-grows-to-its-rows', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 54: one centring pass fewer (1/5/7/3 before).
   row('a-re-seated-band-carries-its-bar-and-flank', '1/4/7/3', 1, 1, 1, 0, 0),
   row('sync-links-do-not-stack-a-tier', '1/4/7/3', 1, 1, 1, 0, 0),
@@ -108,17 +111,21 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
       probe: found.probe, preChords: found.preChords, preCentre: found.preCentre, base7f: found.base7f })
       .toEqual({ counters: expected.counters, runs: expected.runs, attempts: expected.attempts, rounds: expected.rounds, open: expected.open, chord: expected.chord, baseChord: expected.baseChord,
         reseat: expected.reseat, probe: expected.probe, preChords: expected.preChords, preCentre: expected.preCentre, base7f: expected.base7f });
-    // No fixture regrows a gap, leaves a gap short, stands a body on a frozen chord or fails to settle its cantons (section 2, "Findings").
+    // No fixture stands a body on a frozen chord or fails to settle its cantons (section 2, "Findings").
     const i = attemptCounters.invalidations;
     // Phase 4: the unified order takes a chord move on three-continents that a later round has to regrow a gap for (1); the others stay at 0.
     // Verdana metrics (snack-theme ticket 157): three-continents regrows no gap now (1 with Arial).
-    expect([i.gapRegrown, i.shortGapsAfterRounds, i.bodyOnFrozenChord, i.cantonNonConvergence]).toEqual([0, 0, 0, 0]);
+    // Ticket 57: a gap may stand short after the rounds (`shortGapsAfterRounds`): the one solve after them grows it. That count is not judged.
+    // Ticket 57 deletes the count of regrown gaps (`gapRegrown`): no round grows a gap.
+    expect([i.bodyOnFrozenChord, i.cantonNonConvergence]).toEqual([0, 0]);
   }, 60000);
 
   it('traces the step verdicts of the ledger only when a trace is asked for, and the chord step of the phase-1 fixture moves', async () => {
     const found = await ledger(golden('a-chord-step-moves-a-group-off-a-straight-chord'));
     const passes = found.events.map(event => event.pass);
-    expect(passes).toEqual(expect.arrayContaining(['ledger:freeze', 'ledger:round-0:grow', 'ledger:round-0:close-up', 'ledger:round-0:keep-out', 'ledger:round-0:chords', 'ledger:short-gaps']));
+    // Ticket 57: a round grows no gap (no `grow` step); the one solve runs after the rounds.
+    expect(passes).toEqual(expect.arrayContaining(['ledger:freeze', 'ledger:round-0:close-up', 'ledger:round-0:keep-out', 'ledger:round-0:chords', 'ledger:short-gaps', 'solve-tier-gaps']));
+    expect(passes).not.toContain('ledger:round-0:grow');
     expect(found.events.find(event => event.pass === 'round-0:chords')?.verdict).toBe('moved');
     expect(found.events.find(event => event.pass === 'ledger:round-0:chords')?.verdict).toMatch(/^overlay -\d+\/\+\d+ aligned -\d+ blocked \+\d+$/);
   }, 60000);
@@ -126,15 +133,20 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
   // Ticket 54 (titles last): three-continents 43/21/25 (19/19/24 before); the run has one 7f round more and publishes with no non-convergence.
   // Verdana metrics (snack-theme ticket 157): three-continents 19/19/24 (21/21/31 with Arial), a-chord-step 10/10/13 (12/12/15 with Arial).
   // Ticket 162: the canton-member frame needs one gap round (2 before): its feeds are chords over the canton titles and grow no gap.
-  // Phase 2: the replays, the settled copies the chord step judged on, and the rounds of the gap fixed point, where they dropped. Before the phase:
+  // Phase 2: the replays, the settled copies the chord step judged on, and the rounds of the gap fixed point (deleted by ticket 57), where they dropped. Before the phase:
   // Phase 4 raised three-continents to 21/21/31 (more candidates pass the gate of the unified order, each one settled). Ticket 22: a-tier-gap-plan gap rounds 3 to 5 (the crowding round of the direct family). Ticket 23 (the overlay port clearance, separated tracks) raised the chord-step fixture 11/11/14 to 12/12/15. Before it: three-continents 8/7/10, a-tier-gap-plan 1/0/3, two-interleaved 1/0/2, a-tier-gap-grows 1/0/2, canton-member-frame 1/0/2, chord-step fixture 5/4/6.
+  // Ticket 57: the gap rounds are gone; the tier gaps are solved once per 7f attempt body (`gapSolves` = the attempts and their retries),
+  // and no settle round replays for a growth: three-continents 41/19 (43/21 and 25 gap rounds before), the others 0/0 (5, 2, 2, 1 gap
+  // rounds), the chord-step fixture 10/10 (13 gap rounds).
   it.each([
-    ['three-continents', 43, 21, 25], ['a-tier-gap-plan-orders-every-part', 0, 0, 5], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 2],
-    ['a-tier-gap-grows-to-its-rows', 0, 0, 2], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 1], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 13],
-  ] as const)('derives once: %s replays %i, settled copies %i, gap rounds %i', async (name, replays, trials, gapRounds) => {
+    ['three-continents', 41, 19, 2], ['a-tier-gap-plan-orders-every-part', 0, 0, 1], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 1],
+    ['a-tier-gap-grows-to-its-rows', 0, 0, 1], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 1], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 3],
+  ] as const)('derives once: %s replays %i, settled copies %i, gap solves %i', async (name, replays, trials, solves) => {
     resetAttemptCounters();
     await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
-    expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapRounds]).toEqual([replays, trials, gapRounds]);
+    expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapSolves]).toEqual([replays, trials, solves]);
+    // Exactly one solve per 7f attempt body.
+    expect(attemptCounters.gapSolves).toBe(attemptCounters.attempts);
   }, 60000);
 
   it('reads nothing of the model when the ledger and the trace are off', async () => {
@@ -155,12 +167,14 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     const i = attemptCounters.invalidations;
     expect({ counters: found.counters, runs: found.runs, attempts: found.attempts, rounds: found.rounds, open: found.open, chord: found.chord, baseChord: found.baseChord, reseat: found.reseat,
       probe: found.probe, preChords: found.preChords, preCentre: found.preCentre, base7f: found.base7f })
-      .toEqual({ counters: '42/168/120/5', runs: 4, attempts: 2, rounds: 6, open: 0, chord: 4, baseChord: 2, reseat: 'none', probe: 0, preChords: 2, preCentre: 9, base7f: '7/0/0' });
-    // NTP regrows no gap.
-    expect([i.gapRegrown, i.shortGapsAfterRounds, i.bodyOnFrozenChord, i.cantonNonConvergence]).toEqual([0, 0, 0, 0]);
+      // Ticket 57 rebaselines this opt-in test: main acad67cd read '77/267/237/5', rounds 10, chord 6, preChords 8, base7f '6/4/0' (stale since the
+      // titles-last ticket 54); with one tier-gap solve it reads the values below.
+      .toEqual({ counters: '42/153/150/5', runs: 4, attempts: 2, rounds: 5, open: 0, chord: 3, baseChord: 1, reseat: 'none', probe: 0, preChords: 14, preCentre: 12, base7f: '9/4/0' });
+    expect([i.bodyOnFrozenChord, i.cantonNonConvergence]).toEqual([0, 0]);
     // The close-up opened again after a chord move, in the base run and in the side trial (section 2: 0.87 px in r1).
     expect(i.closeUpReopened).toBe(0);
     // Phase 2: 16 replays, 12 settled copies, 16 gap rounds. Phase 4 (the unified order lets more candidates pass to a settled copy): 46, 40 and 44.
-    expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapRounds]).toEqual([46, 40, 44]);
+    // Ticket 57: 41 replays, 38 settled copies, and one gap solve per attempt (2).
+    expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapSolves]).toEqual([41, 38, 2]);
   }, 120000);
 });

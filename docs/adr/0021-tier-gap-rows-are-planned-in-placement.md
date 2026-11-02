@@ -28,7 +28,8 @@ neighbour's leg (tickets 45, 46). That is the pipeline's one rule broken, in one
    the drops and the residual terms (spec Section 3). It is read on the geometry 7f publishes:
    `growTierGaps` takes it to a fixed point on trial copies (at most six rounds; from the third
    round a gap never gives back an earlier ask) and grows the gap by `H` less the room it has. There
-   is no probe.
+   is no probe. (Amended: the fixed point is gone; one solve reads `H` once. See the amendment of
+   architecture-2 ticket 57 at the end.)
 3. **Stage 8 consumes the plan.** `allocateGapRuns` returns every planned part tip to tip as
    reserved geometry; the stem from a port anchor to its tip is claimed straight. A gap whose parts
    are all planned asks the router for nothing.
@@ -75,3 +76,40 @@ Amendment (2026-10-05, architecture ticket 15, phase 4): a course may leave its 
 Amendment (2026-10-05, architecture ticket 15, phase 4, review): (Q2) the width of a perimeter lane and of a padding row is required width, not optional growth, so a canvas that a course widens may exceed the 5 % growth limit, and a turn row may stand in the padding of its group. A course trial is judged on what it publishes, not on its promise: it is refused when a course link publishes more turns than the course promised, and when the routed trial has a gate finding or a hard entry of the x constraint catalogue (`src/layout/constraints/`) that the baseline does not have. The findings are compared as sets, so a trial that trades one finding for another is refused. The side judge does not read the catalogue: `three-canton-groups-close-up-to-a-band-gap` keeps a side trial today that leaves two root frames under the band gap, and a check there would change that sheet (a ticket of its own).
 
 Amendment (2026-10-05, architecture ticket 15, phase 5): the plan has a **U part**: a part whose two ends stand on one boundary of the gap, a port's tip and the mouth of a column-gap lane (`PlanInput.u`). It has one row and two legs, no lower leg, and asks `keep` above the band below. A U part nested in another stands above it, and a U part stands above a stepped part whose upper or lower end stands between its legs (`uEdges`, added only where they close no cycle); the other edges (O1, O2, the Z split) do not read it. `u-turn` is residual only for a link with no gap course. A **gap course** (`runs` with `gap`, no `perimeter`) is offered to a skirt, a link whose two ends stand in one band with a unit between them, only when its baseline route is removed or has a gate finding that names it: a skirt whose route holds keeps it. The lateral end keeps the face the rule gives (`hold`); the other end leaves by its bottom face (`u`), and stage 5 sets that face. Stage 7a reserves the column-gap lane (`gap-lane:<link>:0`) at the centre of the free column beside the lateral end's unit, and its x is fixed (ADR-0010); the extent is replayed from the lateral port's y. A column that is too narrow, or a side run that crosses a body, refuses the course: nothing moves for it, and a column that has to open is not built. The lane is kept on its side of every unit of its band by the guard that holds every lane (`laneSidesHold`). Only the U part below the band is built; a U part above it (a top face) would cross the group title and needs a plan hung from the high boundary.
+
+## Amendment (architecture-2 ticket 57, 2026-11-03)
+
+**A tier gap is as high as its reservations need, and placement computes that height once.** This amends decision 2. The fixed point of
+`growTierGaps` is gone, with its cap of six rounds, its trial copies, its hand-back in the 7f rounds and the counters `gapRounds` and
+`invalidations.gapRegrown`. The original text above stays as the record of the earlier decision.
+
+1. **The stem depths are decided once and recorded.** The fixed point existed because `sidePlan` nested a stem only when `legClear` found
+   the nested leg clear of the tier across the gap, so the plan read after a growth could differ from the plan read before it. `legClear`
+   now reads the nodes, group boxes and lanes of the stem's own sub-tier only. A growth of the gap cannot change a stem. The depths are
+   recorded on the model (`stemDepths`: the node, the side and the reach of each port with a leg there). `[]` means decided, and no side
+   nests. An absent record means a model from before the end of 7f or an older layout, and the readers derive the plan. `stemDepth`,
+   `routerEntryPoints`, `stemCheckpoint`, stage 8 and the validator read the record. The validator and a restore refuse a record that
+   differs from what the published geometry calls for (R5).
+2. **One solve (`solveTierGaps`, `gap-room.ts`).** It runs once per 7f attempt, after the last move in x (`nestOverlayPorts`) and before
+   `placeGroupTitles`. It records the stem depths, reads every plan once, reads the label term, and grows each gap by
+   `max(0, H - room, label deficit)`. The bands below move by the running total, and a y-only rebuild follows with no centring. A rebuild
+   that moves an x throws. The 7f rounds (`settleRound`) and the chord trials grow no gap. A label shortfall across a tier gap in the
+   rounds is recorded and not moved; the validator and the room check count it as a fault. The lane reseat judge (`chooseReseat`) reads no
+   short gap, because the solve runs after the reseat. `TIER_GAP_GROWN` names what set each gap: a part of the plan, or "the label of
+   link-N". Stage 8 `unfitGaps` stays as a safety net (R6) and must not fire. After the growth the solve checks the gaps as they stand,
+   and each check is named: a centring replay when the growth broke an excused alignment (`TIER_GAP_CENTRING_REPLAYED`, its only x move),
+   a stem record decided again (`STEM_DEPTHS_REDECIDED`), a label room across a gap given up, and a gap that still asks
+   (`TIER_GAP_SOLVE_SHORT`). None of them fires on the corpus.
+3. **The label term.** The room of a link label across a gap is read on a copy at the growth the gap takes anyway
+   (`reserveLinkLabelRoom` with `gapRoom`), at most `LABEL_SOLVE_READS` (4) times. A room that still rises is given up
+   (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`).
+4. **The floor.** `floor = max(tierGapMin, gapBandDemand) - (low - bottom(above))`. `tierGapMin` is the larger of the tier-gap spacing and
+   the node clearance plus the widest stroke; it is split from `bandGap`, which keeps the horizontal uses. `gapBandDemand` is the height
+   of the bands that stand in the gap: a canton title band on the gap's edge (20 + title height + band extra + 20) and an across-frames
+   mesh bus band (20 + band + 20). Two facing bus bands add (20 + upper + lower + 20). A canton band and a bus band on one edge add. Stage 4
+   opens each gap to `tierGapMin`. Stage 6 (`reseatBands`) seats it at `max(gap, gapBandDemand)`. The start of 7f reserves the band height
+   on the y axis only (`topUpBandClearance`).
+5. **Known cost, accepted.** With no centring replay after the growth, three corpus sheets gain bends (`avd-cv-pathfinder-wan` 8 to 12,
+   `a-corridor-moves-after-the-grid-settles` 174 to 176,
+   `a-face-aligns-one-port-and-leaves-a-chord-port-in-place` 10 to 12), and `a-band-holds-the-group-that-set-its-edge` loses one held chord (link-28). A
+   follow-up ticket for the centring is planned.

@@ -11,17 +11,20 @@ import { orthogonalLinks } from '../orthogonal-links.js';
 // A gap the plan does not fit is left to the router (`fittingPlans`): nothing is planned into it, and libavoid routes its links among
 // the reserved parts of the other gaps. Ticket 52 deleted the allocation that used to seat such links (`allocateGap`, the holds and the
 // tip bands): the corpus never reached it, 7f sizes every gap it can, and the corridor move is refused where it would leave a gap short
-// (`shortGaps`). The state arises only where the growth rounds do not settle. These tests publish the model with 7f's growth switched
-// off, which is exactly that state. What they hold: the gap is named `TIER_GAP_PART_UNFIT` with the ask, the pipeline publishes, and
+// (`shortGaps`). Since ticket 57 the one solve sizes every gap, so the state arises only where a change after the solve leaves a gap
+// short. These tests publish the model with the solve's growth switched off, which is exactly that state. What they hold: the gap is named `TIER_GAP_PART_UNFIT` with the ask, the pipeline publishes, and
 // every link the router cannot route is removed with a warning of its own, never dropped silently. They do not hold that nothing is
 // removed: libavoid alone removes links here (the old seating removed none on these two fixtures).
 const growth = vi.hoisted(() => ({ tiers: new Map<number, number>() }));
 vi.mock('../../src/layout/gap-room.js', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/layout/gap-room.js')>();
-  // The gap above each tier grows by the amount a test sets, and by nothing else (the plan asks for more).
-  return { ...original, growTierGaps: (model: Parameters<typeof original.moveBands>[0]): boolean => {
+  const { rebuildRegionGeometry } = await import('../../src/layout/region-rebuild.js');
+  // The gap above each tier grows by the amount a test sets, and by nothing else (the plan asks for more); the rebuild is the solve's.
+  return { ...original, solveTierGaps: (model: Parameters<typeof original.moveBands>[0], rebuild: (model: Parameters<typeof original.moveBands>[0]) => void): boolean => {
     if (!growth.tiers.size) return false;
     original.moveBands(model, growth.tiers);
+    rebuildRegionGeometry(model, undefined, undefined, true, false);
+    rebuild(model);
     return true;
   } };
 });

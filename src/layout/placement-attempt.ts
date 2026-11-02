@@ -9,11 +9,11 @@ import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds, gapLabelDeficits } from './bands.js';
 import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
-import { growTierGaps } from './gap-room.js';
+import { solveTierGaps } from './gap-room.js';
 import { holds } from './reservation-checks.js';
 import { candidateCopy, chooseReseat, roomShort, shortGaps } from './decide.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
@@ -29,17 +29,18 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
  * The passes, in order, on the draft:
  *   1. `freezeChords`, then `produceGroupLabelBands`: the last confirmation of a chord becomes a wall, then the reservation of the label bands
  *      (their height; no title is placed while placement moves).
- *   2. Up to `CANTON_ROUNDS` rounds of `settleRound` (the tier-gap growth, the link label room again, the close-up, the keep-out), `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
+ *   2. Up to `CANTON_ROUNDS` rounds of `settleRound` (the close-up, the keep-out, the link label room again), `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
  *      each move on a copy that `trialSettle` has run). The choices of the linkless step, the chord step and the lane reseat are all made by the
  *      decision loop of decide.ts, each judged by the profile `judges` names for its kind; a round that moved anything is followed by `replayRegions`, or, when the step kept
  *      a move, by taking the settled copy of the last kept move (the replay and the next round's settling are then done).
  *   3. The held-axis probe (`holdColumnAxes` on a copy), and the non-convergence warning for the cantons.
  *   4. `reseatLanes`, adopted only when its settled trial is no worse in the named respects (`chooseReseat`, decide.ts).
- *   5. `placeGroupTitles`: every group title, once, on the geometry that publishes (architecture-2 ticket 54).
- *   6. The diagnostics read once on the final geometry: blocked chords, side lanes, chords that leave a frame by a side edge.
+ *   5. `solveTierGaps`: each tier gap grows once to its plan and to the labels of its drops, y-only (architecture-2 ticket 57).
+ *   6. `placeGroupTitles`: every group title, once, on the geometry that publishes (architecture-2 ticket 54).
+ *   7. The diagnostics read once on the final geometry: blocked chords, side lanes, chords that leave a frame by a side edge.
  */
 
-/** Rounds of the tier-gap growth, the label room and the canton close-up in 7f (ranked-groups ticket 65). */
+/** Rounds of the canton close-up and the label room in 7f (ranked-groups ticket 65). */
 const CANTON_ROUNDS = 4;
 /** The move of a close-up round, in px, under which the cantons stand a band gap apart for every purpose (ranked-groups ticket 65). */
 const CANTON_CREEP = 0.5;
@@ -89,7 +90,7 @@ const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|L
  * Take a settled copy as the state of `model`, which the caller still holds, when that is exactly what replaying `model` would give; otherwise
  * leave `model` alone and return false (the caller replays). The copy was taken at diagnostic count `baseDiagnostics`; `original` is its list then.
  * A replay filters the list and appends to it, so the copy's list is the authority: an entry of it that is in `original` survived, any other is new.
- * What `model` gained since the copy (`added`: the notes of the judge, the warnings of the gap growth) is where the replay would have found it:
+ * What `model` gained since the copy (`added`: the notes of the judge) is where the replay would have found it:
  * after the survivors, before the new entries. That holds when nothing of `original` was withdrawn (a withdrawn warning could have taken an added
  * one of its code with it, and a re-raised one is placed by the replay), the new entries come last, and no added entry has a code the replay reads
  * or writes. Then the result is the replay's, in its order. With nothing added the copy's list is the replay's result whatever the replay withdrew.
@@ -168,27 +169,14 @@ function giveUpRoom(model: LayoutModel, passes: number): void {
 }
 
 /**
- * The growth of the tier gaps is measured on the columns as they stand, and the close-up of the cantons (ranked-groups ticket 65)
- * moves them in x after centring widened one in place: so the growth is measured again after every move, and the rounds end when
- * the close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it.
- * One round of the growth, the close-up, the keep-out and the label room (last, `settleRoom`), on any model: the loop runs it on the draft, and the
+ * The close-up of the cantons (ranked-groups ticket 65) moves them in x after centring widened one in place, so the rounds end when the
+ * close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it. No round grows
+ * a tier gap: the one solve after the rounds does (architecture-2 ticket 57).
+ * One round of the close-up, the keep-out and the label room (last, `settleRoom`), on any model: the loop runs it on the draft, and the
  * step over a chord (ticket 77) runs it on a copy to see what a move settles into. It returns the shift of the close-ups.
  */
 export function settleRound(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void, passes = LABEL_ROOM_PASSES): number {
   attemptCounters.settleCalls++;
-  const trial: { trial?: LayoutModel; baseDiagnostics?: number; original?: ReadonlySet<Diagnostic> } = {};
-  const grew = timed('grow-tier-gaps', () => growTierGaps(model, trial));
-  // The growth stopped on "no change": its last trial is the grown model after the replay below, so it is taken instead of replaying (ticket 13, phase 2).
-  // `adoptSettled` declines when the diagnostics would differ from the replay's; the replay then runs.
-  if (grew && !(trial.trial !== undefined && trial.original !== undefined && adoptSettled(model, trial.trial, trial.baseDiagnostics!, trial.original))) {
-    // The replay refits every group box to its content, so a linked pair the first step gave one
-    // x-extent (ADR-0012) holds two again and the published model would not be the grid's fixed
-    // point — which is what `validateGroupLabelBands` demands. The grid is settled here, as part of
-    // the replay: it grows box extents onto edges that already exist, and moves a node only to pack beside rows that stood open
-    // before it (once, then the replay; ticket 136).
-    replayRegions(model);
-  }
-  tap?.('grow', grew);
   const shift = closeUpAndKeepOut(model, tap);
   // The label room last (architecture-2 ticket 27): a chord trial runs this round on its copy, so the judges read, and the draft adopts, a copy
   // whose rooms hold; the draft rounds reserve on their own settled state the same way.
@@ -205,7 +193,7 @@ export function trialSettle(probe: LayoutModel): SettleReading {
   });
 }
 /** The steps of a round of `settleRound`, in order. */
-export type SettleStep = 'grow' | 'room' | 'close-up' | 'keep-out';
+export type SettleStep = 'room' | 'close-up' | 'keep-out';
 /**
  * What a round of `settleRound` found, with the steps it took in order: a copy that adopted it hands this on instead of settling again.
  * `roomSettled`: the round ended on the label room, which reserved nothing or was given up, and nothing moved after it (ticket 27); a judge
@@ -264,10 +252,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     note(`ledger:${pass}`, countStep(seen, now, entry));
     seen = now;
   };
-  // 7f reserves two things. A tier gap grows to the rows the plan must seat in it
-  // (ADR-0015 rule 1) before any label is placed, because the growth moves whole bands down and
-  // a label placed first would stay behind. The replay then rebuilds every claim the movement
-  // touched, exactly as a reservation change does anywhere else in 7f.
+  // A tier gap is no round's business (architecture-2 ticket 57): the rounds settle the cantons and the label rooms, and one solve after them
+  // grows each gap to its plan and to the labels of its drops, y-only, before any title is placed.
   // The last confirmation of a chord was the end of 7e: from here it is a wall (ticket 34).
   abortAt?.();
   // The fan members and the other held chords a retry refused fall back before anything else is decided on their legs (architecture-2 ticket 40,
@@ -298,14 +284,13 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     if (attemptTimings.on) attemptTimings.hooks.round?.(draft);
     // A creep under half a pixel, left by the centring replay, counts as settled; the replay still follows any move.
     const afterChords = again;
-    const tapped = (step: SettleStep, changed: boolean): void => {
-      if (step === 'grow' && changed && round > 0) attemptCounters.invalidations.gapRegrown++;
+    const tapped = (step: SettleStep): void => {
       account(`round-${round}:${step}`);
     };
     let shift: number;
     if (taken !== undefined) {
       // The draft stands on the settled copy that judged the last chord move; that copy has run this round already.
-      for (const [step, changed] of taken.steps) tapped(step, changed);
+      for (const [step] of taken.steps) tapped(step);
       shift = taken.shift;
       taken = undefined;
     } else shift = settleRound(draft, tapped);
@@ -314,7 +299,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     attemptCounters.rounds++; entry.rounds++;
     if (!closed) { attemptCounters.openRounds++; entry.openRounds++; if (afterChords) attemptCounters.invalidations.closeUpReopened++; }
     note(`round-${round}:settle`, closed ? 'closed' : 'open');
-    // The growth and the close-up change the slope of a chord that spans a gap and the x of a column: a group with no links
+    // The close-up changes the slope of a chord that spans a gap and the x of a column: a group with no links
     // steps out of a chord again, after the replays (ticket 76 review). Cheap and idempotent.
     const linkless = moves && stepLinklessOutOfChords(draft);
     if (linkless) lastAttempt.moved = true;
@@ -384,17 +369,17 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   if (reseatLanes(draft, followedLanes)) {
     seated?.reconcile();
     rebuildLaneExtents(draft);
-    // Four things the move can spoil, and it is refused rather than allowed to. It may open an
+    // Three things the move can spoil, and it is refused rather than allowed to. It may open an
     // alignment 7c could not reach, and the centring invariant would then read the published
-    // placement as unfinished work. It also turns the run in the gap beside the corridor from a
-    // column into a row, and the height rule has already measured that gap: a gap that cannot
-    // seat the new row would owe room nothing reserves. And a corridor is an obstacle the link
+    // placement as unfinished work. (It may also turn the run in the gap beside the corridor from a
+    // column into a row: that is no refusal since architecture-2 ticket 57, as the one tier-gap solve
+    // runs after the move and seats the new row.) And a corridor is an obstacle the link
     // label reservation measures against — it decides whether a labelled row link detours and
     // where the room it needs is inserted — so a corridor that moves across one
     // of those runs leaves a label a run 7e and 7f already reserved and did not get (stress ticket
-    // 18). That third one has to be refused rather than settled again: re-reserving moves nodes,
-    // and by here the corridors are fixed. The first three are compared as sets, not as counts: a
-    // move that trades one unverified alignment, one short gap or one short run for another is not
+    // 18). That one has to be refused rather than settled again: re-reserving moves nodes,
+    // and by here the corridors are fixed. They are compared as sets, not as counts: a
+    // move that trades one unverified alignment or one short run for another is not
     // "no worse", it is a different diagram with the same tally.
     //
     // The settling below can move whole frames: where the grid widens a box beside rows that stood open, it packs them once (ticket 136), and a
@@ -442,8 +427,14 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // no box and no other port, and one that would need room 7f did not reserve is not made (`roomHolds`). A trade can also undo the excuse of a
   // centring the attempt declined (a replay that bent a chord no longer bends it), so the result keeps the centring findings it had or fewer, the
   // set test `chooseReseat` makes too (R2; snack-theme ticket 159).
-  const centring = new Set(centreViolations(draft));
-  nestOverlayPorts(draft, model => roomHolds(model) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
+  const centring = new Set(centreViolations(draft)), gapLabels = gapLabelDeficits(draft);
+  nestOverlayPorts(draft, model => roomHolds(model, gapLabels) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
+  // The tier gaps are solved once, after the last move in x and before the titles (architecture-2 ticket 57): the stem depths are
+  // recorded, every plan and every label room across a gap is read once, the gaps grow, and the claims a move in y changes are rebuilt.
+  // After a growth the linkless step runs once more, as a round did after a growth before (ticket 76 review): a held chord whose slope the
+  // growth changed may now cross a group with no links.
+  timed('solve-tier-gaps', () => solveTierGaps(draft, replayGridAndBands, model => moves && stepLinklessOutOfChords(model)));
+  note('solve-tier-gaps', 'done');
   // The group titles are placed once, on the geometry that publishes, after the last move of a box, a lane or a port (architecture-2 ticket 54,
   // "titles last"): a title yields to every link, and nothing placed before reads it. The validator reads the record.
   placeGroupTitles(draft);

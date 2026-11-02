@@ -4,9 +4,10 @@ import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { LINK_LABEL_GEOMETRY, haloSize, reservedLinkRuns } from '../../src/layout/link-labels.js';
 import { labelBorders, labelRunWindows, windowHolds } from '../../src/layout/run-label-box.js';
-import { labelRoomUnsettledFault, reserveLinkLabelRoom, validateGroupLabelBands, type LinkLabelShortfall } from '../../src/layout/bands.js';
+import { labelRoomUnsettledFault, reserveLinkLabelRoom, tierGapShortfall, validateGroupLabelBands, type LinkLabelShortfall } from '../../src/layout/bands.js';
+import { solveTierGaps } from '../../src/layout/gap-room.js';
 import { attemptTimings, resetAttemptTimings } from '../../src/layout/attempt-timings.js';
-import { replayRegions, settleRound, type AttemptTraceEvent, type SettleStep } from '../../src/layout/placement-attempt.js';
+import { replayGridAndBands, replayRegions, settleRound, type AttemptTraceEvent, type SettleStep } from '../../src/layout/placement-attempt.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { measureText } from '../../src/text/index.js';
@@ -93,30 +94,31 @@ async function movedDraft(): Promise<LayoutModel> {
   return draft;
 }
 
-// Review fixes of ticket 27: the room is the last step of a settle, and the pass bound gives a short room up rather than leave it to a throw (R2, R6).
-it('a settle ends on the label room: after the slide the room is reserved and nothing moves after it (ticket 27)', async () => {
+// Review fixes of ticket 27, as ticket 57 changed them: link-4's room is across a tier gap, and since ticket 57 that room is a term of the
+// one tier-gap solve, not a reservation of the settle. A settle still ends on the label room, and gives none of a tier gap's rooms up.
+it('a settle hands a tier-gap label room to the solve, which reserves it once (tickets 27 and 57)', async () => {
   const draft = await movedDraft();
-  expect(reserveLinkLabelRoom(structuredClone(draft))).toBe(true);
+  const before: LinkLabelShortfall[] = [];
+  // The slide turned link-4's line: its room across the gap is short, and the reservation moves nothing for it.
+  expect(reserveLinkLabelRoom(structuredClone(draft), before)).toBe(false);
+  expect(before.filter(tierGapShortfall).map(item => item.link)).toEqual(['link-4']);
   const steps: [SettleStep, boolean][] = [];
   settleRound(draft, (step, changed) => { steps.push([step, changed]); });
   expect(steps.at(-1)).toEqual(['room', false]);
-  // Every room pass that reserved is followed by the close-up, the keep-out and the room again.
-  const reserved = [...steps.entries()].filter(([, [step, changed]]) => step === 'room' && changed).map(([at]) => at);
-  expect(reserved.length).toBeGreaterThan(0);
-  for (const at of reserved) expect(steps.slice(at + 1, at + 4).map(item => item[0])).toEqual(['close-up', 'keep-out', 'room']);
-  expect(reserveLinkLabelRoom(structuredClone(draft))).toBe(false);
   expect(draft.labelRoomUnsettled).toBeUndefined();
+  // The solve reads the room once and grows the gap; the replay then asks for nothing.
+  expect(solveTierGaps(draft, replayGridAndBands)).toBe(true);
+  expect(draft.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN').map(item => item.message).join(' ')).toMatch(/set by the label of link-4/);
+  const after: LinkLabelShortfall[] = [];
+  expect(reserveLinkLabelRoom(structuredClone(draft), after)).toBe(false);
+  expect(after).toEqual([]);
 }, 120000);
 
-it('at the pass bound a short label room is given up, recorded and named, and the reservation holds (ticket 27)', async () => {
+it('at the pass bound a settle gives up no room across a tier gap: the solve owns it (tickets 27 and 57)', async () => {
   const draft = await movedDraft();
   settleRound(draft, undefined, 0);
-  expect(draft.labelRoomUnsettled).toEqual(['link-4']);
-  expect(draft.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNSETTLED').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-4' }]]);
-  expect(labelRoomUnsettledFault(draft)).toBeUndefined();
-  const replay = structuredClone(draft);
-  expect(reserveLinkLabelRoom(replay)).toBe(false);
-  expect(replay.diagnostics.some(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED' && JSON.stringify(item.owners) === JSON.stringify([{ kind: 'link', id: 'link-4' }]))).toBe(true);
+  expect(draft.labelRoomUnsettled).toBeUndefined();
+  expect(draft.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNSETTLED')).toEqual([]);
 }, 120000);
 
 it('a forged record of the label rooms given up is refused (ticket 27, R5)', async () => {

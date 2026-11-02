@@ -9,7 +9,7 @@ import { EPS } from '../../src/geometry/planar.js';
 import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
 import { DEFAULT_STROKE_WIDTHS, overlayTrackPitch } from '../../src/theme/geometry.js';
 import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
-import { reserveAcrossRunRoom, reserveLinkLabelRoom, validateGroupLabelBands } from '../../src/layout/bands.js';
+import { reserveAcrossRunRoom, reserveLinkLabelRoom, tierGapShortfall, validateGroupLabelBands, type LinkLabelShortfall } from '../../src/layout/bands.js';
 import { fitRegionGroup } from '../../src/layout/regions.js';
 import { union } from '../../src/layout/skeleton-geometry.js';
 import { bench } from '../layout/link-label-fixture.js';
@@ -76,7 +76,11 @@ links: [[flank.p, peer.p, {label: ${peering}}]]`);
   const shortened = JSON.parse(JSON.stringify(vertical)) as LayoutModel;
   for (const group of Object.values(shortened.groups)) if (group.tier === 1) group.bounds!.y -= 60;
   const t = shortened.nodes.target!; t.bounds!.y -= 60; for (const p of t.ports) { p.anchor!.y -= 60; if (p.pill) p.pill.bounds.y -= 60; }
-  expect(reserveLinkLabelRoom(shortened)).toBe(true);
+  // The room across a tier gap is a term of the tier-gap solve (architecture-2 ticket 57): the replay moves nothing for it and names
+  // the shortfall, which the validator refuses.
+  const shortfalls: LinkLabelShortfall[] = [];
+  expect(reserveLinkLabelRoom(shortened, shortfalls)).toBe(false);
+  expect(shortfalls.filter(tierGapShortfall).length).toBe(1);
 }, 60000);
 
 it('stress ticket 18: a corridor at or beyond the split decides whether the room is reserved at all', async () => {

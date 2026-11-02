@@ -10,7 +10,8 @@ import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';
 import { centre } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
-import { growTierGaps } from '../../src/layout/gap-room.js';
+import { solveTierGaps } from '../../src/layout/gap-room.js';
+import { replayGridAndBands } from '../../src/layout/placement-attempt.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
@@ -78,8 +79,11 @@ it('an exhausted budget still grows the box where the reservations allow, and re
 it('a y-widening that would take the room of a seated tier gap row is refused', async () => {
   // Stress ticket 05's fixture: the gap under the middle tier owes four rows, 7f grows it to seat them, and the plan then fits.
   const model = structuredClone(await bundles(bars(centre(flanks(lanes(rows(await placed(read('a-tier-gap-grows-to-its-rows')))))))));
-  expect(growTierGaps(model)).toBe(true);
-  rebuildRegionGeometry(model, undefined, undefined, true);
+  // The solve runs at the end of 7f, on boxes fitted to their content; a model after 7e is fitted first, with no centring (the solve may
+  // move no x, and it throws when its rebuild would).
+  rebuildRegionGeometry(model, undefined, undefined, true, false);
+  replayGridAndBands(model);
+  expect(solveTierGaps(model, replayGridAndBands)).toBe(true);
   expect(tierGapPlans(model).map(({ plan }) => plan.growth)).toEqual([0, 0]);
   const middle = model.groups['g1']!;
   expect(gapsHoldGrowth(model, [{ group: middle, bounds: { ...middle.bounds! } }])).toBe(true);

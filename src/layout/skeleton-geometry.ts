@@ -2,7 +2,7 @@ import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
-import { bandGap, compareId, greatestPeers, groupId, nodeGap, nodeId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
+import { bandGap, tierGapMin, compareId, greatestPeers, groupId, nodeGap, nodeId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { isGridGroup, packGrid } from './grid.js';
 import { rebuildFrames } from './frames.js';
 import { packFrameColumns, type Column } from './columns.js';
@@ -253,7 +253,7 @@ export function placeFlanksAndPeers(model: LayoutModel, orderColumns?: (columns:
 
 /** Stack complete band geometry. Preserve each band's valid ELK positions and internal gaps. */
 export function stackBands(model: LayoutModel, includeFlanks: boolean): void {
-  const gap = bandGap(model);
+  const gap = tierGapMin(model);
   rebuildBands(model, includeFlanks);
   let y = spacing.padding;
   for (const band of model.tierBands) {

@@ -423,6 +423,11 @@ no group overlap; violation → fallback (if not already) → hard failure.
 
 Output: absolute group boxes, node positions, in-row order.
 
+**The tier gap starts at its minimum.** `stackBands` opens each tier gap to `tierGapMin(model)`: the larger of `SKELETON_SPACING.tierGap` and
+the node clearance plus the widest stroke (architecture-2 ticket 57; today 60 px). `bandGap` keeps the horizontal uses (sibling columns,
+grid columns, flanks, ELK layer spacing). A gap is never lower than `tierGapMin`. The bands, the rows and the labels that stand in a gap
+raise it later and never lower it.
+
 ## Stage 5 — sides, phase two; resize; repack
 
 Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
@@ -451,6 +456,11 @@ holds the title, and 7f only places it. The same floor holds the rank cell that 
 `frameTitleSide` reads), and a canton's title holds its union through the widest cell of its title-edge sub-tier (`cantonTitleFloor`,
 `regions.ts`: the title room less the other cells of that sub-tier and the two margins). No stage widens a box for a title
 (architecture-2 ticket 54).
+
+**Stage 5 decides the inputs of the bands that stand in a tier gap** (architecture-2 ticket 57): the title edge of a canton, the bus side
+and the title text. Stage 6 seats the gap with them (`gapBandDemand`). Stage 5 does not reserve the band height. A stage-5 reservation made
+7a to 7e plan in boxes that were taller than before and cost bends and crossings on the corpus (branch `t57-step2-stage5`, not taken). The
+start of 7f reserves the height, on the y axis only (`topUpBandClearance`).
 
 **The bus edge is read again here** (ticket 83). Once every routed port has its final side, and before the nodes are re-sized and the rows
 repacked, `busSide` counts the legs each horizontal edge of the row carries within the bar's span (the members' bus ports, first to last, at the
@@ -499,10 +509,14 @@ A **column arrangement** (ticket 52) is decided in the same run, earlier in stag
 
 Per tier: all unstaggered `row`-shape nodes share one top y. A reserved stagger keeps both lines and its pitch; each line is a row to later horizontal repacks. Repack horizontally again if the flattening
 created overlap (nodes ELK stacked at one x). After `flattenRows`, `reseatBands` seats the bands
-again: each band starts one band gap under the band above, and its groups, nodes and icons move by
-one vertical shift (flanks, bars and grids with it). One number, `bandGap`, serves the boundary
-between sub-tiers and between document tiers. So a band that ELK layered deeper than its sub-tier
-needed does not keep the extra height as gap. Room that stage 7 allocates is added on top. For each same-tier pair with facing east/west
+again: each band starts one `tierGapMin` under the band above, or `gapBandDemand` under it when that is more, and its groups, nodes and
+icons move by one vertical shift (flanks, bars and grids with it). `tierGapMin` serves the boundary
+between sub-tiers and between document tiers. `gapBandDemand(above, below)` is the height that the bands in the gap ask: a canton title
+band on the edge of the gap asks 20 + title height + `bandExtra` + 20, and an across-frames mesh bus band asks 20 + band + 20. Two bus
+bands that face each other in the gap add: 20 + upper band + lower band + 20. A canton band and a bus band on one edge add too. The tier-gap
+plan reads the same figure as its floor. So a band that ELK layered deeper than its sub-tier
+needed does not keep the extra height as gap. Room that stage 7 allocates is added on top: the solve at the end of 7f adds the rows of
+the parts and the room of the link labels, once. For each same-tier pair with facing east/west
 ports: level the facing ports (move the ports on the node with fewer on that side) and, if
 nothing lies between, **pin** a non-bundle link as a straight horizontal. Bundle endpoints are
 levelled here but remain unpinned for stage 7e.
@@ -654,24 +668,26 @@ The move is made only when every one of these holds:
   an alignment 7c could not reach, and the invariant would then read the published placement as
   unfinished work. The rule measures `centreViolations` both ways and keeps the corridors where
   they were rather than publish that contradiction;
-- the move leaves **no tier gap whose plan asks for more height than it has**. The move turns the
-  part in the gap beside the corridor from a drop into a stepped part, and 7f has already reserved
-  the height every plan asks for. The rule reads the plan of each gap (`tierGapPlans`, § 7f) before
-  and after the move, and keeps the corridors where they were when the move adds a gap that is short.
+- the move leaves **no body on a frozen chord**, no label that loses its room and no corridor off its child (`chooseReseat`).
+  The move turns the part in the gap beside the corridor from a drop into a stepped part. A gap that
+  cannot seat the new row is no refusal since architecture-2 ticket 57: the judge reads no short gap
+  (it did before), because the one solve of the tier gaps runs after the move and grows the gap by
+  the row (§ 7f).
 
-**The move runs last in 7f**, after the tier-gap growth and after the group label bands, and that
+**The move runs late in 7f**, after the rounds and the group label bands and before the solve of the tier gaps (§ 7f), and that
 is a measured choice. Every centring replay reads lane x as that feed's authoritative x, so a
 corridor moved before one is a corridor the replay chases: on
 `goldens/synthetic/own-lane-is-an-obstacle.yaml` the same move made at 7c widened the child node
 from 145.78 to 1150.89 px and the canvas from 500.05 to 1505.16, and made before the tier-gap
-growth, to 622.89 px and 977.16 — the growth's own replay chases it. Made last, nothing moves at
+growth, to 622.89 px and 977.16 — the growth's own replay chases it (that growth was the fixed point of `growTierGaps`, which ticket 57
+removed). Made late, nothing moves at
 all: the corridor alone changes, and crossings go 3 → 1 with Q 0.5122 → 0.6704. Nothing else moves
 either, so the label bands 7f has just placed stay where they are, and the corridor is measured
 clear of them.
 
-The row the move creates is therefore **refused, not reserved**: the gap keeps the room 7f gave it
-and the corridor moves only where that room holds the new row. Running the move before the growth
-so the height rule counts the row was measured and rejected for the number above — the golden is
+The row the move creates is therefore **solved, not refused** (amended by architecture-2 ticket 57; before it, the row was refused where
+the gap had no room for it). The solve of the tier gaps runs once after the move and reads the plan with the new row, so the gap grows by it.
+Running the move before the rounds, so that the height rule counts the row, was measured and rejected for the number above — the golden is
 byte-identical either way, but the fixture the rule exists for loses its whole point.
 
 The reservation follows the corridor: extents and `fixedSegments` are rebuilt from the new x, and so are the frames (a frame holds the lanes of its own links, so a moved corridor can move a frame edge), so
@@ -917,8 +933,10 @@ the ones the overlay rule would draw face to face, counted when they are straigh
 away. Every such chord that runs through the box's rows bans an interval of the box's x, not only the chords that cross
 it now. The x also keeps the band gap to the other groups, columns and lanes of the tier and prefers their span. When
 none fits, the group goes past the tier's end. A move that bends an overlay link that was straight is undone and reported
-as `LINKLESS_GROUP_MOVE_REFUSED`. The 7f rounds that replay the growth of the tier gaps and the close-up of the cantons
-run the same step again (`stepLinklessOutOfChords`), because a growth changes the slope of a chord that spans two gaps.
+as `LINKLESS_GROUP_MOVE_REFUSED`. The 7f rounds that close up the cantons run the same step again (`stepLinklessOutOfChords`),
+because a move in x changes the slope of a chord. The rounds grow no tier gap (architecture-2 ticket 57). The one solve of the gaps at the
+end of 7f moves y only. It changes the slope of a chord that spans a gap, and no round follows it: a body that then stands on a held chord
+is named `STRAIGHT_LINK_BLOCKED`.
 
 **A chord between two tiers keeps the tiers between free of nodes** (ranked-groups ticket 77, Q64). A straight overlay chord
 between nodes on two tiers reserves its path through the tiers between them. `stepOverChords` (`chord-clear.ts`) runs once
@@ -929,10 +947,10 @@ interval, nearest first. A group moves whole, keeps the band gap to the groups, 
 canton for a member), stays inside the box of the whole layout, and, when it holds a routed link, keeps its place in the
 order of its tier. A node moves alone, inside the box its group has and in its row's order. A candidate stays only when the
 straight overlay count rises, `laneSidesHold` passes, every routed link that ran on one axis or held a chord still does, and
-a copy of the model run through one round of the growth and the close-up (`settle`) has no G6 or G5 finding that the same
+a copy of the model run through one round of the close-up, the keep-out and the label room (`settleRound`; it grows no tier gap since architecture-2 ticket 57) has no G6 or G5 finding that the same
 copy without the move lacks (`parallelClearance` and `portOrder`, the gates' own predicates). Left bent: a chord blocked by
-two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the growth of the tier gaps
-is measured on the geometry that stands. `refreshHeldWarnings` withdraws only a warning that states a jog.
+two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the close-up and the label room
+are measured on the geometry that stands. `refreshHeldWarnings` withdraws only a warning that states a jog.
 
 ### 7d — bars
 
@@ -1088,14 +1106,14 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 
 ### 7f — group label bands, tier gap room, group label bands again
 
-7f does five things, in this order: it reserves the group label bands, it grows each tier gap to the
-height its plan asks (`growTierGaps`, `gap-room.ts`), it carries the group label bands where a
-band moved (`resyncLabelBands`), it lets a corridor whose child 7c could not seat follow that child (§ 7a), and, last, it
-places every group title once (`placeGroupTitles`, architecture-2 ticket 54). The
-corridor move is last because every centring replay before it — 7c's own, the growth's and the label
-bands' — reads lane x as that feed's authoritative x and chases a corridor that has moved. It
-therefore reserves no room: the gap keeps the height this stage gave it, and a move whose new row
-that height cannot hold is refused (§ 7a states the whole condition).
+7f does these things, in this order (architecture-2 ticket 57): it reserves the height of the group label bands on the y axis only
+(`topUpBandClearance`); it runs the rounds (the close-up of the cantons, the keep-out, the label room, the steps over a chord), which
+grow no tier gap; it lets a corridor whose child 7c could not seat follow that child (`reseatLanes`, § 7a); it settles the overlay ports;
+it solves the tier gaps once (`solveTierGaps`, `gap-room.ts`): the stem depths are recorded, every plan and every label room across a gap
+is read once, and each gap grows by what it lacks; and, last, it places every group title once (`placeGroupTitles`, architecture-2
+ticket 54). The corridor move is after the rounds because every centring replay before it — 7c's own and the label bands' — reads lane x
+as that feed's authoritative x and chases a corridor that has moved. It reserves no room itself: the solve after it grows the gap for the
+new row (§ 7a states the whole condition).
 
 **Direct families come first** (architecture-2 ticket 22; `docs/design/routed-chords.md`, Section 15). Before `freezeChords`,
 `planDirectFamilies` counts the orthogonal crossings of each facing pair on a copy, and decides each triggered family's chords
@@ -1126,7 +1144,8 @@ The rule applies to a frame and to a one-rank row group. A canton keeps its band
 overlay links straight, or that puts a frame inside a band it was not in: the group stays where it stood.
 
 **Titles last: a group title yields to its links** (architecture-2 ticket 54, ADR-0023 amendment, user 2026-11-02). Stage 5 fixes the
-title edge (ADR-0011) and the width floor (`ownTitleFloor`); 7f reserves the band height once (`reserveInitialSpace`). No placement reader
+title edge (ADR-0011) and the width floor (`ownTitleFloor`); the start of 7f reserves the band height, on the y axis only
+(`topUpBandClearance`; ticket 57). No placement reader
 sees a title: no chord is refused for one, no fan or direct member is refused or crowded by one, and the gap plan, the leg clearance
 (`legClear`), the corridor (`straightCorridorClear`) and the lane corridor keep no clearance from one. No box grows and no link bends for a
 title. At the end of 7f, after the last move of a box, a lane or a port (`nestOverlayPorts`), `placeGroupTitles` places each title once,
@@ -1145,30 +1164,55 @@ a routed link that turns beside a title it does not cross).
 `4 px + label height + 4 px` (the label is `<class> mesh (<n> nodes)` at 9 px). Two placements reserve it.
 *In-frame*: the group that holds the members (a cell or a group) holds the band on the bus edge as it holds a label band, through
 `groupInsets`: on the title edge the label band's `clearance` grows by the bus band and the title moves out by it; on the other edge the
-inset is the larger of the padding and the band. `reserveInitialSpace` shifts the nodes and grows the box by the room still missing (it
-reads the bands the model carries, so the second call reserves nothing more). The frame follows its cells.
+inset is the larger of the padding and the band. `topUpBandClearance` shifts the nodes and grows the box by the room still missing (it
+reads the bands the model carries, so the second call reserves nothing more); it moves no x, and the tiers below move down by the growth
+of the band. The frame follows its cells.
 *Across frames*: the band stands in the sub-tier gap on the bus edge and belongs to no frame; the sub-tier holds it as it holds a canton title
-band. `cantonGapNeeds` requires 20 + band + 20 there, and 20 + bus band + canton band + 20 where a canton band stands on the same edge (the
-sum, never the larger); the loop of `reserveInitialSpace` moves the lower tiers by the shortfall. A canton whose outer edge carries the band
+band. `gapBandDemand` asks 20 + band + 20 there, and 20 + bus band + canton band + 20 where a canton band stands on the same edge (the
+sum, never the larger); stage 6 (`reseatBands`) seats the gap at that height, so 7f moves no tier for it. A canton whose outer edge carries the band
 grows by it between its member frames and its title band (`deriveFrames`).
 `syncBands` publishes the `BusBand` records (`busBands`; `group` names the host of an in-frame band) and the bar, the stubs and the label's room
 (`bus.bar`, `bus.stubs`, `bus.labelRoom`) beside the label bands, so every replay that rebuilds the label bands rebuilds them, before the
-tier gap grows and again after it. The bar runs at `L + 15` from the first bus port to the last, `L` being the outermost body or pill extent
+tier gaps are solved and again after it. The bar runs at `L + 15` from the first bus port to the last, `L` being the outermost body or pill extent
 of the members' cell in-frame, and the outermost edge on the bus side of every group of the row in the span across frames (a foreign frame
 included). A stub runs from its port's outward face straight to the bar. The label's room is the centre of the bar where no vertical crosses
 the band there, else the longest clear interval; a stub ends at the bar and the label stands beyond it, so a stub never blocks it.
 A stub of an across-frames bus leaves through the padding and the label band of its frame on the bus edge: `legRects` reads it as a leg of the
 band's ports, so the title slides clear of it, or takes the halo where no span is free (ticket 54; the edge flip of ticket 83 is gone). The tier-gap plan reads an across-frames band as an O5 band (`tier-gap-rows.md`).
 Bus members are neither straight nor bent: both `straightOverlays` and `stepOverChords` leave them out.
-Ticket 96 (`mesh-bus.md`, section 11.5): stage 7a, after the lanes of every routed link, fixes the riser x of a joined pair and reserves one overlay-layer riser lane in each sub-tier between the two rows (`riser:<bus>:<sub-tier>`); both bars run to the riser x; two facing bus bands in one gap are added (`cantonGapNeeds`); the tier-gap plan reads the riser as a vertical that a middle drop keeps `k` from.
+Ticket 96 (`mesh-bus.md`, section 11.5): stage 7a, after the lanes of every routed link, fixes the riser x of a joined pair and reserves one overlay-layer riser lane in each sub-tier between the two rows (`riser:<bus>:<sub-tier>`); both bars run to the riser x; two facing bus bands in one gap are added (`gapBandDemand`, seated in stage 6); the tier-gap plan reads the riser as a vertical that a middle drop keeps `k` from.
 
-**A tier gap grows to the height of its plan (ADR-0021).** 7f reserves its group label bands, then reads
-the plan of each gap, then carries the bands where the growth moved them (`resyncLabelBands`). No title
-stands in the gap plan: a title yields to the rows and drops (ticket 54), and is placed after them. The
-last step costs a replay and nothing else. It runs only where the second step moved a band.
-`bandGap` is one number for the whole diagram, chosen in stage 4 from the node clearance and the
-widest stroke. The height a tier gap needs is a property of that gap, and the plan (§ 7a) computes it
-from the rows of its parts, packed from the low boundary:
+**A tier gap is as high as its reservations need, and placement computes that height once (ADR-0021, amended by architecture-2 ticket 57).**
+Each gap has this height: the largest of the tier-gap minimum (`tierGapMin`), the bands that stand in it (`gapBandDemand`), the rows and
+drops of its parts (the plan, with the stored stem depths) and the room of the link labels that ride across it. Stage 4 opens the gap to
+`tierGapMin`. Stage 6 seats it at `max(tierGapMin, gapBandDemand)`. The start of 7f reserves the band height on the y axis only
+(`topUpBandClearance`). The rows and the labels need the final x, so one solve reads them once, after the last move in x. No later step
+grows a gap, and no step reads the height of a gap to make a decision that the height then changes.
+
+**The solve (`solveTierGaps`, `gap-room.ts`)** runs once per 7f attempt, after the last move in x (`nestOverlayPorts`) and before
+`placeGroupTitles`. It takes these steps:
+
+1. It records the stem depths (`recordStemDepths`; below).
+2. It reads every plan once (`tierGapPlans`). No title stands in the gap plan: a title yields to the rows and drops (ticket 54), and is
+   placed after them.
+3. It reads the label term: `reserveLinkLabelRoom` runs on a copy, at the growth that the gap takes anyway, and gives the deficit of each
+   gap. A label that raises its gap is read again with the others at the new height, at most `LABEL_SOLVE_READS` (4) times. A room that still
+   rises is given up to the label placement (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`).
+4. Each gap grows by `max(0, H - room, label deficit)`. Every band below it moves down by the running total (`moveBands`), and a y-only
+   rebuild follows (regions, node geometry, lanes, the grid and the label bands) with no centring. A rebuild that moves an x throws.
+   `TIER_GAP_GROWN` names what set the gap: a part of the plan, or "the label of link-N".
+5. It checks the gaps as they stand. None of these checks grows a gap, and each one is named. None of them fires on the corpus (390 sheets).
+   - A growth that breaks an alignment the centring had excused replays the centring once (`TIER_GAP_CENTRING_REPLAYED`). This replay
+     is the only x move of the solve.
+   - A stem record that the grown geometry no longer calls for is decided again (`STEM_DEPTHS_REDECIDED`).
+   - A label room across a tier gap that is still short is given up.
+   - A plan that still asks for room names its gap (`TIER_GAP_SOLVE_SHORT`).
+
+Except for that one replay, nothing moves horizontally and nothing moves up, so lane x, the groups' order and every reservation 7a to 7e made stay as they are. A gap
+whose parts already fit grows by nothing. A part that the plan declines is named (`TIER_GAP_PART_RESIDUAL`, `TIER_GAP_ROW_CYCLE`) and left
+to the router.
+
+The height `H` of one gap is computed from the rows of its parts, packed from the low boundary:
 
 ```
 lb_i   = max( own upper tip row (or low + e where that tip is in the padding), own mouth row,
@@ -1185,40 +1229,31 @@ growth = max( 0, H - (bandTop - low) )
 ```
 
 `depth` of a lower end is `bandTop` less its row: 15 for a flat tip on the boundary, 32.5 or 50 for
-a nested one, negative for a tip in the padding, `overhang + m` for a mouth. `floor = bandGap - (low
-- bottom(band above))`: a lane overhang takes its part of the band gap. The largest term without the
-floor is the **demand**, and `TIER_GAP_GROWN` names the part that set it. The gap grows by exactly
-`H` less the room it has, and every band below it moves down by the running total. Nothing moves
-horizontally, nothing moves up, so lane x, the groups' order and every reservation 7a–7e made are
-untouched; the lane extents follow their bands and the replay rebuilds every claim the movement
-touched. A gap whose parts already fit grows by nothing.
+a nested one, negative for a tip in the padding, `overhang + m` for a mouth. `floor = max(tierGapMin, gapBandDemand) - (low -
+bottom(band above))`: a lane overhang takes its part of the minimum. The largest term without the
+floor is the **demand**.
 
-`H` is computed on the geometry 7f publishes. A stem nests only where the gap has the room
-(`sidePlan` declines a nested turn that would stand in frozen geometry), so the tips the plan reads
-depend on how far the gap has opened. `growTierGaps` therefore iterates to a fixed point of
-`extra = H(grown by extra) - room`: each round reads the plan on a trial copy grown by the round
-before (`settled`; the trial is replayed only where the published model is replayed) and replaces the
-growth by `H` less the room the gap had before any growth. `H` is not monotone in the growth (on
-`a-band-holds-the-group-that-set-its-edge` it is 247.75 px unopened and 236.25 px opened by 198.5), so
-the first two rounds replace and from the third round a gap never gives back what an earlier round
-asked. The rounds are capped at six. A gap that does not settle is named `TIER_GAP_PART_UNFIT` with
-the ask and left to the router. No probe: the plan does not depend on how far the gap has opened
-except through the stems, and a second measure over the reserved geometry asks for nothing.
+**The stem depths are decided once and recorded (`stemDepths`).** The plan depends on the height of the gap only through the stems: a stem
+nests only where the leg is clear (`sidePlan`, `legClear`). `legClear` reads the nodes, group boxes and lanes of the stem's own sub-tier only
+and no tier across the gap, so a growth of the gap cannot change a stem. The solve decides the depths first and records them on the model:
+the node, the side and the reach of each port with a leg there. `[]` means decided, no side nests; an absent record means a model from
+before the end of 7f or an older layout, and the readers derive the plan (`stemDepth`, `routerEntryPoints`, `stemCheckpoint`). The
+validator and a restore refuse a record that differs from what the published geometry calls for (`stemDepthsFault`, R5). So one read of
+the plan is the answer. Until ticket 57, `growTierGaps` iterated to a fixed point of `extra = H(grown by extra) - room` on trial copies
+(at most six rounds), because `H` was not monotone in the growth; that loop, its trial copies and its caps are gone. The fixture
+`a-band-holds-the-group-that-set-its-edge` is the case of that non-monotone `H`.
 
 The height is a reservation, not a discovery: stage 8 receives a gap that already holds its rows.
-Stage 8 is the **consumer** of the grown gap and never its owner. A corridor move after the growth
-(§ 7a) can leave a gap short; stage 8 reads the plan again on frozen placement, and a gap that then
-does not fit is named `TIER_GAP_PART_UNFIT` at stage 8 and its links are the router's.
+Stage 8 is the **consumer** of the gap and never its owner. It reads the plan again on frozen placement. A gap that then does not fit is
+named `TIER_GAP_PART_UNFIT` at stage 8 (`unfitGaps`) and its links are the router's. That is a safety net (R6), and it must not fire.
 
-The plan is read here and not at 7a because the count of stepped parts and drops depends on every
+The plan is read at the end of 7f and not at 7a because the count of stepped parts and drops depends on every
 rule before 7f: 7c aligns a child under its lane, 7d spans a bar across its ports, and 7e orders a
 bundle's ports, and each turns a row into a drop. Measured: the M1 golden's one populated tier gap
 owes four rows after 7a and none after 7d, so a plan read at 7a would grow a gap the finished
-diagram does not need. 7f is the last placement rule, so its plan is the one stage 8 receives. One
-thing 7f still does afterwards that the plan cannot see: the third step may move a group
-horizontally for a label band, which turns a drop into a stepped part. The plan is recomputed at
-consumption for that reason, and a part that then does not fit is residual with
-`TIER_GAP_PART_UNFIT`, never a silent discovery.
+diagram does not need. The solve is after the last move in x, so its plan is the one stage 8 receives. The solve moves y only, and the
+titles are placed after it and move no box. The plan is recomputed at consumption as a check, and a part that then does not fit is residual
+with `TIER_GAP_PART_UNFIT`, never a silent discovery.
 
 For every group: band height = label height + 8, inside the padding of the **title edge**: the
 horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
@@ -1251,7 +1286,8 @@ stroke-aware rectangles with identical ownership collapse to one entry.
 every authored link label (bars and unsuppressed overlay links included; bundle members excluded) is
 measured and its link's run — symmetric about the midpoint the label will take, out to the nearer
 pill face or node edge — is made at least the label width plus both 8 px shortening margins: a link between tiers
-moves every lower tier down by the deficit; a link between two ends of one tier inserts the room at
+moves nothing in the reservation: its deficit is a term of the height of the tier gap, which the one solve at the end of 7f reads
+(`solveTierGaps`, `reserveLinkLabelRoom` with `gapRoom`, architecture-2 ticket 57); a link between two ends of one tier inserts the room at
 the gap: every group in every tier at or beyond the split between the two pill faces moves right,
 and a group straddling the split shifts only the nodes beyond it — in the link's own tier those that
 start beyond it, elsewhere those with any part beyond it — so alignments, flank sides and
@@ -1344,7 +1380,7 @@ forged or that a replay would complete. Without this rule a label placed first t
 for a later one, and the growth was spent for a label that fell back across a border. A label that yields
 and finds no window, at any growth, is diagnosed `LINK_LABEL_ROOM_UNRESERVED` and no growth is spent on it;
 a label that yields to two or more others can stay without a window that way. A decision never flips and
-growth only increases, so the passes end. The tier gap grows until a window holds the text; the line turns as the lower end moves, so
+growth only increases, so the passes end. The tier gap grows (in the solve at the end of 7f) until a window holds the text; the line turns as the lower end moves, so
 `labelWindowDeficit` finds the least growth by bisection (`LABEL_WINDOW_BISECTIONS` steps, rounded up
 to `LABEL_WINDOW_GRAIN`).
 Self-links, same-tier links
@@ -1356,7 +1392,9 @@ reservation re-runs after the grid inside the 7f loop and any movement replays t
 reserves the label's room beside the detour run under the title. **The room is the last step of every settle
 (architecture-2 ticket 27).** A later 7f move moves a labelled line's end in x (the step over a chord, a lower rank move, the
 canton close-up, the keep-out, the linkless step): the line turns, and its window shrinks below the room the producer reserved.
-`settleRound` therefore runs the growth, the close-up and the keep-out, and then the room (`settleRoom`): `reserveLinkLabelRoom`; when
+`settleRound` therefore runs the close-up and the keep-out, and then the room (`settleRoom`): `reserveLinkLabelRoom`. It grows no tier gap
+(ticket 57): a label room across a tier gap is recorded as a shortfall and not moved, the solve at the end of 7f pays it with height, and
+the validator and the room check (`roomHolds`) count a tier-gap shortfall as a fault. When
 it reserved, the replay, the close-up, the keep-out and the room again, until a pass reserves nothing, so nothing moves after the last
 reading of the room. The linkless step of the last round and its replay are followed by the same `settleRoom`. No measure proves that the
 passes end (the reservation only grows the room, but the replay and the close-up move x), so `LABEL_ROOM_PASSES` (4) bounds them: after
@@ -1409,9 +1447,11 @@ the reservation, require the node gap, and reject any required entry point that 
 stroke-aware extent of its own group's band. This conservative checkpoint reservation preserves
 room below any label position without making unused band space a routing obstacle.
 
-**Atomic rebuild after 7d/7e/7f movement.** Bar-band growth in 7d and tier-gap growth in 7e move
+**Atomic rebuild after 7d/7e/7f movement.** Bar-band growth in 7d and the tier-gap solve at the end of 7f move
 the lower tier bands and their contents; neighbour pushes or centring in 7f move the affected row
-groups and descendants.
+groups and descendants. The solve moves y only and replays no centring: a rebuild after it that moves an x throws (architecture-2
+ticket 57). The cost is that a centring the growth would have changed is not run again; three corpus sheets gained bends from it
+(a follow-up ticket for the centring is planned).
 After any such movement, rebuild changed claims atomically in this order:
 
 1. Recompute moved node/group boxes, port anchors and tier bands.
@@ -1879,8 +1919,8 @@ text fits the longest window. A run no border cuts keeps the midpoint, as before
 place clears every border do both overlay rungs run again at the midpoint without the walls (a
 whole label across a border still beats a shortened one), and the label is reported as
 `LINK_LABEL_ON_BORDER`. Placement reserves the window: 7f's `reserveLinkLabelRoom` measures every
-run a label rides with the same windows (`labelWindowDeficit`) and grows the tier gap or the row
-when no window holds the text (ticket 19), and grows a group's padding when the label beside a run in
+run a label rides with the same windows (`labelWindowDeficit`) and grows the row, or, for a tier gap, gives the solve of the tier gaps
+its deficit (the solve grows the gap; ticket 57), when no window holds the text (ticket 19), and grows a group's padding when the label beside a run in
 that padding reaches the edge (ticket 21, room across a run). A label on a diagonal line takes the step nearest the midpoint
 whose text lies wholly in a window of the line, or the point of a window nearest the midpoint (ticket 20).
 A label that yields to the band of another label on a diagonal line (`model.labelYields`, recorded in 7f)

@@ -258,7 +258,7 @@ chord, can bring a leg nearer the chord after the decision. The plan names each 
 strictly (`TIER_GAP_CHORD_CROWDED`, info), and G6 judges, as for two verticals within `k`
 (`crowded`).
 
-*As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y; `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the last round of `growTierGaps`,
+*As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y; `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
 once each. "Within `k`" is the centre-to-centre distance, 11.5 px (`k` holds the stroke). An unfit gap (`growth > 0` after the rounds) leaves all its parts to the
 router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
 

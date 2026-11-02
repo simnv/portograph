@@ -1,0 +1,24 @@
+# Expected: a canton title band seats its tier gap in stage 6 (architecture-2 ticket 57). The canton `west` (one member `site` on
+# tier 1, three routers fed by two providers, so ADR-0011 puts its title at the bottom) stands above the plain group `edge` on tier 2.
+# The band stands in the gap below the last sub-tier of the canton, so stage 6 opens that gap to 20 + band + 20 px
+# (`gapBandDemand`, 63 px), and the 7f solve grows it by nothing: no `TIER_GAP_GROWN` for the gap above tier 2.
+# Test-only input owned by architecture-2 ticket 57; test/pipeline/gap-solve-fixtures.test.ts reads it.
+portograph: 2
+groups:
+  west: { label: West Canton }
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, canton: west, label: Site }
+  edge: { tier: 2, label: Edge }
+nodes:
+  p1: { group: upstream, class: provider, label: P1 }
+  p2: { group: upstream, class: provider, label: P2 }
+  r0: { group: site, class: router, label: R0 }
+  r1: { group: site, class: router, label: R1 }
+  r2: { group: site, class: router, label: R2 }
+  e0: { group: edge, class: switch, label: E0 }
+links:
+  - [p1, r0]
+  - [p1, r1]
+  - [p2, r1]
+  - [p2, r2]
+  - [r1, e0]

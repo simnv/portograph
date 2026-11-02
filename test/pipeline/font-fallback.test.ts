@@ -10,9 +10,11 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // (approved 2026-11-02); the hash without that key is the old one.
 // Architecture-2 ticket 54 re-baselined both: each group title gains only `crossedBy` (the hash without that key is the old one:
 // b19c42d7... and b20890c8...).
+// Architecture-2 ticket 57 re-baselined both: every published model gains `stemDepths` (the hash without that key is the old one:
+// 745d3f2f... and 0c8f01d5...).
 const baselines = {
-  'm1-sip-edge': '745d3f2f3c2e043e90912615e11ea2f616f508c2d51df838ddb60b30f5a822fd',
-  'synthetic/drawio-constructs': '0c8f01d534570b643c44f5675ea3c5d6265c447f3eda4a57fc9e57f1f7694a5a',
+  'm1-sip-edge': '4ae81293589fbc227160b24ab164503f7015cfcf54084cfe15bc06166576618b',
+  'synthetic/drawio-constructs': '95beda3435ba10afd4dcc5c0077f22b422d891dc4428216395bcadde9b3ca766',
 };
 
 for (const [fixture, baseline] of Object.entries(baselines)) {

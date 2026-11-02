@@ -307,8 +307,10 @@ H      = max( floor, max_i ( y_i − low + need_i ), max_d ( lb_d − low + need
 growth = max( 0, H − (bandTop − low) )
 ```
 
-`floor = bandGap − (low − bottom(band above))`, not `bandGap`: a lane overhang takes its part of the band gap. The largest
-term without the floor is `demand`; the `TIER_GAP_GROWN` diagnostic will report it.
+`floor = max(tierGapMin, gapBandDemand) − (low − bottom(band above))`, not the bare minimum: a lane overhang takes its part of the
+minimum, and a canton title band or an across-frames bus band in the gap raises the floor (`gapBandDemand`; architecture-2 ticket 57
+split `tierGapMin` from `bandGap` and seats the bands in stage 6). The largest term without the floor is `demand`; the `TIER_GAP_GROWN`
+diagnostic reports it.
 
 The drop term is ticket 25's `stemShortfall` (`gap-runs.ts:954-972`) for a planned drop: a drop
 whose nested tips would overlap in a 60 px gap grows the gap to hold them, without the `2k` pocket
@@ -316,16 +318,21 @@ a routed link needs. The residual term keeps that `2k` where the link is routed.
 `reach` headroom (`gap-runs.ts:1004-1006`) is `k + depth(j)` of the parts that really cross that
 leg, x-scoped (ticket 42 proposal 3). Neither is a separate pass.
 
-No probe. **H is computed on the geometry 7f publishes** (S1): a stem nests only where the gap has the
-room, so `H` depends on the growth. `growTierGaps` iterates to a fixed point of `geometry(growth)`:
-each round reads the plan on a trial copy grown by the round before it (the trial is replayed
-only where the published model is replayed) and replaces the growth by `H − room`, the height that plan asks less the room the gap had
-before any growth (ticket 51; adding each round's ask counted a stem that nested only in a larger gap twice). The rounds are capped (6). A gap that does not settle within the cap is left to the router and named
-`TIER_GAP_PART_UNFIT` with the ask. Then the last step: move the bands by the sum, replay, warn
-(`gap-room.ts:84-97`). The 7f order stays: labels, plan and growth, labels again, corridor move. A
-corridor move after the plan changes an x; the plan is recomputed at consumption on frozen
-placement, as `allocateGapRuns` is today, and a part that then does not fit is residual with
-`TIER_GAP_PART_UNFIT`, never a silent discovery.
+No probe. **H is read once, after the stems are decided** (S1, amended by architecture-2 ticket 57). A stem nests only where the leg is
+clear (`legClear`), and `legClear` read the nodes, group boxes and lanes of the tier across the gap, so a gap that the plan would grow
+refused a nested stem, and `H` depended on the growth. Until ticket 57, `growTierGaps` iterated to a fixed point of `geometry(growth)`:
+each round read the plan on a trial copy grown by the round before and replaced the growth by `H − room`, the height that plan asks
+less the room the gap had before any growth (ticket 51; adding each round's ask counted a stem that nested only in a larger gap twice).
+The rounds were capped (6). That loop is gone. `legClear` now reads the nodes, group boxes and lanes of the stem's own sub-tier only,
+so a growth of the gap cannot change a stem. The solve (`solveTierGaps`, `gap-room.ts`) decides the stem depths first and records them
+(`stemDepths`; `[]` = decided, none nests; absent = an older layout, and the readers derive). Then one read of every plan is the answer:
+each gap grows by `max(0, H − room, label deficit)`, the bands below move by the running total, and the solve rebuilds y only (it throws
+if an x moves). `H` was not monotone in the growth (on `a-band-holds-the-group-that-set-its-edge` it was 247.75 px unopened and
+236.25 px opened by 198.5). With the stems recorded, the plan no longer depends on the growth, and that fixture stays a gate on the
+outcome. A part that the plan declines is named with its reason (`TIER_GAP_PART_RESIDUAL`,
+`TIER_GAP_ROW_CYCLE`). The 7f order is now: label bands (y only), the rounds (no gap growth), the corridor move, the overlay-port nest,
+the solve, the titles. The plan is recomputed at consumption on frozen placement, as `allocateGapRuns` is today, and a part that then
+does not fit is residual with `TIER_GAP_PART_UNFIT` (`unfitGaps`, a safety net that must not fire), never a silent discovery.
 
 ## Section 4 — What the router still does
 
@@ -349,7 +356,7 @@ placement, as `allocateGapRuns` is today, and a part that then does not fit is r
   its ticket file):** the chord grant of `gapNeeds` (ticket 37), `crossingParts`, `crossedStems`
   and the stems passable to a batchmate (tickets 22 and 30), `holdsOf`, `heldRuns`,
   `allocateWithHolds`, `rowOrder`, `allocateGap` with its `owed`, `reaches`, `covered` and
-  `declined` sets, the tip bands of `blockers()`, `tierGapRoom`, the probe of `growTierGaps`
+  `declined` sets, the tip bands of `blockers()`, `tierGapRoom`, the probe of the old `growTierGaps`
   (`stemShortfall` went with ticket 50). None had a use at stage 8 on the corpus, and deleting them
   changed no path. **Kept, for residual parts:** the completed-cover grant by a leg or an L (ticket
   21; 7 corpus inputs), the claimed-straight-piece grant (ticket 14; 2 inputs), the crossers of
@@ -394,7 +401,7 @@ headroom`), `interleaved-gap-links.test.ts` (the mid-row assertions), `nested-ti
    the four shapes of 2.4 from their placed models and asserts the rows, the middle drops, one
    crossing per forced pair and none else, and `H`. New synthetic fixture
    `a-tier-gap-plan-orders-every-part.yaml` (the v5-4-0 shape, tier and class only).
-2. **7f grows by the formula and stage 8 consumes the plan, together** (done, ticket 50). `growTierGaps` reads `H`;
+2. **7f grows by the formula and stage 8 consumes the plan, together** (done, ticket 50). `growTierGaps` reads `H` (replaced by the one solve, `solveTierGaps`, in ticket 57);
    the probe, `tierGapRoom`'s seating measure, `stemShortfall` and the `reach` headroom go.
    `allocateGapRuns` returns the plan's parts; `planRoute` reserves them; the old holds are off the
    path. The two ship together: the plan alone disagrees with the old growth (105 px asked against

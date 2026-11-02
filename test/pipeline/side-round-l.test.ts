@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
-import { reserveLinkLabelRoom } from '../../src/layout/bands.js';
+import { reserveLinkLabelRoom, type LinkLabelShortfall } from '../../src/layout/bands.js';
+import { moveBands } from '../../src/layout/gap-room.js';
 import { crosses, overlayPath } from '../../src/layout/overlay-paths.js';
 import { LABEL_BORDER_REACH, LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
 import { measureText } from '../../src/text/index.js';
@@ -227,7 +228,14 @@ describe('the label room of an overlay L', () => {
     const link = overlay(model);
     model.document.links[link.sourceIndex]!.label = LONG;
     const required = measureText(LONG, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
-    expect(reserveLinkLabelRoom(model)).toBe(true);
+    // The room across the tier gap is a term of the tier-gap solve (architecture-2 ticket 57): the reservation hands the deficit over and
+    // moves nothing; the gap below the upper tier then grows by it, as the solve grows it.
+    const room = { floors: new Map<number, number>(), deficits: new Map<number, { deficit: number; link: string }>() };
+    expect(reserveLinkLabelRoom(model, [], room)).toBe(false);
+    expect([...room.deficits.values()].map(item => item.link)).toEqual([link.id]);
+    const [upperTier, { deficit }] = [...room.deficits][0]!;
+    const below = [...model.tierBands].sort((a, b) => a.tier - b.tier).find(band => band.tier > upperTier)!.tier;
+    moveBands(model, new Map([[below, deficit]]));
     const anchor = model.nodes['outlet']!.ports.find(port => port.sideHint === true)!.anchor!.y;
     const lb = model.nodes["lb"]!, drop = anchor - (lb.bounds!.y + lb.bounds!.height);
     // Measured to the node top the run would end one port depth short and the tier gap would grow by that much too much.
@@ -238,7 +246,9 @@ describe('the label room of an overlay L', () => {
     const window = anchor - LINK_LABEL_GEOMETRY.shortenMargin - (upper.y + upper.height + LABEL_BORDER_REACH);
     expect(window).toBeGreaterThanOrEqual(width - 1e-6);
     expect(window).toBeLessThan(width + 1);
-    expect(reserveLinkLabelRoom(model)).toBe(false);
+    const shortfalls: LinkLabelShortfall[] = [];
+    expect(reserveLinkLabelRoom(model, shortfalls)).toBe(false);
+    expect(shortfalls).toEqual([]);
   }, 60000);
 
   it('keeps the old answer for an overlay link that has no hinted end', async () => {

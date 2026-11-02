@@ -622,6 +622,14 @@ export interface LayoutModel {
    */
   labelYields?: Record<string, string[]>;
   /**
+   * The node sides whose stems nest (architecture-2 ticket 57; ADR-0015 rule 1, twelfth amendment): for each, the reach of every port
+   * that has a leg on that side, decided once at the end of 7f, after the last move in x, by `sidePlan` with no read of the tier across
+   * the gap. `stemDepth` (`routerEntryPoints`, `stemCheckpoint`), the tier-gap plan, stage 8 and the validator read the record; the
+   * validator refuses a record that differs from what the published geometry calls for. [] = decided, no side nests. Absent = not
+   * decided yet (a model before the end of 7f, or an older layout): the readers derive the plan.
+   */
+  stemDepths?: StemDepth[];
+  /**
    * The described links whose label room 7f gave up (architecture-2 ticket 27): a settle round reserved the room and replayed
    * `LABEL_ROOM_PASSES` times and a pass still reserved more, so the room of the links still short then is left to the label placement
    * (`LINK_LABEL_ROOM_UNRESERVED`, as for a room no growth can open). No gate judges that label: G3 leaves out overlay labels and
@@ -789,3 +797,6 @@ export interface LayoutFreeze {
   turnOrder?: { node: string; side: Side }[];
   placement?: PlacementSnapshot;
 }
+
+/** One nested node side of `stemDepths`: the node, the side, and the reach of each port with a leg there, in port order. */
+export interface StemDepth { node: string; side: 'top' | 'bottom'; ports: { port: PortRef; depth: number }[] }
