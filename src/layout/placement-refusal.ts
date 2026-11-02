@@ -5,8 +5,11 @@
  */
 import type { Owner } from '../model/index.js';
 
-/** What refused: a side hint, a course, a span corridor, a trunk join, the centring invariant, the skeleton (ELK), a bundle path, the placement budget or a reservation of the ledger. */
-export type RefusalCode = 'side' | 'course' | 'span' | 'trunk' | 'centring' | 'skeleton' | 'bundle' | 'budget' | 'ledger';
+/**
+ * What refused: a side hint, a course, a span corridor, a trunk join, the centring invariant, the skeleton (ELK), a bundle path, the placement budget, a reservation of
+ * the ledger or a stagger reservation (its seat, its stage-5 proof or its validator; ticket 51).
+ */
+export type RefusalCode = 'side' | 'course' | 'span' | 'trunk' | 'centring' | 'skeleton' | 'bundle' | 'budget' | 'ledger' | 'stagger';
 
 export interface RefusalDetail {
   /** The pipeline or model stage that refused, when the source knows it. */

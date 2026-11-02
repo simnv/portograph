@@ -33,6 +33,7 @@
       "backbone": {
         "label": "Backbone",
         "shape": "bar",
+        "shapeAuthored": true,
         "tier": 3
       }
     },

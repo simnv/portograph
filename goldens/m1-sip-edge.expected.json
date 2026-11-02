@@ -7,7 +7,7 @@
     "tbr-left": { "align": "left", "of": "datacenter", "label": "TBR-001", "shape": "ranked" },
     "tbr-right": { "align": "right", "of": "datacenter", "label": "TBR-002", "shape": "ranked" },
     "route-reflector": { "tier": 2, "label": "Route-Reflector (ERR)", "shape": "ranked" },
-    "backbone": { "tier": 3, "label": "Backbone", "shape": "bar" }
+    "backbone": { "tier": 3, "label": "Backbone", "shape": "bar", "shapeAuthored": true }
   },
   "nodes": {
     "provider-1": { "group": "providers", "class": "provider", "label": "", "ports": [

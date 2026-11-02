@@ -1,0 +1,36 @@
+# Expected (architecture-2 ticket 51): with no width budget, stage 5 stands the nine-server row on two lines.
+# `sw1` feeds `a1` to `a5` and `sw2` feeds `a6` to `a9`; the gap between `a5` and `a6` also holds both switches, a row gap apart.
+# The sheet is wider than tall at stage 5, and the two lines bring it nearer square (the aspect rule).
+# All 11 links are straight and vertical, crossings 0, bends 0, the canvas is under 500 px (one line: 698 px), G1-G9 pass.
+# `groupArrangements` records `servers` as `stagger`, and `core` and `access` as `row` with a reason.
+# `shape: row` on `servers`, or `layout.autoArrange: false`, keeps the one-line row of main byte for byte.
+portograph: 2
+groups:
+  core: { tier: 0 }
+  access: { tier: 1 }
+  servers: { tier: 2 }
+nodes:
+  r1: { group: core, class: router }
+  sw1: { group: access, class: switch }
+  sw2: { group: access, class: switch }
+  a1: { group: servers, class: server }
+  a2: { group: servers, class: server }
+  a3: { group: servers, class: server }
+  a4: { group: servers, class: server }
+  a5: { group: servers, class: server }
+  a6: { group: servers, class: server }
+  a7: { group: servers, class: server }
+  a8: { group: servers, class: server }
+  a9: { group: servers, class: server }
+links:
+  - [r1, sw1]
+  - [r1, sw2]
+  - [sw1, a1]
+  - [sw1, a2]
+  - [sw1, a3]
+  - [sw1, a4]
+  - [sw1, a5]
+  - [sw2, a6]
+  - [sw2, a7]
+  - [sw2, a8]
+  - [sw2, a9]

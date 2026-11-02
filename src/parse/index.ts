@@ -79,7 +79,7 @@ function groups(input: Map<string, unknown>, doc: NormalisedDocument, v: Validat
     }
     if (fields.has('shape')) {
       const shape = v.choice(fields.get('shape'), ['ranked', 'row', 'bar', 'grid', 'ring', 'free'], `${path}.shape`);
-      if (shape === 'ranked' || shape === 'row' || shape === 'bar' || shape === 'grid') content.shape = shape;
+      if (shape === 'ranked' || shape === 'row' || shape === 'bar' || shape === 'grid') { content.shape = shape; content.shapeAuthored = true; }
       else if (shape !== undefined) v.report('UNSUPPORTED_SHAPE', `${path}.shape`, `${shape} groups are not supported`);
     }
     if (fields.has('collapsed')) {
@@ -435,7 +435,7 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
         const style = v.choice(value, NODE_CONTENT_STYLES, '$.layout.nodeContent');
         if (style !== undefined) settings.nodeContent = style;
       }
-      else if (key !== 'overlayOverBodies' && key !== 'corridorRowOrder' && key !== 'farEndPull' && key !== 'feedOrder') v.report('UNKNOWN_KEY', `$.layout.${key}`, `Unknown key ${key}`);
+      else if (key !== 'overlayOverBodies' && key !== 'corridorRowOrder' && key !== 'farEndPull' && key !== 'feedOrder' && key !== 'autoArrange') v.report('UNKNOWN_KEY', `$.layout.${key}`, `Unknown key ${key}`);
       else if (typeof value !== 'boolean') v.report('INVALID_TYPE', `$.layout.${key}`, 'Expected a boolean');
       else settings[key] = value;
     }

@@ -4,6 +4,7 @@
  */
 import type { LayoutModel } from '../model/index.js';
 import { TrunkBlocked } from '../layout/placement-refusal.js';
+import { staggerRefusal } from '../layout/stagger.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
 import type { State } from './state.js';
@@ -25,12 +26,31 @@ let kept: Reservations = [...floorEntries(options.testNodeFloors ?? new Map(), '
 for (;;) {
   // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
   if (env.reruns >= env.maxReruns) kept = addReservations(kept, declineTrunk(undefined, 'the placement budget is spent', env.placements));
+  // Likewise it chooses no stagger (ticket 51): it keeps the rows it is given and records nothing, so no stagger can refuse it.
+  if (env.reruns >= env.maxReruns) env.arranged = true;
   try { first = await env.timed('place', () => env.place(kept)); break; } catch (error) {
+    // A stagger stage 5 chose that a later stage of the same run cannot keep (ticket 51): the next attempt keeps those rows one line and
+    // records why. Each attempt declines at least one group, so the attempts end; they share `MAX_RERUNS`.
+    if (staggerRefusal(error) && env.arrangedRows?.length) {
+      // The refused groups when the refusal names them, else every row the attempt chose.
+      const named = env.arrangedRows.filter(group => error.owners.some(owner => owner.kind === 'group' && owner.id === group));
+      const declined = named.length ? named : env.arrangedRows;
+      env.declinedArrangements = new Map([...(env.declinedArrangements ?? []), ...declined.map(group => [group, error.message] as const)]);
+      env.reruns++;
+      continue;
+    }
     if (!(error instanceof TrunkBlocked) || declinedTrunksOf(kept).has(error.key)) throw error;
     kept = addReservations(kept, declineTrunk(error.key, error.why, env.placements));
     env.reruns++;
     options.testSideTrace?.({ ev: 'trunk-blocked', key: error.key, reruns: env.reruns, left: env.maxReruns - env.reruns });
   }
+}
+// Stage 5 of this run chose each group's arrangement (ticket 51). Every later placement run of the command keeps that choice, not a new one,
+// also when this run chose nothing.
+env.arranged = true;
+if (first.groupArrangements !== undefined) {
+  env.groupArrangements = JSON.parse(JSON.stringify(first.groupArrangements)) as typeof first.groupArrangements;
+  if (first.staggerRows !== undefined) env.staggerRows = JSON.parse(JSON.stringify(first.staggerRows)) as typeof first.staggerRows;
 }
 return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: [], promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
 }

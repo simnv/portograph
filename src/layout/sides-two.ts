@@ -25,7 +25,7 @@ import { busOfPort, busSide, meshBuses } from './bus.js';
 import { planTrunks } from './trunk.js';
 import { plannedTurns, turnOrder, turnScope, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { routedLinksAt, unreservedPeers } from './peers.js';
-import { seatStaggerRows } from './stagger.js';
+import { arrangeGroups, seatStaggerRows } from './stagger.js';
 const key = portId;
 
 /**
@@ -791,7 +791,12 @@ export function lanePitchFloors(model: LayoutModel): Map<string, { node: string;
 }
 
 /** Resolve all direction votes, resize and repack in skeleton order; retain the returned snapshot. */
-export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>): LayoutModel {
+/**
+ * `arrange` is the stage-5 arrangement input (ticket 51): `decide` on the first placement run of a command, with the groups a later stage of a
+ * run before refused and why; `keep` on every later run, which keeps the record and rows it is given and decides nothing.
+ */
+export type Arrange = { mode: 'decide'; declined: ReadonlyMap<string, string> } | { mode: 'keep' };
+export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>, arrange: Arrange = { mode: 'decide', declined: new Map() }): LayoutModel {
   if (model.stage !== 'skeleton' || model.freeze) throw new Error('Phase-two sides require the skeleton stage');
   const peers = portPeers(model);
   // The votes of one undecided port, from where its peers sit.
@@ -974,6 +979,10 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
   rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+  // Final sides and bounds exist here, before the freeze: stage 5 picks the arrangement of each group on a draft (ticket 51). The seat
+  // refuses a draft by name (a stagger refusal), and the draft keeps its row. The freeze's own validation runs on the draft as a proof:
+  // a draft it refuses is a defect of the stage-5 checks and ends the run.
+  if (arrange.mode === 'decide') arrangeGroups(model, arrange.declined, draft => { draft.stage = 'sides-two'; freezePortTopology(draft, nodeFloors, turned); });
   if (model.staggerRows?.length) seatStaggerRows(model);
   model.stage = 'sides-two';
   return freezePortTopology(model, nodeFloors, turned);
