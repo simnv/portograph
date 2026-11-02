@@ -59,9 +59,9 @@ direct member is refused or crowded (`title`), no gap row, corridor, lane or leg
 no box grows and no link bends for one. Text against text stays hard (pills, other titles, stage 9 link
 labels). The validator reads the record and checks it on the geometry (R5); it never places a title again.
 G3 reads the record: a segment of a link in the title's `crossedBy` is no hit, except a horizontal segment drawn
-through the text (a run along the title); any other crossing is. The blockers include the planned tier-gap
-geometry (`plannedSegments`), so a drop's jogged vertical is a crossing too. Where no x of the band is clear of
-text, the title stands on it with `GROUP_TITLE_ON_TEXT` (warning), the validator reads that record, and G3 judges.
+through the text (a run along the title); any other crossing is. Where no x of the band is clear of text, the
+title stands on it with `GROUP_TITLE_ON_TEXT` (warning) and G3 judges; the validator accepts a title on text only
+where it proves that no candidate x of the band is clear of text.
 
 Stage 8 (a scope change of ticket 54's item 8, approved by the coordinator 2026-11-02): a title lists
 its `crossedBy` links as consumers of its router obstacle and its reservation (`obstacles.ts`,

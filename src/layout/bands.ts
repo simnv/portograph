@@ -31,7 +31,6 @@ import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './ov
 import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
 import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 import { directFamiliesFault } from './direct-families.js';
-import { plannedSegments, tierGapPlans } from './gap-plan.js';
 import { fanAdmissionsFault } from './fan-admission.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { busBandHeight, busRoom } from './bus-room.js';
@@ -589,25 +588,8 @@ function meets(item: ForbiddenRect, label: Rect): boolean {
  * Text (a node, a pill, a label, a placed title) is `hard`; the rest is link geometry, which names its routed links. One reader
  * for the placement (`placeGroupTitles`) and for the validator (R1).
  */
-function titleBlockers(model: LayoutModel, placed: LayoutLabel[], planned: readonly ForbiddenRect[]): ForbiddenRect[] {
-  return [...forbiddenRects(model, placed), ...legRects(model), ...planned];
-}
-
-/**
- * The planned geometry of every tier gap (`plannedSegments`: legs, rows, a Z part's middle drop, and a drop's vertical with its jog) as title
- * blockers, read once per reader (review of ticket 54). A drop whose ends stand within `keep` jogs near one tip, so its long vertical stands
- * at the other end's x and crosses that end's title band where no port leg (`legRects`) stands. The plan reads no group title, so the
- * placement and the validator read the same plan. A diagonal piece reserves nothing from a title (ticket 162).
- */
-function plannedRects(model: LayoutModel): ForbiddenRect[] {
-  const links = new Map(model.links.map(link => [link.id, link]));
-  return tierGapPlans(model).flatMap(({ gap, plan }, index) => plan.parts.filter(part => part.index !== undefined).flatMap(part => {
-    const link = links.get(part.link);
-    if (link === undefined) return [];
-    return plannedSegments(part, gap).filter(segment => !diagonalMayCross(segment, GROUP_TITLE)).map((segment, piece): ForbiddenRect => ({
-      id: `${part.link}:planned:${index}:${part.index}:${piece}`, bounds: segmentRect(segment, linkStrokeWidth(link) / 2),
-      clearance: GROUP_LABEL_LINK_CLEARANCE, links: [part.link] }));
-  }));
+function titleBlockers(model: LayoutModel, placed: LayoutLabel[]): ForbiddenRect[] {
+  return [...forbiddenRects(model, placed), ...legRects(model)];
 }
 
 /**
@@ -640,6 +622,14 @@ function titleSlots(model: LayoutModel): TitleSlot[] {
   return slots.sort((a, b) => a.gap - b.gap || a.id.localeCompare(b.id));
 }
 
+/** The x a title's left edge may take, nearest the centre first and then the left one: the centre, the band ends and both sides of every blocker. */
+function titleCandidates(slot: TitleSlot, blockers: readonly ForbiddenRect[], width: number): number[] {
+  return [slot.centre, slot.start, slot.limit, ...blockers.flatMap(item => [
+    item.bounds.x - (item.clearance ?? 0) - width - LABEL_CLEARANCE_STEP, right(item.bounds) + (item.clearance ?? 0) + LABEL_CLEARANCE_STEP])]
+    .filter(x => x >= slot.start - PLACEMENT_EPS && x <= slot.limit + PLACEMENT_EPS)
+    .sort((a, b) => Math.abs(a - slot.centre) - Math.abs(b - slot.centre) || a - b);
+}
+
 /** The title label at left edge `x`, with the crossing record. */
 function titleLabel(slot: TitleSlot, x: number, crossedBy: string[], halo: boolean): LayoutLabel {
   const measured = measurement(slot.text);
@@ -659,22 +649,18 @@ function titleLabel(slot: TitleSlot, x: number, crossedBy: string[], halo: boole
  */
 export function placeGroupTitles(model: LayoutModel): void {
   model.labels = model.labels.filter(label => label.role !== 'group');
-  const placed: LayoutLabel[] = [], planned = plannedRects(model);
+  const placed: LayoutLabel[] = [];
   for (const slot of titleSlots(model)) {
-    const blockers = titleBlockers(model, placed, planned), measured = measurement(slot.text);
+    const blockers = titleBlockers(model, placed), measured = measurement(slot.text);
     const y = slot.band.bounds.y + GROUP_LABEL_GEOMETRY.verticalInset;
     const box = (x: number): Rect => ({ x, y, width: measured.width, height: measured.height });
-    const candidates = [slot.centre, slot.start, slot.limit, ...blockers.flatMap(item => [
-      item.bounds.x - (item.clearance ?? 0) - measured.width - LABEL_CLEARANCE_STEP, right(item.bounds) + (item.clearance ?? 0) + LABEL_CLEARANCE_STEP])]
-      .filter(x => x >= slot.start - PLACEMENT_EPS && x <= slot.limit + PLACEMENT_EPS)
-      // Nearest the centre, then the left one.
-      .sort((a, b) => Math.abs(a - slot.centre) - Math.abs(b - slot.centre) || a - b);
+    const candidates = titleCandidates(slot, blockers, measured.width);
     const free = candidates.find(x => !blockers.some(item => meets(item, box(x))));
     const hard = blockers.filter(item => item.hard === true);
     // A title wider than its band less the insets (a box no floor holds: a group with no nodes, a box the lanes hold) stands at the left inset.
     const x = free ?? candidates.find(at => !hard.some(item => meets(item, box(at)))) ?? Math.max(slot.start, Math.min(slot.limit, slot.centre));
     if (slot.limit < slot.start - PLACEMENT_EPS) placementWarning(model, 'GROUP_LABEL_GAP_INFEASIBLE', `The title of ${slot.band.group} is wider than its band; it stands at the left inset and the final gates decide.`, [slot.band.group], 'group');
-    // No x of the band is clear of text: the title stands on it, named, and G3 judges it (R6). The validator reads this record.
+    // No x of the band is clear of text: the title stands on it, named, and G3 judges it (R6). The validator proves that no x was clear.
     if (hard.some(item => rectOverlap(item.bounds, box(x)))) placementWarning(model, TITLE_ON_TEXT, `The title of ${slot.band.group} finds no place in its band clear of text; it stands on text and G3 judges it.`, [slot.band.group], 'group');
     const label = titleLabel(slot, x, free === undefined ? crossings(model, blockers, box(x)) : [], free === undefined);
     placed.push(label);
@@ -691,7 +677,6 @@ export function placeGroupTitles(model: LayoutModel): void {
 function groupTitlesFault(model: LayoutModel): string | undefined {
   const titles = model.labels.filter(label => label.role === 'group'), slots = titleSlots(model);
   if (titles.length !== slots.length) return `${titles.length} group titles stand for ${slots.length} label bands`;
-  const planned = slots.length === 0 ? [] : plannedRects(model);
   for (const slot of slots) {
     const label = titles.find(item => item.id === slot.id);
     if (label === undefined || label.bounds === undefined) return `the title of ${slot.band.group} is missing`;
@@ -701,10 +686,13 @@ function groupTitlesFault(model: LayoutModel): string | undefined {
     if (Math.abs(bounds.y - y) > PLACEMENT_EPS || bounds.x < slot.start - PLACEMENT_EPS || bounds.x > Math.max(slot.start, slot.limit) + PLACEMENT_EPS) {
       return `${slot.id} at x ${bounds.x}, y ${bounds.y} stands outside its band (x ${slot.start} to ${slot.limit}, y ${y})`;
     }
-    const blockers = titleBlockers(model, titles.filter(item => item !== label), planned);
+    const blockers = titleBlockers(model, titles.filter(item => item !== label));
     const text = blockers.find(item => item.hard === true && rectOverlap(item.bounds, bounds));
-    const named = model.diagnostics.some(item => item.code === TITLE_ON_TEXT && item.owners?.some(owner => owner.kind === 'group' && owner.id === slot.band.group) === true);
-    if (text !== undefined && !named) return `${slot.id} stands on ${text.id}`;
+    // A title may stand on text only where no candidate x of its band is clear of it (a feasibility proof, not a choice: the validator's
+    // blockers hold every placed title, a superset of the placement's, so it finds a clear x only where the placement found one).
+    const hard = blockers.filter(item => item.hard === true), at = (x: number): Rect => ({ ...bounds, x });
+    const clear = text === undefined ? undefined : titleCandidates(slot, blockers, bounds.width).find(x => !hard.some(item => meets(item, at(x))));
+    if (text !== undefined && clear !== undefined) return `${slot.id} stands on ${text.id} where x ${clear} is clear of text`;
     if (label.yield === undefined && blockers.some(item => meets(item, bounds))) return `${slot.id} records no yield and meets ${blockers.find(item => meets(item, bounds))!.id}`;
     const expected = label.yield === undefined ? [] : crossings(model, blockers, bounds);
     if (!equal(label.crossedBy, expected)) return `${slot.id} records crossedBy [${label.crossedBy.join(', ')}] and is crossed by [${expected.join(', ')}]`;

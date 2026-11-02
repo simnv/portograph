@@ -95,14 +95,17 @@ describe('a group title is placed last and yields to its links (architecture-2 t
     const model = await run(fixture('a-group-title-yields-with-a-halo'));
     const access = title(model, 'access'), box = access.bounds!;
     // Text over the title: a description label of a node, as wide as the title.
-    const onText = (named: boolean): LayoutModel => {
-      const copy = structuredClone(model);
-      copy.labels.push({ id: 'label:forged', owner: { kind: 'node', id: 'sw1' }, layer: 'routed', role: 'description', text: 'x', bounds: { ...box } });
-      if (named) copy.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'GROUP_TITLE_ON_TEXT', message: 'forged', owners: [{ kind: 'group', id: 'access' }] });
+    // A title on text where its band has an x clear of it is refused, whatever a diagnostic claims (R5); where the text fills the band, no x is
+    // clear and the title may stand on it (G3 judges it).
+    const slid = await run(fixture('a-group-title-slides-to-a-free-span')), lab = title(slid, 'lab').bounds!, band = slid.groups.lab!.bounds!;
+    const onText = (bounds: Rect, named: boolean): LayoutModel => {
+      const copy = structuredClone(slid);
+      copy.labels.push({ id: 'label:forged', owner: { kind: 'node', id: slid.groups.lab!.nodes[0]! }, layer: 'routed', role: 'description', text: 'x', bounds });
+      if (named) copy.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'GROUP_TITLE_ON_TEXT', message: 'forged', owners: [{ kind: 'group', id: 'lab' }] });
       return copy;
     };
-    expect(() => validateGroupLabelBands(onText(false))).toThrow(/stands on label:forged/);
-    expect(() => validateGroupLabelBands(onText(true))).not.toThrow(/stands on/);
+    expect(() => validateGroupLabelBands(onText({ ...lab, width: 10 }, true))).toThrow(/stands on label:forged where x .* is clear of text/);
+    expect(() => validateGroupLabelBands(onText({ ...lab, x: band.x, width: band.width }, false))).not.toThrow(/stands on/);
     // A link the title records may cross it; a horizontal segment of that link drawn through the text is a hit all the same.
     const crossed = model.links.find(link => link.id === access.crossedBy![0])!;
     const copy = structuredClone(model), link = copy.links.find(item => item.id === crossed.id)!, y = box.y + box.height / 2;
