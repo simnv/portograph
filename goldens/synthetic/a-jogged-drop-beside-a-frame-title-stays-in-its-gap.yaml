@@ -1,4 +1,4 @@
-# Expected: architecture-2 ticket 56 (not reproducible; the review finding of ticket 54). `access` spans two ranks, so it is a frame
+# Expected: architecture-2 ticket 56 (the review finding of ticket 54; every jog stays e off every group box by construction). `access` spans two ranks, so it is a frame
 # of the cells `access#0` and `edge#1`; its title stands on the top edge of `access#0`. `r1 -> s1` (link-2) has its ends 1 px apart:
 # one vertical with a jog, the jog one group-edge margin (10.75 px) above `access#0`, out of its box and out of its title band, so its
 # verticals cross the band only at the x of the port leg. Every title is slid clear (`crossedBy: []`), G3 passes, and no

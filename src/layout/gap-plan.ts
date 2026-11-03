@@ -105,7 +105,8 @@ export interface PlanFrame {
   obstacles: readonly PlanObstacle[];
   /**
    * Fixed obstacles a leg may not pass through (a group label, a foreign lane box, a bundle envelope, a placed obstacle), with the
-   * same anchoring as `obstacles` but whatever the sign of the bound. A group edge is not among them: a leg crosses it at its port.
+   * same anchoring as `obstacles` but whatever the sign of the bound (in `obstacles` only a group or node box below takes a negative
+   * bound, ticket 56). A group edge is not among them: a leg crosses it at its port.
    */
   blocks?: readonly PlanObstacle[];
   residual: readonly ResidualPart[];

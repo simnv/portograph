@@ -275,16 +275,16 @@ describe('the tier-gap plan on hand-built parts', () => {
   });
 
   it('keeps the jog of a drop that stands on its upper x one group-edge margin above a box lower than the band top (ticket 56)', () => {
-    // The lower box stands 20 px below the band top (308), and the lower tip 30 px below it (y 338, inside the box): one clearance above the
-    // tip is 326.5, inside the box and its title band. The box is an O5 obstacle whatever the sign of its bound (`tierGapPlan` pushes
-    // 10.75 + 308 − 328 = −9.25), so the jog stands e above the box, at 328 − 10.75.
+    // The lower box stands 12 px below the band top (308, box top 320), and the lower tip 30 px below the band top (y 338, inside the box):
+    // one clearance above the tip is 326.5, inside the box and its title band. The box is an O5 obstacle whatever the sign of its bound
+    // (`tierGapPlan` pushes 10.75 + 308 − 320 = −1.25), so the jog stands e above the box, at 320 − 10.75.
     const deep = { ...part('D', 0, 100, 106), lower: { x: 106, y: 338, kind: 'tip' as const, source: 'low106' } };
     const open = planGap([deep], frame()).parts.find(item => item.id === 'D')!;
     expect([open.shape, open.stand]).toEqual(['drop', 'upper']);
     expect(open.jog).toBeCloseTo(338 - 11.5, 6);
-    const box = { x0: 106 - 30 - 10.75, x1: 106 + 30 + 10.75, anchor: 'below' as const, bound: 10.75 + 308 - 328 };
+    const box = { x0: 106 - 30 - 10.75, x1: 106 + 30 + 10.75, anchor: 'below' as const, bound: 10.75 + 308 - 320 };
     const held = planGap([deep], { ...frame(), obstacles: [box] }).parts.find(item => item.id === 'D')!;
-    expect(held.jog).toBeCloseTo(328 - 10.75, 6);
+    expect(held.jog).toBeCloseTo(320 - 10.75, 6);
   });
 
   it('takes a part whose ends stand under a run clearance apart as a drop, and lets a run cross it once', () => {

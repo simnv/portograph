@@ -9,8 +9,8 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
- * Architecture-2 ticket 56 (the review finding of ticket 54, not reproducible): a jogged drop under a group title. The tier-gap plan
- * keeps each jog one group-edge margin off every group box (the O5 obstacle of each box, `gap-plan.ts`), so the two verticals of a
+ * Architecture-2 ticket 56 (the review finding of ticket 54): a jogged drop under a group title. The tier-gap plan keeps each jog one
+ * group-edge margin off every group box (the O5 obstacle of each box, whatever the sign of its bound, `gap-plan.ts`), so the two verticals of a
  * jogged drop cross a title band only at the x of a port leg, which the title already avoids (`legRects`). A turn of a tier-gap run is
  * placement's, so `ROUTE_TITLE_DETOUR` never names it.
  */

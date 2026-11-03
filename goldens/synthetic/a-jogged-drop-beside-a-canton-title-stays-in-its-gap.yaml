@@ -1,4 +1,4 @@
-# Expected: architecture-2 ticket 56 (not reproducible; the review finding of ticket 54). A jogged drop under a group title stays in
+# Expected: architecture-2 ticket 56 (the review finding of ticket 54; every jog stays e off every group box by construction). A jogged drop under a group title stays in
 # its tier gap: `r1 -> s1` (link-5) inside the canton `west` has its ends 1 px apart, so the tier-gap plan gives it one vertical with
 # a jog, and the jog stands one group-edge margin (10.75 px) above `clients`, out of its box and out of its title band. Its two verticals
 # cross a title band only at the x of a port leg, which the title already avoids; `s0 -> v0` and `s3 -> v3` (6 px apart) jog the same
