@@ -8,7 +8,7 @@ import { cellReach } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
-import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js';
+import { holds, profiles, reading, straightOf, tapVerdict, verdictTap } from './objective.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
@@ -33,6 +33,7 @@ import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
 import { chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
+import { readCache } from '../model/read-cache.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -775,28 +776,55 @@ const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'e
  * the replay stands on the model itself and takes the readings of the first one that did, so they are read once per check and not once per replay.
  */
 interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>; breached?: Set<string> }
-function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
-  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base));
+/**
+ * The chord readings a step that stood took after it moved (architecture-2 ticket 62): the overlay links with a straight chord and the groups a foreign drop
+ * would run along. The producer loop hands them to the next step as its readings before: nothing between the two writes the model when the step stood, no
+ * group between them was cleared (`packClear`), and the rebuild of the next group's nodes leaves their text as it was. The step tests that last part; the
+ * loop drops the value for the rest.
+ */
+interface CarriedReadings { held: Set<string>; breached: Set<string> }
+type GroupStep = { unresolved: Set<string>; group: LayoutGroup; carry?: CarriedReadings };
+const carryCache = readCache('centreCarry');
+/** The groups a foreign drop would run along, by id. */
+const breachedIds = (model: LayoutModel): Set<string> => new Set([...keepOutShifts(model).keys()].map(item => item.id));
+function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
+  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base, carried));
 }
-function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
+function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
   if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   const group = model.groups[id]!;
+  const unbuilt = carried === undefined ? undefined : group.nodes.map(node => JSON.stringify(model.nodes[node]));
   // `moveGroup` leaves pill bounds behind, and the chord reads them: both readings are taken on rebuilt nodes.
   rebuildNodeGeometry(model, group.nodes, 'current');
-  const standing = base !== undefined && group.nodes.every(node => JSON.stringify(model.nodes[node]) === base.texts.get(node));
-  const held = standing && base.held ? base.held : straightChordIds(model), breached = standing && base.breached ? base.breached : new Set([...keepOutShifts(model).keys()].map(item => item.id));
-  if (standing) { base.held = held; base.breached = breached; }
+  let held: Set<string>, breached: Set<string>;
+  if (carried !== undefined && group.nodes.every((node, index) => JSON.stringify(model.nodes[node]) === unbuilt![index])) {
+    // Under `LayoutOptions.checkCaches` both readings are taken again and must be the carried ones.
+    try {
+      held = carryCache.hit(model, carried.held, () => straightChordIds(model));
+      breached = carryCache.hit(model, carried.breached, () => breachedIds(model));
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)} (group ${id}, tier ${tier})`, { cause: error });
+    }
+    attemptCounters.centreCarry.carried++;
+  } else {
+    if (carried !== undefined) carryCache.miss();
+    if (base === undefined) attemptCounters.centreCarry.fresh++;
+    const standing = base !== undefined && group.nodes.every(node => JSON.stringify(model.nodes[node]) === base.texts.get(node));
+    held = standing && base.held ? base.held : straightChordIds(model); breached = standing && base.breached ? base.breached : breachedIds(model);
+    if (standing) { base.held = held; base.breached = breached; }
+  }
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
-  const stands = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) && [...keepOutShifts(model).keys()].every(item => breached.has(item.id));
+  const after = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) ? breachedIds(model) : undefined;
+  const stands = after !== undefined && [...after].every(item => breached.has(item));
   tapVerdict('centreGroupStep', () => `${stands} ${now.size}/${held.size}`);
-  if (stands) return result;
+  if (stands) return { ...result, carry: { held: now, breached: after } };
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
   packClear(model, context, tier, snapshot.group, previous);
@@ -1098,6 +1126,8 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
     // A pass whose steps move geometry that a later stage of the same pass moves back is not at a
     // fixed point: the net change is nil, the work is not. Every step is measured on its own.
     let stepped = false;
+    // The readings the last step left, while they still describe the model (`CarriedReadings`); a pass starts without them.
+    let carry: CarriedReadings | undefined;
     for (const { tier, authority } of context.steps) {
       const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
       const tail = tailReservation(model, context, tier, order);
@@ -1108,12 +1138,14 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
         // them. A group this step does not centre still yields the space a widened neighbour took.
         if (model.document.groups[id]!.shape === 'bar' || !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === id)) {
           packClear(model, context, tier, group, previous);
+          carry = undefined;
           // A bar stands where 7d will shape it, which may move no other group: the groups after it clear the extent its span gives it, not the box it has now (ticket 19).
           previous = standingBox(model, group);
           continue;
         }
         const start = geometry(model);
-        const result = centreGroupStep(model, context, tier, list, id, previous, true, tail);
+        const result = centreGroupStep(model, context, tier, list, id, previous, true, tail, undefined, carry);
+        carry = result.carry;
         if (!stepped && geometry(model).some((value, i) => Math.abs(value - start[i]!) > 0.5)) stepped = true;
         if (result.unresolved.size) unresolved.add(id);
         previous = result.group;
@@ -1171,9 +1203,32 @@ const TRIAL_SHARED = ['document', 'links', 'groupLinks', 'meshBuses', 'lanes', '
  * drops and endpoints (7d), ports any bundle member uses (7e) — are not compared.
  */
 export function centreViolations(model: LayoutModel, ahead = false, shared?: CentreContext): string[] {
-  return withSharedLinkKinds(() => readCentreViolations(model, ahead, shared));
+  return withSharedLinkKinds(() => readCentreViolations(model, ahead, shared, shared === undefined));
 }
-function readCentreViolations(model: LayoutModel, ahead: boolean, shared: CentreContext | undefined): string[] {
+/**
+ * The text of the model one check read, and its answer (architecture-2 ticket 63). With no context handed in, the answer reads the model and `ahead` alone:
+ * the context is built from the model, every trial is parsed from these texts, and the freeze block is read by nothing the check calls. So a later
+ * check on the same model object whose texts are all equal has the same answer, and its replays are not run again. `taps` are the verdicts the
+ * replays gave a test's tap (`verdictTap`), given again with the answer; undefined when no tap listened, and such an answer is not reused while one does.
+ */
+interface CheckedAnswer { ahead: boolean; own: string; still: string; nodes: ReadonlyMap<string, string>; result: readonly string[]; taps: readonly (readonly [string, string])[] | undefined }
+const checkedAnswers = new WeakMap<LayoutModel, CheckedAnswer>();
+const answerCache = readCache('centreCheckAnswer');
+/** Whether two checks read one model text: the same parts, the same nodes in the same order. */
+function sameModelText(known: CheckedAnswer, own: string, still: string, nodes: ReadonlyMap<string, string>): boolean {
+  if (known.own !== own || known.still !== still || known.nodes.size !== nodes.size) return false;
+  const was = known.nodes.entries();
+  for (const [key, text] of nodes) { const [oldKey, oldText] = was.next().value!; if (oldKey !== key || oldText !== text) return false; }
+  return true;
+}
+/** Runs `run` with every verdict it gives the tap also written to `into`; with `forward` off the tap does not see them. Nothing is recorded while no tap listens. */
+function recordTaps<T>(into: [string, string][] | undefined, forward: boolean, run: () => T): T {
+  const sink = verdictTap.sink;
+  if (into === undefined || sink === undefined) return run();
+  verdictTap.sink = (name, value) => { into.push([name, value]); if (forward) sink(name, value); };
+  try { return run(); } finally { verdictTap.sink = sink; }
+}
+function readCentreViolations(model: LayoutModel, ahead: boolean, shared: CentreContext | undefined, reuse: boolean): string[] {
   const anchor = model.anchorTier;
   if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
   const context = shared ?? centreContext(model, anchor);
@@ -1197,6 +1252,8 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   // to a shared part throws; that trial is then run again on a full copy, so the answer is the one a full copy gives (architecture ticket 14).
   let baseReadings: BaseReadings | undefined;
   let replayedText: string | undefined, sharedParts: Record<string, unknown> | undefined, sharedNodes: Record<string, LayoutNode> | undefined, nodeTexts: Map<string, string> | undefined, fullText: string | undefined;
+  let key: Omit<CheckedAnswer, 'result' | 'taps'> | undefined;
+  const taps: [string, string][] | undefined = reuse && verdictTap.sink !== undefined ? [] : undefined;
   const freezeDeep = (value: unknown): void => { if (value && typeof value === 'object') { Object.values(value).forEach(freezeDeep); Object.freeze(value); } };
   for (const { tier, authority } of context.steps) {
     const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
@@ -1238,7 +1295,23 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         freezeDeep(sharedNodes);
         delete own.nodes;
         replayedText = JSON.stringify(own);
-        sharedParts = JSON.parse(JSON.stringify(still)) as Record<string, unknown>;
+        const stillText = JSON.stringify(still);
+        if (reuse) {
+          const known = checkedAnswers.get(model);
+          if (known !== undefined && known.ahead === ahead && (known.taps !== undefined || verdictTap.sink === undefined) && sameModelText(known, replayedText, stillText, nodeTexts)) {
+            // Under `LayoutOptions.checkCaches` the check runs again in full, without reuse, and its answer and verdicts must be the ones kept.
+            const answer = answerCache.hit(model, { result: known.result, taps: known.taps }, () => {
+              const again: [string, string][] | undefined = known.taps === undefined ? undefined : [];
+              const result = recordTaps(again, false, () => readCentreViolations(model, ahead, undefined, false));
+              return { result, taps: again };
+            });
+            for (const [name, value] of answer.taps ?? []) tapVerdict(name, () => value);
+            return [...answer.result];
+          }
+          answerCache.miss();
+          key = { ahead, own: replayedText, still: stillText, nodes: nodeTexts };
+        }
+        sharedParts = JSON.parse(stillText) as Record<string, unknown>;
         freezeDeep(sharedParts);
       }
       const reserved = tail ??= tailReservation(model, context, tier, order);
@@ -1256,9 +1329,10 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved, base) };
       };
       let step: ReturnType<typeof centreGroupStep>;
-      try { step = attempt(false).step; } catch (error) {
+      try { step = recordTaps(taps, true, () => attempt(false).step); } catch (error) {
         if (!(error instanceof TypeError)) throw error;
-        step = attempt(true).step;
+        attemptCounters.centreCheckFallbacks++;
+        step = recordTaps(taps, true, () => attempt(true).step);
       }
       previous = group;
       for (const { child, x, feed, port } of candidates) {
@@ -1268,6 +1342,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
       }
     }
   }
+  if (key !== undefined) checkedAnswers.set(model, { ...key, result: [...result], taps });
   return result;
 }
 /** The code of the note that a model keeps the wide seats of the first feeds: narrowing it would have bent a link that stood straight (ticket 12, "narrow only if free"). */
