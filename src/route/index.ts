@@ -2,6 +2,7 @@ import type { Point } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { tierGapPlans } from '../layout/gap-plan.js';
+import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { unfitGaps, unfitMessage } from '../layout/gap-room.js';
 import { bodiesPassedOver } from '../layout/overlay-paths.js';
 import { withLayoutMutation } from '../layout/mutation.js';
@@ -146,10 +147,11 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
       }
     }
     // A group title stays a router obstacle to every link it does not yield to (architecture-2 ticket 54, slice 1): a routed link that turns
-    // beside a title it does not cross is named, so the detour is visible; a later slice lets a vertical residual cross with the halo.
+    // beside a title it does not cross is named, so the detour is visible; a later slice lets a vertical residual cross with the halo. A turn
+    // of a tier-gap run is placement's, not the router's, and is never named (ticket 56).
     for (const { link: id } of paths) {
       const link = draft.links.find(item => item.id === id)!;
-      for (const title of titlesDetoured(draft, link)) draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'ROUTE_TITLE_DETOUR',
+      for (const title of titlesDetoured(draft, link, plan.plannedTurns.get(id) ?? [])) draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: 'ROUTE_TITLE_DETOUR',
         message: `${id} turns beside the title ${title}, which is a router obstacle to it (it is not in the title's crossedBy).`, owners: [{ ...link.owner }] });
     }
     if (rejections.length) draft.removedLinks = draft.links.filter(link => link.removed === true).map(link => link.id);
@@ -165,15 +167,16 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
 
 /**
  * The group titles a routed link turns beside without crossing them (`ROUTE_TITLE_DETOUR`): a bend of its path within twice the title's
- * link-free margin of the title, the title not naming the link in `crossedBy`. In label order.
+ * link-free margin of the title, the title not naming the link in `crossedBy`. A bend at one of `planned` (the turns of its tier-gap runs,
+ * `RoutePlan.plannedTurns`) is no detour: the plan put it there, before any title stood (ticket 56). In label order.
  */
-function titlesDetoured(model: LayoutModel, link: LayoutLink): string[] {
+function titlesDetoured(model: LayoutModel, link: LayoutLink, planned: readonly Point[]): string[] {
   const segments = link.path?.segments ?? [], reach = 2 * GROUP_LABEL_LINK_CLEARANCE;
   // A turn only: a seam between two collinear pieces is no bend.
   const bends = segments.slice(1).filter((segment, at) => {
     const prior = segments[at]!;
     return Math.abs((prior.to.x - prior.from.x) * (segment.to.y - segment.from.y) - (prior.to.y - prior.from.y) * (segment.to.x - segment.from.x)) > 1e-6;
-  }).map(segment => segment.from);
+  }).map(segment => segment.from).filter(point => !planned.some(turn => Math.abs(turn.x - point.x) <= PLACEMENT_EPS && Math.abs(turn.y - point.y) <= PLACEMENT_EPS));
   return model.labels.filter(label => label.role === 'group' && !label.omitted && label.bounds !== undefined && label.crossedBy?.includes(link.id) !== true
     && bends.some(point => point.x >= label.bounds!.x - reach && point.x <= label.bounds!.x + label.bounds!.width + reach
       && point.y >= label.bounds!.y - reach && point.y <= label.bounds!.y + label.bounds!.height + reach)).map(label => label.id);
