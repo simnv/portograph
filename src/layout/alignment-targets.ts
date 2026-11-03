@@ -67,6 +67,19 @@ export function declinedTargets(model: LayoutModel, nodes: readonly string[]): S
   return result;
 }
 
+const SIDES = ['top', 'bottom', 'left', 'right'] as const;
+/**
+ * The links by id and the direct members, per link list: the writer runs after every step, and the list and the families do not change while
+ * the steps run (a new list or a new family list is read again).
+ */
+const indexes = new WeakMap<readonly LayoutLink[], { families: unknown; links: Map<string, LayoutLink>; direct: Set<string> }>();
+function linkIndex(model: LayoutModel): { links: Map<string, LayoutLink>; direct: Set<string> } {
+  const known = indexes.get(model.links);
+  if (known !== undefined && known.families === model.directFamilies) return known;
+  const fresh = { families: model.directFamilies, links: new Map(model.links.map(link => [link.id, link])), direct: directMembers(model) };
+  indexes.set(model.links, fresh);
+  return fresh;
+}
 const byPort = (a: AlignmentTarget, b: AlignmentTarget): number => (a.port < b.port ? -1 : a.port > b.port ? 1 : 0);
 /** An entry without its pass, field by field (no key order): what a replay must write again. */
 const decided = (entry: AlignmentTarget): string => JSON.stringify([entry.port, entry.link, entry.far, entry.owes, entry.state, entry.reason ?? null, entry.by ?? null,
@@ -82,11 +95,10 @@ const decided = (entry: AlignmentTarget): string => JSON.stringify([entry.port, 
  */
 export function writeAlignmentTargets(model: LayoutModel, nodes: readonly string[], notes: TargetNotes, pass: number): void {
   const record = model.alignmentTargets;
-  if (record === undefined) return;
-  const links = new Map(model.links.map(link => [link.id, link]));
-  let direct: Set<string> | undefined;
+  if (record === undefined || (!notes.wanted.size && !nodes.some(node => SIDES.some(side => record[faceKey(node, side)] !== undefined)))) return;
+  const { links, direct } = linkIndex(model);
   const faces = new Map<string, AlignmentTarget[]>();
-  for (const node of nodes) for (const side of ['top', 'bottom', 'left', 'right'] as const) {
+  for (const node of nodes) for (const side of SIDES) {
     const key = faceKey(node, side);
     if (record[key] !== undefined) faces.set(key, []);
   }
@@ -104,7 +116,7 @@ export function writeAlignmentTargets(model: LayoutModel, nodes: readonly string
     faces.set(face, list);
     const was = record[face]?.find(entry => entry.port === key);
     if (was?.state === 'declined') { list.push(was); continue; }
-    const base = { port: key, link: feed.link, far: feedFar(model, feed), owes: owesVertical(model, links.get(feed.link), direct ??= directMembers(model)) ? 'vertical' as const : 'any' as const, pass };
+    const base = { port: key, link: feed.link, far: feedFar(model, feed), owes: owesVertical(model, links.get(feed.link), direct) ? 'vertical' as const : 'any' as const, pass };
     const refused = notes.declined.get(key);
     let entry: AlignmentTarget | undefined;
     if (refused !== undefined) entry = { ...base, state: 'declined', reason: refused.reason, by: refused.by };

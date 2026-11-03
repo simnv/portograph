@@ -1130,7 +1130,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     // that the step reports itself unresolved on every pass. The pass loop below ends on geometry
     // alone (ticket 75): the step is a fixed point, its `CENTRE_ALIGNMENT_INFEASIBLE` warning
     // already stands, and it neither spends the budget nor reports `PLACEMENT_NON_CONVERGENCE`.
-    return { unresolved, group: saved.group, notes };
+    // The step's geometry is given back, so a decline judged against it does not stand (ticket 66).
+    return { unresolved, group: saved.group, notes: { ...notes, declined: new Map() } };
   }
   return { unresolved, group, notes };
 }
