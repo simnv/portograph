@@ -34,7 +34,9 @@ describe('the row order counts the corridors through the row (architecture-2 tic
     expect(kept.groups.top!.rowOrderDecision).toEqual({ rule: 'author', before: ['t0', 't1'], after: ['t0', 't1'] });
     const [one, two] = [score(turned).snapshot, score(kept).snapshot];
     expect(one.metrics.crossings.count).toBe(1);
-    expect(two.metrics.crossings.count).toBe(2);
+    // Ticket 65: the declared order crosses 5 (2 before): a centring step there keeps a vertical it reached and costs the crossings; the turned
+    // order is unchanged, so the rule gains more.
+    expect(two.metrics.crossings.count).toBe(5);
     expect(bends(turned)).toBeLessThan(bends(kept));
     expect(one.canvas!.width * one.canvas!.height).toBeLessThan(two.canvas!.width * two.canvas!.height);
     expect(Object.values(one.gates).filter(gate => gate.severity === 'error' && gate.violations.length)).toEqual([]);

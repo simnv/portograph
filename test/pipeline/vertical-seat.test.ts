@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { findPort } from '../../src/layout/row-paths.js';
+import { chordNearPairs } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -59,6 +60,23 @@ describe('a frame chord stands over its child before the freeze (ticket 55)', ()
     expect(model.frozenChords).toContain('link-2');
     // Bends cannot see a lean: a chord is one segment at any angle.
     expect(lean(model, 'link-2')).toBeLessThanOrEqual(0.5);
+  }, 120000);
+});
+
+describe('the chord clearance reader (chordNearPairs)', () => {
+  it('names a foreign body moved next to a held chord, and only a pair the move can change', async () => {
+    const model = await run(source('drawio-nested-groups'));
+    const link = model.links.find(item => item.id === 'link-2')!;
+    const ends = new Set([link.attachments!.from.node, link.attachments!.to.node]);
+    const foreign = Object.keys(model.nodes).find(id => !ends.has(id))!;
+    expect(chordNearPairs(model, new Set([foreign])).has(`link-2@${foreign}`)).toBe(false);
+    // The body moved to stand 4 px beside the middle of the chord, under the 10 px clearance.
+    const one = findPort(model, link.attachments!.from)!.anchor!, two = findPort(model, link.attachments!.to)!.anchor!;
+    const box = model.nodes[foreign]!.bounds!;
+    const moved = { ...model, nodes: { ...model.nodes, [foreign]: { ...model.nodes[foreign]!, bounds: { ...box, x: (one.x + two.x) / 2 + 4, y: (one.y + two.y) / 2 - box.height / 2 } } } };
+    expect(chordNearPairs(moved, new Set([foreign])).has(`link-2@${foreign}`)).toBe(true);
+    // A move of no node changes no body pair: the pair is not read.
+    expect(chordNearPairs(moved, new Set()).has(`link-2@${foreign}`)).toBe(false);
   }, 120000);
 });
 

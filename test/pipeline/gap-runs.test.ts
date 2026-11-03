@@ -280,8 +280,9 @@ it('grows the gap of the band that sets the group edge to the rows of its 25 par
   const before = await beforeBands(orthogonalLinks(read('a-band-holds-the-group-that-set-its-edge.yaml')));
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-  // The plan is read once (ticket 57): link-16 and link-36 ask the same height, and the first part in the plan's order names it.
-  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-16#0\)/)]);
+  // The plan is read once (ticket 57): link-16 and link-36 ask the same height, and the first part in the plan's order names it (link-36 since
+  // ticket 65, where the kept verticals change the x of the parts; link-16 before).
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-36#0\)/)]);
   const busy = tierGapPlans(after).filter(item => item.plan.parts.length > 20);
   expect(busy).toHaveLength(1);
   expect(busy[0]!.plan.height).toBeCloseTo(236.25, 9);

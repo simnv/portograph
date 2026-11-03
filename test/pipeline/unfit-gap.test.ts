@@ -52,7 +52,8 @@ describe('a gap the plan does not fit is left to the router with a diagnostic (t
     const published = await publish('a-claim-lies-on-a-cover-edge');
     expect(published.diagnostics.filter(item => item.code === 'TIER_GAP_PART_UNFIT').map(item => item.message)).toEqual([
       'the tier gap above tier 4 asks 14.50 px more than it has; its parts are left to the router.',
-      'the tier gap above tier 5 asks 22.50 px more than it has; its parts are left to the router.',
+      // Ticket 65: the kept verticals leave fewer parts in the lower gap (22.50 px asked before).
+      'the tier gap above tier 5 asks 11.00 px more than it has; its parts are left to the router.',
     ]);
     expect(removalsAreNamed(published)).toBe(true);
     expect(published.links.filter(item => item.removed !== true).every(item => item.path !== undefined)).toBe(true);

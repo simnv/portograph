@@ -20,6 +20,8 @@ const SHEETS = {
   mesh: 'a-mesh-across-a-middle-tier-draws-straight-chords-beside-its-frame',
   three: 'a-chord-over-three-tier-gaps-passes-two-middle-tiers',
   wide: 'a-link-over-a-wide-middle-frame-keeps-its-lane',
+  // Since architecture-2 ticket 65 the link of `wide` stands straight on its transit lane, so no offer reads it; this sheet's transit is refused by its frame.
+  walled: 'a-link-transits-a-child-frame',
   share: 'a-chord-and-a-lane-share-a-middle-tier',
   label: 'a-labelled-chord-across-a-middle-tier-keeps-its-label-on-the-line',
 };
@@ -67,8 +69,8 @@ describe('the shadow offer (measureSpans)', () => {
     expect(offer!.links).toEqual(['link-4']);
   }, 60000);
 
-  it('refuses a link over a wide middle frame with the frame wall, and offers nothing', async () => {
-    const { offer } = await run(SHEETS.wide);
+  it('refuses a link over a middle frame with the frame wall, and offers nothing', async () => {
+    const { offer } = await run(SHEETS.walled);
     expect(offer!.links).toEqual([]);
     expect([...offer!.refused]).toEqual([['link-1', 'frame']]);
   }, 60000);
@@ -99,8 +101,8 @@ describe('the shadow offer (measureSpans)', () => {
 
 describe('the corridor reader (spanVerdict)', () => {
   it('refuses a chord whose corridor is closed', async () => {
-    const { base } = await run(SHEETS.wide);
-    // On the baseline itself the lane of the link is still a wall; the offer reads the copy without it, and names the frame (above).
+    const { base } = await run(SHEETS.walled);
+    // On the baseline itself the frame the link transits is a wall; the offer names the frame (above).
     expect('reason' in spanVerdict(base!, link(base!, 1))).toBe(true);
   }, 60000);
 

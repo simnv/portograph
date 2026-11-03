@@ -1,5 +1,6 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
+import { centreViolations } from './centre.js';
 import { cantonTiers, reserveLinkLabelRoom, tierGapShortfall, type LinkLabelShortfall } from './bands.js';
 import { chordGapNotes, tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
 import type { TierGap } from './gap-runs.js';
@@ -124,9 +125,9 @@ export const LABEL_SOLVE_READS = 4;
  *    at the new height, at most `LABEL_SOLVE_READS` times; a room still rising then is given up to the label placement
  *    (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`), as a settle gives one up.
  * 4. Each gap grows by `max(0, H − room, label deficit)`; the bands below move down by the running total (`moveBands`), and the claims a
- *    move in y changes are rebuilt with no centring. Then the linkless step (`afterGrowth`) runs once; when it moved, the centring is
- *    replayed once (`TIER_GAP_CENTRING_REPLAYED`). Nothing else moves in x: any other rebuild that would move an x is a fault, and it throws.
- *    An alignment the centring must still reach is settled before the solve, at the end of the 7f rounds (architecture-2 ticket 65).
+ *    move in y changes are rebuilt with no centring. Then the linkless step (`afterGrowth`) runs once; when it moved, or when an alignment
+ *    the publication would refuse stands, the centring is replayed once (`TIER_GAP_CENTRING_REPLAYED`). Nothing else moves in x: any other
+ *    rebuild that would move an x is a fault, and it throws.
  * 5. Checks on the gaps as they stand, each named and none a growth: a stem record the grown geometry no longer calls for is decided again
  *    (`STEM_DEPTHS_REDECIDED`); a label room still short is given up; a plan that still asks names its gap (`TIER_GAP_SOLVE_SHORT`).
  *
@@ -172,14 +173,19 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel) 
     });
     rebuilt();
     // What a growth inside a 7f round was followed by before ticket 57, done once here: the slopes and spans the growth changed can put a
-    // group with no links on a held chord (`afterGrowth`: the linkless step). A step that moved is followed by one centring replay, whose x
-    // moves are the only ones the solve makes (R4: one). The checks below run after it. An alignment the centring must still reach is not
-    // read here: the settle at the end of the 7f rounds took it before the solve (ticket 65).
+    // group with no links on a held chord (`afterGrowth`: the linkless step), and can leave an alignment the centring must still reach (the
+    // grid widened a box at the start of 7f and only a replay after a growth re-centred it; the excuse of a declined step is read on the
+    // grown geometry). Either is followed by one centring replay, whose x moves are the only ones the solve makes (R4: one); a violation the
+    // publication would refuse is the trigger, so a model that recorded its non-convergence is left as it is. The checks below run after it.
+    // Since architecture-2 ticket 65 the settle after the 7f rounds reaches the alignments before the solve, and the second trigger fires on no
+    // corpus sheet; it stays as the safety net for a growth that breaks an excused alignment (measured: a card-node variant of
+    // `a-refused-close-up-keeps-the-node-labels-in-order` throws `Centring invariant violated` without it).
     const stepped = afterGrowth(model);
-    if (stepped) {
+    if (stepped || (!model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model).length > 0)) {
       timed('solve-rebuild', () => { rebuildRegionGeometry(model, undefined, undefined, true, true); rebuild(model); });
-      placementWarning(model, 'TIER_GAP_CENTRING_REPLAYED',
-        'a group with no links stepped out of a held chord after the tier gaps grew; the centring was replayed once.', []);
+      placementWarning(model, 'TIER_GAP_CENTRING_REPLAYED', stepped
+        ? 'a group with no links stepped out of a held chord after the tier gaps grew; the centring was replayed once.'
+        : 'the tier gaps grew and an alignment the centring must reach stood off its feed; the centring was replayed once.', []);
       const replayed = xCoordinates(model);
       for (const key of before.keys()) before.set(key, replayed.get(key) ?? before.get(key)!);
     }

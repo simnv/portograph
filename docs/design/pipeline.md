@@ -1222,9 +1222,9 @@ grows a gap, and no step reads the height of a gap to make a decision that the h
    rebuild follows (regions, node geometry, lanes, the grid and the label bands) with no centring. A rebuild that moves an x throws.
    `TIER_GAP_GROWN` names what set the gap: a part of the plan, or "the label of link-N".
 5. It checks the gaps as they stand. None of these checks grows a gap, and each one is named. None of them fires on the corpus (390 sheets).
-   - A linkless step that moved after the growth (`afterGrowth`) replays the centring once (`TIER_GAP_CENTRING_REPLAYED`). This replay
-     is the only x move of the solve. An alignment the centring must still reach is not read here: the settle at the end of the 7f rounds
-     took it before the solve (architecture-2 ticket 65).
+   - A growth that breaks an alignment the centring had excused replays the centring once (`TIER_GAP_CENTRING_REPLAYED`). This replay
+     is the only x move of the solve. Since architecture-2 ticket 65 the settle at the end of the 7f rounds reaches the alignments before
+     the solve, so the replay is a safety net: it fires on no corpus sheet.
    - A stem record that the grown geometry no longer calls for is decided again (`STEM_DEPTHS_REDECIDED`).
    - A label room across a tier gap that is still short is given up.
    - A plan that still asks for room names its gap (`TIER_GAP_SOLVE_SHORT`).

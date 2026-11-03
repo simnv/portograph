@@ -54,6 +54,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * `a-chord-hint-and-a-lane-hint-never-share-a-batch` was re-recorded with them: after a growth the solve reads the centring once (a violation
  * the publication would refuse replays it), and the read replays the steps, so `centreGroupStep` has one call more (18 to 19). Only
  * `centreGroupStep` differs between the two recordings of this ticket (three-canton 890 to 872, three-continents 2155 to 2148).
+ * Seven were re-recorded for architecture-2 ticket 65 (a step keeps the verticals it reached; one settle after the 7f rounds): no judge source changed,
+ * but the centring keeps other geometry and settles once more, so the judges are called a different number of times and on other geometry. The full
+ * streams were compared with main 2f00e003: no figures main judged get another verdict; only `three-continents` judges figures main never judged
+ * (12 `pickTarget`, 3 `windowsHold`, 2 `sheetGains`, 1 `settleKeepOut`, 1 `centreGroupStep`).
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',
