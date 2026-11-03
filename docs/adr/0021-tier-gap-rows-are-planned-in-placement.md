@@ -97,7 +97,8 @@ Amendment (2026-10-05, architecture ticket 15, phase 5): the plan has a **U part
    rounds is recorded and not moved; the validator and the room check count it as a fault. The lane reseat judge (`chooseReseat`) reads no
    short gap, because the solve runs after the reseat. `TIER_GAP_GROWN` names what set each gap: a part of the plan, or "the label of
    link-N". Stage 8 `unfitGaps` stays as a safety net (R6) and must not fire. After the growth the solve checks the gaps as they stand,
-   and each check is named: a centring replay when the growth broke an excused alignment (`TIER_GAP_CENTRING_REPLAYED`, its only x move),
+   and each check is named: a centring replay when the growth broke an excused alignment (`TIER_GAP_CENTRING_REPLAYED`, its only x move;
+   since architecture-2 ticket 65 the settle at the end of the 7f rounds reaches the alignments before the solve, and the replay is a safety net),
    a stem record decided again (`STEM_DEPTHS_REDECIDED`), a label room across a gap given up, and a gap that still asks
    (`TIER_GAP_SOLVE_SHORT`). None of them fires on the corpus.
 3. **The label term.** The room of a link label across a gap is read on a copy at the growth the gap takes anyway
@@ -111,5 +112,6 @@ Amendment (2026-10-05, architecture ticket 15, phase 5): the plan has a **U part
    on the y axis only (`topUpBandClearance`).
 5. **Known cost, accepted.** With no centring replay after the growth, three corpus sheets gain bends (`avd-cv-pathfinder-wan` 8 to 12,
    `a-corridor-moves-after-the-grid-settles` 174 to 176,
-   `a-face-aligns-one-port-and-leaves-a-chord-port-in-place` 10 to 12), and `a-band-holds-the-group-that-set-its-edge` loses one held chord (link-28). A
-   follow-up ticket for the centring is planned.
+   `a-face-aligns-one-port-and-leaves-a-chord-port-in-place` 10 to 12), and `a-band-holds-the-group-that-set-its-edge` loses one held chord (link-28).
+   Architecture-2 ticket 65 recovers them without a replay after the solve: a centring step keeps the verticals it reached, and one settle of the
+   centring follows the 7f rounds (avd-cv 8 bends, a-face 8, link-28 held again).

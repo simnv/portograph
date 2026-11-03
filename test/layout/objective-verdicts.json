@@ -24,21 +24,21 @@
     "centreGroupStep": "1 123fd9e157a59830"
   },
   "a-chord-hint-and-a-lane-hint-never-share-a-batch": {
-    "centreGroupStep": "19 ac7f866c9128d333",
+    "centreGroupStep": "20 96537eeb5022f0d4",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pullTier": "10 b06612ea32ad87db"
   },
   "a-location-router-leaves-a-lateral-side-toward-a-far-provider": {
-    "centreGroupStep": "13 d909a40f7b4006bf",
+    "centreGroupStep": "14 e10eea619c37c69b",
     "judgeTrial": "1 cbf69f5f691d95cd"
   },
   "a-fan-spreads-its-ports-so-its-chords-hold-clearance": {
-    "centreGroupStep": "11 8c069ab3fdc9ede5",
+    "centreGroupStep": "12 a622fea3b2b40907",
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "three-canton-groups-close-up-to-a-band-gap": {
     "attemptCheap": "142 a0e441c1e4589897",
-    "centreGroupStep": "872 6cb3ec4607d0c303",
+    "centreGroupStep": "784 e09c46898f46a990",
     "closeUp": "10 bfb2eab7e78eb477",
     "holdsSettled": "4 af06a53353ac7514",
     "judgeTrial": "1 cbf69f5f691d95cd",
@@ -55,14 +55,14 @@
   },
   "three-continents": {
     "attemptCheap": "68 c1d6ed90784367bd",
-    "centreGroupStep": "2148 e3380753b7dbb2cc",
+    "centreGroupStep": "2148 35b3f38dc83be5eb",
     "holdsSettled": "16 5f5344c4f7a7c14f",
     "judgeTrial": "1 42dd08f8c2a37c4c",
-    "pickTarget": "306 167c2c4454e75150",
+    "pickTarget": "306 5696e2430063279e",
     "pullTier": "445 5badae188fb033c5",
-    "settleKeepOut": "12 b02a552200e80000",
-    "sheetGains": "42 7923bbdd1a893e4f",
-    "windowsHold": "80 16bd888e668fdbff"
+    "settleKeepOut": "12 de7e03b80d55e4f2",
+    "sheetGains": "42 403b0dd7d4e45132",
+    "windowsHold": "80 d6f27ba10f9ec580"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
     "centreGroupStep": "8 a0aee1f9cf73c946",
@@ -75,7 +75,7 @@
     "pickTarget": "12 e6765e397995a2f5"
   },
   "overlay-links-reorder-two-locations": {
-    "centreGroupStep": "71 d91595e143ce19f5",
+    "centreGroupStep": "76 bd264ed0f9f725a1",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "judgeTrial": "1 cbf69f5f691d95cd",
     "pullTier": "10 3153e5d325613dc4",
@@ -90,7 +90,7 @@
     "pullTier": "14 2001b63e774ad155"
   },
   "a-declined-grown-member-stops-at-an-overlay-chord": {
-    "centreGroupStep": "11 dd35bed4f3dba520",
+    "centreGroupStep": "12 61cecc68e482772a",
     "fanRoundHolds": "1 0a22f04442a90cca",
     "pickTarget": "5 45b174ea736f8515",
     "pullTier": "6 4aef7fb3deea9c91"

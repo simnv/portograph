@@ -1,6 +1,8 @@
 # Expected: no spanning chord (architecture ticket 22): the middle tier holds a wide group that stands under both ends of the link a-d, and the
 # widest tier cannot move aside, so the corridor is closed (`frame` in the trace). The link keeps its transit lane and the sheet is as it was before the span round.
-# Test-only input owned by architecture ticket 22; test/pipeline/span-chords.test.ts reads it.
+# Since architecture-2 ticket 65 the link a-d stands on its transit lane as one straight segment (the centring keeps the vertical it reached), so
+# no span offer reads it any more; span-chords.test.ts reads the frame refusal on a-link-transits-a-child-frame. Test-only input owned by
+# architecture ticket 22.
 portograph: 2
 profile: network
 groups:

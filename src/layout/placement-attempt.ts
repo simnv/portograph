@@ -32,7 +32,8 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
  *   2. Up to `CANTON_ROUNDS` rounds of `settleRound` (the close-up, the keep-out, the link label room again), `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
  *      each move on a copy that `trialSettle` has run). The choices of the linkless step, the chord step and the lane reseat are all made by the
  *      decision loop of decide.ts, each judged by the profile `judges` names for its kind; a round that moved anything is followed by `replayRegions`, or, when the step kept
- *      a move, by taking the settled copy of the last kept move (the replay and the next round's settling are then done).
+ *      a move, by taking the settled copy of the last kept move (the replay and the next round's settling are then done). When the rounds
+ *      did not replay the draft and the centring left a non-convergence or a violation, one replay and label room settle it on the frozen geometry (ticket 65).
  *   3. The held-axis probe (`holdColumnAxes` on a copy), and the non-convergence warning for the cantons.
  *   4. `reseatLanes`, adopted only when its settled trial is no worse in the named respects (`chooseReseat`, decide.ts).
  *   5. `solveTierGaps`: each tier gap grows once to its plan and to the labels of its drops, y-only (architecture-2 ticket 57).
@@ -68,6 +69,11 @@ function revisionOf(model: LayoutModel): string {
   return hash.toString(16).padStart(8, '0');
 }
 
+/**
+ * The replays each model object took (architecture-2 ticket 65): the 7f attempt asks whether its rounds replayed the draft itself, which a replay of a
+ * trial copy does not. Keyed by identity, so a copy counts on its own; `attemptCounters` serves tests and measurements only and decides nothing.
+ */
+const replaysOn = new WeakMap<LayoutModel, number>();
 /** The grid and the label bands, settled again: the part of a replay that does not rebuild the regions. No title stands in 7f (ticket 54). */
 export function replayGridAndBands(model: LayoutModel): void {
   timed('grid-pack', () => alignLinkedGroupGridAndPack(model));
@@ -79,6 +85,7 @@ export function replayGridAndBands(model: LayoutModel): void {
  */
 export function replayRegions(model: LayoutModel): void {
   attemptCounters.replays++;
+  replaysOn.set(model, (replaysOn.get(model) ?? 0) + 1);
   rebuildRegionGeometry(model, undefined, undefined, true);
   replayGridAndBands(model);
 }
@@ -279,6 +286,9 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   let taken: SettleReading | undefined;
   /** Whether the draft moved after the last label room of the rounds (the linkless step and its replay, ticket 27). */
   let unsettled = false;
+  /** Whether the rounds replayed the draft: a replay of the draft itself, or a settled copy the draft took (it ran the replay and a round). */
+  const draftReplays = replaysOn.get(draft) ?? 0;
+  let tookCopy = false;
   for (let round = 0; round < CANTON_ROUNDS && (!closed || again); round++) {
     abortAt?.();
     if (attemptTimings.on) attemptTimings.hooks.round?.(draft);
@@ -316,6 +326,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     // The copy that judged the last kept move has the replay and the next round's settling done: the draft takes it (ticket 13, phase 2).
     if (cleared && kept.adopted !== undefined && adoptSettled(draft, kept.adopted.copy, kept.adopted.baseDiagnostics, kept.adopted.original)) {
       taken = kept.adopted.result as SettleReading;
+      tookCopy = true;
       unsettled = false;
     } else {
       if (linkless || cleared) replayRegions(draft);
@@ -330,6 +341,17 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     const tail = settleRoom(draft, step => account(`tail:${step}`));
     if (tail >= CANTON_CREEP) closed = false;
     note('tail:room', 'settled');
+  }
+  // One settle of the centring on the frozen geometry (architecture-2 ticket 65): rounds that did not replay the draft gave the centring no pass after
+  // the bands' single budget, so an alignment a pass still had to reach is settled once here, before the reseat and the tier-gap solve. It runs when
+  // the centring left its non-convergence or a violation the publication would refuse; a step keeps every vertical it reached, so the extra passes
+  // give none up. One replay (R4). A replay of a trial copy (the chord step's judge) is not a replay of the draft.
+  if (moves && !tookCopy && (replaysOn.get(draft) ?? 0) === draftReplays
+    && (draft.diagnostics.some(d => d.code === 'PLACEMENT_NON_CONVERGENCE') || centreViolations(draft).length > 0)) {
+    replayRegions(draft);
+    const tail = settleRoom(draft, step => account(`tail:${step}`));
+    if (tail >= CANTON_CREEP) closed = false;
+    note('tail:centring', 'settled');
   }
   if (ledger) {
     const short = shortGaps(draft).length;

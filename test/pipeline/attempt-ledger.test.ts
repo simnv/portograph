@@ -40,11 +40,13 @@ const ROWS: Row[] = [
   // PLACEMENT_NON_CONVERGENCE) and its base 7f loop loses no overlay link (3 before); the unkept course trial ends 2 rounds open. 2 place runs, 5 rounds
   // (3 and 4 before), 24/105/54/5 (21/117/62/5 before).
   // Ticket 57 (the tier gaps solved once, after the rounds): no settle round grows a gap and replays for it. three-continents 22/100/50/5 (24/105/54/5
-  // before); a-tier-gap-plan 1/24/10/3, one round (2/56/14/3: its second round was the growth's); two-interleaved 1/6/7/3 and a-tier-gap-grows 1/4/7/3
+  // before); a-tier-gap-plan 1/24/10/3, one round (2/56/14/3: its second round was the growth's; 2/48/14/3 and two bodies since ticket 65); two-interleaved 1/6/7/3 and a-tier-gap-grows 1/4/7/3
   // (one centring pass each, the replay after the growth).
   row('three-continents', '22/100/50/5', 2, 2, 5, 2, 2, { preCentre: 2, baseChord: 1 }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
-  row('a-tier-gap-plan-orders-every-part', '1/24/10/3', 1, 1, 1, 0, 0, { reseat: 'refused', preChords: 1 }),
+  // Ticket 65: the settle after the rounds puts src back at the spec's x, a direct member then crowds a planned part, and the attempt body runs
+  // once more with it refused (two bodies of one round each, one settle and its eight passes each): 2/48/14/3 and 2 rounds (1/24/10/3 and 1 before).
+  row('a-tier-gap-plan-orders-every-part', '2/48/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
   row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/6/7/3', 1, 1, 1, 0, 0),
   row('a-tier-gap-grows-to-its-rows', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 54: one centring pass fewer (1/5/7/3 before).
@@ -139,14 +141,15 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
   // and no settle round replays for a growth: three-continents 41/19 (43/21 and 25 gap rounds before), the others 0/0 (5, 2, 2, 1 gap
   // rounds), the chord-step fixture 10/10 (13 gap rounds).
   it.each([
-    ['three-continents', 41, 19, 2], ['a-tier-gap-plan-orders-every-part', 0, 0, 1], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 1],
+    ['three-continents', 41, 19, 2], ['a-tier-gap-plan-orders-every-part', 2, 0, 2], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 1],
     ['a-tier-gap-grows-to-its-rows', 0, 0, 1], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 1], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 3],
   ] as const)('derives once: %s replays %i, settled copies %i, gap solves %i', async (name, replays, trials, solves) => {
-    resetAttemptCounters();
+    resetAttemptCounters(); attemptCounters.ledger = true;
     await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
     expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapSolves]).toEqual([replays, trials, solves]);
-    // Exactly one solve per 7f attempt body.
-    expect(attemptCounters.gapSolves).toBe(attemptCounters.attempts);
+    // Exactly one solve per 7f attempt body: an attempt and its retries (a crowded direct member runs the body again, ticket 22), each body one
+    // entry of the attempt log. Since ticket 65 a-tier-gap-plan retries once (its replays are the settle after the rounds, once per body).
+    expect(attemptCounters.gapSolves).toBe(attemptCounters.attemptLog.length);
   }, 60000);
 
   it('reads nothing of the model when the ledger and the trace are off', async () => {

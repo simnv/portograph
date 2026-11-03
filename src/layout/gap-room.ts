@@ -177,6 +177,9 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel) 
     // grid widened a box at the start of 7f and only a replay after a growth re-centred it; the excuse of a declined step is read on the
     // grown geometry). Either is followed by one centring replay, whose x moves are the only ones the solve makes (R4: one); a violation the
     // publication would refuse is the trigger, so a model that recorded its non-convergence is left as it is. The checks below run after it.
+    // Since architecture-2 ticket 65 the settle after the 7f rounds reaches the alignments before the solve, and the second trigger fires on no
+    // corpus sheet; it stays as the safety net for a growth that breaks an excused alignment (measured: a card-node variant of
+    // `a-refused-close-up-keeps-the-node-labels-in-order` throws `Centring invariant violated` without it).
     const stepped = afterGrowth(model);
     if (stepped || (!model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model).length > 0)) {
       timed('solve-rebuild', () => { rebuildRegionGeometry(model, undefined, undefined, true, true); rebuild(model); });

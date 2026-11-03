@@ -230,6 +230,14 @@ would fail, a run through a foreign group box (G2) or along a box edge inside th
 (`FAN_BRANCH_THROUGH_GROUP`, warning); a branch that only meets a group at a right angle stays. A chord that removed the stem which hemmed a branch
 exposed the case (`a-claimed-run-clears-a-shared-run`). The release is a fallback: ticket 113 keeps the planner's branches clear of foreign groups.
 
+**Centring (7c, 7f).** The centring counts the vertical of a frame chord as owed, as an orthogonal link's (it prefers it; the chord stays
+legal at any angle, Section 4); a cross-frame chord owes none (architecture-2 ticket 65).
+Before the freeze a frame chord already has its pinned path, and the parent-port move (`standPortsOverChildren`) admits it: its port moves
+over the child when its group fills the column of its frame, so the chord stands vertical and does not lean. After the freeze a chord keeps
+the wall move recorded for it (`parentWallMoves`), and a routed chord names no jog. A centring step from 7e on counts the verticals it found
+and keeps them (cross-frame chords in a second term only), and it may not bring a held chord under the chord clearance of another held chord
+or of a foreign body where the pair stood clear when it began (`chordNearPairs`).
+
 **Lanes (7a).** A lane is reserved before a chord is final, and a lane box is a wall to a chord.
 Lanes read a chord that is held at 7a: `corridorFree` keeps a lane's descent off every fixed path,
 and `validateLanes` refuses a fixed path across a foreign lane. So a chord held at 7a can turn a
