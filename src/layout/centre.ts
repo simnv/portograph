@@ -1,5 +1,5 @@
 import { portEndInsets } from './port-insets.js';
-import type { AlignedExtentEdge, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
+import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
@@ -34,6 +34,8 @@ import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
 import { chordKind, chordNearPairs, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 import { readCache } from '../model/read-cache.js';
+import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, tapTarget, owesVertical, sameDeclines, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
+import { faceKey } from './turn-order.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -783,12 +785,19 @@ interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>;
  * loop drops the value for the rest.
  */
 interface CarriedReadings { held: Set<string>; breached: Set<string> }
-type GroupStep = { unresolved: Set<string>; group: LayoutGroup; carry?: CarriedReadings };
+type GroupStep = { unresolved: Set<string>; group: LayoutGroup; carry?: CarriedReadings; notes: TargetNotes };
+/** The centring pass the producer runs now (`CentreBudget.passes`), written on the targets a producer step records; a replay (`warn` off) writes 0. Read by nothing for a decision. */
+let stepPass = 0;
 const carryCache = readCache('centreCarry');
 /** The groups a foreign drop would run along, by id. */
 const breachedIds = (model: LayoutModel): Set<string> => new Set([...keepOutShifts(model).keys()].map(item => item.id));
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
-  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base, carried));
+  return withStepLinkKinds(model, () => {
+    const step = centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base, carried);
+    // The targets the step kept, grew toward or declined, read on the geometry it leaves on every exit (architecture-2 ticket 66).
+    writeAlignmentTargets(model, model.groups[id]!.nodes, step.notes, warn ? stepPass : 0);
+    return step;
+  });
 }
 function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
@@ -828,7 +837,8 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
   packClear(model, context, tier, snapshot.group, previous);
-  return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group };
+  // The undo gives back the geometry the step began on, not the step's own geometry a decline was judged against: no decline of this step stands.
+  return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group, notes: { ...result.notes, declined: new Map() } };
 }
 /** The verticals a centring step counts (ticket 65): the feeds that owe one and stand on it, then every feed that stands on one. */
 type VerticalTally = readonly [owed: number, all: number];
@@ -838,15 +848,16 @@ const fewerVerticals = (a: VerticalTally, b: VerticalTally): boolean => a[0] < b
  * The tally of one group step, read on the misses of its wanted ports (a miss up to half a pixel stands, as `unresolved` reads it). A feed owes a
  * vertical when its link is an orthogonal link, a frame chord or a direct member; a held cross-frame chord owes none (CONTEXT.md: any angle) and counts
  * only in the second term, and not on a face where two wanted ports, one of them a transit, cannot both stand at pitch: a cross chord never costs a
- * transit port its lane. A count reads no order, so no tie-break is needed (R3).
+ * transit port its lane. A target the record declines (`alignmentTargets`, ticket 66) is not counted. A count reads no order, so no tie-break is
+ * needed (R3).
  */
 function verticalTally(model: LayoutModel, group: LayoutGroup, wanted: ReadonlyMap<string, number>, seats: ReadonlyMap<string, Feed>): (misses: ReadonlyMap<string, number>) => VerticalTally {
   const links = new Map(model.links.map(link => [link.id, link]));
-  const direct = new Set((model.directFamilies ?? []).flatMap(family => family.members.filter(member => member.mode === 'direct').map(member => member.link)));
-  const owes = (feed: Feed): boolean => {
-    const link = links.get(feed.link);
-    return link === undefined || !isRoutedChord(model, link) || chordKind(model, link) !== 'cross' || direct.has(link.id);
-  };
+  const direct = directMembers(model);
+  const owes = (feed: Feed): boolean => owesVertical(model, links.get(feed.link), direct);
+  // A target a step declined is final for the placement attempt (architecture-2 ticket 66): it is counted neither before nor after, so the kept
+  // branch is not tried for it again.
+  const declined = declinedTargets(model, group.nodes);
   const inverted = new Set<string>();
   for (const id of group.rowOrder!) {
     const node = model.nodes[id]!;
@@ -862,7 +873,7 @@ function verticalTally(model: LayoutModel, group: LayoutGroup, wanted: ReadonlyM
     let owed = 0, all = 0;
     for (const [key, miss] of misses) {
       const feed = seats.get(key);
-      if (miss > 0.5 || feed === undefined) continue;
+      if (miss > 0.5 || feed === undefined || declined.has(key)) continue;
       if (owes(feed)) { owed++; all++; } else if (!inverted.has(`${feed.child.ref.node}:${feed.child.side}`)) all++;
     }
     return [owed, all];
@@ -899,10 +910,17 @@ function snapAlignedFaces(model: LayoutModel, group: LayoutGroup, wanted: Readon
     }
   }
 }
-function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup } {
+function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup; notes: TargetNotes } {
   const group = model.groups[id]!;
   const { own, wanted, yielded, conflicts, seats } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
+  // What the record of the targets reads at the step's end (architecture-2 ticket 66): the room of each target where the step began, the growth
+  // toward a target, and the targets the kept branch declines.
+  const notes: TargetNotes = { seats, wanted, grown: new Map(), start: new Map(), declined: new Map() };
+  for (const [key, want] of wanted) {
+    const box = model.nodes[seats.get(key)!.child.ref.node]!.bounds!;
+    notes.start.set(key, { low: box.x - want, high: right(box) - want });
+  }
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
@@ -929,11 +947,11 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const diagnosticsBefore = warn && verticalsBefore !== undefined && verticalsBefore[1] > 0 ? [...model.diagnostics] : undefined;
   const moved = new Set(group.nodes);
   const nearBefore = chordStage ? chordNearPairs(model, moved) : undefined;
-  /** Whether a held chord now stands under the chord clearance to a chord or a foreign body it cleared when the step began. Read on rebuilt nodes: a move leaves the pills behind, and a chord end reads them. */
-  const newlyNear = (nodes: readonly string[]): boolean => {
-    if (nearBefore === undefined) return false;
+  /** The first pair (in key order) of a held chord that now stands under the chord clearance to a chord or a foreign body it cleared when the step began. Read on rebuilt nodes: a move leaves the pills behind, and a chord end reads them. */
+  const newlyNear = (nodes: readonly string[]): string | undefined => {
+    if (nearBefore === undefined) return undefined;
     rebuildNodeGeometry(model, nodes, 'current');
-    return [...chordNearPairs(model, moved)].some(key => !nearBefore.has(key));
+    return [...chordNearPairs(model, moved)].filter(key => !nearBefore.has(key)).sort()[0];
   };
   // The overlay walls of each body, read where the body stands as the step begins. A body an earlier
   // pass grew toward its feeds is carried by the move below as well, and a move that carries it onto
@@ -950,7 +968,11 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const stops = walls.get(nodeId)!;
     let stoppedBy: string | undefined;
     for (const side of ['top', 'bottom'] as const) {
-      for (const key of alignSide(node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'), heldChordPorts(model, node))) aligned.add(key);
+      const box = node.bounds!, fromX = box.x, fromWidth = box.width;
+      const kept = alignSide(node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'), heldChordPorts(model, node));
+      for (const key of kept) aligned.add(key);
+      // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
+      if (box.x < fromX - EPS || box.width > fromWidth + EPS) for (const key of kept) notes.grown.set(key, { low: box.x - wanted.get(key)!, high: right(box) - wanted.get(key)! });
     }
     // Once per node, not once per pass and side.
     if (stoppedBy && warn && !model.diagnostics.some(d => d.code === 'ALIGNMENT_STOPPED_AT_OVERLAY' && d.message.startsWith(`${node.id} `))) {
@@ -989,7 +1011,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     // the saved geometry alone would overlap. Decline the alignment and keep the tier packed.
     packClear(model, context, tier, saved.group, previous);
     standNearFeed(model, context, tier, id, saved.group, began + Math.max(farthestLeft, Math.min(toMean, farthestRight)), low, high);
-    return { unresolved: new Set(wanted.keys()), group: saved.group };
+    return { unresolved: new Set(wanted.keys()), group: saved.group, notes };
   }
   const x = Math.max(low, Math.min(group.bounds!.x, high - group.bounds!.width));
   moveGroup(model, group, x - group.bounds!.x, 0);
@@ -1000,12 +1022,12 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // The same for a frozen chord: a step that leaves one across a foreign lane box that it did not cross when the step began is declined, and so is a
   // step that leaves a held chord under the chord clearance where it stood clear (ticket 65).
   if (!riserNoDeeper(startPenetration, riserPenetrations(model, group)) || [...chordLaneCrossings(model, group)].some(pair => !startCrossings.has(pair))
-    || [...spanBreaches(model)].some(key => !startBreaches.has(key)) || newlyNear(group.nodes)) {
+    || [...spanBreaches(model)].some(key => !startBreaches.has(key)) || newlyNear(group.nodes) !== undefined) {
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);
     standNearFeed(model, context, tier, id, saved.group, began + Math.max(farthestLeft, Math.min(toMean, farthestRight)), low, high);
-    return { unresolved: new Set(wanted.keys()), group: saved.group };
+    return { unresolved: new Set(wanted.keys()), group: saved.group, notes };
   }
   for (const [key, want] of wanted) {
     const port = group.nodes.flatMap(id => model.nodes[id]!.ports).find(port => portId(port.ref) === key)!;
@@ -1013,11 +1035,39 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   }
   const endMisses = misses();
   // A step that leaves fewer verticals standing than it found (ticket 65) keeps the geometry it found, clamped into its window, when that keeps more
-  // and passes the same post-conditions. Without it a group that aligns K of its N feeds moves by the mean of all N, crawls by (N - K) / N of the
+  // and passes the same post-conditions and the overlay guard (ticket 66: no overlay link the step draws straight loses its straight chord). A keep
+  // the guards refuse declines the targets only the kept geometry stands, in the record, for the rest of the attempt. Without it a group that aligns K of its N feeds moves by the mean of all N, crawls by (N - K) / N of the
   // miss, and gives up an alignment it reached when the next mean jumps: the output then depends on where the budget stops. The kept geometry
   // stands more than the step would, not always as many as it found (the clamp can cost one), so the budget alone bounds the passes (R4). The
   // publication check replays this step, so it reads the same decision (R5).
   const verticalsAfter = tally?.(endMisses);
+  /**
+   * Why the kept geometry, standing in the model now, may not stand; null when it may. Ticket 65's post-conditions first, then the overlay guard
+   * of ticket 66, by identity: an overlay link that the step's own geometry draws straight and the kept one does not declines the keep. Each
+   * reason names the first key it found, in code-unit order of the keys (R3). The overlay guard reads both geometries on rebuilt nodes, and only here: the kept
+   * branch is not the producer's common path.
+   */
+  const keptRefusal = (keptGroup: LayoutGroup, stepGroup: LayoutGroup, stepNodes: readonly LayoutNode[]): { reason: AlignmentDeclineReason; by: string } | null => {
+    const deeper = [...riserPenetrations(model, keptGroup)].filter(([key, depth]) => depth > (startPenetration.get(key) ?? 0) + 1e-9).map(([key]) => key).sort()[0];
+    if (deeper !== undefined) return { reason: 'riser', by: deeper };
+    const lane = [...chordLaneCrossings(model, keptGroup)].filter(pair => !startCrossings.has(pair)).sort()[0];
+    if (lane !== undefined) return { reason: 'lane-crossing', by: lane };
+    const span = [...spanBreaches(model)].filter(key => !startBreaches.has(key)).sort()[0];
+    if (span !== undefined) return { reason: 'span', by: span };
+    const near = newlyNear(keptGroup.nodes);
+    if (near !== undefined) return { reason: 'chord-clearance', by: near };
+    const keptNodes = keptGroup.nodes.map(node => model.nodes[node]!);
+    model.groups[id] = stepGroup;
+    for (const node of stepNodes) model.nodes[node.id] = node;
+    rebuildNodeGeometry(model, stepGroup.nodes, 'current');
+    const straight = straightChordIds(model);
+    model.groups[id] = keptGroup;
+    for (const node of keptNodes) model.nodes[node.id] = node;
+    rebuildNodeGeometry(model, keptGroup.nodes, 'current');
+    const keptStraight = straightChordIds(model);
+    const lost = [...straight].filter(link => !keptStraight.has(link)).sort()[0];
+    return lost === undefined ? null : { reason: 'overlay-straight', by: lost };
+  };
   if (verticalsBefore !== undefined && verticalsAfter !== undefined && fewerVerticals(verticalsAfter, verticalsBefore) && saved.group.bounds!.width <= high - low) {
     const afterGroup = model.groups[id]!, afterNodes = group.nodes.map(node => model.nodes[node]!);
     const kept = JSON.parse(JSON.stringify(saved)) as typeof saved;
@@ -1030,10 +1080,9 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     moveGroup(model, kept.group, Math.max(low, Math.min(kept.group.bounds!.x, high - kept.group.bounds!.width)) - kept.group.bounds!.x, 0);
     snapAlignedFaces(model, kept.group, wanted);
     const keptMisses = misses();
-    if (fewerVerticals(verticalsAfter, tally!(keptMisses))
-      && riserNoDeeper(startPenetration, riserPenetrations(model, kept.group))
-      && ![...chordLaneCrossings(model, kept.group)].some(pair => !startCrossings.has(pair))
-      && ![...spanBreaches(model)].some(key => !startBreaches.has(key)) && !newlyNear(kept.group.nodes)) {
+    const refusal = fewerVerticals(verticalsAfter, tally!(keptMisses)) ? keptRefusal(kept.group, afterGroup, afterNodes) : undefined;
+    tapTarget('keptBranch', () => `${id} ${warn ? `pass ${stepPass}` : 'replay'} ${refusal === undefined ? 'no-gain' : refusal === null ? 'kept' : `${refusal.reason} ${refusal.by}`}`);
+    if (refusal === null) {
       if (diagnosticsBefore) {
         const wrote = new Set(beforeKept);
         model.diagnostics = [...diagnosticsBefore, ...model.diagnostics.filter(item => !wrote.has(item))];
@@ -1046,8 +1095,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
         if (!wanted.has(key) || !left.has(key)) continue;
         placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
       }
-      return { unresolved: left, group: kept.group };
+      return { unresolved: left, group: kept.group, notes };
     }
+    // A kept geometry the guards refuse declines the targets it alone stands (ticket 66): stored, so no later pass of this attempt tries them again.
+    if (refusal !== undefined) for (const [key, miss] of keptMisses) if (miss <= 0.5 && (endMisses.get(key) ?? 0) > 0.5) notes.declined.set(key, refusal);
     model.groups[id] = afterGroup;
     for (const node of afterNodes) model.nodes[node.id] = node;
     model.diagnostics = beforeKept;
@@ -1079,9 +1130,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     // that the step reports itself unresolved on every pass. The pass loop below ends on geometry
     // alone (ticket 75): the step is a fixed point, its `CENTRE_ALIGNMENT_INFEASIBLE` warning
     // already stands, and it neither spends the budget nor reports `PLACEMENT_NON_CONVERGENCE`.
-    return { unresolved, group: saved.group };
+    // The step's geometry is given back, so a decline judged against it does not stand (ticket 66).
+    return { unresolved, group: saved.group, notes: { ...notes, declined: new Map() } };
   }
-  return { unresolved, group };
+  return { unresolved, group, notes };
 }
 /** What the parent-port pass reads of the group steps (`StepReader`), on one context. The tail reservation is read once per tier: the pass moves ports, not boxes. */
 export function stepReader(model: LayoutModel, context: CentreContext): StepReader {
@@ -1097,6 +1149,16 @@ export function stepReader(model: LayoutModel, context: CentreContext): StepRead
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
+  // The record of the alignment targets starts empty at the centre rule's input (architecture-2 ticket 66); every later run of the passes reads and
+  // writes the one record (a replay of 7f too), and 7f drops it after its last centring reading.
+  // A later run on a model whose centre rule ran no producer (a hand-made transaction) records no target and declines none, and says so (R6),
+  // as the aligned extents do.
+  if (model.alignmentTargets === undefined) {
+    if (model.stage === CENTRE_RULE_INPUT) model.alignmentTargets = {};
+    else if (!model.diagnostics.some(d => d.code === 'ALIGNMENT_TARGETS_UNDECIDED')) {
+      placementWarning(model, 'ALIGNMENT_TARGETS_UNDECIDED', `The centre rule recorded no alignment targets; this centring at stage ${model.stage} records none and declines none for good.`, []);
+    }
+  }
   // A move a replay before took at a frame-column wall is read again where the model stands now: a wall that no longer holds gives the move back before the
   // passes centre on it (architecture ticket 15, follow-up).
   withdrawRecorded(model);
@@ -1249,6 +1311,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
   while (budget.remaining > 0) {
     ran = true;
     budget.remaining--; budget.passes++; attemptCounters.centringPasses++;
+    stepPass = budget.passes;
     const before = geometry(model); unresolved = new Set();
     // A pass whose steps move geometry that a later stage of the same pass moves back is not at a
     // fixed point: the net change is nil, the work is not. Every step is measured on its own.
@@ -1330,7 +1393,16 @@ const TRIAL_SHARED = ['document', 'links', 'groupLinks', 'meshBuses', 'lanes', '
  * drops and endpoints (7d), ports any bundle member uses (7e) — are not compared.
  */
 export function centreViolations(model: LayoutModel, ahead = false, shared?: CentreContext): string[] {
-  return withSharedLinkKinds(() => readCentreViolations(model, ahead, shared, shared === undefined));
+  return withSharedLinkKinds(() => readCentreViolations(model, ahead, shared, shared === undefined, false));
+}
+/**
+ * The publication check (`validateRegionClaims`): `centreViolations`, and for every group it replays, a face where the replay declines a target the
+ * stored record does not decline (`alignment-targets-differ`, architecture-2 ticket 66; `sameDeclines`). Only the publication reads the record
+ * this way: the 7f judges compare the violations of two candidates, and a record a candidate's move leaves behind is no violation of that move.
+ * The publication excuses a held cross chord (any angle) and so never replays a group for it; `ahead` reads as the producer's own check does.
+ */
+export function publishedCentreViolations(model: LayoutModel, ahead = false): string[] {
+  return withSharedLinkKinds(() => readCentreViolations(model, ahead, undefined, true, true));
 }
 /**
  * The text of the model one check read, and its answer (architecture-2 ticket 63). With no context handed in, the answer reads the model and `ahead` alone:
@@ -1338,7 +1410,7 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
  * check on the same model object whose texts are all equal has the same answer, and its replays are not run again. `taps` are the verdicts the
  * replays gave a test's tap (`verdictTap`), given again with the answer; undefined when no tap listened, and such an answer is not reused while one does.
  */
-interface CheckedAnswer { ahead: boolean; own: string; still: string; nodes: ReadonlyMap<string, string>; result: readonly string[]; taps: readonly (readonly [string, string])[] | undefined }
+interface CheckedAnswer { ahead: boolean; targets: boolean; own: string; still: string; nodes: ReadonlyMap<string, string>; result: readonly string[]; taps: readonly (readonly [string, string])[] | undefined }
 const checkedAnswers = new WeakMap<LayoutModel, CheckedAnswer>();
 const answerCache = readCache('centreCheckAnswer');
 /** Whether two checks read one model text: the same parts, the same nodes in the same order. */
@@ -1355,7 +1427,7 @@ function recordTaps<T>(into: [string, string][] | undefined, forward: boolean, r
   verdictTap.sink = (name, value) => { into.push([name, value]); if (forward) sink(name, value); };
   try { return run(); } finally { verdictTap.sink = sink; }
 }
-function readCentreViolations(model: LayoutModel, ahead: boolean, shared: CentreContext | undefined, reuse: boolean): string[] {
+function readCentreViolations(model: LayoutModel, ahead: boolean, shared: CentreContext | undefined, reuse: boolean, targets: boolean): string[] {
   const anchor = model.anchorTier;
   if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
   const context = shared ?? centreContext(model, anchor);
@@ -1425,18 +1497,18 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         const stillText = JSON.stringify(still);
         if (reuse) {
           const known = checkedAnswers.get(model);
-          if (known !== undefined && known.ahead === ahead && (known.taps !== undefined || verdictTap.sink === undefined) && sameModelText(known, replayedText, stillText, nodeTexts)) {
+          if (known !== undefined && known.ahead === ahead && known.targets === targets && (known.taps !== undefined || verdictTap.sink === undefined) && sameModelText(known, replayedText, stillText, nodeTexts)) {
             // Under `LayoutOptions.checkCaches` the check runs again in full, without reuse, and its answer and verdicts must be the ones kept.
             const answer = answerCache.hit(model, { result: known.result, taps: known.taps }, () => {
               const again: [string, string][] | undefined = known.taps === undefined ? undefined : [];
-              const result = recordTaps(again, false, () => readCentreViolations(model, ahead, undefined, false));
+              const result = recordTaps(again, false, () => readCentreViolations(model, ahead, undefined, false, targets));
               return { result, taps: again };
             });
             for (const [name, value] of answer.taps ?? []) tapVerdict(name, () => value);
             return [...answer.result];
           }
           answerCache.miss();
-          key = { ahead, own: replayedText, still: stillText, nodes: nodeTexts };
+          key = { ahead, targets, own: replayedText, still: stillText, nodes: nodeTexts };
         }
         sharedParts = JSON.parse(stillText) as Record<string, unknown>;
         freezeDeep(sharedParts);
@@ -1455,13 +1527,23 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         }
         return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved, base) };
       };
-      let step: ReturnType<typeof centreGroupStep>;
-      try { step = recordTaps(taps, true, () => attempt(false).step); } catch (error) {
+      let replay: ReturnType<typeof attempt>;
+      try { replay = recordTaps(taps, true, () => attempt(false)); } catch (error) {
         if (!(error instanceof TypeError)) throw error;
         attemptCounters.centreCheckFallbacks++;
-        step = recordTaps(taps, true, () => attempt(true).step);
+        replay = recordTaps(taps, true, () => attempt(true));
       }
+      const { step, trial } = replay;
       previous = group;
+      // The record is read, never decided again (R1): a face where the replay declines a target the record does not decline is a finding (R5).
+      // Only 7f's producer ran the tally that declines (its draft stands at `bundles`); 7c to 7e decline nothing, and a chord-stage replay of the
+      // 7e output would read rules its producer did not run. So the publication compares the record of 7f alone.
+      if (targets && model.stage === 'bands' && model.alignmentTargets !== undefined) {
+        for (const nodeId of group.nodes) for (const side of ['top', 'bottom', 'left', 'right'] as const) {
+          const face = faceKey(nodeId, side);
+          if (!sameDeclines(model.alignmentTargets[face], trial.alignmentTargets?.[face])) result.push(`${ALIGNMENT_TARGETS_DIFFER}: ${face}`);
+        }
+      }
       for (const { child, x, feed, port } of candidates) {
         // Only the ports the producer's own step could not resolve are excused, never their siblings.
         if (step.unresolved.has(child)) continue;

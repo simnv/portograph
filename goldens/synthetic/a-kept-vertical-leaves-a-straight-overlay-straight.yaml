@@ -1,0 +1,54 @@
+# Expected: a centring step that would keep the geometry it found for its vertical tally (ticket 65) keeps it only when every overlay link
+# that the step's own geometry draws straight stays straight (architecture-2 ticket 66). `f2` feeds three location routers and a spare,
+# and draws the overlay `f2 -> b-s2` straight from its bottom face. From 7e on the step of `feeds` would stand one vertical fewer than it
+# found; the geometry it found puts a body on the overlay's straight chord, so the keep is declined (`overlay-straight`, by that overlay
+# link), the step's own geometry stands, and the decline is final for the placement attempt (the tally no longer counts the target).
+# The overlay is one segment. Without the guard it bends into five. The same on reversed links and reversed nodes (R3).
+# Test `alignment-targets.test.ts`.
+portograph: 2
+groups:
+  feeds: { tier: 0, label: Feeds }
+  a: { tier: 1, label: Location A }
+  a-zone: { parent: a, label: Zone A }
+  b: { tier: 1, label: Location B }
+  b-zone: { parent: b, label: Zone B }
+  c: { tier: 1, label: Location C }
+  spares: { tier: 1, shape: grid, label: Spares }
+nodes:
+  f1: { group: feeds, class: router, label: Feed one }
+  f2: { group: feeds, class: router, label: Feed two }
+  a-r1: { group: a, class: router, label: A router }
+  a-s1: { group: a, class: switch, label: A switch one }
+  a-s2: { group: a, class: switch, label: A switch two }
+  a-s3: { group: a, class: switch, label: A switch three }
+  a-s4: { group: a, class: switch, label: A switch four }
+  a-t1: { group: a-zone, class: server, label: A time }
+  b-r1: { group: b, class: router, label: B router }
+  b-s1: { group: b, class: switch, label: B switch one }
+  b-s2: { group: b, class: switch, label: B switch two }
+  b-t1: { group: b-zone, class: server, label: B time }
+  c-r1: { group: c, class: router, label: C router }
+  c-s1: { group: c, class: switch, label: C switch one }
+  c-s2: { group: c, class: switch, label: C switch two }
+  c-s3: { group: c, class: switch, label: C switch three }
+  sp1: { group: spares, class: server, label: Spare one }
+  sp2: { group: spares, class: server, label: Spare two }
+links:
+  - [a-r1, a-s1]
+  - [a-r1, a-s2]
+  - [a-r1, a-s3]
+  - [a-r1, a-s4]
+  - [a-s1, a-t1]
+  - [b-r1, b-s1]
+  - [b-r1, b-s2]
+  - [b-s1, b-t1]
+  - [c-r1, c-s1]
+  - [c-r1, c-s2]
+  - [c-r1, c-s3]
+  - [f2, a-r1]
+  - [f2, b-r1]
+  - [f2, c-r1]
+  - [f1, sp1]
+  - [f2, sp2]
+  - [f2, c-s1, { route: overlay }]
+  - [f2, b-s2, { route: overlay }]

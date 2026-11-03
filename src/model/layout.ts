@@ -616,6 +616,20 @@ export interface LayoutModel {
    */
   parentSpreads?: Record<string, ParentSpread>;
   /**
+   * The alignment targets of the centring steps (architecture-2 ticket 66), by node face (`faceKey(node, side)`): one entry per wanted port of the
+   * face, in port-key order. A step writes it at its end, on every exit: `kept` (the target stands), `grown` (the body grew toward it, or it stood
+   * and a later step moved it off; `extent` is the room the body needs), `declined` (a guard refused to keep it, with `reason` and `by`). A declined
+   * target is final for the placement attempt: the vertical tally of ticket 65 no longer counts it, so no later pass tries to keep it again (R1).
+   * Created `{}` by the centre rule at its input stage, read and written through 7f, compared at the publication of 7f, and dropped by the route
+   * rule, so a routed layout does not carry it. Absent = not decided (a model before 7c, a routed model, or a hand-made centre transaction: a
+   * later run of the passes records and declines nothing and warns `ALIGNMENT_TARGETS_UNDECIDED`); a routed model with it is refused. An absent face key = the face had no wanted port in any step; `[]` = the face was stepped and has
+   * no target in any state now (its feeds yielded). `kept` and `grown` are where the targets stood when the last step on the group ended, read
+   * on the geometry that step left (a `grown` extent is read where the body grew, before the row pack and the clamp). The publication check
+   * refuses a malformed record and, at the output of 7f, names a face where its replay declines a target the record does not
+   * (`alignment-targets-differ`); no diagnostic excuses it.
+   */
+  alignmentTargets?: Record<string, AlignmentTarget[]>;
+  /**
    * Who yields among the labels on diagonal lines (architecture-2 ticket 20, `recordLabelYields`): a key for every described overlay
    * link whose label lies on a diagonal line, with the links whose label bands it keeps clear of ([] = none). Each pair is decided once,
    * in 7f, and never again; 7f and stage 9 read the record. Absent = no label on a diagonal line, or a model before 7f.
@@ -728,6 +742,27 @@ export interface FanAdmission {
 
 /** One edge's room across a run (`labelPadding`, tickets 21 and 23): the padding from the node bodies to the box edge, and the links (a label's or a track's) it holds. */
 export interface LabelPaddingEntry { room: number; links: string[] }
+/** Why a centring step declined to keep a target (`AlignmentTarget.reason`, architecture-2 ticket 66): the guard or the ticket-65 post-condition that refused the kept geometry. */
+export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossing' | 'span' | 'chord-clearance';
+/**
+ * One alignment target of a face (`LayoutModel.alignmentTargets`): the wanted `port`, the feed's `link`, and where the target x is read (`far`:
+ * the far port id, or `lane:<id>` for a transit feed; no x is stored, so the entry moves with the geometry). `owes`: `vertical` for an
+ * orthogonal link, a frame chord or a direct member, `any` for a held cross chord. `reason` and `by` only on `declined` (`by` = the overlay
+ * link, or the riser port, lane pair, span or chord pair key of the post-condition). `extent` only on `grown`: the low and the high body edge,
+ * each a distance from the far end's x. `pass`: the pass of its centring budget that last changed it (0 for a replay; each region replay
+ * starts a budget of its own); read by nothing for a decision.
+ */
+export interface AlignmentTarget {
+  port: string;
+  link: string;
+  far: string;
+  owes: 'vertical' | 'any';
+  state: 'kept' | 'grown' | 'declined';
+  reason?: AlignmentDeclineReason;
+  by?: string;
+  extent?: { low: number; high: number };
+  pass: number;
+}
 /** One edge of an aligned extent (`LayoutModel.alignedExtents`): the edge stands at the x of the anchor-tier `port` plus `offset`. */
 export interface AlignedExtentEdge { port: PortRef; offset: number }
 /**

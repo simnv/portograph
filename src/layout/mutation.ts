@@ -27,7 +27,8 @@ import { faceKey, laneFaceOrder } from './turn-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
-import { centreViolations, selectAnchorTier } from './centre.js';
+import { publishedCentreViolations, selectAnchorTier } from './centre.js';
+import { ALIGNMENT_TARGETS_DIFFER, alignmentTargetsFault } from './alignment-targets.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
@@ -336,7 +337,15 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
   }
   if (stages.indexOf(model.stage) >= stages.indexOf('centre')) {
     same(model.anchorTier, selectAnchorTier(model), 'Anchor tier contradicts node count or tie rule');
-    const centring = centreViolations(model);
+    // The record of the alignment targets is read, never decided again (architecture-2 ticket 66, R1); a malformed one is refused (R5).
+    const targets = alignmentTargetsFault(model);
+    if (targets !== undefined) throw new Error(`The alignment target record is forged: ${targets}`);
+    const all = publishedCentreViolations(model);
+    // A replay that declines a target the record does not is a contradiction of the record, not an alignment a spent budget left unverified:
+    // no diagnostic excuses it (R5; ADR-0010 covers the alignments only).
+    const differ = all.filter(item => item.startsWith(ALIGNMENT_TARGETS_DIFFER));
+    if (differ.length) throw new PlacementRefusal('centring', `The alignment target record contradicts its replay: ${differ.join('; ')}`, { stage: model.stage });
+    const centring = all;
     if (centring.length) {
       // A spent shared budget is producer state geometry cannot witness (ADR-0010). A model that
       // reports it keeps its last state and is judged by the final gates; the unverified alignments
@@ -704,7 +713,10 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // The centre rule decides the aligned extents of the canton members once (architecture-2 ticket 31); every later rule keeps them.
     // It also records and withdraws the parent port moves it took at a frame-column wall (`parentWallMoves`, `standPortsOverChildren`),
     // and decides once which parents below the anchor tier spread their ports over their children (`parentSpreads`, architecture-2 ticket 32).
-    ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads'] : [])];
+    ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads'] : []),
+    // The centring steps of 7c to 7f write the record of their alignment targets; the route rule drops it, after the publication of 7f has
+    // compared it with its replay (architecture-2 ticket 66).
+    ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets'] : [])];
   same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
@@ -941,6 +953,8 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     else rebuildRowPaths(draft);
   }
   if (rule === 'bars') rebuildBarDrops(draft);
+  // The last centring reading that reads the record is the publication of 7f: the routed layout publishes without it (architecture-2 ticket 66).
+  if (rule === 'route') delete draft.alignmentTargets;
   draft.stage = rule;
   draft.runtime.stages.push({ stage: rule, durationMs: Date.now() - started });
   if (rule === 'bands') draft.freeze!.placement = clone(placement(draft));
