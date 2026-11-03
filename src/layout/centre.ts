@@ -871,7 +871,8 @@ function verticalTally(model: LayoutModel, group: LayoutGroup, wanted: ReadonlyM
 /**
  * The faces of a group whose aligned ports the clamp left a fraction off their feeds (ticket 65). A miss up to half a pixel counts as standing, so no
  * later step moves it, and the router draws a hair jog. A face whose wanted ports within that tolerance all miss by one shift moves by that shift as a
- * whole (its ports keep their pitch), when it stays inside its body edges and no other port of it ends a link with a corridor of its own.
+ * whole (its ports keep their pitch), when it stays inside its body edges and no other port of it ends a link with a corridor of its own, a
+ * bundle member or a held chord.
  */
 function snapAlignedFaces(model: LayoutModel, group: LayoutGroup, wanted: ReadonlyMap<string, number>): void {
   let cornered: Set<string> | undefined;
@@ -888,7 +889,9 @@ function snapAlignedFaces(model: LayoutModel, group: LayoutGroup, wanted: Readon
       if (pitch === undefined || shift === undefined || Math.abs(shift) <= EPS || shifts.some(item => Math.abs(item - shift) > EPS)) continue;
       const inset = portEndInsets(node, side, pitch);
       if (ports[0]!.anchor!.x + shift - inset.low < box.x - EPS || ports[ports.length - 1]!.anchor!.x + shift + inset.high > right(box) + EPS) continue;
-      cornered ??= new Set(model.links.filter(link => link.attachments && model.lanes.some(lane => lane.owner.kind === 'link' && lane.owner.id === link.id))
+      // A port another rule placed stays: a link with a corridor of its own, a bundle member (7e) and a held chord (`alignSide` keeps its port).
+      cornered ??= new Set(model.links.filter(link => link.attachments && (link.bundle !== undefined || isRoutedChord(model, link)
+        || model.lanes.some(lane => lane.owner.kind === 'link' && lane.owner.id === link.id)))
         .flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
       const corridors = cornered;
       if (ports.some(port => !wanted.has(portId(port.ref)) && corridors.has(portId(port.ref)))) continue;
@@ -1011,12 +1014,16 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const endMisses = misses();
   // A step that leaves fewer verticals standing than it found (ticket 65) keeps the geometry it found, clamped into its window, when that keeps more
   // and passes the same post-conditions. Without it a group that aligns K of its N feeds moves by the mean of all N, crawls by (N - K) / N of the
-  // miss, and gives up an alignment it reached when the next mean jumps: the output then depends on where the budget stops. The tally is monotone
-  // per step, and the budget bounds the passes (R4). The publication check replays this step, so it reads the same decision (R5).
+  // miss, and gives up an alignment it reached when the next mean jumps: the output then depends on where the budget stops. The kept geometry
+  // stands more than the step would, not always as many as it found (the clamp can cost one), so the budget alone bounds the passes (R4). The
+  // publication check replays this step, so it reads the same decision (R5).
   const verticalsAfter = tally?.(endMisses);
   if (verticalsBefore !== undefined && verticalsAfter !== undefined && fewerVerticals(verticalsAfter, verticalsBefore) && saved.group.bounds!.width <= high - low) {
     const afterGroup = model.groups[id]!, afterNodes = group.nodes.map(node => model.nodes[node]!);
     const kept = JSON.parse(JSON.stringify(saved)) as typeof saved;
+    // What the kept attempt writes (`packClear` can name a tier it cannot pack) belongs to the kept geometry: given back with it when it fails,
+    // kept on top of the list before the step when it stands.
+    const beforeKept = [...model.diagnostics];
     model.groups[id] = kept.group;
     for (const node of kept.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, kept.group, previous);
@@ -1027,7 +1034,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
       && riserNoDeeper(startPenetration, riserPenetrations(model, kept.group))
       && ![...chordLaneCrossings(model, kept.group)].some(pair => !startCrossings.has(pair))
       && ![...spanBreaches(model)].some(key => !startBreaches.has(key)) && !newlyNear(kept.group.nodes)) {
-      if (diagnosticsBefore) model.diagnostics = diagnosticsBefore;
+      if (diagnosticsBefore) {
+        const wrote = new Set(beforeKept);
+        model.diagnostics = [...diagnosticsBefore, ...model.diagnostics.filter(item => !wrote.has(item))];
+      }
       const left = new Set<string>(conflicts);
       for (const [key, miss] of keptMisses) if (miss > 0.5) left.add(key);
       // The kept geometry names the feeds it leaves off their x, as the step does (R6).
@@ -1040,6 +1050,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     }
     model.groups[id] = afterGroup;
     for (const node of afterNodes) model.nodes[node.id] = node;
+    model.diagnostics = beforeKept;
   }
   // A step that aligns nothing and brings no feed closer to its x moves nothing. The passes are an
   // iterative solver: the move puts the group under the mean of its feeds, the widenings below it

@@ -78,7 +78,8 @@ const DECLINES = {
   face: { code: 'CENTRE_PARENT_MOVE_HELD_FACE', text: 'its face holds a port that stands on a corridor of its own, which a move would pack again' },
 } as const;
 function name(model: LayoutModel, link: LayoutLink, why: keyof typeof DECLINES = 'reach'): void {
-  // A routed chord keeps its straight segment whatever its ports do: it has no jog to name (ticket 65).
+  // A routed chord keeps its straight segment whatever its ports do, and a chord takes any angle (routed-chords.md, Section 4): a port that does not
+  // stand over its child leaves no jog to name (ticket 65). The centring's own warning names a feed its step leaves off its x.
   if (isRoutedChord(model, link)) return;
   const { code, text } = DECLINES[why];
   if (model.diagnostics.some(d => d.code === code && d.owners?.some(owner => 'id' in owner && owner.id === link.id))) return;

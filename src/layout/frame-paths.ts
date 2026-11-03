@@ -794,17 +794,24 @@ export function chordNearPairs(model: LayoutModel, moved: ReadonlySet<string>): 
     chords.push({ link, segment: { from: chord.from, to: chord.to, owner: { ...link.owner } }, ends, touched: [...ends].some(node => moved.has(node)) });
   }
   const limit = STRAIGHT_PATH_CLEARANCE.path - PLACEMENT_EPS, result = new Set<string>();
-  for (const [index, one] of chords.entries()) {
-    for (const other of chords.slice(index + 1)) {
+  // A pair whose boxes stand farther apart than the clearance and the strokes cannot be near: the boxes are read first, the distances after.
+  const reach = (link: LayoutLink): number => limit + linkStrokeWidth(link);
+  const box = (segment: PathSegment, grow: number): Rect => ({ x: Math.min(segment.from.x, segment.to.x) - grow, y: Math.min(segment.from.y, segment.to.y) - grow,
+    width: Math.abs(segment.to.x - segment.from.x) + 2 * grow, height: Math.abs(segment.to.y - segment.from.y) + 2 * grow });
+  const apart = (a: Rect, b: Rect): boolean => a.x > b.x + b.width || b.x > a.x + a.width || a.y > b.y + b.height || b.y > a.y + a.height;
+  for (let index = 0; index < chords.length; index++) {
+    const one = chords[index]!, around = box(one.segment, reach(one.link));
+    for (let at = index + 1; at < chords.length; at++) {
+      const other = chords[at]!;
       if (!one.touched && !other.touched) continue;
-      if (strictCrossing(one.segment, other.segment)) continue;
+      if (apart(around, box(other.segment, linkStrokeWidth(other.link))) || strictCrossing(one.segment, other.segment)) continue;
       if (segmentDistance(one.segment, other.segment) - (linkStrokeWidth(one.link) + linkStrokeWidth(other.link)) / 2 < limit) {
         result.add(one.link.id < other.link.id ? `${one.link.id}|${other.link.id}` : `${other.link.id}|${one.link.id}`);
       }
     }
     for (const node of one.touched ? Object.keys(model.nodes) : moved) {
       const item = model.nodes[node];
-      if (one.ends.has(node) || !item?.bounds) continue;
+      if (one.ends.has(node) || !item?.bounds || apart(around, item.bounds)) continue;
       if (segmentRectDistance(one.segment, item.bounds) - linkStrokeWidth(one.link) / 2 < limit) result.add(`${one.link.id}@${node}`);
     }
   }
