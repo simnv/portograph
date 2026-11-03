@@ -1,0 +1,44 @@
+# Expected: architecture-2 ticket 56 (not reproducible; the review finding of ticket 54). A jogged drop under a group title stays in
+# its tier gap: `r1 -> s1` (link-5) inside the canton `west` has its ends 1 px apart, so the tier-gap plan gives it one vertical with
+# a jog, and the jog stands one group-edge margin (10.75 px) above `clients`, out of its box and out of its title band. Its two verticals
+# cross a title band only at the x of a port leg, which the title already avoids; `s0 -> v0` and `s3 -> v3` (6 px apart) jog the same
+# way above `sinks`. Every title is slid clear (`crossedBy: []`), G3 passes, and no `ROUTE_TITLE_DETOUR` names the jog beside the
+# `clients` title: a turn of a tier-gap run is placement's, not the router's (on main the warning named link-5). Test-only input owned
+# by architecture-2 ticket 56; test/pipeline/jogged-drop-title.test.ts reads it.
+# The feed order is off (architecture-2 ticket 25, `layout.feedOrder: false`): the feeds would take the near-vertical pair apart.
+portograph: 2
+layout: { feedOrder: false }
+groups:
+  west: { label: West }
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, canton: west, label: Site }
+  clients: { tier: 2, canton: west, label: Clients }
+  sinks: { tier: 3, label: Sinks }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  r0: { group: site, class: router }
+  r1: { group: site, class: router }
+  r2: { group: site, class: router }
+  s0: { group: clients, class: switch }
+  s1: { group: clients, class: switch }
+  s2: { group: clients, class: switch }
+  s3: { group: clients, class: switch }
+  v0: { group: sinks, class: server }
+  v1: { group: sinks, class: server }
+  v2: { group: sinks, class: server }
+  v3: { group: sinks, class: server }
+links:
+  - [isp, r0, { route: orthogonal }]
+  - [isp, r1, { route: orthogonal }]
+  - [isp, r2, { route: orthogonal }]
+  - [r0, s2, { class: physical, route: orthogonal }]
+  - [r1, s1, { class: physical, route: orthogonal }]
+  - [r1, s2, { class: physical, route: orthogonal }]
+  - [r2, s0, { class: physical, route: orthogonal }]
+  - [r2, s3, { class: physical, route: orthogonal }]
+  - [s0, v0, { route: orthogonal }]
+  - [s1, v1, { route: orthogonal }]
+  - [s2, v2, { route: orthogonal }]
+  - [s3, v3, { route: orthogonal }]
+  - [s1, v0, { route: orthogonal }]
+  - [s2, v3, { route: orthogonal }]

@@ -94,6 +94,12 @@ export interface RoutePlan {
   stems: StemReservation[];
   /** libavoid parameters for this diagram (`routeParameters`). */
   parameters: Record<string, number>;
+  /**
+   * The turns inside each tier-gap run this stage stitches unchanged (a row's two ends, a jog, a Z part's middle drop), per link in model
+   * order. Placement planned them, so none of them is a router detour (`ROUTE_TITLE_DETOUR`, architecture-2 ticket 56). A link with no
+   * stitched run has no entry.
+   */
+  plannedTurns: Map<string, Point[]>;
 }
 
 /** Prefer fewer bends; libavoid stays deterministic for any fixed parameter set. */
@@ -363,7 +369,9 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
     const key = JSON.stringify(plan.exclusions);
     batches.set(key, [...(batches.get(key) ?? []), plan.link]);
   }
-  return { remainders, overlay, links, obstacles, stems, parameters: routeParameters(model),
+  // A run's inner points are its turns: it starts and ends on a tip or a mouth, where it continues its stem or its lane.
+  const plannedTurns = new Map([...gapRuns].map(([link, runs]) => [link, [...runs.values()].flatMap(segments => segments.slice(1).map(segment => ({ ...segment.from })))]));
+  return { remainders, overlay, links, obstacles, stems, parameters: routeParameters(model), plannedTurns,
     batches: [...batches.values()].map((ids, index) => ({ id: `batch-${index}`, links: ids })) };
 }
 
