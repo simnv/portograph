@@ -776,28 +776,55 @@ const CHORD_STAGES = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'e
  * the replay stands on the model itself and takes the readings of the first one that did, so they are read once per check and not once per replay.
  */
 interface BaseReadings { texts: ReadonlyMap<string, string>; held?: Set<string>; breached?: Set<string> }
-function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
-  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base));
+/**
+ * The chord readings a step that stood took after it moved (architecture-2 ticket 62): the overlay links with a straight chord and the groups a foreign drop
+ * would run along. The producer loop hands them to the next step as its readings before: nothing between the two writes the model when the step stood, no
+ * group between them was cleared (`packClear`), and the rebuild of the next group's nodes leaves their text as it was. The step tests that last part; the
+ * loop drops the value for the rest.
+ */
+interface CarriedReadings { held: Set<string>; breached: Set<string> }
+type GroupStep = { unresolved: Set<string>; group: LayoutGroup; carry?: CarriedReadings };
+const carryCache = readCache('centreCarry');
+/** The groups a foreign drop would run along, by id. */
+const breachedIds = (model: LayoutModel): Set<string> => new Set([...keepOutShifts(model).keys()].map(item => item.id));
+function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
+  return withStepLinkKinds(model, () => centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base, carried));
 }
-function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings): { unresolved: Set<string>; group: LayoutGroup } {
+function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
   if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   const group = model.groups[id]!;
+  const unbuilt = carried === undefined ? undefined : group.nodes.map(node => JSON.stringify(model.nodes[node]));
   // `moveGroup` leaves pill bounds behind, and the chord reads them: both readings are taken on rebuilt nodes.
   rebuildNodeGeometry(model, group.nodes, 'current');
-  const standing = base !== undefined && group.nodes.every(node => JSON.stringify(model.nodes[node]) === base.texts.get(node));
-  const held = standing && base.held ? base.held : straightChordIds(model), breached = standing && base.breached ? base.breached : new Set([...keepOutShifts(model).keys()].map(item => item.id));
-  if (standing) { base.held = held; base.breached = breached; }
+  let held: Set<string>, breached: Set<string>;
+  if (carried !== undefined && group.nodes.every((node, index) => JSON.stringify(model.nodes[node]) === unbuilt![index])) {
+    // Under `LayoutOptions.checkCaches` both readings are taken again and must be the carried ones.
+    try {
+      held = carryCache.hit(model, carried.held, () => straightChordIds(model));
+      breached = carryCache.hit(model, carried.breached, () => breachedIds(model));
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)} (group ${id}, tier ${tier})`, { cause: error });
+    }
+    attemptCounters.centreCarry.carried++;
+  } else {
+    if (carried !== undefined) carryCache.miss();
+    if (base === undefined) attemptCounters.centreCarry.fresh++;
+    const standing = base !== undefined && group.nodes.every(node => JSON.stringify(model.nodes[node]) === base.texts.get(node));
+    held = standing && base.held ? base.held : straightChordIds(model); breached = standing && base.breached ? base.breached : breachedIds(model);
+    if (standing) { base.held = held; base.breached = breached; }
+  }
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
-  const stands = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) && [...keepOutShifts(model).keys()].every(item => breached.has(item.id));
+  const after = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) ? breachedIds(model) : undefined;
+  const stands = after !== undefined && [...after].every(item => breached.has(item));
   tapVerdict('centreGroupStep', () => `${stands} ${now.size}/${held.size}`);
-  if (stands) return result;
+  if (stands) return { ...result, carry: { held: now, breached: after } };
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
   packClear(model, context, tier, snapshot.group, previous);
@@ -1099,6 +1126,8 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
     // A pass whose steps move geometry that a later stage of the same pass moves back is not at a
     // fixed point: the net change is nil, the work is not. Every step is measured on its own.
     let stepped = false;
+    // The readings the last step left, while they still describe the model (`CarriedReadings`); a pass starts without them.
+    let carry: CarriedReadings | undefined;
     for (const { tier, authority } of context.steps) {
       const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
       const tail = tailReservation(model, context, tier, order);
@@ -1109,12 +1138,14 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
         // them. A group this step does not centre still yields the space a widened neighbour took.
         if (model.document.groups[id]!.shape === 'bar' || !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === id)) {
           packClear(model, context, tier, group, previous);
+          carry = undefined;
           // A bar stands where 7d will shape it, which may move no other group: the groups after it clear the extent its span gives it, not the box it has now (ticket 19).
           previous = standingBox(model, group);
           continue;
         }
         const start = geometry(model);
-        const result = centreGroupStep(model, context, tier, list, id, previous, true, tail);
+        const result = centreGroupStep(model, context, tier, list, id, previous, true, tail, undefined, carry);
+        carry = result.carry;
         if (!stepped && geometry(model).some((value, i) => Math.abs(value - start[i]!) > 0.5)) stepped = true;
         if (result.unresolved.size) unresolved.add(id);
         previous = result.group;
