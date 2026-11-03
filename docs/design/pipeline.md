@@ -877,6 +877,21 @@ by one shift moves by that shift (its ports keep their pitch), when it stays ins
 with a corridor of its own, a bundle member or a held chord. Before the freeze a frame chord takes the parent-port move as an orthogonal feed does (it already has its
 pinned path then); a frozen chord keeps its recorded wall move, and a routed chord names no jog.
 
+**The alignment-target record** (architecture-2 ticket 66, `LayoutModel.alignmentTargets`). Each step writes, at its end and on every exit,
+what it did with each wanted port, per node face (`faceKey`) in port-key order: `kept` (it stands), `grown` (the body grew toward it, or it
+stood and a later step moved it off; `extent` is the body's room from the far end's x) or `declined` (with `reason` and `by`). The far end
+is a port id or `lane:<id>`, never an x, so the record moves with the geometry. The kept branch above keeps its geometry only when, beside
+ticket 65's post-conditions, it leaves every overlay link that the step's own geometry draws straight (`straightChordIds`, by identity, not
+by count as ticket 75's guard reads it) still straight. A refused keep falls through to the step's geometry and declines the targets only
+the kept geometry stands: reason `riser`, `lane-crossing`, `span`, `chord-clearance` or `overlay-straight`, by the first key in key order.
+A decline is final for the placement attempt: the tally counts it neither before nor after, so no later pass tries the keep again. The
+centre rule creates the record `{}` at its input; it is read and written through 7f (the replays of the region too) and dropped after the
+last centring reading of 7f (`refreshAlignmentDeclines`), so a published layout does not carry it. From the centre rule's output to 7f an
+absent record is refused. The publication check refuses a malformed record and names a face where its own replay declines a target the
+record does not (`alignment-targets-differ`); `kept` and `grown` are history a later move leaves behind and are not compared. A guard on
+port order (G5) was measured and dropped: on the three sheets it changed it gave back the two bends ticket 65 won, because the only kept
+geometry that stands them turns another node's ports out of order (ticket 77 owns the face order).
+
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
 Those groups move right. This includes a group the step does not centre. It also includes a group
 whose own window is too narrow to hold it.
