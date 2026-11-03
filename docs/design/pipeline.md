@@ -886,9 +886,9 @@ by count as ticket 75's guard reads it) still straight. A refused keep falls thr
 the kept geometry stands: reason `riser`, `lane-crossing`, `span`, `chord-clearance` or `overlay-straight`, by the first key in key order.
 A decline is final for the placement attempt: the tally counts it neither before nor after, so no later pass tries the keep again. The
 centre rule creates the record `{}` at its input; it is read and written through 7f (the replays of the region too), published with the
-output of 7f, and dropped by the route rule, so a routed layout does not carry it. A published model of 7c to 7f without the record, a
-routed one with it, and a decline in a model before the output of 7f (no producer before 7f runs the tally) are refused, as is a malformed
-record. At the output of 7f the publication check names a face where its replay declines a target the record does not
+output of 7f, and dropped by the route rule, so a routed layout does not carry it. A routed model with the record and a decline in a model
+before the output of 7f (no producer before 7f runs the tally) are refused, as is a malformed record. A model whose centre rule ran no
+producer (a hand-made transaction) has none: a later run records and declines nothing and warns `ALIGNMENT_TARGETS_UNDECIDED`. At the output of 7f the publication check names a face where its replay declines a target the record does not
 (`alignment-targets-differ`), and no diagnostic excuses it; `kept` and `grown` are history a later move leaves behind and are not compared. A guard on
 port order (G5) was measured and dropped: on the three sheets it changed it gave back the two bends ticket 65 won, because the only kept
 geometry that stands them turns another node's ports out of order (ticket 77 owns the face order).

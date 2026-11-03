@@ -621,8 +621,8 @@ export interface LayoutModel {
    * and a later step moved it off; `extent` is the room the body needs), `declined` (a guard refused to keep it, with `reason` and `by`). A declined
    * target is final for the placement attempt: the vertical tally of ticket 65 no longer counts it, so no later pass tries to keep it again (R1).
    * Created `{}` by the centre rule at its input stage, read and written through 7f, compared at the publication of 7f, and dropped by the route
-   * rule, so a routed layout does not carry it. Absent = not decided (a model before 7c, a routed model); a published model of 7c to 7f without
-   * it, or a routed one with it, is refused. An absent face key = the face had no wanted port in any step; `[]` = the face was stepped and has
+   * rule, so a routed layout does not carry it. Absent = not decided (a model before 7c, a routed model, or a hand-made centre transaction: a
+   * later run of the passes records and declines nothing and warns `ALIGNMENT_TARGETS_UNDECIDED`); a routed model with it is refused. An absent face key = the face had no wanted port in any step; `[]` = the face was stepped and has
    * no target in any state now (its feeds yielded). `kept` and `grown` are where the targets stood when the last step on the group ended, read
    * on the geometry that step left (a `grown` extent is read where the body grew, before the row pack and the clamp). The publication check
    * refuses a malformed record and, at the output of 7f, names a face where its replay declines a target the record does not

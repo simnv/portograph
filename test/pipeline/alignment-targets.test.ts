@@ -3,12 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import type { AlignmentTarget } from '../../src/model/layout.js';
-import { alignmentTargetsFault, declinedTargets, sameDeclines } from '../../src/layout/alignment-targets.js';
-import { centre, publishedCentreViolations } from '../../src/layout/centre.js';
+import { alignmentTargetsFault, declinedTargets, sameDeclines, targetTap } from '../../src/layout/alignment-targets.js';
+import { centre, centreDraft, createCentreBudget, publishedCentreViolations } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
-import { verdictTap } from '../../src/layout/objective.js';
 import { rows } from '../../src/layout/rows.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -28,12 +27,12 @@ const reversed = (text: string, key: 'links' | 'nodes'): string => {
   while (end < lines.length && lines[end]!.startsWith('  ')) end++;
   return [...lines.slice(0, start + 1), ...lines.slice(start + 1, end).reverse(), ...lines.slice(end)].join('\n');
 };
-/** Runs `work` with a tap on the verdicts, and returns them with its result. */
+/** Runs `work` with a tap on the record's events, and returns them with its result. */
 async function tapped<T>(work: () => Promise<T>): Promise<{ result: T; verdicts: [string, string][] }> {
   const verdicts: [string, string][] = [];
-  const sink = verdictTap.sink;
-  verdictTap.sink = (name, value) => { verdicts.push([name, value]); };
-  try { return { result: await work(), verdicts }; } finally { if (sink === undefined) delete verdictTap.sink; else verdictTap.sink = sink; }
+  const sink = targetTap.sink;
+  targetTap.sink = (name, value) => { verdicts.push([name, value]); };
+  try { return { result: await work(), verdicts }; } finally { if (sink === undefined) delete targetTap.sink; else targetTap.sink = sink; }
 }
 /** The model 7f publishes, with its record, as its draft stands at the end of the rule (stage `bundles`; the rule then marks it `bands`). */
 const atDrop = (verdicts: [string, string][]): LayoutModel => JSON.parse(verdicts.filter(([name]) => name === 'alignmentTargets').at(-1)![1]) as LayoutModel;
@@ -105,18 +104,22 @@ describe('a kept vertical leaves a straight overlay straight (architecture-2 tic
     expect(alignmentTargetsFault({ ...draft, stage: 'route' })).toMatch(/a record at stage route/);
     const { alignmentTargets: _record, ...bare } = draft;
     void _record;
-    expect(alignmentTargetsFault({ ...bare, stage: 'centre' } as LayoutModel)).toMatch(/undecided at stage centre/);
     expect(alignmentTargetsFault({ ...bare, stage: 'route' } as LayoutModel)).toBeUndefined();
   }, 120000);
-  it('refuses an absent record from 7c to 7f', async () => {
+  it('declines nothing on an absent record, and the producer names it', async () => {
     const { verdicts } = await tapped(() => run(text));
     const model = atDrop(verdicts);
-    expect(model.stage).toBe('bundles');
     delete model.alignmentTargets;
-    expect(() => declinedTargets(model, Object.keys(model.nodes))).toThrow(/undecided at stage bundles/);
-    expect(() => declinedTargets({ ...model, stage: 'bands' }, Object.keys(model.nodes))).toThrow(/undecided at stage bands/);
-    // A routed model (the route rule drops the record): absent says nothing is declined.
-    expect(declinedTargets({ ...model, stage: 'route' }, Object.keys(model.nodes)).size).toBe(0);
+    expect(declinedTargets(model, Object.keys(model.nodes)).size).toBe(0);
+    expect(alignmentTargetsFault(model)).toBeUndefined();
+    // A hand-made centre transaction leaves no record: a later run of the passes records none and says so.
+    const bare = centre(flanks(lanes(rows(await placed(text)))));
+    const { alignmentTargets: _record, ...rest } = bare;
+    void _record;
+    const later = JSON.parse(JSON.stringify({ ...rest, stage: 'bars' })) as LayoutModel;
+    centreDraft(later, createCentreBudget());
+    expect(later.alignmentTargets).toBeUndefined();
+    expect(later.diagnostics.filter(item => item.code === 'ALIGNMENT_TARGETS_UNDECIDED')).toHaveLength(1);
   }, 120000);
 });
 

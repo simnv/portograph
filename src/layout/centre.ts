@@ -34,7 +34,7 @@ import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
 import { chordKind, chordNearPairs, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 import { readCache } from '../model/read-cache.js';
-import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, owesVertical, sameDeclines, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
+import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, tapTarget, owesVertical, sameDeclines, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
 import { faceKey } from './turn-order.js';
 
 export interface CentreBudget { remaining: number; passes: number }
@@ -1081,7 +1081,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     snapAlignedFaces(model, kept.group, wanted);
     const keptMisses = misses();
     const refusal = fewerVerticals(verticalsAfter, tally!(keptMisses)) ? keptRefusal(kept.group, afterGroup, afterNodes) : undefined;
-    tapVerdict('keptBranch', () => `${id} ${warn ? `pass ${stepPass}` : 'replay'} ${refusal === undefined ? 'no-gain' : refusal === null ? 'kept' : `${refusal.reason} ${refusal.by}`}`);
+    tapTarget('keptBranch', () => `${id} ${warn ? `pass ${stepPass}` : 'replay'} ${refusal === undefined ? 'no-gain' : refusal === null ? 'kept' : `${refusal.reason} ${refusal.by}`}`);
     if (refusal === null) {
       if (diagnosticsBefore) {
         const wrote = new Set(beforeKept);
@@ -1151,7 +1151,14 @@ export function stepReader(model: LayoutModel, context: CentreContext): StepRead
 export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   // The record of the alignment targets starts empty at the centre rule's input (architecture-2 ticket 66); every later run of the passes reads and
   // writes the one record (a replay of 7f too), and 7f drops it after its last centring reading.
-  if (model.alignmentTargets === undefined && model.stage === CENTRE_RULE_INPUT) model.alignmentTargets = {};
+  // A later run on a model whose centre rule ran no producer (a hand-made transaction) records no target and declines none, and says so (R6),
+  // as the aligned extents do.
+  if (model.alignmentTargets === undefined) {
+    if (model.stage === CENTRE_RULE_INPUT) model.alignmentTargets = {};
+    else if (!model.diagnostics.some(d => d.code === 'ALIGNMENT_TARGETS_UNDECIDED')) {
+      placementWarning(model, 'ALIGNMENT_TARGETS_UNDECIDED', `The centre rule recorded no alignment targets; this centring at stage ${model.stage} records none and declines none for good.`, []);
+    }
+  }
   // A move a replay before took at a frame-column wall is read again where the model stands now: a wall that no longer holds gives the move back before the
   // passes centre on it (architecture ticket 15, follow-up).
   withdrawRecorded(model);

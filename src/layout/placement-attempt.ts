@@ -1,4 +1,4 @@
-import { tapVerdict } from './objective.js';
+import { tapTarget } from './alignment-targets.js';
 import type { Diagnostic, DirectMemberReason, FanFallbackReason, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
 import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
@@ -488,6 +488,6 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // The same for an alignment a step could not make: a link that stands vertical on that geometry is no longer named (architecture-2 ticket 32).
   refreshAlignmentDeclines(draft);
   // The model 7f publishes, with its record of the alignment targets (architecture-2 ticket 66), for a test; the route rule drops the record.
-  tapVerdict('alignmentTargets', () => JSON.stringify(draft));
+  tapTarget('alignmentTargets', () => JSON.stringify(draft));
   note('diagnostics', 'done');
 }

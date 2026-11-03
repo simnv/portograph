@@ -12,7 +12,7 @@ import { chordKind, isRoutedChord } from './frame-paths.js';
 
 /** The reasons a step declines a target, in the order the kept branch reads them: ticket 65's post-conditions, then the overlay guard. */
 export const ALIGNMENT_DECLINE_REASONS: readonly AlignmentDeclineReason[] = ['riser', 'lane-crossing', 'span', 'chord-clearance', 'overlay-straight'];
-/** The model stages at which the record must be there: from the centre rule's output to the output of 7f (the bands rule); the route rule drops it. */
+/** The model stages at which the record may be there: from the centre rule's output to the output of 7f (the bands rule); the route rule drops it. */
 const RECORD_STAGES: readonly string[] = ['centre', 'bars', 'bundles', 'bands'];
 /** The finding of the publication check: a face where the replay declines a target the record does not. */
 export const ALIGNMENT_TARGETS_DIFFER = 'alignment-targets-differ';
@@ -51,15 +51,22 @@ export function feedFar(model: LayoutModel, feed: Feed): string {
 }
 
 /**
- * The wanted ports of `nodes` whose target is declined. From the centre rule's output to the input of 7f the record must be there: a model
- * without it is refused (R6). Before 7c and after 7f (the record is dropped) absent says no target is declined.
+ * Test only: a sink for the record's events (the kept branch's verdict, the record 7f publishes). Unset in production; the layout never reads it.
+ * Its own tap, not `verdictTap`: these are no judges, and the verdict digests of the judges must not move for them.
+ */
+export const targetTap: { sink?: (name: string, value: string) => void } = {};
+/** Gives an event to the test sink, when there is one. `value` is built only then. */
+export function tapTarget(name: string, value: () => string): void {
+  if (targetTap.sink !== undefined) targetTap.sink(name, value());
+}
+
+/**
+ * The wanted ports of `nodes` whose target is declined. Absent says no target is declined: a model before 7c, a routed model, or one whose
+ * centre rule ran no producer (a hand-made transaction; `centreDraft` names that case, `ALIGNMENT_TARGETS_UNDECIDED`).
  */
 export function declinedTargets(model: LayoutModel, nodes: readonly string[]): Set<string> {
   const record = model.alignmentTargets;
-  if (record === undefined) {
-    if (RECORD_STAGES.includes(model.stage)) throw new Error(`The alignment targets are undecided at stage ${model.stage}`);
-    return new Set();
-  }
+  if (record === undefined) return new Set();
   const result = new Set<string>();
   for (const node of nodes) for (const side of ['top', 'bottom', 'left', 'right'] as const) {
     for (const entry of record[faceKey(node, side)] ?? []) if (entry.state === 'declined') result.add(entry.port);
@@ -148,13 +155,13 @@ export function sameDeclines(stored: readonly AlignmentTarget[] | undefined, rep
 }
 
 /**
- * The first fault of a stored record, or undefined (R5): a record outside the stages it lives at, or none inside them; a face of a node in the model, a port on that face, a link that ends at it, a far end
+ * The first fault of a stored record, or undefined (R5): a record outside the stages it lives at; a face of a node in the model, a port on that face, a link that ends at it, a far end
  * that exists (the link's other port, or a lane of the link), the enum values and the fields each state carries, port-key order and no repeat.
  */
 export function alignmentTargetsFault(model: LayoutModel): string | undefined {
   const record = model.alignmentTargets;
-  // The record lives from the centre rule's output to the output of 7f (R6: absent there is undecided); before and after it is no record of anything.
-  if (record === undefined) return RECORD_STAGES.includes(model.stage) ? `the record is undecided at stage ${model.stage}` : undefined;
+  // The record lives from the centre rule's output to the output of 7f; before and after it is no record of anything. Absent is undecided.
+  if (record === undefined) return undefined;
   if (!RECORD_STAGES.includes(model.stage)) return `a record at stage ${model.stage}`;
   if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
   const links = new Map(model.links.map(link => [link.id, link]));
