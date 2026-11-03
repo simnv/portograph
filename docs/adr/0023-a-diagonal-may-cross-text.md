@@ -68,7 +68,8 @@ its `crossedBy` links as consumers of its router obstacle and its reservation (`
 `reservations.ts`), the same rule as G3, so a planned leg through a title is not refused; the router
 reads `crossedBy` and never adds to it. For every other link the title stays a router obstacle and a
 reservation, and a routed link that turns beside a title it does not cross is named
-(`ROUTE_TITLE_DETOUR`, warning). Letting such a residual cross with the halo is a later slice.
+(`ROUTE_TITLE_DETOUR`, warning; a turn of a planned tier-gap run is no detour and is not named,
+ticket 56). Letting such a residual cross with the halo is a later slice.
 
 This replaces the 7f re-check of the held chords of ticket 162 (`titleCrowdedChords`, the retry reason
 `title`, `STRAIGHT_LINK_TITLE`): a chord that 7f turns onto an axis under a title keeps its chord, and the

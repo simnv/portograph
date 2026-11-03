@@ -1,0 +1,38 @@
+# Expected: architecture-2 ticket 56 (the review finding of ticket 54; every jog stays e off every group box by construction). `access` spans two ranks, so it is a frame
+# of the cells `access#0` and `edge#1`; its title stands on the top edge of `access#0`. `r1 -> s1` (link-2) has its ends 1 px apart:
+# one vertical with a jog, the jog one group-edge margin (10.75 px) above `access#0`, out of its box and out of its title band, so its
+# verticals cross the band only at the x of the port leg. Every title is slid clear (`crossedBy: []`), G3 passes, and no
+# `ROUTE_TITLE_DETOUR` names the planned jog beside the frame title (on main the warning named link-2). Test-only input owned by
+# architecture-2 ticket 56; test/pipeline/jogged-drop-title.test.ts reads it.
+# The feed order is off (architecture-2 ticket 25, `layout.feedOrder: false`): the feeds would take the near-vertical pair apart.
+portograph: 2
+layout: { feedOrder: false }
+groups:
+  core: { tier: 0, label: Core }
+  access: { tier: 1, label: Acc }
+  edge: { parent: access, label: Edge }
+  servers: { tier: 3, label: Servers }
+nodes:
+  r0: { group: core, class: router }
+  r1: { group: core, class: router }
+  r2: { group: core, class: router }
+  s0: { group: access, class: switch }
+  s1: { group: access, class: switch }
+  s2: { group: access, class: switch }
+  s3: { group: access, class: switch }
+  e0: { group: edge, class: switch }
+  v0: { group: servers, class: server }
+  v1: { group: servers, class: server }
+  v2: { group: servers, class: server }
+  v3: { group: servers, class: server }
+links:
+  - [r0, s2, { class: physical, route: orthogonal }]
+  - [r1, s1, { class: physical, route: orthogonal }]
+  - [r1, s2, { class: physical, route: orthogonal }]
+  - [r2, s0, { class: physical, route: orthogonal }]
+  - [r2, s3, { class: physical, route: orthogonal }]
+  - [s0, e0, { route: orthogonal }]
+  - [e0, v0, { route: orthogonal }]
+  - [e0, v1, { route: orthogonal }]
+  - [e0, v2, { route: orthogonal }]
+  - [e0, v3, { route: orthogonal }]
