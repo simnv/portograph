@@ -487,8 +487,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   refreshWindowDeclines(draft);
   // The same for an alignment a step could not make: a link that stands vertical on that geometry is no longer named (architecture-2 ticket 32).
   refreshAlignmentDeclines(draft);
-  // The last centring reading of 7f is above: the record of the alignment targets ends here, so the layout publishes without it (architecture-2 ticket 66).
+  // The model 7f publishes, with its record of the alignment targets (architecture-2 ticket 66), for a test; the route rule drops the record.
   tapVerdict('alignmentTargets', () => JSON.stringify(draft));
-  delete draft.alignmentTargets;
   note('diagnostics', 'done');
 }

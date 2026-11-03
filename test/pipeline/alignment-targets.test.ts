@@ -35,7 +35,7 @@ async function tapped<T>(work: () => Promise<T>): Promise<{ result: T; verdicts:
   verdictTap.sink = (name, value) => { verdicts.push([name, value]); };
   try { return { result: await work(), verdicts }; } finally { if (sink === undefined) delete verdictTap.sink; else verdictTap.sink = sink; }
 }
-/** The 7f model just before the record is dropped (the last centring reading of 7f has run). */
+/** The model 7f publishes, with its record, as its draft stands at the end of the rule (stage `bundles`; the rule then marks it `bands`). */
 const atDrop = (verdicts: [string, string][]): LayoutModel => JSON.parse(verdicts.filter(([name]) => name === 'alignmentTargets').at(-1)![1]) as LayoutModel;
 const declined = (model: LayoutModel): { face: string; entry: AlignmentTarget }[] =>
   Object.entries(model.alignmentTargets!).flatMap(([face, list]) => list.filter(entry => entry.state === 'declined').map(entry => ({ face, entry })));
@@ -96,14 +96,27 @@ describe('a kept vertical leaves a straight overlay straight (architecture-2 tic
     expect(sameDeclines([kept], [{ ...kept, state: 'grown', extent: { low: -10, high: 10 } }])).toBe(true);
     expect(sameDeclines(undefined, undefined)).toBe(true);
   }, 120000);
+  it('refuses a record at a stage it does not live at, and a decline before the output of 7f', async () => {
+    const { verdicts } = await tapped(() => run(text));
+    const draft = atDrop(verdicts);
+    // The draft of 7f stands at `bundles` until the rule ends; what it publishes stands at `bands`, and there a decline is the record's own.
+    expect(alignmentTargetsFault({ ...draft, stage: 'bands' })).toBeUndefined();
+    expect(alignmentTargetsFault(draft)).toMatch(/a decline at stage bundles, before 7f/);
+    expect(alignmentTargetsFault({ ...draft, stage: 'route' })).toMatch(/a record at stage route/);
+    const { alignmentTargets: _record, ...bare } = draft;
+    void _record;
+    expect(alignmentTargetsFault({ ...bare, stage: 'centre' } as LayoutModel)).toMatch(/undecided at stage centre/);
+    expect(alignmentTargetsFault({ ...bare, stage: 'route' } as LayoutModel)).toBeUndefined();
+  }, 120000);
   it('refuses an absent record from 7c to 7f', async () => {
     const { verdicts } = await tapped(() => run(text));
     const model = atDrop(verdicts);
     expect(model.stage).toBe('bundles');
     delete model.alignmentTargets;
     expect(() => declinedTargets(model, Object.keys(model.nodes))).toThrow(/undecided at stage bundles/);
-    // After 7f (the record is dropped) absent says nothing is declined.
-    expect(declinedTargets({ ...model, stage: 'bands' }, Object.keys(model.nodes)).size).toBe(0);
+    expect(() => declinedTargets({ ...model, stage: 'bands' }, Object.keys(model.nodes))).toThrow(/undecided at stage bands/);
+    // A routed model (the route rule drops the record): absent says nothing is declined.
+    expect(declinedTargets({ ...model, stage: 'route' }, Object.keys(model.nodes)).size).toBe(0);
   }, 120000);
 });
 
@@ -115,8 +128,8 @@ describe('the shape of the alignment-target record', () => {
     const faces = Object.entries(model.alignmentTargets!).filter(([, list]) => list.length > 0);
     expect(faces.length).toBeGreaterThan(0);
     const [face, list] = faces[0]!;
-    const forge = (edit: (record: Record<string, AlignmentTarget[]>, entries: AlignmentTarget[]) => void): string | undefined => {
-      const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    const forge = (edit: (record: Record<string, AlignmentTarget[]>, entries: AlignmentTarget[]) => void, stage = model.stage): string | undefined => {
+      const copy = { ...JSON.parse(JSON.stringify(model)) as LayoutModel, stage };
       edit(copy.alignmentTargets!, copy.alignmentTargets![face]!);
       return alignmentTargetsFault(copy);
     };
@@ -126,7 +139,7 @@ describe('the shape of the alignment-target record', () => {
     expect(forge((_, entries) => { entries[0]!.far = entries[0]!.far.startsWith('lane:') ? 'lane:no-such-lane' : entries[0]!.port; })).toMatch(/far end|no lane/);
     expect(forge((_, entries) => { (entries[0] as { owes: string }).owes = 'some'; })).toMatch(/owes/);
     expect(forge((_, entries) => { (entries[0] as { state: string }).state = 'maybe'; delete entries[0]!.extent; })).toMatch(/state/);
-    expect(forge((_, entries) => { entries[0]!.state = 'declined'; delete entries[0]!.extent; })).toMatch(/without its reason/);
+    expect(forge((_, entries) => { entries[0]!.state = 'declined'; delete entries[0]!.extent; }, 'bands')).toMatch(/without its reason/);
     expect(forge((_, entries) => { entries[0]!.state = 'grown'; delete entries[0]!.extent; })).toMatch(/without its extent/);
     expect(forge((_, entries) => { entries.push({ ...entries[0]! }); })).toMatch(/out of port-key order or repeated/);
     expect(forge((_, entries) => { entries[0]!.pass = -1; })).toMatch(/pass/);

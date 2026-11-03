@@ -12,8 +12,10 @@ import { chordKind, isRoutedChord } from './frame-paths.js';
 
 /** The reasons a step declines a target, in the order the kept branch reads them: ticket 65's post-conditions, then the overlay guard. */
 export const ALIGNMENT_DECLINE_REASONS: readonly AlignmentDeclineReason[] = ['riser', 'lane-crossing', 'span', 'chord-clearance', 'overlay-straight'];
-/** The model stages at which the record must be there: from the centre rule's output to the input of 7f (the bands rule). */
-const RECORD_STAGES: readonly string[] = ['centre', 'bars', 'bundles'];
+/** The model stages at which the record must be there: from the centre rule's output to the output of 7f (the bands rule); the route rule drops it. */
+const RECORD_STAGES: readonly string[] = ['centre', 'bars', 'bundles', 'bands'];
+/** The finding of the publication check: a face where the replay declines a target the record does not. */
+export const ALIGNMENT_TARGETS_DIFFER = 'alignment-targets-differ';
 
 /** What one step learned about its targets, read by the writer at the step's end on whatever geometry the step leaves. */
 export interface TargetNotes {
@@ -66,8 +68,9 @@ export function declinedTargets(model: LayoutModel, nodes: readonly string[]): S
 }
 
 const byPort = (a: AlignmentTarget, b: AlignmentTarget): number => (a.port < b.port ? -1 : a.port > b.port ? 1 : 0);
-/** An entry without its pass: what a replay must write again. */
-const decided = (entry: AlignmentTarget): string => JSON.stringify({ ...entry, pass: 0 });
+/** An entry without its pass, field by field (no key order): what a replay must write again. */
+const decided = (entry: AlignmentTarget): string => JSON.stringify([entry.port, entry.link, entry.far, entry.owes, entry.state, entry.reason ?? null, entry.by ?? null,
+  entry.extent?.low ?? null, entry.extent?.high ?? null]);
 
 /**
  * Writes the targets of one step at its end, read on the geometry the step leaves (all exits: it stood, the window or a post-condition declined it,
@@ -94,6 +97,7 @@ export function writeAlignmentTargets(model: LayoutModel, nodes: readonly string
   }
   for (const [key, want] of notes.wanted) {
     const feed = notes.seats.get(key)!, x = anchors.get(key);
+    // A wanted port has an anchor from 7a on (`misses` reads it the same way); one without it has no x to judge.
     if (x === undefined) continue;
     const face = faceKey(feed.child.ref.node, feed.child.side!);
     const list = faces.get(face) ?? [];
@@ -132,12 +136,14 @@ export function sameDeclines(stored: readonly AlignmentTarget[] | undefined, rep
 }
 
 /**
- * The first fault of a stored record, or undefined (R5): a face of a node in the model, a port on that face, a link that ends at it, a far end
+ * The first fault of a stored record, or undefined (R5): a record outside the stages it lives at, or none inside them; a face of a node in the model, a port on that face, a link that ends at it, a far end
  * that exists (the link's other port, or a lane of the link), the enum values and the fields each state carries, port-key order and no repeat.
  */
 export function alignmentTargetsFault(model: LayoutModel): string | undefined {
   const record = model.alignmentTargets;
-  if (record === undefined) return undefined;
+  // The record lives from the centre rule's output to the output of 7f (R6: absent there is undecided); before and after it is no record of anything.
+  if (record === undefined) return RECORD_STAGES.includes(model.stage) ? `the record is undecided at stage ${model.stage}` : undefined;
+  if (!RECORD_STAGES.includes(model.stage)) return `a record at stage ${model.stage}`;
   if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
   const links = new Map(model.links.map(link => [link.id, link]));
   const finite = (value: unknown): boolean => typeof value === 'number' && Number.isFinite(value);
@@ -163,6 +169,8 @@ export function alignmentTargetsFault(model: LayoutModel): string | undefined {
       if (entry.owes !== 'vertical' && entry.owes !== 'any') return `${at}: owes ${String(entry.owes)}`;
       if (!Number.isInteger(entry.pass) || entry.pass < 0) return `${at}: pass ${String(entry.pass)}`;
       if (entry.state === 'declined') {
+        // Only 7f declines (its draft is the first at a chord stage): a decline in a model before its output was written by no producer.
+        if (model.stage !== 'bands') return `${at}: a decline at stage ${model.stage}, before 7f`;
         if (!ALIGNMENT_DECLINE_REASONS.includes(entry.reason!) || typeof entry.by !== 'string' || !entry.by) return `${at}: a declined entry without its reason`;
         if (entry.extent !== undefined) return `${at}: a declined entry with an extent`;
       } else if (entry.state === 'grown') {

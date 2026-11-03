@@ -620,10 +620,13 @@ export interface LayoutModel {
    * face, in port-key order. A step writes it at its end, on every exit: `kept` (the target stands), `grown` (the body grew toward it, or it stood
    * and a later step moved it off; `extent` is the room the body needs), `declined` (a guard refused to keep it, with `reason` and `by`). A declined
    * target is final for the placement attempt: the vertical tally of ticket 65 no longer counts it, so no later pass tries to keep it again (R1).
-   * Created `{}` by the centre rule at its input stage, read and written through 7f, and dropped after the last centring reading of 7f, so the
-   * published layout does not carry it. Absent = not decided (a model before 7c, a model after 7f, an older layout). An absent face key = the
-   * face had no wanted port in any step; `[]` = the face was stepped and has no target in any state now (its feeds yielded). The publication
-   * check refuses a malformed record and names an entry its own replay would write differently (`alignment-targets-differ`).
+   * Created `{}` by the centre rule at its input stage, read and written through 7f, compared at the publication of 7f, and dropped by the route
+   * rule, so a routed layout does not carry it. Absent = not decided (a model before 7c, a routed model); a published model of 7c to 7f without
+   * it, or a routed one with it, is refused. An absent face key = the face had no wanted port in any step; `[]` = the face was stepped and has
+   * no target in any state now (its feeds yielded). `kept` and `grown` are where the targets stood when the last step on the group ended, read
+   * on the geometry that step left (a `grown` extent is read where the body grew, before the row pack and the clamp). The publication check
+   * refuses a malformed record and, at the output of 7f, names a face where its replay declines a target the record does not
+   * (`alignment-targets-differ`); no diagnostic excuses it.
    */
   alignmentTargets?: Record<string, AlignmentTarget[]>;
   /**
@@ -746,7 +749,8 @@ export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossi
  * the far port id, or `lane:<id>` for a transit feed; no x is stored, so the entry moves with the geometry). `owes`: `vertical` for an
  * orthogonal link, a frame chord or a direct member, `any` for a held cross chord. `reason` and `by` only on `declined` (`by` = the overlay
  * link, or the riser port, lane pair, span or chord pair key of the post-condition). `extent` only on `grown`: the low and the high body edge,
- * each a distance from the far end's x. `pass`: the centring pass that wrote it (0 for a replay); read by nothing for a decision.
+ * each a distance from the far end's x. `pass`: the pass of its centring budget that last changed it (0 for a replay; each region replay
+ * starts a budget of its own); read by nothing for a decision.
  */
 export interface AlignmentTarget {
   port: string;

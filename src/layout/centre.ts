@@ -34,7 +34,7 @@ import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
 import { chordKind, chordNearPairs, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 import { readCache } from '../model/read-cache.js';
-import { declinedTargets, directMembers, owesVertical, sameDeclines, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
+import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, owesVertical, sameDeclines, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
 import { faceKey } from './turn-order.js';
 
 export interface CentreBudget { remaining: number; passes: number }
@@ -837,7 +837,8 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
   packClear(model, context, tier, snapshot.group, previous);
-  return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group, notes: result.notes };
+  // The undo gives back the geometry the step began on, not the step's own geometry a decline was judged against: no decline of this step stands.
+  return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group, notes: { ...result.notes, declined: new Map() } };
 }
 /** The verticals a centring step counts (ticket 65): the feeds that owe one and stand on it, then every feed that stands on one. */
 type VerticalTally = readonly [owed: number, all: number];
@@ -1043,7 +1044,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   /**
    * Why the kept geometry, standing in the model now, may not stand; null when it may. Ticket 65's post-conditions first, then the overlay guard
    * of ticket 66, by identity: an overlay link that the step's own geometry draws straight and the kept one does not declines the keep. Each
-   * reason names the first key it found, in key order (R3). The overlay guard reads both geometries on rebuilt nodes, and only here: the kept
+   * reason names the first key it found, in code-unit order of the keys (R3). The overlay guard reads both geometries on rebuilt nodes, and only here: the kept
    * branch is not the producer's common path.
    */
   const keptRefusal = (keptGroup: LayoutGroup, stepGroup: LayoutGroup, stepNodes: readonly LayoutNode[]): { reason: AlignmentDeclineReason; by: string } | null => {
@@ -1064,9 +1065,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     for (const node of keptNodes) model.nodes[node.id] = node;
     rebuildNodeGeometry(model, keptGroup.nodes, 'current');
     const keptStraight = straightChordIds(model);
-    // The first such link in link order.
-    const lost = model.links.find(link => straight.has(link.id) && !keptStraight.has(link.id));
-    return lost === undefined ? null : { reason: 'overlay-straight', by: lost.id };
+    const lost = [...straight].filter(link => !keptStraight.has(link)).sort()[0];
+    return lost === undefined ? null : { reason: 'overlay-straight', by: lost };
   };
   if (verticalsBefore !== undefined && verticalsAfter !== undefined && fewerVerticals(verticalsAfter, verticalsBefore) && saved.group.bounds!.width <= high - low) {
     const afterGroup = model.groups[id]!, afterNodes = group.nodes.map(node => model.nodes[node]!);
@@ -1528,10 +1528,12 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
       const { step, trial } = replay;
       previous = group;
       // The record is read, never decided again (R1): a face where the replay declines a target the record does not decline is a finding (R5).
-      if (targets && model.alignmentTargets !== undefined) {
+      // Only 7f's producer ran the tally that declines (its draft stands at `bundles`); 7c to 7e decline nothing, and a chord-stage replay of the
+      // 7e output would read rules its producer did not run. So the publication compares the record of 7f alone.
+      if (targets && model.stage === 'bands' && model.alignmentTargets !== undefined) {
         for (const nodeId of group.nodes) for (const side of ['top', 'bottom', 'left', 'right'] as const) {
           const face = faceKey(nodeId, side);
-          if (!sameDeclines(model.alignmentTargets[face], trial.alignmentTargets?.[face])) result.push(`alignment-targets-differ: ${face}`);
+          if (!sameDeclines(model.alignmentTargets[face], trial.alignmentTargets?.[face])) result.push(`${ALIGNMENT_TARGETS_DIFFER}: ${face}`);
         }
       }
       for (const { child, x, feed, port } of candidates) {
