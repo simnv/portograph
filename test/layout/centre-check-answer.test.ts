@@ -56,6 +56,17 @@ describe('the centring check reuses its answer only on the same model text (tick
     expect(answers()).toMatchObject({ hits: before.hits, misses: before.misses + 1 });
     expect(moved).not.toEqual(found);
     expect(moved).toEqual(centreViolations(JSON.parse(JSON.stringify(model)) as LayoutModel, true));
+    // A change to one node alone (no group box moves), and one to a shared part alone (the diagnostics): each is read again.
+    for (const change of [
+      (item: LayoutModel): void => { (item.nodes.c as unknown as Record<string, unknown>).note = 'changed'; },
+      (item: LayoutModel): void => { item.diagnostics.push({ stage: 'placement', severity: 'info', code: 'TEST_NOTE', message: 'a shared part changed' }); },
+    ]) {
+      centreViolations(model, true);
+      change(model);
+      const was = answers();
+      expect(centreViolations(model, true)).toEqual(moved);
+      expect(answers()).toMatchObject({ hits: was.hits, misses: was.misses + 1 });
+    }
     // `ahead` is part of the key: the same model asked for the stage it stands at is read again.
     const ahead = answers();
     expect(centreViolations(model, false)).toEqual(centreViolations(JSON.parse(JSON.stringify(model)) as LayoutModel, false));
