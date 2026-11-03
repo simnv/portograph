@@ -901,7 +901,9 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
     if (!group.bounds || !group.nodes.length) continue;
     const box = group.bounds, x0 = box.x - margin, x1 = right(box) + margin;
     if (bottom(box) <= gap.low + EPS && bottom(box) + margin > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + margin });
-    if (box.y >= gap.high - EPS && margin + bandTop - box.y > 0) obstacles.push({ x0, x1, anchor: 'below', bound: margin + bandTop - box.y });
+    // A box below is an obstacle whatever the sign of its bound (ticket 56): a box that stands lower than its band top (a flank, a cell) still
+    // holds a drop's jog one margin above it (`jogDepth`), so no jog stands in its box or its title band. A negative bound asks no row room.
+    if (box.y >= gap.high - EPS) obstacles.push({ x0, x1, anchor: 'below', bound: margin + bandTop - box.y });
   }
   // An across-frames mesh bus band stands in the gap on its bus edge and belongs to no group (mesh-bus.md, section 4): an O5 band anchored to
   // the row's sub-tier band over the bar's span, plus `k`. No planned row lies inside it. A band in a frame is inside a group box already.
@@ -925,7 +927,8 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
     if (!box || node.layer === 'overlay') continue;
     const reach = nodeObstacleReach(model, node), x0 = box.x - reach, x1 = right(box) + reach;
     if (bottom(box) <= gap.low + EPS && bottom(box) + reach > gap.low) obstacles.push({ x0, x1, anchor: 'above', bound: bottom(box) + reach });
-    if (box.y >= gap.high - EPS && reach + bandTop - box.y > 0) obstacles.push({ x0, x1, anchor: 'below', bound: reach + bandTop - box.y });
+    // Whatever the sign of its bound, as a group box (ticket 56).
+    if (box.y >= gap.high - EPS) obstacles.push({ x0, x1, anchor: 'below', bound: reach + bandTop - box.y });
   }
   // A canton frame is no group box, and it reaches into the gap: its margin and its title band stand below its last sub-tier
   // (or above its first), outside every member box. A canton that ends at this gap's upper band is an O5 band anchored to it,

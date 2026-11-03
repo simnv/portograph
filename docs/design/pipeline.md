@@ -1158,7 +1158,10 @@ order). A slid title records `crossedBy: []`; an absent record means not placed 
 reads the record (`groupTitlesFault`): one title per band, inside its band less the insets, on no text, a title with no yield meets no
 blocker, and `crossedBy` equals the links whose geometry crosses it (R5). G3 excuses a segment of a link in `crossedBy` (not a horizontal segment through the text); stage 8 lists those
 links as consumers of the title's obstacle and reservation and keeps the title an obstacle to every other link (`ROUTE_TITLE_DETOUR` names
-a routed link that turns beside a title it does not cross).
+a routed link that turns beside a title it does not cross; a turn of a tier-gap run is placement's, so it is never named, ticket 56). A jog of a
+planned drop stands one group-edge margin off every group box (the O5 obstacle of each box and node, whatever the sign of its bound, so a box
+lower than its band top holds the jog too), and the verticals of a jogged drop cross a title band only at the x of a port leg, which the title
+already reads (ticket 56, fixed by construction).
 
 **The mesh bus band** (ticket 83; `docs/design/mesh-bus.md`, section 4). A bus with a fixed side asks for a band of `BUS_STUB` (15 px) plus
 `4 px + label height + 4 px` (the label is `<class> mesh (<n> nodes)` at 9 px). Two placements reserve it.

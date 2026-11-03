@@ -95,8 +95,8 @@ export interface RoutePlan {
   /** libavoid parameters for this diagram (`routeParameters`). */
   parameters: Record<string, number>;
   /**
-   * The turns inside each tier-gap run this stage stitches unchanged (a row's two ends, a jog, a Z part's middle drop), per link in model
-   * order. Placement planned them, so none of them is a router detour (`ROUTE_TITLE_DETOUR`, architecture-2 ticket 56). A link with no
+   * The turns inside each tier-gap run this stage stitches unchanged (a row's two ends, a jog, a Z part's middle drop), per link (a set:
+   * the order is that of the allocation, by gap). Placement planned them, so none of them is a router detour (`ROUTE_TITLE_DETOUR`, architecture-2 ticket 56). A link with no
    * stitched run has no entry.
    */
   plannedTurns: Map<string, Point[]>;
