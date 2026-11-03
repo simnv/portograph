@@ -331,7 +331,7 @@ if an x moves). `H` was not monotone in the growth (on `a-band-holds-the-group-t
 236.25 px opened by 198.5). With the stems recorded, the plan no longer depends on the growth, and that fixture stays a gate on the
 outcome. A part that the plan declines is named with its reason (`TIER_GAP_PART_RESIDUAL`,
 `TIER_GAP_ROW_CYCLE`). The 7f order is now: label bands (y only), the rounds (no gap growth), one settle of the centring when the rounds
-replayed nothing and the centring left a non-convergence or a violation (architecture-2 ticket 65), the corridor move, the overlay-port
+did not replay the draft and the centring left a non-convergence or a violation (architecture-2 ticket 65), the corridor move, the overlay-port
 nest, the solve, the titles. An alignment the centring must still reach is settled before the solve, and a centring step keeps the
 verticals it reached, so the plans of Section 2.4 hold their spec numbers again (v5-4-0: order 11, 1, 5, 2, 3; H 69.25 set by link-3#0;
 lower gap low 300). The solve's own centring replay (after a linkless step, or a growth that breaks an excused alignment) stays as a safety net. The plan is recomputed at consumption on frozen placement, as `allocateGapRuns` is today, and a part that then

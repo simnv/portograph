@@ -868,13 +868,13 @@ on one; a held cross-frame chord owes none (any angle) and is not counted on a f
 both stand at pitch. A step that ends with fewer (in that order) keeps the geometry it found, clamped into its window, when that stands
 more and passes the step's other post-conditions; it names the feeds it leaves off their x (`CENTRE_ALIGNMENT_INFEASIBLE`) and gives back
 the warnings the undone step wrote. Without it a group that aligns K of its N feeds moves by the mean of all N, crawls by (N - K) / N of
-the miss, and gives up an alignment it reached when the next mean jumps; the output then depends on where the budget stops. The tally is
-monotone per step and the budget bounds the passes. Beside the riser, lane and span post-conditions, a step that leaves a held chord nearer
+the miss, and gives up an alignment it reached when the next mean jumps; the output then depends on where the budget stops. The kept
+geometry stands more than the step would, not always as many as it found (the clamp can cost one), so the budget bounds the passes. Beside the riser, lane and span post-conditions, a step that leaves a held chord nearer
 than the chord clearance (`STRAIGHT_PATH_CLEARANCE.path`, stroke-aware) to another held chord or to a foreign body, where the pair stood
 clear when the step began, is declined (`chordNearPairs`, read on the ports as they stand). A miss up to half a pixel counts as standing,
 so no later step moves it and the router would draw a hair jog: after the clamp, a face whose wanted ports within that tolerance all miss
 by one shift moves by that shift (its ports keep their pitch), when it stays inside its body edges and no other port of it ends a link
-with a corridor of its own. Before the freeze a frame chord takes the parent-port move as an orthogonal feed does (it already has its
+with a corridor of its own, a bundle member or a held chord. Before the freeze a frame chord takes the parent-port move as an orthogonal feed does (it already has its
 pinned path then); a frozen chord keeps its recorded wall move, and a routed chord names no jog.
 
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
@@ -1123,7 +1123,7 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 
 7f does these things, in this order (architecture-2 ticket 57): it reserves the height of the group label bands on the y axis only
 (`topUpBandClearance`); it runs the rounds (the close-up of the cantons, the keep-out, the label room, the steps over a chord), which
-grow no tier gap; when the rounds replayed nothing and the centring left its non-convergence or a violation the publication would
+grow no tier gap; when the rounds did not replay the draft and the centring left its non-convergence or a violation the publication would
 refuse, it settles the centring once on the frozen geometry (one `replayRegions` and label room, architecture-2 ticket 65: the bands'
 single budget gave no pass after it); it lets a corridor whose child 7c could not seat follow that child (`reseatLanes`, § 7a); it settles the overlay ports;
 it solves the tier gaps once (`solveTierGaps`, `gap-room.ts`): the stem depths are recorded, every plan and every label room across a gap

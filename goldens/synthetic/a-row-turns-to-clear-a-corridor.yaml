@@ -7,9 +7,9 @@
 # `u1` → `m1`. Stage 4 cuts each transit link at its predicted corridor, reads each end at its predicted
 # port (ticket 17 follow-up), counts 3 crossings in the declared order and 1 with `top` and `upper` turned, and turns both rows (`rowOrderDecision` `corridor-crossings`).
 #
-# Measured: with `layout: { corridorRowOrder: false }` the sheet publishes at Q 0.6796, crossings 2,
-# bends 7, canvas 1389 × 670; by default at Q 0.7672, crossings 1, bends 6, canvas 418 × 653, and no gate
-# fails. Test-only input owned by architecture-2 ticket 17; test/layout/corridor-order.test.ts reads it.
+# Measured: with `layout: { corridorRowOrder: false }` the sheet publishes at Q 0.5662, crossings 5,
+# bends 10, canvas 1072 × 668, G5 fails (architecture-2 ticket 65; crossings 2, bends 7 before); by default
+# at Q 0.7664, crossings 1, bends 6, canvas 418 × 642, and no gate fails. Test-only input owned by architecture-2 ticket 17; test/layout/corridor-order.test.ts reads it.
 portograph: 2
 groups:
   top: { tier: 0, label: Top }
