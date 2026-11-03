@@ -24,6 +24,11 @@ export interface AttemptCounters {
   settledTrials: number;
   /** Cheap trials of the chord step: a move made and read before a settled copy is paid for. */
   cheapTrials: number;
+  /**
+   * Replays of the centring check that wrote to a part the trials share and ran again on a full copy (`readCentreViolations`, architecture-2 ticket 63).
+   * 0 on every sheet measured; a count above 0 names a step that writes what the per-step copy does not hold.
+   */
+  centreCheckFallbacks: number;
   /** Runs of the one tier-gap solve (`solveTierGaps`, architecture-2 ticket 57): one per 7f attempt body. */
   gapSolves: number;
   /** Runs of the placement stages 1 to 7e (the first, the fan re-runs, the side re-run). */
@@ -91,14 +96,14 @@ const zeroInvalidations = (): Invalidations => ({ closeUpReopened: 0, overlayStr
   overlayWindowsKept: 0, fanReruns: 0, sideReruns: 0, cantonNonConvergence: 0 });
 
 export const attemptCounters: AttemptCounters = { settleCalls: 0, centringPasses: 0, candidateCopies: 0, validationReplays: 0, replays: 0, settledTrials: 0,
-  cheapTrials: 0, gapSolves: 0, placeRuns: 0, placeStarts: 0, attempts: 0, rounds: 0, openRounds: 0, chordRoundsMoved: 0, reseat: { adopted: 0, refused: 0, none: 0 },
+  cheapTrials: 0, centreCheckFallbacks: 0, gapSolves: 0, placeRuns: 0, placeStarts: 0, attempts: 0, rounds: 0, openRounds: 0, chordRoundsMoved: 0, reseat: { adopted: 0, refused: 0, none: 0 },
   ledger: false, in7f: 0, invalidations: zeroInvalidations(), placements: [], attemptLog: [] };
 
 /** Zeroes every count. The `ledger` switch stays as the caller set it. */
 export function resetAttemptCounters(): void {
   const c = attemptCounters;
   c.settleCalls = 0; c.centringPasses = 0; c.candidateCopies = 0; c.validationReplays = 0;
-  c.replays = 0; c.settledTrials = 0; c.cheapTrials = 0; c.gapSolves = 0; c.placeRuns = 0; c.placeStarts = 0;
+  c.replays = 0; c.settledTrials = 0; c.cheapTrials = 0; c.centreCheckFallbacks = 0; c.gapSolves = 0; c.placeRuns = 0; c.placeStarts = 0;
   c.attempts = 0; c.rounds = 0; c.openRounds = 0; c.chordRoundsMoved = 0;
   c.reseat = { adopted: 0, refused: 0, none: 0 }; c.in7f = 0; c.invalidations = zeroInvalidations();
   c.placements = []; c.attemptLog = [];

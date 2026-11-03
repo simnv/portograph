@@ -8,7 +8,7 @@ import { cellReach } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
-import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js';
+import { holds, profiles, reading, straightOf, tapVerdict, verdictTap } from './objective.js';
 import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
@@ -33,6 +33,7 @@ import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
 import { chordKind, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
+import { readCache } from '../model/read-cache.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -1171,9 +1172,32 @@ const TRIAL_SHARED = ['document', 'links', 'groupLinks', 'meshBuses', 'lanes', '
  * drops and endpoints (7d), ports any bundle member uses (7e) — are not compared.
  */
 export function centreViolations(model: LayoutModel, ahead = false, shared?: CentreContext): string[] {
-  return withSharedLinkKinds(() => readCentreViolations(model, ahead, shared));
+  return withSharedLinkKinds(() => readCentreViolations(model, ahead, shared, shared === undefined));
 }
-function readCentreViolations(model: LayoutModel, ahead: boolean, shared: CentreContext | undefined): string[] {
+/**
+ * The text of the model one check read, and its answer (architecture-2 ticket 63). With no context handed in, the answer reads the model and `ahead` alone:
+ * the context is built from the model, every trial is parsed from these texts, and the freeze block is read by nothing the check calls. So a later
+ * check on the same model object whose texts are all equal has the same answer, and its replays are not run again. `taps` are the verdicts the
+ * replays gave a test's tap (`verdictTap`), given again with the answer; undefined when no tap listened, and such an answer is not reused while one does.
+ */
+interface CheckedAnswer { ahead: boolean; own: string; still: string; nodes: ReadonlyMap<string, string>; result: readonly string[]; taps: readonly (readonly [string, string])[] | undefined }
+const checkedAnswers = new WeakMap<LayoutModel, CheckedAnswer>();
+const answerCache = readCache('centreCheckAnswer');
+/** Whether two checks read one model text: the same parts, the same nodes in the same order. */
+function sameModelText(known: CheckedAnswer, own: string, still: string, nodes: ReadonlyMap<string, string>): boolean {
+  if (known.own !== own || known.still !== still || known.nodes.size !== nodes.size) return false;
+  const was = known.nodes.entries();
+  for (const [key, text] of nodes) { const [oldKey, oldText] = was.next().value!; if (oldKey !== key || oldText !== text) return false; }
+  return true;
+}
+/** Runs `run` with every verdict it gives the tap also written to `into`; with `forward` off the tap does not see them. Nothing is recorded while no tap listens. */
+function recordTaps<T>(into: [string, string][] | undefined, forward: boolean, run: () => T): T {
+  const sink = verdictTap.sink;
+  if (into === undefined || sink === undefined) return run();
+  verdictTap.sink = (name, value) => { into.push([name, value]); if (forward) sink(name, value); };
+  try { return run(); } finally { verdictTap.sink = sink; }
+}
+function readCentreViolations(model: LayoutModel, ahead: boolean, shared: CentreContext | undefined, reuse: boolean): string[] {
   const anchor = model.anchorTier;
   if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
   const context = shared ?? centreContext(model, anchor);
@@ -1197,6 +1221,8 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   // to a shared part throws; that trial is then run again on a full copy, so the answer is the one a full copy gives (architecture ticket 14).
   let baseReadings: BaseReadings | undefined;
   let replayedText: string | undefined, sharedParts: Record<string, unknown> | undefined, sharedNodes: Record<string, LayoutNode> | undefined, nodeTexts: Map<string, string> | undefined, fullText: string | undefined;
+  let key: Omit<CheckedAnswer, 'result' | 'taps'> | undefined;
+  const taps: [string, string][] | undefined = reuse && verdictTap.sink !== undefined ? [] : undefined;
   const freezeDeep = (value: unknown): void => { if (value && typeof value === 'object') { Object.values(value).forEach(freezeDeep); Object.freeze(value); } };
   for (const { tier, authority } of context.steps) {
     const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
@@ -1238,7 +1264,23 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         freezeDeep(sharedNodes);
         delete own.nodes;
         replayedText = JSON.stringify(own);
-        sharedParts = JSON.parse(JSON.stringify(still)) as Record<string, unknown>;
+        const stillText = JSON.stringify(still);
+        if (reuse) {
+          const known = checkedAnswers.get(model);
+          if (known !== undefined && known.ahead === ahead && (known.taps !== undefined || verdictTap.sink === undefined) && sameModelText(known, replayedText, stillText, nodeTexts)) {
+            // Under `LayoutOptions.checkCaches` the check runs again in full, without reuse, and its answer and verdicts must be the ones kept.
+            const answer = answerCache.hit(model, { result: known.result, taps: known.taps }, () => {
+              const again: [string, string][] | undefined = known.taps === undefined ? undefined : [];
+              const result = recordTaps(again, false, () => readCentreViolations(model, ahead, undefined, false));
+              return { result, taps: again };
+            });
+            for (const [name, value] of answer.taps ?? []) tapVerdict(name, () => value);
+            return [...answer.result];
+          }
+          answerCache.miss();
+          key = { ahead, own: replayedText, still: stillText, nodes: nodeTexts };
+        }
+        sharedParts = JSON.parse(stillText) as Record<string, unknown>;
         freezeDeep(sharedParts);
       }
       const reserved = tail ??= tailReservation(model, context, tier, order);
@@ -1256,9 +1298,10 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved, base) };
       };
       let step: ReturnType<typeof centreGroupStep>;
-      try { step = attempt(false).step; } catch (error) {
+      try { step = recordTaps(taps, true, () => attempt(false).step); } catch (error) {
         if (!(error instanceof TypeError)) throw error;
-        step = attempt(true).step;
+        attemptCounters.centreCheckFallbacks++;
+        step = recordTaps(taps, true, () => attempt(true).step);
       }
       previous = group;
       for (const { child, x, feed, port } of candidates) {
@@ -1268,6 +1311,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
       }
     }
   }
+  if (key !== undefined) checkedAnswers.set(model, { ...key, result: [...result], taps });
   return result;
 }
 /** The code of the note that a model keeps the wide seats of the first feeds: narrowing it would have bent a link that stood straight (ticket 12, "narrow only if free"). */
