@@ -1,0 +1,66 @@
+# Expected: the step keeps the vertical it reached. Two wide carrier clouds stand over four zone cantons; six feeds reach them, and the
+# centring aligns four. On main before ticket 65 the crawl under the mean aligned zone3-wan1's feed (link-11) and gave it up again on the next
+# pass (12 bends). Now link-11 stays vertical once reached: 8 bends, one TIER_GAP_GROWN, no gap asks more (architecture-2 ticket 65).
+portograph: 2
+profile: network
+title: "A step keeps the vertical it reached"
+groups:
+  controllers: { tier: 0, label: CONTROLLERS }
+  underlays: { tier: 1, label: UNDERLAYS }
+  zone1-wan: { tier: 2, label: ZONE1 WAN, canton: zone1 }
+  zone1-lan: { tier: 3, label: ZONE1 border, canton: zone1 }
+  zone2-wan: { tier: 2, label: ZONE2 WAN, canton: zone2 }
+  zone2-lan: { tier: 3, label: ZONE2 leaf, canton: zone2 }
+  zone3-wan: { tier: 2, label: ZONE3 WAN, canton: zone3 }
+  zone3-lan: { tier: 3, label: ZONE3 leaf, canton: zone3 }
+  zone4-wan: { tier: 2, label: ZONE4 WAN, canton: zone4 }
+  zone4-lan: { tier: 3, label: ZONE4 border, canton: zone4 }
+  zone1: { label: ZONE1 }
+  zone2: { label: ZONE2 }
+  zone3: { label: ZONE3 }
+  zone4: { label: ZONE4 }
+nodes:
+  ct1: { group: controllers, class: router, icon: router }
+  ct2: { group: controllers, class: router, icon: router }
+  core-cloud: { group: underlays, class: cloud, icon: cloud }
+  edge-cloud: { group: underlays, class: cloud, icon: cloud }
+  zone1-wan1: { group: zone1-wan, class: router, icon: router }
+  zone1-wan2: { group: zone1-wan, class: router, icon: router }
+  zone1-border1: { group: zone1-lan, class: switch, icon: switch }
+  zone1-border2: { group: zone1-lan, class: switch, icon: switch }
+  zone2-wan1: { group: zone2-wan, class: router, icon: router }
+  zone2-wan2: { group: zone2-wan, class: router, icon: router }
+  zone2-leaf1: { group: zone2-lan, class: switch, icon: switch }
+  zone2-leaf2: { group: zone2-lan, class: switch, icon: switch }
+  zone3-wan1: { group: zone3-wan, class: router, icon: router }
+  zone3-leaf1: { group: zone3-lan, class: switch, icon: switch }
+  zone4-wan1: { group: zone4-wan, class: router, icon: router }
+  zone4-border1: { group: zone4-lan, class: switch, icon: switch }
+  zone4-border2: { group: zone4-lan, class: switch, icon: switch }
+links:
+  - [ct1, core-cloud]
+  - [ct1, edge-cloud]
+  - [ct2, core-cloud]
+  - [ct2, edge-cloud]
+  - [zone1-wan1, core-cloud]
+  - [zone1-wan1, edge-cloud]
+  - [zone1-wan2, core-cloud]
+  - [zone1-wan2, edge-cloud]
+  - [zone2-wan1, core-cloud]
+  - [zone2-wan2, edge-cloud]
+  - [zone3-wan1, edge-cloud]
+  - [zone4-wan1, core-cloud]
+  - [zone4-wan1, edge-cloud]
+  - [zone1-wan1, zone1-border1]
+  - [zone1-wan1, zone1-border2]
+  - [zone1-wan2, zone1-border1]
+  - [zone1-wan2, zone1-border2]
+  - [zone1-border1, zone1-border2, { class: peer }]
+  - [zone2-wan1, zone2-leaf1]
+  - [zone2-wan2, zone2-leaf2]
+  - [zone2-wan1, zone2-wan2]
+  - [zone2-leaf1, zone2-leaf2, { class: peer }]
+  - [zone3-wan1, zone3-leaf1]
+  - [zone4-wan1, zone4-border1]
+  - [zone4-wan1, zone4-border2]
+  - [zone4-border1, zone4-border2, { class: peer }]

@@ -777,6 +777,41 @@ export function chordClearances(model: LayoutModel, within = 30): Map<string, nu
 
 
 /**
+ * The pairs under the chord clearance (`STRAIGHT_PATH_CLEARANCE.path`, stroke-aware, as G6 measures) that a move of the nodes `moved` can change: a held
+ * chord with an end on a moved node against every other held chord and every foreign body, and every held chord against a moved foreign body. The
+ * chords are read where their ports stand now (not from the stored path, which a move leaves behind). Keys: `a|b` for two chords, ids in code-unit order, `a@node`
+ * for a chord and a body. A strict crossing of two chords is no pair (G6 excuses it). Read before and after a centring step (architecture-2 ticket 65).
+ */
+export function chordNearPairs(model: LayoutModel, moved: ReadonlySet<string>): Set<string> {
+  const held = model.frozenChords ?? model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
+  const chords: { link: LayoutLink; segment: PathSegment; ends: Set<string>; touched: boolean }[] = [];
+  const byId = new Map(model.links.map(link => [link.id, link]));
+  for (const id of held) {
+    const link = byId.get(id);
+    const chord = link?.attachments && straightChord(model, link, undefined, true);
+    if (!link || !chord) continue;
+    const ends = new Set([link.attachments!.from.node, link.attachments!.to.node]);
+    chords.push({ link, segment: { from: chord.from, to: chord.to, owner: { ...link.owner } }, ends, touched: [...ends].some(node => moved.has(node)) });
+  }
+  const limit = STRAIGHT_PATH_CLEARANCE.path - PLACEMENT_EPS, result = new Set<string>();
+  for (const [index, one] of chords.entries()) {
+    for (const other of chords.slice(index + 1)) {
+      if (!one.touched && !other.touched) continue;
+      if (strictCrossing(one.segment, other.segment)) continue;
+      if (segmentDistance(one.segment, other.segment) - (linkStrokeWidth(one.link) + linkStrokeWidth(other.link)) / 2 < limit) {
+        result.add(one.link.id < other.link.id ? `${one.link.id}|${other.link.id}` : `${other.link.id}|${one.link.id}`);
+      }
+    }
+    for (const node of one.touched ? Object.keys(model.nodes) : moved) {
+      const item = model.nodes[node];
+      if (one.ends.has(node) || !item?.bounds) continue;
+      if (segmentRectDistance(one.segment, item.bounds) - linkStrokeWidth(one.link) / 2 < limit) result.add(`${one.link.id}@${node}`);
+    }
+  }
+  return result;
+}
+
+/**
  * Whether an overlay link may stay one straight chord (architecture ticket 15, phase 7; the user's ruling Q1): only where a routed chord would be.
  * The reading is the routed rule's, with no clearance (an overlay owns no clearance gate): no cell, group box or frame that holds neither end stands on the
  * chord, and the chord leaves each box that holds one end only through the edge its port faces, inside the edge; no body or pill stands on it. It reads

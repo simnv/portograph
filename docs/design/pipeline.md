@@ -862,6 +862,21 @@ positions are fixed; if a child now overlaps a lane, push the child, not the lan
 step leaves off its lane is not left there for good: 7f moves the corridor to it under the rule
 § 7a states, after the last replay of this step.
 
+**A step keeps the verticals it reached** (architecture-2 ticket 65). From 7e on, a step counts its verticals before it moves and after
+the clamp: first the feeds that owe one (an orthogonal link, a frame chord, a direct member) and stand on it, then every feed that stands
+on one; a held cross-frame chord owes none (any angle) and is not counted on a face where two wanted ports, one of them a transit, cannot
+both stand at pitch. A step that ends with fewer (in that order) keeps the geometry it found, clamped into its window, when that stands
+more and passes the step's other post-conditions; it names the feeds it leaves off their x (`CENTRE_ALIGNMENT_INFEASIBLE`) and gives back
+the warnings the undone step wrote. Without it a group that aligns K of its N feeds moves by the mean of all N, crawls by (N - K) / N of
+the miss, and gives up an alignment it reached when the next mean jumps; the output then depends on where the budget stops. The tally is
+monotone per step and the budget bounds the passes. Beside the riser, lane and span post-conditions, a step that leaves a held chord nearer
+than the chord clearance (`STRAIGHT_PATH_CLEARANCE.path`, stroke-aware) to another held chord or to a foreign body, where the pair stood
+clear when the step began, is declined (`chordNearPairs`, read on the ports as they stand). A miss up to half a pixel counts as standing,
+so no later step moves it and the router would draw a hair jog: after the clamp, a face whose wanted ports within that tolerance all miss
+by one shift moves by that shift (its ports keep their pitch), when it stays inside its body edges and no other port of it ends a link
+with a corridor of its own. Before the freeze a frame chord takes the parent-port move as an orthogonal feed does (it already has its
+pinned path then); a frozen chord keeps its recorded wall move, and a routed chord names no jog.
+
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
 Those groups move right. This includes a group the step does not centre. It also includes a group
 whose own window is too narrow to hold it.
@@ -1108,7 +1123,9 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 
 7f does these things, in this order (architecture-2 ticket 57): it reserves the height of the group label bands on the y axis only
 (`topUpBandClearance`); it runs the rounds (the close-up of the cantons, the keep-out, the label room, the steps over a chord), which
-grow no tier gap; it lets a corridor whose child 7c could not seat follow that child (`reseatLanes`, § 7a); it settles the overlay ports;
+grow no tier gap; when the rounds replayed nothing and the centring left its non-convergence or a violation the publication would
+refuse, it settles the centring once on the frozen geometry (one `replayRegions` and label room, architecture-2 ticket 65: the bands'
+single budget gave no pass after it); it lets a corridor whose child 7c could not seat follow that child (`reseatLanes`, § 7a); it settles the overlay ports;
 it solves the tier gaps once (`solveTierGaps`, `gap-room.ts`): the stem depths are recorded, every plan and every label room across a gap
 is read once, and each gap grows by what it lacks; and, last, it places every group title once (`placeGroupTitles`, architecture-2
 ticket 54). The corridor move is after the rounds because every centring replay before it — 7c's own and the label bands' — reads lane x
@@ -1205,8 +1222,9 @@ grows a gap, and no step reads the height of a gap to make a decision that the h
    rebuild follows (regions, node geometry, lanes, the grid and the label bands) with no centring. A rebuild that moves an x throws.
    `TIER_GAP_GROWN` names what set the gap: a part of the plan, or "the label of link-N".
 5. It checks the gaps as they stand. None of these checks grows a gap, and each one is named. None of them fires on the corpus (390 sheets).
-   - A growth that breaks an alignment the centring had excused replays the centring once (`TIER_GAP_CENTRING_REPLAYED`). This replay
-     is the only x move of the solve.
+   - A linkless step that moved after the growth (`afterGrowth`) replays the centring once (`TIER_GAP_CENTRING_REPLAYED`). This replay
+     is the only x move of the solve. An alignment the centring must still reach is not read here: the settle at the end of the 7f rounds
+     took it before the solve (architecture-2 ticket 65).
    - A stem record that the grown geometry no longer calls for is decided again (`STEM_DEPTHS_REDECIDED`).
    - A label room across a tier gap that is still short is given up.
    - A plan that still asks for room names its gap (`TIER_GAP_SOLVE_SHORT`).

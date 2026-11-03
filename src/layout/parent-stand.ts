@@ -4,7 +4,7 @@ import type { PortRef } from '../model/document.js';
 import { EPS } from '../geometry/planar.js';
 import { portAnchor } from '../geometry/index.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
-import { isRoutedChord } from './frame-paths.js';
+import { chordKind, isRoutedChord } from './frame-paths.js';
 import { laneRunKind } from './lane-kind.js';
 import { findPort } from './row-paths.js';
 import { orderedNodeIds } from '../model/model.js';
@@ -64,7 +64,10 @@ function faces(model: LayoutModel) {
     sole: (port: LayoutPort): boolean => count.get(portId(port.ref)) === 1,
     eligible: (feed: Feed): boolean => {
       const link = linkOf.get(feed.link)!;
-      return !link.bundle && link.technique !== 'mesh-bus' && !isRoutedChord(model, link) && !isBar(feed.parent.ref.node) && !isBar(feed.child.ref.node);
+      // A frame chord owes a vertical as an orthogonal link does, and before the freeze its port moves over the child like one (ticket 65: the
+      // chord already has its pinned path then, and it was skipped while an orthogonal feed took the wall move). A cross chord owes no vertical.
+      const frameChordBeforeFreeze = model.frozenChords === undefined && chordKind(model, link) === 'frame';
+      return !link.bundle && link.technique !== 'mesh-bus' && (!isRoutedChord(model, link) || frameChordBeforeFreeze) && !isBar(feed.parent.ref.node) && !isBar(feed.child.ref.node);
     },
     feeds: (steps: readonly { tier: number; authority: number }[]): Feed[] => steps.flatMap(({ tier, authority }) => centringFeeds(model, tier, authority)),
   };
@@ -75,6 +78,8 @@ const DECLINES = {
   face: { code: 'CENTRE_PARENT_MOVE_HELD_FACE', text: 'its face holds a port that stands on a corridor of its own, which a move would pack again' },
 } as const;
 function name(model: LayoutModel, link: LayoutLink, why: keyof typeof DECLINES = 'reach'): void {
+  // A routed chord keeps its straight segment whatever its ports do: it has no jog to name (ticket 65).
+  if (isRoutedChord(model, link)) return;
   const { code, text } = DECLINES[why];
   if (model.diagnostics.some(d => d.code === code && d.owners?.some(owner => 'id' in owner && owner.id === link.id))) return;
   placementWarning(model, code, `${link.id} keeps a jog: ${text}; routing completes it.`, [link.id]);
@@ -157,6 +162,8 @@ export function withdrawWallMoves(model: LayoutModel, steps: readonly { tier: nu
       placementWarning(model, 'CENTRE_PARENT_MOVE_RECORD_DROPPED', `${record.link}: the port of its move at a frame-column wall is gone; the record is dropped.`, [record.link]);
       continue;
     }
+    // A frozen chord follows its ports and has no jog to give back: its move stays (ticket 65; the record of the freeze, R1).
+    if (model.frozenChords?.includes(link.id) === true) { kept.push(record); continue; }
     const from = model.nodes[port.ref.node]!.bounds!.x + record.fromLeft;
     const feed = readings.lists.flat().find(item => item.link === record.link && !item.transit);
     if (feed !== undefined) {

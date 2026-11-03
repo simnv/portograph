@@ -330,8 +330,11 @@ each gap grows by `max(0, H − room, label deficit)`, the bands below move by t
 if an x moves). `H` was not monotone in the growth (on `a-band-holds-the-group-that-set-its-edge` it was 247.75 px unopened and
 236.25 px opened by 198.5). With the stems recorded, the plan no longer depends on the growth, and that fixture stays a gate on the
 outcome. A part that the plan declines is named with its reason (`TIER_GAP_PART_RESIDUAL`,
-`TIER_GAP_ROW_CYCLE`). The 7f order is now: label bands (y only), the rounds (no gap growth), the corridor move, the overlay-port nest,
-the solve, the titles. The plan is recomputed at consumption on frozen placement, as `allocateGapRuns` is today, and a part that then
+`TIER_GAP_ROW_CYCLE`). The 7f order is now: label bands (y only), the rounds (no gap growth), one settle of the centring when the rounds
+replayed nothing and the centring left a non-convergence or a violation (architecture-2 ticket 65), the corridor move, the overlay-port
+nest, the solve, the titles. The solve replays the centring only after a linkless step that moved; an alignment the centring must still
+reach is settled before it, and a centring step keeps the verticals it reached, so the plans of Section 2.4 hold their spec numbers again
+(v5-4-0: order 11, 1, 5, 2, 3; H 69.25 set by link-3#0; lower gap low 300). The plan is recomputed at consumption on frozen placement, as `allocateGapRuns` is today, and a part that then
 does not fit is residual with `TIER_GAP_PART_UNFIT` (`unfitGaps`, a safety net that must not fire), never a silent discovery.
 
 ## Section 4 — What the router still does

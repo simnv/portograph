@@ -730,7 +730,8 @@ it('stress ticket 18: a corridor that crosses a labelled row link\'s split keeps
   // move is judged on the rooms alone. The claim stays: the published model holds every label room it reserved.
   const model = run(await throughBundles(corridorCrossesSplit));
   expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(true);
-  expect(model.lanes.map(lane => lane.x)).toEqual([98.22314453125, -409.72432491004224]); // Verdana metrics (snack-theme ticket 157).
+  // Ticket 65: the child the corridor follows stands 32.04 px further right (a step keeps the verticals it reached; -409.72 before).
+  expect(model.lanes.map(lane => lane.x)).toEqual([98.22314453125, -377.68933322098894]); // Verdana metrics (snack-theme ticket 157).
   // The claim itself: the replay asks for nothing more.
   const shortfalls: LinkLabelShortfall[] = [];
   expect(reserveLinkLabelRoom(copy(model), shortfalls)).toBe(false);
