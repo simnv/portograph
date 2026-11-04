@@ -81,7 +81,8 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // Architecture-2 ticket 54: each group title gains only `crossedBy: []`, and nothing else in the layout differs (f976911f2b2220a8 before).
     // Architecture-2 ticket 57: the model gains `stemDepths`, and the orthogonal counterfactual of the two direct families (`directFamilies`,
     // read at the start of 7f) counts 8 and 5 crossings, not 7 and 3, its witnesses 17.5 px lower; no drawn geometry differs (80554445aba21345 before).
-    expect(hash(model)).toBe('89c13145a5d4be12');
+    // Architecture-2 ticket 73: the model gains `feedSplits: []` (and its freeze copy); without that key the hash is the old 89c13145a5d4be12.
+    expect(hash(model)).toBe('90ec7d9b78710dd1');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
@@ -103,7 +104,8 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // Verdana metrics (snack-theme ticket 157): e21a79fe9f158ae7 with Arial.
     // Architecture-2 ticket 54: each group title gains only `crossedBy: []`, and nothing else in the layout differs (e78c0a9d3cded778 before).
     // Architecture-2 ticket 57: the model gains only `stemDepths`; the hash without that key is the old one (84b1668cbefa3b25).
-    expect(hash(model)).toBe('7149b9a576a2ee40');
+    // Architecture-2 ticket 73: without `feedSplits` the hash is the old 7149b9a576a2ee40.
+    expect(hash(model)).toBe('79188b2a83e27b6e');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);

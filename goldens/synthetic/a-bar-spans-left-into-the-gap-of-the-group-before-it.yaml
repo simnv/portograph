@@ -1,7 +1,9 @@
-# Expected: OPEN (architecture ticket 19). A bar whose drop leaves stand far left of the bar's own box takes its span to the left, and 7d may move no other group; the row
-# group before the bar then stands inside the band gap. Nothing in placement reserves this: no sweep moves a group left, and a left yield of the group before the bar
-# oscillated against the room a link label asks for. The final G9 `min-separation` finding reports it (test/pipeline/min-separation-writers.test.ts).
-# When a stage reserves it, the test pins the fix instead. The filler label is short (`F1`, ticket 157): with the wider Verdana label
+# Expected: architecture ticket 19, reserved since architecture-2 ticket 73. A bar whose drop leaves stand far left of the bar's own box takes its span to the
+# left, and 7d may move no other group; before ticket 73 the row group before the bar stood inside the band gap, and the final G9 `min-separation` finding
+# reported it. The feed split of stage 5 now reserves the room: the leaves of `before` and of `bar` (the pair, above the anchor tier) stand apart, and the
+# feeding side right of the split line moves 13.7 px right, so 7d's span leaves the band gap. G9 passes, canvas 432 to 439 px
+# (test/pipeline/min-separation-writers.test.ts pins the fix). The general case stays open: a bar span that no feed split makes room for still meets G9.
+# The filler label is short (`F1`, ticket 157): with the wider Verdana label
 # the filler pushed leaf B to the right, the bar spanned no farther left than its own box, and the premise was lost.
 # Source: architecture ticket 19 re-check.
 portograph: 2

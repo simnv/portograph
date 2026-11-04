@@ -15,6 +15,7 @@
 # the sweep input `v7-0-2`. Test-only input; test/layout/corridor-order.test.ts reads it.
 # Since architecture-2 ticket 72 (the joint stage-4 order): `access` turns to acc0 acc2 acc4 acc6 acc1 acc3 acc5 with the corridor
 # sides; Q 0.8871, crossings 0, bends 2, canvas 722 x 484, G5 passes. The tests of ticket 17 and 71 pin `layout.feedOrder: false`.
+# Since architecture-2 ticket 73 (the feed split): bends 0, canvas 733 x 484.
 portograph: 2
 groups:
   src: { tier: 0 }

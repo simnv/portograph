@@ -1,6 +1,5 @@
 import type { PortRef } from '../model/document.js';
-import { selectAnchorTier } from './lanes.js';
-import { feedSplitSteps, reserveFeedSplits } from './feed-split.js';
+import { reserveFeedSplits } from './feed-split.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutGroup, LayoutLink, LayoutModel, LayoutPort, PathSegment, StemDepth } from '../model/layout.js';
 import { frameSubtreeCells, orderedNodeIds, orderedGroupIds } from '../model/model.js';
@@ -1066,11 +1065,8 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   // a draft it refuses is a defect of the stage-5 checks and ends the run.
   if (arrange.mode === 'decide') arrangeGroups(model, arrange.declined, draft => { draft.stage = 'sides-two'; freezePortTopology(draft, nodeFloors, turned); }, columns);
   if (model.staggerRows?.length) seatStaggerRows(model);
-  // t73 Step 0 prototype P2: the feed split, on final sides and sizes, before the rows, the lanes and the centring read the x.
-  if ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PG_T73_P2) {
-    const anchor = selectAnchorTier(model);
-    if (anchor !== undefined) reserveFeedSplits(model, feedSplitSteps(model, anchor));
-  }
+  // The feed split (ticket 73), on final sides and sizes, before the rows, the lanes and the centring read the x; the freeze keeps its record.
+  reserveFeedSplits(model);
   model.stage = 'sides-two';
   return freezePortTopology(model, nodeFloors, turned);
 }

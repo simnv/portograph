@@ -14,9 +14,11 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // 745d3f2f... and 0c8f01d5...).
 // Architecture-2 ticket 68 re-baselined m1-sip-edge (4ae81293... before): the end trim narrows its stretched bodies, pending the
 // maintainer's approval of the regenerated golden.
+// Architecture-2 ticket 73 re-baselined both: every published model gains `feedSplits: []` and its freeze copy (the hash without that key is
+// the old one: 724ccda3... and 95beda34...).
 const baselines = {
-  'm1-sip-edge': '724ccda30c6d2f859d4001b558f51fcef1c8112bc215a903925a15b3151b8ed2',
-  'synthetic/drawio-constructs': '95beda3435ba10afd4dcc5c0077f22b422d891dc4428216395bcadde9b3ca766',
+  'm1-sip-edge': '70e112a351077e34a8e68f3ff97741985e8f51fc0980a6b3505452286298445a',
+  'synthetic/drawio-constructs': 'b956d053f1a3f5c1bae27c9857ae60e37149d4b36b7c8d512f1f83381b9ed8c9',
 };
 
 for (const [fixture, baseline] of Object.entries(baselines)) {

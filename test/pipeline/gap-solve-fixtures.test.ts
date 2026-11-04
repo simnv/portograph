@@ -47,15 +47,18 @@ function solved(model: LayoutModel): void {
 }
 
 describe('the four fixtures of ticket 57', () => {
-  it('decides the nested stems of `t` before its gap opens, and the solve grows the gap once', async () => {
+  it('decides the nested stems of `t` before its gap opens, and the solve needs no growth since the feed split', async () => {
     const model = await run(fixture(NESTED));
     // The record nests the three legs of the top side of `t`: each deeper than the plain 15 px stem but the first.
     const t = model.stemDepths!.find(item => item.node === 't' && item.side === 'top')!;
     expect(t.ports.map(item => item.depth).sort((a, b) => a - b)).toEqual([15, 32.5, 50]);
     expect(stemDepthsFault(model)).toBeUndefined();
-    // The nested stems and the stems of the access row ask more than the 60 px floor: one growth, set by a part of the plan.
-    expect(grown(model)).toEqual([{ below: 1, px: 7.5, setBy: 'link-2#0' }]);
-    expect(gapHeights(model).get(1)).toBeCloseTo(67.5, 6);
+    // Before architecture-2 ticket 73 the nested stems and the stems of the access row asked 7.5 px more than the 60 px floor (one growth,
+    // set by link-2#0). The feed split (`near` | `edge`, 63 px) now stands the four diagonals of the access row vertical: the stems are still
+    // nested, and the floor holds them. a-chord-spans-a-gap-the-solve-grows keeps a growth (below).
+    expect(model.feedSplits!.map(split => split.pair)).toEqual([['near', 'edge']]);
+    expect(grown(model)).toEqual([]);
+    expect(gapHeights(model).get(1)).toBeCloseTo(60, 6);
     // After the solve no plan asks for anything: the checker asks 0, read where 7f leaves the model.
     const placedModel = await atBands(fixture(NESTED));
     expect(grown(placedModel)).toEqual(grown(model));
@@ -200,7 +203,8 @@ describe('the gap solve does not depend on the order of the input (R3)', () => {
 
 describe('a restore refuses a forged tier gap (R5)', () => {
   it('refuses a tier gap shorter than the solve made it', async () => {
-    const model = await run(fixture(NESTED));
+    // The gap the solve grows: a-chord-spans-a-gap-the-solve-grows (19 px). Before ticket 73 this test read the nested-stem fixture.
+    const model = await run(fixture(CHORD));
     const { low, high } = tierGaps(model);
     const short = grown(model)[0]!.px;
     // Everything at or below the lower band moves up by the growth the solve took, the freeze snapshot with it, and the regions are
@@ -209,8 +213,8 @@ describe('a restore refuses a forged tier gap (R5)', () => {
     rebuildRegions(forged);
     forged.freeze!.placement!.regions = structuredClone(forged.regions);
     expect(tierGaps(forged).high - tierGaps(forged).low).toBeCloseTo(high - low - short, 6);
-    // The restore does not read the plan (a routed model plans no part); the rows the short gap no longer holds stand in the band below.
-    expect(() => restoreFinalLayout(JSON.stringify(forged))).toThrow(/Routed path on link-\d+ enters reserved group:/);
+    // The restore does not read the plan (a routed model plans no part); the nested stem of link-2 no longer fits the short gap.
+    expect(() => restoreFinalLayout(JSON.stringify(forged))).toThrow(/Port stem on link-2 is shorter than/);
   }, 120000);
 
   it('refuses a canton label band with a wrong height', async () => {
