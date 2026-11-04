@@ -1616,6 +1616,7 @@ function centreGivingBack(draft: LayoutModel): void {
   const input = JSON.stringify(draft);
   centreDraft(draft, createCentreBudget());
   const back = strandedGrowth(draft, JSON.parse(input) as LayoutModel);
+  if ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PG_T73_TRACE) traceStretch(draft, JSON.parse(input) as LayoutModel, back);
   if (!Object.keys(back).length) return;
   for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
   Object.assign(draft, JSON.parse(input) as LayoutModel, { givenBack: back });
@@ -1633,6 +1634,19 @@ function centreGivingBack(draft: LayoutModel): void {
     draft.diagnostics.push({ stage: 'placement', severity: 'info', code: GROWTH_KEPT,
       message: `${wide.join(', ')} ends the second run of the passes wider than the rule's input; its growth stays.` });
   }
+}
+/** t73 Step 0 trace: every node the passes widened, its targets, its vertical links and whether 71 gives it back. */
+function traceStretch(draft: LayoutModel, input: LayoutModel, back: Record<string, string[]>): void {
+  const log = (text: string): void => (globalThis as unknown as { console: { error(t: string): void } }).console.error(text);
+  for (const id of Object.keys(draft.nodes).sort()) {
+    const was = input.nodes[id]?.bounds, now = draft.nodes[id]!.bounds;
+    if (!was || !now || now.width <= was.width + EPS) continue;
+    const entries = (['top', 'bottom', 'left', 'right'] as const).flatMap(side => (draft.alignmentTargets?.[faceKey(id, side)] ?? []).map(e => `${side}:${e.port}:${e.state}${'reason' in e && e.reason ? '/' + String(e.reason) : ''}`));
+    const vertical = draft.links.filter(l => l.attachments && (l.attachments.from.node === id || l.attachments.to.node === id) && standsVertical(draft, l.id)).map(l => l.id);
+    const group = draft.groups[draft.document.nodes[id]!.group]!;
+    log(`[t73] ${id} grew ${was.width.toFixed(1)} -> ${now.width.toFixed(1)} x ${was.x.toFixed(1)} -> ${now.x.toFixed(1)} group ${group.id} box ${group.bounds?.x.toFixed(1)}..${(group.bounds!.x + group.bounds!.width).toFixed(1)} spread ${draft.parentSpreads?.[id] !== undefined} vertical [${vertical.join(',')}] back ${Object.hasOwn(back, id)} targets ${entries.join(' ')}`);
+  }
+  log(`[t73] alignmentTargets keys ${Object.keys(draft.alignmentTargets ?? {}).join(',')}`);
 }
 /** The note that the one judgement of the centre rule left a growth the second run stranded (ticket 71, R6). */
 const GROWTH_KEPT = 'CENTRE_GROWTH_KEPT';

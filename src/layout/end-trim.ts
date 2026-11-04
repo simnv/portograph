@@ -21,7 +21,7 @@ import { alignLinkedGroupGrid, forgedRefusals, syncLabelBands } from './bands.js
 import { validateLanes } from './lanes.js';
 import { rebuildRuleGeometry } from './rule-geometry-hook.js';
 import { moveGroup } from './skeleton-geometry.js';
-import { CLOSE_UP_MIN, closeUpSiblings, followingLanes, isCloseUpMover, shiftLane } from './close-up.js';
+import { CLOSE_UP_MIN, closeUpSiblings, followingLanes, isCloseUpMover, shiftLane, slideTowardFeeds } from './close-up.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 const isBarNode = (model: LayoutModel, id: string): boolean => model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar';
@@ -176,6 +176,19 @@ export function trimBodies(draft: LayoutModel): void {
       owners: Object.keys(closed.groups).map(id => ({ kind: 'group' as const, id })) });
   }
   if (closed.declined.length) draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'CLOSE_UP_DECLINED', message: `The close-up is declined for ${closed.declined.join('; ')}.` });
+  // t73 Step 0 prototype P1: the group slide toward its feeds, recorded with the close-up's shifts.
+  const slid = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PG_T73_P1 ? slideTowardFeeds(draft) : { groups: {}, lanes: {}, declined: [] };
+  if (Object.keys(slid.groups).length) {
+    const shifts = { ...(draft.bodyTrims.shifts ?? {}) }, lanes = { ...(draft.bodyTrims.laneShifts ?? {}) };
+    for (const [id, dx] of Object.entries(slid.groups)) shifts[id] = (shifts[id] ?? 0) + dx;
+    for (const [id, dx] of Object.entries(slid.lanes)) lanes[id] = (lanes[id] ?? 0) + dx;
+    draft.bodyTrims.shifts = shifts;
+    if (Object.keys(lanes).length) draft.bodyTrims.laneShifts = lanes;
+    draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'GROUP_SLIDE',
+      message: `Slid toward its feeds: ${Object.entries(slid.groups).map(([id, dx]) => `${id} by ${dx.toFixed(1)} px`).join(', ')}.`,
+      owners: Object.keys(slid.groups).map(id => ({ kind: 'group' as const, id })) });
+  }
+  if (slid.declined.length) draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'GROUP_SLIDE_DECLINED', message: `The group slide is declined for ${slid.declined.join('; ')}.` });
 }
 
 /**
@@ -241,9 +254,9 @@ export function checkBodyTrims(model: LayoutModel, beforeBands: boolean): { faul
   if (laneShifts !== undefined && (shifts === undefined || typeof laneShifts !== 'object' || laneShifts === null || !Object.keys(laneShifts).length)) return fault('malformed lane shifts');
   for (const [id, dx] of Object.entries(shifts ?? {})) {
     const group = model.groups[id];
-    if (group === undefined || !isCloseUpMover(model, group) || typeof dx !== 'number' || !Number.isFinite(dx) || dx > -CLOSE_UP_MIN) return fault(`shift of group ${id}`);
+    if (group === undefined || !isCloseUpMover(model, group) || typeof dx !== 'number' || !Number.isFinite(dx) || Math.abs(dx) < CLOSE_UP_MIN) return fault(`shift of group ${id}`);
   }
-  for (const [id, dx] of Object.entries(laneShifts ?? {})) if (!model.lanes.some(lane => lane.id === id) || typeof dx !== 'number' || !Number.isFinite(dx) || dx >= 0) return fault(`shift of lane ${id}`);
+  for (const [id, dx] of Object.entries(laneShifts ?? {})) if (!model.lanes.some(lane => lane.id === id) || typeof dx !== 'number' || !Number.isFinite(dx) || dx === 0) return fault(`shift of lane ${id}`);
   // The lanes that follow a shifted group are read on the published geometry, where they stand on its ports: each is named with its group's
   // shift, and no other lane is named.
   const followed = new Map<string, number>();
