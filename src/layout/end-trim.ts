@@ -21,7 +21,7 @@ import { alignLinkedGroupGrid, forgedRefusals, syncLabelBands } from './bands.js
 import { validateLanes } from './lanes.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { moveGroup } from './skeleton-geometry.js';
-import { CLOSE_UP_MIN, closeUpSiblings, isCloseUpMover } from './close-up.js';
+import { CLOSE_UP_MIN, closeUpSiblings, isCloseUpMover, shiftLane } from './close-up.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 const isBarNode = (model: LayoutModel, id: string): boolean => model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar';
@@ -193,7 +193,7 @@ export function untrimmedModel(model: LayoutModel): LayoutModel {
   // The close-up (ticket 69) is undone first: the groups and the lanes that followed them move back; the bodies and boxes below are recorded
   // where they stood before it.
   for (const [id, dx] of Object.entries(trims.shifts ?? {})) moveGroup(copy, copy.groups[id]!, -dx, 0);
-  for (const [id, dx] of Object.entries(trims.laneShifts ?? {})) { const lane = copy.lanes.find(item => item.id === id)!; lane.x -= dx; lane.bounds.x -= dx; }
+  for (const [id, dx] of Object.entries(trims.laneShifts ?? {})) shiftLane(copy.lanes.find(item => item.id === id)!, -dx);
   for (const [id, box] of Object.entries(trims.nodes)) { const node = copy.nodes[id]; if (node !== undefined) { node.bounds = { ...box }; node.size = { width: box.width, height: box.height }; } }
   rebuildNodeGeometry(copy, orderedNodeIds(copy.document), 'current');
   for (const [id, box] of Object.entries(trims.groups)) { const group = copy.groups[id]; if (group !== undefined) group.bounds = { ...box }; }
@@ -264,6 +264,8 @@ export function checkBodyTrims(model: LayoutModel, beforeBands: boolean): { faul
   }
   const again = JSON.parse(JSON.stringify(back)) as LayoutModel;
   if (model.freeze !== undefined) again.freeze = model.freeze;
+  // The producer ran on a draft with no routed path (stage 8): its guards read the same input here.
+  for (const link of again.links) if (link.path !== undefined && link.path.fixed !== true) delete link.path;
   trimBodies(again);
   const names = (record: Record<string, unknown> | undefined): string => JSON.stringify(Object.keys(record ?? {}).sort());
   if (names(again.bodyTrims?.nodes) !== names(trims.nodes)) return fault('the trim of the untrimmed geometry names other nodes');

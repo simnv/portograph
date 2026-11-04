@@ -62,11 +62,11 @@ describe('a sibling group closes up after the trim', () => {
     const near = model.groups['near']!.bounds!, far = model.groups['far']!.bounds!;
     expect(far.x - right(near)).toBeGreaterThanOrEqual(bandGap(model) - 1e-6);
     const back = untrimmedModel(model), wasNear = back.groups['near']!.bounds!, wasFar = back.groups['far']!.bounds!;
-    expect(far.x - right(near)).toBeGreaterThanOrEqual(Math.min(wasFar.x - right(wasNear), bandGap(model)) - 1e-6);
-    expect(far.x - right(near)).toBeLessThanOrEqual(Math.max(wasFar.x - right(wasNear), bandGap(model)) + 1e-6);
+    // `near` is the one box on the left of `far` in its rows: the gap is the one it had before the trim, at least the band gap.
+    expect(far.x - right(near)).toBeCloseTo(Math.max(wasFar.x - right(wasNear), bandGap(model)), 6);
   });
 
-  it('R1: the replay builds the geometry the producer had before the trim and the close-up, exactly', () => {
+  it('R1: the replay builds the geometry the producer had before the trim and the close-up (to 1e-9 px)', () => {
     expect(drafts.length).toBeGreaterThan(0);
     const back = geometry(untrimmedModel(model));
     expect(drafts.some(draft => geometry(draft) === back)).toBe(true);
@@ -88,6 +88,36 @@ describe('a sibling group closes up after the trim', () => {
   });
 });
 
+describe('a corridor follows the group that closes up', () => {
+  let model: LayoutModel, drafts: LayoutModel[];
+  beforeAll(async () => { ({ model, drafts } = await run('a-stretched-body-is-trimmed-to-its-ports')); }, 120000);
+
+  it('moves `far` and the lane of its link by one shift, and the lane still stands on the port', () => {
+    const dx = model.bodyTrims?.shifts?.['far'];
+    expect(dx).toBeLessThan(-1);
+    const shifted = Object.entries(model.bodyTrims?.laneShifts ?? {});
+    expect(shifted.length).toBe(1);
+    const [id, laneDx] = shifted[0]!, lane = model.lanes.find(item => item.id === id)!;
+    expect(laneDx).toBe(dx);
+    expect(lane.bounds.x).toBe(lane.x - lane.bounds.width / 2);
+    const port = model.nodes['sink-far']!.ports.find(item => Math.abs(item.anchor!.x - lane.x) < 1e-9);
+    expect(port).toBeDefined();
+  });
+
+  it('R1: the replay moves the lane back and builds the geometry before the trim and the close-up (to 1e-9 px)', () => {
+    const back = geometry(untrimmedModel(model));
+    expect(drafts.some(draft => geometry(draft) === back)).toBe(true);
+  });
+
+  it('refuses a forged lane shift', () => {
+    const id = Object.keys(model.bodyTrims!.laneShifts!)[0]!;
+    expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.laneShifts![id]! -= 40; }))).toThrow(/end trim record is forged/);
+    // R5 limit, as for a group shift: a record with the lane shift left out is itself a fixed point (the lane then stood off the port before the
+    // close-up, did not follow, and stands where it stands), so it passes.
+    expect(() => restoreLayoutModel(forge(model, copy => { delete copy.bodyTrims!.laneShifts; }))).not.toThrow();
+  });
+});
+
 describe('a close-up a guard declines', () => {
   let model: LayoutModel, drafts: LayoutModel[];
   beforeAll(async () => { ({ model, drafts } = await run('a-close-up-that-would-reseat-a-bundled-port-is-declined')); }, 120000);
@@ -102,6 +132,12 @@ describe('a close-up a guard declines', () => {
     expect(drafts.length).toBeGreaterThan(0);
     const xs = (item: LayoutModel): string => JSON.stringify(['sw-3', 'sink-far'].flatMap(id => item.nodes[id]!.ports.map(port => port.anchor!.x)));
     expect(drafts.some(draft => xs(draft) === xs(model))).toBe(true);
+  });
+
+  it('R1: with nothing closed up, the replay builds the geometry before the trim (to 1e-9 px)', () => {
+    expect(model.bodyTrims?.shifts).toBeUndefined();
+    const back = geometry(untrimmedModel(model));
+    expect(drafts.some(draft => geometry(draft) === back)).toBe(true);
   });
 
   it('keeps the two bundled drops straight', () => {
