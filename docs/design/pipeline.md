@@ -1288,9 +1288,11 @@ named `TIER_GAP_PART_UNFIT` at stage 8 (`unfitGaps`) and its links are the route
 node body is trimmed to the span of its `top` and `bottom` ports with their stored end insets (`portEndInsets`), never below its stage-3
 size read on the final faces (`sizeFloor`, `contentSize`, the content measured again, the capacity of each horizontal face, a side hint's
 node floor). A face with lateral ports keeps its x; a node with ports on both lateral sides and a `bar` node are not trimmed. Ports keep
-their x and no node moves, so no plan, chord, lane or course changes. Each group box shrinks to its content and never grows; the
-linked-group grid runs again (honouring `gridRefusals`), and the regions, frames, tier bands and label bands are derived again. A grid that
-would widen a box past the box it had declines the whole trim (`END_TRIM_DECLINED`). A held chord that now leaves a narrower frame by a
+their x and no node moves, so no plan, chord, lane or course changes. Each group box shrinks to its content (title floor
+included) inside the box it had; the linked-group grid runs again (honouring `gridRefusals`) and may grow a box onto a linked partner's
+extent, as its rule says; the regions, frames, tier bands and label bands are derived again. A trim whose grid would move a node, change a
+box's height or widen the drawing, or that would change a label band's clearance, end a grid refusal or contradict a lane, is declined
+whole (`END_TRIM_DECLINED`, with the reason) and the draft is the one 7f left. A held chord that now leaves a narrower frame by a
 side edge is named by `STRAIGHT_LINK_EDGE`, as every 7f move after the freeze is. The record `bodyTrims` holds the body and box each
 trimmed node and changed group had before the trim; the centring replay of the publication check reads that geometry (`untrimmedModel`),
 the one its producer decided on, never the narrower bodies (R1), and the validator checks each recorded node against `trimmedBody` of its
