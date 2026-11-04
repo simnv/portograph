@@ -112,9 +112,8 @@ describe('a corridor follows the group that closes up', () => {
   it('refuses a forged lane shift', () => {
     const id = Object.keys(model.bodyTrims!.laneShifts!)[0]!;
     expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.laneShifts![id]! -= 40; }))).toThrow(/end trim record is forged/);
-    // R5 limit, as for a group shift: a record with the lane shift left out is itself a fixed point (the lane then stood off the port before the
-    // close-up, did not follow, and stands where it stands), so it passes.
-    expect(() => restoreLayoutModel(forge(model, copy => { delete copy.bodyTrims!.laneShifts; }))).not.toThrow();
+    // Review re-check: the lanes that stand on a shifted group's ports in the published model must be named, so leaving one out is refused.
+    expect(() => restoreLayoutModel(forge(model, copy => { delete copy.bodyTrims!.laneShifts; }))).toThrow(/end trim record is forged: the lane shifts are not the lanes/);
   });
 });
 

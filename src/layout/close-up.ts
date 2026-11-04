@@ -114,6 +114,20 @@ function reading(model: LayoutModel): Reading {
   };
 }
 
+/**
+ * The lanes that follow a port of `group`: a lane (not a span or perimeter lane) of a link with an end on the group, standing at that end's x.
+ * They move with the group. One function for the producer and the record check, which reads it on the published model (R1).
+ */
+export function followingLanes(model: LayoutModel, group: LayoutGroup): string[] {
+  const own = new Set<LayoutPort>(group.nodes.flatMap(node => model.nodes[node]!.ports));
+  return model.lanes.filter(lane => {
+    const owner = lane.owner;
+    if (owner.kind !== 'link' || lane.kind === 'span' || lane.kind === 'perimeter') return false;
+    const link = model.links.find(item => item.id === owner.id);
+    return link !== undefined && ends(model, link).some(port => port !== undefined && own.has(port) && Math.abs(port.anchor!.x - lane.x) <= PLACEMENT_EPS);
+  }).map(lane => lane.id);
+}
+
 const gained = (before: ReadonlySet<string>, after: ReadonlySet<string>): string | undefined => [...after].find(id => !before.has(id));
 const lost = (before: ReadonlySet<string>, after: ReadonlySet<string>): string | undefined => [...before].find(id => !after.has(id));
 
@@ -175,13 +189,7 @@ export function closeUpSiblings(model: LayoutModel, before: BeforeTrim): CloseUp
     for (const id of movers) {
       const group = model.groups[id]!, box = group.bounds!, was = before.groups.get(id) ?? box;
       // The lanes that follow a port of the group: the lane of a link with an end on the group, at that end's x.
-      const own = new Set<LayoutPort>(group.nodes.flatMap(node => model.nodes[node]!.ports));
-      const following = model.lanes.filter(lane => {
-        const owner = lane.owner;
-        if (owner.kind !== 'link' || lane.kind === 'span' || lane.kind === 'perimeter') return false;
-        const link = model.links.find(item => item.id === owner.id);
-        return link !== undefined && ends(model, link).some(port => port !== undefined && own.has(port) && Math.abs(port.anchor!.x - lane.x) <= PLACEMENT_EPS);
-      }).map(lane => lane.id);
+      const following = followingLanes(model, group);
       const followingSet = new Set(following);
       // The walls on the left: each keeps the gap it had to the group before the trim, at least the band gap.
       let low = -Infinity, sibling = false;
@@ -243,6 +251,8 @@ export function closeUpSiblings(model: LayoutModel, before: BeforeTrim): CloseUp
         alignLinkedGroupGrid(model, new Set(model.gridRefusals ?? []));
         refusal = closeUpRefusal(model, was0, { deficits }, bandsChanged, JSON.stringify(Object.values(model.groups).map(item => item.bounds)) !== boxes, { nodes: new Set(group.nodes), dx });
       } catch (error) {
+        // A programming error is no refusal: it is thrown on (the draft is put back first).
+        if (error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError) { undo(); throw error; }
         // A rule that cannot derive its geometry on the moved ports refuses the move (R6): the move was only tried.
         refusal = `a rule could not derive the moved geometry: ${error instanceof Error ? error.message : String(error)}`;
       }

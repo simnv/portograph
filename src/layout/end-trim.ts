@@ -21,7 +21,7 @@ import { alignLinkedGroupGrid, forgedRefusals, syncLabelBands } from './bands.js
 import { validateLanes } from './lanes.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { moveGroup } from './skeleton-geometry.js';
-import { CLOSE_UP_MIN, closeUpSiblings, isCloseUpMover, shiftLane } from './close-up.js';
+import { CLOSE_UP_MIN, closeUpSiblings, followingLanes, isCloseUpMover, shiftLane } from './close-up.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 const isBarNode = (model: LayoutModel, id: string): boolean => model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar';
@@ -244,6 +244,12 @@ export function checkBodyTrims(model: LayoutModel, beforeBands: boolean): { faul
     if (group === undefined || !isCloseUpMover(model, group) || typeof dx !== 'number' || !Number.isFinite(dx) || dx > -CLOSE_UP_MIN) return fault(`shift of group ${id}`);
   }
   for (const [id, dx] of Object.entries(laneShifts ?? {})) if (!model.lanes.some(lane => lane.id === id) || typeof dx !== 'number' || !Number.isFinite(dx) || dx >= 0) return fault(`shift of lane ${id}`);
+  // The lanes that follow a shifted group are read on the published geometry, where they stand on its ports: each is named with its group's
+  // shift, and no other lane is named.
+  const followed = new Map<string, number>();
+  for (const [id, dx] of Object.entries(shifts ?? {})) for (const lane of followingLanes(model, model.groups[id]!)) followed.set(lane, dx as number);
+  if (JSON.stringify([...followed.keys()].sort()) !== JSON.stringify(Object.keys(laneShifts ?? {}).sort())
+    || [...followed].some(([lane, dx]) => Math.abs(dx - laneShifts![lane]!) > PLACEMENT_EPS)) return fault('the lane shifts are not the lanes that follow the shifted groups');
   // A recorded body that does not hold its node's ports or content cannot be built: that is a finding, named (R6).
   let back: LayoutModel;
   try { back = untrimmedModel(model); } catch (error) { return fault(`the recorded geometry cannot be built: ${error instanceof Error ? error.message : String(error)}`); }
