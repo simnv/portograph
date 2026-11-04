@@ -148,3 +148,19 @@ describe('a close-up a guard declines', () => {
     }
   });
 });
+
+// Architecture-2 ticket 71: a close-up that changes how a node side nests its stems is declined, so the stem depth record still holds. Before
+// the guard, the sweep sheet v5-5-0 (with ticket 71) and the user's tier-gap sheet with reversed links (on main) threw at publication.
+describe('a close-up keeps the stem depth record', () => {
+  it('lays out v5-5-0 and the tier-gap sheet with reversed links, and the record is the one the geometry nests', async () => {
+    const { stemDepthsFault } = await import('../../src/layout/sides-two.js');
+    const sweep = readFileSync(new URL('../fixtures/sweep/v5-5-0.yaml', import.meta.url), 'utf8');
+    const tierGap = source('a-tier-gap-plan-orders-every-part');
+    const lines = tierGap.split('\n'), at = lines.indexOf('links:');
+    const reversed = [...lines.slice(0, at + 1), ...lines.slice(at + 1).filter(line => line.startsWith('  - ')).reverse()].join('\n') + '\n';
+    for (const text of [sweep, reversed]) {
+      const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      expect(stemDepthsFault(model)).toBeUndefined();
+    }
+  }, 120000);
+});

@@ -367,7 +367,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     }
   }
   else if (model.anchorTier !== undefined) throw new Error('Premature anchor tier');
-  else if (model.givenBack !== undefined) throw new Error('The given-back growth record is forged: a record before the centre rule');
+  else if (givenBackFault(model, true) !== undefined) throw new Error(`The given-back growth record is forged: ${givenBackFault(model, true)}`);
   if (stages.indexOf(model.stage) < stages.indexOf('rows')) return;
   // A snapshot of the stages before the bundles skips the second derivation of the paths below (`withStageMutation`), but not the facing-order check:
   // it runs only before the bundle stage, so no later check reads it.

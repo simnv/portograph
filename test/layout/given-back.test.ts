@@ -34,7 +34,7 @@ describe('a stranded growth is given back', () => {
     expect(model.givenBack!['srv1']).toBeUndefined();
     // isp1 is given back too, but its sibling isp0 stands a target, so the group step keeps isp1's width; the note names it, and srv0 not (R6).
     const kept = model.diagnostics.filter(item => item.code === 'CENTRE_GROWTH_KEPT').map(item => item.message);
-    expect(kept).toEqual([expect.stringMatching(/^isp1 gave a growth back, but a sibling/)]);
+    expect(kept).toEqual([expect.stringMatching(/^isp1 ends the second run of the passes wider than the rule's input/)]);
   });
 
   it('keeps the bends of main (6) and narrows the canvas (668 px on main)', () => {
@@ -46,12 +46,10 @@ describe('a stranded growth is given back', () => {
     expect(restoreLayoutModel(JSON.stringify(model)).givenBack).toEqual(model.givenBack);
   });
 
-  it('R5: refuses a record on a model before the centre rule', async () => {
-    const early = (await import('../../src/layout/mutation.js')).restoreLayoutModel;
-    const placed = JSON.parse(JSON.stringify(model)) as LayoutModel;
-    // A shape-valid record on a model whose stage is before 7c: no producer wrote it.
-    const before = { ...placed, stage: 'flanks', givenBack: placed.givenBack } as unknown as LayoutModel;
-    expect(() => early(JSON.stringify(before))).toThrow();
+  it('R5: refuses a record on a model before the centre rule', () => {
+    // The publication check calls the shape check with `beforeCentre` below the centre stage (mutation.ts) and throws its finding.
+    expect(givenBackFault(model, true)).toBe('a record before the centre rule');
+    expect(givenBackFault(model)).toBeUndefined();
   });
 
   it('R5: refuses a prototype key as a node', () => {

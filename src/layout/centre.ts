@@ -1626,12 +1626,12 @@ function centreGivingBack(draft: LayoutModel): void {
     draft.diagnostics.push({ stage: 'placement', severity: 'info', code: GROWTH_KEPT,
       message: `The second run of the centring passes strands a growth of ${kept.join(', ')}; the centre rule judges its growths once, so the growth stays.` });
   }
-  // The decline reads the targets of the whole group: a given-back body whose sibling stands a target keeps the step's growth. The record then
-  // names a growth the geometry keeps, and the note says so (R6).
+  // The decline reads the targets of the whole group: a given-back body whose sibling stands a target keeps the step's growth (or one of its own
+  // ports stood and a later step moved it off). The record then names a growth the geometry keeps, and the note says so (R6).
   const wide = Object.keys(back).filter(node => draft.nodes[node]!.bounds!.width > was.nodes[node]!.bounds!.width + EPS);
   if (wide.length) {
     draft.diagnostics.push({ stage: 'placement', severity: 'info', code: GROWTH_KEPT,
-      message: `${wide.join(', ')} gave a growth back, but a sibling in its group stands a target, so its step keeps the width.` });
+      message: `${wide.join(', ')} ends the second run of the passes wider than the rule's input; its growth stays.` });
   }
 }
 /** The note that the one judgement of the centre rule left a growth the second run stranded (ticket 71, R6). */

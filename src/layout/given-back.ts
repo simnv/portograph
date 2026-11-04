@@ -67,11 +67,12 @@ export function strandedGrowth(model: LayoutModel, input: LayoutModel): Record<s
 
 /**
  * The first fault of a stored record, or undefined (R5): an empty record, a key that is no node, a port list that is empty, out of code-unit
- * order, repeated, or names a port the node does not have. The caller refuses a record on a model before the centre rule's output.
+ * order, repeated, or names a port the node does not have; any record on a model before the centre rule's output (`beforeCentre`).
  */
-export function givenBackFault(model: LayoutModel): string | undefined {
+export function givenBackFault(model: LayoutModel, beforeCentre = false): string | undefined {
   const record = model.givenBack;
   if (record === undefined) return undefined;
+  if (beforeCentre) return 'a record before the centre rule';
   if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
   if (!Object.keys(record).length) return 'the record names no node';
   for (const [node, ports] of Object.entries(record)) {
