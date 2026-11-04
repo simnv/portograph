@@ -57,7 +57,8 @@ export interface ReservationPayload {
   groupOrder: { tier: number; order: readonly string[]; feeds: readonly RowFeed[] };
   /**
    * The side of the transited group `group` that the corridor of `link` takes in sub-tier `tier`, decided in stage 4 with the free rows and
-   * the group order (ticket 72). Every reader takes the corridor x from `reservedCorridorX` (`lanes.ts`); 7a allocates the lane on this
+   * the group order (ticket 72). The draft, the 7c predictor and `farCoordinate` take the corridor x from `reservedCorridorX` (`lanes.ts`);
+   * 7a reads the entry (`corridorSideOf`) and takes the x by the same predicate (`corridorXOnSide`) on the box it allocates against, on this
    * side, and 7f withdraws the entry by name (`CORRIDOR_SIDE_WITHDRAWN`) when it moves the lane across. Absent: the readers decide the side.
    */
   corridorSide: { link: string; tier: number; group: string; side: 'left' | 'right' };
@@ -361,7 +362,7 @@ const LANE_STAGES: ReadonlySet<LayoutStage> = new Set(['lanes', 'flanks', 'centr
 /**
  * The predicate of a corridor side (ticket 72, R2): the host stands on its sub-tier, and from 7a on the transit lane of the link in that
  * sub-tier stands on the reserved side of the host. A link that 7a does not give a plain transit lane there (a span hint, a course) is
- * judged on its host alone. 7f withdraws an entry whose lane it moves across (`withdrawCorridorSides`), so a later stage reads no stale one.
+ * judged on its host alone. 7f withdraws an entry whose lane it moves across (`withdrawCorridorSide`, `lanes.ts`), so a later stage reads no stale one.
  */
 export function corridorSideFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'corridorSide') return undefined;

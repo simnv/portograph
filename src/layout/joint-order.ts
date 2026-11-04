@@ -15,7 +15,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
  *
  * - **Where.** After the two corridor sweeps of `orderByCorridors` and before the far-end pull; each sub-tier with a free row the sweeps may
  *   turn (`turnable`), the anchor tier first, then downward, then upward.
- * - **Candidates.** Per free row, the orders of six key builders over the normalized ranks of both neighbour sub-tiers (`rowFeedCandidates`);
+ * - **Candidates.** Per free row, the current order and the orders of five key builders over the normalized ranks of both neighbour sub-tiers (`rowFeedCandidates`);
  *   every order of each movable group run of the outward sub-tier (`groupOrderCandidates`); every side vector of the transit corridors
  *   through the sub-tier (`sideVectors`). Each enumeration puts the current order first.
  * - **Predictor.** The outward groups stand at a prediction of their 7c centres (`seatPredicted7c`): a surrogate of 7c, which runs on ports
@@ -29,7 +29,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
  *   judged and is named (`JOINT_ORDER_LEFT_OUT`, R6).
  * - **Record (R1).** A turned row records `feed-order` (`orderByCorridors`); a turned group run a `groupOrder` entry with its premise, the free
  *   rows and their orders; every corridor of an accepted candidate a `corridorSide` entry, which `reservedCorridorX` reads for every consumer.
- * - **Bounds (R4).** `JOINT_GROUP_RUN`, `JOINT_GROUP_ORDERS`, `JOINT_TRANSIT_SIDES` and `JOINT_ROW_ORDERS` per sub-tier, and every evaluation
+ * - **Bounds (R4).** `JOINT_GROUP_RUN`, `JOINT_GROUP_ORDERS` and `JOINT_TRANSIT_SIDES` per sub-tier, `JOINT_ROW_ORDERS` per group order, and every evaluation
  *   spends one candidate of `ROW_ORDER_BUDGET` with the sweeps. A truncation is a `ROW_ORDER_SEARCH_CAPPED` reason.
  *
  * `layout.feedOrder: false` switches it off.
@@ -464,10 +464,10 @@ export function orderJointFreeRows(model: LayoutModel, draft: Draft, turnable: (
   const at = tiers.indexOf(anchor);
   const sweep = [at, ...Array.from({ length: tiers.length - at - 1 }, (_, i) => at + 1 + i), ...Array.from({ length: at }, (_, i) => at - 1 - i)];
 
+  // Every left-out row is named, also on a sub-tier the budget does not reach.
+  for (const k of sweep) for (const row of turnable(k)) { const why = leftOut.get(row); if (why !== undefined) named.set(row, why); }
   for (const k of sweep) {
-    const candidatesRows = turnable(k);
-    for (const row of candidatesRows) { const why = leftOut.get(row); if (why !== undefined) named.set(row, why); }
-    const rows = candidatesRows.filter(group => !leftOut.has(group));
+    const rows = turnable(k).filter(group => !leftOut.has(group));
     if (!rows.length) continue;
     if (budget.spent >= budget.limit) { budget.caps.add(`the sheet spent its budget of ${budget.limit} candidates`); break; }
     const tierK = tiers[k]!, tierUp = k > 0 ? tiers[k - 1] : undefined, tierDown = k + 1 < tiers.length ? tiers[k + 1] : undefined;

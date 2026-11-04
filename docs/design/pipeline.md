@@ -366,7 +366,7 @@ spanning chord, centring) can still move the link, so the corpus measures the ru
 The sweeps above do not judge the anchor tier or a tier no transit link spans, and a key of a free row alone cannot judge it: the
 draft does not hold the x where 7c puts the far groups, and the corridor of a far source can take the far side of the row. After the
 sweeps and before the far-end pull, each sub-tier with a free row the sweeps may turn, the anchor tier first, then down, then up, judges
-three things together: the free rows' candidate orders (six key builders over the normalized ranks of both neighbour sub-tiers, routed
+three things together: the free rows' candidate orders (the current order and five key builders over the normalized ranks of both neighbour sub-tiers, routed
 same-row peers that stand side by side kept together), every order of each movable group run of the sub-tier away from the anchor
 (`JOINT_GROUP_RUN` groups, `JOINT_GROUP_ORDERS` combinations), and every side vector of the transit corridors through the sub-tier
 (`JOINT_TRANSIT_SIDES` corridors). The outward groups stand at a prediction of their 7c centres (`seatPredicted7c`, a surrogate of 7c,

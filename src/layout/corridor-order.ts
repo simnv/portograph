@@ -66,12 +66,12 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
  * author wants the declared order (R9: a per-sheet setting).
  */
 export function orderByCorridors(model: LayoutModel): void {
-  const draft = readDraft(model);
-  if (draft === undefined) return;
   if (model.reservations !== undefined) {
     // A placement re-run decides the joint order again on its own skeleton (ticket 72): the entries of an earlier run are dropped.
     model.reservations = model.reservations.filter(entry => entry.kind !== 'corridorSide' && entry.kind !== 'groupOrder');
   }
+  const draft = readDraft(model);
+  if (draft === undefined) return;
   const { anchor, tiers, index, measureRange, reach } = draft;
   const { movable, freeRow } = orderTools(model);
   const orderOf = (group: LayoutGroup): string[] => [...(group.rowOrder ?? group.nodes)];
