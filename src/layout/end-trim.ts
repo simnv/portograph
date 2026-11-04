@@ -25,7 +25,9 @@ export function trimBodies(input: LayoutModel): LayoutModel {
     const box = node.bounds;
     if (box === undefined || node.contentInsets === undefined || bars.has(model.document.nodes[id]!.group)) continue;
     const floor = Math.max(node.sizeFloor?.width ?? 0, node.contentSize?.width ?? 0,
-      measureNodeContent(model.document.nodes[id]!, model.document, node.contentInsets).width);
+      measureNodeContent(model.document.nodes[id]!, model.document, node.contentInsets).width,
+      // The floor a side hint froze for the node (ADR-0022) holds too.
+      model.freeze?.nodeFloors?.find(item => item.node === id)?.size.width ?? 0);
     // The span the horizontal faces need: the outer ports with the stored end insets.
     let low = Infinity, high = -Infinity;
     for (const side of ['top', 'bottom'] as const) {
