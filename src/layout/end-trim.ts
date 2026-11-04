@@ -3,7 +3,7 @@ import { contentBox, rebuildRegions, right } from './regions.js';
 import { portEndInsets } from './port-insets.js';
 import { measureNodeContent } from './size.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { placeGroupTitles, syncLabelBandsOnly } from './bands.js';
+import { alignLinkedGroupGrid, placeGroupTitles, syncLabelBandsOnly } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { placementSnapshotOf, restoreLayoutModel } from './mutation.js';
 import { orderedNodeIds } from '../model/model.js';
@@ -63,6 +63,8 @@ export function trimBodies(input: LayoutModel): LayoutModel {
     const x = Math.max(old.x, content.x), r = Math.min(right(old), right(content));
     if (r - x < old.width - PLACEMENT_EPS) group.bounds = { x, y: old.y, width: r - x, height: old.height };
   }
+  // The linked-group grid (ADR-0012) again on the trimmed boxes: it only grows a box back to the union of its linked partners.
+  alignLinkedGroupGrid(model, new Set(model.gridRefusals ?? []));
   rebuildRegions(model);
   syncLabelBandsOnly(model);
   rebuildRegions(model);
@@ -70,5 +72,11 @@ export function trimBodies(input: LayoutModel): LayoutModel {
   // The trim is the last placement change: the final placement freeze is taken again on it.
   if (model.freeze?.placement) model.freeze.placement = JSON.parse(JSON.stringify(placementSnapshotOf(model))) as typeof model.freeze.placement;
   // The trimmed copy is published again through the restore API: every publication check of 7f reads it.
-  return restoreLayoutModel(JSON.stringify(model));
+  // A trim the publication checks refuse is not made (experiment): the untrimmed model is routed, and stderr names the refusal.
+  try {
+    return restoreLayoutModel(JSON.stringify(model));
+  } catch (error) {
+    (globalThis as unknown as { console: { error(line: string): void } }).console.error(`END_TRIM_REFUSED ${error instanceof Error ? error.message.slice(0, 200) : String(error)}`);
+    return input;
+  }
 }
