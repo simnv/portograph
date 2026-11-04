@@ -12,8 +12,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // b19c42d7... and b20890c8...).
 // Architecture-2 ticket 57 re-baselined both: every published model gains `stemDepths` (the hash without that key is the old one:
 // 745d3f2f... and 0c8f01d5...).
+// Architecture-2 ticket 68 re-baselined m1-sip-edge (4ae81293... before): the end trim narrows its stretched bodies, pending the
+// maintainer's approval of the regenerated golden.
 const baselines = {
-  'm1-sip-edge': '4ae81293589fbc227160b24ab164503f7015cfcf54084cfe15bc06166576618b',
+  'm1-sip-edge': '724ccda30c6d2f859d4001b558f51fcef1c8112bc215a903925a15b3151b8ed2',
   'synthetic/drawio-constructs': '95beda3435ba10afd4dcc5c0077f22b422d891dc4428216395bcadde9b3ca766',
 };
 

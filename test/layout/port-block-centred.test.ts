@@ -15,7 +15,9 @@ const run = (): Promise<LayoutModel> =>
 describe('the port block of a face (architecture ticket 10, defect D3)', () => {
   it('stands centred on a face that centring left alone while it widened the body', async () => {
     const model = await run();
-    const hub = model.nodes['hub']!, box = hub.bounds!, pitch = hub.sidePitch!.top!;
+    // The face is centred on the body 7f decided; the end trim (architecture-2 ticket 68) then narrows the body and moves no port, so the
+    // centring is read on the recorded body.
+    const hub = model.nodes['hub']!, box = model.bodyTrims?.nodes['hub'] ?? hub.bounds!, pitch = hub.sidePitch!.top!;
     // The body was widened for the two bottom ports; the top face holds three overlay ports.
     expect(box.width).toBeGreaterThan(20 + 3 * pitch + 10);
     const top = hub.ports.filter(port => port.side === 'top').map(port => port.anchor!.x).sort((a, b) => a - b);

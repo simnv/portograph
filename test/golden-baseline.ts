@@ -4,4 +4,6 @@
  * scorer's own `baseline` assertion keeps the ±0.05 tolerance in `test/pipeline/golden-snapshot.test.ts`.
  */
 // Ticket 156 protects existing x separation at wide corners, retaining the 9 px golden geometry.
-export const APPROVED_Q = 0.9016777547259379;
+// Architecture-2 ticket 68 (the end trim) narrows bodies the centring stretched: 0.9016777547259379 to 0.8911101106593655, pending the
+// maintainer's approval of the regenerated golden.
+export const APPROVED_Q = 0.8911101106593655;

@@ -283,10 +283,12 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // 6b813734f4667a13, 2cb9f082ee2bcec1 and b2ef2a0daab9b5b5.
   // Architecture-2 ticket 57 re-baselined all four: every published model gains `stemDepths`, and the hash without that key is the old one
   // (d3e780f62bdcd73f, 4d110ee3c79e3a03, ec6ec0f9d56c0a2a and 1ca0cc4576f1f62b).
+  // Architecture-2 ticket 68 (the end trim) re-baselined `a-linked-node-steps-out-of-a-straight-chord` (055ce54f4c9efef7 before): a body the
+  // centring stretched is trimmed to its ports after 7f and `bodyTrims` records it; no route changes. The no-hint claim is the second check.
   const main: Record<string, string> = {
     'a-group-holds-both-ends-of-a-bundle': '38dcd21f37d7d0d4',
     'a-bus-in-a-rank-gap-grows-the-gap': '4a5fd53ee2ebe075',
-    'a-linked-node-steps-out-of-a-straight-chord': '055ce54f4c9efef7',
+    'a-linked-node-steps-out-of-a-straight-chord': 'e07856b562bce4c8',
     'a-bar-end-keeps-its-corridor': '98b3b139a5a1657b',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {

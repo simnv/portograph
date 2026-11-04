@@ -29,6 +29,7 @@ import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { publishedCentreViolations, selectAnchorTier } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentTargetsFault } from './alignment-targets.js';
+import { checkBodyTrims } from './end-trim.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
@@ -335,12 +336,15 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     rebuildRegions(expected);
     same(model.regions, expected.regions, 'Region geometry contradicts current groups');
   }
+  // The record of the end trim is read by the centring replay below, so it is checked first (architecture-2 ticket 68, R5).
+  const trims = checkBodyTrims(model, stages.indexOf(model.stage) < stages.indexOf('bands'));
+  if (trims.fault !== undefined) throw new Error(`The end trim record is forged: ${trims.fault}`);
   if (stages.indexOf(model.stage) >= stages.indexOf('centre')) {
     same(model.anchorTier, selectAnchorTier(model), 'Anchor tier contradicts node count or tie rule');
     // The record of the alignment targets is read, never decided again (architecture-2 ticket 66, R1); a malformed one is refused (R5).
     const targets = alignmentTargetsFault(model);
     if (targets !== undefined) throw new Error(`The alignment target record is forged: ${targets}`);
-    const all = publishedCentreViolations(model);
+    const all = publishedCentreViolations(model, false, trims.untrimmed);
     // A replay that declines a target the record does not is a contradiction of the record, not an alignment a spent budget left unverified:
     // no diagnostic excuses it (R5; ADR-0010 covers the alignments only).
     const differ = all.filter(item => item.startsWith(ALIGNMENT_TARGETS_DIFFER));
@@ -716,7 +720,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads'] : []),
     // The centring steps of 7c to 7f write the record of their alignment targets; the route rule drops it, after the publication of 7f has
     // compared it with its replay (architecture-2 ticket 66).
-    ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets'] : [])];
+    ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets'] : []),
+    // The end trim of 7f records the bodies and boxes it narrowed (architecture-2 ticket 68); every later rule keeps the record.
+    ...(rule === 'bands' ? ['bodyTrims'] : [])];
   same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
