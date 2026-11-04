@@ -1,6 +1,6 @@
-# Expected: architecture-2 ticket 73, the feed split. The input of a-tier-gap-plan-orders-every-part. The feeds of edge-far (sw0, sw3, the
-# transit lane of isp0's link) and of edge-near (sw1, sw2, sw4, the lane of isp1's link) stand apart in x, but closer than the two reaches
-# and the band gap: stage 5 moves the feeding side (the access and src tiers) right of the split line, so 7c stands both groups under their
+# Expected: architecture-2 ticket 73, the feed split. The input of a-tier-gap-plan-orders-every-part. The feeds of edge-far (sw0, sw3) and
+# of edge-near (sw1, sw2, sw4) stand apart in x at stage 5 (the transit links of isp0 and isp1 have no lane yet), but closer than the two
+# reaches and the band gap: stage 5 moves the feeding side (the access and src tiers) right of the split line, so 7c stands both groups under their
 # feeds (`feedSplits`: one split of sub-tier 2, pair edge-far | edge-near). Every link of srv0 and srv1 is vertical, bends 2 to 0,
 # isp0 293 to 184 px, canvas 579 to 590 px. Test test/layout/feed-split.test.ts.
 portograph: 2

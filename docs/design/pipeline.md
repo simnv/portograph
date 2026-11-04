@@ -532,17 +532,18 @@ sides and sizes. It walks the centring steps from the anchor tier outward, the s
 sub-tier with the adjacent one toward the anchor, its authority). For two sibling groups of the step's sub-tier side by side whose feeds (`centringFeeds`)
 stand apart in x, both can stand under their feeds only when the two inner feeds stand at least `reach(left) + band gap + reach(right)` apart; the reach is
 the distance from the child port of the outer feed to the box edge. Where the first pair in x stands closer by more than `MIN_SPLIT` (0.5 px), every body,
-port, box and transit lane of the feeding side (the authority tier and the tiers beyond it, away from the child) right of a line halfway between the two
+port and box of the feeding side (the authority tier and the tiers beyond it, away from the child) right of a line halfway between the two
 inner feeds moves right by the deficit; the child tier and the far side stay, and 7c then centres each group under its feeds. A body never stretches: a
 split line through a body of the authority tier (a node that feeds both groups) is declined, and a crossed body of a tier beyond moves whole when its
 centre stands right of the line and stays otherwise (where stage 4 put it is incidental, R3; 7c centres it again). A group box the line crosses grows
 only when some of its nodes move and some stay; it moves whole when all move, and stays when none moves. Only plain groups split (no rank cell, frame or
-flank in the pair), and a feeding side with a frame, flank, canton member, bar, grid or a lane other than a transit lane declines. A rebuild or lane check
-that refuses the moved model puts it back. A decline names the pair (`FEED_SPLIT_DECLINED`) and ends its step; a step stops after `MAX_SPLITS_PER_STEP`
+flank in the pair), and a feeding side with a frame, flank, canton member, bar or grid declines (so does a model that holds a lane: 7a reserves them later).
+The moved model must keep the room of this split and of every split made before it (a later split can grow the box of a recorded pair, and so its
+reach) and every seated stagger row; a rebuild or a check that refuses it puts the saved model back. A decline names the pair (`FEED_SPLIT_DECLINED`) and ends its step; a step stops after `MAX_SPLITS_PER_STEP`
 (8) splits with `FEED_SPLIT_CAPPED`. `feedSplits` records each split made (`tier`, `authority`, `pair`, `at`, `width`), `[]` when stage 5 decided and made
 none; absent means no stage 5 of this pipeline ran on the model. Each placement run decides on its own stage-5 geometry. The freeze keeps a copy
 (`freeze.feedSplits`); every publication checks the record against it and its shape, and the stage-5 publication and its restore check that each recorded
-pair has its room (`feedPairRoom`, the one reader of the room). Later stages move the feeding tiers again (7c, the close-up), so no later stage reads the
+pair has its room (`feedPairRoom`, the one reader of a recorded pair, which the check of each split calls too). Later stages move the feeding tiers again (7c, the close-up), so no later stage reads the
 room or decides the split again.
 
 ## Stage 6 — rows

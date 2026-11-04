@@ -8,7 +8,8 @@ import { sizeNodes } from '../../src/layout/size.js';
 import { skeleton } from '../../src/layout/skeleton.js';
 import { sidesTwo } from '../../src/layout/sides-two.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
-import { feedPairRoom, MIN_SPLIT } from '../../src/layout/feed-split.js';
+import { feedPairRoom } from '../../src/layout/feed-split.js';
+import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -86,8 +87,11 @@ describe('the feed split (architecture-2 ticket 73)', () => {
 
   it('publishes the same layout with the links reversed, and the mirror decision on mirrored input (R3)', async () => {
     const [reversed, mirrored] = await Promise.all([run(reversedLinks(SPLIT)), run(mirror(SPLIT))]);
-    // With the links reversed, stage 4 puts isp0 (tier 0) across the split line: it moves whole, and the sheet publishes the same layout.
+    // With the links reversed, stage 4 puts isp0 (tier 0, a tier beyond the authority) across the split line at another x: the split is not
+    // declined for it (before variant V it was), and the sheet publishes the same layout.
+    expect(reversed.feedSplits!.map(split => split.pair)).toEqual([['edge-far', 'edge-near']]);
     expect(reversed.feedSplits![0]!.at).not.toBe(model.feedSplits![0]!.at);
+    expect(reversed.diagnostics.filter(item => item.code === 'FEED_SPLIT_DECLINED')).toEqual([]);
     expect(geometry(reversed)).toEqual(geometry(model));
     // Mirrored, the joint stage-4 order (ticket 72) stands the groups as before: the same decision and the same layout.
     expect(geometry(mirrored)).toEqual(geometry(model));
@@ -97,7 +101,7 @@ describe('the feed split (architecture-2 ticket 73)', () => {
   it('checks the room of each recorded pair on the stage-5 model, and the freeze keeps the record (R1, R5)', async () => {
     const five = await stageFive(SPLIT);
     expect(five.feedSplits).toEqual(model.feedSplits);
-    expect(feedPairRoom(five, 2, 1, 'edge-far', 'edge-near')).toBeLessThanOrEqual(MIN_SPLIT);
+    expect(feedPairRoom(five, 2, 1, 'edge-far', 'edge-near')).toBeLessThanOrEqual(PLACEMENT_EPS);
     expect(restoreLayoutModel(JSON.stringify(five)).feedSplits).toEqual(five.feedSplits);
     const forge = (edit: (copy: LayoutModel) => void): string => {
       const copy = JSON.parse(JSON.stringify(five)) as LayoutModel;
@@ -118,6 +122,11 @@ describe('the feed split (architecture-2 ticket 73)', () => {
     expect(() => restoreLayoutModel(forged(split => { split.pair = ['edge-far', 'access']; }))).toThrow(/two plain groups of sub-tier 2/);
     expect(() => restoreLayoutModel(forged(split => { split.authority = 0; }))).toThrow(/not adjacent sub-tiers/);
     expect(() => restoreLayoutModel(forged(split => { split.width = 0; }))).toThrow(/has no width/);
+    // The same shape check on the published model (stage `final`), where the room is no longer read.
+    const late = JSON.parse(JSON.stringify({ ...model, runtime: { stages: [] } })) as LayoutModel;
+    late.feedSplits![0]!.pair = ['edge-far', 'access'];
+    late.freeze!.feedSplits = JSON.parse(JSON.stringify(late.feedSplits)) as NonNullable<LayoutModel['feedSplits']>;
+    expect(() => restoreLayoutModel(JSON.stringify(late))).toThrow(/two plain groups of sub-tier 2/);
     expect(() => restoreLayoutModel(JSON.stringify({ ...model, runtime: { stages: [] }, feedSplits: [] }))).toThrow(/Frozen feed splits changed/);
   }, 120000);
 
@@ -145,5 +154,44 @@ describe('the feed split (architecture-2 ticket 73)', () => {
     expect(bodies.every(body => body.x >= at)).toBe(true);
     expect(box.width).toBeCloseTo(five.groups.low!.bounds!.width, 6);
     expect(box.x).toBeGreaterThan(at);
+    // The box started left of the line (the line crossed it), and moved by the split's width.
+    expect(box.x - five.feedSplits![0]!.width).toBeLessThan(at);
+  }, 120000);
+
+  it('refuses a later split that would take the room of a split made before it (two steps)', async () => {
+    // Step (2, 1) splits L | R. Step (0, 1) then asks for G1 | G2, whose line crosses the box of L between n2 and n3: L would grow, and so its
+    // reach, and the room of L | R would no longer hold. The later split is declined by name; the stage-5 publication holds (R2).
+    const yaml = `portograph: 2
+groups:
+  G1: { tier: 0 }
+  G2: { tier: 0 }
+  core: { tier: 1 }
+  L: { tier: 2 }
+  R: { tier: 2 }
+nodes:
+  g1: { group: G1, label: "x one" }
+  g2: { group: G2, label: "x two" }
+  p1: { group: core }
+  q: { group: core }
+  s: { group: core }
+  p2: { group: core }
+  t: { group: core }
+  n1: { group: L }
+  n2: { group: L }
+  n3: { group: L }
+  r: { group: R }
+links:
+  - [g1, q]
+  - [g2, s]
+  - [p1, n1]
+  - [p2, n1]
+  - [t, r]
+`;
+    const five = await stageFive(yaml);
+    expect(five.feedSplits!.map(split => split.pair)).toEqual([['L', 'R']]);
+    expect(five.diagnostics.filter(item => item.code === 'FEED_SPLIT_DECLINED').map(item => item.message))
+      .toEqual([expect.stringMatching(/^The feed split G1\|G2 at .* is declined: L\|R would lack [\d.]+ px of its room\.$/)]);
+    const published = await run(yaml);
+    expect(published.feedSplits).toEqual(five.feedSplits);
   }, 120000);
 });

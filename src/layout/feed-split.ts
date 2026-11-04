@@ -5,7 +5,7 @@
  * For two sibling groups of one sub-tier side by side whose feeds stand apart in x (every feed of the left group left of every feed of the
  * right one), both groups can stand under their feeds only when the two feeds next to each other stand at least the reach of the left group,
  * the band gap and the reach of the right group apart. The reach is the distance from the child port of the outer feed to the box edge (end
- * inset and group padding). Where the feeds stand closer, every body, box and transit lane of the feeding side (the sub-tiers from the
+ * inset and group padding). Where the feeds stand closer, every body, port and box of the feeding side (the sub-tiers from the
  * authority tier outward, away from the child) right of the split line moves right by the deficit. The child tier and the far side do not
  * move: the steps of 7c then centre each group under its feeds.
  *
@@ -16,19 +16,18 @@
  * all its nodes move, and it stays when none moves (a mirrored split above the anchor tier crosses the padding of a box; the box gives that
  * width back).
  *
- * `model.feedSplits` records the decision (R1): each split made, `[]` when stage 5 decided and made none. The freeze keeps a copy, the
- * stage-5 publication and its restore check that each recorded pair has its room (`feedPairRoom`, the one reader of the room), and no
- * later stage decides it again.
+ * `model.feedSplits` records the decision (R1): each split made, `[]` when stage 5 decided and made none. Each split checks that it and the
+ * splits before it keep their room (`feedPairRoom`, the one reader of a recorded pair); the freeze keeps a copy, the stage-5 publication and
+ * its restore check the same room, and no later stage decides it again. Stage 5 holds no lane yet: a lane on the model declines the split.
  */
 import type { FeedSplit, LayoutGroup, LayoutModel } from '../model/index.js';
 import { orderedNodeIds } from '../model/model.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
-import { portId } from './skeleton-graph.js';
-import { bandGap } from './skeleton-graph.js';
+import { bandGap, portId } from './skeleton-graph.js';
 import { right, rebuildRegions } from './regions.js';
-import { selectAnchorTier, validateLanes } from './lanes.js';
+import { selectAnchorTier } from './lanes.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { shiftLane } from './close-up.js';
+import { validateStaggerRows } from './stagger.js';
 import { isGridGroup } from './grid.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
@@ -68,8 +67,9 @@ function room(left: FedGroup, rightGroup: FedGroup, gap: number): { need: number
 }
 
 /**
- * The one reader of a pair's room (R1): the deficit of the pair `left`, `right` of `tier` fed from `authority`, or the reason the pair is no
- * fed pair (a group without a feed, the groups in the other x order, or feeds that are not apart). The decision and the validator call it.
+ * The one reader of a recorded pair's room (R1): the deficit of the pair `left`, `right` of `tier` fed from `authority`, or the reason the pair
+ * is no fed pair (a group without a feed, the groups in the other x order, or feeds that are not apart). The check of each split made and the
+ * validator call it; the scan for the first short pair and it share `fedGroups` and `room`.
  */
 export function feedPairRoom(model: LayoutModel, tier: number, authority: number, left: string, rightId: string): number | string {
   const groups = fedGroups(model, centringFeeds(model, tier, authority), tier);
@@ -97,13 +97,13 @@ function blockedSide(model: LayoutModel, side: readonly LayoutGroup[], at: numbe
   const fixed = side.find(group => group.frame !== undefined || group.flank !== undefined || model.document.groups[group.id]?.canton !== undefined
     || model.document.groups[group.id]?.shape === 'bar' || isGridGroup(model, group.id) || Object.values(model.groups).some(other => other.frame === group.id || other.flank?.of === group.id));
   if (fixed !== undefined) return `${fixed.id} cannot move`;
-  const lane = model.lanes.find(item => item.x > at && (item.kind ?? 'transit') !== 'transit');
-  if (lane !== undefined) return `the lane ${lane.id} is no transit lane`;
+  // 7a reserves the lanes after stage 5. A lane already on the model (none today) is not moved by the split, so the split declines.
+  if (model.lanes.length) return `stage 5 holds the lane ${model.lanes[0]!.id}`;
   return undefined;
 }
 
-/** Moves every body, port, box and transit lane of the feeding side right of `at` by `width`. A box the line crosses keeps its empty part. */
-function moveSide(model: LayoutModel, side: readonly LayoutGroup[], at: number, width: number, moving: (tier: number) => boolean): void {
+/** Moves every body, port and box of the feeding side right of `at` by `width`. A box the line crosses keeps its empty part. */
+function moveSide(model: LayoutModel, side: readonly LayoutGroup[], at: number, width: number): void {
   // A body moves when it stands right of the line, or when the line crosses it left of its centre (only a body of a tier beyond the
   // authority: `blockedSide` declines the split through one of the authority tier). The order of the bodies stays, and no gap closes.
   const moves = (body: { x: number; width: number }): boolean => body.x >= at || body.x + body.width / 2 > at;
@@ -121,11 +121,9 @@ function moveSide(model: LayoutModel, side: readonly LayoutGroup[], at: number, 
       for (const port of node.ports) if (port.anchor !== undefined) port.anchor.x += width;
     }
   }
-  for (const lane of model.lanes) if (lane.x > at && moving(lane.tier)) shiftLane(lane, width);
-  model.lanes = [...model.lanes];
 }
 
-/** The tier bands are the union of their groups: derived again in x, their y kept. */
+/** Each tier band grows in x to hold its groups again, its y kept; a band never shrinks here (as in Step 0's P3, the measured rule). */
 function refitBands(model: LayoutModel): void {
   for (const band of model.tierBands) {
     const boxes = band.groups.map(id => model.groups[id]?.bounds).filter((box): box is NonNullable<typeof box> => box !== undefined);
@@ -180,15 +178,23 @@ export function reserveFeedSplits(model: LayoutModel): void {
       const side = Object.values(model.groups).filter(group => group.tier !== undefined && moving(group.tier) && group.bounds !== undefined && right(group.bounds) > at);
       const blocked = blockedSide(model, side, at, pair, authority);
       if (blocked !== undefined) { note('FEED_SPLIT_DECLINED', `The feed split ${name} is declined: ${blocked}.`, pair); break; }
-      // The split works on the model and puts the saved state back when a rebuild or the lane check refuses it (R2: refuses whole).
+      // The split works on the model and puts the saved state back when a check refuses it (R2: refuses whole). The checks are the ones the
+      // freeze runs on the record and on the stagger rows: this split and every split made before it keep their room (a split of a later
+      // step can grow the box of a recorded pair and so its reach), and a seated stagger keeps its lines and pitches.
       const saved = JSON.stringify(model);
-      moveSide(model, side, at, width, moving);
+      moveSide(model, side, at, width);
       let refusal: string | undefined;
       try {
         rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
         if (model.regions.length) rebuildRegions(model);
         refitBands(model);
-        if (model.lanes.length) validateLanes(model);
+        for (const split of [...made, { tier, authority, pair }]) {
+          const deficit = feedPairRoom(model, split.tier, split.authority, split.pair[0], split.pair[1]);
+          if (typeof deficit === 'string') refusal = `${split.pair.join('|')}: ${deficit}`;
+          else if (deficit > PLACEMENT_EPS) refusal = `${split.pair.join('|')} would lack ${deficit.toFixed(2)} px of its room`;
+          if (refusal !== undefined) break;
+        }
+        if (refusal === undefined) validateStaggerRows(model);
       } catch (error) {
         if (error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError) throw error;
         refusal = error instanceof Error ? error.message : String(error);
@@ -218,6 +224,7 @@ export function validateFeedSplits(model: LayoutModel): void {
   if (!Array.isArray(record)) throw new Error('Feed splits are not a list');
   const tiers = new Set(Object.values(model.groups).flatMap(group => group.tier === undefined ? [] : [group.tier]));
   for (const split of record) {
+    if (split === null || typeof split !== 'object') throw new Error('Feed split is not a record');
     const { tier, authority, pair, at, width } = split;
     const name = Array.isArray(pair) ? pair.join('|') : String(pair);
     if (!tiers.has(tier) || !tiers.has(authority) || tier === authority || [...tiers].some(other => other > Math.min(tier, authority) && other < Math.max(tier, authority))) {
