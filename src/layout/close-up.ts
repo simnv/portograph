@@ -78,6 +78,8 @@ interface Reading {
   overlay: Set<string>;
   /** Pairs of boxes that overlap. */
   overlapping: Set<string>;
+  /** The x of every port anchor, keyed `node#index`. */
+  anchors: Map<string, number>;
 }
 
 function reading(model: LayoutModel): Reading {
@@ -94,6 +96,7 @@ function reading(model: LayoutModel): Reading {
     blocked: new Set(blockedChords(model)), edge: new Set(edgeLeavers(model)),
     failing: new Set(holds(model.reservations ?? [], model).map(failure => failure.id)),
     gaps, axis, overlay: straightChordIds(model), overlapping: overlappingPairs(model),
+    anchors: new Map(Object.values(model.nodes).flatMap(node => node.ports.flatMap((port, index) => port.anchor === undefined ? [] : [[`${node.id}#${index}`, port.anchor.x] as [string, number]]))),
   };
 }
 
@@ -104,7 +107,14 @@ const lost = (before: ReadonlySet<string>, after: ReadonlySet<string>): string |
  * Why the moved model is not one the producer may keep, or undefined. `before` is read on the model before the move; `room` says whether the
  * label room held then, with the tier-gap label deficits it was measured against.
  */
-function closeUpRefusal(model: LayoutModel, before: Reading, room: { held: boolean; deficits: ReadonlyMap<number, number> }, bandsChanged: boolean, gridMoved: boolean): string | undefined {
+function closeUpRefusal(model: LayoutModel, before: Reading, room: { held: boolean; deficits: ReadonlyMap<number, number> }, bandsChanged: boolean, gridMoved: boolean,
+  move: { nodes: ReadonlySet<string>; dx: number }): string | undefined {
+  // The move is a translation: every port of the group moves by dx with its node, and no other port moves. A rule that seats a port again
+  // (a bundle's ends agree) would leave it where the replay cannot put it back by the record.
+  for (const [key, x] of before.anchors) {
+    const [node, index] = key.split('#') as [string, string], now = model.nodes[node]?.ports[Number(index)]?.anchor?.x;
+    if (now === undefined || Math.abs(now - (x + (move.nodes.has(node) ? move.dx : 0))) > PLACEMENT_EPS) return `the port ${index} of ${node} would not move with its node`;
+  }
   if (bandsChanged) return 'a label band would change its clearance';
   if (gridMoved) return 'the linked-group grid would move a box';
   const refusals = new Set(model.gridRefusals ?? []), forged = refusals.size ? forgedRefusals(model, refusals) : [];
@@ -156,23 +166,25 @@ export function closeUpSiblings(model: LayoutModel, before: BeforeTrim): CloseUp
       }).map(lane => lane.id);
       const followingSet = new Set(following);
       // The walls on the left: each keeps the gap it had to the group before the trim, at least the band gap.
-      let low = -Infinity;
+      let low = -Infinity, sibling = false;
       const keep = (now: Rect, then: Rect): void => { low = Math.max(low, right(now) + Math.max(gap, was.x - right(then))); };
       for (const other of Object.values(model.groups)) {
         if (other.id === id || other.bounds === undefined || !overlapsY(other.bounds, box) || right(other.bounds) > box.x + PLACEMENT_EPS) continue;
         keep(other.bounds, before.groups.get(other.id) ?? other.bounds);
+        sibling = true;
       }
       for (const frame of model.frames ?? []) {
         if (!overlapsY(frame.box, box) || right(frame.box) > box.x + PLACEMENT_EPS) continue;
         keep(frame.box, before.frames.get(frame.id) ?? frame.box);
+        sibling = true;
       }
       // A lane does not move in the trim: the gap it had is the one it has, less what the group's own trim opened.
       for (const lane of model.lanes) {
         if (followingSet.has(lane.id) || !overlapsY(lane.bounds, box) || right(lane.bounds) > box.x + PLACEMENT_EPS) continue;
         keep(lane.bounds, lane.bounds);
       }
-      // A group with nothing on its left in its rows has no sibling to close up to.
-      if (!Number.isFinite(low)) continue;
+      // A group with no box on its left in its rows has no sibling to close up to: a lane alone holds it where it stands.
+      if (!sibling) continue;
       let dx = low - box.x;
       // A following lane stops at the boxes on its left beside it: a group's occupied box, a frame, another lane.
       for (const laneId of following) {
@@ -202,7 +214,7 @@ export function closeUpSiblings(model: LayoutModel, before: BeforeTrim): CloseUp
       rebuildRegions(model);
       const boxes = JSON.stringify(Object.values(model.groups).map(item => item.bounds));
       alignLinkedGroupGrid(model, new Set(model.gridRefusals ?? []));
-      const refusal = closeUpRefusal(model, was0, room, bandsChanged, JSON.stringify(Object.values(model.groups).map(item => item.bounds)) !== boxes);
+      const refusal = closeUpRefusal(model, was0, room, bandsChanged, JSON.stringify(Object.values(model.groups).map(item => item.bounds)) !== boxes, { nodes: new Set(group.nodes), dx });
       if (refusal !== undefined) {
         const back = JSON.parse(saved) as Record<string, unknown>, target = model as unknown as Record<string, unknown>;
         for (const key of Object.keys(target)) if (!(key in back)) delete target[key];
