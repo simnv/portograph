@@ -10,6 +10,8 @@
 # `a-band-holds-the-group-that-set-its-edge`, where the shortfall is 23 px and link-35 and link-37
 # were removed). A side that gave up its nesting instead keeps flat stems, where the first route laid
 # covers the second port's stem, so the gap grows.
+# Since architecture-2 ticket 72 (the joint stage-4 order): crossings 0 (6 before), bends 6 (8 before), canvas 616 x 314 (764 before);
+# the tests of the gap runs pin `layout.feedOrder: false`.
 portograph: 2
 groups:
   access: { tier: 0 }

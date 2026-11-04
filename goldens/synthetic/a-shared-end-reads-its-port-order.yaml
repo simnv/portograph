@@ -13,6 +13,8 @@
 # crossings 24, bends 10, canvas 1970 × 488 (G5 fails in both, as before ticket 17). With `src` turned it
 # published at Q 0.4467, crossings 26, bends 22, canvas 1634 × 518, and G5 and G6 failed. Same sheet as
 # the sweep input `v7-0-2`. Test-only input; test/layout/corridor-order.test.ts reads it.
+# Since architecture-2 ticket 72 (the joint stage-4 order): `access` turns to acc0 acc2 acc4 acc6 acc1 acc3 acc5 with the corridor
+# sides; Q 0.8871, crossings 0, bends 2, canvas 722 x 484, G5 passes. The tests of ticket 17 and 71 pin `layout.feedOrder: false`.
 portograph: 2
 groups:
   src: { tier: 0 }

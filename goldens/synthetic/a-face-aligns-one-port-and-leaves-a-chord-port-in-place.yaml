@@ -3,6 +3,9 @@
 # ports and content need: snk0 116 px and snk1 56 px (806 and 662 px before). Then `edge-far` closes up toward `edge-near` by the width
 # the trim freed (ticket 69, 388 px), and the corridor of link-11 follows snk1: the canvas is 730 px (1118 after the trim alone, 1633
 # before it), bends 8 and crossings 7 as before. Tests `routed-chord-centring.test.ts` and `vertical-seat.test.ts` read the layout.
+# Since architecture-2 ticket 72 (the joint stage-4 order): `access` turns to acc2 acc4 acc0 acc1 acc3, link-10 passes left and
+# link-11 right of it; crossings 1, bends 6, canvas 722 x 484, G5 and G6 pass. The tests of other rules that read this sheet pin
+# `layout.feedOrder: false`.
 portograph: 2
 groups:
   src: { tier: 0 }
