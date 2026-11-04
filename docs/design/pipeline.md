@@ -893,6 +893,20 @@ producer (a hand-made transaction) has none: a later run records and declines no
 port order (G5) was measured and dropped: on the three sheets it changed it gave back the two bends ticket 65 won, because the only kept
 geometry that stands them turns another node's ports out of order (ticket 77 owns the face order).
 
+**A stranded growth is given back** (architecture-2 ticket 71, `LayoutModel.givenBack`, `src/layout/given-back.ts`). A step can widen a
+body toward its targets (`alignSide`) and then clamp the group into its window, so that no target stands; the width stays, and no later
+rule removes it (the end trim keeps the port x). The centre rule judges this once, at its end, on the record above: a node gives its
+growth back when its body is wider than at the rule's input, its faces hold a `grown` target and no `kept` one, none of its links stands
+vertical (a kept chord), and no parent spread grew it. A node at one end of a transit link gives back only when the port at the other end
+is given back too: 7f moves a corridor to a child it could not seat (`reseatLanes`) and refuses the move when the parent could then align
+to it, so a narrow child whose parent still chases the corridor would lose the follow. When anything is given back, the passes run once
+more from the rule's input with the record, and a step that widens a given-back body and leaves every aligned port of its group off its x after the clamp is
+declined as a window decline is: the group stands near its feed with the widths it began with. The judgement reads the end of all the
+passes, not one pass: a growth one pass strands is the one a later pass may complete. At most two runs, each with its own budget; a growth
+the second run strands is kept and named (`CENTRE_GROWTH_KEPT`, info), as is a given-back body a sibling's standing target lets keep its width. The record names each node and its `grown` ports in code-unit
+order; it is kept by every later rule and published, so the 7d to 7f replays and the publication check read the same decline (R1). A
+malformed record, or one before the centre rule, is refused.
+
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
 Those groups move right. This includes a group the step does not centre. It also includes a group
 whose own window is too narrow to hold it.

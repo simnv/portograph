@@ -22,6 +22,7 @@ import { holds } from './reservation-checks.js';
 import { tierGapPlans } from './gap-plan.js';
 import { straightChordIds } from './read/overlay-straight.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { stemDepthsFault } from './sides-two.js';
 
 /** A move shorter than this is not made: it would narrow nothing a reader sees, and every move costs a full set of guards. */
 export const CLOSE_UP_MIN = 1;
@@ -164,6 +165,10 @@ function closeUpRefusal(model: LayoutModel, before: Reading, room: { deficits: R
     if ((id = gained(was.slant, now.slant)) !== undefined) return `the row of ${id} in the tier gap below ${above} would be slant-limited`;
     if (now.crossings > was.crossings) return `the tier gap below ${above} would plan ${now.crossings - was.crossings} more crossings`;
   }
+  // The stem depths were decided before the tier-gap solve (ticket 57) and the gaps were grown for them: a move that changes how a node side
+  // nests its stems (a leg now clears or meets a neighbour) would publish a record the geometry contradicts (architecture-2 ticket 71).
+  const stems = stemDepthsFault(model);
+  if (stems !== undefined) return 'a node side would nest its stems otherwise than the stem depth record says';
   if ((id = lost(before.axis, after.axis)) !== undefined) return `the link ${id} would leave the axis its two ends share`;
   if ((id = lost(before.overlay, after.overlay)) !== undefined) return `the overlay link ${id} would lose its straight chord`;
   // The room held before the move (the caller refuses otherwise, R6); a move after which the validator's reading no longer holds, or a tier gap

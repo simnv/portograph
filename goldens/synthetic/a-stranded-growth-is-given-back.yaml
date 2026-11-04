@@ -1,0 +1,35 @@
+# Expected: a stranded growth is given back (architecture-2 ticket 71). The user's tier-gap sheet without its two transit links. The
+# centring passes widen `srv0` toward `sw1`, `sw2` and `sw4` (247 px), and the window of its step clamps `edge-near` right of
+# `edge-far`, so no target of `srv0` stands. At the end of the centre rule that width is given back (`givenBack` names `srv0` with its
+# three top ports, and `isp1`; isp1's sibling isp0 stands a target, so its step keeps the width and `CENTRE_GROWTH_KEPT` names it;
+# the end trim removes that width as on main), and the passes run once more from the rule's input:
+# `srv0` is 56 px, its three links are routed as before. `srv1`
+# keeps its width: its links to `sw0` and `sw3` stand vertical. Bends 6, crossings 5, canvas 477 px wide (668 before). Test
+# `test/layout/given-back.test.ts` reads the layout.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  isp0: { group: src, class: router, ports: [] }
+  isp1: { group: src, class: router, ports: [] }
+  sw0: { group: access, class: switch, ports: [] }
+  sw1: { group: access, class: switch, ports: [] }
+  sw2: { group: access, class: switch, ports: [] }
+  sw3: { group: access, class: switch, ports: [] }
+  sw4: { group: access, class: switch, ports: [] }
+  srv0: { group: edge-near, class: server, ports: [] }
+  srv1: { group: edge-far, class: server, ports: [] }
+links:
+  - [isp0, sw0]
+  - [isp1, sw1]
+  - [isp0, sw2]
+  - [isp1, sw3]
+  - [isp0, sw4]
+  - [sw0, srv1]
+  - [sw1, srv0]
+  - [sw2, srv0]
+  - [sw3, srv1]
+  - [sw4, srv0]
