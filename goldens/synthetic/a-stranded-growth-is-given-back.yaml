@@ -1,7 +1,8 @@
 # Expected: a stranded growth is given back (architecture-2 ticket 71). The user's tier-gap sheet without its two transit links. The
 # centring passes widen `srv0` toward `sw1`, `sw2` and `sw4` (247 px), and the window of its step clamps `edge-near` right of
 # `edge-far`, so no target of `srv0` stands. At the end of the centre rule that width is given back (`givenBack` names `srv0` with its
-# three top ports, and `isp1`, whose 7c growth the end trim removes on main), and the passes run once more from the rule's input:
+# three top ports, and `isp1`; isp1's sibling isp0 stands a target, so its step keeps the width and `CENTRE_GROWTH_KEPT` names it;
+# the end trim removes that width as on main), and the passes run once more from the rule's input:
 # `srv0` is 56 px, its three links are routed as before. `srv1`
 # keeps its width: its links to `sw0` and `sw3` stand vertical. Bends 6, crossings 5, canvas 477 px wide (668 before). Test
 # `test/layout/given-back.test.ts` reads the layout.

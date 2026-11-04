@@ -632,7 +632,9 @@ export interface LayoutModel {
   /**
    * The growths the centre rule gave back (architecture-2 ticket 71), by node id: the wanted ports whose alignment widened the body and that no
    * kept target used at the end of 7c (a growth the clamp stranded). Decided once, at the end of the centre rule, and stored; every later
-   * centring run and the publication replay read it, and no step grows a body toward a given-back port again (R1). Absent = no growth was
+   * centring run and the publication replay read it (R1): a step that widens a given-back body and leaves every aligned port of its group off
+   * its x is declined, so the body keeps the width it began the step with. A sibling that stands a target lets the step keep the width; the
+   * centre rule then names the body (`CENTRE_GROWTH_KEPT`). Absent = no growth was
    * given back (a model before 7c, or one whose growths all serve a kept target). A present record names at least one node, each with at
    * least one port, in port-key order.
    */

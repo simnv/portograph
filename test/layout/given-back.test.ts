@@ -32,7 +32,9 @@ describe('a stranded growth is given back', () => {
     expect(model.nodes['srv0']!.bounds!.width).toBeLessThan(70);
     // srv1 keeps its growth: two of its links stand vertical (a kept chord).
     expect(model.givenBack!['srv1']).toBeUndefined();
-    expect(model.diagnostics.some(item => item.code === 'CENTRE_GROWTH_KEPT')).toBe(false);
+    // isp1 is given back too, but its sibling isp0 stands a target, so the group step keeps isp1's width; the note names it, and srv0 not (R6).
+    const kept = model.diagnostics.filter(item => item.code === 'CENTRE_GROWTH_KEPT').map(item => item.message);
+    expect(kept).toEqual([expect.stringMatching(/^isp1 gave a growth back, but a sibling/)]);
   });
 
   it('keeps the bends of main (6) and narrows the canvas (668 px on main)', () => {
@@ -42,6 +44,18 @@ describe('a stranded growth is given back', () => {
 
   it('round-trips through the restore API with its record', () => {
     expect(restoreLayoutModel(JSON.stringify(model)).givenBack).toEqual(model.givenBack);
+  });
+
+  it('R5: refuses a record on a model before the centre rule', async () => {
+    const early = (await import('../../src/layout/mutation.js')).restoreLayoutModel;
+    const placed = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    // A shape-valid record on a model whose stage is before 7c: no producer wrote it.
+    const before = { ...placed, stage: 'flanks', givenBack: placed.givenBack } as unknown as LayoutModel;
+    expect(() => early(JSON.stringify(before))).toThrow();
+  });
+
+  it('R5: refuses a prototype key as a node', () => {
+    expect(() => restoreLayoutModel(forge(model, copy => { copy.givenBack!['toString'] = ['port:["toString",true,null,1]']; }))).toThrow(/toString is no node/);
   });
 
   it('R5: refuses a malformed record', () => {
@@ -82,10 +96,19 @@ describe('the three regression classes of a per-step decline', () => {
     expect(failing(model)).toEqual(['G5']);
   }, 120000);
 
-  it('pass order: widened-child-packs-tier keeps the growth a later pass completes (bends 2)', async () => {
-    const model = await run('widened-child-packs-tier');
+  it('transit corridor: a-shared-end gives nothing back (bends 8, crossings 14)', async () => {
+    const model = await run('a-shared-end-reads-its-port-order');
     expect(model.givenBack).toBeUndefined();
-    expect(bends(model)).toBe(2);
+    expect(bends(model)).toBe(8);
+    expect(score(model).snapshot.metrics.crossings.count).toBe(14);
+  }, 120000);
+
+  it('pass order: widened-child-packs-tier and a-hub-tiers-fan keep the growth a later pass completes (bends 2 and 6)', async () => {
+    for (const [name, count] of [['widened-child-packs-tier', 2], ['a-hub-tiers-fan-draws-straight-and-crosses-itself', 6]] as const) {
+      const model = await run(name);
+      expect(model.givenBack, name).toBeUndefined();
+      expect(bends(model), name).toBe(count);
+    }
   }, 120000);
 });
 
@@ -124,8 +147,12 @@ describe('the judgement (strandedGrowth)', () => {
     const pair = endOfCentre({ transit: true, pGrown: true });
     expect(Object.keys(strandedGrowth(pair.model, pair.input))).toEqual(['a', 'p']);
   });
-  it('R5: the shape check reads no stage and accepts an absent record', () => {
+  it('R5: the shape check accepts an absent record and refuses a port of another face owner', () => {
     const { model } = endOfCentre({});
+    expect(givenBackFault(model)).toBeUndefined();
+    model.givenBack = { a: ['port:["p",true,null,1]'] };
+    expect(givenBackFault(model)).toMatch(/is no port of the node/);
+    model.givenBack = { a: ['port:["a",true,null,1]'] };
     expect(givenBackFault(model)).toBeUndefined();
   });
 });

@@ -1040,7 +1040,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // every kept port off its x after the clamp is declined as a window that cannot hold the group is: the group stands near its feed with the widths it
   // began the step with, and the kept targets are named as alignments the row cannot hold (R6). The publication check replays this step, so it reads
   // the same record (R1, R5).
-  if (aligned.size && [...aligned].every(key => (endMisses.get(key) ?? 0) > 0.5) && group.nodes.some(nodeId => model.givenBack?.[nodeId] !== undefined
+  if (aligned.size && [...aligned].every(key => (endMisses.get(key) ?? 0) > 0.5) && group.nodes.some(nodeId => model.givenBack !== undefined && Object.hasOwn(model.givenBack, nodeId)
     && model.nodes[nodeId]!.bounds!.width > saved.nodes.find(node => node.id === nodeId)!.bounds!.width + EPS)) {
     if (warn) for (const feed of own) {
       if (!aligned.has(portId(feed.child.ref))) continue;
@@ -1609,7 +1609,8 @@ function dropEmptySpreads(model: LayoutModel): void {
  * stands. The judgement reads the end of all eight passes, not one pass: a growth one pass strands is the one a later pass may complete.
  *
  * Bound (R4): at most two runs of the passes, each on its own eight-pass budget (the first run is discarded whole, so its budget is no budget of
- * the second). A growth the second run strands that the first did not is kept, and named (`CENTRE_GROWTH_KEPT`, info).
+ * the second). A growth the second run strands that the first did not is kept, and named (`CENTRE_GROWTH_KEPT`, info), as is a given-back body that
+ * ends the second run wider than the rule's input (its step is declined only when no aligned port of its group stands).
  */
 function centreGivingBack(draft: LayoutModel): void {
   const input = JSON.stringify(draft);
@@ -1619,10 +1620,18 @@ function centreGivingBack(draft: LayoutModel): void {
   for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
   Object.assign(draft, JSON.parse(input) as LayoutModel, { givenBack: back });
   centreDraft(draft, createCentreBudget());
-  const kept = Object.keys(strandedGrowth(draft, JSON.parse(input) as LayoutModel)).filter(node => back[node] === undefined);
+  const was = JSON.parse(input) as LayoutModel;
+  const kept = Object.keys(strandedGrowth(draft, was)).filter(node => !Object.hasOwn(back, node));
   if (kept.length) {
     draft.diagnostics.push({ stage: 'placement', severity: 'info', code: GROWTH_KEPT,
       message: `The second run of the centring passes strands a growth of ${kept.join(', ')}; the centre rule judges its growths once, so the growth stays.` });
+  }
+  // The decline reads the targets of the whole group: a given-back body whose sibling stands a target keeps the step's growth. The record then
+  // names a growth the geometry keeps, and the note says so (R6).
+  const wide = Object.keys(back).filter(node => draft.nodes[node]!.bounds!.width > was.nodes[node]!.bounds!.width + EPS);
+  if (wide.length) {
+    draft.diagnostics.push({ stage: 'placement', severity: 'info', code: GROWTH_KEPT,
+      message: `${wide.join(', ')} gave a growth back, but a sibling in its group stands a target, so its step keeps the width.` });
   }
 }
 /** The note that the one judgement of the centre rule left a growth the second run stranded (ticket 71, R6). */

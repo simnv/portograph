@@ -57,7 +57,7 @@ export function strandedGrowth(model: LayoutModel, input: LayoutModel): Record<s
         const { from, to } = link.attachments!;
         if (from.node !== id && to.node !== id) return false;
         const far = from.node === id ? to : from;
-        return !(result[far.node] ?? []).includes(portId(far));
+        return !(Object.hasOwn(result, far.node) && result[far.node]!.includes(portId(far)));
       });
       if (open) { delete result[id]; dropped = true; }
     }
@@ -75,7 +75,7 @@ export function givenBackFault(model: LayoutModel): string | undefined {
   if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
   if (!Object.keys(record).length) return 'the record names no node';
   for (const [node, ports] of Object.entries(record)) {
-    const item = model.nodes[node];
+    const item = Object.hasOwn(model.nodes, node) ? model.nodes[node] : undefined;
     if (item === undefined) return `${node} is no node`;
     if (!Array.isArray(ports) || !ports.length) return `${node} gives back no port`;
     const own = new Set(item.ports.map(port => portId(port.ref)));
