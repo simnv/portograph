@@ -640,7 +640,7 @@ export interface LayoutModel {
    * never below its stage-3 size, and no node moves. The record holds the body (`nodes`) and the group box (`groups`) each trimmed node and
    * changed group had at the end of 7f, before the trim. The centring replay of the publication check reads that geometry (R1); the validator
    * checks that each recorded node stands at the trim of its recorded body. Absent = no body was trimmed: a model before 7f publishes, a model
-   * whose bodies need no trim, or a trim the grid declined (`END_TRIM_DECLINED`); the bodies as they stand are then the producer's. A present
+   * whose bodies need no trim, or a declined trim (`END_TRIM_DECLINED`); the bodies as they stand are then the producer's. A present
    * record names at least one node; `groups` may be `{}`.
    */
   bodyTrims?: { nodes: Record<string, Rect>; groups: Record<string, Rect> };
