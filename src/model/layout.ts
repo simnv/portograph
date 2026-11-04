@@ -642,8 +642,13 @@ export interface LayoutModel {
    * checks that each recorded node stands at the trim of its recorded body. Absent = no body was trimmed: a model before 7f publishes, a model
    * whose bodies need no trim, or a declined trim (`END_TRIM_DECLINED`); the bodies as they stand are then the producer's. A present
    * record names at least one node; `groups` may be `{}`.
+   *
+   * The close-up (architecture-2 ticket 69) is recorded with the trim: `shifts` holds the dx (at most -1 px) of each group that closed up toward
+   * its sibling after the trim, `laneShifts` the dx of each lane that followed a port of a moved group. The geometry the replay reads moves them
+   * back. Absent = no group closed up (no close-up without a trim); a present `shifts` names at least one group, `laneShifts` is present only
+   * when a lane moved.
    */
-  bodyTrims?: { nodes: Record<string, Rect>; groups: Record<string, Rect> };
+  bodyTrims?: { nodes: Record<string, Rect>; groups: Record<string, Rect>; shifts?: Record<string, number>; laneShifts?: Record<string, number> };
   /**
    * The node sides whose stems nest (architecture-2 ticket 57; ADR-0015 rule 1, twelfth amendment): for each, the reach of every port
    * that has a leg on that side, decided once at the end of 7f, after the last move in x, by `sidePlan` with no read of the tier across

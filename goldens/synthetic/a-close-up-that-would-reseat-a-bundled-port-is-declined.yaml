@@ -1,0 +1,27 @@
+# Expected: A close-up a guard declines (architecture-2 ticket 69). `sw-3` has two links to `sink-far`, a bundle whose ends agree:
+# when `side` closes up toward `access` by the width the trim freed, the bundle rule seats the ports of `sw-3` again on the ports of
+# `sink-far`, so the move is no translation and the replay could not move it back by the record. The close-up is declined
+# (`CLOSE_UP_DECLINED`, "the port ... of sw-3 would not move with its node"), and `side` stays where the trim left it, with its two
+# straight drops. Layout as main. Test `test/layout/close-up.test.ts` reads the layout.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  side: { tier: 1 }
+  far: { tier: 2 }
+  near: { tier: 2 }
+nodes:
+  src-a: { group: src, class: router, ports: [] }
+  src-b: { group: src, class: router, ports: [] }
+  sw-1: { group: access, class: switch, ports: [] }
+  sw-2: { group: access, class: switch, ports: [] }
+  sw-3: { group: side, class: switch, ports: [] }
+  sink-near: { group: near, class: server, ports: [] }
+  sink-far: { group: far, class: server, ports: [] }
+links:
+  - [sw-1, sink-near]
+  - [sw-2, sink-near]
+  - [src-a, sink-near]
+  - [src-b, sink-near]
+  - [sw-3, sink-far]
+  - [sw-3, sink-far]

@@ -119,8 +119,10 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
 
     expect(lower!.plan.order.map(short)).toEqual(['12.1', '10', '8', '7', '9']);
     expectRows(lower!.plan, { '12.1': [315], 10: [326.5], 8: [338], 7: [349.5], 9: [361] }); // Verdana metrics (snack-theme ticket 157): 313, 324.5, 336, 347.5 and 359 with Arial.
+    // Architecture-2 ticket 69: after the end trim `edge-near` closes up by 63.5 px, and 12.1 no longer shares a vertical with 7 (the O2 edge
+    // `12.1>7` of the spec goes); the rows, the crossings and H stay.
     expect(lower!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort())
-      .toEqual(['10>7:O1', '10>8:O1', '10>9:O1', '12.1>10:O1', '12.1>7:O2', '12.1>8:O1', '8>7:O1']);
+      .toEqual(['10>7:O1', '10>8:O1', '10>9:O1', '12.1>10:O1', '12.1>8:O1', '8>7:O1']);
     // 7x9 and 8x9, and four on link-11's drop.
     expect(pairs(lower!.plan)).toEqual(['10x11.1', '11.1x7', '11.1x8', '11.1x9', '7x9', '8x9']);
     // The lanes overhang from the band above: the plan measures from the clipped low boundary (300 under Verdana, 298 with Arial; the 9.25 px of the upper gap later); the spec quotes

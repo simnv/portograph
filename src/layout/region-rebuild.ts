@@ -10,6 +10,7 @@ import { prepareBundleGeometry } from './bundle-geometry.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { timed } from './attempt-timings.js';
 import { moveGroup, rebuildBands, span, union } from './skeleton-geometry.js';
+import { registerRuleGeometryRebuild } from './rule-geometry-hook.js';
 
 const barStages = ['bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
 
@@ -90,3 +91,6 @@ export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget,
     if (budget) timed('centre-flag', () => flagUnverifiedCentring(draft));
   });
 }
+
+// The close-up and its replay (ticket 69) rebuild through the hook, with no centring.
+registerRuleGeometryRebuild(model => rebuildRegionGeometry(model, undefined, undefined, undefined, false));

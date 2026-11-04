@@ -1,0 +1,26 @@
+# Expected: A sibling group closes up after the end trim (architecture-2 ticket 69). Reduced from a-face: the centring stretches
+# `sink-far` (681 px) toward feeds it does not keep; the end trim narrows it to its top ports, and the box of `far` shrinks with it.
+# The gap between `near` and `far` grows by that width, and `far` then moves left toward `near` by the width the trim freed (592 px),
+# its order and the band gap kept. `bodyTrims.shifts` records the move; the replay moves it back. Canvas 1002 to 410 px; bends,
+# crossings and routed links as before. Test `test/layout/close-up.test.ts` reads the layout.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  side: { tier: 1 }
+  far: { tier: 2 }
+  near: { tier: 2 }
+nodes:
+  src-a: { group: src, class: router, ports: [] }
+  src-b: { group: src, class: router, ports: [] }
+  sw-1: { group: access, class: switch, ports: [] }
+  sw-2: { group: access, class: switch, ports: [] }
+  sw-3: { group: side, class: switch, ports: [] }
+  sink-near: { group: near, class: server, ports: [] }
+  sink-far: { group: far, class: server, ports: [] }
+links:
+  - [sw-1, sink-near]
+  - [sw-2, sink-near]
+  - [src-a, sink-near]
+  - [src-b, sink-far]
+  - [sw-3, sink-far]

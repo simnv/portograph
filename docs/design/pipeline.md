@@ -1144,7 +1144,7 @@ refuse, it settles the centring once on the frozen geometry (one `replayRegions`
 single budget gave no pass after it); it lets a corridor whose child 7c could not seat follow that child (`reseatLanes`, § 7a); it settles the overlay ports;
 it solves the tier gaps once (`solveTierGaps`, `gap-room.ts`): the stem depths are recorded, every plan and every label room across a gap
 is read once, and each gap grows by what it lacks; it trims each node body to its ports and content (the end trim, below, architecture-2
-ticket 68); and, last, it places every group title once (`placeGroupTitles`, architecture-2 ticket 54). The corridor move is after the rounds because every centring replay before it — 7c's own and the label bands' — reads lane x
+ticket 68) and closes a group up toward its sibling by the width the trim freed (the close-up, ticket 69); and, last, it places every group title once (`placeGroupTitles`, architecture-2 ticket 54). The corridor move is after the rounds because every centring replay before it — 7c's own and the label bands' — reads lane x
 as that feed's authoritative x and chases a corridor that has moved. It reserves no room itself: the solve after it grows the gap for the
 new row (§ 7a states the whole condition).
 
@@ -1297,6 +1297,22 @@ side edge is named by `STRAIGHT_LINK_EDGE`, as every 7f move after the freeze is
 trimmed node and changed group had before the trim; the centring replay of the publication check reads that geometry (`untrimmedModel`),
 the one its producer decided on, never the narrower bodies (R1), and the validator checks each recorded node against `trimmedBody` of its
 recorded body (`bodyTrimsFault`, R5). Absent = no body was trimmed.
+
+**The close-up (`closeUpSiblings`, `close-up.ts`; architecture-2 ticket 69).** A kept trim is followed by the close-up, in the same
+transaction. Tiers from top to bottom, movers from left to right (ties by id): a mover is a top-level group with no frame cell, flank,
+cells or `bar` shape that has a group or frame box on its left in its rows. It moves left as far as every box on its left that overlaps it
+in y (a group box, a frame cell, a frame, a lane) allows, each keeping the gap it had to the mover before the trim, at least the band gap:
+only the width the trim freed closes. A lane that stands on a port of the mover on its owner link (a corridor that follows its child)
+moves with it and stops the move at the boxes on its left beside it. The node geometry and every rule-owned geometry are derived again
+with no centring (`rebuildRegionGeometry(..., false)`), then the label bands and the grid. A move under 1 px is not made. A guard
+declines the move, undone whole (`CLOSE_UP_DECLINED`, with the group and the reason), when a port does not move by the shift with its
+node (a bundle seats it again), a label band changes, the grid moves a box or a grid refusal would no longer hold, two boxes overlap that
+did not, `validateLanes` fails, a frozen chord becomes blocked or leaves its frame by an edge, a reservation fails that held, a tier-gap
+plan needs more height or gets a new residual part or crowded leg, a link whose two ends stood on one x does not, an overlay link loses
+its straight chord, or a link label loses its room. The shifts are recorded in `bodyTrims.shifts` and `bodyTrims.laneShifts`; the
+replay (`untrimmedModel`) moves the groups and lanes back, drops the routed paths and derives the rule geometry again, and the validator
+requires the close-up of that geometry to give the same shifts (`checkBodyTrims`). The close-up runs after the last move in x: before
+the chord freeze every centring replay of the 7f rounds reads a lane's x as its feed's x and moves the group back.
 
 The plan is read at the end of 7f and not at 7a because the count of stepped parts and drops depends on every
 rule before 7f: 7c aligns a child under its lane, 7d spans a bar across its ports, and 7e orders a

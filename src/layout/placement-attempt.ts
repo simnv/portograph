@@ -460,7 +460,10 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   timed('solve-tier-gaps', () => solveTierGaps(draft, replayGridAndBands, model => moves && stepLinklessOutOfChords(model)));
   note('solve-tier-gaps', 'done');
   // The end trim (architecture-2 ticket 68): after the last move in x, each body is trimmed to its ports and its content, and the boxes, the grid
-  // and the bands are derived again. No node, port or lane moves. The titles below are placed on the trimmed boxes.
+  // and the bands are derived again. No node or port moves inside its group. Then a group may close up toward its sibling by the width the trim
+  // freed (ticket 69, `closeUpSiblings`), with the lanes that follow its ports. The titles below are placed on the final boxes.
+  // The draft before the trim and the close-up, for a test: the replay must build this geometry again from the record (R1, ticket 69).
+  tapTarget('beforeEndTrim', () => JSON.stringify(draft));
   trimBodies(draft);
   note('end-trim', draft.bodyTrims === undefined ? 'none' : String(Object.keys(draft.bodyTrims.nodes).length));
   // The group titles are placed once, on the geometry that publishes, after the last move of a box, a lane or a port (architecture-2 ticket 54,

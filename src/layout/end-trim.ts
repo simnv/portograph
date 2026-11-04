@@ -6,6 +6,9 @@
  * The trim is decided once and recorded (`LayoutModel.bodyTrims`, R1): the body and the box each trimmed node and group had at the end of 7f.
  * The centring replay of the publication check reads that geometry (`untrimmedModel`), the one its producer decided on, and never the narrower
  * bodies the trim left: a narrower sibling would let a replay keep a target the producer could not keep.
+ *
+ * A kept trim is followed by the close-up (ticket 69, `close-up.ts`): a group moves toward its sibling by at most the width the trim freed.
+ * Its shifts are recorded with the trim, and the replay moves the groups back.
  */
 import type { LayoutGroup, LayoutModel, Rect } from '../model/index.js';
 import { orderedNodeIds } from '../model/model.js';
@@ -16,6 +19,9 @@ import { measureNodeContent } from './size.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { alignLinkedGroupGrid, forgedRefusals, syncLabelBands } from './bands.js';
 import { validateLanes } from './lanes.js';
+import { rebuildRuleGeometry } from './rule-geometry-hook.js';
+import { moveGroup } from './skeleton-geometry.js';
+import { CLOSE_UP_MIN, closeUpSiblings, followingLanes, isCloseUpMover, shiftLane } from './close-up.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 const isBarNode = (model: LayoutModel, id: string): boolean => model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar';
@@ -128,6 +134,7 @@ export function trimBodies(draft: LayoutModel): void {
   if (!trims.length) return;
   // The draft as 7f left it, put back whole when the trim is declined: the grid may move a flank, its nodes and its lanes.
   const saved = JSON.stringify(draft);
+  const frames = new Map((draft.frames ?? []).map(frame => [frame.id, { ...frame.box }] as const));
   const boxes = new Map(Object.values(draft.groups).flatMap(group => group.bounds === undefined ? [] : [[group.id, { ...group.bounds }] as const]));
   const bodies = new Map(Object.values(draft.nodes).flatMap(node => node.bounds === undefined ? [] : [[node.id, { ...node.bounds }] as const]));
   const nodes: Record<string, Rect> = {};
@@ -159,6 +166,16 @@ export function trimBodies(draft: LayoutModel): void {
     return;
   }
   draft.bodyTrims = { nodes, groups };
+  // The close-up (ticket 69): the width the trim freed between two groups closes, recorded with the trim.
+  const closed = closeUpSiblings(draft, { groups: boxes, frames });
+  if (Object.keys(closed.groups).length) {
+    draft.bodyTrims.shifts = closed.groups;
+    if (Object.keys(closed.lanes).length) draft.bodyTrims.laneShifts = closed.lanes;
+    draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'CLOSE_UP',
+      message: `Closed up toward the sibling on the left: ${Object.entries(closed.groups).map(([id, dx]) => `${id} by ${(-dx).toFixed(1)} px`).join(', ')}.`,
+      owners: Object.keys(closed.groups).map(id => ({ kind: 'group' as const, id })) });
+  }
+  if (closed.declined.length) draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'CLOSE_UP_DECLINED', message: `The close-up is declined for ${closed.declined.join('; ')}.` });
 }
 
 /**
@@ -173,10 +190,21 @@ export function untrimmedModel(model: LayoutModel): LayoutModel {
   void _trims;
   const copy = JSON.parse(JSON.stringify(rest)) as LayoutModel;
   if (freeze !== undefined) copy.freeze = freeze;
+  // The close-up (ticket 69) is undone first: the groups and the lanes that followed them move back; the bodies and boxes below are recorded
+  // where they stood before it.
+  for (const [id, dx] of Object.entries(trims.shifts ?? {})) moveGroup(copy, copy.groups[id]!, -dx, 0);
+  for (const [id, dx] of Object.entries(trims.laneShifts ?? {})) shiftLane(copy.lanes.find(item => item.id === id)!, -dx);
   for (const [id, box] of Object.entries(trims.nodes)) { const node = copy.nodes[id]; if (node !== undefined) { node.bounds = { ...box }; node.size = { width: box.width, height: box.height }; } }
   rebuildNodeGeometry(copy, orderedNodeIds(copy.document), 'current');
   for (const [id, box] of Object.entries(trims.groups)) { const group = copy.groups[id]; if (group !== undefined) group.bounds = { ...box }; }
   deriveRegions(copy);
+  if (trims.shifts !== undefined) {
+    // A routed path (stage 8, not a rule's) stands on the moved ports; the geometry before the close-up had none. The rule-owned geometry is
+    // derived again on the ports moved back, with no centring, as the close-up derived it on the moved ones.
+    for (const link of copy.links) if (link.path !== undefined && link.path.fixed !== true) delete link.path;
+    rebuildRuleGeometry(copy);
+    deriveRegions(copy);
+  }
   return copy;
 }
 
@@ -206,6 +234,22 @@ export function checkBodyTrims(model: LayoutModel, beforeBands: boolean): { faul
   const valid = (box: Rect | undefined): boolean => typeof box === 'object' && box !== null && [box.x, box.y, box.width, box.height].every(Number.isFinite) && box.width > 0 && box.height > 0;
   for (const [id, box] of Object.entries(trims.nodes)) if (model.nodes[id]?.bounds === undefined || !valid(box)) return fault(`node ${id}`);
   for (const [id, box] of Object.entries(trims.groups)) if (model.groups[id]?.bounds === undefined || !valid(box)) return fault(`group ${id}`);
+  // The close-up's shifts (ticket 69): each names a group that may close up, moved left by at least the least move; a lane shift names a lane
+  // and comes only with a group shift.
+  const shifts = trims.shifts, laneShifts = trims.laneShifts;
+  if (shifts !== undefined && (typeof shifts !== 'object' || shifts === null || !Object.keys(shifts).length)) return fault('malformed shifts');
+  if (laneShifts !== undefined && (shifts === undefined || typeof laneShifts !== 'object' || laneShifts === null || !Object.keys(laneShifts).length)) return fault('malformed lane shifts');
+  for (const [id, dx] of Object.entries(shifts ?? {})) {
+    const group = model.groups[id];
+    if (group === undefined || !isCloseUpMover(model, group) || typeof dx !== 'number' || !Number.isFinite(dx) || dx > -CLOSE_UP_MIN) return fault(`shift of group ${id}`);
+  }
+  for (const [id, dx] of Object.entries(laneShifts ?? {})) if (!model.lanes.some(lane => lane.id === id) || typeof dx !== 'number' || !Number.isFinite(dx) || dx >= 0) return fault(`shift of lane ${id}`);
+  // The lanes that follow a shifted group are read on the published geometry, where they stand on its ports: each is named with its group's
+  // shift, and no other lane is named.
+  const followed = new Map<string, number>();
+  for (const [id, dx] of Object.entries(shifts ?? {})) for (const lane of followingLanes(model, model.groups[id]!)) followed.set(lane, dx as number);
+  if (JSON.stringify([...followed.keys()].sort()) !== JSON.stringify(Object.keys(laneShifts ?? {}).sort())
+    || [...followed].some(([lane, dx]) => Math.abs(dx - laneShifts![lane]!) > PLACEMENT_EPS)) return fault('the lane shifts are not the lanes that follow the shifted groups');
   // A recorded body that does not hold its node's ports or content cannot be built: that is a finding, named (R6).
   let back: LayoutModel;
   try { back = untrimmedModel(model); } catch (error) { return fault(`the recorded geometry cannot be built: ${error instanceof Error ? error.message : String(error)}`); }
@@ -226,10 +270,20 @@ export function checkBodyTrims(model: LayoutModel, beforeBands: boolean): { faul
   }
   const again = JSON.parse(JSON.stringify(back)) as LayoutModel;
   if (model.freeze !== undefined) again.freeze = model.freeze;
+  // The producer ran on a draft with no routed path (stage 8): its guards read the same input here.
+  for (const link of again.links) if (link.path !== undefined && link.path.fixed !== true) delete link.path;
   trimBodies(again);
-  const names = (record: Record<string, Rect> | undefined): string => JSON.stringify(Object.keys(record ?? {}).sort());
+  const names = (record: Record<string, unknown> | undefined): string => JSON.stringify(Object.keys(record ?? {}).sort());
   if (names(again.bodyTrims?.nodes) !== names(trims.nodes)) return fault('the trim of the untrimmed geometry names other nodes');
   if (names(again.bodyTrims?.groups) !== names(trims.groups)) return fault('the trim of the untrimmed geometry names other groups');
+  const sameShifts = (a: Record<string, number> | undefined, b: Record<string, number> | undefined): boolean => names(a) === names(b)
+    && Object.entries(a ?? {}).every(([id, dx]) => Math.abs(dx - b![id]!) <= PLACEMENT_EPS);
+  if (!sameShifts(again.bodyTrims?.shifts, shifts)) return fault('the close-up of the untrimmed geometry shifts other groups');
+  if (!sameShifts(again.bodyTrims?.laneShifts, laneShifts)) return fault('the close-up of the untrimmed geometry shifts other lanes');
+  for (const lane of model.lanes) {
+    const twin = again.lanes.find(item => item.id === lane.id);
+    if (twin === undefined || Math.abs(twin.x - lane.x) > PLACEMENT_EPS) return fault(`lane ${lane.id} is not where the close-up put it`);
+  }
   for (const id of Object.keys(model.nodes)) if (!sameRect(again.nodes[id]!.bounds!, model.nodes[id]!.bounds!)) return fault(`node ${id} is not the trim of its recorded body`);
   for (const id of Object.keys(model.groups)) if (!sameRect(again.groups[id]!.bounds!, model.groups[id]!.bounds!)) return fault(`group ${id} is not the trim of its recorded box`);
   return { untrimmed: back };

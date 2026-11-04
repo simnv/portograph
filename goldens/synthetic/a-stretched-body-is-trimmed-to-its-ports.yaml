@@ -2,8 +2,10 @@
 # Reduced from a-face-aligns-one-port-and-leaves-a-chord-port-in-place. The sink `sink-near` has three feeds: two
 # switches of the tier above and the router `src-a` two tiers up. The centring grows its body toward feeds it does not
 # keep; after the last move of 7f the body ends at its outer top ports with their insets, never below its content.
-# Ports keep their x, no node moves, and every link keeps its route and its bends. The group box of `near` shrinks with
-# the body. Test `test/layout/end-trim.test.ts` reads the layout.
+# Ports keep their x, no node moves inside its group, and every link keeps its route and its bends. The group box of `near`
+# shrinks with the body. Then `far` closes up toward `near` by 48 px, the width the trim freed, and the corridor of
+# `src-b` -> `sink-far` follows its port (architecture-2 ticket 69): canvas 395 to 346 px. Test `test/layout/end-trim.test.ts`
+# reads the layout.
 portograph: 2
 groups:
   src: { tier: 0 }
