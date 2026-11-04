@@ -1,9 +1,11 @@
-import type { Diagnostic, LayoutGroup, LayoutModel, RowOrderDecision } from '../model/layout.js';
-import { ownsTransitLanes, selectAnchorTier } from './lanes.js';
+import type { Diagnostic, LayoutGroup, LayoutLink, LayoutModel, RowOrderDecision } from '../model/layout.js';
+import { corridorSide, laneSource, laneWidth, ownsTransitLanes, selectAnchorTier, transitedCore, transitTiers } from './lanes.js';
+import { foreignRoot } from './frames.js';
 import { orderTools, readDraft, reseatRow, saveGroups } from './overlay-order.js';
-import { compareId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
-import { straightLengthLimit } from './row-paths.js';
-import { rebuildBands } from './skeleton-geometry.js';
+import { bandGap, compareId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
+import { findPort, straightLengthLimit } from './row-paths.js';
+import { moveGroup, rebuildBands } from './skeleton-geometry.js';
+import { reservation, type Reservation } from './reservations.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 /** A row of at most this many nodes is judged in every order; a longer row in its adjacent swaps only. */
@@ -64,8 +66,11 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
 export function orderByCorridors(model: LayoutModel): void {
   const draft = readDraft(model);
   if (draft === undefined) return;
+  if (model.reservations !== undefined) {
+    model.reservations = model.reservations.filter(entry => entry.kind !== 'corridorSide' && !(entry.kind === 'rowOrder' && 'tier' in entry.payload));
+  }
   const { anchor, tiers, index, measureRange, reach } = draft;
-  const { freeRow } = orderTools(model);
+  const { movable, freeRow } = orderTools(model);
   const orderOf = (group: LayoutGroup): string[] => [...(group.rowOrder ?? group.nodes)];
   const rows = (k: number): LayoutGroup[] => Object.values(model.groups).filter(group => group.tier === tiers[k] && group.nodes.length > 1 && freeRow(group))
     .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
@@ -151,6 +156,9 @@ export function orderByCorridors(model: LayoutModel): void {
   for (let k = at + 1; k < tiers.length; k++) step(k, k + 1 < tiers.length ? k + 1 : undefined);
   for (let k = at - 1; k >= 0; k--) step(k, k > 0 ? k - 1 : undefined);
 
+  const joint = model.document.layout?.feedOrder === false ? undefined : orderJointFreeRows(model, draft, turnable, movable, frameBound, before, spanned);
+  if (joint?.moved) moved = true;
+
   // The pull toward the far ends (ticket 22): after the search, a member whose link would bend passes the members beside it toward its link's far end.
   const searched = new Map(free.map(group => [group, orderOf(group)])), pulled = new Map<LayoutGroup, string[]>();
   // A row next to a frame cell takes it too: the frame column is later centred on its feeds, this member's link among them. A pull stands only
@@ -166,9 +174,23 @@ export function orderByCorridors(model: LayoutModel): void {
     moved = true;
   }
 
+  if (joint !== undefined) {
+    const entries: Reservation[] = [
+      ...joint.tierOrders.map(({ tier, order, rows: feedRows }) =>
+        reservation('rowOrder', { kind: 'command', id: 'feed-order' }, `tier:${tier}:${order[0]!}`, 'skeleton', 0, {
+          tier, order, feeds: feedRows.map(row => ({ row: row.id, order: orderOf(row) })),
+        })),
+      ...joint.corridorSides,
+    ];
+    if (entries.length) model.reservations = [...(model.reservations ?? []), ...entries];
+  }
+
   for (const [group, order] of before) {
     const found = searched.get(group)!, after = orderOf(group);
-    const decision: RowOrderDecision = { rule: frameBound.has(group) ? 'frame-columns' : sameOrder(order, found) ? 'kept' : 'corridor-crossings', before: order, after };
+    const rule: RowOrderDecision['rule'] = frameBound.has(group) ? 'frame-columns'
+      : sameOrder(order, found) ? 'kept'
+      : joint?.jointMoved.has(group) ? 'feed-order' : 'corridor-crossings';
+    const decision: RowOrderDecision = { rule, before: order, after };
     if (!sameOrder(found, after)) { decision.pulledFrom = found; decision.pulled = pulled.get(group)!; }
     group.rowOrderDecision = decision;
   }
@@ -392,7 +414,9 @@ export function validateRowOrderDecisions(model: LayoutModel): string[] {
     if (!freeRow(group) || group.nodes.length < 2) errors.push(`Group ${group.id} records a row order decision but is no free row`);
     if (!ofRow(group, decision.before) || !ofRow(group, decision.after)) errors.push(`The row order decision of ${group.id} names nodes that are not its own`);
     const searched = decision.pulledFrom ?? decision.after;
-    if ((decision.rule !== 'corridor-crossings') !== sameOrder(decision.before, searched)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and its before and after orders contradict it`);
+    const turnedRule = decision.rule === 'corridor-crossings' || decision.rule === 'feed-order';
+    if (turnedRule === sameOrder(decision.before, searched)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and its before and after orders contradict it`);
+    if (decision.rule === 'feed-order' && model.document.layout?.feedOrder === false) errors.push(`The row order decision of ${group.id} is feed-order, and feedOrder is false`);
     if ((decision.pulledFrom === undefined) !== (decision.pulled === undefined)) errors.push(`The far-end pull of ${group.id} records only one of its order and its members`);
     if (decision.pulledFrom !== undefined && decision.pulled !== undefined) {
       // R5, read and not searched again: the pulled members are linked members of the row and keep their relative order, the other linked members
@@ -419,4 +443,498 @@ export function validateRowOrderDecisions(model: LayoutModel): string[] {
     if (!sameOrder(group.rowOrder ?? group.nodes, decision.after)) errors.push(`Group ${group.id} stands in an order its row order decision does not name`);
   }
   return errors;
+}
+
+const SAME_FEED_KEY = 1e-6;
+const JOINT_RUN_PERMS_CAP = 24;
+const JOINT_TRANSIT_ENUM_CAP = 4;
+
+interface JointResult {
+  moved: boolean;
+  jointMoved: Set<LayoutGroup>;
+  tierOrders: { tier: number; order: string[]; rows: LayoutGroup[] }[];
+  corridorSides: Reservation[];
+}
+
+function slotSortBy(items: readonly string[], keys: ReadonlyMap<string, number | undefined>, cmp: (a: string, b: string) => number): string[] {
+  const queue = items.filter(item => keys.get(item) !== undefined).sort(cmp);
+  return items.map(item => keys.get(item) === undefined ? item : queue.shift()!);
+}
+
+/**
+ * Joint stage-4 order of each free row with the movable group order of the sub-tier below and the sides of the transit corridors that
+ * cross the row's sub-tier, judged at the predicted stage-7c centres of the sub-tier below.
+ */
+function orderJointFreeRows(model: LayoutModel, draft: NonNullable<ReturnType<typeof readDraft>>,
+  turnable: (k: number) => LayoutGroup[], movable: (group: LayoutGroup) => boolean,
+  frameBound: ReadonlySet<LayoutGroup>, before: ReadonlyMap<LayoutGroup, readonly string[]>,
+  spanned: ReadonlySet<number>): JointResult {
+  const { anchor, tiers, measureRange, reach, portX } = draft;
+  const orderOf = (group: LayoutGroup): string[] => [...(group.rowOrder ?? group.nodes)];
+  const groupOf = (node: string): LayoutGroup => model.groups[model.document.nodes[node]!.group]!;
+  const gap = bandGap(model);
+  const jointMoved = new Set<LayoutGroup>();
+  const tierOrders: { tier: number; order: string[]; rows: LayoutGroup[] }[] = [];
+  const corridorSides: Reservation[] = [];
+  let moved = false;
+
+  const residualGroups = new Set<LayoutGroup>();
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.meshBus !== undefined || !link.attachments || link.technique === 'stub') continue;
+    const { from, to } = link.attachments;
+    if (from.node === to.node) continue;
+    const gf = groupOf(from.node), gt = groupOf(to.node);
+    const pf = findPort(model, from), pt = findPort(model, to);
+    const sf = pf?.side ?? pf?.sizingSide, st = pt?.side ?? pt?.sizingSide;
+    if (gf !== gt) {
+      if (sf === 'left' || sf === 'right' || st === 'left' || st === 'right') {
+        residualGroups.add(gf);
+        residualGroups.add(gt);
+      }
+    } else if (sf === 'top' || sf === 'bottom' || st === 'top' || st === 'bottom' || model.document.links[link.sourceIndex]?.label !== undefined) {
+      residualGroups.add(gf);
+    }
+  }
+
+  const routedVertical = model.links.filter(link => {
+    if (link.layer !== 'routed' || link.meshBus !== undefined || !link.attachments || link.technique === 'stub') return false;
+    const { from, to } = link.attachments;
+    if (from.node === to.node) return false;
+    const pf = findPort(model, from), pt = findPort(model, to);
+    const sf = pf?.side ?? pf?.sizingSide, st = pt?.side ?? pt?.sizingSide;
+    return sf !== 'left' && sf !== 'right' && st !== 'left' && st !== 'right';
+  });
+  const routedSameRow = model.links.filter(link => link.layer === 'routed' && link.meshBus === undefined && link.attachments && link.technique !== 'stub'
+    && link.attachments.from.node !== link.attachments.to.node
+    && groupOf(link.attachments.from.node).id === groupOf(link.attachments.to.node).id);
+
+  const passesFrame = (link: LayoutLink): boolean => {
+    const crossed = new Set(transitTiers(model, link));
+    return Object.values(model.groups).some(group => group.tier !== undefined && crossed.has(group.tier) && foreignRoot(model, group.id, link) !== undefined);
+  };
+
+  /** Normalized [0, 1] left-to-right node rank on a sub-tier as currently seated. */
+  const tierRanks = (tier: number | undefined): Map<string, number> => {
+    if (tier === undefined) return new Map();
+    const groups = Object.values(model.groups)
+      .filter(group => !group.flank && group.tier === tier && group.bounds !== undefined && group.nodes.length > 0)
+      .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
+    const slots: string[][] = [];
+    for (const group of groups) {
+      const ord = group.rowOrder ?? [...group.nodes].sort((a, b) => model.nodes[a]!.bounds!.x - model.nodes[b]!.bounds!.x);
+      const boxes = ord.map(id => model.nodes[id]!.bounds!);
+      const oneRow = boxes.every(b => b.y < boxes[0]!.y + boxes[0]!.height && boxes[0]!.y < b.y + b.height);
+      if (oneRow) for (const id of ord) slots.push([id]);
+      else slots.push(ord);
+    }
+    const n = slots.length;
+    const out = new Map<string, number>();
+    slots.forEach((ids, i) => { const r = n <= 1 ? 0.5 : i / (n - 1); for (const id of ids) out.set(id, r); });
+    return out;
+  };
+
+  /** Repack `ids` across `run`'s existing outer span `[minX, maxRight]` so no neighbour wall is crossed. */
+  const seatRun = (run: readonly LayoutGroup[], ids: readonly string[]): void => {
+    const minX = Math.min(...run.map(group => group.bounds!.x));
+    const maxRight = Math.max(...run.map(group => group.bounds!.x + group.bounds!.width));
+    const sumW = ids.reduce((sum, id) => sum + model.groups[id]!.bounds!.width, 0);
+    const stepGap = ids.length > 1 ? Math.max(gap, (maxRight - minX - sumW) / (ids.length - 1)) : 0;
+    let x = minX;
+    for (const id of ids) {
+      const group = model.groups[id]!;
+      moveGroup(model, group, x - group.bounds!.x, 0);
+      x += group.bounds!.width + stepGap;
+    }
+  };
+
+  /** Candidate node orders for `row` read from normalized ranks on `upTier` and `downTier`. */
+  const rowFeedCandidates = (row: LayoutGroup, rankUp: ReadonlyMap<string, number>, rankDown: ReadonlyMap<string, number>): string[][] => {
+    const cur = orderOf(row), own = new Set(cur);
+    const up = new Map<string, number | undefined>(), down = new Map<string, number | undefined>(), both = new Map<string, number | undefined>();
+    for (const node of cur) {
+      const upVals: number[] = [], downVals: number[] = [];
+      for (const link of routedVertical) {
+        const { from, to } = link.attachments!;
+        const farRef = from.node === node ? to : to.node === node ? from : undefined;
+        if (farRef === undefined || own.has(farRef.node)) continue;
+        const farPort = findPort(model, farRef);
+        const shift = farPort?.authorOrder !== undefined ? farPort.authorOrder * 1e-4 : 0;
+        if (rankUp.has(farRef.node)) upVals.push(rankUp.get(farRef.node)! + shift);
+        else if (rankDown.has(farRef.node)) downVals.push(rankDown.get(farRef.node)! + shift);
+      }
+      const ku = upVals.length ? upVals.reduce((s, v) => s + v, 0) / upVals.length : undefined;
+      const kd = downVals.length ? downVals.reduce((s, v) => s + v, 0) / downVals.length : undefined;
+      up.set(node, ku);
+      down.set(node, kd);
+      both.set(node, ku !== undefined && kd !== undefined ? (ku + kd) / 2 : (ku ?? kd));
+    }
+    // Keep adjacent same-row routed peers together; keep their internal order when a lateral face is authored.
+    const blocks: { nodes: string[]; fixedInner: boolean }[] = [];
+    for (const [i, node] of cur.entries()) {
+      const prev = i > 0 ? cur[i - 1]! : undefined;
+      const join = prev === undefined ? [] : routedSameRow.filter(link => {
+        const { from, to } = link.attachments!;
+        return (from.node === prev && to.node === node) || (from.node === node && to.node === prev);
+      });
+      if (join.length > 0) {
+        const lateral = join.some(link => {
+          const pf = findPort(model, link.attachments!.from), pt = findPort(model, link.attachments!.to);
+          return [pf?.side, pt?.side].some(s => s === 'left' || s === 'right');
+        });
+        blocks[blocks.length - 1]!.nodes.push(node);
+        blocks[blocks.length - 1]!.fixedInner ||= lateral;
+      } else {
+        blocks.push({ nodes: [node], fixedInner: false });
+      }
+    }
+    const buildOrder = (keys: ReadonlyMap<string, number | undefined>, cmpNode: (a: string, b: string) => number): string[] => {
+      const vals = [...keys.values()].filter((v): v is number => v !== undefined);
+      if (vals.length < 2) return [...cur];
+      const bKeys = new Map<string, number | undefined>();
+      for (const b of blocks) {
+        const bVals = b.nodes.map(n => keys.get(n)).filter((v): v is number => v !== undefined);
+        bKeys.set(b.nodes[0]!, bVals.length ? bVals.reduce((s, v) => s + v, 0) / bVals.length : undefined);
+      }
+      const bHeads = blocks.map(b => b.nodes[0]!);
+      const cmpBlock = (ha: string, hb: string): number => {
+        const d = bKeys.get(ha)! - bKeys.get(hb)!;
+        return Math.abs(d) > SAME_FEED_KEY ? d : cmpNode(ha, hb);
+      };
+      const sortedHeads = slotSortBy(bHeads, bKeys, cmpBlock);
+      const innerMap = new Map(blocks.map(b => [b.nodes[0]!, b.fixedInner || b.nodes.length < 2 ? b.nodes : slotSortBy(b.nodes, keys, cmpNode)]));
+      return sortedHeads.flatMap(h => innerMap.get(h)!);
+    };
+    const tieSecondary = (a: string, b: string): number => {
+      const ua = up.get(a), ub = up.get(b);
+      if (ua !== undefined && ub !== undefined && Math.abs(ua - ub) > SAME_FEED_KEY) return ua - ub;
+      const da = down.get(a), db = down.get(b);
+      if (da !== undefined && db !== undefined && Math.abs(da - db) > SAME_FEED_KEY) return da - db;
+      return cur.indexOf(a) - cur.indexOf(b);
+    };
+    const tieSecondaryDown = (a: string, b: string): number => {
+      const da = down.get(a), db = down.get(b);
+      if (da !== undefined && db !== undefined && Math.abs(da - db) > SAME_FEED_KEY) return da - db;
+      const ua = up.get(a), ub = up.get(b);
+      if (ua !== undefined && ub !== undefined && Math.abs(ua - ub) > SAME_FEED_KEY) return ua - ub;
+      return cur.indexOf(a) - cur.indexOf(b);
+    };
+    const cmpBoth = (a: string, b: string): number => {
+      const d = both.get(a)! - both.get(b)!;
+      return Math.abs(d) > SAME_FEED_KEY ? d : tieSecondary(a, b);
+    };
+    const cmpBothDown = (a: string, b: string): number => {
+      const d = both.get(a)! - both.get(b)!;
+      return Math.abs(d) > SAME_FEED_KEY ? d : tieSecondaryDown(a, b);
+    };
+    const cmpBothOuter = (a: string, b: string): number => {
+      const ka = both.get(a)!, kb = both.get(b)!, d = ka - kb;
+      if (Math.abs(d) > SAME_FEED_KEY) return d;
+      const twoA = up.get(a) !== undefined && down.get(a) !== undefined, twoB = up.get(b) !== undefined && down.get(b) !== undefined;
+      if (twoA !== twoB && Math.abs(ka - 0.5) > SAME_FEED_KEY) {
+        return ka < 0.5 ? (twoA ? 1 : -1) : (twoA ? -1 : 1);
+      }
+      return tieSecondary(a, b);
+    };
+    const cmpUp = (a: string, b: string): number => {
+      const d = up.get(a)! - up.get(b)!;
+      return Math.abs(d) > SAME_FEED_KEY ? d : cur.indexOf(a) - cur.indexOf(b);
+    };
+    const cmpDown = (a: string, b: string): number => {
+      const d = down.get(a)! - down.get(b)!;
+      return Math.abs(d) > SAME_FEED_KEY ? d : cur.indexOf(a) - cur.indexOf(b);
+    };
+    const raw = [cur, buildOrder(both, cmpBoth), buildOrder(both, cmpBothDown), buildOrder(both, cmpBothOuter), buildOrder(up, cmpUp), buildOrder(down, cmpDown)];
+    const unique: string[][] = [];
+    for (const ord of raw) if (!unique.some(other => sameOrder(other, ord))) unique.push(ord);
+    return unique;
+  };
+
+  /** Count same-row routed links inside `rowsK` that have another member of the row between their ends. */
+  const freeRowBlocked = (rowsK: readonly LayoutGroup[]): number => {
+    let blocked = 0;
+    for (const row of rowsK) {
+      const ord = orderOf(row);
+      for (const link of routedSameRow) {
+        const { from, to } = link.attachments!;
+        if (groupOf(from.node) !== row) continue;
+        const pf = findPort(model, from), pt = findPort(model, to);
+        const sf = pf?.side ?? pf?.sizingSide, st = pt?.side ?? pt?.sizingSide;
+        if (sf === 'top' || sf === 'bottom' || st === 'top' || st === 'bottom') continue;
+        if (Math.abs(ord.indexOf(from.node) - ord.indexOf(to.node)) > 1) blocked++;
+      }
+    }
+    return blocked;
+  };
+
+  const at = tiers.indexOf(anchor);
+  const sweepOrder = [at, ...Array.from({ length: tiers.length - at - 1 }, (_, i) => at + 1 + i), ...Array.from({ length: at }, (_, i) => at - 1 - i)];
+
+  for (const k of sweepOrder) {
+    const rowsK = turnable(k).filter(group => !residualGroups.has(group));
+    if (!rowsK.length) continue;
+    const tierK = tiers[k]!, tierUp = k > 0 ? tiers[k - 1] : undefined, tierDown = k + 1 < tiers.length ? tiers[k + 1] : undefined;
+    const tierOut = k >= at ? tierDown : tierUp;
+    const mainK = Object.values(model.groups).filter(g => !g.flank && g.tier === tierK && g.bounds !== undefined && g.nodes.length > 0)
+      .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
+    const transitLinks = model.links.filter(link => link.layer === 'routed' && link.attachments && ownsTransitLanes(model, link)
+      && transitTiers(model, link).includes(tierK) && !passesFrame(link)).sort((a, b) => a.sourceIndex - b.sourceIndex);
+
+    // Movable group runs on tierOut (away from anchor, matching 7c): length >= 1 runs get predicted-7c centring; length >= 2 runs get permuted.
+    const groupsDown = tierOut === undefined ? [] : Object.values(model.groups)
+      .filter(g => !g.flank && g.tier === tierOut && g.bounds !== undefined && g.nodes.length > 0)
+      .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
+    interface RunSpec { groups: LayoutGroup[]; wallLeft: number; wallRight: number; permute: boolean }
+    const runsDown: RunSpec[] = [];
+    for (let i = 0; i < groupsDown.length;) {
+      if (!movable(groupsDown[i]!)) { i++; continue; }
+      let j = i;
+      while (j < groupsDown.length && movable(groupsDown[j]!)) j++;
+      const slice = groupsDown.slice(i, j);
+      const wallLeft = i > 0 ? groupsDown[i - 1]!.bounds!.x + groupsDown[i - 1]!.bounds!.width + gap : -Infinity;
+      const wallRight = j < groupsDown.length ? groupsDown[j]!.bounds!.x - gap : Infinity;
+      const nodeSet = new Set(slice.flatMap(g => g.nodes)), rowNodeSet = new Set(rowsK.flatMap(g => g.nodes));
+      const touches = routedVertical.some(l => (nodeSet.has(l.attachments!.from.node) && rowNodeSet.has(l.attachments!.to.node))
+        || (nodeSet.has(l.attachments!.to.node) && rowNodeSet.has(l.attachments!.from.node)))
+        || transitLinks.some(l => nodeSet.has(l.attachments!.from.node) || nodeSet.has(l.attachments!.to.node));
+      const hasSameTierPeer = model.links.some(l => l.layer === 'routed' && l.attachments
+        && nodeSet.has(l.attachments.from.node) && nodeSet.has(l.attachments.to.node)
+        && groupOf(l.attachments.from.node) !== groupOf(l.attachments.to.node));
+      const sliceFrameBound = slice.some(g => frameBound.has(g));
+      runsDown.push({ groups: slice, wallLeft, wallRight, permute: slice.length > 1 && touches && !hasSameTierPeer && !sliceFrameBound });
+      i = j;
+    }
+
+    let sigmaCombos: string[][][] = [[]];
+    for (const run of runsDown) {
+      const baseIds = run.groups.map(g => g.id);
+      const opts = !run.permute ? [baseIds] : run.groups.length <= 4 ? permutations(baseIds) : [baseIds, [...baseIds].reverse()];
+      const next = sigmaCombos.flatMap(prefix => opts.map(opt => [...prefix, opt]));
+      sigmaCombos = next.length <= JOINT_RUN_PERMS_CAP ? next : [...sigmaCombos.map(p => [...p, baseIds]), ...(opts.length > 1 ? [[...sigmaCombos[0]!, opts[1]!]] : [])];
+    }
+
+    // Transit side vectors on tierK: baseline sides first, then remaining combinations.
+    const defaultSides = (): ('left' | 'right')[] => transitLinks.map(link => {
+      const sx = portX(laneSource(model, link));
+      const core = transitedCore(mainK, sx) ?? mainK[0]!;
+      return corridorSide(core.bounds!, sx);
+    });
+    const baseSides = defaultSides();
+    let sideVectors: (('left' | 'right')[] | undefined)[];
+    if (transitLinks.length === 0) {
+      sideVectors = [undefined];
+    } else if (transitLinks.length <= JOINT_TRANSIT_ENUM_CAP) {
+      const all: ('left' | 'right')[][] = [[]];
+      for (let m = 0; m < transitLinks.length; m++) {
+        const b = baseSides[m]!, other: 'left' | 'right' = b === 'left' ? 'right' : 'left';
+        all.splice(0, all.length, ...all.flatMap(prefix => [[...prefix, b], [...prefix, other]]));
+      }
+      sideVectors = all;
+    } else {
+      const rUp = tierRanks(tierUp), rDown = tierRanks(tierDown);
+      const rankSide = transitLinks.map((link, m) => {
+        const { from, to } = link.attachments!;
+        const vals = [rUp.get(from.node) ?? rDown.get(from.node), rUp.get(to.node) ?? rDown.get(to.node)].filter((v): v is number => v !== undefined);
+        if (!vals.length) return baseSides[m]!;
+        const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+        return Math.abs(avg - 0.5) <= SAME_FEED_KEY ? baseSides[m]! : avg < 0.5 ? 'left' : 'right';
+      });
+      sideVectors = [baseSides, ...(rankSide.some((s, i) => s !== baseSides[i]) ? [rankSide] : [])];
+    }
+
+    /** Predict 7c non-overlapping centres for `runsDown` given current `rowsK` seating and corridor `sides`. */
+    const seatPredicted7c = (sigma: readonly (readonly string[])[], sides: readonly ('left' | 'right')[] | undefined): void => {
+      const corridorAt = new Map<LayoutLink, number>();
+      for (const [m, link] of transitLinks.entries()) {
+        const sx = centreOf(model, laneSource(model, link).node);
+        const core = transitedCore(mainK, sx) ?? mainK[0]!;
+        const half = laneWidth(model, link) / 2;
+        const s = sides?.[m] ?? corridorSide(core.bounds!, sx);
+        corridorAt.set(link, s === 'left' ? Math.min(sx, core.bounds!.x - half) : Math.max(sx, core.bounds!.x + core.bounds!.width + half));
+      }
+      const tierKSet = new Set(mainK.flatMap(g => g.nodes));
+      for (const [rIdx, run] of runsDown.entries()) {
+        const ids = sigma[rIdx]!;
+        const blocks: { ids: string[]; desired: number; weight: number; span: number }[] = ids.map(id => {
+          const group = model.groups[id]!, gNodes = new Set(group.nodes);
+          const xs: number[] = [];
+          for (const link of routedVertical) {
+            const { from, to } = link.attachments!;
+            if (gNodes.has(from.node) && tierKSet.has(to.node)) xs.push(centreOf(model, to.node));
+            else if (gNodes.has(to.node) && tierKSet.has(from.node)) xs.push(centreOf(model, from.node));
+          }
+          for (const link of transitLinks) {
+            if (link.bundle) continue;
+            const { from, to } = link.attachments!;
+            if (gNodes.has(from.node) || gNodes.has(to.node)) xs.push(corridorAt.get(link)!);
+          }
+          const wantLeft = xs.length ? xs.reduce((s, v) => s + v, 0) / xs.length - group.bounds!.width / 2 : group.bounds!.x;
+          return { ids: [id], desired: wantLeft, weight: Math.max(1, xs.length), span: group.bounds!.width };
+        });
+        for (let m = 0; m + 1 < blocks.length;) {
+          const a = blocks[m]!, b = blocks[m + 1]!, off = a.span + gap;
+          if (a.desired + off <= b.desired + PLACEMENT_EPS) { m++; continue; }
+          blocks.splice(m, 2, {
+            ids: [...a.ids, ...b.ids],
+            desired: (a.desired * a.weight + (b.desired - off) * b.weight) / (a.weight + b.weight),
+            weight: a.weight + b.weight,
+            span: off + b.span,
+          });
+          if (m > 0) m--;
+        }
+        let cursor = run.wallLeft;
+        const starts = blocks.map(b => { const x = Math.max(cursor, b.desired); cursor = x + b.span + gap; return x; });
+        let high = run.wallRight;
+        for (let m = blocks.length - 1; m >= 0; m--) {
+          if (starts[m]! + blocks[m]!.span > high) starts[m] = Math.max(run.wallLeft, high - blocks[m]!.span);
+          high = starts[m]! - gap;
+        }
+        for (const [m, b] of blocks.entries()) {
+          let x = starts[m]!;
+          for (const id of b.ids) {
+            const group = model.groups[id]!;
+            moveGroup(model, group, x - group.bounds!.x, 0);
+            x += group.bounds!.width + gap;
+          }
+        }
+      }
+    };
+
+    const feedStretch = (sides: readonly ('left' | 'right')[] | undefined): number => {
+      const rowNodeSet = new Set(rowsK.flatMap(g => g.nodes));
+      const corridorAt = new Map<LayoutLink, number>();
+      for (const [m, link] of transitLinks.entries()) {
+        const sx = centreOf(model, laneSource(model, link).node);
+        const core = transitedCore(mainK, sx) ?? mainK[0]!;
+        const half = laneWidth(model, link) / 2;
+        const s = sides?.[m] ?? corridorSide(core.bounds!, sx);
+        corridorAt.set(link, s === 'left' ? Math.min(sx, core.bounds!.x - half) : Math.max(sx, core.bounds!.x + core.bounds!.width + half));
+      }
+      const farNodes = new Set<string>();
+      for (const tier of [tierUp, tierDown]) if (tier !== undefined) {
+        for (const g of Object.values(model.groups)) if (!g.flank && g.tier === tier) for (const n of g.nodes) farNodes.add(n);
+      }
+      let total = 0;
+      for (const far of farNodes) {
+        const xs: number[] = [];
+        for (const link of routedVertical) {
+          const { from, to } = link.attachments!;
+          if (from.node === far && rowNodeSet.has(to.node)) xs.push(centreOf(model, to.node));
+          else if (to.node === far && rowNodeSet.has(from.node)) xs.push(centreOf(model, from.node));
+        }
+        for (const link of transitLinks) {
+          if (link.attachments!.from.node === far || link.attachments!.to.node === far) xs.push(corridorAt.get(link)!);
+        }
+        if (xs.length > 1) total += Math.max(...xs) - Math.min(...xs);
+      }
+      return total;
+    };
+
+    const probeGroups = [...rowsK, ...runsDown.flatMap(r => r.groups)];
+    const [low, high] = reach(probeGroups);
+    const savedLedger = model.reservations;
+
+    const evaluate = (sigma: readonly (readonly string[])[], rowOrders: readonly (readonly string[])[],
+      sides: readonly ('left' | 'right')[] | undefined) => {
+      const undo = saveGroups(model, probeGroups);
+      let ok = true;
+      for (const [i, row] of rowsK.entries()) {
+        if (!sameOrder(rowOrders[i]!, orderOf(row)) && !reseatRow(model, row, [...rowOrders[i]!], true)) { ok = false; break; }
+      }
+      if (ok) {
+        for (const [rIdx, run] of runsDown.entries()) seatRun(run.groups, sigma[rIdx]!);
+        if (sides !== undefined && transitLinks.length > 0) {
+          const tempSides = transitLinks.map((link, m) => {
+            const core = transitedCore(mainK, centreOf(model, laneSource(model, link).node)) ?? mainK[0]!;
+            return reservation('corridorSide', { kind: 'link', id: link.id }, String(tierK), 'skeleton', 0,
+              { link: link.id, tier: tierK, group: core.id, side: sides[m]! });
+          });
+          model.reservations = [...(savedLedger ?? []), ...tempSides];
+        }
+        seatPredicted7c(sigma, sides);
+      }
+      const result = ok ? { ...measureRange(low, high, true), freeBlocked: freeRowBlocked(rowsK), stretch: feedStretch(sides) } : undefined;
+      if (savedLedger === undefined) delete model.reservations; else model.reservations = savedLedger;
+      undo();
+      return result;
+    };
+
+    const baseSigma = runsDown.map(r => r.groups.map(g => g.id));
+    const baseRowOrders = rowsK.map(r => orderOf(r));
+    const baseline = evaluate(baseSigma, baseRowOrders, transitLinks.length > 0 ? baseSides : undefined);
+    if (baseline === undefined) continue;
+
+    interface ScoredCandidate {
+      sigma: string[][];
+      rowOrders: string[][];
+      sides: ('left' | 'right')[] | undefined;
+      score: NonNullable<ReturnType<typeof evaluate>>;
+    }
+    let best: ScoredCandidate | undefined;
+
+    for (const sigma of sigmaCombos) {
+      // Read ranks under `sigma` so free-row keys match the candidate outward group order.
+      const undoDown = saveGroups(model, runsDown.flatMap(r => r.groups));
+      for (const [rIdx, run] of runsDown.entries()) seatRun(run.groups, sigma[rIdx]!);
+      const rankUp = tierRanks(tierUp), rankDown = tierRanks(tierDown);
+      undoDown();
+
+      const perRow = rowsK.map(row => rowFeedCandidates(row, rankUp, rankDown));
+      const product = perRow.reduce((acc, list) => acc * list.length, 1);
+      const rowCombos: string[][][] = product <= 16
+        ? perRow.reduce<string[][][]>((acc, list) => acc.flatMap(prefix => list.map(ord => [...prefix, ord])), [[]])
+        : [
+          rowsK.map((_, i) => perRow[i]![0]!),
+          ...Array.from({ length: Math.max(...perRow.map(l => l.length)) - 1 }, (_, mode) => rowsK.map((_, i) => perRow[i]![Math.min(mode + 1, perRow[i]!.length - 1)]!)),
+          ...rowsK.flatMap((_, i) => perRow[i]!.slice(1).map(ord => rowsK.map((__, j) => i === j ? ord : perRow[j]![0]!))),
+        ];
+
+      const sigmaUnchanged = sigma.every((ids, rIdx) => sameOrder(ids, baseSigma[rIdx]!));
+      const stepCovered = k !== at && spanned.has(k) && rowsK.every(r => r.nodes.length <= ROW_ORDER_PERMUTED_NODES);
+      for (const rowOrders of rowCombos) {
+        if (rowOrders.every((ord, i) => sameOrder(ord, baseRowOrders[i]!))) continue;
+        // Do not undo a 2-tier corridor turn that `step` already committed back to its original order.
+        if (rowOrders.some((ord, i) => {
+          const orig = before.get(rowsK[i]!);
+          return orig !== undefined && !sameOrder(orig, baseRowOrders[i]!) && sameOrder(orig, ord);
+        })) continue;
+        for (const sides of sideVectors) {
+          if (stepCovered && sigmaUnchanged && (sides === undefined || sides.every((s, m) => s === baseSides[m]))) continue;
+          const score = evaluate(sigma, rowOrders, sides);
+          if (score === undefined) continue;
+          if (score.straight < baseline.straight || score.blocked > baseline.blocked || score.freeBlocked > baseline.freeBlocked || score.crossings >= baseline.crossings) continue;
+          const wins = best === undefined
+            || (score.straight !== best.score.straight ? score.straight > best.score.straight
+              : (score.blocked + score.freeBlocked) !== (best.score.blocked + best.score.freeBlocked) ? (score.blocked + score.freeBlocked) < (best.score.blocked + best.score.freeBlocked)
+                : score.crossings !== best.score.crossings ? score.crossings < best.score.crossings
+                  : score.stretch < best.score.stretch - PLACEMENT_EPS);
+          if (wins) best = { sigma, rowOrders, sides, score };
+        }
+      }
+    }
+
+    if (best === undefined) continue;
+    for (const [i, row] of rowsK.entries()) {
+      if (!sameOrder(best.rowOrders[i]!, orderOf(row))) {
+        if (!reseatRow(model, row, [...best.rowOrders[i]!], true)) throw new Error('A joint row order could not be seated again');
+        jointMoved.add(row);
+        moved = true;
+      }
+    }
+    for (const [rIdx, run] of runsDown.entries()) {
+      if (!sameOrder(best.sigma[rIdx]!, baseSigma[rIdx]!)) {
+        seatRun(run.groups, best.sigma[rIdx]!);
+        tierOrders.push({ tier: tierOut!, order: [...best.sigma[rIdx]!], rows: [...rowsK] });
+        moved = true;
+      }
+    }
+    if (best.sides !== undefined && transitLinks.length > 0) {
+      for (const [m, link] of transitLinks.entries()) {
+        const core = transitedCore(mainK, centreOf(model, laneSource(model, link).node)) ?? mainK[0]!;
+        corridorSides.push(reservation('corridorSide', { kind: 'link', id: link.id }, String(tierK), 'skeleton', 0,
+          { link: link.id, tier: tierK, group: core.id, side: best.sides[m]! }));
+      }
+    }
+  }
+
+  return { moved, jointMoved, tierOrders, corridorSides };
 }

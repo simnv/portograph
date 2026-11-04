@@ -23,6 +23,7 @@ import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
 import { type ProposedBox, foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, riserHostGrowth, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
+import { corridorSideOf } from './reservations.js';
 import { nodeTier, transitTiers } from './read/tier.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { orderPortsByLanes } from './turn-order.js';
@@ -1187,33 +1188,54 @@ export function allocateLanes(model: LayoutModel): void {
     for (const [index, link] of tierLinks.entries()) {
       const sx = findPort(model, laneSource(model, link))!.anchor!.x;
       const width = laneWidth(model, link), half = width / 2;
-      const nearest = transitedCore(main, sx) ?? groups[0]!;
+      const reservedEntry = (model.reservations ?? []).find(entry => entry.kind === 'corridorSide'
+        && entry.payload.link === link.id && entry.payload.tier === tier);
+      const reservedHost = reservedEntry?.kind === 'corridorSide' ? groups.find(g => g.id === reservedEntry.payload.group) : undefined;
+      const nearest = reservedHost ?? transitedCore(main, sx) ?? groups[0]!;
       const core = occ(nearest, link);
       // A corridor passes its tier on the side of the transited group that faces the link's target
       // (ticket 03), so the run leaves the tier already on the side its far end stands on. Where the
       // target has no x to read, the corridor keeps the side the source asks for (`corridorSide`).
       const target = targetX(link, tier);
-      const side = target === undefined ? undefined : corridorSide(core, sx, target);
-      let x = corridorSide(core, sx) === 'left' ? Math.min(sx, core.x - half) : Math.max(sx, right(core) + half);
+      const reservedSide = reservedEntry?.kind === 'corridorSide' ? reservedEntry.payload.side : corridorSideOf(model.reservations, link.id, tier, nearest.id);
+      const side = reservedSide ?? (target === undefined ? undefined : corridorSide(core, sx, target));
+      const prefSide = reservedSide ?? corridorSide(core, sx);
+      let x = prefSide === 'left' ? Math.min(sx, core.x - half) : Math.max(sx, right(core) + half);
       // Reserve in transported source order. Previous corridors are immutable even during planning.
       const prior = pending.filter(lane => lane.tier === tier);
-      for (const lane of prior) if (Math.abs(x - lane.x) < (width + lane.bounds.width) / 2) {
-        x = lane.x + (width + lane.bounds.width) / 2;
+      if (reservedSide === undefined) {
+        for (const lane of prior) if (Math.abs(x - lane.x) < (width + lane.bounds.width) / 2) {
+          x = lane.x + (width + lane.bounds.width) / 2;
+        }
+      } else {
+        const dir = reservedSide === 'left' ? -1 : 1;
+        for (let pass = 0, moved = true; moved && pass <= prior.length; pass++) {
+          moved = false;
+          for (const lane of prior) if (Math.abs(x - lane.x) < (width + lane.bounds.width) / 2 - PLACEMENT_EPS) {
+            x = lane.x + dir * (width + lane.bounds.width) / 2;
+            moved = true;
+          }
+        }
       }
       // A corridor directly below its source avoids an approach jog. Before ownership freezes,
       // move intermediate groups aside where that preserves prior corridors and source groups.
       // An insertion gap that leaves the transited group on the target side is taken first; a plan
-      // on the other side is taken only where the target side has none.
+      // on the other side is taken only where the target side has none (and never against a stage-4 side reservation).
       const at = groups.indexOf(nearest);
-      const direct = directPlan(group => occ(group, link), groups, at, side, sx, width, prior, fixedSources)?.shift;
+      const plan = directPlan(group => occ(group, link), groups, at, side, sx, width, prior, fixedSources);
+      const direct = plan !== undefined && (reservedSide === undefined || (reservedSide === 'left' ? plan.split <= at : plan.split > at))
+        ? plan.shift : undefined;
       let shifts: number[] | undefined;
       if (direct) { x = sx; shifts = direct; }
       else {
         // Prefer a full in-span allocation for the remaining same-source members when it fits.
-        x = inSpanSlot(model, link, core, width, prior, tierLinks.slice(index)) ?? x;
+        const slot = inSpanSlot(model, link, core, width, prior, tierLinks.slice(index));
+        if (slot !== undefined && (reservedSide === undefined || (reservedSide === 'left' ? slot <= core.x - half + PLACEMENT_EPS : slot >= right(core) + half - PLACEMENT_EPS))) {
+          x = slot;
+        }
         // If exterior packing crossed the main group, take the margin the target side asks for.
         if (x + half > core.x && x - half < right(core)) x = side === 'left' ? core.x - half : right(core) + half;
-        const split = at + (x > right(core) ? 1 : 0);
+        const split = at + (reservedSide !== undefined ? (reservedSide === 'right' ? 1 : 0) : (x > right(core) ? 1 : 0));
         shifts = marginTranslations(group => occ(group, link), groups, split, x, width, prior, fixedSources);
       }
       if (!shifts) {

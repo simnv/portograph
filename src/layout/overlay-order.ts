@@ -16,7 +16,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { isCantonUnit } from './read/canton.js';
 import { overlayCourse } from './courses.js';
-import { feedingRowsOf, rowOrderOf } from './reservations.js';
+import { corridorSideOf, feedingRowsOf, rowOrderOf } from './reservations.js';
 
 /** Two placed nodes that a link joins, and the link. */
 export interface Pair { from: string; to: string; link: LayoutLink }
@@ -118,7 +118,10 @@ export function readDraft(model: LayoutModel) {
     const tier = tiers[k]!, sx = sourceX(link), groups = groupsAt(tier), main = groups.filter(group => !group.flank);
     const core = transitedCore(main, sx);
     if (core === undefined) return undefined;
-    const box = core.bounds!, far = corridors.target(link, tier), width = laneWidth(model, link), half = width / 2;
+    const box = core.bounds!, width = laneWidth(model, link), half = width / 2;
+    const reserved = corridorSideOf(model.reservations, link.id, tier, core.id);
+    if (reserved !== undefined) return reserved === 'left' ? Math.min(sx, box.x - half) : Math.max(sx, box.x + box.width + half);
+    const far = corridors.target(link, tier);
     const wanted = far === undefined ? undefined : corridorSide(box, sx, centre(far.node)), at = groups.indexOf(core);
     const plan = directPlan(group => group.bounds!, groups, at, wanted, sx, width, [], fixed);
     const side = plan === undefined ? corridorSide(box, sx) : plan.split <= at ? 'left' : 'right';

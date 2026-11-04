@@ -27,6 +27,7 @@ import { plannedTurns, turnOrder, turnScope, type PlannedTurn, type TurnPort } f
 import { routedLinksAt, unreservedPeers } from './peers.js';
 import { arrangeGroups, seatStaggerRows } from './stagger.js';
 import { reserveColumns, seatColumn } from './column-arrangement.js';
+import { ofKind } from './reservations.js';
 const key = portId;
 
 /**
@@ -802,7 +803,28 @@ export function portPeers(model: LayoutModel): Map<string, PortRef[]> {
  */
 export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>, ref: PortRef, side: Side): number {
   const list = peers.get(key(ref)) ?? [];
+  const reserved = (side === 'top' || side === 'bottom') && model.reservations !== undefined ? ofKind(model.reservations, 'corridorSide') : [];
+  const myTier = reserved.length ? model.groups[model.document.nodes[ref.node]?.group ?? '']?.tier : undefined;
+  const refKey = reserved.length ? key(ref) : '';
   const coordinate = (peer: PortRef): number => {
+    if (myTier !== undefined) {
+      const peerTier = model.groups[model.document.nodes[peer.node]?.group ?? '']?.tier, peerKey = key(peer);
+      if (peerTier !== undefined && peerTier !== myTier) {
+        const low = Math.min(myTier, peerTier), high = Math.max(myTier, peerTier);
+        const link = model.links.find(item => item.attachments !== undefined
+          && ((key(item.attachments.from) === refKey && key(item.attachments.to) === peerKey)
+            || (key(item.attachments.to) === refKey && key(item.attachments.from) === peerKey)));
+        if (link !== undefined) {
+          const between = reserved.filter(item => item.payload.link === link.id && item.payload.tier > low && item.payload.tier < high)
+            .sort((a, b) => Math.abs(a.payload.tier - myTier) - Math.abs(b.payload.tier - myTier))[0];
+          const host = between === undefined ? undefined : model.groups[between.payload.group];
+          if (between !== undefined && host?.bounds !== undefined) {
+            const half = laneWidth(model, link) / 2;
+            return between.payload.side === 'left' ? host.bounds.x - half : host.bounds.x + host.bounds.width + half;
+          }
+        }
+      }
+    }
     const box = model.nodes[peer.node]!.bounds!, point = findPort(model, peer)?.anchor;
     return side === 'top' || side === 'bottom' ? (point?.x ?? box.x + box.width / 2) : (point?.y ?? box.y + box.height / 2);
   };

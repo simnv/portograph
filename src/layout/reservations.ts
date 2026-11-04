@@ -48,7 +48,11 @@ export interface ReservationPayload {
    * child frame by its id. `feeds` is the premise: each feeding row the order was read from, with the order it stood in. Stage 4 writes
    * it after the free rows are ordered; an absent entry means the feeds decide nothing there.
    */
-  rowOrder: { cell: string; order: readonly string[]; feeds: readonly RowFeed[] } | { frame: string; order: readonly string[]; feeds: readonly RowFeed[] };
+  rowOrder: { cell: string; order: readonly string[]; feeds: readonly RowFeed[] }
+    | { frame: string; order: readonly string[]; feeds: readonly RowFeed[] }
+    | { tier: number; order: readonly string[]; feeds: readonly RowFeed[] };
+  /** The side of a transited group that a transit corridor takes, decided jointly with free-row order in stage 4. */
+  corridorSide: { link: string; tier: number; group: string; side: 'left' | 'right' };
 }
 export type ReservationKind = keyof ReservationPayload;
 /** A feeding row of a `rowOrder` entry: the group, and the order its nodes stood in when the feeds were read. */
@@ -77,7 +81,7 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
   turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes',
-  rowOrder: 'skeleton',
+  rowOrder: 'skeleton', corridorSide: 'skeleton',
 };
 
 /** A reservation that lives for one move check and is never stored: no clone of the payload, revision 0. */
@@ -224,6 +228,13 @@ export function rowOrderOf(ledger: Reservations | undefined, scope: 'cell' | 'fr
 export function feedingRowsOf(ledger: Reservations | undefined): Set<string> {
   return new Set(ofKind(ledger ?? NO_RESERVATIONS, 'rowOrder').flatMap(({ payload }) => payload.feeds.map(feed => feed.row)));
 }
+/** The side of `group` (or any transited group on `tier`) that the ledger reserves for `link`'s transit corridor (R1). */
+export function corridorSideOf(ledger: Reservations | undefined, link: string, tier: number, group?: string): 'left' | 'right' | undefined {
+  for (const { payload } of ofKind(ledger ?? NO_RESERVATIONS, 'corridorSide')) {
+    if (payload.link === link && payload.tier === tier && (group === undefined || payload.group === group)) return payload.side;
+  }
+  return undefined;
+}
 
 /** Whether every face takes the turn order, and the links whose faces take it when not every face does. */
 export function turnOf(ledger: Reservations): { all: boolean; links: string[]; requireChanged: boolean } {
@@ -302,6 +313,18 @@ export function rowOrderFailure(item: Reservation, model: LayoutModel): string |
     if (group === undefined || group.frame === undefined) return `${payload.cell} is no rank cell`;
     return same(group.rowOrder ?? group.nodes, payload.order) ? undefined : `${payload.cell} does not stand in the order its feeds give`;
   }
+  if ('tier' in payload) {
+    for (const [i, a] of payload.order.entries()) {
+      const one = model.groups[a];
+      if (one?.bounds === undefined || one.tier !== payload.tier) return `${a} does not stand on sub-tier ${payload.tier}`;
+      for (const b of payload.order.slice(i + 1)) {
+        const two = model.groups[b];
+        if (two?.bounds === undefined || two.tier !== payload.tier) return `${b} does not stand on sub-tier ${payload.tier}`;
+        if (one.bounds.x >= two.bounds.x) return `${a} does not stand left of ${b}, the order the feeds of sub-tier ${payload.tier} give`;
+      }
+    }
+    return undefined;
+  }
   const frames = model.document.frames ?? {};
   if (frames[payload.frame] === undefined) return `${payload.frame} is no frame`;
   const cellsOf = (unit: string): string[] | undefined => unit === payload.frame ? frames[unit]!.cells
@@ -316,6 +339,20 @@ export function rowOrderFailure(item: Reservation, model: LayoutModel): string |
   return undefined;
 }
 
+/** The predicate of a stage-4 transit corridor side reservation against the stage-7a lane allocation. */
+export function corridorSideFailure(item: Reservation, model: LayoutModel): string | undefined {
+  if (item.kind !== 'corridorSide') return undefined;
+  const { link: id, tier, group, side } = item.payload;
+  const link = model.links.find(other => other.id === id), host = model.groups[group];
+  if (link === undefined) return `${id} is missing`;
+  if (host?.bounds === undefined || host.tier !== tier) return `${group} does not stand on sub-tier ${tier}`;
+  if (model.stage !== 'lanes' || link.spanHint === true || (model.courses ?? []).some(course => course.link === id)) return undefined;
+  const lane = model.lanes.find(other => other.kind === undefined && other.owner.kind === 'link' && other.owner.id === id && other.tier === tier);
+  if (lane === undefined) return `${id} has no transit lane in sub-tier ${tier}`;
+  const ok = side === 'left' ? lane.x < host.bounds.x : lane.x > host.bounds.x + host.bounds.width;
+  return ok ? undefined : `the corridor of ${id} in sub-tier ${tier} does not stand ${side} of ${group}`;
+}
+
 /** The turn count each kept course promised, by link id: what the turn round's judgment compares a trial with. */
 export function promisedTurns(ledger: Reservations): Map<string, number> {
   return new Map(ofKind(ledger, 'course').flatMap(({ payload }) => payload.maxTurns === undefined ? [] : [[payload.course.link, payload.maxTurns] as const]));
@@ -325,7 +362,7 @@ const isString = (value: unknown): value is string => typeof value === 'string';
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isPort = (value: unknown): boolean => isObject(value) && isString(value['node']) && Number.isInteger(value['ordinal']) && (value['anonymous'] === true ? value['name'] === undefined : isString(value['name']));
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined', 'rowOrder']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined', 'rowOrder', 'corridorSide']);
 const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'skeleton', 'lanes', 'bands']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
@@ -358,10 +395,13 @@ function shapeFailure(entry: unknown): string | undefined {
       return scopeOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
     }
     case 'rowOrder': {
-      const order = payload['order'], one = isString(payload['cell']) !== isString(payload['frame']);
+      const order = payload['order'], scopes = [isString(payload['cell']), isString(payload['frame']), Number.isInteger(payload['tier'])].filter(Boolean).length;
       const feeds = payload['feeds'];
       const feedsOk = Array.isArray(feeds) && feeds.length > 0 && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
-      return one && feedsOk && Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length ? undefined : bad;
+      return scopes === 1 && feedsOk && Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length ? undefined : bad;
+    }
+    case 'corridorSide': {
+      return isString(payload['link']) && Number.isInteger(payload['tier']) && isString(payload['group']) && (payload['side'] === 'left' || payload['side'] === 'right') ? undefined : bad;
     }
     default: {
       const scope = payload['scope'];
@@ -435,7 +475,7 @@ export function validateReservations(model: LayoutModel): void {
   // A floor is a promise about the placed geometry, which later stages may only grow, and a feed order a promise no later stage may turn;
   // the kinds below are checked on every restored stage.
   for (const item of ledger) {
-    const why = floorFailure(item, model) ?? rowOrderFailure(item, model);
+    const why = floorFailure(item, model) ?? rowOrderFailure(item, model) ?? corridorSideFailure(item, model);
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }

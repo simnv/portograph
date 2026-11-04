@@ -45,7 +45,7 @@ const SAME_KEY = 1e-9;
  * packed. The entries of an earlier run are replaced, so a placement re-run decides again on its own skeleton.
  */
 export function orderByFeeds(model: LayoutModel): void {
-  const kept = (model.reservations ?? []).filter(entry => entry.kind !== 'rowOrder');
+  const kept = (model.reservations ?? []).filter(entry => entry.kind !== 'rowOrder' || 'tier' in entry.payload);
   const entries: Reservation[] = [];
   const read = reader(model);
   let moved = false;
@@ -96,6 +96,10 @@ export function refreshFeedOrders(model: LayoutModel): boolean {
     entries.push(cellEntry(cell.id, decision));
   }
   for (const entry of ofKind(model.reservations ?? [], 'rowOrder')) {
+    if ('tier' in entry.payload) {
+      if (rowOrderFailure(entry, model) === undefined) entries.push(entry);
+      continue;
+    }
     if (!('frame' in entry.payload)) continue;
     const id = entry.payload.frame, decision = read.frame(id);
     if (decision !== undefined && sameOrder(decision.order, entry.payload.order)) { entries.push(frameEntry(id, decision)); continue; }
