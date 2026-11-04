@@ -6,7 +6,7 @@ import { PlacementRefusal } from './placement-refusal.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
 import { orderByOverlay, orderFramesByOverlay } from './overlay-order.js';
 import { orderByCorridors, validateRowOrderDecisions } from './corridor-order.js';
-import { orderByFeeds, settlePullsAndFeeds, validateFeedOrders } from './feed-order.js';
+import { orderByFeeds, settlePullsAndFeeds, validateFeedOrders, withdrawBrokenGroupOrders } from './feed-order.js';
 import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 export { buildSkeletonGraph } from './skeleton-graph.js';
 export { validateSkeletonBands } from './skeleton-geometry.js';
@@ -93,6 +93,8 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
     // free row that may feed a cell, so the feed orders are read again, and a re-seated cell may move the far node of another pull: the
     // two repeat until no pull is withdrawn (ticket 25 re-check).
     settlePullsAndFeeds(work);
+    // A group order of the joint order (ticket 72) that the frame order broke is withdrawn by name before the check (R6).
+    withdrawBrokenGroupOrders(work);
     const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work), ...validateFeedOrders(work)];
     if (errors.length) throw new SkeletonError(errors.join('; '));
     work.stage = 'skeleton';

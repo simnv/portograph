@@ -6,6 +6,7 @@ import { orderByOverlay } from '../../src/layout/overlay-order.js';
 import { placeOverlayFree } from '../../src/layout/overlay-place.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 const names = {
   indifferent: 'overlay-links-reorder-an-indifferent-tier',
@@ -13,7 +14,7 @@ const names = {
   bend: 'an-overlay-reorder-is-refused-when-a-link-would-bend',
   partners: 'a-row-orders-its-nodes-by-overlay-partners',
 } as const;
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const run = (yaml: string): Promise<LayoutModel> =>
   layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const overlays = (model: LayoutModel): LayoutLink[] => model.links.filter(link => (link.layer ?? link.family) === 'overlay');

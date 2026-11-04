@@ -140,7 +140,7 @@ export interface LayoutGroup extends OwnedElement {
 
 /** See `LayoutGroup.rowOrderDecision`. `before` is the row order the step found, `after` the order it left. */
 export interface RowOrderDecision {
-  rule: 'kept' | 'corridor-crossings' | 'author' | 'frame-columns';
+  rule: 'kept' | 'corridor-crossings' | 'feed-order' | 'author' | 'frame-columns';
   before: string[];
   after: string[];
   /**

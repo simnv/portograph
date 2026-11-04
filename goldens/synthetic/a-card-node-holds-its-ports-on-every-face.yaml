@@ -14,6 +14,8 @@
 # `layout: { nodeContent: card }` is the switch: without it the document is stacked. The ticket's eighth case, a profile class overridden to
 # `stacked`, is not a document field: the shipped profile carries no override, so test/layout/node-content.test.ts covers it with a stated class table.
 # Test-only input owned by snack-theme ticket 159; test/layout/node-content.test.ts reads it.
+# Since architecture-2 ticket 72 (the joint stage-4 order): crossings 0 (2 before), canvas 799 x 595 (779 before); the test pins
+# `layout.feedOrder: false`.
 portograph: 2
 layout: { nodeContent: card }
 groups:

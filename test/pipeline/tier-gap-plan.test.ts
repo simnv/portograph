@@ -8,12 +8,13 @@ import { score } from '../../src/score/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
+import { withoutJointOrderOn } from '../layout/joint-off.js';
 
 /**
  * Ranked-groups ticket 50 (`docs/design/tier-gap-rows.md`, Section 5, ticket 2): 7f grows every tier gap by the plan's `H` and stage 8
  * reserves the planned parts tip to tip. The fixtures are the four shapes of Section 2.4, through the real router.
  */
-const read = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const read = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const place = async (name: string, orthogonal = false): Promise<LayoutModel> =>
   bands(bundles(bars(centre(flanks(lanes(rows(await placed(orthogonal ? orthogonalLinks(read(name)) : read(name)))))))));
 const growth = (model: LayoutModel): number[] => model.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN')

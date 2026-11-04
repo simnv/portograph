@@ -9,9 +9,10 @@ import { routeParameters } from '../../src/route/plan.js';
 import type { LayoutModel, Owner } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-const fixture = (name: string) => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = (name: string) => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 
 /** Every link of the fan leaves the parent anchor on one identical first stem, and no two paths overlap. */
 function sharedStem(model: LayoutModel, parent: string): void {

@@ -5,6 +5,7 @@ import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-
 import type { AttemptTraceEvent } from '../../src/layout/placement-attempt.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Architecture ticket 13, phase 1: the ledger. It reads the counts of section 2 of the design (main 78dcc8b, before any change of 7f) and pins them.
@@ -21,7 +22,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * tier gaps hands back its last trial when it stopped on "no change" and the round takes it in place of the replay. The layout is byte-identical.
  */
 const golden = (name: string): string =>
-  readFileSync(new URL(`../../goldens/${name === 'm1-sip-edge' ? '' : 'synthetic/'}${name}.yaml`, import.meta.url), 'utf8');
+  withoutJointOrder(readFileSync(new URL(`../../goldens/${name === 'm1-sip-edge' ? '' : 'synthetic/'}${name}.yaml`, import.meta.url), 'utf8'));
 
 interface Row {
   name: string; counters: string | undefined; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: 'none' | 'refused';

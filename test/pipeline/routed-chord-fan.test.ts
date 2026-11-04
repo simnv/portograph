@@ -11,6 +11,7 @@ import { intersection, samePoint, segmentDistance } from '../../src/score/geomet
 import { linkStrokeWidth } from '../../src/theme/geometry.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Ranked-groups ticket 102 (Q108, docs/design/routed-chords.md, Section 7): a face that takes cross-frame chords spreads its ports, as a face of
@@ -128,7 +129,7 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
   }, 60000);
 
   it('keeps all three chords of detoured-stem-checkpoint straight through the fan rounds (Q 0.8140, not 0.7645)', async () => {
-    const stem = readFileSync(new URL('../../goldens/synthetic/detoured-stem-checkpoint.yaml', import.meta.url), 'utf8');
+    const stem = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/detoured-stem-checkpoint.yaml', import.meta.url), 'utf8'));
     const model = await layout(parse(stem), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     const straight = model.links.filter(link => link.technique === 'straight' && link.path?.segments.length === 1);
     expect(straight.map(link => link.id).sort()).toEqual(model.links.map(link => link.id).sort());

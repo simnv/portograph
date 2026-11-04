@@ -9,8 +9,9 @@ import { stemCheckpoint } from '../../src/route/plan.js';
 import { score } from '../../src/score/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrderOn } from '../layout/joint-off.js';
 
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const EPS = 1e-6;
 
 type Segment = { from: { x: number; y: number }; to: { x: number; y: number } };

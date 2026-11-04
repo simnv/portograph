@@ -388,7 +388,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // as it leaves them — but a lane is an input to two of the plans inside those bands, those plans
   // are settled again below, and one of the two can move a node when it settles.
   abortAt?.();
-  const heldLanes = clone(draft.lanes), followedLanes: LaneFollow[] = [];
+  // A corridor side stage 4 reserved that the move withdraws (ticket 72) comes back with the lanes when the move is refused.
+  const heldLanes = clone(draft.lanes), heldLedger = draft.reservations, heldNotes = new Set(draft.diagnostics), followedLanes: LaneFollow[] = [];
   const seated = draft.anchorTier === undefined ? undefined : seatLaneSources(draft, centreContext(draft, draft.anchorTier).steps);
   if (reseatLanes(draft, followedLanes)) {
     seated?.reconcile();
@@ -435,7 +436,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
       note('reseat-lanes', 'adopted');
     } else {
       seated?.undo();
-      draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD');
+      draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD' && (item.code !== 'CORRIDOR_SIDE_WITHDRAWN' || heldNotes.has(item)));
+      if (heldLedger === undefined) delete draft.reservations; else draft.reservations = heldLedger;
       attemptCounters.reseat.refused++;
       note('reseat-lanes', 'refused');
     }

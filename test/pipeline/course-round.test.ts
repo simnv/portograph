@@ -17,13 +17,14 @@ import { laneSidesHold } from '../../src/layout/lanes.js';
 import { right } from '../../src/geometry/planar.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Architecture ticket 15, phase 4: the course round (`measureCourses`, the stage-5 course input, the trial judge) and the perimeter lane. The stop rule of
  * the redesign of 2026-10-05: (a) the in-scope links match the faces and the turns of the `solve` page, (b) every kept course publishes the turns it
  * promised (`COURSE_SHAPE_LOST` is 0), (c) nothing else gets worse.
  */
-const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const source = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 const link = (model: LayoutModel, n: number): LayoutLink => model.links.find(item => item.id === `link-${n}`)!;
 const side = (model: LayoutModel, n: number, end: 'from' | 'to'): Side => findPort(model, link(model, n).attachments![end])!.side!;

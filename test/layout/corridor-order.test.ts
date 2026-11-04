@@ -11,6 +11,7 @@ import { corridorSide } from '../../src/layout/lanes.js';
 import { readDraft, reseatRow } from '../../src/layout/overlay-order.js';
 import { createColdAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from './joint-off.js';
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-row-turns-to-clear-a-corridor.yaml', import.meta.url), 'utf8');
 /** The same sheet with every row in its declared order. */
@@ -151,7 +152,7 @@ links: [[a, y], [b, x]]`);
 
   it('reads each link end at the port sides-two gives it, so links that share a node can cross there (follow-up)', async () => {
     const shared = readFileSync(new URL('../../goldens/synthetic/a-shared-end-reads-its-port-order.yaml', import.meta.url), 'utf8');
-    const [model, plain] = await Promise.all([skeletonOf(shared), skeletonOf(shared.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n'))]);
+    const [model, plain] = await Promise.all([skeletonOf(withoutJointOrder(shared)), skeletonOf(withoutJointOrder(shared.replace('portograph: 2\n', 'portograph: 2\nlayout: { corridorRowOrder: false }\n')))]);
     expect(model.groups.src!.rowOrderDecision).toEqual({ rule: 'kept', before: ['src0', 'src1'], after: ['src0', 'src1'] });
     const declaredCount = readDraft(model)!.measureRange(0, 2, true).crossings;
     expect(reseatRow(model, model.groups.src!, ['src1', 'src0'], true)).toBe(true);
@@ -218,7 +219,7 @@ describe('a row pulls a member toward its link\'s far end (architecture-2 ticket
   const pulled = readFileSync(new URL('../../goldens/synthetic/a-row-member-passes-unlinked-peers-toward-its-far-end.yaml', import.meta.url), 'utf8');
 
   it('moves lb past the unlinked members to stand next to fe2, and records the order the search left', async () => {
-    const model = await skeletonOf(pulled);
+    const model = await skeletonOf(withoutJointOrder(pulled));
     const decision = model.groups.front!.rowOrderDecision!;
     expect(decision.rule).toBe('kept');
     expect(decision.pulledFrom).toEqual(['fe1', 'fe2', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'lb']);
@@ -228,7 +229,7 @@ describe('a row pulls a member toward its link\'s far end (architecture-2 ticket
 
   it('serves the member whose link would bend, and keeps a member whose far node another member feeds (a-row-stretches, user 2026-10-24)', async () => {
     const text = readFileSync(new URL('../../goldens/synthetic/a-row-stretches-a-body-past-its-sibling.yaml', import.meta.url), 'utf8');
-    const decision = (await skeletonOf(text)).groups.top!.rowOrderDecision!;
+    const decision = (await skeletonOf(withoutJointOrder(text))).groups.top!.rowOrderDecision!;
     // n1 is fed by rB and rA, so neither is pulled. s1 will stand past rA once 7c stretches n1 under both, so f1 passes f2 toward it, and
     // then rA: rA moves one slot and still stands over n1, so its three links stay straight (user, 2026-10-24: "move f1 to the right side").
     expect(decision.pulledFrom).toEqual(['rB', 'f1', 'f2', 'rA']);
@@ -238,7 +239,7 @@ describe('a row pulls a member toward its link\'s far end (architecture-2 ticket
 
   it('passes a linked peer whose links stay straight one slot away, and never a peer with a link to a band farther off', async () => {
     const text = readFileSync(new URL('../../goldens/synthetic/a-bent-member-passes-a-linked-peer-whose-links-stay-straight.yaml', import.meta.url), 'utf8');
-    const model = await skeletonOf(text);
+    const model = await skeletonOf(withoutJointOrder(text));
     const decision = model.groups.top!.rowOrderDecision!;
     expect(decision.pulledFrom).toEqual(['f1', 'rA']);
     expect(decision.after).toEqual(['rA', 'f1']);
@@ -275,7 +276,7 @@ describe('a row pulls a member toward its link\'s far end (architecture-2 ticket
   }, 60000);
 
   it('withdraws a pull whose far node ends on the other side of the move, and records it (the guard after the frame order)', async () => {
-    const model = await skeletonOf(pulled);
+    const model = await skeletonOf(withoutJointOrder(pulled));
     const decision = model.groups.front!.rowOrderDecision!;
     // As if the frame order put outlet past the far end of the row after the pull: lb moved left, away from it now.
     const outlet = model.nodes['outlet']!, dx = Math.max(...model.groups.front!.nodes.map(id => model.nodes[id]!.bounds!.x + model.nodes[id]!.bounds!.width)) + 200 - outlet.bounds!.x;
@@ -289,12 +290,12 @@ describe('a row pulls a member toward its link\'s far end (architecture-2 ticket
     expect(withdrawn.pullWithdrawn).toEqual(['lb']);
     expect(validateRowOrderDecisions(model)).toEqual([]);
     // A pull whose far node stands where it moved is left alone.
-    expect(withdrawPullsAcrossFlips(await skeletonOf(pulled))).toBe(false);
+    expect(withdrawPullsAcrossFlips(await skeletonOf(withoutJointOrder(pulled)))).toBe(false);
   }, 60000);
 
   it('two facing rows each pull toward the other; a withdrawal judges the rows again until none changes (review, blocking A)', async () => {
     const text = readFileSync(new URL('../../goldens/synthetic/two-facing-rows-pull-toward-each-other.yaml', import.meta.url), 'utf8');
-    const model = await skeletonOf(text);
+    const model = await skeletonOf(withoutJointOrder(text));
     expect(model.groups['row-1']!.rowOrderDecision!.pulled).toEqual(['x', 'y']);
     expect(model.groups['row-2']!.rowOrderDecision!.pulled).toEqual(['p', 'q']);
     expect(validateRowOrderDecisions(model)).toEqual([]);
@@ -321,16 +322,16 @@ describe('a row pulls a member toward its link\'s far end (architecture-2 ticket
 
   it('reads the far node\'s own row when it predicts where the node will stand: a lower rank of its group pushes nothing', async () => {
     const text = readFileSync(new URL('../../goldens/synthetic/a-pull-reads-the-far-node-row-and-not-its-other-ranks.yaml', import.meta.url), 'utf8');
-    const decision = (await skeletonOf(text)).groups.top!.rowOrderDecision!;
+    const decision = (await skeletonOf(withoutJointOrder(text))).groups.top!.rowOrderDecision!;
     expect(decision.after).toEqual(decision.before);
     expect(decision.pulledFrom).toBeUndefined();
     expect(decision.pullWithdrawn).toBeUndefined();
   }, 60000);
 
   it('refuses a pull record that moves a linked member past another, or names no move (R5)', async () => {
-    const model = await skeletonOf(pulled);
+    const model = await skeletonOf(withoutJointOrder(pulled));
     // The fixture of the linked peer: f1 passes rA, and the record names f1 as the member it served.
-    const peer = await skeletonOf(readFileSync(new URL('../../goldens/synthetic/a-bent-member-passes-a-linked-peer-whose-links-stay-straight.yaml', import.meta.url), 'utf8'));
+    const peer = await skeletonOf(withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-bent-member-passes-a-linked-peer-whose-links-stay-straight.yaml', import.meta.url), 'utf8')));
     // A linked member moves one slot: two pulled members never both pass it.
     const twice = copy(model), us = ['u1', 'u2', 'u3', 'u4', 'u5', 'u6'];
     twice.groups.front!.rowOrder = ['fe2', 'fe1', 'lb', ...us];

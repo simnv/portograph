@@ -12,12 +12,13 @@ import { HALO_CLASS, haloCss, haloDepthClass } from '../../src/render/theme.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { flatCells } from '../render/drawio-cells.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Ticket 162 (ADR-0023, the owner's rule of 2026-10-31): a diagonal may cross a group title or a link label. One predicate says so
  * (`diagonalMayCross`); the text keeps its readability through a halo in the colour behind it.
  */
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const TITLE = 'a-straight-chord-crosses-a-group-title';
 const LABEL = 'a-diagonal-crosses-a-link-label';

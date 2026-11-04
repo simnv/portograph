@@ -1,0 +1,39 @@
+# Expected: the side of a transit corridor is decided in stage 4 with the free row it passes (architecture-2 ticket 72). `sp0` feeds
+# ag0 to ag2 and `sp1` ag3 to ag5; the transit links sp0 -> lf1 and sp1 -> lf0 pass `aggr`. Before the ticket 7a chose each corridor's
+# side on its own, and 7a's direct plan and the stage-5 port order could put a corridor on the side the row order did not count:
+# crossings 6, bends 5, canvas 718 x 484, gate G5 (as with `layout: { feedOrder: false }`, the shape of
+# a-group-shift-leaves-a-chord-clear-of-a-lane). The joint order turns `aggr` to ag1 ag2 ag5 ag0 ag3 ag4 and reserves link-12 left and
+# link-13 right of `aggr` (`corridorSide`); 7a allocates the lanes on those sides, `farCoordinate` sorts the ports toward them, and the
+# check at 7a and after holds: crossings 1, bends 2, canvas 651 x 484, no gate fails. Mirrored, the decision is the mirror image and the
+# sheet publishes the same crossings and bends. Tests: test/layout/joint-order.test.ts.
+portograph: 2
+groups:
+  spine: { tier: 0 }
+  aggr: { tier: 1 }
+  leaf-far: { tier: 2 }
+  leaf-near: { tier: 2 }
+nodes:
+  sp0: { group: spine, class: router, ports: [] }
+  sp1: { group: spine, class: router, ports: [] }
+  ag0: { group: aggr, class: switch, ports: [] }
+  ag1: { group: aggr, class: switch, ports: [] }
+  ag2: { group: aggr, class: switch, ports: [] }
+  ag3: { group: aggr, class: switch, ports: [] }
+  ag4: { group: aggr, class: switch, ports: [] }
+  ag5: { group: aggr, class: switch, ports: [] }
+  lf0: { group: leaf-near, class: server, ports: [] }
+  lf1: { group: leaf-far, class: server, ports: [] }
+links:
+  - [sp0, ag0]
+  - [sp0, ag1]
+  - [sp0, ag2]
+  - [sp1, ag3]
+  - [sp1, ag4]
+  - [sp1, ag5]
+  - [ag0, lf0]
+  - [ag1, lf1]
+  - [ag2, lf1]
+  - [ag3, lf0]
+  - [ag5, lf1]
+  - [sp0, lf1]
+  - [sp1, lf0]

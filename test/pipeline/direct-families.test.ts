@@ -9,9 +9,10 @@ import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /** Architecture 2 ticket 22 (docs/design/routed-chords.md, Section 15): facing units link direct, and a long chord never joins perpendicular faces. */
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 // Six links from four sources to a row that cross when drawn orthogonal; the fixed point alone refuses five of their chords for each other's legs.
 const DIRECT = 'a-port-facing-away-from-a-tier-gap-is-left-to-the-router';
 const LATERAL = 'a-location-router-leaves-a-lateral-side-toward-a-far-provider';

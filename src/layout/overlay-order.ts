@@ -3,7 +3,7 @@ import type { LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/
 import type { PortRef } from '../model/document.js';
 import { busPortKeys, farCoordinate, lanePitchFloors, portPeers, seatAuthored, sortFace } from './sides-two.js';
 import { groupShape } from './grid.js';
-import { corridorReader, corridorSide, directPlan, fixedSourceGroups, laneSource, laneWidth, ownsTransitLanes, selectAnchorTier, transitedCore, transitTiers } from './lanes.js';
+import { corridorReader, corridorSide, corridorXOnSide, directPlan, fixedSourceGroups, laneSource, laneWidth, ownsTransitLanes, reservedCorridorX, selectAnchorTier, transitedCore, transitTiers } from './lanes.js';
 import { crosses } from './overlay-paths.js';
 import { placementWarning } from './regions.js';
 import { bandGap, compareId, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
@@ -118,11 +118,14 @@ export function readDraft(model: LayoutModel) {
     const tier = tiers[k]!, sx = sourceX(link), groups = groupsAt(tier), main = groups.filter(group => !group.flank);
     const core = transitedCore(main, sx);
     if (core === undefined) return undefined;
-    const box = core.bounds!, far = corridors.target(link, tier), width = laneWidth(model, link), half = width / 2;
+    // A side stage 4 reserved (the joint order, ticket 72) is read, not predicted again (R1).
+    const reserved = reservedCorridorX(model, link, tier, sx);
+    if (reserved !== undefined) return reserved;
+    const box = core.bounds!, width = laneWidth(model, link), half = width / 2, far = corridors.target(link, tier);
     const wanted = far === undefined ? undefined : corridorSide(box, sx, centre(far.node)), at = groups.indexOf(core);
     const plan = directPlan(group => group.bounds!, groups, at, wanted, sx, width, [], fixed);
     const side = plan === undefined ? corridorSide(box, sx) : plan.split <= at ? 'left' : 'right';
-    return side === 'left' ? Math.min(sx, box.x - half) : Math.max(sx, box.x + box.width + half);
+    return corridorXOnSide(box, side, half, sx);
   };
   /**
    * Routed crossings in the region between tiers `a` and `b` (indices). A link is read as a straight line between its two ends at

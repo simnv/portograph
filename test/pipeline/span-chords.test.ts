@@ -10,12 +10,13 @@ import { spanBlockedNew } from '../../src/layout/trial-findings.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Architecture ticket 22, spanning chords (docs/design/routed-chords.md, Section 14). Phase 1: the shapes and the corridor reader; phase 3: the offer, the
  * judge and the round. A test under `it.fails` states the outcome of a later phase (or a sheet the round does not reach) and fails today on purpose.
  */
-const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const source = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const SHEETS = {
   mesh: 'a-mesh-across-a-middle-tier-draws-straight-chords-beside-its-frame',
   three: 'a-chord-over-three-tier-gaps-passes-two-middle-tiers',
@@ -211,7 +212,7 @@ describe('the span round on the sheets', () => {
 
   // A refused span trial spends placements and fan re-runs; it must not starve the course round that main runs (a-tier-gap-plan-orders-every-part: Q 0.6466 -> 0.4481, G5 failing).
   it('a refused span trial does not starve the course round', async () => {
-    const text = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part.yaml', import.meta.url), 'utf8');
+    const text = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part.yaml', import.meta.url), 'utf8'));
     const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
     const model = await layout(parse(text), options);
     const plain = await layout(parse(text), { ...options, testSpanHints: [] });

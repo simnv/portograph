@@ -15,9 +15,10 @@ import { horizontal, segmentRect, vertical } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 const read = (name: string): string =>
-  readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8');
+  withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}`, import.meta.url), 'utf8'));
 
 const place = async (fixture: string): Promise<LayoutModel> =>
   bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));

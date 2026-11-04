@@ -7,6 +7,7 @@ import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 const fixture = (name: string) => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -78,7 +79,7 @@ links: [[a.p, b.p, {route: orthogonal}]]`)))));
 it('ADR-0010: publication keeps a genuinely infeasible alignment and restore still rejects a forged one beside a blocked group', async () => {
   // Two ordered child ports whose parents sit in the opposite order: the producer's own alignSide
   // compatibility rule leaves one unaligned and diagnoses it. The published model must pass.
-  const incompatible = centre(flanks(lanes(rows(await placed(`portograph: 2
+  const incompatible = centre(flanks(lanes(rows(await placed(withoutJointOrder(`portograph: 2
 groups: {up: {tier: 0}, low: {tier: 1}}
 nodes:
   a: {group: up, ports: [{name: p, side: bottom}]}
@@ -89,7 +90,7 @@ nodes:
     ports:
       - {name: p, side: top, order: 0}
       - {name: q, side: top, order: 1}
-links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`)))));
+links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`))))));
   expect(incompatible.diagnostics.map(d => d.code)).toEqual(expect.arrayContaining(['CENTRE_ALIGNMENT_INFEASIBLE', 'PLACEMENT_NON_CONVERGENCE']));
   expect(restoreLayoutModel(JSON.stringify(incompatible))).toEqual(incompatible);
   // The infeasible port excuses only itself: sliding the node also moves its feasible sibling off b.p.

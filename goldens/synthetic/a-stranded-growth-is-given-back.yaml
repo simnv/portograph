@@ -6,6 +6,9 @@
 # `srv0` is 56 px, its three links are routed as before. `srv1`
 # keeps its width: its links to `sw0` and `sw3` stand vertical. Bends 6, crossings 5, canvas 477 px wide (668 before). Test
 # `test/layout/given-back.test.ts` reads the layout.
+# Since architecture-2 ticket 72 (the joint stage-4 order): `access` turns to sw2 sw4 sw0 sw1 sw3 and `edge-near` stands left of
+# `edge-far` (`groupOrder`); crossings 1, bends 4, canvas 471 x 484, and nothing is given back. Test `test/layout/given-back.test.ts`
+# pins `layout.feedOrder: false` to read ticket 71's rule.
 portograph: 2
 groups:
   src: { tier: 0 }

@@ -24,6 +24,7 @@ import { orderedGroupIds } from '../../src/model/model.js';
 import { generateScaleYaml } from '../../scripts/scale-input.mjs';
 import { titleRoom } from '../../src/layout/title-room.js';
 import { placed } from './phase-two-fixture.js';
+import { withoutJointOrder } from './joint-off.js';
 
 const golden = readFileSync(new URL('../../goldens/m1-sip-edge.yaml', import.meta.url), 'utf8');
 // Q108 (ticket 100) gives the two provider links their chord; the tests of the two remainders read them on the variant that keeps them orthogonal.
@@ -661,7 +662,7 @@ it('settles the linked-group grid again after the tier gap room replay', async (
   // does the 40-node one of `bundle-scale`, where the refit leaves `access` at 1975 px beside the
   // 1976.81 of `hubs` and `sinks` at 2730.5 beside the 2731.80 of `sources`. Twenty-four nodes is
   // the smallest fan of this generator that shows it.
-  const model = run(await throughBundles(generateScaleYaml({ nodes: 24, multiplicity: 3 }).yaml));
+  const model = run(await throughBundles(withoutJointOrder(generateScaleYaml({ nodes: 24, multiplicity: 3 }).yaml)));
   // The published model is the grid's own fixed point, and every linked pair really shares an
   // extent: an empty pair list would satisfy the first expectation by itself.
   expect(alignLinkedGroupGrid(copy(model))).toBe(false);

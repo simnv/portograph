@@ -6,7 +6,7 @@ import { withdrawPullsAcrossFlips } from './corridor-order.js';
 import { reseatRow } from './overlay-order.js';
 import { placementWarning } from './regions.js';
 import { cellTier } from './read/tier.js';
-import { ofKind, reservation, rowOrderFailure, type Reservation, type ReservationOf, type RowFeed } from './reservations.js';
+import { groupOrderFailure, ofKind, reservation, rowOrderFailure, type Reservation, type ReservationOf, type RowFeed } from './reservations.js';
 import { compareId } from './skeleton-graph.js';
 import { rebuildBands } from './skeleton-geometry.js';
 
@@ -102,8 +102,9 @@ export function refreshFeedOrders(model: LayoutModel): boolean {
     placementWarning(model, 'FEED_ORDER_WITHDRAWN', `The feeds of frame ${id} no longer give the order its units were packed in (${entry.payload.order.join(', ')}): a feeding row turned after the pack. The order stands as packed, with no reservation.`, [id], 'group');
   }
   model.reservations = [...kept, ...entries];
+  const withdrawn = withdrawBrokenGroupOrders(model);
   if (moved) rebuildBands(model, false);
-  return moved || JSON.stringify(entries) !== before;
+  return moved || JSON.stringify(entries) !== before || withdrawn;
 }
 
 /**
@@ -123,10 +124,27 @@ export function settlePullsAndFeeds(model: LayoutModel): number {
   return rounds;
 }
 
-/** The stage-4 check of the feed orders (R2, R5): every `rowOrder` entry of the ledger and its premise hold on the model as it stands. Reads the record, decides nothing again. */
+/**
+ * Drops by name (R6, `FEED_ORDER_WITHDRAWN`) every group order of the joint order (ticket 72) that no longer holds: a turned free row broke
+ * its premise, or the frame pack put its groups in another order. The groups stand as they stand. Returns whether an entry was dropped.
+ * The refresh calls it, and stage 4 once more before its check, so a later step of stage 4 cannot leave a broken entry to the validator.
+ */
+export function withdrawBrokenGroupOrders(model: LayoutModel): boolean {
+  const ledger = model.reservations ?? [];
+  const broken = ofKind(ledger, 'groupOrder').filter(entry => {
+    const why = groupOrderFailure(entry, model);
+    if (why !== undefined) placementWarning(model, 'FEED_ORDER_WITHDRAWN', `The group order ${entry.payload.order.join(', ')} of sub-tier ${entry.payload.tier} is withdrawn: ${why}. The groups stand as they stand, with no reservation.`, [...entry.payload.order], 'group');
+    return why !== undefined;
+  });
+  if (broken.length) model.reservations = ledger.filter(entry => !broken.includes(entry as never));
+  return broken.length > 0;
+}
+
+/** The stage-4 check of the feed orders (R2, R5): every `rowOrder` and `groupOrder` entry of the ledger and its premise hold on the model as it stands. Reads the record, decides nothing again. */
 export function validateFeedOrders(model: LayoutModel): string[] {
-  return ofKind(model.reservations ?? [], 'rowOrder').flatMap(entry => {
-    const why = rowOrderFailure(entry, model);
+  const ledger = model.reservations ?? [];
+  return [...ofKind(ledger, 'rowOrder'), ...ofKind(ledger, 'groupOrder')].flatMap(entry => {
+    const why = rowOrderFailure(entry, model) ?? groupOrderFailure(entry, model);
     return why === undefined ? [] : [`Reservation ${entry.id} does not hold: ${why}`];
   });
 }

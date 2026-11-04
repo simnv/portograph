@@ -8,12 +8,13 @@ import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { segmentRectDistance } from '../../src/score/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Ranked-groups ticket 99 (Q108, docs/design/routed-chords.md): a routed link between two frames or free groups on consecutive
  * document tiers takes one straight segment from face to face when that segment is clear.
  */
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const STRAIGHT = 'a-routed-link-between-frames-draws-straight';
 const FOREIGN = 'a-routed-link-between-frames-keeps-orthogonal-past-a-foreign-frame';

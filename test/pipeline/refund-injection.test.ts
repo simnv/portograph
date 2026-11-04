@@ -7,6 +7,7 @@ import { SpanRefusal } from '../../src/layout/span-lanes.js';
 import { MAX_RERUNS } from '../../src/pipeline/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Architecture 2, ticket 03: a placement that has started is never given back. Stage 7a is made to refuse the n-th placement of a command with a `CourseRefusal` (the refusal that
@@ -36,7 +37,7 @@ const FAN_SHEET = 'goldens/synthetic/a-fan-spreads-its-ports-so-its-chords-hold-
 const run = async (at: number, sheet = SHEET, bundlesAt = 0): Promise<{ starts: number; runs: number; stage: string | undefined }> => {
   injected.at = at; injected.calls = 0; injected.bundlesAt = bundlesAt; injected.bundlesCalls = 0;
   resetAttemptCounters();
-  const model = await layout(parse(readFileSync(sheet, 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }).catch(() => undefined);
+  const model = await layout(parse(withoutJointOrder(readFileSync(sheet, 'utf8'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }).catch(() => undefined);
   return { starts: attemptCounters.placeStarts, runs: attemptCounters.placeRuns, stage: model?.stage };
 };
 

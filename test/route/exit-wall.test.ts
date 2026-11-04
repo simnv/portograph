@@ -7,8 +7,9 @@ import { reserveGroupExits, standsIn } from '../../src/layout/group-exits.js';
 import { routeObstacles } from '../../src/route/obstacles.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from './fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
 async function check(name: string, only?: string[]) {

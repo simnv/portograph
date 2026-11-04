@@ -9,6 +9,7 @@ import { measurePortPill, measureText } from '../../src/text/index.js';
 import { CARD_CONTENT_GEOMETRY as card } from '../../src/theme/content.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from './joint-off.js';
 
 /**
  * Snack-theme ticket 159: a card node. Line heights come from the text module (Verdana, `ceil(1.215 × size)`), never from a number written here.
@@ -168,7 +169,7 @@ describe('the content style resolver', () => {
 });
 
 describe('a card holds its ports on every face (fixture)', () => {
-  const source = readFileSync(new URL('../../goldens/synthetic/a-card-node-holds-its-ports-on-every-face.yaml', import.meta.url), 'utf8');
+  const source = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-card-node-holds-its-ports-on-every-face.yaml', import.meta.url), 'utf8'));
 
   it('measures at stage 3, keeps the size through stage 5 and places the text beside the tile on every node', async () => {
     const model = await layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });

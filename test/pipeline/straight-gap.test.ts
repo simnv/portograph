@@ -7,8 +7,9 @@ import { segmentDistance } from '../../src/score/geometry.js';
 import { placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
-const fixture = readFileSync(new URL('../../goldens/synthetic/a-straight-gap-needs-no-router.yaml', import.meta.url), 'utf8');
+const fixture = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-straight-gap-needs-no-router.yaml', import.meta.url), 'utf8'));
 
 /**
  * Stress-test reproducer (`.scratch/stress/issues/07`). `m2 → l1` is one straight run between two
@@ -85,7 +86,7 @@ it('claims no run through a node the piece does not attach to', async () => {
  * the claim has to read the covers `routeObstacles` puts in front of the router.
  */
 it('claims no run across a reserved run the corridor predicate cannot see', async () => {
-  const yaml = readFileSync(new URL('../../goldens/synthetic/a-claimed-run-clears-a-shared-run.yaml', import.meta.url), 'utf8');
+  const yaml = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-claimed-run-clears-a-shared-run.yaml', import.meta.url), 'utf8'));
   const before = bands(bundles(bars(centre(flanks(lanes(rows(await placed(orthogonalLinks(yaml)))))))));
   const bar = before.links.find(item => item.id === 'link-2')!.sharedRuns!.from!;
   const plan = planRoute(before);

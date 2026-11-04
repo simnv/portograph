@@ -4,6 +4,7 @@ import { orderTools, readDraft, reseatRow, saveGroups } from './overlay-order.js
 import { compareId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { straightLengthLimit } from './row-paths.js';
 import { rebuildBands } from './skeleton-geometry.js';
+import { jointRecord, orderJointFreeRows, type JointBudget } from './joint-order.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 /** A row of at most this many nodes is judged in every order; a longer row in its adjacent swaps only. */
@@ -51,6 +52,9 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
  *   routed links blocked on their row do not rise, and the routed crossings drop strictly. Among the accepted candidates the most
  *   straight links win, then the fewest blocked, then the fewest crossings; a tie keeps the first enumerated (the current order of
  *   each row comes first, then the orders in the lexicographic order of their positions). No candidate accepted: the order stands.
+ * - **The joint order (ticket 72, `joint-order.ts`).** After both sweeps, each sub-tier with a free row the sweeps may turn, the anchor tier
+ *   included, judges its free rows together with the group order of the next sub-tier away from the anchor and the corridor sides; it
+ *   spends the same budget. A row it turns records `feed-order`. `layout.feedOrder: false` switches it off.
  * - **The far-end pull (ticket 22).** After both sweeps, every free row, a row next to a frame cell included, pulls its members
  *   toward their links' far ends (`pullTowardFarEnds`): declaration order is a hint. A pulled member passes unlinked members, and a
  *   linked member once when that member's links stay straight or chords. A pull stands only where the draft measure over the regions
@@ -62,10 +66,14 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
  * author wants the declared order (R9: a per-sheet setting).
  */
 export function orderByCorridors(model: LayoutModel): void {
+  if (model.reservations !== undefined) {
+    // A placement re-run decides the joint order again on its own skeleton (ticket 72): the entries of an earlier run are dropped.
+    model.reservations = model.reservations.filter(entry => entry.kind !== 'corridorSide' && entry.kind !== 'groupOrder');
+  }
   const draft = readDraft(model);
   if (draft === undefined) return;
   const { anchor, tiers, index, measureRange, reach } = draft;
-  const { freeRow } = orderTools(model);
+  const { movable, freeRow } = orderTools(model);
   const orderOf = (group: LayoutGroup): string[] => [...(group.rowOrder ?? group.nodes)];
   const rows = (k: number): LayoutGroup[] => Object.values(model.groups).filter(group => group.tier === tiers[k] && group.nodes.length > 1 && freeRow(group))
     .sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
@@ -95,8 +103,8 @@ export function orderByCorridors(model: LayoutModel): void {
   const frameBound = new Set(free.filter(group => { const [low, high] = reach([group]); return [...framed].some(k => k >= low - 1 && k <= high + 1); }));
   const turnable = (k: number): LayoutGroup[] => rows(k).filter(group => !frameBound.has(group));
 
-  const caps = new Set<string>();
-  let spent = 0, moved = false;
+  const caps = new Set<string>(), budget: JointBudget = { spent: 0, limit: ROW_ORDER_BUDGET, caps };
+  let moved = false;
   /** The candidates of the free rows of tier `k`: their product, or one row at a time when the product passes the step cap. */
   const tierCandidates = (k: number): Candidate[] => {
     const lists = turnable(k).map(group => {
@@ -124,12 +132,12 @@ export function orderByCorridors(model: LayoutModel): void {
       ? own.flatMap(one => far.map(two => new Map([...one, ...two]) as Candidate))
       : (caps.add(`sub-tiers ${tiers[k]} and ${tiers[next!]} have ${own.length * far.length} orders together, so each was judged alone`), [...own, ...far.slice(1)]);
     candidates = candidates.slice(1); // the first is the current order of every row
-    if (spent + candidates.length > ROW_ORDER_BUDGET) {
+    if (budget.spent + candidates.length > ROW_ORDER_BUDGET) {
       caps.add(`the sheet spent its budget of ${ROW_ORDER_BUDGET} candidates`);
-      candidates = candidates.slice(0, Math.max(0, ROW_ORDER_BUDGET - spent));
+      candidates = candidates.slice(0, Math.max(0, ROW_ORDER_BUDGET - budget.spent));
     }
     if (!candidates.length) return;
-    spent += candidates.length;
+    budget.spent += candidates.length;
     const groups = [...turnable(k), ...(next === undefined ? [] : turnable(next))];
     // Every region a turned row can change: the whole span of each routed link with an end in a candidate row or crossing its sub-tier.
     const [low, high] = reach(groups);
@@ -151,6 +159,11 @@ export function orderByCorridors(model: LayoutModel): void {
   for (let k = at + 1; k < tiers.length; k++) step(k, k + 1 < tiers.length ? k + 1 : undefined);
   for (let k = at - 1; k >= 0; k--) step(k, k > 0 ? k - 1 : undefined);
 
+  // The joint order (ticket 72): a free row with the group order of the outward sub-tier and the corridor sides, on the budget the sweeps left.
+  const joint = model.document.layout?.feedOrder === false ? undefined
+    : orderJointFreeRows(model, draft, turnable, movable, frameBound, before, spanned, ROW_ORDER_PERMUTED_NODES, budget);
+  if (joint?.moved) moved = true;
+
   // The pull toward the far ends (ticket 22): after the search, a member whose link would bend passes the members beside it toward its link's far end.
   const searched = new Map(free.map(group => [group, orderOf(group)])), pulled = new Map<LayoutGroup, string[]>();
   // A row next to a frame cell takes it too: the frame column is later centred on its feeds, this member's link among them. A pull stands only
@@ -166,9 +179,16 @@ export function orderByCorridors(model: LayoutModel): void {
     moved = true;
   }
 
+  // The record is written after the pull, so the premise of a group order is the order its free rows stand in now.
+  const entries = joint === undefined ? [] : jointRecord(joint);
+  if (entries.length) model.reservations = [...(model.reservations ?? []), ...entries];
+
   for (const [group, order] of before) {
     const found = searched.get(group)!, after = orderOf(group);
-    const decision: RowOrderDecision = { rule: frameBound.has(group) ? 'frame-columns' : sameOrder(order, found) ? 'kept' : 'corridor-crossings', before: order, after };
+    const rule: RowOrderDecision['rule'] = frameBound.has(group) ? 'frame-columns'
+      : sameOrder(order, found) ? 'kept'
+      : joint?.jointMoved.has(group) ? 'feed-order' : 'corridor-crossings';
+    const decision: RowOrderDecision = { rule, before: order, after };
     if (!sameOrder(found, after)) { decision.pulledFrom = found; decision.pulled = pulled.get(group)!; }
     group.rowOrderDecision = decision;
   }
@@ -392,7 +412,9 @@ export function validateRowOrderDecisions(model: LayoutModel): string[] {
     if (!freeRow(group) || group.nodes.length < 2) errors.push(`Group ${group.id} records a row order decision but is no free row`);
     if (!ofRow(group, decision.before) || !ofRow(group, decision.after)) errors.push(`The row order decision of ${group.id} names nodes that are not its own`);
     const searched = decision.pulledFrom ?? decision.after;
-    if ((decision.rule !== 'corridor-crossings') !== sameOrder(decision.before, searched)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and its before and after orders contradict it`);
+    const turnedRule = decision.rule === 'corridor-crossings' || decision.rule === 'feed-order';
+    if (turnedRule === sameOrder(decision.before, searched)) errors.push(`The row order decision of ${group.id} is ${decision.rule}, and its before and after orders contradict it`);
+    if (decision.rule === 'feed-order' && model.document.layout?.feedOrder === false) errors.push(`The row order decision of ${group.id} is feed-order, and feedOrder is false`);
     if ((decision.pulledFrom === undefined) !== (decision.pulled === undefined)) errors.push(`The far-end pull of ${group.id} records only one of its order and its members`);
     if (decision.pulledFrom !== undefined && decision.pulled !== undefined) {
       // R5, read and not searched again: the pulled members are linked members of the row and keep their relative order, the other linked members
