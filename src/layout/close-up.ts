@@ -15,7 +15,7 @@ import { rebuildRegions, right } from './regions.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { bandGap } from './skeleton-graph.js';
 import { occupiedOverhang, validateLanes } from './lanes.js';
-import { rebuildRegionGeometry } from './region-rebuild.js';
+import { rebuildRuleGeometry } from './rule-geometry-hook.js';
 import { alignLinkedGroupGrid, forgedRefusals, gapLabelDeficits, roomHolds, syncLabelBands } from './bands.js';
 import { blockedChords, edgeLeavers } from './frame-paths.js';
 import { holds } from './reservation-checks.js';
@@ -243,7 +243,7 @@ export function closeUpSiblings(model: LayoutModel, before: BeforeTrim): CloseUp
         // Every rule-owned geometry is derived again on the moved ports, with no centring: the node geometry, the regions, the lane runs, the
         // row, flank and bundle paths and the bar drops; then the label bands and the regions on them, and the grid, which may move nothing.
         rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
-        rebuildRegionGeometry(model, undefined, undefined, undefined, false);
+        rebuildRuleGeometry(model);
         rebuildRegions(model);
         const bandsChanged = syncLabelBands(model);
         rebuildRegions(model);

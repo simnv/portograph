@@ -19,7 +19,7 @@ import { measureNodeContent } from './size.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { alignLinkedGroupGrid, forgedRefusals, syncLabelBands } from './bands.js';
 import { validateLanes } from './lanes.js';
-import { rebuildRegionGeometry } from './region-rebuild.js';
+import { rebuildRuleGeometry } from './rule-geometry-hook.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { CLOSE_UP_MIN, closeUpSiblings, followingLanes, isCloseUpMover, shiftLane } from './close-up.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -202,7 +202,7 @@ export function untrimmedModel(model: LayoutModel): LayoutModel {
     // A routed path (stage 8, not a rule's) stands on the moved ports; the geometry before the close-up had none. The rule-owned geometry is
     // derived again on the ports moved back, with no centring, as the close-up derived it on the moved ones.
     for (const link of copy.links) if (link.path !== undefined && link.path.fixed !== true) delete link.path;
-    rebuildRegionGeometry(copy, undefined, undefined, undefined, false);
+    rebuildRuleGeometry(copy);
     deriveRegions(copy);
   }
   return copy;
