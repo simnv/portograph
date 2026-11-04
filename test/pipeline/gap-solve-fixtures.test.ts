@@ -10,13 +10,14 @@ import { rebuildRegions } from '../../src/layout/regions.js';
 import { stemDepthsFault } from '../../src/layout/sides-two.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Architecture-2 ticket 57: a tier gap is as high as its reservations need, computed once. The four fixtures of the ticket, each
  * through the real pipeline: a nested stem decided before its gap opens, a canton band seated in stage 6, a label that sets its gap,
  * and a held chord over a gap the solve grows. Then R3 (input order) and R5 (a restore refuses a forged gap or band).
  */
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
 const NESTED = 'a-nested-stem-is-decided-before-its-gap-opens';

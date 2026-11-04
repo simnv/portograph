@@ -6,13 +6,14 @@ import { findPort } from '../../src/layout/row-paths.js';
 import { chordNearPairs } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrderOn } from '../layout/joint-off.js';
 
 /**
  * Architecture-2 ticket 65: a feed that owes a vertical keeps a vertical it has reached. A centring step that would stand fewer verticals than it found
  * keeps the geometry it found; a frame chord takes the parent-port move before the freeze; one settle of the centring follows the 7f rounds; a step
  * leaves no held chord under the chord clearance where it stood clear; a face the clamp left a fraction off its feeds is snapped onto them.
  */
-const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const source = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const bends = (model: LayoutModel): number => { const { routed, overlay } = score(model).snapshot.counts; return routed.turns + overlay.turns; };
 const violations = (model: LayoutModel, gate: 'G6'): number => score(model).snapshot.gates[gate].violations.length;

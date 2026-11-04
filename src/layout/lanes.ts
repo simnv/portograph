@@ -664,7 +664,7 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
  * A corridor side stage 4 reserved (ticket 72) that a 7f move put the lane across: the entry is withdrawn by name (R2, R6), since 7f lets
  * the corridor follow its child. The check of every later stage then reads no stale side (`corridorSideFailure`).
  */
-function withdrawCorridorSide(model: LayoutModel, link: LayoutLink, lane: Lane): void {
+export function withdrawCorridorSide(model: LayoutModel, link: LayoutLink, lane: Lane): void {
   const entry = corridorSideOf(model.reservations, link.id, lane.tier), host = entry === undefined ? undefined : model.groups[entry.group];
   if (entry === undefined || host?.bounds === undefined || corridorStandsOn(lane.x, host.bounds, entry.side)) return;
   model.reservations = model.reservations!.filter(item => !(item.kind === 'corridorSide' && item.payload.link === link.id && item.payload.tier === lane.tier));

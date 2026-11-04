@@ -52,6 +52,9 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
  *   routed links blocked on their row do not rise, and the routed crossings drop strictly. Among the accepted candidates the most
  *   straight links win, then the fewest blocked, then the fewest crossings; a tie keeps the first enumerated (the current order of
  *   each row comes first, then the orders in the lexicographic order of their positions). No candidate accepted: the order stands.
+ * - **The joint order (ticket 72, `joint-order.ts`).** After both sweeps, each sub-tier with a free row the sweeps may turn, the anchor tier
+ *   included, judges its free rows together with the group order of the next sub-tier away from the anchor and the corridor sides; it
+ *   spends the same budget. A row it turns records `feed-order`. `layout.feedOrder: false` switches it off.
  * - **The far-end pull (ticket 22).** After both sweeps, every free row, a row next to a frame cell included, pulls its members
  *   toward their links' far ends (`pullTowardFarEnds`): declaration order is a hint. A pulled member passes unlinked members, and a
  *   linked member once when that member's links stay straight or chords. A pull stands only where the draft measure over the regions

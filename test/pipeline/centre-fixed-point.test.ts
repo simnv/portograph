@@ -7,6 +7,7 @@ import { centreDraft } from '../../src/layout/centre.js';
 import { withLayoutMutation } from '../../src/layout/mutation.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Ticket 75. A centring run ends when a pass changes no geometry. A group whose alignment is infeasible has its
@@ -61,7 +62,7 @@ links: [[a.p, c.p], [b.p, d.p]]`)))));
 
   it('geometry that really oscillates still spends the budget and reports the stall', async () => {
     // Two ordered child ports whose parents stand in the opposite order: the group jumps 42.75 px on every pass.
-    const input = flanks(lanes(rows(await placed(`portograph: 2
+    const input = flanks(lanes(rows(await placed(withoutJointOrder(`portograph: 2
 groups: {up: {tier: 0}, low: {tier: 1}}
 nodes:
   a: {group: up, ports: [{name: p, side: bottom}]}
@@ -72,7 +73,7 @@ nodes:
     ports:
       - {name: p, side: top, order: 0}
       - {name: q, side: top, order: 1}
-links: [[a.p, c.q], [b.p, c.p]]`))));
+links: [[a.p, c.q], [b.p, c.p]]`)))));
     const budget = createCentreBudget();
     const model = withLayoutMutation(input, 'centre', draft => centreDraft(draft, budget));
     expect(budget).toEqual({ remaining: 0, passes: 8 });

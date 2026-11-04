@@ -6,13 +6,14 @@ import { facingTips, plannedSegments, planGap, tierGapPlan, tierGapPlans, type G
 import { tierGaps } from '../../src/layout/gap-runs.js';
 import { placed } from './phase-two-fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
+import { withoutJointOrderOn } from './joint-off.js';
 
 /**
  * The tier-gap row plan (`docs/design/tier-gap-rows.md`, ranked-groups ticket 48) on the four shapes of Section 2.4, read from the
  * models `allocateGapRuns` sees (after 7f), and on hand-built parts for the shapes that need no model.
  */
 
-const read = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const read = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const place = async (name: string): Promise<LayoutModel> =>
   bands(bundles(bars(centre(flanks(lanes(rows(await placed(read(name)))))))));
 /** The same input with every link authored `route: orthogonal`: Q108 gives a link between frames its chord, and the plan of the orthogonal parts is the subject here. */

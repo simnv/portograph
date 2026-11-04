@@ -13,6 +13,7 @@ import { score } from '../../src/score/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Ranked-groups ticket 51 (`docs/design/tier-gap-rows.md`, Section 1 item 6 and Section 2.2): every reason a part of a tier gap is
@@ -20,7 +21,7 @@ import { orthogonalLinks } from '../orthogonal-links.js';
  * Each fixture runs through the real router. Where the placement stages never build the shape (a span with no lane, a lane end off
  * its boundary, a lane that walls the gap), the placed model is edited and the plan and the diagnostic are read on it.
  */
-const read = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const read = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const place = async (text: string): Promise<LayoutModel> => bands(bundles(bars(centre(flanks(lanes(rows(await placed(text))))))));
 const residual = (model: LayoutModel): string[] => tierGapPlans(model).flatMap(({ plan }) => plan.residual.map(item => `${item.link}:${item.reason}`));
 const codes = (model: LayoutModel): string[] => model.diagnostics.filter(item => item.code.startsWith('TIER_GAP_PART') || item.code === 'TIER_GAP_ROW_CYCLE')

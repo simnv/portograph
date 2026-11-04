@@ -7,6 +7,7 @@ import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
+import { withoutJointOrder } from '../layout/joint-off.js';
 
 // A gap the plan does not fit is left to the router (`fittingPlans`): nothing is planned into it, and libavoid routes its links among
 // the reserved parts of the other gaps. Ticket 52 deleted the allocation that used to seat such links (`allocateGap`, the holds and the
@@ -29,7 +30,7 @@ vi.mock('../../src/layout/gap-room.js', async importOriginal => {
   } };
 });
 
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const place = async (text: string) => bands(bundles(bars(centre(flanks(lanes(rows(await placed(text))))))));
 const publish = (name: string): Promise<LayoutModel> =>
   layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });

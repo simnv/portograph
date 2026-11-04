@@ -362,6 +362,28 @@ the record without searching again; a free row of two or more nodes without a re
 `false` also switches the corridor cut off, so the overlay order measures as before ticket 17. The prediction is not 7a's answer: a later round (a course, a
 spanning chord, centring) can still move the link, so the corpus measures the rule.
 
+**A free row, the outward group order and the corridor sides are decided together (architecture-2 ticket 72, `joint-order.ts`).**
+The sweeps above do not judge the anchor tier or a tier no transit link spans, and a key of a free row alone cannot judge it: the
+draft does not hold the x where 7c puts the far groups, and the corridor of a far source can take the far side of the row. After the
+sweeps and before the far-end pull, each sub-tier with a free row the sweeps may turn, the anchor tier first, then down, then up, judges
+three things together: the free rows' candidate orders (six key builders over the normalized ranks of both neighbour sub-tiers, routed
+same-row peers that stand side by side kept together), every order of each movable group run of the sub-tier away from the anchor
+(`JOINT_GROUP_RUN` groups, `JOINT_GROUP_ORDERS` combinations), and every side vector of the transit corridors through the sub-tier
+(`JOINT_TRANSIT_SIDES` corridors). The outward groups stand at a prediction of their 7c centres (`seatPredicted7c`, a surrogate of 7c,
+which reads ports and lanes that do not exist yet; the ticket measured its error: on the corpus 38 sheets accepted a candidate, 27
+published fewer crossings, 11 as many, none more). A candidate stands only when the draft crossings drop strictly, the straight
+overlay links do not fall and the blocked links do not rise; ties take the most straight links, the fewest blocked, the fewest
+crossings, then the least feed stretch, then the first enumerated (the current orders first). Every evaluation spends one candidate
+of the sweeps' budget; a truncation is a `ROW_ORDER_SEARCH_CAPPED` reason. A row the draft does not model (a link to a lateral port in
+another group, a same-row U-turn, a labelled same-row link) is not judged, and `JOINT_ORDER_LEFT_OUT` (info) names it. The record:
+a turned row records `feed-order`; a turned run a **`groupOrder`** entry `{tier, order, feeds}` whose premise is the free rows in the
+order they stand in after the pull (checked at stage 4 and on every restored stage; a refresh drops a broken one by name,
+`FEED_ORDER_WITHDRAWN`); and each corridor of the accepted candidate a **`corridorSide`** entry `{link, tier, group, side}`. Every
+consumer reads the side through `reservedCorridorX` (`corridorXOnSide` is the one predicate of a corridor x from a side): the draft,
+`farCoordinate` of stage 5, and 7a, which allocates the lane on that side and refuses a direct plan or an in-span slot on the other.
+The side is checked against the lane from 7a on; 7f may move a corridor to its child (`reseatLanes`), and then withdraws the entry by
+name (`CORRIDOR_SIDE_WITHDRAWN`). `layout.feedOrder: false` switches the joint order off.
+
 **A row pulls a member toward its link's far end (architecture-2 ticket 22, `pullTowardFarEnds`).** Declaration
 order is a hint (user, 2026-10-24). After the corridor search, a member of a free row is pulled when all its links are
 routed and end on one node of a band that faces its row across one tier gap, no other member of the row feeds that node,
@@ -400,7 +422,7 @@ cell reads the order this step gave the cell above it. Feeds from two groups are
 decide nothing. A row is decided when two of its units have different keys: in a cell the keyed nodes take the keyed slots in key
 order, a node without a feed keeps its slot, a tie keeps the order ELK gave (its input is the declaration order), and two neighbours
 a peer link joins move as one block; in a frame every unit must have a key, and a tie keeps the declaration order (own cells first,
-then the children). Feed order beats declaration order. A canton is author-fixed (D1) and a free row keeps the corridor order. Each
+then the children). Feed order beats declaration order. A canton is author-fixed (D1) and a free row keeps the corridor order and the joint order (ticket 72). Each
 decided row is one **`rowOrder`** entry of the ledger, the one decision (R1; `rowOrderOf` is the one reader), with its premise: the
 feeding rows and the order they were read in. A cell is re-seated in its order here, the replay of ELK's output (ELK gets no hint,
 because the feeding row's order is known only after ELK and the free-row orders, and the column pack, not ELK, places a child frame);
