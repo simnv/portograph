@@ -6,7 +6,7 @@ import { withdrawPullsAcrossFlips } from './corridor-order.js';
 import { reseatRow } from './overlay-order.js';
 import { placementWarning } from './regions.js';
 import { cellTier } from './read/tier.js';
-import { ofKind, reservation, rowOrderFailure, type Reservation, type ReservationOf, type RowFeed } from './reservations.js';
+import { groupOrderFailure, ofKind, reservation, rowOrderFailure, type Reservation, type ReservationOf, type RowFeed } from './reservations.js';
 import { compareId } from './skeleton-graph.js';
 import { rebuildBands } from './skeleton-geometry.js';
 
@@ -45,7 +45,7 @@ const SAME_KEY = 1e-9;
  * packed. The entries of an earlier run are replaced, so a placement re-run decides again on its own skeleton.
  */
 export function orderByFeeds(model: LayoutModel): void {
-  const kept = (model.reservations ?? []).filter(entry => entry.kind !== 'rowOrder' || 'tier' in entry.payload);
+  const kept = (model.reservations ?? []).filter(entry => entry.kind !== 'rowOrder');
   const entries: Reservation[] = [];
   const read = reader(model);
   let moved = false;
@@ -96,18 +96,20 @@ export function refreshFeedOrders(model: LayoutModel): boolean {
     entries.push(cellEntry(cell.id, decision));
   }
   for (const entry of ofKind(model.reservations ?? [], 'rowOrder')) {
-    if ('tier' in entry.payload) {
-      if (rowOrderFailure(entry, model) === undefined) entries.push(entry);
-      continue;
-    }
     if (!('frame' in entry.payload)) continue;
     const id = entry.payload.frame, decision = read.frame(id);
     if (decision !== undefined && sameOrder(decision.order, entry.payload.order)) { entries.push(frameEntry(id, decision)); continue; }
     placementWarning(model, 'FEED_ORDER_WITHDRAWN', `The feeds of frame ${id} no longer give the order its units were packed in (${entry.payload.order.join(', ')}): a feeding row turned after the pack. The order stands as packed, with no reservation.`, [id], 'group');
   }
-  model.reservations = [...kept, ...entries];
+  // A group order of the joint order (ticket 72) whose premise a turned row broke is dropped by name (R6): the groups stand as they stand.
+  const groupOrders = ofKind(kept, 'groupOrder').filter(entry => {
+    const why = groupOrderFailure(entry, model);
+    if (why !== undefined) placementWarning(model, 'FEED_ORDER_WITHDRAWN', `The group order ${entry.payload.order.join(', ')} of sub-tier ${entry.payload.tier} is withdrawn: ${why}. The groups stand as they stand, with no reservation.`, [...entry.payload.order], 'group');
+    return why === undefined;
+  });
+  model.reservations = [...kept.filter(entry => entry.kind !== 'groupOrder'), ...groupOrders, ...entries];
   if (moved) rebuildBands(model, false);
-  return moved || JSON.stringify(entries) !== before;
+  return moved || JSON.stringify(entries) !== before || groupOrders.length !== ofKind(kept, 'groupOrder').length;
 }
 
 /**
@@ -127,10 +129,11 @@ export function settlePullsAndFeeds(model: LayoutModel): number {
   return rounds;
 }
 
-/** The stage-4 check of the feed orders (R2, R5): every `rowOrder` entry of the ledger and its premise hold on the model as it stands. Reads the record, decides nothing again. */
+/** The stage-4 check of the feed orders (R2, R5): every `rowOrder` and `groupOrder` entry of the ledger and its premise hold on the model as it stands. Reads the record, decides nothing again. */
 export function validateFeedOrders(model: LayoutModel): string[] {
-  return ofKind(model.reservations ?? [], 'rowOrder').flatMap(entry => {
-    const why = rowOrderFailure(entry, model);
+  const ledger = model.reservations ?? [];
+  return [...ofKind(ledger, 'rowOrder'), ...ofKind(ledger, 'groupOrder')].flatMap(entry => {
+    const why = rowOrderFailure(entry, model) ?? groupOrderFailure(entry, model);
     return why === undefined ? [] : [`Reservation ${entry.id} does not hold: ${why}`];
   });
 }

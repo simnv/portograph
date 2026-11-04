@@ -15,7 +15,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { SideHintRefusal } from './placement-refusal.js';
 import { carriesTitle, nodeObstacleReach, nudgingDistance, portStemReach, routedStroke, sideStemReach, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
-import { laneSource, laneWidth, transitTiers } from './lanes.js';
+import { laneSource, laneWidth, reservedCorridorX, transitTiers } from './lanes.js';
 import { fitRegionGroup, placementWarning } from './regions.js';
 import { approachReach, endPort } from './approach.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
@@ -799,7 +799,8 @@ export function portPeers(model: LayoutModel): Map<string, PortRef[]> {
 /**
  * The far-end coordinate a port of `side` is ordered by in the provisional engine order (stage 5): the mean over its peers of the
  * peer port's anchor (x on a top or bottom face, y on a lateral one), or of the peer node's centre where the peer has no anchor.
- * A peerless port reads `Infinity`. The stage-4 draft reads the same key (`readDraft`, architecture-2 ticket 17).
+ * A peerless port reads `Infinity`. The stage-4 draft reads the same key (`readDraft`, architecture-2 ticket 17). A peer across a sub-tier whose
+ * corridor side stage 4 reserved (ticket 72) is read at that corridor's margin (`reservedCorridorX`), the way the link leaves the face.
  */
 export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>, ref: PortRef, side: Side): number {
   const list = peers.get(key(ref)) ?? [];
@@ -814,15 +815,12 @@ export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, rea
         const link = model.links.find(item => item.attachments !== undefined
           && ((key(item.attachments.from) === refKey && key(item.attachments.to) === peerKey)
             || (key(item.attachments.to) === refKey && key(item.attachments.from) === peerKey)));
-        if (link !== undefined) {
-          const between = reserved.filter(item => item.payload.link === link.id && item.payload.tier > low && item.payload.tier < high)
-            .sort((a, b) => Math.abs(a.payload.tier - myTier) - Math.abs(b.payload.tier - myTier))[0];
-          const host = between === undefined ? undefined : model.groups[between.payload.group];
-          if (between !== undefined && host?.bounds !== undefined) {
-            const half = laneWidth(model, link) / 2;
-            return between.payload.side === 'left' ? host.bounds.x - half : host.bounds.x + host.bounds.width + half;
-          }
-        }
+        // The nearest sub-tier between the two ends where stage 4 reserved the link's corridor side (ticket 72): the link leaves this face
+        // toward that corridor, so the port sorts by its x. Sub-tiers between the ends are distinct, so the nearest is one.
+        const between = link === undefined ? undefined : reserved.filter(item => item.payload.link === link.id && item.payload.tier > low && item.payload.tier < high)
+          .sort((a, b) => Math.abs(a.payload.tier - myTier) - Math.abs(b.payload.tier - myTier))[0];
+        const x = between === undefined ? undefined : reservedCorridorX(model, link!, between.payload.tier);
+        if (x !== undefined) return x;
       }
     }
     const box = model.nodes[peer.node]!.bounds!, point = findPort(model, peer)?.anchor;

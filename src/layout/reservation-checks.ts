@@ -14,7 +14,7 @@ import { spanLaneId } from './lane-kind.js';
 import { trunkKey } from './bus-room.js';
 import { trunkBuses, trunkHeads } from './trunk.js';
 import { portKey } from './sides-one.js';
-import { corridorSideFailure, floorFailure, ofKind, rowOrderFailure, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
+import { corridorSideFailure, floorFailure, groupOrderFailure, ofKind, rowOrderFailure, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
 
 type Found = { why: string; key?: string; link?: string };
 
@@ -24,6 +24,10 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
   switch (item.kind) {
     case 'rowOrder': {
       const why = rowOrderFailure(item, model);
+      return why === undefined ? undefined : { why };
+    }
+    case 'groupOrder': {
+      const why = groupOrderFailure(item, model);
       return why === undefined ? undefined : { why };
     }
     case 'corridorSide': {

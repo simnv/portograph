@@ -1,0 +1,34 @@
+# Expected: the group order of the outward tier follows the free row (architecture-2 ticket 72, the joint stage-4 order). `spine` feeds
+# `aggr`; ag1, ag2 and ag4 feed lf0 in `leaf-near`, ag0 and ag3 feed lf1 in `leaf-far`, declared `leaf-far` first. With the order of
+# `aggr` and of the sink groups decided apart, the sinks stand interleaved under the row: crossings 5, bends 6, canvas 477 x 484 (as
+# with `layout: { feedOrder: false }`, the shape of a-stranded-growth-is-given-back). The joint order turns `aggr` to ag2 ag4 ag0 ag1 ag3
+# and seats `leaf-near` left of `leaf-far` with it (the `groupOrder` entry; its premise is the free row `aggr` in that order):
+# crossings 1, bends 4, canvas 471 x 484. Mirrored, the decision is the mirror image (`groupOrder` leaf-far, leaf-near) and crossings stay
+# 1; bends are 6, from the stages after 4. Tests: test/layout/joint-order.test.ts.
+portograph: 2
+groups:
+  spine: { tier: 0 }
+  aggr: { tier: 1 }
+  leaf-far: { tier: 2 }
+  leaf-near: { tier: 2 }
+nodes:
+  sp0: { group: spine, class: router, ports: [] }
+  sp1: { group: spine, class: router, ports: [] }
+  ag0: { group: aggr, class: switch, ports: [] }
+  ag1: { group: aggr, class: switch, ports: [] }
+  ag2: { group: aggr, class: switch, ports: [] }
+  ag3: { group: aggr, class: switch, ports: [] }
+  ag4: { group: aggr, class: switch, ports: [] }
+  lf0: { group: leaf-near, class: server, ports: [] }
+  lf1: { group: leaf-far, class: server, ports: [] }
+links:
+  - [sp0, ag0]
+  - [sp1, ag1]
+  - [sp0, ag2]
+  - [sp1, ag3]
+  - [sp0, ag4]
+  - [ag0, lf1]
+  - [ag1, lf0]
+  - [ag2, lf0]
+  - [ag3, lf1]
+  - [ag4, lf0]

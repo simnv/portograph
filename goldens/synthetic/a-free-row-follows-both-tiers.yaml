@@ -1,0 +1,37 @@
+# Expected: a free row follows both of its neighbour tiers (architecture-2 ticket 72, the joint stage-4 order). `spine` feeds `aggr`, and
+# `aggr` feeds two sink groups; `sp0` feeds ag0 and ag4 at the two ends of the row, and the transit links sp0 -> lf0 and sp1 -> lf1 pass
+# `aggr`. No corridor sweep judges `aggr` (it is the anchor tier), so before the ticket the row kept ELK's order and sp0 stretched over the
+# whole row: crossings 7, bends 8, canvas 730 x 484, gates G5 and G6 (as with `layout: { feedOrder: false }`). The joint order judges the
+# row's key orders, the order of the sink groups and the two corridor sides together, at the predicted 7c seats of the sinks: `aggr` turns
+# to ag2 ag4 ag0 ag1 ag3 (`feed-order`), link-10 passes left of `aggr` and link-11 right of it (`corridorSide`): crossings 1, bends 6,
+# canvas 722 x 484, no gate fails. Same shape as a-face-aligns-one-port-and-leaves-a-chord-port-in-place. Mirrored (every group and node
+# declared the other way round) the stage-4 decision is the mirror image and crossings stay 1; bends are 8, from the stages after 4 (main's
+# own mirror goes from 7 to 15 crossings). Tests: test/layout/joint-order.test.ts.
+portograph: 2
+groups:
+  spine: { tier: 0 }
+  aggr: { tier: 1 }
+  leaf-far: { tier: 2 }
+  leaf-near: { tier: 2 }
+nodes:
+  sp0: { group: spine, class: router, ports: [] }
+  sp1: { group: spine, class: router, ports: [] }
+  ag0: { group: aggr, class: switch, ports: [] }
+  ag1: { group: aggr, class: switch, ports: [] }
+  ag2: { group: aggr, class: switch, ports: [] }
+  ag3: { group: aggr, class: switch, ports: [] }
+  ag4: { group: aggr, class: switch, ports: [] }
+  lf0: { group: leaf-near, class: server, ports: [] }
+  lf1: { group: leaf-far, class: server, ports: [] }
+links:
+  - [sp0, ag0]
+  - [sp1, ag1]
+  - [sp1, ag3]
+  - [sp0, ag4]
+  - [ag0, lf1]
+  - [ag1, lf0]
+  - [ag2, lf0]
+  - [ag3, lf1]
+  - [ag4, lf0]
+  - [sp0, lf0]
+  - [sp1, lf1]

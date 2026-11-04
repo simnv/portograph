@@ -23,7 +23,7 @@ import { chordKind, chordsHold, isRoutedChord } from './frame-paths.js';
 import { type ProposedBox, foreignReach, framesAfter, foreignRoot, heldLaneReach, ownFrameCells, rebuildFrames, riserForeignReach, riserHostGrowth, frameNodes } from './frames.js';
 import { BUS_RUN_CLEARANCE } from './bus-room.js';
 import { bottom, expandCanvas, GROUP_PADDING, placementWarning, rebuildRegions, right } from './regions.js';
-import { corridorSideOf } from './reservations.js';
+import { corridorSideOf, corridorStandsOn } from './reservations.js';
 import { nodeTier, transitTiers } from './read/tier.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { orderPortsByLanes } from './turn-order.js';
@@ -651,6 +651,7 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
     model.lanes = [...model.lanes];
     lane.side = anchor.x < group.bounds!.x ? 'left' : 'right';
     moved = true;
+    withdrawCorridorSide(model, link, lane);
     followed?.push({ lane: lane.id, child });
     placementWarning(model, 'LANE_FOLLOWS_ITS_CHILD',
       `${link.id} could not be seated under its corridor at tier ${lane.tier}; the corridor follows the child port.`, [link.id]);
@@ -658,6 +659,17 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
   // A frame holds the lanes of its own links (`heldLaneReach`), so a moved corridor can move a frame edge: the frames are derived again.
   if (moved) { rebuildLaneExtents(model); rebuildFrames(model); }
   return moved;
+}
+/**
+ * A corridor side stage 4 reserved (ticket 72) that a 7f move put the lane across: the entry is withdrawn by name (R2, R6), since 7f lets
+ * the corridor follow its child. The check of every later stage then reads no stale side (`corridorSideFailure`).
+ */
+function withdrawCorridorSide(model: LayoutModel, link: LayoutLink, lane: Lane): void {
+  const entry = corridorSideOf(model.reservations, link.id, lane.tier), host = entry === undefined ? undefined : model.groups[entry.group];
+  if (entry === undefined || host?.bounds === undefined || corridorStandsOn(lane.x, host.bounds, entry.side)) return;
+  model.reservations = model.reservations!.filter(item => !(item.kind === 'corridorSide' && item.payload.link === link.id && item.payload.tier === lane.tier));
+  placementWarning(model, 'CORRIDOR_SIDE_WITHDRAWN',
+    `${link.id} follows its child across ${entry.group} at tier ${lane.tier}; the corridor side stage 4 reserved (${entry.side}) is withdrawn.`, [link.id]);
 }
 /** Prefer the nearest in-span slot that leaves room for the remaining members of this source. */
 function inSpanSlot(model: LayoutModel, link: LayoutLink, core: { x: number; width: number }, width: number,
@@ -917,6 +929,24 @@ export function transitedCore(main: readonly LayoutGroup[], sourceX: number): La
  */
 export function corridorSide(core: Rect, sourceX: number, targetX?: number): 'left' | 'right' {
   return (targetX ?? sourceX) < core.x + core.width / 2 ? 'left' : 'right';
+}
+/**
+ * The x of a transit corridor on `side` of the box `core`, the one predicate of "corridor x from a side" (ticket 72, R1): half the lane width
+ * beyond that edge, or the source x `sx` where the source already stands beyond the edge, so the corridor drops straight from it. With no
+ * `sx`, the margin alone: `farCoordinate` sorts the ports of a face before any anchor exists.
+ */
+export function corridorXOnSide(core: Rect, side: 'left' | 'right', half: number, sx?: number): number {
+  const margin = side === 'left' ? core.x - half : right(core) + half;
+  return sx === undefined ? margin : side === 'left' ? Math.min(sx, margin) : Math.max(sx, margin);
+}
+/**
+ * The corridor x of `link` in sub-tier `tier` that the ledger reserves (`corridorSide`, stage 4, ticket 72), on the box of the reserved host
+ * as it stands now; undefined when the ledger reserves no side there (the reader decides the side itself) or the host has no box (the
+ * reservation check names that). The reader of the draft (`readDraft`), the 7c predictor of the joint order and `farCoordinate` read it here.
+ */
+export function reservedCorridorX(model: LayoutModel, link: LayoutLink, tier: number, sx?: number): number | undefined {
+  const entry = corridorSideOf(model.reservations, link.id, tier), host = entry === undefined ? undefined : model.groups[entry.group];
+  return entry === undefined || host?.bounds === undefined ? undefined : corridorXOnSide(host.bounds, entry.side, laneWidth(model, link) / 2, sx);
 }
 /**
  * What decides the side of the corridors of a link, read once per model: the far end of each link, and whether its x may be read.
@@ -1188,19 +1218,17 @@ export function allocateLanes(model: LayoutModel): void {
     for (const [index, link] of tierLinks.entries()) {
       const sx = findPort(model, laneSource(model, link))!.anchor!.x;
       const width = laneWidth(model, link), half = width / 2;
-      const reservedEntry = (model.reservations ?? []).find(entry => entry.kind === 'corridorSide'
-        && entry.payload.link === link.id && entry.payload.tier === tier);
-      const reservedHost = reservedEntry?.kind === 'corridorSide' ? groups.find(g => g.id === reservedEntry.payload.group) : undefined;
-      const nearest = reservedHost ?? transitedCore(main, sx) ?? groups[0]!;
+      // A side stage 4 reserved (ticket 72) names the host and the side; the lane takes it, and no plan below may put it on the other side.
+      const reserved = corridorSideOf(model.reservations, link.id, tier);
+      const nearest = groups.find(group => group.id === reserved?.group) ?? transitedCore(main, sx) ?? groups[0]!;
       const core = occ(nearest, link);
       // A corridor passes its tier on the side of the transited group that faces the link's target
       // (ticket 03), so the run leaves the tier already on the side its far end stands on. Where the
       // target has no x to read, the corridor keeps the side the source asks for (`corridorSide`).
       const target = targetX(link, tier);
-      const reservedSide = reservedEntry?.kind === 'corridorSide' ? reservedEntry.payload.side : corridorSideOf(model.reservations, link.id, tier, nearest.id);
+      const reservedSide = reserved?.group === nearest.id ? reserved.side : undefined;
       const side = reservedSide ?? (target === undefined ? undefined : corridorSide(core, sx, target));
-      const prefSide = reservedSide ?? corridorSide(core, sx);
-      let x = prefSide === 'left' ? Math.min(sx, core.x - half) : Math.max(sx, right(core) + half);
+      let x = corridorXOnSide(core, reservedSide ?? corridorSide(core, sx), half, sx);
       // Reserve in transported source order. Previous corridors are immutable even during planning.
       const prior = pending.filter(lane => lane.tier === tier);
       if (reservedSide === undefined) {
