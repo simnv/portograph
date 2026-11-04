@@ -37,6 +37,7 @@ import { readCache } from '../model/read-cache.js';
 import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, tapTarget, owesVertical, sameDeclines, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
 import { faceKey } from './turn-order.js';
 import { untrimmedModel } from './end-trim.js';
+import { standsVertical, strandedGrowth } from './given-back.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -1035,6 +1036,23 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     if (Math.abs(port.anchor!.x - want) > 0.5) unresolved.add(key);
   }
   const endMisses = misses();
+  // A body whose growth the centre rule gave back (ticket 71, `givenBack`) keeps a growth only for a target it stands. A step that widens it and leaves
+  // every kept port off its x after the clamp is declined as a window that cannot hold the group is: the group stands near its feed with the widths it
+  // began the step with, and the kept targets are named as alignments the row cannot hold (R6). The publication check replays this step, so it reads
+  // the same record (R1, R5).
+  if (aligned.size && [...aligned].every(key => (endMisses.get(key) ?? 0) > 0.5) && group.nodes.some(nodeId => model.givenBack?.[nodeId] !== undefined
+    && model.nodes[nodeId]!.bounds!.width > saved.nodes.find(node => node.id === nodeId)!.bounds!.width + EPS)) {
+    if (warn) for (const feed of own) {
+      if (!aligned.has(portId(feed.child.ref))) continue;
+      placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
+    }
+    model.groups[id] = saved.group;
+    for (const node of saved.nodes) model.nodes[node.id] = node;
+    packClear(model, context, tier, saved.group, previous);
+    standNearFeed(model, context, tier, id, saved.group, began + Math.max(farthestLeft, Math.min(toMean, farthestRight)), low, high);
+    // The step's growth is given back: the record holds no growth of it, and no decline judged against its geometry stands (ticket 66).
+    return { unresolved: new Set(wanted.keys()), group: saved.group, notes: { ...notes, grown: new Map(), declined: new Map() } };
+  }
   // A step that leaves fewer verticals standing than it found (ticket 65) keeps the geometry it found, clamped into its window, when that keeps more
   // and passes the same post-conditions and the overlay guard (ticket 66: no overlay link the step draws straight loses its straight chord). A keep
   // the guards refuse declines the targets only the kept geometry stands, in the record, for the rest of the attempt. Without it a group that aligns K of its N feeds moves by the mean of all N, crawls by (N - K) / N of the
@@ -1200,14 +1218,6 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     reportStall(model, [], 'Centering left an alignment off its feed after the last overlay windows and the passes the budget allowed; routing and the final gates decide the retained geometry.');
   }
   refreshWindowDeclines(model);
-}
-/** Whether the link stands vertical: its two ports face each other, one on a bottom face and one on a top face, within half a pixel in x. */
-function standsVertical(model: LayoutModel, id: string): boolean {
-  const link = model.links.find(item => item.id === id);
-  if (!link?.attachments) return false;
-  const one = findPort(model, link.attachments.from), two = findPort(model, link.attachments.to);
-  if (!one?.anchor || !two?.anchor || ![one.side, two.side].includes('top') || ![one.side, two.side].includes('bottom')) return false;
-  return Math.abs(one.anchor.x - two.anchor.x) <= 0.5;
 }
 /**
  * A `CENTRE_ALIGNMENT_INFEASIBLE` names a feed that a step, or the parent stand, could not put on one x. A later pass, a parent spread, the parent
@@ -1592,6 +1602,31 @@ function hasRivals(model: LayoutModel): boolean {
 function dropEmptySpreads(model: LayoutModel): void {
   if (model.parentSpreads !== undefined && !Object.keys(model.parentSpreads).length) delete model.parentSpreads;
 }
+/**
+ * The centre rule's passes and its one judgement of their growths (architecture-2 ticket 71). The passes run from the rule's input; at their end a
+ * width the passes added to align a face's links and that no kept target or kept chord uses is stranded (`strandedGrowth`). When one is, the
+ * passes run once more from the same input with the record `givenBack`, and every step of a given-back body keeps a growth only for a target it
+ * stands. The judgement reads the end of all eight passes, not one pass: a growth one pass strands is the one a later pass may complete.
+ *
+ * Bound (R4): at most two runs of the passes, each on its own eight-pass budget (the first run is discarded whole, so its budget is no budget of
+ * the second). A growth the second run strands that the first did not is kept, and named (`CENTRE_GROWTH_KEPT`, info).
+ */
+function centreGivingBack(draft: LayoutModel): void {
+  const input = JSON.stringify(draft);
+  centreDraft(draft, createCentreBudget());
+  const back = strandedGrowth(draft, JSON.parse(input) as LayoutModel);
+  if (!Object.keys(back).length) return;
+  for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
+  Object.assign(draft, JSON.parse(input) as LayoutModel, { givenBack: back });
+  centreDraft(draft, createCentreBudget());
+  const kept = Object.keys(strandedGrowth(draft, JSON.parse(input) as LayoutModel)).filter(node => back[node] === undefined);
+  if (kept.length) {
+    draft.diagnostics.push({ stage: 'placement', severity: 'info', code: GROWTH_KEPT,
+      message: `The second run of the centring passes strands a growth of ${kept.join(', ')}; the centre rule judges its growths once, so the growth stays.` });
+  }
+}
+/** The note that the one judgement of the centre rule left a growth the second run stranded (ticket 71, R6). */
+const GROWTH_KEPT = 'CENTRE_GROWTH_KEPT';
 export function centre(model: LayoutModel): LayoutModel {
   return withStageMutation(model, 'centre', draft => {
     // The wide twin: the seats of the first feeds with the conflicting feeds pulling, as before ticket 12. It is built only where a port has two parents.
@@ -1601,9 +1636,9 @@ export function centre(model: LayoutModel): LayoutModel {
       return copy;
     };
     const wideTwin = hasRivals(draft) ? twin() : undefined;
-    orderBundles(draft); normalizePrimaryBundlePorts(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); dropEmptySpreads(draft);
+    orderBundles(draft); normalizePrimaryBundlePorts(draft); centreGivingBack(draft); recordSeatedSideLanes(draft); dropEmptySpreads(draft);
     if (!wideTwin) return;
-    centreDraft(wideTwin, createCentreBudget()); recordSeatedSideLanes(wideTwin); dropEmptySpreads(wideTwin);
+    centreGivingBack(wideTwin); recordSeatedSideLanes(wideTwin); dropEmptySpreads(wideTwin);
     // Narrow only if free: a link that stands straight under the wide seat must stand straight under the narrow one, or the node keeps its wide seat.
     const narrow = straightLinks(draft);
     if ([...straightLinks(wideTwin)].every(id => narrow.has(id))) return;

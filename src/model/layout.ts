@@ -630,6 +630,14 @@ export interface LayoutModel {
    */
   alignmentTargets?: Record<string, AlignmentTarget[]>;
   /**
+   * The growths the centre rule gave back (architecture-2 ticket 71), by node id: the wanted ports whose alignment widened the body and that no
+   * kept target used at the end of 7c (a growth the clamp stranded). Decided once, at the end of the centre rule, and stored; every later
+   * centring run and the publication replay read it, and no step grows a body toward a given-back port again (R1). Absent = no growth was
+   * given back (a model before 7c, or one whose growths all serve a kept target). A present record names at least one node, each with at
+   * least one port, in port-key order.
+   */
+  givenBack?: Record<string, string[]>;
+  /**
    * Who yields among the labels on diagonal lines (architecture-2 ticket 20, `recordLabelYields`): a key for every described overlay
    * link whose label lies on a diagonal line, with the links whose label bands it keeps clear of ([] = none). Each pair is decided once,
    * in 7f, and never again; 7f and stage 9 read the record. Absent = no label on a diagonal line, or a model before 7f.

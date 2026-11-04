@@ -29,6 +29,7 @@ import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { publishedCentreViolations, selectAnchorTier } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentTargetsFault } from './alignment-targets.js';
+import { givenBackFault } from './given-back.js';
 import { checkBodyTrims } from './end-trim.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
@@ -344,6 +345,9 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     // The record of the alignment targets is read, never decided again (architecture-2 ticket 66, R1); a malformed one is refused (R5).
     const targets = alignmentTargetsFault(model);
     if (targets !== undefined) throw new Error(`The alignment target record is forged: ${targets}`);
+    // The record of the growths the centre rule gave back is read by the replay below (architecture-2 ticket 71, R1); a malformed one is refused (R5).
+    const back = givenBackFault(model);
+    if (back !== undefined) throw new Error(`The given-back growth record is forged: ${back}`);
     const all = publishedCentreViolations(model, false, trims.untrimmed);
     // A replay that declines a target the record does not is a contradiction of the record, not an alignment a spent budget left unverified:
     // no diagnostic excuses it (R5; ADR-0010 covers the alignments only).
@@ -363,6 +367,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     }
   }
   else if (model.anchorTier !== undefined) throw new Error('Premature anchor tier');
+  else if (model.givenBack !== undefined) throw new Error('The given-back growth record is forged: a record before the centre rule');
   if (stages.indexOf(model.stage) < stages.indexOf('rows')) return;
   // A snapshot of the stages before the bundles skips the second derivation of the paths below (`withStageMutation`), but not the facing-order check:
   // it runs only before the bundle stage, so no later check reads it.
@@ -715,9 +720,10 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   const unriser = (value: LayoutModel): LayoutModel => unfaced(rule === 'lanes' && value.meshBuses ? { ...value, meshBuses: value.meshBuses.map(bus => omit(bus, ['riser', 'trunk']) as MeshBus) } : value);
   const declared = ['nodes', 'groups', 'tierBands', 'labels', 'canvas', 'diagnostics', 'runtime', 'links', 'lanes', 'bundles', 'junctions', 'labelBands', 'barDrops', 'obstacles', 'regions', 'anchorTier', 'frames', 'removedLinks',
     // The centre rule decides the aligned extents of the canton members once (architecture-2 ticket 31); every later rule keeps them.
+    // It also gives back, once at its end, the growths no kept target uses (`givenBack`, architecture-2 ticket 71).
     // It also records and withdraws the parent port moves it took at a frame-column wall (`parentWallMoves`, `standPortsOverChildren`),
     // and decides once which parents below the anchor tier spread their ports over their children (`parentSpreads`, architecture-2 ticket 32).
-    ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads'] : []),
+    ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads', 'givenBack'] : []),
     // The centring steps of 7c to 7f write the record of their alignment targets; the route rule drops it, after the publication of 7f has
     // compared it with its replay (architecture-2 ticket 66).
     ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets'] : []),
