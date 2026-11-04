@@ -69,10 +69,36 @@ describe('a stretched body is trimmed to its ports', () => {
 
   it('refuses a forged record: a node that is not the trim of its recorded body, a widened box, a record that names no node', () => {
     expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.nodes['sink-near']!.x -= 400; copy.bodyTrims!.nodes['sink-near']!.width -= 400; })))
-      .toThrow(/end trim record is forged: node sink-near/);
+      .toThrow(/end trim record is forged: (node sink-near|the recorded geometry cannot be built)/);
     expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.groups['near']!.width = 1; })))
-      .toThrow(/end trim record is forged: group near/);
+      .toThrow(/end trim record is forged/);
     expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.nodes = {}; }))).toThrow(/end trim record is forged: malformed/);
+    // Review round 1: a record with a changed group left out is not the producer's (the fixed point); a recorded box that would overlap a box it
+    // stands apart from is not a placement. A box recorded wider into free space passes: the record is the trusted decision (R5 limit).
+    expect(() => restoreLayoutModel(forge(model, copy => { delete copy.bodyTrims!.groups['near']; }))).toThrow(/end trim record is forged/);
+    expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.groups['far'] = { ...copy.groups['far']!.bounds!, x: copy.groups['far']!.bounds!.x - 1000, width: copy.groups['far']!.bounds!.width + 1000 }; })))
+      .toThrow(/end trim record is forged: group (far|near) overlaps/);
+  });
+
+  it('keeps a lateral face where it stands', () => {
+    const copy = JSON.parse(JSON.stringify(model)) as LayoutModel, was = model.bodyTrims!.nodes['sink-near']!;
+    const node = copy.nodes['sink-near']!, port = node.ports.find(item => item.side === 'top')!;
+    port.side = 'right';
+    port.anchor = { x: right(was), y: was.y + was.height / 2 };
+    const next = trimmedBody(copy, 'sink-near', was)!;
+    expect(right(next)).toBeCloseTo(right(was), 9);
+    expect(next.width).toBeLessThan(was.width);
+  });
+
+  it('declines the whole trim, and puts the draft back as 7f left it, when the trim would end a grid refusal', () => {
+    const draft = JSON.parse(JSON.stringify(untrimmedModel(model))) as LayoutModel;
+    draft.freeze = model.freeze!;
+    draft.gridRefusals = [...(draft.gridRefusals ?? []), 'x:far|near'];
+    const before = JSON.stringify({ ...draft, diagnostics: [] });
+    trimBodies(draft);
+    expect(draft.bodyTrims).toBeUndefined();
+    expect(draft.diagnostics.filter(item => item.code === 'END_TRIM_DECLINED').map(item => item.message)).toEqual([expect.stringMatching(/grid refusals x:far\|near/)]);
+    expect(JSON.stringify({ ...draft, diagnostics: [] })).toBe(before);
   });
 
   it('gives a body with no room to trim no new body', () => {
@@ -93,6 +119,26 @@ describe('the centring replay reads the bodies the producer decided on (R1)', ()
 
   it('without the record, the replay reads the trimmed bodies and refuses them', () => {
     expect(() => restoreLayoutModel(forge(model, copy => { delete copy.bodyTrims; }))).toThrow(/Centring invariant violated/);
+  });
+
+  it('refuses a forged record that would excuse the violation: a node never trimmed, recorded wide over its siblings', () => {
+    const untouched = Object.keys(model.nodes).find(id => !(id in model.bodyTrims!.nodes) && model.document.groups[model.document.nodes[id]!.group]!.shape !== 'bar')!;
+    expect(() => restoreLayoutModel(forge(model, copy => {
+      const box = copy.nodes[untouched]!.bounds!;
+      copy.bodyTrims!.nodes[untouched] = { ...box, x: box.x - 1000, width: box.width + 2000 };
+    }))).toThrow(/end trim record is forged/);
+  });
+});
+
+describe('a trimmed group box keeps its title floor', () => {
+  it('holds the title of a group whose label is wider than its trimmed bodies (review round 1)', async () => {
+    const text = source('a-stretched-body-is-trimmed-to-its-ports').replace('near: { tier: 2 }', 'near: { tier: 2, label: A title far wider than the one sink it holds }');
+    const model = await run(text);
+    expect(model.bodyTrims?.nodes['sink-near']).toBeDefined();
+    expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([]);
+    const label = model.labels.find(item => item.role === 'group' && item.text === 'A title far wider than the one sink it holds')!, box = model.groups['near']!.bounds!;
+    expect(label.bounds!.x).toBeGreaterThanOrEqual(box.x + 8 - 1e-6);
+    expect(right(label.bounds!)).toBeLessThanOrEqual(right(box) - 8 + 1e-6);
   });
 });
 

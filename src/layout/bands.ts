@@ -365,8 +365,6 @@ function expectedBands(model: LayoutModel, entries: RouterEntryPoint[]): LabelBa
  * Reserved link geometry is rebuilt only by the ordered replay, so a caller that has just moved
  * boxes must supply the entry points it measured while the two agreed.
  */
-/** The label bands again from the group boxes as they stand, with no producer replay: for a change that moves nothing (the end trim, ticket 68). */
-export function syncLabelBands(model: LayoutModel): void { syncBands(model); }
 function syncBands(model: LayoutModel, entries = routerEntryPoints(model)): boolean {
   const before = new Map(model.labelBands.map(band => [band.group, band.clearance]));
   model.labelBands = expectedBands(model, entries);
@@ -375,6 +373,11 @@ function syncBands(model: LayoutModel, entries = routerEntryPoints(model)): bool
   syncBusGeometry(model);
   return model.labelBands.some(band => before.has(band.group) && Math.abs(before.get(band.group)! - band.clearance) > PLACEMENT_EPS);
 }
+/**
+ * The label bands again from the group boxes as they stand, with no producer replay: for a change that moves nothing (the end trim,
+ * architecture-2 ticket 68). Returns whether a band changed its clearance, which the caller cannot reserve.
+ */
+export function syncLabelBands(model: LayoutModel): boolean { return syncBands(model); }
 
 function intersectsY(rect: Rect, y: number, height: number): boolean {
   return rect.y <= y + height + PLACEMENT_EPS && bottom(rect) >= y - PLACEMENT_EPS;

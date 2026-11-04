@@ -1,6 +1,6 @@
 # Expected: The face of acc0 aligns one port and leaves the port of a held chord in place (ticket 100 review 3; the user's drawing of
 # 2026-11-03 is the target of the compact-node family). After the end trim of 7f (architecture-2 ticket 68) the sinks are as wide as their
-# ports and content need: snk0 116 px and snk1 56 px (811 and 662 px before), and the canvas is 1118 px (1633 before). Tests
+# ports and content need: snk0 116 px and snk1 56 px (806 and 662 px before), and the canvas is 1118 px (1633 before). Tests
 # `routed-chord-centring.test.ts` and `vertical-seat.test.ts` read the layout.
 portograph: 2
 groups:

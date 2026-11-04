@@ -420,11 +420,13 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(model.lanes.some(lane => lane.tier === model.groups.low!.tier)).toBe(false);
     const lowBand = model.labelBands.find(item => item.group === 'low')!, lowLabel = model.labels.find(item => item.id === 'label:group:low')!;
     expect(lowBand.side).toBe('bottom');
-    // Its box only changed through the linked-group grid: it shares the x-extent of top-group, which
-    // feeds it through the lanes (ticket 24); the label centres in that shared box.
+    // Its box shared the x-extent of top-group through the linked-group grid (ticket 24) until the end trim of 7f (architecture-2
+    // ticket 68): the body of a is trimmed to its port, top-group to its content, and the two boxes are no longer within the 30 % the
+    // grid asks (ADR-0012). low keeps its title floor; the label centres in its box.
     const lowBox = model.groups.low!.bounds!, topBox = model.groups['top-group']!.bounds!;
     expect(lowBox.width).toBeGreaterThanOrEqual(lowWidth);
-    expect([lowBox.x, lowBox.width]).toEqual([topBox.x, topBox.width]);
+    expect(model.bodyTrims?.groups['top-group']).toBeDefined();
+    expect(topBox.width).toBeLessThan(0.7 * lowBox.width);
     expect(lowLabel.bounds!.x).toBeCloseTo(lowBox.x + (lowBox.width - lowLabel.bounds!.width) / 2, 9);
 
     // The stroke-aware reservation and the mandatory shared prefix both survive the refusal.

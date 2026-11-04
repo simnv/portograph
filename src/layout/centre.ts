@@ -1402,8 +1402,9 @@ export function centreViolations(model: LayoutModel, ahead = false, shared?: Cen
  * this way: the 7f judges compare the violations of two candidates, and a record a candidate's move leaves behind is no violation of that move.
  * The publication excuses a held cross chord (any angle) and so never replays a group for it; `ahead` reads as the producer's own check does.
  */
-export function publishedCentreViolations(model: LayoutModel, ahead = false): string[] {
-  return withSharedLinkKinds(() => readCentreViolations(model, ahead, undefined, true, true));
+export function publishedCentreViolations(model: LayoutModel, ahead = false, untrimmed?: LayoutModel): string[] {
+  // A caller that has built the untrimmed geometry of the model (the publication check of the end trim, ticket 68) hands it in: it is read as is.
+  return withSharedLinkKinds(() => readCentreViolations(untrimmed ?? model, ahead, undefined, true, true));
 }
 /**
  * The text of the model one check read, and its answer (architecture-2 ticket 63). With no context handed in, the answer reads the model and `ahead` alone:
