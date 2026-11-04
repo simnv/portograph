@@ -10,6 +10,7 @@ import type { ElkClock } from '../layout/elk-worker.js';
 import { lastAttempt } from '../layout/attempt-counters.js';
 import type { Reservations } from '../layout/reservations.js';
 import { route, ROUTE_BUDGET_MS } from '../route/index.js';
+import { trimBodies } from '../layout/end-trim.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 import type { LayoutOptions } from './options.js';
 import type { GroupArrangement, StaggerRow } from '../model/layout.js';
@@ -78,7 +79,7 @@ export function createEnv(document: NormalisedDocument, options: LayoutOptions):
     route: async (model, trial, publish) => {
       if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'route');
       const started = now();
-      const routed = await timed(trial === undefined ? 'route' : 'route-trial', () => route(model, {
+      const routed = await timed(trial === undefined ? 'route' : 'route-trial', () => route(trimBodies(model), {
         ...(publish === undefined ? { ordinaryOverlay: true } : {}),
         ...(options.createRouteAttempt ? { createAttempt: options.createRouteAttempt } : {}),
         ...(clock ? { clock } : {}),

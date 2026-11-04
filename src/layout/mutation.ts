@@ -118,6 +118,8 @@ function structure(model: LayoutModel, ordered = false) {
 function nodeLabels(model: LayoutModel) {
   return model.labels.filter(label => ['node', 'description', 'pill'].includes(label.role ?? ''));
 }
+/** Experiment `scratch/end-trim`: the final placement snapshot the trim stores again. */
+export function placementSnapshotOf(model: LayoutModel): PlacementSnapshot { return placement(model); }
 function placement(model: LayoutModel): PlacementSnapshot {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id,
