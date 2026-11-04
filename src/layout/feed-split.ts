@@ -45,6 +45,7 @@ export interface FeedSplit { tier: number; at: number; width: number }
 /** Decides and makes the splits; returns the splits made. */
 export function reserveFeedSplits(model: LayoutModel, steps: readonly { tier: number; authority: number }[]): FeedSplit[] {
   const made: FeedSplit[] = [], gap = bandGap(model);
+  const p3 = Boolean((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PG_T73_P3);
   const note = (message: string): void => { model.diagnostics.push({ stage: 'placement', severity: 'info', code: 'FEED_SPLIT', message }); };
   // The steps nearest the anchor first: a split moves the tiers it is fed from, and those hold the children the next step outward reads.
   for (const { tier, authority } of steps) {
@@ -65,6 +66,18 @@ export function reserveFeedSplits(model: LayoutModel, steps: readonly { tier: nu
       const blocked = side.find(group => group.frame !== undefined || group.flank !== undefined || model.document.groups[group.id]?.canton !== undefined
         || model.document.groups[group.id]?.shape === 'bar' || isGridGroup(model, group.id) || Object.values(model.groups).some(other => other.frame === group.id || other.flank?.of === group.id));
       const laneBlock = model.lanes.find(lane => lane.x > split.at && (lane.kind ?? 'transit') !== 'transit');
+      // P3 guards (behind PG_T73_P3): the split line crosses no body of the feeding side (a body never stretches for it), and the two groups
+      // are plain top-level groups (no rank cell, no frame, no flank).
+      if (p3) {
+        const [left, rightId] = split.pair.split('|') as [string, string];
+        const plain = (id: string): boolean => { const group = model.groups[id]!; return group.frame === undefined && group.flank === undefined
+          && !Object.values(model.groups).some(other => other.frame === id || other.flank?.of === id); };
+        const through = side.flatMap(group => group.nodes).find(id => { const body = model.nodes[id]!.bounds!; return body.x < split.at && right(body) > split.at; });
+        if (!plain(left) || !plain(rightId) || through !== undefined) {
+          note(`The feed split ${split.pair} at x ${split.at.toFixed(1)} (${split.width.toFixed(1)} px) is declined: ${through !== undefined ? `the split would stretch ${through}` : 'a group of the pair is a rank cell, a frame or a flank'}.`);
+          break;
+        }
+      }
       if (blocked !== undefined || laneBlock !== undefined) {
         note(`The feed split ${split.pair} at x ${split.at.toFixed(1)} (${split.width.toFixed(1)} px) is declined: ${blocked ? `${blocked.id} cannot move` : `the lane ${laneBlock!.id} is no transit lane`}.`);
         break;
