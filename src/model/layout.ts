@@ -636,6 +636,15 @@ export interface LayoutModel {
    */
   labelYields?: Record<string, string[]>;
   /**
+   * The end trim (architecture-2 ticket 68): after the last x move of 7f each node body is trimmed to the span of its ports plus its content,
+   * never below its stage-3 size, and no node moves. The record holds the body (`nodes`) and the group box (`groups`) each trimmed node and
+   * changed group had at the end of 7f, before the trim. The centring replay of the publication check reads that geometry (R1); the validator
+   * checks that each recorded node stands at the trim of its recorded body. Absent = no body was trimmed: a model before 7f publishes, a model
+   * whose bodies need no trim, or a trim the grid declined (`END_TRIM_DECLINED`); the bodies as they stand are then the producer's. A present
+   * record names at least one node; `groups` may be `{}`.
+   */
+  bodyTrims?: { nodes: Record<string, Rect>; groups: Record<string, Rect> };
+  /**
    * The node sides whose stems nest (architecture-2 ticket 57; ADR-0015 rule 1, twelfth amendment): for each, the reach of every port
    * that has a leg on that side, decided once at the end of 7f, after the last move in x, by `sidePlan` with no read of the tier across
    * the gap. `stemDepth` (`routerEntryPoints`, `stemCheckpoint`), the tier-gap plan, stage 8 and the validator read the record; the

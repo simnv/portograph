@@ -1,0 +1,24 @@
+# Expected: A body that the centring stretched is trimmed to its ports after placement (architecture-2 ticket 68, the end trim).
+# Reduced from a-face-aligns-one-port-and-leaves-a-chord-port-in-place. The sink `sink-near` has three feeds: two
+# switches of the tier above and the router `src-a` two tiers up. The centring grows its body toward feeds it does not
+# keep; after the last move of 7f the body ends at its outer top ports with their insets, never below its content.
+# Ports keep their x, no node moves, and every link keeps its route and its bends. The group box of `near` shrinks with
+# the body. Test `test/layout/end-trim.test.ts` reads the layout.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  far: { tier: 2 }
+  near: { tier: 2 }
+nodes:
+  src-a: { group: src, class: router, ports: [] }
+  src-b: { group: src, class: router, ports: [] }
+  sw-1: { group: access, class: switch, ports: [] }
+  sw-2: { group: access, class: switch, ports: [] }
+  sink-near: { group: near, class: server, ports: [] }
+  sink-far: { group: far, class: server, ports: [] }
+links:
+  - [sw-1, sink-near]
+  - [sw-2, sink-near]
+  - [src-a, sink-near]
+  - [src-b, sink-far]

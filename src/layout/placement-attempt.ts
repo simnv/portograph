@@ -15,6 +15,7 @@ import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { solveTierGaps } from './gap-room.js';
+import { trimBodies } from './end-trim.js';
 import { holds } from './reservation-checks.js';
 import { candidateCopy, chooseReseat, roomShort, shortGaps } from './decide.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
@@ -458,6 +459,10 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // growth changed may now cross a group with no links.
   timed('solve-tier-gaps', () => solveTierGaps(draft, replayGridAndBands, model => moves && stepLinklessOutOfChords(model)));
   note('solve-tier-gaps', 'done');
+  // The end trim (architecture-2 ticket 68): after the last move in x, each body is trimmed to its ports and its content, and the boxes, the grid
+  // and the bands are derived again. No node, port or lane moves. The titles below are placed on the trimmed boxes.
+  trimBodies(draft);
+  note('end-trim', draft.bodyTrims === undefined ? 'none' : String(Object.keys(draft.bodyTrims.nodes).length));
   // The group titles are placed once, on the geometry that publishes, after the last move of a box, a lane or a port (architecture-2 ticket 54,
   // "titles last"): a title yields to every link, and nothing placed before reads it. The validator reads the record.
   placeGroupTitles(draft);

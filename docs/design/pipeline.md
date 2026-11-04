@@ -1143,8 +1143,8 @@ grow no tier gap; when the rounds did not replay the draft and the centring left
 refuse, it settles the centring once on the frozen geometry (one `replayRegions` and label room, architecture-2 ticket 65: the bands'
 single budget gave no pass after it); it lets a corridor whose child 7c could not seat follow that child (`reseatLanes`, § 7a); it settles the overlay ports;
 it solves the tier gaps once (`solveTierGaps`, `gap-room.ts`): the stem depths are recorded, every plan and every label room across a gap
-is read once, and each gap grows by what it lacks; and, last, it places every group title once (`placeGroupTitles`, architecture-2
-ticket 54). The corridor move is after the rounds because every centring replay before it — 7c's own and the label bands' — reads lane x
+is read once, and each gap grows by what it lacks; it trims each node body to its ports and content (the end trim, below, architecture-2
+ticket 68); and, last, it places every group title once (`placeGroupTitles`, architecture-2 ticket 54). The corridor move is after the rounds because every centring replay before it — 7c's own and the label bands' — reads lane x
 as that feed's authoritative x and chases a corridor that has moved. It reserves no room itself: the solve after it grows the gap for the
 new row (§ 7a states the whole condition).
 
@@ -1283,6 +1283,18 @@ the plan is the answer. Until ticket 57, `growTierGaps` iterated to a fixed poin
 The height is a reservation, not a discovery: stage 8 receives a gap that already holds its rows.
 Stage 8 is the **consumer** of the gap and never its owner. It reads the plan again on frozen placement. A gap that then does not fit is
 named `TIER_GAP_PART_UNFIT` at stage 8 (`unfitGaps`) and its links are the router's. That is a safety net (R6), and it must not fire.
+
+**The end trim (`trimBodies`, `end-trim.ts`; architecture-2 ticket 68).** After the solve, the last move in x, and before the titles, each
+node body is trimmed to the span of its `top` and `bottom` ports with their stored end insets (`portEndInsets`), never below its stage-3
+size read on the final faces (`sizeFloor`, `contentSize`, the content measured again, the capacity of each horizontal face, a side hint's
+node floor). A face with lateral ports keeps its x; a node with ports on both lateral sides and a `bar` node are not trimmed. Ports keep
+their x and no node moves, so no plan, chord, lane or course changes. Each group box shrinks to its content and never grows; the
+linked-group grid runs again (honouring `gridRefusals`), and the regions, frames, tier bands and label bands are derived again. A grid that
+would widen a box past the box it had declines the whole trim (`END_TRIM_DECLINED`). A held chord that now leaves a narrower frame by a
+side edge is named by `STRAIGHT_LINK_EDGE`, as every 7f move after the freeze is. The record `bodyTrims` holds the body and box each
+trimmed node and changed group had before the trim; the centring replay of the publication check reads that geometry (`untrimmedModel`),
+the one its producer decided on, never the narrower bodies (R1), and the validator checks each recorded node against `trimmedBody` of its
+recorded body (`bodyTrimsFault`, R5). Absent = no body was trimmed.
 
 The plan is read at the end of 7f and not at 7a because the count of stepped parts and drops depends on every
 rule before 7f: 7c aligns a child under its lane, 7d spans a bar across its ports, and 7e orders a

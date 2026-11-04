@@ -36,6 +36,7 @@ import { chordKind, chordNearPairs, isRoutedChord, withSharedLinkKinds, withStep
 import { readCache } from '../model/read-cache.js';
 import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, tapTarget, owesVertical, sameDeclines, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
 import { faceKey } from './turn-order.js';
+import { untrimmedModel } from './end-trim.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -1428,6 +1429,9 @@ function recordTaps<T>(into: [string, string][] | undefined, forward: boolean, r
   try { return run(); } finally { verdictTap.sink = sink; }
 }
 function readCentreViolations(model: LayoutModel, ahead: boolean, shared: CentreContext | undefined, reuse: boolean, targets: boolean): string[] {
+  // The replay reads the geometry its producer decided on (R1): the bodies and boxes before the end trim of 7f (architecture-2 ticket 68). A
+  // narrower sibling would let it keep a target the producer could not keep. A context built on the trimmed boxes is not read.
+  if (model.bodyTrims !== undefined) return readCentreViolations(untrimmedModel(model), ahead, undefined, reuse, targets);
   const anchor = model.anchorTier;
   if (anchor === undefined || !model.tierBands.some(band => band.tier === anchor)) return [];
   const context = shared ?? centreContext(model, anchor);
