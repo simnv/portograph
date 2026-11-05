@@ -2,7 +2,7 @@
 # the plain group beside it stand at least a band gap plus `COLUMN_SLACK` apart (`besideGap`, the gap gate G9 reads,
 # `separation-root-frame-group`). g1 is a frame of two ranks, g2 a plain group of one rank on the same document tier. The column pull
 # packs g2 at that gap from the frame, and the centring of g1#0 under its feed n1 would move the cell toward g2. The column of a frame
-# (`frameColumns`) reads the plain group as its nearest neighbour and spends no slack toward it, and g2 keeps the gap from the column
+# (`frameColumns`) spends no slack on the side where the plain group stands, and g2 keeps the gap from the column
 # edge (`columnWindow`), which is then the frame box. Before ticket 75 the column gave the frame its full slack toward g2, the cell took some of it
 # after g2 was placed, and G9 failed by 8.2 px (with the pull rule of ticket 75, which packs g2 at the gap). Every gate passes.
 # Tests test/layout/column-pull-wish.test.ts and test/pipeline/linkless-group-beside.test.ts (g2 linkless).

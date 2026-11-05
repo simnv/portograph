@@ -1390,8 +1390,8 @@ export interface FrameColumn extends Column {
 
 /**
  * The columns of a model's top-level frames, read off the geometry as it stands. A parent's frame box
- * holds its children, so the box of a top-level frame, with up to `COLUMN_SLACK` on each side that the next unit leaves beyond `besideGap`
- * (a band gap from a frame, a band gap and `COLUMN_SLACK` from a plain group), is its column, and every cell of a child frame
+ * holds its children, so the box of a top-level frame, with up to `COLUMN_SLACK` on each side, is its column: half of what the next frame
+ * leaves beyond a band gap, and none on a side where a plain group of the frame's sub-tiers stands (ticket 75), and every cell of a child frame
  * stands in the column of the top-level frame above it. Centring reads them once, before its first
  * step, and treats them as walls: a cell stays inside its column, and a group that is not in a frame
  * stays `besideGap` out of the column of every frame whose sub-tiers it shares, so a frame that spends its room never comes nearer a
@@ -1409,23 +1409,25 @@ export function frameColumns(model: LayoutModel): FrameColumn[] {
   const plain = Object.values(model.groups).filter(group => group.frame === undefined && group.bounds !== undefined && group.tier !== undefined);
   return tops.map(({ frame, cells, from, to }) => {
     // The slack is what the boxes of the neighbour frames leave beyond a band gap, shared between the two; read off the boxes as they
-    // stand, so a replay of centring cannot spend it a second time. Toward a plain group that is its nearest neighbour the frame has no
-    // slack (architecture-2 ticket 75): the group stays `besideGap` from the column edge (`columnWindow`, the overlay and chord walls),
-    // which is then the frame box. Slack toward it read the group's own place: halved, every read moved a linkless group in by half; whole,
-    // a group placed while the slack was 20 stayed 20 px beyond the gap G9 reads.
+    // stand, so a replay of centring cannot spend it a second time. Toward a side where a plain group stands the frame has no slack
+    // (architecture-2 ticket 75): the group stays `besideGap` from the column edge (`columnWindow`, the overlay and chord walls), which is
+    // then the frame box. Slack read from the group's own place moved it again: halved, every read moved a linkless group in by half;
+    // whole, a group placed while the slack was 20 stayed 20 px beyond the gap G9 reads; from the nearest unit only, a group that became
+    // the nearest took the room away and moved once more.
     const boxes = [...tops.filter(other => other.frame !== frame && other.from <= to && other.to >= from).map(other => ({ box: other.frame.box, frame: true })),
       ...plain.filter(group => group.tier! >= from && group.tier! <= to).map(group => ({ box: group.bounds!, frame: false }))];
     const room = (side: 1 | -1): number => {
-      let free = Infinity, nearest: { between: number; frame: boolean } | undefined;
+      let free = Infinity;
       for (const other of boxes) {
         const between = side > 0 ? other.box.x - (frame.box.x + frame.box.width) : frame.box.x - (other.box.x + other.box.width);
         if (between < 0) continue;
-        if (nearest === undefined || between < nearest.between || (between === nearest.between && !other.frame)) nearest = { between, frame: other.frame };
-        if (other.frame) free = Math.min(free, Math.max(0, between - besideGap(model, true, true)) / 2);
+        // A frame spends no slack on a side where a plain group of its sub-tiers stands: every wall a plain group reads (the column edge
+        // and `besideGap`) is then the frame box and `besideGap`, the gap G9 reads. The side a group stands on does not change while it
+        // moves in its window, so the room does not depend on where it stands (a fixed point; read from the nearest unit it did).
+        free = other.frame ? Math.min(free, Math.max(0, between - besideGap(model, true, true)) / 2) : 0;
+        if (free === 0) break;
       }
-      // A frame spends no slack toward a plain group that is its nearest neighbour on the side: every wall a plain group reads (the column
-      // edge and `besideGap`) is then the frame box and `besideGap`, the gap G9 reads, wherever the group stands (a fixed point).
-      return nearest !== undefined && !nearest.frame ? 0 : Math.min(COLUMN_SLACK, free);
+      return Math.min(COLUMN_SLACK, free);
     };
     const low = room(-1), high = room(1);
     return { id: frame.id, x: frame.box.x - low, width: frame.box.width + low + high, from, to, cells: new Set(cells),

@@ -1659,11 +1659,12 @@ slack and never leaves less than a band gap between two frame boxes, or less tha
 `COLUMN_SLACK` between a frame box and a plain group. One function says how far two units of the
 root scope stand apart, `besideGap` (architecture-2 ticket 75): gate G9, `runSpacing` (the column
 passes), `flankRoom`, `frameColumns` and every wall a column puts to a plain group (`columnWindow`,
-the overlay placement, the step over chords) read it. A frame has no slack toward a plain group
-that is its nearest neighbour on a side, so every wall a plain group reads is the frame box and
-`besideGap`, wherever the group stands: a fixed point. Slack toward it read the group's own place
+the overlay placement, the step over chords) read it. A frame has no slack on a side where a plain
+group of its sub-tiers stands, so every wall a plain group reads is the frame box and `besideGap`,
+wherever the group stands: a fixed point. Slack read from the group's own place moved it again
 (halved, every replay of the linkless step moved the group in by half; whole, a group placed while
-the slack was 20 px stayed 20 px beyond the gap). Toward a frame the slack is half of what the two
+the slack was 20 px stayed 20 px beyond the gap; from the nearest unit only, a group that became
+the nearest took the slack away and moved once more). Toward a frame the slack is half of what the two
 boxes leave beyond a band gap. `separateFrameColumns` runs
 in the `rows` rule, after every row group has its width, and moves each frame as a whole with one
 dx until the gap is a band gap again. `orderFramesByOverlay` re-packs the columns in the order the
