@@ -1078,6 +1078,14 @@ Primary facing blocks remain aligned. Secondary flank blocks clear intervening n
 actual stroke-aware bounds. Growth translates downstream bands and attached flanks before paths.
 Existing lane identity, owner, x and width never change.
 
+The repack after the seat can move one end of a block along x and not the other (a frame column
+keeps a band gap and its slack from the one before; a column is pulled toward its feed). The
+block then stands off the ports it aligned, and the next replay would seat it again: an x move
+that a y-only rebuild (the tier-gap solve of 7f) may not make. So the blocks are seated again
+on the repacked geometry until the repack moves no block's ends apart, at most
+`BUNDLE_SEAT_ROUNDS` (4) per call; a block still apart is named, `BUNDLE_BLOCK_UNSETTLED`
+(warning), and keeps the last seat (architecture-2 ticket 74).
+
 Reserve crossing width/rows before creating paths. Strict endpoint-pair inversions ignore shared
 port ties. Distinct engine ports use a common order where authored precedence permits it. Shared
 incidence uses a deterministic search capped at 4096 endpoint-order pairs. Exhaustion emits

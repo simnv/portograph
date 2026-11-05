@@ -1,0 +1,33 @@
+# Expected: architecture-2 ticket 74, a regression of the tier-gap solve (a reduced, anonymized real sheet). The bundle n6 -> n5 is seated
+# along x: n5 grows to the ports of n6. The repack after the seat moves the frame column g1 a band gap and its slack from g2, so n6 moves
+# and the block stands off the ports it aligned (0.42 px here, 30 px on the real sheet). The tier-gap solve then grows the gap above tier 1,
+# and its rebuild in y seated the block again: n5 grew, g0 moved in x, and the solve threw. Now `prepareBundleGeometry` seats the blocks
+# again until the repack moves no block's ends apart (`BUNDLE_SEAT_ROUNDS`). The sheet publishes, the three bundle links stand vertical,
+# and n5 publishes in every slot of the g0 row (on main slots 0, 2 and 5 threw).
+# Test test/layout/bundle-seat.test.ts.
+portograph: 2
+theme: snack
+layout: { nodeContent: card }
+groups:
+  g0: { tier: 0 }
+  g1: { tier: 1 }
+  g2: { tier: 1 }
+  g3: { parent: g2 }
+nodes:
+  n0: { group: g0, label: n0 }
+  n1: { group: g0, label: n1 }
+  n2: { group: g0, label: n2 }
+  n3: { group: g0, label: n3, description: dxxxxxxxxxxxxxxxxxxx }
+  n4: { group: g0, icon: cloud, label: n4xxxxxxx }
+  n5: { group: g0, label: n5 }
+  n6: { group: g1, label: n6, ports: [{ name: p0 }, { name: p1 }, { name: p2 }] }
+  n7: { group: g1, label: n7, description: dxxxxxxxxxxxxxx }
+  n8: { group: g1, icon: switch, label: n8xxxxxxxxxx }
+  n9: { group: g2, label: n9, description: dxxxxxxxxxxxxxxxx, ports: [{ name: p0 }] }
+  n10: { group: g2, icon: server, label: n10xxxx }
+  n11: { group: g3, label: n11 }
+links:
+  - [n6.p0, n5]
+  - [n6.p1, n5]
+  - [n6.p2, n5]
+  - [n9.p0, n5, { label: l3xxxxxxxxx }]
