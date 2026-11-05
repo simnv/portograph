@@ -73,7 +73,7 @@ describe('a unit with no feed range stands until it is pushed', () => {
     }
   }, 120000);
 
-  it('a block that stands bent records no lead', async () => {
+  it('a block that is not lined up from one end records no lead (slot 1)', async () => {
     const model = await layout(parse(inSlot(SOURCE, 1)), options);
     expect(model.bundles.map(bundle => bundle.lead)).toEqual([undefined]);
   }, 120000);
