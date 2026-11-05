@@ -1193,7 +1193,16 @@ scorer still requires every complete path; a stage-11 subset score is not a full
 For facing, non-inverted members whose endpoint tracks differ, each bend receives a distinct
 member-pitch row. Members moving toward smaller tangent coordinates turn in increasing source
 order; those moving toward larger coordinates turn in decreasing order. This avoids bend contact
-and coincident lateral runs even when unrelated ports create unequal endpoint spacing. Optional
+and coincident lateral runs even when unrelated ports create unequal endpoint spacing. The rows
+stand centred between the two stems, unless a row would then bring its member into a foreign box:
+a group or frame box that gate G2 holds the member out of, or a node body that is no end of the
+bundle, each with its gate margin. A box over the member's run forbids its own depth band; a box
+over the leg from the near end also forbids every deeper row, and a box over the leg to the far end
+every shallower row. Such rows move toward the near end, or else toward the far end, past the box,
+the same way they move one edge margin off the edge of a group box: the boxes gate G6 reads
+(`groupBoxes`, every frame and every plain group, the bundle's own included), not the frames only
+(architecture-2 ticket 76: the lower end's group padding is part of the channel, so centred rows
+could stand under a foreign box that the upper end stands over). Optional
 projection onto a common endpoint block is declined if its full side capacity would cross a sibling
 or immutable lane; local slots remain valid and the bundle bends instead.
 

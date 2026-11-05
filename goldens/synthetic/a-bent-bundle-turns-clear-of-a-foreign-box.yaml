@@ -1,0 +1,26 @@
+# Expected: architecture-2 ticket 76 (a reduced, anonymized real sheet). The bundle n6 -> n5 stands bent: n5 cannot grow over its row
+# neighbours to the ports of n6, so the seat records no lead. Its rows were centred between the two stems, and that range holds the
+# padding of g1 above n6. With n5 in slot 1, 2 or 3 of the g0 row, n5 stands over g2, a foreign box: the deepest row fell under the top
+# of g2, so its leg from n5 went into g2, and the routed channel fallback found no way out (`BUNDLE_CHANNEL_BLOCKED`, on main).
+# The rows now keep clear of every foreign box (and one edge margin off every group edge, g1 included): they move toward n5 past
+# g2. All six slots publish, every gate passes, and in slots 0, 4 and 5 the bundle links stand vertical.
+# Test test/layout/bundle-rows-foreign-box.test.ts.
+portograph: 2
+groups:
+  g0: { tier: 0 }
+  g1: { tier: 1 }
+  g2: { tier: 1 }
+nodes:
+  n0: { group: g0, label: n0 }
+  n1: { group: g0, label: n1 }
+  n2: { group: g0, label: n2 }
+  n3: { group: g0, label: n3 }
+  n4: { group: g0, label: n4 }
+  n5: { group: g0, label: n5 }
+  n6: { group: g1, label: n6, ports: [{ name: p0xxxxxxxxxxxx }, { name: p1xxxxxx }, { name: p2xxxxxx }] }
+  n7: { group: g2, label: n7, ports: [{ name: p0xxxxxxxxx }] }
+links:
+  - [n6.p0xxxxxxxxxxxx, n5]
+  - [n6.p1xxxxxx, n5]
+  - [n6.p2xxxxxx, n5]
+  - [n7.p0xxxxxxxxx, n5]

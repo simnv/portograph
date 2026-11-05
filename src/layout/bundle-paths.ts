@@ -3,8 +3,8 @@ import type { Bundle, LayoutModel, LayoutPath, Owner, PathSegment, Point, Rect }
 import { clearBundleMembers, routeBundleChannel } from './bundle-channel.js';
 import { mergeMembers } from './bundle-merge.js';
 import { bundleFans, crossBundleFans } from './bundle-junctions.js';
-import { junctionChain, junctionFan, mergedRun, sharedStem } from '../score/model.js';
-import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
+import { groupBoxes, groupConsumers, junctionChain, junctionFan, mergedRun, sharedStem } from '../score/model.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '../geometry/planar.js';
 import { MEMBER_GAP, MIN_STEM, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, inversionPairs, members, normal, outward, pitch, type DepthPair, type Member } from './bundle-geometry.js';
 import { bundleTurnSpan } from './bundle-need.js';
@@ -320,16 +320,59 @@ function alongFrame(segment: PathSegment, box: Rect, margin: number): boolean {
   return false;
 }
 
+/**
+ * The depths at which the turn row of `item` would bring its path into a foreign box (architecture-2 ticket 76), as open intervals.
+ * A foreign box is one gate G2 holds the member out of (`groupBoxes` that do not consume it) and a node body that is no end of the
+ * bundle; each keeps its gate margin. A box over the member's run forbids its own depth band; a box over the leg from the near end
+ * also forbids every deeper row, because the leg would reach it; a box over the leg to the far end forbids every shallower row.
+ */
+function foreignDepths(model: LayoutModel, bundle: Bundle, item: Member, n: Point, margin: number, stroke: number): DepthPair[] {
+  const horizontal = n.x !== 0, depth = (p: Point): number => n.x * p.x + n.y * p.y;
+  const tangent = (p: Point): number => (horizontal ? p.y : p.x);
+  const a = tangent(item.a.anchor!), b = tangent(item.b.anchor!), faceA = depth(item.a.anchor!), faceB = depth(item.b.anchor!);
+  const boxes = groupBoxes(model).filter(({ id }) => !groupConsumers(model, id).includes(item.link.id)).map(({ bounds }) => ({ box: bounds, reach: margin }));
+  for (const node of Object.values(model.nodes)) {
+    if (bundle.nodes.includes(node.id)) continue;
+    boxes.push({ box: node.bounds!, reach: 10 + (stroke + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2 });
+  }
+  const result: DepthPair[] = [];
+  for (const { box, reach } of boxes) {
+    const t0 = horizontal ? box.y : box.x, t1 = t0 + (horizontal ? box.height : box.width);
+    const depths = [depth({ x: box.x, y: box.y }), depth({ x: box.x + box.width, y: box.y + box.height })];
+    const d0 = Math.min(...depths) - reach, d1 = Math.max(...depths) + reach;
+    const over = (low: number, high: number): boolean => t0 - reach < high - EPS && t1 + reach > low + EPS;
+    if (!over(Math.min(a, b), Math.max(a, b))) continue;
+    result.push([d0, d1]);
+    if (over(a, a) && d1 > faceA + EPS) result.push([d0, Infinity]);
+    if (over(b, b) && d0 < faceB - EPS) result.push([-Infinity, d1]);
+  }
+  return result;
+}
+
+/** A row strictly inside one of `blocked` moves `direction`-ward to its edge; bounded, so a chain of intervals cannot loop. */
+function clearOfBlocked(value: number, blocked: DepthPair[], direction: 1 | -1): number {
+  let result = value;
+  for (let guard = 0; guard <= blocked.length; guard++) {
+    const hit = blocked.find(([low, high]) => result > low + EPS && result < high - EPS);
+    if (!hit) return result;
+    result = direction < 0 ? hit[0] : hit[1];
+  }
+  return result;
+}
+
 /** Non-inverted members turn in distinct rows, including when their endpoint pitches differ. */
 function parallelPaths(model: LayoutModel, bundle: Bundle, list: Member[], q: number): Map<string, PathSegment[]> {
   const n = normal(list[0]!.a.side!), horizontal = n.x !== 0;
   const depth = (p: Point): number => n.x * p.x + n.y * p.y;
   const start = Math.max(...list.map(item => depth(item.a.anchor!))) + 15;
   const end = Math.min(...list.map(item => depth(item.b.anchor!))) - 15;
-  // A canton frame is a group edge too (ADR-0013), but it is no entry of `model.groups`: its cells are. The rows are centred in the channel
-  // unless that leaves a segment of the bundle along a frame edge; then the rows move one edge margin off the edge toward the near end, or
-  // else toward the far end, whichever keeps every row and stem clear of every frame. Rows that fit no way stay centred and are named.
-  const margin = edgeMargin(Math.max(...list.map(item => linkStrokeWidth(item.link))));
+  // A frame (a canton frame too) is a group edge (ADR-0013), and so is a plain group's box; a cell is not. The rows are centred in the
+  // channel unless that leaves a segment of the bundle along such an edge; then the rows move one edge margin off the edge toward the near
+  // end, or else toward the far end, whichever keeps every row and stem clear of every box. Rows that fit no way stay centred and are named.
+  // The rows also keep clear of every foreign box (`foreignDepths`): a strategy whose rows stand in one is not taken (ticket 76).
+  const stroke = Math.max(...list.map(item => linkStrokeWidth(item.link))), margin = edgeMargin(stroke);
+  // The boxes gate G6 holds a segment off the edges of (`groupBoxes`): every frame and every plain group, the bundle's own included.
+  const boxes = groupBoxes(model).map(({ bounds }) => ({ box: bounds }));
   const groups = [-1, 1].map(direction => {
     const turning = list.filter(item => Math.sign(coordinate(item.b) - coordinate(item.a)) === direction)
       .sort((a, b) => -direction * (coordinate(a.a) - coordinate(b.a)));
@@ -337,28 +380,40 @@ function parallelPaths(model: LayoutModel, bundle: Bundle, list: Member[], q: nu
     if (turning.length && end - start < span - PLACEMENT_EPS) {
       throw new BundleFeasibilityError('BUNDLE_CHANNEL_CAPACITY', bundle.id, `Need ${span} px for distinct member turns, have ${end - start}.`);
     }
-    // Only a frame whose box overlaps the row along its length can hold the row; one elsewhere on the canvas cannot.
+    // Only a box that overlaps the row along its length can hold the row; one elsewhere on the canvas cannot.
     const lows = turning.map(item => Math.min(item.a.anchor![horizontal ? 'y' : 'x'], item.b.anchor![horizontal ? 'y' : 'x']));
     const highs = turning.map(item => Math.max(item.a.anchor![horizontal ? 'y' : 'x'], item.b.anchor![horizontal ? 'y' : 'x']));
     const [lo, hi] = [Math.min(...lows), Math.max(...highs)];
-    const pairs: DepthPair[] = (model.frames ?? []).filter(({ box }) => horizontal
+    const pairs: DepthPair[] = boxes.filter(({ box }) => horizontal
       ? box.y < hi && box.y + box.height > lo : box.x < hi && box.x + box.width > lo).map(({ box }) => {
       const values = [depth({ x: box.x, y: box.y }), depth({ x: box.x + box.width, y: box.y + box.height })];
       return [Math.min(...values), Math.max(...values)] as DepthPair;
     });
-    return { turning, first: (start + end - span) / 2, pairs };
+    const blocked = turning.map(item => foreignDepths(model, bundle, item, n, margin, stroke));
+    return { turning, first: (start + end - span) / 2, pairs, blocked };
   });
+  // A row moves off a frame edge and out of a foreign box, in turn, until neither moves it; bounded like each of the two.
+  const clearOf = (value: number, pairs: DepthPair[], blocked: DepthPair[], direction: 1 | -1): number => {
+    let result = value;
+    for (let guard = 0; guard < 8; guard++) {
+      const next = clearOfBlocked(clearOfGroupEdges(result, pairs, direction, margin), blocked, direction);
+      if (next === result) return result;
+      result = next;
+    }
+    return result;
+  };
   const build = (strategy: 'centre' | 'near' | 'far'): { paths: Map<string, PathSegment[]>; fits: boolean } => {
     const paths = new Map<string, PathSegment[]>();
     let fits = true;
-    for (const { turning, first, pairs } of groups) {
+    for (const { turning, first, pairs, blocked } of groups) {
       const rows: number[] = [];
       if (strategy === 'near') {
-        for (let i = turning.length - 1; i >= 0; i--) rows[i] = clearOfGroupEdges(Math.min(first + i * q, (rows[i + 1] ?? Infinity) - q), pairs, -1, margin);
+        for (let i = turning.length - 1; i >= 0; i--) rows[i] = clearOf(Math.min(first + i * q, (rows[i + 1] ?? Infinity) - q), pairs, blocked[i]!, -1);
       } else for (let i = 0; i < turning.length; i++) {
-        rows[i] = strategy === 'far' ? clearOfGroupEdges(Math.max(first + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, 1, margin) : first + i * q;
+        rows[i] = strategy === 'far' ? clearOf(Math.max(first + i * q, (rows[i - 1] ?? -Infinity) + q), pairs, blocked[i]!, 1) : first + i * q;
       }
       if (rows.length && (rows[0]! < start - PLACEMENT_EPS || rows[rows.length - 1]! > end + PLACEMENT_EPS)) fits = false;
+      if (rows.some((row, i) => blocked[i]!.some(([low, high]) => row > low + EPS && row < high - EPS))) fits = false;
       for (const [index, item] of turning.entries()) {
         const a = item.a.anchor!, b = item.b.anchor!, row = rows[index]!;
         paths.set(item.link.id, polyline(horizontal
@@ -369,9 +424,9 @@ function parallelPaths(model: LayoutModel, bundle: Bundle, list: Member[], q: nu
     return { paths, fits };
   };
   const clear = (paths: Map<string, PathSegment[]>): boolean => ![...paths.values()].flat()
-    .some(segment => (model.frames ?? []).some(({ box }) => alongFrame(segment, box, margin)));
+    .some(segment => boxes.some(({ box }) => alongFrame(segment, box, margin)));
   const centred = build('centre');
-  if (clear(centred.paths)) return centred.paths;
+  if (centred.fits && clear(centred.paths)) return centred.paths;
   for (const strategy of ['near', 'far'] as const) {
     const moved = build(strategy);
     if (moved.fits && clear(moved.paths)) return moved.paths;
