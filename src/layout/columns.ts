@@ -886,9 +886,16 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   }).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));
   // Lefts of a run kept a band gap apart, less the offset of that run, must not fall: pool adjacent violators on
   // the wanted lefts, the nearest point of each range to where the unit stands in the plan so far.
-  const offsets: number[] = [];
-  let sum = 0;
-  for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
+  // The outer pass keeps the spacing of `runSpacing` (R1, one rule): a frame beside a plain group keeps `COLUMN_SLACK` on its side also at
+  // slack 0, as gate G9 reads it. A sibling that pulls pushes a unit with no wish to exactly this spacing (ticket 74).
+  let offsets: number[] = [];
+  if (scope === undefined) {
+    const rect = new Map(standing.map(item => [item.unit, { x: item.x, y: 0, width: item.width, height: 0 }] as const));
+    offsets = runSpacing(model, standing.map(item => item.unit), unit => rect.get(unit)!, columnSlack);
+  } else {
+    let sum = 0;
+    for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
+  }
   // A pinned unit stays where the overlay order put it; it splits the run. The units on either side are pooled apart, each side
   // between its own pins (ticket 67): pooled across a pin, two wishes of opposite sign would average and move a unit away from its own
   // feed range, and a packed run with a pin would not be a fixed point.

@@ -1078,13 +1078,12 @@ Primary facing blocks remain aligned. Secondary flank blocks clear intervening n
 actual stroke-aware bounds. Growth translates downstream bands and attached flanks before paths.
 Existing lane identity, owner, x and width never change.
 
-The repack after the seat can move one end of a block along x and not the other (a frame column
-keeps a band gap and its slack from the one before; a column is pulled toward its feed). The
-block then stands off the ports it aligned, and the next replay would seat it again: an x move
-that a y-only rebuild (the tier-gap solve of 7f) may not make. So the blocks are seated again
-on the repacked geometry until the repack moves no block's ends apart, at most
-`BUNDLE_SEAT_ROUNDS` (4) per call; a block still apart is named, `BUNDLE_BLOCK_UNSETTLED`
-(warning), and keeps the last seat (architecture-2 ticket 74).
+A block seated along x records its lead, `Bundle.lead`: the end whose first port stands farthest
+along the tier, which the other end grows to and follows. A block with no single lead, a flank
+floor or a lane that decides its start, or a far end that cannot grow to it (the block stands
+bent) records none. The column pull reads the record: a column whose every feed is the far end of
+a block it leads has no feed range, because the seat has decided where that feed stands
+(architecture-2 ticket 74).
 
 Reserve crossing width/rows before creating paths. Strict endpoint-pair inversions ignore shared
 port ties. Distinct engine ports use a common order where authored precedence permits it. Shared
@@ -1651,6 +1650,15 @@ slack and never leaves less than a band gap between two frame boxes. `separateFr
 in the `rows` rule, after every row group has its width, and moves each frame as a whole with one
 dx until the gap is a band gap again. `orderFramesByOverlay` re-packs the columns in the order the
 overlay links ask for.
+
+`holdColumnAxes` pulls each frame column of a tier toward its feeds: the units of the tier keep a
+band gap apart by pool adjacent violators on the moves that reach each feed range. Only a unit
+with a feed range has a wish in the pool. A unit with none (a row group, a frame with no feed, or
+a frame whose feeds all follow it, `Bundle.lead`) stands where it stands until a sibling pushes it
+(architecture-2 ticket 74). A wish to stay took half of a sibling's deficit and stood elsewhere for
+the next call, which took half again: every replay moved the tier in x, and the y-only rebuild of
+the tier-gap solve refused the move. Without it the feeds are the only fixed end, and a second
+call keeps the plan of the first.
 
 ## Stage 8 — route (remainder)
 
