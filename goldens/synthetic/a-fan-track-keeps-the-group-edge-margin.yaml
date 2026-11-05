@@ -7,6 +7,8 @@
 # so it is the edge keeper: the junction moves out along the port's column past the frame's top margin
 # (inside the rows the fan holds), link-3 turns right there, link-2 turns left and rises on `c1`'s
 # column: one L each, no step. Every gate passes; 6 routed bends; no warning.
+# Since architecture-2 ticket 75 `home` reaches its feeds (the plain group `beside` no longer holds it half way), `c1`'s port stands
+# inside `home`'s x span and no edge keeper arises; every gate still passes. Ticket 77 restores the scenario.
 portograph: 2
 groups:
   up: { tier: 2, label: "Up" }
