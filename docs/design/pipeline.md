@@ -1078,6 +1078,13 @@ Primary facing blocks remain aligned. Secondary flank blocks clear intervening n
 actual stroke-aware bounds. Growth translates downstream bands and attached flanks before paths.
 Existing lane identity, owner, x and width never change.
 
+A block seated along x records its lead, `Bundle.lead`: the end whose first port stands farthest
+along the tier, which the other end grows to and follows. A block with no single lead, a lane
+that decides its start, or a far end that cannot grow to it (the block stands bent) records none. The column pull reads the record: a column whose every feed is the far end of
+a block it leads has no feed range in the outer pass, because the seat has decided where that
+feed stands (architecture-2 ticket 74). The canton inner pass keeps the feed range of such a
+member.
+
 Reserve crossing width/rows before creating paths. Strict endpoint-pair inversions ignore shared
 port ties. Distinct engine ports use a common order where authored precedence permits it. Shared
 incidence uses a deterministic search capped at 4096 endpoint-order pairs. Exhaustion emits
@@ -1643,6 +1650,15 @@ slack and never leaves less than a band gap between two frame boxes. `separateFr
 in the `rows` rule, after every row group has its width, and moves each frame as a whole with one
 dx until the gap is a band gap again. `orderFramesByOverlay` re-packs the columns in the order the
 overlay links ask for.
+
+`holdColumnAxes` pulls each frame column of a tier toward its feeds: the units of the tier keep a
+band gap apart by pool adjacent violators on the moves that reach each feed range. In the outer pass a unit whose
+every feed follows it (`Bundle.lead`, 7e) has no wish in the pool: it stands where it stands until a
+sibling pushes it (architecture-2 ticket 74). With a wish to stay it took half of a sibling's
+deficit, the next seat moved its feeds after it, and the next call took half again: every replay
+moved the tier in x, and the y-only rebuild of the tier-gap solve refused the move. Any other unit
+with no feed range still wishes to stay where it stands, and pooled with a sibling that pulls it
+moves half of the deficit at each call (architecture-2 ticket 75).
 
 ## Stage 8 — route (remainder)
 

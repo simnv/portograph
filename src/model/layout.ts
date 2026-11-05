@@ -329,6 +329,14 @@ export interface Bundle extends OwnedElement {
   /** Swept channel rectangles; consumers prefer these over the union for bent channels. */
   envelopeParts?: Rect[];
   inversions?: number;
+  /**
+   * The end the seat of a block along x (7e, `prepareBundleGeometry`) lined the block up from: the node whose first port stands
+   * farthest along the tier, so the other end grows to it and follows it (architecture-2 ticket 74). The column pull reads it: a column
+   * whose every feed is the far end of a block it leads has no x to reach (`feedsFollow`). Absent before the bundles stage (a lead then is
+   * refused as an unsupported claim), and when the block is not seated along x, both ends start at one x, a lane decides the start, or the
+   * far end cannot grow to it (the block stands bent). The record does not carry how far the far end can grow: ticket 75.
+   */
+  lead?: string;
 }
 
 export interface Junction extends OwnedElement {

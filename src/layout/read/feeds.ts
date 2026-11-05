@@ -84,6 +84,11 @@ export interface UnitFeeds {
   parents: Map<string, number>;
   /** The x of each distinct port of the unit, by port id, with the cell that holds it. */
   children: Map<string, { x: number; cell: string }>;
+  /**
+   * The parent ports, by id, that follow the unit: every link that reaches one is a member of a bundle block that the seat lined up
+   * from the unit's end (`Bundle.lead`, architecture-2 ticket 74), so the seat moves the port with the unit.
+   */
+  follow: Set<string>;
 }
 
 /**
@@ -94,6 +99,7 @@ export interface UnitFeeds {
 export function columnPullFeeds(model: LayoutModel, sources: ReadonlySet<string>, below: boolean): (unit: { groups: readonly LayoutGroup[] }) => UnitFeeds {
   return unit => {
     const parents = new Map<string, number>(), children = new Map<string, { x: number; cell: string }>();
+    const follow = new Set<string>(), fixed = new Set<string>();
     const mine = new Set(unit.groups.map(group => group.id));
     for (const link of model.links) {
       if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
@@ -117,9 +123,12 @@ export function columnPullFeeds(model: LayoutModel, sources: ReadonlySet<string>
         if (beyond && lane === undefined) continue;
         children.set(portId(child.ref), { x: child.anchor.x, cell: ownGroup });
         parents.set(portId(parent.ref), lane?.x ?? parent.anchor.x);
+        const bundle = link.bundle === undefined ? undefined : model.bundles.find(item => item.id === link.bundle);
+        (bundle?.lead === own!.node && bundle.nodes.includes(other!.node) ? follow : fixed).add(portId(parent.ref));
       }
     }
-    return { parents, children };
+    for (const key of fixed) follow.delete(key);
+    return { parents, children, follow };
   };
 }
 

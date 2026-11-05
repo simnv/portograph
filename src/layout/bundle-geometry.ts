@@ -538,6 +538,8 @@ export function prepareBundleGeometry(model: LayoutModel): void {
   if (!model.bundles.length && !treeCohorts(model).some(({ port }) => axis(port.side!) === 'x')) return;
   const oldBands = clone(model.tierBands);
   orderBundles(model);
+  // Every seat below decides its lead again; a block it does not seat along x has none.
+  for (const bundle of model.bundles) delete bundle.lead;
   const planned = new Map<string, Map<LayoutPort, number>>();
   const set = (port: LayoutPort, value: number): void => {
     const key = JSON.stringify([port.ref.node, port.side]);
@@ -571,7 +573,9 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const lead = new Map<string, number>(list.flatMap(m => [m.a, m.b]).map(p => [p.ref.node, leading(p)] as const));
     const sideOf = (id: string): Side => list.flatMap(m => [m.a, m.b]).find(p => p.ref.node === id)!.side!;
     const floorOf = (id: string): number => model.nodes[id]!.bounds![tangent] + portEndInsets(model.nodes[id]!, sideOf(id), spacing).low + (lead.get(id) ?? 0) * spacing;
-    const commonStart = Math.max(lower ?? -Infinity, ...bundle.nodes.map(floorOf));
+    const floors = bundle.nodes.map(floorOf), commonStart = Math.max(lower ?? -Infinity, ...floors);
+    // The ends that did not reach the common start: a limit left the block bent at their own floor.
+    const bent = new Set<string>();
     for (const end of ['a', 'b'] as const) {
       const far = end === 'a' ? 'b' : 'a';
       const ordered = [...list].sort((a, b) => a[end].engineOrder! - b[end].engineOrder! || a[far].engineOrder! - b[far].engineOrder! || a.link.sourceIndex - b.link.sourceIndex);
@@ -605,6 +609,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length - (lead.get(node.id) ?? 0);
         if (start + (sideCount - 1) * spacing + inset.high > limit) {
           start = floorOf(node.id);
+          if (start < commonStart - PLACEMENT_EPS) bent.add(node.id);
         }
       }
       ports.forEach(port => set(port, start + ordered.findIndex(m => m[end] === port) * spacing));
@@ -623,6 +628,11 @@ export function prepareBundleGeometry(model: LayoutModel): void {
       node.size!.width = node.bounds!.width;
       set(port, lane.x);
     }
+    // The record of the lead (R1): one end alone stands at the common start, no lane decided it, and the other end reached it. (`lower`, the
+    // flank floor, is passed only for a block seated along y.)
+    const leaders = bundle.nodes.filter((_, i) => floors[i]! >= commonStart - PLACEMENT_EPS);
+    const laned = model.lanes.some(lane => lane.owner.kind === 'link' && bundle.members.includes(lane.owner.id));
+    if (tangent === 'x' && leaders.length === 1 && !bent.size && !laned) bundle.lead = leaders[0]!;
     done.add(bundle.id);
   };
   // Primary facing blocks occupy the upper range; secondary corridors clear every intervening box.

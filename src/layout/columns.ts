@@ -289,7 +289,7 @@ export function packTier(model: LayoutModel, tier: Unit[], columns: Map<string, 
  * Overlay links are the overlay order's (tickets 05 and 06), stubs draw no path.
  */
 function feedReader(model: LayoutModel, tiers: Unit[][], index: number, authority: number | undefined): (unit: Unit) => UnitFeeds {
-  if (authority === undefined) return () => ({ parents: new Map(), children: new Map() });
+  if (authority === undefined) return () => ({ parents: new Map(), children: new Map(), follow: new Set() });
   return columnPullFeeds(model, new Set(tiers[authority]!.flatMap(unit => unit.groups.map(group => group.id))), index > authority);
 }
 
@@ -441,7 +441,9 @@ export function separateFrameColumns(model: LayoutModel): boolean {
  * target, met with the feed (`overlayRange`); a frame stays put, and bounds its siblings, only when no move meets both and the
  * partner is one that stays. A column that still jogs by
  * more than its cells can slide to absorb warns once, `COLUMN_AXIS_HELD`, with that residual in px. The pass
- * is idempotent: the feeds are the fixed end, so a second run wants exactly the plan the first one kept.
+ * is idempotent where the feeds are the fixed end: a second run wants exactly the plan the first one kept. A feed that follows its column
+ * (`feedsFollow`, ticket 74) is not fixed; such a column has no wish. A unit with no feed range for another reason still wishes to stay
+ * where it stands, and a second run moves it again (architecture-2 ticket 75).
  *
  * `slack` is the room a frame leaves its cells beyond its box and keeps beside a sibling: `COLUMN_SLACK` while the
  * rows rule runs, and 0 after centring has spent it (stage 7f, ticket 17: the frames stand a band gap apart and
@@ -734,11 +736,24 @@ function slideRange(model: LayoutModel, box: Rect, cellIds: Iterable<string>, ne
  * that moves the mean of its ports under the mean of its feeds, less what the cells that hold those ports can
  * slide inside the column (its box with the slack on each side). `undefined` for a frame with no feed.
  */
-function feedRange(model: LayoutModel, unit: Unit, feeds: (unit: Unit) => UnitFeeds, box: Rect, slack: number): MoveRange | undefined {
-  const { parents, children } = feeds(unit);
-  if (!parents.size || !children.size) return undefined;
+function feedRange(model: LayoutModel, unit: Unit, feeds: (unit: Unit) => UnitFeeds, box: Rect, slack: number, outer = true): MoveRange | undefined {
+  const read = feeds(unit), { parents, children } = read;
+  // In the outer pass a unit whose feeds follow it has no feed range; the canton inner pass (`outer` false) keeps it, as it has no unit without a wish.
+  if (!parents.size || !children.size || (outer && feedsFollow(read))) return undefined;
   const need = mean([...parents.values()]) - mean([...children.values()].map(child => child.x));
   return slideRange(model, box, [...children.values()].map(child => child.cell), need, slack);
+}
+
+/**
+ * Whether every feed of a unit follows it (architecture-2 ticket 74): each is the far end of a bundle block that the seat lined up from
+ * the unit's end (`Bundle.lead`), and the seat grows that end to the unit wherever the unit stands. The seat has decided the x of such a
+ * feed (R1), so the outer pull does not decide it again: the unit has no feed range, and so no wish in the pool of `pullTier`. A sibling that
+ * pulls toward a fixed feed pushes it the whole way in one pass. With the feed range of the block, the unit wanted to stand where the
+ * last seat had lined it up, the run moved half of the sibling's deficit, the next seat moved the feed after the unit, and every replay
+ * moved the column again (the x move that the y-only rebuild of the tier-gap solve refuses).
+ */
+function feedsFollow(feeds: UnitFeeds): boolean {
+  return feeds.parents.size > 0 && [...feeds.parents.keys()].every(key => feeds.follow.has(key));
 }
 
 /**
@@ -837,12 +852,12 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   const gap = bandGap(model), free = overlayFreeGroups(model, selectAnchorTier(model));
   // A frame with a feed wants the moves that reach the feed and every partner that stays (both ranges met). When
   // no move does, an overlay link to a group that stays holds the frame where it stands: it is pinned.
-  const held = new Map<Unit, HeldBy>(), pinned = new Set<Unit>(), wanting = new Set<Unit>(), flush = new Set<Unit>();
+  const held = new Map<Unit, HeldBy>(), pinned = new Set<Unit>(), wanting = new Set<Unit>(), flush = new Set<Unit>(), wishless = new Set<Unit>();
   const standing = tier.filter(inScope).map(unit => {
     const at = unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
     let range: MoveRange | undefined;
     if (unit.frame) {
-      range = feedRange(model, unit, feeds, at, columnSlack);
+      range = feedRange(model, unit, feeds, at, columnSlack, scope === undefined);
       const overlay = overlayRange(model, unit, tier, free, at, columnSlack);
       if (overlay !== undefined) {
         const met = range === undefined ? overlay : { ...range, low: Math.max(range.low, overlay.low), high: Math.min(range.high, overlay.high) };
@@ -867,7 +882,10 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     if (room.high < Infinity) to = Math.max(Math.min(to, room.high), at.x);
     if (room.low > -Infinity) from = Math.min(Math.max(from, room.low), at.x);
     from = Math.min(from, to); to = Math.max(from, to);
-    if (range !== undefined) wanting.add(unit);
+    // A unit whose feeds all follow it (`feedsFollow`) has no wish: the seat decides where its feeds stand, so it takes no part in the pool
+    // and stands where it stands until a sibling pushes it (ticket 74). Any other unit with no feed range still wishes to stay where it
+    // stands; pooled with a sibling that pulls, it takes half of the deficit at each call (architecture-2 ticket 75).
+    if (range !== undefined) wanting.add(unit); else if (!pinned.has(unit) && scope === undefined && feedsFollow(feeds(unit))) wishless.add(unit);
     return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from, to };
   }).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));
   // Lefts of a run kept a band gap apart, less the offset of that run, must not fall: pool adjacent violators on
@@ -896,16 +914,29 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     const below = fixed.map((_, i) => Math.max(-Infinity, ...fixed.slice(0, i + 1).filter((z): z is number => z !== undefined)));
     const above = fixed.map((_, i) => Math.min(Infinity, ...fixed.slice(i).filter((z): z is number => z !== undefined)));
     const segment = fixed.map((_, i) => 2 * fixed.slice(0, i).filter(z => z !== undefined).length + (fixed[i] !== undefined ? 1 : 0));
+    // A unit with no wish is left out of the pool (ticket 74). Pooled with a wish to stay where it stands, it took half of a sibling's
+    // deficit, the next seat moved its feeds after it, and the next call took half again: every replay moved the run in x. Left out, it
+    // stands where it stood unless the units of its segment that the pool placed push it, so a second call keeps the plan.
+    const noWish = standing.map(item => wishless.has(item.unit));
     const fit = (wanted: number[]): number[] => {
-      const blocks: { sum: number; count: number; segment: number }[] = [];
+      const blocks: { sum: number; count: number; segment: number; members: number[] }[] = [];
       for (const [at, wish] of wanted.entries()) {
-        blocks.push({ sum: wish - offsets[at]!, count: 1, segment: segment[at]! });
+        if (noWish[at]) continue;
+        blocks.push({ sum: wish - offsets[at]!, count: 1, segment: segment[at]!, members: [at] });
         while (blocks.length > 1 && blocks[blocks.length - 2]!.segment === blocks[blocks.length - 1]!.segment && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
           const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
-          before.sum += last.sum; before.count += last.count;
+          before.sum += last.sum; before.count += last.count; before.members.push(...last.members);
         }
       }
-      return blocks.flatMap(block => Array.from({ length: block.count }, () => block.sum / block.count)).map((base, at) => Math.min(Math.max(base, below[at]!), above[at]!) + offsets[at]!);
+      const base: number[] = wanted.map((wish, at) => wish - offsets[at]!);
+      for (const block of blocks) for (const at of block.members) base[at] = block.sum / block.count;
+      for (const [at, isFree] of noWish.entries()) {
+        if (!isFree) continue;
+        const same = (other: number): boolean => segment[other] === segment[at];
+        const before = base.filter((_, other) => other < at && same(other)), after = base.filter((_, other) => other > at && !noWish[other] && same(other));
+        base[at] = Math.min(Math.max(base[at]!, ...before), ...after);
+      }
+      return base.map((value, at) => Math.min(Math.max(value, below[at]!), above[at]!) + offsets[at]!);
     };
     let lefts = standing.map(item => item.x);
     for (let round = 0; round < 200; round++) {
@@ -1058,7 +1089,7 @@ function reportHeld(model: LayoutModel, tier: Unit[], feeds: (unit: Unit) => Uni
   for (const unit of tier.filter(item => item.frame)) {
     // The first owner is the column that is held; a member's warning names its canton as the second.
     model.diagnostics = model.diagnostics.filter(item => !(item.code === COLUMN_AXIS_HELD && item.owners?.[0] !== undefined && 'id' in item.owners[0] && item.owners[0].id === unit.id));
-    const range = feedRange(model, unit, feeds, derived.find(item => item.id === unit.id)!.box, slack);
+    const range = feedRange(model, unit, feeds, derived.find(item => item.id === unit.id)!.box, slack, scope === undefined);
     // Standing where it stands, the column reaches its feed when 0 lies in the range of moves.
     const residual = range === undefined ? 0 : Math.max(0, range.low, -range.high);
     if (residual > 0.5) model.diagnostics.push({ stage: 'placement', severity: 'warning', code: COLUMN_AXIS_HELD,

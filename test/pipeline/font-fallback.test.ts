@@ -16,9 +16,11 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // maintainer's approval of the regenerated golden.
 // Architecture-2 ticket 73 re-baselined both: every published model gains `feedSplits: []` and its freeze copy (the hash without that key is
 // the old one: 724ccda3... and 95beda34...).
+// Architecture-2 ticket 74 re-baselined synthetic/drawio-constructs: its bundle gains only `lead` (the hash without that key is the old
+// one: b956d053...).
 const baselines = {
   'm1-sip-edge': '70e112a351077e34a8e68f3ff97741985e8f51fc0980a6b3505452286298445a',
-  'synthetic/drawio-constructs': 'b956d053f1a3f5c1bae27c9857ae60e37149d4b36b7c8d512f1f83381b9ed8c9',
+  'synthetic/drawio-constructs': '2f8dee6c7b7047b40bf5a1619e6d7f35e61c80fbbd3c0bbd97dcbb25f6ebab96',
 };
 
 for (const [fixture, baseline] of Object.entries(baselines)) {
