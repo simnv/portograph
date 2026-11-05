@@ -77,8 +77,8 @@ function revisionOf(model: LayoutModel): string {
  */
 const replaysOn = new WeakMap<LayoutModel, number>();
 /** The grid and the label bands, settled again: the part of a replay that does not rebuild the regions. No title stands in 7f (ticket 54). */
-export function replayGridAndBands(model: LayoutModel): void {
-  timed('grid-pack', () => alignLinkedGroupGridAndPack(model));
+export function replayGridAndBands(model: LayoutModel, honour?: ReadonlySet<string>): void {
+  timed('grid-pack', () => alignLinkedGroupGridAndPack(model, undefined, honour));
   timed('bands', () => resyncLabelBands(model));
 }
 /**
@@ -459,7 +459,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // recorded, every plan and every label room across a gap is read once, the gaps grow, and the claims a move in y changes are rebuilt.
   // After a growth the linkless step runs once more, as a round did after a growth before (ticket 76 review): a held chord whose slope the
   // growth changed may now cross a group with no links.
-  timed('solve-tier-gaps', () => solveTierGaps(draft, replayGridAndBands, model => moves && stepLinklessOutOfChords(model)));
+  timed('solve-tier-gaps', () => solveTierGaps(draft, (model, held) => replayGridAndBands(model, held), model => moves && stepLinklessOutOfChords(model)));
   note('solve-tier-gaps', 'done');
   // The end trim (architecture-2 ticket 68): after the last move in x, each body is trimmed to its ports and its content, and the boxes, the grid
   // and the bands are derived again. No node or port moves inside its group. Then a group may close up toward its sibling by the width the trim

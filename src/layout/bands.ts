@@ -762,7 +762,7 @@ function packRowsAfterGrid(model: LayoutModel): boolean {
  * left with the grid aligned and `GROUP_GRID_NON_CONVERGENCE` says a row may stand open. That warning is withdrawn by the next call that settles.
  * Returns whether the grid widened a box. With a shared `budget` the replay spends a pass of it.
  */
-export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreBudget): boolean {
+export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreBudget, honour?: ReadonlySet<string>): boolean {
   // A warning of an earlier call is stale once a later call settles: it is raised again below when this one does not.
   model.diagnostics = model.diagnostics.filter(item => !(item.code === 'GROUP_GRID_NON_CONVERGENCE' && item.message.startsWith(GRID_PACK_WARNING)));
   let widened = false;
@@ -772,7 +772,7 @@ export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreB
     if (budget !== undefined) consumeGrowthPass(budget, passes);
   };
   for (let round = 0; round < GRID_PACK_ROUNDS; round++) {
-    const grid = alignGrid(model);
+    const grid = alignGrid(model, honour);
     if (!grid.changed) return widened;
     widened = true;
     // A grid that refuses what the pack would undo widens onto a packed row and leaves it packed; a row that stood open before the grid is packed once.
@@ -783,7 +783,7 @@ export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreB
     replay();
   }
   // The grid still widened after the last pack. The model is left with the grid aligned (`validateGroupLabelBands` reads the grid, and accepts it) and a row may stand open: say so.
-  const last = alignGrid(model);
+  const last = alignGrid(model, honour);
   if (last.changed) {
     // A flank moved by this last reading stands off the regions reserved beside it: replayed with the budget as it is, spent or not.
     if (last.flanksMoved) replay();
@@ -1038,6 +1038,19 @@ function flankShifts(model: LayoutModel, group: LayoutGroup, box: Rect): { group
 export function forgedRefusals(model: LayoutModel, honour: ReadonlySet<string>): string[] {
   const { shares } = alignGrid(model, honour);
   return [...honour].filter(key => shares.get(key) !== false);
+}
+/**
+ * The linked pairs of one axis whose boxes do not share an extent now, by the key the grid records (`x:a|b`). The tier-gap solve holds them apart
+ * through its rebuild in y (architecture-2 ticket 73).
+ */
+export function gridPairsApart(model: LayoutModel, axis: 'x' | 'y'): string[] {
+  const [pos, len] = axis === 'x' ? ['x', 'width'] as const : ['y', 'height'] as const;
+  return linkedGroupPairs(model).filter(pair => pair.axis === axis).flatMap(({ a, b }) => {
+    const members = [...a, ...b];
+    const low = Math.min(...members.map(group => group.bounds![pos])), high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
+    const shared = members.every(group => Math.abs(group.bounds![len] - (high - low)) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS);
+    return shared ? [] : [`${axis}:${members.map(group => group.id).sort().join('|')}`];
+  }).sort();
 }
 export function alignLinkedGroupGrid(model: LayoutModel, honour?: ReadonlySet<string>): boolean {
   return alignGrid(model, honour).changed;

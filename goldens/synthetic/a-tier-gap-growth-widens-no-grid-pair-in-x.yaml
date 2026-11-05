@@ -1,0 +1,39 @@
+# Expected: architecture-2 ticket 73, a regression of the tier-gap solve (the sweep input v6-2-1). The feed split of the first placement run
+# (edge-near | edge-far, 60.5 px) makes link-14 a spanning chord, and the span round places the sheet twice more. In those runs the last move
+# in x leaves `edge-near` narrower than `access` (the grid's x guard `holdsMove` refuses the widening on the gaps as they stand), and the
+# tier-gap solve grows the gap above tier 1. The rebuild in y of the solve held no grid pair apart, so the grid widened `edge-near` to the
+# extent of `access`, an x move, and the solve threw. Now the rebuild holds every x pair apart that stood apart, and records a pair the
+# grid would widen in `gridRefusals`. The sheet publishes: the first run's layout, bends 4 (8 on main), G5 fails as on main.
+# Test test/layout/feed-split.test.ts.
+portograph: 2
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  src0: { group: src, class: router, ports: [] }
+  src1: { group: src, class: router, ports: [] }
+  acc0: { group: access, class: switch, ports: [] }
+  acc1: { group: access, class: switch, ports: [] }
+  acc2: { group: access, class: switch, ports: [] }
+  acc3: { group: access, class: switch, ports: [] }
+  acc4: { group: access, class: switch, ports: [] }
+  acc5: { group: access, class: switch, ports: [] }
+  snk0: { group: edge-near, class: server, ports: [] }
+  snk1: { group: edge-far, class: server, ports: [] }
+links:
+  - [src0, acc0]
+  - [src1, acc1]
+  - [src0, acc2]
+  - [src1, acc3]
+  - [src0, acc4]
+  - [src1, acc5]
+  - [acc0, snk0]
+  - [acc1, snk0]
+  - [acc2, snk0]
+  - [acc3, snk0]
+  - [acc4, snk1]
+  - [acc5, snk1]
+  - [src0, snk1]
+  - [src1, snk1]

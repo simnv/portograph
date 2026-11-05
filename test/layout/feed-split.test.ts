@@ -194,4 +194,11 @@ links:
     const published = await run(yaml);
     expect(published.feedSplits).toEqual(five.feedSplits);
   }, 120000);
+
+  it('publishes the sheet whose span round grows a tier gap beside a linked pair the grid holds apart in x (sweep v6-2-1)', async () => {
+    // Before the fix the tier-gap solve of the span round's last run threw: its rebuild in y widened edge-near to the extent of access.
+    const model = await run(sheet('a-tier-gap-growth-widens-no-grid-pair-in-x'));
+    expect(model.feedSplits!.map(split => split.pair)).toEqual([['edge-near', 'edge-far']]);
+    expect(bends(model)).toBe(4);
+  }, 240000);
 });
