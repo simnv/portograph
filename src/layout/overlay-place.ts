@@ -1,6 +1,6 @@
 import type { LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import type { Point } from '../model/geometry.js';
-import { frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js';
+import { besideGap, frameColumns, overlayFreeGroups, type FrameColumn } from './columns.js';
 import { groupShape } from './grid.js';
 import { occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { holdsMove } from './move-reservations.js';
@@ -350,7 +350,7 @@ function chordBans(model: LayoutModel, group: LayoutGroup, overlays: readonly La
  * has room, and the rules that shift the connected part later (centring, the 7f replays) leave it behind: a gap as wide as the
  * shift. Placement reserves its place instead. After every partner is settled, a linkless group that stands outside the x-extent
  * of the other groups of its tier, and further than one band gap from the nearest of them, moves to one band gap from the extent
- * on the side it stood on. If that side has no room (a column of a frame, a lane), it tries the other side; if neither has, it stays.
+ * on the side it stood on, or `besideGap` where the extent ends at the column of a frame on its tier (ticket 75). If that side has no room (a column of a frame, a lane), it tries the other side; if neither has, it stays.
  * A group inside the extent stays. The step after this one (`stepOutOfChords`) moves it again where a straight chord crosses it.
  */
 export function standLinklessBeside(model: LayoutModel, tiers: readonly number[], free: ReadonlySet<string>, columns: readonly FrameColumn[]): boolean {
@@ -359,7 +359,7 @@ export function standLinklessBeside(model: LayoutModel, tiers: readonly number[]
     if (!link.attachments) continue;
     for (const end of [link.attachments.from.node, link.attachments.to.node]) linked.add(model.document.nodes[end]!.group);
   }
-  const gap = bandGap(model);
+  const gap = bandGap(model), beside = besideGap(model, true, false);
   let moved = false;
   for (const tier of tiers) {
     const groups = Object.values(model.groups).filter(group => group.tier === tier && group.bounds);
@@ -375,17 +375,20 @@ export function standLinklessBeside(model: LayoutModel, tiers: readonly number[]
     if (!standing.length) continue;
     // The frames and lanes of the tier are part of the connected extent: the nearest connected frame is what the gap is read from. A tier
     // with no connected group takes every column, since the frame boxes are wider than their cells.
-    const frames = columns.filter(column => !onTier.length || (column.from <= tier && tier <= column.to)).map(column => ({ low: column.x, high: column.x + column.width }));
-    const lanes = model.lanes.filter(lane => lane.tier === tier && !pending.some(item => item.id === lane.group)).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width }));
+    // A plain group keeps `besideGap` from the column of a frame on its own tier, the gap gate G9 reads (architecture-2 ticket 75); from the
+    // column of a frame on other tiers (a tier with no connected group), a group or a lane it keeps a band gap: G9 does not pair them.
+    const onOwnTier = (column: FrameColumn): boolean => column.from <= tier && tier <= column.to;
+    const frames = columns.filter(column => !onTier.length || onOwnTier(column)).map(column => ({ low: column.x, high: column.x + column.width, gap: onOwnTier(column) ? beside : gap }));
+    const lanes = model.lanes.filter(lane => lane.tier === tier && !pending.some(item => item.id === lane.group)).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width, gap }));
     const walls = (other: readonly LayoutGroup[]) => [
       ...other.map(item => ({ ...span(item), gap })),
-      ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap })),
+      ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap: beside })),
       ...lanes.map(lane => ({ ...lane, gap: 0 })),
     ];
     const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined && link.attachments && !overlayCourse(model, link));
     const rest = [...pending];
     while (rest.length) {
-      const parts = [...standing.map(span), ...frames, ...lanes];
+      const parts = [...standing.map(item => ({ ...span(item), gap })), ...frames, ...lanes];
       const extent = { low: Math.min(...parts.map(part => part.low)), high: Math.max(...parts.map(part => part.high)) };
       // The pending group nearest the extent goes first, so a second one stands beside the first.
       const distance = (group: LayoutGroup): number => {
@@ -404,7 +407,7 @@ export function standLinklessBeside(model: LayoutModel, tiers: readonly number[]
       const fits = (x: number): boolean => !banned.some(({ low, high }) => x > low + PLACEMENT_EPS && x < high - PLACEMENT_EPS)
         && !wall.some(item => x - reach.left < item.high + item.gap - PLACEMENT_EPS && x - reach.left + width > item.low - item.gap + PLACEMENT_EPS)
         && holdsMove(model, [{ group, bounds: { ...box, x } }], false);
-      const left = extent.low - gap - width + reach.left, right = extent.high + gap + reach.left;
+      const left = Math.min(...parts.map(part => part.low - part.gap)) - width + reach.left, right = Math.max(...parts.map(part => part.high + part.gap)) + reach.left;
       const wasLeft = one.high <= extent.low;
       // From the point one gap off the extent, outward to the first x clear of the chords: the edges of the banned intervals are the only other candidates.
       const outward = (start: number, sign: 1 | -1): number | undefined => [start, ...banned.flatMap(({ low, high }) => [low, high])]
@@ -427,7 +430,7 @@ export function standLinklessBeside(model: LayoutModel, tiers: readonly number[]
  * after every partner is settled: each such group stands at the x nearest its own where its box
  * crosses no straight overlay chord, using the chords as drawn (face to face) and counting a chord
  * that is straight once the group's own nodes are taken away. The x must keep the band gap to the
- * other groups and the lanes of the tier and stay inside their span; if no x does, the group goes
+ * other groups of the tier, `besideGap` to the frame columns of the tier (ticket 75), clear the lanes and stay inside their span; if no x does, the group goes
  * past the tier's end. A move that bends an overlay link that was straight is refused, with a warning.
  */
 export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], free: ReadonlySet<string>, columns: readonly FrameColumn[]): void {
@@ -452,7 +455,7 @@ export function stepOutOfChords(model: LayoutModel, tiers: readonly number[], fr
           const one = occupiedOverhang(model, item);
           return { low: item.bounds!.x - one.left, high: item.bounds!.x + item.bounds!.width + one.right, gap };
         }),
-        ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap })),
+        ...columns.filter(column => column.from <= tier && tier <= column.to).map(column => ({ low: column.x, high: column.x + column.width, gap: besideGap(model, true, false) })),
         ...model.lanes.filter(lane => lane.tier === tier).map(lane => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width, gap: 0 })),
       ];
       const width = box.width + reach.left + reach.right;
@@ -520,7 +523,7 @@ function tierWalls(model: LayoutModel, tier: number, groups: readonly LayoutGrou
       return { low, high, centre: (low + high) / 2, gap };
     }),
     ...columns.filter(column => column.from <= tier && tier <= column.to).map((column): Wall => ({ low: column.x, high: column.x + column.width,
-      centre: column.x + column.width / 2, gap })),
+      centre: column.x + column.width / 2, gap: besideGap(model, true, false) })),
     ...model.lanes.filter(lane => lane.tier === tier).map((lane): Wall => ({ low: lane.bounds.x, high: lane.bounds.x + lane.bounds.width,
       centre: lane.bounds.x + lane.bounds.width / 2, gap: 0 })),
   ].sort((a, b) => a.low - b.low);

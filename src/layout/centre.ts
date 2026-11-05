@@ -9,7 +9,7 @@ import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
 import { holds, profiles, reading, straightOf, tapVerdict, verdictTap } from './objective.js';
-import { besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
+import { besideGap, besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
 import { timed } from './attempt-timings.js';
@@ -341,8 +341,8 @@ function frameDepth(model: LayoutModel, id: string): number {
 /**
  * The window the columns of the frames of a tier leave a group (ranked-groups ticket 09). A rank cell
  * stays inside the column of its frame: the box of the cell, and the reach `cellReach` gives its
- * bodies and pills, lie between the column edges. Any other group stays out of the column of every
- * frame that spans its sub-tier, on the side it stands on. Unbounded for a tier with no frame.
+ * bodies and pills, lie between the column edges. Any other group stays `besideGap` out of the column of every
+ * frame that spans its sub-tier, on the side it stands on (the gap G9 reads, ticket 75). Unbounded for a tier with no frame.
  */
 function columnWindow(model: LayoutModel, context: CentreContext, tier: number, id: string): WideningLimit {
   const group = model.groups[id]!, box = group.bounds!;
@@ -360,7 +360,8 @@ function columnWindow(model: LayoutModel, context: CentreContext, tier: number, 
   }
   const window = { low: -Infinity, high: Infinity };
   if (!context.columns.some(column => column.from <= tier && tier <= column.to)) return window;
-  const reach = occupiedOverhang(model, group), centre = box.x + box.width / 2, gap = bandGap(model);
+  // A plain group keeps `besideGap` from the column edge: the frame may spend its room up to that edge (R1, the gap gate G9 reads).
+  const reach = occupiedOverhang(model, group), centre = box.x + box.width / 2, gap = besideGap(model, true, false);
   for (const column of context.columns.filter(item => item.from <= tier && tier <= item.to)) {
     if (centre < column.x + column.width / 2) window.high = Math.min(window.high, column.x - gap - reach.right);
     else window.low = Math.max(window.low, column.x + column.width + gap + reach.left);

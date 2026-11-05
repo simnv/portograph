@@ -1,0 +1,31 @@
+# Expected: architecture-2 ticket 75. A frame keeps its margin beside a plain group through centring: the frame box and the box of
+# the plain group beside it stand at least a band gap plus `COLUMN_SLACK` apart (`besideGap`, the gap gate G9 reads,
+# `separation-root-frame-group`). g1 is a frame of two ranks, g2 a plain group of one rank on the same document tier. The column pull
+# packs g2 at that gap from the frame, and the centring of g1#0 under its feed n1 would move the cell toward g2. The column of a frame
+# (`frameColumns`) spends no slack on the side where the plain group stands, and g2 keeps the gap from the column
+# edge (`columnWindow`), which is then the frame box. Before ticket 75 the column gave the frame its full slack toward g2, the cell took some of it
+# after g2 was placed, and G9 failed by 8.2 px (with the pull rule of ticket 75, which packs g2 at the gap). Every gate passes.
+# Tests test/layout/column-pull-wish.test.ts and test/pipeline/linkless-group-beside.test.ts (g2 linkless).
+portograph: 2
+profile: network
+groups:
+  g0: { tier: 0, label: g0 }
+  g1: { tier: 1, label: g1 }
+  g2: { tier: 1, label: g2 }
+  g3: { tier: 2, label: g3 }
+nodes:
+  n1: { group: g0, class: router, label: n1 aaaa aaaaaa aaa }
+  n0: { group: g0, class: router, label: n0 aaaa aaaaaa aaa }
+  n2: { group: g1, class: router, label: n2 aaaaaa aaaa aa aaa aaaaa aaaa, ports: [up, down] }
+  n3: { group: g1, class: router, label: n3 aaaaaa aaaa, ports: [up, out] }
+  n4: { group: g2, class: router, label: n4 aaaaaaaa aaaaaaaa aaaa aaa aaaaa, ports: [up, m1, m2] }
+  n7: { group: g3, class: router, label: n7 aaaa aa aaa aaaa, ports: [in] }
+  n5: { group: g3, class: router, label: n5 aaaa aaa, ports: [in] }
+  n6: { group: g3, class: router, label: n6 aaaa aaa, ports: [in] }
+links:
+  - [n0, n4.up]
+  - [n1, n2.up]
+  - [n2.down, n3.up]
+  - [n4.m1, n5.in, { class: dashed }]
+  - [n4.m2, n6.in, { class: dashed }]
+  - [n3.out, n7.in]

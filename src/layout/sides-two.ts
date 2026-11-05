@@ -10,7 +10,7 @@ import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } fro
 import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
-import { COLUMN_SLACK, separateFrameColumns } from './columns.js';
+import { besideGap, separateFrameColumns } from './columns.js';
 import { deriveFrames } from './frames.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { SideHintRefusal } from './placement-refusal.js';
@@ -767,7 +767,7 @@ export function sweepTiers(model: LayoutModel): void {
     let end = -Infinity, frameEnd = -Infinity, fixedEnd = -Infinity;
     for (const group of sorted) {
       let need = end;
-      if (mixed && fixed(group)) need = Math.max(need, frameEnd + gap + COLUMN_SLACK);
+      if (mixed && fixed(group)) need = Math.max(need, frameEnd + besideGap(model, true, false));
       if (group.bounds!.x < need) shift(group, need - group.bounds!.x);
       if (mixed && group.frame !== undefined) {
         const box = boxOf(group);
@@ -776,7 +776,7 @@ export function sweepTiers(model: LayoutModel): void {
         if (moved !== undefined) frameEnd = Math.max(frameEnd, moved.x + moved.width);
       }
       end = group.bounds!.x + group.bounds!.width + gap;
-      if (mixed && fixed(group)) fixedEnd = end + COLUMN_SLACK;
+      if (mixed && fixed(group)) fixedEnd = group.bounds!.x + group.bounds!.width + besideGap(model, false, true);
     }
   }
     // A frame moved whole stands in every band it occupies: the columns of the other bands keep their band gap and slack from its box (`columnShifts`), as the rows rule keeps them.

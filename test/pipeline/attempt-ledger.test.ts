@@ -56,7 +56,8 @@ const ROWS: Row[] = [
   row('an-overlay-leaves-a-lateral-side-past-a-sibling-body', '2/7/12/5', 2, 2, 2, 0, 0),
   // Ticket 22: a long, flat chord never joins perpendicular faces, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
   // The far-end pull (ticket 22) stands lb next to fe4, so its link is a chord (1/14/7/3 before).
-  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/13/7/3', 4, 1, 1, 0, 0, { probe: 1 }),
+  // Ticket 75: the pull is idempotent, so the 7f held-axes probe moves nothing (probe 1 before).
+  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/13/7/3', 4, 1, 1, 0, 0),
   row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/7/7/3', 2, 1, 1, 0, 0),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 162 (a diagonal may cross a title): the two feeds the canton titles refused are chords before centring, which takes them off (pre-7f chords
