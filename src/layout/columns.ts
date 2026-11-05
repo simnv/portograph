@@ -1408,19 +1408,24 @@ export function frameColumns(model: LayoutModel): FrameColumn[] {
   });
   const plain = Object.values(model.groups).filter(group => group.frame === undefined && group.bounds !== undefined && group.tier !== undefined);
   return tops.map(({ frame, cells, from, to }) => {
-    // The slack is what the boxes of the neighbours leave beyond the gap `besideGap` keeps from them; read off the boxes as they stand, so
-    // a replay of centring cannot spend it a second time. Two frames share it. A plain group beside the frame is a neighbour too: it stays
-    // `besideGap` from the column edge (`columnWindow`, the overlay and chord walls), so the frame takes all of it, and a plain group
-    // placed `besideGap` from the edge reads the same column again (a fixed point; halved, every read moved it in by half).
+    // The slack is what the boxes of the neighbour frames leave beyond a band gap, shared between the two; read off the boxes as they
+    // stand, so a replay of centring cannot spend it a second time. Toward a plain group that is its nearest neighbour the frame has no
+    // slack (architecture-2 ticket 75): the group stays `besideGap` from the column edge (`columnWindow`, the overlay and chord walls),
+    // which is then the frame box. Slack toward it read the group's own place: halved, every read moved a linkless group in by half; whole,
+    // a group placed while the slack was 20 stayed 20 px beyond the gap G9 reads.
     const boxes = [...tops.filter(other => other.frame !== frame && other.from <= to && other.to >= from).map(other => ({ box: other.frame.box, frame: true })),
       ...plain.filter(group => group.tier! >= from && group.tier! <= to).map(group => ({ box: group.bounds!, frame: false }))];
     const room = (side: 1 | -1): number => {
-      let free = Infinity;
+      let free = Infinity, nearest: { between: number; frame: boolean } | undefined;
       for (const other of boxes) {
         const between = side > 0 ? other.box.x - (frame.box.x + frame.box.width) : frame.box.x - (other.box.x + other.box.width);
-        if (between >= 0) free = Math.min(free, Math.max(0, between - besideGap(model, true, other.frame)) / (other.frame ? 2 : 1));
+        if (between < 0) continue;
+        if (nearest === undefined || between < nearest.between || (between === nearest.between && !other.frame)) nearest = { between, frame: other.frame };
+        if (other.frame) free = Math.min(free, Math.max(0, between - besideGap(model, true, true)) / 2);
       }
-      return Math.min(COLUMN_SLACK, free);
+      // A frame spends no slack toward a plain group that is its nearest neighbour on the side: every wall a plain group reads (the column
+      // edge and `besideGap`) is then the frame box and `besideGap`, the gap G9 reads, wherever the group stands (a fixed point).
+      return nearest !== undefined && !nearest.frame ? 0 : Math.min(COLUMN_SLACK, free);
     };
     const low = room(-1), high = room(1);
     return { id: frame.id, x: frame.box.x - low, width: frame.box.width + low + high, from, to, cells: new Set(cells),
