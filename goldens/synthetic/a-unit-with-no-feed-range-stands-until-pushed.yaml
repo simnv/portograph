@@ -1,10 +1,11 @@
-# Expected: architecture-2 ticket 74, a regression of the tier-gap solve (a reduced, anonymized real sheet). The column pull of tier 1
-# (`holdColumnAxes`) pools the frame g2, which pulls toward its feed on n5, with the row group g1. g1 has no feed range: with n5 last
-# in its row the seat lines the bundle n6 -> n5 up from n6 (`Bundle.lead` n6, n5 grows to it); in the other slots the block stands
-# bent. Pooled with a wish to stay where it stood, g1 took half of g2's deficit at each call, so every replay moved tier 1 in x, and the
-# rebuild in y of the tier-gap solve threw. A unit with no feed range now has no wish: g2 reaches its feed in one call and pushes g1,
-# and a second call keeps the plan. The sheet publishes, the three bundle links stand vertical, and n5 publishes in every slot of the
-# g0 row (on main slots 0, 2 and 5 threw). Test test/layout/column-pull-wish.test.ts.
+# Expected: architecture-2 ticket 74, a regression of the tier-gap solve (a reduced, anonymized real sheet). With n5 last in its row,
+# the seat lines the bundle n6 -> n5 up from n6 (`Bundle.lead` n6): n5 grows to the ports of n6. The column pull of tier 1
+# (`holdColumnAxes`) pooled the frame g2, which pulls toward its feed on n5, with g1, which wished to stay where it stood: the run
+# moved half of g2's deficit, the next seat moved n5 after n6, and every replay moved tier 1 in x, so the rebuild in y of the tier-gap
+# solve threw. A unit whose feeds all follow it now has no wish: g2 reaches its feed in one call and pushes g1, and a second call keeps
+# the plan. The sheet publishes and the three bundle links stand vertical; with g1 a frame it publishes in every slot of n5. In slots
+# 0 and 2 of the g0 row the block stands bent and g1 still wishes to stay: the tier-gap solve throws, as on main (ticket 75).
+# Test test/layout/column-pull-wish.test.ts.
 portograph: 2
 theme: snack
 layout: { nodeContent: card }

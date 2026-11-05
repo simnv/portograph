@@ -735,8 +735,8 @@ function slideRange(model: LayoutModel, box: Rect, cellIds: Iterable<string>, ne
  * slide inside the column (its box with the slack on each side). `undefined` for a frame with no feed.
  */
 function feedRange(model: LayoutModel, unit: Unit, feeds: (unit: Unit) => UnitFeeds, box: Rect, slack: number): MoveRange | undefined {
-  const { parents, children } = feeds(unit);
-  if (!parents.size || !children.size || feedsFollow(feeds(unit))) return undefined;
+  const read = feeds(unit), { parents, children } = read;
+  if (!parents.size || !children.size || feedsFollow(read)) return undefined;
   const need = mean([...parents.values()]) - mean([...children.values()].map(child => child.x));
   return slideRange(model, box, [...children.values()].map(child => child.cell), need, slack);
 }
@@ -879,23 +879,17 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     if (room.high < Infinity) to = Math.max(Math.min(to, room.high), at.x);
     if (room.low > -Infinity) from = Math.min(Math.max(from, room.low), at.x);
     from = Math.min(from, to); to = Math.max(from, to);
-    // A unit with no feed range (a row group, a frame with no feed, or one whose feeds all follow it, `feedsFollow`) has no wish: the pull
-    // does not own its x, so it takes no part in the pool and stands where it stands until a sibling pushes it (ticket 74).
-    if (range !== undefined) wanting.add(unit); else if (!pinned.has(unit) && scope === undefined) wishless.add(unit);
+    // A unit whose feeds all follow it (`feedsFollow`) has no wish: the seat decides where its feeds stand, so it takes no part in the pool
+    // and stands where it stands until a sibling pushes it (ticket 74). Any other unit with no feed range still wishes to stay where it
+    // stands; pooled with a sibling that pulls, it takes half of the deficit at each call (architecture-2 ticket 75).
+    if (range !== undefined) wanting.add(unit); else if (!pinned.has(unit) && scope === undefined && feedsFollow(feeds(unit))) wishless.add(unit);
     return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from, to };
   }).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));
   // Lefts of a run kept a band gap apart, less the offset of that run, must not fall: pool adjacent violators on
   // the wanted lefts, the nearest point of each range to where the unit stands in the plan so far.
-  // The outer pass keeps the spacing of `runSpacing` (R1, one rule): a frame beside a plain group keeps `COLUMN_SLACK` on its side also at
-  // slack 0, as gate G9 reads it. A sibling that pulls pushes a unit with no wish to exactly this spacing (ticket 74).
-  let offsets: number[] = [];
-  if (scope === undefined) {
-    const rect = new Map(standing.map(item => [item.unit, { x: item.x, y: 0, width: item.width, height: 0 }] as const));
-    offsets = runSpacing(model, standing.map(item => item.unit), unit => rect.get(unit)!, columnSlack);
-  } else {
-    let sum = 0;
-    for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
-  }
+  const offsets: number[] = [];
+  let sum = 0;
+  for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
   // A pinned unit stays where the overlay order put it; it splits the run. The units on either side are pooled apart, each side
   // between its own pins (ticket 67): pooled across a pin, two wishes of opposite sign would average and move a unit away from its own
   // feed range, and a packed run with a pin would not be a fixed point.
@@ -918,8 +912,8 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     const above = fixed.map((_, i) => Math.min(Infinity, ...fixed.slice(i).filter((z): z is number => z !== undefined)));
     const segment = fixed.map((_, i) => 2 * fixed.slice(0, i).filter(z => z !== undefined).length + (fixed[i] !== undefined ? 1 : 0));
     // A unit with no wish is left out of the pool (ticket 74). Pooled with a wish to stay where it stands, it took half of a sibling's
-    // deficit, and stood elsewhere for the next call, which took half again: the pass was not idempotent, and every replay moved the run
-    // in x. Left out, it stands where it stood unless the units of its segment that the pool placed push it, so a second call keeps the plan.
+    // deficit, the next seat moved its feeds after it, and the next call took half again: every replay moved the run in x. Left out, it
+    // stands where it stood unless the units of its segment that the pool placed push it, so a second call keeps the plan.
     const free = standing.map(item => wishless.has(item.unit));
     const fit = (wanted: number[]): number[] => {
       const blocks: { sum: number; count: number; segment: number; members: number[] }[] = [];

@@ -1652,13 +1652,13 @@ dx until the gap is a band gap again. `orderFramesByOverlay` re-packs the column
 overlay links ask for.
 
 `holdColumnAxes` pulls each frame column of a tier toward its feeds: the units of the tier keep a
-band gap apart by pool adjacent violators on the moves that reach each feed range. Only a unit
-with a feed range has a wish in the pool. A unit with none (a row group, a frame with no feed, or
-a frame whose feeds all follow it, `Bundle.lead`) stands where it stands until a sibling pushes it
-(architecture-2 ticket 74). A wish to stay took half of a sibling's deficit and stood elsewhere for
-the next call, which took half again: every replay moved the tier in x, and the y-only rebuild of
-the tier-gap solve refused the move. Without it the feeds are the only fixed end, and a second
-call keeps the plan of the first.
+band gap apart by pool adjacent violators on the moves that reach each feed range. A unit whose
+every feed follows it (`Bundle.lead`, 7e) has no wish in the pool: it stands where it stands until a
+sibling pushes it (architecture-2 ticket 74). With a wish to stay it took half of a sibling's
+deficit, the next seat moved its feeds after it, and the next call took half again: every replay
+moved the tier in x, and the y-only rebuild of the tier-gap solve refused the move. Any other unit
+with no feed range still wishes to stay where it stands, and pooled with a sibling that pulls it
+moves half of the deficit at each call (architecture-2 ticket 75).
 
 ## Stage 8 — route (remainder)
 
