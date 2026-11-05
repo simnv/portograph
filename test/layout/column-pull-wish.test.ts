@@ -85,7 +85,7 @@ describe('a unit with no feed range stands until it is pushed', () => {
     expect(model.links.every(link => link.path !== undefined)).toBe(true);
   }, 120000);
 
-  // Ticket 75: the block stands bent, g1 has no feed range and still wishes to stay, so the pull halves g2's deficit at each call and
+  // Ticket 75: the block records no lead, g1 has no feed range and still wishes to stay, so the pull halves g2's deficit at each call and
   // the tier-gap solve throws, as on main. The fix of ticket 75 makes these pass.
   it.fails.each([0, 2])('publishes with n5 in slot %i of its row (ticket 75)', async slot => {
     const model = await layout(parse(inSlot(SOURCE, slot)), options);
