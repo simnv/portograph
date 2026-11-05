@@ -174,10 +174,17 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel, 
     const before = xCoordinates(model);
     const rebuilt = (): void => timed('solve-rebuild', () => {
       rebuildRegionGeometry(model, undefined, undefined, true, false);
-      const live = JSON.parse(JSON.stringify(model)) as LayoutModel;
-      rebuild(live, new Set());
-      const stillApart = new Set(gridPairsApart(live, 'x'));
-      rebuild(model, new Set([...apart].filter(key => !stillApart.has(key))));
+      // The hold grows to a fixed point: a held pair keeps a box small, and so can admit a widening of another pair of its chain. Each round
+      // holds one more pair or ends, so at most `apart.size` + 1 rounds run (R4).
+      const hold = new Set<string>();
+      for (let round = 0; apart.size && round <= apart.size; round++) {
+        const live = JSON.parse(JSON.stringify(model)) as LayoutModel;
+        rebuild(live, hold);
+        const stillApart = new Set(gridPairsApart(live, 'x')), widened = [...apart].filter(key => !hold.has(key) && !stillApart.has(key));
+        if (!widened.length) break;
+        widened.forEach(key => hold.add(key));
+      }
+      rebuild(model, hold);
     });
     rebuilt();
     // What a growth inside a 7f round was followed by before ticket 57, done once here: the slopes and spans the growth changed can put a

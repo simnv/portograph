@@ -1041,8 +1041,8 @@ export function forgedRefusals(model: LayoutModel, honour: ReadonlySet<string>):
   return [...honour].filter(key => shares.get(key) !== false);
 }
 /**
- * The linked pairs of one axis whose boxes do not share an extent now, by the key the grid records (`x:a|b`). The tier-gap solve holds them apart
- * through its rebuild in y (architecture-2 ticket 73).
+ * The linked pairs of one axis whose boxes do not share an extent now, by the key the grid records (`x:a|b`). The tier-gap solve reads them
+ * before its growth and holds those a live grid would widen after it (architecture-2 ticket 73).
  */
 export function gridPairsApart(model: LayoutModel, axis: 'x' | 'y'): string[] {
   const [pos, len] = axis === 'x' ? ['x', 'width'] as const : ['y', 'height'] as const;
