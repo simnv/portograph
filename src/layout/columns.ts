@@ -289,7 +289,7 @@ export function packTier(model: LayoutModel, tier: Unit[], columns: Map<string, 
  * Overlay links are the overlay order's (tickets 05 and 06), stubs draw no path.
  */
 function feedReader(model: LayoutModel, tiers: Unit[][], index: number, authority: number | undefined): (unit: Unit) => UnitFeeds {
-  if (authority === undefined) return () => ({ parents: new Map(), children: new Map() });
+  if (authority === undefined) return () => ({ parents: new Map(), children: new Map(), follow: new Set() });
   return columnPullFeeds(model, new Set(tiers[authority]!.flatMap(unit => unit.groups.map(group => group.id))), index > authority);
 }
 
@@ -736,9 +736,21 @@ function slideRange(model: LayoutModel, box: Rect, cellIds: Iterable<string>, ne
  */
 function feedRange(model: LayoutModel, unit: Unit, feeds: (unit: Unit) => UnitFeeds, box: Rect, slack: number): MoveRange | undefined {
   const { parents, children } = feeds(unit);
-  if (!parents.size || !children.size) return undefined;
+  if (!parents.size || !children.size || feedsFollow(feeds(unit))) return undefined;
   const need = mean([...parents.values()]) - mean([...children.values()].map(child => child.x));
   return slideRange(model, box, [...children.values()].map(child => child.cell), need, slack);
+}
+
+/**
+ * Whether every feed of a unit follows it (architecture-2 ticket 74): each is the far end of a bundle block that the seat lined up from
+ * the unit's end (`Bundle.lead`), and the seat grows that end to the unit wherever the unit stands. The seat has decided the x of such a
+ * feed (R1), so the pull does not decide it again: the unit has no feed range, and so no wish in the pool of `pullTier`. A sibling that
+ * pulls toward a fixed feed pushes it the whole way in one pass. With the feed range of the block, the unit wanted to stand where the
+ * last seat had lined it up, the run moved half of the sibling's deficit, the next seat moved the feed after the unit, and every replay
+ * moved the column again (the x move that the y-only rebuild of the tier-gap solve refuses).
+ */
+function feedsFollow(feeds: UnitFeeds): boolean {
+  return feeds.parents.size > 0 && [...feeds.parents.keys()].every(key => feeds.follow.has(key));
 }
 
 /**
@@ -837,7 +849,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
   const gap = bandGap(model), free = overlayFreeGroups(model, selectAnchorTier(model));
   // A frame with a feed wants the moves that reach the feed and every partner that stays (both ranges met). When
   // no move does, an overlay link to a group that stays holds the frame where it stands: it is pinned.
-  const held = new Map<Unit, HeldBy>(), pinned = new Set<Unit>(), wanting = new Set<Unit>(), flush = new Set<Unit>();
+  const held = new Map<Unit, HeldBy>(), pinned = new Set<Unit>(), wanting = new Set<Unit>(), flush = new Set<Unit>(), wishless = new Set<Unit>();
   const standing = tier.filter(inScope).map(unit => {
     const at = unit.frame ? box.get(unit.id)! : unit.groups[0]!.bounds!;
     let range: MoveRange | undefined;
@@ -867,7 +879,9 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     if (room.high < Infinity) to = Math.max(Math.min(to, room.high), at.x);
     if (room.low > -Infinity) from = Math.min(Math.max(from, room.low), at.x);
     from = Math.min(from, to); to = Math.max(from, to);
-    if (range !== undefined) wanting.add(unit);
+    // A unit with no feed range (a row group, a frame with no feed, or one whose feeds all follow it, `feedsFollow`) has no wish: the pull
+    // does not own its x, so it takes no part in the pool and stands where it stands until a sibling pushes it (ticket 74).
+    if (range !== undefined) wanting.add(unit); else if (!pinned.has(unit) && scope === undefined) wishless.add(unit);
     return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from, to };
   }).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));
   // Lefts of a run kept a band gap apart, less the offset of that run, must not fall: pool adjacent violators on
@@ -896,16 +910,29 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     const below = fixed.map((_, i) => Math.max(-Infinity, ...fixed.slice(0, i + 1).filter((z): z is number => z !== undefined)));
     const above = fixed.map((_, i) => Math.min(Infinity, ...fixed.slice(i).filter((z): z is number => z !== undefined)));
     const segment = fixed.map((_, i) => 2 * fixed.slice(0, i).filter(z => z !== undefined).length + (fixed[i] !== undefined ? 1 : 0));
+    // A unit with no wish is left out of the pool (ticket 74). Pooled with a wish to stay where it stands, it took half of a sibling's
+    // deficit, and stood elsewhere for the next call, which took half again: the pass was not idempotent, and every replay moved the run
+    // in x. Left out, it stands where it stood unless the units of its segment that the pool placed push it, so a second call keeps the plan.
+    const free = standing.map(item => wishless.has(item.unit));
     const fit = (wanted: number[]): number[] => {
-      const blocks: { sum: number; count: number; segment: number }[] = [];
+      const blocks: { sum: number; count: number; segment: number; members: number[] }[] = [];
       for (const [at, wish] of wanted.entries()) {
-        blocks.push({ sum: wish - offsets[at]!, count: 1, segment: segment[at]! });
+        if (free[at]) continue;
+        blocks.push({ sum: wish - offsets[at]!, count: 1, segment: segment[at]!, members: [at] });
         while (blocks.length > 1 && blocks[blocks.length - 2]!.segment === blocks[blocks.length - 1]!.segment && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
           const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
-          before.sum += last.sum; before.count += last.count;
+          before.sum += last.sum; before.count += last.count; before.members.push(...last.members);
         }
       }
-      return blocks.flatMap(block => Array.from({ length: block.count }, () => block.sum / block.count)).map((base, at) => Math.min(Math.max(base, below[at]!), above[at]!) + offsets[at]!);
+      const base: number[] = wanted.map((wish, at) => wish - offsets[at]!);
+      for (const block of blocks) for (const at of block.members) base[at] = block.sum / block.count;
+      for (const [at, isFree] of free.entries()) {
+        if (!isFree) continue;
+        const same = (other: number): boolean => segment[other] === segment[at];
+        const before = base.filter((_, other) => other < at && same(other)), after = base.filter((_, other) => other > at && !free[other] && same(other));
+        base[at] = Math.min(Math.max(base[at]!, ...before), ...after);
+      }
+      return base.map((value, at) => Math.min(Math.max(value, below[at]!), above[at]!) + offsets[at]!);
     };
     let lefts = standing.map(item => item.x);
     for (let round = 0; round < 200; round++) {

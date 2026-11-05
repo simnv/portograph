@@ -531,19 +531,15 @@ export function orderBundles(model: LayoutModel): void {
   }
 }
 
-/** Rounds of the bundle seat and the repack in one `prepareBundleGeometry` (R4: a count, per call; ticket 74). */
-export const BUNDLE_SEAT_ROUNDS = 4;
-const BUNDLE_BLOCK_UNSETTLED = 'BUNDLE_BLOCK_UNSETTLED';
-
-/** The ends of a block seated along x and their x when it was seated: a repack that moves them by different amounts leaves the block apart. */
-interface SeatedBlock { bundle: Bundle; x: [number, number] }
-
-/**
- * One seat of every facing block (the flank blocks first, then the rest) and the install of the planned ports, from the geometry as it
- * stands. Returns the blocks seated along x, with the x of their ends.
- */
-function seatFacingBlocks(model: LayoutModel): SeatedBlock[] {
-  const seated: SeatedBlock[] = [];
+/** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */
+export function prepareBundleGeometry(model: LayoutModel): void {
+  // A diagram with no bundle still reserves the depth of its plain fans (ticket 20); one with
+  // neither has nothing to plan.
+  if (!model.bundles.length && !treeCohorts(model).some(({ port }) => axis(port.side!) === 'x')) return;
+  const oldBands = clone(model.tierBands);
+  orderBundles(model);
+  // Every seat below decides its lead again; a block it does not seat along x has none.
+  for (const bundle of model.bundles) delete bundle.lead;
   const planned = new Map<string, Map<LayoutPort, number>>();
   const set = (port: LayoutPort, value: number): void => {
     const key = JSON.stringify([port.ref.node, port.side]);
@@ -577,7 +573,9 @@ function seatFacingBlocks(model: LayoutModel): SeatedBlock[] {
     const lead = new Map<string, number>(list.flatMap(m => [m.a, m.b]).map(p => [p.ref.node, leading(p)] as const));
     const sideOf = (id: string): Side => list.flatMap(m => [m.a, m.b]).find(p => p.ref.node === id)!.side!;
     const floorOf = (id: string): number => model.nodes[id]!.bounds![tangent] + portEndInsets(model.nodes[id]!, sideOf(id), spacing).low + (lead.get(id) ?? 0) * spacing;
-    const commonStart = Math.max(lower ?? -Infinity, ...bundle.nodes.map(floorOf));
+    const floors = bundle.nodes.map(floorOf), commonStart = Math.max(lower ?? -Infinity, ...floors);
+    // The ends that did not reach the common start: a limit left the block bent at their own floor.
+    const bent = new Set<string>();
     for (const end of ['a', 'b'] as const) {
       const far = end === 'a' ? 'b' : 'a';
       const ordered = [...list].sort((a, b) => a[end].engineOrder! - b[end].engineOrder! || a[far].engineOrder! - b[far].engineOrder! || a.link.sourceIndex - b.link.sourceIndex);
@@ -611,6 +609,7 @@ function seatFacingBlocks(model: LayoutModel): SeatedBlock[] {
         const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length - (lead.get(node.id) ?? 0);
         if (start + (sideCount - 1) * spacing + inset.high > limit) {
           start = floorOf(node.id);
+          if (start < commonStart - PLACEMENT_EPS) bent.add(node.id);
         }
       }
       ports.forEach(port => set(port, start + ordered.findIndex(m => m[end] === port) * spacing));
@@ -629,7 +628,10 @@ function seatFacingBlocks(model: LayoutModel): SeatedBlock[] {
       node.size!.width = node.bounds!.width;
       set(port, lane.x);
     }
-    if (tangent === 'x') seated.push({ bundle, x: [model.nodes[bundle.nodes[0]]!.bounds!.x, model.nodes[bundle.nodes[1]]!.bounds!.x] });
+    // The record of the lead (R1): one end alone stands at the common start, nothing else decided it, and the other end reached it.
+    const leaders = bundle.nodes.filter((_, i) => floors[i]! >= commonStart - PLACEMENT_EPS);
+    const laned = model.lanes.some(lane => lane.owner.kind === 'link' && bundle.members.includes(lane.owner.id));
+    if (tangent === 'x' && leaders.length === 1 && (lower === undefined || lower < commonStart - PLACEMENT_EPS) && !bent.size && !laned) bundle.lead = leaders[0]!;
     done.add(bundle.id);
   };
   // Primary facing blocks occupy the upper range; secondary corridors clear every intervening box.
@@ -741,35 +743,8 @@ function seatFacingBlocks(model: LayoutModel): SeatedBlock[] {
     if (port.side === 'right') port.anchor!.x = right(node.bounds!);
     if (port.side === 'left') port.anchor!.x = node.bounds!.x;
   }
-  return seated;
-}
-
-/** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */
-export function prepareBundleGeometry(model: LayoutModel): void {
-  // A diagram with no bundle still reserves the depth of its plain fans (ticket 20); one with
-  // neither has nothing to plan.
-  if (!model.bundles.length && !treeCohorts(model).some(({ port }) => axis(port.side!) === 'x')) return;
-  const oldBands = clone(model.tierBands);
-  orderBundles(model);
-  // The repack after the blocks moves groups: a frame column stands a band gap and its slack from the one before (`separateFrameColumns`), and
-  // a column is pulled toward its feed (`holdColumnAxes`). A move of one end of a block and not the other leaves the block off the ports it
-  // aligned, and the next replay seats it again: a move in x that a y-only rebuild (the tier-gap solve, architecture-2 ticket 57) may not
-  // make (ticket 74). So the blocks are seated again on the repacked geometry until the repack moves no block's ends apart, at most
-  // `BUNDLE_SEAT_ROUNDS` times; a block still apart then is named (`BUNDLE_BLOCK_UNSETTLED`) and left as the last round seated it.
-  model.diagnostics = model.diagnostics.filter(item => item.code !== BUNDLE_BLOCK_UNSETTLED);
-  for (let round = 1; ; round++) {
-    const seated = seatFacingBlocks(model);
-    for (const group of Object.values(model.groups)) fitRegionGroup(model, group);
-    repackOverlaps(model);
-    const moved = (id: string, x: number): number => model.nodes[id]!.bounds!.x - x;
-    const apart = seated.filter(({ bundle, x }) => Math.abs(moved(bundle.nodes[0], x[0]) - moved(bundle.nodes[1], x[1])) > PLACEMENT_EPS).map(item => item.bundle);
-    if (!apart.length) break;
-    if (round === BUNDLE_SEAT_ROUNDS) {
-      model.diagnostics.push({ stage: 'placement', severity: 'warning', code: BUNDLE_BLOCK_UNSETTLED, owners: apart.map(bundle => bundle.owner),
-        message: `The port blocks of ${apart.map(bundle => bundle.id).join(', ')} still moved apart after ${BUNDLE_SEAT_ROUNDS} rounds of the bundle seat and the repack; the last seat is kept.` });
-      break;
-    }
-  }
+  for (const group of Object.values(model.groups)) fitRegionGroup(model, group);
+  repackOverlaps(model);
   rebuildBands(model);
   let shift = 0;
   for (const band of [...model.tierBands].sort((a, b) => a.tier - b.tier)) {

@@ -93,7 +93,7 @@ export function replayRegions(model: LayoutModel): void {
 }
 
 /** The codes a replay reads from the list or writes to it: a diagnostic of one of these, added after the copy was taken, could change what the replay does. */
-const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|LINK_LABEL|BUNDLE_BLOCK_UNSETTLED)/;
+const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|LINK_LABEL)/;
 
 /**
  * Take a settled copy as the state of `model`, which the caller still holds, when that is exactly what replaying `model` would give; otherwise
