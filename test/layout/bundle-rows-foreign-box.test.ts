@@ -4,6 +4,7 @@ import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { edgeMargin } from '../../src/layout/bundle-geometry.js';
 
 /**
  * Architecture-2 ticket 76: the turn rows of a bent bundle were centred between its two stems. That range holds the padding of the
@@ -26,10 +27,12 @@ function inSlot(source: string, slot: number): string {
 const bundled = (model: LayoutModel) => model.links.filter(link => link.bundle !== undefined);
 
 describe('a bent bundle turns clear of a foreign box', () => {
-  // On main the slots 1, 2 and 3 threw BUNDLE_CHANNEL_BLOCKED.
+  // On main the slots 1, 2 and 3 threw BUNDLE_CHANNEL_BLOCKED. The bundle's first end is n5, the upper one: g2 stands under the legs
+  // from the near end, so it forbids every deeper row.
   for (const slot of [1, 2, 3]) {
     it(`slot ${slot}: publishes, every gate passes, and every turn row stands one edge margin above g2`, async () => {
       const model = await layout(parse(inSlot(SOURCE, slot)), options);
+      expect(model.bundles.map(bundle => bundle.nodes[0])).toEqual(['n5']);
       const gates = score(model).snapshot.gates;
       for (const [id, gate] of Object.entries(gates)) if (gate.severity === 'error') expect(gate.violations, id).toEqual([]);
       const g2 = model.groups.g2!.bounds!, n5 = model.nodes.n5!.bounds!;
@@ -40,7 +43,7 @@ describe('a bent bundle turns clear of a foreign box', () => {
       for (const link of links) {
         const rows = link.path!.segments.filter(segment => segment.from.y === segment.to.y).map(segment => segment.from.y);
         expect(rows, link.id).toHaveLength(1);
-        expect(rows[0]!, link.id).toBeLessThanOrEqual(g2.y - 10.75 + 1e-6);
+        expect(rows[0]!, link.id).toBeLessThanOrEqual(g2.y - edgeMargin(1.5) + 1e-6);
       }
     }, 120000);
   }

@@ -308,7 +308,7 @@ function straightPaths(bundle: Bundle, list: Member[]): Map<string, PathSegment[
 }
 
 /**
- * Whether a segment runs along an edge of a frame box closer than the margin, read as gate G6 `segment-group-edge` reads it: parallel to
+ * Whether a segment runs along an edge of a group box (a frame or a plain group) closer than the margin, read as gate G6 `segment-group-edge` reads it: parallel to
  * the edge, overlapping it along its length, on or outside the box (strictly inside a box a link turns in its padding).
  */
 function alongFrame(segment: PathSegment, box: Rect, margin: number): boolean {
@@ -332,7 +332,8 @@ function foreignDepths(model: LayoutModel, bundle: Bundle, item: Member, n: Poin
   const a = tangent(item.a.anchor!), b = tangent(item.b.anchor!), faceA = depth(item.a.anchor!), faceB = depth(item.b.anchor!);
   const boxes = groupBoxes(model).filter(({ id }) => !groupConsumers(model, id).includes(item.link.id)).map(({ bounds }) => ({ box: bounds, reach: margin }));
   for (const node of Object.values(model.nodes)) {
-    if (bundle.nodes.includes(node.id)) continue;
+    // An overlay-layer node is no obstacle to a routed segment (gate G2 skips it too).
+    if (bundle.nodes.includes(node.id) || node.layer === 'overlay') continue;
     boxes.push({ box: node.bounds!, reach: 10 + (stroke + (node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2 });
   }
   const result: DepthPair[] = [];
@@ -433,7 +434,7 @@ function parallelPaths(model: LayoutModel, bundle: Bundle, list: Member[], q: nu
   }
   if (!model.diagnostics.some(d => d.code === 'BUNDLE_ROWS_ALONG_FRAME_EDGE' && equal(d.owners, [bundle.owner]))) {
     model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'BUNDLE_ROWS_ALONG_FRAME_EDGE', owners: [bundle.owner],
-      message: `The channel of ${bundle.id} has no rows that keep every member clear of a canton frame edge; the rows stay centred, and gate G6 reports what is left.` });
+      message: `The channel of ${bundle.id} has no rows that keep every member clear of every group edge and every foreign box; the rows stay centred, and gate G6 reports what is left.` });
   }
   return centred.paths;
 }
