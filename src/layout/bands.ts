@@ -760,9 +760,10 @@ function packRowsAfterGrid(model: LayoutModel): boolean {
  * named by `GROUP_GRID_YIELDS_TO_PACK`), so on a packed row it leaves the row packed. A row that stood open before the grid is packed once after it, the region
  * producers are replayed as any move asks, and the grid is read once more. At most `GRID_PACK_ROUNDS` rounds; when the grid still widens after them, the model is
  * left with the grid aligned and `GROUP_GRID_NON_CONVERGENCE` says a row may stand open. That warning is withdrawn by the next call that settles.
- * Returns whether the grid widened a box. With a shared `budget` the replay spends a pass of it.
+ * Returns whether the grid widened a box. With a shared `budget` the replay spends a pass of it. `hold` names pairs the grid leaves as they
+ * stand and records as refused while they stay apart (the rebuild in y of the tier-gap solve, architecture-2 ticket 73).
  */
-export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreBudget, honour?: ReadonlySet<string>): boolean {
+export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreBudget, hold?: ReadonlySet<string>): boolean {
   // A warning of an earlier call is stale once a later call settles: it is raised again below when this one does not.
   model.diagnostics = model.diagnostics.filter(item => !(item.code === 'GROUP_GRID_NON_CONVERGENCE' && item.message.startsWith(GRID_PACK_WARNING)));
   let widened = false;
@@ -772,7 +773,7 @@ export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreB
     if (budget !== undefined) consumeGrowthPass(budget, passes);
   };
   for (let round = 0; round < GRID_PACK_ROUNDS; round++) {
-    const grid = alignGrid(model, honour);
+    const grid = alignGrid(model, undefined, hold);
     if (!grid.changed) return widened;
     widened = true;
     // A grid that refuses what the pack would undo widens onto a packed row and leaves it packed; a row that stood open before the grid is packed once.
@@ -783,7 +784,7 @@ export function alignLinkedGroupGridAndPack(model: LayoutModel, budget?: CentreB
     replay();
   }
   // The grid still widened after the last pack. The model is left with the grid aligned (`validateGroupLabelBands` reads the grid, and accepts it) and a row may stand open: say so.
-  const last = alignGrid(model, honour);
+  const last = alignGrid(model, undefined, hold);
   if (last.changed) {
     // A flank moved by this last reading stands off the regions reserved beside it: replayed with the budget as it is, spent or not.
     if (last.flanksMoved) replay();
@@ -1047,20 +1048,23 @@ export function gridPairsApart(model: LayoutModel, axis: 'x' | 'y'): string[] {
   const [pos, len] = axis === 'x' ? ['x', 'width'] as const : ['y', 'height'] as const;
   return linkedGroupPairs(model).filter(pair => pair.axis === axis).flatMap(({ a, b }) => {
     const members = [...a, ...b];
-    const low = Math.min(...members.map(group => group.bounds![pos])), high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
-    const shared = members.every(group => Math.abs(group.bounds![len] - (high - low)) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS);
-    return shared ? [] : [`${axis}:${members.map(group => group.id).sort().join('|')}`];
+    return sharesExtent(members, pos, len) ? [] : [`${axis}:${members.map(group => group.id).sort().join('|')}`];
   }).sort();
+}
+/** Whether the boxes of `members` share one extent on the axis (`pos`, `len`): the one test of the grid and its readers. */
+function sharesExtent(members: readonly LayoutGroup[], pos: 'x' | 'y', len: 'width' | 'height'): boolean {
+  const low = Math.min(...members.map(group => group.bounds![pos])), high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
+  return members.every(group => Math.abs(group.bounds![len] - (high - low)) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS);
 }
 export function alignLinkedGroupGrid(model: LayoutModel, honour?: ReadonlySet<string>): boolean {
   return alignGrid(model, honour).changed;
 }
 /** The grid, and whether it moved a flank: the caller then owes the regions a replay (`alignLinkedGroupGridAndPack`). */
-function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed: boolean; flanksMoved: boolean; shares: ReadonlyMap<string, boolean> } {
+function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>, hold?: ReadonlySet<string>): { changed: boolean; flanksMoved: boolean; shares: ReadonlyMap<string, boolean> } {
   let changed = false, base: Set<string> | undefined;
   const flankMoved: string[] = [];
   const refused = new Set<string>(), heldOff = new Set<string>();
-  // The pairs a reservation guard refused are a decision of this call, recorded in `model.gridRefusals` (ticket 16). A caller that validates passes the record as `honour`: those pairs are skipped as the
+  // The pairs a reservation guard refused, and the pairs the caller holds (`hold`), are a decision of this call, recorded in `model.gridRefusals` (tickets 16, 73). A caller that validates passes the record as `honour`: those pairs are skipped as the
   // producer skipped them, because the lanes and gap plans the guards read have moved since, and every other pair is judged live.
   const decided = new Map<string, { members: LayoutGroup[]; pos: 'x' | 'y'; len: 'width' | 'height' }>(), keys = new Map<string, boolean>();
   model.diagnostics = model.diagnostics.filter(item => item.code !== 'GROUP_GRID_YIELDS_TO_PACK');
@@ -1079,10 +1083,12 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
       const key = `${axis}:${members.map(group => group.id).sort().join('|')}`;
       // A recorded refusal is consumed first, whatever skip would apply to the pair below: the validator judges whether the record is true on the final model.
       if (honour?.has(key)) continue;
+      // A held pair (producer only) is left as it stands and recorded like a refusal of this call while it stays apart.
+      if (hold?.has(key)) { decided.set(key, { members, pos, len }); continue; }
       const low = Math.min(...members.map(group => group.bounds![pos]));
       const high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
       const extent = high - low;
-      if (members.every(group => Math.abs(group.bounds![len] - extent) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS)) continue;
+      if (sharesExtent(members, pos, len)) continue;
       // A unit's own size is its union: one cell alone, or the column the cells of a frame make.
       const size = (unit: LayoutGroup[]): number => Math.max(...unit.map(group => group.bounds![pos] + group.bounds![len]))
         - Math.min(...unit.map(group => group.bounds![pos]));
@@ -1153,17 +1159,13 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>): { changed:
   if (changed) { rebuildBands(model); rebuildRegions(model); }
   if (honour === undefined) {
     // The record keeps the pairs this call refused that still stand apart; a pair a later pass made is not refused.
-    const apart = [...decided].filter(([, { members, pos, len }]) => {
-      const low = Math.min(...members.map(group => group.bounds![pos])), high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
-      return !members.every(group => Math.abs(group.bounds![len] - (high - low)) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS);
-    }).map(([key]) => key).sort();
+    const apart = [...decided].filter(([, { members, pos, len }]) => !sharesExtent(members, pos, len)).map(([key]) => key).sort();
     if (apart.length) model.gridRefusals = apart; else delete model.gridRefusals;
   }
   // Whether each linked pair shares an extent now: the validator reads the recorded pairs off this.
   if (honour !== undefined) for (const { a, b, axis } of linkedGroupPairs(model)) {
     const [pos, len] = axis === 'x' ? ['x', 'width'] as const : ['y', 'height'] as const, members = [...a, ...b];
-    const low = Math.min(...members.map(group => group.bounds![pos])), high = Math.max(...members.map(group => group.bounds![pos] + group.bounds![len]));
-    keys.set(`${axis}:${members.map(group => group.id).sort().join('|')}`, members.every(group => Math.abs(group.bounds![len] - (high - low)) <= PLACEMENT_EPS && Math.abs(group.bounds![pos] - low) <= PLACEMENT_EPS));
+    keys.set(`${axis}:${members.map(group => group.id).sort().join('|')}`, sharesExtent(members, pos, len));
   }
   return { changed, flanksMoved: flankMoved.length > 0, shares: keys };
 }

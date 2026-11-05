@@ -8,6 +8,7 @@ import { sizeNodes } from '../../src/layout/size.js';
 import { skeleton } from '../../src/layout/skeleton.js';
 import { sidesTwo } from '../../src/layout/sides-two.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { alignLinkedGroupGridAndPack, gridPairsApart } from '../../src/layout/bands.js';
 import { feedPairRoom } from '../../src/layout/feed-split.js';
 import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
 import { createAttempt } from './phase-two-fixture.js';
@@ -200,5 +201,15 @@ links:
     const model = await run(sheet('a-tier-gap-growth-widens-no-grid-pair-in-x'));
     expect(model.feedSplits!.map(split => split.pair)).toEqual([['edge-near', 'edge-far']]);
     expect(bends(model)).toBe(4);
+  }, 240000);
+
+  it('a grid pair the tier-gap solve holds stays as it stands and is recorded as refused (R1)', async () => {
+    const model = await run(sheet('a-tier-gap-growth-widens-no-grid-pair-in-x'));
+    const apart = gridPairsApart(model, 'x');
+    expect(apart.length).toBeGreaterThan(0);
+    const held = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    alignLinkedGroupGridAndPack(held, undefined, new Set(apart));
+    for (const id of Object.keys(model.groups)) expect(held.groups[id]!.bounds, id).toEqual(model.groups[id]!.bounds);
+    for (const key of apart) expect(held.gridRefusals ?? []).toContain(key);
   }, 240000);
 });

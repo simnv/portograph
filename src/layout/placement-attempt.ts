@@ -77,8 +77,8 @@ function revisionOf(model: LayoutModel): string {
  */
 const replaysOn = new WeakMap<LayoutModel, number>();
 /** The grid and the label bands, settled again: the part of a replay that does not rebuild the regions. No title stands in 7f (ticket 54). */
-export function replayGridAndBands(model: LayoutModel, honour?: ReadonlySet<string>): void {
-  timed('grid-pack', () => alignLinkedGroupGridAndPack(model, undefined, honour));
+export function replayGridAndBands(model: LayoutModel, hold?: ReadonlySet<string>): void {
+  timed('grid-pack', () => alignLinkedGroupGridAndPack(model, undefined, hold));
   timed('bands', () => resyncLabelBands(model));
 }
 /**

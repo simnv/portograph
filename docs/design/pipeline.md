@@ -1291,9 +1291,10 @@ grows a gap, and no step reads the height of a gap to make a decision that the h
    rises is given up to the label placement (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`).
 4. Each gap grows by `max(0, H - room, label deficit)`. Every band below it moves down by the running total (`moveBands`), and a y-only
    rebuild follows (regions, node geometry, lanes, the grid and the label bands) with no centring. A rebuild that moves an x throws.
-   The grid of that rebuild holds apart every linked pair that stood apart in x before the growth (architecture-2 ticket 73): its x guard
-   (`holdsMove`) reads the gaps, so a growth can admit a widening the last move in x refused. A pair a live grid would now widen is added to
-   `gridRefusals`, which the validator and the replays after the solve honour (sweep input v6-2-1, fixture
+   The grid of that rebuild holds a linked pair that stood apart in x before the growth and that a live grid would widen after it
+   (architecture-2 ticket 73): its x guard (`holdsMove`) reads the gaps, so a growth can admit a widening the last move in x refused. The
+   held pair stays as it stands and is recorded in `gridRefusals`, which the validator and the replays after the solve honour; every other
+   pair is judged and recorded as before. The centring replay below holds nothing (sweep input v6-2-1, fixture
    a-tier-gap-growth-widens-no-grid-pair-in-x).
    `TIER_GAP_GROWN` names what set the gap: a part of the plan, or "the label of link-N".
 5. It checks the gaps as they stand. None of these checks grows a gap, and each one is named. None of them fires on the corpus (390 sheets).

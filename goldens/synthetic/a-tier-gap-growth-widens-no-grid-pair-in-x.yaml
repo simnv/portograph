@@ -2,8 +2,9 @@
 # (edge-near | edge-far, 60.5 px) makes link-14 a spanning chord, and the span round places the sheet twice more. In those runs the last move
 # in x leaves `edge-near` narrower than `access` (the grid's x guard `holdsMove` refuses the widening on the gaps as they stand), and the
 # tier-gap solve grows the gap above tier 1. The rebuild in y of the solve held no grid pair apart, so the grid widened `edge-near` to the
-# extent of `access`, an x move, and the solve threw. Now the rebuild holds every x pair apart that stood apart, and records a pair the
-# grid would widen in `gridRefusals`. The sheet publishes: the first run's layout, bends 4 (8 on main), G5 fails as on main.
+# extent of `access`, an x move, and the solve threw. Now the rebuild holds a pair apart in x that the growth alone would widen and records
+# it in `gridRefusals` (in the span round's run, which does not publish). The sheet publishes the first run's layout: bends 4 (8 on main),
+# G5 fails as on main.
 # Test test/layout/feed-split.test.ts.
 portograph: 2
 groups:
