@@ -393,7 +393,7 @@ function parallelPaths(model: LayoutModel, bundle: Bundle, list: Member[], q: nu
     const blocked = turning.map(item => foreignDepths(model, bundle, item, n, margin, stroke));
     return { turning, first: (start + end - span) / 2, pairs, blocked };
   });
-  // A row moves off a frame edge and out of a foreign box, in turn, until neither moves it; bounded like each of the two.
+  // A row moves off a group edge and out of a foreign box, in turn, until neither moves it; bounded like each of the two.
   const clearOf = (value: number, pairs: DepthPair[], blocked: DepthPair[], direction: 1 | -1): number => {
     let result = value;
     for (let guard = 0; guard < 8; guard++) {
@@ -434,7 +434,7 @@ function parallelPaths(model: LayoutModel, bundle: Bundle, list: Member[], q: nu
   }
   if (!model.diagnostics.some(d => d.code === 'BUNDLE_ROWS_ALONG_FRAME_EDGE' && equal(d.owners, [bundle.owner]))) {
     model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'BUNDLE_ROWS_ALONG_FRAME_EDGE', owners: [bundle.owner],
-      message: `The channel of ${bundle.id} has no rows that keep every member clear of every group edge and every foreign box; the rows stay centred, and gate G6 reports what is left.` });
+      message: `The channel of ${bundle.id} has no rows that keep every member clear of every group edge and every foreign box; the rows stay centred, and gates G2 and G6 report what is left.` });
   }
   return centred.paths;
 }

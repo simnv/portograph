@@ -1196,7 +1196,7 @@ order; those moving toward larger coordinates turn in decreasing order. This avo
 and coincident lateral runs even when unrelated ports create unequal endpoint spacing. The rows
 stand centred between the two stems, unless a row would then bring its member into a foreign box:
 a group or frame box that gate G2 holds the member out of, or a node body that is no end of the
-bundle, each with its gate margin. A box over the member's run forbids its own depth band; a box
+bundle and not on the overlay layer, each with its gate margin. A box over the member's run forbids its own depth band; a box
 over the leg from the near end also forbids every deeper row, and a box over the leg to the far end
 every shallower row. Such rows move toward the near end, or else toward the far end, past the box,
 the same way they move one edge margin off the edge of a group box: the boxes gate G6 reads
