@@ -1079,11 +1079,11 @@ actual stroke-aware bounds. Growth translates downstream bands and attached flan
 Existing lane identity, owner, x and width never change.
 
 A block seated along x records its lead, `Bundle.lead`: the end whose first port stands farthest
-along the tier, which the other end grows to and follows. A block with no single lead, a flank
-floor or a lane that decides its start, or a far end that cannot grow to it (the block stands
-bent) records none. The column pull reads the record: a column whose every feed is the far end of
-a block it leads has no feed range, because the seat has decided where that feed stands
-(architecture-2 ticket 74).
+along the tier, which the other end grows to and follows. A block with no single lead, a lane
+that decides its start, or a far end that cannot grow to it (the block stands bent) records none. The column pull reads the record: a column whose every feed is the far end of
+a block it leads has no feed range in the outer pass, because the seat has decided where that
+feed stands (architecture-2 ticket 74). The canton inner pass keeps the feed range of such a
+member.
 
 Reserve crossing width/rows before creating paths. Strict endpoint-pair inversions ignore shared
 port ties. Distinct engine ports use a common order where authored precedence permits it. Shared
@@ -1652,7 +1652,7 @@ dx until the gap is a band gap again. `orderFramesByOverlay` re-packs the column
 overlay links ask for.
 
 `holdColumnAxes` pulls each frame column of a tier toward its feeds: the units of the tier keep a
-band gap apart by pool adjacent violators on the moves that reach each feed range. A unit whose
+band gap apart by pool adjacent violators on the moves that reach each feed range. In the outer pass a unit whose
 every feed follows it (`Bundle.lead`, 7e) has no wish in the pool: it stands where it stands until a
 sibling pushes it (architecture-2 ticket 74). With a wish to stay it took half of a sibling's
 deficit, the next seat moved its feeds after it, and the next call took half again: every replay

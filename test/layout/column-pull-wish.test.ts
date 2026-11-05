@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { prepareBundleGeometry } from '../../src/layout/bundle-geometry.js';
+import { holdColumnAxes } from '../../src/layout/columns.js';
 import { targetTap } from '../../src/layout/alignment-targets.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -64,6 +65,10 @@ describe('a unit with no feed range stands until it is pushed', () => {
         const again = JSON.parse(JSON.stringify(draft)) as LayoutModel;
         prepareBundleGeometry(again);
         expect(xs(again)).toBe(xs(draft));
+        // The pull of 7f (slack 0) on its own moves nothing either, and the lead stays.
+        expect(holdColumnAxes(again, 0)).toBe(false);
+        expect(xs(again)).toBe(xs(draft));
+        expect(again.bundles.map(bundle => bundle.lead)).toEqual(['n6']);
       }
     }
   }, 120000);

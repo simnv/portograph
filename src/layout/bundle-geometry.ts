@@ -628,10 +628,11 @@ export function prepareBundleGeometry(model: LayoutModel): void {
       node.size!.width = node.bounds!.width;
       set(port, lane.x);
     }
-    // The record of the lead (R1): one end alone stands at the common start, nothing else decided it, and the other end reached it.
+    // The record of the lead (R1): one end alone stands at the common start, no lane decided it, and the other end reached it. (`lower`, the
+    // flank floor, is passed only for a block seated along y.)
     const leaders = bundle.nodes.filter((_, i) => floors[i]! >= commonStart - PLACEMENT_EPS);
     const laned = model.lanes.some(lane => lane.owner.kind === 'link' && bundle.members.includes(lane.owner.id));
-    if (tangent === 'x' && leaders.length === 1 && (lower === undefined || lower < commonStart - PLACEMENT_EPS) && !bent.size && !laned) bundle.lead = leaders[0]!;
+    if (tangent === 'x' && leaders.length === 1 && !bent.size && !laned) bundle.lead = leaders[0]!;
     done.add(bundle.id);
   };
   // Primary facing blocks occupy the upper range; secondary corridors clear every intervening box.
