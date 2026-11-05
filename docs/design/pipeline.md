@@ -527,6 +527,25 @@ Two sources give the rows. With `layout.maxWidth`, the width-budget search tries
 
 A **column arrangement** (ticket 52) is decided in the same run, earlier in stage 5: after the first re-size, on final sides, and before the rows are repacked and the faces sorted (`reserveColumns`, `column-arrangement.ts`). It reads stage-1 and stage-4 facts only. A group takes the column when it is a flank, or a tier group with a flank beside it and a lateral link, and all of these hold: no authored `shape`, not a rank cell, two or more members, one facing group (a tier group with a flank on each side keeps the row; so does a flank whose primary peer another flank shares), and every member has exactly one link, a plain routed lateral link through the facing faces to the **one** node of the facing group that all members link to, on a port of its own with no authored side or order, and that node's facing face holds no other port. The prediction is structural: a row of two or more members beside one facing node hides every member but the nearest behind the nearest body, and the column predicts 0 crossings, 0 removed links and straight links, so an admitted column is never worse than its row (the row's routes are not read at stage 5). The facing face takes the column's centre pitch (the tallest member plus the node gap) and the nodes are sized again; the repack seats the members one on each line, centred on one x, from the row's top, in the stage-4 order (all members share one peer, so the order of their ports follows); the face sort then orders the facing ports by the members' y, so the links keep the order of their ports, and `stackBands` grows the band. 7b keeps each member's face as it is, and its one translation levels every pair. `groupArrangements` records `column`, or `row` with the column's reason for every flank group and every tier group with a lateral link that stays a row; the record exists when a group took the column or a stagger draft was tried, and later placement runs seat the recorded columns again (a recorded column that a later run no longer admits refuses that run by name). Rows, the row-order check and `packRowsOf` read a column as one member per line (`columnOf`), and publication and restore check one centre x and one centre pitch (`validateColumns`).
 
+A **feed split** (architecture-2 ticket 73, `feed-split.ts`) runs last in stage 5, after the arrangement and the stagger seat and before the freeze, on final
+sides and sizes. It walks the centring steps from the anchor tier outward, the step next to the anchor first and the two sides in turn (each occupied
+sub-tier with the adjacent one toward the anchor, its authority). For two sibling groups of the step's sub-tier side by side whose feeds (`centringFeeds`)
+stand apart in x, both can stand under their feeds only when the two inner feeds stand at least `reach(left) + band gap + reach(right)` apart; the reach is
+the distance from the child port of the outer feed to the box edge. Where the first pair in x stands closer by more than `MIN_SPLIT` (0.5 px), every body,
+port and box of the feeding side (the authority tier and the tiers beyond it, away from the child) right of a line halfway between the two
+inner feeds moves right by the deficit; the child tier and the far side stay, and 7c then centres each group under its feeds. A body never stretches: a
+split line through a body of the authority tier (a node that feeds both groups) is declined, and a crossed body of a tier beyond moves whole when its
+centre stands right of the line and stays otherwise (where stage 4 put it is incidental, R3; 7c centres it again). A group box the line crosses grows
+only when some of its nodes move and some stay; it moves whole when all move, and stays when none moves. Only plain groups split (no rank cell, frame or
+flank in the pair), and a feeding side with a frame, flank, canton member, bar or grid declines (so does a model that holds a lane: 7a reserves them later).
+The moved model must keep the room of this split and of every split made before it (a later split can grow the box of a recorded pair, and so its
+reach) and every seated stagger row; a rebuild or a check that refuses it puts the saved model back. A decline names the pair (`FEED_SPLIT_DECLINED`) and ends its step; a step stops after `MAX_SPLITS_PER_STEP`
+(8) splits with `FEED_SPLIT_CAPPED`. `feedSplits` records each split made (`tier`, `authority`, `pair`, `at`, `width`), `[]` when stage 5 decided and made
+none; absent means no stage 5 of this pipeline ran on the model. Each placement run decides on its own stage-5 geometry. The freeze keeps a copy
+(`freeze.feedSplits`); every publication checks the record against it and its shape, and the stage-5 publication and its restore check that each recorded
+pair has its room (`feedPairRoom`, the one reader of a recorded pair, which the check of each split calls too). Later stages move the feeding tiers again (7c, the close-up), so no later stage reads the
+room or decides the split again.
+
 ## Stage 6 — rows
 
 Per tier: all unstaggered `row`-shape nodes share one top y. A reserved stagger keeps both lines and its pitch; each line is a row to later horizontal repacks. Repack horizontally again if the flattening
@@ -1272,6 +1291,11 @@ grows a gap, and no step reads the height of a gap to make a decision that the h
    rises is given up to the label placement (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`).
 4. Each gap grows by `max(0, H - room, label deficit)`. Every band below it moves down by the running total (`moveBands`), and a y-only
    rebuild follows (regions, node geometry, lanes, the grid and the label bands) with no centring. A rebuild that moves an x throws.
+   The grid of that rebuild holds a linked pair that stood apart in x before the growth and that a live grid would widen after it
+   (architecture-2 ticket 73): its x guard (`holdsMove`) reads the gaps, so a growth can admit a widening the last move in x refused. The
+   held pair stays as it stands and is recorded in `gridRefusals`, which the validator and the replays after the solve honour; every other
+   pair is judged and recorded as before. The centring replay below holds nothing (sweep input v6-2-1, fixture
+   a-tier-gap-growth-widens-no-grid-pair-in-x).
    `TIER_GAP_GROWN` names what set the gap: a part of the plan, or "the label of link-N".
 5. It checks the gaps as they stand. None of these checks grows a gap, and each one is named. None of them fires on the corpus (390 sheets).
    - A growth that breaks an alignment the centring had excused replays the centring once (`TIER_GAP_CENTRING_REPLAYED`). This replay

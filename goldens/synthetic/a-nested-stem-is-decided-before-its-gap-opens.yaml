@@ -1,8 +1,9 @@
 # Expected: the stems of a nested node side are decided before the tier gap opens (architecture-2 ticket 57). `t` takes three links
 # from `a1`, `a2` and `a4`, and the chords of `f0` stand between them, so the three legs on the top side of `t` nest: stems of 15,
 # 32.5 and 50 px, recorded in `stemDepths` (with the two nested stems of `u`). The nested stems and the 15 px stems of the access
-# row ask more than the 60 px gap holds: the one tier-gap solve of 7f grows the gap once, 7.5 px (`TIER_GAP_GROWN`, set by
-# link-2#0), and after it every plan asks 0.
+# row asked more than the 60 px gap holds: the one tier-gap solve of 7f grew the gap once, 7.5 px (`TIER_GAP_GROWN`, set by
+# link-2#0). Since architecture-2 ticket 73 the feed split (`near` | `edge`, 63 px) stands the four diagonals of the access row
+# vertical: the stems still nest, the 60 px floor holds them, no growth, and every plan asks 0. Canvas 548 to 672 px.
 # Test-only input owned by architecture-2 ticket 57; test/pipeline/gap-solve-fixtures.test.ts reads it.
 portograph: 2
 groups:

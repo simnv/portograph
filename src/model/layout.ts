@@ -510,6 +510,13 @@ export interface LayoutModel {
    * gave the rows. Present = one entry per group, and a group is `stagger` exactly when `staggerRows` holds it; a `column` group stands one member on each line (`validateColumns`).
    */
   groupArrangements?: Record<string, GroupArrangement>;
+  /**
+   * Architecture-2 ticket 73: the feed splits stage 5 made (`feed-split.ts`), in the order it made them. Absent = not decided: no stage 5 of this
+   * pipeline ran on the model (a model before `sides-two`, or one frozen by hand); `[]` = stage 5 decided and split nothing (no anchor tier, no
+   * pair short of its room, or each short pair declined with `FEED_SPLIT_DECLINED`). Each placement run decides on its own stage-5 geometry.
+   * The freeze keeps a copy; the stage-5 publication and its restore check each pair's room.
+   */
+  feedSplits?: FeedSplit[];
   freeze?: LayoutFreeze;
   /**
    * What this placement run was told to keep (architecture 2, ticket 03): pitch and size floors, side faces, lane owners, courses, spanning chords, the turn
@@ -838,11 +845,18 @@ export interface StaggerRow {
   pitches: number[];
   step: number;
 }
+/**
+ * One feed split (ticket 73): the feeding side of the step `tier` (child) and `authority` (the adjacent sub-tier toward the anchor) right of x `at`
+ * moved `width` px right, so the two sibling groups `pair` (left, right) of `tier` can both stand under their feeds.
+ */
+export interface FeedSplit { tier: number; authority: number; pair: [string, string]; at: number; width: number }
 /** Ticket 51: a group stands on two lines (`stagger`) or stays one row; a `row` names the first rule that kept it. */
 export type GroupArrangement = { chosen: 'stagger' } | { chosen: 'column' } | { chosen: 'row'; reason: string };
 export interface LayoutFreeze {
   /** Stage-5 stagger decision, including absence versus an explicit empty record (ticket 166). */
   staggerRows?: StaggerRow[];
+  /** Stage-5 feed splits (ticket 73), absent when the model has no record. */
+  feedSplits?: FeedSplit[];
   version: 1;
   topology: { node: string; ports: FrozenPort[]; portCorners?: LayoutNode['portCorners'] }[];
   floors: { node: string; size: Size }[];

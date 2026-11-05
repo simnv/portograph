@@ -1,7 +1,7 @@
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { centreViolations } from './centre.js';
-import { cantonTiers, reserveLinkLabelRoom, tierGapShortfall, type LinkLabelShortfall } from './bands.js';
+import { cantonTiers, gridPairsApart, reserveLinkLabelRoom, tierGapShortfall, type LinkLabelShortfall } from './bands.js';
 import { chordGapNotes, tierGapPlans, type GapPlan, type ResidualReason } from './gap-plan.js';
 import type { TierGap } from './gap-runs.js';
 import { rebuildLaneExtents } from './lanes.js';
@@ -125,7 +125,7 @@ export const LABEL_SOLVE_READS = 4;
  *    at the new height, at most `LABEL_SOLVE_READS` times; a room still rising then is given up to the label placement
  *    (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`), as a settle gives one up.
  * 4. Each gap grows by `max(0, H − room, label deficit)`; the bands below move down by the running total (`moveBands`), and the claims a
- *    move in y changes are rebuilt with no centring. Then the linkless step (`afterGrowth`) runs once; when it moved, or when an alignment
+ *    move in y changes are rebuilt with no centring; the grid of the rebuild holds an x pair apart that the growth alone would widen (ticket 73). Then the linkless step (`afterGrowth`) runs once; when it moved, or when an alignment
  *    the publication would refuse stands, the centring is replayed once (`TIER_GAP_CENTRING_REPLAYED`). Nothing else moves in x: any other
  *    rebuild that would move an x is a fault, and it throws.
  * 5. Checks on the gaps as they stand, each named and none a growth: a stem record the grown geometry no longer calls for is decided again
@@ -134,7 +134,7 @@ export const LABEL_SOLVE_READS = 4;
  * No later step grows a gap. Stage 8 reads the plan again and names a gap that does not fit (`unfitGaps`), a safety net that must not
  * fire. Returns whether a gap grew.
  */
-export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel) => void, afterGrowth: (model: LayoutModel) => boolean = () => false): boolean {
+export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel, hold: ReadonlySet<string>) => void, afterGrowth: (model: LayoutModel) => boolean = () => false): boolean {
   attemptCounters.gapSolves++;
   recordStemDepths(model);
   const plans = timed('solve-plans', () => tierGapPlans(model));
@@ -165,11 +165,26 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel) 
     }
   }
   if (grown.size) {
+    // The rebuild in y replays the linked-group grid (architecture-2 ticket 73). Its x guard (`holdsMove`) reads the gaps, so a growth can admit
+    // a widening in x that the last move in x refused. The rebuild holds such a pair: a pair apart in x before the growth that a live grid would
+    // widen after it. The grid leaves it as it stands and records it in `gridRefusals`, which the validator and the replays after the solve
+    // honour (R1). Every other pair, on both axes, is judged and recorded as before. The x check below stays.
+    let apart = new Set(gridPairsApart(model, 'x'));
     grow(model, grown);
     const before = xCoordinates(model);
     const rebuilt = (): void => timed('solve-rebuild', () => {
       rebuildRegionGeometry(model, undefined, undefined, true, false);
-      rebuild(model);
+      // The hold grows to a fixed point: a held pair keeps a box small, and so can admit a widening of another pair of its chain. Each round
+      // holds one more pair or ends, so at most `apart.size` + 1 rounds run (R4).
+      const hold = new Set<string>();
+      for (let round = 0; apart.size && round <= apart.size; round++) {
+        const live = JSON.parse(JSON.stringify(model)) as LayoutModel;
+        rebuild(live, hold);
+        const stillApart = new Set(gridPairsApart(live, 'x')), widened = [...apart].filter(key => !hold.has(key) && !stillApart.has(key));
+        if (!widened.length) break;
+        widened.forEach(key => hold.add(key));
+      }
+      rebuild(model, hold);
     });
     rebuilt();
     // What a growth inside a 7f round was followed by before ticket 57, done once here: the slopes and spans the growth changed can put a
@@ -182,10 +197,12 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel) 
     // `a-refused-close-up-keeps-the-node-labels-in-order` throws `Centring invariant violated` without it).
     const stepped = afterGrowth(model);
     if (stepped || (!model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model).length > 0)) {
-      timed('solve-rebuild', () => { rebuildRegionGeometry(model, undefined, undefined, true, true); rebuild(model); });
+      // The centring replay may move x: its grid holds nothing.
+      timed('solve-rebuild', () => { rebuildRegionGeometry(model, undefined, undefined, true, true); rebuild(model, new Set()); });
       placementWarning(model, 'TIER_GAP_CENTRING_REPLAYED', stepped
         ? 'a group with no links stepped out of a held chord after the tier gaps grew; the centring was replayed once.'
         : 'the tier gaps grew and an alignment the centring must reach stood off its feed; the centring was replayed once.', []);
+      apart = new Set(gridPairsApart(model, 'x'));
       const replayed = xCoordinates(model);
       for (const key of before.keys()) before.set(key, replayed.get(key) ?? before.get(key)!);
     }

@@ -1,5 +1,6 @@
 import { validateReservations } from './reservations.js';
 import { validateStaggerRows } from './stagger.js';
+import { validateFeedSplits } from './feed-split.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
@@ -550,6 +551,8 @@ function validateFreeze(model: LayoutModel): void {
   const freeze = model.freeze;
   if (!freeze || freeze.version !== 1) throw new Error('Missing or unsupported topology freeze');
   same(model.staggerRows, freeze.staggerRows, 'Frozen stagger reservation changed');
+  same(model.feedSplits, freeze.feedSplits, 'Frozen feed splits changed');
+  validateFeedSplits(model);
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
   validateSpans(model, freeze.spans);
@@ -583,6 +586,7 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
   const floored = orderedNodeIds(model.document).filter(id => nodeFloors?.has(id));
   if (model.courses !== undefined) result.freeze.courses = clone(model.courses);
   if (model.staggerRows !== undefined) result.freeze.staggerRows = clone(model.staggerRows);
+  if (model.feedSplits !== undefined) result.freeze.feedSplits = clone(model.feedSplits);
   const spans = model.links.filter(link => link.spanHint === true).map(link => link.id);
   if (spans.length) result.freeze.spans = spans;
   if (turnFaces.length) result.freeze.turnOrder = turnFaces.map(face => ({ ...face }));

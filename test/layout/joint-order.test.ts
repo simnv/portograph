@@ -81,7 +81,8 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
       expect(payload.side === 'left' ? lane.x < aggr.x : lane.x > aggr.x + aggr.width).toBe(true);
     }
     for (const entry of ofKind(joint.reservations ?? [], 'corridorSide')) expect(corridorSideFailure(entry, joint)).toBeUndefined();
-    expect([crossings(joint), bends(joint)]).toEqual([1, 2]);
+    // Bends 2 before architecture-2 ticket 73: the feed split stands both sink groups under their feeds.
+    expect([crossings(joint), bends(joint)]).toEqual([1, 0]);
     expect([crossings(alone), bends(alone)]).toEqual([6, 5]);
   }, 120000);
 
@@ -96,8 +97,8 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
     const published = await Promise.all([FACE, mirror(FACE), SINKS, mirror(SINKS), SIDES, mirror(SIDES)].map(run));
     expect(published.map(crossings)).toEqual([1, 1, 1, 1, 1, 1]);
     // Bends follow the stages after 4 on the first two shapes (main's own mirror of the a-face shape goes from 7 to 15 crossings); the sheet
-    // whose later stages are symmetric publishes the same bends.
-    expect(published.map(bends)).toEqual([6, 8, 4, 6, 2, 2]);
+    // whose later stages are symmetric publishes the same bends (2 and 2 before the feed split of architecture-2 ticket 73).
+    expect(published.map(bends)).toEqual([6, 8, 4, 6, 0, 0]);
   }, 300000);
 
   it('the 7c predictor raises no published crossing; where the draft counts a crossing the published sheet never had, it gains none (the oracle)', async () => {

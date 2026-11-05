@@ -12,6 +12,7 @@
 # covers the second port's stem, so the gap grows.
 # Since architecture-2 ticket 72 (the joint stage-4 order): crossings 0 (6 before), bends 6 (8 before), canvas 616 x 314 (764 before);
 # the tests of the gap runs pin `layout.feedOrder: false`.
+# Since architecture-2 ticket 73 (the feed split): bends 0, every routed link straight, canvas 677 x 314.
 portograph: 2
 groups:
   access: { tier: 0 }

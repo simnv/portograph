@@ -7993,6 +7993,7 @@
     "width": 930.525390625,
     "height": 960.25
   },
+  "feedSplits": [],
   "freeze": {
     "version": 1,
     "topology": [
@@ -8603,6 +8604,7 @@
         }
       }
     ],
+    "feedSplits": [],
     "placement": {
       "nodes": {
         "provider-1": {
