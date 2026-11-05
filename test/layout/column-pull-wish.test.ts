@@ -143,9 +143,14 @@ describe('fitRun, the fit of the column pull', () => {
   it('a unit with no wish that nothing pushes stands where it stands', () => {
     expect(fitRun([0, 140, 300], offsets, segment, free, none, [false, true, false])).toEqual([0, 140, 300]);
   });
-  it('a unit with no wish between two pins is held between them', () => {
-    // Units 0 and 2 are pins (segments 1 and 3), both at z = left - offset = 0; unit 1 (segment 2) has no wish and is wanted left of that.
-    expect(fitRun([0, 50, 200], offsets, [1, 2, 3], [0, 0, 0], [0, 0, 0], [false, true, false])).toEqual([0, 100, 200]);
+  it('a unit with no wish between two pins is pushed by its segment and held between the pins', () => {
+    // Units 0 and 3 are pins at z = left - offset = 0 and 50 (segments 1 and 3). Units 1 and 2 share segment 2: unit 1 wants z 30, unit 2
+    // has no wish and stands at z 10, so unit 1 pushes it to z 30 (pooled with a wish to stay, both would stand at z 20). A wish past the
+    // pin at z 50 is held there.
+    const four = [0, 100, 200, 300], segment = [1, 2, 2, 3], below = [0, 0, 0, 50], above = [0, 50, 50, 50], noWish = [false, false, true, false];
+    expect(fitRun([0, 130, 210, 350], four, segment, below, above, noWish)).toEqual([0, 130, 230, 350]);
+    expect(fitRun([0, 130, 210, 350], four, segment, below, above, [false, false, false, false])).toEqual([0, 120, 220, 350]);
+    expect(fitRun([0, 180, 210, 350], four, segment, below, above, noWish)).toEqual([0, 150, 250, 350]);
   });
   it('is a fixed point: on its own result as the wanted lefts it returns the same lefts', () => {
     const noWish = [false, true, true, false], four = [0, 100, 200, 300], one = [0, 0, 0, 0];

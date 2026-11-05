@@ -1408,16 +1408,17 @@ export function frameColumns(model: LayoutModel): FrameColumn[] {
   });
   const plain = Object.values(model.groups).filter(group => group.frame === undefined && group.bounds !== undefined && group.tier !== undefined);
   return tops.map(({ frame, cells, from, to }) => {
-    // The slack is what the boxes of the neighbours leave beyond the gap `besideGap` keeps from them, shared between the
-    // two; read off the boxes as they stand, so a replay of centring cannot spend it a second time. A plain unit beside the
-    // frame is a neighbour too: it stays `besideGap` from the column edge (`columnWindow`), so the room the frame spends is room it gives up.
+    // The slack is what the boxes of the neighbours leave beyond the gap `besideGap` keeps from them; read off the boxes as they stand, so
+    // a replay of centring cannot spend it a second time. Two frames share it. A plain group beside the frame is a neighbour too: it stays
+    // `besideGap` from the column edge (`columnWindow`, the overlay and chord walls), so the frame takes all of it, and a plain group
+    // placed `besideGap` from the edge reads the same column again (a fixed point; halved, every read moved it in by half).
     const boxes = [...tops.filter(other => other.frame !== frame && other.from <= to && other.to >= from).map(other => ({ box: other.frame.box, frame: true })),
       ...plain.filter(group => group.tier! >= from && group.tier! <= to).map(group => ({ box: group.bounds!, frame: false }))];
     const room = (side: 1 | -1): number => {
       let free = Infinity;
       for (const other of boxes) {
         const between = side > 0 ? other.box.x - (frame.box.x + frame.box.width) : frame.box.x - (other.box.x + other.box.width);
-        if (between >= 0) free = Math.min(free, Math.max(0, between - besideGap(model, true, other.frame)) / 2);
+        if (between >= 0) free = Math.min(free, Math.max(0, between - besideGap(model, true, other.frame)) / (other.frame ? 2 : 1));
       }
       return Math.min(COLUMN_SLACK, free);
     };
