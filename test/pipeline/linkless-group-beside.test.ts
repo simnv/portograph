@@ -4,7 +4,7 @@ import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import type { ElkAttempt } from '../../src/layout/elk-worker.js';
-import { frameColumns } from '../../src/layout/columns.js';
+import { besideGap, frameColumns } from '../../src/layout/columns.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -49,9 +49,10 @@ describe('a group with no links stands beside the connected diagram (ticket 92)'
     expect(model.diagnostics.some(d => d.code === 'LINKLESS_GROUP_MOVE_REFUSED')).toBe(false);
   }, 60000);
 
-  it.each([-900, 900])('cantons: the key ends one band gap from the nearest frame, not from a group in it (%i px)', async dx => {
+  // A plain group keeps `besideGap` (a band gap and `COLUMN_SLACK`) from a frame column, the gap G9 reads beside a frame (ticket 75).
+  it.each([-900, 900])('cantons: the key ends besideGap from the nearest frame column, not from a group in it (%i px)', async dx => {
     const model = await run('a-group-with-no-links-stands-beside-a-canton', dx);
-    const key = box(model, 'key'), gap = bandGap(model);
+    const key = box(model, 'key'), gap = besideGap(model, true, false);
     const frames = frameColumns(model);
     expect(frames.length).toBeGreaterThan(0);
     const low = Math.min(...frames.map(item => item.x)), high = Math.max(...frames.map(item => item.x + item.width));

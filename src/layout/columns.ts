@@ -399,6 +399,16 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
 }
 
 /**
+ * The least gap between two units of the root scope that stand beside each other, box to box (architecture-2 ticket 75): a band gap, and
+ * `COLUMN_SLACK` more when exactly one of them is a frame (a frame keeps its margin beside a plain unit, as the rows rule reserves it).
+ * Gate G9 (`separation-root-*`), the spacing of the column passes (`runSpacing`, `flankRoom`) and the centring windows (`frameColumns`,
+ * `columnWindow`) read this one rule.
+ */
+export function besideGap(model: LayoutModel, aFrame: boolean, bFrame: boolean): number {
+  return bandGap(model) + (aFrame !== bFrame ? COLUMN_SLACK : 0);
+}
+
+/**
  * Keep the columns disjoint after a rule has widened cells (ranked-groups ticket 12). `packFrameColumns`
  * measures a cell as stage 4 leaves it, but the rows rule flattens a cell onto one baseline and spaces its
  * nodes by `rowGap`, and a cell can grow by hundreds of px. A widened cell pushed its row neighbours in
@@ -441,9 +451,9 @@ export function separateFrameColumns(model: LayoutModel): boolean {
  * target, met with the feed (`overlayRange`); a frame stays put, and bounds its siblings, only when no move meets both and the
  * partner is one that stays. A column that still jogs by
  * more than its cells can slide to absorb warns once, `COLUMN_AXIS_HELD`, with that residual in px. The pass
- * is idempotent where the feeds are the fixed end: a second run wants exactly the plan the first one kept. A feed that follows its column
- * (`feedsFollow`, ticket 74) is not fixed; such a column has no wish. A unit with no feed range for another reason still wishes to stay
- * where it stands, and a second run moves it again (architecture-2 ticket 75).
+ * is idempotent: a second run wants exactly the plan the first one kept. A unit with no feed range (no feed, or feeds that follow it,
+ * `feedsFollow`, ticket 74) has no wish in the outer pass: it stands where it stands until a sibling pushes it (architecture-2 ticket 75).
+ * With a wish to stay where it stood, pooled with a sibling that pulls, it took half of the deficit at each call and every replay moved it.
  *
  * `slack` is the room a frame leaves its cells beyond its box and keeps beside a sibling: `COLUMN_SLACK` while the
  * rows rule runs, and 0 after centring has spent it (stage 7f, ticket 17: the frames stand a band gap apart and
@@ -592,12 +602,12 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
  * back what a close-up removed.
  */
 function runSpacing(model: LayoutModel, run: readonly Unit[], at: (unit: Unit) => Rect, slack: number): number[] {
-  const gap = bandGap(model), offsets: number[] = [];
+  const offsets: number[] = [];
   let sum = 0;
   for (const [i, unit] of run.entries()) {
     offsets.push(sum);
     const next = run[i + 1];
-    if (next !== undefined) sum += at(unit).width + gap + (unit.frame && next.frame ? 2 * slack : unit.frame || next.frame ? COLUMN_SLACK : 0);
+    if (next !== undefined) sum += at(unit).width + besideGap(model, unit.frame, next.frame) + (unit.frame && next.frame ? 2 * slack : 0);
   }
   return offsets;
 }
@@ -829,7 +839,7 @@ function flanksBesideUnit(model: LayoutModel, unit: Unit): LayoutGroup[] {
  * the greatest; a unit already past a wall stays where it is, and nothing here moves it back, so each bound admits `at.x`. `pullTier` and `closeUp` read it.
  */
 function flankRoom(model: LayoutModel, unit: Unit, at: Rect): { low: number; high: number } {
-  const wall = bandGap(model) + (unit.frame ? COLUMN_SLACK : 0);
+  const wall = besideGap(model, unit.frame, false);
   let low = -Infinity, high = Infinity;
   for (const flank of flanksBesideUnit(model, unit)) {
     if (flank.flank!.align === 'right') high = Math.min(high, flank.bounds!.x - wall - at.width);
@@ -840,6 +850,34 @@ function flankRoom(model: LayoutModel, unit: Unit, at: Rect): { low: number; hig
 
 /** The members of one canton that the inner pass may move, and the canton frame box that walls them. */
 interface MemberScope { units: ReadonlySet<Unit>; wall: Column; canton: string }
+
+/**
+ * The fit of one plan of `pullTier` (exported for its unit tests): pool adjacent violators on the wanted lefts of the units that have a
+ * wish, less the offset of each in the packed run, within each segment between the pins (`segment`: pins split the run, ticket 67).
+ * A unit with no wish (`noWish`, ticket 75) is left out of the pool: it stands where it is wanted (where it stands now) unless the units of
+ * its segment push it, the ones before it to the right and the ones after it with a wish to the left. The result is clamped between the
+ * held points (`below`, `above`) and given back as lefts. On its own result as the wanted lefts it returns the same lefts (a fixed point).
+ */
+export function fitRun(wanted: readonly number[], offsets: readonly number[], segment: readonly number[], below: readonly number[], above: readonly number[], noWish: readonly boolean[]): number[] {
+  const blocks: { sum: number; count: number; segment: number; members: number[] }[] = [];
+  for (const [at, wish] of wanted.entries()) {
+    if (noWish[at]) continue;
+    blocks.push({ sum: wish - offsets[at]!, count: 1, segment: segment[at]!, members: [at] });
+    while (blocks.length > 1 && blocks[blocks.length - 2]!.segment === blocks[blocks.length - 1]!.segment && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
+      const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
+      before.sum += last.sum; before.count += last.count; before.members.push(...last.members);
+    }
+  }
+  const base: number[] = wanted.map((wish, at) => wish - offsets[at]!);
+  for (const block of blocks) for (const at of block.members) base[at] = block.sum / block.count;
+  for (const [at, isFree] of noWish.entries()) {
+    if (!isFree) continue;
+    const same = (other: number): boolean => segment[other] === segment[at];
+    const before = base.filter((_, other) => other < at && same(other)), after = base.filter((_, other) => other > at && !noWish[other] && same(other));
+    base[at] = Math.min(Math.max(base[at]!, ...before), ...after);
+  }
+  return base.map((value, at) => Math.min(Math.max(value, below[at]!), above[at]!) + offsets[at]!);
+}
 
 /** One tier of `holdColumnAxes`: plans the pulled positions, applies them unless a lane forbids them, and reports the residuals. */
 function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (unit: Unit) => UnitFeeds, requestedSlack: number, scope?: MemberScope): boolean {
@@ -882,17 +920,17 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     if (room.high < Infinity) to = Math.max(Math.min(to, room.high), at.x);
     if (room.low > -Infinity) from = Math.min(Math.max(from, room.low), at.x);
     from = Math.min(from, to); to = Math.max(from, to);
-    // A unit whose feeds all follow it (`feedsFollow`) has no wish: the seat decides where its feeds stand, so it takes no part in the pool
-    // and stands where it stands until a sibling pushes it (ticket 74). Any other unit with no feed range still wishes to stay where it
-    // stands; pooled with a sibling that pulls, it takes half of the deficit at each call (architecture-2 ticket 75).
-    if (range !== undefined) wanting.add(unit); else if (!pinned.has(unit) && scope === undefined && feedsFollow(feeds(unit))) wishless.add(unit);
+    // A unit with no feed range and no pin has no wish in the outer pass (architecture-2 ticket 75; ticket 74 for feeds that follow it,
+    // `feedsFollow`): it takes no part in the pool and stands where it stands until a sibling pushes it. A wish to stay where it stood
+    // took half of a sibling's deficit at each call, so every replay moved the tier. The canton inner pass keeps every member's wish.
+    if (range !== undefined) wanting.add(unit); else if (!pinned.has(unit) && scope === undefined) wishless.add(unit);
     return { unit, x: at.x, width: at.width, slack: unit.frame ? columnSlack : 0, from, to };
   }).sort((a, b) => a.x - b.x || compareId(a.unit.id, b.unit.id));
   // Lefts of a run kept a band gap apart, less the offset of that run, must not fall: pool adjacent violators on
   // the wanted lefts, the nearest point of each range to where the unit stands in the plan so far.
-  const offsets: number[] = [];
-  let sum = 0;
-  for (const [i, item] of standing.entries()) { offsets.push(sum); sum += item.width + gap + item.slack + (standing[i + 1]?.slack ?? 0); }
+  // The spacing is the one of `runSpacing` (R1): `besideGap`, and the slack of each of two frames that face each other.
+  const rect = new Map(standing.map(item => [item.unit, { x: item.x, y: 0, width: item.width, height: 0 }] as const));
+  const offsets = runSpacing(model, standing.map(item => item.unit), unit => rect.get(unit)!, columnSlack);
   // A pinned unit stays where the overlay order put it; it splits the run. The units on either side are pooled apart, each side
   // between its own pins (ticket 67): pooled across a pin, two wishes of opposite sign would average and move a unit away from its own
   // feed range, and a packed run with a pin would not be a fixed point.
@@ -914,30 +952,10 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     const below = fixed.map((_, i) => Math.max(-Infinity, ...fixed.slice(0, i + 1).filter((z): z is number => z !== undefined)));
     const above = fixed.map((_, i) => Math.min(Infinity, ...fixed.slice(i).filter((z): z is number => z !== undefined)));
     const segment = fixed.map((_, i) => 2 * fixed.slice(0, i).filter(z => z !== undefined).length + (fixed[i] !== undefined ? 1 : 0));
-    // A unit with no wish is left out of the pool (ticket 74). Pooled with a wish to stay where it stands, it took half of a sibling's
-    // deficit, the next seat moved its feeds after it, and the next call took half again: every replay moved the run in x. Left out, it
-    // stands where it stood unless the units of its segment that the pool placed push it, so a second call keeps the plan.
+    // A unit with no wish is left out of the pool (`fitRun`, tickets 74 and 75): it stands where it stood unless the units of its segment
+    // that the pool placed push it, so a second call keeps the plan.
     const noWish = standing.map(item => wishless.has(item.unit));
-    const fit = (wanted: number[]): number[] => {
-      const blocks: { sum: number; count: number; segment: number; members: number[] }[] = [];
-      for (const [at, wish] of wanted.entries()) {
-        if (noWish[at]) continue;
-        blocks.push({ sum: wish - offsets[at]!, count: 1, segment: segment[at]!, members: [at] });
-        while (blocks.length > 1 && blocks[blocks.length - 2]!.segment === blocks[blocks.length - 1]!.segment && blocks[blocks.length - 2]!.sum / blocks[blocks.length - 2]!.count > blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.count) {
-          const last = blocks.pop()!, before = blocks[blocks.length - 1]!;
-          before.sum += last.sum; before.count += last.count; before.members.push(...last.members);
-        }
-      }
-      const base: number[] = wanted.map((wish, at) => wish - offsets[at]!);
-      for (const block of blocks) for (const at of block.members) base[at] = block.sum / block.count;
-      for (const [at, isFree] of noWish.entries()) {
-        if (!isFree) continue;
-        const same = (other: number): boolean => segment[other] === segment[at];
-        const before = base.filter((_, other) => other < at && same(other)), after = base.filter((_, other) => other > at && !noWish[other] && same(other));
-        base[at] = Math.min(Math.max(base[at]!, ...before), ...after);
-      }
-      return base.map((value, at) => Math.min(Math.max(value, below[at]!), above[at]!) + offsets[at]!);
-    };
+    const fit = (wanted: number[]): number[] => fitRun(wanted, offsets, segment, below, above, noWish);
     let lefts = standing.map(item => item.x);
     for (let round = 0; round < 200; round++) {
       const next = fit(lefts.map((left, at) => Math.min(Math.max(left, standing[at]!.from), standing[at]!.to)));
@@ -1372,10 +1390,12 @@ export interface FrameColumn extends Column {
 
 /**
  * The columns of a model's top-level frames, read off the geometry as it stands. A parent's frame box
- * holds its children, so the box of a top-level frame, with up to `COLUMN_SLACK` on each side that the next frame leaves beyond a band gap, is its column, and every cell of a child frame
+ * holds its children, so the box of a top-level frame, with up to `COLUMN_SLACK` on each side that the next unit leaves beyond `besideGap`
+ * (a band gap from a frame, a band gap and `COLUMN_SLACK` from a plain group), is its column, and every cell of a child frame
  * stands in the column of the top-level frame above it. Centring reads them once, before its first
  * step, and treats them as walls: a cell stays inside its column, and a group that is not in a frame
- * stays out of the column of every frame whose sub-tiers it shares.
+ * stays `besideGap` out of the column of every frame whose sub-tiers it shares, so a frame that spends its room never comes nearer a
+ * plain group than gate G9 allows (architecture-2 ticket 75).
  */
 export function frameColumns(model: LayoutModel): FrameColumn[] {
   const frames = model.document.frames, derived = deriveFrames(model);
@@ -1386,16 +1406,18 @@ export function frameColumns(model: LayoutModel): FrameColumn[] {
     const cells = cellsOf(frame.id), tiers = cells.map(cell => model.groups[cell]!.tier!);
     return { frame, cells, from: Math.min(...tiers), to: Math.max(...tiers) };
   });
-  const gap = bandGap(model);
+  const plain = Object.values(model.groups).filter(group => group.frame === undefined && group.bounds !== undefined && group.tier !== undefined);
   return tops.map(({ frame, cells, from, to }) => {
-    // The slack is what the boxes of the neighbour frames leave beyond a band gap, shared between the
-    // two; read off the boxes as they stand, so a replay of centring cannot spend it a second time.
+    // The slack is what the boxes of the neighbours leave beyond the gap `besideGap` keeps from them, shared between the
+    // two; read off the boxes as they stand, so a replay of centring cannot spend it a second time. A plain unit beside the
+    // frame is a neighbour too: it stays `besideGap` from the column edge (`columnWindow`), so the room the frame spends is room it gives up.
+    const boxes = [...tops.filter(other => other.frame !== frame && other.from <= to && other.to >= from).map(other => ({ box: other.frame.box, frame: true })),
+      ...plain.filter(group => group.tier! >= from && group.tier! <= to).map(group => ({ box: group.bounds!, frame: false }))];
     const room = (side: 1 | -1): number => {
       let free = Infinity;
-      for (const other of tops) {
-        if (other.frame === frame || other.from > to || other.to < from) continue;
-        const between = side > 0 ? other.frame.box.x - (frame.box.x + frame.box.width) : frame.box.x - (other.frame.box.x + other.frame.box.width);
-        if (between >= 0) free = Math.min(free, Math.max(0, between - gap) / 2);
+      for (const other of boxes) {
+        const between = side > 0 ? other.box.x - (frame.box.x + frame.box.width) : frame.box.x - (other.box.x + other.box.width);
+        if (between >= 0) free = Math.min(free, Math.max(0, between - besideGap(model, true, other.frame)) / 2);
       }
       return Math.min(COLUMN_SLACK, free);
     };

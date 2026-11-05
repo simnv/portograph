@@ -1,6 +1,6 @@
 # Expected: A group with no links stands one band gap from the nearest connected frame, not from a group inside it (ticket 92).
 # `key` (tier 0) has no link and no other group stands in its tier. The connected diagram is two cantons, whose frames are wider
-# than the groups they hold. A test shifts `key` far to either side after ELK; it must stand one band gap from the frame.
+# than the groups they hold. A test shifts `key` far to either side after ELK; it must stand `besideGap` (a band gap and the column slack, ticket 75) from the frame column.
 # Test-only input owned by ranked-groups ticket 92; test/pipeline/linkless-group-beside.test.ts reads the layout.
 portograph: 2
 groups:

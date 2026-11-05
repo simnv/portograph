@@ -4,8 +4,8 @@
 # moved half of g2's deficit, the next seat moved n5 after n6, and every replay moved tier 1 in x, so the rebuild in y of the tier-gap
 # solve threw. A unit whose feeds all follow it now has no wish: g2 reaches its feed in one call and pushes g1, and a second call keeps
 # the plan. The sheet publishes and the three bundle links stand vertical; so does the sheet with g1 a frame (the column that leads the
-# block). In the other slots of n5 the block records no lead (its links are not vertical): slots 1, 3 and 4 publish as on main, and in slots 0 and 2
-# g1 still wishes to stay and the tier-gap solve throws, as on main (ticket 75).
+# block). In the other slots of n5 the block records no lead (its links are not vertical). In slots 0 and 2, g1 (a row group with no
+# feed range) wished to stay and the tier-gap solve threw; since ticket 75 no unit with no feed range has a wish, and all six slots publish.
 # Test test/layout/column-pull-wish.test.ts.
 portograph: 2
 theme: snack

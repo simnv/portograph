@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { prepareBundleGeometry } from '../../src/layout/bundle-geometry.js';
-import { holdColumnAxes } from '../../src/layout/columns.js';
+import { COLUMN_SLACK, besideGap, fitRun, holdColumnAxes } from '../../src/layout/columns.js';
+import { bandGap } from '../../src/layout/skeleton-graph.js';
+import { score } from '../../src/score/index.js';
 import { targetTap } from '../../src/layout/alignment-targets.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -12,8 +14,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * Architecture-2 ticket 74: the column pull (`holdColumnAxes`) pooled a frame that pulls toward a fixed feed with a unit whose feeds are the
  * far end of a bundle block it leads (`Bundle.lead`), and gave that unit a wish to stay where it stood. The run moved half of the frame's
  * deficit, the next seat moved the feeds after the unit, so every replay moved the tier in x, and the y-only rebuild of the tier-gap solve
- * threw. Such a unit now has no feed range and no wish: the seat has decided where its feeds stand. A unit with no feed range for another
- * reason still wishes to stay (slots 0 and 2, the block bent): ticket 75.
+ * threw. Such a unit now has no feed range and no wish: the seat has decided where its feeds stand. Ticket 75: no unit with no feed range
+ * has a wish (slots 0 and 2: the block records no lead and g1, a row group, has no feed), so the pass is idempotent in every slot. The
+ * centring window reads the gap G9 reads beside a frame (`besideGap`).
  */
 const SOURCE = readFileSync(new URL('../../goldens/synthetic/a-unit-with-no-feed-range-stands-until-pushed.yaml', import.meta.url), 'utf8');
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
@@ -78,18 +81,24 @@ describe('a unit with no feed range stands until it is pushed', () => {
     expect(model.bundles.map(bundle => bundle.lead)).toEqual([undefined]);
   }, 120000);
 
-  it.each([1, 3, 4, 5])('publishes with n5 in slot %i of its row', async slot => {
+  it.each([0, 1, 2, 3, 4, 5])('publishes with n5 in slot %i of its row', async slot => {
     const yaml = inSlot(SOURCE, slot);
     expect(yaml.split('\n').filter(line => /^ {2}n[0-5]: /.test(line)).findIndex(line => line.startsWith('  n5:'))).toBe(slot);
     const model = await layout(parse(yaml), options);
     expect(model.links.every(link => link.path !== undefined)).toBe(true);
   }, 120000);
 
-  // Ticket 75: the block records no lead, g1 has no feed range and still wishes to stay, so the pull halves g2's deficit at each call and
-  // the tier-gap solve throws, as on main. The fix of ticket 75 makes these pass.
-  it.fails.each([0, 2])('publishes with n5 in slot %i of its row (ticket 75)', async slot => {
-    const model = await layout(parse(inSlot(SOURCE, slot)), options);
-    expect(model.links.every(link => link.path !== undefined)).toBe(true);
+  // Ticket 75: in slots 0 and 2 the block records no lead and g1 has no feed range. With a wish to stay, the pull halved g2's deficit at each
+  // call and the tier-gap solve threw. With no wish, a replay of the pull on the draft the solve leaves moves nothing, in every slot.
+  it.each([0, 1, 2, 3, 4, 5])('the pull is idempotent on the draft the solve leaves with n5 in slot %i: a second call moves nothing', async slot => {
+    const { drafts } = await run(inSlot(SOURCE, slot));
+    expect(drafts.length).toBeGreaterThan(0);
+    for (const draft of drafts) {
+      const again = JSON.parse(JSON.stringify(draft)) as LayoutModel;
+      expect(holdColumnAxes(again, 0)).toBe(false);
+      expect(holdColumnAxes(again)).toBe(false);
+      expect(xs(again)).toBe(xs(draft));
+    }
   }, 120000);
 
   it.each([0, 1, 2, 3, 4, 5])('publishes with g1 a frame and n5 in slot %i of its row', async slot => {
@@ -99,4 +108,48 @@ describe('a unit with no feed range stands until it is pushed', () => {
     expect(model.links.every(link => link.path !== undefined)).toBe(true);
     if (slot === 5) expect(model.bundles.map(bundle => bundle.lead)).toEqual(['n6']);
   }, 120000);
+});
+
+const MARGIN = readFileSync(new URL('../../goldens/synthetic/a-frame-keeps-its-margin-beside-a-plain-group.yaml', import.meta.url), 'utf8');
+
+describe('a frame keeps its margin beside a plain group (ticket 75)', () => {
+  it('the frame box and the plain group stand besideGap apart, and every gate passes', async () => {
+    const model = await layout(parse(MARGIN), options);
+    const frame = model.frames!.find(item => item.id === 'g1')!.box, group = model.groups.g2!.bounds!;
+    expect(group.x - (frame.x + frame.width)).toBeGreaterThanOrEqual(besideGap(model, true, false) - 1e-6);
+    const failed = Object.entries(score(model).snapshot.gates).filter(([, gate]) => gate.severity === 'error' && gate.violations.length > 0);
+    expect(failed.map(([id]) => id)).toEqual([]);
+  }, 120000);
+
+  it('besideGap is a band gap, and COLUMN_SLACK more when exactly one unit is a frame', async () => {
+    const model = await layout(parse(MARGIN), options);
+    expect(besideGap(model, true, true)).toBe(bandGap(model));
+    expect(besideGap(model, false, false)).toBe(bandGap(model));
+    expect(besideGap(model, true, false)).toBe(bandGap(model) + COLUMN_SLACK);
+    expect(besideGap(model, false, true)).toBe(bandGap(model) + COLUMN_SLACK);
+  }, 120000);
+});
+
+describe('fitRun, the fit of the column pull', () => {
+  // Three units of widths folded into `offsets` (each 100 apart when packed), one segment, no pin.
+  const offsets = [0, 100, 200], segment = [0, 0, 0], free = [-Infinity, -Infinity, -Infinity], none = [Infinity, Infinity, Infinity];
+  it('a unit with a wish pushes the units with no wish after it the whole way, in one call', () => {
+    // Unit 0 wants 150; units 1 and 2 stand at 120 and 260 and have no wish.
+    expect(fitRun([150, 120, 260], offsets, segment, free, none, [false, true, true])).toEqual([150, 250, 350]);
+  });
+  it('a unit with a wish pushes the units with no wish before it to the left', () => {
+    expect(fitRun([0, 100, 120], offsets, segment, free, none, [true, true, false])).toEqual([-80, 20, 120]);
+  });
+  it('a unit with no wish that nothing pushes stands where it stands', () => {
+    expect(fitRun([0, 140, 300], offsets, segment, free, none, [false, true, false])).toEqual([0, 140, 300]);
+  });
+  it('a unit with no wish between two pins is held between them', () => {
+    // Units 0 and 2 are pins (segments 1 and 3), both at z = left - offset = 0; unit 1 (segment 2) has no wish and is wanted left of that.
+    expect(fitRun([0, 50, 200], offsets, [1, 2, 3], [0, 0, 0], [0, 0, 0], [false, true, false])).toEqual([0, 100, 200]);
+  });
+  it('is a fixed point: on its own result as the wanted lefts it returns the same lefts', () => {
+    const noWish = [false, true, true, false], four = [0, 100, 200, 300], one = [0, 0, 0, 0];
+    const first = fitRun([150, 120, 260, 290], four, one, four.map(() => -Infinity), four.map(() => Infinity), noWish);
+    expect(fitRun(first, four, one, four.map(() => -Infinity), four.map(() => Infinity), noWish)).toEqual(first);
+  });
 });

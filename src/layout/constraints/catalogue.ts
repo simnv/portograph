@@ -1,5 +1,5 @@
 import type { LayoutModel } from '../../model/layout.js';
-import { COLUMN_SLACK } from '../columns.js';
+import { besideGap } from '../columns.js';
 import { CELL_TO_CHILD_FRAME_GAP, FRAME_TO_FRAME_GAP, cellReach, isTransitKind } from '../frames.js';
 import { GROUP_PADDING } from '../regions.js';
 import { bandGap } from '../skeleton-graph.js';
@@ -146,10 +146,10 @@ export function xCatalogue(model: LayoutModel, options: CatalogueOptions = {}): 
       if (items.some((c, k) => k > i && k < j && shareY(a, c) && shareY(c, b))) continue;
       const flank = (item: Item): boolean => !item.frame && model.groups[item.id]?.flank !== undefined;
       let kind: ConstraintKind, gap: number, source: string, basis: string, contract: Constraint['contract'] = 'known', note: string | undefined;
-      if (scope.root && a.frame && b.frame) { kind = 'separation-root-frames'; gap = bg; basis = 'bandGap'; source = 'Q80, Q102: sibling columns a band gap apart (bandGap)'; }
-      else if (scope.root && (a.frame || b.frame)) { kind = 'separation-root-frame-group'; gap = bg + COLUMN_SLACK; basis = 'bandGap + COLUMN_SLACK'; source = 'Q80 bandGap + COLUMN_SLACK (columns.ts runSpacing: the frame keeps its margin beside a plain group)'; }
+      if (scope.root && a.frame && b.frame) { kind = 'separation-root-frames'; gap = besideGap(model, true, true); basis = 'bandGap'; source = 'Q80, Q102: sibling columns a band gap apart (bandGap)'; }
+      else if (scope.root && (a.frame || b.frame)) { kind = 'separation-root-frame-group'; gap = besideGap(model, true, false); basis = 'bandGap + COLUMN_SLACK'; source = 'Q80 bandGap + COLUMN_SLACK (columns.ts besideGap: the frame keeps its margin beside a plain group)'; }
       else if (scope.root && (flank(a) || flank(b))) { kind = 'separation-flank'; gap = bg; basis = 'bandGap'; source = 'skeleton-geometry.ts placeFlanksAndPeers: a flank stands a bandGap from its core; centre.ts flank window keeps it'; }
-      else if (scope.root) { kind = 'separation-root-groups'; gap = bg; basis = 'bandGap'; source = 'Q80 band gap between group boxes (bandGap)'; }
+      else if (scope.root) { kind = 'separation-root-groups'; gap = besideGap(model, false, false); basis = 'bandGap'; source = 'Q80 band gap between group boxes (bandGap)'; }
       else if (a.frame && b.frame) { kind = 'separation-frame-frames'; gap = FRAME_TO_FRAME_GAP; basis = 'FRAME_TO_FRAME_GAP'; source = 'FRAME_TO_FRAME_GAP (columns.ts packBesideRows)'; }
       else if (a.frame || b.frame) { kind = 'separation-cell-child-frame'; gap = CELL_TO_CHILD_FRAME_GAP; basis = 'CELL_TO_CHILD_FRAME_GAP'; source = 'CELL_TO_CHILD_FRAME_GAP, measured from cellReach (columns.ts packBesideRows)'; }
       else { kind = 'separation-frame-cells'; gap = 0; basis = 'zero (non-overlap)'; source = 'cellReach of two cells of one frame must not overlap (no named gap: the reach already holds GROUP_PADDING on each side)'; contract = 'translation'; note = 'the gap is this catalogue\'s reading: no code constant names a cell-to-cell gap inside a frame'; }

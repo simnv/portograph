@@ -1655,19 +1655,24 @@ each side. `packFrameColumns` (`src/layout/columns.ts`) runs in stage 4 after EL
 frames and the one-rank groups of a document tier left to right, anchor tier first. Each axis
 lands on the mean x of its routed feeds, and the columns stand a band gap apart
 (`packStep`). The column is a wall for the centring and the overlay sweeps. Centring spends the
-slack and never leaves less than a band gap between two frame boxes. `separateFrameColumns` runs
+slack and never leaves less than a band gap between two frame boxes, or less than a band gap and
+`COLUMN_SLACK` between a frame box and a plain group. One function says how far two units of the
+root scope stand apart, `besideGap` (architecture-2 ticket 75): gate G9, `runSpacing` (the column
+passes), `flankRoom`, `frameColumns` and every wall a column puts to a plain group (`columnWindow`,
+the overlay placement, the step over chords) read it. A column has room toward a plain group only
+where the two stand more than that gap apart, half of the excess, as between two frames. `separateFrameColumns` runs
 in the `rows` rule, after every row group has its width, and moves each frame as a whole with one
 dx until the gap is a band gap again. `orderFramesByOverlay` re-packs the columns in the order the
 overlay links ask for.
 
-`holdColumnAxes` pulls each frame column of a tier toward its feeds: the units of the tier keep a
-band gap apart by pool adjacent violators on the moves that reach each feed range. In the outer pass a unit whose
-every feed follows it (`Bundle.lead`, 7e) has no wish in the pool: it stands where it stands until a
-sibling pushes it (architecture-2 ticket 74). With a wish to stay it took half of a sibling's
-deficit, the next seat moved its feeds after it, and the next call took half again: every replay
-moved the tier in x, and the y-only rebuild of the tier-gap solve refused the move. Any other unit
-with no feed range still wishes to stay where it stands, and pooled with a sibling that pulls it
-moves half of the deficit at each call (architecture-2 ticket 75).
+`holdColumnAxes` pulls each frame column of a tier toward its feeds: the units of the tier keep the
+spacing of `runSpacing` by pool adjacent violators on the moves that reach each feed range
+(`fitRun`). In the outer pass a unit with no feed range (no feed, or every feed follows it,
+`Bundle.lead`, 7e) has no wish in the pool: it stands where it stands until a sibling pushes it
+(architecture-2 tickets 74 and 75). With a wish to stay it took half of a sibling's deficit, and the
+next call took half again (after the seat moved its feeds, where they followed it): every replay
+moved the tier in x, and the y-only rebuild of the tier-gap solve refused the move. The pass is
+idempotent: a second call moves nothing.
 
 ## Stage 8 — route (remainder)
 
