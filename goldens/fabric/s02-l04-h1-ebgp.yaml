@@ -1,0 +1,48 @@
+# Generator: scripts/gen-fabric.mjs
+# Parameters: spines=2 leafs=4 hostsPerLeaf=1 mode=ebgp sessions=true
+# Netlab reference: https://github.com/ipspace/netlab/blob/4c3280eafa905a1f4b150a61f8d0e7484c64e1c6/docs/plugins/fabric.md
+# Reference page: https://netlab.tools/plugins/fabric/ (read 2026-11-06)
+# Physical links: 12; nodes: 10
+# Sessions: 8 overlay (class flow), generated EBGP spine-to-leaf sessions
+portograph: 2
+profile: network
+title: "Fabric 2x4, 1 host per leaf, EBGP"
+groups:
+  spines: { tier: 0, label: "AS 65100" }
+  leafs-L1: { tier: 1, label: "AS 65001" }
+  leafs-L2: { tier: 1, label: "AS 65002" }
+  leafs-L3: { tier: 1, label: "AS 65003" }
+  leafs-L4: { tier: 1, label: "AS 65004" }
+  hosts: { tier: 2, label: hosts }
+nodes:
+  S1: { group: spines, class: router }
+  S2: { group: spines, class: router }
+  L1: { group: leafs-L1, class: router, icon: router }
+  L2: { group: leafs-L2, class: router, icon: router }
+  L3: { group: leafs-L3, class: router, icon: router }
+  L4: { group: leafs-L4, class: router, icon: router }
+  H1: { group: hosts, class: host, icon: server }
+  H2: { group: hosts, class: host, icon: server }
+  H3: { group: hosts, class: host, icon: server }
+  H4: { group: hosts, class: host, icon: server }
+links:
+  - { id: phy-S1-L1, from: S1, to: L1 }
+  - { id: phy-S1-L2, from: S1, to: L2 }
+  - { id: phy-S1-L3, from: S1, to: L3 }
+  - { id: phy-S1-L4, from: S1, to: L4 }
+  - { id: phy-S2-L1, from: S2, to: L1 }
+  - { id: phy-S2-L2, from: S2, to: L2 }
+  - { id: phy-S2-L3, from: S2, to: L3 }
+  - { id: phy-S2-L4, from: S2, to: L4 }
+  - { id: phy-H1-L1, from: H1, to: L1 }
+  - { id: phy-H2-L2, from: H2, to: L2 }
+  - { id: phy-H3-L3, from: H3, to: L3 }
+  - { id: phy-H4-L4, from: H4, to: L4 }
+  - { id: ses-01, from: S1, to: L1, class: flow, label: EBGP }
+  - { id: ses-02, from: S1, to: L2, class: flow, label: EBGP }
+  - { id: ses-03, from: S1, to: L3, class: flow, label: EBGP }
+  - { id: ses-04, from: S1, to: L4, class: flow, label: EBGP }
+  - { id: ses-05, from: S2, to: L1, class: flow, label: EBGP }
+  - { id: ses-06, from: S2, to: L2, class: flow, label: EBGP }
+  - { id: ses-07, from: S2, to: L3, class: flow, label: EBGP }
+  - { id: ses-08, from: S2, to: L4, class: flow, label: EBGP }

@@ -79,6 +79,24 @@ implementation:
 - Link-label coverage comes from ticket-owned synthetic inputs; adding labels to the golden would
   add text absent from the JPEG.
 
+## Generated fabric sheets
+
+`fabric/` holds two portograph-owned generated fabrics with BGP session overlays.
+Regenerate them with `scripts/gen-fabric.mjs`; parameters and the pinned netlab
+reference are in each header. These sheets add a shared-AS canton with RR spines,
+and separate leaf-AS boxes with hosts outside them, beyond the real physical fabrics.
+
+| File | Expected contract |
+|---|---|
+| [`fabric/s02-l04-h0-ibgp.yaml`](fabric/s02-l04-h0-ibgp.yaml) | AS 65000 canton, two RR spines, four leaf routers, eight physical links and eight IBGP overlays |
+| [`fabric/s02-l04-h1-ebgp.yaml`](fabric/s02-l04-h1-ebgp.yaml) | AS 65100 spine box, four leaf AS boxes, four hosts, 12 physical links and eight EBGP overlays |
+
+Both rendered with zero error-severity gates and zero removed links on 2026-11-06;
+their PNGs were inspected. The EBGP render omits two overlay labels and reports
+three label-border crossings. The inputs retain all labels and session links.
+Measurements and the 20-case stress matrix are in
+[`.scratch/stress/fabric/`](../.scratch/stress/fabric/README.md).
+
 ## Real sheets
 
 `real/` holds diagrams from public sources with a licence that allows reuse. They are inputs only:
