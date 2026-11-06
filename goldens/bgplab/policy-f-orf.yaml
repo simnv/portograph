@@ -1,0 +1,31 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/policy/f-orf/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/policy/topology-orf.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 2 real nodes (rtr, x1), 2 AS boxes (Small site: AS 65000, Upstream: AS 65100), 1 physical pair (src-link-001),
+#   0 LANs, 0 stubs, no link name.
+# Added: none.
+# Simplified: orientation rotated (see Tiers/order).
+# Dropped links: none.
+# Dropped annotations: Callouts "Inbound prefix list" (RTR) and "Outbound route filter" (X1) with link-end markers;
+#   the EBGP arrow is kept as a session.
+# Dropped configuration: originated prefixes, default-originate, bgp.as values (kept only in the box labels),
+#   plugin/_adjust data.
+# Sessions: 1 overlay (class flow) from the drawing: rtr-x1 EBGP.
+# Tiers/order: Rotated: the PNG has the small site on the left and the upstream on the right; left becomes tier 0.
+#   small-site = tier 0 [rtr]; upstream = tier 1 [x1].
+# Aliases: none (candidate neighbours F1: basic/0-frrouting, basic/1-session: w01 compares box labels).
+portograph: 2
+profile: network
+title: "Use Outbound Route Filters (ORF) for IP Prefixes"
+groups:
+  small-site: { tier: 0, label: "Small site: AS 65000" }
+  upstream: { tier: 1, label: "Upstream: AS 65100" }
+nodes:
+  rtr: { group: small-site, label: RTR, class: router, icon: router }
+  x1: { group: upstream, label: X1, class: router, icon: router }
+links:
+  - [rtr, x1, { id: src-link-001 }]
+  - [rtr, x1, { id: ses-01, class: flow, label: "EBGP" }]

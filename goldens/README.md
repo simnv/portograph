@@ -123,6 +123,9 @@ Thornton), read at commit `8aeeacc`. The AVD repository is `github.com/aristanet
 (Apache-2.0), read at commit `6267989`. The AVD sheets are built by hand from inventory and group
 variables: only host names and links are kept; addresses, ASNs and interface names are not.
 
+`bgplab/` holds 44 sheets from the bgplab labs (MIT, Ivan Pepelnjak), also inputs only and also in
+`npm run corpus`. See [`bgplab/README.md`](bgplab/README.md).
+
 ## Normalised model contract
 
 The expected JSON records document normalisation before placement and technique

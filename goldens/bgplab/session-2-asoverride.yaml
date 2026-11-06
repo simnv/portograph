@@ -1,0 +1,62 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/session/2-asoverride/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/session/topology-asoverride.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1 plus decision-addendum
+# Kept: 4 real nodes; 3 AS/site boxes; 3 physical pairs; 0 LANs; no one-ended stubs; all retained source link names
+# Added: none; source-only retained cable labels: src-link-001 "PE1-to-CE1"; src-link-005 "PE2-to-CE2"; src-link-006 "SP internal link"
+# Simplified: Rotate the source left-to-right chain into top-to-bottom tiers; retain both separate AS 65000 site boxes. Router/server/cloud icons substitute source artwork.
+# Dropped links: src-link-002: pe1 - ce2 omitted, source explicitly names "Unused link" and reference omits it. src-link-003: ce1 - ce2 omitted, source explicitly names "Unused link" and reference omits it. src-link-004: pe2 - ce1 omitted, source explicitly names "Unused link" and reference omits it.
+# Sessions: 0 overlay (class flow) from the drawing: none
+# Dropped annotations: AS-path ribbons "X: 65000", "X: 65000 i", "X: 65100 65100"; these are route advertisements, not BGP session arrows
+# Dropped configuration: addressing and prefixes, protocol settings and policies, IDs and router IDs, timers, validation includes, plugins, defaults and deployment instructions; no credential values
+# Tiers/order: as-65000-site-a=0 [ce1]; as-65100=1 [pe1, pe2]; as-65000-site-b=2 [ce2]; declared nodes follow reference reading order; engine may reorder
+# Aliases: none confirmed; see notes for duplicate nominations
+portograph: 2
+profile: network
+title: Fix AS-Path in Environments Reusing BGP AS Numbers
+groups:
+  as-65000-site-a:
+    tier: 0
+    label: Site A AS 65000
+  as-65100:
+    tier: 1
+    label: "ISP: AS 65100"
+  as-65000-site-b:
+    tier: 2
+    label: Site B AS 65000
+nodes:
+  ce1:
+    group: as-65000-site-a
+    label: CE1
+    class: router
+    icon: router
+  pe1:
+    group: as-65100
+    label: PE1
+    class: router
+    icon: router
+  pe2:
+    group: as-65100
+    label: PE2
+    class: router
+    icon: router
+  ce2:
+    group: as-65000-site-b
+    label: CE2
+    class: router
+    icon: router
+links:
+  - id: src-link-001
+    from: pe1
+    to: ce1
+    label: PE1-to-CE1
+  - id: src-link-005
+    from: pe2
+    to: ce2
+    label: PE2-to-CE2
+  - id: src-link-006
+    from: pe1
+    to: pe2
+    label: SP internal link

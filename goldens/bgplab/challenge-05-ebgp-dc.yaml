@@ -1,0 +1,50 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/challenge/05-ebgp-dc/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/challenge/topology-ebgp-dc.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 10 real nodes (S1, S2 spines; L1 to L4 leaves; H1 to H4 hosts), 0 AS boxes (the drawing has none), 16 physical pairs, 0 LANs, 0 stubs, no link names.
+# Added: 3 empty-label groups for the three rows (a node needs a group).
+# Simplified: S and L nodes are class switch (the drawing shows switch icons; the source names no role). H1 to H4 are hosts as in the drawing although the source gives them FRR.
+# Dropped links: none.
+# Dropped annotations: none (the drawing has no arrows).
+# Dropped configuration: FRR daemon list, device setting.
+# Sessions: 0 overlay (the drawing has no session arrows)
+# Tiers/order: 0 g-spines (S1, S2); 1 g-leaves (L1 to L4); 2 g-hosts (H1 to H4).
+# Aliases: none
+portograph: 2
+profile: network
+title: "EBGP-Only Data Center Design"
+groups:
+  g-spines: { tier: 0, label: "" }
+  g-leaves: { tier: 1, label: "" }
+  g-hosts: { tier: 2, label: "" }
+nodes:
+  s1: { group: g-spines, label: S1, class: switch, icon: switch }
+  s2: { group: g-spines, label: S2, class: switch, icon: switch }
+  l1: { group: g-leaves, label: L1, class: switch, icon: switch }
+  l2: { group: g-leaves, label: L2, class: switch, icon: switch }
+  l3: { group: g-leaves, label: L3, class: switch, icon: switch }
+  l4: { group: g-leaves, label: L4, class: switch, icon: switch }
+  h1: { group: g-hosts, label: H1, class: server, icon: server }
+  h2: { group: g-hosts, label: H2, class: server, icon: server }
+  h3: { group: g-hosts, label: H3, class: server, icon: server }
+  h4: { group: g-hosts, label: H4, class: server, icon: server }
+links:
+  - [l1, s1, { id: src-link-001 }]
+  - [l1, s2, { id: src-link-002 }]
+  - [l2, s1, { id: src-link-003 }]
+  - [l2, s2, { id: src-link-004 }]
+  - [l3, s1, { id: src-link-005 }]
+  - [l3, s2, { id: src-link-006 }]
+  - [l4, s1, { id: src-link-007 }]
+  - [l4, s2, { id: src-link-008 }]
+  - [h1, l1, { id: src-link-009 }]
+  - [h1, l2, { id: src-link-010 }]
+  - [h2, l1, { id: src-link-011 }]
+  - [h2, l2, { id: src-link-012 }]
+  - [h3, l3, { id: src-link-013 }]
+  - [h3, l4, { id: src-link-014 }]
+  - [h4, l3, { id: src-link-015 }]
+  - [h4, l4, { id: src-link-016 }]

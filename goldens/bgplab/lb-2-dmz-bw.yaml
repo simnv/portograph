@@ -1,0 +1,31 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/lb/2-dmz-bw/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/lb/topology-lb-dmz-bw.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 3 real nodes (RTR, X1, X2), 2 AS boxes (AS 65000, AS 65100), 3 physical pairs, 0 LANs, 0 stubs, no link names.
+# Added: source link 3 (x1-x2, both in the AS 65100 box) is not drawn in the PNG; it is an active link (addressed, OSPF in the group), so it is kept as an addition.
+# Simplified: the drawing's left-to-right pair of boxes is rotated into vertical tiers.
+# Dropped links: none.
+# Dropped annotations: 3 orange callouts ("Set DMZ Bandwidth", "Ignore MED, Set DMZ Bandwidth", "10.1.3.0/24") and the 2 orange dots at the RTR link ends.
+# Dropped configuration: addressing, MED values, originated prefix, loopback advertisement, OSPF and BGP module settings, policy plugin.
+# Sessions: 2 overlay (class flow) from the drawing: rtr-x1 EBGP, rtr-x2 EBGP
+# Tiers/order: rotated left to right into tiers. 0 as-65000 (RTR); 1 as-65100 (X1, X2).
+# Aliases: none
+portograph: 2
+profile: network
+title: "EBGP Load Balancing with BGP Link Bandwidth"
+groups:
+  as-65000: { tier: 0, label: "AS 65000" }
+  as-65100: { tier: 1, label: "AS 65100" }
+nodes:
+  rtr: { group: as-65000, label: RTR, class: router, icon: router }
+  x1: { group: as-65100, label: X1, class: router, icon: router }
+  x2: { group: as-65100, label: X2, class: router, icon: router }
+links:
+  - [rtr, x1, { id: src-link-001 }]
+  - [rtr, x2, { id: src-link-002 }]
+  - [x1, x2, { id: src-link-003 }]
+  - [rtr, x1, { id: ses-01, class: flow, label: EBGP }]
+  - [rtr, x2, { id: ses-02, class: flow, label: EBGP }]

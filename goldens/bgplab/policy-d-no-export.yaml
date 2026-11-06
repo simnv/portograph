@@ -1,0 +1,38 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/policy/d-no-export/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/policy/topology-no-export.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 4 real nodes (c1, c2, x1, x2), 3 AS boxes (ISP-1: AS 65100, ISP-2: AS 65101, Customer: AS 65000), 3 physical
+#   pairs (src-link-001, 005, 006), 0 LANs, 0 stubs; names kept as labels.
+# Added: none.
+# Simplified: src-link-006 (c1-c2) is a two-participant `type: lan`, kept as an ordinary link. No x1-x2 line (the
+#   unused link is omitted).
+# Dropped links: src-link-002 c1-x2, src-link-003 x1-x2, src-link-004 c2-x1: each named "Unused link", pool l2only,
+#   "Used for compliance with 4-router topology"; not drawn.
+# Dropped annotations: Two callouts "Set no-export on ingress"; the OSPF arrow c1-c2 (non-BGP).
+# Dropped configuration: addresses, loopbacks, router IDs, bgp.community setting, bgp.advertise_loopback and
+#   bgp.advertise, ospf module, validation.
+# Sessions: 3 overlay (class flow) from the drawing: x1-c1 EBGP (grey), x2-c2 EBGP (grey), c1-c2 IBGP (grey).
+# Tiers/order: isp-1 = tier 0 [x1]; isp-2 = tier 0 [x2]; customer = tier 1 [c1, c2]. Reading order: x1, x2, c1, c2.
+# Aliases: none.
+portograph: 2
+profile: network
+title: "Using No-Export Community to Filter Transit Routes"
+groups:
+  isp-1: { tier: 0, label: "ISP-1: AS 65100" }
+  isp-2: { tier: 0, label: "ISP-2: AS 65101" }
+  customer: { tier: 1, label: "Customer: AS 65000" }
+nodes:
+  x1: { group: isp-1, label: X1, class: router, icon: router }
+  x2: { group: isp-2, label: X2, class: router, icon: router }
+  c1: { group: customer, label: C1, class: router, icon: router }
+  c2: { group: customer, label: C2, class: router, icon: router }
+links:
+  - [c1, x1, { id: src-link-001, label: "Link to AS 65100" }]
+  - [c2, x2, { id: src-link-005, label: "Link to AS 65101" }]
+  - [c1, c2, { id: src-link-006, label: "Customer internal link" }]
+  - [x1, c1, { id: ses-01, class: flow, label: "EBGP" }]
+  - [x2, c2, { id: ses-02, class: flow, label: "EBGP" }]
+  - [c1, c2, { id: ses-03, class: flow, label: "IBGP" }]

@@ -1,0 +1,42 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/policy/8-community-attach/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/policy/topology-community-attach.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 4 real nodes (c1, c2, x1, x2), 4 AS boxes (Site 1: AS 65000, ISP-1: AS 65207, ISP-2: AS 65304, Site 2: AS
+#   65001), 4 physical pairs (src-link-001, 002, 003, 005), 0 LANs, 0 stubs; names kept as labels.
+# Added: none.
+# Simplified: orientation rotated (see Tiers/order).
+# Dropped links: src-link-004 c2-x1: named "Unused link", pool l2only; the lab page says unused links retain interface
+#   names; not drawn.
+# Dropped annotations: Callout "Add community" at C1; grey bubble "Local preference is reduced" pointing at X2; EBGP
+#   arrows kept as sessions.
+# Dropped configuration: originated prefixes, BGP community and routing-policy data on x2 (prefix lists, community
+#   map, local-preference policy), loopbacks, router IDs, validation, plugin/_adjust data.
+# Sessions: 3 overlay (class flow) from the drawing: c1-x1 EBGP, c1-x2 EBGP, x2-c2 EBGP.
+# Tiers/order: Rotated: the PNG has Site 1 on the left, ISP-1 above ISP-2 in the middle, Site 2 on the right; left to
+#   right becomes top to bottom. site-1 = tier 0 [c1]; isp-1 = tier 1 [x1]; isp-2 = tier 1 [x2]; site-2 = tier 2 [c2].
+#   Reading order: c1, x1, x2, c2.
+# Aliases: none.
+portograph: 2
+profile: network
+title: "Attach BGP Communities to Outgoing BGP Updates"
+groups:
+  site-1: { tier: 0, label: "Site 1: AS 65000" }
+  isp-1: { tier: 1, label: "ISP-1: AS 65207" }
+  isp-2: { tier: 1, label: "ISP-2: AS 65304" }
+  site-2: { tier: 2, label: "Site 2: AS 65001" }
+nodes:
+  c1: { group: site-1, label: C1, class: router, icon: router }
+  x1: { group: isp-1, label: X1, class: router, icon: router }
+  x2: { group: isp-2, label: X2, class: router, icon: router }
+  c2: { group: site-2, label: C2, class: router, icon: router }
+links:
+  - [c1, x1, { id: src-link-001, label: "Primary uplink" }]
+  - [c1, x2, { id: src-link-002, label: "Backup uplink" }]
+  - [x1, x2, { id: src-link-003, label: "Inter-ISP link" }]
+  - [c2, x2, { id: src-link-005, label: "Site 2 uplink" }]
+  - [c1, x1, { id: ses-01, class: flow, label: "EBGP" }]
+  - [c1, x2, { id: ses-02, class: flow, label: "EBGP" }]
+  - [x2, c2, { id: ses-03, class: flow, label: "EBGP" }]

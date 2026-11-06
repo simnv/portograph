@@ -1,0 +1,56 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/basic/b-max-prefix/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/basic/topology-max-prefix.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 2 real nodes; 2 displayed AS boxes; 2 physical pairs including 1 stub legs; 0 LANs; all visible router labels
+# Sessions: 1 overlay (class flow) from the drawing: rtr-customer EBGP
+# Added: stub-2, active customer stub src-link-002 labeled with its explicit subnet; source-only physical stub absent from PNG
+# Simplified: source left-to-right hierarchy rotated into top-to-bottom tiers; standard icons replace artwork; no port or layout hints
+# Dropped links: none
+# Dropped annotations: Too many prefixes callout
+# Dropped configuration: addressing, route origination/policy, protocol timers/options, validation, plugins, device/deployment data and credentials; no credential values retained
+# Tiers/order: as-65000=0, as-65100=1, medium-2=2; group and node declaration follows PNG reading order, source order breaks ties; engine may reorder
+# Aliases: none
+portograph: 2
+profile: network
+title: Limit the Number of Accepted BGP Prefixes
+groups:
+  as-65000:
+    tier: 0
+    label: AS 65000
+  as-65100:
+    tier: 1
+    label: AS 65100
+  medium-2:
+    tier: 2
+    label: ""
+nodes:
+  rtr:
+    group: as-65000
+    label: RTR
+    class: router
+    icon: router
+  customer:
+    group: as-65100
+    label: Customer
+    class: router
+    icon: router
+  stub-2:
+    group: medium-2
+    label: 10.42.1.0/24
+    class: cloud
+    icon: cloud
+links:
+  - id: src-link-001
+    from: rtr
+    to: customer
+  - id: src-link-002
+    from: customer
+    to: stub-2
+  - id: ses-01
+    from: rtr
+    to: customer
+    class: flow
+    label: EBGP

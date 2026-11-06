@@ -1,0 +1,36 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/challenge/40-mpls-core/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/challenge/topology-mpls-core.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 5 real nodes (E1, PE1, CORE, PE2, E2), 3 AS boxes (AS 65101, Transit network: AS 65000, AS 65102), 4 physical pairs, 0 LANs, 0 stubs, no link names.
+# Added: CORE sits inside the transit box as the drawing shows; the source gives it no AS (drawing-derived membership).
+# Simplified: the drawing's left-to-right row is rotated into vertical tiers.
+# Dropped links: none.
+# Dropped annotations: 2 grey OSPF arrows (PE1-CORE, CORE-PE2).
+# Dropped configuration: addressing, loopbacks, OSPF and BGP module settings, LDP daemon list.
+# Sessions: 3 overlay (class flow) from the drawing: e1-pe1 EBGP, pe1-pe2 IBGP, pe2-e2 EBGP
+# Tiers/order: rotated left to right into tiers. 0 as-65101 (E1); 1 as-65000 (PE1, CORE, PE2); 2 as-65102 (E2).
+# Aliases: none
+portograph: 2
+profile: network
+title: "BGP-Free Core in a Transit Network"
+groups:
+  as-65101: { tier: 0, label: "AS 65101" }
+  as-65000: { tier: 1, label: "Transit network: AS 65000" }
+  as-65102: { tier: 2, label: "AS 65102" }
+nodes:
+  e1: { group: as-65101, label: E1, class: router, icon: router }
+  pe1: { group: as-65000, label: PE1, class: router, icon: router }
+  core: { group: as-65000, label: CORE, class: router, icon: router }
+  pe2: { group: as-65000, label: PE2, class: router, icon: router }
+  e2: { group: as-65102, label: E2, class: router, icon: router }
+links:
+  - [e1, pe1, { id: src-link-001 }]
+  - [pe1, core, { id: src-link-002 }]
+  - [core, pe2, { id: src-link-003 }]
+  - [pe2, e2, { id: src-link-004 }]
+  - [e1, pe1, { id: ses-01, class: flow, label: EBGP }]
+  - [pe1, pe2, { id: ses-02, class: flow, label: IBGP }]
+  - [pe2, e2, { id: ses-03, class: flow, label: EBGP }]

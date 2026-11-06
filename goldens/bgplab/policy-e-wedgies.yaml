@@ -1,0 +1,43 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/policy/e-wedgies/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/policy/topology-wedgies.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 5 real nodes (c1, p1, p2, u1, u2), 5 AS boxes (Customer: AS 65000, AS 65207, AS 65304, AS 65101, AS 65102), 5
+#   physical pairs (src-link-001..005), 0 LANs, 0 stubs; names kept as labels.
+# Added: none (YAML and PNG agree). The netlab group external [p1, p2, u1, u2] is not a drawn box.
+# Simplified: orientation rotated (see Tiers/order).
+# Dropped links: none.
+# Dropped annotations: Callout "Add community" at C1; grey bubbles "Local preference is reduced" (P2) and "BGP wedgie"
+#   (U2); EBGP arrows kept as sessions.
+# Dropped configuration: originated prefix, BGP community and routing-policy data on p2 (prefix list, community,
+#   local-preference policy), loopbacks, bgp.advertise_loopback, validation, plugin/_adjust data.
+# Sessions: 2 overlay (class flow) from the drawing: c1-p1 EBGP, c1-p2 EBGP.
+# Tiers/order: Rotated: the PNG has Customer on the left and a 2x2 grid right of it (P1 U1 over P2 U2); left to right
+#   becomes top to bottom, grid rows become the order within a tier. customer = tier 0 [c1]; as-65207 = tier 1 [p1];
+#   as-65304 = tier 1 [p2]; as-65101 = tier 2 [u1]; as-65102 = tier 2 [u2]. Reading order: c1, p1, p2, u1, u2.
+# Aliases: none.
+portograph: 2
+profile: network
+title: "Resolve BGP Wedgies"
+groups:
+  customer: { tier: 0, label: "Customer: AS 65000" }
+  as-65207: { tier: 1, label: "AS 65207" }
+  as-65304: { tier: 1, label: "AS 65304" }
+  as-65101: { tier: 2, label: "AS 65101" }
+  as-65102: { tier: 2, label: "AS 65102" }
+nodes:
+  c1: { group: customer, label: C1, class: router, icon: router }
+  p1: { group: as-65207, label: P1, class: router, icon: router }
+  p2: { group: as-65304, label: P2, class: router, icon: router }
+  u1: { group: as-65101, label: U1, class: router, icon: router }
+  u2: { group: as-65102, label: U2, class: router, icon: router }
+links:
+  - [c1, p1, { id: src-link-001, label: "Primary uplink" }]
+  - [c1, p2, { id: src-link-002, label: "Backup uplink" }]
+  - [p1, u1, { id: src-link-003, label: "P1 uplink" }]
+  - [p2, u2, { id: src-link-004, label: "P2 uplink" }]
+  - [u1, u2, { id: src-link-005, label: "Upstream peering link" }]
+  - [c1, p1, { id: ses-01, class: flow, label: "EBGP" }]
+  - [c1, p2, { id: ses-02, class: flow, label: "EBGP" }]

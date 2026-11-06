@@ -1,0 +1,57 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/basic/e-ebgp-multihop/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/basic/topology-ebgp-multihop.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 3 real nodes; 2 displayed AS boxes; 2 physical pairs including 0 stub legs; 0 LANs; all visible router labels
+# Sessions: 1 overlay (class flow) from the drawing: int-ext EBGP
+# Added: none
+# Simplified: source left-to-right hierarchy rotated into top-to-bottom tiers; standard icons replace artwork; no port or layout hints
+# Dropped links: none
+# Dropped annotations: Multihop EBGP callout
+# Dropped configuration: addressing, route origination/policy, protocol timers/options, validation, plugins, device/deployment data and credentials; no credential values retained
+# Tiers/order: as-65000=0, neutral-fw=1, as-64501=2; group and node declaration follows PNG reading order, source order breaks ties; engine may reorder
+# Aliases: none
+# Facts: fw is an unlabelled firewall icon outside both AS boxes in the PNG, retained with empty visible label and class/icon firewall; no ASN invented.
+portograph: 2
+profile: network
+title: Running EBGP Across a Firewall
+groups:
+  as-65000:
+    tier: 0
+    label: AS 65000
+  neutral-fw:
+    tier: 1
+    label: ""
+  as-64501:
+    tier: 2
+    label: AS 64501
+nodes:
+  int:
+    group: as-65000
+    label: INT
+    class: router
+    icon: router
+  fw:
+    group: neutral-fw
+    label: ""
+    class: firewall
+    icon: firewall
+  ext:
+    group: as-64501
+    label: EXT
+    class: router
+    icon: router
+links:
+  - id: src-link-001
+    from: ext
+    to: fw
+  - id: src-link-002
+    from: int
+    to: fw
+  - id: ses-01
+    from: int
+    to: ext
+    class: flow
+    label: EBGP

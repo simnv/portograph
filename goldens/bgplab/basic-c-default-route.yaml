@@ -1,0 +1,61 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/basic/c-default-route/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/basic/topology-default-route.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 3 real nodes; 2 displayed AS boxes; 2 physical pairs including 0 stub legs; 0 LANs; all visible router labels
+# Sessions: 2 overlay (class flow) from the drawing: x1-r1 EBGP, r1-r2 IBGP
+# Added: source link names Link with the customer and Intra-ISP link, absent from PNG; preserve on physical links
+# Simplified: source left-to-right hierarchy rotated into top-to-bottom tiers; standard icons replace artwork; no port or layout hints
+# Dropped links: none
+# Dropped annotations: OSPF arrow r1-r2; Advertise default route callout
+# Dropped configuration: addressing, route origination/policy, protocol timers/options, validation, plugins, device/deployment data and credentials; no credential values retained
+# Tiers/order: as-65100=0, as-65000=1; group and node declaration follows PNG reading order, source order breaks ties; engine may reorder
+# Aliases: none
+# Facts: r1/r2 inherit global bgp.as 65000; x1 overrides to 65100. ISP dash and whitespace follow displayed title.
+portograph: 2
+profile: network
+title: Advertise Default Route in BGP
+groups:
+  as-65100:
+    tier: 0
+    label: Customer AS 65100
+  as-65000:
+    tier: 1
+    label: ISP – AS 65000
+nodes:
+  x1:
+    group: as-65100
+    label: X1
+    class: router
+    icon: router
+  r1:
+    group: as-65000
+    label: R1
+    class: router
+    icon: router
+  r2:
+    group: as-65000
+    label: R2
+    class: router
+    icon: router
+links:
+  - id: src-link-001
+    from: r1
+    to: x1
+    label: Link with the customer
+  - id: src-link-002
+    from: r1
+    to: r2
+    label: Intra-ISP link
+  - id: ses-01
+    from: x1
+    to: r1
+    class: flow
+    label: EBGP
+  - id: ses-02
+    from: r1
+    to: r2
+    class: flow
+    label: IBGP

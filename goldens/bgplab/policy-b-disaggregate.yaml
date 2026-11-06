@@ -1,0 +1,39 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/policy/b-disaggregate/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/policy/topology-disaggregate.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 3 real YAML nodes (rtr, x1, x2), 3 AS boxes, 3 physical pairs (src-link-001..003), 0 LANs, 0 stubs, no link
+#   names.
+# Added: node int (label INT): drawn in the AS 65000 box next to RTR with no line, absent from the YAML; drawing-
+#   derived, isolated (no link).
+# Simplified: orientation rotated.
+# Dropped links: none.
+# Dropped annotations: Callouts "Primary uplink, Disaggregation", "Backup uplink, No disaggregation" and
+#   "172.16.4.0/22" (on INT) with link-end markers; EBGP arrows kept as sessions.
+# Dropped configuration: originated prefix 172.16.4.0/22, bgp.locpref on x2, loopbacks, router IDs, validation, plugin
+#   data.
+# Sessions: 2 overlay (class flow) from the drawing: rtr-x1 EBGP, rtr-x2 EBGP.
+# Tiers/order: Rotated: the PNG has AS 65000 on the left and X1 above X2 on the right; left becomes tier 0 (top).
+#   as-65000 = tier 0 [rtr]; as-65100 = tier 1 [x1]; as-65101 = tier 1 [x2]. Reading order: int, rtr (INT is left of
+#   RTR in the PNG), x1, x2.
+# Aliases: none (the drawing-derived node int makes it differ from policy-1-weights).
+portograph: 2
+profile: network
+title: "Use Disaggregated Prefixes to Select the Primary Link"
+groups:
+  as-65000: { tier: 0, label: "AS 65000" }
+  as-65100: { tier: 1, label: "AS 65100" }
+  as-65101: { tier: 1, label: "AS 65101" }
+nodes:
+  int: { group: as-65000, label: INT, class: router, icon: router }
+  rtr: { group: as-65000, label: RTR, class: router, icon: router }
+  x1: { group: as-65100, label: X1, class: router, icon: router }
+  x2: { group: as-65101, label: X2, class: router, icon: router }
+links:
+  - [rtr, x1, { id: src-link-001 }]
+  - [rtr, x2, { id: src-link-002 }]
+  - [x1, x2, { id: src-link-003 }]
+  - [rtr, x1, { id: ses-01, class: flow, label: "EBGP" }]
+  - [rtr, x2, { id: ses-02, class: flow, label: "EBGP" }]

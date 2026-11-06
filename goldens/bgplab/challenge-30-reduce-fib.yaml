@@ -1,0 +1,40 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/challenge/30-reduce-fib/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/challenge/topology-reduce-fib.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 7 real nodes (CE1, CE2, CE3, PE1, C1, XA, XB), 6 AS boxes (Customer AS 65001, 65002, 65003; ISP: AS 65100; Upstream-A AS 65200; Upstream-B AS 65201), 6 physical pairs, 0 LANs, 0 stubs, no link names.
+# Added: none.
+# Simplified: none.
+# Dropped links: none.
+# Dropped annotations: 3 orange callouts ("Default" arrow over PE1-C1, "Small FIB" tag on PE1, "Large FIB" tag on C1).
+# Dropped configuration: addressing, originated prefixes, loopbacks, OSPF and BGP module settings, validation plugin.
+# Sessions: 0 overlay (the drawing has no session arrows)
+# Tiers/order: top row of the drawing is tier 0, the middle row is tier 1. 0 as-65003 (CE3), as-65002 (CE2), as-65200 (XA); 1 as-65001 (CE1), as-65100 (PE1, C1), as-65201 (XB).
+# Aliases: none
+portograph: 2
+profile: network
+title: "Minimize the Forwarding Table on BGP Routers"
+groups:
+  as-65003: { tier: 0, label: "Customer AS 65003" }
+  as-65002: { tier: 0, label: "Customer AS 65002" }
+  as-65200: { tier: 0, label: "Upstream-A AS 65200" }
+  as-65001: { tier: 1, label: "Customer AS 65001" }
+  as-65100: { tier: 1, label: "ISP: AS 65100" }
+  as-65201: { tier: 1, label: "Upstream-B AS 65201" }
+nodes:
+  ce3: { group: as-65003, label: CE3, class: router, icon: router }
+  ce2: { group: as-65002, label: CE2, class: router, icon: router }
+  xa: { group: as-65200, label: XA, class: router, icon: router }
+  ce1: { group: as-65001, label: CE1, class: router, icon: router }
+  pe1: { group: as-65100, label: PE1, class: router, icon: router }
+  c1: { group: as-65100, label: C1, class: router, icon: router }
+  xb: { group: as-65201, label: XB, class: router, icon: router }
+links:
+  - [pe1, ce1, { id: src-link-001 }]
+  - [pe1, ce3, { id: src-link-002 }]
+  - [pe1, c1, { id: src-link-003 }]
+  - [c1, ce2, { id: src-link-004 }]
+  - [c1, xa, { id: src-link-005 }]
+  - [c1, xb, { id: src-link-006 }]

@@ -1,0 +1,35 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/challenge/31-table-size/topology.yml
+# Reference: none; static-source reconstruction (the lab has no drawing at the pinned commit; its index.md names a missing topology-table-size.png and describes a different exercise). Hierarchy follows the sibling session/5-routeserver drawing: route server on top, LAN, then the three ISPs.
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML only; recipe bgplab-v1
+# Kept: 4 real nodes (rs, isp1, isp2, isp3), 4 AS boxes adopted from the node AS values (AS 65000, AS 65100, AS 65103, AS 65107), 1 LAN of 4 members (source link 1), 0 stubs.
+# Added: lan-1 (class cloud) for the 4-member LAN, label "LAN 1"; legs rs, isp1, isp2, isp3 in source order. 1 empty-label group for the LAN.
+# Simplified: rs is class route-server (netlab node name rs; no role in the source).
+# Dropped links: none.
+# Dropped annotations: none (no drawing).
+# Dropped configuration: addressing, prefix, loopbacks, validation plugin.
+# Sessions: 0 overlay (no drawing, so no sessions)
+# Tiers/order: 0 as-65000 (rs); 1 g-lan (LAN 1); 2 as-65100 (isp1), as-65103 (isp2), as-65107 (isp3).
+# Aliases: none (same graph as the F4 cluster: policy/c-cond-advertise, session/5-routeserver, session/8-passive; their drawn variants carry sessions or other boxes)
+portograph: 2
+profile: network
+title: "Configure a BGP route server"
+groups:
+  as-65000: { tier: 0, label: "AS 65000" }
+  g-lan: { tier: 1, label: "" }
+  as-65100: { tier: 2, label: "AS 65100" }
+  as-65103: { tier: 2, label: "AS 65103" }
+  as-65107: { tier: 2, label: "AS 65107" }
+nodes:
+  rs: { group: as-65000, class: route-server, icon: server }
+  lan-1: { group: g-lan, label: LAN 1, class: cloud, icon: cloud }
+  isp1: { group: as-65100, class: router, icon: router }
+  isp2: { group: as-65103, class: router, icon: router }
+  isp3: { group: as-65107, class: router, icon: router }
+links:
+  - [rs, lan-1, { id: src-link-001-leg-01 }]
+  - [isp1, lan-1, { id: src-link-001-leg-02 }]
+  - [isp2, lan-1, { id: src-link-001-leg-03 }]
+  - [isp3, lan-1, { id: src-link-001-leg-04 }]

@@ -1,0 +1,50 @@
+# Source: drawing only (no topology.yml at the pinned commit): https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/challenge/22-bgp-ha-protocol.md
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/challenge/topology-bgp-ha-protocol.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from the reference PNG alone; recipe bgplab-v1
+# Kept: 8 nodes read from the drawing (H, C1, C2, two firewalls, E1, E2, ISP), 2 AS boxes (AS 65000, AS 64501), 7 physical pairs, 1 LAN (the vertical bus), 0 stubs.
+# Added: inferred from the drawing: ids fw-1 and fw-2 with an empty label for the two unlabelled firewall icons (ruling R7: no invented names) (fw-1 on the C1-E1 path, fw-2 on the C2-E2 path); lan-1 (class cloud, label "LAN") for the left bus with square end caps, joining H, C1 and C2, placed inside the AS 65000 box; ISP in an empty-label group; link ids drw-link-NNN (no source index).
+# Simplified: the drawing's left-to-right order is rotated into vertical tiers.
+# Dropped links: none.
+# Dropped annotations: 1 orange callout ("Multihop EBGP").
+# Dropped configuration: none (no source file).
+# Sessions: 6 overlay (class flow) from the drawing: c1-e1 EBGP, e1-isp EBGP, c1-c2 IBGP, e1-e2 IBGP, e2-isp EBGP, c2-e2 EBGP
+# Tiers/order: rotated left to right into tiers. 0 as-65000 (H, LAN, C1, C2); 1 g-firewalls (fw-1, fw-2); 2 as-64501 (E1, E2); 3 g-isp (ISP).
+# Aliases: none
+portograph: 2
+profile: network
+title: "BGP as a High Availability Protocol"
+groups:
+  as-65000: { tier: 0, label: "AS 65000" }
+  g-firewalls: { tier: 1, label: "" }
+  as-64501: { tier: 2, label: "AS 64501" }
+  g-isp: { tier: 3, label: "" }
+nodes:
+  h: { group: as-65000, label: H, class: server, icon: server }
+  lan-1: { group: as-65000, label: LAN, class: cloud, icon: cloud }
+  c1: { group: as-65000, label: C1, class: router, icon: router }
+  c2: { group: as-65000, label: C2, class: router, icon: router }
+  fw-1: { group: g-firewalls, label: "", class: firewall }
+  fw-2: { group: g-firewalls, label: "", class: firewall }
+  e1: { group: as-64501, label: E1, class: router, icon: router }
+  e2: { group: as-64501, label: E2, class: router, icon: router }
+  isp: { group: g-isp, label: ISP, class: router, icon: router }
+links:
+  - [h, lan-1, { id: drw-link-001-leg-01 }]
+  - [c1, lan-1, { id: drw-link-001-leg-02 }]
+  - [c2, lan-1, { id: drw-link-001-leg-03 }]
+  - [c1, fw-1, { id: drw-link-002 }]
+  - [fw-1, e1, { id: drw-link-003 }]
+  - [c2, fw-2, { id: drw-link-004 }]
+  - [fw-2, e2, { id: drw-link-005 }]
+  - [e1, e2, { id: drw-link-006 }]
+  - [e1, isp, { id: drw-link-007 }]
+  - [e2, isp, { id: drw-link-008 }]
+  - [c1, e1, { id: ses-01, class: flow, label: EBGP }]
+  - [e1, isp, { id: ses-02, class: flow, label: EBGP }]
+  - [c1, c2, { id: ses-03, class: flow, label: IBGP }]
+  - [e1, e2, { id: ses-04, class: flow, label: IBGP }]
+  - [e2, isp, { id: ses-05, class: flow, label: EBGP }]
+  - [c2, e2, { id: ses-06, class: flow, label: EBGP }]

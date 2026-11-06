@@ -1,0 +1,38 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/policy/9-community-use/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/policy/topology-community-use.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 3 real nodes (isp, c, x), 3 AS boxes (Customer: AS 65304, Peer: AS 65207, ISP: AS 65000), 3 physical pairs
+#   (src-link-001..003), 0 LANs, 0 stubs; names kept as labels.
+# Added: none.
+# Simplified: orientation rotated (see Tiers/order). The netlab group external [c, x] is not a drawn box; the PNG puts
+#   c and x in separate boxes.
+# Dropped links: none.
+# Dropped annotations: Vertical tag "172.17.207.0/24"; grey bubbles "Primary uplink" and "Backup uplink: add
+#   community"; callouts "Default local preference" and "Community-based local preference" with a link-end marker;
+#   EBGP arrows kept as sessions.
+# Dropped configuration: prefix list, route-map (community set), loopbacks, router IDs, bgp.advertise_loopback,
+#   validation, plugin/_adjust data.
+# Sessions: 2 overlay (class flow) from the drawing: c-x EBGP, c-isp EBGP.
+# Tiers/order: Rotated: the PNG has Customer on the left, Peer above ISP on the right. as-65304 = tier 0 [c]; as-65207
+#   = tier 1 [x]; as-65000 = tier 1 [isp]. Reading order: c, x, isp.
+# Aliases: none.
+portograph: 2
+profile: network
+title: "Use BGP Communities in Routing Policies"
+groups:
+  as-65304: { tier: 0, label: "Customer: AS 65304" }
+  as-65207: { tier: 1, label: "Peer: AS 65207" }
+  as-65000: { tier: 1, label: "ISP: AS 65000" }
+nodes:
+  c: { group: as-65304, label: C, class: router, icon: router }
+  x: { group: as-65207, label: X, class: router, icon: router }
+  isp: { group: as-65000, label: ISP, class: router, icon: router }
+links:
+  - [isp, c, { id: src-link-001, label: "Customer uplink to ISP" }]
+  - [isp, x, { id: src-link-002, label: "Link to peer ISP" }]
+  - [c, x, { id: src-link-003, label: "Customer uplink to peer ISP" }]
+  - [c, x, { id: ses-01, class: flow, label: "EBGP" }]
+  - [c, isp, { id: ses-02, class: flow, label: "EBGP" }]

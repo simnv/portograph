@@ -1,0 +1,61 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/basic/6-protect/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/basic/topology-protect.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 3 real nodes; 3 displayed AS boxes; 2 physical pairs including 0 stub legs; 0 LANs; all visible router labels
+# Sessions: 2 overlay (class flow) from the drawing: rtr-x1 EBGP, rtr-x2 EBGP
+# Added: none
+# Simplified: source left-to-right hierarchy rotated into top-to-bottom tiers; standard icons replace artwork; no port or layout hints
+# Dropped links: none
+# Dropped annotations: TTL protection and MD5 password callouts
+# Dropped configuration: addressing, route origination/policy, protocol timers/options, validation, plugins, device/deployment data and credentials; no credential values retained
+# Tiers/order: as-65000=0, as-65100=1, as-65101=1; group and node declaration follows PNG reading order, source order breaks ties; engine may reorder
+# Aliases: basic/9-ao (same body; own title)
+portograph: 2
+profile: network
+title: Protect BGP Sessions with Passwords and GTSM
+groups:
+  as-65000:
+    tier: 0
+    label: AS 65000
+  as-65100:
+    tier: 1
+    label: "ISP-1: AS 65100"
+  as-65101:
+    tier: 1
+    label: "ISP-2: AS 65101"
+nodes:
+  rtr:
+    group: as-65000
+    label: RTR
+    class: router
+    icon: router
+  x1:
+    group: as-65100
+    label: X1
+    class: router
+    icon: router
+  x2:
+    group: as-65101
+    label: X2
+    class: router
+    icon: router
+links:
+  - id: src-link-001
+    from: rtr
+    to: x1
+  - id: src-link-002
+    from: rtr
+    to: x2
+  - id: ses-01
+    from: rtr
+    to: x1
+    class: flow
+    label: EBGP
+  - id: ses-02
+    from: rtr
+    to: x2
+    class: flow
+    label: EBGP
