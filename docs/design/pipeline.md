@@ -501,6 +501,14 @@ two different authored sides (ticket 35). From here on port identity, count, sid
 rules may adjust engine-selected slots and the documented stage-7 rules may grow or move geometry,
 but no stage may shrink a node below its current content or author floor.
 
+**A parallel set keeps one order at both ends** (architecture-2 ticket 80). A parallel set (`parallelSets`, `parallel-sets.ts`) is every bundle,
+and every other group of two or more links of any family between one node pair whose ends share one face at each node when the two faces face each
+other. Stage 5 sorts a face by the far ends' anchors; the node sorted second would read the slots the skeleton left, not the order the first one
+took, and a cable and an overlay link written in opposite directions then flip at both ends and cross (the draft of a reversed ELK edge is
+mirrored). So a sorted face hands its slots to the ports of a set in their new order before the next face is sorted. The guards are the bundle's:
+one port per link, each port with one peer, and the end with an authored `order:` leads. No later stage decides the order again. Which of the
+links stands first is still the draft's: stage 5 makes the ends agree, it does not make the choice independent of the authored direction.
+
 Stage 5 also produces measured node and description labels, icon bounds, named pills and exact
 port-associated pill labels. Centre content inside its asymmetric content insets. Anonymous ports
 receive anchors only. `rebuildNodeGeometry(draft, ids, 'current')` lets later rules retain their

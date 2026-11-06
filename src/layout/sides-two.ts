@@ -29,6 +29,7 @@ import { routedLinksAt, unreservedPeers } from './peers.js';
 import { arrangeGroups, seatStaggerRows } from './stagger.js';
 import { reserveColumns, seatColumn } from './column-arrangement.js';
 import { ofKind } from './reservations.js';
+import { parallelSets } from './parallel-sets.js';
 const key = portId;
 
 /**
@@ -1006,15 +1007,15 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   separateFramedTiersBesideFlanks(model);
   sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
-  // The ports of the links of a bundle, each link with a port of its own at the node. The two ends of a bundle are one order, so the node that is sorted second reads the order the
-  // first one took, not the slots the skeleton left: below, a sorted face hands its slots to its ports in their new order, before the next face is sorted. An end with an authored `order:`
-  // leads (its node is sorted first), so the other end follows it whichever node the document names first. A node where a bundle port also carries a link beyond the bundle seats
-  // its ports as free ports: one mixed key cannot put such a port in the bundle's order.
+  // The ports of the links of a parallel set (`parallelSets`: a bundle, or the links of any family between one node pair that leave facing faces), each link with a port of its own at the node. The two
+  // ends of a set are one order, so the node that is sorted second reads the order the first one took, not the slots the skeleton left: below, a sorted face hands its slots to its ports in their
+  // new order, before the next face is sorted. Without it each end sorts against the other end's stale slots and both flip: a cable and an overlay link written in opposite directions cross
+  // (ticket 80). An end with an authored `order:` leads (its node is sorted first), so the other end follows it whichever node the document names first. A node where a port of a set also
+  // carries a link beyond the set seats its ports as free ports: one mixed key cannot put such a port in the set's order.
   const bundled = new Set<string>(), leaders = new Set<string>();
-  for (const bundle of model.bundles) {
-    if (bundle.nodes[0] === bundle.nodes[1]) continue;
-    const ends = bundle.members.map(member => model.links.find(link => link.id === member)!.attachments!);
-    for (const node of bundle.nodes) {
+  for (const set of parallelSets(model)) {
+    const ends = set.links.map(link => link.attachments!);
+    for (const node of set.nodes) {
       const mine = ends.map(item => (item.from.node === node ? item.from : item.to));
       if (new Set(mine.map(key)).size !== mine.length || mine.some(ref => (peers.get(key(ref)) ?? []).length !== 1)) continue;
       for (const ref of mine) bundled.add(key(ref));

@@ -1,0 +1,20 @@
+# The cable is written lower node to upper node, the overlay upper to lower (opposite directions): the two links leave facing faces of one node pair and keep one side order at both ends.
+portograph: 2
+profile: network
+groups:
+  as-a: {tier: 0, label: "AS A"}
+  as-b: {tier: 0, label: "AS B"}
+  as-r: {tier: 1, label: "AS R"}
+  as-p: {tier: 2, label: "AS P"}
+nodes:
+  c1: {group: as-a, class: router, icon: router, label: C1}
+  c2: {group: as-b, class: router, icon: router, label: C2}
+  rtr: {group: as-r, class: router, icon: router, label: RTR}
+  peer: {group: as-p, class: router, icon: router, label: PEER}
+links:
+  - [c1, rtr]
+  - [c2, rtr]
+  - [peer, rtr]
+  - [c1, rtr, {class: flow, label: EBGP}]
+  - [c2, rtr, {class: flow, label: EBGP}]
+  - [rtr, peer, {class: flow, label: EBGP}]
