@@ -15,6 +15,7 @@ describe('fabric generator', () => {
     it(`${mode}, hosts=${hosts}, sessions=${sessions}: parses, preserves incidence and emits deterministic bytes`, () => {
       const text = generate(2, 4, hosts, mode, sessions);
       expect(generate(2, 4, hosts, mode, sessions)).toBe(text);
+      expect(text).toContain(sessions ? `# Sessions: 8 overlay (class flow), generated ${mode.toUpperCase()} spine-to-leaf sessions\n` : '# Sessions: none\n');
       const result = parseWithDiagnostics(text);
       expect(result.diagnostics).toEqual([]);
       if (!result.ok) throw new Error('Generated fabric did not parse');
@@ -64,6 +65,23 @@ describe('fabric generator', () => {
     expect(result.stderr).toContain('Usage:');
   });
 
+  it.each(['spines', 'leafs', 'hostsPerLeaf'].flatMap(name =>
+    ['', '0x1', '1e0', ' 1', '+1', '1.0'].map(value => ({ name, value })),
+  ))('rejects non-decimal --$name "$value"', ({ name, value }) => {
+    const values = { spines: '2', leafs: '4', hostsPerLeaf: '0', mode: 'ibgp', [name]: value };
+    const result = spawnSync(process.execPath, [generator, ...Object.entries(values).flatMap(([key, item]) => [`--${key}`, item])], { encoding: 'utf8' });
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Usage:');
+  });
+
+  it.each([['--sessions', 'bad'], ['--sessions=bad']])('rejects a value supplied to the boolean session flag: %s', (...args) => {
+    const result = spawnSync(process.execPath, [generator, '--spines', '2', '--leafs', '4', '--hostsPerLeaf', '0', '--mode', 'ibgp', ...args], { encoding: 'utf8' });
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Usage:');
+  });
+
   it('keeps every committed matrix sheet reproducible and parseable', () => {
     for (const { spines, leafs } of [
       { spines: 1, leafs: 2 }, { spines: 2, leafs: 4 }, { spines: 4, leafs: 8 },
@@ -78,6 +96,8 @@ describe('fabric generator', () => {
         if (!result.ok) throw new Error(`${name} did not parse`);
         expect(Object.keys(result.document.nodes)).toHaveLength(spines + leafs + hosts * leafs);
         expect(result.document.links).toHaveLength(spines * leafs + hosts * leafs);
+        expect(result.diagnostics.some(diagnostic => diagnostic.code === 'LINK_LIMIT')).toBe(spines === 16 && leafs === 64 && hosts === 0);
+        if (mode === 'ebgp') expect(Object.entries(result.document.nodes).filter(([id]) => id.startsWith('S')).every(([, node]) => node.class === 'router')).toBe(true);
       }
     }
   });

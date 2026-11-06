@@ -16,6 +16,12 @@ import { parseArgs } from 'node:util';
 const REFERENCE = 'https://github.com/ipspace/netlab/blob/4c3280eafa905a1f4b150a61f8d0e7484c64e1c6/docs/plugins/fabric.md';
 const USAGE = 'Usage: node scripts/gen-fabric.mjs --spines <positive integer> --leafs <positive integer> --hostsPerLeaf <0|1> --mode <ibgp|ebgp> [--sessions]';
 
+/** @param {string} name @param {string | undefined} value @returns {number} */
+function decimalInteger(name, value) {
+  if (typeof value !== 'string' || !/^[0-9]+$/.test(value)) throw new TypeError(`${name} must be written with decimal digits only`);
+  return Number(value);
+}
+
 /** @param {FabricParameters} parameters @returns {string} */
 export function generateFabric(parameters) {
   const { spines, leafs, hostsPerLeaf, mode, sessions = false } = parameters;
@@ -32,7 +38,7 @@ export function generateFabric(parameters) {
     `# Netlab reference: ${REFERENCE}`,
     '# Reference page: https://netlab.tools/plugins/fabric/ (read 2026-11-06)',
     `# Physical links: ${spines * leafs + hostsPerLeaf * leafs}; nodes: ${spines + leafs + hostsPerLeaf * leafs}`,
-    `# Sessions: ${sessions ? spines * leafs : 0} overlay (class flow), generated ${mode.toUpperCase()} spine-to-leaf sessions`,
+    sessions ? `# Sessions: ${spines * leafs} overlay (class flow), generated ${mode.toUpperCase()} spine-to-leaf sessions` : '# Sessions: none',
     'portograph: 2',
     'profile: network',
     `title: "Fabric ${spines}x${leafs}, ${hostsPerLeaf} host per leaf, ${mode.toUpperCase()}"`,
@@ -77,8 +83,8 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     } });
     if (values.help) process.stdout.write(`${USAGE}\n`);
     else process.stdout.write(generateFabric({
-      spines: Number(values.spines), leafs: Number(values.leafs),
-      hostsPerLeaf: Number(values.hostsPerLeaf), mode: values.mode, sessions: values.sessions,
+      spines: decimalInteger('spines', values.spines), leafs: decimalInteger('leafs', values.leafs),
+      hostsPerLeaf: decimalInteger('hostsPerLeaf', values.hostsPerLeaf), mode: values.mode, sessions: values.sessions,
     }));
   } catch (error) {
     process.stderr.write(`${error.message}\n${USAGE}\n`);
