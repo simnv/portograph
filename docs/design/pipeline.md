@@ -501,14 +501,16 @@ two different authored sides (ticket 35). From here on port identity, count, sid
 rules may adjust engine-selected slots and the documented stage-7 rules may grow or move geometry,
 but no stage may shrink a node below its current content or author floor.
 
-**A parallel set keeps one order at both ends** (architecture-2 ticket 80). A parallel set (`parallelSets`, `parallel-sets.ts`) is every bundle,
+**A routed+overlay parallel set keeps one order at both ends** (architecture-2 ticket 80). A parallel set (`parallelSets`, `parallel-sets.ts`) is every bundle,
 and every group of two or more links between one node pair that holds a routed link and an overlay link (any family class) and whose ends share one face
-at each node when the two faces face each other. A group of one layer is no new set: its owner is the bundle, the overlay order or the author's route
-override (measured: as sets, 8 older sheets changed and 2 got worse). Stage 5 sorts a face by the far ends' anchors; the node sorted second would read the slots the skeleton left, not the order the first one
+at each node when the two faces face each other. Stage 5 sorts a face by the far ends' anchors; the node sorted second would read the slots the skeleton left, not the order the first one
 took, and a cable and an overlay link written in opposite directions then flip at both ends and cross (the draft of a reversed ELK edge is
 mirrored). So a sorted face hands its slots to the ports of a set in their new order before the next face is sorted. The guards are the bundle's:
-one port per link, each port with one peer, and the end with an authored `order:` leads. No later stage decides the order again. Which of the
-links stands first is still the draft's: stage 5 makes the ends agree, it does not make the choice independent of the authored direction.
+one port per link, each port with one peer, and the end with an authored `order:` leads. Where no end is authored, the lead end of a mixed set is the end in the upper tier, then the smaller
+node id (`visitOrder`): the visit order of the sort puts every lead before its follower, and no document order decides it (R3). The overlay trades of 7f (`nestOverlayPorts`) leave the
+overlay port of such a set where stage 5 put it. What this does not hold: which of the links stands first follows the stage-4 draft as the lead end reads it, so it can differ with the
+authored direction of the links (stage 4 gives ELK each edge in its authored direction); two overlay links between one pair, and two routed links without a bundle, are no set
+(as sets they changed 8 older sheets and made 2 worse) and can still cross (`an-overlay-frame-reorder-is-refused-with-six-sync-links`).
 
 Stage 5 also produces measured node and description labels, icon bounds, named pills and exact
 port-associated pill labels. Centre content inside its asymmetric content insets. Anonymous ports

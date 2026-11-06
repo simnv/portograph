@@ -29,7 +29,7 @@ import { routedLinksAt, unreservedPeers } from './peers.js';
 import { arrangeGroups, seatStaggerRows } from './stagger.js';
 import { reserveColumns, seatColumn } from './column-arrangement.js';
 import { ofKind } from './reservations.js';
-import { parallelSets } from './parallel-sets.js';
+import { parallelSets, visitOrder, type ParallelSet } from './parallel-sets.js';
 const key = portId;
 
 /**
@@ -1007,27 +1007,32 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   separateFramedTiersBesideFlanks(model);
   sweepTiers(model);
   if (Object.keys(model.groups).length) stackBands(model, true);
-  // The ports of the links of a parallel set (`parallelSets`: a bundle, or the links of any family between one node pair that leave facing faces), each link with a port of its own at the node. The two
+  // The ports of the links of a parallel set (`parallelSets`: a bundle, or a routed link with an overlay link between one node pair, on facing faces), each link with a port of its own at the node. The two
   // ends of a set are one order, so the node that is sorted second reads the order the first one took, not the slots the skeleton left: below, a sorted face hands its slots to its ports in their
   // new order, before the next face is sorted. Without it each end sorts against the other end's stale slots and both flip: a cable and an overlay link written in opposite directions cross
   // (ticket 80). An end with an authored `order:` leads (its node is sorted first), so the other end follows it whichever node the document names first. A node where a port of a set also
-  // carries a link beyond the set seats its ports as free ports: one mixed key cannot put such a port in the set's order.
-  const bundled = new Set<string>(), leaders = new Set<string>();
+  // carries a link beyond the set seats its ports as free ports: one mixed key cannot put such a port in the set's order. The lead end of a mixed set is chosen by content, never by the
+  // document order of the nodes (`visitOrder`, R3): the order the links take still follows the stage-4 draft as the lead end reads it, so it can differ with the authored direction of
+  // the links. Two overlay links between one pair are not a set.
+  const bundled = new Set<string>(), leaders = new Set<string>(), mixed: ParallelSet[] = [];
   for (const set of parallelSets(model)) {
     const ends = set.links.map(link => link.attachments!);
+    let held = 0;
     for (const node of set.nodes) {
       const mine = ends.map(item => (item.from.node === node ? item.from : item.to));
       if (new Set(mine.map(key)).size !== mine.length || mine.some(ref => (peers.get(key(ref)) ?? []).length !== 1)) continue;
       for (const ref of mine) bundled.add(key(ref));
+      held++;
       if (mine.some(ref => model.nodes[node]!.ports.find(port => key(port.ref) === key(ref))?.authorOrder !== undefined)) leaders.add(node);
     }
+    if (set.kind === 'mixed' && held === 2) mixed.push(set);
   }
   // The planned first turn of each overlay course port (ticket 15; `turn-order.ts`): its lane runs to its far end's row, beyond it by a padding row, short of it by a drop.
   const planned = plannedTurns(model), plainTurns = model.turnOrder === true ? plannedTurns(model, false) : planned;
   // The faces that a planned first turn moved (ticket 24): the order with the turns differs from the order with the overlay brackets alone.
   const turned: { node: string; side: Side }[] = [];
   const sortOrder = orderedNodeIds(model.document), buses = busPortKeys(model);
-  for (const id of [...sortOrder.filter(item => leaders.has(item)), ...sortOrder.filter(item => !leaders.has(item))]) {
+  for (const id of visitOrder(model, [...sortOrder.filter(item => leaders.has(item)), ...sortOrder.filter(item => !leaders.has(item))], mixed, leaders)) {
     const node = model.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
       const ports = node.ports.filter(port => port.side === side);

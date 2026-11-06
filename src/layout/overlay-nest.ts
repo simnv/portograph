@@ -2,6 +2,7 @@ import type { LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { measurePortPill } from '../text/index.js';
 import { busOfPort } from './bus.js';
 import { overlayCourse } from './courses.js';
+import { parallelSets } from './parallel-sets.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { overlayBasePath, publishedOverlayPath, sharedBlockers } from './overlay-paths.js';
 import { sharedTrackPairs } from './overlay-tracks.js';
@@ -47,9 +48,11 @@ export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel)
   const linkAt = new Map<string, LayoutLink>();
   for (const link of links) for (const end of [link.attachments!.from, link.attachments!.to]) linkAt.set(portId(end), link);
   const blockers = sharedBlockers(model);
+  // The overlay link of a parallel set with a routed link keeps the order stage 5 gave both ends (ticket 80, R1): this measure counts overlay crossings only, so a trade could move it across its own cable.
+  const ofSet = new Set(parallelSets(model).filter(set => set.kind === 'mixed').flatMap(set => set.links.map(link => link.id)));
   const free = (port: LayoutPort): boolean => {
     const key = portId(port.ref), link = linkAt.get(key);
-    return link !== undefined && count.get(key) === 1 && port.anchor !== undefined && port.side !== undefined && port.authorOrder === undefined
+    return link !== undefined && !ofSet.has(link.id) && count.get(key) === 1 && port.anchor !== undefined && port.side !== undefined && port.authorOrder === undefined
       && port.courseHint !== true && busOfPort(model, port.ref) === undefined && !overlayCourse(model, link)
       && link.attachments!.from.node !== link.attachments!.to.node;
   };

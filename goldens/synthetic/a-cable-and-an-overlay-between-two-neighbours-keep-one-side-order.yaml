@@ -1,0 +1,16 @@
+# Two nodes side by side in one row, joined by a cable and an overlay written in opposite directions, with a third link on each so that the pair leaves facing lateral faces:
+# the two links keep one side order at both ends on the lateral faces too (ticket 80).
+portograph: 2
+profile: network
+groups:
+  row: {tier: 0, label: ROW}
+  low: {tier: 1, label: LOW}
+nodes:
+  a: {group: row, class: router, label: A}
+  b: {group: row, class: router, label: B}
+  c: {group: low, class: router, label: C}
+links:
+- [a, b]
+- [b, a, {class: flow, label: EBGP}]
+- [a, c]
+- [b, c]
