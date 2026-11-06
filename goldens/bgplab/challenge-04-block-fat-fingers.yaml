@@ -1,0 +1,35 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/challenge/04-block-fat-fingers/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/challenge/topology-fat-fingers.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 4 real nodes (C1, C2, RTR, Peer), 4 AS boxes (C1: AS 65100, C2: AS 65101, ISP: AS 65000, Peer: AS 65107), 3 physical pairs, 0 LANs, 0 stubs, no link names.
+# Added: none. Conflict resolved (ruling R6): the drawing labels the Peer box AS 65007, a drawing typo; topology.yml (bgp.as: 65107) and the lab text agree on 65107, so the box reads AS 65107.
+# Simplified: the drawing's three columns are rotated into vertical tiers.
+# Dropped links: none.
+# Dropped annotations: none (EBGP arrows are kept as sessions).
+# Dropped configuration: addressing, originated prefixes, prepend policy, default-originate, _adjust blocks, plugin list.
+# Sessions: 3 overlay (class flow) from the drawing: c1-rtr EBGP, c2-rtr EBGP, rtr-peer EBGP
+# Tiers/order: rotated left to right into tiers. 0 as-65100 (C1) and as-65101 (C2), side by side; 1 as-65000 (RTR); 2 as-65107 (Peer).
+# Aliases: none
+portograph: 2
+profile: network
+title: "Stop the Propagation of Configuration Errors"
+groups:
+  as-65100: { tier: 0, label: "C1: AS 65100" }
+  as-65101: { tier: 0, label: "C2: AS 65101" }
+  as-65000: { tier: 1, label: "ISP: AS 65000" }
+  as-65107: { tier: 2, label: "Peer: AS 65107" }
+nodes:
+  c1: { group: as-65100, label: C1, class: router, icon: router }
+  c2: { group: as-65101, label: C2, class: router, icon: router }
+  rtr: { group: as-65000, label: RTR, class: router, icon: router }
+  peer: { group: as-65107, label: Peer, class: router, icon: router }
+links:
+  - [c1, rtr, { id: src-link-001 }]
+  - [c2, rtr, { id: src-link-002 }]
+  - [peer, rtr, { id: src-link-003 }]
+  - [c1, rtr, { id: ses-01, class: flow, label: EBGP }]
+  - [c2, rtr, { id: ses-02, class: flow, label: EBGP }]
+  - [rtr, peer, { id: ses-03, class: flow, label: EBGP }]

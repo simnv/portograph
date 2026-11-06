@@ -1,0 +1,37 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/lb/3-ibgp/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/lb/topology-lb-ibgp-dmz-bw.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 5 real nodes (X1, X2, WE1, WE2, Core), 2 AS boxes (ISP: AS 65100, Customer AS 65000), 6 physical pairs including the parallel pair we1-x1 twice, 0 LANs, 0 stubs, no link names.
+# Added: source link 6 (x1-x2) is not drawn as a cable in the PNG (a cloud stands between X1 and X2); it is an active link, so it is kept as an addition.
+# Simplified: none.
+# Dropped links: none.
+# Dropped annotations: 2 clouds (an unlabelled one between X1 and X2, one "OSPF+IBGP" between WE1, WE2 and Core), 2 orange callouts ("High-speed uplinks" at WE1, "Low-speed uplink" at WE2).
+# Dropped configuration: addressing, originated prefix, loopback advertisement, community setting, OSPF and BGP module settings.
+# Sessions: 3 overlay (class flow) from the drawing: x1-we1 EBGP, x1-we1 EBGP (two arrows on the doubled link), x2-we2 EBGP
+# Tiers/order: 0 as-65100 (X1, X2); 1 as-65000 (WE1, WE2, Core). The drawing stacks the two boxes.
+# Aliases: none
+portograph: 2
+profile: network
+title: "IBGP Load Balancing with BGP Link Bandwidth"
+groups:
+  as-65100: { tier: 0, label: "ISP: AS 65100" }
+  as-65000: { tier: 1, label: "Customer AS 65000" }
+nodes:
+  x1: { group: as-65100, label: X1, class: router, icon: router }
+  x2: { group: as-65100, label: X2, class: router, icon: router }
+  we1: { group: as-65000, label: WE1, class: router, icon: router }
+  we2: { group: as-65000, label: WE2, class: router, icon: router }
+  core: { group: as-65000, label: Core, class: router, icon: router }
+links:
+  - [core, we1, { id: src-link-001 }]
+  - [core, we2, { id: src-link-002 }]
+  - [we1, x1, { id: src-link-003 }]
+  - [we1, x1, { id: src-link-004 }]
+  - [we2, x2, { id: src-link-005 }]
+  - [x1, x2, { id: src-link-006 }]
+  - [x1, we1, { id: ses-01, class: flow, label: EBGP }]
+  - [x1, we1, { id: ses-02, class: flow, label: EBGP }]
+  - [x2, we2, { id: ses-03, class: flow, label: EBGP }]

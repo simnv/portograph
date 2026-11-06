@@ -1,0 +1,37 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/policy/1-weights/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/policy/topology-weights.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 3 real nodes (rtr, x1, x2), 3 AS boxes (AS 65000, AS 65100, AS 65101), 3 physical pairs (src-link-001..003), 0
+#   LANs, 0 stubs, no link names in the source.
+# Added: none.
+# Simplified: orientation rotated (see Tiers/order). No two-member LANs.
+# Dropped links: none.
+# Dropped annotations: Callouts "Primary uplink, High weight" and "Backup uplink, Low weight" with orange square/dot
+#   link-end markers; the two EBGP double arrows are kept as sessions.
+# Dropped configuration: bgp.originate prefixes, default-originate, loopback addresses and router IDs,
+#   bgp.advertise_loopback, id values, validation tests, plugin/_adjust data, defaults include. No credentials
+#   present.
+# Sessions: 2 overlay (class flow) from the drawing: rtr-x1 EBGP, rtr-x2 EBGP.
+# Tiers/order: Rotated: the PNG has AS 65000 on the left and X1 above X2 on the right; left becomes tier 0 (top).
+#   as-65000 = tier 0 [rtr]; as-65100 = tier 1 [x1]; as-65101 = tier 1 [x2]. Reading order: rtr, x1, x2.
+# Aliases: policy/2-stop-transit, policy/3-prefix, policy/4-reduce (same body; own titles). The x1-x2 cable (src-link-003) is drawn in policy/1 and active in the topology.yml of all four; the PNGs of policy/2, 3 and 4 do not draw it, it is kept there from the YAML (ruling R3).
+portograph: 2
+profile: network
+title: "Select Preferred EBGP Peer with Weights"
+groups:
+  as-65000: { tier: 0, label: "AS 65000" }
+  as-65100: { tier: 1, label: "AS 65100" }
+  as-65101: { tier: 1, label: "AS 65101" }
+nodes:
+  rtr: { group: as-65000, label: RTR, class: router, icon: router }
+  x1: { group: as-65100, label: X1, class: router, icon: router }
+  x2: { group: as-65101, label: X2, class: router, icon: router }
+links:
+  - [rtr, x1, { id: src-link-001 }]
+  - [rtr, x2, { id: src-link-002 }]
+  - [x1, x2, { id: src-link-003 }]
+  - [rtr, x1, { id: ses-01, class: flow, label: "EBGP" }]
+  - [rtr, x2, { id: ses-02, class: flow, label: "EBGP" }]

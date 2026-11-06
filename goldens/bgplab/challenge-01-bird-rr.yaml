@@ -1,0 +1,40 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/challenge/01-bird-rr/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/challenge/topology-bird-rr.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 6 real nodes (X1, PE1, CORE, PE2, RR, X2), 3 AS boxes (AS 65100, AS 65000, AS 65101), 5 physical pairs, 0 LANs, 0 stubs, no link names.
+# Added: none. Node labels are the upper-case names the drawing shows; ids are the source node names.
+# Simplified: RR is class rr (bird daemon, drawing shows a server icon). The drawing's left-to-right row is rotated into vertical tiers.
+# Dropped links: none (the core-rr cable, source link 5, is drawn in the PNG only as the vertical IBGP arrow; it is kept as a cable).
+# Dropped annotations: 2 grey OSPF arrows (PE1-CORE, CORE-PE2) and the red line decoration.
+# Dropped configuration: addressing, router ids, loopbacks, OSPF and BGP module settings, daemon bind files.
+# Sessions: 5 overlay (class flow) from the drawing: x1-pe1 EBGP, rr-pe1 IBGP, rr-core IBGP, rr-pe2 IBGP, pe2-x2 EBGP
+# Tiers/order: rotated left to right into tiers. 0 as-65100 (X1); 1 as-65000 (RR, PE1, CORE, PE2); 2 as-65101 (X2).
+# Aliases: none
+portograph: 2
+profile: network
+title: "Using BIRD BGP Daemon as a BGP Route Reflector"
+groups:
+  as-65100: { tier: 0, label: "ISP: AS 65100" }
+  as-65000: { tier: 1, label: "Transit network: AS 65000" }
+  as-65101: { tier: 2, label: "AS 65101" }
+nodes:
+  x1: { group: as-65100, label: X1, class: router, icon: router }
+  rr: { group: as-65000, label: RR, class: rr, icon: server }
+  pe1: { group: as-65000, label: PE1, class: router, icon: router }
+  core: { group: as-65000, label: CORE, class: router, icon: router }
+  pe2: { group: as-65000, label: PE2, class: router, icon: router }
+  x2: { group: as-65101, label: X2, class: router, icon: router }
+links:
+  - [x1, pe1, { id: src-link-001 }]
+  - [pe1, core, { id: src-link-002 }]
+  - [core, pe2, { id: src-link-003 }]
+  - [pe2, x2, { id: src-link-004 }]
+  - [core, rr, { id: src-link-005 }]
+  - [x1, pe1, { id: ses-01, class: flow, label: EBGP }]
+  - [rr, pe1, { id: ses-02, class: flow, label: IBGP }]
+  - [rr, core, { id: ses-03, class: flow, label: IBGP }]
+  - [rr, pe2, { id: ses-04, class: flow, label: IBGP }]
+  - [pe2, x2, { id: ses-05, class: flow, label: EBGP }]

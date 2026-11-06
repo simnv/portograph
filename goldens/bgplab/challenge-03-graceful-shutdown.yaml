@@ -1,0 +1,35 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/challenge/03-graceful-shutdown/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/challenge/topology-graceful-shutdown.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 4 real nodes (X1, X2, C1, C2), 2 AS boxes (ISP: AS 65100, Customer: AS 65000), 4 physical pairs with their source names as labels, 0 LANs, 0 stubs.
+# Added: link labels "Intra-customer link", "C2 uplink", "Intra-ISP link", "C1 uplink" (source names; the drawing omits them).
+# Simplified: none.
+# Dropped links: source links 2 (c1-x2) and 4 (x1-c2): both are named "Unused link" in the source and are not drawn.
+# Dropped annotations: 2 grey OSPF arrows, 2 orange callouts ("Change BGP Local Preference to zero" at X1, "Set Graceful Shutdown community" at C1).
+# Dropped configuration: addressing, advertise flags, local preference, loopback, _adjust block, OSPF and BGP module settings.
+# Sessions: 4 overlay (class flow) from the drawing: x1-x2 IBGP, x1-c1 EBGP, x2-c2 EBGP, c1-c2 IBGP
+# Tiers/order: 0 as-65100 (X1, X2); 1 as-65000 (C1, C2). The drawing stacks the two boxes.
+# Aliases: none (same drawn graph, boxes and tiers as policy/5-local-preference, but the link names differ, so the retained contracts are not equal; session/2-asoverride has other node labels and boxes)
+portograph: 2
+profile: network
+title: "BGP Graceful Shutdown"
+groups:
+  as-65100: { tier: 0, label: "ISP: AS 65100" }
+  as-65000: { tier: 1, label: "Customer: AS 65000" }
+nodes:
+  x1: { group: as-65100, label: X1, class: router, icon: router }
+  x2: { group: as-65100, label: X2, class: router, icon: router }
+  c1: { group: as-65000, label: C1, class: router, icon: router }
+  c2: { group: as-65000, label: C2, class: router, icon: router }
+links:
+  - [c1, c2, { id: src-link-001, label: Intra-customer link }]
+  - [c2, x2, { id: src-link-003, label: C2 uplink }]
+  - [x1, x2, { id: src-link-005, label: Intra-ISP link }]
+  - [c1, x1, { id: src-link-006, label: C1 uplink }]
+  - [x1, x2, { id: ses-01, class: flow, label: IBGP }]
+  - [x1, c1, { id: ses-02, class: flow, label: EBGP }]
+  - [x2, c2, { id: ses-03, class: flow, label: EBGP }]
+  - [c1, c2, { id: ses-04, class: flow, label: IBGP }]

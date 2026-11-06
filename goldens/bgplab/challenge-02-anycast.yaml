@@ -1,0 +1,35 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/challenge/02-anycast/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/challenge/topology-anycast.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 5 real nodes (SW router; S1, S2, S3, C hosts), 0 AS boxes (the drawing has none), 1 LAN of 5 members (source link 1), 0 stubs.
+# Added: lan-1 (class cloud) for the 5-member LAN, labelled "Access VLAN" as the drawing writes it; legs sw, s1, s2, s3, c in source order. 3 empty-label groups for the rows.
+# Simplified: C (blue icon in the drawing) is a plain server like S1 to S3; the source gives AS 65000 to SW and 65100 to C but the drawing shows no AS.
+# Dropped links: none.
+# Dropped annotations: none (the drawing colours C blue and S1 to S3 orange).
+# Dropped configuration: addressing, prefix, FRR daemon list, device and role settings.
+# Sessions: 0 overlay (the drawing has no session arrows)
+# Tiers/order: 0 g-router (SW); 1 g-lan (Access VLAN); 2 g-hosts (S1, S2, S3, C).
+# Aliases: none
+portograph: 2
+profile: network
+title: "Implement Anycast Services with BGP"
+groups:
+  g-router: { tier: 0, label: "" }
+  g-lan: { tier: 1, label: "" }
+  g-hosts: { tier: 2, label: "" }
+nodes:
+  sw: { group: g-router, label: SW, class: router, icon: router }
+  lan-1: { group: g-lan, label: Access VLAN, class: cloud, icon: cloud }
+  s1: { group: g-hosts, label: S1, class: server, icon: server }
+  s2: { group: g-hosts, label: S2, class: server, icon: server }
+  s3: { group: g-hosts, label: S3, class: server, icon: server }
+  c: { group: g-hosts, label: C, class: server, icon: server }
+links:
+  - [sw, lan-1, { id: src-link-001-leg-01 }]
+  - [s1, lan-1, { id: src-link-001-leg-02 }]
+  - [s2, lan-1, { id: src-link-001-leg-03 }]
+  - [s3, lan-1, { id: src-link-001-leg-04 }]
+  - [c, lan-1, { id: src-link-001-leg-05 }]

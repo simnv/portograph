@@ -1,0 +1,88 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/session/8-passive/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/session/topology-passive-bgp.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1 plus decision-addendum
+# Kept: 4 real nodes; 4 AS/site boxes; 0 physical pairs; 1 LANs; no one-ended stubs; all retained source link names
+# Added: lan-1: Carrier Ethernet LAN; participants [hub, s1, s2, s3]; The source LAN explicitly includes Hub, S1, S2, S3. The PNG bus has no separate Hub leg. Add the source-required Hub leg; the three EBGP arrows remain overlays and never stand in for the cable.
+# Simplified: Preserve Hub above participants; insert the required neutral medium group between them. Hub remains a router, not a route server. Router/server/cloud icons substitute source artwork.
+# Dropped links: none
+# Sessions: 3 overlay (class flow) from the drawing: hub-s1 EBGP, hub-s2 EBGP, hub-s3 EBGP
+# Dropped annotations: LAN bus square end caps and source icon styling
+# Dropped configuration: addressing and prefixes, protocol settings and policies, IDs and router IDs, timers, validation includes, plugins, defaults and deployment instructions; no credential values
+# Tiers/order: as-65000=0 [hub]; medium=1 [lan-1]; as-65100=2 [s1]; as-65103=2 [s2]; as-65107=2 [s3]; declared nodes follow reference reading order; engine may reorder
+# Aliases: none confirmed; see notes for duplicate nominations
+portograph: 2
+profile: network
+title: Passive BGP Sessions
+groups:
+  as-65000:
+    tier: 0
+    label: AS 65000
+  medium:
+    tier: 1
+    label: ""
+  as-65100:
+    tier: 2
+    label: AS 65100
+  as-65103:
+    tier: 2
+    label: AS 65103
+  as-65107:
+    tier: 2
+    label: AS 65107
+nodes:
+  hub:
+    group: as-65000
+    label: Hub
+    class: router
+    icon: router
+  lan-1:
+    group: medium
+    label: Carrier Ethernet LAN
+    class: cloud
+    icon: cloud
+  s1:
+    group: as-65100
+    label: S1
+    class: router
+    icon: router
+  s2:
+    group: as-65103
+    label: S2
+    class: router
+    icon: router
+  s3:
+    group: as-65107
+    label: S3
+    class: router
+    icon: router
+links:
+  - id: src-link-001-leg-01
+    from: hub
+    to: lan-1
+  - id: src-link-001-leg-02
+    from: s1
+    to: lan-1
+  - id: src-link-001-leg-03
+    from: s2
+    to: lan-1
+  - id: src-link-001-leg-04
+    from: s3
+    to: lan-1
+  - id: ses-01
+    from: hub
+    to: s1
+    class: flow
+    label: EBGP
+  - id: ses-02
+    from: hub
+    to: s2
+    class: flow
+    label: EBGP
+  - id: ses-03
+    from: hub
+    to: s3
+    class: flow
+    label: EBGP

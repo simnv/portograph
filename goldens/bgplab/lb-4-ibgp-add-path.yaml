@@ -1,0 +1,41 @@
+# Source: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/lb/4-ibgp-add-path/topology.yml
+# Reference: https://github.com/bgplab/bgplab/blob/4bd74dbc7f19f172d51cda9ff681303f7e152a5a/docs/lb/topology-ibgp-add-path.png
+# Licence: MIT; Copyright (c) 2023–2024 Ivan Pepelnjak
+# Author: Ivan Pepelnjak (bgplab/bgplab)
+# Fetched: 2026-11-06
+# Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
+# Kept: 6 real nodes (X1, X2, WE1, WE2, AC1, RR), 2 AS boxes (ISP: AS 65100, Customer: AS 65000), 7 physical pairs, 0 LANs, 0 stubs, no link names.
+# Added: source links 3 to 6 (ac1-we1, ac1-we2, rr-we1, rr-we2) and 7 (x1-x2) are not drawn as cables in the PNG (the drawing shows RR and AC1 only as IBGP arrows, and a cloud between X1 and X2); they are active links, so they are kept as additions.
+# Simplified: RR is class rr (source bgp.rr true; the drawing shows a server icon).
+# Dropped links: none.
+# Dropped annotations: 1 cloud between X1 and X2, 1 cloud behind the WE1-RR arrow, 2 orange callouts ("High-speed uplink" at WE1, "Low-speed uplink" at WE2).
+# Dropped configuration: addressing, bandwidth values, advertise flag, loopback advertisement, OSPF and BGP module settings, policy plugin.
+# Sessions: 5 overlay (class flow) from the drawing: x1-we1 EBGP, x2-we2 EBGP, we1-rr IBGP, we2-rr IBGP, ac1-rr IBGP
+# Tiers/order: 0 as-65100 (X1, X2); 1 as-65000 (WE1, WE2, AC1, RR). The drawing stacks the two boxes.
+# Aliases: none
+portograph: 2
+profile: network
+title: "IBGP Load Balancing with BGP Additional Paths"
+groups:
+  as-65100: { tier: 0, label: "ISP: AS 65100" }
+  as-65000: { tier: 1, label: "Customer: AS 65000" }
+nodes:
+  x1: { group: as-65100, label: X1, class: router, icon: router }
+  x2: { group: as-65100, label: X2, class: router, icon: router }
+  we1: { group: as-65000, label: WE1, class: router, icon: router }
+  we2: { group: as-65000, label: WE2, class: router, icon: router }
+  ac1: { group: as-65000, label: AC1, class: router, icon: router }
+  rr: { group: as-65000, label: RR, class: rr, icon: server }
+links:
+  - [we1, x1, { id: src-link-001 }]
+  - [we2, x2, { id: src-link-002 }]
+  - [ac1, we1, { id: src-link-003 }]
+  - [ac1, we2, { id: src-link-004 }]
+  - [rr, we1, { id: src-link-005 }]
+  - [rr, we2, { id: src-link-006 }]
+  - [x1, x2, { id: src-link-007 }]
+  - [x1, we1, { id: ses-01, class: flow, label: EBGP }]
+  - [x2, we2, { id: ses-02, class: flow, label: EBGP }]
+  - [we1, rr, { id: ses-03, class: flow, label: IBGP }]
+  - [we2, rr, { id: ses-04, class: flow, label: IBGP }]
+  - [ac1, rr, { id: ses-05, class: flow, label: IBGP }]
