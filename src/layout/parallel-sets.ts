@@ -9,8 +9,8 @@ const FACING: Readonly<Record<Side, Side>> = { top: 'bottom', bottom: 'top', lef
 
 /**
  * The parallel sets of a model with final sides (stage 5, architecture-2 ticket 80). Every bundle is a set, whatever its faces. Every other group of two or
- * more links of any family (routed, overlay, signal) between one node pair is a set too when its links leave one face of each node and the two faces
- * face each other (top with bottom, left with right). The order is the same at both ends, so the authored direction of a link, and the family it is in,
+ * more links between one node pair is a set too when it holds a routed link and an overlay link (two layers, any family class), its links leave one face of
+ * each node and the two faces face each other (top with bottom, left with right). The order is the same at both ends, so the authored direction of a link, and the family it is in,
  * decide nothing (R3). A group that holds exactly the members of a bundle is that bundle, listed once. The caller guards the ports of a set.
  */
 export function parallelSets(model: LayoutModel): ParallelSet[] {
@@ -35,6 +35,10 @@ export function parallelSets(model: LayoutModel): ParallelSet[] {
   }
   for (const group of groups.values()) {
     if (group.links.length < 2 || bundled.has(group.links.map(link => link.id).sort().join('\n'))) continue;
+    // Two layers on one pair: no bundle holds a routed link with an overlay link, and the overlay order (7b to 7e) holds only overlay links. A group of one layer keeps its own
+    // owner (a bundle, the overlay order, or the author's route override): the gate measured 8 older sheets changed, two of them worse, when it was a set as well.
+    const overlay = group.links.filter(link => link.technique === 'overlay').length;
+    if (overlay === 0 || overlay === group.links.length || group.links.some(link => link.meshBus !== undefined)) continue;
     sets.push(group);
   }
   return sets;

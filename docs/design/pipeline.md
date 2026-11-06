@@ -502,8 +502,9 @@ rules may adjust engine-selected slots and the documented stage-7 rules may grow
 but no stage may shrink a node below its current content or author floor.
 
 **A parallel set keeps one order at both ends** (architecture-2 ticket 80). A parallel set (`parallelSets`, `parallel-sets.ts`) is every bundle,
-and every other group of two or more links of any family between one node pair whose ends share one face at each node when the two faces face each
-other. Stage 5 sorts a face by the far ends' anchors; the node sorted second would read the slots the skeleton left, not the order the first one
+and every group of two or more links between one node pair that holds a routed link and an overlay link (any family class) and whose ends share one face
+at each node when the two faces face each other. A group of one layer is no new set: its owner is the bundle, the overlay order or the author's route
+override (measured: as sets, 8 older sheets changed and 2 got worse). Stage 5 sorts a face by the far ends' anchors; the node sorted second would read the slots the skeleton left, not the order the first one
 took, and a cable and an overlay link written in opposite directions then flip at both ends and cross (the draft of a reversed ELK edge is
 mirrored). So a sorted face hands its slots to the ports of a set in their new order before the next face is sorted. The guards are the bundle's:
 one port per link, each port with one peer, and the end with an authored `order:` leads. No later stage decides the order again. Which of the
