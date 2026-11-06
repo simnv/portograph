@@ -12,7 +12,7 @@
 # Dropped annotations: LAN bus square end caps and source icon styling
 # Dropped configuration: addressing and prefixes, protocol settings and policies, IDs and router IDs, timers, validation includes, plugins, defaults and deployment instructions; no credential values
 # Tiers/order: as-65000=0 [rs]; medium=1 [lan-1]; as-65100=2 [isp1]; as-65103=2 [isp2]; as-65107=2 [isp3]; declared nodes follow reference reading order; engine may reorder
-# Aliases: policy/c-cond-advertise (its topology.yml is a copy of the route-server lab and its drawing shows rtr/x1/x2: an upstream inconsistency; ruling R5)
+# Aliases: none
 portograph: 2
 profile: network
 title: BGP Route Server in an Internet Exchange Point

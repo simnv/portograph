@@ -5,7 +5,7 @@
 # Fetched: 2026-11-06
 # Conversion: authored from the reference PNG alone; recipe bgplab-v1
 # Kept: 8 nodes read from the drawing (H, C1, C2, two firewalls, E1, E2, ISP), 2 AS boxes (AS 65000, AS 64501), 7 physical pairs, 1 LAN (the vertical bus), 0 stubs.
-# Added (inferred from the drawing): ids fw-1 and fw-2 with an empty label for the two unlabelled firewall icons (ruling R7: no invented names) (fw-1 on the C1-E1 path, fw-2 on the C2-E2 path); lan-1 (class cloud, label "LAN") for the left bus with square end caps, joining H, C1 and C2, placed inside the AS 65000 box; ISP in an empty-label group; link ids drw-link-NNN (no source index).
+# Added: inferred from the drawing: ids fw-1 and fw-2 with an empty label for the two unlabelled firewall icons (ruling R7: no invented names) (fw-1 on the C1-E1 path, fw-2 on the C2-E2 path); lan-1 (class cloud, label "LAN") for the left bus with square end caps, joining H, C1 and C2, placed inside the AS 65000 box; ISP in an empty-label group; link ids drw-link-NNN (no source index).
 # Simplified: the drawing's left-to-right order is rotated into vertical tiers.
 # Dropped links: none.
 # Dropped annotations: 1 orange callout ("Multihop EBGP").

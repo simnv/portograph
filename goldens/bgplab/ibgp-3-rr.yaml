@@ -4,7 +4,7 @@
 # Author: Ivan Pepelnjak (bgplab/bgplab)
 # Fetched: 2026-11-06
 # Conversion: authored from static YAML and reference PNG; recipe bgplab-v1 plus decision-addendum
-# Kept: 6 real nodes; 0 AS/site boxes; 8 physical pairs; 0 LANs; no one-ended stubs; all retained source link names
+# Kept: 6 real nodes; 0 AS/site boxes; 8 physical pairs; 0 LANs; no one-ended stubs; no link names (the source links have none); ids are source link indices
 # Added: none
 # Simplified: Preserve spine row above leaf row using required empty-label structural groups; no AS box is drawn. Static global AS 65000 is known but not a container. The initial configuration has no bgp.rr and the reference has no RR badges, so all six nodes remain routers. Router/server/cloud icons substitute source artwork.
 # Dropped links: none

@@ -8,12 +8,15 @@
 #   ISP-2: AS 65101, Customer: AS 65000), 10 physical pairs minus 2 omitted = 8 (src-link-001, 003, 005..010), 0 LANs,
 #   0 stubs; names kept as labels.
 # Added: uc200, uc205, uc207 and src-link-007..010: active links and nodes of the full 7-node lab; not in the main PNG
-#   but drawn in the second reference docs/policy/policy-extra-asn.png (AS 65200 over ISP-1; AS 65205 between ISP-1
-#   and ISP-2; AS 65207 over ISP-2), whose boxes and tier rows are used here.
+#   and the nodes come from topology.yml; the second reference docs/policy/policy-extra-asn.png draws only their AS
+#   boxes (AS 65200 over ISP-1; AS 65205 between ISP-1 and ISP-2; AS 65207 over ISP-2) and grey links, no router; its
+#   boxes and tier rows are used here. Also added: the source link names are kept as link labels: "Primary uplink"
+#   (src-link-001), "Inter-ISP link" (src-link-003), "Backup uplink" (src-link-005), "Customer internal link"
+#   (src-link-006).
 # Simplified: src-link-006 (c1-c2) is a two-participant `type: lan`, kept as an ordinary link.
 # Dropped links: src-link-002 c1-x2 and src-link-004 c2-x1: named "Unused link", pool l2only, comment "Used for
 #   compliance with 4-router topology"; not drawn. (topology.4-router.yml, a variant without uc nodes, not used.)
-# Dropped annotations: Callouts "Primary uplink" and "Backup uplink"; the OSPF arrow c1-c2 (non-BGP). The extra-ASN
+# Dropped annotations: the callout shapes of "Primary uplink" and "Backup uplink" (their texts stay as link labels); the OSPF arrow c1-c2 (non-BGP). The extra-ASN
 #   PNG draws no arrows.
 # Dropped configuration: addresses, loopbacks, router IDs, ids, bgp.advertise_loopback and bgp.advertise, ospf module,
 #   per-device extra-config templates (not read). No credentials.

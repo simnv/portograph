@@ -16,7 +16,7 @@ Ticket 78. One row per lab: all 54 labs of the source, plus the two drawing-only
   Admission rule: the sheet lays out, 0 error-severity gates, 0 removed links, and a fidelity review against the reference PNG.
   The conversion workers rendered every sheet once with that result; the corpus run of the branch confirms it.
 
-Counts: 56 labs = 44 admitted + 11 alias + 1 pending. 0 sheets wait in `.scratch/architecture-2/fixtures/bgplab/`.
+Counts: 56 labs = 44 admitted + 10 alias + 2 pending. 0 sheets wait in `.scratch/architecture-2/fixtures/bgplab/`.
 
 | lab | sheet | status | alias-of | reason |
 | --- | --- | --- | --- | --- |
@@ -63,7 +63,7 @@ Counts: 56 labs = 44 admitted + 11 alias + 1 pending. 0 sheets wait in `.scratch
 | policy/9-community-use | [policy-9-community-use](../../../goldens/bgplab/policy-9-community-use.yaml) | admitted | — | fidelity reviewed; 0 error gates, 0 removed links |
 | policy/a-locpref-route-map | [policy-a-locpref-route-map](../../../goldens/bgplab/policy-a-locpref-route-map.yaml) | admitted | — | fidelity reviewed; 0 error gates, 0 removed links |
 | policy/b-disaggregate | [policy-b-disaggregate](../../../goldens/bgplab/policy-b-disaggregate.yaml) | admitted | — | drawing-only node INT kept with no link (ruling R4); 0 error gates, 0 removed links |
-| policy/c-cond-advertise | [session-5-routeserver](../../../goldens/bgplab/session-5-routeserver.yaml) | alias | session/5-routeserver | upstream topology.yml copied from the route-server lab; the drawing shows rtr/x1/x2 (ruling R5) |
+| policy/c-cond-advertise | — | pending | — | no sheet: upstream inconsistency. Its topology.yml copies the route-server lab (same graph as session/5-routeserver) and its drawing shows rtr/x1/x2; neither source alone is a faithful sheet (ruling R5, revised) |
 | policy/d-no-export | [policy-d-no-export](../../../goldens/bgplab/policy-d-no-export.yaml) | admitted | — | fidelity reviewed; 0 error gates, 0 removed links |
 | policy/e-wedgies | [policy-e-wedgies](../../../goldens/bgplab/policy-e-wedgies.yaml) | admitted | — | fidelity reviewed; 0 error gates, 0 removed links |
 | policy/f-orf | [policy-f-orf](../../../goldens/bgplab/policy-f-orf.yaml) | admitted | — | fidelity reviewed; 0 error gates, 0 removed links |
@@ -71,7 +71,7 @@ Counts: 56 labs = 44 admitted + 11 alias + 1 pending. 0 sheets wait in `.scratch
 | session/2-asoverride | [session-2-asoverride](../../../goldens/bgplab/session-2-asoverride.yaml) | admitted | — | fidelity checked; 0 error gates, 0 removed links; 0.618 s; 3 reviewed warnings |
 | session/3-localas | [session-3-localas](../../../goldens/bgplab/session-3-localas.yaml) | admitted | — | fidelity checked; 0 error gates, 0 removed links; 0.605 s; 0 reviewed warnings |
 | session/4-removeprivate | [session-4-removeprivate](../../../goldens/bgplab/session-4-removeprivate.yaml) | admitted | — | fidelity checked; 0 error gates, 0 removed links; 0.606 s; 0 reviewed warnings |
-| session/5-routeserver | [session-5-routeserver](../../../goldens/bgplab/session-5-routeserver.yaml) | admitted | — | representative of 2 labs; 4-leg IXP LAN node; 0 error gates, 0 removed links |
+| session/5-routeserver | [session-5-routeserver](../../../goldens/bgplab/session-5-routeserver.yaml) | admitted | — | 4-leg IXP LAN node; 0 error gates, 0 removed links |
 | session/6-templates | [session-6-templates](../../../goldens/bgplab/session-6-templates.yaml) | admitted | — | fidelity checked; 0 error gates, 0 removed links; 0.617 s; 3 reviewed warnings |
 | session/7-policy | [basic-2-multihomed](../../../goldens/bgplab/basic-2-multihomed.yaml) | alias | basic/2-multihomed | cross-batch duplicate found at assembly: same body as basic/2-multihomed; its PNG differs only in two dropped "Policy template" callouts |
 | session/8-passive | [session-8-passive](../../../goldens/bgplab/session-8-passive.yaml) | admitted | — | fidelity checked; 0 error gates, 0 removed links; 0.752 s; 6 reviewed warnings; source additions reconciled |
