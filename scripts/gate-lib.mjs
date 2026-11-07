@@ -1,5 +1,5 @@
 /**
- * What the gate scripts (`corpus.mjs`, `sweep.mjs`) share: the pipeline as the command line runs it.
+ * What the gate scripts (`corpus.mjs`, `sweep.mjs`, `r3.mjs`) share: the pipeline as the command line runs it.
  *
  * The scripts load the built library in `dist/` and its packaged workers, the way `bin/compute.mjs`
  * does, so a gate measures what `portograph render` produces. One warm ELK worker serves every
@@ -113,10 +113,10 @@ export function layoutHash(api, model) {
 
 /**
  * Run `work` inside a job that holds the host-wide lock (`scripts/with-lock.mjs`, set up by the npm
- * scripts `corpus`, `sweep` and `gate:branch`). Without the lock it refuses, so no heavy run
+ * scripts `corpus`, `sweep`, `r3` and `gate:branch`). Without the lock it refuses, so no heavy run
  * bypasses the one-heavy-job rule.
  */
 export async function withGateLock(work) {
-  if (heldLock() === undefined) throw new Error('run this through its npm script (npm run corpus, sweep or gate:branch); it takes the host-wide lock');
+  if (heldLock() === undefined) throw new Error('run this through its npm script (npm run corpus, sweep, r3 or gate:branch); it takes the host-wide lock');
   return work();
 }

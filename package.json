@@ -57,6 +57,8 @@
     "corpus:run": "vite build --logLevel error && node scripts/corpus.mjs",
     "sweep": "node scripts/with-lock.mjs sweep -- npm run sweep:run --silent --",
     "sweep:run": "vite build --logLevel error && node scripts/sweep.mjs",
+    "r3": "node scripts/with-lock.mjs r3 -- npm run r3:run --silent --",
+    "r3:run": "vite build --logLevel error && node scripts/r3.mjs",
     "gate:compare": "node scripts/gate-compare.mjs",
     "gate:branch": "node scripts/with-lock.mjs gate:branch -- node scripts/gate-branch.mjs",
     "png": "node scripts/png.mjs",

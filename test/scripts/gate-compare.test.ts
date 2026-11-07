@@ -76,3 +76,39 @@ it('refuses a base without an Xf column: its X counts faint crossings too', () =
   expect(result.status).toBe(2);
   expect(String(result.stderr)).toContain('no Xf column');
 });
+
+// Architecture-2 ticket 86: a sheet only the head has is judged on its own.
+const NEW = 'goldens/new.yaml';
+/** The base holds goldens/a.yaml; the head holds it unchanged and `added` as a second sheet. */
+const withNewSheet = (added: string): string => compare(sheet(), `${sheet()}\n${added}`);
+
+it('flags a head-only ERROR row NEW-FAIL, with the error', () => {
+  const out = withNewSheet(`${NEW}\tERROR no such node`);
+  expect(out).toMatch(/goldens\/new\.yaml\s+\(sheet\)\s+-\s+ERROR no such node\s+NEW-FAIL/);
+  expect(out).toContain('worse: new-fail 1');
+});
+
+it('flags a head-only TIMEOUT row NEW-FAIL', () => {
+  expect(withNewSheet(`${NEW}\tTIMEOUT after 120 s`)).toMatch(/\(sheet\)\s+-\s+TIMEOUT after 120 s\s+NEW-FAIL/);
+});
+
+it('flags a head-only sheet with an error gate NEW-FAIL, with the gate id', () => {
+  const out = withNewSheet(sheet({ file: NEW, gates: 'G4,G6' }));
+  expect(out).toMatch(/goldens\/new\.yaml\s+gates\s+-\s+G4,G6\s+NEW-FAIL/);
+  expect(out).toMatch(/goldens\/new\.yaml\s+\(sheet\)\s+-\s+only in head\s+NEW-FAIL/);
+  expect(out).toContain('worse: new-fail 1');
+});
+
+it('flags a head-only sheet with removed links NEW-FAIL, and counts the sheet once', () => {
+  const out = withNewSheet(sheet({ file: NEW, removed: '2', gates: 'G1' }));
+  expect(out).toMatch(/goldens\/new\.yaml\s+removed\s+-\s+2\s+NEW-FAIL/);
+  expect(out).toContain('worse: new-fail 1');
+});
+
+it('passes a clean head-only sheet: warnings and bends are not judged on a sheet with no base', () => {
+  const out = withNewSheet(sheet({ file: NEW, warn: 'W3', bends: '4', X: '2' }));
+  expect(out).toMatch(/goldens\/new\.yaml\s+\(sheet\)\s+-\s+only in head\s*$/m);
+  expect(out).not.toContain('NEW-FAIL');
+  expect(out).not.toContain('WORSE');
+  expect(out).toContain('worse: none');
+});

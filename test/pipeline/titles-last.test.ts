@@ -8,6 +8,7 @@ import { pathBends } from '../../src/layout/objective.js';
 import { score } from '../../src/score/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 /**
  * Architecture-2 ticket 54, "titles last": a group title is placed once, at the end of 7f, and yields to every link. It slides to a free
@@ -116,13 +117,11 @@ describe('a group title is placed last and yields to its links (architecture-2 t
 
   it('keeps the titles independent of the order of the links and the nodes (R3)', async () => {
     const yaml = fixture('a-group-title-yields-with-a-halo'), base = await run(yaml);
-    const [top, rest] = yaml.split('nodes:\n'), [nodes, links] = rest!.split('links:\n');
-    const reverse = (block: string): string => `${block.trimEnd().split('\n').reverse().join('\n')}\n`;
     const titles = (model: LayoutModel) => model.labels.filter(label => label.role === 'group')
       .map(label => ({ id: label.id, bounds: label.bounds, yield: label.yield, crossedBy: ends(model, label.crossedBy!) }));
-    expect(titles(await run(`${top}nodes:\n${nodes}links:\n${reverse(links!)}`))).toEqual(titles(base));
+    expect(titles(await run(reversed(yaml, 'links')))).toEqual(titles(base));
     // Node order is the row order (a meaningful order): the row mirrors, and the titles stand as before.
-    const mirrored = titles(await run(`${top}nodes:\n${reverse(nodes!)}links:\n${links}`));
+    const mirrored = titles(await run(reversed(yaml, 'nodes')));
     expect(mirrored.map(({ id, bounds, yield: kind }) => ({ id, bounds, kind }))).toEqual(titles(base).map(({ id, bounds, yield: kind }) => ({ id, bounds, kind })));
   }, 240000);
 });

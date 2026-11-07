@@ -5,6 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createColdAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 /**
  * Architecture-2 ticket 14, "bends first": a node grows only as far as the links it keeps straight need. A feed whose alignment the row
@@ -23,11 +24,7 @@ const ownWidth = (model: LayoutModel, node: string): number => {
   return 20 + pitch * item.ports.filter(port => port.side === 'top').length;
 };
 /** The same sheet with its links, and when `nodes` its nodes too, declared in the reverse order. The node order is the row order the author wrote. */
-function reversed(yaml: string, nodes = false): string {
-  const lines = yaml.split('\n'), at = lines.indexOf('nodes:'), links = lines.indexOf('links:');
-  const body = (from: number, to: number, flip: boolean) => { const kept = lines.slice(from, to).filter(line => line.trim() !== ''); return flip ? kept.reverse() : kept; };
-  return [...lines.slice(0, at + 1), ...body(at + 1, links, nodes), 'links:', ...body(links + 1, lines.length, true), ''].join('\n');
-}
+const reversedOrder = (yaml: string, nodes = false): string => (nodes ? reversed(reversed(yaml, 'links'), 'nodes') : reversed(yaml, 'links'));
 
 describe('a declined feed grows no body', () => {
   for (const name of ['a-declined-feed-grows-no-body', 'a-declined-feed-grows-no-body-mirrored', 'a-declined-feed-grows-no-body-interior']) {
@@ -42,12 +39,12 @@ describe('a declined feed grows no body', () => {
   }
 
   it('lays the sheet out the same with its links declared in reverse', async () => {
-    const [ahead, back] = await Promise.all([run(text('a-declined-feed-grows-no-body')), run(reversed(text('a-declined-feed-grows-no-body')))]);
+    const [ahead, back] = await Promise.all([run(text('a-declined-feed-grows-no-body')), run(reversedOrder(text('a-declined-feed-grows-no-body')))]);
     for (const id of Object.keys(ahead.nodes)) expect(back.nodes[id]!.bounds).toEqual(ahead.nodes[id]!.bounds);
   });
 
   it.fails('with its nodes declared in reverse (the rows mirror), n1 still keeps the width its ports need', async () => {
-    const model = await run(reversed(text('a-declined-feed-grows-no-body'), true));
+    const model = await run(reversedOrder(text('a-declined-feed-grows-no-body'), true));
     for (const port of ['a1', 'a2', 'a3']) expect(pathBends(linkTo(model, 'n1', port))).toBe(0);
     expect(model.nodes['n1']!.bounds!.width).toBeLessThanOrEqual(ownWidth(model, 'n1') + 0.5);
   });

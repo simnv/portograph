@@ -7,6 +7,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 // Architecture-2 ticket 52: a group whose members all link laterally to the group beside it stands as one column, one member on each
 // line, decided in stage 5 of the first placement run and recorded in `groupArrangements`.
@@ -95,13 +96,11 @@ describe('a group whose members all link laterally stands as one column (archite
 
   it('does not follow the order of the links; reversed nodes keep the choice (R3)', async () => {
     const base = await run(fixture(FLANK));
-    const [top, rest] = fixture(FLANK).split('nodes:\n'), [nodes, links] = rest!.split('links:\n');
-    const reverse = (block: string): string => `${block.trimEnd().split('\n').reverse().join('\n')}\n`;
-    const reversedLinks = await run(`${top}nodes:\n${nodes}links:\n${reverse(links!)}`);
+    const reversedLinks = await run(reversed(fixture(FLANK), 'links'));
     expect(picture(reversedLinks)).toEqual(picture(base));
     expect(reversedLinks.groupArrangements).toEqual(base.groupArrangements);
     // Node declaration order is the stage-4 row order, which the column keeps top to bottom (a meaningful order, R3).
-    const reversedNodes = await run(`${top}nodes:\n${reverse(nodes!)}links:\n${links}`);
+    const reversedNodes = await run(reversed(fixture(FLANK), 'nodes'));
     expect(reversedNodes.groupArrangements).toEqual(base.groupArrangements);
     expect(reversedNodes.canvas).toEqual(base.canvas);
     expect(reversedNodes.groups.guard!.rowOrder).toEqual([...base.groups.guard!.rowOrder!].reverse());

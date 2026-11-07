@@ -7,6 +7,7 @@ import { chordNearPairs } from '../../src/layout/frame-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrderOn } from '../layout/joint-off.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 /**
  * Architecture-2 ticket 65: a feed that owes a vertical keeps a vertical it has reached. A centring step that would stand fewer verticals than it found
@@ -22,13 +23,6 @@ const count = (model: LayoutModel, code: string): number => model.diagnostics.fi
 const lean = (model: LayoutModel, id: string): number => {
   const link = model.links.find(item => item.id === id)!;
   return Math.abs(findPort(model, link.attachments!.from)!.anchor!.x - findPort(model, link.attachments!.to)!.anchor!.x);
-};
-/** The document with its `links` (or `nodes`) entries in reverse order. */
-const reversed = (text: string, key: 'links' | 'nodes'): string => {
-  const lines = text.split('\n'), start = lines.indexOf(`${key}:`);
-  let end = start + 1;
-  while (end < lines.length && lines[end]!.startsWith('  ')) end++;
-  return [...lines.slice(0, start + 1), ...lines.slice(start + 1, end).reverse(), ...lines.slice(end)].join('\n');
 };
 
 describe('a step keeps the vertical it reached', () => {

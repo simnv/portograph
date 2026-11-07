@@ -12,6 +12,7 @@ import { rows } from '../../src/layout/rows.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 const NAME = 'a-parent-below-the-anchor-spreads-its-ports-over-its-children';
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -161,25 +162,23 @@ describe('a parent below the anchor tier spreads its ports over its children (ar
 
   it('the spread does not follow the order of the links or of the nodes (R3)', async () => {
     const base = await run(fixture(NAME));
-    const [top, rest] = fixture(NAME).split('nodes:\n'), [nodes, links] = rest!.split('links:\n');
-    const reverse = (block: string): string => `${block.trimEnd().split('\n').reverse().join('\n')}\n`;
     // The decision: the grown width, the face and the two shifts (as a pair: a mirrored row swaps them).
     const spread = (model: LayoutModel) => {
       const item = parentSpread(model, 'sw')!;
       return { width: item.width.toFixed(6), shifts: [item.shift.low, item.shift.high].map(value => value.toFixed(6)).sort(), offsets: item.ports.map(port => port.offset.toFixed(6)).sort() };
     };
     // Links reversed: the link ids and the ordinals of anonymous ports follow the link list; the geometry may not.
-    const links2 = await run(`${top}nodes:\n${nodes}links:\n${reverse(links!)}`);
+    const links2 = await run(reversed(fixture(NAME), 'links'));
     expect(picture(links2)).toEqual(picture(base));
     expect(spread(links2)).toEqual(spread(base));
     // Nodes reversed: the declaration order is the order of the row (a meaningful order, R3), so the row is mirrored. The decision is the same, and
     // both drops stand vertical.
-    for (const yaml of [`${top}nodes:\n${reverse(nodes!)}links:\n${links}`, `${top}nodes:\n${reverse(nodes!)}links:\n${reverse(links!)}`]) {
-      const reversed = await run(yaml);
-      expect(spread(reversed)).toEqual(spread(base));
-      const drops = reversed.links.filter(link => link.attachments!.from.node === 'sw' || link.attachments!.to.node === 'sw').filter(link => link.attachments!.to.node !== 'sw');
+    for (const yaml of [reversed(fixture(NAME), 'nodes'), reversed(reversed(fixture(NAME), 'links'), 'nodes')]) {
+      const flipped = await run(yaml);
+      expect(spread(flipped)).toEqual(spread(base));
+      const drops = flipped.links.filter(link => link.attachments!.from.node === 'sw' || link.attachments!.to.node === 'sw').filter(link => link.attachments!.to.node !== 'sw');
       expect(drops.length).toBe(2);
-      for (const link of drops) expect(dx(reversed, link.id)).toBeLessThanOrEqual(0.5);
+      for (const link of drops) expect(dx(flipped, link.id)).toBeLessThanOrEqual(0.5);
     }
   }, 60000);
 
