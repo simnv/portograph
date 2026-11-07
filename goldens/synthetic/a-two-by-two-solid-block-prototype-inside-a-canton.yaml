@@ -1,5 +1,5 @@
-# PROTOTYPE ticket 81: canton.
-# Expected: complete solid block, compact hubs, full-weight X, reserved 34-degree gap capped at 600 px.
+# Ticket 83: a complete solid node block under the cap.
+# Expected: all block members straight, compact hubs, full-weight X, 34-degree/top-entry gap reserved before freeze.
 portograph: 2
 profile: network
 layout: { autoArrange: false }

@@ -71,7 +71,7 @@ For every link, in this fixed order, from the document only:
    model, after the ranked groups are cells, and reads the document only, so resolving
    `model.document` reproduces it. No geometry until tickets 83 and 84 (`docs/design/mesh-bus.md`,
    Q105, Q106).
-3b. **Solid block prototype** — ticket 81 detects a complete solid node relation on adjacent document tiers after expansion.
+3b. **Complete solid block** — ticket 83 detects a complete solid node relation on adjacent document tiers after expansion.
    It supersedes inferred aggregation, counts far nodes within a canton, and records solid ownership for full crossing weight.
    `docs/design/routed-chords.md` Section 17 states its limited scope.
 3c. **Fan family** — after the mesh buses, `detectFanFamilies` (`src/resolve/fan-family.ts`) groups the
@@ -455,7 +455,7 @@ raise it later and never lower it.
 
 ## Stage 5 — sides, phase two; resize; repack
 
-Ticket 81 prototype reserves block-face pitch before sizing. It records declaration ties in the stage-4 row draft.
+Ticket 83 reserves block-face pitch before sizing. It records declaration ties in the stage-4 row draft.
 
 Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
 `left`/`right` from the in-row order — except inside a **grid**, where a peer may stand above or
@@ -866,8 +866,10 @@ links on the peer.
 
 ### 7c — child under parents
 
-Ticket 81 prototype block feeds centre the row without stretching its faces toward individual peers.
-After centring and before joint chord admission, its draft seats the stored angle/top-entry gap floor.
+Ticket 83 block feeds centre the row without stretching its faces toward individual peers.
+The gap decision waits for settled 7e geometry; an earlier 7c replay reserves no speculative height.
+The pre-freeze draft seats the stored 34-degree/top-entry deficit, at most a 600 px tier-band gap.
+An over-cap block restarts from resolution with a named refusal and its original owners; shared-node blocks decline for ticket 84.
 
 Anchor tier = the tier with the most main-tier nodes, including bars and excluding flanks (ties: lowest effective tier index). Empty layouts omit it. Below the anchor, each
 group is centred under its feeds; above it, each group is centred over its children (mirror).

@@ -1,4 +1,4 @@
-import { blockReservationsFault, blockSheafApart } from './solid-block-proto.js';
+import { blockReservationsFault } from './block-checks.js';
 import type { FanAdmission, FanFallbackReason, FanFamily, LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
@@ -296,8 +296,6 @@ function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment
       continue;
     }
     const side = one ? sides.from : sides.to;
-    // The capped block may enter its own lower box by a side. Foreign boxes above remain walls.
-    if (link.solidBlock && side === 'top' && model.blockReservations?.some(item => item.family === link.fanFamily && item.capped)) continue;
     if (side === 'left' || side === 'right') {
       // A lateral port leaves through the side edge it faces, at least the margin (and the slack) from each corner.
       const edge = side === 'right' ? bounds.x + bounds.width : bounds.x;
@@ -529,7 +527,7 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
   for (const other of model.links) {
     if (other.id === link.id || !isRoutedChord(model, other)) continue;
     const run = other.path!.segments[0]!;
-    if (!chordsApart(segment, run, stroke, linkStrokeWidth(other)) && !blockSheafApart(model, link, other, segment, run)) return 'chord';
+    if (!chordsApart(segment, run, stroke, linkStrokeWidth(other))) return 'chord';
   }
   // The router leaves every other port by a stem of at least 15 px, and G6 keeps that stem 10 px from the
   // chord. Stage 8 cannot make room the chord took, so the chord stays clear of every stem placement has

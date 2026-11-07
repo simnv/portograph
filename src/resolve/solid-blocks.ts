@@ -4,9 +4,9 @@ import { faintLinkClass } from '../profiles/network/theme.js';
 import { groupShape } from '../layout/grid.js';
 import { portId } from '../layout/skeleton-graph.js';
 
-// PROTOTYPE, ticket 81 slice 1. No maximal-biclique extraction: a whole group and
+// Ticket 83, the under-cap slice of ticket 81. No maximal-biclique extraction: a whole group and
 // the whole adjacent boundary/class cohort must form one complete node relation.
-export function detectSolidBlocks(model: LayoutModel): void {
+export function detectSolidBlocks(model: LayoutModel, excluded: ReadonlyMap<string, string> = new Map()): void {
   const shared = new Map<string, number>();
   for (const link of model.links) if (link.layer === 'routed' && link.attachments) {
     for (const ref of Object.values(link.attachments)) shared.set(portId(ref), (shared.get(portId(ref)) ?? 0) + 1);
@@ -28,7 +28,7 @@ export function detectSolidBlocks(model: LayoutModel): void {
   }
   const candidates: FanFamily[] = [];
   const declined = (links: LayoutLink[], reason: string): void => {
-    model.diagnostics.push({ stage: 'model', severity: 'info', code: 'SOLID_BLOCK_DECLINED', message: `Solid block prototype declines ${reason}.`, owners: links.map(link => link.owner) });
+    model.diagnostics.push({ stage: 'model', severity: 'info', code: 'SOLID_BLOCK_DECLINED', message: `Solid block declines ${reason}.`, owners: links.map(link => link.owner) });
   };
   for (const cohort of cohorts.values()) {
     const hubs = [...model.groups[cohort.group]!.nodes];
@@ -64,7 +64,16 @@ export function detectSolidBlocks(model: LayoutModel): void {
   const seen = new Set<string>();
   const unique = candidates.filter(family => { const key = family.members.map(member => member.link).sort().join('\0'); if (seen.has(key)) return false; seen.add(key); return true; });
   const overlaps = new Set(unique.filter(a => unique.some(b => a !== b && a.members.some(member => b.members.some(other => other.link === member.link)))).map(family => family.id));
-  const accepted = unique.filter(family => !overlaps.has(family.id));
+  // Shared nodes couple face order and both adjacent gaps. Ticket 84 owns that component decision.
+  const interacting = new Set(unique.filter(a => unique.some(b => a !== b && [...a.hubs, ...a.farNodes!].some(node => [...b.hubs, ...b.farNodes!].includes(node)))).map(family => family.id));
+  const accepted = unique.filter(family => {
+    const reason = excluded.get(family.id) ?? excluded.get('*') ?? (interacting.has(family.id) ? 'interacting-blocks' : undefined);
+    if (reason) {
+      declined(model.links.filter(link => family.members.some(member => member.link === link.id)), reason);
+      if (excluded.has(family.id) || excluded.has('*')) (model.declinedSolidBlocks ??= []).push({ family: family.id, reason });
+    }
+    return reason === undefined && !overlaps.has(family.id);
+  });
   for (const family of unique) if (overlaps.has(family.id)) declined(model.links.filter(link => family.members.some(member => member.link === link.id)), 'overlapping-blocks');
   if (!accepted.length) return;
   const owned = new Set(accepted.flatMap(family => family.members.map(member => member.link)));

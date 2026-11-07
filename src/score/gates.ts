@@ -1,4 +1,3 @@
-import { blockSheafApart } from '../layout/solid-block-proto.js';
 import type { Frame, LayoutLink, LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
@@ -187,7 +186,7 @@ export function parallelClearance(model: LayoutModel, routed: Segment[], fail: (
       const point = intersection(a.segment, b.segment);
       const strict = point !== undefined
         && ![a.segment.from, a.segment.to, b.segment.from, b.segment.to].some(end => samePoint(end, point));
-      if (strict || blockSheafApart(model, a.link, b.link, a.segment, b.segment)) continue;
+      if (strict) continue;
     }
     // One link's own staircase tread is not a clearance pair. Stage 7a reserves a lane at a fixed x
     // and states that routing completes the attachment jog, so a tread shorter than the clearance

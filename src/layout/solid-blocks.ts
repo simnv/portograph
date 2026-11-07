@@ -1,19 +1,17 @@
-import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
-import { orderedGroupIds, orderedNodeIds } from '../model/model.js';
-import { EPS, segmentDistance } from '../geometry/planar.js';
-import { linkStrokeWidth } from '../theme/geometry.js';
-import { groupBoxes, groupConsumers } from '../score/model.js';
+import type { LayoutModel } from '../model/layout.js';
+import { frameSubtreeCells, orderedGroupIds, orderedNodeIds } from '../model/model.js';
+import { EPS } from '../geometry/planar.js';
+import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
+import { groupBoxes } from '../score/model.js';
 import { findPort } from './row-paths.js';
-import { moveBands } from './gap-room.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { fitRegionGroup } from './regions.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 
-export const BLOCK_ANGLE = 34;
-export const BLOCK_CAP = 600;
+import { SolidBlockRefusal } from './placement-refusal.js';
+import { BLOCK_ANGLE, BLOCK_CAP } from './block-checks.js';
 const radians = BLOCK_ANGLE * Math.PI / 180;
 
-/** PROTOTYPE: capacity is owned before resizing, never by the chord consumer. */
+/** Ticket 83: capacity is owned before resizing, never by the chord consumer. */
 export function reserveBlockPitch(model: LayoutModel): void {
   for (const family of model.fanFamilies ?? []) {
     if (family.kind !== 'solid') continue;
@@ -30,7 +28,7 @@ export function reserveBlockPitch(model: LayoutModel): void {
  * Seat that row before lanes, rather than asking 7c to stretch small hosts across it.
  * A mixed row, overlapping target, flank, or frame keeps its existing owner.
  */
-export function seatBlockFollowers(model: LayoutModel): void {
+export function seatBlockFollowers(model: LayoutModel, fitRegionGroup: (model: LayoutModel, group: LayoutModel['groups'][string]) => void): void {
   const far = new Set((model.fanFamilies ?? []).filter(family => family.kind === 'solid').flatMap(family => family.farNodes ?? []));
   if (!far.size) return;
   model.blockFollowers = [];
@@ -96,84 +94,45 @@ export function seatBlockOrder(model: LayoutModel): void {
  * Angle and each facing-edge demand combine by max; shared gap demands also combine by max.
  * One read and one y move per draft; pitch has already fixed the x capacity.
  */
-export function reserveBlockGaps(model: LayoutModel): void {
-  if (model.frozenChords !== undefined || !model.fanFamilies?.some(family => family.kind === 'solid')) return;
+export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutModel, growth: Map<number, number>) => void): void {
+  if (model.frozenChords !== undefined || model.blockReservations !== undefined || !model.fanFamilies?.some(family => family.kind === 'solid')) return;
   const grown = new Map<number, number>();
+  const declined = new Map<string, string>();
   model.blockReservations = [];
   for (const family of model.fanFamilies) {
     if (family.kind !== 'solid') continue;
     const links = model.links.filter(link => link.fanFamily === family.id);
-    let target = 0, current = Infinity, above = Infinity, below = -Infinity;
+    let required = 0, above = Infinity, below = -Infinity, gap = 0;
     for (const link of links) {
       const ends = Object.values(link.attachments!).map(ref => ({ ref, port: findPort(model, ref)!, tier: model.groups[model.document.nodes[ref.node]!.group]!.tier! })).sort((a, b) => a.tier - b.tier);
       const upper = ends[0]!, lower = ends[1]!, a = upper.port.anchor!, b = lower.port.anchor!;
       above = upper.tier; below = lower.tier;
       const dx = Math.abs(b.x - a.x), dy = b.y - a.y;
-      current = Math.min(current, dy); target = Math.max(target, dx * Math.tan(radians));
+      const top = model.tierBands.find(band => band.tier === above)!.bounds!;
+      const bottom = model.tierBands.find(band => band.tier === below)!.bounds!;
+      gap = bottom.y - top.y - top.height;
+      let target = dx * Math.tan(radians);
       for (const box of groupBoxes(model)) {
-        const ownsUpper = groupConsumers(model, box.id).includes(link.id) && box.bounds.y <= a.y && box.bounds.y + box.bounds.height >= a.y;
-        const ownsLower = groupConsumers(model, box.id).includes(link.id) && box.bounds.y <= b.y && box.bounds.y + box.bounds.height >= b.y;
+        const cells = model.document.frames?.[box.id] ? frameSubtreeCells(model.document.frames, box.id) : [box.id];
+        const ownsUpper = cells.includes(model.document.nodes[upper.ref.node]!.group);
+        const ownsLower = cells.includes(model.document.nodes[lower.ref.node]!.group);
         if (ownsUpper === ownsLower) continue;
         const port = ownsUpper ? a : b;
         const offset = ownsUpper ? box.bounds.y + box.bounds.height - a.y : b.y - box.bounds.y;
         const towardRight = ownsUpper ? b.x > a.x : a.x > b.x;
-        const room = towardRight ? box.bounds.x + box.bounds.width - 10 - port.x : port.x - box.bounds.x - 10;
+        const room = towardRight ? box.bounds.x + box.bounds.width - GROUP_EDGE_LINK_CLEARANCE - port.x : port.x - box.bounds.x - GROUP_EDGE_LINK_CLEARANCE;
         if (offset > 0 && room > 0) target = Math.max(target, offset * dx / room);
       }
+      // Each chord owes only the deficit beyond the height already inside its endpoint bands.
+      required = Math.max(required, target - (dy - gap));
     }
-    const chosen = Math.max(current, Math.min(target, BLOCK_CAP));
-    model.blockReservations.push({ family: family.id, above, below, target, cap: BLOCK_CAP, chosen, capped: target > BLOCK_CAP + EPS,
+    if (required > BLOCK_CAP + EPS) { declined.set(family.id, 'gap-cap: needs ' + required.toFixed(2) + ' px, cap ' + BLOCK_CAP + ' px'); continue; }
+    const chosen = Math.max(gap, required);
+    model.blockReservations.push({ family: family.id, above, below, target: required, cap: BLOCK_CAP, chosen,
       pitch: Math.ceil((10 + Math.max(...links.map(linkStrokeWidth))) / Math.sin(radians)) });
-    grown.set(below, Math.max(grown.get(below) ?? 0, chosen - current));
+    grown.set(below, Math.max(grown.get(below) ?? 0, chosen - gap));
   }
+  if (declined.size) throw new SolidBlockRefusal(declined);
   if ([...grown.values()].some(value => value > EPS)) moveBands(model, grown);
 }
 
-/** Capped sheaves excuse only a local prefix at their shared node. The rest of
- * both chords still owes 10 px. Non-members and pairs without a shared node owe all of it.
- * The local zone is one shared body width from its face, fixed by placement capacity.
- */
-export function blockSheafApart(model: LayoutModel, a: LayoutLink, b: LayoutLink, sa: PathSegment, sb: PathSegment): boolean {
-  if (!a.solidBlock || !b.solidBlock || a.fanFamily !== b.fanFamily || !model.blockReservations?.some(item => item.family === a.fanFamily && item.capped)) return false;
-  const family = model.fanFamilies?.find(item => item.id === a.fanFamily && item.kind === 'solid');
-  if (!family || ![a, b].every(link => family.members.some(member => member.link === link.id))) return false;
-  if (model.frozenChords !== undefined && ![a, b].every(link => model.fanAdmissions?.some(item => item.link === link.id && item.mode === 'straight') && link.path?.segments.length === 1)) return false;
-  const shared = Object.values(a.attachments!).find(ref => Object.values(b.attachments!).some(other => other.node === ref.node));
-  if (!shared) return false;
-  const radius = Math.max(model.nodes[shared.node]!.bounds!.width, model.nodes[shared.node]!.bounds!.height);
-  const trim = (link: LayoutLink, segment: PathSegment): PathSegment => {
-    const near = link.attachments!.from.node === shared.node ? segment.from : segment.to;
-    const far = near === segment.from ? segment.to : segment.from;
-    const length = Math.hypot(far.x - near.x, far.y - near.y), t = Math.min(0.5, radius / length);
-    return { ...segment, from: { x: near.x + t * (far.x - near.x), y: near.y + t * (far.y - near.y) }, to: far };
-  };
-  return segmentDistance(trim(a, sa), trim(b, sb)) - (linkStrokeWidth(a) + linkStrokeWidth(b)) / 2 >= 10 - EPS;
-}
-
-/** Read the stored floor; do not choose a new cap or boundary mode at publication. */
-export function blockReservationsFault(model: LayoutModel): string | undefined {
-  const families = model.fanFamilies?.filter(family => family.kind === 'solid') ?? [];
-  if (!families.length || model.frozenChords === undefined) return undefined;
-  if (model.blockReservations?.length !== families.length) return 'solid block reservation is missing';
-  for (const id of model.blockFollowers ?? []) {
-    const link = model.links.find(item => item.id === id);
-    if (!link?.attachments) return `${id} lost its follower attachment`;
-    const [a, b] = Object.values(link.attachments).map(ref => findPort(model, ref)?.anchor);
-    if (!a || !b || Math.abs(a.x - b.x) > EPS) return `${id} lost its follower alignment`;
-  }
-  for (const family of families) {
-    const record = model.blockReservations.find(item => item.family === family.id);
-    if (!record || ![record.target, record.cap, record.chosen, record.pitch].every(Number.isFinite) || record.cap !== BLOCK_CAP
-      || record.chosen + EPS < Math.min(record.target, record.cap) || record.capped !== (record.target > record.cap + EPS)) return `${family.id} has an unreadable reservation`;
-    for (const member of family.members) {
-      const link = model.links.find(item => item.id === member.link);
-      if (!link?.attachments) return `${member.link} has no endpoints`;
-      const ports = Object.values(link.attachments).map(ref => findPort(model, ref));
-      if (ports.some(port => !port?.anchor)) return `${member.link} has no anchors`;
-      const [a, b] = ports.map(port => port!.anchor!);
-      if (Math.abs(b!.y - a!.y) + EPS < record.chosen) return `${member.link} lost its reserved gap`;
-      if (!record.capped && Math.abs(b!.y - a!.y) + EPS < Math.abs(b!.x - a!.x) * Math.tan(radians)) return `${member.link} lost its reserved angle`;
-    }
-  }
-  return undefined;
-}

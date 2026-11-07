@@ -1,4 +1,4 @@
-import { blockReservationsFault, blockSheafApart } from './solid-block-proto.js';
+import { blockReservationsFault } from './block-checks.js';
 import type { FanFallbackReason, FanFamily, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { EPS, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
@@ -63,7 +63,7 @@ function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly 
   const apart = new Map<string, boolean>();
   for (let i = 0; i < open.length; i++) for (let j = i + 1; j < open.length; j++) {
     const a = open[i]!, b = open[j]!;
-    apart.set(pair(a.id, b.id), chordsApart(segments.get(a.id)!, segments.get(b.id)!, linkStrokeWidth(a), linkStrokeWidth(b)) || blockSheafApart(model, a, b, segments.get(a.id)!, segments.get(b.id)!));
+    apart.set(pair(a.id, b.id), chordsApart(segments.get(a.id)!, segments.get(b.id)!, linkStrokeWidth(a), linkStrokeWidth(b)));
   }
   let tested = 0, truncated = false;
   /**
@@ -205,6 +205,11 @@ export function admitFanFamilies(draft: LayoutModel, members: readonly LayoutLin
   for (const family of draft.fanFamilies ?? []) {
     const own = members.filter(link => link.fanFamily === family.id);
     if (!own.length) continue;
+    // A solid block is offered only after settled placement has reserved its gap. Earlier row probes own no decision.
+    if (family.kind === 'solid' && !draft.blockReservations?.some(item => item.family === family.id)) {
+      for (const link of own) makeFanOrthogonal(draft, link);
+      continue;
+    }
     const verdict = familyVerdict(draft, family, own, budget);
     if (family.kind === 'solid') {
       const prefix = `${family.id}: `;

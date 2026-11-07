@@ -234,7 +234,7 @@ export interface LayoutLink {
   meshBus?: string;
   /** The fan family (`fanFamilies`) this routed link is a member of (architecture-2 ticket 40); stage 1 sets it and nothing later changes it. */
   fanFamily?: string;
-  /** Ticket 81 prototype: solid members keep full crossing weight. */
+  /** Ticket 83: solid members keep full crossing weight. */
   solidBlock?: true;
   /** Routing must first resolve group endpoints to concrete port refs. */
   attachments?: { from: PortRef; to: PortRef };
@@ -594,8 +594,10 @@ export interface LayoutModel {
    * decided again. Absent = the document has none (a sheet with none keeps its bytes). Resolving `document` reproduces it.
    */
   fanFamilies?: FanFamily[];
-  /** Ticket 81 prototype. Absent before the gap draft; [] means no solid block. */
+  /** Ticket 83. Absent before the settled gap draft or with no solid block; [] cannot validate a block. */
   blockReservations?: BlockReservation[];
+  /** Placement refusals restored by stage 1; absent when no geometry probe declined a block. */
+  declinedSolidBlocks?: { family: string; reason: string }[];
   /** Terminal one-link followers seated below the block in stage 5. */
   blockFollowers?: string[];
   /**
@@ -771,7 +773,7 @@ export interface FanFamily {
   /** One entry per member link, sorted by link id: its hub end and the unit of its far end. */
   members: { link: string; hub: string; unit: string }[];
 }
-/** Placement-owned aesthetic floor. Mandatory room may exceed the cap. */
+/** Placement-owned floor between tier-band edges, capped before acceptance. Mandatory room may exceed it. */
 export interface BlockReservation {
   family: string;
   above: number;
@@ -779,7 +781,6 @@ export interface BlockReservation {
   target: number;
   cap: number;
   chosen: number;
-  capped: boolean;
   pitch: number;
 }
 /**

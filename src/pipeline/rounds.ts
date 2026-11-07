@@ -7,7 +7,7 @@ import { portKey } from '../layout/sides-one.js';
 import { endMode } from '../layout/course-rows.js';
 import { contentInsets, measureNodeContent } from '../layout/size.js';
 import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
-import { TrunkBlocked } from '../layout/placement-refusal.js';
+import { SolidBlockRefusal, TrunkBlocked } from '../layout/placement-refusal.js';
 import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
 import { staggerRefusal } from '../layout/stagger.js';
 import { documentTierDistance, freezeRefusal } from '../layout/frame-paths.js';
@@ -52,7 +52,7 @@ const fanRound = (child: boolean): Round<{ grown: Reservations }> => ({
   // A fan floor can move the rows, and a trunk that the baseline placed may then have a foreign unit on both sides. The run that found it blocked is a
   // trial, so the round is cut and the baseline stands (a test cannot reach this: it needs a floor that reorders a row of the mesh).
   // A fan floor can also leave a kept stagger no room (ticket 51): the same cut, and the baseline keeps the stagger.
-  tolerates: (error, phase) => phase === 'place' && (child ? error instanceof PlacementRefusal : error instanceof TrunkBlocked || staggerRefusal(error)),
+  tolerates: (error, phase) => phase === 'place' && (child ? error instanceof PlacementRefusal : error instanceof TrunkBlocked || error instanceof SolidBlockRefusal || staggerRefusal(error)),
   async measure(env, s) {
     const measure = await env.timed('measureFans', () => measureFans(s.kept7e));
     const grown = pitchGrowth(s.kept, measure.floors, child ? 'span' : 'fan', env.placements);

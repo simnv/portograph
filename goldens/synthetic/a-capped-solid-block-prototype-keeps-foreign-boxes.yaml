@@ -1,5 +1,5 @@
-# PROTOTYPE ticket 81: cap.
-# Expected: complete solid block, compact hubs, full-weight X, reserved 34-degree gap capped at 600 px.
+# Ticket 83: the over-cap block keeps its previous placement owners.
+# Expected: named gap-cap decline, unchanged drawing versus main; no sheaf or side-entry permission.
 portograph: 2
 profile: network
 layout: { autoArrange: false }

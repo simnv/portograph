@@ -156,11 +156,15 @@ This document keeps the detailed vocabulary, invariants and geometry rules.
 | Group-link collapse | complete bipartite set only | Q30 as amended by codex |
 | Mesh bus | three nodes or more, complete, one class, one row (one sub-tier, across groups); bar at 15 px (`BUS_STUB`, the port-stem length) beyond the row's outermost body or pill extent on the bus side (in-frame), or beyond the outermost member frame edge on that side (across-frames; more than the 10 px group edge clearance plus half the stroke); band = stub + bar + (4 px + label height + 4 px, or the run clearance `k` without a label); a riser lane is as wide as a lane for a link with no pill | ticket 81, Q105, Q106, Q107 |
 
-## Ticket 81 prototype branch
+## Complete solid blocks (tickets 81 and 83)
 
 A complete solid node block across adjacent document tiers uses joint admission with full-weight crossings.
-The prototype reserves 34-degree face pitch and a face-to-face gap capped at 600 px before chord freeze.
-It keeps compact block faces and declaration order on tied rows, including two tier groups in one canton.
-Capped members may enter their own lower box through its side; foreign boxes remain obstacles.
-The capped sheaf exception checks clearance after a prefix of one shared body width, at most half each chord.
-This local-zone definition is experimental. Mixed fallback and interacting-block guarantees remain slice 2 work.
+Both sides contain at least two nodes, including rows inside one canton; inferred aggregation yields to the block.
+Placement reserves compact faces, declaration ties and ceil((10 + stroke) / sin(34 degrees)) face pitch.
+After the x geometry settles at 7e, it reserves only the gap deficit for 34 degrees and horizontal box entry.
+The 600 px cap measures the tier gap between band edges, excluding height inside endpoint boxes.
+A block already meeting the angle and entry rules takes no gap growth.
+A block needing more than 600 px is declined by name and placement starts again with its previous owners.
+Shared-node blocks decline as interacting-blocks; their component decision belongs to ticket 84.
+Foreign boxes remain obstacles. This slice grants no side entry and no G6 sheaf exception; ticket 85 owns capped blocks.
+Body fallback keeps the existing behaviour until ticket 84 proves isolated fallback.

@@ -1,4 +1,4 @@
-import { seatBlockOrder } from './solid-block-proto.js';
+import { seatBlockOrder } from './solid-blocks.js';
 import type { LayoutModel } from '../model/layout.js';
 import { createBrowserElkFactory, elkDeadlineMs, ElkDeadlineError, runElkAttempt, systemElkClock,
   type CreateElkAttempt, type ElkClock } from './elk-worker.js';

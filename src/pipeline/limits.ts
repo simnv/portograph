@@ -1,6 +1,9 @@
 /** The counts that bound a command's placement runs. A leaf module: the placement run and the environment both read it. */
 import { PlacementRefusal } from '../layout/placement-refusal.js';
 
+/** Failed geometry probes before all remaining solid blocks keep their prior owners (ticket 83). */
+export const BLOCK_PROBES = 2;
+
 /** Most runs of placement a fan's pitch may cost after the first (ticket 89). */
 export const FAN_ROUNDS = 2;
 /** Most side rounds after the fan rounds: one offer, one retry (side-faces.md, Section 7). */

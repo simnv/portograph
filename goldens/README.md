@@ -364,11 +364,14 @@ unless its entry preconditions hold.
 The command line loads `dist/`, so `npm run build` must run before `node bin/portograph.mjs render`
 is used to check a golden. A source change alone does not reach the CLI.
 
-Ticket 81 prototype fixtures, not approved golden replacements:
+Ticket 83 rule fixtures, retaining the prototype filenames:
 
 | Sheet | Expected |
 |---|---|
 | `synthetic/a-solid-block-prototype-keeps-all-members-straight.yaml` | 4x8 complete solid block, reserved pitch and gap, full-weight X. |
 | `synthetic/a-two-by-two-solid-block-prototype-inside-a-canton.yaml` | 2x2 node block inside one canton, inferred aggregation yields. |
-| `synthetic/a-capped-solid-block-prototype-keeps-foreign-boxes.yaml` | Cap-limited block, endpoint side entry only; foreign boxes remain obstacles. |
+| `synthetic/a-capped-solid-block-prototype-keeps-foreign-boxes.yaml` | Over-cap block declines by name and retains its previous drawing; no side-entry or sheaf exception. |
 | `synthetic/a-solid-block-prototype-keeps-terminal-followers-straight.yaml` | Wider block faces reserve the terminal follower spacing before centring. |
+
+| `synthetic/a-solid-block-keeps-a-gap-that-already-fits.yaml` | A sufficient 34-degree/top-entry gap takes no growth after x settles. |
+| `synthetic/solid-blocks-that-share-nodes-keep-their-owners.yaml` | Shared-node blocks decline together pending the component decision of ticket 84. |

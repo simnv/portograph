@@ -9,7 +9,7 @@ import type { Owner } from '../model/index.js';
  * What refused: a side hint, a course, a span corridor, a trunk join, the centring invariant, the skeleton (ELK), a bundle path, the placement budget, a reservation of
  * the ledger or a stagger reservation (its seat, its stage-5 proof or its validator; ticket 51).
  */
-export type RefusalCode = 'side' | 'course' | 'span' | 'trunk' | 'centring' | 'skeleton' | 'bundle' | 'budget' | 'ledger' | 'stagger';
+export type RefusalCode = 'side' | 'course' | 'span' | 'trunk' | 'centring' | 'skeleton' | 'bundle' | 'budget' | 'ledger' | 'stagger' | 'solid-block';
 
 export interface RefusalDetail {
   /** The pipeline or model stage that refused, when the source knows it. */
@@ -47,3 +47,10 @@ export class TrunkBlocked extends SideHintRefusal {
 
 /** A refusal that stage 7f may also give (a trial's bands run): the centring invariant and the budget are the command's, never a trial's. */
 export const refusedAtBands = (error: unknown): error is PlacementRefusal => error instanceof PlacementRefusal && error.code !== 'centring' && error.code !== 'budget';
+
+/** The whole block is declined before freeze; the next run restores its original placement owners. */
+export class SolidBlockRefusal extends PlacementRefusal {
+  constructor(readonly blocks: ReadonlyMap<string, string>) {
+    super('solid-block', [...blocks].map(([id, why]) => id + ': ' + why).join('; '), { stage: 'bundles' });
+  }
+}

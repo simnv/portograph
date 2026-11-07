@@ -1,4 +1,4 @@
-import { detectSolidBlocks } from './solid-block-proto.js';
+import { detectSolidBlocks } from './solid-blocks.js';
 import {
   createLayoutModel, groupNodeIds, orderedGroupIds, orderedNodeIds, unsupportedMessage,
   type Diagnostic, type Endpoint, type Layer, type LayoutLink, type LayoutModel,
@@ -17,6 +17,8 @@ export interface ResolveOptions {
   diagnostics?: readonly Diagnostic[];
   /** The trunk joins stage 5 found blocked, by `trunkKey`, with the reason; a join named here stays declined (mesh-bus.md, section 12.4). */
   declinedTrunks?: ReadonlyMap<string, string>;
+  /** Blocks refused by a placement probe; resolve restores their original ownership. */
+  declinedSolidBlocks?: ReadonlyMap<string, string>;
 }
 
 export class ResolveError extends Error {
@@ -397,6 +399,6 @@ export function resolve(input: NormalisedDocument, options: ResolveOptions = {})
   detectMeshBuses(final, options.declinedTrunks);
   // The fan families read the resolved links and the frames, so they are found on the final model too (architecture-2 ticket 40).
   detectFanFamilies(final);
-  detectSolidBlocks(final);
+  detectSolidBlocks(final, options.declinedSolidBlocks);
   return final;
 }

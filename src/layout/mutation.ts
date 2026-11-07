@@ -95,6 +95,7 @@ function semantics(model: LayoutModel) {
     meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross', 'meshNodes', 'mesh', 'labelled'])),
     // Stage 1 decides the fan families from the document alone; a stored record must be the one the document gives (architecture-2 ticket 40, R1).
     fanFamilies: model.fanFamilies ?? [],
+    declinedSolidBlocks: model.declinedSolidBlocks ?? [],
   };
 }
 function topology(model: LayoutModel) {
@@ -166,7 +167,10 @@ function validateDocumentCss(model: LayoutModel): void {
 
 function validateDocument(model: LayoutModel): LayoutModel {
   validateDocumentCss(model);
-  const resolved = resolve(model.document, model.declinedTrunks === undefined ? {} : { declinedTrunks: new Map(model.declinedTrunks.map(key => [key, 'declined'] as const)) });
+  const resolved = resolve(model.document, {
+    ...(model.declinedTrunks === undefined ? {} : { declinedTrunks: new Map(model.declinedTrunks.map(key => [key, 'declined'] as const)) }),
+    ...(model.declinedSolidBlocks === undefined ? {} : { declinedSolidBlocks: new Map(model.declinedSolidBlocks.map(item => [item.family, item.reason])) }),
+  });
   same(semantics(model), semantics(resolved), 'Resolved semantics differ from document');
   same(Object.keys(model.nodes).sort(), Object.keys(resolved.nodes).sort(), 'Node membership differs from document');
   same(Object.keys(model.groups).sort(), Object.keys(resolved.groups).sort(), 'Group membership differs from document');

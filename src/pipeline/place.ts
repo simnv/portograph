@@ -28,14 +28,14 @@ import type { Env } from './env.js';
  * model it returns. `abort` is the deadline check of a trial; it reserves nothing.
  */
 export async function place(env: Env, reservations: Reservations, abort?: (stage: string) => void): Promise<LayoutModel> {
-  // The one assertion of the placement budget: a command places at most MAX_RERUNS + 1 times (the first run and the re-runs), whatever round asks. A slot is released
-  // only before a run starts; a run that has started is spent, even when stage 7a refuses it at once, so `placements` never goes down.
+  // The original rounds have MAX_RERUNS + 1 placements; ticket 83 adds at most BLOCK_PROBES discarded geometry probes.
+  // Every started run stays counted. The probes preserve the legacy optimisation allowance when a block is declined.
   env.placements++; attemptCounters.placeStarts++;
-  if (env.placements > env.placeCap) throw new PlacementBudgetExceeded(env.placements - 1);
+  if (env.placements - env.blockProbes > env.placeCap) throw new PlacementBudgetExceeded(env.placements - 1);
   const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return env.step(stage, run); };
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4) are declined in the next: the ledger names them, or all of them once the budget is spent.
   const declinedTrunks = declinedTrunksOf(reservations);
-  const resolved = stepIn('resolve', () => resolve(env.document, { ...(env.options.diagnostics ? { diagnostics: env.options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
+  const resolved = stepIn('resolve', () => resolve(env.document, { ...(env.declinedSolidBlocks ? { declinedSolidBlocks: env.declinedSolidBlocks } : {}), ...(env.options.diagnostics ? { diagnostics: env.options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
   resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
   if (env.staggerRows?.length) resolved.staggerRows = JSON.parse(JSON.stringify(env.staggerRows)) as typeof env.staggerRows;
   if (env.groupArrangements !== undefined) resolved.groupArrangements = JSON.parse(JSON.stringify(env.groupArrangements)) as typeof env.groupArrangements;

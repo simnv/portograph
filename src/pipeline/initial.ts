@@ -3,9 +3,10 @@
  * re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
  */
 import type { LayoutModel } from '../model/index.js';
-import { TrunkBlocked } from '../layout/placement-refusal.js';
+import { SolidBlockRefusal, TrunkBlocked } from '../layout/placement-refusal.js';
 import { staggerRefusal } from '../layout/stagger.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
+import { BLOCK_PROBES } from './limits.js';
 import type { Env } from './env.js';
 import type { State } from './state.js';
 
@@ -27,8 +28,19 @@ for (;;) {
   // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
   if (env.reruns >= env.maxReruns) kept = addReservations(kept, declineTrunk(undefined, 'the placement budget is spent', env.placements));
   // Likewise it chooses no stagger (ticket 51): it keeps the rows it is given and records nothing, so no stagger can refuse it.
-  if (env.reruns >= env.maxReruns) env.arranged = true;
+  if (env.reruns >= env.maxReruns) {
+    env.arranged = true;
+    env.declinedSolidBlocks = new Map([...(env.declinedSolidBlocks ?? []), ['*', 'placement-budget']]);
+  }
   try { first = await env.timed('place', () => env.place(kept)); break; } catch (error) {
+    if (error instanceof SolidBlockRefusal) {
+      env.declinedSolidBlocks = new Map([...(env.declinedSolidBlocks ?? []), ...error.blocks]);
+      env.blockProbes++;
+      // The second probe ends the finite block trial: all remaining blocks keep their former owners.
+      // A refusal does not spend a fan/side round, so a declined block gets the same optimisation as main.
+      if (env.blockProbes >= BLOCK_PROBES) env.declinedSolidBlocks.set('*', 'block-probe-budget');
+      continue;
+    }
     // A stagger stage 5 chose that a later stage of the same run cannot keep (ticket 51): the next attempt keeps those rows one line and
     // records why. Each attempt declines at least one group, so the attempts end; they share `MAX_RERUNS`.
     if (staggerRefusal(error) && env.arrangedRows?.length) {
