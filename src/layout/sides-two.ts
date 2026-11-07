@@ -1,3 +1,5 @@
+import { separationShortfalls, worseSeparations } from './constraints/separation.js';
+import { declineOversizedBlocks, reserveBlockPitch, seatBlockFollowers } from './solid-blocks.js';
 import type { PortRef } from '../model/document.js';
 import { reserveFeedSplits } from './feed-split.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
@@ -972,6 +974,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       }
     }
   }
+  reserveBlockPitch(model);
   // Final sides and bundle pitches replace stage 3's provisional topology before corners freeze.
   for (const node of Object.values(model.nodes)) delete node.portCorners;
   sizeNodes(model);
@@ -1073,6 +1076,11 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   if (model.staggerRows?.length) seatStaggerRows(model);
   // The feed split (ticket 73), on final sides and sizes, before the rows, the lanes and the centring read the x; the freeze keeps its record.
   reserveFeedSplits(model);
+  declineOversizedBlocks(model);
+  seatBlockFollowers(model, fitRegionGroup, (before, after) => {
+    const now = separationShortfalls(after), then = separationShortfalls(before);
+    return worseSeparations(now, then).map(reason => ({ owners: now.get(reason)!.owners, reason }));
+  });
   model.stage = 'sides-two';
   return freezePortTopology(model, nodeFloors, turned);
 }

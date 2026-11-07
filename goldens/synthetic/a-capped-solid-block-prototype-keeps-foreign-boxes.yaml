@@ -1,0 +1,72 @@
+# Ticket 83: the over-cap block keeps its previous placement owners.
+# Expected: named gap-cap decline, unchanged drawing versus main; no sheaf or side-entry permission.
+portograph: 2
+profile: network
+layout: { autoArrange: false }
+groups:
+  upper: { tier: 0 }
+  cell0: { tier: 1, label: Site 1 }
+  cell1: { tier: 1, label: Site 2 }
+  cell2: { tier: 1, label: Site 3 }
+  cell3: { tier: 1, label: Site 4 }
+  cell4: { tier: 1, label: Site 5 }
+  cell5: { tier: 1, label: Site 6 }
+  cell6: { tier: 1, label: Site 7 }
+  cell7: { tier: 1, label: Site 8 }
+  cell8: { tier: 1, label: Site 9 }
+  cell9: { tier: 1, label: Site 10 }
+  cell10: { tier: 1, label: Site 11 }
+  cell11: { tier: 1, label: Site 12 }
+nodes:
+  hub0: { group: upper, class: router }
+  hub1: { group: upper, class: router }
+  hub2: { group: upper, class: router }
+  leaf0: { group: cell0, class: router }
+  leaf1: { group: cell1, class: router }
+  leaf2: { group: cell2, class: router }
+  leaf3: { group: cell3, class: router }
+  leaf4: { group: cell4, class: router }
+  leaf5: { group: cell5, class: router }
+  leaf6: { group: cell6, class: router }
+  leaf7: { group: cell7, class: router }
+  leaf8: { group: cell8, class: router }
+  leaf9: { group: cell9, class: router }
+  leaf10: { group: cell10, class: router }
+  leaf11: { group: cell11, class: router }
+links:
+  - { from: hub0, to: leaf0 }
+  - { from: hub0, to: leaf1 }
+  - { from: hub0, to: leaf2 }
+  - { from: hub0, to: leaf3 }
+  - { from: hub0, to: leaf4 }
+  - { from: hub0, to: leaf5 }
+  - { from: hub0, to: leaf6 }
+  - { from: hub0, to: leaf7 }
+  - { from: hub0, to: leaf8 }
+  - { from: hub0, to: leaf9 }
+  - { from: hub0, to: leaf10 }
+  - { from: hub0, to: leaf11 }
+  - { from: hub1, to: leaf0 }
+  - { from: hub1, to: leaf1 }
+  - { from: hub1, to: leaf2 }
+  - { from: hub1, to: leaf3 }
+  - { from: hub1, to: leaf4 }
+  - { from: hub1, to: leaf5 }
+  - { from: hub1, to: leaf6 }
+  - { from: hub1, to: leaf7 }
+  - { from: hub1, to: leaf8 }
+  - { from: hub1, to: leaf9 }
+  - { from: hub1, to: leaf10 }
+  - { from: hub1, to: leaf11 }
+  - { from: hub2, to: leaf0 }
+  - { from: hub2, to: leaf1 }
+  - { from: hub2, to: leaf2 }
+  - { from: hub2, to: leaf3 }
+  - { from: hub2, to: leaf4 }
+  - { from: hub2, to: leaf5 }
+  - { from: hub2, to: leaf6 }
+  - { from: hub2, to: leaf7 }
+  - { from: hub2, to: leaf8 }
+  - { from: hub2, to: leaf9 }
+  - { from: hub2, to: leaf10 }
+  - { from: hub2, to: leaf11 }

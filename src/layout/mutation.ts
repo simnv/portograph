@@ -23,7 +23,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { heldSourceGroups, rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
-import { spanCandidate } from './frame-paths.js';
+import { freezeChords, spanCandidate } from './frame-paths.js';
 import { faceKey, laneFaceOrder } from './turn-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
@@ -35,7 +35,9 @@ import { checkBodyTrims } from './end-trim.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { validateGroupLabelBands } from './bands.js';
+import { reserveBlockGaps } from './solid-blocks.js';
+import { moveBands } from './gap-room.js';
+import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
@@ -89,12 +91,13 @@ function protect(model: LayoutModel, baseline: LayoutModel, intermediate = false
 }
 function semantics(model: LayoutModel) {
   return {
-    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'fanFamily', 'strokeWidth'])),
+    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'fanFamily', 'solidBlock', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
     meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross', 'meshNodes', 'mesh', 'labelled'])),
     // Stage 1 decides the fan families from the document alone; a stored record must be the one the document gives (architecture-2 ticket 40, R1).
     fanFamilies: model.fanFamilies ?? [],
+    declinedSolidBlocks: model.declinedSolidBlocks ?? [],
   };
 }
 function topology(model: LayoutModel) {
@@ -166,7 +169,10 @@ function validateDocumentCss(model: LayoutModel): void {
 
 function validateDocument(model: LayoutModel): LayoutModel {
   validateDocumentCss(model);
-  const resolved = resolve(model.document, model.declinedTrunks === undefined ? {} : { declinedTrunks: new Map(model.declinedTrunks.map(key => [key, 'declined'] as const)) });
+  const resolved = resolve(model.document, {
+    ...(model.declinedTrunks === undefined ? {} : { declinedTrunks: new Map(model.declinedTrunks.map(key => [key, 'declined'] as const)) }),
+    ...(model.declinedSolidBlocks === undefined ? {} : { declinedSolidBlocks: new Map(model.declinedSolidBlocks.map(item => [item.family, item.reason])) }),
+  });
   same(semantics(model), semantics(resolved), 'Resolved semantics differ from document');
   same(Object.keys(model.nodes).sort(), Object.keys(resolved.nodes).sort(), 'Node membership differs from document');
   same(Object.keys(model.groups).sort(), Object.keys(resolved.groups).sort(), 'Group membership differs from document');
@@ -961,6 +967,15 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   else if (changed || ['rows', 'lanes', 'flanks', 'centre', 'bundles'].includes(rule)) {
     if (stages.indexOf(rule) >= stages.indexOf('flanks')) {
       rebuildRegionGeometry(draft, undefined, rule === 'bars' ? model.tierBands : undefined, rule === 'bundles' || stages.indexOf(model.stage) >= stages.indexOf('bundles'));
+      if (rule === 'bundles' && draft.fanFamilies?.some(family => family.kind === 'solid')) {
+        // Forecast mandatory label/grid packing on a disposable draft; reserve its entry demand
+        // before freezing the real placement. No tentative label claim is published at 7e.
+        const packed = clone(draft);
+        freezeChords(packed);
+        produceGroupLabelBands(packed);
+        reserveBlockGaps(draft, moveBands, packed);
+        rebuildRegionGeometry(draft, undefined, undefined, true, false);
+      }
       // The geometry rebuild can move a port (the stems of a fan, 7e): a span corridor is derived from the two end anchors, so it is read again (architecture ticket 22).
       if (draft.lanes.some(lane => lane.kind === 'span')) rebuildLaneExtents(draft);
       if (rule === 'bars') same(nonBarHorizontalPlacement(draft), nonBarHorizontalPlacement(model),

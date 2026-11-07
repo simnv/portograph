@@ -1,0 +1,22 @@
+# Ticket 83: a block whose final chords already meet the angle owes no gap growth.
+# Expected: eight straight members, 34-degree minimum and no extra tier gap.
+portograph: 2
+profile: network
+layout: { autoArrange: false }
+groups: { upper: { tier: 0, label: "" }, lower: { tier: 1, label: "" } }
+nodes:
+  u0: { group: upper, class: router, icon: router, label: U0 }
+  u1: { group: upper, class: router, icon: router, label: U1 }
+  v0: { group: lower, class: router, icon: router, label: V0 }
+  v1: { group: lower, class: router, icon: router, label: V1 }
+  v2: { group: lower, class: router, icon: router, label: V2 }
+  v3: { group: lower, class: router, icon: router, label: V3 }
+links:
+  - [v0, u0]
+  - [v0, u1]
+  - [v1, u0]
+  - [v1, u1]
+  - [v2, u0]
+  - [v2, u1]
+  - [v3, u0]
+  - [v3, u1]

@@ -1,0 +1,33 @@
+# Expected: The complete 2x4 relation over two far groups has one canonical owner; wide follower rows retain their own constraints and any seat invading a sibling gap declines before mutation (ticket 83 B2/R3).
+portograph: 2
+profile: network
+groups:
+  spines: { tier: 0 }
+  la: { tier: 1 }
+  lb: { tier: 1 }
+  ha: { tier: 2 }
+  hb: { tier: 2 }
+nodes:
+  s1: { group: spines, class: router }
+  s2: { group: spines, class: router }
+  l1: { group: la, class: router }
+  l2: { group: la, class: router }
+  l3: { group: lb, class: router }
+  l4: { group: lb, class: router }
+  h1: { group: ha, class: server, label: "host-one-with-a-long-name" }
+  h2: { group: ha, class: server, label: "host-two-with-a-long-name" }
+  h3: { group: hb, class: server }
+  h4: { group: hb, class: server }
+links:
+  - { from: s1, to: l1 }
+  - { from: s1, to: l2 }
+  - { from: s1, to: l3 }
+  - { from: s1, to: l4 }
+  - { from: s2, to: l1 }
+  - { from: s2, to: l2 }
+  - { from: s2, to: l3 }
+  - { from: s2, to: l4 }
+  - { from: l1, to: h1 }
+  - { from: l2, to: h2 }
+  - { from: l3, to: h3 }
+  - { from: l4, to: h4 }

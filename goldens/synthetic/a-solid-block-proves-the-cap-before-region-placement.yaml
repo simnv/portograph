@@ -1,0 +1,28 @@
+# Expected: Stage 5 proves this wide complete 2x6 block exceeds the cap before a region-placement probe (ticket 83 review).
+portograph: 2
+profile: network
+groups:
+  upper: {tier: 0}
+  lower: {tier: 1}
+nodes:
+  hub0: {group: upper, class: router}
+  hub1: {group: upper, class: router}
+  leaf0: {group: lower, class: router, size: {width: 800, height: 0}}
+  leaf1: {group: lower, class: router, size: {width: 800, height: 0}}
+  leaf2: {group: lower, class: router, size: {width: 800, height: 0}}
+  leaf3: {group: lower, class: router, size: {width: 800, height: 0}}
+  leaf4: {group: lower, class: router, size: {width: 800, height: 0}}
+  leaf5: {group: lower, class: router, size: {width: 800, height: 0}}
+links:
+  - [hub0, leaf0]
+  - [hub0, leaf1]
+  - [hub0, leaf2]
+  - [hub0, leaf3]
+  - [hub0, leaf4]
+  - [hub0, leaf5]
+  - [hub1, leaf0]
+  - [hub1, leaf1]
+  - [hub1, leaf2]
+  - [hub1, leaf3]
+  - [hub1, leaf4]
+  - [hub1, leaf5]

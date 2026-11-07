@@ -1,3 +1,5 @@
+import { reserveBlockGaps } from './solid-blocks.js';
+import { moveBands } from './gap-room.js';
 import type { LayoutModel, TierBand } from '../model/layout.js';
 import { centreDraft, createCentreBudget, flagUnverifiedCentring, type CentreBudget } from './centre.js';
 import { rebuildLaneExtents } from './lanes.js';
@@ -84,6 +86,7 @@ export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget,
     // replayed on the pills that stand (snack-theme ticket 157: with the Verdana metrics 7f published a span lane 13 px wider than its chord's corridor).
     timed('lane-extents', () => rebuildLaneExtents(draft));
     timed('row-path-delete', () => { for (const link of draft.links) if (rowPathCandidate(draft, link) || flankPathCandidate(draft, link)) delete link.path; });
+    if (bundlesReady) reserveBlockGaps(draft, moveBands);
     timed('row-paths', () => rebuildRowPaths(draft));
     timed('flank-paths', () => rebuildFlankPaths(draft));
     if (barsReady) timed('bar-drops', () => rebuildBarDrops(draft));

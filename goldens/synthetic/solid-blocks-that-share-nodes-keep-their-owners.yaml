@@ -1,0 +1,12 @@
+# Ticket 83: shared-node blocks need the component decision of ticket 84.
+# Expected: both complete blocks decline as interacting-blocks; prior ownership and geometry stand.
+portograph: 2
+groups: { upper: { tier: 0 }, middle: { tier: 1 }, lower: { tier: 2 } }
+nodes:
+  a: { group: upper }
+  b: { group: upper }
+  c: { group: middle }
+  d: { group: middle }
+  e: { group: lower }
+  f: { group: lower }
+links: [[a,c], [a,d], [b,c], [b,d], [c,e], [c,f], [d,e], [d,f]]

@@ -69,7 +69,7 @@ export function fanCrossings(model: LayoutModel): Map<string, Set<string>> {
 export const FAINT_SALIENCE = 0.3;
 /** Whether a crossing of two links is faint: both are members of one fan family, straight or fallen back (user ruling Q126). */
 export function faintPair(a: LayoutLink, b: LayoutLink): boolean {
-  return a.fanFamily !== undefined && a.fanFamily === b.fanFamily;
+  return a.solidBlock !== true && b.solidBlock !== true && a.fanFamily !== undefined && a.fanFamily === b.fanFamily;
 }
 /**
  * What one `groupConsumers` answer read (architecture-2 ticket 60): the arrays by identity and length (an append through an alias moves the

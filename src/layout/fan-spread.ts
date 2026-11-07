@@ -36,7 +36,7 @@ export interface FanMeasure {
 export function measureFans(model: LayoutModel): FanMeasure {
   const floors: FanMeasure['floors'] = new Map(), declined: FanMeasure['declined'] = [];
   // A link whose chord no other link can free (a tier transit, a title strip, a corridor, a body) is no reason to widen a face.
-  const candidates = model.links.filter(link => link.attachments && routedChordCandidate(model, link) && standaloneChord(model, link) !== undefined);
+  const candidates = model.links.filter(link => !link.solidBlock && link.attachments && routedChordCandidate(model, link) && standaloneChord(model, link) !== undefined);
   const byPort = new Map<string, LayoutLink[]>();
   for (const link of candidates) for (const end of [link.attachments!.from, link.attachments!.to]) {
     byPort.set(portId(end), [...(byPort.get(portId(end)) ?? []), link]);

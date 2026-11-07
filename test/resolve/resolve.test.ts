@@ -48,12 +48,13 @@ describe('semantic resolution', () => {
     expect(model.diagnostics).toContainEqual(expect.objectContaining({ stage: 'model', severity: 'warning', code: 'ROUTE_UNSUPPORTED' }));
   });
 
-  it('routes the members of a complete 2×2 aggregation of routed links with a warning in M1', () => {
+  it('gives a complete solid 2×2 block ownership before inferred aggregation (ticket 83 contract)', () => {
     const model = resolve(input(['[a, c]', '[d, a]', '[b, c]', '[b, d]']));
-    expect(model.groupLinks).toHaveLength(1);
-    expect(model.groupLinks[0]).toMatchObject({ groups: ['upper', 'lower'], layer: 'routed' });
-    expect(model.links.every(link => link.family === 'routed' && link.layer === 'routed' && link.technique === 'orthogonal')).toBe(true);
-    expect(model.diagnostics).toContainEqual(expect.objectContaining({ stage: 'model', severity: 'warning', code: 'ROUTE_UNSUPPORTED' }));
+    expect(model.groupLinks).toEqual([]);
+    expect(model.fanFamilies).toHaveLength(1);
+    expect(model.fanFamilies![0]!.kind).toBe('solid');
+    expect(model.links.every(link => link.solidBlock && link.fanFamily === model.fanFamilies![0]!.id && link.groupLink === undefined)).toBe(true);
+    expect(model.diagnostics.some(item => item.code === 'ROUTE_UNSUPPORTED')).toBe(false);
   });
 
   it.each([
@@ -307,11 +308,22 @@ links:
     expect(overlay.links.every(link => link.technique === 'overlay' && link.layer === 'overlay')).toBe(true);
   });
 
-  it('keeps inferred and explicit GroupLink records in originating link order', () => {
+  it('supersedes only inferred aggregation and retains an authored GroupLink (ticket 83 contract)', () => {
     const doc = parse(`portograph: 2
 groups: {g1: {tier: 0}, g2: {tier: 1}, g3: {tier: 2}}
 nodes: {a: {group: g1}, b: {group: g1}, c: {group: g2}, d: {group: g2}, e: {group: g3}, f: {group: g3}}
 links: [[a, c], [a, d], [b, c], [b, d], [g2, g3, {route: group-link}]]`);
+    const model = resolve(doc);
+    expect(model.groupLinks.map(link => link.groups)).toEqual([['g2', 'g3']]);
+    expect(model.fanFamilies![0]!.members.map(member => member.link).sort()).toEqual(['link-1', 'link-2', 'link-3', 'link-4']);
+  });
+
+  it('keeps inferred faint and explicit GroupLinks in originating link order', () => {
+    const doc = parse(`portograph: 2
+profile: network
+groups: {g1: {tier: 0}, g2: {tier: 1}, g3: {tier: 2}}
+nodes: {a: {group: g1}, b: {group: g1}, c: {group: g2}, d: {group: g2}, e: {group: g3}, f: {group: g3}}
+links: [[a, c, {class: dashed}], [a, d, {class: dashed}], [b, c, {class: dashed}], [b, d, {class: dashed}], [g2, g3, {route: group-link}]]`);
     const model = resolve(doc);
     expect(model.groupLinks.map(link => link.groups)).toEqual([['g1', 'g2'], ['g2', 'g3']]);
   });

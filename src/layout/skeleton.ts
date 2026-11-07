@@ -1,3 +1,4 @@
+import { seatBlockOrder } from './solid-blocks.js';
 import type { LayoutModel } from '../model/layout.js';
 import { createBrowserElkFactory, elkDeadlineMs, ElkDeadlineError, runElkAttempt, systemElkClock,
   type CreateElkAttempt, type ElkClock } from './elk-worker.js';
@@ -84,6 +85,7 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
     }
     // Overlay links weigh the order ELK chose (ranked-groups spec 3.2); sides-two reads the result.
     orderByOverlay(work);
+    if (work.fanFamilies?.some(family => family.kind === 'solid')) seatBlockOrder(work);
     // The free rows then take the order the corridors through them cross least (ticket 17); the record is checked below.
     orderByCorridors(work);
     // The rank cells and the child frames then take the order their feeds give (ticket 25): the ledger's `rowOrder`, checked below.

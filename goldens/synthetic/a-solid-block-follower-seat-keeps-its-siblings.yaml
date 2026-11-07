@@ -1,0 +1,33 @@
+# Expected: Reversing links keeps the complete 2x4 block and its follower-group order; a follower seat that would enter a sibling box or its tier gap is declined before moving any node (ticket 83 recheck R1).
+portograph: 2
+profile: network
+groups:
+  spines: { tier: 0 }
+  la: { tier: 1 }
+  lb: { tier: 1 }
+  ha: { tier: 2 }
+  hb: { tier: 2 }
+nodes:
+  s1: { group: spines, class: router }
+  s2: { group: spines, class: router }
+  l1: { group: la, class: router }
+  l2: { group: la, class: router }
+  l3: { group: lb, class: router }
+  l4: { group: lb, class: router }
+  h1: { group: ha, class: server, label: "host-one-with-a-long-name" }
+  h2: { group: ha, class: server, label: "host-two-with-a-long-name" }
+  h3: { group: hb, class: server }
+  h4: { group: hb, class: server }
+links:
+  - { from: l4, to: h4 }
+  - { from: l3, to: h3 }
+  - { from: l2, to: h2 }
+  - { from: l1, to: h1 }
+  - { from: s2, to: l4 }
+  - { from: s2, to: l3 }
+  - { from: s2, to: l2 }
+  - { from: s2, to: l1 }
+  - { from: s1, to: l4 }
+  - { from: s1, to: l3 }
+  - { from: s1, to: l2 }
+  - { from: s1, to: l1 }

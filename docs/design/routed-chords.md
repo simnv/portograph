@@ -511,9 +511,10 @@ two lateral faces there is no angle floor (a slight tilt is fine). Overlay chord
   crossings of their planned paths (stem, part, stem) are counted, once per point and pair. A family is
   triggered when more than one counted crossing involves its members, or when more than one endpoint
   inversion involves them (`triggers`). A member the plan leaves residual makes the count `unresolved`.
-- **No angle floor, no growth.** The 30 degree floor and the gap growth of the first rounds are gone (user,
+- **No angle floor, no growth for ordinary direct families.** The 30 degree floor and the gap growth of the first rounds are gone (user,
   2026-10-24: the flat fans of `a-shared-end-reads-its-port-order` on main are "closest to ideal"). Measured
   with the floor: v7 fans stayed orthogonal, a-shared-end went from 10 to 22 bends and six canvases grew.
+  Ticket 83 narrows this rule for complete solid node blocks only: Section 17 reserves their 34-degree/top-entry deficit before freeze.
 - **Verdict.** At the start of 7f, before the freeze, each triggered family in id order takes the largest set of
   members that hold together (`DIRECT_SEARCH_BUDGET` sets at most): `chordVerdict`; no two members of the fan
   touching or nearer than the chord clearance; and `fixedPointRefusal` with the members left out as orthogonal
@@ -552,7 +553,7 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   different units (a unit is the outermost frame, canton or free group of an end). A cohort is one tier group of
   hubs and one class. It is a family when it has `FAN_MIN_HUBS` (2) hubs or more, `FAN_MIN_UNITS` (3) units or more,
   and every hub links to every unit. A link two families claim declines both (`FAN_FAMILY_DECLINED`). Solid links
-  form no family. Recorded as `model.fanFamilies` and `link.fanFamily`; absent on a sheet with no family, so no fan
+  use the separate ticket-83 trigger in Section 17. Recorded as `model.fanFamilies` and `link.fanFamily`; absent on a sheet with no family, so no fan
   code runs there (R4). A direct-family member is never a fan member: the fan takes the link first.
 - **Admission (before the freeze, once per placed model).** In `rebuildRowPaths` every member starts orthogonal, the
   settle loop runs for the other links, then `admitFanFamilies` searches each family. Each member must pass
@@ -593,6 +594,37 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   frozen, names only foreign boxes and crosses no box it does not name, an orthogonal one is not frozen and names
   a reason.
 - **Score.** G2 `through-group` excuses a straight member's one segment in the boxes its record names, and no other
-  box. G6 stays geometric. A crossing of two members of one family is faint: Q weighs it 0.09 (CONTEXT.md,
+  box. These foreign-box and faint-score permissions apply only to faint families. Solid block members keep foreign boxes as walls.
+  G6 stays geometric for every family, with no sheaf exemption in ticket 83. A crossing of two members of one faint family is faint: Q weighs it 0.09 (CONTEXT.md,
   *salience*), `metrics.crossings.faint` counts it, and the corpus TSV writes it in `Xf`, outside `X`.
   `gate-compare` prints `Xf` and never judges it, and refuses a pair of TSV files where one lacks the column.
+
+## 17. Complete solid blocks under the cap (tickets 81 and 83)
+
+A complete, unlabelled solid node relation spans one adjacent document-tier boundary.
+Every hub and every node of the far groups participates, with at least two nodes on each side and one distinct-port link per pair.
+Reverse cohorts strictly contained in another complete cohort yield to it before overlap checks. Identical member sets canonicalize to the smaller hub group, upper on a tie. Partial cohorts are not mined for bicliques.
+Non-facing final ports decline as `non-facing-ports`, retaining authored sides; the slice grants no lateral block entry.
+An inferred group-link yields ownership; an incompatible authored route, bundle, label, shared port, non-row or nested shape declines by name.
+Blocks sharing nodes decline together as interacting-blocks: their face and gap decisions belong to ticket 84.
+
+Stage 4 keeps declaration order where complete incidence ties, permuting block slots within the whole tier while retaining foreign slots and packing all units without overlap. Terminal follower groups use their parents' geometric order (group id breaks a final tie), so an incidental link order cannot leave the follower tier opposite the newly ordered far tier. Stage 5 reserves ceil((10 + stroke) / sin(34 degrees)) pitch before sizing.
+Block feeds centre a row but do not own individual vertical alignment targets. Terminal one-link followers request the widened row's spacing at stage 5. Placement fits all eligible rows on one draft and uses the shared separation catalogue to check siblings and frames. Every seat in a new or deepened spacing violation declines together as `BLOCK_FOLLOWER_SEAT_DECLINED` (`sibling-spacing`); an internally overlapping row declines as `node-spacing`. Restored siblings can obstruct another seat, so each refusal round rechecks the remaining set, removing at least one seat per round. A declined row keeps its previous owner and geometry. An accepted seat is provisional: `frozenBlockFollowers` records only those still vertical at the chord freeze (`[]` means none; absent means not frozen or no seats). Chord move guards, node-move guards, settled-draft adoption, trim and publication checks hold that record. Widening a box with `dx: 0` moves no node.
+A conservative stage-5 span bound declines provably capped rows before region placement. The settled 7e draft forecasts mandatory label/grid packing on a disposable frozen copy, then measures each chord's angle and horizontal endpoint-box entry demand, subtracts the height already inside its endpoint bands,
+and takes the maximum deficit per tier gap before the real chord freeze. The forecast reserves no label claims and publishes no speculative x geometry. It does not reserve at the earlier 7c probes. A sufficient existing gap grows by zero.
+A target above 600 px declines the block as gap-cap and restarts placement from resolution, preserving inferred aggregation and original sizing/order.
+The cap bounds empty space between tier bands, not the face-to-face chord height. The four 4×8 eBGP targets need a 582.74 px band gap,
+with 40 px already inside their endpoint bands, for a 622.74 px chord height at 34 degrees.
+
+The stored blockReservations carry target, chosen gap floor, cap, pitch and tier boundary; publication reads them and refuses missing records, lost floors, missing horizontal entry or corner clearance, and foreign box intersections. The box predicate is shared with chord admission.
+Absent means no accepted block or not decided yet. An empty record cannot validate an accepted block.
+The declinedSolidBlocks record carries geometry-probe refusals into resolution and restore; validators do not trust the diagnostic.
+Each failed block probe excludes at least one new named block. The finite candidate set bounds retries; a repeated refusal without progress is an error. Neither the trunk/fan rerun budget nor a block refusal disables unrelated blocks with a wildcard.
+Those discarded probes count as placements, but do not consume the original fan/side optimisation budget: a declined block must draw as on main.
+All probes share the command deadline, which aborts the command and never chooses a drawing.
+
+A full-set joint check precedes the bounded subset search. Solid crossings remain in X at full weight, narrowing Q125 only for this trigger.
+Foreign boxes remain walls, every member enters/exits its own box through its horizontal edge, and G6 keeps ordinary geometric clearance.
+There is no experimental local sheaf zone or side-entry permission in this slice.
+The existing body-refusal/fallback machinery remains; ticket 84 owns isolated fallback and interacting-block admission.
+Ticket 85 owns cap-limited geometry, side entry and the sheaf rule, plus broader ownership for labels, irregular/nested frames and adjacent ranks.

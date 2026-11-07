@@ -234,6 +234,8 @@ export interface LayoutLink {
   meshBus?: string;
   /** The fan family (`fanFamilies`) this routed link is a member of (architecture-2 ticket 40); stage 1 sets it and nothing later changes it. */
   fanFamily?: string;
+  /** Ticket 83: solid members keep full crossing weight. */
+  solidBlock?: true;
   /** Routing must first resolve group endpoints to concrete port refs. */
   attachments?: { from: PortRef; to: PortRef };
   path?: LayoutPath;
@@ -592,6 +594,14 @@ export interface LayoutModel {
    * decided again. Absent = the document has none (a sheet with none keeps its bytes). Resolving `document` reproduces it.
    */
   fanFamilies?: FanFamily[];
+  /** Ticket 83. Absent before the settled gap draft or with no solid block; [] cannot validate a block. */
+  blockReservations?: BlockReservation[];
+  /** Placement refusals restored by stage 1; absent when no geometry probe declined a block. */
+  declinedSolidBlocks?: { family: string; reason: string }[];
+  /** Terminal one-link followers seated below the block in stage 5. */
+  blockFollowers?: string[];
+  /** The stage-5 followers still vertical at the chord freeze; [] means none kept. */
+  frozenBlockFollowers?: string[];
   /**
    * How the freeze (the start of 7f) drew each member of every fan family: one entry per member, in the order of `fanFamilies`. Absent before the
    * freeze, and on a sheet with no fan family. A straight member is in `frozenChords` and names the group boxes it crosses (the only boxes G2
@@ -750,6 +760,9 @@ export interface DirectFamily {
  * hubs of one tier group for framed units elsewhere, when two hubs or more each reach every one of three units or more.
  */
 export interface FanFamily {
+  /** Absent is the original faint family; solid blocks count nodes, not units. */
+  kind?: 'solid';
+  farNodes?: string[];
   /** `fan:<group>:<class>`. */
   id: string;
   /** The tier group (a document group) the hubs stand in. */
@@ -761,6 +774,16 @@ export interface FanFamily {
   units: string[];
   /** One entry per member link, sorted by link id: its hub end and the unit of its far end. */
   members: { link: string; hub: string; unit: string }[];
+}
+/** Placement-owned floor between tier-band edges, capped before acceptance. Mandatory room may exceed it. */
+export interface BlockReservation {
+  family: string;
+  above: number;
+  below: number;
+  target: number;
+  cap: number;
+  chosen: number;
+  pitch: number;
 }
 /**
  * Why a fan member stays orthogonal: a chord refusal of its own (at the freeze, or in the cascade after a sibling fell back: `chord`, `leg`,
