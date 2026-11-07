@@ -11,6 +11,7 @@ import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { rows } from '../../src/layout/rows.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 /**
  * Architecture-2 ticket 66: the alignment-target record. A centring step that would keep the geometry it found for its vertical tally keeps it only
@@ -20,13 +21,6 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const NAME = 'a-kept-vertical-leaves-a-straight-overlay-straight';
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-/** The document with its `links` (or `nodes`) entries in reverse order. */
-const reversed = (text: string, key: 'links' | 'nodes'): string => {
-  const lines = text.split('\n'), start = lines.indexOf(`${key}:`);
-  let end = start + 1;
-  while (end < lines.length && lines[end]!.startsWith('  ')) end++;
-  return [...lines.slice(0, start + 1), ...lines.slice(start + 1, end).reverse(), ...lines.slice(end)].join('\n');
-};
 /** Runs `work` with a tap on the record's events, and returns them with its result. */
 async function tapped<T>(work: () => Promise<T>): Promise<{ result: T; verdicts: [string, string][] }> {
   const verdicts: [string, string][] = [];

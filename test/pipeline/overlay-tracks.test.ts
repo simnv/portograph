@@ -11,6 +11,7 @@ import { validateRoutedPaths } from '../../src/route/validate.js';
 import { anonymousDotRadius, DEFAULT_STROKE_WIDTHS, overlayPortClearance, overlayTrackPitch } from '../../src/theme/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 /**
  * Architecture-2 ticket 23: two overlay detours never share a track, and every turn steps out of its port face by the overlay port
@@ -94,10 +95,9 @@ describe('two overlay detours never share a track (architecture-2 ticket 23)', (
 
   it('does not depend on the order of links (R3)', async () => {
     const source = fixture('two-overlay-detours-never-share-a-track');
-    const [head, body] = source.split('links:\n');
-    const reversed = `${head}links:\n${body!.trimEnd().split('\n').reverse().join('\n')}\n`;
+    const backward = reversed(source, 'links');
     const drawn = (model: LayoutModel) => overlays(model).map(link => `${link.attachments!.from.node}-${link.attachments!.to.node} ${JSON.stringify(pointsOf(link.path!.segments))}`).sort();
-    const one = await run(source), two = await run(reversed);
+    const one = await run(source), two = await run(backward);
     expect(drawn(two)).toEqual(drawn(one));
   }, 120000);
 

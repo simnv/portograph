@@ -54,7 +54,7 @@ Allocate conflicting candidates together. Do not let the first one win. Write th
 `sourceIndex` is a last key only.
 
 Evidence: architecture-2 tickets 13 (greedy exit choice, then joint allocation, then a content tie-break) and 15 (movers took link order).
-Check: run the sheet with `links` reversed and with `nodes` reversed. Compare layout JSON without `runtime`. Every `.sort(` needs a total order.
+Check: `npm run r3 -- <sheet.yaml>...` runs the sheet with `links` reversed and with `nodes` reversed and prints `SAME` or the first differing path (`docs/agents/gates.md`). In a test, reverse a block with `reversed(yaml, 'links' | 'nodes')` from `scripts/r3-lib.mjs`. Every `.sort(` needs a total order.
 
 ### R4. Bound work by count, never by time.
 

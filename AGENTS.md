@@ -15,6 +15,7 @@ during placement. This is the pipeline's one load-bearing rule.
   Read that stage's section only (`## Stage N`; stage 7 has subsections 7a to 7f).
 - [`docs/adr/`](docs/adr/): when a rule or decision is in question. Pick by file name.
 - [`docs/design/decisions-log.md`](docs/design/decisions-log.md): when you need the history of a choice.
+- [`docs/agents/worker-contract.md`](docs/agents/worker-contract.md): when you are an Orca worker, at the start of the task. Report header, commits, locked jobs, renders.
 - [`docs/design/quality.md`](docs/design/quality.md): when you judge a render.
 - [`ref/README.md`](ref/README.md): reference corpus behind the design.
 
