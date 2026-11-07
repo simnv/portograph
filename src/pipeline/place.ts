@@ -28,7 +28,7 @@ import type { Env } from './env.js';
  * model it returns. `abort` is the deadline check of a trial; it reserves nothing.
  */
 export async function place(env: Env, reservations: Reservations, abort?: (stage: string) => void): Promise<LayoutModel> {
-  // The original rounds have MAX_RERUNS + 1 placements; ticket 83 adds at most BLOCK_PROBES discarded geometry probes.
+  // The original rounds have MAX_RERUNS + 1 placements; ticket 83 adds at most one failed probe per named block.
   // Every started run stays counted. The probes preserve the legacy optimisation allowance when a block is declined.
   env.placements++; attemptCounters.placeStarts++;
   if (env.placements - env.blockProbes > env.placeCap) throw new PlacementBudgetExceeded(env.placements - 1);

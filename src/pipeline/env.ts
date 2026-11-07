@@ -21,7 +21,7 @@ export interface Banded { model: LayoutModel; moved: boolean; unmoved: LayoutMod
 export interface Env {
   /** Monotone block refusals from pre-freeze geometry, shared by subsequent runs. */
   declinedSolidBlocks?: Map<string, string>;
-  /** At most two failed block probes, separate from the legacy optimisation budget. */
+  /** Failed probes, each excluding a new named block; separate from the legacy optimisation budget. */
   blockProbes: number;
   staggerRows?: StaggerRow[];
   /** Ticket 51: the arrangement stage 5 of the first placement run chose; every later run of the command keeps it (R1). */

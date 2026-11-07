@@ -1,3 +1,4 @@
+import { blockReservationsFault } from './block-checks.js';
 /**
  * The end trim (architecture-2 ticket 68, user 2026-11-04): after the last x move of 7f, a node body is trimmed to the span of its ports with
  * their end insets, plus its label, icon and padding, never below its stage-3 size. Ports keep their x, no node moves; the group boxes, the
@@ -99,6 +100,8 @@ function deriveRegions(model: LayoutModel): boolean {
 
 /** Why the trimmed draft would not publish as the transaction leaves it, or undefined: the checks of what the trim moves no further (R2). */
 function trimRefusal(draft: LayoutModel, boxes: ReadonlyMap<string, Rect>, bodies: ReadonlyMap<string, Rect>, bandsChanged: boolean): string | undefined {
+  const block = blockReservationsFault(draft);
+  if (block !== undefined) return block;
   // The grid may grow a box onto the extent of a linked partner (ADR-0012, its own guards hold), but it may move no node and widen no drawing.
   const moved = [...bodies].find(([id, old]) => !within(draft.nodes[id]!.bounds!, old));
   if (moved !== undefined) return `the linked-group grid would move the node ${moved[0]}`;
@@ -120,7 +123,7 @@ function trimRefusal(draft: LayoutModel, boxes: ReadonlyMap<string, Rect>, bodie
  * model as it is otherwise. The linked-group grid may grow a box onto the extent of a linked partner, as its rule says (ADR-0012). The trim
  * moves nothing further: a trim whose grid would move a node or widen the drawing, or that would change a label band's clearance, end a grid
  * refusal or contradict a lane, is declined whole (`END_TRIM_DECLINED`, with the reason) and the draft is the one 7f left. A held chord that now
- * leaves a narrower frame by a side edge is not refused: like every 7f move after the freeze, it is named by `STRAIGHT_LINK_EDGE`
+ * leaves a narrower frame by a side edge is refused for a solid block; for other chords it is not refused: like every 7f move after the freeze, it is named by `STRAIGHT_LINK_EDGE`
  * (`edgeLeavers`, read after the trim) and the gates judge it.
  */
 export function trimBodies(draft: LayoutModel): void {

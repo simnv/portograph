@@ -1,0 +1,24 @@
+# Expected: One complete solid block stays straight, enters through its horizontal box edges with 10 px corner clearance, and clears foreign boxes (ticket 83 review).
+portograph: 2
+profile: network
+groups:
+  spines: { tier: 0 }
+  la: { tier: 1 }
+  x: { tier: 1, label: "a foreign group with a long title" }
+  lb: { tier: 1 }
+  hosts: { tier: 2 }
+nodes:
+  s1: { group: spines, class: router }
+  s2: { group: spines, class: router }
+  l1: { group: la, class: router }
+  xx: { group: x, class: router }
+  xy: { group: x, class: router }
+  l2: { group: lb, class: router }
+  h1: { group: hosts, class: server }
+links:
+  - { from: s1, to: l1 }
+  - { from: s1, to: l2 }
+  - { from: s2, to: l1 }
+  - { from: s2, to: l2 }
+  - { from: xx, to: h1 }
+  - { from: xy, to: h1 }

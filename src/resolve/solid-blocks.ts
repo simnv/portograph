@@ -62,15 +62,19 @@ export function detectSolidBlocks(model: LayoutModel, excluded: ReadonlyMap<stri
   // upper row on a tie, then the group id. Genuine overlaps decline together.
   candidates.sort((a, b) => a.hubs.length - b.hubs.length || model.groups[a.group]!.tier! - model.groups[b.group]!.tier! || a.id.localeCompare(b.id));
   const seen = new Set<string>();
-  const unique = candidates.filter(family => { const key = family.members.map(member => member.link).sort().join('\0'); if (seen.has(key)) return false; seen.add(key); return true; });
+  const orientations = candidates.filter(family => { const key = family.members.map(member => member.link).sort().join('\0'); if (seen.has(key)) return false; seen.add(key); return true; });
+  // A reverse cohort of one far group is part of the complete relation, not another block.
+  // Retain only inclusion-maximal whole cohorts before judging genuine overlaps.
+  const unique = orientations.filter(a => !orientations.some(b => b.members.length > a.members.length
+    && a.members.every(member => b.members.some(other => other.link === member.link))));
   const overlaps = new Set(unique.filter(a => unique.some(b => a !== b && a.members.some(member => b.members.some(other => other.link === member.link)))).map(family => family.id));
   // Shared nodes couple face order and both adjacent gaps. Ticket 84 owns that component decision.
   const interacting = new Set(unique.filter(a => unique.some(b => a !== b && [...a.hubs, ...a.farNodes!].some(node => [...b.hubs, ...b.farNodes!].includes(node)))).map(family => family.id));
   const accepted = unique.filter(family => {
-    const reason = excluded.get(family.id) ?? excluded.get('*') ?? (interacting.has(family.id) ? 'interacting-blocks' : undefined);
+    const reason = excluded.get(family.id) ?? (interacting.has(family.id) ? 'interacting-blocks' : undefined);
     if (reason) {
       declined(model.links.filter(link => family.members.some(member => member.link === link.id)), reason);
-      if (excluded.has(family.id) || excluded.has('*')) (model.declinedSolidBlocks ??= []).push({ family: family.id, reason });
+      if (excluded.has(family.id)) (model.declinedSolidBlocks ??= []).push({ family: family.id, reason });
     }
     return reason === undefined && !overlaps.has(family.id);
   });

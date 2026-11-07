@@ -161,10 +161,13 @@ This document keeps the detailed vocabulary, invariants and geometry rules.
 A complete solid node block across adjacent document tiers uses joint admission with full-weight crossings.
 Both sides contain at least two nodes, including rows inside one canton; inferred aggregation yields to the block.
 Placement reserves compact faces, declaration ties and ceil((10 + stroke) / sin(34 degrees)) face pitch.
-After the x geometry settles at 7e, it reserves only the gap deficit for 34 degrees and horizontal box entry.
+At 7e a disposable forecast includes mandatory label/grid packing before the freeze; placement reserves only the gap deficit for 34 degrees and horizontal box entry, with the 10 px corner margin.
 The 600 px cap measures the tier gap between band edges, excluding height inside endpoint boxes.
 A block already meeting the angle and entry rules takes no gap growth.
 A block needing more than 600 px is declined by name and placement starts again with its previous owners.
-Shared-node blocks decline as interacting-blocks; their component decision belongs to ticket 84.
+Reverse cohorts contained in a larger complete relation canonicalize into that relation, including multiple far groups.
+Shared-node blocks with distinct member sets decline as interacting-blocks; their component decision belongs to ticket 84.
+Stage-5 follower seats are provisional; the chord freeze records only those still vertical, and later move, widening, trim and publication checks keep that record.
+A box widening keeps bodies fixed when it carries `dx: 0`.
 Foreign boxes remain obstacles. This slice grants no side entry and no G6 sheaf exception; ticket 85 owns capped blocks.
 Body fallback keeps the existing behaviour until ticket 84 proves isolated fallback.

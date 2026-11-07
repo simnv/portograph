@@ -600,6 +600,8 @@ export interface LayoutModel {
   declinedSolidBlocks?: { family: string; reason: string }[];
   /** Terminal one-link followers seated below the block in stage 5. */
   blockFollowers?: string[];
+  /** The stage-5 followers still vertical at the chord freeze; [] means none kept. */
+  frozenBlockFollowers?: string[];
   /**
    * How the freeze (the start of 7f) drew each member of every fan family: one entry per member, in the order of `fanFamilies`. Absent before the
    * freeze, and on a sheet with no fan family. A straight member is in `frozenChords` and names the group boxes it crosses (the only boxes G2

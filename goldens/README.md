@@ -372,6 +372,10 @@ Ticket 83 rule fixtures, retaining the prototype filenames:
 | `synthetic/a-two-by-two-solid-block-prototype-inside-a-canton.yaml` | 2x2 node block inside one canton, inferred aggregation yields. |
 | `synthetic/a-capped-solid-block-prototype-keeps-foreign-boxes.yaml` | Over-cap block declines by name and retains its previous drawing; no side-entry or sheaf exception. |
 | `synthetic/a-solid-block-prototype-keeps-terminal-followers-straight.yaml` | Wider block faces reserve the terminal follower spacing before centring. |
-
 | `synthetic/a-solid-block-keeps-a-gap-that-already-fits.yaml` | A sufficient 34-degree/top-entry gap takes no growth after x settles. |
 | `synthetic/solid-blocks-that-share-nodes-keep-their-owners.yaml` | Shared-node blocks decline together pending the component decision of ticket 84. |
+| `synthetic/a-solid-block-keeps-the-box-corner-margin.yaml` | Packed far groups retain 10 px corner clearance for every solid chord (ticket 83 B1). |
+| `synthetic/a-solid-block-enters-beside-a-foreign-group.yaml` | A foreign middle group keeps its slot; each solid chord enters its own far box from above (ticket 83 B1/N7). |
+| `synthetic/a-solid-block-spans-two-far-groups.yaml` | A complete 2x4 block across two far pairs has one canonical owner; wide followers retain their own constraints (ticket 83 B2/N4). |
+| `synthetic/a-solid-block-proves-the-cap-before-region-placement.yaml` | A wide 2x6 block declines at stage 5 before the costly region probe (ticket 83 N2). |
+| `synthetic/a-solid-block-keeps-authored-lateral-faces.yaml` | Authored lateral ports decline solid-block ownership; no accidental side-entry permission (ticket 83 B1). |

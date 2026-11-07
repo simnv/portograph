@@ -603,22 +603,23 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
 
 A complete, unlabelled solid node relation spans one adjacent document-tier boundary.
 Every hub and every node of the far groups participates, with at least two nodes on each side and one distinct-port link per pair.
-Two orientations canonicalize to the smaller hub group, upper on a tie. Partial cohorts are not mined for bicliques.
+Reverse cohorts strictly contained in another complete cohort yield to it before overlap checks. Identical member sets canonicalize to the smaller hub group, upper on a tie. Partial cohorts are not mined for bicliques.
+Non-facing final ports decline as `non-facing-ports`, retaining authored sides; the slice grants no lateral block entry.
 An inferred group-link yields ownership; an incompatible authored route, bundle, label, shared port, non-row or nested shape declines by name.
 Blocks sharing nodes decline together as interacting-blocks: their face and gap decisions belong to ticket 84.
 
-Stage 4 keeps declaration order where complete incidence ties. Stage 5 reserves ceil((10 + stroke) / sin(34 degrees)) pitch before sizing.
-Block feeds centre a row but do not own individual vertical alignment targets. Terminal one-link followers keep the widened row's spacing.
-The settled 7e draft measures each chord's angle and horizontal endpoint-box entry demand, subtracts the height already inside its endpoint bands,
-and takes the maximum deficit per tier gap. It does not reserve at the earlier 7c probes. A sufficient existing gap grows by zero.
+Stage 4 keeps declaration order where complete incidence ties, permuting block slots within the whole tier while retaining foreign slots and packing all units without overlap. Stage 5 reserves ceil((10 + stroke) / sin(34 degrees)) pitch before sizing.
+Block feeds centre a row but do not own individual vertical alignment targets. Terminal one-link followers receive the widened row's spacing at stage 5. Their seat is provisional: `frozenBlockFollowers` records only those still vertical at the chord freeze (`[]` means none; absent means not frozen or no seats). Chord move guards, node-move guards, settled-draft adoption, trim and publication checks hold that record. Widening a box with `dx: 0` moves no node.
+A conservative stage-5 span bound declines provably capped rows before region placement. The settled 7e draft forecasts mandatory label/grid packing on a disposable frozen copy, then measures each chord's angle and horizontal endpoint-box entry demand, subtracts the height already inside its endpoint bands,
+and takes the maximum deficit per tier gap before the real chord freeze. The forecast reserves no label claims and publishes no speculative x geometry. It does not reserve at the earlier 7c probes. A sufficient existing gap grows by zero.
 A target above 600 px declines the block as gap-cap and restarts placement from resolution, preserving inferred aggregation and original sizing/order.
 The cap bounds empty space between tier bands, not the face-to-face chord height. The four 4×8 eBGP targets need a 582.74 px band gap,
 with 40 px already inside their endpoint bands, for a 622.74 px chord height at 34 degrees.
 
-The stored blockReservations carry target, chosen gap floor, cap, pitch and tier boundary; publication reads them and refuses missing records or lost floors.
+The stored blockReservations carry target, chosen gap floor, cap, pitch and tier boundary; publication reads them and refuses missing records, lost floors, missing horizontal entry or corner clearance, and foreign box intersections. The box predicate is shared with chord admission.
 Absent means no accepted block or not decided yet. An empty record cannot validate an accepted block.
 The declinedSolidBlocks record carries geometry-probe refusals into resolution and restore; validators do not trust the diagnostic.
-At most two failed block probes precede the original optimisation rounds. The second declines remaining blocks as block-probe-budget.
+Each failed block probe excludes at least one new named block. The finite candidate set bounds retries; a repeated refusal without progress is an error. Neither the trunk/fan rerun budget nor a block refusal disables unrelated blocks with a wildcard.
 Those discarded probes count as placements, but do not consume the original fan/side optimisation budget: a declined block must draw as on main.
 All probes share the command deadline, which aborts the command and never chooses a drawing.
 

@@ -1,3 +1,4 @@
+import { chordBoxRefusal, chordHolders as holders } from './chord-boxes.js';
 import { blockReservationsFault } from './block-checks.js';
 import type { FanAdmission, FanFallbackReason, FanFamily, LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
@@ -263,54 +264,10 @@ export const SIDE_EDGE_SLACK = 4;
 /** The first check that refused a chord (`ROUTED_CHORD_REFUSED`, docs/design/routed-chords.md, Section 10). */
 export type ChordRefusal = 'transit' | 'faces' | 'edge' | 'frame' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg';
 
-/** The ids of the groups, frames and parents above them that hold this node. */
-function holders(model: LayoutModel, node: string): Set<string> {
-  const ids = new Set<string>();
-  let id: string | undefined = model.document.nodes[node]?.group;
-  for (let depth = 0; id !== undefined && depth < 6 && !ids.has(id); depth++) {
-    ids.add(id);
-    const frame = frameOfGroup(model, id);
-    ids.add(frame);
-    id = model.document.frames?.[frame]?.parent ?? model.document.groups[frame]?.parent;
-  }
-  return ids;
-}
-
-/**
- * What a cross-frame chord must clear beyond the bodies (docs/design/routed-chords.md, Section 4). Every box of `groupBoxes` that holds neither end
- * and does not consume the link is a wall with the group edge margin; a box that holds one end only is left through the horizontal edge the port
- * faces, at least the margin from each corner. Reads `model.frames`, which equals the cells after every transaction.
- */
+/** Faint fans keep their recorded exception; solid chords use the shared box predicate. */
 function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): 'edge' | 'frame' | undefined {
   if (link.fanFamily !== undefined && link.solidBlock !== true && fanFamilyOf(model, link) !== undefined) return fanBoxRefusal(model, link, segment);
-  const ends = link.attachments!, stroke = linkStrokeWidth(link);
-  const from = holders(model, ends.from.node), to = holders(model, ends.to.node);
-  const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
-  const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
-  const margin = GROUP_EDGE_LINK_CLEARANCE - EPS;
-  for (const { id, bounds } of groupBoxes(model)) {
-    const one = from.has(id), two = to.has(id);
-    if (one && two) continue;
-    if (!one && !two) {
-      if (segmentRectDistance(segment, bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - EPS && !groupConsumers(model, id).includes(link.id)) return 'frame';
-      continue;
-    }
-    const side = one ? sides.from : sides.to;
-    if (side === 'left' || side === 'right') {
-      // A lateral port leaves through the side edge it faces, at least the margin (and the slack) from each corner.
-      const edge = side === 'right' ? bounds.x + bounds.width : bounds.x;
-      const t = Math.abs(dx) < EPS ? Infinity : (edge - segment.from.x) / dx;
-      const y = segment.from.y + t * dy, room = margin + sideSlack;
-      if (!(t >= -EPS && t <= 1 + EPS) || y < bounds.y + room || y > bounds.y + bounds.height - room) return 'edge';
-      continue;
-    }
-    if (side !== 'top' && side !== 'bottom') return 'edge';
-    const edge = side === 'bottom' ? bounds.y + bounds.height : bounds.y;
-    const t = Math.abs(dy) < EPS ? Infinity : (edge - segment.from.y) / dy;
-    const x = segment.from.x + t * dx;
-    if (!(t >= -EPS && t <= 1 + EPS) || x < bounds.x + margin || x > bounds.x + bounds.width - margin) return 'edge';
-  }
-  return undefined;
+  return chordBoxRefusal(model, link, segment, sideSlack);
 }
 
 /**
@@ -632,6 +589,13 @@ export function freezeRefusal(model: LayoutModel, link: LayoutLink): ChordRefusa
  * chord too.
  */
 export function freezeChords(model: LayoutModel, refusals: ReadonlyMap<string, FanFallbackReason> = new Map()): void {
+  if (model.blockFollowers !== undefined && model.frozenBlockFollowers === undefined) {
+    model.frozenBlockFollowers = model.blockFollowers.filter(id => {
+      const link = model.links.find(item => item.id === id);
+      const anchors = link?.attachments ? Object.values(link.attachments).map(ref => findPort(model, ref)?.anchor) : [];
+      return anchors.length === 2 && anchors.every(anchor => anchor !== undefined) && Math.abs(anchors[0]!.x - anchors[1]!.x) <= EPS;
+    });
+  }
   const held = model.links.filter(link => isRoutedChord(model, link)).map(link => link.id);
   const reasons = new Map<string, FanFallbackReason>();
   for (const link of model.links) {
@@ -685,9 +649,9 @@ export function blockedChords(model: LayoutModel): string[] {
     if (chord === undefined) return true;
     // Only a foreign frame is a wall after the freeze. The facing edge is a decision rule: a 7f move in x (a title widening pushes a
     // column) turns the chord shallower, and refusing that move leaves the title unfit (measured: `a-member-title-widens-a-beside-row`
-    // gains G6 when the edge is held, none when it is not). The chord then keeps its two faces and may leave its frame by a side edge.
+    // gains G6 when the edge is held, none when it is not). The chord then keeps its two faces and may leave its frame by a side edge. Solid blocks instead hold entry in `blockReservationsFault`.
     const refusal = chordKind(model, link) === 'cross' ? crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) : undefined;
-    return refusal === 'frame' || (link.solidBlock === true && refusal === 'edge');
+    return refusal === 'frame';
   });
 }
 /**
@@ -730,14 +694,14 @@ export function blockedChordsAt(model: LayoutModel): string[] {
  * The 7f counterpart of `laneSidesHold`: a move that fails is refused for that unit, and the link is named
  * in a diagnostic. Nothing is held before 7f, so centring and the column rules pass through here unchanged.
  */
-export function chordsHold(model: LayoutModel, proposed: { group: { id?: string; nodes: string[]; bounds?: Rect }; bounds: Rect }[], report = true): boolean {
+export function chordsHold(model: LayoutModel, proposed: { group: { id?: string; nodes: string[]; bounds?: Rect }; bounds: Rect; dx?: number }[], report = true): boolean {
   if (!model.frozenChords?.length) return true;
   const nodes = { ...model.nodes }, groups = { ...model.groups };
-  for (const { group, bounds } of proposed) {
+  for (const { group, bounds, dx: shift } of proposed) {
     const from = group.bounds;
     if (!from) continue;
     if (group.id !== undefined && groups[group.id]) groups[group.id] = { ...groups[group.id]!, bounds: { ...bounds } };
-    const dx = bounds.x - from.x, dy = bounds.y - from.y;
+    const dx = shift ?? bounds.x - from.x, dy = shift === 0 ? 0 : bounds.y - from.y;
     if (!dx && !dy) continue;
     for (const id of group.nodes) {
       const node = model.nodes[id];
@@ -749,6 +713,11 @@ export function chordsHold(model: LayoutModel, proposed: { group: { id?: string;
     }
   }
   const trial = { ...model, nodes, groups };
+  if (trial.blockReservations?.length && trial.document.frames) {
+    const frames = deriveFrames(trial);
+    if (frames === undefined) return false;
+    trial.frames = frames;
+  }
   if (blockReservationsFault(trial) !== undefined) return false;
   const held = blockedChordsAt(trial);
   // A caller that tries many candidates asks with `report` off and reports the final verdict itself (ticket 77).

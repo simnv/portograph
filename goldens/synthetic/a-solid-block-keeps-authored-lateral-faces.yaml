@@ -1,0 +1,16 @@
+# Expected: Authored lateral faces keep their original routing; the solid block declines as non-facing-ports (ticket 83).
+portograph: 2
+profile: network
+groups:
+  upper: {tier: 0}
+  lower: {tier: 1}
+nodes:
+  a: {group: upper, ports: [{name: one, side: left}, {name: two, side: left}]}
+  b: {group: upper, ports: [{name: one, side: left}, {name: two, side: left}]}
+  c: {group: lower, ports: [{name: one, side: left}, {name: two, side: left}]}
+  d: {group: lower, ports: [{name: one, side: left}, {name: two, side: left}]}
+links:
+  - [a.one, c.one]
+  - [a.two, d.one]
+  - [b.one, c.two]
+  - [b.two, d.two]

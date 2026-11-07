@@ -14,6 +14,7 @@ import { groupExitsHold } from './group-exit-check.js';
 import type { ProposedBox } from './frames.js';
 import { foreignOverExtensions, trunkHeads, trunkXAfter } from './trunk.js';
 import { lanesHoldGrowth } from './growth-guard.js';
+import { chordsHold } from './frame-paths.js';
 import { findPort } from './row-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 const isSpanLane = (lane: { kind?: string }): boolean => lane.kind === 'span';
@@ -106,7 +107,10 @@ export function holdsMove(model: LayoutModel, proposed: ProposedMove, report = t
  */
 export function holdsNodeMove(model: LayoutModel, group: LayoutGroup, ids: readonly string[], dx: number): boolean {
   if (Math.abs(dx) <= 1e-9) return true;
-  return holdsMove(model, [{ group: { ...group, nodes: [...ids] }, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }], false, ['riserKeepOut', 'sideAlignment']);
+  const bounds = { ...group.bounds!, x: group.bounds!.x + dx };
+  if (!holdsMove(model, [{ group: { ...group, nodes: [...ids] }, bounds }], false, ['riserKeepOut', 'sideAlignment'])) return false;
+  // A node slide leaves the container in place. Omit its id so the chord trial moves only these bodies.
+  return !model.blockReservations?.length || chordsHold(model, [{ group: { nodes: [...ids], bounds: group.bounds! }, bounds }], false);
 }
 
 /**

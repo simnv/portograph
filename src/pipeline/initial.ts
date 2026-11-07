@@ -6,7 +6,6 @@ import type { LayoutModel } from '../model/index.js';
 import { SolidBlockRefusal, TrunkBlocked } from '../layout/placement-refusal.js';
 import { staggerRefusal } from '../layout/stagger.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
-import { BLOCK_PROBES } from './limits.js';
 import type { Env } from './env.js';
 import type { State } from './state.js';
 
@@ -30,15 +29,14 @@ for (;;) {
   // Likewise it chooses no stagger (ticket 51): it keeps the rows it is given and records nothing, so no stagger can refuse it.
   if (env.reruns >= env.maxReruns) {
     env.arranged = true;
-    env.declinedSolidBlocks = new Map([...(env.declinedSolidBlocks ?? []), ['*', 'placement-budget']]);
   }
   try { first = await env.timed('place', () => env.place(kept)); break; } catch (error) {
     if (error instanceof SolidBlockRefusal) {
+      // Every failed probe excludes at least one new named block. The finite candidate set
+      // bounds retries; unrelated accepted blocks never lose ownership to a wildcard.
+      if ([...error.blocks.keys()].every(id => env.declinedSolidBlocks?.has(id))) throw error;
       env.declinedSolidBlocks = new Map([...(env.declinedSolidBlocks ?? []), ...error.blocks]);
       env.blockProbes++;
-      // The second probe ends the finite block trial: all remaining blocks keep their former owners.
-      // A refusal does not spend a fan/side round, so a declined block gets the same optimisation as main.
-      if (env.blockProbes >= BLOCK_PROBES) env.declinedSolidBlocks.set('*', 'block-probe-budget');
       continue;
     }
     // A stagger stage 5 chose that a later stage of the same run cannot keep (ticket 51): the next attempt keeps those rows one line and

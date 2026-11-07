@@ -81,10 +81,20 @@ export function seatBlockOrder(model: LayoutModel): void {
     }
     const free = groups.filter(id => model.groups[id]!.frame === undefined && id !== family.group);
     if (free.length > 1) {
-      const sorted = [...free].sort((a, b) => model.groups[a]!.bounds!.x - model.groups[b]!.bounds!.x);
-      const gap = Math.min(...sorted.slice(1).map((id, i) => model.groups[id]!.bounds!.x - model.groups[sorted[i]!]!.bounds!.x - model.groups[sorted[i]!]!.bounds!.width));
-      let x = model.groups[sorted[0]!]!.bounds!.x;
-      for (const id of free) { const group = model.groups[id]!; moveGroup(model, group, x - group.bounds!.x, 0); x += group.bounds!.width + gap; }
+      // Permute participating slots in the whole tier, retaining foreign slots and the minimum existing gap.
+      // Packing only the block's units would temporarily occupy a foreign group's box.
+      for (const tier of new Set(free.map(id => model.groups[id]!.tier))) {
+        const tied = free.filter(id => model.groups[id]!.tier === tier);
+        const row = Object.values(model.groups).filter(group => group.tier === tier && group.flank === undefined)
+          .sort((a, b) => a.bounds!.x - b.bounds!.x || a.id.localeCompare(b.id));
+        const gaps = row.slice(1).map((group, i) => group.bounds!.x - row[i]!.bounds!.x - row[i]!.bounds!.width);
+        let x = row[0]!.bounds!.x, index = 0;
+        const order = row.map(group => tied.includes(group.id) ? model.groups[tied[index++]!]! : group);
+        for (const group of order) {
+          moveGroup(model, group, x - group.bounds!.x, 0);
+          x += group.bounds!.width + (gaps.length ? Math.min(...gaps) : 0);
+        }
+      }
     }
   }
   rebuildBands(model, false);
@@ -92,27 +102,31 @@ export function seatBlockOrder(model: LayoutModel): void {
 
 /** Final-x draft before the freeze. Replays after the freeze only read this record.
  * Angle and each facing-edge demand combine by max; shared gap demands also combine by max.
- * One read and one y move per draft; pitch has already fixed the x capacity.
+ * The initial draft and the mandatory-pack forecast each contribute one read and one y move; pitch already fixes x capacity.
  */
-export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutModel, growth: Map<number, number>) => void): void {
-  if (model.frozenChords !== undefined || model.blockReservations !== undefined || !model.fanFamilies?.some(family => family.kind === 'solid')) return;
+export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutModel, growth: Map<number, number>) => void, geometry = model): void {
+  if (model.frozenChords !== undefined || (geometry === model && model.blockReservations !== undefined) || !model.fanFamilies?.some(family => family.kind === 'solid')) return;
   const grown = new Map<number, number>();
   const declined = new Map<string, string>();
   model.blockReservations = [];
   for (const family of model.fanFamilies) {
     if (family.kind !== 'solid') continue;
     const links = model.links.filter(link => link.fanFamily === family.id);
+    if (links.some(link => {
+      const ports = Object.values(link.attachments!).map(ref => findPort(geometry, ref)!).sort((a, b) => a.anchor!.y - b.anchor!.y);
+      return ports[0]!.side !== 'bottom' || ports[1]!.side !== 'top';
+    })) { declined.set(family.id, 'non-facing-ports'); continue; }
     let required = 0, above = Infinity, below = -Infinity, gap = 0;
     for (const link of links) {
-      const ends = Object.values(link.attachments!).map(ref => ({ ref, port: findPort(model, ref)!, tier: model.groups[model.document.nodes[ref.node]!.group]!.tier! })).sort((a, b) => a.tier - b.tier);
+      const ends = Object.values(link.attachments!).map(ref => ({ ref, port: findPort(geometry, ref)!, tier: model.groups[model.document.nodes[ref.node]!.group]!.tier! })).sort((a, b) => a.tier - b.tier);
       const upper = ends[0]!, lower = ends[1]!, a = upper.port.anchor!, b = lower.port.anchor!;
       above = upper.tier; below = lower.tier;
       const dx = Math.abs(b.x - a.x), dy = b.y - a.y;
-      const top = model.tierBands.find(band => band.tier === above)!.bounds!;
-      const bottom = model.tierBands.find(band => band.tier === below)!.bounds!;
+      const top = geometry.tierBands.find(band => band.tier === above)!.bounds!;
+      const bottom = geometry.tierBands.find(band => band.tier === below)!.bounds!;
       gap = bottom.y - top.y - top.height;
       let target = dx * Math.tan(radians);
-      for (const box of groupBoxes(model)) {
+      for (const box of groupBoxes(geometry)) {
         const cells = model.document.frames?.[box.id] ? frameSubtreeCells(model.document.frames, box.id) : [box.id];
         const ownsUpper = cells.includes(model.document.nodes[upper.ref.node]!.group);
         const ownsLower = cells.includes(model.document.nodes[lower.ref.node]!.group);
@@ -121,12 +135,15 @@ export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutMo
         const offset = ownsUpper ? box.bounds.y + box.bounds.height - a.y : b.y - box.bounds.y;
         const towardRight = ownsUpper ? b.x > a.x : a.x > b.x;
         const room = towardRight ? box.bounds.x + box.bounds.width - GROUP_EDGE_LINK_CLEARANCE - port.x : port.x - box.bounds.x - GROUP_EDGE_LINK_CLEARANCE;
-        if (offset > 0 && room > 0) target = Math.max(target, offset * dx / room);
+        if (offset > 0) target = Math.max(target, room > 0 ? offset * dx / room : Infinity);
       }
       // Each chord owes only the deficit beyond the height already inside its endpoint bands.
       required = Math.max(required, target - (dy - gap));
     }
     if (required > BLOCK_CAP + EPS) { declined.set(family.id, 'gap-cap: needs ' + required.toFixed(2) + ' px, cap ' + BLOCK_CAP + ' px'); continue; }
+    const originalTop = model.tierBands.find(band => band.tier === above)!.bounds!;
+    const originalBottom = model.tierBands.find(band => band.tier === below)!.bounds!;
+    gap = originalBottom.y - originalTop.y - originalTop.height;
     const chosen = Math.max(gap, required);
     model.blockReservations.push({ family: family.id, above, below, target: required, cap: BLOCK_CAP, chosen,
       pitch: Math.ceil((10 + Math.max(...links.map(linkStrokeWidth))) / Math.sin(radians)) });
@@ -136,3 +153,28 @@ export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutMo
   if ([...grown.values()].some(value => value > EPS)) moveBands(model, grown);
 }
 
+
+/** A conservative stage-5 cap bound: even zero inter-node gaps and optimal row translation
+ * cannot place one hub face within 34 degrees of both ends of a wider complete row.
+ * Endpoint band heights are credited in full, so this can only decline a provably over-cap block.
+ */
+export function declineOversizedBlocks(model: LayoutModel): void {
+  const declined = new Map<string, string>();
+  for (const family of model.fanFamilies ?? []) {
+    if (family.kind !== 'solid') continue;
+    const sides = [family.hubs, family.farNodes!];
+    if (sides.some(ids => new Set(ids.map(id => model.groups[model.document.nodes[id]!.group]!.tier)).size !== 1)) continue;
+    let span = 0;
+    for (const [index, ids] of sides.entries()) {
+      const widths = ids.map(id => model.nodes[id]!.size!.width).sort((a, b) => b - a);
+      const interior = widths.slice(2).reduce((sum, width) => sum + width, 0);
+      const face = Math.max(...sides[1 - index]!.map(id => model.nodes[id]!.size!.width));
+      span = Math.max(span, (interior - face) / 2);
+    }
+    const tiers = sides.map(ids => model.groups[model.document.nodes[ids[0]!]!.group]!.tier!);
+    const credit = tiers.reduce((sum, tier) => sum + model.tierBands.find(band => band.tier === tier)!.bounds!.height, 0);
+    const floor = span * Math.tan(radians) - credit;
+    if (floor > BLOCK_CAP + EPS) declined.set(family.id, `gap-cap: stage-5 lower bound ${floor.toFixed(2)} px, cap ${BLOCK_CAP} px`);
+  }
+  if (declined.size) throw new SolidBlockRefusal(declined);
+}

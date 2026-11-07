@@ -318,6 +318,16 @@ links: [[a, c], [a, d], [b, c], [b, d], [g2, g3, {route: group-link}]]`);
     expect(model.fanFamilies![0]!.members.map(member => member.link).sort()).toEqual(['link-1', 'link-2', 'link-3', 'link-4']);
   });
 
+  it('keeps inferred faint and explicit GroupLinks in originating link order', () => {
+    const doc = parse(`portograph: 2
+profile: network
+groups: {g1: {tier: 0}, g2: {tier: 1}, g3: {tier: 2}}
+nodes: {a: {group: g1}, b: {group: g1}, c: {group: g2}, d: {group: g2}, e: {group: g3}, f: {group: g3}}
+links: [[a, c, {class: dashed}], [a, d, {class: dashed}], [b, c, {class: dashed}], [b, d, {class: dashed}], [g2, g3, {route: group-link}]]`);
+    const model = resolve(doc);
+    expect(model.groupLinks.map(link => link.groups)).toEqual([['g1', 'g2'], ['g2', 'g3']]);
+  });
+
   it('does not aggregate a complete subset when another overridden member joins the group pair', () => {
     const model = resolve(input(['[a, c]', '[a, d]', '[b, c]', '[b, d]', '[a, c, {route: straight}]']));
     expect(model.groupLinks).toEqual([]);

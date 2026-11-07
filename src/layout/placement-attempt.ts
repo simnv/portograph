@@ -1,3 +1,4 @@
+import { blockReservationsFault } from './block-checks.js';
 import { tapTarget } from './alignment-targets.js';
 import type { Diagnostic, DirectMemberReason, FanFallbackReason, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
@@ -107,6 +108,7 @@ const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|L
  */
 export function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnostics: number, original: ReadonlySet<Diagnostic>): boolean {
   // The replay inside a settled copy may move a group by a required move, which keeps its exception. A copy that loses a requested promise (a lane owner's far anchor on the lane, a course) is not adopted.
+  if (blockReservationsFault(copy) !== undefined) return false;
   if (holds(model.reservations ?? [], copy, entry => entry.kind === 'laneOwner' || entry.kind === 'course').length > 0) return false;
   const added = model.diagnostics.slice(baseDiagnostics);
   const survivors = copy.diagnostics.filter(item => original.has(item)), fresh = copy.diagnostics.filter(item => !original.has(item));

@@ -71,10 +71,7 @@ For every link, in this fixed order, from the document only:
    model, after the ranked groups are cells, and reads the document only, so resolving
    `model.document` reproduces it. No geometry until tickets 83 and 84 (`docs/design/mesh-bus.md`,
    Q105, Q106).
-3b. **Complete solid block** — ticket 83 detects a complete solid node relation on adjacent document tiers after expansion.
-   It supersedes inferred aggregation, counts far nodes within a canton, and records solid ownership for full crossing weight.
-   `docs/design/routed-chords.md` Section 17 states its limited scope.
-3c. **Fan family** — after the mesh buses, `detectFanFamilies` (`src/resolve/fan-family.ts`) groups the
+3b. **Fan family** — after the mesh buses, `detectFanFamilies` (`src/resolve/fan-family.ts`) groups the
    dashed or dotted routed links (no bundle, group-link or bus member, no authored route but `straight`,
    no shared port, no flank or bar end) whose ends stand on adjacent document tiers in two different
    units (outermost frame, canton or free group), by the hub's tier group and the class. A cohort with
@@ -82,6 +79,9 @@ For every link, in this fixed order, from the document only:
    `FAN_FAMILY`. A link two families claim declines both (`FAN_FAMILY_DECLINED`). Nothing is written on a
    sheet with no family. It reads the document only, so resolving `model.document` reproduces it. The
    admission, the reservation and the score are in `docs/design/routed-chords.md` Section 16 (ticket 40).
+3c. **Complete solid block** — ticket 83 detects a complete solid node relation on adjacent document tiers after the faint fan-family pass.
+   It supersedes inferred aggregation, counts far nodes within a canton, and records solid ownership for full crossing weight.
+   `docs/design/routed-chords.md` Section 17 states its limited scope.
 4. **Bundle membership** — ≥ 2 routed links between the same node pair (ports may differ) that
    leave each shared node on one authored side; links whose authored sides differ at a shared node
    form separate cohorts, and a cohort of one stays routed with a `BUNDLE_MIXED_SIDES` warning
@@ -455,7 +455,7 @@ raise it later and never lower it.
 
 ## Stage 5 — sides, phase two; resize; repack
 
-Ticket 83 reserves block-face pitch before sizing. It records declaration ties in the stage-4 row draft.
+Ticket 83 reserves block-face pitch before sizing and rejects a provably over-cap span at the end of stage 5, before region placement. It records declaration ties in the stage-4 row draft, preserving foreign-group slots.
 
 Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
 `left`/`right` from the in-row order — except inside a **grid**, where a peer may stand above or
@@ -867,7 +867,7 @@ links on the peer.
 ### 7c — child under parents
 
 Ticket 83 block feeds centre the row without stretching its faces toward individual peers.
-The gap decision waits for settled 7e geometry; an earlier 7c replay reserves no speculative height.
+The gap decision waits for settled 7e geometry and its disposable mandatory label/grid packing forecast; an earlier 7c replay reserves no speculative height. The forecast transfers only gap demand, before the real chord freeze.
 The pre-freeze draft seats the stored 34-degree/top-entry deficit, at most a 600 px tier-band gap.
 An over-cap block restarts from resolution with a named refusal and its original owners; shared-node blocks decline for ticket 84.
 
