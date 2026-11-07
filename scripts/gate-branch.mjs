@@ -33,7 +33,7 @@ class Stop extends Error {}
 /** Run a command and capture its output; `cwd` defaults to this checkout. */
 function run(command, args, cwd = ROOT) {
   const result = spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 1 << 28 });
-  return { ok: result.status === 0, out: `${result.stdout ?? ''}${result.stderr ?? ''}`, stdout: result.stdout ?? '' };
+  return { ok: result.status === 0, status: result.status, out: `${result.stdout ?? ''}${result.stderr ?? ''}`, stdout: result.stdout ?? '' };
 }
 
 const git = (...args) => run('git', args);
@@ -96,9 +96,11 @@ function reportR3(files) {
   say(`r3: ${checked.length} of ${files.length} changed sheets (report only; a difference does not fail the gate)${files.length > checked.length ? `; the rest: npm run r3 -- <sheet>...` : ''}`);
   const result = run('node', [join(ROOT, 'scripts', 'r3.mjs'), ...checked]);
   const lines = result.stdout.trimEnd().split('\n').filter(Boolean);
-  const different = lines.filter((line) => !/\t(SAME|SKIP .*)$/.test(line));
-  say(different.length === 0 ? `r3: ${lines.length} reversals, all SAME or SKIP` : `r3: ${different.length} of ${lines.length} reversals differ or failed:\n${different.join('\n')}`);
-  if (!result.ok && different.length === 0) say(`r3: the script failed\n${tail(result.out)}`);
+  const different = lines.filter((line) => !/\t(SAME( .*)?|SKIP .*)$/.test(line));
+  if (different.length > 0) say(`r3: ${different.length} of ${lines.length} reversals differ or failed:\n${different.join('\n')}`);
+  else if (result.ok) say(`r3: ${lines.length} reversals, all SAME or SKIP`);
+  // Exit 1 means a difference or an ERROR line (shown above); anything else is a crash of the script.
+  if (result.status !== 0 && result.status !== 1) say(`r3: the script failed (exit ${result.status})\n${tail(result.out)}`);
 }
 
 /** Links a sweep file removes that the base sweep did not, as `name:id`; a new ERROR or TIMEOUT counts as one. */
@@ -165,7 +167,10 @@ function main(argv) {
   const compared = run('node', [join(ROOT, 'scripts', 'gate-compare.mjs'), baseTsv, headTsv]);
   if (!compared.ok) throw new Stop(`gate:compare failed\n${compared.out}`);
   say(compared.stdout.trimEnd());
-  for (const row of worseRows(compared.stdout)) {
+  const rows = worseRows(compared.stdout);
+  for (const row of rows) {
+    // A head-only sheet that fails on a gate or on removed links says so in its own row; the sheet row alone adds nothing.
+    if (row.flag === 'NEW-FAIL' && row.head === 'only in head' && rows.some((other) => other.file === row.file && other !== row)) continue;
     if (row.flag === 'NEW-FAIL') reasons.push(`NEW-FAIL ${row.file} ${row.column} ${row.head}`);
     else if (strict || row.column !== 'W') reasons.push(`WORSE ${row.file} ${row.column} ${row.base} -> ${row.head}`);
   }

@@ -27,6 +27,6 @@ it('reads the WORSE and NEW-FAIL rows of gate:compare output', () => {
   ]);
 });
 
-it('lists the sheets with a changed hash and the clean head-only sheets for the R3 report, sorted, once each', () => {
+it('lists the sheets with a changed hash and the head-only sheets that did not fail to lay out, for the R3 report, sorted, once each', () => {
   expect(changedSheets(OUTPUT)).toEqual(['goldens/a.yaml', 'goldens/c.yaml', 'goldens/m.yaml']);
 });

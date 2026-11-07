@@ -2,6 +2,7 @@
  * What `npm run r3` and the tests share: the same sheet with one block of its input in the reverse
  * order, and the first place where two layouts differ (CODING_STANDARDS.md, R3).
  */
+import { isMap, isSeq, parseDocument } from 'yaml';
 
 /** Leading spaces of a line. */
 const indentOf = (line) => line.length - line.trimStart().length;
@@ -10,15 +11,41 @@ const isComment = (line) => line.trimStart().startsWith('#');
 
 /**
  * The YAML with the entries of the top-level block `key:` (`links` or `nodes`) in the reverse order.
- * An entry is a line at the block's own indent with the deeper lines under it, so a record that spans
- * lines moves whole. Comment lines before the first entry stay in place; later ones go with the entry
- * above them. Throws when the block is absent, is not a block, or holds fewer than two entries:
- * a reversal that changes nothing would let a test pass without testing.
+ * A block (`links:` alone on its line, or with a comment) is reversed in the text: an entry is a line at the
+ * block's own indent with the deeper lines under it, so a record that spans lines moves whole. Comment lines
+ * before the first entry stay in place; later ones go with the entry above them. A flow block
+ * (`links: [[a, b], [b, c]]`) is reversed through the YAML document and written again.
+ * Throws when the block is absent, holds fewer than two entries, or cannot be reversed
+ * (an anchor in the block would stand after its alias): a reversal that changes nothing, or breaks
+ * the sheet, would let a test pass or fail without testing.
  */
 export function reversed(yaml, key) {
   const lines = yaml.split('\n');
-  const start = lines.findIndex((line) => line.trimEnd() === `${key}:`);
-  if (start < 0) throw new Error(`reversed: no top-level \`${key}:\` block`);
+  const start = lines.findIndex((line) => line.startsWith(`${key}:`) && /^\s*(#.*)?$/.test(line.slice(key.length + 1)));
+  const inline = start < 0 && lines.some((line) => line.startsWith(`${key}:`));
+  if (start < 0 && !inline) throw new Error(`reversed: no top-level \`${key}:\` block`);
+  const text = inline ? reversedFlow(yaml, key) : reversedBlock(lines, start, key);
+  // The result must parse when the input does: an alias that now comes before its anchor is a named skip, not a layout error.
+  if (readable(yaml) && !readable(text)) {
+    throw new Error(`reversed: reversing \`${key}:\` puts an alias before its anchor (an anchor inside the block)`);
+  }
+  return text;
+}
+
+/** True when the YAML parses and every alias finds its anchor (the library reports an alias before its anchor only when it reads the values). */
+function readable(yaml) {
+  const document = parseDocument(yaml);
+  if (document.errors.length > 0) return false;
+  try {
+    document.toJS();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The text path of `reversed`: `lines[start]` is the `key:` line of a block. */
+function reversedBlock(lines, start, key) {
   // The block ends at the first line that is not blank, not indented, not a comment and not a `- ` item at column 0.
   let end = start + 1;
   while (end < lines.length && (isBlank(lines[end]) || indentOf(lines[end]) > 0 || isComment(lines[end]) || /^-(\s|$)/.test(lines[end]))) end++;
@@ -35,6 +62,22 @@ export function reversed(yaml, key) {
   }
   if (entries.length < 2) throw new Error(`reversed: \`${key}:\` has fewer than two entries; reversing it changes nothing`);
   return [...lines.slice(0, start + 1), ...body.slice(0, first), ...entries.reverse().flat(), ...lines.slice(end)].join('\n');
+}
+
+/** The document path of `reversed`: the key's value is on the `key:` line (a flow list or map); the document is written again. */
+function reversedFlow(yaml, key) {
+  const document = parseDocument(yaml);
+  if (document.errors.length > 0) throw new Error(`reversed: the sheet does not parse: ${document.errors[0].message}`);
+  const node = document.get(key, true);
+  if (!isSeq(node) && !isMap(node)) throw new Error(`reversed: \`${key}:\` is not a list or a map`);
+  if (node.items.length < 2) throw new Error(`reversed: \`${key}:\` has fewer than two entries; reversing it changes nothing`);
+  node.items.reverse();
+  try {
+    return document.toString();
+  } catch (error) {
+    // The library cannot write an alias that stands before its anchor.
+    throw new Error(`reversed: reversing \`${key}:\` puts an alias before its anchor (an anchor inside the block): ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**
@@ -104,8 +147,52 @@ export function* differences(a, b, path = '$') {
   }
 }
 
-/** The first difference of `differences(a, b)`, or `undefined` when the two are the same. */
-export function firstDifference(a, b) {
-  for (const found of differences(a, b)) return found;
+/**
+ * The group member order the `nodes` reversal changes by construction: a group lists its members, and keeps its row order and the
+ * record of the row-order decision, in the order the nodes are declared, and that order is meaningful (R3).
+ */
+export const MEMBER_ORDER = /^\$\.groups\.[^.:[]+\.(nodes|rowOrder|rowOrderDecision)(\[|:|\.|$)/;
+
+/** The first difference of `differences(a, b)` whose description does not match `allowed`, or `undefined` when there is none. */
+export function firstDifference(a, b, allowed) {
+  for (const found of differences(a, b)) if (allowed === undefined || !allowed.test(found)) return found;
   return undefined;
+}
+
+/**
+ * The R3 lines of one sheet: `{ lines: [[kind, text]], bad }`. `read()` gives the sheet text and `lay(text)` the comparable layout;
+ * `describe(error)` words a failure. An unreadable sheet or a failed first layout is one `written` line, so the run goes on to the next sheet.
+ * A reversal that cannot be made is `SKIP <reason>`; `bad` counts the reversals that differ and the failures.
+ */
+export async function checkSheet({ read, lay, describe }) {
+  const lines = [];
+  let bad = 0;
+  let source;
+  let written;
+  try {
+    source = read();
+    written = await lay(source);
+  } catch (error) {
+    return { lines: [['written', describe(error)]], bad: 1 };
+  }
+  for (const key of ['links', 'nodes']) {
+    let text;
+    try {
+      text = reversed(source, key);
+    } catch (error) {
+      lines.push([key, `SKIP ${error instanceof Error ? error.message : String(error)}`]);
+      continue;
+    }
+    try {
+      const reordered = await lay(text);
+      // Reversed nodes list the members of a group in the reverse order, which R3 allows: look past it for a real difference.
+      const found = firstDifference(written, reordered, key === 'nodes' ? MEMBER_ORDER : undefined);
+      if (found !== undefined) bad++;
+      lines.push([key, found ?? (firstDifference(written, reordered) === undefined ? 'SAME' : 'SAME (group member order only)')]);
+    } catch (error) {
+      bad++;
+      lines.push([key, describe(error)]);
+    }
+  }
+  return { lines, bad };
 }
