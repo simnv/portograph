@@ -167,7 +167,9 @@ A block already meeting the angle and entry rules takes no gap growth.
 A block needing more than 600 px is declined by name and placement starts again with its previous owners.
 Reverse cohorts contained in a larger complete relation canonicalize into that relation, including multiple far groups.
 Shared-node blocks with distinct member sets decline as interacting-blocks; their component decision belongs to ticket 84.
-Stage-5 follower seats are provisional; the chord freeze records only those still vertical, and later move, widening, trim and publication checks keep that record.
+Stage 4 orders terminal follower groups by their parents, carrying the block tie through the next tier while retaining foreign slots.
+Stage 5 fits proposed follower seats together and declines all that add or deepen sibling-spacing violations, before moving nodes; restoring a refused seat rechecks the remaining proposals.
+Accepted follower seats are provisional; the chord freeze records only those still vertical, and later move, widening, trim and publication checks keep that record.
 A box widening keeps bodies fixed when it carries `dx: 0`.
 Foreign boxes remain obstacles. This slice grants no side entry and no G6 sheaf exception; ticket 85 owns capped blocks.
 Body fallback keeps the existing behaviour until ticket 84 proves isolated fallback.

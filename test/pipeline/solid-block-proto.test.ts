@@ -24,6 +24,20 @@ const geometry = (model: Awaited<ReturnType<typeof layout>>): unknown => {
   return { ...copy, diagnostics: [], runtime: { stages: [] } };
 };
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+// These five review probes use one-line records; node declaration order is meaningful for block ties.
+const reversed = (source: string, key: 'links' | 'nodes'): string => {
+  const lines = source.split('\n'), start = lines.indexOf(`${key}:`);
+  let end = start + 1;
+  while (end < lines.length && lines[end]!.startsWith('  ')) end++;
+  return [...lines.slice(0, start + 1), ...lines.slice(start + 1, end).reverse(), ...lines.slice(end)].join('\n');
+};
+const reviewFixtures = [
+  'a-solid-block-keeps-the-box-corner-margin',
+  'a-solid-block-enters-beside-a-foreign-group',
+  'a-solid-block-spans-two-far-groups',
+  'a-solid-block-proves-the-cap-before-region-placement',
+  'a-solid-block-keeps-authored-lateral-faces',
+];
 const regular = fixture('a-solid-block-prototype-keeps-all-members-straight');
 const canton = fixture('a-two-by-two-solid-block-prototype-inside-a-canton');
 const lay = (source: string) => layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -39,6 +53,44 @@ describe('ticket 83 under-cap solid blocks', () => {
     expect(blockReservationsFault(model)).toBeUndefined();
     expect(model.diagnostics.filter(item => ['STRAIGHT_LINK_EDGE', 'STRAIGHT_LINK_BLOCKED'].includes(item.code))).toEqual([]);
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+  });
+  it.each(reviewFixtures)('keeps the review contract with links and nodes reversed: %s', async name => {
+    const source = fixture(name), original = score(await lay(source)).snapshot;
+    for (const key of ['links', 'nodes'] as const) {
+      const input = reversed(source, key), model = await lay(input);
+      expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+      if (name.includes('proves-the-cap') || name.includes('lateral-faces')) {
+        expect(model.declinedSolidBlocks?.some(item => item.reason.startsWith(name.includes('proves-the-cap') ? 'gap-cap:' : 'non-facing-ports'))).toBe(true);
+        baseline.enabled = true;
+        try { expect(geometry(model)).toEqual(geometry(await lay(input))); } finally { baseline.enabled = false; }
+      } else {
+        expect(model.fanFamilies?.filter(item => item.kind === 'solid')).toHaveLength(1);
+        expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(name.includes('two-far') ? 8 : 4);
+        expect(blockReservationsFault(model)).toBeUndefined();
+        const snapshot = score(model).snapshot;
+        expect(snapshot.metrics.crossings.count).toBe(original.metrics.crossings.count);
+        expect(snapshot.counts.routed.turns).toBe(original.counts.routed.turns);
+        expect(Object.values(snapshot.gates).filter(gate => gate.severity === 'error' && gate.violations.length)).toEqual([]);
+      }
+    }
+  });
+  it('declines a follower seat before it occupies a sibling box', async () => {
+    const model = await placed(fixture('a-solid-block-follower-seat-keeps-its-siblings'));
+    expect(model.diagnostics.some(item => item.code === 'BLOCK_FOLLOWER_SEAT_DECLINED' && item.message.includes('sibling-spacing'))).toBe(true);
+    const a = model.groups.ha!.bounds!, b = model.groups.hb!.bounds!;
+    expect(Math.max(a.x, b.x) - Math.min(a.x + a.width, b.x + b.width)).toBeGreaterThanOrEqual(60 - 1e-6);
+    expect(model.blockFollowers).toEqual([]);
+  });
+  it('declines conflicting follower rows together instead of accepting the first', async () => {
+    const source = fixture('a-solid-block-spans-two-far-groups')
+      .replace('host-one-with-a-long-name', 'host-one').replace('host-two-with-a-long-name', 'host-two')
+      .replace('from: l2, to: h2', 'from: l3, to: h2').replace('from: l3, to: h3', 'from: l2, to: h3');
+    for (const input of [source, reversed(source, 'links')]) {
+      const model = await placed(input);
+      const declined = model.diagnostics.filter(item => item.code === 'BLOCK_FOLLOWER_SEAT_DECLINED' && item.message.includes('sibling-spacing'));
+      expect(declined.flatMap(item => item.owners?.map(owner => 'id' in owner ? owner.id : undefined) ?? []).sort()).toEqual(['ha', 'hb']);
+      expect(model.blockFollowers).toEqual([]);
+    }
   });
   it('keeps blocks when the unrelated rerun budget is zero', async () => {
     const model = await layout(parse(canton), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });

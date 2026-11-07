@@ -1,4 +1,4 @@
-# Expected: One complete solid block stays straight, enters through its horizontal box edges with 10 px corner clearance, and clears foreign boxes (ticket 83 review).
+# Expected: The complete 2x4 relation over two far groups has one canonical owner; wide follower rows retain their own constraints and any seat invading a sibling gap declines before mutation (ticket 83 B2/R3).
 portograph: 2
 profile: network
 groups:

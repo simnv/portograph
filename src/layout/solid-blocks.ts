@@ -1,4 +1,4 @@
-import type { LayoutModel } from '../model/layout.js';
+import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { frameSubtreeCells, orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { EPS } from '../geometry/planar.js';
 import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
@@ -26,35 +26,66 @@ export function reserveBlockPitch(model: LayoutModel): void {
 
 /** A row of terminal one-link followers needs the newly widened block's spacing.
  * Seat that row before lanes, rather than asking 7c to stretch small hosts across it.
- * A mixed row, overlapping target, flank, or frame keeps its existing owner.
+ * A mixed row, flank, or frame keeps its existing owner. Proposed rows are fitted together on a
+ * draft; conflicting seats all decline before publication, including conflicts with unseated siblings.
  */
-export function seatBlockFollowers(model: LayoutModel, fitRegionGroup: (model: LayoutModel, group: LayoutModel['groups'][string]) => void): void {
+export function seatBlockFollowers(
+  model: LayoutModel,
+  fitRegionGroup: (model: LayoutModel, group: LayoutModel['groups'][string]) => void,
+  conflicts: (before: LayoutModel, after: LayoutModel) => { owners: string[]; reason: string }[],
+): void {
   const far = new Set((model.fanFamilies ?? []).filter(family => family.kind === 'solid').flatMap(family => family.farNodes ?? []));
   if (!far.size) return;
   model.blockFollowers = [];
-  for (const group of Object.values(model.groups)) {
-    if (group.frame !== undefined || group.flank !== undefined || !group.nodes.length) continue;
-    const plans = group.nodes.map(id => {
-      const links = model.links.filter(link => link.attachments && Object.values(link.attachments).some(ref => ref.node === id));
-      if (links.length !== 1) return undefined;
-      const link = links[0]!;
-      if (link.layer !== 'routed' || link.bundle !== undefined) return undefined;
-      const refs = Object.values(link.attachments!), own = refs.find(ref => ref.node === id)!, parent = refs.find(ref => ref.node !== id);
-      if (!parent || !far.has(parent.node)) return undefined;
+  const draft = JSON.parse(JSON.stringify(model)) as LayoutModel;
+  const seats = new Map<string, { id: string; link: string; dx: number }[]>();
+  const decline = (id: string, reason: string): void => {
+    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'BLOCK_FOLLOWER_SEAT_DECLINED',
+      message: `Follower seat for ${id} keeps its previous owner: ${reason}`, owners: [{ kind: 'group', id }] });
+  };
+  for (const { group, links } of terminalFollowerRows(model, far)) {
+    const plans = links.map(({ id, link, own, parent }) => {
       const a = findPort(model, parent)!, b = findPort(model, own)!;
-      if (a.side !== 'bottom' || b.side !== 'top') return undefined;
-      return { id, link: link.id, dx: a.anchor!.x - b.anchor!.x };
+      return a.side === 'bottom' && b.side === 'top' ? { id, link, dx: a.anchor!.x - b.anchor!.x } : undefined;
     });
     if (plans.some(plan => plan === undefined)) continue;
     const known = plans.filter(plan => plan !== undefined).sort((a, b) => model.nodes[a.id]!.bounds!.x + a.dx - model.nodes[b.id]!.bounds!.x - b.dx || a.id.localeCompare(b.id));
-    if (known.some((plan, index) => index > 0 && model.nodes[plan.id]!.bounds!.x + plan.dx < model.nodes[known[index - 1]!.id]!.bounds!.x + known[index - 1]!.dx + model.nodes[known[index - 1]!.id]!.bounds!.width + 22)) continue;
+    // Final tie-break: node id, after the proposed x coordinate.
+    if (known.some((plan, index) => index > 0 && model.nodes[plan.id]!.bounds!.x + plan.dx < model.nodes[known[index - 1]!.id]!.bounds!.x + known[index - 1]!.dx + model.nodes[known[index - 1]!.id]!.bounds!.width + 22)) {
+      decline(group.id, 'node-spacing');
+      continue;
+    }
+    seats.set(group.id, known);
     for (const plan of known) {
+      const node = draft.nodes[plan.id]!;
+      node.bounds!.x += plan.dx;
+      for (const port of node.ports) if (port.anchor) port.anchor.x += plan.dx;
+    }
+    rebuildNodeGeometry(draft, group.nodes, 'current');
+    fitRegionGroup(draft, draft.groups[group.id]!);
+  }
+  // Joint refusal, never first-wins. Each round removes at least one seat; at most seats.size rounds.
+  // Reverting a refused seat can obstruct a remaining one, so check the resulting set again.
+  while (seats.size) {
+    const broken = conflicts(model, draft);
+    const refused = [...seats.keys()].filter(id => broken.some(item => item.owners.includes(`group:${id}`)));
+    if (!refused.length) break;
+    for (const id of refused) {
+      const reasons = broken.filter(item => item.owners.includes(`group:${id}`)).map(item => item.reason).sort();
+      decline(id, `sibling-spacing: ${reasons.join(', ')}`);
+      seats.delete(id);
+      draft.groups[id] = model.groups[id]!;
+      for (const node of model.groups[id]!.nodes) draft.nodes[node] = model.nodes[node]!;
+    }
+  }
+  for (const [id, plans] of seats) {
+    model.groups[id]!.bounds = draft.groups[id]!.bounds!;
+    for (const plan of plans) {
       const node = model.nodes[plan.id]!;
       node.bounds!.x += plan.dx;
       for (const port of node.ports) if (port.anchor) port.anchor.x += plan.dx;
       model.blockFollowers.push(plan.link);
     }
-    fitRegionGroup(model, group);
   }
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildBands(model);
@@ -80,24 +111,53 @@ export function seatBlockOrder(model: LayoutModel): void {
       group.rowOrder = order;
     }
     const free = groups.filter(id => model.groups[id]!.frame === undefined && id !== family.group);
-    if (free.length > 1) {
-      // Permute participating slots in the whole tier, retaining foreign slots and the minimum existing gap.
-      // Packing only the block's units would temporarily occupy a foreign group's box.
-      for (const tier of new Set(free.map(id => model.groups[id]!.tier))) {
-        const tied = free.filter(id => model.groups[id]!.tier === tier);
-        const row = Object.values(model.groups).filter(group => group.tier === tier && group.flank === undefined)
-          .sort((a, b) => a.bounds!.x - b.bounds!.x || a.id.localeCompare(b.id));
-        const gaps = row.slice(1).map((group, i) => group.bounds!.x - row[i]!.bounds!.x - row[i]!.bounds!.width);
-        let x = row[0]!.bounds!.x, index = 0;
-        const order = row.map(group => tied.includes(group.id) ? model.groups[tied[index++]!]! : group);
-        for (const group of order) {
-          moveGroup(model, group, x - group.bounds!.x, 0);
-          x += group.bounds!.width + (gaps.length ? Math.min(...gaps) : 0);
-        }
-      }
-    }
+    permuteGroupSlots(model, free);
+    // A block's declaration tie also orders its terminal follower groups by their parents.
+    // Otherwise an incidental ELK link order leaves the follower tier opposite the reordered far tier.
+    const followers = terminalFollowerRows(model, new Set(family.farNodes!)).map(({ group, links }) => ({
+      id: group.id,
+      target: links.reduce((sum, { parent }) => {
+        const box = model.nodes[parent.node]!.bounds!;
+        return sum + box.x + box.width / 2;
+      }, 0) / links.length,
+    })).sort((a, b) => a.target - b.target || a.id.localeCompare(b.id)); // Final tie-break: group id.
+    permuteGroupSlots(model, followers.map(item => item.id));
   }
   rebuildBands(model, false);
+}
+
+/** The same terminal rows are eligible for parent order at stage 4 and a facing-port seat at stage 5. */
+function terminalFollowerRows(model: LayoutModel, far: ReadonlySet<string>) {
+  return Object.values(model.groups).flatMap(group => {
+    if (group.frame !== undefined || group.flank !== undefined || !group.nodes.length) return [];
+    const links = group.nodes.map(id => {
+      const attached = model.links.filter(link => link.attachments && Object.values(link.attachments).some(ref => ref.node === id));
+      if (attached.length !== 1) return undefined;
+      const link = attached[0]!;
+      if (link.layer !== 'routed' || link.bundle !== undefined) return undefined;
+      const refs = Object.values(link.attachments!), own = refs.find(ref => ref.node === id)!, parent = refs.find(ref => ref.node !== id);
+      if (!parent || !far.has(parent.node) || group.tier! <= model.groups[model.document.nodes[parent.node]!.group]!.tier!) return undefined;
+      return { id, link: link.id, own, parent };
+    });
+    return links.some(link => link === undefined) ? [] : [{ group, links: links.filter(link => link !== undefined) }];
+  });
+}
+
+/** Permute participating slots in the whole tier, retaining foreign slots and its minimum gap. */
+function permuteGroupSlots(model: LayoutModel, ids: readonly string[]): void {
+  for (const tier of new Set(ids.map(id => model.groups[id]!.tier))) {
+    const tied = ids.filter(id => model.groups[id]!.tier === tier);
+    if (tied.length < 2) continue;
+    const row = Object.values(model.groups).filter(group => group.tier === tier && group.flank === undefined)
+      .sort((a, b) => a.bounds!.x - b.bounds!.x || a.id.localeCompare(b.id)); // Final tie-break: group id.
+    const gaps = row.slice(1).map((group, i) => group.bounds!.x - row[i]!.bounds!.x - row[i]!.bounds!.width);
+    let x = row[0]!.bounds!.x, index = 0;
+    const order: LayoutGroup[] = row.map(group => tied.includes(group.id) ? model.groups[tied[index++]!]! : group);
+    for (const group of order) {
+      moveGroup(model, group, x - group.bounds!.x, 0);
+      x += group.bounds!.width + Math.min(...gaps);
+    }
+  }
 }
 
 /** Final-x draft before the freeze. Replays after the freeze only read this record.

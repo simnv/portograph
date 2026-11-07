@@ -1,3 +1,4 @@
+import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { declineOversizedBlocks, reserveBlockPitch, seatBlockFollowers } from './solid-blocks.js';
 import type { PortRef } from '../model/document.js';
 import { reserveFeedSplits } from './feed-split.js';
@@ -1076,7 +1077,10 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   // The feed split (ticket 73), on final sides and sizes, before the rows, the lanes and the centring read the x; the freeze keeps its record.
   reserveFeedSplits(model);
   declineOversizedBlocks(model);
-  seatBlockFollowers(model, fitRegionGroup);
+  seatBlockFollowers(model, fitRegionGroup, (before, after) => {
+    const now = separationShortfalls(after), then = separationShortfalls(before);
+    return worseSeparations(now, then).map(reason => ({ owners: now.get(reason)!.owners, reason }));
+  });
   model.stage = 'sides-two';
   return freezePortTopology(model, nodeFloors, turned);
 }
