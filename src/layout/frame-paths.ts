@@ -1,3 +1,4 @@
+import { blockReservationsFault, blockSheafApart } from './solid-block-proto.js';
 import type { FanAdmission, FanFallbackReason, FanFamily, LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
@@ -281,7 +282,7 @@ function holders(model: LayoutModel, node: string): Set<string> {
  * faces, at least the margin from each corner. Reads `model.frames`, which equals the cells after every transaction.
  */
 function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): 'edge' | 'frame' | undefined {
-  if (link.fanFamily !== undefined && fanFamilyOf(model, link) !== undefined) return fanBoxRefusal(model, link, segment);
+  if (link.fanFamily !== undefined && link.solidBlock !== true && fanFamilyOf(model, link) !== undefined) return fanBoxRefusal(model, link, segment);
   const ends = link.attachments!, stroke = linkStrokeWidth(link);
   const from = holders(model, ends.from.node), to = holders(model, ends.to.node);
   const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
@@ -295,6 +296,8 @@ function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment
       continue;
     }
     const side = one ? sides.from : sides.to;
+    // The capped block may enter its own lower box by a side. Foreign boxes above remain walls.
+    if (link.solidBlock && side === 'top' && model.blockReservations?.some(item => item.family === link.fanFamily && item.capped)) continue;
     if (side === 'left' || side === 'right') {
       // A lateral port leaves through the side edge it faces, at least the margin (and the slack) from each corner.
       const edge = side === 'right' ? bounds.x + bounds.width : bounds.x;
@@ -526,7 +529,7 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
   for (const other of model.links) {
     if (other.id === link.id || !isRoutedChord(model, other)) continue;
     const run = other.path!.segments[0]!;
-    if (!chordsApart(segment, run, stroke, linkStrokeWidth(other))) return 'chord';
+    if (!chordsApart(segment, run, stroke, linkStrokeWidth(other)) && !blockSheafApart(model, link, other, segment, run)) return 'chord';
   }
   // The router leaves every other port by a stem of at least 15 px, and G6 keeps that stem 10 px from the
   // chord. Stage 8 cannot make room the chord took, so the chord stays clear of every stem placement has
@@ -685,7 +688,8 @@ export function blockedChords(model: LayoutModel): string[] {
     // Only a foreign frame is a wall after the freeze. The facing edge is a decision rule: a 7f move in x (a title widening pushes a
     // column) turns the chord shallower, and refusing that move leaves the title unfit (measured: `a-member-title-widens-a-beside-row`
     // gains G6 when the edge is held, none when it is not). The chord then keeps its two faces and may leave its frame by a side edge.
-    return chordKind(model, link) === 'cross' && crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) === 'frame';
+    const refusal = chordKind(model, link) === 'cross' ? crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) : undefined;
+    return refusal === 'frame' || (link.solidBlock === true && refusal === 'edge');
   });
 }
 /**
@@ -746,7 +750,9 @@ export function chordsHold(model: LayoutModel, proposed: { group: { id?: string;
           ...(port.pill ? { pill: { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x + dx, y: port.pill.bounds.y + dy } } } : {}) })) };
     }
   }
-  const held = blockedChordsAt({ ...model, nodes, groups });
+  const trial = { ...model, nodes, groups };
+  if (blockReservationsFault(trial) !== undefined) return false;
+  const held = blockedChordsAt(trial);
   // A caller that tries many candidates asks with `report` off and reports the final verdict itself (ticket 77).
   if (report) for (const id of held) {
     if (!model.diagnostics.some(item => item.code === 'STRAIGHT_LINK_HELD' && item.owners?.some(owner => owner.kind === 'link' && owner.id === id))) {

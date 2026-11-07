@@ -483,7 +483,10 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
     for (const feed of candidates) if (feed.x !== best.x) remainder(feed);
   }
   const wanted = new Map<string, number>();
-  for (const [child, feed] of seats) wanted.set(child, feed.x);
+  for (const [child, feed] of seats) {
+    // A solid block owns its face capacity; its feeds centre the row but never stretch a body.
+    if (model.links.find(link => link.id === feed.link)?.solidBlock !== true) wanted.set(child, feed.x);
+  }
   return { own, wanted, yielded, seats, conflicts };
 }
 /**

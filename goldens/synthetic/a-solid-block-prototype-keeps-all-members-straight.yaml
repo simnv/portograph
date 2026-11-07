@@ -1,0 +1,61 @@
+# PROTOTYPE ticket 81: regular.
+# Expected: complete solid block, compact hubs, full-weight X, reserved 34-degree gap capped at 600 px.
+portograph: 2
+profile: network
+layout: { autoArrange: false }
+groups:
+  upper: { tier: 0 }
+  cell0: { tier: 1, label: Site 1 }
+  cell1: { tier: 1, label: Site 2 }
+  cell2: { tier: 1, label: Site 3 }
+  cell3: { tier: 1, label: Site 4 }
+  cell4: { tier: 1, label: Site 5 }
+  cell5: { tier: 1, label: Site 6 }
+  cell6: { tier: 1, label: Site 7 }
+  cell7: { tier: 1, label: Site 8 }
+nodes:
+  hub0: { group: upper, class: router }
+  hub1: { group: upper, class: router }
+  hub2: { group: upper, class: router }
+  hub3: { group: upper, class: router }
+  leaf0: { group: cell0, class: router }
+  leaf1: { group: cell1, class: router }
+  leaf2: { group: cell2, class: router }
+  leaf3: { group: cell3, class: router }
+  leaf4: { group: cell4, class: router }
+  leaf5: { group: cell5, class: router }
+  leaf6: { group: cell6, class: router }
+  leaf7: { group: cell7, class: router }
+links:
+  - { from: hub0, to: leaf0 }
+  - { from: hub0, to: leaf1 }
+  - { from: hub0, to: leaf2 }
+  - { from: hub0, to: leaf3 }
+  - { from: hub0, to: leaf4 }
+  - { from: hub0, to: leaf5 }
+  - { from: hub0, to: leaf6 }
+  - { from: hub0, to: leaf7 }
+  - { from: hub1, to: leaf0 }
+  - { from: hub1, to: leaf1 }
+  - { from: hub1, to: leaf2 }
+  - { from: hub1, to: leaf3 }
+  - { from: hub1, to: leaf4 }
+  - { from: hub1, to: leaf5 }
+  - { from: hub1, to: leaf6 }
+  - { from: hub1, to: leaf7 }
+  - { from: hub2, to: leaf0 }
+  - { from: hub2, to: leaf1 }
+  - { from: hub2, to: leaf2 }
+  - { from: hub2, to: leaf3 }
+  - { from: hub2, to: leaf4 }
+  - { from: hub2, to: leaf5 }
+  - { from: hub2, to: leaf6 }
+  - { from: hub2, to: leaf7 }
+  - { from: hub3, to: leaf0 }
+  - { from: hub3, to: leaf1 }
+  - { from: hub3, to: leaf2 }
+  - { from: hub3, to: leaf3 }
+  - { from: hub3, to: leaf4 }
+  - { from: hub3, to: leaf5 }
+  - { from: hub3, to: leaf6 }
+  - { from: hub3, to: leaf7 }

@@ -1,0 +1,19 @@
+# PROTOTYPE ticket 81: canton.
+# Expected: complete solid block, compact hubs, full-weight X, reserved 34-degree gap capped at 600 px.
+portograph: 2
+profile: network
+layout: { autoArrange: false }
+groups:
+  domain: { label: Domain }
+  upper: { tier: 0, canton: domain }
+  lower: { tier: 1, canton: domain }
+nodes:
+  hub0: { group: upper, class: router }
+  hub1: { group: upper, class: router }
+  leaf0: { group: lower, class: router }
+  leaf1: { group: lower, class: router }
+links:
+  - { from: hub0, to: leaf0 }
+  - { from: hub0, to: leaf1 }
+  - { from: hub1, to: leaf0 }
+  - { from: hub1, to: leaf1 }

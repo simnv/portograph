@@ -1,3 +1,4 @@
+import { blockReservationsFault, blockSheafApart } from './solid-block-proto.js';
 import type { FanFallbackReason, FanFamily, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { EPS, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
@@ -35,7 +36,7 @@ function makeChord(model: LayoutModel, link: LayoutLink, segment: PathSegment): 
 }
 
 /** The result of one family's search: the members drawn straight, with their chords, and whether the budget cut the search short. */
-interface FamilyVerdict { straight: LayoutLink[]; segments: Map<string, PathSegment>; truncated: boolean }
+interface FamilyVerdict { straight: LayoutLink[]; segments: Map<string, PathSegment>; truncated: boolean; tested: number; bodyRefusals: number }
 
 /**
  * The largest set of the family's members whose chords hold together, every other member orthogonal. Read whole (R3: no first-wins): the
@@ -50,9 +51,11 @@ function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly 
     return `${portId(hubFirst ? ends.from : ends.to)}|${portId(hubFirst ? ends.to : ends.from)}`;
   };
   const segments = new Map<string, PathSegment>();
+  let bodyRefusals = 0;
   for (const link of members) {
     const verdict = chordVerdict(model, link, SIDE_EDGE_SLACK);
     if ('segment' in verdict) segments.set(link.id, verdict.segment);
+    else if (verdict.reason === 'body') bodyRefusals++;
   }
   // The last key is the port keys of the member, which are unique (R3).
   const open = members.filter(link => segments.has(link.id)).sort((a, b) => keyOf(a) < keyOf(b) ? -1 : keyOf(a) > keyOf(b) ? 1 : 0);
@@ -60,7 +63,7 @@ function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly 
   const apart = new Map<string, boolean>();
   for (let i = 0; i < open.length; i++) for (let j = i + 1; j < open.length; j++) {
     const a = open[i]!, b = open[j]!;
-    apart.set(pair(a.id, b.id), chordsApart(segments.get(a.id)!, segments.get(b.id)!, linkStrokeWidth(a), linkStrokeWidth(b)));
+    apart.set(pair(a.id, b.id), chordsApart(segments.get(a.id)!, segments.get(b.id)!, linkStrokeWidth(a), linkStrokeWidth(b)) || blockSheafApart(model, a, b, segments.get(a.id)!, segments.get(b.id)!));
   }
   let tested = 0, truncated = false;
   /**
@@ -100,8 +103,11 @@ function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly 
     if (set.every(other => apart.get(pair(link.id, other.id)) === true)) walk(index + 1, [...set, link]);
     walk(index + 1, set);
   };
-  walk(0, []);
-  return { straight: best, segments, truncated };
+  // Try the whole set directly: a compatible block costs one check, even above the 512 subset budget.
+  const full = open.length === members.length && open.every((link, i) => open.slice(i + 1).every(other => apart.get(pair(link.id, other.id)) === true));
+  if (family.kind === 'solid' && full && canHold(open, open.length)) offer(open);
+  else walk(0, []);
+  return { straight: best, segments, truncated, tested, bodyRefusals };
 }
 
 /**
@@ -111,6 +117,8 @@ function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly 
  * an orthogonal member is no frozen chord and names its reason.
  */
 export function fanAdmissionsFault(model: LayoutModel): string | undefined {
+  const blockFault = blockReservationsFault(model);
+  if (blockFault !== undefined) return blockFault;
   const record = model.fanAdmissions;
   if (model.fanFamilies === undefined) return record === undefined ? undefined : 'an admission is recorded on a sheet with no fan family';
   if (record === undefined) return model.frozenChords === undefined ? undefined : 'the freeze recorded no admission';
@@ -198,6 +206,13 @@ export function admitFanFamilies(draft: LayoutModel, members: readonly LayoutLin
     const own = members.filter(link => link.fanFamily === family.id);
     if (!own.length) continue;
     const verdict = familyVerdict(draft, family, own, budget);
+    if (family.kind === 'solid') {
+      const prefix = `${family.id}: `;
+      draft.diagnostics = draft.diagnostics.filter(note => note.code !== 'SOLID_BLOCK_ADMISSION' || !note.message.startsWith(prefix));
+      draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'SOLID_BLOCK_ADMISSION',
+        message: `${prefix}${own.length} members, ${verdict.segments.size} standalone, ${verdict.bodyRefusals} body refusals, ${verdict.segments.size * (verdict.segments.size - 1) / 2} pair checks, ${verdict.tested} sets, ${verdict.straight.length} held${verdict.truncated ? ', truncated' : ''}.`,
+        owners: own.map(link => link.owner) });
+    }
     for (const link of verdict.straight) makeChord(draft, link, verdict.segments.get(link.id)!);
     if (verdict.truncated && !draft.diagnostics.some(item => item.code === 'FAN_SEARCH_TRUNCATED' && item.owners?.some(owner => owner.kind === 'link' && owner.id === own[0]!.id))) {
       draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_SEARCH_TRUNCATED',

@@ -552,7 +552,7 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   different units (a unit is the outermost frame, canton or free group of an end). A cohort is one tier group of
   hubs and one class. It is a family when it has `FAN_MIN_HUBS` (2) hubs or more, `FAN_MIN_UNITS` (3) units or more,
   and every hub links to every unit. A link two families claim declines both (`FAN_FAMILY_DECLINED`). Solid links
-  form no family. Recorded as `model.fanFamilies` and `link.fanFamily`; absent on a sheet with no family, so no fan
+  use the separate ticket-81 prototype trigger below. Recorded as `model.fanFamilies` and `link.fanFamily`; absent on a sheet with no family, so no fan
   code runs there (R4). A direct-family member is never a fan member: the fan takes the link first.
 - **Admission (before the freeze, once per placed model).** In `rebuildRowPaths` every member starts orthogonal, the
   settle loop runs for the other links, then `admitFanFamilies` searches each family. Each member must pass
@@ -596,3 +596,23 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   box. G6 stays geometric. A crossing of two members of one family is faint: Q weighs it 0.09 (CONTEXT.md,
   *salience*), `metrics.crossings.faint` counts it, and the corpus TSV writes it in `Xf`, outside `X`.
   `gate-compare` prints `Xf` and never judges it, and refuses a pair of TSV files where one lacks the column.
+
+## 17. Solid block prototype (ticket 81)
+
+This branch tests one complete, unlabelled solid node relation across one document-tier boundary.
+Every hub and every node of the far groups must participate, with one distinct-port link per pair.
+Two orientations canonicalize to the smaller hub group, upper on a tie. Partial cohorts are not mined for bicliques.
+An inferred group-link yields ownership; explicit routes, bundles, labels, shared ports, non-row and nested shapes decline by name.
+
+Stage 5 reserves ceil((10 + stroke) / sin(34 degrees)) pitch before sizing.
+Block feeds centre a row but do not own individual vertical alignment targets.
+The pre-freeze draft reserves the maximum of angle and facing-box demands, capped at 600 px face to face.
+The cap cannot remove mandatory room. The record carries target, chosen floor, cap, boundary mode, pitch, and tier boundary.
+Publication reads that record and rejects missing records or lost angle/gap floors.
+A full-set joint check precedes the bounded subset search. Solid crossings remain in X at full weight.
+
+Only capped members may enter their own lower box through a side; no foreign-box permission is granted.
+The experimental sheaf zone is a prefix of one shared body width, at most half a chord, for two straight members sharing a node.
+G6 still checks the rest of both chords and all unrelated pairs. Collinear overlap keeps G4.
+Slice 2 must prove isolated body fallback and shared-gap component admission against final slants.
+Slice 3 must handle labels, irregular/nested frames, adjacent ranks and broader cap-limited geometry.

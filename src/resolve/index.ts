@@ -1,3 +1,4 @@
+import { detectSolidBlocks } from './solid-block-proto.js';
 import {
   createLayoutModel, groupNodeIds, orderedGroupIds, orderedNodeIds, unsupportedMessage,
   type Diagnostic, type Endpoint, type Layer, type LayoutLink, type LayoutModel,
@@ -396,5 +397,6 @@ export function resolve(input: NormalisedDocument, options: ResolveOptions = {})
   detectMeshBuses(final, options.declinedTrunks);
   // The fan families read the resolved links and the frames, so they are found on the final model too (architecture-2 ticket 40).
   detectFanFamilies(final);
+  detectSolidBlocks(final);
   return final;
 }

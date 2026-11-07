@@ -71,7 +71,10 @@ For every link, in this fixed order, from the document only:
    model, after the ranked groups are cells, and reads the document only, so resolving
    `model.document` reproduces it. No geometry until tickets 83 and 84 (`docs/design/mesh-bus.md`,
    Q105, Q106).
-3b. **Fan family** — after the mesh buses, `detectFanFamilies` (`src/resolve/fan-family.ts`) groups the
+3b. **Solid block prototype** — ticket 81 detects a complete solid node relation on adjacent document tiers after expansion.
+   It supersedes inferred aggregation, counts far nodes within a canton, and records solid ownership for full crossing weight.
+   `docs/design/routed-chords.md` Section 17 states its limited scope.
+3c. **Fan family** — after the mesh buses, `detectFanFamilies` (`src/resolve/fan-family.ts`) groups the
    dashed or dotted routed links (no bundle, group-link or bus member, no authored route but `straight`,
    no shared port, no flank or bar end) whose ends stand on adjacent document tiers in two different
    units (outermost frame, canton or free group), by the hub's tier group and the class. A cohort with
@@ -451,6 +454,8 @@ grid columns, flanks, ELK layer spacing). A gap is never lower than `tierGapMin`
 raise it later and never lower it.
 
 ## Stage 5 — sides, phase two; resize; repack
+
+Ticket 81 prototype reserves block-face pitch before sizing. It records declaration ties in the stage-4 row draft.
 
 Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
 `left`/`right` from the in-row order — except inside a **grid**, where a peer may stand above or
@@ -860,6 +865,9 @@ ports → warning, extra links route. *Moves:* the flank, two nodes' sizes. *Re-
 links on the peer.
 
 ### 7c — child under parents
+
+Ticket 81 prototype block feeds centre the row without stretching its faces toward individual peers.
+After centring and before joint chord admission, its draft seats the stored angle/top-entry gap floor.
 
 Anchor tier = the tier with the most main-tier nodes, including bars and excluding flanks (ties: lowest effective tier index). Empty layouts omit it. Below the anchor, each
 group is centred under its feeds; above it, each group is centred over its children (mirror).

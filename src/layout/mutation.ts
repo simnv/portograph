@@ -89,7 +89,7 @@ function protect(model: LayoutModel, baseline: LayoutModel, intermediate = false
 }
 function semantics(model: LayoutModel) {
   return {
-    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'fanFamily', 'strokeWidth'])),
+    links: model.links.map(link => pick(link, ['id', 'sourceIndex', 'owner', 'from', 'to', 'attachments', 'family', 'layer', 'bundle', 'groupLink', 'meshBus', 'fanFamily', 'solidBlock', 'strokeWidth'])),
     bundles: model.bundles.map(bundle => pick(bundle, ['id', 'owner', 'layer', 'nodes', 'members'])),
     groupLinks: model.groupLinks.map(group => pick(group, ['id', 'owner', 'layer', 'groups', 'members'])),
     meshBuses: (model.meshBuses ?? []).map(bus => pick(bus, ['id', 'owner', 'layer', 'class', 'row', 'placement', 'frames', 'nodes', 'ports', 'members', 'dissolved', 'joined', 'cross', 'meshNodes', 'mesh', 'labelled'])),
