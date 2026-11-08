@@ -33,16 +33,16 @@ describe('the column-gap course on hand-solve 09 (ticket 15, phase 5)', () => {
   it.each([[AROUND, 'from'], [LISTED, 'to']] as const)('%s: the link takes the gap course in 3 turns and every gate holds', async (name, uEnd) => {
     const model = await layout(parse(source(name)), options);
     const lateral = uEnd === 'from' ? 'to' : 'from';
-    expect(sideOf(model, 6, uEnd)).toBe('bottom');
-    expect(sideOf(model, 6, lateral)).toBe('left');
-    expect(pathBends(link(model, 6))).toBe(3);
+    expect(sideOf(model, 4, uEnd)).toBe('bottom');
+    expect(sideOf(model, 4, lateral)).toBe('left');
+    expect(pathBends(link(model, 4))).toBe(3);
     expect(gates(model)).toBe(true);
-    expect(model.courses!.find(course => course.link === 'link-6')).toEqual({ link: 'link-6', kind: 'skirt', from: { face: uEnd === 'from' ? 'bottom' : 'left' }, to: { face: uEnd === 'from' ? 'left' : 'bottom' },
+    expect(model.courses!.find(course => course.link === 'link-4')).toEqual({ link: 'link-4', kind: 'skirt', from: { face: uEnd === 'from' ? 'bottom' : 'left' }, to: { face: uEnd === 'from' ? 'left' : 'bottom' },
       runs: uEnd === 'from' ? ['u', 'gap'] : ['gap', 'u'] });
     expect(codes(model)).toContain('COURSE_TAKEN');
     expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
-    // Link 5 takes a gap course as well: 6 turns and 1 crossing in all, against the hand solve's 7 and 2.
-    expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), pathBends(link(model, 5))]).toEqual(['bottom', 'left', 3]);
+    // Link 6 takes a gap course as well: 6 turns and 1 crossing in all, against the hand solve's 7 and 2.
+    expect([sideOf(model, 6, 'from'), sideOf(model, 6, 'to'), pathBends(link(model, 6))]).toEqual(['bottom', 'left', 3]);
     expect(score(model).snapshot.counts.routed.turns).toBe(6);
   }, 60000);
 

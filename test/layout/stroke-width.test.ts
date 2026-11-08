@@ -95,10 +95,11 @@ describe('authored weight becomes one effective stroke width', () => {
       '  - [a.f, b.f, {class: flow, weight: 4}]'].join('\n');
     const model = linkLabels(await route(bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml)))))))),
       { createAttempt: createAvoidAttempt }));
-    for (const link of model.links.slice(0, 2)) {
+    // The canonical order (DR-04) lists the authored third link, the flow overlay, first.
+    for (const link of model.links.slice(1, 3)) {
       expect([link.id, link.strokeWidth, link.path!.strokeWidth]).toEqual([link.id, 3, 3]);
     }
-    const overlay = model.links[2]!;
+    const overlay = model.links[0]!;
     expect([overlay.layer, overlay.strokeWidth, overlay.path!.strokeWidth]).toEqual(['overlay', 6, 6]);
     // The trunk one bundle paints for both merged members carries their resolved width too.
     const runs = model.bundles.flatMap(bundle => bundle.mergeRuns ?? []);
@@ -208,7 +209,7 @@ describe('two facing pills keep a visible wire', () => {
     expect(visible).toBeGreaterThanOrEqual(PILL_WIRE_GAP - DEFAULT_STROKE_WIDTHS.pill - 1e-9);
     expect(visible).toBeGreaterThan(1);
     // The link really crosses that gap, so the wire is drawn rather than hidden under the pills.
-    const link = model.links.find(item => item.id === 'link-8')!;
+    const link = model.links.find(item => item.id === 'link-1')!;
     const segment = link.path!.segments[0]!;
     expect(Math.min(segment.from.x, segment.to.x)).toBeLessThanOrEqual(leftPill.x + leftPill.width);
     expect(Math.max(segment.from.x, segment.to.x)).toBeGreaterThanOrEqual(rightPill.x);

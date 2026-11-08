@@ -20,7 +20,7 @@ const source = (name: string): string => readFileSync(new URL(`../../goldens/syn
 const MESH = 'a-mesh-across-a-middle-tier-draws-straight-chords-beside-its-frame';
 const THREE = 'a-chord-over-three-tier-gaps-passes-two-middle-tiers';
 const LABEL = 'a-labelled-chord-across-a-middle-tier-keeps-its-label-on-the-line';
-const MESH_LINKS = ['link-3', 'link-4', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10', 'link-11'];
+const MESH_LINKS = ['link-1', 'link-2', 'link-3', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10'];
 const forced = (name: string, hints: string[]): Promise<LayoutModel> =>
   layout(parse(source(name)), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: hints });
 const plain = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: [] });

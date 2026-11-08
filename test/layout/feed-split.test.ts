@@ -79,7 +79,7 @@ describe('the feed split (architecture-2 ticket 73)', () => {
   beforeAll(async () => { model = await run(SPLIT); }, 120000);
 
   it('records one split of sub-tier 2 and stands every link of srv0 and srv1 vertical (a-feed-split-stands-each-group-under-its-feeds)', () => {
-    expect(model.feedSplits).toEqual([{ tier: 2, authority: 1, pair: ['edge-far', 'edge-near'], at: 164.25, width: 60.5 }]);
+    expect(model.feedSplits).toEqual([{ tier: 2, authority: 1, pair: ['edge-far', 'edge-near'], at: 201.25, width: 60.5 }]);
     expect(model.freeze!.feedSplits).toEqual(model.feedSplits);
     for (const id of [...linksOf(model, 'srv0'), ...linksOf(model, 'srv1')]) expect(vertical(model, id), id).toBe(true);
     expect([bends(model), Math.round(model.canvas!.width)]).toEqual([0, 590]);
@@ -88,10 +88,10 @@ describe('the feed split (architecture-2 ticket 73)', () => {
 
   it('publishes the same layout with the links reversed, and the mirror decision on mirrored input (R3)', async () => {
     const [reversed, mirrored] = await Promise.all([run(reversedLinks(SPLIT)), run(mirror(SPLIT))]);
-    // With the links reversed, stage 4 puts isp0 (tier 0, a tier beyond the authority) across the split line at another x: the split is not
-    // declined for it (before variant V it was), and the sheet publishes the same layout.
+    // Link order is never input (ticket DR-04): with the links reversed, every stage reads the same links in the same order, so the split
+    // stands at the same x, nothing is declined, and the sheet publishes the same layout.
     expect(reversed.feedSplits!.map(split => split.pair)).toEqual([['edge-far', 'edge-near']]);
-    expect(reversed.feedSplits![0]!.at).not.toBe(model.feedSplits![0]!.at);
+    expect(reversed.feedSplits![0]!.at).toBe(model.feedSplits![0]!.at);
     expect(reversed.diagnostics.filter(item => item.code === 'FEED_SPLIT_DECLINED')).toEqual([]);
     expect(geometry(reversed)).toEqual(geometry(model));
     // Mirrored, the joint stage-4 order (ticket 72) stands the groups as before: the same decision and the same layout.
@@ -138,7 +138,7 @@ describe('the feed split (architecture-2 ticket 73)', () => {
     // Step 0's P2 split through k0, a node of the authority tier that feeds both groups, by 147 px (q1, a tier beyond, would move whole). The
     // split never stretches a body, and the decline is named (R6).
     expect(five.diagnostics.filter(item => item.code === 'FEED_SPLIT_DECLINED').map(item => item.message))
-      .toEqual(['The feed split B|A at x 155.5 (147.0 px) is declined: the split would stretch k0.']);
+      .toEqual(['The feed split A|B at x 400.3 (147.0 px) is declined: the split would stretch k0.']);
     expect(restoreLayoutModel(JSON.stringify(five)).feedSplits).toEqual([]);
     const absent = JSON.parse(JSON.stringify(five)) as LayoutModel;
     delete absent.feedSplits;

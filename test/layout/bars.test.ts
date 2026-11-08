@@ -323,7 +323,9 @@ links: [[${first}, ${second}, {route: orthogonal}], [source.p#2, other.p, {route
     expect(result.gates.G2.passed).toBe(true);
     expect(result.gates.G5.passed).toBe(true);
     expect(result.gates.G6.passed).toBe(true);
-    expect(model.links[0]!.path!.segments.some(segment => segment.from.y === approachY && segment.to.y === approachY)).toBe(true);
+    // The authored first link is the one on `bar`; the canonical order (DR-04) may list it second.
+    const barLink = model.links.find(link => link.attachments?.from.node === 'bar' || link.attachments?.to.node === 'bar')!;
+    expect(barLink.path!.segments.some(segment => segment.from.y === approachY && segment.to.y === approachY)).toBe(true);
     expect(barSide === 'bottom' ? other.y - approachY : approachY - bottom(other)).toBeGreaterThan(10);
   });
 

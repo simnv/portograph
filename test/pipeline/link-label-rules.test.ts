@@ -847,13 +847,13 @@ it('a forged label yield record is refused (ticket 20)', async () => {
 it('two diagonal labels from one node keep their lines (ticket 20)', async () => {
   const model = await run(fixture('two-diagonal-labels-from-one-node-keep-their-lines'));
   expect(model.diagnostics.filter(item => /LINK_LABEL/.test(item.code))).toEqual([]);
-  expect(model.labelYields).toEqual({ 'link-1': ['link-3'], 'link-3': [] });
-  for (const id of ['link-1', 'link-3']) expect(model.labels.find(label => label.id === `label:link:${id}`)!.onLine).toBe(true);
+  expect(model.labelYields).toEqual({ 'link-1': ['link-2'], 'link-2': [] });
+  for (const id of ['link-1', 'link-2']) expect(model.labels.find(label => label.id === `label:link:${id}`)!.onLine).toBe(true);
   expect(score(model).snapshot.counters.labelBorderCrossings).toBeUndefined();
   // Ticket 21: who yields is ranked first by whether growth can help. Extra borders: a box edge that link-1 runs along across the tier
-  // gap's split (its cut stretches with the growth, so no window of link-1 grows), and three boxes stacked on link-3 above the split
-  // (the window across the split grows). link-1 has the more slack (its best window is 5 px short, link-3's 42 px), so ranking by
-  // slack alone makes link-1 yield, and nothing can help it; link-3 yields now, and 7f can grow its window.
+  // gap's split (its cut stretches with the growth, so no window of link-1 grows), and three boxes stacked on link-2 above the split
+  // (the window across the split grows). link-1 has the more slack (its best window is 5 px short, link-2's 42 px), so ranking by
+  // slack alone makes link-1 yield, and nothing can help it; link-2 yields now, and 7f can grow its window.
   const walls = groupBoxes(model).map(item => item.bounds);
   const boxes = [...walls, { x: 54, y: 205, width: 4, height: 95 },
     { x: 80, y: 140, width: 120, height: 40 }, { x: 80, y: 180, width: 120, height: 35 }, { x: 80, y: 215, width: 120, height: 30 }];
@@ -864,13 +864,13 @@ it('two diagonal labels from one node keep their lines (ticket 20)', async () =>
   const deficit = (id: string, other: string) => labelWindowDeficit(boxes, line(id), extent(id), tierGapSplit(model, model.links.find(link => link.id === id)!), true,
     { across: label(id).height, axis: 'y', links: [band(other)] });
   const slack = (id: string, other: string) => Math.max(...labelRunWindows(boxes, line(id), label(id).height, [band(other)])!.map(window => window.to - window.from)) - extent(id);
-  expect(deficit('link-1', 'link-3')).toBeUndefined();
-  expect(deficit('link-3', 'link-1')).toBeGreaterThan(0);
-  expect(slack('link-1', 'link-3')).toBeGreaterThan(slack('link-3', 'link-1'));
+  expect(deficit('link-1', 'link-2')).toBeUndefined();
+  expect(deficit('link-2', 'link-1')).toBeGreaterThan(0);
+  expect(slack('link-1', 'link-2')).toBeGreaterThan(slack('link-2', 'link-1'));
   const fresh = structuredClone(model);
   delete fresh.labelYields;
   expect(recordLabelYields(fresh, boxes)).toBe(true);
-  expect(fresh.labelYields).toEqual({ 'link-1': [], 'link-3': ['link-1'] });
+  expect(fresh.labelYields).toEqual({ 'link-1': [], 'link-2': ['link-1'] });
 }, 120000);
 
 // The 0.7500001 case: a text that fills a window cut at a frozen chord passes stage 9's test of the chord (clearance + EPS).

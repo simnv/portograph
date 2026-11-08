@@ -389,9 +389,9 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     const before = await throughBundles(enclosedByLanes);
     const laneIdentity = before.lanes.map(lane => [lane.id, lane.owner, lane.group, lane.side, lane.x, lane.bounds.width]);
     const midBox = { ...before.groups.mid!.bounds! }, lowWidth = before.groups.low!.bounds!.width;
-    // link-3 is the only non-bundle transit; its lane aligns toward c in the anchor tier (ticket 19).
-    expect(before.lanes.map(lane => [lane.id, lane.side])).toEqual([['lane:"link-1":1', 'left'],
-      ['lane:"link-2":1', 'right'], ['lane:"link-3":1', 'right']]);
+    // link-4 is the only non-bundle transit; its lane aligns toward c in the anchor tier (ticket 19).
+    expect(before.lanes.map(lane => [lane.id, lane.side])).toEqual([['lane:"link-2":1', 'left'],
+      ['lane:"link-3":1', 'right'], ['lane:"link-4":1', 'right']]);
 
     const model = run(before);
     expect(model.lanes.map(lane => [lane.id, lane.owner, lane.group, lane.side, lane.x, lane.bounds.width]))
@@ -399,8 +399,8 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
 
     // Feasibility evidence: the two nearest reserved corridors touch mid's own edges, so the only
     // widening that would reach the first free gap crosses the corridor mid's right lane owns.
-    const leftLane = model.lanes.find(item => item.id === 'lane:"link-1":1')!;
-    const rightLane = model.lanes.find(item => item.id === 'lane:"link-2":1')!;
+    const leftLane = model.lanes.find(item => item.id === 'lane:"link-2":1')!;
+    const rightLane = model.lanes.find(item => item.id === 'lane:"link-3":1')!;
     const mid = model.groups.mid!;
     expect(right(leftLane.bounds)).toBe(mid.bounds!.x);
     expect(rightLane.bounds.x).toBe(right(mid.bounds!));
@@ -437,7 +437,7 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(band.bounds).toEqual({ x: mid.bounds!.x, y: bottom(mid.bounds!) - 23, width: mid.bounds!.width, height: 23 }); // Verdana metrics (snack-theme ticket 157): 22 with Arial (the 15 px line height plus 8).
     expect(band.clearance).toBe(GROUP_PADDING);
     expect(bottom(model.nodes.m!.bounds!)).toBe(band.bounds.y - GROUP_PADDING);
-    const member = model.links.find(link => link.id === 'link-1')!;
+    const member = model.links.find(link => link.id === 'link-2')!;
     expect(member.sharedRuns!.from!.length).toBeGreaterThan(0);
     expect(member.path!.segments.slice(0, member.sharedRuns!.from!.length)).toEqual(member.sharedRuns!.from);
     expect(bandEntryConflicts(model)).toEqual([]);
@@ -446,7 +446,7 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
 
   it('still rejects a group that has been widened across its own reserved lane', async () => {
     const model = run(await throughBundles(enclosedByLanes));
-    const lane = model.lanes.find(item => item.id === 'lane:"link-2":1')!;
+    const lane = model.lanes.find(item => item.id === 'lane:"link-3":1')!;
     expect(() => validateLanes(copy(model))).not.toThrow();
 
     const crossed = copy(model);
@@ -456,7 +456,7 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     // One pixel into the reserved corridor is still rejected, by the crossing rule.
     const touching = copy(model);
     touching.groups.mid!.bounds!.width = lane.bounds.x + 1 - touching.groups.mid!.bounds!.x;
-    expect(() => validateLanes(touching)).toThrow(/Lane lane:"link-2":1 crosses occupied group mid/);
+    expect(() => validateLanes(touching)).toThrow(/Lane lane:"link-3":1 crosses occupied group mid/);
 
     expect(() => withLayoutMutation(model, 'route', draft => { draft.groups.mid!.bounds!.width += 20; }))
       .toThrow(/cannot change placement/);
@@ -464,7 +464,7 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
 
   it('measures widening feasibility from the occupied box a lane was reserved against', async () => {
     const before = await throughBundles(pillPastThePadding);
-    const mid = before.groups.mid!, lane = before.lanes.find(item => item.id === 'lane:"link-2":1')!;
+    const mid = before.groups.mid!, lane = before.lanes.find(item => item.id === 'lane:"link-3":1')!;
     const pill = before.nodes.m!.ports.find(port => port.side === 'right')!.pill!;
     const box = mid.bounds!;
 
@@ -484,7 +484,7 @@ ${pairs.flatMap(i => [`  - [parent-${i}.p, child-${i}.p]`, `  - [parent-${i}.q, 
     expect(laneSidesHold(exposed, [{ group: exposed.groups.mid!, bounds: { ...exposedBox, x: exposedBox.x + lane.bounds.x - right(pill.bounds) + 1 } }])).toBe(false);
     const crossed = copy(before);
     crossed.groups.mid!.bounds!.width = widened.width + 1;
-    expect(() => validateLanes(crossed)).toThrow(/Lane lane:"link-2":1 crosses occupied group mid/);
+    expect(() => validateLanes(crossed)).toThrow(/Lane lane:"link-3":1 crosses occupied group mid/);
 
     const model = run(before);
     expect(model.groups.mid!.bounds!.width).toBe(mid.bounds!.width);
@@ -726,7 +726,7 @@ it('keeps the tolerance on the band comparators that the producer repair no long
 });
 
 it('stress ticket 18: a corridor that crosses a labelled row link\'s split keeps the room the label reserved', async () => {
-  // The corridor `link-16` owns across tier 2 stands at x 231, beyond `link-17`'s split. Label room wins over the lane (architecture-2
+  // The corridor `link-5` owns across tier 2 stands at x 231, beyond `link-9`'s split. Label room wins over the lane (architecture-2
   // ticket 23): 7f inserts the row's room at the split and the corridor moves out with it, so it keeps its distance to what it serves (R2).
   // 7f's last step then takes that corridor to its child's port. Until ticket 57 the move was refused, because it left the gap above
   // tier 2 short of its rows after 7f had grown it; since ticket 57 the gaps are solved once after the move (`solveTierGaps`), so the

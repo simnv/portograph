@@ -102,7 +102,7 @@ describe('the course, reserved and drawn', () => {
     const ring = (id: string): number => model.lanes.find(lane => lane.id === `perimeter:${id}`)!.ring!;
     expect(ring('link-6')).toBeGreaterThan(ring('link-5'));
     const y = (n: number): number => link(model, n).path!.segments[0]!.from.y;
-    expect(y(8)).toBeLessThan(y(7));
+    expect(y(6)).toBeLessThan(y(5));
     expect(score(model).snapshot.counts.overlay.crossings.pairs).toBe(0);
   }, 60000);
 
@@ -118,7 +118,7 @@ describe('the course, reserved and drawn', () => {
 describe('the round', () => {
   it('shares the re-runs: with none left it takes no course, and an admitted chord stays', async () => {
     const none = await run(SHEETS.chord, { testMaxReruns: 0 });
-    expect(turnsOf(link(none, 3))).toBe(4);
+    expect(turnsOf(link(none, 2))).toBe(4);
     expect(turnsOf(link(await run(SHEETS.chord), 2))).toBe(2);
     const straight = await run(SHEETS.straight);
     expect(pure(straight)).toBe(pure(await before(SHEETS.straight)));

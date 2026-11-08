@@ -81,7 +81,7 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
   }, 120000);
 
   it('leaves no leg under a title to the router, and names a leg over a shared run (crosses-shared-run) on the corpus fixtures', async () => {
-    // A title yields to the legs under it (architecture-2 ticket 54): the fixture whose wide titles once left link-8 and link-11 to the router
+    // A title yields to the legs under it (architecture-2 ticket 54): the fixture whose wide titles once left link-10 and link-14 to the router
     // (`leg-blocked`) plans every part now.
     expect(residual(await place(read('a-title-no-position-clears-leaves-the-leg-to-the-router')))).toEqual([]);
     expect(residual(await place(read('a-tier-gap-plan-orders-every-part')))).toEqual([]);
@@ -91,7 +91,7 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
   }, 120000);
 });
 
-/** Three tiers, a transit lane for link-2 through tier 1, and planned parts in both gaps. */
+/** Three tiers, a transit lane for link-4 through tier 1, and planned parts in both gaps. */
 const transit = `portograph: 2
 groups:
   top: { tier: 0 }
@@ -123,29 +123,29 @@ describe('shapes the placement stages do not build, on an edited placed model (t
 
   it('names a span across two gaps without a lane (spans-two-gaps) in both gaps, and the router is left the link', async () => {
     const model = await edited(item => {
-      const link = item.links.find(entry => entry.id === 'link-2')!;
+      const link = item.links.find(entry => entry.id === 'link-4')!;
       delete link.fixedSegments;
-      item.lanes = item.lanes.filter(lane => !(lane.owner.kind === 'link' && lane.owner.id === 'link-2'));
+      item.lanes = item.lanes.filter(lane => !(lane.owner.kind === 'link' && lane.owner.id === 'link-4'));
     });
-    expect(residual(model).sort()).toEqual(['link-2:spans-two-gaps', 'link-2:spans-two-gaps']);
+    expect(residual(model).sort()).toEqual(['link-4:spans-two-gaps', 'link-4:spans-two-gaps']);
     solveTierGaps(model, replayGridAndBands);
     const named = codes(model).filter(item => item.startsWith('TIER_GAP_PART_RESIDUAL')).map(item => item.replace(/tier \d/g, 'tier N'));
-    expect(named).toEqual(Array(2).fill('TIER_GAP_PART_RESIDUAL|link-2 is left to the router in the tier gap above tier N: its part spans two tier gaps without a lane.'));
+    expect(named).toEqual(Array(2).fill('TIER_GAP_PART_RESIDUAL|link-4 is left to the router in the tier gap above tier N: its part spans two tier gaps without a lane.'));
     // Stage 8 plans the edited model without throwing: the residual link has no planned part to reserve.
     expect(() => planRoute(model)).not.toThrow();
   }, 120000);
 
   it('names a lane end that stands on no boundary of the gap (off-boundary)', async () => {
     const model = await edited(item => {
-      for (const segment of item.links.find(entry => entry.id === 'link-2')!.fixedSegments ?? []) { segment.from.y += 4; segment.to.y -= 4; }
+      for (const segment of item.links.find(entry => entry.id === 'link-4')!.fixedSegments ?? []) { segment.from.y += 4; segment.to.y -= 4; }
     });
-    expect(residual(model)).toContain('link-2:off-boundary');
+    expect(residual(model)).toContain('link-4:off-boundary');
   }, 120000);
 
   it('names a span that crosses the reserved run of a through lane (crosses-lane)', async () => {
     const model = await edited(item => {
       const above = item.tierBands.find(entry => entry.tier === 0)!.bounds!, below = item.tierBands.find(entry => entry.tier === 1)!.bounds!;
-      const lane = item.lanes.find(entry => entry.owner.kind === 'link' && entry.owner.id === 'link-2')!;
+      const lane = item.lanes.find(entry => entry.owner.kind === 'link' && entry.owner.id === 'link-4')!;
       // The lane's box stands over the whole gap, from the band above to the band below: a wall.
       lane.bounds = { ...lane.bounds, y: above.y + above.height - 1, height: below.y - above.y - above.height + 2 };
     });

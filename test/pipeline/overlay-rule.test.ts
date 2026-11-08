@@ -257,8 +257,8 @@ links:
   - [REVERSIBLE, {route: overlay}]`;
     const forward = await run(both.replace('REVERSIBLE', 'b.lo, a.lo'));
     const backward = await run(both.replace('REVERSIBLE', 'a.lo, b.lo'));
-    // `link-3` is the third declaration, the one written both ways round.
-    const pick = (model: LayoutModel): Point[] => pointsOf(model.links.find(link => link.id === 'link-3')!);
+    // `link-2` is the third declaration (canonical order, DR-04), the one written both ways round.
+    const pick = (model: LayoutModel): Point[] => pointsOf(model.links.find(link => link.id === 'link-2')!);
     expect(pick(forward)).toEqual([...pick(backward)].reverse());
     for (const model of [forward, backward]) {
       for (const link of model.links.filter(item => (item.layer ?? item.family) === 'overlay')) {

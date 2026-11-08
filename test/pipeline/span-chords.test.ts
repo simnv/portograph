@@ -109,7 +109,7 @@ describe('the corridor reader (spanVerdict)', () => {
 
   it('passes a chord whose corridor is clear, and reads overlay geometry as no wall', async () => {
     const { base } = await run(SHEETS.three);
-    expect('segment' in spanVerdict(base!, link(base!, 4))).toBe(true);
+    expect('segment' in spanVerdict(base!, link(base!, 1))).toBe(true);
   }, 60000);
 
   it('lets two chords that cross strictly stand, and refuses two that run side by side under the clearance', async () => {

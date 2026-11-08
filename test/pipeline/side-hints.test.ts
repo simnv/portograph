@@ -365,13 +365,13 @@ links:
   it('the mesh bus keeps the edge its natural-side leg count gives', async () => {
     const yaml = fixture('a-bus-in-a-rank-gap-grows-the-gap');
     const plain = await run(yaml);
-    const { key } = port(plain.model, 'm3', 4);
+    const { key } = port(plain.model, 'm3', 10); // [m3, a2]: authored link-5, canonical link-11
     expect(plain.model.meshBuses![0]!.side).toBe('top');
     const resolved = resolve(parse(yaml));
     sidesOne(resolved, new Map([[key, 'right']]));
     expect(busSide(resolved, meshBuses(resolved)[0]!, true)).toBe('top');
     const hinted = await run(yaml, new Map([[key, 'right']]));
-    expect(port(hinted.model, 'm3', 4).port.side).toBe('right');
+    expect(port(hinted.model, 'm3', 10).port.side).toBe('right');
     expect(hinted.model.meshBuses![0]!.side).toBe('top');
   }, 60000);
 });

@@ -33,6 +33,8 @@ const gates = (model: LayoutModel): void => {
 };
 /** The links of `branch` to the exit row: m1 and m2 of `b-main`. */
 const SPANS = ['link-5', 'link-6'];
+/** The same two links on `STILL`, where the canonical order numbers them 8 and 9. */
+const STILL_SPANS = ['link-8', 'link-9'];
 
 describe('part 1: a link across one document tier gap with a rank band between its ends', () => {
   it('is a spanning-chord candidate; a link between adjacent sub-tiers is not', async () => {
@@ -112,14 +114,14 @@ describe('part 1: a link across one document tier gap with a rank band between i
   it('opens a corridor beside a unit it does not move, though an earlier lane reaches into that unit\'s wall: both chords taken, every gate passes', async () => {
     // Before the fix 7a judged the unmoved `ranked#1` against the lane of link-5 and refused the corridor (span-refused, placement).
     const { model, base } = await run(STILL);
-    for (const id of SPANS) {
+    for (const id of STILL_SPANS) {
       const item = link(model, id);
       expect(item.spanHint, id).toBe(true);
       expect(isRoutedChord(model, item), id).toBe(true);
       expect(pathBends(item), id).toBe(0);
       expect(model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === id).map(lane => [lane.kind, lane.tier])).toEqual([['span', 2]]);
     }
-    expect(model.diagnostics.filter(item => item.code === 'SPAN_CHORD_TAKEN').map(item => item.owners)).toEqual(SPANS.map(id => [{ kind: 'link', id }]));
+    expect(model.diagnostics.filter(item => item.code === 'SPAN_CHORD_TAKEN').map(item => item.owners)).toEqual(STILL_SPANS.map(id => [{ kind: 'link', id }]));
     // The premise, read where the span round measures: the two links into one port hold transit lanes in sub-tier 2. Snack-theme ticket 159 (an engine
     // fix, not the card: it holds with stacked nodes): the course round, after the span round, takes link-5 round the outside (the node floor of a
     // moved end now holds its content, `movedFloor`), so the published model keeps the transit lane of link-6 only; before, the course trial was

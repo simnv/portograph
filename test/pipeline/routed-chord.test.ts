@@ -62,8 +62,8 @@ describe('what is a cross-frame candidate', () => {
     // A side port is no candidate: the router of the east frame leaves by its left side.
     const side = await run(fixture(STRAIGHT).replace('east-router: { group: east, class: router, label: East router }',
       'east-router: { group: east, class: router, label: East router, ports: [{ name: w, side: left }] }').replace('[east-router, provider-1,', '[east-router.w, provider-1,'));
-    // Link ids follow the canonical order (DR-04), so the link of the east router is found by its end.
-    const ofRouter = (m: LayoutModel): LayoutLink => m.links.find(link => link.attachments?.from.node === 'east-router' || link.attachments?.to.node === 'east-router')!;
+    // Link ids follow the canonical order (DR-04), so the link east-router to provider-1 (authored third, canonical link-2) is found by its ends.
+    const ofRouter = (m: LayoutModel): LayoutLink => m.links.find(link => [link.attachments?.from.node, link.attachments?.to.node].sort().join() === 'east-router,provider-1')!;
     expect(chordKind(side, ofRouter(side))).toBeUndefined();
     expect(ofRouter(side).technique).not.toBe('straight');
     // `route: orthogonal` is no candidate; the other links of the pair still are.

@@ -105,7 +105,7 @@ it('moves a corridor to the child 7c could not seat under it', async () => {
  */
 it('keeps a corridor that would leave the centring invariant unverified', async () => {
   const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(twoRuns))))))));
-  const lane = model.lanes.find(item => item.id === 'lane:"link-2":2')!;
+  const lane = model.lanes.find(item => item.id === 'lane:"link-3":2')!;
   const child = model.nodes.d!.ports[0]!;
   expect(child.anchor!.x).not.toBe(lane.x);
   expect(lane.x).toBe(59);

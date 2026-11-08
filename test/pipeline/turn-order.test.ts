@@ -152,7 +152,7 @@ describe('the carried turn order and the budget', () => {
     const full = await layout(parse(solve09()), { ...options, testTurnOrder: false });
     const courses = full.courses!;
     const all = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnOrder: true });
-    const scoped = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-5'] });
+    const scoped = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-6'] });
     expect(all.freeze?.turnOrder).toContainEqual({ node: 'core-1', side: 'left' });
     expect(scoped.freeze?.turnOrder).toEqual([{ node: 'mg-1', side: 'bottom' }]);
     const none = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-1'] });

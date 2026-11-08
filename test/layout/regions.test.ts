@@ -412,8 +412,8 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     }
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 
-    // Stress ticket 08: `m1|top` carries the two links, 12 px apart, and `link-3` travels over
-    // `link-4`'s port. Rule 1 nests the two stems, so the earlier batch's route no longer covers
+    // Stress ticket 08: `m1|top` carries the two links, 12 px apart, and `link-2` travels over
+    // `link-3`'s port. Rule 1 nests the two stems, so the earlier batch's route no longer covers
     // the later link's reserved turn, and the diagram publishes.
     // Ticket 50: both links are planned parts, so their stems are claimed and no batch reserves them (`plan.stems` is empty); the nesting
     // is read from the stem plan that placed the tips.
@@ -423,7 +423,7 @@ links: [[a.p, c.p], [a.q, b.p]]`;
       return stemPlan(model, port).depth;
     };
     expect(plan.stems.filter(stem => stem.node === 'm1')).toEqual([]);
-    expect(depth('link-3')).toBeGreaterThan(depth('link-4') + 17);
+    expect(depth('link-2')).toBeGreaterThan(depth('link-3') + 17);
     const routed = await route(model, { createAttempt: createAvoidAttempt });
     for (const link of routed.links) expect(link.path, link.id).toBeDefined();
     const report = score(routed).snapshot;
