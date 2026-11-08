@@ -163,12 +163,20 @@ function adapt<T>(light: T, dark: T): T {
  * hint to the editor's resize handles and does not constrain rendering, so a shape written into a
  * box of the wrong ratio is simply stretched. Each is letterboxed into its measured tile instead.
  */
-const CISCO19: Readonly<Record<string, { kind: 'badge' | 'silhouette'; shape: string; width: number; height: number }>> = {
+const CISCO19: Readonly<Record<string, { kind: 'badge' | 'silhouette'; shape: string; stencil?: boolean; width: number; height: number }>> = {
   router: { kind: 'badge', shape: 'router', width: 50, height: 50 },
   switch: { kind: 'badge', shape: 'l2_switch', width: 50, height: 50 },
   server: { kind: 'badge', shape: 'server', width: 64, height: 50 },
-  cloud: { kind: 'silhouette', shape: 'cloud', width: 50, height: 30 },
+  // `mxgraph.cisco19.cloud` is two contours 0.04 px apart: `fillColor` paints a hairline and the
+  // tile looks empty (audit A1-03). The other cisco19 names that could stand for it are no
+  // shapes (an unknown `prIcon` draws nothing). draw.io's built-in `cloud` shape is one closed
+  // outline, so `fillColor` paints a solid cloud (measured: DX-10, `test/render/drawio-glyphs.test.ts`).
+  cloud: { kind: 'silhouette', shape: 'cloud', stencil: false, width: 50, height: 30 },
 };
+
+/** The `shape` style value of a table entry: a bundled stencil, or a built-in shape when `stencil` is false. */
+const nativeShape = (native: { kind: 'badge' | 'silhouette'; shape: string; stencil?: boolean }): string =>
+  native.kind === 'badge' ? 'mxgraph.cisco19.rect' : native.stencil === false ? native.shape : `mxgraph.cisco19.${native.shape}`;
 
 /** The smallest box containing both. */
 function union(a: Rect, b: Rect): Rect {
@@ -886,7 +894,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         if (box) {
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
             sketch: 0, aspect: 'fixed', points: '[]',
-            shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
+            shape: nativeShape(native),
             ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
             // On a badge `fillColor` is the frame and `strokeColor` is the glyph; a silhouette is
             // filled with the glyph colour and has no frame to stroke.
@@ -1543,7 +1551,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           if (box) {
             vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
               sketch: 0, aspect: 'fixed', points: '[]',
-              shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
+              shape: nativeShape(native),
               ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
               fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
               strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
