@@ -86,7 +86,8 @@ import {
 /** Stroke width of an icon glyph, matching `DEFAULT_STROKE_WIDTHS.glyph`. */
 const GLYPH_STROKE = DEFAULT_STROKE_WIDTHS.glyph;
 /**
- * The export's own distance tolerance, in px: axis alignment, offsets along a run, and a joint shared by bus pieces. It is
+ * The export's own distance tolerance, in px: axis alignment, offsets along a run, a joint shared by bus pieces, and a pill's
+ * corner tie (`nearerEnd`). It is
  * the renderer owner of the D-Q6 tolerance table and answers only questions the SVG does not ask. A question both renderers
  * ask reads the shared rule instead: where a path breaks into runs is `pathRuns` (`render/shared.ts`, planar `EPS`).
  */
@@ -548,8 +549,11 @@ const relative = (box: Rect, origin: Point): Rect =>
  */
 interface Anchored extends Rect { fraction: Point; node: { width: number; height: number } }
 
-/** 1 when the middle of `[start, start + length]` is past the middle of `size`, else 0: a tie takes the start. */
-const nearerEnd = (start: number, length: number, size: number): 0 | 1 => (start + length / 2 > size / 2 ? 1 : 0);
+/**
+ * 1 when the middle of `[start, start + length]` is past the middle of `size` by more than `EPS`, else 0. A tie takes the
+ * start, also a tie off by float noise: many pills are centred on their face, and some are off by up to 2e-13 px.
+ */
+const nearerEnd = (start: number, length: number, size: number): 0 | 1 => (start + length / 2 - size / 2 > EPS ? 1 : 0);
 
 /**
  * A pill keeps its face across, and a fixed px distance from the nearer corner of that face along it
@@ -1418,7 +1422,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // link ends on, so it is a child of that port's pill, stated from the pill's own top-left: a
       // pill moved by hand carries its mark with it, where an absolute mark stayed behind. A port
       // that draws no pill is a child of its node, stated from the node's top-left (issue 03), at the
-      // point the model gives. It paints with its host now, not with the overlay layer.
+      // point the model gives. It paints with its host now, not with the overlay layer. A mark on a
+      // node keeps absolute geometry, so a resized node leaves it at its old offset; unlike a pill
+      // (issue 07) it is not anchored to its face yet, and a follow-up ticket covers it.
       // On a pill the mark sits on the pill's outward point, where the connector really ends: the
       // anchor is the pill's centre, and a mark there covers the port's name (maintainer, 2026-09-15).
       const ends = link.path!.segments;
@@ -1491,7 +1497,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       });
     };
     // Every end of the bus geometry is a joint: a 2 px invisible, locked vertex, a child of a member's node or pill and
-    // stated from its top-left, so a node dragged by hand carries its stub's end and its piece of the bar with it. A free
+    // stated from its top-left, so a node dragged by hand carries its stub's end and its piece of the bar with it. A joint and a
+    // bus mark keep absolute geometry: on a node (not a pill) a resize leaves them at their old offset, unlike a pill (issue 07);
+    // a follow-up ticket covers them. A free
     // end (`sourcePoint`/`targetPoint`) stays behind, and draw.io shows it as a loose handle (issue 04).
     // The bar is one edge per pair of neighbouring joints, so a move bends the bar beside the moved node only, and every
     // stub stays on its own joint. Ids are `pg-busJoint~<bus>~<n>`, with `n` the joint's place along the bar: no author

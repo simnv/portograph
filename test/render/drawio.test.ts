@@ -1971,4 +1971,17 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
       expect(pills).toBeGreaterThan(0);
       expect(followers).toBeGreaterThan(0);
     }, 60000);
+
+  it.each([1e-13, -1e-13])('measures a pill centred to within float noise (%s px) from the start corner', async noise => {
+    // The pipeline freezes its model; the noise goes into a copy.
+    const model = structuredClone(await pipeline(fixture('a-card-node-holds-its-ports-on-every-face')));
+    const node = model.nodes['crowd']!;
+    const port = node.ports.find(item => item.side === 'top' && item.pill !== undefined)!;
+    const pill = port.pill!.bounds;
+    // The fixture centres this pill on its face exactly; the noise is what float arithmetic leaves on a centred pill.
+    expect(pill.x + pill.width / 2).toBeCloseTo(node.bounds!.x + node.bounds!.width / 2, 9);
+    port.pill!.bounds = { ...pill, x: pill.x + noise };
+    const cell = cells(drawio(model)).get(id('port', 'crowd', port.ref.name!, String(port.ref.ordinal)))!;
+    expect([cell.geometry['x'], cell.geometry['y']]).toEqual(['0', '0']);
+  }, 60000);
 });
