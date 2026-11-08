@@ -1,8 +1,8 @@
 # Expected: up-2 has a named port on its bottom side, and its link to low-1 passes the core tier as one straight vertical line. The
 # stem is 15 px and the turned pill is 31 px deep, so the stem ends 0.5 px inside the pill. The visible end is the stem end, not the
 # pill face beyond it (D-Q7, `visibleEnd`), and draw.io exports the straight link as `edgeStyle=none` (Q118), not as orthogonal.
-# `low-1` feeds `floor-1` one tier lower, so `lower` links to a lower tier: it is no float component and stays below the core tier
-# (group lift, D-Q5, ticket 08).
+# `low-1` feeds `floor-1` one tier lower. Without it `lower` would rise into the core band (group lift, D-Q5, ticket 08); with it,
+# `lower` and `floor` rise only as one component, whose trial is declined (more canvas area), so `lower` stays under the core tier.
 # Source: decision-review ticket 13 review (M1, M2).
 portograph: 2
 profile: network
