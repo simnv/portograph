@@ -1,7 +1,6 @@
 import type { Point } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
-import { effectiveLayer } from '../score/model.js';
-import { endPort } from './approach.js';
+import { effectiveLayer, linkPort } from '../score/model.js';
 import { isRoutedChord } from './frame-paths.js';
 import { overlayEndpoint } from './overlay-paths.js';
 
@@ -15,7 +14,7 @@ import { overlayEndpoint } from './overlay-paths.js';
  *   ends on the port's own **outward face** (`overlayEndpoint`). The overlay layer is masked out of
  *   the pill, and a chord has no stem, so a run inside the pill would never be drawn.
  *
- * An end on an **approach** (ticket 15, phase 6) is read from the virtual port `endPort` gives: its
+ * An end on an **approach** (ticket 15, phase 6) is read from the virtual port `linkPort` gives: its
  * anchor stands on the pill's tangential edge, so the anchor and the face are one point.
  */
 
@@ -29,7 +28,7 @@ export const chordBuilt = (model: LayoutModel, link: LayoutLink): boolean =>
  * its anchor. `undefined` when the end names a missing port or a port with no anchor.
  */
 export function pathEnd(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): Point | undefined {
-  const port = endPort(model, link, end);
+  const port = linkPort(model, link, end);
   if (port?.anchor === undefined) return undefined;
   return (chordBuilt(model, link) ? overlayEndpoint(model.nodes[port.ref.node], port) : undefined) ?? port.anchor;
 }
@@ -46,8 +45,9 @@ export function visibleEnd(model: LayoutModel, link: LayoutLink, end: 'from' | '
   const segments = link.path?.segments;
   if (!segments?.length) return undefined;
   const at = end === 'from' ? segments[0]!.from : segments.at(-1)!.to;
-  if (link.attachments?.[end] === undefined || link.approach?.[end] !== undefined || chordBuilt(model, link)) return at;
-  const port = endPort(model, link, end);
+  // A hand-built model may state no attachments; its end is then the path end, as the renderers always drew it.
+  if (link.attachments === undefined || link.approach?.[end] !== undefined || chordBuilt(model, link)) return at;
+  const port = linkPort(model, link, end);
   if (!port?.pill || port.ref.anonymous === true || !port.side) return at;
   return overlayEndpoint(model.nodes[port.ref.node], port) ?? at;
 }
