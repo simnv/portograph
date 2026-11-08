@@ -4,12 +4,15 @@ import { layout, parse } from '../../src/index.js';
 import { SkeletonError } from '../../src/layout/skeleton.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
 import { MAX_RERUNS } from '../../src/pipeline/index.js';
+import { LIFT_TRIALS } from '../../src/layout/lift.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
  * The placement budget (architecture ticket 22, Q111): a command places at most `MAX_RERUNS` + 1 times, whatever rounds fire. The cap is asserted in one place, at the entry of
- * the pipeline's `place`; a round that asks for more has its trial refused.
+ * the pipeline's `place`; a round that asks for more has its trial refused. The group lift (ticket 08) judges a lift on whole command runs: the
+ * no-lift run and at most `LIFT_TRIALS` trial runs, each under its own cap. So a command with a float component places at most
+ * (`MAX_RERUNS` + 1) x (1 + `LIFT_TRIALS`) times, and one pipeline run (the lift off) at most `MAX_RERUNS` + 1 times.
  */
 const SHEETS = [
   'ref/hand-solves/09-flank-link-around-a-neighbour.yaml',
@@ -23,9 +26,15 @@ const SHEETS = [
 describe('placements per command', () => {
   it.each(SHEETS)('%s never places past the cap', async sheet => {
     resetAttemptCounters();
-    await layout(parse(readFileSync(sheet, 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    await layout(parse(readFileSync(sheet, 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
     expect(attemptCounters.placeRuns).toBeLessThanOrEqual(MAX_RERUNS + 1);
     expect(attemptCounters.placeRuns).toBeGreaterThanOrEqual(1);
+    // With the lift: each run of the command keeps its cap, and the runs are bounded by count (R4).
+    resetAttemptCounters();
+    let trials = 0;
+    await layout(parse(readFileSync(sheet, 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftTrace: () => { trials++; } });
+    expect(trials).toBeLessThanOrEqual(LIFT_TRIALS);
+    expect(attemptCounters.placeRuns).toBeLessThanOrEqual((MAX_RERUNS + 1) * (1 + trials));
   }, 120000);
 });
 

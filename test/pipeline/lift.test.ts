@@ -100,7 +100,7 @@ describe('group lift: the fixture and the key sheet', () => {
 });
 
 describe('group lift: the record (absent and empty)', () => {
-  it('is absent under layout.autoArrange: false, empty on a sheet with no float component, and lists a component when one is found', async () => {
+  it('is absent under layout.autoArrange: false and on a sheet with no float component, and lists a component when one is found', async () => {
     const off = await run(withLayout(fixture(NAME), '{ autoArrange: false }'));
     expect(off.groupLifts).toBeUndefined();
     expect(off.groups.lab!.tier).toBe(1);
@@ -115,7 +115,10 @@ nodes:
 links:
   - [x, y]
 `);
-    expect(none.groupLifts).toEqual([]);
+    // Nothing to decide: one run and no record, as `groupArrangements` when stage 5 has nothing to choose.
+    expect(none.groupLifts).toBeUndefined();
+    // `[]` (decided, none) restores like the absent record: no member, no band moved.
+    expect(() => restoreLayoutModel(JSON.stringify({ ...JSON.parse(serializeLayoutModel(none)) as object, groupLifts: [] }))).not.toThrow();
   }, 120000);
 });
 

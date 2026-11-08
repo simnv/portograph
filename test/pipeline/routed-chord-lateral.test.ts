@@ -7,6 +7,8 @@ import { chordTrace, pitchRefused, tooClose } from '../../src/layout/side-chords
 import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
+// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
 
 /** Ticket 117 (docs/design/side-faces.md, Section 9; docs/design/routed-chords.md, Section 3): a routed chord leaves a lateral side. */
 const FAR = 'a-location-router-leaves-a-lateral-side-toward-a-far-provider';
@@ -15,7 +17,7 @@ type Link = LayoutModel['links'][number];
 interface Counted { model: LayoutModel; places: number }
 async function run(extra: Partial<Parameters<typeof layout>[1]> = {}): Promise<Counted> {
   let places = 0;
-  const model = await layout(parse(source), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, ...extra });
+  const model = await layout(parse(source), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, ...extra });
   return { model, places };
 }
 const strip = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' || key === 'reservations' ? undefined : value);
@@ -70,7 +72,7 @@ describe('a routed chord leaves a lateral side', () => {
   it('a diagram with no routed candidate for a side is the layout the round makes when it is switched off', async () => {
     const name = 'a-routed-link-between-frames-draws-straight';
     const text = readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
+    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true };
     const one = await layout(parse(text), options), two = await layout(parse(text), { ...options, testMaxReruns: 0 });
     expect(strip(one)).toBe(strip(two));
   }, 60000);

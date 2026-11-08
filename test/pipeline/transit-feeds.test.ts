@@ -5,8 +5,10 @@ import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.j
 import type { LayoutModel } from '../../src/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
+// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
 
-const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
 const anchorOf = (model: LayoutModel, ref: { node: string; name?: string }) =>
   model.nodes[ref.node]!.ports.find(port => port.ref.name === ref.name)!.anchor!;
 

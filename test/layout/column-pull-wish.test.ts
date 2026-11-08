@@ -9,6 +9,8 @@ import { score } from '../../src/score/index.js';
 import { targetTap } from '../../src/layout/alignment-targets.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
+// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
 
 /**
  * Architecture-2 ticket 74: the column pull (`holdColumnAxes`) pooled a frame that pulls toward a fixed feed with a unit whose feeds are the
@@ -19,7 +21,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * centring window reads the gap G9 reads beside a frame (`besideGap`).
  */
 const SOURCE = readFileSync(new URL('../../goldens/synthetic/a-unit-with-no-feed-range-stands-until-pushed.yaml', import.meta.url), 'utf8');
-const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
+const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true };
 
 /** The sheet with n5 in slot `slot` of the g0 row (the node order of the document is the row order). */
 function inSlot(source: string, slot: number): string {

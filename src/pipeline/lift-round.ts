@@ -6,21 +6,20 @@
  * ends the whole command and never picks a layout.
  */
 import type { Diagnostic, GroupLift, LayoutModel } from '../model/index.js';
-import { floatComponents, LIFT_AREA_TOLERANCE, LIFT_TRIALS, liftEntry, measureLifts } from '../layout/lift.js';
+import { LIFT_AREA_TOLERANCE, LIFT_TRIALS, liftEntry, measureLifts } from '../layout/lift.js';
 import { judgeLift } from '../layout/lift-judge.js';
 import type { LayoutOptions } from './options.js';
 import { restoreLayoutModel } from '../layout/mutation.js';
 import { serializeLayoutModel } from '../model/model.js';
-import { resolve } from '../resolve/index.js';
 import { CommandDeadlineError } from './budget.js';
 
 /**
- * The lift decision of one command. A document with no float component runs once with an empty record. Otherwise the no-lift run is the
- * first baseline; a kept trial is the next. The tolerant area judge reads the no-lift run and the kept run with the least area. The published
+ * The lift decision of one command whose document has a float component in the first slice (`layoutOnce` runs any other document once,
+ * with no record). The
+ * no-lift run is the first baseline; a kept trial is the next. The tolerant area judge reads the no-lift run and the kept run with the least area. The published
  * model of the best run carries the command's whole record (a restore of its JSON with the record and the notes, so the record is validated).
  */
 export async function decideLifts(document: LayoutModel['document'], options: LayoutOptions, run: (options: LayoutOptions) => Promise<LayoutModel>): Promise<LayoutModel> {
-  if (!floatComponents(resolve(document)).length) return run({ ...options, fixedLifts: [] });
   let best = await run({ ...options, fixedLifts: [] });
   const noLift = best;
   let smallest = best;
@@ -48,7 +47,9 @@ export async function decideLifts(document: LayoutModel['document'], options: La
       let trial: LayoutModel | undefined;
       try { trial = await run({ ...options, fixedLifts: [...record, tried] }); } catch (error) {
         if (error instanceof CommandDeadlineError) throw error;
-        return { reason: `the command refused it (${String((error as Error).message ?? error).slice(0, 240)})` };
+        const reason = `the command refused it (${String((error as Error).message ?? error).slice(0, 240)})`;
+        options.testLiftTrace?.({ entry: tried, routedBase: best, routedTrial: undefined, reason });
+        return { reason };
       }
       const verdict = judgeLift(best, trial, new Set(tried.sideEntry ?? []), { noLift, smallest, T: LIFT_AREA_TOLERANCE });
       options.testLiftTrace?.({ entry: tried, routedBase: best, routedTrial: trial, reason: verdict.reason });

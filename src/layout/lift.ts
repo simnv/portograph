@@ -11,9 +11,9 @@
  *
  * Decided at placement (the load-bearing rule): the command runs once with no lift, the components are measured on its published model
  * (`measureLifts`, a band estimate), and each candidate runs the whole command again with the record as stage-1 band input (`applyLifts`);
- * the judge (`judgeLift`) keeps it on the published result. Stored as `groupLifts` (absent = not decided, `[]` = decided, none). The document
- * tier is never rewritten, only the band (`LayoutGroup.tier`) of a member group. `validateGroupLifts` checks the record at every publication
- * and at restore (R1, R5).
+ * the judge (`judgeLift`) keeps it on the published result. Stored as `groupLifts` (absent = nothing to decide: no float component in the
+ * first slice; `[]` = decided, none). The document tier is never rewritten, only the band (`LayoutGroup.tier`) of a member group.
+ * `validateGroupLifts` checks the record at every publication and at restore (R1, R5).
  */
 import type { LayoutModel, GroupLift, LayoutGroup, Frame } from '../model/layout.js';
 import type { Rect } from '../model/geometry.js';

@@ -10,6 +10,8 @@ import { stepOutOfChords } from '../../src/layout/overlay-place.js';
 import { moveGroup } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
+// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
 
 // The step refuses a move that leaves the picture worse (architecture ticket 13, phase 4: by the order of the user, a net gain may bend a link, so the
 // refusal needs a loss). The geometry cannot force that (a chord that is straight with the group in place is straight without it, so it bans its own
@@ -31,7 +33,7 @@ vi.mock('../../src/layout/overlay-paths.js', async importOriginal => {
 
 it('undoes a move that would leave the overlay links worse, and warns', async () => {
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-group-with-no-links-stands-in-a-straight-chord.yaml', import.meta.url), 'utf8');
-  const model = structuredClone(await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
+  const model = structuredClone(await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true }));
   const key = model.groups['key']!;
   // Stand the group across the chord again, then let the step try.
   moveGroup(model, key, 12 - key.bounds!.x, 0);

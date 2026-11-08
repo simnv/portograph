@@ -14,9 +14,11 @@ import { CHORD_WINDOW_TRIALS, EVENT_TRIALS, chordWindows, drawn, overlayCrossing
 import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
+// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
 const centreX = (box: Rect): number => box.x + box.width / 2;
 const right = (box: Rect): number => box.x + box.width;
 const bentTo = (model: LayoutModel, group: string): string[] => model.links

@@ -25,8 +25,8 @@ the groups that did not lift, and a lifted unit gets the record checks instead (
 whole units, a float component, each member in its recorded band, a fed node never above its
 feeder, a side entry level with it, the push the record gives).
 
-The decision is placement input, stored as `groupLifts` (absent = not decided, `[]` = decided,
-none) and applied at stage 1 (`applyLifts`) of every placement run of the command; nothing is
+The decision is placement input, stored as `groupLifts` (absent = nothing to decide: no float component in the
+first slice, as `groupArrangements`; `[]` = decided, none) and applied at stage 1 (`applyLifts`) of every placement run of the command; nothing is
 found during routing. The command runs once with no lift and once per trial; a trial is kept on
 its published result. The bound is `LIFT_TRIALS` = 2 trials per command (R4), with
 `GROUP_LIFT_CAPPED` for a component past it (the value of the lift PoCs, choice L6; each trial
