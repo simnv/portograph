@@ -44,8 +44,10 @@ export const JOINT_TRANSIT_SIDES = 4;
 /** The most row-order combinations one group order judges; above it, each row alone, and the n-th builder of every row together. */
 export const JOINT_ROW_ORDERS = 16;
 
-/** Two keys nearer than this are one key. */
+/** Two keys nearer than this are one key: a normalised rank, dimensionless (not the ordinal `SAME_KEY` of `feed-order.ts`). */
 const SAME_FEED_KEY = 1e-6;
+/** The authored order of a far port shifts its normalised feed key by this much per order unit: a deliberate tie-break, not numerical noise. */
+const AUTHOR_ORDER_KEY_STEP = 1e-4;
 
 type CorridorSide = 'left' | 'right';
 /** The sides of the transit corridors of one sub-tier, in the order of `transitLinks`; undefined when no corridor passes. */
@@ -175,7 +177,7 @@ export function rowFeedCandidates(model: LayoutModel, links: JointLinks, row: La
       const { from, to } = link.attachments!;
       const far = from.node === node ? to : to.node === node ? from : undefined;
       if (far === undefined || own.has(far.node)) continue;
-      const order = findPort(model, far)?.authorOrder, shift = order !== undefined ? order * 1e-4 : 0;
+      const order = findPort(model, far)?.authorOrder, shift = order !== undefined ? order * AUTHOR_ORDER_KEY_STEP : 0;
       if (rankUp.has(far.node)) upVals.push(rankUp.get(far.node)! + shift);
       else if (rankDown.has(far.node)) downVals.push(rankDown.get(far.node)! + shift);
     }

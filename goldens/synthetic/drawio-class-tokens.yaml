@@ -1,0 +1,33 @@
+# Expected: Paint follows the class cascade in both renderers (draw.io ticket 13, R1). A class with a token the theme does not
+# know keeps its known paint: `extra-router` (`router extra`) has the pills of `plain-router` (`router`), and the
+# `dashed extra` link has the stroke and dash of the `dashed` one. Stage 3 gives `router extra` no icon and the legend lists
+# it as its own class with no swatch; that is outside the renderers (recorded by draw.io ticket 13, not fixed by it). The order of the port tokens changes nothing: `uplink up down`
+# and `uplink down up` both take the `down` stroke and dash, the later status rule of the theme sheet.
+# Test-only input owned by draw.io ticket 13 (`test/render/shared.test.ts`); the whole pipeline runs, so no stage precondition is needed.
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  extra-router:
+    group: upper
+    class: router extra
+    label: Router A
+    ports:
+      - { name: down, side: bottom }
+  plain-router:
+    group: upper
+    class: router
+    label: Router B
+    ports:
+      - { name: down, side: bottom }
+  border:
+    group: lower
+    class: tbr
+    label: Border C
+    ports:
+      - { name: one, side: top, class: uplink up down }
+      - { name: two, side: top, class: uplink down up }
+links:
+  - [extra-router.down, border.one, { class: dashed extra }]
+  - [plain-router.down, border.two, { class: dashed }]

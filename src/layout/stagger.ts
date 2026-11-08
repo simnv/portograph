@@ -10,7 +10,7 @@ import { fitRegionGroup } from './regions.js';
 import { nodeObstacleReach, routedStroke } from './bands.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { ASPECT_EPS, PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { rowGap } from './sides-two.js';
@@ -429,8 +429,6 @@ function aspectOf(model: LayoutModel): { width: number; height: number } | undef
   return canvas !== undefined && canvas.width > 0 && canvas.height > 0 ? { width: canvas.width, height: canvas.height } : undefined;
 }
 const size = (box: { width: number; height: number } | undefined): string => box === undefined ? 'unmeasured' : `${box.width.toFixed(2)} x ${box.height.toFixed(2)} px`;
-/** A stagger must bring |ln(W/H)| down by more than this to count as nearer square (a float tolerance, not a design margin). */
-const ASPECT_EPS = 1e-9;
 
 /** The first rule that keeps `group` one row before any draft (ticket 51), or undefined when stage 5 may try it. */
 function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): string | undefined {

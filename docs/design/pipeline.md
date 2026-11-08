@@ -28,6 +28,13 @@ Three principles, each learned the hard way:
    Dimensions never shrink below their current content or author floor. Anything a later stage
    moves must be re-validated; placement freezes after stage 7f.
 
+Every stage that counts turns or crossings reads one predicate for each (decision review 2026-11, D-Q6). A turn is
+`pieceTurns` of `src/geometry/planar.ts` (`pathBends` reads a link with it): a change of direction or a reversal, a
+collinear or zero-length piece is no turn. A proper crossing is `strictCrossing` of `src/layout/read/crossings.ts`: two
+segments meet at a point that is farther than the planar `EPS` from every end, never a fraction of the segment. The course
+round counts the links a polyline crosses with `polylinesCross`, a pair once. Tolerances have named owners
+(`src/layout/tolerance.ts`, `src/geometry/planar.ts`); `CODING_STANDARDS.md` R10 states the rule.
+
 ---
 
 ## Stage 0 — parse
@@ -1115,9 +1122,10 @@ minimum of one. Contradictory intermediate lane order fails with
 
 Route a clear full-width centreline and offset its members. Aligned clear bundles stay straight.
 Bent channels expose `envelopeParts` as swept rectangles and `envelope` as their union. Author
-inversions use isolated adjacent-swap cells, unless the bundle is heavily inverted (ADR-0017) and
-the existing geometry holds the member gap, when each member is drawn as stem, one straight
-diagonal, stem instead; an infeasible bundle keeps the staircase. Every strict crossed member pair is independently
+inversions use isolated adjacent-swap cells, unless the gap holds the member pitch (ADR-0017 as
+amended by ticket DR-03: both stems fit between the placed faces and the existing geometry holds
+the member gap), when each member is drawn as stem, one straight diagonal, stem instead; the
+inversion count plays no part, and an infeasible bundle keeps the staircase. Every strict crossed member pair is independently
 checked against the endpoint inversions; undeclared bend contacts and overlaps fail. Complete
 member paths follow authored source-to-target direction even when bundle orientation differs.
 Lane runs and the latest rebuilt bar hints/slots remain constraints. Every actual `barCross`
@@ -2222,6 +2230,14 @@ declaration either. The generated locks restate the measured stroke widths and t
 or a shadow — is held by that one parser policy on both routes, not restated per element.
 The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
 one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
+
+**What both renderers compute is stated once** (`render/shared.ts`, draw.io ticket 13). The theme sheet is a table of paint rules
+(`paintRules`): the SVG writes it as CSS, and the draw.io export resolves each cell's paint from the same table by the CSS cascade
+(`resolvePaint`: the more specific rule wins, then the later one), on the classes the SVG element carries. A class token the theme
+does not know, or the order of the tokens, changes the paint in neither. The glyph box in an icon tile (`iconGlyphBox`: the inset,
+1.5 px or the card's own, is at most a quarter of each tile side) and the runs of a path (`pathRuns`: a new run where a segment does
+not start at the end of the one before, at the planar tolerance) are the other two. The SVG starts a subpath per run; draw.io writes
+a connector per run.
 
 **Every text outside node bodies carries a halo** (ticket 162, ADR-0023): group titles, link, multiplicity and bus labels and
 legend labels have the class `pg-halo` and a depth class `pg-halo-<n>`, where `n` counts the group boxes behind the text's centre

@@ -17,7 +17,7 @@ import { moveGroup } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { groupShape } from './grid.js';
 import { crosses } from './overlay-paths.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { COLUMN_SETTLE_EPS, PLACEMENT_EPS } from './tolerance.js';
 import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 
 /**
@@ -976,7 +976,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
       const next = fit(lefts.map((left, at) => Math.min(Math.max(left, standing[at]!.from), standing[at]!.to)));
       const change = Math.max(...next.map((left, at) => Math.abs(left - lefts[at]!)));
       lefts = next;
-      if (change < 1e-9) break;
+      if (change < COLUMN_SETTLE_EPS) break;
     }
     return lefts;
   };

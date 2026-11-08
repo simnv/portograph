@@ -20,10 +20,9 @@ import { GeometryLocks, HALO_CLASS, haloCss, haloDepthClass, sheetClassWashCss, 
 import { legendKeyRadius, themeById } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
+import { iconGlyphBox, pathRuns } from './shared.js';
 
 export { OVERLAY_ENDPOINT_RADIUS };
-/** Inset of a scaled icon glyph inside its measured tile, so the tile keeps a visible border. */
-const ICON_INSET = 1.5;
 const MASK_ID = 'pg-overlay-mask';
 /** The mask of one line that a text cuts (ticket 162; it replaced the routed layer's one mask of ticket 16). */
 const LINE_MASK_ID = 'pg-line-mask';
@@ -49,7 +48,6 @@ export interface RenderOptions {
 
 const nodeStroke = (node: LayoutNode): number => node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node;
 const centre = (box: Rect): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
-const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS && Math.abs(a.y - b.y) <= EPS;
 
 /** `node.port#ordinal` for a named port; anonymous ports draw nothing and need no identity. */
 const portId = (node: string, name: string, ordinal: number): string => `${node}.${name}#${ordinal}`;
@@ -81,14 +79,12 @@ function checkOptions(options: RenderOptions): void {
   }
 }
 
-/** `d` for one chain of segments, starting a new subpath wherever the model's chain breaks. */
+/** `d` for one chain of segments: one subpath per run (`pathRuns`), so a new one starts wherever the model's chain breaks. */
 function pathData(segments: readonly PathSegment[]): string {
   const parts: string[] = [];
-  let previous: Point | undefined;
-  for (const segment of segments) {
-    if (!previous || !samePoint(previous, segment.from)) parts.push(`M${num(segment.from.x)} ${num(segment.from.y)}`);
-    parts.push(`L${num(segment.to.x)} ${num(segment.to.y)}`);
-    previous = segment.to;
+  for (const run of pathRuns(segments)) {
+    parts.push(`M${num(segments[run.first]!.from.x)} ${num(segments[run.first]!.from.y)}`);
+    for (const segment of segments.slice(run.first, run.last + 1)) parts.push(`L${num(segment.to.x)} ${num(segment.to.y)}`);
   }
   return parts.join(' ');
 }
@@ -176,13 +172,12 @@ function textElement(label: LayoutLabel, locks: GeometryLocks, structural: strin
 }
 
 function iconElement(icon: { icon: string; bounds: Rect; inset?: number; radius?: number }, locks: GeometryLocks, authored: string | undefined, themeRadius: number): string {
-  const box = icon.bounds, radius = icon.radius ?? themeRadius;
-  const inset = Math.min(icon.inset ?? ICON_INSET, box.width / 4, box.height / 4);
+  const box = icon.bounds, radius = icon.radius ?? themeRadius, glyph = iconGlyphBox(box, icon.inset);
   return element('rect', { class: classes('icon-tile', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.pill)),
     x: box.x, y: box.y, width: box.width, height: box.height, rx: radius, ry: radius })
     + element('use', { class: classes('node-icon', authored, locks.stroke(DEFAULT_STROKE_WIDTHS.glyph)),
       href: `#pg-icon-${iconKey(icon.icon)}`,
-      x: box.x + inset, y: box.y + inset, width: box.width - 2 * inset, height: box.height - 2 * inset });
+      x: glyph.x, y: glyph.y, width: glyph.width, height: glyph.height });
 }
 
 /**

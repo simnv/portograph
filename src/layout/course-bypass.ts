@@ -5,6 +5,7 @@ import { bypassDepth, bypassRowIndex, RING_PITCH } from './course-rows.js';
 import { findPort } from './row-paths.js';
 import { nodeTier } from './read/tier.js';
 import { portId } from './skeleton-graph.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * The row bypass (architecture ticket 24, phase 5; docs/design/turn-order.md, Section 6). A routed link between two nodes of one row group, with a node of the row
@@ -118,8 +119,8 @@ export function admitBypassLanes(model: LayoutModel, link: LayoutLink, course: C
     for (const other of paths ? model.links : []) {
       if (other.id === link.id || other.path === undefined) continue;
       for (const segment of other.path.segments) {
-        const strict = Math.abs(segment.from.y - segment.to.y) < 1e-6 && segment.from.y > box.y + 1e-6 && segment.from.y < bottomOf(box) - 1e-6
-          && Math.min(segment.from.x, segment.to.x) < extent.x - 1e-6 && Math.max(segment.from.x, segment.to.x) > extent.x + 1e-6;
+        const strict = Math.abs(segment.from.y - segment.to.y) < PLACEMENT_EPS && segment.from.y > box.y + PLACEMENT_EPS && segment.from.y < bottomOf(box) - PLACEMENT_EPS
+          && Math.min(segment.from.x, segment.to.x) < extent.x - PLACEMENT_EPS && Math.max(segment.from.x, segment.to.x) > extent.x + PLACEMENT_EPS;
         if (strict) return { why: `The link ${other.id} runs across the stem beside ${end.ref.node}` };
       }
     }

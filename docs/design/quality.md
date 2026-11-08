@@ -93,7 +93,8 @@ worse.
 `counts` gives the raw counts of each link family, beside Q and outside it (Q reads only the routed
 layer). For `routed` and for `overlay`: `links`, `bent` (links with at least one bend) and `turns`
 (the bends of all links), and the `crossings`. A bend is a change of direction or a reversal between
-two segments (`pathBends`); a zero-length or collinear piece is no bend. Every count reads the
+two segments (`pathBends`, which reads `pieceTurns`, the one turn predicate of readers and gates); a zero-length or
+collinear piece is no bend, and the pieces on both sides of a zero-length piece are compared. Every count reads the
 published `path.segments`. Removed and pathless links are excluded, and so are stubs from the routed
 family. The routed `crossings` is the count that Q uses. The overlay `crossings` has one number per
 named mode of `src/layout/read/crossings.ts`, kept apart: `pairs` (path pairs that cross) and
@@ -259,9 +260,8 @@ command, the time is simply not a promise.
     ports level on one side are joined by a U whose run stands one overlay port clearance beyond the
     pill tips, never by a line on the tips (architecture-2 ticket 34, user 2026-10-25).
 
-A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
-bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again
-as the straight members, and only when the existing geometry holds the member gap between every pair of member segments G6 would measure, stems included). It carries `straight: true`, which G5 accepts only on a member of a bundle that owns the
+A **straight bundle member** is the single diagonal between the two stems of an inverted
+bundle (ADR-0017 as amended by ticket DR-03: when the gap holds the member pitch, that is, the channel between the placed faces holds both stems and the existing geometry holds the member gap between every pair of member segments G6 would measure, stems included; the inversion count and the drawn length play no part). It carries `straight: true`, which G5 accepts only on a member of a bundle that owns the
 segment, and only one per member — a second is a staircase of its own. G4 indexes such a segment — before the axis buckets, whatever its angle — on a uniform grid over the
 cells its run crosses and their neighbours, so an overlap longer than 1 px always shares a cell, and
 measures that overlap along the run. An ordinary run joins that grid too, in the cells a declared

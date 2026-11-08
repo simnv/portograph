@@ -12,6 +12,7 @@ import { portId } from './skeleton-graph.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { orderedNodeIds } from '../model/model.js';
+import { pointTurns } from '../geometry/planar.js';
 
 /**
  * Overlay ports nest (architecture-2 tickets 23 and 24, user 2026-10-23): on one face, the ports of overlay detours that arrive by parallel
@@ -75,7 +76,7 @@ export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel)
     });
     drawnPaths = new Map(links.map((link, index) => [link.id, points[index]!]));
     const shares = sharedTrackPairs(links.map((link, index) => ({ points: points[index]!, strokeWidth: linkStrokeWidth(link) }))).length;
-    const bent = points.filter(item => item.length > 2).length, turns = points.reduce((sum, item) => sum + Math.max(0, item.length - 2), 0);
+    const bent = points.filter(item => item.length > 2).length, turns = points.reduce((sum, item) => sum + pointTurns(item), 0);
     const crossings = overlayCrossingPoints(links.map((link, index) => drawn(points[index]!, [portKey(link.attachments!.from), portKey(link.attachments!.to)])));
     return [bent, turns, shares, crossings];
   };
