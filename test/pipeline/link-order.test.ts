@@ -68,6 +68,16 @@ describe('the canonical link order', () => {
     expect(gateFailures(score(model).snapshot)).toEqual([]);
   });
 
+  it('a perimeter lane stands one ring beyond the outermost earlier lane it meets, so no two lanes of one side share an x', async () => {
+    // With its nodes reversed this sheet met earlier lanes of rings 0 and 2 only; the old ring was their count, 2, and two lanes stood on one x.
+    const model = await run(reversed(fixture('synthetic/three-canton-groups-whose-grid-yields-to-the-pack'), 'nodes'));
+    const perimeter = model.lanes.filter(lane => lane.kind === 'perimeter');
+    for (const lane of perimeter) for (const other of perimeter) {
+      if (other === lane || other.side !== lane.side || other.bounds.y >= lane.bounds.y + lane.bounds.height || lane.bounds.y >= other.bounds.y + other.bounds.height) continue;
+      expect(other.ring).not.toBe(lane.ring);
+    }
+  }, 120000);
+
   it('m1-sip-edge lays out the same with its links reversed', async () => {
     const source = fixture('m1-sip-edge');
     const [base, model] = await Promise.all([run(source), run(reversed(source, 'links'))]);

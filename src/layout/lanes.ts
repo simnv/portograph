@@ -1484,7 +1484,7 @@ function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: Layo
 }
 /**
  * Stage 7a, after the side lanes: the perimeter lane of each course (ticket 15). The id, owner, side, ring and span are fixed here; the x is derived at the
- * replay that follows (`rebuildLaneExtents`). Rings are taken in course order: a lane stands outside every earlier lane of its side whose extent it meets.
+ * replay that follows (`rebuildLaneExtents`). Rings are taken in course order: a lane stands one ring outside the outermost earlier lane of its side whose extent it meets.
  */
 function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
   const placed: Lane[] = [];
@@ -1496,7 +1496,10 @@ function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: La
     const geometry = (ring: number) => courseGeometry(model, link, course, { ...draft, ring }, (group, item) => occ(group, item), ringsOf(placed), placed);
     const first = geometry(0);
     if (first === undefined) throw new CourseRefusal(`The course of ${link.id} cannot join one lane`);
-    const ring = placed.filter(lane => lane.side === course.side && lane.bounds.y < bottom(first.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > first.bounds.y + PLACEMENT_EPS).length;
+    // One ring beyond the outermost earlier lane it meets. A count of the lanes it meets is no ring: where the earlier lanes it meets are rings 0 and 2
+    // (ring 1 met only a lane it does not meet), the count gives 2 and the two lanes stand on one x (ticket DR-04: a sheet with its `nodes` reversed).
+    const met = placed.filter(lane => lane.side === course.side && lane.bounds.y < bottom(first.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > first.bounds.y + PLACEMENT_EPS);
+    const ring = met.length ? Math.max(...met.map(lane => lane.ring ?? 0)) + 1 : 0;
     const used = ring === 0 ? first : geometry(ring)!;
     const host = model.groups[model.document.nodes[used.upper.ref.node]!.group]!;
     const lane: Lane = { id: draft.id, kind: 'perimeter', owner: { kind: 'link', id: link.id }, layer: link.layer === 'overlay' ? 'overlay' : 'routed', group: host.id, tier: host.tier!, side: course.side,
