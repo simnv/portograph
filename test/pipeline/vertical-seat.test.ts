@@ -27,10 +27,11 @@ const lean = (model: LayoutModel, id: string): number => {
 
 describe('a step keeps the vertical it reached', () => {
   const text = source('a-step-keeps-the-vertical-it-reached');
-  it('keeps link-12 vertical once reached: 8 bends, one gap growth, no gap short', async () => {
+  it('keeps link-12 vertical once reached: 6 bends, one gap growth, no gap short', async () => {
     const model = await run(text);
     expect(lean(model, 'link-12')).toBeLessThanOrEqual(0.5);
-    expect(bends(model)).toBe(8);
+    // 8 bends before ticket DR-04; in the canonical link order the sheet has 6.
+    expect(bends(model)).toBe(6);
     expect(count(model, 'TIER_GAP_GROWN')).toBe(1);
     expect(count(model, 'TIER_GAP_PART_UNFIT')).toBe(0);
     expect(count(model, 'TIER_GAP_SOLVE_SHORT')).toBe(0);

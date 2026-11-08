@@ -6,6 +6,8 @@
 # shrinks with the body. Then `far` closes up toward `near` by 48 px, the width the trim freed, and the corridor of
 # `src-b` -> `sink-far` follows its port (architecture-2 ticket 69): canvas 395 to 346 px. Test `test/layout/end-trim.test.ts`
 # reads the layout.
+# The nodes are declared so that the canonical link order (decision review D-Q1, ticket DR-04) is the order the links are written in;
+# the order of the nodes inside each group is unchanged.
 portograph: 2
 groups:
   src: { tier: 0 }
@@ -13,11 +15,11 @@ groups:
   far: { tier: 2 }
   near: { tier: 2 }
 nodes:
+  sw-1: { group: access, class: switch, ports: [] }
+  sink-near: { group: near, class: server, ports: [] }
+  sw-2: { group: access, class: switch, ports: [] }
   src-a: { group: src, class: router, ports: [] }
   src-b: { group: src, class: router, ports: [] }
-  sw-1: { group: access, class: switch, ports: [] }
-  sw-2: { group: access, class: switch, ports: [] }
-  sink-near: { group: near, class: server, ports: [] }
   sink-far: { group: far, class: server, ports: [] }
 links:
   - [sw-1, sink-near]
