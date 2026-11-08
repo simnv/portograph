@@ -83,3 +83,9 @@ title yields to it.
 - The keep-out of 7f, which the new geometry reaches more often, now undoes a sweep that breaks or
   deepens a hard separation (G9), judged on the frames derived from the moved boxes. It restores the
   boxes and anchors exactly as they stood and states `KEEP_OUT_UNDONE`.
+
+## Amendment: a crossed title in draw.io (DX-06, user 2026-11-08)
+
+Point 5 no longer holds for a title with a non-empty `crossedBy`. In draw.io that title is a child of its group (the swimlane value, or a
+text cell inside the group), so it moves and copies with the group, and a link paints over it: the group lies under the Links layer.
+The SVG halo rule is unchanged.
