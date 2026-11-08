@@ -176,6 +176,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [bar-both-sides](synthetic/bar-both-sides.yaml) | 7d | Mirror bottom-fed drops and count crossings of intervening bars. |
 | [one-px-sources](synthetic/one-px-sources.yaml) | 7d | Keep the first slot; jog the second to the next pitch-safe slot and warn. |
 | [author-ordered-bundle](synthetic/author-ordered-bundle.yaml) | 7e | Preserve the reversed permutation with exactly three inversions and crossings. |
+| [a-bundle-with-two-inversions-draws-straight-when-the-gap-holds-the-pitch](synthetic/a-bundle-with-two-inversions-draws-straight-when-the-gap-holds-the-pitch.yaml) | 7e, G5, G6 | Ticket DR-03 (ADR-0017 as amended): four members, target order 2, 1, 4, 3, two inversions. The gap holds both stems and the member pitch, so every member draws stem, one diagonal, stem, with two member crossings; the inversion count plays no part. Before the amendment it drew two orthogonal crossover staircases (two inversions are not more than half of four, and the staircase was not 1.5 times as long). |
 | [both-margins-full](synthetic/both-margins-full.yaml) | 7a | Widen the canvas for transit lanes when both margins have zero capacity. |
 | [label-no-gap](synthetic/label-no-gap.yaml) | 7f | Widen the group, push its neighbour, and re-centre the affected child. |
 | [port-roles](synthetic/port-roles.yaml) | 9, 11 | Paint pills by role and status; list every role as a pill swatch in the legend; move nothing. |

@@ -1,0 +1,26 @@
+# Expected: Four bundle members, two strict endpoint inversions (target order 2, 1, 4, 3). The gap between the two faces holds both stems, and every pair of member segments keeps the member pitch, so each member draws stem, one diagonal, stem (ADR-0017); two member crossings, none outside the bundle, every gate passes.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  lower: { tier: 1 }
+nodes:
+  source:
+    group: upper
+    ports:
+      - { name: p, side: bottom, order: 1 }
+      - { name: p, side: bottom, order: 2 }
+      - { name: p, side: bottom, order: 3 }
+      - { name: p, side: bottom, order: 4 }
+  target:
+    group: lower
+    ports:
+      - { name: p, side: top, order: 1 }
+      - { name: p, side: top, order: 2 }
+      - { name: p, side: top, order: 3 }
+      - { name: p, side: top, order: 4 }
+links:
+  - [source.p#1, target.p#2, { route: bundle }]
+  - [source.p#2, target.p#1, { route: bundle }]
+  - [source.p#3, target.p#4, { route: bundle }]
+  - [source.p#4, target.p#3, { route: bundle }]

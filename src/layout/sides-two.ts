@@ -786,7 +786,7 @@ export function sweepTiers(model: LayoutModel): void {
     // A frame moved whole stands in every band it occupies: the columns of the other bands keep their band gap and slack from its box (`columnShifts`), as the rows rule keeps them.
     if (anyMixed && separateFrameColumns(model)) moved = true;
   }
-  if (moved) placementWarning(model, 'PLACEMENT_NON_CONVERGENCE', 'The sweep that seats the groups of a tier beside the frames did not settle in 16 rounds; final gates decide the retained geometry.', [], 'group');
+  if (moved) placementWarning(model, 'PLACEMENT_NON_CONVERGENCE', 'The sweep that seats the groups of a tier beside the frames did not settle in 16 rounds; the geometry kept is still checked by the publication and the final gates.', [], 'group');
 }
 
 /** The far ends of the links of every port, by port key (a link from a port to itself counts once). Stage 5 orders a face by them. */

@@ -1122,9 +1122,10 @@ minimum of one. Contradictory intermediate lane order fails with
 
 Route a clear full-width centreline and offset its members. Aligned clear bundles stay straight.
 Bent channels expose `envelopeParts` as swept rectangles and `envelope` as their union. Author
-inversions use isolated adjacent-swap cells, unless the bundle is heavily inverted (ADR-0017) and
-the existing geometry holds the member gap, when each member is drawn as stem, one straight
-diagonal, stem instead; an infeasible bundle keeps the staircase. Every strict crossed member pair is independently
+inversions use isolated adjacent-swap cells, unless the gap holds the member pitch (ADR-0017 as
+amended by ticket DR-03: both stems fit between the placed faces and the existing geometry holds
+the member gap), when each member is drawn as stem, one straight diagonal, stem instead; the
+inversion count plays no part, and an infeasible bundle keeps the staircase. Every strict crossed member pair is independently
 checked against the endpoint inversions; undeclared bend contacts and overlaps fail. Complete
 member paths follow authored source-to-target direction even when bundle orientation differs.
 Lane runs and the latest rebuilt bar hints/slots remain constraints. Every actual `barCross`
