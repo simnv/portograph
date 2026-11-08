@@ -15,6 +15,7 @@ import { foreignOverExtensions, trunkHeads } from './trunk.js';
 import { blockedChords } from './frame-paths.js';
 import { holds } from './reservation-checks.js';
 import { groupExitViolations, missingGroupExits } from './group-exit-check.js';
+import { PostconditionRefusal } from './placement-refusal.js';
 
 /**
  * The kinds a postcondition reads. `laneSide` is the lanes clear of every occupied box and no group across a lane it stood beside; `frozenChord`
@@ -28,6 +29,8 @@ export interface PostconditionViolation {
   /** The group, lane, link or ledger entry the finding is about. */
   subject: string;
   detail: string;
+  /** For `stored`: the ledger kind of the failed entry. */
+  ledger?: string;
 }
 
 /** Test and measurement only: called with every violation of every judged transaction. Unset in production. */
@@ -38,7 +41,7 @@ const message = (error: unknown): string => error instanceof Error ? error.messa
 /** Every violation of the net draft `after` of `rule`, against the entry model `before`. A check that cannot read its input is a violation (R6). */
 export function postconditionViolations(before: LayoutModel, after: LayoutModel, rule: 'bundles' | 'bands'): PostconditionViolation[] {
   const out: PostconditionViolation[] = [];
-  const add = (kind: PostconditionKind, subject: string, detail: string): void => { out.push({ rule, kind, subject, detail }); };
+  const add = (kind: PostconditionKind, subject: string, detail: string, ledger?: string): void => { out.push({ rule, kind, subject, detail, ...(ledger === undefined ? {} : { ledger }) }); };
   const attempt = (kind: PostconditionKind, run: () => void): void => {
     try { run(); } catch (error) { add(kind, 'check', `the check could not read the draft: ${message(error)}`); }
   };
@@ -98,12 +101,29 @@ export function postconditionViolations(before: LayoutModel, after: LayoutModel,
   // Stored kinds: no ledger entry fails that held at entry.
   attempt('stored', () => {
     const was = new Set(holds(before.reservations ?? [], before).map(item => item.id));
-    for (const failure of holds(after.reservations ?? [], after)) if (!was.has(failure.id)) add('stored', `${failure.kind}:${failure.id}`, failure.why);
+    for (const failure of holds(after.reservations ?? [], after)) if (!was.has(failure.id)) add('stored', `${failure.kind}:${failure.id}`, failure.why, failure.kind);
   });
   return out;
 }
 
-/** Judge the net draft of 7e or 7f before commit. Every violation goes to the sink; none refuses yet (DR-11, step 1: output neutral). */
+/**
+ * The kinds that stay advisory: a finding of these is reported, never refused. Each already ends as a named outcome that its owning rule reads
+ * (`SPAN_CHORD_BLOCKED` and the span round's judge, `STRAIGHT_LINK_BLOCKED`), and the corpus shows them only in trials that their own judge drops
+ * (DR-11 step 1, corpus at 1af7b324: frozenChord 5 sheets, spanCorridor 5 sheets; every other kind 0).
+ */
+export const ADVISORY_KINDS: ReadonlySet<PostconditionKind> = new Set<PostconditionKind>(['frozenChord', 'spanCorridor']);
+/**
+ * The ledger kinds whose new failure stays advisory: a `sideFace` failure shows once on the corpus, in a 7e trial that the round's own `holds`
+ * withdraws (`four-locations-each-with-a-zone`). Every other stored kind refuses.
+ */
+export const ADVISORY_LEDGER_KINDS: ReadonlySet<string> = new Set(['sideFace']);
+/** Whether a violation is reported only. */
+export const advisory = (item: PostconditionViolation): boolean => ADVISORY_KINDS.has(item.kind) || (item.ledger !== undefined && ADVISORY_LEDGER_KINDS.has(item.ledger));
+
+/** Judge the net draft of 7e or 7f before commit. Every violation goes to the sink; one of a refusing kind refuses the transaction whole. */
 export function judgePostconditions(before: LayoutModel, after: LayoutModel, rule: 'bundles' | 'bands'): void {
-  for (const violation of postconditionViolations(before, after, rule)) postconditionSink.hook?.(violation);
+  const found = postconditionViolations(before, after, rule);
+  for (const violation of found) postconditionSink.hook?.(violation);
+  const refused = found.filter(item => !advisory(item));
+  if (refused.length) throw new PostconditionRefusal(rule, refused);
 }

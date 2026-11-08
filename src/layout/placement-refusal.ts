@@ -7,9 +7,9 @@ import type { Owner } from '../model/index.js';
 
 /**
  * What refused: a side hint, a course, a span corridor, a trunk join, the centring invariant, the skeleton (ELK), a bundle path, the placement budget, a reservation of
- * the ledger or a stagger reservation (its seat, its stage-5 proof or its validator; ticket 51).
+ * the ledger, a stagger reservation (its seat, its stage-5 proof or its validator; ticket 51), a solid block, or a producer postcondition of 7e or 7f (DR-11).
  */
-export type RefusalCode = 'side' | 'course' | 'span' | 'trunk' | 'centring' | 'skeleton' | 'bundle' | 'budget' | 'ledger' | 'stagger' | 'solid-block';
+export type RefusalCode = 'side' | 'course' | 'span' | 'trunk' | 'centring' | 'skeleton' | 'bundle' | 'budget' | 'ledger' | 'stagger' | 'solid-block' | 'postcondition';
 
 export interface RefusalDetail {
   /** The pipeline or model stage that refused, when the source knows it. */
@@ -52,5 +52,15 @@ export const refusedAtBands = (error: unknown): error is PlacementRefusal => err
 export class SolidBlockRefusal extends PlacementRefusal {
   constructor(readonly blocks: ReadonlyMap<string, string>) {
     super('solid-block', [...blocks].map(([id, why]) => id + ': ' + why).join('; '), { stage: 'bundles' });
+  }
+}
+
+/**
+ * The net draft of 7e or 7f breaks a reservation that held at entry (DR-11, `postconditions.ts`). In a round's trial it withdraws the trial; in the
+ * main line the command fails and names the reservation.
+ */
+export class PostconditionRefusal extends PlacementRefusal {
+  constructor(readonly rule: 'bundles' | 'bands', readonly findings: readonly { kind: string; subject: string; detail: string }[]) {
+    super('postcondition', `Postcondition of ${rule} failed: ${findings.map(item => `${item.kind} ${item.subject}: ${item.detail}`).join('; ')}`, { stage: rule });
   }
 }
