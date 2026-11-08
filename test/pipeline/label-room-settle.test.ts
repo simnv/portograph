@@ -5,7 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { LINK_LABEL_GEOMETRY, haloSize, reservedLinkRuns } from '../../src/layout/link-labels.js';
 import { labelBorders, labelRunWindows, windowHolds } from '../../src/layout/run-label-box.js';
 import { labelRoomUnsettledFault, reserveLinkLabelRoom, tierGapShortfall, validateGroupLabelBands, type LinkLabelShortfall } from '../../src/layout/bands.js';
-import { holdsMove } from '../../src/layout/move-reservations.js';
+import { holdsMove, resizeEvidence, resizeHolds } from '../../src/layout/move-reservations.js';
 import { solveTierGaps } from '../../src/layout/gap-room.js';
 import { attemptTimings, resetAttemptTimings } from '../../src/layout/attempt-timings.js';
 import { replayGridAndBands, replayRegions, settleRound, type AttemptTraceEvent, type SettleStep } from '../../src/layout/placement-attempt.js';
@@ -142,4 +142,35 @@ it('a close-up keeps the row room of a same-tier labelled link (ticket DR-02)', 
   // A move that shifts the ends of a described same-tier link apart is judged by the producer's reading; one that moves nothing is not.
   const group = model.groups[model.document.nodes['loc-b-ac1']!.group]!;
   expect(holdsMove(model, [{ group, bounds: { ...group.bounds! } }], false, ['labelRoom'])).toBe(true);
+}, 120000);
+
+const closeUpFixture = readFileSync(new URL('../../goldens/synthetic/a-close-up-keeps-the-row-room-of-a-same-tier-label.yaml', import.meta.url), 'utf8');
+
+// Ticket DR-02, the refusal path: the guard refuses a move that shortens the room of a labelled same-tier link and allows one that lengthens it.
+it('holdsMove refuses a move that shortens a same-tier row room and allows one that lengthens it (ticket DR-02)', async () => {
+  const model = await run(closeUpFixture);
+  const move = (node: string, dx: number): boolean => {
+    const group = model.groups[model.document.nodes[node]!.group]!;
+    return holdsMove(model, [{ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }], false, ['labelRoom']);
+  };
+  // loc-b -> loc-c is one labelled link of a tier; loc-a2 -> loc-b the other.
+  expect(move('loc-c-ac1', -60)).toBe(false);
+  expect(move('loc-b-ac1', -60)).toBe(false);
+  expect(move('loc-b-ac1', 60)).toBe(false);
+  expect(move('loc-c-ac1', 60)).toBe(true);
+  expect(move('loc-c-ac1', -5)).toBe(true);
+}, 120000);
+
+// The resize path (centring, the parent spread) moves bodies on the model, and `resizeHolds` reads the room again where they stand.
+it('resizeHolds refuses a resize that leaves a same-tier row room short (ticket DR-02)', async () => {
+  const model = await run(closeUpFixture);
+  const resized = (dx: number): boolean => {
+    const copy = structuredClone(model);
+    delete copy.groupExits;
+    const group = copy.groups[copy.document.nodes['loc-c-ac1']!.group]!, evidence = resizeEvidence(copy, group);
+    moveGroup(copy, group, dx, 0);
+    return resizeHolds(copy, group, evidence);
+  };
+  expect(resized(-60)).toBe(false);
+  expect(resized(60)).toBe(true);
 }, 120000);

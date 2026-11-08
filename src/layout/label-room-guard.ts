@@ -49,6 +49,11 @@ function rowShort(model: LayoutModel): Set<string> {
   return new Set(shortfalls.filter(isRow).map(item => item.link));
 }
 
+/** The links with a row shortfall on `model` (the evidence of a resize), or `undefined` when no link carries a label. */
+export function rowRoomShortOf(model: LayoutModel): string[] | undefined {
+  return model.document.links.some(link => link.label !== undefined) ? [...rowShort(model)] : undefined;
+}
+
 /** The links whose row room is short before the move: a move may not add one. Absent when no described link of one tier has its ends shifted apart. */
 export function rowRoomShortNow(model: LayoutModel, proposed: readonly ProposedBox[]): string[] | undefined {
   if (!model.document.links.some(link => link.label !== undefined)) return undefined;

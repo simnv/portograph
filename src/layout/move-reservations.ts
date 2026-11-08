@@ -16,7 +16,7 @@ import { foreignOverExtensions, trunkHeads, trunkXAfter } from './trunk.js';
 import { lanesHoldGrowth } from './growth-guard.js';
 import { chordsHold } from './frame-paths.js';
 import { findPort } from './row-paths.js';
-import { rowRoomHolds, rowRoomShortNow } from './label-room-guard.js';
+import { rowRoomHolds, rowRoomShortNow, rowRoomShortOf } from './label-room-guard.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 const isSpanLane = (lane: { kind?: string }): boolean => lane.kind === 'span';
 
@@ -137,6 +137,8 @@ export interface ResizeEvidence {
   trunks: Map<string, Set<string>>;
   /** The side lanes whose far port, a port of the group, stands on the lane x. */
   farOnLane: string[];
+  /** The links with a row shortfall; a resize adds none (DR-02). Absent when no link has a label. */
+  rowShort?: string[] | undefined;
 }
 const overExtensions = (model: LayoutModel): Map<string, Set<string>> =>
   new Map(trunkHeads(model).map(head => [head.id, new Set(foreignOverExtensions(model, head).map(item => `${item.group}|${item.bus}`))]));
@@ -148,13 +150,13 @@ export function resizeEvidence(model: LayoutModel, group: LayoutGroup): ResizeEv
     const far = sideLaneSource(link, lane), port = findPort(model, far);
     return group.nodes.includes(far.node) && port?.anchor !== undefined && Math.abs(port.anchor.x - lane.x) <= PLACEMENT_EPS ? [lane.id] : [];
   });
-  return { box: { ...group.bounds! }, riser: riserPenetrations(model, group), breaches: spanBreaches(model), trunks: overExtensions(model), farOnLane };
+  return { box: { ...group.bounds! }, riser: riserPenetrations(model, group), breaches: spanBreaches(model), trunks: overExtensions(model), farOnLane, rowShort: rowRoomShortOf(model) };
 }
 /**
  * Whether a resize of `group`, made on `model`, keeps what `evidence` read before it: every reserved lane window and span corridor meets the new box no
  * more than it met the old one (`lanesHoldGrowth`), every lane of the tier keeps its side of the occupied extent (`laneSidesHold`), no facing port goes
- * deeper in a riser keep-out, no new wall stands in a span corridor, no new foreign unit stands across a trunk extension, and every far port that stood
- * on its side lane still does. The exits of 7e are a record a resize does not read: a model that has them refuses (R6).
+ * deeper in a riser keep-out, no new wall stands in a span corridor, no new foreign unit stands across a trunk extension, every far port that stood
+ * on its side lane still does, and no same-tier link has a row room short that was not short before (DR-02). The exits of 7e are a record a resize does not read: a model that has them refuses (R6).
  */
 export function resizeHolds(model: LayoutModel, group: LayoutGroup, evidence: ResizeEvidence): boolean {
   if (model.groupExits?.length) return false;
@@ -162,6 +164,8 @@ export function resizeHolds(model: LayoutModel, group: LayoutGroup, evidence: Re
   if (!laneSidesHold(model, [{ group, bounds: group.bounds! }], false)) return false;
   if (!riserNoDeeper(evidence.riser, riserPenetrations(model, group))) return false;
   if ([...spanBreaches(model)].some(key => !evidence.breaches.has(key))) return false;
+  // The label room of a same-tier link (DR-02): the resize moves row nodes apart or together, and nothing reserves the room again.
+  if (evidence.rowShort !== undefined && (rowRoomShortOf(model) ?? []).some(id => !evidence.rowShort!.includes(id))) return false;
   for (const [head, pairs] of overExtensions(model)) for (const pair of pairs) if (!evidence.trunks.get(head)?.has(pair)) return false;
   return evidence.farOnLane.every(id => {
     const lane = model.lanes.find(item => item.id === id), link = lane === undefined ? undefined : laneLink(model, lane);
