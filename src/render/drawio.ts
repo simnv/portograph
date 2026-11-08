@@ -615,7 +615,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
   const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect, paint: Readonly<Record<string, StyleValue>>,
-    size = labelSize(label), backdrop?: string): void => {
+    size = labelSize(label), backdrop?: string, onEdge?: EdgeLabel): void => {
     // draw.io turns a cell's own rectangle about its centre. A turned label (ticket 20) records its
     // text rectangle (`turnedSize`), so the cell is that rectangle about the box centre, and draw.io
     // turns the rectangle the text really occupies. Any other label's `bounds` is its box: a quarter
@@ -623,7 +623,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // it takes every reserved angle — a straight bundle member's label is rotated to its own run
     // (ADR-0017), not to a quarter turn.
     // `spacingTop` turns with the text, so one value puts the first baseline where `render` does.
-    vertex(id, parent, styleString(['text'], {
+    const style = styleString(['text'], {
       strokeColor: 'none', fillColor: 'none', align: label.textAlign === 'start' ? 'left' : 'center', verticalAlign: 'middle',
       // A card's subtitle (ticket 159) starts at its box's left edge; draw.io starts left-aligned text `spacing` inside it.
       spacingLeft: label.textAlign === 'start' ? -LABEL_SPACING : undefined,
@@ -633,7 +633,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       rotation: label.textRotation ? label.textRotation : undefined,
       labelBackgroundColor: backdrop,
-    }), turnedCell(label, box), plainText(labelLines(label)));
+    });
+    if (onEdge === undefined) {
+      vertex(id, parent, style, turnedCell(label, box), plainText(labelLines(label)));
+      return;
+    }
+    // A child of an edge is stated along that edge (`relative=1`), as a link label is, so it follows the edge when a node moves.
+    cells.push(cellElement({ id: claim(id), value: plainText(labelLines(label)), style, vertex: 1, parent, connectable: 0 },
+      element('mxGeometry', { x: onEdge.x, y: onEdge.y, relative: 1, as: 'geometry' },
+        residualPoint(onEdge) || undefined)));
   };
 
   // ---- paint resolution -------------------------------------------------------------------
@@ -781,10 +789,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // band is only handed to draw.io when the reserved band really does hold a centred title:
     // otherwise the title keeps its measured box as a text cell and the container stays plain.
     // A frame's band sits in one of its cells, so it must also span the frame edge to edge.
-    // A title that links cross (`crossedBy`, architecture-2 ticket 54) must paint above them, with a backdrop for its halo: it goes to the
-    // labels layer as a text cell, never into its group's swimlane head, which paints under every link.
-    const crossed = (title?.crossedBy?.length ?? 0) > 0;
-    const centred = band !== undefined && title !== undefined && !crossed
+    // A title that links cross (`crossedBy`, ticket 54) is the group's own like any other (DX-06, user 2026-11-08): it moves and copies with
+    // its group. A container paints with its children, under the Links layer, so in draw.io a link paints over it; the SVG halo rule is unchanged.
+    // A group title has two forms: the swimlane value (a centred band) and a text cell child of the group (a title off the band's centre, or
+    // a band that does not span its frame, which a swimlane head cannot state).
+    const centred = band !== undefined && title !== undefined
       && Math.abs(centre(title.bounds!).x - centre(band.bounds).x) <= 0.5
       && Math.abs(centre(title.bounds!).y - centre(band.bounds).y) <= 0.5
       && (!frame || (Math.abs(band.bounds.x - bounds.x) <= 0.5 && Math.abs(band.bounds.width - bounds.width) <= 0.5
@@ -821,9 +830,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const holder = frame ? frameParent.get(id) : undefined;
     vertex(cellId('group', id), holder === undefined ? layerId('diagram') : cellId('group', holder), style,
       holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? plainText(labelLines(title!)) : undefined);
-    if (title && crossed) {
-      textCell(cellId('groupTitle', id), layerId('labels'), title, shiftRect(title.bounds!), titlePaint, undefined, backdrop(centre(title.bounds!)));
-    } else if (title && !swimlane) {
+    if (title && !swimlane) {
       textCell(cellId('groupTitle', id), cellId('group', id), title,
         relative(shiftRect(title.bounds!), box), titlePaint);
     }
@@ -1505,9 +1512,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         pill ? relative(box, pill.box) : box);
     }
     // The bar, one piece between each two neighbouring joints.
+    const pieces: { id: string; points: Point[] }[] = [];
     for (let index = 0; index + 1 < mine.length; index++) {
       const a = mine[index]!, b = mine[index + 1]!;
-      edgeCell(cellId('bus', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(a.id, b.id)), [a.at, b.at],
+      pieces.push({ id: cellId('bus', bus.id, String(index)), points: [a.at, b.at] });
+      edgeCell(pieces[index]!.id, layerId('overlay'), stroke(false, pinned(a.id, b.id)), [a.at, b.at],
         { source: a.id, target: b.id });
     }
     // The riser of a join is one more edge between the two bars, exported with the upper bus (mesh-bus.md, section 11.7);
@@ -1533,8 +1542,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
     const label = layout.labels.find(item => item.id === bus.label);
     if (label !== undefined && !label.omitted && label.bounds !== undefined) {
-      textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds),
-        textPaint(labelPath(classes('link-label', 'mesh-bus-label'), label.bounds, authorClass(bus.class))), undefined, backdrop(centre(label.bounds)));
+      // The label is a child of the bar piece nearest to it (DX-06), so it follows the bus when a member node moves. A bus with no
+      // bar piece (fewer than two joints) has nothing to follow and keeps the label on the labels layer.
+      const at = centre(shiftRect(label.bounds));
+      const near = (piece: { points: Point[] }): number => {
+        const on = project(at, { from: piece.points[0]!, to: piece.points[1]! });
+        return Math.hypot(at.x - on.x, at.y - on.y);
+      };
+      const piece = pieces.reduce<(typeof pieces)[number] | undefined>((best, item) => best === undefined || near(item) < near(best) ? item : best, undefined);
+      textCell(cellId('busLabel', bus.id), piece?.id ?? layerId('labels'), label, shiftRect(label.bounds),
+        textPaint(labelPath(classes('link-label', 'mesh-bus-label'), label.bounds, authorClass(bus.class))), undefined, backdrop(centre(label.bounds)),
+        piece === undefined ? undefined : edgeLabel(piece.points, at));
     }
   }
 

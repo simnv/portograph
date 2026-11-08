@@ -1882,4 +1882,22 @@ describe('a sheet class wash reads the same in the SVG and in draw.io (ticket 09
     expect(svg).toMatch(/<rect class="node-body switch pg-wash-\d+/);
     expect([...all.values()].filter(cell => cell.id.startsWith('pg-legendBody~')).length).toBeGreaterThan(0);
   }, 60000);
+  // DX-06 (audit A1-01, A1-06, A1-08): a title or a bus label is the child of what it names, never of a layer.
+  it('hangs a crossed group title on its group and a bus label on its bar, never on a layer', async () => {
+    const titled = cells(drawio(await pipeline(fixture('a-group-title-yields-with-a-halo'))));
+    const crossed = [...titled.values()].filter(cell => cell.id.startsWith('pg-groupTitle~'));
+    for (const cell of crossed) expect(cell.parent, cell.id).toBe(id('group', cell.id.slice('pg-groupTitle~'.length)));
+    expect(titled.get(id('group', 'access'))!.value ?? titled.get(id('groupTitle', 'access'))).toBeDefined();
+    const labelled = fixture('a-full-mesh-on-one-row-draws-as-one-bus').replace(/class: sync \}/g, 'class: sync, label: Sync }');
+    const model = await pipeline(labelled);
+    const all = cells(drawio(model));
+    const bus = model.meshBuses![0]!;
+    const label = all.get(id('busLabel', bus.id))!;
+    expect(label, 'the bus has a label cell').toBeDefined();
+    expect(all.get(label.parent!)!.edge).toBe(true);
+    expect(label.parent!.startsWith(`pg-bus~${bus.id}~`)).toBe(true);
+    for (const cell of all.values()) {
+      if (/^pg-(groupTitle|busLabel)~/.test(cell.id)) expect(cell.parent, cell.id).not.toMatch(/^pg-layer~/);
+    }
+  }, 60000);
 });
