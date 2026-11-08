@@ -63,8 +63,8 @@ for (;;) {
 await placeFirst();
 // The acceptance gate of the stagger stage 5 chose (fan wrap, D-Q4; ADR-0024, second amendment): the two lines stand only when the complete
 // placement beats the same placement without them (`wrapGateVerdict`). The comparison run keeps the first run's record with every chosen
-// stagger a row, and places no stagger at all (keep mode, no rows), so it cannot choose another one. It is one placement more per command, by
-// construction: it spends no `MAX_RERUNS` (`env.gateRuns` lifts the placement cap by one), so it is always available. Its state (the ledger, the
+// stagger a row, and places no stagger at all (keep mode, no rows), so it cannot choose another one. It is one placement run more per command (with
+// any trunk re-runs of its own): it spends no `MAX_RERUNS` (`env.gateRuns` lifts the placement cap by its placements), so it is always available. Its state (the ledger, the
 // declined blocks, the re-run count) is its own: a kept wrap goes on exactly as if the comparison had not run. Both models are judged after 7f,
 // as trials; `bands` is a function of its model, so the baseline's own 7f run of a kept wrap is the trial that passed here.
 const wraps = (env.arrangedRows ?? []).filter(group => first.groupArrangements?.[group]?.chosen === 'stagger').sort();
@@ -77,8 +77,11 @@ if (wraps.length) {
   for (const id of wraps) record[id] = { chosen: 'row', reason: `the acceptance gate declined the two lines (${FAN_WRAP_DECLINED} names why)` };
   env.arranged = true; env.groupArrangements = record; delete env.staggerRows;
   if (env.declinedSolidBlocks !== undefined) env.declinedSolidBlocks = new Map(env.declinedSolidBlocks);
-  env.gateRuns++;
+  // Every placement of the comparison run (one, or more when a trunk join is declined) stays counted in `placements` and is lifted from the
+  // cap by `gateRuns`, so the rounds after a kept wrap have the placements they would have had without the comparison (R4: one count).
+  const placedBefore = env.placements;
   await placeFirst();
+  env.gateRuns += env.placements - placedBefore;
   const plain = first;
   // A stagger refusal in 7f of the wrapped run declines the lines by name. A refusal in 7f of the run without them leaves the wrapped run the
   // only placement that stands: it beats a placement that cannot be made. Any other error (a deadline included) ends the command.

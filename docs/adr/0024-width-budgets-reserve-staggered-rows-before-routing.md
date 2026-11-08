@@ -98,7 +98,7 @@ The user ruled that a tier block must not be much wider than its sheet because o
 - Acceptance gate. A stagger that stage 5 chose stands only when the complete placement (after 7f, before routing) takes less area than
   the same placement without it, keeps every link that placement makes straight, and shortens no hard separation. The comparison run keeps
   the first run's record with every chosen stagger a row and places no stagger at all, so it cannot choose another one. It is one placement
-  per command outside `MAX_RERUNS` and the placement cap, so it is always available, and its state is its own: a kept stagger goes on as if
+  run per command whose placements stand outside `MAX_RERUNS` and the placement cap, so it is always available, and its state is its own: a kept stagger goes on as if
   it had not run. A declined stagger stays one line; the record names the gate, and the info diagnostic `FAN_WRAP_DECLINED` names the reason.
   A stagger refusal in the wrapped run's 7f declines it the same way.
 

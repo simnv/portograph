@@ -23,7 +23,7 @@ export interface Env {
   declinedSolidBlocks?: Map<string, string>;
   /** Failed probes, each excluding a new named block; separate from the legacy optimisation budget. */
   blockProbes: number;
-  /** The comparison runs of the fan-wrap acceptance gate (D-Q4): at most one per command; like the probes, outside the placement cap. */
+  /** The placements of the fan-wrap acceptance gate's comparison run (D-Q4; one run per command, with its trunk re-runs): like the probes, outside the placement cap. */
   gateRuns: number;
   staggerRows?: StaggerRow[];
   /** Ticket 51: the arrangement stage 5 of the first placement run chose; every later run of the command keeps it (R1). */
