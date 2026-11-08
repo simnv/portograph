@@ -55,7 +55,7 @@ const token = (value: number): string => String(value).replace(/\./g, '_').repla
 /**
  * One paint rule of the theme sheet: the structural class it paints, the further classes the element must carry, and its
  * declarations in order. `where` puts the further classes inside `:where()`, which adds no specificity. The SVG writes each
- * rule as CSS (`cssRule`); the draw.io export resolves the same rules as the CSS cascade does (`resolvePaint` in
+ * rule as CSS (`cssRule`); the draw.io export resolves the same rules as the CSS cascade does (`computePaint`, `PaintSheet` in
  * `render/shared.ts`), so the two renderers read one table (R1).
  */
 export interface PaintRule {
