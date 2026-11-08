@@ -9,6 +9,7 @@ import { withStageMutation } from './mutation.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { joinFanTrees } from './bundle-geometry.js';
 import { fitRegionGroup, placementWarning, rebuildRegions } from './regions.js';
+import { PlacementRefusal } from './placement-refusal.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { portSideCapacity } from './port-insets.js';
 import { columnOf } from './read/arrangement.js';
@@ -191,7 +192,12 @@ export function alignFlanks(model: LayoutModel): void {
   for (const group of Object.values(model.groups)) if (group.nodes.some(id => sides.has(id))) fitRegionGroup(model, group);
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   rebuildRegions(model);
-  if (validateSkeletonBands(model).length) placementWarning(model, 'PLACEMENT_NON_CONVERGENCE',
-    'Flank growth exceeds the available tier band; later placement must retain this conflict for final gates.', Object.keys(model.groups), 'group');
+  // Publication holds the band geometry for every model (ADR-0010; ticket DR-01): a conflict that flank growth leaves is a refusal of this run, never a diagnostic.
+  const bandErrors = validateSkeletonBands(model);
+  if (bandErrors.length) {
+    const flankIds = Object.values(model.groups).filter(group => group.flank).map(group => group.id);
+    throw new PlacementRefusal('skeleton', `Flank growth of ${flankIds.join(', ') || 'no flank'} exceeds the available tier band: ${bandErrors.join('; ')}`,
+      { stage: 'flanks', owners: flankIds.map(id => ({ kind: 'group' as const, id })) });
+  }
 }
 export function flanks(model: LayoutModel): LayoutModel { return withStageMutation(model, 'flanks', alignFlanks); }

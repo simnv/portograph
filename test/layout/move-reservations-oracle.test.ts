@@ -5,6 +5,7 @@ import type { Rect } from '../../src/model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../../src/model/layout.js';
 import { laneSidesHold, riserNoDeeper, riserPenetrations, sideLanesHold, spanBreaches } from '../../src/layout/lanes.js';
 import { foreignOverExtensions, trunkHeads, trunkXAfter } from '../../src/layout/trunk.js';
+import { NO_MOVE_EPS } from '../../src/layout/tolerance.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -17,7 +18,7 @@ type Proposed = { group: LayoutGroup; bounds: Rect }[];
 export function legacyOptionalMoveHolds(model: LayoutModel, proposed: Proposed): boolean {
   const riser = proposed.every(({ group, bounds }) => {
     const dx = bounds.x - group.bounds!.x;
-    return Math.abs(dx) <= 1e-9 || riserNoDeeper(riserPenetrations(model, group), riserPenetrations(model, group, dx));
+    return Math.abs(dx) <= NO_MOVE_EPS || riserNoDeeper(riserPenetrations(model, group), riserPenetrations(model, group, dx));
   });
   const trunk = (): boolean => trunkHeads(model).every(head => {
     const now = new Set(foreignOverExtensions(model, head).map(item => `${item.group}|${item.bus}`));

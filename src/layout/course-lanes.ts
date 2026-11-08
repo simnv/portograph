@@ -5,6 +5,7 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EDGE_MARGIN, RING_PITCH, endMode, rowDepth, type EndMode, type EndName } from './course-rows.js';
 import { nodeTier } from './read/tier.js';
 import { findPort } from './row-paths.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * The perimeter lane of a course (architecture ticket 15, Section 2). A course names the face of each end and how each end joins the lane: by a side run
@@ -49,7 +50,6 @@ export interface CourseGeometry {
 
 const bandBox = (model: LayoutModel, tier: number): Rect => model.tierBands.find(band => band.tier === tier)!.bounds!;
 const bottomOf = (box: Rect): number => box.y + box.height;
-const EPS = 1e-6;
 const pad = (): number => 10 + DEFAULT_STROKE_WIDTHS.path / 2;
 
 function endFacts(model: LayoutModel, course: Course, link: LayoutLink, which: EndName): CourseEndFacts | undefined {
@@ -113,10 +113,10 @@ export function courseGeometry(model: LayoutModel, link: LayoutLink, course: Cou
   else yTop = upper.mode === 'side' ? upper.port.anchor.y : rowY(upper);
   if (lower.mode === 'natural') { const t = previous(lower.tier); if (t === undefined) return undefined; yBottom = bottomOf(bandBox(model, t)) + pad(); }
   else yBottom = lower.mode === 'side' ? lower.port.anchor.y : rowY(lower);
-  if (!(yBottom > yTop + EPS)) return undefined;
+  if (!(yBottom > yTop + PLACEMENT_EPS)) return undefined;
 
   const dir = lane.side === 'right' ? 1 : -1;
-  const meets = (box: Rect): boolean => box.y < yBottom - EPS && bottomOf(box) > yTop + EPS;
+  const meets = (box: Rect): boolean => box.y < yBottom - PLACEMENT_EPS && bottomOf(box) > yTop + PLACEMENT_EPS;
   const boxes: Rect[] = [];
   for (const group of Object.values(model.groups)) {
     if (group.bounds === undefined || group.nodes.length === 0) continue;
@@ -129,7 +129,7 @@ export function courseGeometry(model: LayoutModel, link: LayoutLink, course: Cou
   let base = lane.keepX === true && lane.x !== undefined ? lane.x : outer + dir * (EDGE_MARGIN + (lane.ring ?? 0) * RING_PITCH);
   // The lanes of one side stand as one stack: a lane stands a pitch beyond every inner lane of its side whose extent it meets, whatever boxes each one clears.
   for (const other of lane.keepX === true ? [] : peers) {
-    if (other.side !== lane.side || (other.ring ?? 0) >= (lane.ring ?? 0) || !(other.bounds.y < yBottom - EPS && bottomOf(other.bounds) > yTop + EPS)) continue;
+    if (other.side !== lane.side || (other.ring ?? 0) >= (lane.ring ?? 0) || !(other.bounds.y < yBottom - PLACEMENT_EPS && bottomOf(other.bounds) > yTop + PLACEMENT_EPS)) continue;
     const wanted = other.x + dir * RING_PITCH;
     base = dir > 0 ? Math.max(base, wanted) : Math.min(base, wanted);
   }
@@ -137,7 +137,7 @@ export function courseGeometry(model: LayoutModel, link: LayoutLink, course: Cou
   let x = base, aligned = false;
   if (lane.aligned === true && far !== undefined && lane.keepX !== true) {
     const fx = far.port.anchor.x;
-    if (dir > 0 ? fx >= base - EPS : fx <= base + EPS) { x = fx; aligned = true; }
+    if (dir > 0 ? fx >= base - PLACEMENT_EPS : fx <= base + PLACEMENT_EPS) { x = fx; aligned = true; }
   }
 
   // The reserved polyline from the upper end to the lower end.
@@ -158,11 +158,11 @@ export function courseGeometry(model: LayoutModel, link: LayoutLink, course: Cou
   const mid = (a: number, b: number): number => (a + b) / 2;
   if (first.mode === 'natural') {
     const mouth = polyline[0]!, anchor = first.port.anchor;
-    polyline.unshift(...(Math.abs(mouth.x - anchor.x) <= EPS ? [{ ...anchor }] : [{ ...anchor }, { x: anchor.x, y: mid(anchor.y, mouth.y) }, { x: mouth.x, y: mid(anchor.y, mouth.y) }]));
+    polyline.unshift(...(Math.abs(mouth.x - anchor.x) <= PLACEMENT_EPS ? [{ ...anchor }] : [{ ...anchor }, { x: anchor.x, y: mid(anchor.y, mouth.y) }, { x: mouth.x, y: mid(anchor.y, mouth.y) }]));
   }
   if (last.mode === 'natural') {
     const mouth = polyline.at(-1)!, anchor = last.port.anchor;
-    polyline.push(...(Math.abs(mouth.x - anchor.x) <= EPS ? [{ ...anchor }] : [{ x: mouth.x, y: mid(anchor.y, mouth.y) }, { x: anchor.x, y: mid(anchor.y, mouth.y) }, { ...anchor }]));
+    polyline.push(...(Math.abs(mouth.x - anchor.x) <= PLACEMENT_EPS ? [{ ...anchor }] : [{ x: mouth.x, y: mid(anchor.y, mouth.y) }, { x: anchor.x, y: mid(anchor.y, mouth.y) }, { ...anchor }]));
   }
   const spanTiers = tiers.filter(tier => meets(bandBox(model, tier)));
   const span = spanTiers.length ? { top: Math.min(...spanTiers), bottom: Math.max(...spanTiers) } : { top: upper.tier, bottom: lower.tier };

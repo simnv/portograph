@@ -14,7 +14,7 @@ import { disjointShapes } from './containment.js';
 export { disjointShapes } from './containment.js';
 import { completedRouteObstacles, reservedRunObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
 import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, type RouteConnector, type RouteEndpoint, type RoutePin, type RouteShape } from './types.js';
-import { PLACEMENT_EPS } from '../layout/tolerance.js';
+import { PLACEMENT_EPS, ROUTE_AXIS_EPS } from '../layout/tolerance.js';
 import { linkLayer } from '../layout/link-layer.js';
 import { exitSide } from '../layout/group-exits.js';
 
@@ -253,7 +253,7 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
     const paired = covers.length === run.segments.length;
     for (const [index, item] of covers.entries()) {
       const segment = run.segments[index]!;
-      const across = paired && Math.abs(segment.from.y - segment.to.y) < 1e-9;
+      const across = paired && Math.abs(segment.from.y - segment.to.y) < ROUTE_AXIS_EPS;
       // The owner's own route reaches this run at its two terminals and nowhere else. The end
       // rectangles therefore keep it as a consumer, so the gap beside the run can start inside one
       // of them; the rectangles between do not, or the owner's other gaps could run along the run
@@ -675,7 +675,7 @@ const OPPOSITE_BIT: Record<number, number> = { 1: 2, 2: 1, 4: 8, 8: 4 };
 function approachCheckpoint(run: PathSegment, end: 'from' | 'to'): RouteCheckpoint {
   const dx = run.to.x - run.from.x, dy = run.to.y - run.from.y;
   const span = Math.hypot(dx, dy) || 1;
-  const travel = dy > 1e-9 ? DIRECTION_BITS.bottom : dy < -1e-9 ? DIRECTION_BITS.top
+  const travel = dy > ROUTE_AXIS_EPS ? DIRECTION_BITS.bottom : dy < -ROUTE_AXIS_EPS ? DIRECTION_BITS.top
     : dx > 0 ? DIRECTION_BITS.right : DIRECTION_BITS.left;
   // Leaving `run.to` continues the run's direction; reaching `run.from` heads back into it. Only
   // the side facing the corridor is constrained, so the gap stays free to turn away afterwards.

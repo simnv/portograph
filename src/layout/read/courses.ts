@@ -5,6 +5,7 @@ import { groupShape } from '../grid.js';
 import { laneSource, transitTiers } from '../lanes.js';
 import { findPort } from '../row-paths.js';
 import { nodeTier } from './tier.js';
+import { PLACEMENT_EPS } from '../tolerance.js';
 
 /**
  * Shared readers for the course plan (architecture ticket 15, phase 2). They state the order facts of Section 1 of the design: the units of each band
@@ -140,11 +141,11 @@ export function linkFacts(model: LayoutModel): Map<string, LinkFacts> {
     // The lane end is `laneSource` (the end nearer the anchor tier), which can be `to`: a unit over the lane end's x is what stops 7a seating the lane under it.
     const laneEnd = laneSource(model, link) === toRef ? to : from, laneX = laneEnd.anchor.x;
     for (const tier of crossed) for (const unit of units.get(tier) ?? []) {
-      if (overlaps(unit.box, lo, hi) || overlaps(unit.box, laneX, laneX + 1e-6)) between.push(unit);
-      if (overlaps(unit.box, laneX - 1e-6, laneX + 1e-6)) sourceCovered = true;
+      if (overlaps(unit.box, lo, hi) || overlaps(unit.box, laneX, laneX + PLACEMENT_EPS)) between.push(unit);
+      if (overlaps(unit.box, laneX - PLACEMENT_EPS, laneX + PLACEMENT_EPS)) sourceCovered = true;
     }
     if (from.tier === to.tier) for (const unit of units.get(from.tier) ?? []) {
-      if (unit.id !== from.group && unit.id !== to.group && unit.box.x >= lo - 1e-6 && unit.box.x + unit.box.width <= hi + 1e-6) between.push(unit);
+      if (unit.id !== from.group && unit.id !== to.group && unit.box.x >= lo - PLACEMENT_EPS && unit.box.x + unit.box.width <= hi + PLACEMENT_EPS) between.push(unit);
     }
     const row = from.group === to.group && !isGrid(model, from.group) ? model.groups[from.group]!.rowOrder ?? model.groups[from.group]!.nodes : [];
     const rowBetween = row.length > 0 && Math.abs(row.indexOf(from.node) - row.indexOf(to.node)) > 1;

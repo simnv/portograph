@@ -10,7 +10,7 @@ import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { rowGap } from './sides-two.js';
 import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
 import { gridChains } from './grid.js';
-import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
+import { BUNDLE_EDGE_EPS, PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 import { sidePillBodyReach } from './pill-reach.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 
@@ -47,8 +47,8 @@ export function edgeMargin(strokeWidth: number): number { return GROUP_EDGE_LINK
 export function clearOfGroupEdges(value: number, pairs: DepthPair[], direction: 1 | -1, margin: number = GROUP_EDGE_LINK_CLEARANCE): number {
   let result = value;
   for (let guard = 0; guard < 8; guard++) {
-    const blocking = pairs.find(([lo, hi]) => !(result > lo + 1e-9 && result < hi - 1e-9)
-      && (Math.abs(result - lo) < margin - 1e-9 || Math.abs(result - hi) < margin - 1e-9));
+    const blocking = pairs.find(([lo, hi]) => !(result > lo + BUNDLE_EDGE_EPS && result < hi - BUNDLE_EDGE_EPS)
+      && (Math.abs(result - lo) < margin - BUNDLE_EDGE_EPS || Math.abs(result - hi) < margin - BUNDLE_EDGE_EPS));
     if (!blocking) return result;
     const edge = Math.abs(result - blocking[0]) <= Math.abs(result - blocking[1]) ? blocking[0] : blocking[1];
     result = edge + direction * margin;

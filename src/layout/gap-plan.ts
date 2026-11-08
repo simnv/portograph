@@ -1,6 +1,6 @@
 import type { Point, Rect } from '../model/geometry.js';
 import type { Diagnostic, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
-import { bottom, EPS, intersection, right, samePoint, segmentDistance } from '../geometry/planar.js';
+import { bottom, EPS, right, samePoint, segmentDistance } from '../geometry/planar.js';
 import { measureText } from '../text/index.js';
 import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { cantonTiers, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke } from './bands.js';
@@ -14,6 +14,7 @@ import { gapEnds, isGapCourse } from './course-gap.js';
 import { tierGapMin } from './skeleton-graph.js';
 import { gapBandDemand } from './gap-band.js';
 import { stemCache, stemPlan, type StemCache } from './sides-two.js';
+import { strictCrossing } from './read/crossings.js';
 
 /**
  * The tier-gap row plan (`docs/design/tier-gap-rows.md`, ranked-groups ticket 48): the rows, legs and
@@ -154,9 +155,7 @@ export const SLANT_LOWERING_KEEPS = 4;
  */
 function clearOfSlants(unit: { part: PlanInput; half: 0 | 1 | 2; xu: number; xl: number }, from: number, slants: readonly PathSegment[], keep: number): { y: number; limited: boolean } {
   const clear = (y: number): boolean => unitPieces(unit, y).every(piece => slants.every(chord => {
-    const point = intersection(piece, chord);
-    const strict = point !== undefined && ![piece.from, piece.to, chord.from, chord.to].some(end => samePoint(end, point));
-    return strict || segmentDistance(piece, chord) >= keep - EPS;
+    return strictCrossing(piece, chord) || segmentDistance(piece, chord) >= keep - EPS;
   }));
   if (clear(from)) return { y: from, limited: false };
   const candidates: number[] = [];
@@ -1008,9 +1007,7 @@ export function chordGapNotes(model: LayoutModel, plans: readonly { gap: TierGap
       for (const part of plan.parts) {
         const near = plannedSegments(part, gap).filter(seg => Math.abs(seg.from.x - seg.to.x) < EPS && Math.abs(seg.from.y - seg.to.y) >= EPS)
           .some(seg => {
-            const point = intersection(seg, held.segment);
-            const strict = point !== undefined && ![seg.from, seg.to, held.segment.from, held.segment.to].some(end => samePoint(end, point));
-            return !strict && segmentDistance(seg, held.segment) < keep - EPS;
+            return !strictCrossing(seg, held.segment) && segmentDistance(seg, held.segment) < keep - EPS;
           });
         if (near) notes.push({ stage: 'placement', severity: 'info', code: 'TIER_GAP_CHORD_CROWDED',
           message: `A vertical of ${part.link} in the tier gap above tier ${gap.below} stands within ${keep} px of the straight link ${held.link.id}.`,
