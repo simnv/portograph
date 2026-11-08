@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Point } from '../../src/index.js';
 import { linkIds } from '../../src/model/index.js';
-import { drawio, render } from '../../src/index.js';
+import { drawio, layout, parse, render } from '../../src/index.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';
@@ -17,7 +17,7 @@ import { route } from '../../src/route/index.js';
 import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
 import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
-import { placed } from '../layout/phase-two-fixture.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { flatCells, inFile } from './drawio-cells.js';
 
@@ -1916,6 +1916,31 @@ describe('a sheet class wash reads the same in the SVG and in draw.io (ticket 09
     // The key paints the wash behind a class's tile, in both.
     expect(svg).toMatch(/<rect class="node-body switch pg-wash-\d+/);
     expect([...all.values()].filter(cell => cell.id.startsWith('pg-legendBody~')).length).toBeGreaterThan(0);
+  }, 60000);
+  // DX-06 (audit A1-01, A1-06, A1-08): a title or a bus label is the child of what it names, never of a layer.
+  it('hangs a crossed group title on its group and a bus label on its bar, never on a layer', async () => {
+    const titled = cells(drawio(await pipeline(fixture('a-group-title-yields-with-a-halo'))));
+    expect(titled.get(id('group', 'access'))!.value).toBeDefined();
+    // A crossed title in the text-child form: aws-nested-vpc has crossed titles that are not centred bands.
+    const aws = await layout(parse(readFileSync(new URL('../../goldens/real/aws-nested-vpc.yaml', import.meta.url), 'utf8')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const crossedIds = aws.labels.filter(item => item.role === 'group' && (item.crossedBy?.length ?? 0) > 0 && item.owner.kind === 'group')
+      .map(item => item.owner.kind === 'group' ? item.owner.id.replace(/#\d+$/, '') : '');
+    const awsCells = cells(drawio(aws));
+    const children = crossedIds.filter(owner => awsCells.has(id('groupTitle', owner)));
+    expect(children.length, 'a crossed title in the text-child form').toBeGreaterThan(0);
+    for (const owner of children) expect(awsCells.get(id('groupTitle', owner))!.parent).toBe(id('group', owner));
+    const labelled = fixture('a-full-mesh-on-one-row-draws-as-one-bus').replace(/class: sync \}/g, 'class: sync, label: Sync }');
+    const model = await pipeline(labelled);
+    const all = cells(drawio(model));
+    const bus = model.meshBuses![0]!;
+    const label = all.get(id('busLabel', bus.id))!;
+    expect(label, 'the bus has a label cell').toBeDefined();
+    expect(all.get(label.parent!)!.edge).toBe(true);
+    expect(label.parent!.startsWith(`pg-bus~${bus.id}~`)).toBe(true);
+    for (const cell of all.values()) {
+      if (/^pg-(groupTitle|busLabel)~/.test(cell.id)) expect(cell.parent, cell.id).not.toMatch(/^pg-layer~/);
+    }
   }, 60000);
 });
 
