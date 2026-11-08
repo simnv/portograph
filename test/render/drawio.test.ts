@@ -385,6 +385,15 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     expect(middle).toBeGreaterThan(at(support.segment + 1));
   }, 60000);
 
+  it('states the page background as the canvas pair, and one overlay opacity for light and dark (DX-09)', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const attr = (xml: string): string => /<mxGraphModel[^>]* background="([^"]*)"/.exec(xml)![1]!;
+    expect(attr(drawio(model))).toBe(`light-dark(${NETWORK_THEME.light.background},${NETWORK_THEME.dark.background})`);
+    expect(attr(drawio(model, { theme: 'dark' }))).toBe(NETWORK_THEME.dark.background);
+    // A number cannot be paired in a style, so the palette holds one overlay opacity for both modes.
+    expect(NETWORK_THEME.dark.overlay.opacity).toBe(NETWORK_THEME.light.overlay.opacity);
+  }, 60000);
+
   it('carries both appearances in one file, because draw.io inverts a colour it is given alone', async () => {
     const model = await pipeline(fixture('drawio-constructs'));
     const auto = cells(drawio(model));
