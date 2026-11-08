@@ -29,7 +29,9 @@ function portInKeepOut(model: LayoutModel): LayoutGroup {
 
 describe('one no-move tolerance for the move guards', () => {
   it('a shift of 1e-8 is no move for all six kinds; a shift of 1 px deeper is refused', async () => {
-    const model = await layout(parse(readFileSync(SHEET, 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const published = await layout(parse(readFileSync(SHEET, 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    // The published model is frozen; the probe moves the riser on a copy.
+    const model = JSON.parse(JSON.stringify(published)) as LayoutModel;
     const group = portInKeepOut(model);
     const shifted = (dx: number) => [{ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }];
     expect(1e-8).toBeLessThanOrEqual(NO_MOVE_EPS);
