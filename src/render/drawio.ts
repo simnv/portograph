@@ -38,7 +38,9 @@
  *    offers. An endpoint is pinned by `exitX`/`exitY` on the edge, and `exitPerimeter` defaults to
  *    1, which projects the point onto the perimeter instead of using it.
  * 3. `startSize` does not shift a child's origin: a child is always placed from the parent's
- *    top-left, so the title band's inset is ours to add.
+ *    top-left, so the title band's inset is ours to add. A pill, an icon and a description are the
+ *    exception: they are `relative="1"` children of their node, measured from a corner or the top
+ *    centre of it (`Anchored`), so a node resized by hand keeps them on their face (issue 07).
  * 4. Every label is plain text: no `html` key, the lines one `\n` apart, no markup. An SVG export
  *    then draws each line as a native `<text>`, where `html=1` draws a `<foreignObject>` with a PNG
  *    fallback beside it — several times the bytes, softer type, and a warning in a dashboard that
@@ -519,10 +521,10 @@ const outlinedFill = (theme: Theme, of: ThemeMode, washes: WashAssignment, nodeC
 
 const centre = (box: Rect): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
 /** The cell of a label at `box`: the turned label's text rectangle about the box centre (`turnedSize`), or the box. */
-const turnedCell = (label: LayoutLabel, box: Rect): Rect => {
+const turnedCell = <T extends Rect>(label: LayoutLabel, box: T): T => {
   if (label.turnedSize === undefined) return box;
   const middle = centre(box);
-  return { x: middle.x - label.turnedSize.width / 2, y: middle.y - label.turnedSize.height / 2, ...label.turnedSize };
+  return { ...box, x: middle.x - label.turnedSize.width / 2, y: middle.y - label.turnedSize.height / 2, ...label.turnedSize };
 };
 /** Two joint positions of bus pieces are one joint (draw.io only; a path's runs are `pathRuns`). */
 const sameJoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS && Math.abs(a.y - b.y) <= EPS;
@@ -530,6 +532,51 @@ const sameJoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS &&
 /** A rectangle expressed from another rectangle's top-left, as every child geometry must be. */
 const relative = (box: Rect, origin: Point): Rect =>
   ({ x: box.x - origin.x, y: box.y - origin.y, width: box.width, height: box.height });
+
+/**
+ * A child of a node that stays where it belongs when the maintainer resizes the node. `x` and `y`
+ * are still stated from the node's top-left; `fraction` names the point of the node the child is
+ * measured from, as a fraction of the node's size, and `node` is that size. draw.io writes it as
+ * `relative="1"` geometry: `x`/`y` are the fraction and an `mxPoint as="offset"` is the px rest, and
+ * mxGraph draws the child at the parent's top-left plus fraction × the parent's size plus offset.
+ * A resized node moves the point, and the child with it; the child keeps its size. With
+ * `recursiveResize=0` on the node, absolute children stayed at their old offset from the top-left,
+ * so right and bottom pills ended inside the body (audit A1-02, issue 07).
+ */
+interface Anchored extends Rect { fraction: Point; node: { width: number; height: number } }
+
+/** 1 when the middle of `[start, start + length]` is past the middle of `size`, else 0: a tie takes the start. */
+const nearerEnd = (start: number, length: number, size: number): 0 | 1 => (start + length / 2 > size / 2 ? 1 : 0);
+
+/**
+ * A pill keeps its face across, and a fixed px distance from the nearer corner of that face along it
+ * (user, 2026-11-08): a pill nearer the far corner is measured from that corner, fraction 1 and a
+ * negative offset. The side is the one the pipeline decided; a pill without one is measured from the
+ * nearer edge on both axes.
+ */
+const onFace = (pill: Rect, node: Anchored['node'], side: Side | undefined): Anchored => ({
+  ...pill, node,
+  fraction: {
+    x: side === 'left' ? 0 : side === 'right' ? 1 : nearerEnd(pill.x, pill.width, node.width),
+    y: side === 'top' ? 0 : side === 'bottom' ? 1 : nearerEnd(pill.y, pill.height, node.height),
+  },
+});
+
+/**
+ * An icon or a description follows the node's name. The name is the node's own top-aligned label,
+ * so draw.io keeps it at a fixed distance from the top, centred or, on a card, from the left: the
+ * cell is measured from the top centre, or from the top-left on a card.
+ */
+const asName = (box: Rect, node: Anchored['node'], card: boolean): Anchored =>
+  ({ ...box, node, fraction: { x: card ? 0 : 0.5, y: 0 } });
+
+/** The `mxGeometry` of a vertex: from the parent's top-left, or relative to the point an `Anchored` box names. */
+const vertexGeometry = (box: Rect | Anchored): string => {
+  if (!('fraction' in box)) return element('mxGeometry', { x: box.x, y: box.y, width: box.width, height: box.height, as: 'geometry' });
+  const { fraction, node } = box;
+  return element('mxGeometry', { x: fraction.x, y: fraction.y, width: box.width, height: box.height, relative: 1, as: 'geometry' },
+    element('mxPoint', { x: box.x - fraction.x * node.width, y: box.y - fraction.y * node.height, as: 'offset' }));
+};
 
 /**
  * One component of a cell id, with the separator escaped so it cannot be produced by an author's
@@ -588,12 +635,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     claimed.add(id);
     return id;
   };
-  const vertex = (id: string, parent: string, style: string, box: Rect, value?: string,
+  const vertex = (id: string, parent: string, style: string, box: Rect | Anchored, value?: string,
     extra: Readonly<Record<string, StyleValue>> = {}, bound?: Binding): void => {
     const own = claim(id);
     parents.add(parent);
     cells.push(() => cellElement({ id: own, value, style: holdsChildren(own, style), vertex: 1, parent, ...extra },
-      element('mxGeometry', { x: box.x, y: box.y, width: box.width, height: box.height, as: 'geometry' }), bound));
+      vertexGeometry(box), bound));
   };
 
   // ---- binding ------------------------------------------------------------------------------
@@ -611,7 +658,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   };
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
-  const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect, colour: string,
+  const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect | Anchored, colour: string,
     size = labelSize(label), backdrop?: string): void => {
     // draw.io turns a cell's own rectangle about its centre. A turned label (ticket 20) records its
     // text rectangle (`turnedSize`), so the cell is that rectangle about the box centre, and draw.io
@@ -832,7 +879,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const top = named === undefined ? undefined
       : finite(centre(named.bounds!).y + firstBaseline(named, nameSize) - node.bounds!.y
         - LABEL_SPACING - BASE_SPACING_TOP - (nameSize - 1));
-    const card = named?.textAlign === 'start';
+    // A card's text (ticket 159) starts at the left: the name's alignment, or the description's on a card with no name.
+    const card = (named ?? described)?.textAlign === 'start';
+    // The size every face child of this node is measured against (`Anchored`).
+    const size = { width: node.bounds!.width, height: node.bounds!.height };
     const across = named === undefined ? 0 : finite(centre(named.bounds!).x - centre(node.bounds!).x);
     vertex(cellId('node', id), group, styleString([], {
       // A node really does contain its ports and its icon, so it says so: a container moves,
@@ -865,7 +915,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }, document.nodes[id]?.meta));
     if (described !== undefined) {
       textCell(cellId('nodeDescription', id), cellId('node', id), described,
-        relative(shiftRect(described.bounds!), shift(node.bounds!)), paint.node.description,
+        asName(relative(shiftRect(described.bounds!), shift(node.bounds!)), size, card), paint.node.description,
         finite(described.fontSize ?? NODE_DESCRIPTION_SIZE));
     }
 
@@ -885,7 +935,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
             rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
-          }), tile);
+          }), asName(tile, size, card));
         }
         // The glyph sits in the box the SVG draws its glyph in (`iconGlyphBox`): the inset is at most a
         // quarter of each side, so a small tile keeps its glyph. Only a tile with no area has no glyph,
@@ -900,14 +950,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             // filled with the glyph colour and has no frame to stroke.
             fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
             strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
-          }), box, undefined, {}, iconBinding);
+          }), asName(box, size, card), undefined, {}, iconBinding);
         }
       } else {
         if (positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
             rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
-          }), tile);
+          }), asName(tile, size, card));
         }
         // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
         // its own image. An embedded image is the one thing here that cannot adapt to dark — draw.io
@@ -920,7 +970,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
             shape: 'image', imageAspect: 0, points: '[]',
             image: svgImage(glyph),
-          }), inner, undefined, {}, iconBinding);
+          }), asName(inner, size, card), undefined, {}, iconBinding);
         }
       }
     }
@@ -969,7 +1019,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           fontStyle: shown.fontWeight === 700 ? 1 : undefined,
           horizontal: port.pill.textRotation === -90 ? 0 : undefined,
         } : {}),
-      }), relative(shiftRect(port.pill.bounds), shift(node.bounds!)),
+      }), onFace(relative(shiftRect(port.pill.bounds), shift(node.bounds!)), size, port.side),
       shown ? plainText(labelLines(shown)) : undefined, {},
       binding({
         'pg-kind': 'port', 'pg-id': endpointId({ node: id, name: port.ref.name!, ordinal: port.ref.ordinal }),
