@@ -87,6 +87,13 @@ describe('restore keeps the runs placement planned (D-Q2)', () => {
       .toThrow('Routed path on link-2 does not keep the leg placement planned for link-2 in its row gap');
   }, 120000);
 
+  it('refuses a moved planned row whose link a forged frozenChords entry calls a chord', async () => {
+    // The tier-gap plan leaves every link `frozenChords` names out; restore reads the record against the geometry.
+    const copy = moved(await fixture(), 'link-5', 'tier-gap', 4);
+    copy.frozenChords = [...copy.frozenChords ?? [], 'link-5'];
+    expect(() => restore(copy)).toThrow('frozenChords names link-5, which holds no routed chord');
+  }, 120000);
+
   it('accepts a planned segment split in two by a collinear same-owner joint', async () => {
     const model = await fixture(), copy = clone(model), path = copy.links.find(item => item.id === 'link-5')!.path!.segments;
     const at = path.findIndex(segment => holds(segment, planned(model, 'link-5')[0]!.segments[1]!));
@@ -109,6 +116,39 @@ describe('the P-05 F2 cases', () => {
     expect(() => restore(copy))
       .toThrow(new RegExp(`^Routed path on ${link} does not keep the run placement planned for ${link} in its tier gap`));
   }, 120000);
+});
+
+describe('a forged record does not take a planned run out of the check', () => {
+  // The producer reads these records on the restored model. Restore reads each against the geometry, or a forgery leaves the plan as it
+  // was; with a planned row moved 4 px as well, restore refuses. The corpus pass forged every top-level record (absent, empty, one entry
+  // dropped) and found no forgery that changed the plan and was accepted.
+  type Forge = (model: LayoutModel, moved: string) => void;
+  const absent = (key: keyof LayoutModel): Forge => model => { delete model[key]; };
+  const empty = (key: keyof LayoutModel): Forge => model => { (model as unknown as Record<string, unknown>)[key] = []; };
+  const cases: { name: string; options?: object; record: keyof LayoutModel; forges: [string, Forge][] }[] = [
+    { name: FIXTURE, record: 'frozenChords', forges: [['names the moved link', (model, link) => { model.frozenChords = [...model.frozenChords ?? [], link]; }], ['absent', absent('frozenChords')]] },
+    { name: FIXTURE, record: 'stemDepths', forges: [['absent', absent('stemDepths')], ['empty', empty('stemDepths')]] },
+    { name: 'two-skirts-from-one-face-nest', options: { testTurnOrder: true }, record: 'courses', forges: [['absent', absent('courses')], ['empty', empty('courses')]] },
+    { name: 'a-riser-keeps-out-of-a-side-lane', record: 'busBands', forges: [['absent', absent('busBands')], ['empty', empty('busBands')]] },
+    { name: 'a-hub-tiers-fan-draws-straight-and-crosses-itself', record: 'fanFamilies', forges: [['absent', absent('fanFamilies')]] },
+  ];
+  /** The first planned row of the sheet that can be moved with its joins. */
+  function anyMoved(model: LayoutModel): { copy: LayoutModel; link: string } {
+    for (const link of model.links) {
+      if (!planned(model, link.id).some(run => run.kind === 'tier-gap')) continue;
+      try { return { copy: moved(model, link.id, 'tier-gap', 4), link: link.id }; } catch { /* no interior segment on this link; try the next */ }
+    }
+    throw new Error('no planned row to move');
+  }
+  for (const { name, options, record, forges } of cases) {
+    it.each(forges)(`${name}: ${String(record)} %s, with a planned row moved 4 px, is refused`, async (_label, forge) => {
+      const model = await built(name, synthetic(name), options);
+      expect(model[record]).toBeDefined();
+      const { copy, link } = anyMoved(model);
+      forge(copy, link);
+      expect(() => restore(copy)).toThrow();
+    }, 120000);
+  }
 });
 
 describe('the four live controls of audit P-05 stay accepted', () => {

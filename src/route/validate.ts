@@ -130,12 +130,26 @@ export function lostPlannedRun(segments: readonly PathSegment[], planned: readon
 }
 
 /**
+ * `frozenChords` names exactly the links that hold a routed chord: `freezeChords` writes the links `isRoutedChord` holds, and from then
+ * on a named link keeps its chord. The tier-gap plan leaves every named link out (`tierGapPlan`), so a name the published geometry does
+ * not hold would take that link's planned runs out of `plannedRunsKept`. The record is read against the geometry, never trusted (R5).
+ * Absent: not frozen yet, no name to check. Empty: frozen with no chord held.
+ */
+function frozenChordsHeld(model: LayoutModel): void {
+  for (const id of model.frozenChords ?? []) {
+    const link = model.links.find(item => item.id === id);
+    if (link === undefined || !isRoutedChord(model, link)) throw new Error(`frozenChords names ${id}, which holds no routed chord`);
+  }
+}
+
+/**
  * Every run placement planned for a routed link stays in its path, with its owner and traversal (decision D-Q2), as the fixed and
  * shared runs do (`reservedPositions`), even where another route would pass the gates. The one producer (`placementRuns`) runs again
  * on the published or restored placement, seen as stage 8 received it; nothing new is recorded. A producer that cannot read the
  * placement throws, and the model is refused (R6).
  */
 function plannedRunsKept(model: LayoutModel): void {
+  frozenChordsHeld(model);
   let placed: ReturnType<typeof placementRuns> | undefined;
   for (const link of model.links) {
     if (!drawn(link) || !link.path || link.path.fixed === true || effectiveLayer(link) !== 'routed') continue;

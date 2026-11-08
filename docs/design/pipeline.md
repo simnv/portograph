@@ -1883,6 +1883,8 @@ shared runs are (decision D-Q2, ADR-0010): `validateRoutedPaths` calls the one p
 lie inside one straight piece of the path with the same link owner, running the planned way, in the
 planned order. A collinear merge with the same owner passes; a run moved off its line, given another
 owner, reversed or reordered is refused by name, even where another route would pass the gates.
+The plan leaves out every link `frozenChords` names, so each name must hold a routed chord in the
+published geometry (`isRoutedChord`), or the model is refused.
 
 `overlay` links: never routed and never sent to the worker. Their path is the one
 `src/layout/overlay-paths.ts` derives from the two ports placement froze, and stage 8 only publishes
