@@ -8,7 +8,7 @@ import { endMode } from '../layout/course-rows.js';
 import { contentInsets, measureNodeContent } from '../layout/size.js';
 import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-spread.js';
 import { SolidBlockRefusal, TrunkBlocked } from '../layout/placement-refusal.js';
-import { PlacementRefusal, refusedAtBands } from '../layout/placement-refusal.js';
+import { PlacementRefusal, producerRefusal, refusedAtBands } from '../layout/placement-refusal.js';
 import { staggerRefusal } from '../layout/stagger.js';
 import { documentTierDistance, freezeRefusal } from '../layout/frame-paths.js';
 import { transitTiers } from '../layout/lanes.js';
@@ -69,7 +69,8 @@ const fanRound = (child: boolean): Round<{ grown: Reservations }> => ({
   commit(_env, s, _o, t) { s.kept7e = t.trial7e; s.kept = t.ledger; },
   refuse(_env, s, _o, r) {
     if (child) return;
-    s.cuts.push(r.note ?? cutNote(r.at === 'place' ? 'a trunk join was blocked by the moved rows, and the re-run was dropped'
+    // A producer refusal at the placement run (DR-11) is a broken reservation, as one found at 7e.
+    s.cuts.push(r.note ?? cutNote(r.at === 'place' && !producerRefusal(r.error) ? 'a trunk join was blocked by the moved rows, and the re-run was dropped'
       : r.at === 'fallback' ? 'ELK fell back during it, and the re-run was dropped' : `it broke a reservation (${r.why})`));
   },
 });

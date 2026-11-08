@@ -2,8 +2,13 @@
  * The box writers: every `moveGroup` call site in `src/` (DR-11; audit P-06 table 3a, T-25). R2 says every write to a box after 7a asks a guard
  * and refuses whole, or works on a draft. Each entry names how its site keeps the reservations: a guard it asks, the reservations it keeps by
  * construction, or the withdrawal or replan path of the rule that owns the reservation it can break. `npm run lint`
- * (`scripts/check-box-writers.mjs`) fails when the call sites of a function differ in number from its entries here: a new box writer states
- * its guard in this table first.
+ * (`scripts/check-box-writers.mjs`) fails when the `moveGroup` call sites of a function differ in number from its entries here: a new
+ * `moveGroup` writer states its guard in this table first.
+ *
+ * The limit: the table and its lint hold the `moveGroup` calls only. A direct write to a node box or a port anchor is not in the table, and the
+ * lint does not see it: `topUpBandClearance`, `insertRoomAt` (bands.ts), `stepOverChords` (chord-clear.ts, two sites), `moveSide`
+ * (feed-split.ts), `shiftNode` (centre.ts), `seatBlockFollowers` (solid-blocks.ts, two sites), `moveNode` (rows.ts), and the nodes of a group
+ * that W09 moves in part (bundle-geometry.ts). Each of these writes also lands in the net draft that the producer postconditions judge.
  *
  * The transient kinds are those of `move-reservations.ts`: riser keep-out (Ri), trunk extension (Tr), lane sides with the frozen chords (La),
  * side alignment (Si), span corridor (Sp), group exit (Ex). They are not active before 7a. Every write of 7e and 7f also lands in the net draft
@@ -66,7 +71,7 @@ export const BOX_WRITERS: readonly BoxWriter[] = [
   { id: 'W06', file: 'src/layout/bundle-geometry.ts', fn: 'prepareBundleGeometry', guard: { kind: 'forced', keeps: 'a y-only band shift by the growth of a band after the bundle fit: Ri, Si, lane sides, Tr', otherwise: REPLAY } },
   { id: 'W07', file: 'src/layout/bundle-geometry.ts', fn: 'prepareBundleGeometry', guard: { kind: 'forced', keeps: 'a y-only band shift for the room of a fan stem: Ri, Si, lane sides, Tr', otherwise: REPLAY } },
   { id: 'W08', file: 'src/layout/bundle-geometry.ts', fn: 'prepareBundleGeometry', guard: { kind: 'forced', keeps: 'a y-only band shift for the room of a bundle join: Ri, Si, lane sides, Tr', otherwise: REPLAY } },
-  { id: 'W09', file: 'src/layout/bundle-geometry.ts', fn: 'prepareBundleGeometry', guard: { kind: 'guarded', by: 'holdsMove on the whole groups it moves in x; refused, no crossover room is taken (BUNDLE_ROOM_HELD) and the bundle draws straight members or refuses by name (ADR-0017)' } },
+  { id: 'W09', file: 'src/layout/bundle-geometry.ts', fn: 'prepareBundleGeometry', guard: { kind: 'guarded', by: 'holdsMove on the whole groups it moves in x, and on the widened box and the moved nodes (holdsNodeMove) of a group it moves in part; refused, no crossover room is taken (BUNDLE_ROOM_HELD) and the bundle draws straight members or refuses by name (ADR-0017)' } },
   { id: 'W10', file: 'src/layout/bundle-geometry.ts', fn: 'prepareBundleGeometry', guard: { kind: 'forced', keeps: 'a y-only band shift for the need of a facing bundle: Ri, Si, lane sides, Tr', otherwise: REPLAY } },
   { id: 'W15', file: 'src/layout/bands.ts', fn: 'topUpBandClearance', guard: { kind: 'forced', keeps: 'a y-only band shift for the clearance of a label band: Ri, Si, lane sides, Tr', otherwise: `${REPLAY}; it runs after the chord freeze, so a chord it blocks ends as STRAIGHT_LINK_BLOCKED` } },
   { id: 'W18', file: 'src/layout/bands.ts', fn: 'insertRoomAt', guard: { kind: 'forced', keeps: 'an x shift of the half-plane right of the split in every tier, with every lane and riser right of it: Ri, Si, lane sides for every unit wholly on one side of the split', otherwise: `a node of a straddling group keeps its port where a lane or riser past the split moves (Si, Ri), and Tr, ${REPLAY}; label room wins over a lane beyond it (user, 2026-10-24); the producer postconditions judge the net draft` } },

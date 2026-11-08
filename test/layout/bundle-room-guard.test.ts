@@ -40,4 +40,31 @@ describe('W09: the crossover room of an inverted bundle asks the guard (DR-11)',
     expect(held.nodes['b']!.bounds!.x).toBe(base.nodes['b']!.bounds!.x);
     expect(held.diagnostics.filter(item => item.code === 'BUNDLE_ROOM_HELD').map(item => item.owners)).toEqual([[{ kind: 'bundle', id: base.bundles[0]!.id }]]);
   }, 60000);
+
+  // DR-11 review F3: a group that straddles the threshold (here gb, whose node c stands left of b) moves only b and is refitted, so its box grows
+  // right. The guard reads that widened box: an exit right of gb where it stands, met by the grown box, holds the room.
+  it('asks the guard for a group that straddles the threshold, by its widened box', async () => {
+    const straddle = inverted.replace('nodes:\n', 'nodes:\n  c: {group: gb}\n');
+    const base = await bars(centre(flanks(lanes(rows(await placed(straddle))))));
+    const was = base.groups['gb']!.bounds!;
+    expect(base.nodes['c']!.bounds!.x).toBeLessThan(base.nodes['b']!.bounds!.x);
+    const free = copy(base);
+    prepareBundleGeometry(free);
+    const grown = free.groups['gb']!.bounds!;
+    expect(grown.x).toBe(was.x);
+    expect(free.nodes['c']!.bounds!.x).toBe(base.nodes['c']!.bounds!.x);
+    const dx = grown.x + grown.width - (was.x + was.width);
+    expect(dx).toBeGreaterThan(1);
+    expect(free.diagnostics.some(item => item.code === 'BUNDLE_ROOM_HELD')).toBe(false);
+    const link = base.links.find(item => item.attachments?.from.node === 'a')!;
+    const margin = routedStroke(base) / 2 + GROUP_EDGE_LINK_CLEARANCE, x = was.x + was.width + margin + dx / 2, y = was.y + was.height / 2;
+    expect(dx / 2).toBeGreaterThan(margin);
+    const held = copy(base);
+    held.groupExits = [{ link: link.id, end: 'from', exited: ['ga'], from: { x, y }, to: { x: x + 1, y }, clearance: margin }];
+    prepareBundleGeometry(held);
+    // The room in x is not taken (a y growth of the bundle fit, W06, may still stand).
+    expect([held.groups['gb']!.bounds!.x, held.groups['gb']!.bounds!.width]).toEqual([was.x, was.width]);
+    expect(held.nodes['b']!.bounds!.x).toBe(base.nodes['b']!.bounds!.x);
+    expect(held.diagnostics.filter(item => item.code === 'BUNDLE_ROOM_HELD').map(item => item.owners)).toEqual([[{ kind: 'bundle', id: base.bundles[0]!.id }]]);
+  }, 60000);
 });

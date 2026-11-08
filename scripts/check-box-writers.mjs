@@ -8,7 +8,15 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { BOX_WRITERS } = await import(join(root, 'src', 'layout', 'box-writers.ts'));
+// The table is read as data, as the other lint scripts read their sources: Node needs no TypeScript loader for it (engines: >=22).
+const entry = /\{ id: '(\w+)', file: '([^']+)', fn: '(\w+)', guard: \{ kind: '(pre-7a|guarded|forced|scratch)'/g;
+const source = readFileSync(join(root, 'src', 'layout', 'box-writers.ts'), 'utf8');
+const BOX_WRITERS = [...source.matchAll(entry)].map(([, id, file, fn]) => ({ id, file, fn }));
+// Every entry is read, or the lint fails: an entry in another form would not count.
+if (BOX_WRITERS.length === 0 || BOX_WRITERS.length !== (source.match(/\{ id: '/g) ?? []).length) {
+  process.stderr.write('Box writers: an entry of src/layout/box-writers.ts is not in the form the lint reads; the form is `{ id: \'W01\', file: \'...\', fn: \'...\', guard: { kind: ... } }`.\n');
+  process.exit(1);
+}
 const walk = (dir) => readdirSync(dir).sort().flatMap((name) => { const path = join(dir, name); return statSync(path).isDirectory() ? walk(path) : path.endsWith('.ts') ? [path] : []; });
 const sites = new Map();
 for (const file of walk(join(root, 'src'))) {

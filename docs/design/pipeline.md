@@ -1226,8 +1226,9 @@ end its held direction alone while that direction is free; any other outcome is 
 before the final freeze and refused after it. A required exit that the geometry admits and the
 record lacks fails the producer postcondition, whatever diagnostic the model carries.
 
-The crossover room of an inverted side-facing bundle moves whole groups in x without their lanes,
-so it asks `holdsMove` first. Refused, no room is taken (`BUNDLE_ROOM_HELD`): the bundle draws
+The crossover room of an inverted side-facing bundle moves groups in x without their lanes, so it
+asks `holdsMove` first: for a group wholly right of the threshold, its moved box; for a group that
+straddles the threshold, its box widened by the room, and `holdsNodeMove` for its moved nodes. Refused, no room is taken (`BUNDLE_ROOM_HELD`): the bundle draws
 straight members where its gap holds the member pitch (ADR-0017), or refuses by name.
 
 For facing, non-inverted members whose endpoint tracks differ, each bend receives a distinct
@@ -1652,10 +1653,13 @@ The callbacks of 7e and 7f are empty, so their rule checks never see the produce
 producer postconditions (`postconditions.ts`, DR-11) judge it: on the net draft, after every
 dependent rebuild and before commit, each reservation that held at entry still holds (riser
 keep-out, trunk extension, lane sides, side alignment, group exit, the stored ledger). A breach
-refuses the transaction with a `PostconditionRefusal`, which withdraws a round's trial and fails
-the main line by name. A newly blocked frozen chord and a new wall in a span corridor stay
-advisory: `STRAIGHT_LINK_BLOCKED`, `SPAN_CHORD_BLOCKED` and the span round's judge own them. The
-box writers after 7a, with the guard or proof of each, are listed in `box-writers.ts`.
+refuses the transaction with a `PostconditionRefusal`. A producer refusal (that one, or a bundle
+path with no room) withdraws the trial of every round, by one rule in the round runner
+(`producerRefusal`), and fails the main line by name. A newly blocked frozen chord and a new wall
+in a span corridor stay advisory, for output neutrality: each such break that publishes is named
+again by its own finding (`STRAIGHT_LINK_BLOCKED`, `SPAN_CHORD_BLOCKED`). The `moveGroup` writers,
+with the guard or proof of each, are listed in `box-writers.ts`; a direct write to a node box is
+outside that table, and its doc names those writes.
 
 After 7f, the successful `bands` transaction captures `freeze.placement`, including node content
 and pill geometry, group geometry, tier bands, regions, lanes and group-label placement. Later

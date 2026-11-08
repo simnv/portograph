@@ -48,6 +48,14 @@ export class TrunkBlocked extends SideHintRefusal {
 /** A refusal that stage 7f may also give (a trial's bands run): the centring invariant and the budget are the command's, never a trial's. */
 export const refusedAtBands = (error: unknown): error is PlacementRefusal => error instanceof PlacementRefusal && error.code !== 'centring' && error.code !== 'budget';
 
+/**
+ * A refusal of a producer of 7e or 7f (DR-11): a postcondition of the net draft (`PostconditionRefusal`) or a bundle path with no room
+ * (`BundleFeasibilityError`, code `bundle`; W09 can end there when its guard refuses the room). Every round withdraws its trial on one, at its
+ * placement run and at its 7f run alike; the main line fails by name. One rule for every round: the round runner (`round.ts`) asks it before the
+ * round's own `tolerates`.
+ */
+export const producerRefusal = (error: unknown): error is PlacementRefusal => error instanceof PlacementRefusal && (error.code === 'postcondition' || error.code === 'bundle');
+
 /** The whole block is declined before freeze; the next run restores its original placement owners. */
 export class SolidBlockRefusal extends PlacementRefusal {
   constructor(readonly blocks: ReadonlyMap<string, string>) {

@@ -107,9 +107,13 @@ export function postconditionViolations(before: LayoutModel, after: LayoutModel,
 }
 
 /**
- * The kinds that stay advisory: a finding of these is reported, never refused. Each already ends as a named outcome that its owning rule reads
- * (`SPAN_CHORD_BLOCKED` and the span round's judge, `STRAIGHT_LINK_BLOCKED`), and the corpus shows them only in trials that their own judge drops
- * (DR-11 step 1, corpus at 1af7b324: frozenChord 5 sheets, spanCorridor 5 sheets; every other kind 0).
+ * The kinds that stay advisory: a finding of these is reported, never refused. The reason is output neutrality. A break of these kinds that
+ * publishes is named again by its own finding on the final draft, so the command keeps its output and the break is still named: a body on a
+ * frozen chord ends as `STRAIGHT_LINK_BLOCKED` (`placement-attempt.ts`, after the 7f settle loop), and a wall in a span corridor ends as
+ * `SPAN_CHORD_BLOCKED` (`spanLaneFindings`, which the span round also reads to withdraw a trial); a routed promise is judged again at
+ * publication (`holdsRouted`, `publish.ts`). A refusal of these kinds would fail sheets that publish today, also in the main line:
+ * `a-foreign-unit-with-routed-links-to-two-canton-groups` publishes with its link-3 frozen chord blocked (`STRAIGHT_LINK_BLOCKED`). DR-11 step 1,
+ * corpus at 1af7b324: frozenChord fires on 5 sheets, spanCorridor on 5; every other kind on 0.
  */
 export const ADVISORY_KINDS: ReadonlySet<PostconditionKind> = new Set<PostconditionKind>(['frozenChord', 'spanCorridor']);
 /**

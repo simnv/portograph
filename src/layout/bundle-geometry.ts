@@ -1,5 +1,5 @@
 import { GROUP_EDGE_LINK_CLEARANCE, routedStrokeWidth } from '../theme/geometry.js';
-import type { Bundle, LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment, Point, Side } from '../model/index.js';
+import type { Bundle, LayoutGroup, LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment, Point, Side } from '../model/index.js';
 import { repackOverlaps } from './rows.js';
 import { applyBundleOrder } from './bundle-order.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
@@ -7,7 +7,7 @@ import { findPort } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { fitRegionGroup, bottom, groupInsets, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
-import { holdsMove } from './move-reservations.js';
+import { holdsMove, holdsNodeMove } from './move-reservations.js';
 import { rowGap } from './sides-two.js';
 import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
 import { gridChains } from './grid.js';
@@ -828,17 +828,24 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         const delta = Math.max(0, required - (threshold - right(left!.bounds!)));
         const tier = model.groups[model.document.nodes[rightNode!.id]!.group]!.tier;
         const row = Object.values(model.groups).filter(g => g.tier === tier);
-        // The room moves whole groups in x without their lanes, so it is no forced write: it asks the guard of every reservation (R2, DR-11, W09).
-        // Refused, no room is taken. The bundle then draws straight members where its gap holds the member pitch (ADR-0017), or refuses by
-        // name (`BUNDLE_CROSSOVER_CAPACITY`), and `BUNDLE_ROOM_HELD` names the room it did not take.
-        const whole = row.filter(group => group.bounds !== undefined && group.nodes.every(id => model.nodes[id]!.bounds!.x >= threshold));
-        const held = delta > 0 && !holdsMove(model, whole.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + delta } })), false);
+        // The room moves groups in x without their lanes, so it is no forced write: it asks the guard of every reservation (R2, DR-11, W09).
+        // A group wholly right of the threshold moves whole. A group that straddles it (often the group of `rightNode`) moves the nodes right
+        // of it and is refitted (`fitRegionGroup`): its box grows right by at most `delta`, so the guard reads that widened box (the moved bodies'
+        // own guards by `holdsNodeMove`). Refused, no room is taken. The bundle then draws straight members where its gap holds the member pitch
+        // (ADR-0017), or refuses by name (`BUNDLE_CROSSOVER_CAPACITY`), and `BUNDLE_ROOM_HELD` names the room it did not take.
+        const rightOf = (group: LayoutGroup): string[] => group.nodes.filter(id => model.nodes[id]!.bounds!.x >= threshold);
+        const whole = row.filter(group => group.bounds !== undefined && rightOf(group).length === group.nodes.length);
+        const part = row.filter(group => group.bounds !== undefined && rightOf(group).length > 0 && rightOf(group).length < group.nodes.length);
+        const roomHolds = (): boolean => holdsMove(model, [...whole.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + delta } })),
+          ...part.map(group => ({ group, bounds: { ...group.bounds!, width: group.bounds!.width + delta }, dx: 0 }))], false)
+          && part.every(group => holdsNodeMove(model, group, rightOf(group), delta));
+        const held = delta > 0 && !roomHolds();
         if (held && !model.diagnostics.some(item => item.code === 'BUNDLE_ROOM_HELD' && item.owners?.some(owner => 'id' in owner && owner.id === bundle.id))) {
           model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'BUNDLE_ROOM_HELD', owners: [{ kind: 'bundle', id: bundle.id }],
             message: `The crossover room of ${bundle.id} (${delta.toFixed(1)} px right of ${rightNode!.id}) would break a reservation, so it is not taken.` });
         }
         if (delta && !held) for (const group of row) {
-          const moved = group.nodes.filter(id => model.nodes[id]!.bounds!.x >= threshold);
+          const moved = rightOf(group);
           if (moved.length === group.nodes.length) moveGroup(model, group, delta, 0);
           else for (const id of moved) { model.nodes[id]!.bounds!.x += delta; model.nodes[id]!.ports.forEach(p => { p.anchor!.x += delta; }); }
           fitRegionGroup(model, group);
