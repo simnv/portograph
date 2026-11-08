@@ -1,0 +1,49 @@
+# Expected: One node per icon the draw.io exporter writes as a bundled or built-in shape (`router`, `switch`, `server`, `cloud`)
+# plus the fallback star, so a render-back check can measure the painted area of each glyph (drawio-export ticket 10, A1-03).
+# Every glyph has to paint a visible area in the node and in the legend: the stencil `mxgraph.cisco19.cloud` is two contours
+# 0.04 px apart and paints a hairline, so the exporter writes draw.io's built-in `cloud` shape instead.
+# Test-only input owned by drawio-export ticket 10 (`test/render/drawio-glyphs.test.ts`); the whole pipeline runs, so no stage
+# precondition is needed.
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  lower: { tier: 1, label: Lower }
+nodes:
+  a:
+    group: upper
+    class: router
+    label: Router
+    icon: router
+    ports:
+      - { name: down, side: bottom }
+  b:
+    group: upper
+    class: tbr
+    label: Switch
+    icon: switch
+    ports:
+      - { name: down, side: bottom }
+  c:
+    group: lower
+    class: rr
+    label: Server
+    icon: server
+    ports:
+      - { name: up, side: top }
+  d:
+    group: lower
+    class: provider
+    label: Cloud
+    icon: cloud
+    ports:
+      - { name: up, side: top }
+  e:
+    group: lower
+    class: wan
+    label: Star
+    icon: star
+    ports:
+      - { name: up, side: top }
+links:
+  - [a.down, c.up]
+  - [b.down, d.up]
