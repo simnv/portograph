@@ -123,7 +123,7 @@ export const LABEL_SOLVE_READS = 4;
  * 3. The room of the link labels that ride across a gap is read at the growth the gap takes anyway (`reserveLinkLabelRoom` with
  *    `gapRoom`): a label whose window holds unopened can break once the gap opens. A label that raises a gap is read again with the others
  *    at the new height, at most `LABEL_SOLVE_READS` times; a room still rising then is given up to the label placement
- *    (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`), as a settle gives one up.
+ *    (`labelRoomUnsettled`, `LINK_LABEL_ROOM_UNSETTLED`). Label room is reserved by the producer and this solve only (ADR-0014 r2).
  * 4. Each gap grows by `max(0, H − room, label deficit)`; the bands below move down by the running total (`moveBands`), and the claims a
  *    move in y changes are rebuilt with no centring; the grid of the rebuild holds an x pair apart that the growth alone would widen (ticket 73). Then the linkless step (`afterGrowth`) runs once; when it moved, or when an alignment
  *    the publication would refuse stands, the centring is replayed once (`TIER_GAP_CENTRING_REPLAYED`). Nothing else moves in x: any other
@@ -148,7 +148,7 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel, 
     if (!rising.length) break;
   }
   // A room still rising after the last read is given up (R4, R6): the gap keeps the height the reads reached, and the label placement
-  // decides the label, as for a room a settle gave up.
+  // decides the label, as for a room the solve gave up.
   if (rising.length) giveUpGapRooms(model, rising.map(tier => deficits.get(tier)!.link), `still rose after ${LABEL_SOLVE_READS} reads of the tier-gap solve`);
   const grown = new Map<number, GapGrowth>();
   for (const { gap, plan } of plans) {
@@ -222,7 +222,7 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel, 
   }
   // The label rooms across a tier gap are read once more on the gaps as they stand (R6): the growth turns a diagonal that spans a grown gap,
   // and a deficit of a gap no plan reads (`tierGaps` skips it) grew nothing. A room across a gap still short is given up to the label
-  // placement, named, as a settle gives one up; nothing moves. A room of another kind is no term of the solve: the validator judges it.
+  // placement, named; nothing moves. A room of another kind is no term of the solve: the validator judges it.
   const shortfalls: LinkLabelShortfall[] = [];
   timed('solve-labels', () => reserveLinkLabelRoom(JSON.parse(JSON.stringify(model)) as LayoutModel, shortfalls));
   const gapShort = shortfalls.filter(tierGapShortfall);

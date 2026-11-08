@@ -42,6 +42,8 @@ export interface ReservationPayload {
   spanCorridor: { link: string; allowedBreaches: readonly string[] };
   /** A move keeps each reserved group exit clear of every box and node but the ones it leaves, and keeps its end beyond the margin of the boxes it leaves (architecture ticket 13). */
   groupExit: { exits: readonly GroupExit[] };
+  /** A move leaves each same-tier link's row room as the producer reserved it: it adds no link with a row shortfall to `short` (DR-02, `label-room-guard.ts`). */
+  labelRoom: { short: readonly string[] };
   /**
    * The order the feeds give a row (architecture-2 ticket 25, `feed-order.ts`): for `cell`, the nodes of a rank cell left to right; for
    * `frame`, the units that stand beside each other in the frame left to right, the frame's own cells named by the frame id and each
@@ -89,7 +91,7 @@ const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes',
+  turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton',
 };
 

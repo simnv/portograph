@@ -694,8 +694,8 @@ export interface LayoutModel {
    */
   stemDepths?: StemDepth[];
   /**
-   * The described links whose label room 7f gave up (architecture-2 ticket 27): a settle round reserved the room and replayed
-   * `LABEL_ROOM_PASSES` times and a pass still reserved more, so the room of the links still short then is left to the label placement
+   * The described links whose label room 7f gave up (architecture-2 ticket 27): the tier-gap solve read the room
+   * `LABEL_SOLVE_READS` times and a read still asked for more, so the room of the links still short then is left to the label placement
    * (`LINK_LABEL_ROOM_UNRESERVED`, as for a room no growth can open). No gate judges that label: G3 leaves out overlay labels and
    * `labelBorderCrossings` is a counter. When no window holds it, stage 9 places it across a border with `LINK_LABEL_ON_BORDER`; its own
    * collision test still refuses a place on a link. The reservation reads the record
@@ -876,6 +876,14 @@ export interface StaggerRow {
   /** The centre distance of each consecutive pair of members, `order.length - 1` entries (ticket 51: a gap between two parents is wider). */
   pitches: number[];
   step: number;
+  /**
+   * The feeding chain of a wrapped rank cell (fan wrap, decision review 2026-11, D-Q4): the column units (top-level frames and one-rank
+   * groups, sorted by id) on the feed side of the row's block that stage 5 moves as one block in x, so that their feeds into the block
+   * stand over the block's feed ports. The first stage 5 that seats the row decides it; every later run reads it and moves the same units.
+   * `[]`: decided, no chain (no unit feeds the block, or each feeder is a shared parent). Absent: the row is no rank cell (a plain row has no
+   * block and no chain). Publication and restore check that a chain still stands over its block (`validateStaggerRows`).
+   */
+  chain?: string[];
 }
 /**
  * One feed split (ticket 73): the feeding side of the step `tier` (child) and `authority` (the adjacent sub-tier toward the anchor) right of x `at`
