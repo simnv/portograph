@@ -283,6 +283,21 @@ export function packTier(model: LayoutModel, tier: Unit[], columns: Map<string, 
   if (step !== undefined) packStep(model, tiers, step.index, step.authority, columns, sequence);
 }
 
+/** The unit (a top-level frame with its child frames, or a one-rank group) that holds `groupId`; a reader over `columnTiers`, no new decision. */
+export function unitOf(model: LayoutModel, groupId: string): Unit | undefined {
+  return columnTiers(model).flat().find(unit => unit.groups.some(group => group.id === groupId));
+}
+
+/** Every document tier with its units (`columnTiers`), from the top tier down; a reader, no new decision. */
+export function documentTiers(model: LayoutModel): Unit[][] {
+  return columnTiers(model);
+}
+
+/** The units of the document tier that holds `groupId`; a reader over `columnTiers`, no new decision. */
+export function tierUnitsOf(model: LayoutModel, groupId: string): Unit[] {
+  return columnTiers(model).find(tier => tier.some(unit => unit.groups.some(group => group.id === groupId))) ?? [];
+}
+
 /**
  * Reads, for a unit of `tiers[index]`, the routed, attached, non-stub links that leave it towards the tier
  * `authority` on the facing sides, with the current x of both ports (ranked-groups tickets 11 and 16).

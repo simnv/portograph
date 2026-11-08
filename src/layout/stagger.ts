@@ -1,4 +1,4 @@
-/** Two-line row reservations, made before stage 5 freezes port topology: the width-budget search (ticket 166) and stage 5's own choice (ticket 51). */
+/** Two-line row reservations, made before stage 5 freezes port topology: the width-budget search (ticket 166) and stage 5's own choice (ticket 51, fan wrap D-Q4). */
 import type { GroupArrangement, LayoutLink, LayoutModel, LayoutGroup } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import type { StaggerRow } from '../model/layout.js';
@@ -18,6 +18,12 @@ import { laneWidth, occupied, selectAnchorTier } from './lanes.js';
 import { nodeTier } from './read/tier.js';
 import { straightCorridorClear } from './row-paths.js';
 import { validateColumns, type ColumnPlan } from './column-arrangement.js';
+import { besideGap, documentTiers, packTier, tierUnitsOf, unitOf, type Unit } from './columns.js';
+import { deriveFrames } from './frames.js';
+import { separationShortfalls, worseSeparations } from './constraints/separation.js';
+import { straightOverlaysAsDrawn } from './read/overlay-straight.js';
+import { isRoutedChord } from './frame-paths.js';
+import { columnUnitId } from './read/chain.js';
 
 export const staggerOf = (model: LayoutModel, group: string): StaggerRow | undefined => model.staggerRows?.find(row => row.group === group);
 
@@ -210,7 +216,8 @@ function seatFeeds(model: LayoutModel): SeatedParent[] {
     const width = Math.max(old.width, high - low + 2 * Math.max(inset.low, inset.high));
     const x = (low + high - width) / 2, dx = x - old.x;
     node.bounds = { ...old, x, width }; node.size = { ...node.size!, width };
-    for (const port of node.ports) if (port.anchor) port.anchor.x += dx + (port.side === 'right' ? width - old.width : 0);
+    // The far face keeps its ports' offsets from the centre (fan wrap, D-Q4): the hub's feed from the tier beyond stays over the drops it spans.
+    for (const port of node.ports) if (port.anchor) port.anchor.x += dx + (port.side === 'right' ? width - old.width : port.side === opposite(side) ? (width - old.width) / 2 : 0);
     for (const port of wanted) port.anchor!.x = targets.get(portId(port.ref))!;
     ports.sort((a, b) => a.anchor!.x - b.anchor!.x || a.engineOrder! - b.engineOrder!).forEach((port, index) => { port.engineOrder = index; });
     rebuildNodeGeometry(model, [id], 'current');
@@ -274,7 +281,10 @@ function seatedParentFits(model: LayoutModel, parent: SeatedParent): void {
   }
 }
 
-/** Stage 5 only: seat both lines, fit containing groups, close the space released in each affected tier. */
+/**
+ * Stage 5 only: seat both lines, fit containing groups, close the space released in each affected tier. A wrapped rank cell also packs its
+ * document tier again and stands its feeding chain over its block (fan wrap, D-Q4), before the feeding faces are seated.
+ */
 export function seatStaggerRows(model: LayoutModel): void {
   const affected = new Set<number>();
   for (const plan of model.staggerRows ?? []) {
@@ -305,6 +315,15 @@ export function seatStaggerRows(model: LayoutModel): void {
     if (groups.some(group => group.frame !== undefined || group.flank)) continue;
     let x = groups[0]!.bounds!.x;
     for (const group of groups) { moveGroup(model, group, x - group.bounds!.x, 0); x += group.bounds!.width + bandGap(model); }
+  }
+  // A wrapped rank cell (fan wrap, D-Q4): the column packer packs its document tier again against the narrower cell (`packTier`), and the
+  // feeding chain of its block moves as one block in x to stand over the block's feeds again. The first seat decides the chain; a later run
+  // reads it (R1). Rows in `staggerRows` order; a unit of an earlier row's chain is no unit of a later one, so the chains are disjoint.
+  const rankCells = (model.staggerRows ?? []).filter(plan => model.groups[plan.group]!.frame !== undefined);
+  for (const plan of rankCells) packTier(model, tierUnitsOf(model, plan.group), new Map());
+  for (const [i, plan] of rankCells.entries()) {
+    plan.chain ??= decideChain(model, plan, new Set(rankCells.slice(0, i).flatMap(row => row.chain ?? [])));
+    standChain(model, plan);
   }
   const seated = seatFeeds(model);
   stackBands(model, true);
@@ -373,13 +392,17 @@ export function staggerRefusal(error: unknown): error is PlacementRefusal {
 export function validateStaggerRows(model: LayoutModel): void {
   validateArrangements(model);
   validateColumns(model);
-  const seen = new Set<string>();
+  const seen = new Set<string>(), claimed = new Set<string>();
   for (const plan of model.staggerRows ?? []) {
     const group = model.groups[plan.group];
     if (seen.has(plan.group) || group === undefined || exitSide(model, group) !== plan.side
       || JSON.stringify(group.rowOrder) !== JSON.stringify(plan.order) || !Array.isArray(plan.pitches) || plan.pitches.length !== plan.order.length - 1
-      || !plan.pitches.every(pitch => pitch > 0 && Number.isFinite(pitch)) || !(plan.step > 0)) throw new PlacementRefusal('stagger', 'Invalid stagger reservation');
+      || !plan.pitches.every(pitch => pitch > 0 && Number.isFinite(pitch)) || !(plan.step > 0)
+      // A rank cell carries its decided feeding chain (fan wrap, D-Q4), a plain row none (`StaggerRow.chain`).
+      || (group.frame !== undefined) !== Array.isArray(plan.chain)) throw new PlacementRefusal('stagger', 'Invalid stagger reservation');
     seen.add(plan.group);
+    if (plan.chain?.length) validateChain(model, plan, claimed);
+    for (const id of plan.chain ?? []) claimed.add(id);
     const first = model.nodes[plan.order[0]!]!.bounds!;
     let offset = 0;
     for (const [i, id] of plan.order.entries()) {
@@ -400,12 +423,6 @@ export function validateStaggerRows(model: LayoutModel): void {
   }
 }
 
-/** The x extent of every group box and frame: the width the canvas takes from the groups. */
-function sheetWidth(model: LayoutModel): number {
-  const boxes = [...Object.values(model.groups).flatMap(group => group.bounds && group.nodes.length ? [group.bounds] : []), ...(model.frames ?? []).map(frame => frame.box)];
-  return boxes.length ? Math.max(...boxes.map(box => box.x + box.width)) - Math.min(...boxes.map(box => box.x)) : 0;
-}
-
 /** The stage-5 canvas, which `stackBands` sets from the band extents; undefined when it is not set or has no area (the aspect rule then refuses, R6). */
 function aspectOf(model: LayoutModel): { width: number; height: number } | undefined {
   const canvas = model.canvas;
@@ -420,9 +437,8 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
   const source = model.document.groups[group.id];
   if (source?.shapeAuthored) return 'the author set the shape';
   if (group.flank) return 'a flank group';
-  if (group.frame !== undefined) return 'a rank cell of a ranked frame';
   if (groupShape(model, group.id) !== 'row') return `a ${groupShape(model, group.id)} group`;
-  if (group.nodes.length < 4) return 'fewer than four members';
+  if (group.nodes.length < 3) return 'fewer than three members';
   if (!candidate) return 'its members do not all link out of the row through one horizontal face';
   for (const id of group.nodes) {
     const all = model.links.filter(link => link.attachments === undefined
@@ -433,19 +449,62 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
     if (links[0]!.bundle !== undefined) return `the link of member ${id} is a bundle member`;
     if (model.groups[model.document.nodes[endsOf(links[0]!, id).far.node]!.group]!.flank) return `member ${id} links to a flank`;
   }
+  // A fan (D-Q4): every hub of the row feeds three or more of its members; the hub runs stand side by side (`parentGaps` refuses interleaved runs).
+  const runs = new Map<string, number>();
+  for (const id of group.nodes) { const hub = endsOf(memberLinks(model, id)[0]!, id).far.node; runs.set(hub, (runs.get(hub) ?? 0) + 1); }
+  const small = [...runs].filter(([, count]) => count < 3).sort(([a], [b]) => compareId(a, b))[0];
+  if (small !== undefined) return `hub ${small[0]} feeds ${small[1]} of its members, not three or more`;
   return undefined;
 }
 
 /**
+ * The two triggers of a stage-5 stagger (decision review 2026-11, D-Q4; ADR-0024, second amendment), in one place. Returns the reason the
+ * trigger refuses, or undefined when the row may be tried on a draft.
+ * - A rank cell (a fan wrap): the block trigger. Its one line must be wider than the widest other group of its tier block (the unit
+ *   `columnTiers` reads: a top-level frame with its child frames), read on `model`, the one-line stage-5 model, so no seated hub is read.
+ * - A plain row (no other block content): the aspect trigger (user decision 2026-11-02). Its band is the one widest band, and the sheet is
+ *   wider than tall, read on `base`, the stage-5 canvas that `stackBands` sets with the rows accepted so far.
+ */
+function triggerReason(model: LayoutModel, base: LayoutModel, id: string): string | undefined {
+  const group = model.groups[id]!;
+  if (group.frame !== undefined) {
+    const others = (unitOf(model, id)?.groups ?? []).filter(other => other.id !== id && other.bounds !== undefined && other.nodes.length);
+    if (!others.length) return 'block: its block holds no other group';
+    const width = group.bounds!.width, widest = Math.max(...others.map(item => item.bounds!.width));
+    return width > widest + PLACEMENT_EPS ? undefined : `block: one line (${width.toFixed(2)} px) is no wider than the rest of its block (${widest.toFixed(2)} px)`;
+  }
+  const band = base.tierBands.find(item => item.tier === base.groups[id]!.tier)!;
+  if (base.tierBands.some(other => other !== band && other.bounds!.width >= band.bounds!.width - PLACEMENT_EPS)) return 'its band is not the one widest band of the sheet';
+  const before = aspectOf(base);
+  return before !== undefined && before.width > before.height + PLACEMENT_EPS ? undefined : `aspect: the sheet is ${size(before)}, not wider than tall`;
+}
+
+/**
+ * The objective of a stage-5 stagger (D-Q4), read on the seated draft against `base`: the stage-5 canvas area strictly less; and for a plain
+ * row (the aspect trigger) the sheet also nearer square (`|ln(W/H)|` strictly smaller). Returns the reason it refuses, or undefined.
+ */
+function objectiveReason(base: LayoutModel, draft: LayoutModel, id: string): string | undefined {
+  const before = aspectOf(base), after = aspectOf(draft);
+  if (before === undefined || after === undefined || !(after.width * after.height < before.width * before.height - PLACEMENT_EPS)) {
+    return `two lines give ${size(after)}, not less area than ${size(before)}`;
+  }
+  if (draft.groups[id]!.frame !== undefined) return undefined;
+  return Math.abs(Math.log(after.width / after.height)) < Math.abs(Math.log(before.width / before.height)) - ASPECT_EPS ? undefined
+    : `aspect: two lines give ${size(after)}, not nearer square than ${size(before)}`;
+}
+
+/**
  * Stage 5 of the first placement run, before the seat (ticket 51): pick each group's arrangement when no budget gave the rows. A candidate
- * row is tried widest first on a draft; it staggers only when its band alone is the widest band, the sheet is wider than tall, the seated
- * draft passes `prove` (the stage-5 refusals and the topology-freeze validation), and the sheet comes out at least one pitch narrower and
- * nearer square (aspect). A draft that a stage-5 stagger refusal refuses is dropped, the row stays, and the record names the reason; any
- * other error of the draft ends the run (a freeze validation that the stage-5 proof did not foresee is a defect, not a reason). Each candidate is tried once (a finite traversal). A `declined` group stays a row: a later
- * stage of an earlier attempt of the first run could not keep its stagger. When every group keeps its row by a rule before any draft there is
- * nothing to choose and no record: an absent record and an all-`row` record both mean "every group stays one row"; the record exists
- * only when stage 5 tried a group. `columns` are the columns stage 5 seated earlier (ticket 52): each is recorded `column`, and a group
- * the column rule refused by name keeps that reason (the two filters are disjoint).
+ * row (`rowReason`: a row of three or more members, each with one plain routed link out through one horizontal face, every hub feeding three
+ * or more of them) is tried widest first on a draft. It staggers only when its trigger holds (`triggerReason`: the block trigger for a rank
+ * cell, the aspect trigger for a plain row), the seated draft passes `prove` (the stage-5 refusals and the topology-freeze validation), and the
+ * objective holds (`objectiveReason`: less stage-5 canvas area, and nearer square for a plain row). A draft that a stage-5 stagger refusal
+ * refuses is dropped, the row stays, and the record names the reason; any other error of the draft ends the run (a freeze validation that the
+ * stage-5 proof did not foresee is a defect, not a reason). Each candidate is tried once (a finite traversal). A `declined` group stays a row:
+ * a later stage of an earlier attempt of the first run, or the acceptance gate (`wrapGateVerdict`), could not keep its stagger. When every group
+ * keeps its row by a rule before any draft there is nothing to choose and no record: an absent record and an all-`row` record both mean
+ * "every group stays one row"; the record exists only when stage 5 tried a group. `columns` are the columns stage 5 seated earlier (ticket
+ * 52): each is recorded `column`, and a group the column rule refused by name keeps that reason (the two filters are disjoint).
  */
 export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, string>, prove: (draft: LayoutModel) => void,
   columns: { plans: readonly ColumnPlan[]; reasons: ReadonlyMap<string, string> } = { plans: [], reasons: new Map() }): void {
@@ -473,19 +532,12 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
   // No group the rule may try (every group keeps its row by a rule of `rowReason`): nothing to choose, no record. A declined group was tried.
   if (declined.size === 0 && ids.every(id => reasons.has(id))) return;
   const accepted: StaggerRow[] = [];
-  let base = model, width = sheetWidth(model);
+  let base = model;
   for (const row of candidates) {
     if (reasons.has(row.group)) continue;
-    const band = base.tierBands.find(item => item.tier === base.groups[row.group]!.tier)!;
-    if (base.tierBands.some(other => other !== band && other.bounds!.width >= band.bounds!.width - PLACEMENT_EPS)) {
-      reasons.set(row.group, 'its band is not the one widest band of the sheet');
-      continue;
-    }
-    // The aspect rule (user decision 2026-11-02): only a sheet wider than tall staggers, and only toward square. Both sizes are the stage-5
-    // canvas that `stackBands` sets from the band extents, before the stagger (`base`) and on the seated draft.
-    const before = aspectOf(base);
-    if (before === undefined || !(before.width > before.height + PLACEMENT_EPS)) {
-      reasons.set(row.group, `aspect: the sheet is ${size(before)}, not wider than tall`);
+    const trigger = triggerReason(model, base, row.group);
+    if (trigger !== undefined) {
+      reasons.set(row.group, trigger);
       continue;
     }
     const draft = JSON.parse(JSON.stringify(model)) as LayoutModel;
@@ -497,17 +549,12 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
       reasons.set(row.group, `stage 5 refused the two lines: ${error.message}`);
       continue;
     }
-    const pitch = Math.min(...draft.staggerRows.find(item => item.group === row.group)!.pitches), next = sheetWidth(draft);
-    if (next > width - pitch + PLACEMENT_EPS) {
-      reasons.set(row.group, `two lines give ${next.toFixed(2)} px, not one pitch (${pitch.toFixed(2)} px) less than ${width.toFixed(2)} px`);
+    const objective = objectiveReason(base, draft, row.group);
+    if (objective !== undefined) {
+      reasons.set(row.group, objective);
       continue;
     }
-    const after = aspectOf(draft);
-    if (after === undefined || !(Math.abs(Math.log(after.width / after.height)) < Math.abs(Math.log(before!.width / before!.height)) - ASPECT_EPS)) {
-      reasons.set(row.group, `aspect: two lines give ${size(after)}, not nearer square than ${size(before)}`);
-      continue;
-    }
-    accepted.push(row); base = draft; width = next;
+    accepted.push(row); base = draft;
   }
   const arrangements: Record<string, GroupArrangement> = {};
   for (const id of ids) arrangements[id] = column.has(id) ? { chosen: 'column' } : accepted.some(row => row.group === id) ? { chosen: 'stagger' } : { chosen: 'row', reason: reasons.get(id)! };
@@ -530,4 +577,169 @@ function validateArrangements(model: LayoutModel): void {
       throw new PlacementRefusal('stagger', `The arrangement of ${id} contradicts its stagger reservation`);
     }
   }
+}
+
+
+/**
+ * The block of a wrapped rank cell among the document tiers (`documentTiers`): the unit that holds the row (a top-level frame with its child
+ * frames), its tier index, and the step toward the row's feeds (-1 when the feeds stand above the row, `plan.side` 'top').
+ */
+function blockOf(model: LayoutModel, plan: StaggerRow): { tiers: Unit[][]; index: number; block: Unit; step: number } {
+  const tiers = documentTiers(model);
+  const index = tiers.findIndex(tier => tier.some(unit => unit.groups.some(group => group.id === plan.group)));
+  const block = tiers[index]!.find(unit => unit.groups.some(group => group.id === plan.group))!;
+  return { tiers, index, block, step: plan.side === 'top' ? -1 : 1 };
+}
+
+/**
+ * The feeds of a row's stored chain into its block (fan wrap, D-Q4): each routed link between a node of a chain unit on the document tier next
+ * to the block and a node of the block, the chain port on the face toward the block and the block port on the row's feed face, with both x.
+ * The one reader of where the chain stands: the stage-5 move (`standChain`) and the publication check (`validateChain`) call it (R1).
+ */
+function chainFeeds(model: LayoutModel, plan: StaggerRow): { link: string; from: number; to: number }[] {
+  if (!plan.chain?.length) return [];
+  const { tiers, index, block, step } = blockOf(model, plan), chain = new Set(plan.chain);
+  const near = new Set((tiers[index + step] ?? []).filter(unit => chain.has(unit.id)).flatMap(unit => unit.groups.map(group => group.id)));
+  const inBlock = new Set(block.groups.map(group => group.id)), groupOf = (ref: PortRef): string => model.document.nodes[ref.node]!.group;
+  const feeds: { link: string; from: number; to: number }[] = [];
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]] as const) {
+      if (!near.has(groupOf(own)) || !inBlock.has(groupOf(other))) continue;
+      const a = findPort(model, own), b = findPort(model, other);
+      if (a?.anchor && b?.anchor && a.side === opposite(plan.side) && b.side === plan.side) feeds.push({ link: link.id, from: a.anchor.x, to: b.anchor.x });
+    }
+  }
+  return feeds;
+}
+/** The x move that stands the chain over its block: the mean of (block port x - chain port x) over its feeds. */
+const chainOffset = (feeds: readonly { from: number; to: number }[]): number => feeds.reduce((sum, feed) => sum + feed.to - feed.from, 0) / feeds.length;
+
+/**
+ * Decides the feeding chain of a wrapped rank cell once (fan wrap, D-Q4; `StaggerRow.chain`). From the block, tier by tier toward the row's
+ * feeds, a unit joins when one of its nodes has a routed link into the units that joined on the tier before (the block first). A node that
+ * also links to another unit of that tier before is a shared parent: a move over one would leave the other, so its unit stays out, and the
+ * chain ends at a tier where no unit joins. A unit of an earlier row's chain (`claimed`) or a unit that holds a stagger row stays out too.
+ * A chain whose near tier has no feed on the faces `chainFeeds` reads has nothing to stand over and is no chain. Unit ids sorted.
+ */
+function decideChain(model: LayoutModel, plan: StaggerRow, claimed: ReadonlySet<string>): string[] {
+  const { tiers, index, block, step } = blockOf(model, plan);
+  const unitOfGroup = new Map<string, Unit>(tiers.flat().flatMap(unit => unit.groups.map(group => [group.id, unit] as const)));
+  // Each routed link as its two ends: the node and the unit that holds it (none for a flank node).
+  const ends = model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
+    .map(link => [link.attachments!.from.node, link.attachments!.to.node].map(node => ({ node, unit: unitOfGroup.get(model.document.nodes[node]!.group) })));
+  const rows = new Set((model.staggerRows ?? []).map(row => row.group));
+  const chain: Unit[] = [];
+  let front = new Set<Unit>([block]), before = new Set<Unit>(tiers[index]!);
+  for (let at = index + step; at >= 0 && at < tiers.length; at += step) {
+    const next = tiers[at]!.filter(unit => {
+      if (claimed.has(unit.id) || unit.groups.some(group => rows.has(group.id))) return false;
+      const feeders = new Set(ends.flatMap(pair => pair.flatMap((end, i) => end.unit === unit && pair[1 - i]!.unit !== undefined && front.has(pair[1 - i]!.unit!) ? [end.node] : [])));
+      return feeders.size > 0
+        && !ends.some(pair => pair.some((end, i) => feeders.has(end.node) && pair[1 - i]!.unit !== undefined && before.has(pair[1 - i]!.unit!) && !front.has(pair[1 - i]!.unit!)));
+    });
+    if (!next.length) break;
+    chain.push(...next); front = new Set(next); before = new Set(tiers[at]!);
+  }
+  const ids = chain.map(unit => unit.id).sort(compareId);
+  return ids.length && chainFeeds(model, { ...plan, chain: ids }).length ? ids : [];
+}
+
+/**
+ * Moves the stored chain of a wrapped rank cell as one block in x (fan wrap, D-Q4), after the re-pack of its tier: its feeds into the block
+ * stand over the block's ports at their mean (`chainOffset`). Whole units move (every cell of a chain frame, a flank with its group), so every
+ * reservation inside a unit holds. The move must keep a beside gap (`besideGap`) from every group box and frame beside the chain on its own
+ * rows; a chain with no room for the whole move, or with no feed left, refuses the row by name (a stagger refusal: the first run keeps the row
+ * one line, a later run is cut). Each run measures the move on its own stage-5 geometry; the units are the stored decision.
+ */
+function standChain(model: LayoutModel, plan: StaggerRow): void {
+  if (!plan.chain?.length) return;
+  const feeds = chainFeeds(model, plan);
+  if (!feeds.length) refuse(plan, `its feeding chain (${plan.chain.join(', ')}) has no feed into its block`);
+  const dx = chainOffset(feeds), chain = new Set(plan.chain);
+  const moving = Object.values(model.groups).filter(group => chain.has(columnUnitId(model, group.id))).sort((a, b) => compareId(a.id, b.id));
+  const movingIds = new Set(moving.map(group => group.id)), frames = deriveFrames(model) ?? [];
+  // The boxes that stand beside each other: the moving groups and the chain's frames against every unframed group and top-level frame that stays.
+  const boxes = (inChain: boolean): { box: { x: number; y: number; width: number; height: number }; frame: boolean }[] => [
+    ...Object.values(model.groups).filter(group => group.bounds && group.nodes.length && movingIds.has(group.id) === inChain && (inChain || group.frame === undefined))
+      .map(group => ({ box: group.bounds!, frame: false })),
+    ...frames.filter(frame => frame.parent === undefined && chain.has(frame.id) === inChain).map(frame => ({ box: frame.box, frame: true }))];
+  let low = -Infinity, high = Infinity;
+  const others = boxes(false);
+  for (const own of boxes(true)) for (const other of others) {
+    if (other.box.y >= own.box.y + own.box.height || own.box.y >= other.box.y + other.box.height) continue;
+    const gap = besideGap(model, own.frame, other.frame);
+    if (other.box.x + other.box.width <= own.box.x + PLACEMENT_EPS) low = Math.max(low, other.box.x + other.box.width + gap - own.box.x);
+    else if (other.box.x >= own.box.x + own.box.width - PLACEMENT_EPS) high = Math.min(high, other.box.x - gap - own.box.x - own.box.width);
+  }
+  if (dx < low - PLACEMENT_EPS || dx > high + PLACEMENT_EPS) {
+    refuse(plan, `its feeding chain (${plan.chain.join(', ')}) has no room to stand over its block: it must move ${dx.toFixed(2)} px, the boxes beside it allow ${low.toFixed(2)} to ${high.toFixed(2)} px`);
+  }
+  if (Math.abs(dx) > PLACEMENT_EPS) for (const group of moving) moveGroup(model, group, dx, 0);
+}
+
+/**
+ * The publication check of a stored chain (fan wrap, D-Q4): its units are sorted, distinct, held by no other row's chain, and stand on the
+ * document tiers on the feed side of the block; and the chain still stands over its block (`chainFeeds`, `chainOffset`): no later stage moved
+ * it off. Geometry and the record only; no diagnostic excuses it (R5).
+ */
+function validateChain(model: LayoutModel, plan: StaggerRow, claimed: ReadonlySet<string>): void {
+  const chain = plan.chain!, owners = [{ kind: 'group' as const, id: plan.group }];
+  const { tiers, index, step } = blockOf(model, plan);
+  const beyond = new Set(tiers.filter((_, at) => (at - index) * step > 0).flat().map(unit => unit.id));
+  if (chain.some((id, i) => (i > 0 && compareId(chain[i - 1]!, id) >= 0) || claimed.has(id) || !beyond.has(id))) {
+    throw new PlacementRefusal('stagger', `Stagger row ${plan.group}: invalid feeding chain`, { owners });
+  }
+  const feeds = chainFeeds(model, plan), offset = feeds.length ? chainOffset(feeds) : undefined;
+  if (offset === undefined || Math.abs(offset) > PLACEMENT_EPS) {
+    throw new PlacementRefusal('stagger', `Stagger row ${plan.group}: the feeding chain (${chain.join(', ')}) no longer stands over its block (${offset === undefined ? 'no feed' : `${offset.toFixed(2)} px off`})`, { owners });
+  }
+}
+
+/** The extent of every node, group box and frame box of a placed model, width x height (the acceptance gate's canvas). */
+function placedExtent(model: LayoutModel): { width: number; height: number } {
+  const boxes = [...Object.values(model.nodes).flatMap(node => node.bounds ? [node.bounds] : []),
+    ...Object.values(model.groups).flatMap(group => group.bounds && group.nodes.length ? [group.bounds] : []), ...(deriveFrames(model) ?? []).map(frame => frame.box)];
+  if (!boxes.length) return { width: 0, height: 0 };
+  return { width: Math.max(...boxes.map(box => box.x + box.width)) - Math.min(...boxes.map(box => box.x)),
+    height: Math.max(...boxes.map(box => box.y + box.height)) - Math.min(...boxes.map(box => box.y)) };
+}
+
+/**
+ * The links a placed model draws as one straight segment: both ends on facing faces, on one x (top and bottom) or one y (left and right),
+ * a held routed chord (`isRoutedChord`), and an overlay link the overlay rule draws as one segment (`straightOverlaysAsDrawn`).
+ */
+function placedStraight(model: LayoutModel): Set<string> {
+  const straight = new Set<string>([...straightOverlaysAsDrawn(model).map(item => item.id), ...model.links.filter(link => isRoutedChord(model, link)).map(link => link.id)]);
+  for (const link of model.links) {
+    if (!link.attachments || link.technique === 'stub') continue;
+    const a = findPort(model, link.attachments.from), b = findPort(model, link.attachments.to);
+    if (!a?.anchor || !b?.anchor || a.side === undefined || b.side === undefined) continue;
+    const vertical = (a.side === 'top' && b.side === 'bottom') || (a.side === 'bottom' && b.side === 'top');
+    const lateral = (a.side === 'left' && b.side === 'right') || (a.side === 'right' && b.side === 'left');
+    if ((vertical && Math.abs(a.anchor.x - b.anchor.x) <= PLACEMENT_EPS) || (lateral && Math.abs(a.anchor.y - b.anchor.y) <= PLACEMENT_EPS)) straight.add(link.id);
+  }
+  return straight;
+}
+
+/** The diagnostic code of a stage-5 stagger that the acceptance gate declines (fan wrap, D-Q4; ADR-0024, second amendment). */
+export const FAN_WRAP_DECLINED = 'FAN_WRAP_DECLINED';
+/** The diagnostic code of a stage-5 stagger that stands without the acceptance gate: the placement budget left no run to compare it with. */
+export const FAN_WRAP_UNGATED = 'FAN_WRAP_UNGATED';
+
+/**
+ * The acceptance gate of the stagger stage 5 chose (fan wrap, D-Q4): the complete placement with the two lines (`wrapped`, after 7f, before
+ * routing) against the same run with every chosen stagger declined (`plain`). The two lines stand only when they take less area, every link
+ * `plain` places straight stays straight, and no hard separation is shorter than in `plain`. Returns the reason to decline, or undefined to keep.
+ */
+export function wrapGateVerdict(wrapped: LayoutModel, plain: LayoutModel): string | undefined {
+  const w = placedExtent(wrapped), p = placedExtent(plain);
+  if (!(w.width * w.height < p.width * p.height - PLACEMENT_EPS)) {
+    return `the complete placement is ${size(w)} with two lines, not less area than ${size(p)} without`;
+  }
+  const kept = placedStraight(wrapped), lost = [...placedStraight(plain)].filter(id => !kept.has(id)).sort(compareId);
+  if (lost.length) return `the link${lost.length > 1 ? 's' : ''} ${lost.join(', ')} ${lost.length > 1 ? 'are' : 'is'} straight without the two lines and not with them`;
+  const short = worseSeparations(separationShortfalls(wrapped), separationShortfalls(plain)).sort(compareId);
+  if (short.length) return `the two lines leave the separation ${short[0]} short`;
+  return undefined;
 }

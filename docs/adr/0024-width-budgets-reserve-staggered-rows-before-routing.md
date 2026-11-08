@@ -76,3 +76,30 @@ link to one node of the facing group stands one member on each line. Stage 5 of 
 placement run decides it on final sides, before the nodes are sized again, and the facing face
 takes the column's centre pitch, so every link is level and straight. It spends no placement
 run, and the record exists when a group took the column or a stagger draft was tried.
+
+## Second amendment (2026-11-08, decision review 2026-11, D-Q4, ticket 07): fan wrap, two triggers, area objective
+
+The user ruled that a tier block must not be much wider than its sheet because one row of leaves stands on one line under one hub
+(mock A: two staggered lines, straight vertical drops, the hub spans them). The first amendment changes as follows.
+
+- Candidates. A rank cell is admitted. A row has three or more members, and every hub of the row feeds three or more of them (a **fan**;
+  the runs of several hubs stand side by side, and the seat refuses interleaved runs). The other rules stay.
+- Two triggers, in one place (`triggerReason`, `src/layout/stagger.ts`). A rank cell takes the **block trigger**: its one line is wider
+  than the widest other group of its tier block (its top-level frame with the child frames). A plain row, which has no other block content,
+  keeps the aspect rule: its band is the one widest band and the sheet is wider than tall.
+- Objective: the stage-5 canvas area, strictly less, replaces "at least one pitch narrower". A plain row must also come out nearer square.
+- Re-pack. After the seat, a wrapped rank cell packs its document tier again (`packTier`), so the sibling units close up.
+- Feeding chain. The units on the feed side that feed the block, tier by tier, without a shared parent, are its feeding chain. The first
+  seat decides it once (`StaggerRow.chain`; `[]` for no chain, absent for a plain row); every seat moves those units as one block in x so
+  their feeds stand over the block, or refuses the row by name when the boxes beside the chain leave no room. 7c grows no chain body and
+  centres a chain node only on its feeds inside the chain or into the block. Publication and restore check that the chain still stands over
+  its block.
+- Acceptance gate. A stagger that stage 5 chose stands only when the complete placement (after 7f, before routing) takes less area than
+  the same run without it, keeps every link that run places straight, and shortens no hard separation. The run without it is one more
+  placement run within `MAX_RERUNS`. A declined stagger stays one line; the record names the gate, and the info diagnostic
+  `FAN_WRAP_DECLINED` names the reason. When the budget leaves no run that can still choose, the stagger stands ungated with
+  `FAN_WRAP_UNGATED`.
+
+Evidence: `.scratch/decision-review-2026-11/poc/fanwrap/results.md` and `poc/fanwrap-v4/results.md`. On the key sheet
+`a-chain-of-tiers-packs-over-its-feeds-final-x` the canvas goes from 2937 x 1069 to 1845 x 1126 px (area -33.8 %), with no bend and no
+straight link lost.
