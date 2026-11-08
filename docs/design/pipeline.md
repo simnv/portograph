@@ -1212,6 +1212,16 @@ identity, side, authored precedence and floors reject before replay can repair t
 replay is reusable by stage 7f and consumes one caller-owned eight-pass centering budget. The final
 scorer still requires every complete path; a stage-11 subset score is not a full golden result.
 
+A group exit (`model.groupExits`) is a held promise (DR-11): its direction and the boxes it leaves
+are a stored decision, and each replay derives only its coordinates again. A replay offers a held
+end its held direction alone while that direction is free; any other outcome is a replan, allowed
+before the final freeze and refused after it. A required exit that the geometry admits and the
+record lacks fails the producer postcondition, whatever diagnostic the model carries.
+
+The crossover room of an inverted side-facing bundle moves whole groups in x without their lanes,
+so it asks `holdsMove` first. Refused, no room is taken (`BUNDLE_ROOM_HELD`): the bundle draws
+straight members where its gap holds the member pitch (ADR-0017), or refuses by name.
+
 For facing, non-inverted members whose endpoint tracks differ, each bend receives a distinct
 member-pitch row. Members moving toward smaller tangent coordinates turn in increasing source
 order; those moving toward larger coordinates turn in decreasing order. This avoids bend contact
@@ -1634,6 +1644,15 @@ is kept, and final gates decide whether the diagram fails.
 The bands transaction owns this production after its callback checks, reuses one centring budget
 across every replay, and captures placement only after the final coherent claims. A callback cannot
 publish provisional bands or labels for the finalizer to repair.
+
+The callbacks of 7e and 7f are empty, so their rule checks never see the producer output. The
+producer postconditions (`postconditions.ts`, DR-11) judge it: on the net draft, after every
+dependent rebuild and before commit, each reservation that held at entry still holds (riser
+keep-out, trunk extension, lane sides, side alignment, group exit, the stored ledger). A breach
+refuses the transaction with a `PostconditionRefusal`, which withdraws a round's trial and fails
+the main line by name. A newly blocked frozen chord and a new wall in a span corridor stay
+advisory: `STRAIGHT_LINK_BLOCKED`, `SPAN_CHORD_BLOCKED` and the span round's judge own them. The
+box writers after 7a, with the guard or proof of each, are listed in `box-writers.ts`.
 
 After 7f, the successful `bands` transaction captures `freeze.placement`, including node content
 and pill geometry, group geometry, tier bands, regions, lanes and group-label placement. Later
