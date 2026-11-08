@@ -792,8 +792,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // colour in the file is exact — and a label's backdrop fill would then not match what is behind
   // it. The rectangle is inert: it takes no pointer events and is locked, so it is backdrop rather
   // than furniture.
+  const canvasFill = colour(paintPath.canvas(root), 'fill');
   vertex(cellId('canvas'), layerId('canvas'), styleString([], {
-    fillColor: colour(paintPath.canvas(root), 'fill'), strokeColor: 'none', points: '[]',
+    fillColor: canvasFill, strokeColor: 'none', points: '[]',
     pointerEvents: 0, locked: 1, movable: 0, resizable: 0, deletable: 0, editable: 0, connectable: 0,
   }), { x: 0, y: 0, width: canvas.width, height: canvas.height });
 
@@ -1752,11 +1753,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const model = element('mxGraphModel', {
     dx: 0, dy: 0, grid: 0, gridSize: 10, guides: 1, tooltips: 1, connect: 1, arrows: 0, fold: 1,
     page: 1, pageScale: 1, pageWidth: Math.ceil(canvas.width), pageHeight: Math.ceil(canvas.height),
-    // The page background is an *attribute*, and jgraph's published schema pins it to a plain
-    // colour — `light-dark()` belongs in a style string, which is where every other colour here
-    // goes. So this one states the chosen palette's backdrop and lets draw.io's own inversion
-    // darken it, which for a flat backdrop is exactly what inversion is good at.
-    math: 0, shadow: 0, background: sheet.peek(mode, paintPath.canvas(root)).get('fill') ?? 'none',
+    // The page background is the canvas fill, the same string as the canvas rectangle. jgraph's published schema pins the
+    // attribute to a plain colour, but draw.io resolves `light-dark()` in it (measured, `-x --theme dark -b 20`: border
+    // #1d2d3d, as the rectangle). A plain colour would be inverted instead, and a frame would show at the border (A1-04).
+    math: 0, shadow: 0, background: canvasFill,
   }, element('root', {}, cellElement({ id: claim('0') }, undefined, binding({ 'pg-schema': BINDING_SCHEMA }, document.meta))
     + layers + cells.map(cell => typeof cell === 'string' ? cell : cell()).join('')));
   const title = document.title ?? 'portograph';

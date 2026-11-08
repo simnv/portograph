@@ -301,6 +301,13 @@ export interface ThemePaint {
   overlay: { stroke: string; opacity: number; mark: string; dash?: string };
 }
 
+/**
+ * The opacity of an overlay link in light and dark, decided once (DX-09, audit A1-05). A draw.io style cannot pair a number
+ * by mode (`light-dark(70,60)` resolves opaque, measured), so an auto export carries one value; the dark SVG takes the same
+ * value, and the two renderers agree. Print keeps its own 0.55: it is an explicit mode in both.
+ */
+export const OVERLAY_OPACITY = 0.7;
+
 export const NETWORK_THEME: Modal<ThemePaint> = {
   light: {
     background: '#f2f2f3',
@@ -311,7 +318,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[200], stroke: STEEL[500], text: STEEL[800] },
     link: { stroke: STEEL[800], label: NEUTRAL[700], multiplicity: STEEL[700] },
     legend: { text: NEUTRAL[800] },
-    overlay: { stroke: INDIGO[500], opacity: 0.7, mark: INDIGO[500] },
+    overlay: { stroke: INDIGO[500], opacity: OVERLAY_OPACITY, mark: INDIGO[500] },
   },
   dark: {
     background: STEEL[900],
@@ -322,7 +329,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[800], stroke: STEEL[400], text: STEEL[200] },
     link: { stroke: STEEL[300], label: STEEL[300], multiplicity: STEEL[200] },
     legend: { text: STEEL[200] },
-    overlay: { stroke: INDIGO[500], opacity: 0.6, mark: INDIGO[500] },
+    overlay: { stroke: INDIGO[500], opacity: OVERLAY_OPACITY, mark: INDIGO[500] },
   },
   print: {
     background: WHITE,
