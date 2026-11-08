@@ -165,6 +165,12 @@ Rules:
 - The `pg-` attributes come first. The meta attributes come after them, in sorted key order.
 - `tooltip` and `link` are not reserved. draw.io shows `tooltip` when the pointer is on the cell
   and makes the cell a hyperlink with `link`.
+- The export also writes generated text into `tooltip`, as the SVG writes it in `<title>`: the full
+  text of a shortened or omitted link label (on the link, or on the label cell), the members of a
+  group-link fallback, and the tooltip of a mesh bus (on every piece of the bus; these pieces carry
+  `tooltip` and no `pg-` attribute). When a cell also has an author `meta.tooltip`, the author text
+  comes first, then a new line, then the generated text. A reader that binds by `pg-kind` ignores a
+  cell with no `pg-kind`.
 - No cell inherits the root `meta:`. A reader can use it as a default for every cell.
 
 Common keys for a network diagram: `host`, `job`, `instance`, `ifname`, `device`, `capacity`

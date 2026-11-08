@@ -78,6 +78,7 @@ import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOI
 import { boxesBehind, groupShapes } from './frame-order.js';
 import { backdropColour } from '../profiles/network/theme.js';
 import { linkVisible } from './index.js';
+import { busTooltip, linkTooltipLines } from './tooltips.js';
 import { authorClass, classes, element, num } from './svg.js';
 import {
   PaintSheet, boxClasses, groupLabelClasses, iconGlyphBox, legendSwatchClass, linkClassToken, paintPath, pathRuns, svgClass,
@@ -426,6 +427,20 @@ const binding = (own: Binding, meta: Meta | undefined): Binding => ({
 });
 
 /**
+ * Adds generated text to a cell's `tooltip` attribute, as the SVG renderer's `<title>` holds it. An author's own
+ * `meta.tooltip` stays first and the generated text follows on a new line, so neither is lost. The `pg-*` keys are untouched.
+ */
+const withTooltip = (own: Binding, text: string | undefined): Binding =>
+  text === undefined || text === '' ? own : { ...own, tooltip: own['tooltip'] === undefined ? text : `${own['tooltip']}\n${text}` };
+
+/** The full text a drawn label shortened, as `LayoutLabel.tooltip` carries it in the SVG. */
+const shortenedText = (label: LayoutLabel): string | undefined =>
+  label.tooltip !== undefined && label.tooltip !== label.text ? label.tooltip : undefined;
+
+/** The font a label states, then the shared default, as the SVG renderer reads it. */
+const fontOf = (label: LayoutLabel): string => label.fontFamily ?? FONT_FAMILY;
+
+/**
  * A cell, bare or bound. A bound cell is a draw.io `UserObject`: an `<object>` that holds the id, the
  * label and the binding attributes, around an `<mxCell>` that holds the rest. draw.io keeps the
  * attributes through an edit and in an SVG export with the diagram embedded, and its *Edit Data*
@@ -654,13 +669,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // so reordering the links does not move a binding; the layout model keeps its positional ids.
   const stableIds = linkIds(document);
   const stableId = (link: LayoutLink): string => stableIds[link.sourceIndex] ?? link.id;
-  const linkBinding = (link: LayoutLink, run?: { index: number; count: number }): Binding => {
+  const linkBinding = (link: LayoutLink, run?: { index: number; count: number }, own?: LayoutLabel): Binding => {
     const source = document.links[link.sourceIndex];
-    return binding({
+    // Text the link carries and does not draw: an omitted label, a group-link's members, and the full text of a shortened label.
+    const text = [...linkTooltipLines(layout, link), ...(own ? [shortenedText(own)] : [])].filter(line => line !== undefined).join('\n');
+    return withTooltip(binding({
       'pg-kind': 'link', 'pg-id': stableId(link),
       'pg-from': endpointId(source?.from ?? link.from), 'pg-to': endpointId(source?.to ?? link.to),
       ...(run ? { 'pg-run': String(run.index), 'pg-runs': String(run.count) } : {}),
-    }, source?.meta);
+    }, source?.meta), text);
   };
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
@@ -679,11 +696,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       spacingLeft: label.textAlign === 'start' ? -LABEL_SPACING : undefined,
       whiteSpace: 'nowrap', overflow: 'visible', points: '[]', resizable: 0,
       spacingTop: middleSpacing(label, size),
-      fontFamily: FONT_FAMILY, fontSize: size, ...paint,
+      fontFamily: fontOf(label), fontSize: size, ...paint,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       rotation: label.textRotation ? label.textRotation : undefined,
       labelBackgroundColor: backdrop,
-    }), turnedCell(label, box), plainText(labelLines(label)));
+    }), turnedCell(label, box), plainText(labelLines(label)), {}, shortenedText(label) === undefined ? undefined : withTooltip({}, shortenedText(label)));
   };
 
   // ---- paint resolution -------------------------------------------------------------------
@@ -854,7 +871,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         align: 'center', verticalAlign: 'middle',
         // The head is centred on the band, which may sit up to half a pixel off the title's centre.
         spacingTop: middleSpacing(title!, labelSize(title!), centre(swimlane.bounds).y - centre(title!.bounds!).y),
-        fontFamily: FONT_FAMILY, fontSize: labelSize(title!), ...titlePaint,
+        fontFamily: fontOf(title!), fontSize: labelSize(title!), ...titlePaint,
         fontStyle: title!.fontWeight === 700 ? 1 : undefined,
         swimlaneLine: 0,
         // On a swimlane `fillColor` paints the head and `swimlaneFillColor` the body, the reverse
@@ -961,7 +978,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // `spacingLeft` states the rest of the measured offset.
         ...(card ? { spacingLeft: finite(named!.bounds!.x - node.bounds!.x - LABEL_SPACING) }
           : across > 0 ? { spacingLeft: finite(2 * across) } : across < 0 ? { spacingRight: finite(-2 * across) } : {}),
-        fontFamily: FONT_FAMILY, fontSize: nameSize, ...textPaint(nodeTextPath(authored, 'node-label')),
+        fontFamily: fontOf(named!), fontSize: nameSize, ...textPaint(nodeTextPath(authored, 'node-label')),
         fontStyle: (named.fontWeight ?? 700) === 700 ? 1 : undefined,
       }),
     }), relative(box, origin), named === undefined ? undefined : plainText(labelLines(named)), {},
@@ -1078,7 +1095,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           // `horizontal=0` turns `spacingTop` with the text, as `rotation=` does.
           spacingTop: shown.bounds && middleSpacing(shown, labelSize(shown), port.pill.textRotation === -90
             ? centre(port.pill.bounds).x - centre(shown.bounds).x : centre(port.pill.bounds).y - centre(shown.bounds).y),
-          fontFamily: FONT_FAMILY, fontSize: labelSize(shown), ...textPaint(paintPath.inPort(root, authored, portClass, classes('pill-label', portClass))),
+          fontFamily: fontOf(shown), fontSize: labelSize(shown), ...textPaint(paintPath.inPort(root, authored, portClass, classes('pill-label', portClass))),
           fontStyle: shown.fontWeight === 700 ? 1 : undefined,
           horizontal: port.pill.textRotation === -90 ? 0 : undefined,
         } : {}),
@@ -1240,7 +1257,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       labelBackgroundColor: backdrop({ x: at.x + canvas.x, y: at.y + canvas.y }),
       ...(on ? { spacing: LABEL_MARGIN } : {}),
       align: 'center', verticalAlign: 'middle',
-      fontFamily: FONT_FAMILY, fontSize: labelSize(label),
+      fontFamily: fontOf(label), fontSize: labelSize(label),
       ...textPaint(linkLabelPath(label, multiplicity, link)),
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       // The label is centred on its point, and the shift that puts its baseline where `render`
@@ -1407,7 +1424,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       }, carried ? {
         value: plainText(labelLines(carried.label)),
         at: carried.at,
-      } : undefined, linkBinding(link, runs.length === 1 ? undefined : { index, count: runs.length }));
+      } : undefined, linkBinding(link, runs.length === 1 ? undefined : { index, count: runs.length }, carried?.label));
     });
     edgeRuns.set(link.id, shown);
 
@@ -1527,6 +1544,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       return found.map((item, index) => ({ ...item, id: cellId('busJoint', of.id, String(index)) }));
     };
     const mine = spots(bus);
+    // The bus tooltip of the SVG, with the text of a bus label that had no room to be drawn. It rides on every piece of the bus.
+    const busLabel = layout.labels.find(item => item.id === bus.label);
+    const busTip = withTooltip({}, [busTooltip(layout, bus), ...(busLabel?.omitted && busLabel.tooltip !== undefined ? [busLabel.tooltip] : [])].join('\n'));
     const jointAt = (list: readonly Spot[], at: Point): string | undefined => list.find(item => sameJoint(item.at, at))?.id;
     for (const spot of mine) {
       const host = markHost(spot.ref)!;
@@ -1550,7 +1570,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const end = jointAt(mine, to);
       // A stub is one straight run (port face to bar) and both its ends move with one node, so `edgeStyle=none` keeps it straight.
       edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(false, { ...(head?.style ?? {}), ...(end ? centred('entry') : {}) }), points,
-        { source: head?.cell, target: end, sourcePoint: head ? undefined : points[0], targetPoint: end ? undefined : points[1] });
+        { source: head?.cell, target: end, sourcePoint: head ? undefined : points[0], targetPoint: end ? undefined : points[1] }, undefined, busTip);
       const at = shift(stub.from);
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
@@ -1562,7 +1582,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     for (let index = 0; index + 1 < mine.length; index++) {
       const a = mine[index]!, b = mine[index + 1]!;
       edgeCell(cellId('bus', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(a.id, b.id)), [a.at, b.at],
-        { source: a.id, target: b.id });
+        { source: a.id, target: b.id }, undefined, busTip);
     }
     // The riser of a join is one more edge between the two bars, exported with the upper bus (mesh-bus.md, section 11.7);
     // each end is the joint the bar's own piece ends on.
@@ -1571,7 +1591,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const lower = layout.meshBuses?.find(other => other.id === bus.joined);
       const riserFrom = jointAt(mine, riser[0]!), riserTo = lower ? jointAt(spots(lower), riser[1]!) : undefined;
       edgeCell(cellId('busRiser', bus.id), layerId('overlay'), stroke(false, pinned(riserFrom, riserTo), 'riser'), riser,
-        { source: riserFrom, target: riserTo, sourcePoint: riserFrom ? undefined : riser[0], targetPoint: riserTo ? undefined : riser[1] });
+        { source: riserFrom, target: riserTo, sourcePoint: riserFrom ? undefined : riser[0], targetPoint: riserTo ? undefined : riser[1] }, undefined, busTip);
     }
     // The trunk of a three-row join is `N - 1` pieces, one per pair of neighbouring bars, exported with the head bus (mesh-bus.md, section 12.7);
     // each end is the joint where that bar ends at the trunk x, so a drag of a member node bends only the pieces that end on its joint.
@@ -1582,7 +1602,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       for (let index = 0; index + 1 < joins.length; index++) {
         const piece = [shift(joins[index]!), shift(joins[index + 1]!)], from = ends[index], to = ends[index + 1];
         edgeCell(cellId('busTrunk', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(from, to), 'trunk'), piece,
-          { source: from, target: to, sourcePoint: from ? undefined : piece[0], targetPoint: to ? undefined : piece[1] });
+          { source: from, target: to, sourcePoint: from ? undefined : piece[0], targetPoint: to ? undefined : piece[1] }, undefined, busTip);
       }
     }
     const label = layout.labels.find(item => item.id === bus.label);
@@ -1630,7 +1650,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       }),
       vertex: 1, connectable: 0, parent: run.id,
     }, element('mxGeometry', { x: relativeAt.x, y: relativeAt.y, relative: 1, as: 'geometry' },
-      residualPoint(relativeAt) || undefined), { 'pg-kind': 'link-label', 'pg-of': stableId(link) }));
+      residualPoint(relativeAt) || undefined), withTooltip({ 'pg-kind': 'link-label', 'pg-of': stableId(link) }, shortenedText(label))));
   }
 
   // ---- legend -------------------------------------------------------------------------------
@@ -1655,7 +1675,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           spacingLeft: shiftRect(shown.bounds!).x - outer.x - LABEL_SPACING,
           // The row is centred on the swatch and the caption together, not on the caption alone.
           spacingTop: middleSpacing(shown, labelSize(shown), centre(outer).y - centre(shiftRect(shown.bounds!)).y),
-          fontFamily: FONT_FAMILY, fontSize: labelSize(shown),
+          fontFamily: fontOf(shown), fontSize: labelSize(shown),
           ...textPaint(paintPath.inLegend(root, entry.kind, entry.key,
             classes('legend-label', svgClass.halo(boxesBehind(shapes, centre(shown.bounds!)))))),
           fontStyle: shown.fontWeight === 700 ? 1 : undefined,
