@@ -73,7 +73,9 @@ const golden = (name: string): string => readFileSync(new URL(`../../goldens/syn
 async function record(source: string): Promise<string[]> {
   const lines: string[] = [];
   verdictTap.sink = (name, value) => { lines.push(`${name} ${value}`); };
-  try { await layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] }); } finally { delete verdictTap.sink; }
+  // The group lift (ticket 08) is off: the digests pin the judges of one command, and each lift trial is one more whole command run whose
+  // judges would join the stream. The lift's own judge is tested in `lift.test.ts`.
+  try { await layout(parse(source), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true }); } finally { delete verdictTap.sink; }
   return lines;
 }
 

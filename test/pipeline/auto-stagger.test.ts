@@ -14,7 +14,8 @@ import { reversed } from '../../scripts/r3-lib.mjs';
 // stagger proves straight drops and a narrower sheet, and records each group's arrangement (`groupArrangements`).
 const NAME = 'a-wide-leaf-row-of-two-parents-staggers-without-a-budget';
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+// The group lift (ticket 08) is off: on the inline sheets a lift changes the canvas the stagger rules read, so a pinned refusal is admitted.
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
 const picture = (model: LayoutModel) => Object.fromEntries(Object.entries(model.nodes).sort(([a], [b]) => a < b ? -1 : 1).map(([id, node]) =>
   [id, { bounds: node.bounds, xs: node.ports.map(port => port.anchor!.x).sort((a, b) => a - b) }]));
 const lines = (model: LayoutModel, group: string): number => new Set(model.groups[group]!.nodes.map(id => model.nodes[id]!.bounds!.y)).size;

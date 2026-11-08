@@ -30,7 +30,9 @@ async function run(yaml: string, hints?: Hints, floors?: ReadonlyMap<string, { w
     const attempt = createAttempt();
     return { layout: graph => { graphs.push(JSON.stringify(graph)); return attempt.layout(graph); }, terminateWorker: () => attempt.terminateWorker() };
   };
-  const model = await layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt,
+  // The group lift (ticket 08) is off: these tests pin the side-hint rounds of one command (hashes recorded on main before the lift; the lift
+  // record joins the JSON and its trial runs are whole commands). The lift has its own tests (`lift.test.ts`) and the corpus gate.
+  const model = await layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true,
     ...(hints ? { testSideHints: hints } : {}), ...(floors ? { testNodeFloors: floors } : {}) });
   return { model, graph: JSON.parse(graphs[0]!) };
 }

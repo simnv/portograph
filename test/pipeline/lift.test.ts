@@ -63,16 +63,19 @@ describe('group lift: eligibility (D-Q5)', () => {
     expect(components.every(item => !item.units.includes('float') || item.units.includes('mid2'))).toBe(true);
   });
 
-  it('stops a lone group below its routed feeder, and finds nothing where every group is fed from directly above', () => {
+  it('lets a lone group fed from directly above rise only through a level side entry: plain bound 0, side-entry bound 1', () => {
+    // The user's ruling (2026-11-08, "a side entry is level") replaces the first slice's "a lone group stops below its feeder": each leaf
+    // group fed from directly above may rise one band, until its node stands in its feeder's band. Its trial is judged like any other.
     const chain = OVERLAY_BELOW.replace('  - [f, n, { route: overlay }]\n', '').replace('  - [f, l]\n', '  - [f, l]\n  - [t, f]\n');
-    expect(floatComponents(resolved(chain))).toEqual([]);
+    expect(floatComponents(resolved(chain)).map(item => [item.units, item.bound, item.plainBound])).toEqual([[['low'], 1, 0], [['mid2'], 1, 0]]);
   });
 
   it('leaves a component that holds a flank out of the first slice: it is found, with its scope', () => {
     const flanked = OVERLAY_BELOW.replace('  - [f, n, { route: overlay }]\n', '').replace('  mid2: { tier: 2 }\n', '  mid2: { tier: 2 }\n  side: { align: left, of: low }\n')
       .replace('  n: { group: mid2, class: switch }\n', '  n: { group: mid2, class: switch }\n  s: { group: side, class: switch }\n').replace('  - [f, l]\n', '  - [f, l]\n  - [s, l]\n');
     const components = floatComponents(resolved(flanked));
-    expect(components.map(item => [item.units, item.scope])).toEqual([[['float', 'low', 'side'], 'beside a flank']]);
+    // `mid2` (fed from directly above by `mid`) is a side-entry component of its own and holds no flank.
+    expect(components.map(item => [item.units, item.scope])).toEqual([[['float', 'low', 'side'], 'beside a flank'], [['mid2'], undefined]]);
   });
 });
 
@@ -80,7 +83,9 @@ describe('group lift: the fixture and the key sheet', () => {
   it('lifts the fixture component one whole band; every straight link stays straight, the canvas area drops, the document tiers stay', async () => {
     const lifted = await run(fixture(NAME));
     const plain = await layout(parse(fixture(NAME)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
-    expect(lifted.groupLifts).toEqual([expect.objectContaining({ units: ['lab', 'lab-floor'], members: ['lab', 'lab-floor'], tiers: [1, 2], from: [1, 2], to: [0, 1], offset: 1, side: 'left' })]);
+    // The campus frame is a side-entry component too (fed from directly above by `dist`); its trial is declined on area, so it stays.
+    expect(lifted.groupLifts).toEqual([expect.objectContaining({ units: ['lab', 'lab-floor'], members: ['lab', 'lab-floor'], tiers: [1, 2], from: [1, 2], to: [0, 1], offset: 1, side: 'left' }),
+      expect.objectContaining({ units: ['campus'], offset: 0 })]);
     expect(lifted.groups.lab!.tier).toBe(0);
     expect(lifted.groups['lab-floor']!.tier).toBe(1);
     // The document keeps the author's tiers: only the band moved.
@@ -99,10 +104,11 @@ describe('group lift: the record (absent and empty)', () => {
     const off = await run(withLayout(fixture(NAME), '{ autoArrange: false }'));
     expect(off.groupLifts).toBeUndefined();
     expect(off.groups.lab!.tier).toBe(1);
+    // Two groups of one tier joined by a link: the closure of either is the whole sheet, so no float component exists.
     const none = await run(`portograph: 2
 groups:
   a: { tier: 0 }
-  b: { tier: 1 }
+  b: { tier: 0 }
 nodes:
   x: { group: a, class: router }
   y: { group: b, class: switch }
