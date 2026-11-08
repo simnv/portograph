@@ -105,6 +105,18 @@ Do not add code for one sheet. Name the general principle and the other sheets i
 Fixtures, tests, docs and commit messages use invented names and documentation address ranges. The denylist hook checks staged lines.
 Check: ask which other sheet the rule changes.
 
+### R10. A tolerance has a named owner, a unit and an edge.
+
+Compare at a name, never at a raw `1e-N` literal. Placement and routing names live in `src/layout/tolerance.ts`
+(`PLACEMENT_EPS` for reservation arithmetic in px, `NO_MOVE_EPS` for every move guard, `SIGN_EPS` for products in px squared,
+and the named depths, keys, grains and solver stops); published geometry reads `EPS` of `src/geometry/planar.ts`.
+Two numbers that are equal answer two questions: do not merge them, and do not borrow a distance for a product.
+Count turns and crossings with the shared predicates (R7), not with a private threshold.
+
+Evidence: audit 2026-11 P-08 (62 unowned literals, a 1e-3 fraction that dropped a crossing 5 px inside a segment) and P-06-F7
+(two no-move thresholds in one guard set); stress tickets 13 and 19.
+Check: `test/lint/tolerance-literals.test.ts` refuses a raw literal outside the two owner files and the named exceptions it lists.
+
 ## Tests
 
 A rule-level ticket adds a fixture in `goldens/synthetic/`, a `goldens/README.md` row, and a test that loads the fixture. Corpus tests scan that directory for invariants.
@@ -112,6 +124,6 @@ Never change the golden to make a test pass. The maintainer approves a new golde
 
 ## Checklist (rule ids)
 
-R1 R2 R3 R4 R5 R6 R7 R8 R9
+R1 R2 R3 R4 R5 R6 R7 R8 R9 R10
 
 When a review finds a defect class a second time, add it here as a new R-id.
