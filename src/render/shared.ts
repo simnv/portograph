@@ -227,6 +227,7 @@ export class PaintSheet {
   private readonly computed = new Map<string, { chain: Map<string, Resolved>[]; read: Set<string> | undefined }>();
   private readonly author: readonly PaintRule[];
   private readonly outside: readonly string[];
+  private readonly lost: string[] = [];
 
   constructor(private readonly theme: Theme, private readonly nodeClassAttrs: readonly (string | undefined)[], css: string | undefined) {
     const parsed = authorRules(css);
@@ -270,6 +271,21 @@ export class PaintSheet {
     };
   }
 
+  /**
+   * Names the author rules that give the element at `path` one of `properties` (its own, or by inheritance or opacity from an
+   * ancestor) as not carried, whatever a cell reads of it: two SVG elements that draw.io draws as one cell (a merge trunk and its
+   * member's line) take different paint, so a rule that paints either one is lost in draw.io.
+   */
+  notCarried(mode: ThemeMode, path: PaintPath, properties: readonly string[], why: string): void {
+    const chain = computePaint(this.rules(mode), path), leaf = chain[chain.length - 1]!;
+    const element = classes(path[path.length - 1]).split(' ')[0]!;
+    const given = [...properties.filter(property => property !== 'opacity').flatMap(property => leaf.has(property) ? [[property, leaf.get(property)!] as const] : []),
+      ...(properties.includes('opacity') ? fadedBy(chain).map(resolved => ['opacity', resolved] as const) : [])];
+    for (const [property, resolved] of given) {
+      if (resolved.rule.source !== undefined) this.lost.push(`${resolved.rule.source} { ${property}: ${resolved.value} } on ${element} (${why})`);
+    }
+  }
+
   /** The author rules, or parts of them, that draw.io cannot carry, once each, as CSS text. */
   unmapped(): string[] {
     const notCarried = [...this.computed].flatMap(([key, { chain, read }]) => {
@@ -282,6 +298,6 @@ export class PaintSheet {
       return unread.filter(([, resolved]) => resolved.rule.source !== undefined)
         .map(([property, resolved]) => `${resolved.rule.source} { ${property}: ${resolved.value} } on ${element}`);
     });
-    return [...new Set([...this.outside, ...notCarried])];
+    return [...new Set([...this.outside, ...notCarried, ...this.lost])];
   }
 }

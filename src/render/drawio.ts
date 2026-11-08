@@ -1404,8 +1404,17 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const shared = new Set(members.map(member => linkClass(member)));
       const authored = shared.size === 1 ? [...shared][0] : undefined;
       const trunk: PaintPath = [root, 'links', classes('merge-run', authored), svgClass.linkLine(authored, false)];
-      const like = members.filter(visible).every(member => strokeLook(paintPath.linkLine(root, linkClass(member), effectiveLayer(member) === 'overlay')) === strokeLook(trunk));
-      if (like) { colour(trunk, 'stroke'); single(trunk, paint => paint.get('stroke-dasharray')); alpha(trunk, 'stroke-opacity'); } else sheet.at(mode, trunk);
+      const lines = members.filter(visible).map(member => paintPath.linkLine(root, linkClass(member), effectiveLayer(member) === 'overlay'));
+      if (lines.every(line => strokeLook(line) === strokeLook(trunk))) {
+        colour(trunk, 'stroke'); single(trunk, paint => paint.get('stroke-dasharray')); alpha(trunk, 'stroke-opacity');
+        continue;
+      }
+      // The trunk and a member's line differ, and draw.io draws both as the member's connector: the author rules that paint
+      // either one are lost, on the trunk or on the member's own part of the line.
+      const painted = ['stroke', 'stroke-dasharray', 'stroke-opacity', 'opacity'];
+      for (const of of adaptive ? ['light', 'dark'] as const : [mode]) {
+        for (const path of [trunk, ...lines]) sheet.notCarried(of, path, painted, 'a merge trunk painted unlike its members');
+      }
     }
   }
 

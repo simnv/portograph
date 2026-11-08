@@ -239,6 +239,21 @@ describe('fixture drawio-author-css', async () => {
     expect(message).toContain('4 part(s)');
   });
 
+  it('names a rule that paints a merge trunk unlike its members, and only then', () => {
+    // A forged merge run of two routed links: the SVG paints the shared run under `.merge-run`, draw.io inside each member's connector.
+    const routed = laid.links.filter(link => link.path && link.layer !== 'overlay').slice(0, 2);
+    const forged = (css: string): string[] => {
+      const warnings: string[] = [];
+      const model = { ...laid, document: { ...laid.document, css }, bundles: [{ ...laid.bundles[0]!, id: 'forged', members: routed.map(link => link.id),
+        mergeRuns: [{ id: 'trunk', count: 2, members: routed.map(link => link.id), path: routed[0]!.path! }] }] } as LayoutModel;
+      drawio(model, { theme: 'light', onDiagnostic: diagnostic => warnings.push(diagnostic.message) });
+      return warnings;
+    };
+    expect(forged('.link .link-line { stroke: #ff0000 }')[0]).toContain('.link .link-line { stroke: #ff0000 } on link-line (a merge trunk painted unlike its members)');
+    expect(forged('.merge-run .link-line { stroke: #ff0000 }')[0]).toContain('.merge-run .link-line { stroke: #ff0000 } on link-line (a merge trunk');
+    expect(forged('.link-line { stroke: #ff0000 }')).toEqual([]);
+  });
+
   it('draws the flow legend row as an overlay sample in both renderers (A1-16)', () => {
     expect(legendLineOverlay(laid, 'flow')).toBe(true);
     expect(legendLineOverlay(laid, 'default')).toBe(false);
