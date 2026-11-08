@@ -1220,6 +1220,17 @@ identity, side, authored precedence and floors reject before replay can repair t
 replay is reusable by stage 7f and consumes one caller-owned eight-pass centering budget. The final
 scorer still requires every complete path; a stage-11 subset score is not a full golden result.
 
+A group exit (`model.groupExits`) is a held promise (DR-11): its direction and the boxes it leaves
+are a stored decision, and each replay derives only its coordinates again. A replay offers a held
+end its held direction alone while that direction is free; any other outcome is a replan, allowed
+before the final freeze and refused after it. A required exit that the geometry admits and the
+record lacks fails the producer postcondition, whatever diagnostic the model carries.
+
+The crossover room of an inverted side-facing bundle moves groups in x without their lanes, so it
+asks `holdsMove` first: for a group wholly right of the threshold, its moved box; for a group that
+straddles the threshold, its box widened by the room, and `holdsNodeMove` for its moved nodes. Refused, no room is taken (`BUNDLE_ROOM_HELD`): the bundle draws
+straight members where its gap holds the member pitch (ADR-0017), or refuses by name.
+
 For facing, non-inverted members whose endpoint tracks differ, each bend receives a distinct
 member-pitch row. Members moving toward smaller tangent coordinates turn in increasing source
 order; those moving toward larger coordinates turn in decreasing order. This avoids bend contact
@@ -1638,6 +1649,18 @@ The bands transaction owns this production after its callback checks, reuses one
 across every replay, and captures placement only after the final coherent claims. A callback cannot
 publish provisional bands or labels for the finalizer to repair.
 
+The callbacks of 7e and 7f are empty, so their rule checks never see the producer output. The
+producer postconditions (`postconditions.ts`, DR-11) judge it: on the net draft, after every
+dependent rebuild and before commit, each reservation that held at entry still holds (riser
+keep-out, trunk extension, lane sides, side alignment, group exit, the stored ledger). A breach
+refuses the transaction with a `PostconditionRefusal`. A producer refusal (that one, or a bundle
+path with no room) withdraws the trial of every round, by one rule in the round runner
+(`producerRefusal`), and fails the main line by name. A newly blocked frozen chord and a new wall
+in a span corridor stay advisory, for output neutrality: each such break that publishes is named
+again by its own finding (`STRAIGHT_LINK_BLOCKED`, `SPAN_CHORD_BLOCKED`). The `moveGroup` writers,
+with the guard or proof of each, are listed in `box-writers.ts`; a direct write to a node box is
+outside that table, and its doc names those writes.
+
 After 7f, the successful `bands` transaction captures `freeze.placement`, including node content
 and pill geometry, group geometry, tier bands, regions, lanes and group-label placement. Later
 transactions and restore require exact equality with this projection. Canvas may expand, and
@@ -1713,6 +1736,15 @@ same producer and compares, as for every overlay path, and G7 reads each end at 
 straight nor bent and enter neither the bends nor the crossings metric (routed geometry only, as no overlay path does). The verticals that cross
 each bar in the published layout are counted (`busVerticals`) beside the stage-5 leg count (`busLegCounts`); no gate reads them.
 Ticket 97: a cross link of a joined pair takes the path stub, bar run, riser, bar run, stub (three to five orthogonal segments, `busMemberPath`); `route/validate` derives it again from the published stubs, bars and riser x, and G7 reads its ends at the port face.
+
+**The path-end rule, by producer** (D-Q7, audit T-05). A **stem-built** path (orthogonal, bundle,
+merge, and a straight link drawn anchor to anchor with its stems) starts and ends on the port
+**anchor**; the pill is painted over the inner half of its stem. A **chord-built** path (an overlay
+path; a routed chord: straight, fan family, direct family) starts and ends on the port's outward
+**face** (`overlayEndpoint`). An end on an approach (ticket 15, phase 6) ends on the approach point,
+which is on the pill's tangential edge. `pathEnd` in `src/layout/path-end.ts` states the point;
+`route/validate`, G7 `endpoint-anchor` and the score's incident-segment test read it, so the
+producer, the validator and the gate cannot drift apart.
 
 **Group boxes are obstacles for foreign links (ADR-0013).** Every group box, grown by the 10 px
 edge margin, obstructs each link that neither attaches inside it, nor owns a lane in its margin,
@@ -1897,7 +1929,7 @@ outward faces — the pill's, or the node's when the port draws none — at what
 nothing else. The path **begins and ends on that face**, which is also where the endpoint mark is
 drawn: the anchor is the pill's centre, the overlay layer is masked out of every pill, and a run from
 the anchor was never drawn (*"path should also start on the point"*, maintainer, 2026-09-16, stress
-ticket 30). `overlayEndpoint` names the point; `route/validate` and G7 `endpoint-anchor` read it, so
+ticket 30). `overlayEndpoint` names the point; `route/validate` and G7 `endpoint-anchor` read it through `pathEnd`, so
 both still name exactly one point per end, and an end that states no side has no face to read and
 keeps its anchor.
 
@@ -2216,6 +2248,16 @@ named port, the model link id, the merge-run id and the legend entry key. A deta
 mark or bar body carries `data-owner` and, for a mark, `data-end`, instead of repeating a `data-id`.
 Every text node and attribute is XML-escaped, including the inline style, so no source string is
 interpolated as markup.
+
+**Visible ends.** Both renderers draw the reserved path and read where its stroke is seen to end
+from one helper, `visibleEnd` (`src/layout/path-end.ts`), always a point of the path: for a
+stem-built end on a pill, the first point where the path leaves the pill (the pill's outward face on
+the stem, or the stem end when a 15 px stem is shorter than the pill's half depth); for a
+chord-built end, an end on an approach, and an end on a port that draws no pill, the path end. The SVG puts the overlay endpoint marks and the bare-end dots on it. The
+draw.io export pins each connector end to it on the port's pill cell (`exitX`/`exitY` from the
+point, so an approach end is pinned on the tangential edge), and chooses `edgeStyle` from the
+waypoints and the pinned polyline, both exactly: an end off its stem is never hidden by a style
+fallback.
 
 **A mesh bus** (ticket 84) is one `<g class="mesh-bus overlay <class>" data-id data-members>` in the masked overlay layer: one `<path>` for the bar
 and one per stub, each `link-line overlay-line <class>`, so the class stroke and dash apply; a `<title>` lists the members, the dissolved
