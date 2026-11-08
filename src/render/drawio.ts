@@ -555,7 +555,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const shift = (point: Point): Point => ({ x: point.x - canvas.x, y: point.y - canvas.y });
   const shiftRect = (box: Rect): Rect => ({ ...shift(box), width: box.width, height: box.height });
 
-  const cells: string[] = [];
+  const cells: (string | (() => string))[] = [];
+  // Every vertex that holds another vertex is a container, whatever it is for: a group box, a
+  // swimlane, a frame, a node with ports and an icon, the legend and its rows. mxGraph scales the
+  // children of a resized container unless its style says `recursiveResize=0`, and a maintainer who
+  // resizes a group box means the box, not the nodes in it. The key is added here once, when the
+  // file is joined and every parent is known, so no style helper has to remember it (R1).
+  const parents = new Set<string>();
+  const holdsChildren = (id: string, style: string): string =>
+    parents.has(id) && !/(^|;)recursiveResize=/.test(style) ? `${style}recursiveResize=0;` : style;
   const claimed = new Set<string>();
   /**
    * Every id passes through here. A collision is silent corruption in draw.io, and the loss is
@@ -568,7 +576,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   };
   const vertex = (id: string, parent: string, style: string, box: Rect, value?: string,
     extra: Readonly<Record<string, StyleValue>> = {}, bound?: Binding): void => {
-    cells.push(cellElement({ id: claim(id), value, style, vertex: 1, parent, ...extra },
+    const claimed = claim(id);
+    parents.add(parent);
+    cells.push(() => cellElement({ id: claimed, value, style: holdsChildren(claimed, style), vertex: 1, parent, ...extra },
       element('mxGeometry', { x: box.x, y: box.y, width: box.width, height: box.height, as: 'geometry' }), bound));
   };
 
@@ -816,7 +826,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     vertex(cellId('node', id), group, styleString([], {
       // A node really does contain its ports and its icon, so it says so: a container moves,
       // copies and accepts a drop as one thing, which is what a node is.
-      container: 1, collapsible: 0, recursiveResize: 0,
+      container: 1, collapsible: 0,
       rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.node * 2,
       whiteSpace: 'nowrap', fillColor: dual(of => themeWashFill(theme, washToken(authored), of, washes)), strokeColor: paint.node.stroke,
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
@@ -1589,7 +1599,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // darken it, which for a flat backdrop is exactly what inversion is good at.
     math: 0, shadow: 0, background: theme.paint[mode].background,
   }, element('root', {}, cellElement({ id: claim('0') }, undefined, binding({ 'pg-schema': BINDING_SCHEMA }, document.meta))
-    + layers + cells.join('')));
+    + layers + cells.map(cell => typeof cell === 'string' ? cell : cell()).join('')));
   const title = document.title ?? 'portograph';
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
     + element('mxfile', { host: 'portograph' },

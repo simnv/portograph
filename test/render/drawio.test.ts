@@ -195,6 +195,19 @@ describe('draw.io export', () => {
     }
   }, 60000);
 
+  it.each(['a-child-frame-stands-inside-its-parent', 'drawio-constructs'])(
+    'keeps the size of the children when a container is resized: every parent of a vertex says recursiveResize=0 (%s)', async name => {
+      const all = cells(drawio(await pipeline(fixture(name))));
+      const parents = new Set([...all.values()].filter(cell => cell.vertex && cell.parent !== undefined).map(cell => cell.parent!));
+      // A link label hangs from its connector, which is an edge: a connector is never resized as a container.
+      const containers = [...parents].map(parent => all.get(parent)!).filter(cell => cell.vertex);
+      expect(containers.length).toBeGreaterThan(0);
+      // The fixtures cover a group box, a swimlane and a node with ports, which are the kinds a maintainer resizes.
+      expect(containers.some(cell => cell.id.startsWith('pg-group~'))).toBe(true);
+      expect(containers.some(cell => cell.id.startsWith('pg-node~'))).toBe(true);
+      for (const cell of containers) expect(cell.style['recursiveResize'], cell.id).toBe('0');
+    }, 60000);
+
   it('stacks the layers so nothing a group box would wash out is painted beneath it', async () => {
     const model = await pipeline(fixture('drawio-constructs'));
     const xml = drawio(model);
