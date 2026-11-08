@@ -8,6 +8,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 // Architecture-2 ticket 51: with no width budget, stage 5 of the first placement run stands a wide leaf row on two lines when the
 // stagger proves straight drops and a narrower sheet, and records each group's arrangement (`groupArrangements`).
@@ -91,13 +92,11 @@ ${[1, 2, 3, 4, 5, 6].map(i => `  - [p, n${i}]`).join('\n')}
 
   it('does not follow the order of the links; reversed nodes mirror the row and keep the choice (R3)', async () => {
     const base = await run(fixture(NAME));
-    const [top, rest] = fixture(NAME).split('nodes:\n'), [nodes, links] = rest!.split('links:\n');
-    const reverse = (block: string): string => `${block.trimEnd().split('\n').reverse().join('\n')}\n`;
-    const reversedLinks = await run(`${top}nodes:\n${nodes}links:\n${reverse(links!)}`);
+    const reversedLinks = await run(reversed(fixture(NAME), 'links'));
     expect(picture(reversedLinks)).toEqual(picture(base));
     expect(reversedLinks.groupArrangements).toEqual(base.groupArrangements);
     // Node declaration order is the row order (a meaningful order, R3): the row is mirrored, and the decision and the canvas are the same.
-    const reversedNodes = await run(`${top}nodes:\n${reverse(nodes!)}links:\n${links}`);
+    const reversedNodes = await run(reversed(fixture(NAME), 'nodes'));
     expect(reversedNodes.groupArrangements).toEqual(base.groupArrangements);
     expect(reversedNodes.canvas).toEqual(base.canvas);
     expect([...reversedNodes.staggerRows![0]!.pitches].reverse()).toEqual(base.staggerRows![0]!.pitches);

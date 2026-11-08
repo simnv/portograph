@@ -8,6 +8,7 @@ import { admitFanFamilies } from '../../src/layout/fan-admission.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 const baseline = vi.hoisted(() => ({ enabled: false }));
 vi.mock('../../src/resolve/solid-blocks.js', async importOriginal => {
@@ -25,12 +26,6 @@ const geometry = (model: Awaited<ReturnType<typeof layout>>): unknown => {
 };
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 // These five review probes use one-line records; node declaration order is meaningful for block ties.
-const reversed = (source: string, key: 'links' | 'nodes'): string => {
-  const lines = source.split('\n'), start = lines.indexOf(`${key}:`);
-  let end = start + 1;
-  while (end < lines.length && lines[end]!.startsWith('  ')) end++;
-  return [...lines.slice(0, start + 1), ...lines.slice(start + 1, end).reverse(), ...lines.slice(end)].join('\n');
-};
 const reviewFixtures = [
   'a-solid-block-keeps-the-box-corner-margin',
   'a-solid-block-enters-beside-a-foreign-group',

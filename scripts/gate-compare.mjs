@@ -11,6 +11,9 @@
  * is non-zero (2) only when a file cannot be read as a corpus TSV. A sheet that lays out in the
  * base and fails in the head is flagged `error`, before the other flags.
  *
+ * A sheet only in the head has no base to be worse than, so it is judged on its own: an ERROR or TIMEOUT row, an error gate (`gates` not `-`)
+ * or `removed > 0` prints `NEW-FAIL` (one row for the sheet, one for each reason), and `gate:branch` fails on it. A clean new sheet passes.
+ *
  * Worse means: more bends; more removed links; a gate id with a violation that the base did not
  * have; more crossings; a larger canvas area; more label border crossings; more overlay run pairs on one track.
  */
@@ -19,6 +22,8 @@ import process from 'node:process';
 import { COLUMNS } from './gate-lib.mjs';
 
 const JUDGED = ['bends', 'removed', 'gates', 'crossings', 'canvas', 'labelBorder', 'track'];
+/** The flag of a sheet that only the head has, judged on its own. */
+const NEW_FAIL = 'new-fail';
 /** The columns in print order: the judged ones first, in judgement order, then the rest as the TSV has them. */
 const PRINT_ORDER = ['bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track', ...COLUMNS.filter((column) => !['file', 'bends', 'removed', 'gates', 'X', 'W', 'labelBorder', 'track'].includes(column))];
 
@@ -59,6 +64,15 @@ function parseTsv(path) {
   return { columns, rows };
 }
 
+/** What fails on a head-only sheet, as `[column, value]` cells; empty when it is clean. */
+function newFailures(row) {
+  if (row.error !== undefined) return [['(sheet)', row.error]];
+  const failures = [];
+  if ('gates' in row.cells && row.cells.gates !== '-') failures.push(['gates', row.cells.gates]);
+  if ('removed' in row.cells && Number(row.cells.removed) > 0) failures.push(['removed', row.cells.removed]);
+  return failures;
+}
+
 const gateSet = (text) => new Set(text === '-' ? [] : text.split(','));
 const area = (text) => text.split('x').reduce((product, side) => product * Number(side), 1);
 
@@ -80,7 +94,7 @@ function compare(base, head) {
   const files = [...new Set([...base.rows.keys(), ...head.rows.keys()])].sort();
   const columns = PRINT_ORDER.filter((column) => base.columns.includes(column) && head.columns.includes(column));
   const lines = []; // [file, column, base, head, flag]
-  const counts = Object.fromEntries(['error', ...JUDGED].map((flag) => [flag, 0]));
+  const counts = Object.fromEntries(['error', NEW_FAIL, ...JUDGED].map((flag) => [flag, 0]));
   let changed = 0;
   let geometry = 0;
   for (const file of files) {
@@ -88,8 +102,12 @@ function compare(base, head) {
     const h = head.rows.get(file);
     let sheetFlags = [];
     let cells = [];
-    if (b === undefined) cells.push(['(sheet)', '-', 'only in head']);
-    else if (h === undefined) cells.push(['(sheet)', 'only in base', '-']);
+    if (b === undefined) {
+      // Only in the head: no base to be worse than, so the sheet is judged on its own. Every row of a failing sheet carries the flag.
+      const failures = newFailures(h);
+      cells = h.error !== undefined ? [['(sheet)', '-', h.error]] : [['(sheet)', '-', 'only in head'], ...failures.map(([column, value]) => [column, '-', value])];
+      if (failures.length > 0) sheetFlags = [NEW_FAIL];
+    } else if (h === undefined) cells.push(['(sheet)', 'only in base', '-']);
     else if (b.error !== undefined || h.error !== undefined) {
       if (b.error === h.error) continue;
       cells.push(['(sheet)', b.error ?? 'ok', h.error ?? 'ok']);
@@ -104,7 +122,7 @@ function compare(base, head) {
     for (const flag of sheetFlags) counts[flag]++;
     for (const [column, left, right] of cells) {
       const flag = column === 'bends' ? 'bends' : column === 'removed' ? 'removed' : column === 'gates' ? 'gates' : column === 'X' ? 'crossings' : column === 'W' ? 'canvas' : column === 'labelBorder' ? 'labelBorder' : column === 'track' ? 'track' : column === '(sheet)' ? 'error' : undefined;
-      lines.push([file, column, left, right, flag !== undefined && sheetFlags.includes(flag) ? 'WORSE' : '']);
+      lines.push([file, column, left, right, sheetFlags.includes(NEW_FAIL) ? 'NEW-FAIL' : flag !== undefined && sheetFlags.includes(flag) ? 'WORSE' : '']);
     }
   }
   return { lines, changed, counts, total: files.length, geometry };
@@ -115,7 +133,7 @@ function format({ lines, changed, counts, total, geometry }) {
   const table = [['file', 'column', 'base', 'head', ''], ...lines];
   const widths = [0, 1, 2, 3].map((position) => Math.max(...table.map((row) => row[position].length)));
   const out = table.map((row) => row.map((cell, position) => (position < 4 ? cell.padEnd(widths[position]) : cell)).join('  ').trimEnd());
-  const worse = ['error', ...JUDGED].filter((flag) => counts[flag] > 0).map((flag) => `${flag} ${counts[flag]}`).join(', ');
+  const worse = ['error', NEW_FAIL, ...JUDGED].filter((flag) => counts[flag] > 0).map((flag) => `${flag} ${counts[flag]}`).join(', ');
   out.push('', `${changed} of ${total} sheets changed; worse: ${worse || 'none'}`);
   out.push(`${geometry} sheets with a geometry change (hash)`);
   return `${out.join('\n')}\n`;

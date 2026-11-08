@@ -9,7 +9,9 @@
  *   --strict        a larger canvas fails the gate too
  *
  * Fails on: a dirty tree or a merge conflict, a typecheck, lint or test failure, any WORSE row of
- * `gate:compare` (canvas aside, unless --strict) and any link the sweep removes that main keeps.
+ * `gate:compare` (canvas aside, unless --strict), any NEW-FAIL row (a sheet only the head has that fails),
+ * and any link the sweep removes that main keeps. It also prints the R3 check (`npm run r3`) of the sheets
+ * whose hash changed; that report does not fail the gate.
  * The base files `/tmp/pg-main-<sha>.tsv` and `/tmp/pg-main-<sha>-sweep.txt` are reused when
  * they exist; otherwise they are built in a detached worktree `.claude/worktrees/gate-main` under
  * the main checkout. See docs/agents/gates.md.
@@ -19,7 +21,10 @@ import { cpSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { COLUMNS, ROOT } from './gate-lib.mjs';
+import { changedSheets, worseRows } from './gate-rows.mjs';
 
+/** At most this many changed sheets get the R3 report; each takes three layouts. */
+const R3_MAX = 40;
 const USAGE = 'npm run gate:branch -- [--skip-tests] [--allow-canvas] [--strict]';
 
 /** A reason to stop: the first line is the verdict, the rest is detail for standard error. */
@@ -28,7 +33,7 @@ class Stop extends Error {}
 /** Run a command and capture its output; `cwd` defaults to this checkout. */
 function run(command, args, cwd = ROOT) {
   const result = spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 1 << 28 });
-  return { ok: result.status === 0, out: `${result.stdout ?? ''}${result.stderr ?? ''}`, stdout: result.stdout ?? '' };
+  return { ok: result.status === 0, status: result.status, out: `${result.stdout ?? ''}${result.stderr ?? ''}`, stdout: result.stdout ?? '' };
 }
 
 const git = (...args) => run('git', args);
@@ -84,12 +89,18 @@ function ensureBase(sha, baseTsv, baseSweep) {
   measure(worktree, baseTsv, baseSweep, needTsv && needSweep ? undefined : needTsv ? 'corpus' : 'sweep');
 }
 
-/** The WORSE rows of gate:compare output, as `{ file, column, base, head }`. */
-function worseRows(text) {
-  return text.split('\n').filter((line) => /\sWORSE$/.test(line)).map((line) => {
-    const [file, column, base, head] = line.replace(/\s+WORSE$/, '').split(/\s{2,}/);
-    return { file, column, base, head };
-  });
+/** R3 report (it does not fail the gate): `npm run r3` on `files` through `node scripts/r3.mjs`, which runs inside this job's lock; at most R3_MAX sheets. */
+function reportR3(files) {
+  if (files.length === 0) return say('r3: no sheet with a new hash');
+  const checked = files.slice(0, R3_MAX);
+  say(`r3: ${checked.length} of ${files.length} changed sheets (report only; a difference does not fail the gate)${files.length > checked.length ? `; the rest: npm run r3 -- <sheet>...` : ''}`);
+  const result = run('node', [join(ROOT, 'scripts', 'r3.mjs'), ...checked]);
+  const lines = result.stdout.trimEnd().split('\n').filter(Boolean);
+  const different = lines.filter((line) => !/\t(SAME( .*)?|SKIP .*)$/.test(line));
+  if (different.length > 0) say(`r3: ${different.length} of ${lines.length} reversals differ or failed:\n${different.join('\n')}`);
+  else if (result.ok) say(`r3: ${lines.length} reversals, all SAME or SKIP`);
+  // Exit 1 means a difference or an ERROR line (shown above); anything else is a crash of the script.
+  if (result.status !== 0 && result.status !== 1) say(`r3: the script failed (exit ${result.status})\n${tail(result.out)}`);
 }
 
 /** Links a sweep file removes that the base sweep did not, as `name:id`; a new ERROR or TIMEOUT counts as one. */
@@ -156,9 +167,14 @@ function main(argv) {
   const compared = run('node', [join(ROOT, 'scripts', 'gate-compare.mjs'), baseTsv, headTsv]);
   if (!compared.ok) throw new Stop(`gate:compare failed\n${compared.out}`);
   say(compared.stdout.trimEnd());
-  for (const row of worseRows(compared.stdout)) {
-    if (strict || row.column !== 'W') reasons.push(`WORSE ${row.file} ${row.column} ${row.base} -> ${row.head}`);
+  const rows = worseRows(compared.stdout);
+  for (const row of rows) {
+    // A head-only sheet that fails on a gate or on removed links says so in its own row; the sheet row alone adds nothing.
+    if (row.flag === 'NEW-FAIL' && row.head === 'only in head' && rows.some((other) => other.file === row.file && other !== row)) continue;
+    if (row.flag === 'NEW-FAIL') reasons.push(`NEW-FAIL ${row.file} ${row.column} ${row.head}`);
+    else if (strict || row.column !== 'W') reasons.push(`WORSE ${row.file} ${row.column} ${row.base} -> ${row.head}`);
   }
+  reportR3(changedSheets(compared.stdout));
 
   const diff = run('diff', [baseSweep, headSweep]);
   say(diff.stdout.trim() === '' ? 'sweep: no change' : `sweep diff:\n${diff.stdout.trimEnd()}`);
