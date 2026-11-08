@@ -1,6 +1,6 @@
 import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
-import { frameSubtreeCells, orderedGroupIds } from '../model/model.js';
+import { frameSubtreeCells } from '../model/model.js';
 import { CELL_TO_CHILD_FRAME_GAP, cellReach, deriveFrames, frameNodes } from './frames.js';
 import { GROUP_PADDING } from './group-padding.js';
 import { selectAnchorTier } from './lanes.js';
@@ -364,7 +364,8 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
   // of the run take the slots the cantons hold, in the order the document declares them; every other unit keeps its slot. The
   // overlay order of frames (ticket 57) may move them later, with a `sequence`.
   if (sequence === undefined) {
-    const declared = new Map(orderedGroupIds(model.document).map((id, at) => [id, at]));
+    // The expanded document lists its frames in the declaration order of the authored groups (`deriveDocumentFrames`).
+    const declared = new Map(Object.keys(model.document.frames ?? {}).map((id, at) => [id, at]));
     const slots = run.flatMap((unit, at) => isCantonUnit(model, unit) ? [at] : []);
     const cantons = slots.map(at => run[at]!).sort((a, b) => declared.get(a.id)! - declared.get(b.id)!);
     slots.forEach((at, k) => { run[at] = cantons[k]!; });

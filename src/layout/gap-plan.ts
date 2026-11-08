@@ -427,14 +427,16 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
     const unsplit = onCycle.filter(part => !split.has(part.id));
     // Where the cycle is among halves only, its latest part is residual (`TIER_GAP_ROW_CYCLE`).
     if (!unsplit.length) return { reject: latest(onCycle) };
-    const pick = latest(unsplit);
-    // The widest clear interval that leaves the halves on no cycle; residual only where none does.
-    const middle = middleDrops(pick, parts, split, keep, frame.verticals, frame.chords).find(candidate => {
+    // The widest clear interval that leaves the halves on no cycle. The latest part of the cycle that has one is split (ticket DR-04:
+    // which part is latest is link order, so a cycle that one of its parts can open is opened whatever the order); residual only
+    // where none has one, and then the latest part is.
+    const middleOf = (pick: Part): number | undefined => middleDrops(pick, parts, split, keep, frame.verticals, frame.chords).find(candidate => {
       const trial = new Map(split).set(pick.id, candidate), after = expand(base, trial, unitsOf(parts, trial));
       return !inCycle(after, `${pick.id}a`) && !inCycle(after, `${pick.id}b`);
     });
-    if (middle === undefined) return { reject: pick };
-    split.set(pick.id, middle);
+    const opened = [...unsplit].sort((a, b) => b.order - a.order).map(pick => ({ pick, middle: middleOf(pick) })).find(item => item.middle !== undefined);
+    if (opened === undefined) return { reject: latest(unsplit) };
+    split.set(opened.pick.id, opened.middle!);
   }
   // A part the whole Z interleaves is not left free: between the halves it can cross the Z three times. It goes above
   // the first half where that keeps the graph acyclic, else below the second half, else it is residual.

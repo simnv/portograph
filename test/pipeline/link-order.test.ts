@@ -61,6 +61,13 @@ describe('the canonical link order', () => {
     expect(gateFailures(score(model).snapshot)).toEqual([]);
   });
 
+  it('bar-fan with its nodes reversed stands the bar under its drop and passes every gate', async () => {
+    // Reversed, the link to c2 comes first in the canonical order; the parent port still seats over the bar, so 7d shapes the bar
+    // under the drop and not over the leaves (the seat rivals of `groupFeeds` are read bar first, then by x, never in link order).
+    const model = await run(reversed(fixture('synthetic/bar-fan'), 'nodes'));
+    expect(gateFailures(score(model).snapshot)).toEqual([]);
+  });
+
   it('m1-sip-edge lays out the same with its links reversed', async () => {
     const source = fixture('m1-sip-edge');
     const [base, model] = await Promise.all([run(source), run(reversed(source, 'links'))]);
