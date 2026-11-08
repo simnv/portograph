@@ -1094,9 +1094,9 @@ interval, nearest first. A group moves whole, keeps the band gap to the groups, 
 canton for a member), stays inside the box of the whole layout, and, when it holds a routed link, keeps its place in the
 order of its tier. A node moves alone, inside the box its group has and in its row's order. A candidate stays only when the
 straight overlay count rises, `laneSidesHold` passes, every routed link that ran on one axis or held a chord still does, and
-a copy of the model run through one round of the close-up, the keep-out and the label room (`settleRound`; it grows no tier gap since architecture-2 ticket 57) has no G6 or G5 finding that the same
+a copy of the model run through one round of the close-up and the keep-out (`settleRound`; it grows no tier gap since architecture-2 ticket 57) has no G6 or G5 finding that the same
 copy without the move lacks (`parallelClearance` and `portOrder`, the gates' own predicates). Left bent: a chord blocked by
-two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the close-up and the label room
+two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the close-up and the keep-out
 are measured on the geometry that stands. `refreshHeldWarnings` withdraws only a warning that states a jog.
 
 ### 7d — bars
@@ -1271,9 +1271,9 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 ### 7f — group label bands, tier gap room, group label bands again
 
 7f does these things, in this order (architecture-2 ticket 57): it reserves the height of the group label bands on the y axis only
-(`topUpBandClearance`); it runs the rounds (the close-up of the cantons, the keep-out, the label room, the steps over a chord), which
+(`topUpBandClearance`); it runs the rounds (the close-up of the cantons, the keep-out, the steps over a chord), which
 grow no tier gap; when the rounds did not replay the draft and the centring left its non-convergence or a violation the publication would
-refuse, it settles the centring once on the frozen geometry (one `replayRegions` and label room, architecture-2 ticket 65: the bands'
+refuse, it settles the centring once on the frozen geometry (one `replayRegions`, architecture-2 ticket 65: the bands'
 single budget gave no pass after it); it lets a corridor whose child 7c could not seat follow that child (`reseatLanes`, § 7a); it settles the overlay ports;
 it solves the tier gaps once (`solveTierGaps`, `gap-room.ts`): the stem depths are recorded, every plan and every label room across a gap
 is read once, and each gap grows by what it lacks; it trims each node body to its ports and content (the end trim, below, architecture-2
@@ -1594,23 +1594,18 @@ whose longest run lies wholly across the axis the room grows on are diagnosed `L
 Room that lies beyond a reserved lane is inserted, and the lane and everything beyond it move out
 with it (`insertRoomAt`; label room wins over an adjacent lane, architecture-2 ticket 23). Moves settle pills before the next link measures; the
 reservation re-runs after the grid inside the 7f loop and any movement replays the region producers. That group's band clearance also
-reserves the label's room beside the detour run under the title. **The room is the last step of every settle
-(architecture-2 ticket 27).** A later 7f move moves a labelled line's end in x (the step over a chord, a lower rank move, the
-canton close-up, the keep-out, the linkless step): the line turns, and its window shrinks below the room the producer reserved.
-`settleRound` therefore runs the close-up and the keep-out, and then the room (`settleRoom`): `reserveLinkLabelRoom`. It grows no tier gap
-(ticket 57): a label room across a tier gap is recorded as a shortfall and not moved, the solve at the end of 7f pays it with height, and
-the validator and the room check (`roomHolds`) count a tier-gap shortfall as a fault. When
-it reserved, the replay, the close-up, the keep-out and the room again, until a pass reserves nothing, so nothing moves after the last
-reading of the room. The linkless step of the last round and its replay are followed by the same `settleRoom`. No measure proves that the
-passes end (the reservation only grows the room, but the replay and the close-up move x), so `LABEL_ROOM_PASSES` (4) bounds them: after
-that many reservations the rooms a reservation would still grow are given up, recorded (`labelRoomUnsettled`) and named
-(`LINK_LABEL_ROOM_UNSETTLED`). The reservation then reserves nothing for those links (`LINK_LABEL_ROOM_UNRESERVED`) and the label placement
-decides: with no window the label may lie across a border, with `LINK_LABEL_ON_BORDER`, and stage 9's collision test refuses a place on a
-link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that names no
-described link. A chord trial (`trialSettle`)
-runs the same round on its copy, so the judges read, and the draft adopts, a copy whose rooms hold. The settled chord and rank judges, as
-the lane reseat, refuse a move that names a new link in the room set (`noNewFindings('room')`, `roomFindings`): a room given up, and, for a
-copy that did not end a settle on its room, a room a reservation would still grow.
+reserves the label's room beside the detour run under the title. **Label room is reserved by the producer and by the tier-gap
+solve only (ADR-0014 r2, amended 2026-11-07; decision review ticket DR-02).** A settle round (`settleRound`) runs the close-up and the
+keep-out and reserves no label room: architecture-2 ticket 27 once ended each round on `reserveLinkLabelRoom` with a bound of 4 passes
+(`LABEL_ROOM_PASSES`), and ticket DR-02 deleted that loop because the bound at 0 changed no drawing on 467 sheets. A label room across a
+tier gap is recorded as a shortfall and not moved; the solve at the end of 7f pays it with height, and the validator and the room check
+(`roomHolds`) count a tier-gap shortfall as a fault. A room the solve cannot open is given up (`labelRoomUnsettled`, named
+`LINK_LABEL_ROOM_UNSETTLED`, see 7f solve). The reservation then reserves nothing for those links (`LINK_LABEL_ROOM_UNRESERVED`) and the
+label placement decides: with no window the label may lie across a border, with `LINK_LABEL_ON_BORDER`, and stage 9's collision test refuses
+a place on a link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that
+names no described link. The settled chord and rank judges, as the lane reseat, refuse a move that names a new link in the room set
+(`noNewFindings('room')`, `roomFindings`): a room given up, and a room a reservation would still grow.
+A move that runs after the reservation keeps a same-tier row room: `holdsMove` has the kind `labelRoom` (`label-room-guard.ts`), which refuses a move that shifts the ends of a described same-tier link apart and leaves a row shortfall the model did not have (decision review ticket DR-02, R2). Nothing reserves the room again.
 Publication and restore re-run the reservation on a copy and reject a model it would still change.
 
 **Linked groups share a grid (ADR-0012).** Before labels are planned, groups joined by vertical
@@ -2194,8 +2189,11 @@ bands are not replanned around it, and the anchor is that drawn-geometry union r
 canvas, so re-deriving the legend from a published model puts it back in exactly the same place.
 It exists only when the document draws more than one symbol or more than one line style — or a
 port role beside any other variant, since nothing else says what a role's paint means — lists exactly the classes present (known profile classes in declaration
-order, then author classes by first use; a link without a class contributes the profile's default
-line style; each role token of a drawn pill's `class` contributes one `port:<role>` entry, drawn as
+order, then author classes by first use; a class with several tokens is keyed by the profile class that paints it, so `router extra`
+shares the router row and `dashed extra` the dashed row, and stage 3 gives `router extra` the router icon (draw.io ticket 8); a
+link without a class contributes the profile's default
+line style; a line row whose links are all overlay links draws an overlay sample, the paint those links take (audit A1-16);
+each role token of a drawn pill's `class` contributes one `port:<role>` entry, drawn as
 a 26 × 10 pill with that role's paint, while status tokens contribute nothing), and records the
 same effective stroke width `score` measures. `LayoutModel.legend` and its `role: 'legend'` labels
 are stage 9's claims: the validator re-derives both and rejects a forged, moved or removed legend.
@@ -2273,10 +2271,18 @@ or a shadow — is held by that one parser policy on both routes, not restated p
 The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
 one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
 
-**What both renderers compute is stated once** (`render/shared.ts`, draw.io ticket 13). The theme sheet is a table of paint rules
-(`paintRules`): the SVG writes it as CSS, and the draw.io export resolves each cell's paint from the same table by the CSS cascade
-(`resolvePaint`: the more specific rule wins, then the later one), on the classes the SVG element carries. A class token the theme
-does not know, or the order of the tokens, changes the paint in neither. The glyph box in an icon tile (`iconGlyphBox`: the inset,
+**What both renderers compute is stated once** (`render/shared.ts`, draw.io tickets 13 and 8). The theme sheet is a table of paint
+rules (`paintRules`, and `washRules` for the sheet's own node classes): the SVG writes it as CSS, and the draw.io export reads the same
+table and the document's `css:` (`authorRules` in `render/author-css.ts`) and resolves each cell's paint by the CSS cascade
+(`PaintSheet`, `computePaint`): an important declaration wins, then the more specific rule, then the later one; a property no rule
+states is inherited from the element's parent (every paint property but `opacity`), and the opacity a cell is drawn at is the
+product of `opacity` along the path. The match runs on the path of class attributes from the SVG root to the element (`paintPath`,
+`svgClass`, which the SVG writes too), so a descendant or child rule reaches both renderers. A mode reads the light rules and, for
+dark or print, that mode's rules on top, as a browser reads the unconditional rules and the matching `@media` blocks. A class token
+the theme does not know, or the order of the tokens, changes the paint in neither. What draw.io cannot carry of the author's rules (a
+selector beyond class compounds and the two combinators, a property beyond fill, stroke, their opacities, `opacity` and the dash, an
+at-rule other than a plain `@media`, or a value draw.io has no key for, such as a stroke on a text) is named in one
+`DRAWIO_CSS_UNMAPPED` warning. The glyph box in an icon tile (`iconGlyphBox`: the inset,
 1.5 px or the card's own, is at most a quarter of each tile side) and the runs of a path (`pathRuns`: a new run where a segment does
 not start at the end of the one before, at the planar tolerance) are the other two. The SVG starts a subpath per run; draw.io writes
 a connector per run.

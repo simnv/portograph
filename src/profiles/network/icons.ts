@@ -1,4 +1,5 @@
 import type { NormalisedNode } from '../../model/document.js';
+import { NETWORK_NODE_CLASSES } from './theme.js';
 
 /**
  * Network profile defaults shared by node measurement and SVG rendering. The glyph, not only the
@@ -35,6 +36,18 @@ export const iconKey = (icon: string): string => Object.hasOwn(NETWORK_ICON_PATH
 /** An explicit empty icon suppresses the class default. */
 export function resolveNodeIcon(node: Pick<NormalisedNode, 'icon' | 'class'>): string | undefined {
   if (node.icon !== undefined) return node.icon === '' ? undefined : node.icon;
-  return node.class !== undefined && Object.hasOwn(NETWORK_NODE_ICONS, node.class)
-    ? NETWORK_NODE_ICONS[node.class] : undefined;
+  const token = iconClass(node.class);
+  return token === undefined ? undefined : NETWORK_NODE_ICONS[token];
+}
+
+/**
+ * The class token of a node's `class` that gives it its icon: of the tokens that have one, the profile class declared last (the one
+ * whose `.icon-tile.<class>` rule wins the cascade, as `washToken` picks the body), else the first in the attribute. So `router extra`
+ * draws the router icon, and the order of the tokens changes nothing for two profile classes (drawio-export ticket 8).
+ */
+export function iconClass(classAttr: string | undefined): string | undefined {
+  const rank = (token: string): number => NETWORK_NODE_CLASSES.findIndex(([name]) => name === token);
+  const tokens = (classAttr ?? '').split(/\s+/).filter(token => token && Object.hasOwn(NETWORK_NODE_ICONS, token));
+  // Last key: the token order of the attribute (a stable sort), for two tokens the theme does not paint.
+  return [...tokens].sort((a, b) => rank(b) - rank(a))[0];
 }

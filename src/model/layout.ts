@@ -530,7 +530,8 @@ export interface Obstacle extends OwnedElement {
 }
 
 export interface Diagnostic {
-  stage: 'parse' | 'model' | 'placement' | 'final-geometry';
+  /** `render`: a renderer's own diagnostic, which no stage of the pipeline records on the model (the draw.io export's). */
+  stage: 'parse' | 'model' | 'placement' | 'final-geometry' | 'render';
   severity: 'info' | 'warning' | 'error';
   code: string;
   message: string;
@@ -732,8 +733,8 @@ export interface LayoutModel {
    */
   stemDepths?: StemDepth[];
   /**
-   * The described links whose label room 7f gave up (architecture-2 ticket 27): a settle round reserved the room and replayed
-   * `LABEL_ROOM_PASSES` times and a pass still reserved more, so the room of the links still short then is left to the label placement
+   * The described links whose label room 7f gave up (architecture-2 ticket 27): the tier-gap solve read the room
+   * `LABEL_SOLVE_READS` times and a read still asked for more, so the room of the links still short then is left to the label placement
    * (`LINK_LABEL_ROOM_UNRESERVED`, as for a room no growth can open). No gate judges that label: G3 leaves out overlay labels and
    * `labelBorderCrossings` is a counter. When no window holds it, stage 9 places it across a border with `LINK_LABEL_ON_BORDER`; its own
    * collision test still refuses a place on a link. The reservation reads the record

@@ -43,7 +43,8 @@ const ROWS: Row[] = [
   // Ticket 57 (the tier gaps solved once, after the rounds): no settle round grows a gap and replays for it. three-continents 22/100/50/5 (24/105/54/5
   // before); a-tier-gap-plan 1/24/10/3, one round (2/56/14/3: its second round was the growth's; 2/48/14/3 and two bodies since ticket 65); two-interleaved 1/6/7/3 and a-tier-gap-grows 1/4/7/3
   // (one centring pass each, the replay after the growth).
-  row('three-continents', '22/100/50/5', 2, 2, 5, 2, 2, { preCentre: 2, baseChord: 1 }),
+  // Decision review ticket DR-02: a trial copy's room set is read from `roomShort` (13 candidate copies more, 50 to 63); no other count moves.
+  row('three-continents', '22/100/63/5', 2, 2, 5, 2, 2, { preCentre: 2, baseChord: 1 }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
   // Ticket 65: the settle after the rounds puts src back at the spec's x, a direct member then crowds a planned part, and the attempt body runs
   // once more with it refused (two bodies of one round each, one settle and its eight passes each): 2/48/14/3 and 2 rounds (1/24/10/3 and 1 before).
@@ -88,7 +89,8 @@ const ROWS: Row[] = [
   // Verdana metrics (snack-theme ticket 157): 13/28/35/6 (15/30/39/6 with Arial).
   // Ticket 162: two feeds a title refused are chords before centring, which takes them off (pre-7f chords lost 2, 0 before).
   // Ticket 54: no title refuses the feeds (pre-7f chords lost 0) and nine centring passes fewer (13/28/35/6 before).
-  row('a-chord-step-moves-a-group-off-a-straight-chord', '13/19/35/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
+  // Decision review ticket DR-02: no settle ends on the label room, so a trial copy's room set is read from `roomShort` (nine candidate copies more, 35 to 44); no other count moves.
+  row('a-chord-step-moves-a-group-off-a-straight-chord', '13/19/44/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
 ];
 
 interface Reading { counters: string; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: string; probe: number; preChords: number; preCentre: number; base7f: string; events: AttemptTraceEvent[] }

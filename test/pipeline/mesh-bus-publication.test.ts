@@ -58,7 +58,8 @@ describe('the bus publishes member paths, scores, renders and exports (ticket 84
     expect(count(svg, /<g class="mesh-bus overlay sync"/g)).toBe(1);
     expect(count(svg, /<g class="link overlay/g)).toBe(0);
     expect(count(svg, /<circle class="overlay-endpoint sync"/g)).toBe(5);
-    expect(count(svg, /class="link-line overlay-line sync/g)).toBe(6);
+    // Six bus lines, and the legend's `sync` sample: every `sync` link is an overlay link, so it draws as one (audit A1-16).
+    expect(count(svg, /class="link-line overlay-line sync/g)).toBe(7);
     expect(svg).toContain('sync mesh (5 nodes)');
   }, 60000);
 
