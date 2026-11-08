@@ -2224,6 +2224,14 @@ or a shadow — is held by that one parser policy on both routes, not restated p
 The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
 one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
 
+**What both renderers compute is stated once** (`render/shared.ts`, draw.io ticket 13). The theme sheet is a table of paint rules
+(`paintRules`): the SVG writes it as CSS, and the draw.io export resolves each cell's paint from the same table by the CSS cascade
+(`resolvePaint`: the more specific rule wins, then the later one), on the classes the SVG element carries. A class token the theme
+does not know, or the order of the tokens, changes the paint in neither. The glyph box in an icon tile (`iconGlyphBox`: the inset,
+1.5 px or the card's own, is at most a quarter of each tile side) and the runs of a path (`pathRuns`: a new run where a segment does
+not start at the end of the one before, at the planar tolerance) are the other two. The SVG starts a subpath per run; draw.io writes
+a connector per run.
+
 **Every text outside node bodies carries a halo** (ticket 162, ADR-0023): group titles, link, multiplicity and bus labels and
 legend labels have the class `pg-halo` and a depth class `pg-halo-<n>`, where `n` counts the group boxes behind the text's centre
 (`boxesBehind`). The style states `paint-order: stroke fill` with a 4 px stroke, and per depth the colour behind the text

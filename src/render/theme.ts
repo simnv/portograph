@@ -53,61 +53,85 @@ export class GeometryLocks {
 const token = (value: number): string => String(value).replace(/\./g, '_').replace(/-/g, 'm').replace(/\+/g, 'p');
 
 /**
+ * One paint rule of the theme sheet: the structural class it paints, the further classes the element must carry, and its
+ * declarations in order. `where` puts the further classes inside `:where()`, which adds no specificity. The SVG writes each
+ * rule as CSS (`cssRule`); the draw.io export resolves the same rules as the CSS cascade does (`resolvePaint` in
+ * `render/shared.ts`), so the two renderers read one table (R1).
+ */
+export interface PaintRule {
+  readonly element: string;
+  readonly tokens: readonly string[];
+  readonly where?: true;
+  readonly declarations: readonly (readonly [property: string, value: string | number])[];
+}
+
+const rule = (element: string, tokens: readonly string[], declarations: PaintRule['declarations'], where?: true): PaintRule =>
+  where ? { element, tokens, where, declarations } : { element, tokens, declarations };
+
+/** One rule as CSS text: `.element.token{property:value;…}`, or `.element:where(.token){…}`. */
+export function cssRule(paintRule: PaintRule): string {
+  const tokens = paintRule.tokens.map(name => `.${name}`).join('');
+  const selector = `.${paintRule.element}${paintRule.where ? `:where(${tokens})` : tokens}`;
+  return `${selector}{${paintRule.declarations.map(([property, value]) => `${property}:${value}`).join(';')}}`;
+}
+
+/**
  * The paint rules of one theme mode. Colour, fill, dash and opacity only: every rule here is at
  * the same specificity a document `css:` rule can reach, and the document's filtered CSS is
  * appended after the whole theme, so an author still owns the palette. The order and the
  * declarations are those of `ref/theme-handoff/portograph-theme.css` plus its recorded amendments,
  * which a test compares against.
  */
-export function themeRules(mode: ThemeMode, theme: Theme = themeById(undefined)): string[] {
+export function paintRules(mode: ThemeMode, theme: Theme = themeById(undefined)): PaintRule[] {
   const paint = theme.paint[mode];
-  const rules: string[] = [
-    `.pg-canvas{fill:${paint.background}}`,
-    `.group-box{fill:${paint.group.fill};fill-opacity:${paint.group.fillOpacity};stroke:${paint.group.stroke};stroke-dasharray:${paint.group.dash}}`,
-    `.group-label{fill:${paint.group.text}}`,
-    `.node-body{fill:${paint.node.fill};stroke:${paint.node.stroke}}`,
-    `.node-label{fill:${paint.node.text}}`,
-    `.node-description{fill:${paint.node.description};fill-opacity:1}`,
+  const rules: PaintRule[] = [
+    rule('pg-canvas', [], [['fill', paint.background]]),
+    rule('group-box', [], [['fill', paint.group.fill], ['fill-opacity', paint.group.fillOpacity], ['stroke', paint.group.stroke], ['stroke-dasharray', paint.group.dash]]),
+    rule('group-label', [], [['fill', paint.group.text]]),
+    rule('node-body', [], [['fill', paint.node.fill], ['stroke', paint.node.stroke]]),
+    rule('node-label', [], [['fill', paint.node.text]]),
+    rule('node-description', [], [['fill', paint.node.description], ['fill-opacity', 1]]),
     // Defaults for a class the profile does not know; the class rules below are more specific.
-    `.icon-tile{fill:${paint.tile.fill};stroke:${paint.tile.stroke}}`,
-    `.node-icon{fill:none;stroke:${paint.glyph};stroke-linecap:round;stroke-linejoin:round}`,
-    `.pill{fill:${paint.pill.fill};stroke:${paint.pill.stroke}}`,
-    `.pill-label{fill:${paint.pill.text}}`,
-    `.link-line{fill:none;stroke:${paint.link.stroke}}`,
-    `.link-label{fill:${paint.link.label}}`,
-    `.multiplicity-label{fill:${paint.link.multiplicity}}`,
-    `.legend-label{fill:${paint.legend.text}}`,
-    `.overlay-line{stroke:${paint.overlay.stroke};stroke-opacity:${paint.overlay.opacity}${paint.overlay.dash ? `;stroke-dasharray:${paint.overlay.dash}` : ''}}`,
-    `.overlay-endpoint{fill:${paint.overlay.mark};stroke:none}`,
+    rule('icon-tile', [], [['fill', paint.tile.fill], ['stroke', paint.tile.stroke]]),
+    rule('node-icon', [], [['fill', 'none'], ['stroke', paint.glyph], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round']]),
+    rule('pill', [], [['fill', paint.pill.fill], ['stroke', paint.pill.stroke]]),
+    rule('pill-label', [], [['fill', paint.pill.text]]),
+    rule('link-line', [], [['fill', 'none'], ['stroke', paint.link.stroke]]),
+    rule('link-label', [], [['fill', paint.link.label]]),
+    rule('multiplicity-label', [], [['fill', paint.link.multiplicity]]),
+    rule('legend-label', [], [['fill', paint.legend.text]]),
+    rule('overlay-line', [], [['stroke', paint.overlay.stroke], ['stroke-opacity', paint.overlay.opacity],
+      ...(paint.overlay.dash ? [['stroke-dasharray', paint.overlay.dash] as const] : [])]),
+    rule('overlay-endpoint', [], [['fill', paint.overlay.mark], ['stroke', 'none']]),
   ];
   // The role colour lives on the icon tile; the pill takes the class hue. The body takes a faint wash of the class hue.
   for (const [name] of NETWORK_NODE_CLASSES) {
     const { tile, glyph, pill, body } = theme.classPaint(name, mode)!;
     // `:where()` keeps the wash at the specificity of `.node-body`, so a document `css:` rule on the body wins.
-    rules.push(`.node-body:where(.${name}){fill:${body}}`);
-    rules.push(`.icon-tile.${name}{fill:${tile.fill};stroke:${tile.stroke}}`);
-    rules.push(`.node-icon.${name}{stroke:${glyph}}`);
-    rules.push(`.pill.${name}{fill:${pill.fill};stroke:${pill.stroke}}`);
-    rules.push(`.pill-label.${name}{fill:${pill.text}}`);
+    rules.push(rule('node-body', [name], [['fill', body]], true));
+    rules.push(rule('icon-tile', [name], [['fill', tile.fill], ['stroke', tile.stroke]]));
+    rules.push(rule('node-icon', [name], [['stroke', glyph]]));
+    rules.push(rule('pill', [name], [['fill', pill.fill], ['stroke', pill.stroke]]));
+    rules.push(rule('pill-label', [name], [['fill', pill.text]]));
   }
   for (const [name, style] of theme.linkClasses) {
     if (name === LEGEND_DEFAULT_CLASS) continue;
-    rules.push(`.link-line.${name}{stroke:${style.strokes[mode]}`
-      + `${style.dash ? `;stroke-dasharray:${style.dash}` : ''}${style.cap ? `;stroke-linecap:${style.cap}` : ''}}`);
+    rules.push(rule('link-line', [name], [['stroke', style.strokes[mode]],
+      ...(style.dash ? [['stroke-dasharray', style.dash] as const] : []), ...(style.cap ? [['stroke-linecap', style.cap] as const] : [])]));
   }
   // A `port.class` role drives the pill fill (the outlined role its stroke); a status drives the
   // stroke; `unused` fades the whole port.
   for (const [name, style] of theme.portRoles) {
-    const paint = portRolePaint(style, mode);
-    if (paint.stroke !== undefined) { rules.push(`.pill.${name}{fill:none;stroke:${paint.stroke}}`); continue; }
-    rules.push(`.pill.${name}{fill:${paint.fill}}`);
-    rules.push(`.pill-label.${name}{fill:${paint.text}}`);
+    const rolePaint = portRolePaint(style, mode);
+    if (rolePaint.stroke !== undefined) { rules.push(rule('pill', [name], [['fill', 'none'], ['stroke', rolePaint.stroke]])); continue; }
+    rules.push(rule('pill', [name], [['fill', rolePaint.fill]]));
+    rules.push(rule('pill-label', [name], [['fill', rolePaint.text]]));
   }
   for (const [name, style] of theme.portStatus) {
-    if (style.kind === 'fade') { rules.push(`.port.${name}{opacity:${style.opacity}}`); continue; }
-    rules.push(`.pill.${name}{stroke:${style.stroke[mode]}`
-      + `${style.dash ? `;stroke-dasharray:${style.dash[mode]}` : ''}${style.fill ? `;fill:${style.fill[mode]}` : ''}}`);
-    if (style.text) rules.push(`.pill-label.${name}{fill:${style.text[mode]}}`);
+    if (style.kind === 'fade') { rules.push(rule('port', [name], [['opacity', style.opacity]])); continue; }
+    rules.push(rule('pill', [name], [['stroke', style.stroke[mode]],
+      ...(style.dash ? [['stroke-dasharray', style.dash[mode]] as const] : []), ...(style.fill ? [['fill', style.fill[mode]] as const] : [])]));
+    if (style.text) rules.push(rule('pill-label', [name], [['fill', style.text[mode]]]));
   }
   // The overlay mask is internal render structure, not an author styling surface, so its paint is
   // not stated here at all: a rule in this sheet is reachable by an accepted `css:` rule of the same
@@ -115,6 +139,10 @@ export function themeRules(mode: ThemeMode, theme: Theme = themeById(undefined))
   // its elements, inline and important, where no author style sheet can reach it.
   return rules;
 }
+
+/** The paint rules of one theme mode as CSS text, in sheet order. */
+export const themeRules = (mode: ThemeMode, theme: Theme = themeById(undefined)): string[] =>
+  paintRules(mode, theme).map(cssRule);
 
 /**
  * The paint sheet of one theme (the default is `network`): the light sheet, then the dark sheet behind `prefers-color-scheme`
