@@ -1,5 +1,5 @@
 import type { Point, Side } from '../model/geometry.js';
-import { isTurn } from '../geometry/planar.js';
+import { distinctPoints, isTurn } from '../geometry/planar.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
@@ -17,17 +17,17 @@ const OUT: Record<Side, Point> = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, 
 const OPPOSITE: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
 const HEADINGS: Side[] = ['top', 'right', 'bottom', 'left'];
 const BEND = 1000;
-/** Coordinate equality of the grid and the polyline points, in px: the reservation tolerance, strict at the bound. */
+/** Coordinate equality of the grid lines and of a facing offset, in px: the reservation tolerance, strict at the bound. */
 const near = (a: number, b: number): boolean => Math.abs(a - b) < PLACEMENT_EPS;
-const samePoint = (a: Point, b: Point): boolean => near(a.x, b.x) && near(a.y, b.y);
 const step = (p: Point, side: Side, by: number): Point => ({ x: p.x + OUT[side].x * by, y: p.y + OUT[side].y * by });
 
-/** Drops repeated points, and the middle point of three where the polyline makes no turn (`isTurn`, the turn predicate `pointTurns` counts with). */
+/**
+ * Drops repeated points (`distinctPoints`) and the middle point of three where the polyline makes no turn (`isTurn`): the same point and the
+ * same turn that `pointTurns` reads, so the count of turns survives it.
+ */
 export function simplify(points: readonly Point[]): Point[] {
-  const kept: Point[] = [];
-  for (const point of points) if (kept.length === 0 || !samePoint(kept.at(-1)!, point)) kept.push(point);
   const out: Point[] = [];
-  for (const point of kept) {
+  for (const point of distinctPoints(points)) {
     while (out.length >= 2 && !isTurn({ from: out.at(-2)!, to: out.at(-1)! }, { from: out.at(-1)!, to: point })) out.pop();
     out.push(point);
   }

@@ -46,33 +46,41 @@ export function segmentRectDistance(s: PathSegment, r: Rect): number {
 /** A segment by its two ends: a published `PathSegment`, or a piece of a polyline that has no owner yet. */
 export interface Piece { from: Point; to: Point }
 
-/**
- * Whether a path turns where piece `b` follows piece `a`: a change of direction, or a reversal. A collinear piece that goes on the
- * same way is no turn. The determinant and the dot product are in px squared and compare at `EPS` (the number, not a distance).
- */
-export function isTurn(a: Piece, b: Piece): boolean {
-  const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
-  return !near(ax * by - ay * bx, 0) || ax * bx + ay * by < -EPS;
+/** The points of a polyline less each point that is the same point (`samePoint`) as the last one kept: the one "same point" of every turn reader. */
+export function distinctPoints(points: readonly Point[]): Point[] {
+  const kept: Point[] = [];
+  for (const point of points) if (kept.length === 0 || !samePoint(kept.at(-1)!, point)) kept.push(point);
+  return kept;
 }
 
 /**
- * The turns of a path, by its pieces (CODING_STANDARDS R7: the one bend count of readers and gates; `pathBends` reads a link with it). A
- * piece whose two ends are one point (`samePoint`) has no direction: it is skipped, and the next piece is compared with the one before it.
+ * Whether a path turns where piece `b` follows piece `a`: a change of direction, or a reversal. A collinear piece that goes on the same way
+ * is no turn, and so is a piece with no length. The test is on the angle, so it does not depend on the drawing's scale: the sine of the
+ * angle between the pieces (the determinant over both lengths) above `EPS`, or a cosine below `-EPS`. `EPS` is a dimensionless number here,
+ * as in `overlapSegment`; a fixed px-squared bound would call a residue on two long pieces a turn and a real corner of two short ones none.
  */
-export function pieceTurns(pieces: readonly Piece[]): number {
-  let turns = 0, last: Piece | undefined;
-  for (const piece of pieces) {
-    if (samePoint(piece.from, piece.to)) continue;
-    if (last !== undefined && isTurn(last, piece)) turns++;
-    last = piece;
-  }
+export function isTurn(a: Piece, b: Piece): boolean {
+  if (samePoint(a.from, a.to) || samePoint(b.from, b.to)) return false;
+  const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
+  const scale = Math.hypot(ax, ay) * Math.hypot(bx, by);
+  return Math.abs(ax * by - ay * bx) > EPS * scale || ax * bx + ay * by < -EPS * scale;
+}
+
+/** The points where a polyline turns (`isTurn`), in order, read on its distinct points (`distinctPoints`). */
+export function turnPoints(points: readonly Point[]): Point[] {
+  const p = distinctPoints(points), turns: Point[] = [];
+  for (let i = 1; i + 1 < p.length; i++) if (isTurn({ from: p[i - 1]!, to: p[i]! }, { from: p[i]!, to: p[i + 1]! })) turns.push(p[i]!);
   return turns;
 }
 
-/** The turns of a polyline given by its points: `pieceTurns` of its pieces. */
-export function pointTurns(points: readonly Point[]): number {
-  return pieceTurns(points.slice(1).map((to, index) => ({ from: points[index]!, to })));
-}
+/** The turns of a polyline given by its points (CODING_STANDARDS R7: the one bend count of readers and gates). */
+export const pointTurns = (points: readonly Point[]): number => turnPoints(points).length;
+
+/** The points of a path given by its pieces: a path is a chain, each piece starts where the one before ends (`route/validate` checks it). */
+export const chainPoints = (pieces: readonly Piece[]): Point[] => pieces.length === 0 ? [] : [pieces[0]!.from, ...pieces.map(piece => piece.to)];
+
+/** The turns of a path given by its pieces: `pointTurns` of its chain. `pathBends` reads a link with it. */
+export const pieceTurns = (pieces: readonly Piece[]): number => pointTurns(chainPoints(pieces));
 
 export function intersection(a: Piece, b: Piece): Point | undefined {
   const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;

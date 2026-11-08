@@ -8,11 +8,12 @@
  * owners, below. Each name states its quantity, its unit and its edge; two names with one number are two decisions, kept apart so that
  * a change of one cannot move the other.
  *
- * Owner files: this one and `geometry/planar.ts`. A raw `1e-N` literal anywhere else in `src/layout`, `src/route`, `src/pipeline`,
- * `src/geometry` and `src/render` fails the lint (`test/lint/tolerance-literals.test.ts`), except as the direct initializer of a named
- * exception that the lint lists: an order key (`SAME_KEY`, `SAME_FEED_KEY`, `AUTHOR_ORDER_KEY_STEP`), a parametric guard (`NEAR_END`),
- * a room grain (`LABEL_PADDING_GRAIN`, `LABEL_WINDOW_GRAIN`) and the renderer's own owners (`render/drawio.ts`: `EPS`, `PHASE_GRAIN`; a
- * renderer must not import a placement rule). A new comparison reads a name here, or names its own quantity and adds it to the lint.
+ * Owner files: this one and `geometry/planar.ts`. A raw tolerance literal (a number above 0 and at most 0.01 in any spelling,
+ * `Number.EPSILON`, a power with a negative exponent) anywhere else in `src` fails the lint (`test/lint/tolerance-literals.test.ts`),
+ * except as the direct initializer of a top-level named exception that the lint lists: an order key (`SAME_KEY`, `SAME_FEED_KEY`,
+ * `AUTHOR_ORDER_KEY_STEP`), a parametric guard (`NEAR_END`), a room grain (`LABEL_PADDING_GRAIN`, `LABEL_WINDOW_GRAIN`), the constraint
+ * residual (`RESIDUAL_TOLERANCE`) and the renderer's own owners (`render/drawio.ts`: `EPS`, `PHASE_GRAIN`; a renderer must not import a
+ * placement rule). A new comparison reads a name here, or names its own quantity and adds it to the lint.
  */
 
 // ---- distances, px ----------------------------------------------------------------------------------------------------------------
@@ -22,10 +23,11 @@ export const PLACEMENT_EPS = 1e-6;
 
 /**
  * No move, px: a move guard treats a displacement `|dx| <= NO_MOVE_EPS` as no move and holds it without reading its evidence. One name for
- * every kind of `holdsMove` and for `holdsNodeMove` (audit P-06-F7), so a move of 1e-8 has one verdict for all six kinds. It is the
- * reservation tolerance: a shift below it is arithmetic residue, not a move.
+ * every kind of `holdsMove` and for `holdsNodeMove` (audit P-06-F7), so a shift has one verdict, move or no move, for all six kinds. Strict
+ * (ADR-0010: lane guards stay strict): at the reservation tolerance a shift of 9e-7 toward a riser took a port 5e-7 outside the keep-out
+ * line into it unjudged (DR-12 review), and producers pass raw shifts of that size.
  */
-export const NO_MOVE_EPS = PLACEMENT_EPS;
+export const NO_MOVE_EPS = 1e-9;
 
 /**
  * Riser keep-out depth, px: a routed port stands in the keep-out when its depth is `> RISER_DEPTH_EPS`, and a move keeps it no deeper when the
@@ -44,6 +46,9 @@ export const LEGEND_FIT_EPS = 1e-9;
 
 /** A reserved run's axis in the router plan, px: a vertical difference `< e` is level; `> e` and `< -e` say down and up. */
 export const ROUTE_AXIS_EPS = 1e-9;
+
+/** The bundle channel's visibility grid, px: an obstacle grows by this beyond its clearance, and a grid line stands this far off its edge. */
+export const CHANNEL_GRID_STEP = 1e-3;
 
 // ---- products, px squared ---------------------------------------------------------------------------------------------------------
 

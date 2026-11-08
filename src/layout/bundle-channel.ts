@@ -4,6 +4,7 @@ import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } fro
 import { clearOfGroupEdges, coordinate, edgeMargin, groupDepthPairs, normal, type Member } from './bundle-geometry.js';
 import { BundleFeasibilityError, pathBounds, polyline } from './bundle-paths.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { CHANNEL_GRID_STEP } from './tolerance.js';
 
 const inflate = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, width: r.width + 2 * d, height: r.height + 2 * d });
 const segment = (from: Point, to: Point, bundle: Bundle): PathSegment => ({ from, to, owner: bundle.owner });
@@ -12,10 +13,10 @@ function rects(model: LayoutModel, bundle: Bundle, halfWidth: number): Rect[] {
   // Foreign group boxes keep the edge margin (ADR-0013); the bundle's own two groups do not obstruct.
   const own = new Set(bundle.nodes.map(id => model.document.nodes[id]!.group));
   for (const [id, group] of Object.entries(model.groups)) if (!own.has(id) && group.bounds && group.nodes.length) obstacles.push(inflate(group.bounds, halfWidth + GROUP_EDGE_LINK_CLEARANCE));
-  for (const lane of model.lanes) obstacles.push(inflate(lane.bounds, halfWidth + 0.001));
+  for (const lane of model.lanes) obstacles.push(inflate(lane.bounds, halfWidth + CHANNEL_GRID_STEP));
   // A group title is placed last and yields to the bundle (architecture-2 ticket 54): it is no obstacle, so the 7f rebuilds (no title yet) and
   // the validator (titles placed) read the same channel.
-  for (const label of model.labels) if (label.bounds && !label.omitted && label.layer !== 'overlay' && label.role !== 'group') obstacles.push(inflate(label.bounds, halfWidth + 0.001));
+  for (const label of model.labels) if (label.bounds && !label.omitted && label.layer !== 'overlay' && label.role !== 'group') obstacles.push(inflate(label.bounds, halfWidth + CHANNEL_GRID_STEP));
   for (const link of model.links) {
     if (!link.path || link.bundle === bundle.id || link.layer !== 'routed') continue;
     for (const s of link.path.segments) obstacles.push(inflate(pathBounds([s]), halfWidth + 10 + linkStrokeWidth(link) / 2));
@@ -24,8 +25,8 @@ function rects(model: LayoutModel, bundle: Bundle, halfWidth: number): Rect[] {
 }
 /** Axis visibility graph for the full swept channel, with bounded deterministic shortest-path work. */
 function route(start: Point, end: Point, obstacles: Rect[], bundle: Bundle): Point[] {
-  const xs = [...new Set([start.x, end.x, ...obstacles.flatMap(r => [r.x - 0.001, r.x + r.width + 0.001])])].sort((a, b) => a - b);
-  const ys = [...new Set([start.y, end.y, ...obstacles.flatMap(r => [r.y - 0.001, r.y + r.height + 0.001])])].sort((a, b) => a - b);
+  const xs = [...new Set([start.x, end.x, ...obstacles.flatMap(r => [r.x - CHANNEL_GRID_STEP, r.x + r.width + CHANNEL_GRID_STEP])])].sort((a, b) => a - b);
+  const ys = [...new Set([start.y, end.y, ...obstacles.flatMap(r => [r.y - CHANNEL_GRID_STEP, r.y + r.height + CHANNEL_GRID_STEP])])].sort((a, b) => a - b);
   if (xs.length * ys.length > 40000) throw new BundleFeasibilityError('BUNDLE_CHANNEL_SEARCH_LIMIT', bundle.id, 'The envelope visibility grid exceeds 40000 vertices.');
   const id = (x: number, y: number): number => y * xs.length + x;
   const first = id(xs.indexOf(start.x), ys.indexOf(start.y)), last = id(xs.indexOf(end.x), ys.indexOf(end.y));

@@ -107,7 +107,7 @@ Check: ask which other sheet the rule changes.
 
 ### R10. A tolerance has a named owner, a unit and an edge.
 
-Compare at a name, never at a raw `1e-N` literal. Placement and routing names live in `src/layout/tolerance.ts`
+Compare at a name, never at a raw small literal (`1e-6`, `0.000001`, `Number.EPSILON`, `10 ** -6`). Placement and routing names live in `src/layout/tolerance.ts`
 (`PLACEMENT_EPS` for reservation arithmetic in px, `NO_MOVE_EPS` for every move guard, `SIGN_EPS` for products in px squared,
 and the named depths, keys, grains and solver stops); published geometry reads `EPS` of `src/geometry/planar.ts`.
 Two numbers that are equal answer two questions: do not merge them, and do not borrow a distance for a product.

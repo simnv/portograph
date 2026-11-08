@@ -1,10 +1,10 @@
 import type { Point } from '../../model/geometry.js';
 import type { LayoutModel } from '../../model/layout.js';
-import { EPS, intersection, samePoint, type Piece } from '../../geometry/planar.js';
+import { EPS, intersection, type Piece } from '../../geometry/planar.js';
 
 /**
  * Shared readers: how many crossings. "A crossing" is several quantities, and each is a named mode. They share
- * the geometric primitives (`intersection`, `samePoint` of `geometry/planar.ts`) and nothing else; a count of one mode
+ * the geometric primitives (`intersection` and `EPS` of `geometry/planar.ts`) and nothing else; a count of one mode
  * is no estimate of another's. The modes, with the readers that live elsewhere and keep their own meaning:
  *
  * | mode | counts | reader |
@@ -23,13 +23,22 @@ import { EPS, intersection, samePoint, type Piece } from '../../geometry/planar.
  */
 
 /**
- * Whether two segments cross strictly: crossing is allowed, closeness is not (G6). A meeting at an end of either is no crossing. The one
- * proper-crossing predicate (D-Q6): the end is excluded at the planar `EPS` in pixels, never at a fraction of the segment, so a crossing
- * 5 px inside a long segment counts.
+ * Whether two segments cross strictly: crossing is allowed, closeness is not (G6). The one proper-crossing predicate (D-Q6). Each segment
+ * has its two ends on opposite sides of the other's line, each end farther than the planar `EPS` from that line. The bound is a distance
+ * in pixels, never a fraction of a segment, so a crossing 5 px inside a long segment counts. A meeting at an end of either is no crossing,
+ * and neither is a pair that never leaves `EPS` of each other's line: a collinear overlap, a residue tilt, two near-parallel segments
+ * (they do not depend on an exact zero determinant, DR-12 review).
  */
 export function strictCrossing(a: Piece, b: Piece): boolean {
-  const point = intersection(a, b);
-  return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
+  return straddles(a, b) && straddles(b, a);
+}
+/** Whether the ends of `b` stand on opposite sides of the line of `a`, each farther than `EPS` from it. A segment with no length has no line. */
+function straddles(a: Piece, b: Piece): boolean {
+  const dx = a.to.x - a.from.x, dy = a.to.y - a.from.y, length = Math.hypot(dx, dy);
+  if (length <= EPS) return false;
+  const side = (p: Point): number => ((p.x - a.from.x) * dy - (p.y - a.from.y) * dx) / length;
+  const one = side(b.from), two = side(b.to);
+  return (one > EPS && two < -EPS) || (one < -EPS && two > EPS);
 }
 
 /** How many other links a routed link crosses (no slack, both paths as published). Mode: links crossed by one link. */

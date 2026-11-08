@@ -34,9 +34,9 @@ retain coherent geometry for the final gates through a placement diagnostic with
 Derived containing-box rebuilds retain an existing left, top, right or bottom edge when the newly
 computed padded edge differs by at most `1e-6`. This removes arithmetic no-ops before the exact
 movement permissions run; meaningful movement, structural JSON equality and lane guards remain
-strict. Every move guard treats a displacement of at most `NO_MOVE_EPS` (the reservation tolerance,
-`1e-6`) as no move, one name for all kinds (decision review 2026-11, D-Q6); the riser depth checks
-stay strict at `RISER_DEPTH_EPS` (`1e-9`). Tolerances have named owners in `src/layout/tolerance.ts`.
+strict. Every move guard treats a displacement of at most `NO_MOVE_EPS` (`1e-9`, strict) as no
+move, one name for all kinds (decision review 2026-11, D-Q6); the riser depth checks stay strict at
+`RISER_DEPTH_EPS` (`1e-9`). Tolerances have named owners in `src/layout/tolerance.ts`.
 
 All three publication paths share claim, technique, geometry and freeze validation. Required
 rectangle fields, row sequence and authored flank side remain structural checks even after a
