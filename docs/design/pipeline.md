@@ -2263,10 +2263,10 @@ fallback.
 and one per stub, each `link-line overlay-line <class>`, so the class stroke and dash apply; a `<title>` lists the members, the dissolved
 group-links and the members' authored labels. The member `<g class="link">` elements are not emitted, and one endpoint mark per stub is drawn
 above the mask at the port face. The bus label is drawn on the label layer (`link-label mesh-bus-label`). `document.overlays` hides the bus
-with its class. The draw.io export writes the bar as one `edgeStyle=none` edge with two free points, each stub as an
-`edgeStyle=none` edge (a run with no bend is straight, Q118) from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
-vertex on the `labels` layer; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
-Ticket 97: the riser of a joined pair is one more `<path class="link-line overlay-line <class> riser">` in the upper bus's group, both groups carry `data-joined`, the tooltip names both buses, the members and the cross links, and a cross link draws no `<g class="link">`. draw.io: the riser is one `edgeStyle=none` edge with two free points on the overlay layer (`pg-busRiser~<bus>`).
+with its class. The draw.io export writes a joint (an invisible locked vertex, a child of a node) at each stub end and bar end, the bar as one
+straight `edgeStyle=none` edge between each two neighbouring joints, each stub as an `edgeStyle=none` edge (a run with no bend is
+straight, Q118) from its port's cell to its joint, a mark per stub on its pill, and the label as a text child of the nearest bar piece; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
+Ticket 97: the riser of a joined pair is one more `<path class="link-line overlay-line <class> riser">` in the upper bus's group, both groups carry `data-joined`, the tooltip names both buses, the members and the cross links, and a cross link draws no `<g class="link">`. draw.io: the riser is one `edgeStyle=none` edge on the overlay layer (`pg-busRiser~<bus>`), bound at each end to a joint of its bar.
 
 An inline `<style>` holds the profile theme, the generated geometry locks and the parser-filtered
 document `css:`, in that order. The theme is three paint-only sheets emitted from one data table
