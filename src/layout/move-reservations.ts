@@ -17,7 +17,7 @@ import { lanesHoldGrowth } from './growth-guard.js';
 import { chordsHold } from './frame-paths.js';
 import { findPort } from './row-paths.js';
 import { rowRoomHolds, rowRoomShortNow, rowRoomShortOf } from './label-room-guard.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { NO_MOVE_EPS, PLACEMENT_EPS } from './tolerance.js';
 const isSpanLane = (lane: { kind?: string }): boolean => lane.kind === 'span';
 
 /** The boxes a stage proposes; `ProposedBox.dx` says whether the bodies move with a box (a move) or stay (a widening). */
@@ -30,7 +30,7 @@ export type MoveKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'sideAli
 const riserKeepOut: Maker = (model, proposed) => {
   const upper = (model.meshBuses ?? []).find(bus => bus.riser !== undefined && bus.cross !== undefined);
   if (upper === undefined) return [];
-  const maxDepth = proposed.flatMap(({ group, bounds }) => Math.abs(bounds.x - group.bounds!.x) <= 1e-9 ? [] : [...riserPenetrations(model, group)]);
+  const maxDepth = proposed.flatMap(({ group, bounds }) => Math.abs(bounds.x - group.bounds!.x) <= NO_MOVE_EPS ? [] : [...riserPenetrations(model, group)]);
   return [transient('riserKeepOut', { kind: 'mesh-bus', id: upper.id }, 'move', 'lanes', { bus: upper.id, maxDepth })];
 };
 /** The foreign units that stand across a bar extension of a trunk join now: a move may not add one. */
@@ -76,7 +76,7 @@ function holdsMoveEntry(entry: Reservation, model: LayoutModel, proposed: Propos
       const before = new Map(entry.payload.maxDepth);
       return proposed.every(({ group, bounds }) => {
         const dx = bounds.x - group.bounds!.x;
-        return Math.abs(dx) <= 1e-9 || riserNoDeeper(before, riserPenetrations(model, group, dx));
+        return Math.abs(dx) <= NO_MOVE_EPS || riserNoDeeper(before, riserPenetrations(model, group, dx));
       });
     }
     case 'trunkExtension': {
@@ -113,7 +113,7 @@ export function holdsMove(model: LayoutModel, proposed: ProposedMove, report = t
  * keep-out of its facing ports and the far port of an aligned side lane. A node that leaves its lane's x is refused, as a unit that does.
  */
 export function holdsNodeMove(model: LayoutModel, group: LayoutGroup, ids: readonly string[], dx: number): boolean {
-  if (Math.abs(dx) <= 1e-9) return true;
+  if (Math.abs(dx) <= NO_MOVE_EPS) return true;
   const bounds = { ...group.bounds!, x: group.bounds!.x + dx };
   if (!holdsMove(model, [{ group: { ...group, nodes: [...ids] }, bounds }], false, ['riserKeepOut', 'sideAlignment'])) return false;
   // A node slide leaves the container in place. Omit its id so the chord trial moves only these bodies.

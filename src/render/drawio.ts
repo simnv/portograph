@@ -47,7 +47,8 @@
  *    baseline where `render` puts it (`middleSpacing`).
  *
  * Named styles do not exist in the file format — an `<mxStylesheet>` in an `mxfile` is dropped — so
- * the palette lives here and every cell carries its own resolved style string.
+ * every cell carries its own resolved style string. Its colours are resolved from the paint rules the
+ * SVG writes as CSS (`resolvePaint` in `render/shared.ts`), so the two renderers read one palette.
  */
 
 import type { Point, Rect, Side } from '../model/geometry.js';
@@ -63,9 +64,9 @@ import { nodeSymbolIds } from '../layout/legend.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 import {
-  LEGEND_DEFAULT_CLASS, washAssignment, washToken, type WashAssignment, portRolePaint,
+  LEGEND_DEFAULT_CLASS, washAssignment, washToken, type WashAssignment,
 } from '../profiles/network/theme.js';
-import { legendKeyRadius, themeById, themeLinkClass, themePortRole, themeWashFill } from '../profiles/network/themes.js';
+import { legendKeyRadius, themeById, themeWashFill } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
@@ -74,12 +75,15 @@ import { boxesBehind, groupShapes } from './frame-order.js';
 import { backdropColour } from '../profiles/network/theme.js';
 import { linkVisible } from './index.js';
 import { authorClass, element, num } from './svg.js';
+import { iconGlyphBox, paintLookup, pathRuns } from './shared.js';
 
-/** Inset of a scaled icon glyph inside its measured tile, matching the SVG renderer. */
-const ICON_INSET = 1.5;
 /** Stroke width of an icon glyph, matching `DEFAULT_STROKE_WIDTHS.glyph`. */
 const GLYPH_STROKE = DEFAULT_STROKE_WIDTHS.glyph;
-/** Points closer than this in both axes are the same point, as `render` treats them. */
+/**
+ * The export's own distance tolerance, in px: axis alignment, offsets along a run, and a joint shared by bus pieces. It is
+ * the renderer owner of the D-Q6 tolerance table and answers only questions the SVG does not ask. A question both renderers
+ * ask reads the shared rule instead: where a path breaks into runs is `pathRuns` (`render/shared.ts`, planar `EPS`).
+ */
 const EPS = 1e-6;
 
 /** Clear space a label on its run keeps around its glyphs, so the stroke it covers stays covered. */
@@ -159,12 +163,20 @@ function adapt<T>(light: T, dark: T): T {
  * hint to the editor's resize handles and does not constrain rendering, so a shape written into a
  * box of the wrong ratio is simply stretched. Each is letterboxed into its measured tile instead.
  */
-const CISCO19: Readonly<Record<string, { kind: 'badge' | 'silhouette'; shape: string; width: number; height: number }>> = {
+const CISCO19: Readonly<Record<string, { kind: 'badge' | 'silhouette'; shape: string; stencil?: boolean; width: number; height: number }>> = {
   router: { kind: 'badge', shape: 'router', width: 50, height: 50 },
   switch: { kind: 'badge', shape: 'l2_switch', width: 50, height: 50 },
   server: { kind: 'badge', shape: 'server', width: 64, height: 50 },
-  cloud: { kind: 'silhouette', shape: 'cloud', width: 50, height: 30 },
+  // `mxgraph.cisco19.cloud` is two contours 0.04 px apart: `fillColor` paints a hairline and the
+  // tile looks empty (audit A1-03). The other cisco19 names that could stand for it are no
+  // shapes (an unknown `prIcon` draws nothing). draw.io's built-in `cloud` shape is one closed
+  // outline, so `fillColor` paints a solid cloud (measured: DX-10, `test/render/drawio-glyphs.test.ts`).
+  cloud: { kind: 'silhouette', shape: 'cloud', stencil: false, width: 50, height: 30 },
 };
+
+/** The `shape` style value of a table entry: a bundled stencil, or a built-in shape when `stencil` is false. */
+const nativeShape = (native: { kind: 'badge' | 'silhouette'; shape: string; stencil?: boolean }): string =>
+  native.kind === 'badge' ? 'mxgraph.cisco19.rect' : native.stencil === false ? native.shape : `mxgraph.cisco19.${native.shape}`;
 
 /** The smallest box containing both. */
 function union(a: Rect, b: Rect): Rect {
@@ -203,19 +215,19 @@ const residualPoint = (label: EdgeLabel | undefined): string =>
 const positive = (box: Rect): boolean =>
   box.width > 0 && box.height > 0 && Number.isFinite(box.x) && Number.isFinite(box.y);
 
-/** `box` pulled in by `by` on every side, or nothing when the box is smaller than twice the inset. */
-function shrink(box: Rect, by: number): Rect | undefined {
-  const inner = { x: box.x + by, y: box.y + by, width: box.width - 2 * by, height: box.height - 2 * by };
+/** The glyph box of a tile (`iconGlyphBox`, the rule the SVG draws its glyph in), or nothing when the tile has no area. */
+function glyphInset(tile: Rect, inset?: number): Rect | undefined {
+  const inner = iconGlyphBox(tile, inset);
   return positive(inner) ? inner : undefined;
 }
 
 /**
- * Where a native shape is drawn inside its measured tile, or nothing when the tile has no room for
- * it. A badge replaces the tile and takes the whole of it; a silhouette sits on the tile and keeps
- * the glyph inset, which is what a tile thinner than `2 × ICON_INSET` cannot give it.
+ * Where a native shape is drawn inside its measured tile, or nothing when the tile has no area. A
+ * badge replaces the tile and takes the whole of it; a silhouette sits on the tile in the glyph box
+ * the SVG draws its glyph in (`iconGlyphBox`).
  */
-function glyphBox(tile: Rect, native: { kind: 'badge' | 'silhouette'; width: number; height: number }, inset = ICON_INSET): Rect | undefined {
-  const box = native.kind === 'badge' ? (positive(tile) ? tile : undefined) : shrink(tile, inset);
+function glyphBox(tile: Rect, native: { kind: 'badge' | 'silhouette'; width: number; height: number }, inset?: number): Rect | undefined {
+  const box = native.kind === 'badge' ? (positive(tile) ? tile : undefined) : glyphInset(tile, inset);
   return box === undefined ? undefined : letterbox(box, native);
 }
 
@@ -512,7 +524,8 @@ const turnedCell = (label: LayoutLabel, box: Rect): Rect => {
   const middle = centre(box);
   return { x: middle.x - label.turnedSize.width / 2, y: middle.y - label.turnedSize.height / 2, ...label.turnedSize };
 };
-const samePoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS && Math.abs(a.y - b.y) <= EPS;
+/** Two joint positions of bus pieces are one joint (draw.io only; a path's runs are `pathRuns`). */
+const sameJoint = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) <= EPS && Math.abs(a.y - b.y) <= EPS;
 
 /** A rectangle expressed from another rectangle's top-left, as every child geometry must be. */
 const relative = (box: Rect, origin: Point): Rect =>
@@ -527,9 +540,6 @@ const relative = (box: Rect, origin: Point): Rect =>
 const part = (value: string): string => value.replace(/[%~]/g, character => `%${character.charCodeAt(0).toString(16)}`);
 const cellId = (kind: string, ...parts: readonly string[]): string =>
   parts.length ? `pg-${kind}~${parts.map(part).join('~')}` : `pg-${kind}`;
-
-/** The tokens an author put on a port: a role, a status and any free text, in any order. */
-const portTokens = (port: LayoutPort): string[] => (authorClass(port.class) ?? '').split(/\s+/).filter(Boolean);
 
 export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string {
   validate(layout);
@@ -625,40 +635,37 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   // ---- paint resolution -------------------------------------------------------------------
   // There is no resolved paint on the model: the SVG renderer states the palette as a class
-  // cascade and lets the reader resolve it. A draw.io cell carries its own colours, so the same
-  // cascade is walked here, in the sheet's own order — base, then node class, then port role,
-  // then port status — because a later rule of equal specificity wins there.
+  // cascade and lets the reader resolve it. A draw.io cell carries its own colours, so each one is
+  // resolved from the same rules (`paintRules`) by the same cascade (`resolvePaint`), on the classes
+  // the SVG element carries. A token the theme does not know, or the order of the tokens, then
+  // changes the paint in neither renderer.
+  const sheet = paintLookup(theme);
 
   const nodeClassOf = (id: string): string | undefined => authorClass(document.nodes[id]?.class);
 
   const pillPaintIn = (of: ThemeMode, nodeClass: string | undefined, port: LayoutPort):
   { fill: string; stroke: string; text: string; dash: string | undefined; opacity: number | undefined } => {
-    let result = { ...theme.paint[of].pill, dash: undefined as string | undefined, opacity: undefined as number | undefined };
-    const known = theme.classPaint(nodeClass, of);
-    if (known) result = { ...result, ...known.pill };
-    for (const token of portTokens(port)) {
-      const role = themePortRole(theme, token);
-      if (!role) continue;
-      const rolePaint = portRolePaint(role, of);
-      result = rolePaint.stroke === undefined
-        ? { ...result, fill: rolePaint.fill, text: rolePaint.text }
-        : { ...result, fill: outlinedFill(theme, of, washes, nodeClass), stroke: rolePaint.stroke };
-    }
-    for (const token of portTokens(port)) {
-      const status = theme.portStatus.find(([name]) => name === token)?.[1];
-      if (!status) continue;
-      if (status.kind === 'fade') { result = { ...result, opacity: status.opacity }; continue; }
-      result = {
-        ...result, stroke: status.stroke[of],
-        dash: status.dash ? status.dash[of] : result.dash,
-        fill: status.fill ? status.fill[of] : result.fill,
-        text: status.text ? status.text[of] : result.text,
-      };
-    }
-    return result;
+    const portClass = authorClass(port.class);
+    const pill = sheet(of, 'pill', nodeClass, portClass), fill = pill.get('fill')!;
+    const opacity = sheet(of, 'port', nodeClass, portClass).get('opacity');
+    return {
+      fill: fill === 'none' ? outlinedFill(theme, of, washes, nodeClass) : fill, stroke: pill.get('stroke')!,
+      text: sheet(of, 'pill-label', nodeClass, portClass).get('fill')!,
+      dash: pill.get('stroke-dasharray'), opacity: opacity === undefined ? undefined : Number(opacity),
+    };
   };
   const pillPaint = (nodeClass: string | undefined, port: LayoutPort): ReturnType<typeof pillPaintIn> =>
     dual(of => pillPaintIn(of, nodeClass, port));
+  /** The tile and glyph paint of an icon of the class `authored`. */
+  const iconPaint = (of: ThemeMode, authored: string | undefined): { tile: { fill: string; stroke: string }; glyph: string } => {
+    const tile = sheet(of, 'icon-tile', authored);
+    return { tile: { fill: tile.get('fill')!, stroke: tile.get('stroke')! }, glyph: sheet(of, 'node-icon', authored).get('stroke')! };
+  };
+  /** The stroke paint of a link line of the class `authored`; an overlay line also carries `overlay-line`. */
+  const linePaint = (of: ThemeMode, authored: string | undefined, overlay: boolean): { stroke: string; dash: string | undefined } => {
+    const line = sheet(of, 'link-line', overlay ? 'overlay-line' : undefined, authored);
+    return { stroke: line.get('stroke')!, dash: line.get('stroke-dasharray') };
+  };
 
   /** A dash pattern the model states in absolute pixels; `fixDash` stops draw.io scaling it. */
   const dashEntries = (dash: string | undefined): Readonly<Record<string, StyleValue>> =>
@@ -865,10 +872,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     if (node.icon) {
       const tile = relative(shiftRect(node.icon.bounds), shift(node.bounds!));
       // A card tile (ticket 159) states its own glyph inset and radius; the stacked tile takes the renderer's and the theme's.
-      const glyphInset = node.icon.inset ?? ICON_INSET, tileRadius = node.icon.radius ?? theme.radii.tile;
-      const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => {
-        return theme.classPaint(authored, of) ?? { tile: theme.paint[of].tile, glyph: theme.paint[of].glyph };
-      };
+      const ownInset = node.icon.inset, tileRadius = node.icon.radius ?? theme.radii.tile;
+      const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => iconPaint(of, authored);
       const resolved = dual(pick);
       const native = iconSet === 'cisco19' ? CISCO19[iconKey(node.icon.icon)] : undefined;
       // The icon is bound like a link label: by the node it belongs to, so a dashboard can colour
@@ -882,14 +887,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
           }), tile);
         }
-        // A tile with no room for the glyph inset leaves the glyph out. Subtracting the inset from
-        // a tile thinner than it gives a negative width, which draw.io writes and then draws as
-        // nothing at all — so the whole icon would go, silently, rather than just the inset.
-        const box = glyphBox(tile, native, glyphInset);
+        // The glyph sits in the box the SVG draws its glyph in (`iconGlyphBox`): the inset is at most a
+        // quarter of each side, so a small tile keeps its glyph. Only a tile with no area has no glyph,
+        // since draw.io writes a box of no or negative size and then draws nothing at all.
+        const box = glyphBox(tile, native, ownInset);
         if (box) {
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
             sketch: 0, aspect: 'fixed', points: '[]',
-            shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
+            shape: nativeShape(native),
             ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
             // On a badge `fillColor` is the frame and `strokeColor` is the glyph; a silhouette is
             // filled with the glyph colour and has no frame to stroke.
@@ -907,7 +912,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
         // its own image. An embedded image is the one thing here that cannot adapt to dark — draw.io
         // has no way into it — which is the reason `cisco19` is the default.
-        const inner = shrink(tile, glyphInset);
+        const inner = glyphInset(tile, ownInset);
         if (inner) {
           const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
             + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
@@ -986,18 +991,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * segment and has to be attached to the connector that really draws that segment.
    */
   function polylines(segments: readonly PathSegment[]): Run[] {
-    const runs: Run[] = [];
-    let current: Run | undefined;
-    for (const [index, segment] of segments.entries()) {
-      if (!current || !samePoint(current.points[current.points.length - 1]!, segment.from)) {
-        current = { points: [segment.from], first: index, last: index };
-        runs.push(current);
-      }
-      current.points.push(segment.to);
-      current.last = index;
-    }
-    return runs.filter(run => run.points.length > 1)
-      .map(run => ({ ...run, points: run.points.map(shift) }));
+    return pathRuns(segments).map(({ first, last }) => ({
+      first, last,
+      points: [segments[first]!.from, ...segments.slice(first, last + 1).map(segment => segment.to)].map(shift),
+    }));
   }
 
   /**
@@ -1215,11 +1212,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   for (const link of drawn) {
     const layer = effectiveLayer(link) === 'overlay' ? layerId('overlay') : layerId('links');
     const authored = linkClass(link);
-    const klass = themeLinkClass(theme, authored);
     const overlay = effectiveLayer(link) === 'overlay';
-    // An overlay link of a class the theme names (`signal`) states that class's stroke and dash, as the SVG's
+    // An overlay link of a class the theme names (`signal`) takes that class's stroke and dash, as the SVG's
     // `.link-line.<class>` rule beats `.overlay-line`; sync, flow and unknown classes keep the overlay stroke.
-    const themed = authored !== undefined && theme.linkClasses.some(([key]) => key === authored);
     const runs = polylines(link.path!.segments);
     const from = link.attachments?.from, to = link.attachments?.to;
     const head = from ? terminal('exit', from) : undefined;
@@ -1275,10 +1270,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         edgeStyle: square ? 'orthogonalEdgeStyle' : 'none',
         jettySize: square ? 0 : undefined,
         rounded: 0, endArrow: 'none', startArrow: 'none',
-        strokeColor: dual(of => overlay && !themed ? theme.paint[of].overlay.stroke : klass.strokes[of]),
+        strokeColor: dual(of => linePaint(of, authored, overlay).stroke),
         strokeWidth: linkStrokeWidth(link),
         opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
-        ...dashEntries(overlay && !themed ? theme.paint[mode].overlay.dash : klass.dash),
+        ...dashEntries(linePaint(mode, authored, overlay).dash),
         ...(source ? dotMarker(link, 'from') : {}),
         ...(target ? dotMarker(link, 'to') : {}),
         ...(source?.style ?? {}),
@@ -1333,15 +1328,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     if (bus.bar === undefined || bus.stubs === undefined) continue;
     const first = bus.members.map(id => byId.get(id)).find(link => link !== undefined && visible(link));
     if (first === undefined) continue;
-    const authored = linkClass(first), klass = themeLinkClass(theme, authored);
-    const themed = authored !== undefined && theme.linkClasses.some(([key]) => key === authored);
+    const authored = linkClass(first);
     const stroke = (square: boolean, extra: Readonly<Record<string, StyleValue>> = {}): string => styleString([], {
       edgeStyle: square ? 'orthogonalEdgeStyle' : 'none', jettySize: square ? 0 : undefined,
       rounded: 0, endArrow: 'none', startArrow: 'none',
-      strokeColor: dual(of => !themed ? theme.paint[of].overlay.stroke : klass.strokes[of]),
+      strokeColor: dual(of => linePaint(of, authored, true).stroke),
       strokeWidth: linkStrokeWidth(first),
       opacity: Math.round(paint.overlay.opacity * 100),
-      ...dashEntries(!themed ? theme.paint[mode].overlay.dash : klass.dash),
+      ...dashEntries(linePaint(mode, authored, true).dash),
       ...extra,
     });
     // Every end of the bus geometry is a joint: a 2 px invisible, locked vertex, a child of a member's node or pill and
@@ -1358,7 +1352,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       if (of.bar === undefined || of.stubs === undefined) return [];
       const found: { at: Point; ref: PortKey }[] = [];
       const add = (at: Point, ref?: PortKey): void => {
-        if (found.some(item => samePoint(item.at, at))) return;
+        if (found.some(item => sameJoint(item.at, at))) return;
         let host = ref, gap = Infinity;
         if (host === undefined) {
           for (const candidate of of.ports) {
@@ -1378,7 +1372,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       return found.map((item, index) => ({ ...item, id: cellId('busJoint', of.id, String(index)) }));
     };
     const mine = spots(bus);
-    const jointAt = (list: readonly Spot[], at: Point): string | undefined => list.find(item => samePoint(item.at, at))?.id;
+    const jointAt = (list: readonly Spot[], at: Point): string | undefined => list.find(item => sameJoint(item.at, at))?.id;
     for (const spot of mine) {
       const host = markHost(spot.ref)!;
       const box = { x: spot.at.x - JOINT / 2, y: spot.at.y - JOINT / 2, width: JOINT, height: JOINT };
@@ -1510,28 +1504,27 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       }), row, shown ? plainText(labelLines(shown)) : undefined);
       const swatch = relative(shiftRect(entry.swatch), outer);
       if (entry.kind === 'line') {
-        const klass = entry.key === LEGEND_DEFAULT_CLASS ? themeLinkClass(theme, undefined) : themeLinkClass(theme, entry.key);
+        const key = entry.key === LEGEND_DEFAULT_CLASS ? undefined : authorClass(entry.key);
         // `shape=line` draws the sample across its own box, so the swatch is a vertex like every
         // other one and sits in the row rather than floating over it.
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
           shape: 'line', points: '[]',
-          strokeColor: dual(of => klass.strokes[of]), strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
-          ...dashEntries(klass.dash),
+          strokeColor: dual(of => linePaint(of, key, false).stroke), strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
+          ...dashEntries(linePaint(mode, key, false).dash),
         }), swatch);
       } else if (entry.kind === 'port') {
-        const role = themePortRole(theme, entry.key);
-        // The legend has to name what the diagram draws, so an outlined role's swatch takes the
-        // same opaque body the pill takes; see `outlinedFill`.
-        const resolved = role ? dual(of => {
-          const rolePaint = portRolePaint(role, of);
-          return rolePaint.stroke === undefined ? rolePaint
-            : { ...rolePaint, fill: outlinedFill(theme, of, washes) };
-        }) : undefined;
+        // A role's swatch is a pill drawn with the role class, so it takes the same paint as the pills. The
+        // legend has to name what the diagram draws, so an outlined role's swatch takes the same opaque
+        // body the pill takes; see `outlinedFill`.
+        const resolved = dual(of => {
+          const pill = sheet(of, 'pill', authorClass(entry.key)), fill = pill.get('fill')!;
+          return { fill: fill === 'none' ? outlinedFill(theme, of, washes) : fill, stroke: pill.get('stroke')! };
+        });
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
           rounded: 1, absoluteArcSize: 1,
           arcSize: (entry.radius ?? CORNER_RADII.pill) * 2,
-          fillColor: resolved?.fill ?? paint.pill.fill,
-          strokeColor: resolved?.stroke ?? paint.pill.stroke,
+          fillColor: resolved.fill,
+          strokeColor: resolved.stroke,
           strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
         }), swatch);
       } else if (entry.icon) {
@@ -1542,15 +1535,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           fillColor: dual(of => themeWashFill(theme, washToken(authorClass(entry.key)), of, washes)), strokeColor: paint.node.stroke,
           strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
         }), { x: body.x - grow, y: body.y - grow, width: body.width + 2 * grow, height: body.height + 2 * grow });
-        const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => {
-          return theme.classPaint(entry.key, of) ?? { tile: theme.paint[of].tile, glyph: theme.paint[of].glyph };
-        };
+        const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => iconPaint(of, authorClass(entry.key));
         const resolved = dual(pick);
         const native = iconSet === 'cisco19' ? CISCO19[iconKey(entry.icon)] : undefined;
         if (native) {
-          // The legend has to name what the diagram draws, so it takes the same glyph — and the
-          // same guard: a swatch with no room for the inset keeps its tile and drops the glyph,
-          // rather than writing a negative box draw.io silently draws as nothing.
+          // The legend has to name what the diagram draws, so it takes the same glyph in the same
+          // glyph box (`iconGlyphBox`); only a swatch with no area drops the glyph.
           if (native.kind === 'silhouette' && positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
               rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
@@ -1561,7 +1551,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           if (box) {
             vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
               sketch: 0, aspect: 'fixed', points: '[]',
-              shape: native.kind === 'badge' ? 'mxgraph.cisco19.rect' : `mxgraph.cisco19.${native.shape}`,
+              shape: nativeShape(native),
               ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
               fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
               strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
@@ -1574,7 +1564,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
               fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
             }), swatch);
           }
-          const inner = shrink(swatch, ICON_INSET);
+          const inner = glyphInset(swatch);
           if (inner) {
             const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
               + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${pick(mode).glyph}"`

@@ -75,11 +75,11 @@ export type { BundleOrderResult } from './layout/bundle-order.js';
 
 export { route, routeRemainders } from './route/index.js';
 export type { RouteOptions } from './route/index.js';
-export { batchRequest, planRoute, routeObstacles, nodeClearance, trimChain, stemCheckpoint, TERMINAL_TRIM,
+export { batchRequest, placementRuns, plannedRunsOf, planRoute, routeObstacles, nodeClearance, trimChain, stemCheckpoint, TERMINAL_TRIM,
   ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './route/index.js';
-export type { LinkPlan, RoutePiece, RoutePlan, RouteObstacle } from './route/index.js';
+export type { LinkPlan, PlacementRuns, PlannedRun, RoutePiece, RoutePlan, RouteObstacle } from './route/index.js';
 export { checkpointsHonoured, crossedTiers, simplify, stitchPath, stitchPaths, stubCandidate,
-  reservationConflicts, reservedRuns, validateRoutedPaths } from './route/index.js';
+  lostPlannedRun, preRoute, reservationConflicts, reservedRuns, validateRoutedPaths } from './route/index.js';
 export type { ReservationConflict, RoutedLinkPath } from './route/index.js';
 export { createBrowserRouteFactory, createRouteFactory, RouteDeadlineError, RouteSession, withRouteSession,
   systemRouteClock, ROUTE_BUDGET_MS, ROUTE_REQUEST, ROUTE_RESPONSE, ALL_DIRECTIONS, DIRECTION_BITS } from './route/index.js';

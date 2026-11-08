@@ -12,7 +12,7 @@ import { portId } from './skeleton-graph.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE, straightCorridorClear, straightLengthLimit, type CorridorOptions } from './row-paths.js';
 
 const OUTWARD = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } } as const;
-import { EPS, intersection, samePoint, segmentDistance, segmentRect, segmentRectDistance } from '../geometry/planar.js';
+import { EPS, segmentDistance, segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import type { Rect } from '../model/geometry.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
@@ -20,6 +20,7 @@ import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { deriveFrames } from './frames.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { transitTiers } from './read/tier.js';
+import { strictCrossing } from './read/crossings.js';
 
 /**
  * The **straight** technique of a routed link inside one frame (ticket 34).
@@ -666,16 +667,9 @@ export function edgeLeavers(model: LayoutModel): string[] {
     return link !== undefined && chord !== undefined && crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) === 'edge';
   });
 }
-/** Whether two segments cross at a point that is an end of neither (G6 excuses only such a crossing). */
-export function strictCrossing(a: PathSegment, b: PathSegment): boolean {
-  const point = intersection(a, b);
-  return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
-}
-/** Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing). */
+/** Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing, `strictCrossing`). */
 export function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, strokeB: number): boolean {
-  const point = intersection(a, b);
-  const strict = point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
-  return strict || segmentDistance(a, b) - (strokeA + strokeB) / 2 >= STRAIGHT_PATH_CLEARANCE.path - EPS;
+  return strictCrossing(a, b) || segmentDistance(a, b) - (strokeA + strokeB) / 2 >= STRAIGHT_PATH_CLEARANCE.path - EPS;
 }
 
 /**
@@ -741,8 +735,7 @@ export function chordClearances(model: LayoutModel, within = 30): Map<string, nu
     const a = one.path!.segments[0]!, b = other.path!.segments[0]!;
     if (Math.min(a.from.x, a.to.x) - within > Math.max(b.from.x, b.to.x) || Math.min(b.from.x, b.to.x) - within > Math.max(a.from.x, a.to.x)
       || Math.min(a.from.y, a.to.y) - within > Math.max(b.from.y, b.to.y) || Math.min(b.from.y, b.to.y) - within > Math.max(a.from.y, a.to.y)) continue;
-    const point = intersection(a, b);
-    if (point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point))) continue;
+    if (strictCrossing(a, b)) continue;
     result.set(`${one.id}|${other.id}`, segmentDistance(a, b) - (linkStrokeWidth(one) + linkStrokeWidth(other)) / 2);
   }
   return result;

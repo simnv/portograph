@@ -4,7 +4,7 @@ import { GROUP_LABEL_GEOMETRY, nudgingDistance, routedStroke } from '../layout/b
 import { legReservation, sideNested, stemCache, stemPlan, type StemCache } from '../layout/sides-two.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
 import { edgeMargin } from '../layout/bundle-geometry.js';
-import { allocateGapRuns } from '../layout/gap-runs.js';
+import { allocateGapRuns, type GapRun } from '../layout/gap-runs.js';
 import { endPort, hasApproach } from '../layout/approach.js';
 import { findPort, straightCorridorClear } from '../layout/row-paths.js';
 import { portId } from '../layout/skeleton-graph.js';
@@ -14,7 +14,7 @@ import { disjointShapes } from './containment.js';
 export { disjointShapes } from './containment.js';
 import { completedRouteObstacles, reservedRunObstacles, routeObstacles, type RouteObstacle } from './obstacles.js';
 import { ALL_DIRECTIONS, DIRECTION_BITS, type RouteBatch, type RouteCheckpoint, type RouteConnector, type RouteEndpoint, type RoutePin, type RouteShape } from './types.js';
-import { PLACEMENT_EPS } from '../layout/tolerance.js';
+import { PLACEMENT_EPS, ROUTE_AXIS_EPS } from '../layout/tolerance.js';
 import { linkLayer } from '../layout/link-layer.js';
 import { exitSide } from '../layout/group-exits.js';
 
@@ -119,6 +119,41 @@ export function routeParameters(model: LayoutModel): Record<string, number> {
 export const effectiveLayer = linkLayer;
 const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.removed !== true && link.attachments !== undefined;
 
+/**
+ * The runs placement planned for stage 8 to stitch back unchanged (ADR-0015 rule 1, ADR-0021 decision 3), read from frozen placement
+ * and written nowhere: the leg of each link that turns in a row gap (`legReservation`) and the planned parts of every tier gap whose
+ * plan fits (`allocateGapRuns`). `planRoute` reserves and stitches them. `validateRoutedPaths` asks the same function of the published
+ * or restored placement, seen as stage 8 received it (`preRoute`), and requires each run in the path (decision D-Q2).
+ *
+ * `plans` absent: the plans are read here (`tierGapPlans`). `plans` empty: no tier gap holds a plan, so no tier-gap run is planned.
+ */
+export interface PlacementRuns { legs: Map<string, PathSegment>; gapRuns: GapRun[] }
+export function placementRuns(model: LayoutModel, plans?: Parameters<typeof allocateGapRuns>[1], cache: StemCache = stemCache()): PlacementRuns {
+  const legs = new Map<string, PathSegment>();
+  for (const link of model.links) {
+    const leg = drawn(link) && !link.path ? legReservation(model, link, cache) : undefined;
+    if (leg) legs.set(link.id, leg);
+  }
+  return { legs, gapRuns: allocateGapRuns(model, plans) };
+}
+
+/** Whether `link` turns in a row gap: then its leg is its one planned run, and its tier-gap runs are neither stitched nor required. */
+const holdsLeg = (placed: PlacementRuns, link: string): boolean => placed.legs.has(link);
+
+/** One run placement planned for a link: its row-gap leg, or its tier-gap run of the planned gap `index` in its traversal order. */
+export interface PlannedRun { kind: 'leg' | 'tier-gap'; index: number; segments: readonly PathSegment[] }
+
+/**
+ * The runs `link` must keep, in its traversal order. A link that turns in a row gap holds one reserved run, its leg, and no tier-gap
+ * run: `gapPlan` declines a gap whose legs own a lane, so the two never meet, and this one rule keeps the stitched pieces and the
+ * validator agreed if they ever do. An empty list: placement planned no run for the link, and nothing is required of its path.
+ */
+export function plannedRunsOf(placed: PlacementRuns, link: string): PlannedRun[] {
+  if (holdsLeg(placed, link)) return [{ kind: 'leg', index: 0, segments: [placed.legs.get(link)!] }];
+  return placed.gapRuns.filter(run => run.link === link).sort((a, b) => a.index - b.index)
+    .map(run => ({ kind: 'tier-gap', index: run.index, segments: run.segments }));
+}
+
 /** Ports carrying more than one link end cannot hold an exclusive pin, fixed ends included. */
 function portUsage(model: LayoutModel): Map<string, number> {
   const usage = new Map<string, number>();
@@ -182,8 +217,11 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
   // A leg's run is derived here rather than stored on the link, because `fixedSegments` belongs to
   // the lanes rule, which runs long before this geometry exists. It is still a reserved run, so it
   // is an obstacle to every link but its own from the start — a batch that ran earlier, or one this
-  // link shares, would otherwise be free to cross geometry the stitcher inserts verbatim.
-  const legs = new Map<string, PathSegment>();
+  // link shares, would otherwise be free to cross geometry the stitcher inserts verbatim. The tier
+  // gaps a transit link crosses are allocated the same way and for the same reason (ADR-0015 rule 1):
+  // the room is reserved before the first batch runs, so no batch can consume the corridor another
+  // link's own lane opens into. Both come from one producer, which the validator calls again.
+  const placed = placementRuns(model, plans, gaps), legs = placed.legs;
   // Every reserved run a claim must keep out of: the ones the model already holds — a pinned path,
   // a lane run, an outward shared prefix — and the ones this pass adds as it goes, a leg, a tier-gap
   // allocation and an earlier claim. `straightCorridorClear` reads a link's `path` and
@@ -191,25 +229,17 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
   // this is the set with the margins the router is given, and the claim is judged by both.
   const reserved: RouteObstacle[] = reservedRunObstacles(model);
   const reserve = (items: RouteObstacle[]): void => { obstacles.push(...items); reserved.push(...items); };
-  for (const link of model.links) {
-    const leg = drawn(link) && !link.path ? legReservation(model, link, gaps) : undefined;
-    if (!leg) continue;
-    legs.set(link.id, leg);
-    reserve(completedRouteObstacles(model, link, `leg:${link.id}`, [leg.from, leg.to]));
+  for (const [id, leg] of legs) {
+    reserve(completedRouteObstacles(model, model.links.find(item => item.id === id)!, `leg:${id}`, [leg.from, leg.to]));
   }
-  // The tier gaps a transit link crosses are allocated the same way and for the same reason
-  // (ADR-0015 rule 1): the room is reserved before the first batch runs, so no batch can consume
-  // the corridor another link's own lane opens into.
   const gapRuns = new Map<string, Map<number, PathSegment[]>>();
   // Planned parts on one port share the leg from the tip to the higher row (tier-gap-rows.md, Section 4): the links of the
   // same port lie on each other's covers there. The plan names them; nothing is written to the model.
   const sharing = new Map<string, Set<string>>();
-  for (const run of allocateGapRuns(model, plans)) {
+  for (const run of placed.gapRuns) {
     if (run.shares?.length) sharing.set(run.link, new Set([...sharing.get(run.link) ?? [], ...run.shares]));
-    // A link that turns in a row gap holds one reserved run, and its leg is that one. `gapPlan`
-    // declines a gap whose legs own a lane, so the two never meet; this keeps the obstacle set and
-    // the stitched pieces agreed if they ever do.
-    if (legs.has(run.link)) continue;
+    // A link with a leg holds that one run, as the validator reads it (`plannedRunsOf`).
+    if (holdsLeg(placed, run.link)) continue;
     const link = model.links.find(item => item.id === run.link)!;
     const runs = gapRuns.get(run.link) ?? new Map<number, PathSegment[]>();
     runs.set(run.index, run.segments);
@@ -223,7 +253,7 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
     const paired = covers.length === run.segments.length;
     for (const [index, item] of covers.entries()) {
       const segment = run.segments[index]!;
-      const across = paired && Math.abs(segment.from.y - segment.to.y) < 1e-9;
+      const across = paired && Math.abs(segment.from.y - segment.to.y) < ROUTE_AXIS_EPS;
       // The owner's own route reaches this run at its two terminals and nowhere else. The end
       // rectangles therefore keep it as a consumer, so the gap beside the run can start inside one
       // of them; the rectangles between do not, or the owner's other gaps could run along the run
@@ -645,7 +675,7 @@ const OPPOSITE_BIT: Record<number, number> = { 1: 2, 2: 1, 4: 8, 8: 4 };
 function approachCheckpoint(run: PathSegment, end: 'from' | 'to'): RouteCheckpoint {
   const dx = run.to.x - run.from.x, dy = run.to.y - run.from.y;
   const span = Math.hypot(dx, dy) || 1;
-  const travel = dy > 1e-9 ? DIRECTION_BITS.bottom : dy < -1e-9 ? DIRECTION_BITS.top
+  const travel = dy > ROUTE_AXIS_EPS ? DIRECTION_BITS.bottom : dy < -ROUTE_AXIS_EPS ? DIRECTION_BITS.top
     : dx > 0 ? DIRECTION_BITS.right : DIRECTION_BITS.left;
   // Leaving `run.to` continues the run's direction; reaching `run.from` heads back into it. Only
   // the side facing the corridor is constrained, so the gap stays free to turn away afterwards.

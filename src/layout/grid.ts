@@ -6,6 +6,7 @@ import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skele
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { stackedChannelNeed } from './bundle-geometry.js';
 import { authoredSide, gridUnits, groupExits, seatUnits, stackChains, type Chain, type GridUnit } from './grid-chains.js';
+import { ASPECT_EPS } from './tolerance.js';
 
 /**
  * `grid` is the third group shape `CONTEXT.md` names (`row`, `bar`, `grid`, `ring`, `free`).
@@ -268,7 +269,7 @@ export function gridColumns(model: LayoutModel, group: LayoutGroup, order: reado
     const metrics = gridMetrics(model, rows, () => gap, rowGap);
     if (metrics.width <= 0 || metrics.height <= 0) continue;
     const score = Math.abs(Math.log(metrics.width / metrics.height));
-    if (score < bestScore - 1e-9) { bestScore = score; best = columns; }
+    if (score < bestScore - ASPECT_EPS) { bestScore = score; best = columns; }
   }
   return best;
 }
@@ -448,7 +449,7 @@ export function gridRows(order: readonly string[], ranks: ExitRanks, columns: nu
  * `columns` is the chosen count, which can exceed the widest row `rows` actually holds — a grid of
  * `n` nodes in `n` columns is one row of `n`, and `gridRows` never pads it. The right-pad below
  * would then insert cells past the last column. It is unreachable: a count whose widest row is
- * short ties with the count one smaller, and the strict `< bestScore - 1e-9` in `gridColumns` hands
+ * short ties with the count one smaller, and the strict `< bestScore - ASPECT_EPS` in `gridColumns` hands
  * a tie to the smaller, so the chosen count always equals its widest row. An empty leading column
  * costs nothing anyway — `gridMetrics` gives it width 0 and no gap — so this is a note, not a guard.
  *
@@ -573,7 +574,7 @@ function packChains(model: LayoutModel, group: LayoutGroup, order: readonly stri
     const metrics = gridMetrics(model, cells, () => gap, gridRowGaps(model, group, cells));
     if (metrics.width <= 0 || metrics.height <= 0) continue;
     const score = Math.abs(Math.log(metrics.width / metrics.height));
-    if (score < bestScore - 1e-9) { bestScore = score; best = cells; }
+    if (score < bestScore - ASPECT_EPS) { bestScore = score; best = cells; }
   }
   if (!best) throw new Error(`Group ${group.id} stands as a grid but no column count seats its chains`);
   packGridRows(model, group, best, () => gap, gridRowGaps(model, group, best));

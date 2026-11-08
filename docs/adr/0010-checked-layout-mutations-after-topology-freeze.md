@@ -34,7 +34,9 @@ retain coherent geometry for the final gates through a placement diagnostic with
 Derived containing-box rebuilds retain an existing left, top, right or bottom edge when the newly
 computed padded edge differs by at most `1e-6`. This removes arithmetic no-ops before the exact
 movement permissions run; meaningful movement, structural JSON equality and lane guards remain
-strict.
+strict. Every move guard treats a displacement of at most `NO_MOVE_EPS` (`1e-9`, strict) as no
+move, one name for all kinds (decision review 2026-11, D-Q6); the riser depth checks stay strict at
+`RISER_DEPTH_EPS` (`1e-9`). Tolerances have named owners in `src/layout/tolerance.ts`.
 
 All three publication paths share claim, technique, geometry and freeze validation. Required
 rectangle fields, row sequence and authored flank side remain structural checks even after a
@@ -126,3 +128,5 @@ After the freeze of the chords (stage 7f), the stage 7c centring reads `frozenCh
 Amendment (2026-10-05, architecture ticket 15, phase 4): a perimeter lane (`kind: 'perimeter'`, id `perimeter:<link>`) has a derived x. Its id, owner, side, ring, span and `aligned` flag are fixed at stage 7a and stay immutable. Its x is read from the boxes over its span at each `rebuildLaneExtents` replay, with the course geometry as the one reader (`courseGeometry`). The reserved `fixedSegments` of its link (the side run or stem, the padding row and the vertical run) follow the x. The lane-identity check in `mutation.ts` compares the identity of a course lane without its x. Every other lane x stays immutable.
 
 Amendment (2026-10-05, ticket 15, phase 4, review): the perimeter lanes of one side form one stack. A lane stands a ring pitch beyond every inner lane of its side whose extent it meets, whichever boxes each of them clears; `validateLanes` checks the pitch and that no lane stands across the box of a group on its extent. 7f replays the derived x once more on the geometry that publishes, because the settling after the last replay can move a box.
+
+Amendment (2026-11-08, decision D-Q2, decision-review ticket 10): publication and full restore keep every run placement planned for stage 8, as they keep the fixed and shared runs: each tier-gap part (`allocateGapRuns`, ADR-0021 decision 3) and each row-gap leg (`legReservation`) stays in its link's path with its owner and its traversal, even where another route would pass the gates. No record is added. `validateRoutedPaths` calls the one producer (`placementRuns`) on the model as stage 8 received it (`preRoute`: the router's paths, removals and stub marks taken away) and requires each planned segment inside one straight piece of the path with the same link owner, running the planned way, in the planned order. A collinear merge with the same owner passes; a run moved off its line, given another owner, reversed or reordered is refused, and the error names the link. The plan leaves out every link `frozenChords` names, so restore first requires each name to hold a routed chord in the published geometry (`isRoutedChord`, the predicate the freeze writes the record with): a forged name cannot take a planned run out of the check.

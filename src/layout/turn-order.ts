@@ -10,6 +10,7 @@ import { busOfPort } from './bus.js';
 import { groupShape } from './grid.js';
 import { orderedNodeIds } from '../model/model.js';
 import { nodeTier } from './read/tier.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * The order of the ports of one face from the planned first turn of their links (architecture ticket 24, `docs/design/turn-order.md`).
@@ -169,8 +170,8 @@ function transitTurn(model: LayoutModel, link: LayoutLink, mine: PortRef, own: L
   const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && (item.kind === undefined || item.kind === 'transit'));
   if (lane === undefined || link.spanHint === true || portId(laneSource(model, link)) !== portId(mine)) return undefined;
   const xs = (model.nodes[mine.node]?.ports ?? []).filter(port => port.side === own.side && port.anchor !== undefined).map(port => port.anchor!.x);
-  if (lane.x < Math.min(...xs) - 1e-6) return { turn: 'low', shape: 'onward', reach: lane.x };
-  if (lane.x > Math.max(...xs) + 1e-6) return { turn: 'high', shape: 'onward', reach: lane.x };
+  if (lane.x < Math.min(...xs) - PLACEMENT_EPS) return { turn: 'low', shape: 'onward', reach: lane.x };
+  if (lane.x > Math.max(...xs) + PLACEMENT_EPS) return { turn: 'high', shape: 'onward', reach: lane.x };
   return undefined;
 }
 
@@ -211,10 +212,10 @@ export function publishedTurn(link: LayoutLink, which: 'from' | 'to', side: Side
   const walked = which === 'from' ? [segments[0]!.from, ...segments.map(segment => segment.to)] : [segments[segments.length - 1]!.to, ...[...segments].reverse().map(segment => segment.from)];
   for (const point of walked) {
     const last = points[points.length - 1];
-    if (last === undefined || Math.abs(last.x - point.x) > 1e-6 || Math.abs(last.y - point.y) > 1e-6) points.push(point);
+    if (last === undefined || Math.abs(last.x - point.x) > PLACEMENT_EPS || Math.abs(last.y - point.y) > PLACEMENT_EPS) points.push(point);
   }
   const across = horizontalFace(side), at = (point: Point): number => (across ? point.x : point.y), normal = (point: Point): number => (across ? point.y : point.x);
-  const index = points.findIndex((point, i) => i > 0 && Math.abs(at(point) - at(points[i - 1]!)) > 1e-6);
+  const index = points.findIndex((point, i) => i > 0 && Math.abs(at(point) - at(points[i - 1]!)) > PLACEMENT_EPS);
   if (index < 0) return undefined;
   const turn = at(points[index]!) < at(points[index - 1]!) ? 'low' : 'high', reach = at(points[index]!), next = points[index + 1];
   const outward = side === 'bottom' || side === 'right' ? 1 : -1;
@@ -244,7 +245,7 @@ export function turnOrderViolated(a: TurnPort, b: TurnPort, rank: (port: TurnPor
   const ra = rank(a), rb = rank(b), ga = turnGroup(a);
   if (ra !== rb) return ra > rb;
   if (ga === 3 || ga === 2 || ga === 4) return ranges;
-  return a.reach! < b.reach! - 1e-6;
+  return a.reach! < b.reach! - PLACEMENT_EPS;
 }
 
 /**

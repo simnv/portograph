@@ -218,8 +218,9 @@ export function riserCrossings(model: LayoutModel, bus: MeshBus): number {
     if (link.layer !== 'routed' || link.technique === 'stub' || link.path === undefined) continue;
     for (const { from, to } of link.path.segments) {
       const lo = Math.min(from.x, to.x), hi = Math.max(from.x, to.x);
+      // The segment spans the riser x strictly, so it is more than two `PLACEMENT_EPS` wide and the division is safe.
       if (!(lo < riser.x - PLACEMENT_EPS && hi > riser.x + PLACEMENT_EPS)) continue;
-      const y = hi - lo < 1e-9 ? from.y : from.y + (to.y - from.y) * (riser.x - from.x) / (to.x - from.x);
+      const y = from.y + (to.y - from.y) * (riser.x - from.x) / (to.x - from.x);
       if (y > y0 + PLACEMENT_EPS && y < y1 - PLACEMENT_EPS) count++;
     }
   }

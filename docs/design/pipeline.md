@@ -28,6 +28,13 @@ Three principles, each learned the hard way:
    Dimensions never shrink below their current content or author floor. Anything a later stage
    moves must be re-validated; placement freezes after stage 7f.
 
+Every stage that counts turns or crossings reads one predicate for each (decision review 2026-11, D-Q6). A turn is
+`pieceTurns` of `src/geometry/planar.ts` (`pathBends` reads a link with it): a change of direction or a reversal, a
+collinear or zero-length piece is no turn. A proper crossing is `strictCrossing` of `src/layout/read/crossings.ts`: two
+segments meet at a point that is farther than the planar `EPS` from every end, never a fraction of the segment. The course
+round counts the links a polyline crosses with `polylinesCross`, a pair once. Tolerances have named owners
+(`src/layout/tolerance.ts`, `src/geometry/planar.ts`); `CODING_STANDARDS.md` R10 states the rule.
+
 ---
 
 ## Stage 0 — parse
@@ -794,7 +801,8 @@ stage 8 among the reserved parts (§ 8); nothing in placement seats it.
 
 The plan writes no model geometry. Stage 8 reads it again on frozen placement (`allocateGapRuns`)
 and reserves every planned part tip to tip. A gap whose parts are all planned asks the router for
-nothing. A part with no lane terminal on either boundary is planned all the same: the old
+nothing. Publication and restore read it again too, on the model as stage 8 received it, and keep
+each planned part in its link's path with its owner and its traversal (decision D-Q2, § 8). A part with no lane terminal on either boundary is planned all the same: the old
 allocation seated only runs with a lane.
 
 **A node side that feeds another tier nests its own stems (ADR-0015 rule 1).** A side carries one
@@ -1871,6 +1879,15 @@ the same shape the region rules produce. Publication and restore then check the 
 structurally — complete anchored path, orthogonal and connected, exact reserved runs, perpendicular
 stems of at least the reserved reach, link ownership of every routed gap, and no entry into a
 reservation the link does not own — because route geometry cannot be re-derived without the router.
+The runs placement planned for stage 8 can be derived again, and they are kept as the fixed and
+shared runs are (decision D-Q2, ADR-0010): `validateRoutedPaths` calls the one producer
+(`placementRuns`: the row-gap legs and the tier-gap parts) on the model as stage 8 received it
+(`preRoute`: the router's paths, removals and stub marks taken away), and each planned segment must
+lie inside one straight piece of the path with the same link owner, running the planned way, in the
+planned order. A collinear merge with the same owner passes; a run moved off its line, given another
+owner, reversed or reordered is refused by name, even where another route would pass the gates.
+The plan leaves out every link `frozenChords` names, so each name must hold a routed chord in the
+published geometry (`isRoutedChord`), or the model is refused.
 
 `overlay` links: never routed and never sent to the worker. Their path is the one
 `src/layout/overlay-paths.ts` derives from the two ports placement froze, and stage 8 only publishes
@@ -2218,6 +2235,14 @@ declaration either. The generated locks restate the measured stroke widths and t
 or a shadow — is held by that one parser policy on both routes, not restated per element.
 The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
 one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
+
+**What both renderers compute is stated once** (`render/shared.ts`, draw.io ticket 13). The theme sheet is a table of paint rules
+(`paintRules`): the SVG writes it as CSS, and the draw.io export resolves each cell's paint from the same table by the CSS cascade
+(`resolvePaint`: the more specific rule wins, then the later one), on the classes the SVG element carries. A class token the theme
+does not know, or the order of the tokens, changes the paint in neither. The glyph box in an icon tile (`iconGlyphBox`: the inset,
+1.5 px or the card's own, is at most a quarter of each tile side) and the runs of a path (`pathRuns`: a new run where a segment does
+not start at the end of the one before, at the planar tolerance) are the other two. The SVG starts a subpath per run; draw.io writes
+a connector per run.
 
 **Every text outside node bodies carries a halo** (ticket 162, ADR-0023): group titles, link, multiplicity and bus labels and
 legend labels have the class `pg-halo` and a depth class `pg-halo-<n>`, where `n` counts the group boxes behind the text's centre

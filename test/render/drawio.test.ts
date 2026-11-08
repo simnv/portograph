@@ -1174,7 +1174,7 @@ describe('connection grid, rotation and tiles', () => {
     expect(cell.style['horizontal']).toBeUndefined();
   }, 60000);
 
-  it('leaves out a glyph a tile has no room for, rather than writing a negative box', async () => {
+  it('leaves out the glyph of a tile with no area, rather than writing a negative box', async () => {
     const model = await pipeline(fixture('drawio-constructs'));
     for (const icons of ['profile', 'cisco19'] as const) {
       const normal = cells(drawio(model, { icons }));
@@ -1199,14 +1199,16 @@ describe('connection grid, rotation and tiles', () => {
         expect(box(cell).height).toBeGreaterThanOrEqual(0);
       }
 
-      // A tile 2 px across keeps the tile and drops the glyph: there is something to draw, and no
-      // room inside it for the inset the glyph needs.
+      // A tile 2 px across keeps the tile and the glyph (draw.io ticket 13, S-10): the inset is at
+      // most a quarter of the side (`iconGlyphBox`), so the glyph box is 1 px wide, as in the SVG.
       const tight = structuredClone(model);
       tight.nodes['a']!.icon!.bounds.width = 2;
       tight.nodes['a']!.icon!.icon = 'cloud';
       const some = cells(drawio(tight, { icons }));
       expect(some.has(id('iconTile', 'a'))).toBe(true);
-      expect(some.has(id('icon', 'a'))).toBe(false);
+      expect(some.has(id('icon', 'a'))).toBe(true);
+      expect(box(some.get(id('icon', 'a'))!).width).toBeGreaterThan(0);
+      expect(box(some.get(id('icon', 'a'))!).width).toBeLessThanOrEqual(1);
     }
   }, 60000);
 
