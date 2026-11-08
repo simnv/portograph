@@ -96,7 +96,7 @@ async function movedDraft(): Promise<LayoutModel> {
 
 // Review fixes of ticket 27, as ticket 57 changed them: link-4's room is across a tier gap, and since ticket 57 that room is a term of the
 // one tier-gap solve, not a reservation of the settle. A settle still ends on the label room, and gives none of a tier gap's rooms up.
-it('a settle hands a tier-gap label room to the solve, which reserves it once (tickets 27 and 57)', async () => {
+it('a settle round hands a tier-gap label room to the solve, which reserves it once (tickets 27, 57 and DR-02)', async () => {
   const draft = await movedDraft();
   const before: LinkLabelShortfall[] = [];
   // The slide turned link-4's line: its room across the gap is short, and the reservation moves nothing for it.
@@ -104,7 +104,8 @@ it('a settle hands a tier-gap label room to the solve, which reserves it once (t
   expect(before.filter(tierGapShortfall).map(item => item.link)).toEqual(['link-4']);
   const steps: [SettleStep, boolean][] = [];
   settleRound(draft, (step, changed) => { steps.push([step, changed]); });
-  expect(steps.at(-1)).toEqual(['room', false]);
+  // Ticket DR-02: a round ends on the keep-out; it reserves no label room and gives none up.
+  expect(steps.map(([step]) => step)).toEqual(['close-up', 'keep-out']);
   expect(draft.labelRoomUnsettled).toBeUndefined();
   // The solve reads the room once and grows the gap; the replay then asks for nothing.
   expect(solveTierGaps(draft, replayGridAndBands)).toBe(true);
@@ -112,13 +113,6 @@ it('a settle hands a tier-gap label room to the solve, which reserves it once (t
   const after: LinkLabelShortfall[] = [];
   expect(reserveLinkLabelRoom(structuredClone(draft), after)).toBe(false);
   expect(after).toEqual([]);
-}, 120000);
-
-it('at the pass bound a settle gives up no room across a tier gap: the solve owns it (tickets 27 and 57)', async () => {
-  const draft = await movedDraft();
-  settleRound(draft, undefined, 0);
-  expect(draft.labelRoomUnsettled).toBeUndefined();
-  expect(draft.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNSETTLED')).toEqual([]);
 }, 120000);
 
 it('a forged record of the label rooms given up is refused (ticket 27, R5)', async () => {
@@ -135,16 +129,3 @@ it('a forged record of the label rooms given up is refused (ticket 27, R5)', asy
   expect(labelRoomUnsettledFault(honest)).toBeUndefined();
 }, 120000);
 
-// A canton sheet whose close-up moves: in every round of the trace the label room comes after the last close-up and keep-out.
-it('the label room is the last step of every round on a sheet the close-up moves (ticket 27)', async () => {
-  const events: AttemptTraceEvent[] = [];
-  await run(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8'), event => events.push(event));
-  const rounds = new Map<string, string[]>();
-  for (const { pass } of events) {
-    const found = /^ledger:(round-\d+|tail):(room|close-up|keep-out)$/.exec(pass);
-    if (found) rounds.set(found[1]!, [...(rounds.get(found[1]!) ?? []), found[2]!]);
-  }
-  expect(rounds.size).toBeGreaterThan(0);
-  expect([...rounds.values()].flat()).toContain('close-up');
-  for (const steps of rounds.values()) expect(steps.at(-1)).toBe('room');
-}, 120000);

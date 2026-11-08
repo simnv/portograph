@@ -1562,7 +1562,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     // A room 7f gave up (ticket 27) is not reserved again: the label placement decides, and with no window the label may lie across a
     // border (`LINK_LABEL_ON_BORDER`).
     if (unsettled.has(link.id)) {
-      placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} did not hold its label room after the passes of a settle round (labelRoomUnsettled); its label room is not reserved and the label placement decides.`, [link.id]);
+      placementWarning(model, 'LINK_LABEL_ROOM_UNRESERVED', `${link.id} did not hold its label room after the reads of the tier-gap solve (labelRoomUnsettled); its label room is not reserved and the label placement decides.`, [link.id]);
       continue;
     }
     const text = model.document.links[link.sourceIndex]!.label!;

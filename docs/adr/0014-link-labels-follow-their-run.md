@@ -31,7 +31,11 @@ Three rules for link descriptions (stage 9 labels):
    ticket 23: room beyond a reserved lane is no longer diagnosed; it is inserted and the lane moves out
    with it.) Moves settle pills before the next link measures, any
    movement replays the region producers, and publication and restore re-run the reservation on a
-   copy and reject a model it would still change.
+   copy and reject a model it would still change. (Amended 2026-11-07, decision review ticket DR-02:
+   label room is reserved by the producer and by the tier-gap solve only. The settle-time growth
+   passes of architecture-2 ticket 27 (`LABEL_ROOM_PASSES`, `settleRoom`) are deleted: with the bound
+   at 0 no drawing changed on 467 sheets. A room the tier-gap solve cannot open is still given up to
+   the label placement, `LINK_LABEL_ROOM_UNSETTLED`.)
 3. **The best location is found automatically.** The stage 9 ladder keeps its order for the full
    text — longest segment first, first side before second — but a segment may carry the full text
    only when it is at least the text plus the 8 px shorten margin at each end long, so no label

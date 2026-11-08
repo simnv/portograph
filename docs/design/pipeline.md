@@ -1054,7 +1054,7 @@ interval, nearest first. A group moves whole, keeps the band gap to the groups, 
 canton for a member), stays inside the box of the whole layout, and, when it holds a routed link, keeps its place in the
 order of its tier. A node moves alone, inside the box its group has and in its row's order. A candidate stays only when the
 straight overlay count rises, `laneSidesHold` passes, every routed link that ran on one axis or held a chord still does, and
-a copy of the model run through one round of the close-up, the keep-out and the label room (`settleRound`; it grows no tier gap since architecture-2 ticket 57) has no G6 or G5 finding that the same
+a copy of the model run through one round of the close-up and the keep-out (`settleRound`; it grows no tier gap since architecture-2 ticket 57) has no G6 or G5 finding that the same
 copy without the move lacks (`parallelClearance` and `portOrder`, the gates' own predicates). Left bent: a chord blocked by
 two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the close-up and the label room
 are measured on the geometry that stands. `refreshHeldWarnings` withdraws only a warning that states a jog.
@@ -1553,23 +1553,17 @@ whose longest run lies wholly across the axis the room grows on are diagnosed `L
 Room that lies beyond a reserved lane is inserted, and the lane and everything beyond it move out
 with it (`insertRoomAt`; label room wins over an adjacent lane, architecture-2 ticket 23). Moves settle pills before the next link measures; the
 reservation re-runs after the grid inside the 7f loop and any movement replays the region producers. That group's band clearance also
-reserves the label's room beside the detour run under the title. **The room is the last step of every settle
-(architecture-2 ticket 27).** A later 7f move moves a labelled line's end in x (the step over a chord, a lower rank move, the
-canton close-up, the keep-out, the linkless step): the line turns, and its window shrinks below the room the producer reserved.
-`settleRound` therefore runs the close-up and the keep-out, and then the room (`settleRoom`): `reserveLinkLabelRoom`. It grows no tier gap
-(ticket 57): a label room across a tier gap is recorded as a shortfall and not moved, the solve at the end of 7f pays it with height, and
-the validator and the room check (`roomHolds`) count a tier-gap shortfall as a fault. When
-it reserved, the replay, the close-up, the keep-out and the room again, until a pass reserves nothing, so nothing moves after the last
-reading of the room. The linkless step of the last round and its replay are followed by the same `settleRoom`. No measure proves that the
-passes end (the reservation only grows the room, but the replay and the close-up move x), so `LABEL_ROOM_PASSES` (4) bounds them: after
-that many reservations the rooms a reservation would still grow are given up, recorded (`labelRoomUnsettled`) and named
-(`LINK_LABEL_ROOM_UNSETTLED`). The reservation then reserves nothing for those links (`LINK_LABEL_ROOM_UNRESERVED`) and the label placement
-decides: with no window the label may lie across a border, with `LINK_LABEL_ON_BORDER`, and stage 9's collision test refuses a place on a
-link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that names no
-described link. A chord trial (`trialSettle`)
-runs the same round on its copy, so the judges read, and the draft adopts, a copy whose rooms hold. The settled chord and rank judges, as
-the lane reseat, refuse a move that names a new link in the room set (`noNewFindings('room')`, `roomFindings`): a room given up, and, for a
-copy that did not end a settle on its room, a room a reservation would still grow.
+reserves the label's room beside the detour run under the title. **Label room is reserved by the producer and by the tier-gap
+solve only (ADR-0014 r2, amended 2026-11-07; decision review ticket DR-02).** A settle round (`settleRound`) runs the close-up and the
+keep-out and reserves no label room: architecture-2 ticket 27 once ended each round on `reserveLinkLabelRoom` with a bound of 4 passes
+(`LABEL_ROOM_PASSES`), and ticket DR-02 deleted that loop because the bound at 0 changed no drawing on 467 sheets. A label room across a
+tier gap is recorded as a shortfall and not moved; the solve at the end of 7f pays it with height, and the validator and the room check
+(`roomHolds`) count a tier-gap shortfall as a fault. A room the solve cannot open is given up (`labelRoomUnsettled`, named
+`LINK_LABEL_ROOM_UNSETTLED`, see 7f solve). The reservation then reserves nothing for those links (`LINK_LABEL_ROOM_UNRESERVED`) and the
+label placement decides: with no window the label may lie across a border, with `LINK_LABEL_ON_BORDER`, and stage 9's collision test refuses
+a place on a link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that
+names no described link. The settled chord and rank judges, as the lane reseat, refuse a move that names a new link in the room set
+(`noNewFindings('room')`, `roomFindings`): a room given up, and a room a reservation would still grow.
 Publication and restore re-run the reservation on a copy and reject a model it would still change.
 
 **Linked groups share a grid (ADR-0012).** Before labels are planned, groups joined by vertical
