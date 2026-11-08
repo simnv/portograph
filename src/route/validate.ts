@@ -208,8 +208,9 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
     // A chord-built path (an overlay path, a routed chord) ends on the port's own outward **face**,
     // because the overlay layer is masked out of the pill and a chord has no stem (stress ticket 30,
     // ticket 34). G7 `endpoint-anchor` and the renderers read the same module.
-    if (!samePoint(path.segments[0]!.from, pathEnd(model, link, 'from')!)
-      || !samePoint(path.segments.at(-1)!.to, pathEnd(model, link, 'to')!)) {
+    const head = pathEnd(model, link, 'from'), tail = pathEnd(model, link, 'to');
+    if (head === undefined || tail === undefined) throw new Error(`Link ${link.id} references a missing port`);
+    if (!samePoint(path.segments[0]!.from, head) || !samePoint(path.segments.at(-1)!.to, tail)) {
       throw new Error(`Path on ${link.id} does not start and end at its ports`);
     }
     // `fixed` decides which contract this path answers to, so a restored value that merely looks

@@ -2227,10 +2227,10 @@ Every text node and attribute is XML-escaped, including the inline style, so no 
 interpolated as markup.
 
 **Visible ends.** Both renderers draw the reserved path and read where its stroke is seen to end
-from one helper, `visibleEnd` (`src/layout/path-end.ts`): on a port that draws a pill, the pill's
-outward face on the path's own stem (the path end of a chord-built path, the point where a
-stem-built path leaves its pill), the approach point for an end on an approach, and the path end on
-a port that draws no pill. The SVG puts the overlay endpoint marks and the bare-end dots on it. The
+from one helper, `visibleEnd` (`src/layout/path-end.ts`), always a point of the path: for a
+stem-built end on a pill, the first point where the path leaves the pill (the pill's outward face on
+the stem, or the stem end when a 15 px stem is shorter than the pill's half depth); for a
+chord-built end, an end on an approach, and an end on a port that draws no pill, the path end. The SVG puts the overlay endpoint marks and the bare-end dots on it. The
 draw.io export pins each connector end to it on the port's pill cell (`exitX`/`exitY` from the
 point, so an approach end is pinned on the tangential edge), and chooses `edgeStyle` from the
 waypoints and the pinned polyline, both exactly: an end off its stem is never hidden by a style

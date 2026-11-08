@@ -2,7 +2,8 @@ import type { Point } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { effectiveLayer, linkPort } from '../score/model.js';
 import { isRoutedChord } from './frame-paths.js';
-import { overlayEndpoint } from './overlay-paths.js';
+import { EPS } from '../geometry/planar.js';
+import { overlayEnd, overlayEndpoint } from './overlay-paths.js';
 
 /**
  * The path-end rule (D-Q7, audit T-05), by producer. Every reader of a link end reads this module:
@@ -36,18 +37,25 @@ export function pathEnd(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'
 /**
  * Where the stroke of `link` is seen to end at `end`: the point every renderer pins or marks the end
  * on. A chord-built path and an end on an approach already end on that point, so it is the path end.
- * A stem-built path on a port that draws a pill is seen from the pill's outward face on the path's
- * own stem, where it leaves the pill. On an anonymous port, or a port that draws no pill, the stroke
- * runs to the path end itself. The renderers draw the reserved path; this point only says where the
- * visible part of it begins. `undefined` when the link has no path.
+ * A stem-built path on a port that draws a pill is seen from the first point where it leaves the
+ * pill: the pill's outward face on the path's own stem, or the stem end itself when the stem is
+ * shorter than the pill's half depth and the path turns or runs on inside the pill (a 15 px stem
+ * beside a 31 px pill). On an anonymous port, or a port that draws no pill, the stroke runs to the
+ * path end itself. The renderers draw the reserved path; this point only says where the visible part
+ * of it begins, and it is always a point of the path. `undefined` when the link has no path.
  */
 export function visibleEnd(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): Point | undefined {
   const segments = link.path?.segments;
   if (!segments?.length) return undefined;
-  const at = end === 'from' ? segments[0]!.from : segments.at(-1)!.to;
+  const first = end === 'from' ? segments[0]! : segments.at(-1)!;
+  const at = end === 'from' ? first.from : first.to, stemEnd = end === 'from' ? first.to : first.from;
   // A hand-built model may state no attachments; its end is then the path end, as the renderers always drew it.
   if (link.attachments === undefined || link.approach?.[end] !== undefined || chordBuilt(model, link)) return at;
-  const port = linkPort(model, link, end);
-  if (!port?.pill || port.ref.anonymous === true || !port.side) return at;
-  return overlayEndpoint(model.nodes[port.ref.node], port) ?? at;
+  const port = linkPort(model, link, end), node = port ? model.nodes[port.ref.node] : undefined;
+  if (!port?.pill || port.ref.anonymous === true || !port.side || !node) return at;
+  const pill = overlayEnd(node, port);
+  if (pill === undefined) return at;
+  // Depth along the stem, from the path end outward: the face stands at the pill's half depth.
+  const depth = (point: Point): number => (point.x - at.x) * pill.out.x + (point.y - at.y) * pill.out.y;
+  return depth(stemEnd) < depth(pill.face) - EPS ? stemEnd : pill.face;
 }

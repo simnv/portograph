@@ -1113,8 +1113,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * terminates on the **pill**, for two reasons. It makes the connector a real connection: the pill
    * is the port, so moving the port or its node carries the line, which pinning to the node's box
    * never did. And it is what the SVG makes visible — a pill straddles the boundary and is painted
-   * over the inner half of its own stem, so the stroke the reader sees starts on the pill's outward
-   * face, on the path's own stem; an end on an approach (ticket 15, phase 6) meets the pill on a
+   * over the inner half of its own stem, so the stroke the reader sees starts where the path leaves
+   * the pill: its outward face on the stem, or the stem end of a stem shorter than the pill's half
+   * depth; an end on an approach (ticket 15, phase 6) meets the pill on a
    * tangential edge, and is pinned there. The reserved waypoints are untouched; only a stem-built
    * endpoint moves, by the pill's half depth, onto the point the diagram already showed.
    */

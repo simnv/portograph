@@ -1352,27 +1352,17 @@ describe('maintainer edit principles', () => {
     expect(cell.points[0]).toEqual({ x: off.x - model.canvas!.x, y: off.y - model.canvas!.y });
   }, 60000);
 
-  it('pins an end on the path\'s own stem, so a pill off its anchor\'s axis cannot skew the drawn line (D-Q7)', async () => {
-    // Codex round 1 found that an end pinned to the pill's outward midpoint moves *across* the stem
-    // when a pill does not sit on its own anchor's axis, and a 1 px style tolerance hid it. Since D-Q7
-    // the end is pinned to `visibleEnd`: the pill's outward face on the path's own stem. The drawn
-    // polyline is then the model polyline, and the style is read from it exactly.
+  it('reads the style off the polyline draw.io draws, terminals included, exactly (D-Q7)', async () => {
+    // Codex round 1 found that an end pinned to the pill's outward midpoint could move *across* the
+    // stem, and a 1 px style tolerance hid it. Since D-Q7 each end is pinned at `visibleEnd`, a point
+    // of the path's own stem, so the drawn polyline is the model polyline and the style is read from
+    // it exactly. A short stem inside its pill is covered in `path-end.test.ts`.
     const model = await pipeline(fixture('drawio-constructs'));
     const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
     const square = cells(drawio(model)).get(id('link', stable(model, link.id)))!;
     // Ticket 34: the overlay is a U, square from terminal to terminal, so it is a square connector.
     expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     expect(square.points).toHaveLength(2);
-    const skewed = structuredClone(model);
-    const ref = link.attachments!.from;
-    // The pill moved 12 px in x — a model the layout never publishes. The path leaves the top pill
-    // by a vertical leg (the U), so the pinned end stays on that leg's axis and nothing is skewed.
-    const port = skewed.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name && item.ref.ordinal === ref.ordinal)!;
-    port.pill!.bounds.x += 12;
-    const cell = cells(drawio(skewed)).get(id('link', stable(model, link.id)))!;
-    expect(cell.points).toEqual(square.points);
-    expect(cell.style['edgeStyle']).toBe('orthogonalEdgeStyle');
-    expect(Number(cell.style['exitX'])).toBeCloseTo((port.anchor!.x - port.pill!.bounds.x) / port.pill!.bounds.width, 12);
   }, 60000);
 
   it('leaves an overlay end that draws no pill by the node it terminates on', async () => {

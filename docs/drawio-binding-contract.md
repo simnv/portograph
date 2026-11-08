@@ -102,9 +102,10 @@ direction, for example the transmit counter of the `pg-from` port.
 `pg-from` and `pg-to` name a port cell only when the end is a named port. An anonymous port has no
 cell, and the link ends on the node cell.
 
-A link end is pinned to its visible end (`visibleEnd`, D-Q7): on a port that draws a pill, the
-pill's outward face on the path's own stem, or the approach point on the pill's tangential edge for
-an end on an approach; on an anonymous port, the path end on the node cell. The interior waypoints
+A link end is pinned to its visible end (`visibleEnd`, D-Q7), a point of the path: on a port that
+draws a pill, the first point where the path leaves the pill (its outward face on the stem, or the
+stem end when the stem is shorter than the pill's half depth), or the approach point on the pill's
+tangential edge for an end on an approach; on an anonymous port, the path end on the node cell. The interior waypoints
 are the published path. `edgeStyle` follows that polyline: `none` for a run with no bend,
 `orthogonalEdgeStyle` for a square run, and `none` for a run with a diagonal.
 

@@ -5,6 +5,7 @@ import type { LayoutLink, LayoutModel, Point } from '../../src/index.js';
 import { EPS as PLANAR_EPS } from '../../src/geometry/planar.js';
 import { chordBuilt, pathEnd, visibleEnd } from '../../src/layout/path-end.js';
 import { findPort } from '../../src/layout/row-paths.js';
+import { overlayEnd } from '../../src/layout/overlay-paths.js';
 import { linkIds } from '../../src/model/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -21,12 +22,16 @@ const run = (name: string): Promise<LayoutModel> =>
 
 /** The fixture with an approach: link-1 meets the trunk pill from above (ticket 15, phase 6). */
 const APPROACH = 'a-port-with-two-peers-in-two-directions-takes-a-side-per-link';
+/** The short-stem fixture (D-Q7 review M2), and two sheets whose straight links ran past a short stem (review M1). */
+const SHORT = 'a-short-stem-is-seen-from-its-stem-end';
+const STRAIGHT_SHORT = ['a-bundle-rows-turn-near-when-the-far-end-enters-a-frame', 'a-grid-growth-stops-at-a-reserved-lane'];
 /**
  * One sheet per producer family: approach and orthogonal, bundle, routed chords on named ports (the golden's provider links) and on
  * anonymous ports (fan and direct families), overlay.
  */
 const SHEETS = [
   APPROACH,
+  SHORT,
   './m1-sip-edge',
   'a-bundle-of-named-ports-agrees-at-both-ends',
   'a-hub-tiers-fan-draws-straight-and-crosses-itself',
@@ -35,7 +40,7 @@ const SHEETS = [
   'drawio-constructs',
 ];
 
-interface Cell { id: string; parent?: string; source?: string; target?: string; style: Record<string, string>; box: Record<string, number>; points: Point[]; ends: Record<string, Point> }
+interface Cell { id: string; parent?: string; source?: string; target?: string; style: Record<string, string>; box: Record<string, number>; relative: boolean; offset: Point; points: Point[]; ends: Record<string, Point> }
 
 function cells(xml: string): Map<string, Cell> {
   const found = new Map<string, Cell>();
@@ -44,7 +49,10 @@ function cells(xml: string): Map<string, Cell> {
     for (const pair of match[1]!.matchAll(/([\w:-]+)="([^"]*)"/g)) attributes[pair[1]!] = pair[2]!;
     const body = match[3] ?? '';
     const box: Record<string, number> = {};
-    for (const pair of (/<mxGeometry\b([^>]*)/.exec(body)?.[1] ?? '').matchAll(/(x|y|width|height)="([^"]*)"/g)) box[pair[1]!] = Number(pair[2]);
+    const geometry = /<mxGeometry\b([^>]*)/.exec(body)?.[1] ?? '';
+    for (const pair of geometry.matchAll(/\b(x|y|width|height)="([^"]*)"/g)) box[pair[1]!] = Number(pair[2]);
+    const offsetTag = /<mxPoint x="([^"]*)" y="([^"]*)" as="offset"\/>/.exec(body);
+    const offset = offsetTag ? { x: Number(offsetTag[1]), y: Number(offsetTag[2]) } : { x: 0, y: 0 };
     const style: Record<string, string> = {};
     for (const part of (attributes['style'] ?? '').split(';')) if (part.includes('=')) style[part.slice(0, part.indexOf('='))] = part.slice(part.indexOf('=') + 1);
     const points = [...(/<Array as="points">([\s\S]*?)<\/Array>/.exec(body)?.[1] ?? '').matchAll(/<mxPoint x="([^"]*)" y="([^"]*)"\/>/g)]
@@ -52,7 +60,7 @@ function cells(xml: string): Map<string, Cell> {
     const ends: Record<string, Point> = {};
     for (const point of body.matchAll(/<mxPoint x="([^"]*)" y="([^"]*)" as="(sourcePoint|targetPoint)"\/>/g)) ends[point[3]!] = { x: Number(point[1]), y: Number(point[2]) };
     const id = attributes['id']!;
-    found.set(id, { id, style, box, points, ends,
+    found.set(id, { id, style, box, relative: /\brelative="1"/.test(geometry), offset, points, ends,
       ...(attributes['parent'] === undefined ? {} : { parent: attributes['parent'] }),
       ...(attributes['source'] === undefined ? {} : { source: attributes['source'] }),
       ...(attributes['target'] === undefined ? {} : { target: attributes['target'] }) });
@@ -60,14 +68,19 @@ function cells(xml: string): Map<string, Cell> {
   return found;
 }
 
-/** A cell's box on the page: its geometry plus the corner of every container above it. */
+/**
+ * A vertex's box on the page, the mxGraph way: an absolute geometry stands from its parent's corner; a relative one (a pill on its
+ * node's face, DX-07) stands at its fractions of the parent's size plus its offset. Layers and the root have no geometry.
+ */
 function absolute(all: Map<string, Cell>, id: string): { x: number; y: number; width: number; height: number } {
   const cell = all.get(id)!;
-  let x = cell.box['x'] ?? 0, y = cell.box['y'] ?? 0;
-  for (let at = cell.parent === undefined ? undefined : all.get(cell.parent); at?.box['width'] !== undefined; at = at.parent === undefined ? undefined : all.get(at.parent)) {
-    x += at.box['x'] ?? 0; y += at.box['y'] ?? 0;
-  }
-  return { x, y, width: cell.box['width'] ?? 0, height: cell.box['height'] ?? 0 };
+  const parent = cell.parent === undefined ? undefined : all.get(cell.parent);
+  const width = cell.box['width'] ?? 0, height = cell.box['height'] ?? 0;
+  if (parent?.box['width'] === undefined) return { x: cell.box['x'] ?? 0, y: cell.box['y'] ?? 0, width, height };
+  const host = absolute(all, parent.id);
+  return cell.relative
+    ? { x: host.x + (cell.box['x'] ?? 0) * host.width + cell.offset.x, y: host.y + (cell.box['y'] ?? 0) * host.height + cell.offset.y, width, height }
+    : { x: host.x + (cell.box['x'] ?? 0), y: host.y + (cell.box['y'] ?? 0), width, height };
 }
 
 /** The connectors of one link, in run order. */
@@ -145,6 +158,31 @@ describe('the path-end rule by producer (D-Q7)', () => {
     }
     expect([...kinds].sort()).toEqual(['approach', 'overlay', 'routed chord', 'stem-built']);
   }, 240000);
+
+  it.each([SHORT, ...STRAIGHT_SHORT])('%s: a stem shorter than its pill half depth is seen from its stem end, and a straight link stays `none` (Q118)', async name => {
+    const model = await run(name);
+    const all = cells(drawio(model));
+    let short = 0;
+    for (const link of model.links) {
+      if (!link.path?.segments.length || link.meshBus !== undefined || chordBuilt(model, link)) continue;
+      for (const end of ['from', 'to'] as const) {
+        const port = findPort(model, link.attachments![end]), node = port ? model.nodes[port.ref.node] : undefined;
+        if (!port?.pill || port.ref.anonymous === true || !port.side || !node || link.approach?.[end] !== undefined) continue;
+        const { at, next } = ends(link)[end], pill = overlayEnd(node, port)!;
+        const depth = (point: Point): number => (point.x - at.x) * pill.out.x + (point.y - at.y) * pill.out.y;
+        if (depth(next) >= depth(pill.face) - PLANAR_EPS) continue;
+        short += 1;
+        expect(gap(visibleEnd(model, link, end)!, next), `${link.id}:${end}`).toBeLessThanOrEqual(PLANAR_EPS);
+      }
+      // A link drawn as one straight line is a straight connector, whatever its stems (Q118).
+      const points = [link.path.segments[0]!.from, ...link.path.segments.map(segment => segment.to)];
+      const first = points[0]!, last = points.at(-1)!, length = gap(first, last);
+      const straight = length > PLANAR_EPS && points.every(point =>
+        Math.abs((point.x - first.x) * (last.y - first.y) - (point.y - first.y) * (last.x - first.x)) / length <= PLANAR_EPS);
+      if (straight) for (const cell of connectors(model, all, link)) expect(cell.style['edgeStyle'], link.id).toBe('none');
+    }
+    if (name === SHORT) expect(short).toBeGreaterThan(0);
+  }, 60000);
 
   it('pins an approach end on the approach point, so draw.io draws the model path (M-5)', async () => {
     const model = await run(APPROACH);
