@@ -6,6 +6,7 @@ import { plannedSegments, tierGapPlans, type GapPlan, type PlannedPart } from '.
 import { endPort } from './approach.js';
 import { findPort } from './row-paths.js';
 import { stemPlan, type StemCache } from './sides-two.js';
+import { COVER_BOUNDARY_EPS } from './tolerance.js';
 
 /**
  * ADR-0015 rule 1, per gap: the room every run that crosses a **tier gap** needs, reserved before
@@ -211,7 +212,7 @@ function plannedRuns(model: LayoutModel, plan: GapPlan, gap: TierGap): PlannedRu
       return [...new Set(plan.residual.filter(item => {
         const span = item.span ?? (item.upper && item.lower
           ? { x0: Math.min(item.upper.x, item.lower.x), x1: Math.max(item.upper.x, item.lower.x) } : undefined);
-        return span !== undefined && x > span.x0 - keep + 1e-9 && x < span.x1 + keep - 1e-9;
+        return span !== undefined && x > span.x0 - keep + COVER_BOUNDARY_EPS && x < span.x1 + keep - COVER_BOUNDARY_EPS;
       }).map(item => item.link))].sort();
     });
     return { part, segments, shares: [...new Set(shares)].sort(), grants };

@@ -3,7 +3,8 @@ import type { DirectFamily, DirectMemberReason, DirectUnit, LayoutLink, LayoutMo
 import { EPS, intersection, samePoint, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
-import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, orthogonalLeg, SIDE_EDGE_SLACK, siblingStemCrowded, strictCrossing } from './frame-paths.js';
+import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, orthogonalLeg, SIDE_EDGE_SLACK, siblingStemCrowded } from './frame-paths.js';
+import { strictCrossing } from './read/crossings.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';

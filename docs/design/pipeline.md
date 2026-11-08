@@ -28,6 +28,13 @@ Three principles, each learned the hard way:
    Dimensions never shrink below their current content or author floor. Anything a later stage
    moves must be re-validated; placement freezes after stage 7f.
 
+Every stage that counts turns or crossings reads one predicate for each (decision review 2026-11, D-Q6). A turn is
+`pieceTurns` of `src/geometry/planar.ts` (`pathBends` reads a link with it): a change of direction or a reversal, a
+collinear or zero-length piece is no turn. A proper crossing is `strictCrossing` of `src/layout/read/crossings.ts`: two
+segments meet at a point that is farther than the planar `EPS` from every end, never a fraction of the segment. The course
+round counts the links a polyline crosses with `polylinesCross`, a pair once. Tolerances have named owners
+(`src/layout/tolerance.ts`, `src/geometry/planar.ts`); `CODING_STANDARDS.md` R10 states the rule.
+
 ---
 
 ## Stage 0 — parse

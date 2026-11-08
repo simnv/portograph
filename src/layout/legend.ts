@@ -9,6 +9,7 @@ import { measureText } from '../text/index.js';
 import { effectiveLayer } from '../score/model.js';
 import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { LEGEND_GEOMETRY as theme } from '../theme/legend.js';
+import { LEGEND_FIT_EPS } from './tolerance.js';
 
 const OWNER = { kind: 'legend', id: 'legend' } as const;
 
@@ -295,7 +296,7 @@ export function produceLegend(model: LayoutModel): void {
   let row: Measured[] = [], used = 0;
   for (const item of measured) {
     const advance = row.length ? theme.columnGap + item.width : item.width;
-    if (row.length && used + advance > limit + 1e-9) { rows.push(row); row = [item]; used = item.width; continue; }
+    if (row.length && used + advance > limit + LEGEND_FIT_EPS) { rows.push(row); row = [item]; used = item.width; continue; }
     row.push(item);
     used += advance;
   }
