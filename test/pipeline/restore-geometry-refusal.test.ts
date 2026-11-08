@@ -1,13 +1,20 @@
 import { readFileSync } from 'node:fs';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { centre, flanks, lanes, restoreLayoutModel, rows } from '../../src/internal.js';
 import type { Diagnostic, LayoutModel } from '../../src/index.js';
+import { validateSkeletonBands } from '../../src/layout/skeleton-geometry.js';
 import { rebuildRegions } from '../../src/layout/regions.js';
 import { refitCanvas } from '../../src/layout/link-labels.js';
+import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+
+vi.mock('../../src/layout/skeleton-geometry.js', async importOriginal => {
+  const original = await importOriginal<typeof import('../../src/layout/skeleton-geometry.js')>();
+  return { ...original, validateSkeletonBands: vi.fn(original.validateSkeletonBands) };
+});
 
 // Ticket DR-01 (audit T-07, M-1): the clearance, containment and band checks of publication hold for every model, whatever diagnostics it
 // carries. Only the centring exemption reads PLACEMENT_NON_CONVERGENCE (ADR-0010).
@@ -15,13 +22,12 @@ const yaml = readFileSync(new URL('../../goldens/synthetic/a-restored-layout-wit
 const deep = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const code = 'PLACEMENT_NON_CONVERGENCE';
 const warn = (message: string): Diagnostic => ({ stage: 'placement', severity: 'warning', code, message });
-/** The five emitters' messages and one forged sentence; the code is what a restore reads. */
+/** The four remaining emitters' messages (flanks.ts now refuses instead) and one forged sentence; the code is what a restore reads. */
 const codes: Record<string, Diagnostic> = {
-  'flanks.ts': warn('Flank growth exceeds the available tier band; later placement must retain this conflict for final gates.'),
-  'bands.ts': warn('Link-label room reservation exhausted the shared eight-pass budget; final gates decide the retained geometry.'),
-  'placement-attempt.ts': warn('The cantons did not settle a band gap apart in 6 rounds of the close-up and the replay; final gates decide the retained geometry.'),
+  'bands.ts': warn('Link-label room reservation exhausted the shared eight-pass budget; the geometry kept is still checked by the publication and the final gates.'),
+  'placement-attempt.ts': warn('The cantons did not settle a band gap apart in 6 rounds of the close-up and the replay; the geometry kept is still checked by the publication and the final gates.'),
   'centre.ts': warn('Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.'),
-  'sides-two.ts': warn('The sweep that seats the groups of a tier beside the frames did not settle in 16 rounds; final gates decide the retained geometry.'),
+  'sides-two.ts': warn('The sweep that seats the groups of a tier beside the frames did not settle in 16 rounds; the geometry kept is still checked by the publication and the final gates.'),
   forged: warn('forged'),
 };
 
@@ -97,4 +103,15 @@ it('restore refuses a geometry break beside a centring item that the code excuse
     moveNode(broken, 'spare', -(broken.nodes.spare!.bounds!.x - broken.nodes.b!.bounds!.x) + 10, 0);
     expect(() => restoreLayoutModel(JSON.stringify(broken)), emitter).toThrow(/violate clearance/);
   }
+}, 60000);
+
+it('flanks refuses a run whose flank growth leaves a band conflict, with a named PlacementRefusal and no diagnostic', async () => {
+  const staged = lanes(rows(await placed(withoutJointOrder(yaml))));
+  // No input reaches the condition today (no corpus or sweep sheet); the band check of the stage is made to report one conflict, once.
+  vi.mocked(validateSkeletonBands).mockReturnValueOnce(['tier band 1 overlaps tier band 0']);
+  let refusal: unknown;
+  try { flanks(staged); } catch (error) { refusal = error; }
+  expect(refusal).toBeInstanceOf(PlacementRefusal);
+  expect(refusal).toMatchObject({ code: 'skeleton', stage: 'flanks', message: expect.stringMatching(/Flank growth of .* exceeds the available tier band: tier band 1 overlaps tier band 0/) });
+  expect(staged.diagnostics.map(d => d.code)).not.toContain(code);
 }, 60000);
