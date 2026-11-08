@@ -1,0 +1,59 @@
+# Expected: The document's `css:` paints the draw.io export as it paints the SVG (draw.io ticket 8, R1): both read one rule table by
+# the CSS cascade, on the path of classes the SVG element sits on. The router bodies take the author fill over the theme's
+# `:where()` wash, and the dark one in the dark mode only (the mode rule: dark on top of light). The pills of the `access` node take
+# the author stroke through the node group (a descendant rule), the `backup` link the author dash through its link group (a child
+# rule), every pill label the important colour over the more specific role colour, the link label an `rgb()` colour, the overlay a
+# named colour at 50 % stroke opacity, and the unused port 30 % opacity on its pill and its name. In print the group boxes are dashed.
+# The `flow` legend row draws an overlay sample, as its one link is an overlay (audit A1-16). draw.io cannot carry four parts, and
+# the export names them in one `DRAWIO_CSS_UNMAPPED` warning: the glyph fill and line cap, the `:hover` rule and the `@supports` block.
+# So the SVG node bodies are dashed (a browser applies the `@supports` block) and the draw.io bodies are solid.
+# Test-only input owned by draw.io ticket 8 (`test/render/author-css.test.ts`); the whole pipeline runs, so no stage precondition is needed.
+portograph: 2
+css: |
+  .node-body.router { fill: #fde68a; }
+  @media (prefers-color-scheme: dark) { .node-body.router { fill: #78350f; } }
+  .node.access .pill { stroke: #b91c1c; }
+  .links > .link.backup .link-line { stroke-dasharray: 6 3; }
+  .pill-label { fill: #1e3a8a !important; }
+  .link-label { fill: rgb(30, 64, 175); }
+  .overlay-line { stroke: teal; stroke-opacity: 50%; }
+  .port.unused { opacity: 0.3; }
+  @media print { .group-box { stroke-dasharray: 2 2; } }
+  .node-icon { fill: none; stroke-linecap: square; }
+  .pill:hover { fill: #ff0000; }
+  @supports (display: grid) { .node-body { stroke-dasharray: 3 2; } }
+groups:
+  core: { tier: 0, label: Core }
+  edge: { tier: 1, label: Edge }
+nodes:
+  core-1:
+    group: core
+    class: router
+    label: Core 1
+    ports:
+      - { name: down, side: bottom, class: downlink up }
+      - { name: spare, side: bottom, class: mgmt unused }
+  core-2:
+    group: core
+    class: router
+    label: Core 2
+    ports:
+      - { name: down, side: bottom, class: downlink }
+  access-1:
+    group: edge
+    class: access
+    label: Access 1
+    ports:
+      - { name: up, side: top, class: uplink }
+      - { name: alt, side: top, class: peer }
+  border-1:
+    group: edge
+    class: tbr
+    label: Border 1
+    ports:
+      - { name: up, side: top, class: uplink }
+      - { name: alt, side: top, class: peer }
+links:
+  - [core-1.down, access-1.up, { label: 10G }]
+  - [core-2.down, border-1.up, { class: backup }]
+  - [access-1.alt, border-1.alt, { route: overlay, class: flow }]

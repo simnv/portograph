@@ -5,6 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { LINK_LABEL_GEOMETRY, haloSize, reservedLinkRuns } from '../../src/layout/link-labels.js';
 import { labelBorders, labelRunWindows, windowHolds } from '../../src/layout/run-label-box.js';
 import { labelRoomUnsettledFault, reserveLinkLabelRoom, tierGapShortfall, validateGroupLabelBands, type LinkLabelShortfall } from '../../src/layout/bands.js';
+import { holdsMove, resizeEvidence, resizeHolds } from '../../src/layout/move-reservations.js';
 import { solveTierGaps } from '../../src/layout/gap-room.js';
 import { attemptTimings, resetAttemptTimings } from '../../src/layout/attempt-timings.js';
 import { replayGridAndBands, replayRegions, settleRound, type AttemptTraceEvent, type SettleStep } from '../../src/layout/placement-attempt.js';
@@ -96,7 +97,7 @@ async function movedDraft(): Promise<LayoutModel> {
 
 // Review fixes of ticket 27, as ticket 57 changed them: link-4's room is across a tier gap, and since ticket 57 that room is a term of the
 // one tier-gap solve, not a reservation of the settle. A settle still ends on the label room, and gives none of a tier gap's rooms up.
-it('a settle hands a tier-gap label room to the solve, which reserves it once (tickets 27 and 57)', async () => {
+it('a settle round hands a tier-gap label room to the solve, which reserves it once (tickets 27, 57 and DR-02)', async () => {
   const draft = await movedDraft();
   const before: LinkLabelShortfall[] = [];
   // The slide turned link-4's line: its room across the gap is short, and the reservation moves nothing for it.
@@ -104,7 +105,8 @@ it('a settle hands a tier-gap label room to the solve, which reserves it once (t
   expect(before.filter(tierGapShortfall).map(item => item.link)).toEqual(['link-4']);
   const steps: [SettleStep, boolean][] = [];
   settleRound(draft, (step, changed) => { steps.push([step, changed]); });
-  expect(steps.at(-1)).toEqual(['room', false]);
+  // Ticket DR-02: a round ends on the keep-out; it reserves no label room and gives none up.
+  expect(steps.map(([step]) => step)).toEqual(['close-up', 'keep-out']);
   expect(draft.labelRoomUnsettled).toBeUndefined();
   // The solve reads the room once and grows the gap; the replay then asks for nothing.
   expect(solveTierGaps(draft, replayGridAndBands)).toBe(true);
@@ -112,13 +114,6 @@ it('a settle hands a tier-gap label room to the solve, which reserves it once (t
   const after: LinkLabelShortfall[] = [];
   expect(reserveLinkLabelRoom(structuredClone(draft), after)).toBe(false);
   expect(after).toEqual([]);
-}, 120000);
-
-it('at the pass bound a settle gives up no room across a tier gap: the solve owns it (tickets 27 and 57)', async () => {
-  const draft = await movedDraft();
-  settleRound(draft, undefined, 0);
-  expect(draft.labelRoomUnsettled).toBeUndefined();
-  expect(draft.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNSETTLED')).toEqual([]);
 }, 120000);
 
 it('a forged record of the label rooms given up is refused (ticket 27, R5)', async () => {
@@ -135,16 +130,47 @@ it('a forged record of the label rooms given up is refused (ticket 27, R5)', asy
   expect(labelRoomUnsettledFault(honest)).toBeUndefined();
 }, 120000);
 
-// A canton sheet whose close-up moves: in every round of the trace the label room comes after the last close-up and keep-out.
-it('the label room is the last step of every round on a sheet the close-up moves (ticket 27)', async () => {
-  const events: AttemptTraceEvent[] = [];
-  await run(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8'), event => events.push(event));
-  const rounds = new Map<string, string[]>();
-  for (const { pass } of events) {
-    const found = /^ledger:(round-\d+|tail):(room|close-up|keep-out)$/.exec(pass);
-    if (found) rounds.set(found[1]!, [...(rounds.get(found[1]!) ?? []), found[2]!]);
-  }
-  expect(rounds.size).toBeGreaterThan(0);
-  expect([...rounds.values()].flat()).toContain('close-up');
-  for (const steps of rounds.values()) expect(steps.at(-1)).toBe('room');
+
+// Decision review ticket DR-02 (F1): no settle reserves the label room again, so a 7f move that shrinks a same-tier room is held (`labelRoom` of
+// `holdsMove`, `label-room-guard.ts`). Without the hold the close-up shortened the runs of the two labelled links and the layout threw.
+it('a close-up keeps the row room of a same-tier labelled link (ticket DR-02)', async () => {
+  const model = await run(readFileSync(new URL('../../goldens/synthetic/a-close-up-keeps-the-row-room-of-a-same-tier-label.yaml', import.meta.url), 'utf8'));
+  expect(() => validateGroupLabelBands(model)).not.toThrow();
+  const shortfalls: LinkLabelShortfall[] = [];
+  reserveLinkLabelRoom(structuredClone(model), shortfalls);
+  expect(shortfalls.filter(item => item.axis === 'row' || item.axis === 'row window')).toEqual([]);
+  // A move that shifts the ends of a described same-tier link apart is judged by the producer's reading; one that moves nothing is not.
+  const group = model.groups[model.document.nodes['loc-b-ac1']!.group]!;
+  expect(holdsMove(model, [{ group, bounds: { ...group.bounds! } }], false, ['labelRoom'])).toBe(true);
+}, 120000);
+
+const closeUpFixture = readFileSync(new URL('../../goldens/synthetic/a-close-up-keeps-the-row-room-of-a-same-tier-label.yaml', import.meta.url), 'utf8');
+
+// Ticket DR-02, the refusal path: the guard refuses a move that shortens the room of a labelled same-tier link and allows one that lengthens it.
+it('holdsMove refuses a move that shortens a same-tier row room and allows one that lengthens it (ticket DR-02)', async () => {
+  const model = await run(closeUpFixture);
+  const move = (node: string, dx: number): boolean => {
+    const group = model.groups[model.document.nodes[node]!.group]!;
+    return holdsMove(model, [{ group, bounds: { ...group.bounds!, x: group.bounds!.x + dx } }], false, ['labelRoom']);
+  };
+  // loc-b -> loc-c is one labelled link of a tier; loc-a2 -> loc-b the other.
+  expect(move('loc-c-ac1', -60)).toBe(false);
+  expect(move('loc-b-ac1', -60)).toBe(false);
+  expect(move('loc-b-ac1', 60)).toBe(false);
+  expect(move('loc-c-ac1', 60)).toBe(true);
+  expect(move('loc-c-ac1', -5)).toBe(true);
+}, 120000);
+
+// The resize path (centring, the parent spread) moves bodies on the model, and `resizeHolds` reads the room again where they stand.
+it('resizeHolds refuses a resize that leaves a same-tier row room short (ticket DR-02)', async () => {
+  const model = await run(closeUpFixture);
+  const resized = (dx: number): boolean => {
+    const copy = structuredClone(model);
+    delete copy.groupExits;
+    const group = copy.groups[copy.document.nodes['loc-c-ac1']!.group]!, evidence = resizeEvidence(copy, group);
+    moveGroup(copy, group, dx, 0);
+    return resizeHolds(copy, group, evidence);
+  };
+  expect(resized(-60)).toBe(false);
+  expect(resized(60)).toBe(true);
 }, 120000);

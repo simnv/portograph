@@ -11,14 +11,14 @@ import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
-import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, reserveLinkLabelRoom, roomHolds, roomLikelyHolds, gapLabelDeficits } from './bands.js';
+import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, roomHolds, roomLikelyHolds, gapLabelDeficits } from './bands.js';
 import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { solveTierGaps } from './gap-room.js';
 import { trimBodies } from './end-trim.js';
 import { holds } from './reservation-checks.js';
-import { candidateCopy, chooseReseat, roomShort, shortGaps } from './decide.js';
+import { candidateCopy, chooseReseat, shortGaps } from './decide.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
 import { attemptTimings, timed } from './attempt-timings.js';
 import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnapshot } from './attempt-ledger.js';
@@ -32,11 +32,11 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
  * The passes, in order, on the draft:
  *   1. `freezeChords`, then `produceGroupLabelBands`: the last confirmation of a chord becomes a wall, then the reservation of the label bands
  *      (their height; no title is placed while placement moves).
- *   2. Up to `CANTON_ROUNDS` rounds of `settleRound` (the close-up, the keep-out, the link label room again), `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
+ *   2. Up to `CANTON_ROUNDS` rounds of `settleRound` (the close-up and the keep-out), `stepLinklessOutOfChords` and the step over a chord (`stepOverChords`, which judges
  *      each move on a copy that `trialSettle` has run). The choices of the linkless step, the chord step and the lane reseat are all made by the
  *      decision loop of decide.ts, each judged by the profile `judges` names for its kind; a round that moved anything is followed by `replayRegions`, or, when the step kept
  *      a move, by taking the settled copy of the last kept move (the replay and the next round's settling are then done). When the rounds
- *      did not replay the draft and the centring left a non-convergence or a violation, one replay and label room settle it on the frozen geometry (ticket 65).
+ *      did not replay the draft and the centring left a non-convergence or a violation, one replay settles it on the frozen geometry (ticket 65).
  *   3. The held-axis probe (`holdColumnAxes` on a copy), and the non-convergence warning for the cantons.
  *   4. `reseatLanes`, adopted only when its settled trial is no worse in the named respects (`chooseReseat`, decide.ts).
  *   5. `solveTierGaps`: each tier gap grows once to its plan and to the labels of its drops, y-only (architecture-2 ticket 57).
@@ -48,11 +48,6 @@ import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnap
 const CANTON_ROUNDS = 4;
 /** The move of a close-up round, in px, under which the cantons stand a band gap apart for every purpose (ranked-groups ticket 65). */
 const CANTON_CREEP = 0.5;
-/** Reservations of the label room in one settle (architecture-2 ticket 27; R4: a count). Past it, a room still short is given up (`settleRoom`). */
-const LABEL_ROOM_PASSES = 4;
-/** The warning of a settle that gave a label room up at `LABEL_ROOM_PASSES` (`labelRoomUnsettled`). */
-const LABEL_ROOM_UNSETTLED = 'LINK_LABEL_ROOM_UNSETTLED';
-
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 /** One line of the opt-in trace: a pass, a short hash of the model after it, and what the pass decided. */
 export interface AttemptTraceEvent { pass: string; revision: string; verdict: string }
@@ -139,59 +134,16 @@ function closeUpAndKeepOut(model: LayoutModel, tap?: (step: SettleStep, changed:
 }
 
 /**
- * The label room of every described link (architecture-2 ticket 27), as the last step of a settle: `reserveLinkLabelRoom` on the geometry as it
- * stands; when it reserved, the replay, the close-up and the keep-out, and the room again. The producer reserved the room once; a later 7f move
- * (a chord step, a rank move, the close-up, the keep-out, the linkless step) moves a line end in x, the line turns, and its window shrinks.
- *
- * Convergence: the loop ends when a pass reserves nothing, so nothing moves after the last reading of the room. No measure proves that it ends:
- * the reservation only grows the room, but the replay and the close-up move x and can turn a line again. `passes` bounds it (R4): after that many
- * reservations the rooms a reservation would still grow are given up, not reserved (`labelRoomUnsettled`, named `LINK_LABEL_ROOM_UNSETTLED`; R6):
- * the label placement decides them: with no window a label may lie across a border (`LINK_LABEL_ON_BORDER`), and stage 9's collision test
- * refuses a place on a link. No gate judges such a label (G3 leaves out overlay labels). Returns the shift of the close-ups it ran.
- */
-export function settleRoom(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void, passes = LABEL_ROOM_PASSES): number {
-  let shift = 0;
-  for (let pass = 0; ; pass++) {
-    if (pass >= passes) {
-      giveUpRoom(model, passes);
-      return shift;
-    }
-    const reserved = timed('label-room', () => reserveLinkLabelRoom(model));
-    if (reserved) replayRegions(model);
-    tap?.('room', reserved);
-    if (!reserved) return shift;
-    shift += closeUpAndKeepOut(model, tap);
-  }
-}
-
-/**
- * The rooms a reservation would still grow at the pass bound, given up: their links join `labelRoomUnsettled` in link order, and a warning names
- * them. Their labels may then lie across a border, with `LINK_LABEL_ON_BORDER` from stage 9.
- */
-function giveUpRoom(model: LayoutModel, passes: number): void {
-  const short = roomShort(model);
-  if (!short.size) return;
-  const order = new Map(model.links.map((link, at) => [link.id, at]));
-  const byOrder = (a: string, b: string): number => order.get(a)! - order.get(b)!;
-  model.labelRoomUnsettled = [...new Set([...(model.labelRoomUnsettled ?? []), ...short])].sort(byOrder);
-  const fresh = [...short].sort(byOrder);
-  model.diagnostics.push({ stage: 'placement', severity: 'warning', code: LABEL_ROOM_UNSETTLED, owners: fresh.map(id => ({ kind: 'link' as const, id })),
-    message: `The label room of ${fresh.join(', ')} was still short after ${passes} passes of the reservation, the replay and the close-up; it is given up, and the label placement decides; with no window the label may lie across a border.` });
-}
-
-/**
  * The close-up of the cantons (ranked-groups ticket 65) moves them in x after centring widened one in place, so the rounds end when the
  * close-up has nothing to move. A round that moves groups replays the region producers, and the grid and the labels after it. No round grows
  * a tier gap: the one solve after the rounds does (architecture-2 ticket 57).
- * One round of the close-up, the keep-out and the label room (last, `settleRoom`), on any model: the loop runs it on the draft, and the
- * step over a chord (ticket 77) runs it on a copy to see what a move settles into. It returns the shift of the close-ups.
+ * One round of the close-up and the keep-out, on any model: the loop runs it on the draft, and the step over a chord (ticket 77) runs it on a
+ * copy to see what a move settles into. It returns the shift of the close-ups. It reserves no label room: the producer and the tier-gap solve
+ * do (ADR-0014 r2, decision review ticket DR-02).
  */
-export function settleRound(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void, passes = LABEL_ROOM_PASSES): number {
+export function settleRound(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void): number {
   attemptCounters.settleCalls++;
-  const shift = closeUpAndKeepOut(model, tap);
-  // The label room last (architecture-2 ticket 27): a chord trial runs this round on its copy, so the judges read, and the draft adopts, a copy
-  // whose rooms hold; the draft rounds reserve on their own settled state the same way.
-  return shift + settleRoom(model, tap, passes);
+  return closeUpAndKeepOut(model, tap);
 }
 
 /** What the step over a chord judges a move by: the replays and a round of `settleRound`, which is what the next round does. */
@@ -200,17 +152,15 @@ export function trialSettle(probe: LayoutModel): SettleReading {
     timed('replay-first', () => replayRegions(probe));
     const steps: SettleReading['steps'] = [];
     const shift = timed('settle-round', () => settleRound(probe, (step, changed) => { steps.push([step, changed]); }));
-    return { shift, steps, roomSettled: true };
+    return { shift, steps };
   });
 }
 /** The steps of a round of `settleRound`, in order. */
-export type SettleStep = 'room' | 'close-up' | 'keep-out';
+export type SettleStep = 'close-up' | 'keep-out';
 /**
  * What a round of `settleRound` found, with the steps it took in order: a copy that adopted it hands this on instead of settling again.
- * `roomSettled`: the round ended on the label room, which reserved nothing or was given up, and nothing moved after it (ticket 27); a judge
- * then reads the room of the copy from `labelRoomUnsettled` and reserves nothing again (`roomFindings`, decide.ts).
  */
-export interface SettleReading { shift: number; steps: [SettleStep, boolean][]; roomSettled: true }
+export interface SettleReading { shift: number; steps: [SettleStep, boolean][] }
 
 /**
  * Run the 7f producer on the transaction's draft. The draft already stands on the stage before `bands` and has passed the callback checks;
@@ -288,8 +238,6 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   const movers = new Set<string>();
   /** The settled copy of the last move of the chord step, once the draft has taken it: the next round reads its settling and does not settle again. */
   let taken: SettleReading | undefined;
-  /** Whether the draft moved after the last label room of the rounds (the linkless step and its replay, ticket 27). */
-  let unsettled = false;
   /** Whether the rounds replayed the draft: a replay of the draft itself, or a settled copy the draft took (it ran the replay and a round). */
   const draftReplays = replaysOn.get(draft) ?? 0;
   let tookCopy = false;
@@ -331,20 +279,11 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     if (cleared && kept.adopted !== undefined && adoptSettled(draft, kept.adopted.copy, kept.adopted.baseDiagnostics, kept.adopted.original)) {
       taken = kept.adopted.result as SettleReading;
       tookCopy = true;
-      unsettled = false;
     } else {
       if (linkless || cleared) replayRegions(draft);
-      unsettled = linkless || cleared;
     }
     account(`round-${round}:replay`);
     again = cleared;
-  }
-  // The linkless step of the last round and its replay move a line end after that round's label room: the room is the last step here too
-  // (architecture-2 ticket 27). A close-up it runs that moves the cantons reopens them, and the warning below says so.
-  if (unsettled) {
-    const tail = settleRoom(draft, step => account(`tail:${step}`));
-    if (tail >= CANTON_CREEP) closed = false;
-    note('tail:room', 'settled');
   }
   // One settle of the centring on the frozen geometry (architecture-2 ticket 65): rounds that did not replay the draft gave the centring no pass after
   // the bands' single budget, so an alignment a pass still had to reach is settled once here, before the reseat and the tier-gap solve. It runs when
@@ -353,8 +292,6 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   if (moves && !tookCopy && (replaysOn.get(draft) ?? 0) === draftReplays
     && (draft.diagnostics.some(d => d.code === 'PLACEMENT_NON_CONVERGENCE') || centreViolations(draft).length > 0)) {
     replayRegions(draft);
-    const tail = settleRoom(draft, step => account(`tail:${step}`));
-    if (tail >= CANTON_CREEP) closed = false;
     note('tail:centring', 'settled');
   }
   if (ledger) {

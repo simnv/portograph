@@ -49,26 +49,27 @@
  *    baseline where `render` puts it (`middleSpacing`).
  *
  * Named styles do not exist in the file format — an `<mxStylesheet>` in an `mxfile` is dropped — so
- * every cell carries its own resolved style string. Its colours are resolved from the paint rules the
- * SVG writes as CSS (`resolvePaint` in `render/shared.ts`), so the two renderers read one palette.
+ * every cell carries its own resolved style string. Its paint is resolved from the rules the SVG's
+ * style sheet states — the theme, the sheet's wash rules and the document's `css:` — by the CSS cascade,
+ * on the path of classes the SVG element sits on (`PaintSheet` in `render/shared.ts`), so the two
+ * renderers read one palette. An author rule draw.io cannot carry is named in one warning.
  */
 
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type {
-  Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutPort, PathSegment,
+  Layer, LayoutLabel, LayoutLink, LayoutModel, PathSegment,
 } from '../model/layout.js';
 import type { Meta } from '../model/document.js';
+import type { Diagnostic } from '../model/layout.js';
 import { dotEnds } from './anonymous-end.js';
 import { endpointId, linkIds } from '../model/link-ids.js';
 import { orderedNodeIds } from '../model/model.js';
 import { isDirect } from '../layout/link-labels.js';
-import { nodeSymbolIds } from '../layout/legend.js';
+import { legendLineOverlay, nodeSymbolIds } from '../layout/legend.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
-import {
-  LEGEND_DEFAULT_CLASS, washAssignment, washToken, type WashAssignment,
-} from '../profiles/network/theme.js';
-import { legendKeyRadius, themeById, themeWashFill } from '../profiles/network/themes.js';
+import { washAssignment, washClass } from '../profiles/network/theme.js';
+import { legendKeyRadius, themeById } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
@@ -76,8 +77,11 @@ import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOI
 import { boxesBehind, groupShapes } from './frame-order.js';
 import { backdropColour } from '../profiles/network/theme.js';
 import { linkVisible } from './index.js';
-import { authorClass, element, num } from './svg.js';
-import { iconGlyphBox, paintLookup, pathRuns } from './shared.js';
+import { authorClass, classes, element, num } from './svg.js';
+import {
+  PaintSheet, boxClasses, groupLabelClasses, iconGlyphBox, legendSwatchClass, linkClassToken, paintPath, pathRuns, svgClass,
+  type ElementPaint, type PaintPath,
+} from './shared.js';
 
 /** Stroke width of an icon glyph, matching `DEFAULT_STROKE_WIDTHS.glyph`. */
 const GLYPH_STROKE = DEFAULT_STROKE_WIDTHS.glyph;
@@ -402,6 +406,11 @@ export interface DrawioOptions {
    * older than draw.io 26.0.0 needs, and the only way to get `print`.
    */
   theme?: ThemeMode | 'auto';
+  /**
+   * Receives the export's diagnostics. Today there is one: `DRAWIO_CSS_UNMAPPED` (warning), which lists every rule of the document's
+   * `css:`, or part of one, that draw.io cannot carry, so the SVG and the export differ there and nothing is lost in silence.
+   */
+  onDiagnostic?: (diagnostic: Diagnostic) => void;
 }
 
 type StyleValue = string | number | undefined;
@@ -507,17 +516,11 @@ function middleSpacing(label: LayoutLabel, size: number, offset = 0): number | u
 /** A data URI draw.io can use as an image, with no `;` or `=` to break the style string. */
 const svgImage = (svg: string): string => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
-/**
- * The body colour of the outlined port role, which `portRolePaint` states as `fill: 'none'`.
- *
- * A pill is opaque. In the SVG the outlined pill shows the node body through it — a pill straddles
- * its node's edge, and the theme paints the body behind the inner half — and the overlay mask keeps
- * every other stroke off the box. mxGraph has neither: `fillColor=none` there is a hole through
- * which the connector the pill ends, and the group tint under it, both read. So the export paints
- * the colour the SVG reveals, the node body background of the same mode, and the two agree on what
- * a reader sees. Paired by `dual()` like every other colour, so both appearances stay exact.
- */
-const outlinedFill = (theme: Theme, of: ThemeMode, washes: WashAssignment, nodeClass?: string): string => themeWashFill(theme, washToken(nodeClass), of, washes);
+/** An opacity as a draw.io percentage, or nothing for a fully opaque one (draw.io's default). */
+const percent = (alpha: number): number | undefined => alpha === 1 ? undefined : Math.round(alpha * 100);
+
+/** The value SVG gives a paint property that no rule states: a black fill, no stroke. */
+const initial = (property: string): string => property === 'fill' ? '#000000' : 'none';
 
 const centre = (box: Rect): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
 /** The cell of a label at `box`: the turned label's text rectangle about the box centre (`turnedSize`), or the box. */
@@ -601,9 +604,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   const dual = <T,>(pick: (of: ThemeMode) => T): T => adaptive ? adapt(pick('light'), pick('dark')) : pick(mode);
   // The document's theme (ticket 158); `--theme` picks the mode of it, never the theme.
   const theme: Theme = themeById(layout.document.theme);
-  const paint = dual(of => theme.paint[of]);
-  const washes = washAssignment(orderedNodeIds(layout.document).map(id => authorClass(layout.document.nodes[id]!.class)));
   const document = layout.document;
+  const nodeClassAttrs = orderedNodeIds(document).map(id => authorClass(document.nodes[id]!.class));
+  const washes = washAssignment(nodeClassAttrs);
   const visible = (link: LayoutLink): boolean =>
     linkVisible(layout, link, options.layers ? { layers: options.layers } : {});
 
@@ -658,7 +661,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   };
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
-  const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect | Anchored, colour: string,
+  const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect | Anchored, paint: Readonly<Record<string, StyleValue>>,
     size = labelSize(label), backdrop?: string): void => {
     // draw.io turns a cell's own rectangle about its centre. A turned label (ticket 20) records its
     // text rectangle (`turnedSize`), so the cell is that rectangle about the box centre, and draw.io
@@ -673,7 +676,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       spacingLeft: label.textAlign === 'start' ? -LABEL_SPACING : undefined,
       whiteSpace: 'nowrap', overflow: 'visible', points: '[]', resizable: 0,
       spacingTop: middleSpacing(label, size),
-      fontFamily: FONT_FAMILY, fontSize: size, fontColor: colour,
+      fontFamily: FONT_FAMILY, fontSize: size, ...paint,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       rotation: label.textRotation ? label.textRotation : undefined,
       labelBackgroundColor: backdrop,
@@ -683,36 +686,80 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // ---- paint resolution -------------------------------------------------------------------
   // There is no resolved paint on the model: the SVG renderer states the palette as a class
   // cascade and lets the reader resolve it. A draw.io cell carries its own colours, so each one is
-  // resolved from the same rules (`paintRules`) by the same cascade (`resolvePaint`), on the classes
-  // the SVG element carries. A token the theme does not know, or the order of the tokens, then
-  // changes the paint in neither renderer.
-  const sheet = paintLookup(theme);
-
-  const nodeClassOf = (id: string): string | undefined => authorClass(document.nodes[id]?.class);
-
-  const pillPaintIn = (of: ThemeMode, nodeClass: string | undefined, port: LayoutPort):
-  { fill: string; stroke: string; text: string; dash: string | undefined; opacity: number | undefined } => {
-    const portClass = authorClass(port.class);
-    const pill = sheet(of, 'pill', nodeClass, portClass), fill = pill.get('fill')!;
-    const opacity = sheet(of, 'port', nodeClass, portClass).get('opacity');
-    return {
-      fill: fill === 'none' ? outlinedFill(theme, of, washes, nodeClass) : fill, stroke: pill.get('stroke')!,
-      text: sheet(of, 'pill-label', nodeClass, portClass).get('fill')!,
-      dash: pill.get('stroke-dasharray'), opacity: opacity === undefined ? undefined : Number(opacity),
-    };
+  // resolved from the same rules — the theme, the wash rules and the document's `css:` — by the same
+  // cascade, on the path of classes the SVG element sits on (`PaintSheet`, `paintPath`). A token the
+  // theme does not know, or the order of the tokens, then changes the paint in neither renderer, and an
+  // author rule reaches both.
+  const sheet = new PaintSheet(theme, nodeClassAttrs, document.css);
+  const root = svgClass.root(document.profile);
+  /** A colour of the element at `path`, paired for both appearances when the file adapts. */
+  const colour = (path: PaintPath, property: string): string => dual(of => sheet.at(of, path).get(property) ?? initial(property));
+  /**
+   * A value of the element at `path` that `light-dark()` cannot pair (a dash, an opacity): the file carries the one of its mode, and
+   * light when it adapts. A dark value that differs is then not carried, and an author rule that gives one is named in the warning.
+   */
+  const single = <T,>(path: PaintPath, read: (paint: ElementPaint) => T): T => {
+    const value = read(sheet.at(mode, path));
+    if (adaptive) {
+      if (read(sheet.peek('dark', path)) === value) read(sheet.at('dark', path));
+      else sheet.at('dark', path);
+    }
+    return value;
   };
-  const pillPaint = (nodeClass: string | undefined, port: LayoutPort): ReturnType<typeof pillPaintIn> =>
-    dual(of => pillPaintIn(of, nodeClass, port));
-  /** The tile and glyph paint of an icon of the class `authored`. */
-  const iconPaint = (of: ThemeMode, authored: string | undefined): { tile: { fill: string; stroke: string }; glyph: string } => {
-    const tile = sheet(of, 'icon-tile', authored);
-    return { tile: { fill: tile.get('fill')!, stroke: tile.get('stroke')! }, glyph: sheet(of, 'node-icon', authored).get('stroke')! };
-  };
-  /** The stroke paint of a link line of the class `authored`; an overlay line also carries `overlay-line`. */
-  const linePaint = (of: ThemeMode, authored: string | undefined, overlay: boolean): { stroke: string; dash: string | undefined } => {
-    const line = sheet(of, 'link-line', overlay ? 'overlay-line' : undefined, authored);
-    return { stroke: line.get('stroke')!, dash: line.get('stroke-dasharray') };
-  };
+  /** The opacity the element at `path` is seen at, times its own `fill-opacity` or `stroke-opacity` when one is named. */
+  const alpha = (path: PaintPath, property?: string): number =>
+    single(path, paint => paint.opacity() * Number(property === undefined ? 1 : paint.get(property) ?? 1));
+  /** The fill of a node body of the class `nodeClass`: what an outlined pill shows through it. */
+  const bodyPath = (nodeClass: string | undefined): PaintPath =>
+    paintPath.inNode(root, nodeClass, svgClass.nodeBody(nodeClass, washClass(nodeClass, washes)));
+  /**
+   * The body colour of the outlined port role, which `portRolePaint` states as `fill: 'none'`.
+   *
+   * A pill is opaque. In the SVG the outlined pill shows the node body through it — a pill straddles
+   * its node's edge, and the theme paints the body behind the inner half — and the overlay mask keeps
+   * every other stroke off the box. mxGraph has neither: `fillColor=none` there is a hole through
+   * which the connector the pill ends, and the group tint under it, both read. So the export paints
+   * the colour the SVG reveals, the node body background of the same mode, and the two agree on what
+   * a reader sees. Paired by `dual()` like every other colour, so both appearances stay exact.
+   */
+  const pillFill = (pill: PaintPath, nodeClass: string | undefined): string => dual(of => {
+    const fill = sheet.at(of, pill).get('fill') ?? initial('fill');
+    return fill === 'none' ? sheet.at(of, bodyPath(nodeClass)).get('fill') ?? initial('fill') : fill;
+  });
+  /** The style keys of a text the cell `path` names: its colour, and its opacity when it is not opaque. */
+  const textPaint = (path: PaintPath): Readonly<Record<string, StyleValue>> =>
+    ({ fontColor: colour(path, 'fill'), textOpacity: percent(alpha(path, 'fill-opacity')) });
+  /**
+   * The style keys of a shape the cell `path` names: fill, stroke, their opacities and the dash. `fillOpacity` and `strokeOpacity`
+   * are stated only when a rule makes them other than opaque, so a theme cell is written as before.
+   */
+  const shapePaint = (path: PaintPath): Readonly<Record<string, StyleValue>> => ({
+    fillColor: colour(path, 'fill'), strokeColor: colour(path, 'stroke'),
+    fillOpacity: percent(single(path, paint => Number(paint.get('fill-opacity') ?? 1))),
+    strokeOpacity: percent(single(path, paint => Number(paint.get('stroke-opacity') ?? 1))),
+    opacity: percent(alpha(path)),
+    ...dashEntries(single(path, paint => paint.get('stroke-dasharray'))),
+  });
+  /**
+   * The paint of an icon: its tile and its glyph, at the paths of the SVG's `icon-tile` and `node-icon`. `image` is the glyph colour
+   * of the file's mode, for a profile glyph carried as an image, which cannot adapt.
+   */
+  const iconPaint = (tilePath: PaintPath, glyphPath: PaintPath): {
+    tile: { fill: string; stroke: string }; glyph: string; image: string; tileOpacity: number | undefined; glyphOpacity: number | undefined;
+  } => ({
+    tile: { fill: colour(tilePath, 'fill'), stroke: colour(tilePath, 'stroke') }, glyph: colour(glyphPath, 'stroke'),
+    image: sheet.at(mode, glyphPath).get('stroke') ?? initial('stroke'),
+    tileOpacity: percent(alpha(tilePath)), glyphOpacity: percent(alpha(glyphPath)),
+  });
+  /** The paint of an overlay end mark: its fill and stroke, and its opacity when it is not opaque. */
+  const markPaint = (path: PaintPath): Readonly<Record<string, StyleValue>> =>
+    ({ fillColor: colour(path, 'fill'), strokeColor: colour(path, 'stroke'), opacity: percent(alpha(path)) });
+  /** The text of a node: its name or its description. */
+  const nodeTextPath = (nodeClass: string | undefined, role: 'node-label' | 'node-description'): PaintPath =>
+    paintPath.inNode(root, nodeClass, classes(role, nodeClass));
+  /** The text of the labels layer at `box`: its halo depth class is the one the SVG gives it (`boxesBehind`). */
+  const labelPath = (structural: string, box: Rect, authored: string | undefined): PaintPath =>
+    paintPath.label(root, classes(structural, svgClass.halo(boxesBehind(shapes, centre(box))), authored));
 
   /** A dash pattern the model states in absolute pixels; `fixDash` stops draw.io scaling it. */
   const dashEntries = (dash: string | undefined): Readonly<Record<string, StyleValue>> =>
@@ -742,7 +789,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // it. The rectangle is inert: it takes no pointer events and is locked, so it is backdrop rather
   // than furniture.
   vertex(cellId('canvas'), layerId('canvas'), styleString([], {
-    fillColor: paint.background, strokeColor: 'none', points: '[]',
+    fillColor: colour(paintPath.canvas(root), 'fill'), strokeColor: 'none', points: '[]',
     pointerEvents: 0, locked: 1, movable: 0, resizable: 0, deletable: 0, editable: 0, connectable: 0,
   }), { x: 0, y: 0, width: canvas.width, height: canvas.height });
 
@@ -767,8 +814,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     layout.labels.find(label => label.role === 'group' && !label.omitted
       && label.owner.kind === 'group' && label.owner.id === owner);
 
-  for (const { id, bounds, frame } of shapes) {
+  for (const shape of shapes) {
+    const { id, bounds, frame } = shape;
     const box = shiftRect(bounds);
+    const { authored: groupClass, uniform } = boxClasses(layout, shape);
+    const boxPath = paintPath.groupBox(root, groupClass, uniform);
+    // A group box always states its fill opacity, the theme's group tint.
+    const { fillColor, strokeColor, ...boxRest } = shapePaint(boxPath);
+    const fillOpacity = Math.round(single(boxPath, paint => Number(paint.get('fill-opacity') ?? 1)) * 100);
     const band = layout.labelBands.find(item => item.group === id);
     const title = groupTitle(band?.host ?? id);
     // A swimlane's title is its own value, which is what makes the group editable as a group. The
@@ -785,6 +838,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         && Math.abs(band.side === 'top' ? band.bounds.y - bounds.y
           : band.bounds.y + band.bounds.height - bounds.y - bounds.height) <= 0.5));
     const swimlane = centred ? band! : undefined;
+    // The title's paint is that of the SVG's group label (`groupLabelClasses`), wherever draw.io puts the text.
+    const titlePaint = title === undefined ? {} : textPaint(labelPath('group-label', title.bounds!, groupLabelClasses(layout, title)));
     const style = swimlane
       ? styleString(['swimlane'], {
         whiteSpace: 'nowrap', container: 1, collapsible: 0, rounded: 1,
@@ -796,29 +851,28 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         align: 'center', verticalAlign: 'middle',
         // The head is centred on the band, which may sit up to half a pixel off the title's centre.
         spacingTop: middleSpacing(title!, labelSize(title!), centre(swimlane.bounds).y - centre(title!.bounds!).y),
-        fontFamily: FONT_FAMILY, fontSize: labelSize(title!), fontColor: paint.group.text,
+        fontFamily: FONT_FAMILY, fontSize: labelSize(title!), ...titlePaint,
         fontStyle: title!.fontWeight === 700 ? 1 : undefined,
         swimlaneLine: 0,
         // On a swimlane `fillColor` paints the head and `swimlaneFillColor` the body, the reverse
         // of what the format's own style reference says. Both take the group fill.
-        fillColor: paint.group.fill, swimlaneFillColor: paint.group.fill,
-        strokeColor: paint.group.stroke, fillOpacity: Math.round(paint.group.fillOpacity * 100),
+        fillColor, swimlaneFillColor: fillColor,
+        strokeColor, ...boxRest, fillOpacity,
       })
       : styleString([], {
         container: 1, collapsible: 0, rounded: 1,
         absoluteArcSize: 1, arcSize: theme.radii.group * 2,
-        fillColor: paint.group.fill, strokeColor: paint.group.stroke,
-        fillOpacity: Math.round(paint.group.fillOpacity * 100),
+        fillColor, strokeColor, ...boxRest, fillOpacity,
         verticalAlign: 'top', align: 'center',
       });
     const holder = frame ? frameParent.get(id) : undefined;
     vertex(cellId('group', id), holder === undefined ? layerId('diagram') : cellId('group', holder), style,
       holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? plainText(labelLines(title!)) : undefined);
     if (title && crossed) {
-      textCell(cellId('groupTitle', id), layerId('labels'), title, shiftRect(title.bounds!), paint.group.text, undefined, backdrop(centre(title.bounds!)));
+      textCell(cellId('groupTitle', id), layerId('labels'), title, shiftRect(title.bounds!), titlePaint, undefined, backdrop(centre(title.bounds!)));
     } else if (title && !swimlane) {
       textCell(cellId('groupTitle', id), cellId('group', id), title,
-        relative(shiftRect(title.bounds!), box), paint.group.text);
+        relative(shiftRect(title.bounds!), box), titlePaint);
     }
   }
 
@@ -831,7 +885,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const group = cellId('group', frame?.id ?? cell.id);
     const box = shiftRect(node.bounds!);
     const origin = shift(frame?.box ?? cell.bounds!);
-    const authored = nodeClassOf(id);
+    const authored = authorClass(document.nodes[id]?.class);
     // Every port anchor is mirrored into `points=` so the editor offers the anchors the pipeline
     // actually used. It constrains nothing — the edges pin themselves — but without it a user
     // dragging a new connector gets draw.io's four default anchors instead of this node's ports.
@@ -889,7 +943,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // copies and accepts a drop as one thing, which is what a node is.
       container: 1, collapsible: 0,
       rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.node * 2,
-      whiteSpace: 'nowrap', fillColor: dual(of => themeWashFill(theme, washToken(authored), of, washes)), strokeColor: paint.node.stroke,
+      whiteSpace: 'nowrap', ...shapePaint(bodyPath(authored)),
       strokeWidth: node.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node,
       points: `[${[...anchors].join(',')}]`,
       ...(named === undefined ? {} : {
@@ -904,7 +958,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // `spacingLeft` states the rest of the measured offset.
         ...(card ? { spacingLeft: finite(named!.bounds!.x - node.bounds!.x - LABEL_SPACING) }
           : across > 0 ? { spacingLeft: finite(2 * across) } : across < 0 ? { spacingRight: finite(-2 * across) } : {}),
-        fontFamily: FONT_FAMILY, fontSize: nameSize, fontColor: paint.node.text,
+        fontFamily: FONT_FAMILY, fontSize: nameSize, ...textPaint(nodeTextPath(authored, 'node-label')),
         fontStyle: (named.fontWeight ?? 700) === 700 ? 1 : undefined,
       }),
     }), relative(box, origin), named === undefined ? undefined : plainText(labelLines(named)), {},
@@ -915,7 +969,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }, document.nodes[id]?.meta));
     if (described !== undefined) {
       textCell(cellId('nodeDescription', id), cellId('node', id), described,
-        asName(relative(shiftRect(described.bounds!), shift(node.bounds!)), size, card), paint.node.description,
+        asName(relative(shiftRect(described.bounds!), shift(node.bounds!)), size, card), textPaint(nodeTextPath(authored, 'node-description')),
         finite(described.fontSize ?? NODE_DESCRIPTION_SIZE));
     }
 
@@ -923,8 +977,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const tile = relative(shiftRect(node.icon.bounds), shift(node.bounds!));
       // A card tile (ticket 159) states its own glyph inset and radius; the stacked tile takes the renderer's and the theme's.
       const ownInset = node.icon.inset, tileRadius = node.icon.radius ?? theme.radii.tile;
-      const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => iconPaint(of, authored);
-      const resolved = dual(pick);
+      const resolved = iconPaint(paintPath.inNode(root, authored, classes('icon-tile', authored)),
+        paintPath.inNode(root, authored, classes('node-icon', authored)));
       const native = iconSet === 'cisco19' ? CISCO19[iconKey(node.icon.icon)] : undefined;
       // The icon is bound like a link label: by the node it belongs to, so a dashboard can colour
       // the icon rather than the whole node. The tile behind a silhouette stays unbound.
@@ -934,7 +988,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         if (native.kind === 'silhouette' && positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
             rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
-            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', opacity: resolved.tileOpacity,
           }), asName(tile, size, card));
         }
         // The glyph sits in the box the SVG draws its glyph in (`iconGlyphBox`): the inset is at most a
@@ -950,13 +1004,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             // filled with the glyph colour and has no frame to stroke.
             fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
             strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
+            opacity: native.kind === 'badge' ? resolved.tileOpacity : resolved.glyphOpacity,
           }), asName(box, size, card), undefined, {}, iconBinding);
         }
       } else {
         if (positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
             rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
-            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', opacity: resolved.tileOpacity,
           }), asName(tile, size, card));
         }
         // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
@@ -965,11 +1020,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         const inner = glyphInset(tile, ownInset);
         if (inner) {
           const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
-            + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
+            + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${resolved.image}"`
             + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
             shape: 'image', imageAspect: 0, points: '[]',
-            image: svgImage(glyph),
+            image: svgImage(glyph), opacity: resolved.glyphOpacity,
           }), asName(inner, size, card), undefined, {}, iconBinding);
         }
       }
@@ -980,7 +1035,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     for (const port of node.ports) {
       if (!port.pill || port.ref.anonymous === true) continue;
       const identity = [id, port.ref.name!, String(port.ref.ordinal)];
-      const resolved = pillPaint(authored, port);
+      // The port's own tokens follow the node class on the port group, the pill and its label, as in the SVG.
+      const portClass = classes(authored, authorClass(port.class)) || undefined;
+      const pillPath = paintPath.inPort(root, authored, portClass, svgClass.pill(portClass));
+      const pillShape = shapePaint(pillPath);
       // The editor offers the one anchor this port's links leave from, so a connector a user draws
       // by hand starts where every exported connector starts.
       const outward = port.side ? OUTWARD[port.side] : undefined;
@@ -1001,21 +1059,23 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // invisible. Also measured.
       vertex(cellId('port', ...identity), cellId('node', id), styleString([], {
         rounded: 1, absoluteArcSize: 1, arcSize: port.pill.radius * 2,
-        fillColor: resolved.fill, strokeColor: resolved.stroke,
+        fillColor: pillFill(pillPath, authored), strokeColor: pillShape.strokeColor,
+        fillOpacity: pillShape.fillOpacity, strokeOpacity: pillShape.strokeOpacity,
         strokeWidth: DEFAULT_STROKE_WIDTHS.pill,
         points: outward ? `[[${num(outward.x)},${num(outward.y)},0]]` : '[]',
         // A pill dragged loose snaps back onto one of the node's connection points, which are the
         // port anchors the pipeline itself allocated — so a hand edit lands on the grid the layout
         // reserved rather than near it.
         snapToPoint: 1,
-        opacity: resolved.opacity === undefined ? undefined : Math.round(resolved.opacity * 100),
-        ...dashEntries(resolved.dash),
+        // A faded port (`.port.unused`) fades its pill and the pill's name, as the SVG fades the port group.
+        opacity: pillShape.opacity,
+        ...dashEntries(single(pillPath, paint => paint.get('stroke-dasharray'))),
         ...(shown ? {
           verticalAlign: 'middle', align: 'center', whiteSpace: 'nowrap', overflow: 'visible',
           // `horizontal=0` turns `spacingTop` with the text, as `rotation=` does.
           spacingTop: shown.bounds && middleSpacing(shown, labelSize(shown), port.pill.textRotation === -90
             ? centre(port.pill.bounds).x - centre(shown.bounds).x : centre(port.pill.bounds).y - centre(shown.bounds).y),
-          fontFamily: FONT_FAMILY, fontSize: labelSize(shown), fontColor: resolved.text,
+          fontFamily: FONT_FAMILY, fontSize: labelSize(shown), ...textPaint(paintPath.inPort(root, authored, portClass, classes('pill-label', portClass))),
           fontStyle: shown.fontWeight === 700 ? 1 : undefined,
           horizontal: port.pill.textRotation === -90 ? 0 : undefined,
         } : {}),
@@ -1030,10 +1090,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
 
   // ---- links --------------------------------------------------------------------------------
   const byId = new Map(layout.links.map(link => [link.id, link]));
-  const linkClass = (link: LayoutLink): string | undefined => {
-    const value = document.links[link.sourceIndex]?.class;
-    return value === '' ? undefined : authorClass(value);
-  };
+  const linkClass = (link: LayoutLink): string | undefined => linkClassToken(layout, link);
 
   /**
    * The polylines a path draws: one per run of segments whose ends meet, as `pathData` splits.
@@ -1173,6 +1230,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * further −90 on top of it rather than replacing it, so a child states its angle once, in
    * `rotation=`, and never sets `horizontal`.
    */
+  /** The path of a link label in the SVG: the labels layer, with the class of the link that owns it (none for a bundle's count). */
+  const linkLabelPath = (label: LayoutLabel, multiplicity: boolean, link: LayoutLink | undefined): PaintPath =>
+    labelPath(classes('link-label', multiplicity ? 'multiplicity-label' : undefined), label.bounds!, link && linkClass(link));
   const labelStyle = (label: LayoutLabel, at: Point, carrier: 'edge' | 'child', link: LayoutLink): Readonly<Record<string, StyleValue>> => {
     // A label on a direct line (ticket 16) lies on it in either mode, so it always hides the line behind its glyphs.
     const segment = label.support?.kind === 'link-segment' ? link.path?.segments[label.support.segment] : undefined;
@@ -1185,7 +1245,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       ...(on ? { spacing: LABEL_MARGIN } : {}),
       align: 'center', verticalAlign: 'middle',
       fontFamily: FONT_FAMILY, fontSize: labelSize(label),
-      fontColor: multiplicity ? paint.link.multiplicity : paint.link.label,
+      ...textPaint(linkLabelPath(label, multiplicity, link)),
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       // The label is centred on its point, and the shift that puts its baseline where `render`
       // does turns with the text — except on an edge's own `horizontal=0` label, which draw.io
@@ -1266,6 +1326,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // An overlay link of a class the theme names (`signal`) takes that class's stroke and dash, as the SVG's
     // `.link-line.<class>` rule beats `.overlay-line`; sync, flow and unknown classes keep the overlay stroke.
     const runs = polylines(link.path!.segments);
+    const linePath = paintPath.linkLine(root, authored, overlay);
+    const lineStroke = colour(linePath, 'stroke');
+    // A bare end's dot is drawn in the connector's own stroke; the SVG dot takes its `.link-line` rules, so a rule that gives the
+    // dot alone another stroke (`.link-dot`) is not carried and is named in the warning.
+    if (dotEnds(layout.document, link).length) {
+      const dot = paintPath.linkDot(root, authored, overlay);
+      if (dual(of => sheet.peek(of, dot).get('stroke') ?? initial('stroke')) === lineStroke) colour(dot, 'stroke');
+      else sheet.at(mode, dot);
+    }
     const from = link.attachments?.from, to = link.attachments?.to;
     const head = from ? terminal('exit', from) : undefined;
     const tail = to ? terminal('entry', to) : undefined;
@@ -1320,10 +1389,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         edgeStyle: square ? 'orthogonalEdgeStyle' : 'none',
         jettySize: square ? 0 : undefined,
         rounded: 0, endArrow: 'none', startArrow: 'none',
-        strokeColor: dual(of => linePaint(of, authored, overlay).stroke),
+        strokeColor: lineStroke,
         strokeWidth: linkStrokeWidth(link),
-        opacity: overlay ? Math.round(paint.overlay.opacity * 100) : undefined,
-        ...dashEntries(linePaint(mode, authored, overlay).dash),
+        // The line is seen at its `stroke-opacity` (the overlay's, `.overlay-line`) times every `opacity` above it. An overlay
+        // connector always states it.
+        opacity: overlay ? Math.round(alpha(linePath, 'stroke-opacity') * 100) : percent(alpha(linePath, 'stroke-opacity')),
+        ...dashEntries(single(linePath, paint => paint.get('stroke-dasharray'))),
         ...(source ? dotMarker(link, 'from') : {}),
         ...(target ? dotMarker(link, 'to') : {}),
         ...(source?.style ?? {}),
@@ -1364,8 +1435,35 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
         vertex(cellId('overlayMark', stableId(link), mark.end), mark.host?.cell ?? layerId('overlay'),
           styleString(['ellipse'], {
-            fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]',
+            ...markPaint(paintPath.overlayEndpoint(root, authored)), points: '[]',
           }), mark.host ? relative(box, mark.host.box) : box);
+      }
+    }
+  }
+
+  // ---- merge trunks -------------------------------------------------------------------------
+  // The SVG paints a merge trunk once, as its own line under `.merge-run`, and takes it out of each member's line; draw.io draws each
+  // member's whole path. A rule that paints the trunk unlike the lines of its members is therefore not carried, and is named in the
+  // warning; a trunk painted like its members is carried by their connectors.
+  const strokeLook = (path: PaintPath): string => JSON.stringify([...(adaptive ? ['light', 'dark'] as const : [mode]).map(of => sheet.peek(of, path).get('stroke')),
+    sheet.peek(mode, path).get('stroke-dasharray'), sheet.peek(mode, path).opacity() * Number(sheet.peek(mode, path).get('stroke-opacity') ?? 1)]);
+  for (const bundle of layout.bundles) {
+    for (const run of bundle.mergeRuns ?? []) {
+      const members = run.members.map(id => byId.get(id)).filter((link): link is LayoutLink => link !== undefined);
+      if (!members.some(visible)) continue;
+      const shared = new Set(members.map(member => linkClass(member)));
+      const authored = shared.size === 1 ? [...shared][0] : undefined;
+      const trunk: PaintPath = [root, 'links', classes('merge-run', authored), svgClass.linkLine(authored, false)];
+      const lines = members.filter(visible).map(member => paintPath.linkLine(root, linkClass(member), effectiveLayer(member) === 'overlay'));
+      if (lines.every(line => strokeLook(line) === strokeLook(trunk))) {
+        colour(trunk, 'stroke'); single(trunk, paint => paint.get('stroke-dasharray')); alpha(trunk, 'stroke-opacity');
+        continue;
+      }
+      // The trunk and a member's line differ, and draw.io draws both as the member's connector: the author rules that paint
+      // either one are lost, on the trunk or on the member's own part of the line.
+      const painted = ['stroke', 'stroke-dasharray', 'stroke-opacity', 'opacity'];
+      for (const of of adaptive ? ['light', 'dark'] as const : [mode]) {
+        for (const path of [trunk, ...lines]) sheet.notCarried(of, path, painted, 'a merge trunk painted unlike its members');
       }
     }
   }
@@ -1378,16 +1476,20 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     if (bus.bar === undefined || bus.stubs === undefined) continue;
     const first = bus.members.map(id => byId.get(id)).find(link => link !== undefined && visible(link));
     if (first === undefined) continue;
-    const authored = linkClass(first);
-    const stroke = (square: boolean, extra: Readonly<Record<string, StyleValue>> = {}): string => styleString([], {
-      edgeStyle: square ? 'orthogonalEdgeStyle' : 'none', jettySize: square ? 0 : undefined,
-      rounded: 0, endArrow: 'none', startArrow: 'none',
-      strokeColor: dual(of => linePaint(of, authored, true).stroke),
-      strokeWidth: linkStrokeWidth(first),
-      opacity: Math.round(paint.overlay.opacity * 100),
-      ...dashEntries(linePaint(mode, authored, true).dash),
-      ...extra,
-    });
+    // The bus takes the class of its first member, as the SVG's bus group does.
+    const authored = linkClass(byId.get(bus.members[0]!) ?? first);
+    const stroke = (square: boolean, extra: Readonly<Record<string, StyleValue>> = {}, piece?: 'riser' | 'trunk'): string => {
+      const busPath = paintPath.busLine(root, authored, piece);
+      return styleString([], {
+        edgeStyle: square ? 'orthogonalEdgeStyle' : 'none', jettySize: square ? 0 : undefined,
+        rounded: 0, endArrow: 'none', startArrow: 'none',
+        strokeColor: colour(busPath, 'stroke'),
+        strokeWidth: linkStrokeWidth(first),
+        opacity: Math.round(alpha(busPath, 'stroke-opacity') * 100),
+        ...dashEntries(single(busPath, paint => paint.get('stroke-dasharray'))),
+        ...extra,
+      });
+    };
     // Every end of the bus geometry is a joint: a 2 px invisible, locked vertex, a child of a member's node or pill and
     // stated from its top-left, so a node dragged by hand carries its stub's end and its piece of the bar with it. A free
     // end (`sourcePoint`/`targetPoint`) stays behind, and draw.io shows it as a loose handle (issue 04).
@@ -1449,7 +1551,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
       vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),
-        styleString(['ellipse'], { fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]' }),
+        styleString(['ellipse'], { ...markPaint(paintPath.overlayEndpoint(root, authorClass(bus.class))), points: '[]' }),
         pill ? relative(box, pill.box) : box);
     }
     // The bar, one piece between each two neighbouring joints.
@@ -1464,7 +1566,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const riser = [shift(bus.riser.from), shift(bus.riser.to)];
       const lower = layout.meshBuses?.find(other => other.id === bus.joined);
       const riserFrom = jointAt(mine, riser[0]!), riserTo = lower ? jointAt(spots(lower), riser[1]!) : undefined;
-      edgeCell(cellId('busRiser', bus.id), layerId('overlay'), stroke(false, pinned(riserFrom, riserTo)), riser,
+      edgeCell(cellId('busRiser', bus.id), layerId('overlay'), stroke(false, pinned(riserFrom, riserTo), 'riser'), riser,
         { source: riserFrom, target: riserTo, sourcePoint: riserFrom ? undefined : riser[0], targetPoint: riserTo ? undefined : riser[1] });
     }
     // The trunk of a three-row join is `N - 1` pieces, one per pair of neighbouring bars, exported with the head bus (mesh-bus.md, section 12.7);
@@ -1475,13 +1577,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const ends = joins.map((at, index) => { const bar = bars[index]; return bar === undefined ? undefined : jointAt(spots(bar), shift(at)); });
       for (let index = 0; index + 1 < joins.length; index++) {
         const piece = [shift(joins[index]!), shift(joins[index + 1]!)], from = ends[index], to = ends[index + 1];
-        edgeCell(cellId('busTrunk', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(from, to)), piece,
+        edgeCell(cellId('busTrunk', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(from, to), 'trunk'), piece,
           { source: from, target: to, sourcePoint: from ? undefined : piece[0], targetPoint: to ? undefined : piece[1] });
       }
     }
     const label = layout.labels.find(item => item.id === bus.label);
     if (label !== undefined && !label.omitted && label.bounds !== undefined) {
-      textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds), paint.link.label, undefined, backdrop(centre(label.bounds)));
+      textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds),
+        textPaint(labelPath(classes('link-label', 'mesh-bus-label'), label.bounds, authorClass(bus.class))), undefined, backdrop(centre(label.bounds)));
     }
   }
 
@@ -1505,7 +1608,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const bundle = label.owner.id;
       if (!drawn.some(item => item.bundle === bundle)) continue;
       textCell(cellId('linkLabel', label.id), layerId('labels'), label, shiftRect(label.bounds),
-        paint.link.multiplicity, undefined, backdrop(centre(label.bounds)));
+        textPaint(linkLabelPath(label, true, undefined)), undefined, backdrop(centre(label.bounds)));
       continue;
     }
     const run = ids[runFor(label, link, ids)]!;
@@ -1548,45 +1651,48 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           spacingLeft: shiftRect(shown.bounds!).x - outer.x - LABEL_SPACING,
           // The row is centred on the swatch and the caption together, not on the caption alone.
           spacingTop: middleSpacing(shown, labelSize(shown), centre(outer).y - centre(shiftRect(shown.bounds!)).y),
-          fontFamily: FONT_FAMILY, fontSize: labelSize(shown), fontColor: paint.legend.text,
+          fontFamily: FONT_FAMILY, fontSize: labelSize(shown),
+          ...textPaint(paintPath.inLegend(root, entry.kind, entry.key,
+            classes('legend-label', svgClass.halo(boxesBehind(shapes, centre(shown.bounds!)))))),
           fontStyle: shown.fontWeight === 700 ? 1 : undefined,
         } : {}),
       }), row, shown ? plainText(labelLines(shown)) : undefined);
       const swatch = relative(shiftRect(entry.swatch), outer);
+      const keyClass = legendSwatchClass(entry.kind, entry.key);
+      const inEntry = (leaf: string): PaintPath => paintPath.inLegend(root, entry.kind, entry.key, leaf);
       if (entry.kind === 'line') {
-        const key = entry.key === LEGEND_DEFAULT_CLASS ? undefined : authorClass(entry.key);
+        // The sample takes the paint its links take: an overlay line when every link the row keys is one (audit A1-16).
+        const linePath = inEntry(svgClass.linkLine(keyClass, legendLineOverlay(layout, entry.key)));
         // `shape=line` draws the sample across its own box, so the swatch is a vertex like every
         // other one and sits in the row rather than floating over it.
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
           shape: 'line', points: '[]',
-          strokeColor: dual(of => linePaint(of, key, false).stroke), strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
-          ...dashEntries(linePaint(mode, key, false).dash),
+          strokeColor: colour(linePath, 'stroke'), strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
+          opacity: percent(alpha(linePath, 'stroke-opacity')),
+          ...dashEntries(single(linePath, paint => paint.get('stroke-dasharray'))),
         }), swatch);
       } else if (entry.kind === 'port') {
         // A role's swatch is a pill drawn with the role class, so it takes the same paint as the pills. The
         // legend has to name what the diagram draws, so an outlined role's swatch takes the same opaque
         // body the pill takes; see `outlinedFill`.
-        const resolved = dual(of => {
-          const pill = sheet(of, 'pill', authorClass(entry.key)), fill = pill.get('fill')!;
-          return { fill: fill === 'none' ? outlinedFill(theme, of, washes) : fill, stroke: pill.get('stroke')! };
-        });
+        const pillPath = inEntry(svgClass.pill(keyClass)), pillShape = shapePaint(pillPath);
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
           rounded: 1, absoluteArcSize: 1,
           arcSize: (entry.radius ?? CORNER_RADII.pill) * 2,
-          fillColor: resolved.fill,
-          strokeColor: resolved.stroke,
+          fillColor: pillFill(pillPath, undefined),
+          strokeColor: pillShape.strokeColor,
           strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
+          opacity: pillShape.opacity, ...dashEntries(single(pillPath, paint => paint.get('stroke-dasharray'))),
         }), swatch);
       } else if (entry.icon) {
         // The key shows the class's body wash behind its tile, as a node of the class shows it.
         const body = swatch, grow = 2;
         vertex(cellId('legendBody', entry.id), cellId('legendRow', entry.id), styleString([], {
           rounded: 1, absoluteArcSize: 1, arcSize: legendKeyRadius(theme, grow) * 2,
-          fillColor: dual(of => themeWashFill(theme, washToken(authorClass(entry.key)), of, washes)), strokeColor: paint.node.stroke,
+          ...shapePaint(inEntry(svgClass.nodeBody(keyClass, washClass(keyClass, washes)))),
           strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
         }), { x: body.x - grow, y: body.y - grow, width: body.width + 2 * grow, height: body.height + 2 * grow });
-        const pick = (of: ThemeMode): { tile: { fill: string; stroke: string }; glyph: string } => iconPaint(of, authorClass(entry.key));
-        const resolved = dual(pick);
+        const resolved = iconPaint(inEntry(classes('icon-tile', keyClass)), inEntry(classes('node-icon', keyClass)));
         const native = iconSet === 'cisco19' ? CISCO19[iconKey(entry.icon)] : undefined;
         if (native) {
           // The legend has to name what the diagram draws, so it takes the same glyph in the same
@@ -1594,7 +1700,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           if (native.kind === 'silhouette' && positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
               rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
-              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', opacity: resolved.tileOpacity,
             }), swatch);
           }
           const box = glyphBox(swatch, native);
@@ -1605,22 +1711,23 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
               ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
               fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
               strokeColor: native.kind === 'badge' ? resolved.glyph : 'none',
+              opacity: native.kind === 'badge' ? resolved.tileOpacity : resolved.glyphOpacity,
             }), box);
           }
         } else {
           if (positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
               rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
-              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', opacity: resolved.tileOpacity,
             }), swatch);
           }
           const inner = glyphInset(swatch);
           if (inner) {
             const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">`
-              + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${pick(mode).glyph}"`
+              + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${resolved.image}"`
               + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
             vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-              shape: 'image', imageAspect: 0, points: '[]', image: svgImage(glyph),
+              shape: 'image', imageAspect: 0, points: '[]', image: svgImage(glyph), opacity: resolved.glyphOpacity,
             }), inner);
           }
         }
@@ -1641,10 +1748,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // colour — `light-dark()` belongs in a style string, which is where every other colour here
     // goes. So this one states the chosen palette's backdrop and lets draw.io's own inversion
     // darken it, which for a flat backdrop is exactly what inversion is good at.
-    math: 0, shadow: 0, background: theme.paint[mode].background,
+    math: 0, shadow: 0, background: sheet.peek(mode, paintPath.canvas(root)).get('fill') ?? 'none',
   }, element('root', {}, cellElement({ id: claim('0') }, undefined, binding({ 'pg-schema': BINDING_SCHEMA }, document.meta))
     + layers + cells.map(cell => typeof cell === 'string' ? cell : cell()).join('')));
   const title = document.title ?? 'portograph';
+  // Every cell has read its paint now, so what the author's rules gave and no cell carries is known.
+  const unmapped = sheet.unmapped();
+  if (unmapped.length) {
+    options.onDiagnostic?.({ stage: 'render', severity: 'warning', code: 'DRAWIO_CSS_UNMAPPED',
+      message: `draw.io cannot carry ${unmapped.length} part(s) of css:, which the SVG applies: ${unmapped.join('; ')}` });
+  }
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
     + element('mxfile', { host: 'portograph' },
       element('diagram', { id: 'pg-diagram', name: title }, model)) + '\n';
