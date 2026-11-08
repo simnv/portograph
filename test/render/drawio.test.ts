@@ -66,6 +66,11 @@ interface Cell {
   /** The ends the edge leaves free (`sourcePoint`, `targetPoint`): a free end stays behind when a node moves. */
   free: string[];
   offset?: Point;
+  /**
+   * A `relative="1"` vertex in a vertex (a pill, an icon, a description: issue 07), resolved the way
+   * mxGraph draws it: the parent's size times the fraction, plus the offset, from the parent's top-left.
+   */
+  at?: Point;
 }
 
 /** A generated part carries every lock a joint carries (DX-12). */
@@ -114,11 +119,19 @@ function cells(xml: string): Map<string, Cell> {
       ...(offsetTag ? { offset: { x: Number(offsetTag[1]), y: Number(offsetTag[2]) } } : {}),
     });
   }
+  for (const cell of found.values()) {
+    const parent = cell.parent === undefined ? undefined : found.get(cell.parent);
+    if (!cell.vertex || cell.geometry['relative'] !== '1' || !parent?.vertex) continue;
+    cell.at = {
+      x: Number(cell.geometry['x'] ?? 0) * Number(parent.geometry['width'] ?? 0) + (cell.offset?.x ?? 0),
+      y: Number(cell.geometry['y'] ?? 0) * Number(parent.geometry['height'] ?? 0) + (cell.offset?.y ?? 0),
+    };
+  }
   return found;
 }
 
 const box = (cell: Cell): { x: number; y: number; width: number; height: number } => ({
-  x: Number(cell.geometry['x'] ?? 0), y: Number(cell.geometry['y'] ?? 0),
+  x: cell.at?.x ?? Number(cell.geometry['x'] ?? 0), y: cell.at?.y ?? Number(cell.geometry['y'] ?? 0),
   width: Number(cell.geometry['width'] ?? 0), height: Number(cell.geometry['height'] ?? 0),
 });
 
@@ -712,8 +725,8 @@ describe('link labels', () => {
   const absolute = (all: Map<string, Cell>, key: string): { x: number; y: number; width: number; height: number } => {
     let at: Cell | undefined = all.get(key), x = 0, y = 0;
     while (at) {
-      x += Number(at.geometry['x'] ?? 0);
-      y += Number(at.geometry['y'] ?? 0);
+      x += box(at).x;
+      y += box(at).y;
       at = at.parent === undefined ? undefined : all.get(at.parent);
     }
     return { ...box(all.get(key)!), x, y };
@@ -1903,5 +1916,94 @@ describe('a sheet class wash reads the same in the SVG and in draw.io (ticket 09
     // The key paints the wash behind a class's tile, in both.
     expect(svg).toMatch(/<rect class="node-body switch pg-wash-\d+/);
     expect([...all.values()].filter(cell => cell.id.startsWith('pg-legendBody~')).length).toBeGreaterThan(0);
+  }, 60000);
+});
+
+describe('a pill stays on its face when its node is resized (drawio-export 07)', () => {
+  /**
+   * Where mxGraph draws a `relative="1"` child of a node of size `size`: the node's top-left plus the fraction of its size plus
+   * the offset. The exported fraction and offset, read back, under the node size a maintainer's resize leaves.
+   */
+  const drawnIn = (cell: Cell, size: { width: number; height: number }): Point => ({
+    x: Number(cell.geometry['x']) * size.width + (cell.offset?.x ?? 0),
+    y: Number(cell.geometry['y']) * size.height + (cell.offset?.y ?? 0),
+  });
+  const RESIZES = [{ dw: 40, dh: 30 }, { dw: -20, dh: -10 }];
+
+  it.each(['drawio-face-children-stay-on-resize', 'a-card-node-holds-its-ports-on-every-face', 'a-theme-paints-and-moves-nothing'])(
+    'keeps each pill on its face, a fixed px distance from the nearer corner, and the icon and description with the name (%s)', async name => {
+      const model = await pipeline(fixture(name));
+      const all = cells(drawio(model));
+      let pills = 0, followers = 0;
+      for (const [key, node] of Object.entries(model.nodes)) {
+        const nodeCell = all.get(id('node', key))!;
+        const size = { width: node.bounds!.width, height: node.bounds!.height };
+        // A card (ticket 159) starts its text at the left: its name and description say `textAlign: start`.
+        const card = model.labels.some(label => label.owner.kind === 'node' && label.owner.id === key
+          && (label.role === 'node' || label.role === 'description') && label.textAlign === 'start');
+        if (name === 'a-card-node-holds-its-ports-on-every-face') expect(card, key).toBe(nodeCell.style['align'] === 'left');
+        for (const port of node.ports) {
+          if (!port.pill || port.ref.anonymous === true) continue;
+          const cell = all.get(id('port', key, port.ref.name!, String(port.ref.ordinal)))!;
+          pills++;
+          expect(cell.geometry['relative'], cell.id).toBe('1');
+          // Before any edit the pill is where the layout put it.
+          const pill = port.pill.bounds, local = { x: pill.x - node.bounds!.x, y: pill.y - node.bounds!.y };
+          const at = drawnIn(cell, size);
+          expect(at.x, cell.id).toBeCloseTo(local.x, 6);
+          expect(at.y, cell.id).toBeCloseTo(local.y, 6);
+          const horizontal = port.side === 'top' || port.side === 'bottom';
+          // The face across: the side the pipeline decided.
+          expect(Number(cell.geometry[horizontal ? 'y' : 'x']), cell.id).toBe(port.side === 'bottom' || port.side === 'right' ? 1 : 0);
+          // Along the face: the nearer corner, the start on a tie.
+          const start = horizontal ? local.x : local.y, extent = horizontal ? pill.width : pill.height;
+          const along = horizontal ? size.width : size.height;
+          const far = start + extent / 2 > along / 2;
+          expect(Number(cell.geometry[horizontal ? 'x' : 'y']), cell.id).toBe(far ? 1 : 0);
+          for (const { dw, dh } of RESIZES) {
+            const resized = { width: size.width + dw, height: size.height + dh };
+            const moved = drawnIn(cell, resized);
+            // On its face: the pill's centre stays on the face line it straddled.
+            const across = horizontal ? moved.y + pill.height / 2 - (port.side === 'bottom' ? resized.height : 0)
+              : moved.x + pill.width / 2 - (port.side === 'right' ? resized.width : 0);
+            const before = horizontal ? local.y + pill.height / 2 - (port.side === 'bottom' ? size.height : 0)
+              : local.x + pill.width / 2 - (port.side === 'right' ? size.width : 0);
+            expect(across, `${cell.id} ${dw}/${dh}`).toBeCloseTo(before, 6);
+            // Its corner distance along the face is kept.
+            const corner = (from: number, length: number): number => (far ? length - from - extent : from);
+            expect(corner(horizontal ? moved.x : moved.y, horizontal ? resized.width : resized.height), `${cell.id} ${dw}/${dh}`)
+              .toBeCloseTo(corner(start, along), 6);
+          }
+        }
+        // The icon and the description follow the name: from the top, centred, or from the left on a card.
+        for (const kind of ['icon', 'iconTile', 'nodeDescription']) {
+          const cell = all.get(id(kind, key));
+          if (cell === undefined) continue;
+          followers++;
+          expect(cell.geometry['relative'], cell.id).toBe('1');
+          expect([Number(cell.geometry['x']), Number(cell.geometry['y'])], cell.id).toEqual([card ? 0 : 0.5, 0]);
+          for (const { dw, dh } of RESIZES) {
+            const resized = { width: size.width + dw, height: size.height + dh };
+            const was = drawnIn(cell, size), now = drawnIn(cell, resized);
+            expect(now.y, cell.id).toBeCloseTo(was.y, 6);
+            expect(now.x, cell.id).toBeCloseTo(card ? was.x : was.x + dw / 2, 6);
+          }
+        }
+      }
+      expect(pills).toBeGreaterThan(0);
+      expect(followers).toBeGreaterThan(0);
+    }, 60000);
+
+  it.each([1e-13, -1e-13])('measures a pill centred to within float noise (%s px) from the start corner', async noise => {
+    // The pipeline freezes its model; the noise goes into a copy.
+    const model = structuredClone(await pipeline(fixture('a-card-node-holds-its-ports-on-every-face')));
+    const node = model.nodes['crowd']!;
+    const port = node.ports.find(item => item.side === 'top' && item.pill !== undefined)!;
+    const pill = port.pill!.bounds;
+    // The fixture centres this pill on its face exactly; the noise is what float arithmetic leaves on a centred pill.
+    expect(pill.x + pill.width / 2).toBeCloseTo(node.bounds!.x + node.bounds!.width / 2, 9);
+    port.pill!.bounds = { ...pill, x: pill.x + noise };
+    const cell = cells(drawio(model)).get(id('port', 'crowd', port.ref.name!, String(port.ref.ordinal)))!;
+    expect([cell.geometry['x'], cell.geometry['y']]).toEqual(['0', '0']);
   }, 60000);
 });
