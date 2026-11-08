@@ -14,6 +14,7 @@ import { firstState } from './initial.js';
 import { drive } from './driver.js';
 import { publish } from './publish.js';
 import { fitWidthBudget } from './width-budget.js';
+import { decideLifts } from './lift-round.js';
 import type { StaggerRow } from '../model/layout.js';
 
 export { MAX_RERUNS, PlacementBudgetExceeded } from './limits.js';
@@ -32,6 +33,10 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
 
 /** One complete pipeline run; the width-budget trials share the caller's command deadline. */
 async function layoutOnce(document: NormalisedDocument, options: LayoutOptions, staggerRows?: StaggerRow[]): Promise<LayoutModel> {
+  // D-Q5 (ticket 08): the group lift is decided on the published results of whole command runs (`liftByFinal`); each trial run applies its record.
+  if (options.fixedLifts === undefined && options.testLiftOff !== true && document.layout?.autoArrange !== false) {
+    return decideLifts(document, options, opts => layoutOnce(document, opts, staggerRows));
+  }
   const env = createEnv(document, options);
   if (staggerRows !== undefined) env.staggerRows = staggerRows;
   const state = await firstState(env);

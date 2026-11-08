@@ -815,6 +815,11 @@ export function validateLinkLabels(model: LayoutModel): void {
 }
 
 /** Stage 9: measure and place post-route link and multiplicity labels. */
-export function linkLabels(model: LayoutModel, notes: readonly Diagnostic[] = []): LayoutModel {
-  return withLayoutMutation(model, 'link-labels', draft => { draft.diagnostics.push(...notes); });
+export function linkLabels(model: LayoutModel, notes: readonly Diagnostic[] = [], groupLifts?: LayoutModel['groupLifts']): LayoutModel {
+  return withLayoutMutation(model, 'link-labels', draft => {
+    draft.diagnostics.push(...notes);
+    // D-Q5: the final lift record of the command. A placed model carries the entries decided before it was placed; the declined entries decided
+    // after it change no band, so the published record is the command's own.
+    if (groupLifts !== undefined) draft.groupLifts = JSON.parse(JSON.stringify(groupLifts)) as NonNullable<LayoutModel['groupLifts']>;
+  });
 }

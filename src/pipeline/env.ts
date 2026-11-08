@@ -12,7 +12,7 @@ import type { Reservations } from '../layout/reservations.js';
 import { route, ROUTE_BUDGET_MS } from '../route/index.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 import type { LayoutOptions } from './options.js';
-import type { GroupArrangement, StaggerRow } from '../model/layout.js';
+import type { GroupArrangement, GroupLift, StaggerRow } from '../model/layout.js';
 import { FAN_ROUNDS, MAX_RERUNS } from './limits.js';
 
 /** What stage 7f did to a model, with the copy of its first settled state (`lastAttempt`): phase 3b's trigger. */
@@ -32,6 +32,8 @@ export interface Env {
   arranged?: boolean;
   /** Ticket 51: the groups an earlier attempt of the first run staggered and a later stage refused, with the refusal; they stay rows. */
   declinedArrangements?: Map<string, string>;
+  /** D-Q5: the group lifts every placement run applies as band input (`lift.ts`); absent before the decision. */
+  groupLifts?: GroupLift[];
   /** Ticket 51: the groups stage 5 of the latest placement run staggered by its own choice (read when that run is refused). */
   arrangedRows?: string[];
   readonly document: NormalisedDocument;

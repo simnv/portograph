@@ -57,5 +57,5 @@ export async function publish(env: Env, s: State): Promise<LayoutModel> {
     }
   }
 
-  return env.timed('link-labels', () => env.step('link-labels', () => linkLabels(published, [...s.cuts, ...s.sideNotes, ...declined, ...lost])));
+  return env.timed('link-labels', () => env.step('link-labels', () => linkLabels(published, [...s.cuts, ...s.sideNotes, ...declined, ...lost], env.groupLifts)));
 }

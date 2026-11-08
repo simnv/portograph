@@ -21,6 +21,8 @@ import { deriveFrames } from './frames.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { transitTiers } from './read/tier.js';
 import { strictCrossing } from './read/crossings.js';
+import { isSideEntry } from './lift.js';
+import type { PortRef } from '../model/document.js';
 
 /**
  * The **straight** technique of a routed link inside one frame (ticket 34).
@@ -199,6 +201,11 @@ function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): 
   // A spanning chord (ticket 22): the hint makes a link on tiers that are not consecutive a cross-frame candidate. An unhinted one is not.
   if (gap !== 1 && !(gap >= 2 && (assumeSpan || link.spanHint === true))) return undefined;
   const [upper, lower] = tiers[0] < tiers[1] ? [from, to] : [to, from];
+  // D-Q5: a recorded side entry of a lifted unit leaves and enters on the lateral faces its record gives (`liftFaces`).
+  if (isSideEntry(model, link.id)) {
+    const lateral = (ref: PortRef): boolean => { const side = findPort(model, ref)?.side; return side === 'left' || side === 'right'; };
+    if ((lateral(upper) || facesAllowed(findPort(model, upper), 'bottom')) && (lateral(lower) || facesAllowed(findPort(model, lower), 'top'))) return 'cross';
+  }
   return facesAllowed(findPort(model, upper), 'bottom') && facesAllowed(findPort(model, lower), 'top') ? 'cross' : undefined;
 }
 

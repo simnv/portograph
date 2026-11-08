@@ -12,6 +12,8 @@ import type { State } from './state.js';
 
 export async function firstState(env: Env): Promise<State> {
   const options = env.options;
+// D-Q5: a lift trial run (and the no-lift run, with `[]`) applies its lift record from the first placement on.
+if (options.fixedLifts !== undefined) env.groupLifts = JSON.parse(JSON.stringify(options.fixedLifts)) as typeof options.fixedLifts;
 // A fan of chords whose neighbours stand closer than the chord clearance is spread by placement, not found by routing (ticket 89):
 // the placed chords say the pitch each face needs, and placement runs again with those floors until no face needs more.
 let first!: LayoutModel;
