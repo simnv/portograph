@@ -3,7 +3,7 @@
  * re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
  */
 import type { LayoutModel } from '../model/index.js';
-import { SolidBlockRefusal, TrunkBlocked } from '../layout/placement-refusal.js';
+import { SolidBlockRefusal, TrunkBlocked, producerRefusal } from '../layout/placement-refusal.js';
 import { FAN_WRAP_DECLINED, staggerRefusal, wrapGateVerdict } from '../layout/stagger.js';
 import type { Diagnostic } from '../model/index.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
@@ -85,10 +85,11 @@ if (wraps.length) {
   await placeFirst();
   env.gateRuns += env.placements - placedBefore;
   const plain = first;
-  // A stagger refusal in 7f of the wrapped run declines the lines by name. A refusal in 7f of the run without them leaves the wrapped run the
-  // only placement that stands: it beats a placement that cannot be made. Any other error (a deadline included) ends the command.
+  // A stagger refusal or a producer refusal (DR-11) in 7f of the wrapped run declines the lines by name: both models are trials here. A refusal
+  // in 7f of the run without them leaves the wrapped run the only placement that stands: it beats a placement that cannot be made. Any other
+  // error (a deadline included) ends the command.
   const banded = async (model: LayoutModel): Promise<LayoutModel | Error> => {
-    try { return (await env.bands(model, true)).model; } catch (error) { if (staggerRefusal(error)) return error; throw error; }
+    try { return (await env.bands(model, true)).model; } catch (error) { if (staggerRefusal(error) || producerRefusal(error)) return error; throw error; }
   };
   const lines = await banded(wrapped), alternative = await banded(plain);
   const verdict = lines instanceof Error ? `7f refused them: ${lines.message}` : alternative instanceof Error ? undefined : wrapGateVerdict(lines, alternative);

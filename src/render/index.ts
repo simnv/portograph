@@ -1,3 +1,4 @@
+import { checkOptions } from './check-options.js';
 import type { Point, Rect } from '../model/geometry.js';
 import type {
   Bundle, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, PathSegment,
@@ -9,6 +10,7 @@ import { orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, labelArea, validate } from '../score/model.js';
+import { visibleEnd } from '../layout/path-end.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
@@ -20,6 +22,7 @@ import type { Theme } from '../profiles/network/themes.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 import { boxClasses, frameTitled, groupLabelClasses, iconGlyphBox, legendSwatchClass, linkClassToken, pathRuns, svgClass } from './shared.js';
 import { legendLineOverlay } from '../layout/legend.js';
+import { busTooltip, linkTooltipLines, shortenedText } from './tooltips.js';
 
 export { OVERLAY_ENDPOINT_RADIUS };
 const MASK_ID = 'pg-overlay-mask';
@@ -65,14 +68,6 @@ export function linkVisible(model: LayoutModel, link: LayoutLink, options: Rende
   if (layer !== 'overlay') return true;
   const authored = documentClass(model, link);
   return authored === undefined || model.document.overlays?.[authored] !== 'hidden';
-}
-
-function checkOptions(options: RenderOptions): void {
-  if (options.layers === undefined) return;
-  if (!options.layers.length) throw new Error('Layer selection must name at least one of routed, overlay');
-  for (const layer of options.layers) {
-    if (layer !== 'routed' && layer !== 'overlay') throw new Error(`Unknown link layer ${String(layer)}`);
-  }
 }
 
 /** `d` for one chain of segments: one subpath per run (`pathRuns`), so a new one starts wherever the model's chain breaks. */
@@ -157,8 +152,8 @@ function textElement(label: LayoutLabel, locks: GeometryLocks, structural: strin
   const start = label.textAlign === 'start';
   const spans = lines.map((line, index) => element('tspan',
     { x: start ? box.x : middle.x, y: first + index * lineHeight }, escapeText(line))).join('');
-  const title = label.tooltip !== undefined && label.tooltip !== label.text
-    ? element('title', {}, escapeText(label.tooltip)) : '';
+  const shortened = shortenedText(label);
+  const title = shortened !== undefined ? element('title', {}, escapeText(shortened)) : '';
   return element('text', {
     class: classes(structural, extra, locks.font(label.fontFamily ?? FONT_FAMILY, label.fontSize ?? 9, label.fontWeight ?? 400)),
     'data-owner': owner,
@@ -366,11 +361,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
    * aggregated glyph: the members are still drawn one by one.
    */
   const linkTooltip = (link: LayoutLink): string => {
-    const lines = layout.labels.filter(label => label.role === 'link' && label.omitted
-      && label.tooltip !== undefined && label.owner.kind === 'link' && label.owner.id === link.id)
-      .map(label => label.tooltip!);
-    const group = link.groupLink === undefined ? undefined : layout.groupLinks.find(item => item.id === link.groupLink);
-    if (group) lines.push(`${group.groups[0]} – ${group.groups[1]}: ${group.members.length} links`);
+    const lines = linkTooltipLines(layout, link);
     return lines.length ? element('title', {}, escapeText(lines.join('\n'))) : '';
   };
 
@@ -430,25 +421,12 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     // The trunk of a three-row join is one line per pair of neighbouring bars, in the head bus's group (mesh-bus.md, section 12.7).
     const joins = bus.trunk?.joins ?? [];
     const trunk = joins.slice(1).map((point, index) => line(joins[index]!, point, 'trunk')).join('');
-    const authoredLabels = [...bus.members, ...(bus.cross ?? [])].flatMap(id => {
-      const link = memberOf(id), text = link === undefined ? undefined : layout.document.links[link.sourceIndex]?.label;
-      return text ? [`${id}: ${text}`] : [];
-    });
-    const partner = bus.joined === undefined ? undefined : (layout.meshBuses ?? []).find(item => item.id === bus.joined);
-    const upper = bus.cross !== undefined ? bus : partner;
-    const joinLines = partner === undefined ? [] : [`joined with: ${partner.id} (${bus.meshNodes ?? bus.nodes.length} nodes in all)`,
-      `mesh: ${[...bus.nodes, ...partner.nodes].join(', ')}`, `cross links: ${(upper?.cross ?? []).join(', ')}`];
-    const meshBuses = bus.mesh === undefined ? [] : (layout.meshBuses ?? []).filter(item => item.mesh === bus.mesh);
-    const trunkLines = bus.mesh === undefined ? [] : [`joined by trunk: ${meshBuses.map(item => item.id).join(', ')} (${bus.meshNodes ?? bus.nodes.length} nodes in all)`,
-      ...(bus.trunk === undefined ? [] : [`mesh: ${meshBuses.flatMap(item => item.nodes).join(', ')}`, `cross links: ${(bus.cross ?? []).join(', ')}`])];
-    const lines = [`${bus.class ?? 'unclassed'} mesh: ${bus.nodes.join(', ')}`, `links: ${bus.members.join(', ')}`, ...joinLines, ...trunkLines,
-      ...(bus.dissolved.length ? [`group-links: ${bus.dissolved.join(', ')}`] : []), ...authoredLabels];
     const runs = [bus.bar!, ...bus.stubs!, ...(bus.riser?.from !== undefined && bus.riser.to !== undefined ? [{ from: bus.riser.from, to: bus.riser.to }] : []),
       ...joins.slice(1).map((point, index) => ({ from: joins[index]!, to: point }))];
     return element('g', { class: svgClass.meshBus(authored), 'data-id': bus.id, 'data-members': bus.members.join(' '),
       ...(bus.joined !== undefined ? { 'data-joined': bus.joined } : {}), ...(bus.mesh !== undefined ? { 'data-mesh': bus.mesh } : {}),
       ...lineMask(crossedTextCutouts(layout, runs, linkStrokeWidth(first) / 2, undefined, visible)) },
-      element('title', {}, escapeText(lines.join('\n'))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join('') + riser + trunk);
+      element('title', {}, escapeText(busTooltip(layout, bus))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join('') + riser + trunk);
   }).join('');
   const byId = new Map(layout.links.map(link => [link.id, link]));
   const bundleOf = new Map(layout.bundles.map(bundle => [bundle.id, bundle]));
@@ -538,7 +516,8 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     // `.link-line` rules, so a document `css:` rule that recolours the line recolours the dot.
     const radius = anonymousDotRadius(linkStrokeWidth(link));
     return ends.map(end => {
-      const point = end === 'from' ? segments[0]!.from : segments.at(-1)!.to;
+      // An anonymous end draws no pill, so its visible end is the path end itself (`visibleEnd`, D-Q7).
+      const point = visibleEnd(layout, link, end) ?? (end === 'from' ? segments[0]!.from : segments.at(-1)!.to);
       return element('circle', { class: classes(svgClass.linkDot(linkClassToken(layout, link), overlay), locks.stroke(radius)),
         style: 'stroke-dasharray:none', 'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: radius / 2 });
     }).join('');
@@ -552,7 +531,9 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     const segments = link.path!.segments;
     if (!segments.length) return [];
     const bare = dotEnds(layout.document, link);
-    return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).filter(([end]) => !bare.includes(end)).map(([end, point]) =>
+    // The mark stands where the line is seen to end (`visibleEnd`, D-Q7): an overlay path is chord-built and ends on that point.
+    return ([['from', visibleEnd(layout, link, 'from') ?? segments[0]!.from], ['to', visibleEnd(layout, link, 'to') ?? segments.at(-1)!.to]] as const)
+      .filter(([end]) => !bare.includes(end)).map(([end, point]) =>
       element('circle', { class: svgClass.overlayEndpoint(linkClassToken(layout, link)),
         'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: OVERLAY_ENDPOINT_RADIUS }));
   }).join('') + overlayDots;

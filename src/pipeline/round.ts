@@ -5,6 +5,7 @@
  */
 import type { Diagnostic, LayoutModel } from '../model/index.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
+import { producerRefusal } from '../layout/placement-refusal.js';
 import type { Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
 import type { State, Trial } from './state.js';
@@ -62,7 +63,10 @@ export interface Round<O> {
   gain(env: Env, s: State, o: O): readonly number[];
   /** Say that the round had an offer and was given no start. */
   skip(env: Env, s: State, o: O, left: number): void;
-  /** Whether the round answers `error` of its placement run (`place`) or its 7f run and route (`bands`) with a refusal; every other error is a defect and propagates. */
+  /**
+   * Whether the round answers `error` of its placement run (`place`) or its 7f run and route (`bands`) with a refusal; every other error is a defect and propagates.
+   * A producer refusal (`producerRefusal`) withdraws the trial of every round before this is asked (DR-11), so a round need not name it.
+   */
   tolerates(error: unknown, phase: 'place' | 'bands'): boolean;
   /** The offer on the kept baseline, or `undefined` when the round has none. */
   measure(env: Env, s: State): Promise<O | undefined>;
@@ -88,6 +92,9 @@ export type AnyRound = Round<any>;
 /** A trial that was placed: the ledger it was placed with and its 7e model. */
 export interface Opened { ledger: Reservations; trial7e: LayoutModel }
 
+/** Whether `error` of a trial's run withdraws the trial: a producer refusal in every round (DR-11), else what the round tolerates. */
+const withdraws = <O>(round: Round<O>, error: unknown, phase: 'place' | 'bands'): boolean => producerRefusal(error) || round.tolerates(error, phase);
+
 const refuse = <O>(env: Env, s: State, round: Round<O>, o: O, r: Refusal): Refusal => { round.refuse(env, s, o, r); return r; };
 
 /** Reserve and place a trial of `round` on the offer `o`. A started placement is never given back. */
@@ -97,7 +104,7 @@ export async function open<O>(env: Env, s: State, round: Round<O>, o: O): Promis
   if (round.invalidation !== undefined) attemptCounters.invalidations[round.invalidation]++;
   let trial7e: LayoutModel;
   try { trial7e = await env.timed(round.label, () => env.place(ledger, env.trialAbort)); } catch (error) {
-    if (!round.tolerates(error, 'place')) throw error;
+    if (!withdraws(round, error, 'place')) throw error;
     return refuse(env, s, round, o, { at: 'place', why: (error as Error).message, error: error as Error });
   }
   if (trial7e.fallbackUsed && !(s.fallbackFrom ?? s.kept7e).fallbackUsed) return refuse(env, s, round, o, { at: 'fallback', why: `ELK fell back during the ${round.id} trial` });
@@ -116,7 +123,7 @@ export async function close<O>(env: Env, s: State, round: Round<O>, o: O, { ledg
       await round.ready?.(env, s);
       t = { ledger, trial7e, trial: banded.model, routedTrial: await env.route(banded.model, true), moved: banded.moved, unmoved: banded.unmoved };
     } catch (error) {
-      if (!round.tolerates(error, 'bands')) throw error;
+      if (!withdraws(round, error, 'bands')) throw error;
       return refuse(env, s, round, o, { at: 'bands', why: (error as Error).message, error: error as Error });
     }
   }

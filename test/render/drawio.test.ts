@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Point } from '../../src/index.js';
 import { linkIds } from '../../src/model/index.js';
-import { drawio, render } from '../../src/index.js';
+import { drawio, layout, parse, render } from '../../src/index.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';
@@ -17,7 +17,7 @@ import { route } from '../../src/route/index.js';
 import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
 import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
-import { placed } from '../layout/phase-two-fixture.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { flatCells, inFile } from './drawio-cells.js';
 
@@ -72,6 +72,21 @@ interface Cell {
    */
   at?: Point;
 }
+
+/** A generated part carries every lock a joint carries (DX-12). */
+function expectFixed(cell: { style: Record<string, string> }, deletable = true): void {
+  for (const key of ['movable', 'resizable', 'rotatable', 'editable', 'connectable', 'pointerEvents']) {
+    expect(cell.style[key], key).toBe('0');
+  }
+  // Only the cells that bind link ends (joints, marks) cannot be deleted alone.
+  expect(cell.style['deletable']).toBe(deletable ? undefined : '0');
+}
+
+it('rejects an empty layer selection in draw.io as in SVG', async () => {
+  const model = await pipeline('portograph: 2\ngroups: {g: {tier: 0}}\nnodes:\n  a: {group: g}\nlinks: []\n');
+  expect(() => drawio(model, { layers: [] })).toThrow('Layer selection must name at least one');
+  expect(() => render(model, { layers: [] })).toThrow('Layer selection must name at least one');
+});
 
 /** Every `<mxCell>`, with its style string split the way draw.io splits it. */
 function cells(xml: string): Map<string, Cell> {
@@ -1192,6 +1207,11 @@ describe('connection grid, rotation and tiles', () => {
     for (const icons of ['profile', 'cisco19'] as const) {
       const normal = cells(drawio(model, { icons }));
       expect(normal.has(id('icon', 'a'))).toBe(true);
+      expectFixed(normal.get(id('icon', 'a'))!);
+      if (normal.has(id('iconTile', 'a'))) expectFixed(normal.get(id('iconTile', 'a'))!);
+      // The owner stays free: the node carries no lock.
+      expect(normal.get(id('node', 'a'))!.style['movable']).toBeUndefined();
+      expect(normal.get(id('node', 'a'))!.style['resizable']).toBeUndefined();
       for (const cell of normal.values()) {
         expect(box(cell).width).toBeGreaterThanOrEqual(0);
         expect(box(cell).height).toBeGreaterThanOrEqual(0);
@@ -1223,6 +1243,17 @@ describe('connection grid, rotation and tiles', () => {
       expect(box(some.get(id('icon', 'a'))!).width).toBeGreaterThan(0);
       expect(box(some.get(id('icon', 'a'))!).width).toBeLessThanOrEqual(1);
     }
+  }, 60000);
+
+  it('locks every legend swatch, tile and body to its row (DX-12)', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    const kinds = new Set(model.legend!.entries.map(item => item.kind));
+    expect(kinds.has('line') && kinds.has('port') && kinds.has('symbol')).toBe(true);
+    const parts = [...all.values()].filter(cell => /^pg-legend(Swatch|Tile|Body)~/.test(cell.id));
+    expect(parts.length).toBeGreaterThanOrEqual(model.legend!.entries.length);
+    for (const cell of parts) expectFixed(cell);
+    expect([...all.keys()].some(key => key.startsWith('pg-legendBody~'))).toBe(true);
   }, 60000);
 
   it('applies the same guard to a legend swatch', async () => {
@@ -1352,30 +1383,17 @@ describe('maintainer edit principles', () => {
     expect(cell.points[0]).toEqual({ x: off.x - model.canvas!.x, y: off.y - model.canvas!.y });
   }, 60000);
 
-  it('reads the guard off the polyline draw.io draws, terminals included', async () => {
-    // Codex round 1: the guard read the waypoints alone. An end is pinned to the pill's outward
-    // midpoint, not to the port anchor the path starts from, so a pill that does not sit on its own
-    // anchor's axis moves the endpoint *across* that axis — and a link whose every waypoint is
-    // square is then drawn as a diagonal the orthogonal router would answer with a corner nothing
-    // reserved.
+  it('reads the style off the polyline draw.io draws, terminals included, exactly (D-Q7)', async () => {
+    // Codex round 1 found that an end pinned to the pill's outward midpoint could move *across* the
+    // stem, and a 1 px style tolerance hid it. Since D-Q7 each end is pinned at `visibleEnd`, a point
+    // of the path's own stem, so the drawn polyline is the model polyline and the style is read from
+    // it exactly. A short stem inside its pill is covered in `path-end.test.ts`.
     const model = await pipeline(fixture('drawio-constructs'));
     const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
     const square = cells(drawio(model)).get(id('link', stable(model, link.id)))!;
     // Ticket 34: the overlay is a U, square from terminal to terminal, so it is a square connector.
     expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     expect(square.points).toHaveLength(2);
-    const skewed = structuredClone(model);
-    const ref = link.attachments!.from;
-    // The pill moved — a hand edit the model knows nothing about. Since ticket 34 the path leaves the
-    // top pill by a vertical leg (the U), so moving the pill in y keeps the pinned endpoint on that
-    // leg's axis and skews nothing; moving it 12 px in x moves the pinned endpoint off the leg's axis,
-    // which is the case this guard is for.
-    skewed.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
-      && item.ref.ordinal === ref.ordinal)!.pill!.bounds.x += 12;
-    const cell = cells(drawio(skewed)).get(id('link', stable(model, link.id)))!;
-    expect(cell.points).toEqual(square.points);
-    expect(cell.style['edgeStyle']).toBe('none');
-    expect(cell.style['jettySize']).toBeUndefined();
   }, 60000);
 
   it('leaves an overlay end that draws no pill by the node it terminates on', async () => {
@@ -1795,6 +1813,10 @@ describe('link ends and nested groups move with their owner (issue 03)', () => {
     for (const cell of all.values()) {
       if (cell.id.startsWith('pg-overlayMark~') || cell.id.startsWith('pg-busMark~')) expect(all.get(cell.parent!)!.vertex).toBe(true);
     }
+    // A mark is fixed to its owner, as a joint is (DX-12, S-08).
+    const marks = [...all.values()].filter(cell => /^pg-(overlay|bus)Mark~/.test(cell.id));
+    expect(marks.length).toBeGreaterThan(0);
+    for (const cell of marks) expectFixed(cell, false);
   }, 60000);
 });
 
@@ -1894,6 +1916,31 @@ describe('a sheet class wash reads the same in the SVG and in draw.io (ticket 09
     // The key paints the wash behind a class's tile, in both.
     expect(svg).toMatch(/<rect class="node-body switch pg-wash-\d+/);
     expect([...all.values()].filter(cell => cell.id.startsWith('pg-legendBody~')).length).toBeGreaterThan(0);
+  }, 60000);
+  // DX-06 (audit A1-01, A1-06, A1-08): a title or a bus label is the child of what it names, never of a layer.
+  it('hangs a crossed group title on its group and a bus label on its bar, never on a layer', async () => {
+    const titled = cells(drawio(await pipeline(fixture('a-group-title-yields-with-a-halo'))));
+    expect(titled.get(id('group', 'access'))!.value).toBeDefined();
+    // A crossed title in the text-child form: aws-nested-vpc has crossed titles that are not centred bands.
+    const aws = await layout(parse(readFileSync(new URL('../../goldens/real/aws-nested-vpc.yaml', import.meta.url), 'utf8')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const crossedIds = aws.labels.filter(item => item.role === 'group' && (item.crossedBy?.length ?? 0) > 0 && item.owner.kind === 'group')
+      .map(item => item.owner.kind === 'group' ? item.owner.id.replace(/#\d+$/, '') : '');
+    const awsCells = cells(drawio(aws));
+    const children = crossedIds.filter(owner => awsCells.has(id('groupTitle', owner)));
+    expect(children.length, 'a crossed title in the text-child form').toBeGreaterThan(0);
+    for (const owner of children) expect(awsCells.get(id('groupTitle', owner))!.parent).toBe(id('group', owner));
+    const labelled = fixture('a-full-mesh-on-one-row-draws-as-one-bus').replace(/class: sync \}/g, 'class: sync, label: Sync }');
+    const model = await pipeline(labelled);
+    const all = cells(drawio(model));
+    const bus = model.meshBuses![0]!;
+    const label = all.get(id('busLabel', bus.id))!;
+    expect(label, 'the bus has a label cell').toBeDefined();
+    expect(all.get(label.parent!)!.edge).toBe(true);
+    expect(label.parent!.startsWith(`pg-bus~${bus.id}~`)).toBe(true);
+    for (const cell of all.values()) {
+      if (/^pg-(groupTitle|busLabel)~/.test(cell.id)) expect(cell.parent, cell.id).not.toMatch(/^pg-layer~/);
+    }
   }, 60000);
 });
 

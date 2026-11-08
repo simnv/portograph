@@ -16,8 +16,8 @@
  *    trunk pieces are single straight pieces and were already `none`. Every run with a bend takes the
  *    rule below. `edgeStyle=orthogonalEdgeStyle;jettySize=0` draws a square route on the reserved route. Over 61
  *    link edges in four diagrams, 59 render within 0.05 px of the model polyline — the orthogonal
- *    router rounds a waypoint to 0.1 px — and 2 within 0.51 px, which is an endpoint defect the
- *    export has with `edgeStyle=none` as well. No waypoint is dropped and no edge is re-routed.
+ *    router rounds a waypoint to 0.1 px — and 2 within 0.51 px, an endpoint defect that pinning each end
+ *    to its `visibleEnd` on the path's own stem removed (D-Q7). No waypoint is dropped and no edge is re-routed.
  *    `jettySize=0` is the one key that matters: without it an edge whose two ends leave the same
  *    node side gains a 10 px loop, and `jettySize=auto` doubles that. `orthogonalLoop`, `curved` and
  *    the perimeter spacing keys are no-ops; `elbowEdgeStyle` re-routes by up to 265 px and is
@@ -72,11 +72,14 @@ import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { legendKeyRadius, themeById } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
 import { effectiveLayer, validate } from '../score/model.js';
+import { visibleEnd } from '../layout/path-end.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { boxesBehind, groupShapes } from './frame-order.js';
 import { backdropColour } from '../profiles/network/theme.js';
+import { checkOptions } from './check-options.js';
 import { linkVisible } from './index.js';
+import { busTooltip, linkTooltipLines, shortenedText } from './tooltips.js';
 import { authorClass, classes, element, num } from './svg.js';
 import {
   PaintSheet, boxClasses, groupLabelClasses, iconGlyphBox, legendSwatchClass, linkClassToken, paintPath, pathRuns, svgClass,
@@ -244,6 +247,18 @@ const OUTWARD: Readonly<Record<Side, Point>> = {
   left: { x: 0, y: 0.5 }, right: { x: 1, y: 0.5 },
 };
 
+/**
+ * A point as a constraint fraction of `box`. A fraction within `EPS` px of an edge or of the middle is
+ * written exactly, so a pinned end on a face midpoint reads `1` and `0.5`, not a rounding residue.
+ */
+const fractionIn = (box: Rect, at: Point): Point => {
+  const along = (value: number, start: number, size: number): number => {
+    const exact = [0, 0.5, 1].find(fraction => Math.abs(start + fraction * size - value) <= EPS);
+    return exact ?? (value - start) / size;
+  };
+  return { x: along(at.x, box.x, box.width), y: along(at.y, box.y, box.height) };
+};
+
 /** A side's outward normal: the direction a link leaves the pill on that side. */
 const NORMAL: Readonly<Record<Side, Point>> = {
   top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
@@ -273,20 +288,6 @@ const isStraight = (points: readonly Point[], within = EPS): boolean => {
     return ok;
   });
 };
-
-/**
- * How far a **drawn** endpoint may sit off its segment's axis and still count as a square route.
- *
- * The waypoints are square or they are not, and that is tested exactly. The two ends are not
- * waypoints: draw.io resolves them from the terminal cell's own box, and the export puts a pill's
- * outward midpoint up to half a pixel off the model's stem axis — a defect with its own ticket,
- * present under `edgeStyle=none` as well. Both styles draw that residue at the same size: the
- * orthogonal router as a half-pixel jog, `edgeStyle=none` as a half-pixel diagonal, and the measured
- * 0.51 px worst case is exactly it. Anything larger is a real corner, and there the router would
- * invent a turn nothing reserved — so the link keeps `edgeStyle=none` and the line is drawn as
- * stated. A port that draws no pill and terminates on its node's box is the case that needs this.
- */
-const SQUARE_ENDPOINT_TOLERANCE = 1;
 
 /**
  * How many connection points one side may offer beyond its real anchors. This is a guard against a
@@ -425,6 +426,23 @@ const binding = (own: Binding, meta: Meta | undefined): Binding => ({
   ...own,
   ...Object.fromEntries(Object.keys(meta ?? {}).sort().map(key => [key, String(meta![key])])),
 });
+
+/** draw.io shows `tooltip` as HTML (`Graph.sanitizeHtml`, then `innerHTML`), so generated text is escaped to stay text. */
+const htmlText = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * Adds generated text to a cell's `tooltip` attribute, as the SVG renderer's `<title>` holds it. An author's own
+ * `meta.tooltip` stays first and raw (it is draw.io's own HTML) and the escaped generated text follows on a new line,
+ * so neither is lost. The `pg-*` keys are untouched.
+ */
+const withTooltip = (own: Binding, text: string | undefined): Binding => {
+  if (text === undefined || text === '') return own;
+  const generated = htmlText(text);
+  return { ...own, tooltip: own['tooltip'] === undefined ? generated : `${own['tooltip']}\n${generated}` };
+};
+
+/** The font a label states, then the shared default, as the SVG renderer reads it. A `;` would end the style value, so it is dropped. */
+const fontOf = (label: LayoutLabel): string => label.fontFamily?.replace(/;/g, '').trim() || FONT_FAMILY;
 
 /**
  * A cell, bare or bound. A bound cell is a draw.io `UserObject`: an `<object>` that holds the id, the
@@ -595,7 +613,23 @@ const part = (value: string): string => value.replace(/[%~]/g, character => `%${
 const cellId = (kind: string, ...parts: readonly string[]): string =>
   parts.length ? `pg-${kind}~${parts.map(part).join('~')}` : `pg-${kind}`;
 
+/**
+ * The locks of a generated part (a joint, a port mark, an icon tile or glyph, a legend swatch): it
+ * belongs to its owner, so it cannot be moved, resized, rotated, edited or connected apart from it.
+ * The owner still moves and resizes, and carries the part (mxGraph moves children).
+ * `pointerEvents=0` acts only where a shape has no fill; a filled part still takes the click, and
+ * draw.io passes that click to the parent, so the owner is the thing selected.
+ * A part is deletable alone (so that ungroup leaves no stuck cell), except where `UNDELETABLE`
+ * is added: the joints and the marks bind link ends, and a link would lose an end.
+ */
+const FIXED: Readonly<Record<string, StyleValue>> = {
+  movable: 0, resizable: 0, rotatable: 0, editable: 0, connectable: 0, pointerEvents: 0,
+};
+/** The one addition to `FIXED` for the cells that bind link ends. */
+const UNDELETABLE: Readonly<Record<string, StyleValue>> = { deletable: 0 };
+
 export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string {
+  checkOptions(options);
   validate(layout);
   const canvas = layout.canvas;
   if (!canvas) throw new Error('A draw.io export requires a final canvas');
@@ -655,18 +689,20 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // so reordering the links does not move a binding; the layout model keeps its positional ids.
   const stableIds = linkIds(document);
   const stableId = (link: LayoutLink): string => stableIds[link.sourceIndex] ?? link.id;
-  const linkBinding = (link: LayoutLink, run?: { index: number; count: number }): Binding => {
+  const linkBinding = (link: LayoutLink, run?: { index: number; count: number }, own?: LayoutLabel): Binding => {
     const source = document.links[link.sourceIndex];
-    return binding({
+    // Text the link carries and does not draw: an omitted label, a group-link's members, and the full text of a shortened label.
+    const text = [...linkTooltipLines(layout, link), ...(own ? [shortenedText(own)] : [])].filter(line => line !== undefined).join('\n');
+    return withTooltip(binding({
       'pg-kind': 'link', 'pg-id': stableId(link),
       'pg-from': endpointId(source?.from ?? link.from), 'pg-to': endpointId(source?.to ?? link.to),
       ...(run ? { 'pg-run': String(run.index), 'pg-runs': String(run.count) } : {}),
-    }, source?.meta);
+    }, source?.meta), text);
   };
 
   /** A text cell placed at exactly the box stage 9 measured, so no label is re-flowed on open. */
   const textCell = (id: string, parent: string, label: LayoutLabel, box: Rect | Anchored, paint: Readonly<Record<string, StyleValue>>,
-    size = labelSize(label), backdrop?: string): void => {
+    size = labelSize(label), backdrop?: string, onEdge?: EdgeLabel): void => {
     // draw.io turns a cell's own rectangle about its centre. A turned label (ticket 20) records its
     // text rectangle (`turnedSize`), so the cell is that rectangle about the box centre, and draw.io
     // turns the rectangle the text really occupies. Any other label's `bounds` is its box: a quarter
@@ -674,17 +710,26 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // it takes every reserved angle — a straight bundle member's label is rotated to its own run
     // (ADR-0017), not to a quarter turn.
     // `spacingTop` turns with the text, so one value puts the first baseline where `render` does.
-    vertex(id, parent, styleString(['text'], {
+    const style = styleString(['text'], {
       strokeColor: 'none', fillColor: 'none', align: label.textAlign === 'start' ? 'left' : 'center', verticalAlign: 'middle',
       // A card's subtitle (ticket 159) starts at its box's left edge; draw.io starts left-aligned text `spacing` inside it.
       spacingLeft: label.textAlign === 'start' ? -LABEL_SPACING : undefined,
       whiteSpace: 'nowrap', overflow: 'visible', points: '[]', resizable: 0,
       spacingTop: middleSpacing(label, size),
-      fontFamily: FONT_FAMILY, fontSize: size, ...paint,
+      fontFamily: fontOf(label), fontSize: size, ...paint,
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       rotation: label.textRotation ? label.textRotation : undefined,
       labelBackgroundColor: backdrop,
-    }), turnedCell(label, box), plainText(labelLines(label)));
+    });
+    const tip = shortenedText(label) === undefined ? undefined : withTooltip({}, shortenedText(label));
+    if (onEdge === undefined) {
+      vertex(id, parent, style, turnedCell(label, box), plainText(labelLines(label)), {}, tip);
+      return;
+    }
+    // A child of an edge is stated along that edge (`relative=1`), as a link label is, so it follows the edge when a node moves.
+    cells.push(cellElement({ id: claim(id), value: plainText(labelLines(label)), style, vertex: 1, parent, connectable: 0 },
+      element('mxGeometry', { x: onEdge.x, y: onEdge.y, relative: 1, as: 'geometry' },
+        residualPoint(onEdge) || undefined), tip));
   };
 
   // ---- paint resolution -------------------------------------------------------------------
@@ -804,8 +849,10 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   /**
    * The halo of a text outside node bodies (ticket 162), as draw.io can state it. A plain-text label has no outline: `textShadow` with no
    * offset draws a soft glow through which a crossing line still shows (measured with the drawio CLI, 2026-10-31), so a text in the
-   * labels layer takes a backdrop in the colour behind it instead (`backdropColour`, the SVG halo's colour). A group title lies in the
-   * diagram layer, under the links, and no backdrop of its own can cover a line drawn above it.
+   * labels layer, or a bus label under the overlay layer, takes a backdrop in the colour behind it instead (`backdropColour`, the SVG
+   * halo's colour). A group title, crossed or not, is a child of its group in the diagram layer (DX-06), under the links, and no backdrop
+   * of its own can cover a line drawn above it: the link paints over it. A bus label lies under the Links layer, so a routed link that
+   * crosses it paints over its backdrop.
    */
   const backdrop = (point: Point): string => dual(of => backdropColour(theme.paint[of], boxesBehind(shapes, point)));
   // A frame nests as the model nests it: a zone in a location, a location in a continent. Its cell is a
@@ -832,10 +879,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // band is only handed to draw.io when the reserved band really does hold a centred title:
     // otherwise the title keeps its measured box as a text cell and the container stays plain.
     // A frame's band sits in one of its cells, so it must also span the frame edge to edge.
-    // A title that links cross (`crossedBy`, architecture-2 ticket 54) must paint above them, with a backdrop for its halo: it goes to the
-    // labels layer as a text cell, never into its group's swimlane head, which paints under every link.
-    const crossed = (title?.crossedBy?.length ?? 0) > 0;
-    const centred = band !== undefined && title !== undefined && !crossed
+    // A title that links cross (`crossedBy`, ticket 54) is the group's own like any other (DX-06, user 2026-11-08): it moves and copies with
+    // its group. A container paints with its children, under the Links layer, so in draw.io a link paints over it; the SVG halo rule is unchanged.
+    // A group title has two forms: the swimlane value (a centred band) and a text cell child of the group (a title off the band's centre, or
+    // a band that does not span its frame, which a swimlane head cannot state).
+    const centred = band !== undefined && title !== undefined
       && Math.abs(centre(title.bounds!).x - centre(band.bounds).x) <= 0.5
       && Math.abs(centre(title.bounds!).y - centre(band.bounds).y) <= 0.5
       && (!frame || (Math.abs(band.bounds.x - bounds.x) <= 0.5 && Math.abs(band.bounds.width - bounds.width) <= 0.5
@@ -855,7 +903,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         align: 'center', verticalAlign: 'middle',
         // The head is centred on the band, which may sit up to half a pixel off the title's centre.
         spacingTop: middleSpacing(title!, labelSize(title!), centre(swimlane.bounds).y - centre(title!.bounds!).y),
-        fontFamily: FONT_FAMILY, fontSize: labelSize(title!), ...titlePaint,
+        fontFamily: fontOf(title!), fontSize: labelSize(title!), ...titlePaint,
         fontStyle: title!.fontWeight === 700 ? 1 : undefined,
         swimlaneLine: 0,
         // On a swimlane `fillColor` paints the head and `swimlaneFillColor` the body, the reverse
@@ -872,9 +920,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     const holder = frame ? frameParent.get(id) : undefined;
     vertex(cellId('group', id), holder === undefined ? layerId('diagram') : cellId('group', holder), style,
       holder === undefined ? box : relative(box, frameBox.get(holder)!), swimlane ? plainText(labelLines(title!)) : undefined);
-    if (title && crossed) {
-      textCell(cellId('groupTitle', id), layerId('labels'), title, shiftRect(title.bounds!), titlePaint, undefined, backdrop(centre(title.bounds!)));
-    } else if (title && !swimlane) {
+    if (title && !swimlane) {
       textCell(cellId('groupTitle', id), cellId('group', id), title,
         relative(shiftRect(title.bounds!), box), titlePaint);
     }
@@ -962,7 +1008,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // `spacingLeft` states the rest of the measured offset.
         ...(card ? { spacingLeft: finite(named!.bounds!.x - node.bounds!.x - LABEL_SPACING) }
           : across > 0 ? { spacingLeft: finite(2 * across) } : across < 0 ? { spacingRight: finite(-2 * across) } : {}),
-        fontFamily: FONT_FAMILY, fontSize: nameSize, ...textPaint(nodeTextPath(authored, 'node-label')),
+        fontFamily: fontOf(named!), fontSize: nameSize, ...textPaint(nodeTextPath(authored, 'node-label')),
         fontStyle: (named.fontWeight ?? 700) === 700 ? 1 : undefined,
       }),
     }), relative(box, origin), named === undefined ? undefined : plainText(labelLines(named)), {},
@@ -992,7 +1038,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         if (native.kind === 'silhouette' && positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
             rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
-            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', opacity: resolved.tileOpacity,
+            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', ...FIXED, opacity: resolved.tileOpacity,
           }), asName(tile, size, card));
         }
         // The glyph sits in the box the SVG draws its glyph in (`iconGlyphBox`): the inset is at most a
@@ -1001,7 +1047,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         const box = glyphBox(tile, native, ownInset);
         if (box) {
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
-            sketch: 0, aspect: 'fixed', points: '[]',
+            sketch: 0, aspect: 'fixed', points: '[]', ...FIXED,
             shape: nativeShape(native),
             ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
             // On a badge `fillColor` is the frame and `strokeColor` is the glyph; a silhouette is
@@ -1015,7 +1061,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         if (positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
             rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
-            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', opacity: resolved.tileOpacity,
+            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', ...FIXED, opacity: resolved.tileOpacity,
           }), asName(tile, size, card));
         }
         // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
@@ -1027,7 +1073,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${resolved.image}"`
             + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
-            shape: 'image', imageAspect: 0, points: '[]',
+            shape: 'image', imageAspect: 0, points: '[]', ...FIXED,
             image: svgImage(glyph), opacity: resolved.glyphOpacity,
           }), asName(inner, size, card), undefined, {}, iconBinding);
         }
@@ -1079,7 +1125,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           // `horizontal=0` turns `spacingTop` with the text, as `rotation=` does.
           spacingTop: shown.bounds && middleSpacing(shown, labelSize(shown), port.pill.textRotation === -90
             ? centre(port.pill.bounds).x - centre(shown.bounds).x : centre(port.pill.bounds).y - centre(shown.bounds).y),
-          fontFamily: FONT_FAMILY, fontSize: labelSize(shown), ...textPaint(paintPath.inPort(root, authored, portClass, classes('pill-label', portClass))),
+          fontFamily: fontOf(shown), fontSize: labelSize(shown), ...textPaint(paintPath.inPort(root, authored, portClass, classes('pill-label', portClass))),
           fontStyle: shown.fontWeight === 700 ? 1 : undefined,
           horizontal: port.pill.textRotation === -90 ? 0 : undefined,
         } : {}),
@@ -1109,38 +1155,36 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   }
 
   /**
-   * Where an edge terminates, and on which cell. A port that draws a pill terminates on the **pill**,
-   * at the middle of its outward edge, for two reasons. It makes the connector a real connection:
-   * the pill is the port, so moving the port or its node carries the line, which pinning to the
-   * node's box never did. And it is what the SVG makes visible — a pill straddles the boundary and
-   * is painted over the inner half of its own stem, so the stroke the reader sees starts at the
-   * pill's outer edge. The reserved waypoints are untouched; only the endpoint moves, by the pill's
-   * half depth, onto the point the diagram already showed.
+   * Where an edge terminates, and on which cell. `seen` is the end's visible point in model space
+   * (`visibleEnd`, the path-end rule of D-Q7), and the edge is pinned to it. A port that draws a pill
+   * terminates on the **pill**, for two reasons. It makes the connector a real connection: the pill
+   * is the port, so moving the port or its node carries the line, which pinning to the node's box
+   * never did. And it is what the SVG makes visible — a pill straddles the boundary and is painted
+   * over the inner half of its own stem, so the stroke the reader sees starts where the path leaves
+   * the pill: its outward face on the stem, or the stem end of a stem shorter than the pill's half
+   * depth; an end on an approach (ticket 15, phase 6) meets the pill on a
+   * tangential edge, and is pinned there. The reserved waypoints are untouched; only a stem-built
+   * endpoint moves, by the pill's half depth, onto the point the diagram already showed.
    */
-  const terminal = (end: 'exit' | 'entry', ref: { node: string; name?: string; ordinal: number }):
+  const terminal = (end: 'exit' | 'entry', ref: { node: string; name?: string; ordinal: number }, seen: Point | undefined):
   { cell: string; style: Readonly<Record<string, StyleValue>>; at: Point; anonymous?: true } | undefined => {
     const node = layout.nodes[ref.node];
     const port = node?.ports.find(item => item.ref.node === ref.node && item.ref.name === ref.name
       && item.ref.ordinal === ref.ordinal);
     if (!node?.bounds || !port?.anchor) return undefined;
+    const at = seen ?? port.anchor;
     // Both fractions must be present or draw.io drops the constraint entirely, and `exitPerimeter`
     // defaults to 1, which would project the point onto the perimeter instead of using it.
-    const fix = (at: Point): Readonly<Record<string, StyleValue>> =>
-      ({ [`${end}X`]: at.x, [`${end}Y`]: at.y, [`${end}Dx`]: 0, [`${end}Dy`]: 0, [`${end}Perimeter`]: 0 });
+    const fix = (fraction: Point): Readonly<Record<string, StyleValue>> =>
+      ({ [`${end}X`]: fraction.x, [`${end}Y`]: fraction.y, [`${end}Dx`]: 0, [`${end}Dy`]: 0, [`${end}Perimeter`]: 0 });
     // `at` is where draw.io really puts the endpoint: the constraint fraction resolved against the
     // terminal cell's own box. The exported waypoints do not hold it, and an edge label is stated
     // relative to the whole drawn polyline, terminals included, so it has to be known here.
     if (port.pill && port.ref.anonymous !== true && port.side) {
-      const pill = port.pill.bounds, outward = OUTWARD[port.side];
-      return {
-        cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), style: fix(outward),
-        at: shift({ x: pill.x + outward.x * pill.width, y: pill.y + outward.y * pill.height }),
-      };
+      return { cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), style: fix(fractionIn(port.pill.bounds, at)), at: shift(at) };
     }
-    return { cell: cellId('node', ref.node), style: fix({
-      x: (port.anchor.x - node.bounds.x) / node.bounds.width,
-      y: (port.anchor.y - node.bounds.y) / node.bounds.height,
-    }), at: shift(port.anchor), ...(port.ref.anonymous === true ? { anonymous: true as const } : {}) };
+    return { cell: cellId('node', ref.node), style: fix(fractionIn(node.bounds, at)), at: shift(at),
+      ...(port.ref.anonymous === true ? { anonymous: true as const } : {}) };
   };
 
   /**
@@ -1155,21 +1199,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   };
 
   /**
-   * The pill a link ends on, in page space: its cell, its box, the point on its outward edge the
-   * connector really starts from, and the direction that edge faces. Nothing here is measured — the
-   * box is the one stage 9 reserved and the outward point is the one `terminal` already pins to.
+   * The pill a link ends on, in page space: its cell, its box, and the direction its outward edge
+   * faces. Nothing here is measured — the box is the one stage 9 reserved. Where on the pill the
+   * connector really ends is `visibleEnd`, which `terminal` pins to.
    */
-  interface PillEnd { cell: string; box: Rect; at: Point; out: Point }
+  interface PillEnd { cell: string; box: Rect; out: Point }
   const pillEnd = (ref: { node: string; name?: string; ordinal: number }): PillEnd | undefined => {
     const port = layout.nodes[ref.node]?.ports.find(item => item.ref.node === ref.node
       && item.ref.name === ref.name && item.ref.ordinal === ref.ordinal);
     if (!port?.pill || port.ref.anonymous === true || !port.side) return undefined;
-    const box = shiftRect(port.pill.bounds), outward = OUTWARD[port.side];
-    return {
-      cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), box,
-      at: { x: box.x + outward.x * box.width, y: box.y + outward.y * box.height },
-      out: NORMAL[port.side],
-    };
+    return { cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), box: shiftRect(port.pill.bounds), out: NORMAL[port.side] };
   };
 
   /**
@@ -1178,7 +1217,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * child of that shape and stated from its top-left, so the shape carries it. Only a port whose node
    * the model does not hold leaves the mark on the overlay layer.
    */
-  const markHost = (ref: { node: string; name?: string; ordinal: number }): { cell: string; box: Rect; at?: Point } | undefined => {
+  const markHost = (ref: { node: string; name?: string; ordinal: number }): { cell: string; box: Rect } | undefined => {
     const pill = pillEnd(ref);
     if (pill) return pill;
     const bounds = layout.nodes[ref.node]?.bounds;
@@ -1248,7 +1287,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       labelBackgroundColor: backdrop({ x: at.x + canvas.x, y: at.y + canvas.y }),
       ...(on ? { spacing: LABEL_MARGIN } : {}),
       align: 'center', verticalAlign: 'middle',
-      fontFamily: FONT_FAMILY, fontSize: labelSize(label),
+      fontFamily: fontOf(label), fontSize: labelSize(label),
       ...textPaint(linkLabelPath(label, multiplicity, link)),
       fontStyle: label.fontWeight === 700 ? 1 : undefined,
       // The label is centred on its point, and the shift that puts its baseline where `render`
@@ -1340,12 +1379,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       else sheet.at(mode, dot);
     }
     const from = link.attachments?.from, to = link.attachments?.to;
-    const head = from ? terminal('exit', from) : undefined;
-    const tail = to ? terminal('entry', to) : undefined;
+    // Where the stroke is seen to end (`visibleEnd`, D-Q7): every pin and every end mark reads it.
+    const seenFrom = visibleEnd(layout, link, 'from'), seenTo = visibleEnd(layout, link, 'to');
+    const head = from ? terminal('exit', from, seenFrom) : undefined;
+    const tail = to ? terminal('entry', to, seenTo) : undefined;
     const headHost = overlay && from ? markHost(from) : undefined;
     const tailHost = overlay && to ? markHost(to) : undefined;
-    // What draw.io draws is not what the model holds: a pinned end sits on the pill's outward edge,
-    // not on the port anchor the waypoints start from. An edge label's coordinates are fractions of
+    // What draw.io draws is not what the model holds: a pinned end sits on its visible point, on the
+    // pill's edge, not on the port anchor a stem-built path's waypoints start from. An edge label's coordinates are fractions of
     // that drawn polyline, so it is resolved here — the waypoints themselves are untouched.
     const shown: Connector[] = runs.map((run, index) => {
       const points = [...run.points];
@@ -1377,16 +1418,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // family reaches it: a routed declared straight bundle member (ADR-0017) and an overlay link
       // the straight branch answered with an angled segment. See fact 1 for the four in the corpus.
       //
-      // Both polylines are tested, because they differ: the waypoints exactly, and the polyline
-      // draw.io really draws — the pinned terminals included — within the endpoint tolerance. A port
-      // that draws no pill terminates on its node's box, which can leave the drawn line diagonal
-      // while every waypoint is square, and that is a corner the router would invent.
+      // Both polylines are tested, the waypoints and the polyline draw.io really draws, the pinned
+      // terminals included, and both exactly. A pinned end stands on its `visibleEnd`, on the path's
+      // own stem, so the two agree; an end off its stem is a defect, and it shows as a diagonal
+      // under `edgeStyle=none`, never as a corner the orthogonal router would invent.
       //
       // A run with no bend is the exception (maintainer, 2026-10-23): it is a straight connector,
       // `edgeStyle=none`, because a straight line is easier to edit in draw.io than an orthogonal one.
       // It is tested on both polylines, as `square` is. Only a run with a bend keeps the orthogonal style.
-      const straight = isStraight(points) && isStraight(shown[index]!.points, SQUARE_ENDPOINT_TOLERANCE);
-      const square = !straight && axisAligned(points) && axisAligned(shown[index]!.points, SQUARE_ENDPOINT_TOLERANCE);
+      const straight = isStraight(points) && isStraight(shown[index]!.points);
+      const square = !straight && axisAligned(points) && axisAligned(shown[index]!.points);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
       const style = styleString([], {
@@ -1413,7 +1454,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       }, carried ? {
         value: plainText(labelLines(carried.label)),
         at: carried.at,
-      } : undefined, linkBinding(link, runs.length === 1 ? undefined : { index, count: runs.length }));
+      } : undefined, linkBinding(link, runs.length === 1 ? undefined : { index, count: runs.length }, carried?.label));
     });
     edgeRuns.set(link.id, shown);
 
@@ -1425,23 +1466,24 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // point the model gives. It paints with its host now, not with the overlay layer. A mark on a
       // node keeps absolute geometry, so a resized node leaves it at its old offset; unlike a pill
       // (issue 07) it is not anchored to its face yet, and a follow-up ticket covers it.
-      // On a pill the mark sits on the pill's outward point, where the connector really ends: the
-      // anchor is the pill's centre, and a mark there covers the port's name (maintainer, 2026-09-15).
+      // The mark sits on the end's `visibleEnd`, where the connector really ends: on a pill that is the
+      // pill's outward point, not the anchor at its centre, where a mark covers the port's name
+      // (maintainer, 2026-09-15).
       const ends = link.path!.segments;
       const marks = [
-        { end: 'from', at: ends[0]!.from, host: headHost },
-        { end: 'to', at: ends[ends.length - 1]!.to, host: tailHost },
+        { end: 'from', at: seenFrom ?? ends[0]!.from, host: headHost },
+        { end: 'to', at: seenTo ?? ends[ends.length - 1]!.to, host: tailHost },
       ] as const;
       const bare = dotEnds(layout.document, link);
       for (const mark of marks) {
         // A bare end is closed by the connector's own oval, so it takes no second mark.
         if (bare.includes(mark.end) && (mark.end === 'from' ? head : tail)) continue;
-        const at = mark.host?.at ?? shift(mark.at);
+        const at = shift(mark.at);
         const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
         vertex(cellId('overlayMark', stableId(link), mark.end), mark.host?.cell ?? layerId('overlay'),
           styleString(['ellipse'], {
-            ...markPaint(paintPath.overlayEndpoint(root, authored)), points: '[]',
+            ...markPaint(paintPath.overlayEndpoint(root, authored)), points: '[]', ...FIXED, ...UNDELETABLE,
           }), mark.host ? relative(box, mark.host.box) : box);
       }
     }
@@ -1477,7 +1519,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // ---- mesh buses ---------------------------------------------------------------------------
   // The bar is one edge with `edgeStyle=none` and two free points; each stub is an edge from its port's cell to a free point on the
   // bar, orthogonal with `jettySize=0`, as an axis-aligned overlay is exported. All take the class stroke and dash an overlay link
-  // takes, on the overlay layer, and the label is a text vertex on the labels layer.
+  // takes, on the overlay layer, and the label is a text child of the bar piece nearest to it (DX-06), so it follows the bus.
   for (const bus of layout.meshBuses ?? []) {
     if (bus.bar === undefined || bus.stubs === undefined) continue;
     const first = bus.members.map(id => byId.get(id)).find(link => link !== undefined && visible(link));
@@ -1532,13 +1574,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       return found.map((item, index) => ({ ...item, id: cellId('busJoint', of.id, String(index)) }));
     };
     const mine = spots(bus);
+    // The bus tooltip of the SVG, with the text of a bus label that had no room to be drawn (`busTooltip`). It rides on every piece of the bus.
+    const busTip = withTooltip({}, busTooltip(layout, bus));
     const jointAt = (list: readonly Spot[], at: Point): string | undefined => list.find(item => sameJoint(item.at, at))?.id;
     for (const spot of mine) {
       const host = markHost(spot.ref)!;
       const box = { x: spot.at.x - JOINT / 2, y: spot.at.y - JOINT / 2, width: JOINT, height: JOINT };
       vertex(spot.id, host.cell, styleString(['ellipse'], {
         fillColor: 'none', strokeColor: 'none', points: '[]',
-        movable: 0, resizable: 0, rotatable: 0, editable: 0, connectable: 0, deletable: 0, pointerEvents: 0,
+        ...FIXED, ...UNDELETABLE,
       }), relative(box, host.box));
     }
     /** The style that pins an edge end to the centre of its joint. */
@@ -1548,25 +1592,28 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       ({ ...(from ? centred('exit') : {}), ...(to ? centred('entry') : {}) });
     for (const stub of bus.stubs) {
       const ref = bus.ports.find(port => port.node === stub.node)!;
-      const head = terminal('exit', ref), pill = markHost(ref);
+      // A stub starts on its port's outward face (`overlayEndpoint`, the bus producer's own point).
+      const head = terminal('exit', ref, stub.from), pill = markHost(ref);
       const to = shift(stub.to);
       const points = [head?.at ?? shift(stub.from), to];
       const end = jointAt(mine, to);
       // A stub is one straight run (port face to bar) and both its ends move with one node, so `edgeStyle=none` keeps it straight.
       edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(false, { ...(head?.style ?? {}), ...(end ? centred('entry') : {}) }), points,
-        { source: head?.cell, target: end, sourcePoint: head ? undefined : points[0], targetPoint: end ? undefined : points[1] });
-      const at = pill?.at ?? shift(stub.from);
+        { source: head?.cell, target: end, sourcePoint: head ? undefined : points[0], targetPoint: end ? undefined : points[1] }, undefined, busTip);
+      const at = shift(stub.from);
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
       vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),
-        styleString(['ellipse'], { ...markPaint(paintPath.overlayEndpoint(root, authorClass(bus.class))), points: '[]' }),
+        styleString(['ellipse'], { ...markPaint(paintPath.overlayEndpoint(root, authorClass(bus.class))), points: '[]', ...FIXED, ...UNDELETABLE }),
         pill ? relative(box, pill.box) : box);
     }
     // The bar, one piece between each two neighbouring joints.
+    const pieces: { id: string; points: Point[] }[] = [];
     for (let index = 0; index + 1 < mine.length; index++) {
       const a = mine[index]!, b = mine[index + 1]!;
-      edgeCell(cellId('bus', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(a.id, b.id)), [a.at, b.at],
-        { source: a.id, target: b.id });
+      pieces.push({ id: cellId('bus', bus.id, String(index)), points: [a.at, b.at] });
+      edgeCell(pieces[index]!.id, layerId('overlay'), stroke(false, pinned(a.id, b.id)), [a.at, b.at],
+        { source: a.id, target: b.id }, undefined, busTip);
     }
     // The riser of a join is one more edge between the two bars, exported with the upper bus (mesh-bus.md, section 11.7);
     // each end is the joint the bar's own piece ends on.
@@ -1575,7 +1622,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const lower = layout.meshBuses?.find(other => other.id === bus.joined);
       const riserFrom = jointAt(mine, riser[0]!), riserTo = lower ? jointAt(spots(lower), riser[1]!) : undefined;
       edgeCell(cellId('busRiser', bus.id), layerId('overlay'), stroke(false, pinned(riserFrom, riserTo), 'riser'), riser,
-        { source: riserFrom, target: riserTo, sourcePoint: riserFrom ? undefined : riser[0], targetPoint: riserTo ? undefined : riser[1] });
+        { source: riserFrom, target: riserTo, sourcePoint: riserFrom ? undefined : riser[0], targetPoint: riserTo ? undefined : riser[1] }, undefined, busTip);
     }
     // The trunk of a three-row join is `N - 1` pieces, one per pair of neighbouring bars, exported with the head bus (mesh-bus.md, section 12.7);
     // each end is the joint where that bar ends at the trunk x, so a drag of a member node bends only the pieces that end on its joint.
@@ -1586,13 +1633,22 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       for (let index = 0; index + 1 < joins.length; index++) {
         const piece = [shift(joins[index]!), shift(joins[index + 1]!)], from = ends[index], to = ends[index + 1];
         edgeCell(cellId('busTrunk', bus.id, String(index)), layerId('overlay'), stroke(false, pinned(from, to), 'trunk'), piece,
-          { source: from, target: to, sourcePoint: from ? undefined : piece[0], targetPoint: to ? undefined : piece[1] });
+          { source: from, target: to, sourcePoint: from ? undefined : piece[0], targetPoint: to ? undefined : piece[1] }, undefined, busTip);
       }
     }
     const label = layout.labels.find(item => item.id === bus.label);
     if (label !== undefined && !label.omitted && label.bounds !== undefined) {
-      textCell(cellId('busLabel', bus.id), layerId('labels'), label, shiftRect(label.bounds),
-        textPaint(labelPath(classes('link-label', 'mesh-bus-label'), label.bounds, authorClass(bus.class))), undefined, backdrop(centre(label.bounds)));
+      // The label is a child of the bar piece nearest to it (DX-06), so it follows the bus when a member node moves. A bus with no
+      // bar piece (fewer than two joints) has nothing to follow and keeps the label on the labels layer.
+      const at = centre(shiftRect(label.bounds));
+      const near = (piece: { points: Point[] }): number => {
+        const on = project(at, { from: piece.points[0]!, to: piece.points[1]! });
+        return Math.hypot(at.x - on.x, at.y - on.y);
+      };
+      const piece = pieces.reduce<(typeof pieces)[number] | undefined>((best, item) => best === undefined || near(item) < near(best) ? item : best, undefined);
+      textCell(cellId('busLabel', bus.id), piece?.id ?? layerId('labels'), label, shiftRect(label.bounds),
+        textPaint(labelPath(classes('link-label', 'mesh-bus-label'), label.bounds, authorClass(bus.class))), undefined, backdrop(centre(label.bounds)),
+        piece === undefined ? undefined : edgeLabel(piece.points, at));
     }
   }
 
@@ -1634,7 +1690,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       }),
       vertex: 1, connectable: 0, parent: run.id,
     }, element('mxGeometry', { x: relativeAt.x, y: relativeAt.y, relative: 1, as: 'geometry' },
-      residualPoint(relativeAt) || undefined), { 'pg-kind': 'link-label', 'pg-of': stableId(link) }));
+      residualPoint(relativeAt) || undefined), withTooltip({ 'pg-kind': 'link-label', 'pg-of': stableId(link) }, shortenedText(label))));
   }
 
   // ---- legend -------------------------------------------------------------------------------
@@ -1659,7 +1715,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           spacingLeft: shiftRect(shown.bounds!).x - outer.x - LABEL_SPACING,
           // The row is centred on the swatch and the caption together, not on the caption alone.
           spacingTop: middleSpacing(shown, labelSize(shown), centre(outer).y - centre(shiftRect(shown.bounds!)).y),
-          fontFamily: FONT_FAMILY, fontSize: labelSize(shown),
+          fontFamily: fontOf(shown), fontSize: labelSize(shown),
           ...textPaint(paintPath.inLegend(root, entry.kind, entry.key,
             classes('legend-label', svgClass.halo(boxesBehind(shapes, centre(shown.bounds!)))))),
           fontStyle: shown.fontWeight === 700 ? 1 : undefined,
@@ -1674,7 +1730,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // `shape=line` draws the sample across its own box, so the swatch is a vertex like every
         // other one and sits in the row rather than floating over it.
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-          shape: 'line', points: '[]',
+          shape: 'line', points: '[]', ...FIXED,
           strokeColor: colour(linePath, 'stroke'), strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
           opacity: percent(alpha(linePath, 'stroke-opacity')),
           ...dashEntries(single(linePath, paint => paint.get('stroke-dasharray'))),
@@ -1689,7 +1745,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           arcSize: (entry.radius ?? CORNER_RADII.pill) * 2,
           fillColor: pillFill(pillPath, undefined),
           strokeColor: pillShape.strokeColor,
-          strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
+          strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]', ...FIXED,
           opacity: pillShape.opacity, ...dashEntries(single(pillPath, paint => paint.get('stroke-dasharray'))),
         }), swatch);
       } else if (entry.icon) {
@@ -1698,7 +1754,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         vertex(cellId('legendBody', entry.id), cellId('legendRow', entry.id), styleString([], {
           rounded: 1, absoluteArcSize: 1, arcSize: legendKeyRadius(theme, grow) * 2,
           ...shapePaint(inEntry(svgClass.nodeBody(keyClass, washClass(keyClass, washes)))),
-          strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
+          strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]', ...FIXED,
         }), { x: body.x - grow, y: body.y - grow, width: body.width + 2 * grow, height: body.height + 2 * grow });
         const resolved = iconPaint(inEntry(classes('icon-tile', keyClass)), inEntry(classes('node-icon', keyClass)));
         const native = iconSet === 'cisco19' ? CISCO19[iconKey(entry.icon)] : undefined;
@@ -1708,13 +1764,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           if (native.kind === 'silhouette' && positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
               rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
-              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', opacity: resolved.tileOpacity,
+              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', ...FIXED, opacity: resolved.tileOpacity,
             }), swatch);
           }
           const box = glyphBox(swatch, native);
           if (box) {
             vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-              sketch: 0, aspect: 'fixed', points: '[]',
+              sketch: 0, aspect: 'fixed', points: '[]', ...FIXED,
               shape: nativeShape(native),
               ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
               fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
@@ -1726,7 +1782,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           if (positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
               rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
-              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', opacity: resolved.tileOpacity,
+              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', ...FIXED, opacity: resolved.tileOpacity,
             }), swatch);
           }
           const inner = glyphInset(swatch);
@@ -1735,7 +1791,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
               + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${resolved.image}"`
               + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
             vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-              shape: 'image', imageAspect: 0, points: '[]', image: svgImage(glyph), opacity: resolved.glyphOpacity,
+              shape: 'image', imageAspect: 0, points: '[]', ...FIXED, image: svgImage(glyph), opacity: resolved.glyphOpacity,
             }), inner);
           }
         }
@@ -1765,6 +1821,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   if (unmapped.length) {
     options.onDiagnostic?.({ stage: 'render', severity: 'warning', code: 'DRAWIO_CSS_UNMAPPED',
       message: `draw.io cannot carry ${unmapped.length} part(s) of css:, which the SVG applies: ${unmapped.join('; ')}` });
+  }
+  // draw.io lays plain text out at `round(size × 1.2)` a line and has no style to change it, so a multi-line label whose model pitch
+  // differs puts its further lines off the SVG's baselines. The first baseline is exact (`middleSpacing`).
+  const pitched = layout.labels.filter(label => !label.omitted && label.bounds !== undefined && labelLines(label).length > 1
+    && label.lineHeight !== undefined && Math.abs(label.lineHeight - plainPitch(labelSize(label))) > EPS);
+  if (pitched.length) {
+    options.onDiagnostic?.({ stage: 'render', severity: 'warning', code: 'DRAWIO_LINE_PITCH',
+      message: `draw.io draws plain text at its own line pitch, so ${pitched.length} multi-line label(s) differ from the SVG in their further lines: ${pitched.map(label => label.id).join('; ')}` });
   }
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
     + element('mxfile', { host: 'portograph' },
