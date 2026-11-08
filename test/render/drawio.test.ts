@@ -73,6 +73,21 @@ interface Cell {
   at?: Point;
 }
 
+/** A generated part carries every lock a joint carries (DX-12). */
+function expectFixed(cell: { style: Record<string, string> }, deletable = true): void {
+  for (const key of ['movable', 'resizable', 'rotatable', 'editable', 'connectable', 'pointerEvents']) {
+    expect(cell.style[key], key).toBe('0');
+  }
+  // Only the cells that bind link ends (joints, marks) cannot be deleted alone.
+  expect(cell.style['deletable']).toBe(deletable ? undefined : '0');
+}
+
+it('rejects an empty layer selection in draw.io as in SVG', async () => {
+  const model = await pipeline('portograph: 2\ngroups: {g: {tier: 0}}\nnodes:\n  a: {group: g}\nlinks: []\n');
+  expect(() => drawio(model, { layers: [] })).toThrow('Layer selection must name at least one');
+  expect(() => render(model, { layers: [] })).toThrow('Layer selection must name at least one');
+});
+
 /** Every `<mxCell>`, with its style string split the way draw.io splits it. */
 function cells(xml: string): Map<string, Cell> {
   const found = new Map<string, Cell>();
@@ -1192,6 +1207,11 @@ describe('connection grid, rotation and tiles', () => {
     for (const icons of ['profile', 'cisco19'] as const) {
       const normal = cells(drawio(model, { icons }));
       expect(normal.has(id('icon', 'a'))).toBe(true);
+      expectFixed(normal.get(id('icon', 'a'))!);
+      if (normal.has(id('iconTile', 'a'))) expectFixed(normal.get(id('iconTile', 'a'))!);
+      // The owner stays free: the node carries no lock.
+      expect(normal.get(id('node', 'a'))!.style['movable']).toBeUndefined();
+      expect(normal.get(id('node', 'a'))!.style['resizable']).toBeUndefined();
       for (const cell of normal.values()) {
         expect(box(cell).width).toBeGreaterThanOrEqual(0);
         expect(box(cell).height).toBeGreaterThanOrEqual(0);
@@ -1223,6 +1243,17 @@ describe('connection grid, rotation and tiles', () => {
       expect(box(some.get(id('icon', 'a'))!).width).toBeGreaterThan(0);
       expect(box(some.get(id('icon', 'a'))!).width).toBeLessThanOrEqual(1);
     }
+  }, 60000);
+
+  it('locks every legend swatch, tile and body to its row (DX-12)', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    const kinds = new Set(model.legend!.entries.map(item => item.kind));
+    expect(kinds.has('line') && kinds.has('port') && kinds.has('symbol')).toBe(true);
+    const parts = [...all.values()].filter(cell => /^pg-legend(Swatch|Tile|Body)~/.test(cell.id));
+    expect(parts.length).toBeGreaterThanOrEqual(model.legend!.entries.length);
+    for (const cell of parts) expectFixed(cell);
+    expect([...all.keys()].some(key => key.startsWith('pg-legendBody~'))).toBe(true);
   }, 60000);
 
   it('applies the same guard to a legend swatch', async () => {
@@ -1782,6 +1813,10 @@ describe('link ends and nested groups move with their owner (issue 03)', () => {
     for (const cell of all.values()) {
       if (cell.id.startsWith('pg-overlayMark~') || cell.id.startsWith('pg-busMark~')) expect(all.get(cell.parent!)!.vertex).toBe(true);
     }
+    // A mark is fixed to its owner, as a joint is (DX-12, S-08).
+    const marks = [...all.values()].filter(cell => /^pg-(overlay|bus)Mark~/.test(cell.id));
+    expect(marks.length).toBeGreaterThan(0);
+    for (const cell of marks) expectFixed(cell, false);
   }, 60000);
 });
 
