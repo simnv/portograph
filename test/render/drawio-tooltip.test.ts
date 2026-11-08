@@ -59,4 +59,23 @@ describe('draw.io tooltips', () => {
     expect(xml).toContain('fontFamily=Courier, monospace');
     expect(xml).not.toContain('fontFamily=Verdana');
   }, 60000);
+
+  it('escapes generated text as HTML and keeps the author tooltip raw', async () => {
+    const text = 'A <b>x</b> <uplink> & y "q" \'r\'\nnext';
+    const yaml = fixture('unfittable-link-label').replace('{ label: This', '{ meta: {tooltip: "<i>Mine</i>"}, label: This');
+    const link = objects(drawio(edited(await run(yaml), () => ({ omitted: true, tooltip: text }), linkOnly))).find(item => item['pg-kind'] === 'link')!;
+    expect(link['tooltip']).toBe('<i>Mine</i>\nA &lt;b&gt;x&lt;/b&gt; &lt;uplink&gt; &amp; y "q" \'r\'\nnext');
+  }, 60000);
+
+  it('drops a semicolon from a model font family', async () => {
+    const xml = drawio(edited(await run(fixture('fitting-link-label')), () => ({ fontFamily: 'Evil; strokeColor=red' })));
+    expect(xml).toContain('fontFamily=Evil strokeColor=red;');
+  }, 60000);
+
+  it('warns when a multi-line label has a model pitch draw.io cannot draw', async () => {
+    const diagnostics: string[] = [];
+    drawio(edited(await run(fixture('fitting-link-label')), label => ({ lines: ['a', 'b'], lineHeight: (label.lineHeight ?? 10) + 5 }), linkOnly),
+      { onDiagnostic: item => diagnostics.push(item.code) });
+    expect(diagnostics).toContain('DRAWIO_LINE_PITCH');
+  }, 60000);
 });

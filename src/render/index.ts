@@ -22,7 +22,7 @@ import type { Theme } from '../profiles/network/themes.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 import { boxClasses, frameTitled, groupLabelClasses, iconGlyphBox, legendSwatchClass, linkClassToken, pathRuns, svgClass } from './shared.js';
 import { legendLineOverlay } from '../layout/legend.js';
-import { busTooltip, linkTooltipLines } from './tooltips.js';
+import { busTooltip, linkTooltipLines, shortenedText } from './tooltips.js';
 
 export { OVERLAY_ENDPOINT_RADIUS };
 const MASK_ID = 'pg-overlay-mask';
@@ -152,8 +152,8 @@ function textElement(label: LayoutLabel, locks: GeometryLocks, structural: strin
   const start = label.textAlign === 'start';
   const spans = lines.map((line, index) => element('tspan',
     { x: start ? box.x : middle.x, y: first + index * lineHeight }, escapeText(line))).join('');
-  const title = label.tooltip !== undefined && label.tooltip !== label.text
-    ? element('title', {}, escapeText(label.tooltip)) : '';
+  const shortened = shortenedText(label);
+  const title = shortened !== undefined ? element('title', {}, escapeText(shortened)) : '';
   return element('text', {
     class: classes(structural, extra, locks.font(label.fontFamily ?? FONT_FAMILY, label.fontSize ?? 9, label.fontWeight ?? 400)),
     'data-owner': owner,

@@ -79,7 +79,7 @@ import { boxesBehind, groupShapes } from './frame-order.js';
 import { backdropColour } from '../profiles/network/theme.js';
 import { checkOptions } from './check-options.js';
 import { linkVisible } from './index.js';
-import { busTooltip, linkTooltipLines } from './tooltips.js';
+import { busTooltip, linkTooltipLines, shortenedText } from './tooltips.js';
 import { authorClass, classes, element, num } from './svg.js';
 import {
   PaintSheet, boxClasses, groupLabelClasses, iconGlyphBox, legendSwatchClass, linkClassToken, paintPath, pathRuns, svgClass,
@@ -427,19 +427,22 @@ const binding = (own: Binding, meta: Meta | undefined): Binding => ({
   ...Object.fromEntries(Object.keys(meta ?? {}).sort().map(key => [key, String(meta![key])])),
 });
 
+/** draw.io shows `tooltip` as HTML (`Graph.sanitizeHtml`, then `innerHTML`), so generated text is escaped to stay text. */
+const htmlText = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 /**
  * Adds generated text to a cell's `tooltip` attribute, as the SVG renderer's `<title>` holds it. An author's own
- * `meta.tooltip` stays first and the generated text follows on a new line, so neither is lost. The `pg-*` keys are untouched.
+ * `meta.tooltip` stays first and raw (it is draw.io's own HTML) and the escaped generated text follows on a new line,
+ * so neither is lost. The `pg-*` keys are untouched.
  */
-const withTooltip = (own: Binding, text: string | undefined): Binding =>
-  text === undefined || text === '' ? own : { ...own, tooltip: own['tooltip'] === undefined ? text : `${own['tooltip']}\n${text}` };
+const withTooltip = (own: Binding, text: string | undefined): Binding => {
+  if (text === undefined || text === '') return own;
+  const generated = htmlText(text);
+  return { ...own, tooltip: own['tooltip'] === undefined ? generated : `${own['tooltip']}\n${generated}` };
+};
 
-/** The full text a drawn label shortened, as `LayoutLabel.tooltip` carries it in the SVG. */
-const shortenedText = (label: LayoutLabel): string | undefined =>
-  label.tooltip !== undefined && label.tooltip !== label.text ? label.tooltip : undefined;
-
-/** The font a label states, then the shared default, as the SVG renderer reads it. */
-const fontOf = (label: LayoutLabel): string => label.fontFamily ?? FONT_FAMILY;
+/** The font a label states, then the shared default, as the SVG renderer reads it. A `;` would end the style value, so it is dropped. */
+const fontOf = (label: LayoutLabel): string => label.fontFamily?.replace(/;/g, '').trim() || FONT_FAMILY;
 
 /**
  * A cell, bare or bound. A bound cell is a draw.io `UserObject`: an `<object>` that holds the id, the
@@ -1571,9 +1574,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       return found.map((item, index) => ({ ...item, id: cellId('busJoint', of.id, String(index)) }));
     };
     const mine = spots(bus);
-    // The bus tooltip of the SVG, with the text of a bus label that had no room to be drawn. It rides on every piece of the bus.
-    const busLabel = layout.labels.find(item => item.id === bus.label);
-    const busTip = withTooltip({}, [busTooltip(layout, bus), ...(busLabel?.omitted && busLabel.tooltip !== undefined ? [busLabel.tooltip] : [])].join('\n'));
+    // The bus tooltip of the SVG, with the text of a bus label that had no room to be drawn (`busTooltip`). It rides on every piece of the bus.
+    const busTip = withTooltip({}, busTooltip(layout, bus));
     const jointAt = (list: readonly Spot[], at: Point): string | undefined => list.find(item => sameJoint(item.at, at))?.id;
     for (const spot of mine) {
       const host = markHost(spot.ref)!;
@@ -1819,6 +1821,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   if (unmapped.length) {
     options.onDiagnostic?.({ stage: 'render', severity: 'warning', code: 'DRAWIO_CSS_UNMAPPED',
       message: `draw.io cannot carry ${unmapped.length} part(s) of css:, which the SVG applies: ${unmapped.join('; ')}` });
+  }
+  // draw.io lays plain text out at `round(size × 1.2)` a line and has no style to change it, so a multi-line label whose model pitch
+  // differs puts its further lines off the SVG's baselines. The first baseline is exact (`middleSpacing`).
+  const pitched = layout.labels.filter(label => !label.omitted && label.bounds !== undefined && labelLines(label).length > 1
+    && label.lineHeight !== undefined && Math.abs(label.lineHeight - plainPitch(labelSize(label))) > EPS);
+  if (pitched.length) {
+    options.onDiagnostic?.({ stage: 'render', severity: 'warning', code: 'DRAWIO_LINE_PITCH',
+      message: `draw.io draws plain text at its own line pitch, so ${pitched.length} multi-line label(s) differ from the SVG in their further lines: ${pitched.map(label => label.id).join('; ')}` });
   }
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
     + element('mxfile', { host: 'portograph' },

@@ -1,4 +1,8 @@
-import type { LayoutLink, LayoutModel, MeshBus } from '../model/layout.js';
+import type { LayoutLabel, LayoutLink, LayoutModel, MeshBus } from '../model/layout.js';
+
+/** The full text of a drawn label that shows a shortened form: its `tooltip`, when that differs from what it draws. */
+export const shortenedText = (label: LayoutLabel): string | undefined =>
+  label.tooltip !== undefined && label.tooltip !== label.text ? label.tooltip : undefined;
 
 /**
  * Text a link carries but does not draw: the full text of each omitted label it owns, and the
@@ -14,8 +18,9 @@ export function linkTooltipLines(layout: LayoutModel, link: LayoutLink): string[
   return lines;
 }
 
-/** The tooltip of one mesh bus: its class, members, joins and the authored label of each member link. */
+/** The tooltip of one mesh bus: its class, members, joins, the authored label of each member link, and the text of a bus label with no room. */
 export function busTooltip(layout: LayoutModel, bus: MeshBus): string {
+  const label = layout.labels.find(item => item.id === bus.label);
   const memberOf = (id: string): LayoutLink | undefined => layout.links.find(link => link.id === id);
   const authoredLabels = [...bus.members, ...(bus.cross ?? [])].flatMap(id => {
     const link = memberOf(id), text = link === undefined ? undefined : layout.document.links[link.sourceIndex]?.label;
@@ -29,5 +34,5 @@ export function busTooltip(layout: LayoutModel, bus: MeshBus): string {
   const trunkLines = bus.mesh === undefined ? [] : [`joined by trunk: ${meshBuses.map(item => item.id).join(', ')} (${bus.meshNodes ?? bus.nodes.length} nodes in all)`,
     ...(bus.trunk === undefined ? [] : [`mesh: ${meshBuses.flatMap(item => item.nodes).join(', ')}`, `cross links: ${(bus.cross ?? []).join(', ')}`])];
   return [`${bus.class ?? 'unclassed'} mesh: ${bus.nodes.join(', ')}`, `links: ${bus.members.join(', ')}`, ...joinLines, ...trunkLines,
-    ...(bus.dissolved.length ? [`group-links: ${bus.dissolved.join(', ')}`] : []), ...authoredLabels].join('\n');
+    ...(bus.dissolved.length ? [`group-links: ${bus.dissolved.join(', ')}`] : []), ...authoredLabels, ...(label?.omitted && label.tooltip !== undefined ? [label.tooltip] : [])].join('\n');
 }

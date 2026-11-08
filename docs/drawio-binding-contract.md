@@ -13,8 +13,9 @@ rule in this document. A change to a rule increments the schema version.
 - A bound cell is an `<object>` element around an `<mxCell>`. The `<object>` holds the cell `id`,
   the `label` (the old `value`) and the binding attributes. The inner `<mxCell>` holds `style`,
   `vertex` or `edge`, `parent`, `source`, `target` and the geometry. It has no `id` and no `value`.
-- All other cells (groups, icon tiles, legend, mesh buses, overlay marks, layers) are bare `<mxCell>`
-  elements, as before.
+- All other cells (groups, icon tiles, legend, overlay marks, layers) are bare `<mxCell>`
+  elements, as before. A mesh bus piece and a text cell that only needs a `tooltip` are an `<object>`
+  with `tooltip` and no `pg-kind`. Such an `<object>` is not a binding; a reader keys on `pg-kind`.
 
 ```xml
 <object id="pg-port~sw1~eth2~1" label="eth2" pg-kind="port" pg-id="sw1:eth2"
@@ -168,8 +169,10 @@ Rules:
 - The export also writes generated text into `tooltip`, as the SVG writes it in `<title>`: the full
   text of a shortened or omitted link label (on the link, or on the label cell), the members of a
   group-link fallback, and the tooltip of a mesh bus (on every piece of the bus; these pieces carry
-  `tooltip` and no `pg-` attribute). When a cell also has an author `meta.tooltip`, the author text
-  comes first, then a new line, then the generated text. A reader that binds by `pg-kind` ignores a
+  `tooltip` and no `pg-` attribute). draw.io shows `tooltip` as HTML: the generated text has `&`, `<`
+  and `>` escaped, and an author `meta.tooltip` is written raw, so it may hold draw.io HTML. When a
+  cell also has an author `meta.tooltip`, the author text comes first, then a new line, then the
+  generated text. A reader that binds by `pg-kind` ignores a
   cell with no `pg-kind`.
 - No cell inherits the root `meta:`. A reader can use it as a default for every cell.
 
@@ -185,6 +188,10 @@ These cells have no binding attributes:
 - overlay end marks, icon tiles, node descriptions and the legend,
 - the count label of a merge bundle. Its cell id comes from the bundle number, which can change
   when you reorder the links.
+
+Known difference: draw.io draws plain text at its own line pitch, `round(size × 1.2)`, and has no
+style to change it. The first baseline is exact. When the model pitch of a multi-line label differs,
+its further lines can sit about 1 px a line off the SVG, and the export reports `DRAWIO_LINE_PITCH`.
 
 ## 6. Versioning
 
