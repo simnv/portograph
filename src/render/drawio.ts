@@ -73,7 +73,7 @@ import { FONT_FAMILY, measureText } from '../text/index.js';
 import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { boxesBehind, groupShapes } from './frame-order.js';
 import { backdropColour } from '../profiles/network/theme.js';
-import { linkVisible } from './index.js';
+import { checkOptions, linkVisible } from './index.js';
 import { authorClass, element, num } from './svg.js';
 import { iconGlyphBox, paintLookup, pathRuns } from './shared.js';
 
@@ -541,7 +541,17 @@ const part = (value: string): string => value.replace(/[%~]/g, character => `%${
 const cellId = (kind: string, ...parts: readonly string[]): string =>
   parts.length ? `pg-${kind}~${parts.map(part).join('~')}` : `pg-${kind}`;
 
+/**
+ * The locks of a generated part (a joint, a port mark, an icon tile or glyph): it belongs to its
+ * owner, so it cannot be moved, resized, edited, connected or deleted apart from it, and it takes
+ * no pointer. The owner still moves and resizes, and carries the part (mxGraph moves children).
+ */
+const FIXED: Readonly<Record<string, StyleValue>> = {
+  movable: 0, resizable: 0, rotatable: 0, editable: 0, connectable: 0, deletable: 0, pointerEvents: 0,
+};
+
 export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string {
+  checkOptions(options);
   validate(layout);
   const canvas = layout.canvas;
   if (!canvas) throw new Error('A draw.io export requires a final canvas');
@@ -884,7 +894,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         if (native.kind === 'silhouette' && positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
             rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
-            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', ...FIXED,
           }), tile);
         }
         // The glyph sits in the box the SVG draws its glyph in (`iconGlyphBox`): the inset is at most a
@@ -893,7 +903,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         const box = glyphBox(tile, native, ownInset);
         if (box) {
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
-            sketch: 0, aspect: 'fixed', points: '[]',
+            sketch: 0, aspect: 'fixed', points: '[]', ...FIXED,
             shape: nativeShape(native),
             ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
             // On a badge `fillColor` is the frame and `strokeColor` is the glyph; a silhouette is
@@ -906,7 +916,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         if (positive(tile)) {
           vertex(cellId('iconTile', id), cellId('node', id), styleString([], {
             rounded: 1, absoluteArcSize: 1, arcSize: tileRadius * 2,
-            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+            fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', ...FIXED,
           }), tile);
         }
         // A profile glyph is a stroked 24-unit path with no bundled equivalent, so it is carried as
@@ -918,7 +928,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             + `<path d="${iconPath(node.icon.icon)}" fill="none" stroke="${pick(mode).glyph}"`
             + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
           vertex(cellId('icon', id), cellId('node', id), styleString([], {
-            shape: 'image', imageAspect: 0, points: '[]',
+            shape: 'image', imageAspect: 0, points: '[]', ...FIXED,
             image: svgImage(glyph),
           }), inner, undefined, {}, iconBinding);
         }
@@ -1314,7 +1324,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
         vertex(cellId('overlayMark', stableId(link), mark.end), mark.host?.cell ?? layerId('overlay'),
           styleString(['ellipse'], {
-            fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]',
+            fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]', ...FIXED,
           }), mark.host ? relative(box, mark.host.box) : box);
       }
     }
@@ -1378,7 +1388,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const box = { x: spot.at.x - JOINT / 2, y: spot.at.y - JOINT / 2, width: JOINT, height: JOINT };
       vertex(spot.id, host.cell, styleString(['ellipse'], {
         fillColor: 'none', strokeColor: 'none', points: '[]',
-        movable: 0, resizable: 0, rotatable: 0, editable: 0, connectable: 0, deletable: 0, pointerEvents: 0,
+        ...FIXED,
       }), relative(box, host.box));
     }
     /** The style that pins an edge end to the centre of its joint. */
@@ -1399,7 +1409,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
       vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),
-        styleString(['ellipse'], { fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]' }),
+        styleString(['ellipse'], { fillColor: paint.overlay.mark, strokeColor: 'none', points: '[]', ...FIXED }),
         pill ? relative(box, pill.box) : box);
     }
     // The bar, one piece between each two neighbouring joints.
@@ -1544,13 +1554,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           if (native.kind === 'silhouette' && positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
               rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
-              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', ...FIXED,
             }), swatch);
           }
           const box = glyphBox(swatch, native);
           if (box) {
             vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-              sketch: 0, aspect: 'fixed', points: '[]',
+              sketch: 0, aspect: 'fixed', points: '[]', ...FIXED,
               shape: nativeShape(native),
               ...(native.kind === 'badge' ? { prIcon: native.shape } : {}),
               fillColor: native.kind === 'badge' ? resolved.tile.fill : resolved.glyph,
@@ -1561,7 +1571,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           if (positive(swatch)) {
             vertex(cellId('legendTile', entry.id), cellId('legendRow', entry.id), styleString([], {
               rounded: 1, absoluteArcSize: 1, arcSize: theme.radii.tile * 2,
-              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]',
+              fillColor: resolved.tile.fill, strokeColor: resolved.tile.stroke, points: '[]', ...FIXED,
             }), swatch);
           }
           const inner = glyphInset(swatch);
@@ -1570,7 +1580,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
               + `<path d="${iconPath(entry.icon)}" fill="none" stroke="${pick(mode).glyph}"`
               + ` stroke-width="${num(GLYPH_STROKE)}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
             vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-              shape: 'image', imageAspect: 0, points: '[]', image: svgImage(glyph),
+              shape: 'image', imageAspect: 0, points: '[]', ...FIXED, image: svgImage(glyph),
             }), inner);
           }
         }

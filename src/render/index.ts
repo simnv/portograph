@@ -71,7 +71,8 @@ export function linkVisible(model: LayoutModel, link: LayoutLink, options: Rende
   return authored === undefined || model.document.overlays?.[authored] !== 'hidden';
 }
 
-function checkOptions(options: RenderOptions): void {
+/** The one check of the layer selection, shared by the SVG and the draw.io renderer. */
+export function checkOptions(options: Pick<RenderOptions, 'layers'>): void {
   if (options.layers === undefined) return;
   if (!options.layers.length) throw new Error('Layer selection must name at least one of routed, overlay');
   for (const layer of options.layers) {
