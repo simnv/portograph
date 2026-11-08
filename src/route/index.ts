@@ -12,12 +12,12 @@ import { stitchPaths, stubCandidate, tryStitch, type RouteRejection, type Stitch
 import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
 
 export type { RouteObstacle } from './obstacles.js';
-export type { LinkPlan, RoutePiece, RoutePlan, StemReservation } from './plan.js';
-export { batchRequest, pendingStemObstacles, planRoute, effectiveLayer, stemCheckpoint, ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './plan.js';
+export type { LinkPlan, PlacementRuns, PlannedRun, RoutePiece, RoutePlan, StemReservation } from './plan.js';
+export { batchRequest, pendingStemObstacles, placementRuns, plannedRunsOf, planRoute, effectiveLayer, stemCheckpoint, ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './plan.js';
 export { nodeClearance, routeObstacles, trimChain, TERMINAL_TRIM } from './obstacles.js';
 export { checkpointsHonoured, crossedTiers, firstSkippedCheckpoint, simplify, skippedCheckpoint, stitchPath, stitchPaths, stubCandidate, tryStitch } from './paths.js';
 export type { RoutedLinkPath, RouteRejection, Stitched } from './paths.js';
-export { reservationConflicts, reservedRuns, validateRoutedPaths } from './validate.js';
+export { lostPlannedRun, preRoute, reservationConflicts, reservedRuns, validateRoutedPaths } from './validate.js';
 export type { ReservationConflict } from './validate.js';
 export { createBrowserRouteFactory, createRouteFactory, RouteDeadlineError, RouteSession, ROUTE_BUDGET_MS, ROUTE_REQUEST, ROUTE_RESPONSE, systemRouteClock, withRouteSession } from './worker.js';
 export type { CreateRouteAttempt, RouteAssets, RouteAttempt, RouteClock, RouteWorker } from './worker.js';

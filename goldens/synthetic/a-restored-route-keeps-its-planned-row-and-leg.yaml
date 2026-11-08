@@ -1,0 +1,24 @@
+# Expected (decision D-Q2, decision-review ticket 10): full restore keeps every run placement planned, with its owner and its
+# traversal, as it keeps the fixed and shared runs. `link-1` (`a.p` to `b.p`, both facing right) turns up in the row gap between
+# `a` and `b`, and `link-2` (`a.q` to `b.q`) jogs in it: `legReservation` plans a leg for each. The three orthogonal links from
+# `top` to `bottom` cross one tier gap, and the tier-gap plan gives each its part: a row between two legs, tip to tip.
+# The published layout passes every gate and restores unchanged. A copy with a planned row of `link-5` moved 4 px with its two
+# joins, or with the leg of `link-2` moved 4 px with its two joins, keeps the boxes, the records and the freeze, and the gates
+# can pass on it; restore refuses it and names the link whose planned run is lost
+# (test/route/planned-run-restore.test.ts).
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  bottom: { tier: 1, label: Bottom }
+nodes:
+  a: { group: top, ports: [{ name: p, side: right }, { name: q, side: right }] }
+  b: { group: top, ports: [{ name: p, side: right }, { name: q, side: left }] }
+  c: { group: bottom }
+  d: { group: bottom }
+  e: { group: bottom }
+links:
+  - [a.p, b.p]
+  - [a.q, b.q]
+  - [a, e, { route: orthogonal }]
+  - [b, c, { route: orthogonal }]
+  - [b, d, { route: orthogonal }]
