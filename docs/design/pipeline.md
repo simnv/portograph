@@ -452,7 +452,9 @@ bands above its document tier's bands. The decision is band input, made before a
 band estimate: each band as wide as its units side by side, the widest band times the stacked heights) and runs the command once more
 per candidate, widest estimated gain first, with the record as `LayoutOptions.fixedLifts`. At most `LIFT_TRIALS` = 2 trials per command
 (R4; a component past it is recorded with `GROUP_LIFT_CAPPED`); each trial run has its own placement cap and shares the caller's one
-budget. A rise is a candidate when its estimate drops the area by `LIFT_MIN_GAIN` or more, or when it is narrower or nearer square by
+budget. A deadline error ends the command (`isDeadlineError`, shared with the width budget); a trial whose run fails on another error is
+declined, with a warning unless placement refused it by name. With `layout.maxWidth` the first run decides the lift and every stagger trial
+applies the record (`fixedLifts`). A rise is a candidate when its estimate drops the area by `LIFT_MIN_GAIN` or more, or when it is narrower or nearer square by
 `LIFT_SHAPE_STEP` (shape admission: the estimate is too coarse for a push). The judge (`judgeLift`) reads the published results: no
 link removed, every straight link still straight, a vertical link still vertical and every routed link on its faces (except the
 trial's side entries), no link with more bends, no new gate, hard-constraint or separation finding, the unified order (bent links,

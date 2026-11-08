@@ -3,7 +3,8 @@
 # Beside the tall `campus` frame (three sub-tiers), the one row of `lab-floor` widens the bands of tier 2; one band up, `lab` stands
 # beside `core` and `lab-floor` beside `dist`, over the campus frame and out of its bands, and the canvas is narrower. The feeds from
 # Lab one stay straight, every straight link stays straight, and the document tiers do not change: only the bands do (`groupLifts`).
-# `dist` cannot rise: its feed from Core one stands directly above it.
+# `dist` is no float component: it feeds `campus`, a lower tier. `campus` (fed from directly above by `dist`) may rise only through a
+# level side entry; its trial is declined on area, so it stays.
 portograph: 2
 groups:
   core: { tier: 0, label: Core }

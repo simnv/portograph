@@ -11,8 +11,8 @@ import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
-// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
-// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
+// The group lift (ticket 08) is off in these tests: every lift trial on these sheets is declined, but each trial is one more whole run,
+// and the trace the tests read is the last run's offer, not the command's. `lift.test.ts` tests the lift.
 
 /**
  * Architecture ticket 22, spanning chords (docs/design/routed-chords.md, Section 14). Phase 1: the shapes and the corridor reader; phase 3: the offer, the

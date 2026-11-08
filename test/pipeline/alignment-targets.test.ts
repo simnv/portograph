@@ -12,8 +12,8 @@ import { rows } from '../../src/layout/rows.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
-// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
-// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
+// The group lift (ticket 08) is off in these tests: every lift trial on these sheets is declined, but each trial is one more whole run,
+// and the tests count the alignment declines of one run. `lift.test.ts` tests the lift.
 
 /**
  * Architecture-2 ticket 66: the alignment-target record. A centring step that would keep the geometry it found for its vertical tally keeps it only

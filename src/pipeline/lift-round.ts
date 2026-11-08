@@ -11,7 +11,8 @@ import { judgeLift } from '../layout/lift-judge.js';
 import type { LayoutOptions } from './options.js';
 import { restoreLayoutModel } from '../layout/mutation.js';
 import { serializeLayoutModel } from '../model/model.js';
-import { CommandDeadlineError } from './budget.js';
+import { isDeadlineError } from './deadline.js';
+import { PlacementRefusal } from '../layout/placement-refusal.js';
 
 /**
  * The lift decision of one command whose document has a float component in the first slice (`layoutOnce` runs any other document once,
@@ -26,8 +27,8 @@ export async function decideLifts(document: LayoutModel['document'], options: La
   const areaOf = (m: LayoutModel): number => (m.canvas?.width ?? 0) * (m.canvas?.height ?? 0);
   const record: GroupLift[] = [], notes: Diagnostic[] = [], decided = new Set<string>();
   let trials = 0;
-  const note = (code: string, message: string, entry: GroupLift): void => {
-    notes.push({ stage: 'placement', severity: 'info', code, message, owners: entry.units.map(id => ({ kind: 'group' as const, id })) });
+  const note = (code: string, message: string, entry: GroupLift, severity: Diagnostic['severity'] = 'info'): void => {
+    notes.push({ stage: 'placement', severity, code, message, owners: entry.units.map(id => ({ kind: 'group' as const, id })) });
   };
   for (;;) {
     const candidate = measureLifts(best, decided)[0];
@@ -43,11 +44,15 @@ export async function decideLifts(document: LayoutModel['document'], options: La
     }
     trials++;
     let entry = liftEntry(best, candidate, candidate.offset, 'trial');
+    // A trial whose run throws is declined: by name when placement refused it (`PlacementRefusal`), with a warning for any other error. A
+    // deadline (the command's or a per-attempt timer of ELK or the router) ends the whole command (R4, `isDeadlineError`).
+    let faulted = false;
     const attempt = async (tried: GroupLift): Promise<{ trial?: LayoutModel; reason?: string; verdict?: ReturnType<typeof judgeLift> }> => {
       let trial: LayoutModel | undefined;
       try { trial = await run({ ...options, fixedLifts: [...record, tried] }); } catch (error) {
-        if (error instanceof CommandDeadlineError) throw error;
-        const reason = `the command refused it (${String((error as Error).message ?? error).slice(0, 240)})`;
+        if (isDeadlineError(error)) throw error;
+        if (!(error instanceof PlacementRefusal)) faulted = true;
+        const reason = `the command ${error instanceof PlacementRefusal ? 'refused' : 'failed on'} it (${String((error as Error).message ?? error).slice(0, 240)})`;
         options.testLiftTrace?.({ entry: tried, routedBase: best, routedTrial: undefined, reason });
         return { reason };
       }
@@ -74,7 +79,7 @@ export async function decideLifts(document: LayoutModel['document'], options: La
     } else {
       const declined = liftEntry(best, candidate, 0, `declined after a trial of ${candidate.offset} band${candidate.offset > 1 ? 's' : ''}${entry.sideEntry ? ` (side entries ${entry.sideEntry.join(', ')})` : ''}: ${reason}`);
       record.push(declined);
-      note('GROUP_LIFT_DECLINED', `The float component ${name} does not rise ${candidate.offset} band${candidate.offset > 1 ? 's' : ''}: ${reason}.`, declined);
+      note('GROUP_LIFT_DECLINED', `The float component ${name} does not rise ${candidate.offset} band${candidate.offset > 1 ? 's' : ''}: ${reason}.`, declined, faulted ? 'warning' : 'info');
     }
   }
   // The published geometry is the best run's; its record and notes become the command's (declined entries move no band).

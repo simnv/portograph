@@ -30,7 +30,10 @@ first slice, as `groupArrangements`; `[]` = decided, none) and applied at stage 
 found during routing. The command runs once with no lift and once per trial; a trial is kept on
 its published result. The bound is `LIFT_TRIALS` = 2 trials per command (R4), with
 `GROUP_LIFT_CAPPED` for a component past it (the value of the lift PoCs, choice L6; each trial
-is one more whole command run, so the bound is also the bound on wall time). The area tolerance is `LIFT_AREA_TOLERANCE` = 5 %: a lift set may cost
+is one more whole command run under its own placement cap, so a command has at most 1 + `LIFT_TRIALS`
+lift runs). With `layout.maxWidth` the lift is decided once, by the first run, and every width-budget
+stagger trial applies that record (`fixedLifts`) and decides none. A deadline (the command's, or a
+per-attempt timer of ELK or the router) ends the command; it never declines a trial (R4). The area tolerance is `LIFT_AREA_TOLERANCE` = 5 %: a lift set may cost
 up to 5 % area over the smallest kept set when its canvas is narrower or nearer square
 (`|ln W/H|`, ADR-0024), and it must stay below the no-lift run. 5 % is the smallest tested value
 that keeps the user's key-sheet ruling (+4.07 % on

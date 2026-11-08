@@ -7,8 +7,8 @@ import { measureSpans, type SpanOffer } from '../../src/layout/span-measure.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
-// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
+// The group lift (ticket 08) is off in these tests: with it, `exits` (it links to no lower tier) rises one band beside `ranked#1`, so no
+// rank band stands between the ends of the two chords. `lift.test.ts` tests the lift.
 
 /**
  * Architecture-2 ticket 35, part 1 (docs/design/routed-chords.md, Section 14.1). A link across one document tier gap whose ends stand on sub-tiers

@@ -7,8 +7,8 @@ import { chordTrace, pitchRefused, tooClose } from '../../src/layout/side-chords
 import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
-// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
+// The group lift (ticket 08) is off in these tests: every lift trial of `providers` is declined, but each trial is one more whole run,
+// and the tests count the side-round runs of one command. `lift.test.ts` tests the lift.
 
 /** Ticket 117 (docs/design/side-faces.md, Section 9; docs/design/routed-chords.md, Section 3): a routed chord leaves a lateral side. */
 const FAR = 'a-location-router-leaves-a-lateral-side-toward-a-far-provider';

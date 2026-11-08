@@ -333,6 +333,16 @@ export function measureLifts(model: LayoutModel, decided: ReadonlySet<string> = 
   return out.sort((a, b) => (b.before - b.after) - (a.before - a.after) || compareId(a.component.units[0]!, b.component.units[0]!));
 }
 
+/**
+ * The side a component stands on against the units of the bands it shares: right when the centre of its boxes stands right of the centre
+ * of theirs. Undefined when either list is empty. One reader for the record (`liftEntry`) and its check (`validateGroupLifts`, R1).
+ */
+function standingSide(mine: readonly Part[], others: readonly Part[]): 'left' | 'right' | undefined {
+  if (!mine.length || !others.length) return undefined;
+  const centre = (list: readonly Part[]): number => { const box = union(list.map(part => part.box)); return box.x + box.width / 2; };
+  return centre(mine) > centre(others) ? 'right' : 'left';
+}
+
 /** The record entry of a candidate before its trial; `straight` and `reason` are set by the judge. */
 export function liftEntry(model: LayoutModel, candidate: LiftCandidate, offset: number, reason: string, straight: string[] = [],
   push: { at: number; by: number } | undefined = offset > 0 && offset === candidate.offset ? candidate.push : undefined): GroupLift {
@@ -346,8 +356,7 @@ export function liftEntry(model: LayoutModel, candidate: LiftCandidate, offset: 
   const pushAt = push !== undefined ? index.get(push.at)! : Infinity;
   const shifted = (part: Part): Part => part.low > pushAt ? { ...part, low: Infinity, high: Infinity } : part;
   const others = all.filter(part => !unitSet.has(part.unit)).map(shifted).filter(part => part.low <= high && low <= part.high);
-  const centre = (list: Part[]): number => { const box = union(list.map(part => part.box)); return box.x + box.width / 2; };
-  const side: 'left' | 'right' = mine.length && others.length && centre(mine) > centre(others) ? 'right' : 'left';
+  const side = standingSide(mine, others) ?? 'left';
   const to = members.map(id => offset === 0 ? model.groups[id]!.tier! : bands[index.get(model.groups[id]!.tier!)! - offset]!);
   const sideEntry = offset === 0 ? [] : sideEntries(model, new Set(candidate.component.units), new Map(members.map((id, i) => [id, to[i]!])));
   return {
@@ -582,7 +591,8 @@ export function validateGroupLifts(model: LayoutModel): void {
   if (record === undefined) return;
   const fail = (message: string): never => { throw new PlacementRefusal('skeleton', `Group lift record: ${message}`); };
   if (!Array.isArray(record)) fail('not a list');
-  if (model.document.layout?.autoArrange === false && record.length) fail('recorded although layout.autoArrange is false');
+  // Under `layout.autoArrange: false` nothing is decided, so the record is absent; an empty record there is refused too.
+  if (model.document.layout?.autoArrange === false) fail('recorded although layout.autoArrange is false');
   const { units, unitOf } = liftUnits(model);
   const seen = new Set<string>();
   // A later entry's push moves the members of earlier entries that stand below its feeders.
@@ -602,7 +612,18 @@ export function validateGroupLifts(model: LayoutModel): void {
       if (band !== recorded.get(id)) fail(`${id} stands in band ${band}, not in its recorded band`);
       if (lift.offset > 0 && !(lift.to[i]! < lift.from[i]!)) fail(`${id} does not rise`);
     }
-    if (lift.offset === 0) continue;
+    if (lift.offset === 0) {
+      // A declined entry moves nothing: it has no push and no side entry.
+      if (lift.push !== undefined || lift.sideEntry !== undefined) fail(`the declined entry of ${lift.units.join(', ')} has a push or a side entry`);
+      continue;
+    }
+    // The component stands on its recorded side of the units of the bands it shares (`seatLifts` and `holdLifts` keep it there).
+    const placed = parts(model), mine = placed.filter(part => unitSet.has(part.unit));
+    if (mine.length) {
+      const low = Math.min(...mine.map(part => part.low)), high = Math.max(...mine.map(part => part.high));
+      const side = standingSide(mine, placed.filter(part => !unitSet.has(part.unit) && part.low <= high && low <= part.high));
+      if (side !== undefined && side !== lift.side) fail(`${lift.units.join(', ')} stands on the ${side} of the units beside it, not on its recorded ${lift.side}`);
+    }
     for (const id of lift.units) if (units.get(id)!.scope !== undefined) fail(`${id} is ${units.get(id)!.scope}, out of the first slice`);
     const below = linkBelow(model, unitSet);
     if (below !== undefined) fail(`the link ${below} leaves the component to a unit of the same or a lower tier`);

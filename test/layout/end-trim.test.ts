@@ -7,8 +7,8 @@ import { trimBodies, trimmedBody, untrimmedModel } from '../../src/layout/end-tr
 import { portEndInsets } from '../../src/layout/port-insets.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
-// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
+// The group lift (ticket 08) is off in these tests: with it, `far` and the `access`/`near` component rise one band each, so the trimmed
+// group no longer stands under the title it must keep. `lift.test.ts` tests the lift.
 
 /**
  * Architecture-2 ticket 68, the end trim: after the last x move of 7f a body is trimmed to the span of its ports plus its content, never below

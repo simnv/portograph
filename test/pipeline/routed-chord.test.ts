@@ -9,8 +9,8 @@ import { segmentRectDistance } from '../../src/score/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
-// The group lift (ticket 08) is off in these tests: it moves a group of their sheets (a group fed from directly above rises to a level side
-// entry beside its feeder), which changes the subject they pin. `lift.test.ts` tests the lift, and the corpus gate measures it on every sheet.
+// The group lift (ticket 08) is off in these tests: with it, the lower component (`hub`/`low`/`mid`, or `low`/`x`) rises one band, so
+// the ends no longer stand a transit band apart. `lift.test.ts` tests the lift.
 
 /**
  * Ranked-groups ticket 99 (Q108, docs/design/routed-chords.md): a routed link between two frames or free groups on consecutive

@@ -103,6 +103,8 @@ describe('group lift: the record (absent and empty)', () => {
   it('is absent under layout.autoArrange: false and on a sheet with no float component, and lists a component when one is found', async () => {
     const off = await run(withLayout(fixture(NAME), '{ autoArrange: false }'));
     expect(off.groupLifts).toBeUndefined();
+    // Under autoArrange: false nothing is decided, so even an empty record is refused.
+    expect(() => restoreLayoutModel(JSON.stringify({ ...JSON.parse(serializeLayoutModel(off)) as object, groupLifts: [] }))).toThrow(/autoArrange is false/);
     expect(off.groups.lab!.tier).toBe(1);
     // Two groups of one tier joined by a link: the closure of either is the whole sheet, so no float component exists.
     const none = await run(`portograph: 2
@@ -207,6 +209,10 @@ describe('group lift: the units below a hanging component move down', () => {
     // Side and Middle rise as one component; East rises one band beside Dist and pushes West down two bands; at most LIFT_TRIALS trials.
     expect(model.groupLifts!.find(item => item.units.includes('mid'))).toMatchObject({ units: ['mid', 'side'], offset: 3, side: 'left' });
     expect(traces.length).toBeLessThanOrEqual(LIFT_TRIALS);
+    // The two trials are spent on Side/Middle and East, so West (a side-entry component the estimate also admits) is capped, by name (R4).
+    expect(traces).toHaveLength(LIFT_TRIALS);
+    expect(model.groupLifts!.find(item => item.units.includes('west'))).toMatchObject({ offset: 0, reason: `capped: the sheet has made its ${LIFT_TRIALS} lift trials` });
+    expect(model.diagnostics.filter(note => note.code === 'GROUP_LIFT_CAPPED').map(note => note.owners)).toEqual([[{ kind: 'group', id: 'west' }]]);
     const east = model.groupLifts!.find(item => item.units.includes('east'))!;
     expect(east).toMatchObject({ units: ['east'], offset: 1, from: [4, 5, 6], to: [3, 4, 5], side: 'right', sideEntry: ['link-8'], push: { at: 3, by: 2 } });
     expect(east.reason).toMatch(/tolerated/);
@@ -242,6 +248,15 @@ describe('group lift: the units below a hanging component move down', () => {
     expect(() => restoreLayoutModel(forge(entry => { entry.push = { at: 3, by: 1 }; }))).toThrow(/pushes/);
     expect(() => restoreLayoutModel(forge(entry => { delete entry.push; }))).toThrow();
     expect(() => restoreLayoutModel(forge(entry => { entry.offset = 2; entry.to = [2, 3, 4]; entry.push = { at: 3, by: 1 }; }))).toThrow();
+    // A side the geometry does not show, and a declined entry that keeps a push or a side entry.
+    expect(() => restoreLayoutModel(forge(entry => { entry.side = 'left'; }))).toThrow(/not on its recorded left/);
+    const declined = (edit: (entry: NonNullable<LayoutModel['groupLifts']>[number]) => void): string => {
+      const copy = JSON.parse(json) as LayoutModel;
+      edit(copy.groupLifts!.find(item => item.units.includes('west'))!);
+      return JSON.stringify(copy);
+    };
+    expect(() => restoreLayoutModel(declined(entry => { entry.push = { at: 3, by: 1 }; }))).toThrow(/declined entry/);
+    expect(() => restoreLayoutModel(declined(entry => { entry.sideEntry = ['link-6']; }))).toThrow(/declined entry/);
   }, 180000);
 });
 

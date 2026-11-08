@@ -4,6 +4,9 @@
 # path of the chord from `src-a` to `dst-c`. Placement steps `key` to the nearest x where its box
 # crosses no chord, so every overlay link stays one straight segment.
 # `hosts` (tier 3, four nodes) is the anchor tier, so `key` is free to move.
+# With the group lift (D-Q5, ticket 08) the corpus layout differs: `key` has no link, so it is a float component and rises into band 0 beside
+# the sources, above every chord. A link would end the subject (a group with no links), so the step out of the chords is tested on this sheet
+# with the lift off (`linkless-group-chord.test.ts`).
 # The same case with dashed `signal` links (ticket 73 puts them in the overlay family). Test-only input owned by ranked-groups ticket 76; test/pipeline/linkless-group-chord.test.ts reads the layout.
 portograph: 2
 groups:
