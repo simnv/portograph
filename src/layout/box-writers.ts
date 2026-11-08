@@ -55,6 +55,7 @@ export const BOX_WRITERS: readonly BoxWriter[] = [
   { id: 'S14', file: 'src/layout/sides-two.ts', fn: 'sweepTiers', guard: { kind: 'pre-7a' } },
   { id: 'S15', file: 'src/layout/stagger.ts', fn: 'seatStaggerRows', guard: { kind: 'pre-7a' } },
   { id: 'S16', file: 'src/layout/rows.ts', fn: 'reseatBands', guard: { kind: 'pre-7a' } },
+  { id: 'S17', file: 'src/layout/stagger.ts', fn: 'standChain', guard: { kind: 'pre-7a' } },
   // 7a and 7b: the rule checks of the transaction see these writes.
   { id: 'W01', file: 'src/layout/lanes.ts', fn: 'allocateLanes', guard: { kind: 'guarded', by: 'the lanes rule checks of mutate (whole-group x translation, occupied intermediate tiers, fixed transit sources); the kinds begin here' } },
   { id: 'W02', file: 'src/layout/flanks.ts', fn: 'alignFlanks', guard: { kind: 'guarded', by: 'the flanks rule checks of mutate (no x translation, a common y translation of the flank group)' } },

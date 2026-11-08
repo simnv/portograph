@@ -5,6 +5,8 @@
 # the x ELK gave it, `core` packs over that x, and centring then moves both. The pack order must follow the feed chain
 # from the anchor tier outward, so the two locations end over the final x of `core`.
 # Test-only input owned by ranked-groups ticket 33; test/pipeline/tier-above-final-x.test.ts reads the layout.
+# Fan wrap (D-Q4, ticket 07): the 29 leaves of `west` stand on two lines, and the feeding chain (`dist`, `core` and the two top
+# locations) stands over West gateway; the canvas is about a third smaller than with one line. test/pipeline/fan-wrap.test.ts reads it too.
 portograph: 2
 groups:
   top-a: { tier: 0, label: Site A }

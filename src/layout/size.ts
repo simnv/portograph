@@ -12,6 +12,7 @@ import { SIDE_TIE_ORDER } from './sides-one.js';
 import { gridChains } from './grid.js';
 import { barLabelFloor, barPortsFloor } from './bar-width.js';
 import { portSideCapacity, reservePortCorners } from './port-insets.js';
+import { chainBlockOf } from './read/chain.js';
 
 export type NodeContentBlock =
   | (Size & { kind: 'icon'; icon: string; inset?: number; radius?: number })
@@ -174,8 +175,12 @@ export function ownSideWidth(node: LayoutNode, side: Side): number {
  * cover the rules that widen a body after 7c, and nothing reaches it across the suite or the
  * geometry corpus; if anything ever does, it throws where it is read rather than drawing something
  * wrong.
+ *
+ * A node of a stored feeding chain (`chainBlockOf`, fan wrap) may not grow at all: its allowance is its width.
  */
-export function alignmentAllowance(node: LayoutNode, side: Side): number {
+export function alignmentAllowance(model: LayoutModel, node: LayoutNode, side: Side): number {
+  // A node of a feeding chain (fan wrap, D-Q4) stands over its wrapped block by a stage-5 move; no alignment grows it toward a feed.
+  if (chainBlockOf(model, node.id) !== undefined) return node.bounds?.width ?? 0;
   return Math.max(node.bounds?.width ?? 0, ALIGNMENT_MAX_GROWTH * ownSideWidth(node, side));
 }
 

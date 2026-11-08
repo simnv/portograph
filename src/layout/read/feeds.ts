@@ -5,6 +5,7 @@ import { isSideLane, sideLaneSource } from '../lanes.js';
 import { findPort } from '../row-paths.js';
 import { portId } from '../skeleton-graph.js';
 import { nodeTier } from './tier.js';
+import { chainBlockOf, columnUnitId } from './chain.js';
 
 /**
  * Shared readers: "what feeds this group?" Two modes, and they are not one answer. Ticket 74 unifies them; until then each is
@@ -39,6 +40,10 @@ export function centringFeeds(model: LayoutModel, tier: number, authority: numbe
       const parentTier = nodeTier(model, parentRef.node);
       if (parentTier === undefined || (tier > authority ? parentTier > authority : parentTier < authority)) continue;
       if ([parentRef.node, childRef.node].some(id => model.groups[model.document.nodes[id]!.group]!.flank)) continue;
+      // A node of a feeding chain (fan wrap, D-Q4) is centred only on its feeds inside its chain or into its wrapped block: a feed from
+      // elsewhere would pull the chain off the block it stands over.
+      const held = chainBlockOf(model, childRef.node);
+      if (held !== undefined && chainBlockOf(model, parentRef.node) !== held && columnUnitId(model, model.document.nodes[parentRef.node]!.group) !== held) continue;
       const parent = findPort(model, parentRef)!, child = findPort(model, childRef)!;
       // A bar takes its slots from the reserved stagger, so it cannot also dictate the child's old x.
       if (model.staggerRows?.some(row => row.group === model.document.nodes[childRef.node]!.group)

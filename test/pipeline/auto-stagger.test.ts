@@ -173,13 +173,20 @@ const skeletonOf = async (yaml: string): Promise<LayoutModel> => {
 
 describe('stage 5 admits a stagger only toward a square sheet (ticket 51, aspect rule)', () => {
   it.each(['a-linked-node-steps-out-of-a-straight-chord', 'a-group-with-routed-links-steps-off-a-straight-chord'])(
-    '%s: a sheet taller than wide keeps its row, and the record names the aspect', async sheet => {
+    '%s: two hubs that feed two hosts each are no fan (D-Q4): the row stays and no group is tried', async sheet => {
       const model = await run(fixture(sheet));
       expect(model.staggerRows).toBeUndefined();
       expect(lines(model, 'hosts')).toBe(1);
-      const entry = model.groupArrangements!.hosts!;
-      expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: the sheet is [\d.]+ x [\d.]+ px, not wider than tall$/);
+      expect(model.groupArrangements).toBeUndefined();
     }, 60000);
+
+  it('a plain row on a sheet taller than wide keeps its row, and the record names the aspect', async () => {
+    const model = await run(oneParent(3));
+    expect(model.staggerRows).toBeUndefined();
+    expect(lines(model, 'leaves')).toBe(1);
+    const entry = model.groupArrangements!.leaves!;
+    expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: the sheet is [\d.]+ x [\d.]+ px, not wider than tall$/);
+  }, 60000);
 
   it('refuses two lines that leave a wide sheet further from square than one line', async () => {
     const model = await run(oneParent(5));
@@ -295,8 +302,8 @@ describe('stage 5 refuses the stagger trials whose drops would bend (architectur
     // Without a budget, stage 5 keeps the row too, and the record names why.
     const unbudgeted = await run(fixture(sheet));
     expect(unbudgeted.staggerRows?.some(row => row.group === group) ?? false).toBe(false);
-    // Each of these groups is a rank cell, has fewer than four members, or leaves through a lateral far face: a record names it, or there is
-    // no group passes the rules before a draft and there is no record.
+    // Each of these groups is no fan (a hub feeds fewer than three members), leaves through a lateral far face, or fails the seat's proof: a
+    // record names it, or no group passes the rules before a draft and there is no record.
     const entry = unbudgeted.groupArrangements?.[group];
     expect(entry === undefined ? unbudgeted.groupArrangements : entry.chosen).toBe(entry === undefined ? undefined : 'row');
   }, 120000);

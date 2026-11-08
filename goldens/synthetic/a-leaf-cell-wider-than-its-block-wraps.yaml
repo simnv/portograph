@@ -1,0 +1,45 @@
+# Expected: A rank cell whose one line is wider than the rest of its tier block stands on two lines (fan wrap, decision D-Q4, ticket 07).
+# Two three-rank locations stand in one tier under the core. `west` holds a gateway, a hub and eight leaves fed by the hub; the
+# leaf cell on one line is wider than the gateway cell and the hub cell (the block trigger). Stage 5 seats the leaves on two lines in
+# feed order, odd members away from the hub, every drop vertical; the hub spans its drops; the column packer packs the tier again, so
+# `east` stands one band gap from the narrower `west`. Core one feeds both gateways (a shared parent), so the feeding chain is empty.
+# The acceptance gate keeps the two lines: less area and every straight link kept. `groupArrangements` records the leaf cell as
+# `stagger`; `layout.autoArrange: false` keeps the one line. Test-only input; test/pipeline/fan-wrap.test.ts reads the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  west: { tier: 1, label: West }
+  west-zone: { parent: west, label: West zone }
+  east: { tier: 1, label: East }
+  east-zone: { parent: east, label: East zone }
+nodes:
+  core-1: { group: core, class: router, label: Core one }
+  w-gw: { group: west, class: router, label: West gateway }
+  w-hub: { group: west-zone, class: switch, label: West hub }
+  w-1: { group: west-zone, class: access, label: West 1 }
+  w-2: { group: west-zone, class: access, label: West 2 }
+  w-3: { group: west-zone, class: access, label: West 3 }
+  w-4: { group: west-zone, class: access, label: West 4 }
+  w-5: { group: west-zone, class: access, label: West 5 }
+  w-6: { group: west-zone, class: access, label: West 6 }
+  w-7: { group: west-zone, class: access, label: West 7 }
+  w-8: { group: west-zone, class: access, label: West 8 }
+  e-gw: { group: east, class: router, label: East gateway }
+  e-hub: { group: east-zone, class: switch, label: East hub }
+  e-1: { group: east-zone, class: access, label: East 1 }
+  e-2: { group: east-zone, class: access, label: East 2 }
+links:
+  - [core-1, w-gw]
+  - [core-1, e-gw]
+  - [w-gw, w-hub]
+  - [w-hub, w-1]
+  - [w-hub, w-2]
+  - [w-hub, w-3]
+  - [w-hub, w-4]
+  - [w-hub, w-5]
+  - [w-hub, w-6]
+  - [w-hub, w-7]
+  - [w-hub, w-8]
+  - [e-gw, e-hub]
+  - [e-hub, e-1]
+  - [e-hub, e-2]
