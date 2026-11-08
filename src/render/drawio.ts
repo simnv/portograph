@@ -562,8 +562,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   // resizes a group box means the box, not the nodes in it. The key is added here once, when the
   // file is joined and every parent is known, so no style helper has to remember it (R1).
   const parents = new Set<string>();
-  const holdsChildren = (id: string, style: string): string =>
-    parents.has(id) && !/(^|;)recursiveResize=/.test(style) ? `${style}recursiveResize=0;` : style;
+  const holdsChildren = (id: string, style: string): string => {
+    // A cell that says `container=1` takes a drop at any time, and draw.io counts its children when
+    // it is resized, so it needs the key whether or not it holds a child when written.
+    if (!(parents.has(id) || /(^|;)container=1(;|$)/.test(style)) || /(^|;)recursiveResize=/.test(style)) return style;
+    return style.includes('collapsible=0;') ? style.replace('collapsible=0;', 'collapsible=0;recursiveResize=0;') : `${style}recursiveResize=0;`;
+  };
   const claimed = new Set<string>();
   /**
    * Every id passes through here. A collision is silent corruption in draw.io, and the loss is
@@ -576,9 +580,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   };
   const vertex = (id: string, parent: string, style: string, box: Rect, value?: string,
     extra: Readonly<Record<string, StyleValue>> = {}, bound?: Binding): void => {
-    const claimed = claim(id);
+    const own = claim(id);
     parents.add(parent);
-    cells.push(() => cellElement({ id: claimed, value, style: holdsChildren(claimed, style), vertex: 1, parent, ...extra },
+    cells.push(() => cellElement({ id: own, value, style: holdsChildren(own, style), vertex: 1, parent, ...extra },
       element('mxGeometry', { x: box.x, y: box.y, width: box.width, height: box.height, as: 'geometry' }), bound));
   };
 

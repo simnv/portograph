@@ -205,7 +205,9 @@ describe('draw.io export', () => {
       // The fixtures cover a group box, a swimlane and a node with ports, which are the kinds a maintainer resizes.
       expect(containers.some(cell => cell.id.startsWith('pg-group~'))).toBe(true);
       expect(containers.some(cell => cell.id.startsWith('pg-node~'))).toBe(true);
-      for (const cell of containers) expect(cell.style['recursiveResize'], cell.id).toBe('0');
+      // A cell that says `container=1` takes a drop, so it needs the key even with no child yet.
+      const declared = [...all.values()].filter(cell => cell.vertex && cell.style['container'] === '1');
+      for (const cell of new Set([...containers, ...declared])) expect(cell.style['recursiveResize'], cell.id).toBe('0');
     }, 60000);
 
   it('stacks the layers so nothing a group box would wash out is painted beneath it', async () => {
