@@ -2,6 +2,7 @@ import type { Bundle, LayoutModel, PathSegment, Point } from '../model/index.js'
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { clone, normal, type Member, clearOfGroupEdges, edgeMargin, groupDepthPairs } from './bundle-geometry.js';
 import { BundleFeasibilityError, polyline, reverse } from './bundle-paths.js';
+import { BUNDLE_ROW_SETTLE_EPS } from './tolerance.js';
 
 /** Merge selected members through a comb of real trunk joins, retaining complete logical paths. */
 export function mergeMembers(model: LayoutModel, bundle: Bundle, list: Member[], q: number): Bundle['mergeRuns'] {
@@ -39,7 +40,7 @@ export function mergeMembers(model: LayoutModel, bundle: Bundle, list: Member[],
     for (let guard = 0; guard < 8; guard++) {
       const moved = selected.map((_, index) => clearOfGroupEdges(value + index * step, pairs, direction, edgeMargin(Math.max(...selected.map(m => linkStrokeWidth(m.link))))) - (value + index * step));
       const delta = direction > 0 ? Math.max(0, ...moved) : Math.min(0, ...moved);
-      if (Math.abs(delta) < 1e-9) return value;
+      if (Math.abs(delta) < BUNDLE_ROW_SETTLE_EPS) return value;
       value += delta;
     }
     return value;

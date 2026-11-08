@@ -1775,7 +1775,7 @@ function produceGroupLabelBandsRaw(model: LayoutModel): void {
       syncBands(model);
       if (!model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE')) model.diagnostics.push({
         stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
-        message: 'Link-label room reservation exhausted the shared eight-pass budget; final gates decide the retained geometry.',
+        message: 'Link-label room reservation exhausted the shared eight-pass budget; the geometry kept is still checked by the publication and the final gates.',
       });
     }
     // The replays above may widen a canton in place; the cantons close up to a band gap again before anything is planned in them

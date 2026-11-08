@@ -3,7 +3,7 @@ import type { Point, Rect } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPort } from '../model/layout.js';
 import { placePortPill } from '../geometry/index.js';
 import { measurePortPill } from '../text/index.js';
-import { EPS } from '../geometry/planar.js';
+import { EPS, pieceTurns } from '../geometry/planar.js';
 import { isRoutedChord } from './frame-paths.js';
 import { isSideLane, transitTiers } from './lanes.js';
 import { crosses, sharedBlockers, overlayBasePath, straightChord, type ShapeQuery } from './overlay-paths.js';
@@ -31,18 +31,18 @@ export const refusedKey = (key: string, side: string): string => `${key}|${side}
 const isOverlay = (link: LayoutLink): boolean => link.layer === 'overlay' && link.meshBus === undefined && link.attachments !== undefined;
 
 /**
- * The bends a link will have, read from the placed model, no router (spec Section 6). An overlay link: the segments of its derived path
- * less one. A link with a pinned path (a chord, a level path): that path's segments less one. Any other routed link: per tier gap 0 when
+ * The bends a link will have, read from the placed model, no router (spec Section 6). An overlay link: the turns of its derived path
+ * (`pieceTurns`). A link with a pinned path (a chord, a level path): that path's turns. Any other routed link: per tier gap 0 when
  * its two ends stand on one x (a drop, adjacent tiers only), else 2. A lower bound.
  */
 export function plannedBends(model: LayoutModel, link: LayoutLink, blockers?: ShapeQuery): number {
   if (link.attachments === undefined) return 0;
-  if (isOverlay(link)) return Math.max(0, overlayBasePath(model, link, blockers).segments.length - 1);
+  if (isOverlay(link)) return pieceTurns(overlayBasePath(model, link, blockers).segments);
   if (isRoutedChord(model, link)) return 0;
   // A side lane (spec Section 6): one bend into the lateral port, and a stepped part in the gap above a lane the far port does not stand on.
   const lane = model.lanes.find(item => isSideLane(item) && item.owner.kind === 'link' && item.owner.id === link.id);
   if (lane !== undefined) return lane.aligned === true ? 1 : 3;
-  if (link.path?.fixed === true) return Math.max(0, link.path.segments.length - 1);
+  if (link.path?.fixed === true) return pieceTurns(link.path.segments);
   const refs = [link.attachments.from, link.attachments.to];
   const ends = refs.map(ref => model.nodes[ref.node]?.ports.find(port => portKey(port.ref) === portKey(ref))?.anchor);
   const tiers = refs.map(ref => model.groups[model.document.nodes[ref.node]!.group]?.tier ?? 0);

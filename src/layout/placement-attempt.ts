@@ -379,7 +379,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   if (!closed) attemptCounters.invalidations.cantonNonConvergence++;
   if (!closed && !draft.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE' && item.message.startsWith('The cantons'))) draft.diagnostics.push({
     stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE',
-    message: `The cantons did not settle a band gap apart in ${CANTON_ROUNDS} rounds of the close-up and the replay; final gates decide the retained geometry.`,
+    message: `The cantons did not settle a band gap apart in ${CANTON_ROUNDS} rounds of the close-up and the replay; the geometry kept is still checked by the publication and the final gates.`,
   });
   // 7c seats each transit feed's child under the corridor its link owns; where it could not, the
   // corridor follows the child (ticket 02). The move belongs to the transaction, not to the

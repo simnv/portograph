@@ -1,5 +1,5 @@
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
-import { EPS, near } from '../geometry/planar.js';
+import { pieceTurns } from '../geometry/planar.js';
 import { isRoutedChord } from './frame-paths.js';
 import { sharedBlockers, overlayBasePath } from './overlay-paths.js';
 import { drawn, overlayCrossingPairs, overlayCrossingPoints, portKey, type Drawn } from './read/crossings.js';
@@ -112,17 +112,13 @@ export function straightOf(ids: ReadonlySet<string>): Family {
 
 // ---- reading a model ------------------------------------------------------------------------------------------------------------
 
-/** The bends of one routed path: each change of direction, and each reversal. Undefined when the route removed the link. */
+/**
+ * The bends of one path: each change of direction, and each reversal (`pieceTurns` of `geometry/planar.ts`, the one turn predicate of
+ * readers and gates). Undefined when the route removed the link.
+ */
 export function pathBends(link: LayoutLink): number | undefined {
   if (link.removed === true || link.path === undefined) return undefined;
-  const path = link.path.segments;
-  let turns = 0;
-  for (let i = 1; i < path.length; i++) {
-    const a = path[i - 1]!, b = path[i]!;
-    const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
-    if (!near(ax * by - ay * bx, 0) || ax * bx + ay * by < -EPS) turns++;
-  }
-  return turns;
+  return pieceTurns(link.path.segments);
 }
 
 /** The bends of every link that a routed model keeps, by link id. */
@@ -177,7 +173,7 @@ export function read(model: LayoutModel, options: ReadOptions): Reading {
     const paths = options.overlays.map(link => ({ link, segments: overlayBasePath(model, link, blockers).segments }));
     const straightIds = new Set(paths.filter(path => isOneSegment(path.segments)).map(path => path.link.id));
     const bentIds = new Set(paths.filter(path => path.segments.length > 1).map(path => path.link.id));
-    parts.overlay = { straight: straightIds.size, straightIds, bent: bentIds.size, bentIds, turns: paths.reduce((sum, path) => sum + path.segments.length - 1, 0) };
+    parts.overlay = { straight: straightIds.size, straightIds, bent: bentIds.size, bentIds, turns: paths.reduce((sum, path) => sum + pieceTurns(path.segments), 0) };
     if (options.crossings === 'pairs') {
       parts.crossings = lazyCount(() => overlayCrossingPairs(paths.map(path => path.segments)));
       parts.crossingMode = 'pairs';

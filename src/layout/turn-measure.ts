@@ -9,6 +9,7 @@ import { plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn
 import { added as namesAdded, constraintFindings, gateFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { compare, lazyCount, profiles, reading, routedBends, type Reading } from './objective.js';
 import type { ScoreCounts } from '../score/types.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * The turn round of architecture ticket 24 (`docs/design/turn-order.md`, Section 10): the offer and the judge.
@@ -87,7 +88,7 @@ export function judgeTurnTrial(routedBase: LayoutModel, routedTrial: LayoutModel
   if (constraintNew.length > 0) return no(`the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
   const separationNew = separationWorse(routedTrial, routedBase);
   if (separationNew.length > 0) return no(`the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`);
-  if ((routedTrial.canvas?.width ?? 0) > (routedBase.canvas?.width ?? 0) + 1e-6 || (routedTrial.canvas?.height ?? 0) > (routedBase.canvas?.height ?? 0) + 1e-6) return no('the routed trial grows the canvas');
+  if ((routedTrial.canvas?.width ?? 0) > (routedBase.canvas?.width ?? 0) + PLACEMENT_EPS || (routedTrial.canvas?.height ?? 0) > (routedBase.canvas?.height ?? 0) + PLACEMENT_EPS) return no('the routed trial grows the canvas');
   const readingOf = (counts: ScoreCounts): Reading => {
     const family = (bent: number, turns: number) => ({ straight: 0, bent, turns });
     return reading({ routed: family(counts.routed.bent, counts.routed.turns), overlay: family(counts.overlay.bent, counts.overlay.turns),

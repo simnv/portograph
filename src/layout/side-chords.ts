@@ -1,7 +1,7 @@
 import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel, LayoutNode, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth } from '../theme/geometry.js';
-import { EPS, intersection, samePoint, segmentDistance } from '../geometry/planar.js';
+import { EPS, segmentDistance } from '../geometry/planar.js';
 import { chordKind, chordVerdict, edgeMisses, fixedPointRefusal, isRoutedChord, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { straightChord } from './overlay-paths.js';
@@ -9,6 +9,7 @@ import { findPort } from './row-paths.js';
 import { facingSide, hintRefusal } from './side-hints.js';
 import { portKey } from './sides-one.js';
 import { nodeTier } from './read/tier.js';
+import { strictCrossing } from './read/crossings.js';
 
 /**
  * The routed chord shape of the side measure (docs/design/side-faces.md, Sections 5 and 9): a routed link that is no chord now, and would be
@@ -43,8 +44,7 @@ export interface ChordPass {
  * lateral faces are not spread in the first version, and two near-parallel chords would both be lost at 7e. A strict crossing is excused, as G6 excuses it.
  */
 export function tooClose(segment: PathSegment, stroke: number, other: Accepted): boolean {
-  const point = intersection(segment, other.segment);
-  if (point !== undefined && ![segment.from, segment.to, other.segment.from, other.segment.to].some(end => samePoint(end, point))) return false;
+  if (strictCrossing(segment, other.segment)) return false;
   return segmentDistance(segment, other.segment) - (stroke + other.stroke) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS;
 }
 

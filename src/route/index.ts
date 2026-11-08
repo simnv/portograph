@@ -3,6 +3,7 @@ import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { tierGapPlans } from '../layout/gap-plan.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
+import { chainPoints, turnPoints } from '../geometry/planar.js';
 import { unfitGaps, unfitMessage } from '../layout/gap-room.js';
 import { bodiesPassedOver } from '../layout/overlay-paths.js';
 import { withLayoutMutation } from '../layout/mutation.js';
@@ -12,12 +13,12 @@ import { stitchPaths, stubCandidate, tryStitch, type RouteRejection, type Stitch
 import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession, type CreateRouteAttempt, type RouteClock } from './worker.js';
 
 export type { RouteObstacle } from './obstacles.js';
-export type { LinkPlan, RoutePiece, RoutePlan, StemReservation } from './plan.js';
-export { batchRequest, pendingStemObstacles, planRoute, effectiveLayer, stemCheckpoint, ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './plan.js';
+export type { LinkPlan, PlacementRuns, PlannedRun, RoutePiece, RoutePlan, StemReservation } from './plan.js';
+export { batchRequest, pendingStemObstacles, placementRuns, plannedRunsOf, planRoute, effectiveLayer, stemCheckpoint, ROUTE_PARAMETERS, SHAPE_BUFFER_DISTANCE } from './plan.js';
 export { nodeClearance, routeObstacles, trimChain, TERMINAL_TRIM } from './obstacles.js';
 export { checkpointsHonoured, crossedTiers, firstSkippedCheckpoint, simplify, skippedCheckpoint, stitchPath, stitchPaths, stubCandidate, tryStitch } from './paths.js';
 export type { RoutedLinkPath, RouteRejection, Stitched } from './paths.js';
-export { reservationConflicts, reservedRuns, validateRoutedPaths } from './validate.js';
+export { lostPlannedRun, preRoute, reservationConflicts, reservedRuns, validateRoutedPaths } from './validate.js';
 export type { ReservationConflict } from './validate.js';
 export { createBrowserRouteFactory, createRouteFactory, RouteDeadlineError, RouteSession, ROUTE_BUDGET_MS, ROUTE_REQUEST, ROUTE_RESPONSE, systemRouteClock, withRouteSession } from './worker.js';
 export type { CreateRouteAttempt, RouteAssets, RouteAttempt, RouteClock, RouteWorker } from './worker.js';
@@ -172,11 +173,8 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
  */
 function titlesDetoured(model: LayoutModel, link: LayoutLink, planned: readonly Point[]): string[] {
   const segments = link.path?.segments ?? [], reach = 2 * GROUP_LABEL_LINK_CLEARANCE;
-  // A turn only: a seam between two collinear pieces is no bend.
-  const bends = segments.slice(1).filter((segment, at) => {
-    const prior = segments[at]!;
-    return Math.abs((prior.to.x - prior.from.x) * (segment.to.y - segment.from.y) - (prior.to.y - prior.from.y) * (segment.to.x - segment.from.x)) > 1e-6;
-  }).map(segment => segment.from).filter(point => !planned.some(turn => Math.abs(turn.x - point.x) <= PLACEMENT_EPS && Math.abs(turn.y - point.y) <= PLACEMENT_EPS));
+  // A turn only (`turnPoints`, the predicate `pathBends` counts with): a seam between two collinear pieces, or a piece with no length, is no bend.
+  const bends = turnPoints(chainPoints(segments)).filter(point => !planned.some(turn => Math.abs(turn.x - point.x) <= PLACEMENT_EPS && Math.abs(turn.y - point.y) <= PLACEMENT_EPS));
   return model.labels.filter(label => label.role === 'group' && !label.omitted && label.bounds !== undefined && label.crossedBy?.includes(link.id) !== true
     && bends.some(point => point.x >= label.bounds!.x - reach && point.x <= label.bounds!.x + label.bounds!.width + reach
       && point.y >= label.bounds!.y - reach && point.y <= label.bounds!.y + label.bounds!.height + reach)).map(label => label.id);

@@ -3,6 +3,7 @@ import { compare, routedBends } from './objective.js';
 import { courseProfile, GROWTH_BOUND, routedReading } from './course-measure.js';
 import { added as namesAdded, constraintFindings, gateFindings, separationWorse } from './trial-findings.js';
 import { isRoutedChord } from './frame-paths.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * The span round's judge (architecture ticket 22, docs/design/routed-chords.md, Section 14.4). The trial that reserves the offered span corridors is kept only when
@@ -32,7 +33,7 @@ export function judgeSpanTrial(routedBase: LayoutModel, routedTrial: LayoutModel
   if (constraintNew.length > 0) return verdict(false, 'constraint', `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
   const separationNew = separationWorse(routedTrial, routedBase);
   if (separationNew.length > 0) return verdict(false, 'separation', `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`);
-  const cap = (was: number | undefined): number => (was ?? 0) * (1 + GROWTH_BOUND) + 1e-6;
+  const cap = (was: number | undefined): number => (was ?? 0) * (1 + GROWTH_BOUND) + PLACEMENT_EPS;
   if ((routedTrial.canvas?.width ?? 0) > cap(routedBase.canvas?.width) || (routedTrial.canvas?.height ?? 0) > cap(routedBase.canvas?.height)) {
     return verdict(false, 'growth', `the routed trial grows the canvas past ${GROWTH_BOUND * 100} %`);
   }

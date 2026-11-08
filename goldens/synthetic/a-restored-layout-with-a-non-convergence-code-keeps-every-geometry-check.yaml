@@ -1,0 +1,8 @@
+portograph: 2
+groups: {up: {tier: 0}, low: {tier: 1}, lonely: {tier: 1}}
+nodes:
+  a: {group: up, ports: [{name: p, side: bottom}]}
+  b: {group: low, ports: [{name: p, side: top}]}
+  spare: {group: low}
+  solo: {group: lonely}
+links: [[a.p, b.p, {route: orthogonal}]]
