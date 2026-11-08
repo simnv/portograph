@@ -1,10 +1,10 @@
 import type { Rect } from '../model/geometry.js';
-import type { GroupExit, LayoutGroup, LayoutModel } from '../model/layout.js';
+import type { GroupExit, LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { routedStroke } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { deriveFrames } from './frames.js';
-import { standsIn } from './group-exits.js';
+import { exitNeeds, reserveGroupExits, standsIn } from './group-exits.js';
 
 type Moved = { group: LayoutGroup; bounds: Rect }[];
 
@@ -14,6 +14,7 @@ const strictInside = (box: Rect, p: { x: number; y: number }): boolean =>
 const touches = (a: Rect, b: Rect): boolean =>
   a.x < b.x + b.width - PLACEMENT_EPS && b.x < a.x + a.width - PLACEMENT_EPS
   && a.y < b.y + b.height - PLACEMENT_EPS && b.y < a.y + a.height - PLACEMENT_EPS;
+const samePoint = (a: { x: number; y: number }, b: { x: number; y: number }): boolean => Math.abs(a.x - b.x) <= PLACEMENT_EPS && Math.abs(a.y - b.y) <= PLACEMENT_EPS;
 const sameBox = (a: Rect, b: Rect): boolean => Math.abs(a.x - b.x) <= PLACEMENT_EPS && Math.abs(a.y - b.y) <= PLACEMENT_EPS
   && Math.abs(a.width - b.width) <= PLACEMENT_EPS && Math.abs(a.height - b.height) <= PLACEMENT_EPS;
 
@@ -58,4 +59,61 @@ export function groupExitsHold(model: LayoutModel, exits: readonly GroupExit[], 
     }
   }
   return true;
+}
+
+/** A reserved exit that the boxes of the model break, or that names a run its link does not end with. */
+export interface ExitViolation { link: string; end: 'from' | 'to'; box?: string; why: 'margin' | 'strip' | 'run' }
+
+/**
+ * The absolute reading of `groupExitsHold` (DR-11, D-Q3): every reserved exit judged against every box as it stands, with no move proposed. The
+ * end of an exit stands outside the margin it reserved beyond each box it leaves; its strip meets no other box with the edge margin; and its
+ * link's shared run at that end ends with the exit run.
+ */
+export function groupExitViolations(model: LayoutModel, exits: readonly GroupExit[] = model.groupExits ?? []): ExitViolation[] {
+  const half = routedStroke(model) / 2, margin = half + GROUP_EDGE_LINK_CLEARANCE, boxes = boxesWith(model, []), out: ExitViolation[] = [];
+  for (const exit of exits) {
+    const link = model.links.find(item => item.id === exit.link);
+    if (!link?.attachments) { out.push({ link: exit.link, end: exit.end, why: 'run' }); continue; }
+    const last = link.sharedRuns?.[exit.end]?.at(-1);
+    if (last === undefined || !samePoint(last.from, exit.from) || !samePoint(last.to, exit.to)) out.push({ link: exit.link, end: exit.end, why: 'run' });
+    const near = link.attachments[exit.end].node, strip: Rect = {
+      x: Math.min(exit.from.x, exit.to.x) - half, y: Math.min(exit.from.y, exit.to.y) - half,
+      width: Math.abs(exit.to.x - exit.from.x) + 2 * half, height: Math.abs(exit.to.y - exit.from.y) + 2 * half };
+    for (const [id, box] of boxes) {
+      if (exit.exited.includes(id) ? strictInside(grow(box, exit.clearance), exit.to) : !standsIn(model, id, near) && touches(grow(box, margin), strip)) {
+        out.push({ link: exit.link, end: exit.end, box: id, why: exit.exited.includes(id) ? 'margin' : 'strip' });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The required exits that are missing (DR-11, R5): the link ends whose shared run ends inside a box it leaves (`exitNeeds`), with no reserved
+ * exit, where the geometry admits one. The proof reads the geometry and the record only, never `GROUP_EXIT_BLOCKED`: it takes every reserved exit
+ * run off its shared run, so the model reads as the reservation read it, and derives the exits once more with the record as the held promise.
+ * An end the derivation can place is missing; an end it cannot place is blocked, the advisory outcome the reservation names.
+ */
+export function missingGroupExits(model: LayoutModel): { link: string; end: 'from' | 'to' }[] {
+  const records = model.groupExits ?? [], reserved = new Set(records.map(exit => `${exit.link}:${exit.end}`));
+  const strip = (link: LayoutLink): LayoutLink => {
+    const ends = records.filter(exit => exit.link === link.id);
+    if (!ends.length || link.sharedRuns === undefined) return link;
+    const runs = { ...link.sharedRuns };
+    for (const exit of ends) {
+      const list = runs[exit.end], last = list?.at(-1);
+      if (list !== undefined && last !== undefined && samePoint(last.from, exit.from) && samePoint(last.to, exit.to)) runs[exit.end] = list.slice(0, -1);
+    }
+    return { ...link, sharedRuns: runs };
+  };
+  const view: LayoutModel = { ...model, links: model.links.map(strip) };
+  const open = exitNeeds(view).filter(need => !reserved.has(`${need.link.id}:${need.end}`));
+  if (!open.length) return [];
+  // A copy the derivation may write: its own runs, records and diagnostics.
+  // The proof replans nothing it keeps, so the copy reads as before the final freeze.
+  const trial = JSON.parse(JSON.stringify({ ...view, diagnostics: [] })) as LayoutModel;
+  if (trial.freeze !== undefined) delete trial.freeze.placement;
+  reserveGroupExits(trial);
+  const placed = new Set((trial.groupExits ?? []).map(exit => `${exit.link}:${exit.end}`));
+  return open.filter(need => placed.has(`${need.link.id}:${need.end}`)).map(need => ({ link: need.link.id, end: need.end }));
 }

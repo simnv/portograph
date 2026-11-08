@@ -42,6 +42,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
 import { placementAttempt, type AttemptTraceEvent } from './placement-attempt.js';
+import { judgePostconditions } from './postconditions.js';
 import { columnOf } from './read/arrangement.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
@@ -638,7 +639,7 @@ const permissions: Record<PlacementRule, { move: boolean; reorder: boolean }> = 
   rows: { move: true, reorder: false }, lanes: { move: true, reorder: false },
   flanks: { move: true, reorder: true }, centre: { move: true, reorder: true },
   // 7e and 7f give an empty callback: their producers run after the checks below, so a rule check here reads only what a caller authored.
-  // The producer output is judged by publication (`protect`), the second boundary (D-Q3, DR-11).
+  // The producer postconditions (`postconditions.ts`) judge the producer output; publication (`protect`) is the second boundary (D-Q3, DR-11).
   bars: { move: true, reorder: true }, bundles: { move: true, reorder: true }, bands: { move: true, reorder: false },
   route: { move: false, reorder: false }, 'link-labels': { move: false, reorder: false },
   validate: { move: false, reorder: false }, emit: { move: false, reorder: false },
@@ -977,6 +978,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   if (rule === 'bars') rebuildBarDrops(draft);
   // The last centring reading that reads the record is the publication of 7f: the routed layout publishes without it (architecture-2 ticket 66).
   if (rule === 'route') delete draft.alignmentTargets;
+  // The producers of 7e and 7f write after the rule checks above: their output is judged here, on the net draft after every dependent rebuild
+  // and before commit (DR-11). Publication (`protect`) stays the second boundary.
+  if (rule === 'bundles' || rule === 'bands') judgePostconditions(model, draft, rule);
   draft.stage = rule;
   draft.runtime.stages.push({ stage: rule, durationMs: Date.now() - started });
   if (rule === 'bands') draft.freeze!.placement = clone(placement(draft));
