@@ -617,13 +617,6 @@ export function validateGroupLifts(model: LayoutModel): void {
       if (lift.push !== undefined || lift.sideEntry !== undefined) fail(`the declined entry of ${lift.units.join(', ')} has a push or a side entry`);
       continue;
     }
-    // The component stands on its recorded side of the units of the bands it shares (`seatLifts` and `holdLifts` keep it there).
-    const placed = parts(model), mine = placed.filter(part => unitSet.has(part.unit));
-    if (mine.length) {
-      const low = Math.min(...mine.map(part => part.low)), high = Math.max(...mine.map(part => part.high));
-      const side = standingSide(mine, placed.filter(part => !unitSet.has(part.unit) && part.low <= high && low <= part.high));
-      if (side !== undefined && side !== lift.side) fail(`${lift.units.join(', ')} stands on the ${side} of the units beside it, not on its recorded ${lift.side}`);
-    }
     for (const id of lift.units) if (units.get(id)!.scope !== undefined) fail(`${id} is ${units.get(id)!.scope}, out of the first slice`);
     const below = linkBelow(model, unitSet);
     if (below !== undefined) fail(`the link ${below} leaves the component to a unit of the same or a lower tier`);
@@ -639,6 +632,13 @@ export function validateGroupLifts(model: LayoutModel): void {
         if ((lift.sideEntry ?? []).includes(link.id)) { if (fedBand !== feederBand) fail(`the side entry ${link.id} does not stand level with its feeder`); continue; }
         if (!(feederBand! < fedBand!)) fail(`the routed link ${link.id} no longer feeds the component from above`);
       }
+    }
+    // The component stands on its recorded side of the units of the bands it shares (`seatLifts` and `holdLifts` keep it there).
+    const placed = parts(model), mine = placed.filter(part => unitSet.has(part.unit));
+    if (mine.length) {
+      const low = Math.min(...mine.map(part => part.low)), high = Math.max(...mine.map(part => part.high));
+      const side = standingSide(mine, placed.filter(part => !unitSet.has(part.unit) && part.low <= high && low <= part.high));
+      if (side !== undefined && side !== lift.side) fail(`${lift.units.join(', ')} stands on the ${side} of the units beside it, not on its recorded ${lift.side}`);
     }
     for (const id of lift.straight) if (!model.links.some(item => item.id === id)) fail(`the kept straight link ${id} does not exist`);
     const entries = sideEntries(model, unitSet, new Map());

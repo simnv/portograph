@@ -249,7 +249,10 @@ describe('group lift: the units below a hanging component move down', () => {
     expect(() => restoreLayoutModel(forge(entry => { delete entry.push; }))).toThrow();
     expect(() => restoreLayoutModel(forge(entry => { entry.offset = 2; entry.to = [2, 3, 4]; entry.push = { at: 3, by: 1 }; }))).toThrow();
     // A side the geometry does not show, and a declined entry that keeps a push or a side entry.
-    expect(() => restoreLayoutModel(forge(entry => { entry.side = 'left'; }))).toThrow(/not on its recorded left/);
+    // (A restore of a forged side is refused earlier, by the stage-2 faces the side gives; the record check reads the geometry itself.)
+    const sided = JSON.parse(json) as LayoutModel;
+    sided.groupLifts!.find(item => item.units.includes('east'))!.side = 'left';
+    expect(() => validateGroupLifts(sided)).toThrow(/not on its recorded left/);
     const declined = (edit: (entry: NonNullable<LayoutModel['groupLifts']>[number]) => void): string => {
       const copy = JSON.parse(json) as LayoutModel;
       edit(copy.groupLifts!.find(item => item.units.includes('west'))!);
