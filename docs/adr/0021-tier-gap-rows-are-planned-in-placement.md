@@ -32,7 +32,8 @@ neighbour's leg (tickets 45, 46). That is the pipeline's one rule broken, in one
    architecture-2 ticket 57 at the end.)
 3. **Stage 8 consumes the plan.** `allocateGapRuns` returns every planned part tip to tip as
    reserved geometry; the stem from a port anchor to its tip is claimed straight. A gap whose parts
-   are all planned asks the router for nothing.
+   are all planned asks the router for nothing. Publication and restore keep each planned part with
+   its owner and traversal (decision D-Q2, ADR-0010 amendment of 2026-11-08).
 4. **A residual part is named, never silent.** A part the plan declines (`spans-two-gaps`,
    `lateral-port`, `u-turn`, `faces-away`, `off-boundary`, `crosses-lane`, `crosses-shared-run`,
    `leg-blocked`, `row-cycle`) is routed by libavoid among the reserved parts.
