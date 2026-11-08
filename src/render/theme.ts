@@ -1,4 +1,4 @@
-import { LEGEND_DEFAULT_CLASS, NETWORK_NODE_CLASSES, backdropColour, washAssignment, washToken, portRolePaint } from '../profiles/network/theme.js';
+import { LEGEND_DEFAULT_CLASS, NETWORK_NODE_CLASSES, backdropColour, washAssignment, washClassName, washToken, portRolePaint } from '../profiles/network/theme.js';
 import type { ThemeMode } from '../profiles/network/theme.js';
 import { themeById } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
@@ -63,6 +63,16 @@ export interface PaintRule {
   readonly tokens: readonly string[];
   readonly where?: true;
   readonly declarations: readonly (readonly [property: string, value: string | number])[];
+  /**
+   * An author rule only (`render/author-css.ts`). `context` holds the compounds left of the subject, outermost first; `child`
+   * says that the next compound to the right is a child (`>`) of this one, not any descendant. `element` `*` is the universal
+   * subject. `important` declarations win over every normal one. `modes` are the theme modes whose media the rule is behind;
+   * absent: every mode. `source` is the selector as written, for the warning of what draw.io cannot carry.
+   */
+  readonly context?: readonly { readonly classes: readonly string[]; readonly child: boolean }[];
+  readonly important?: true;
+  readonly modes?: readonly ThemeMode[];
+  readonly source?: string;
 }
 
 const rule = (element: string, tokens: readonly string[], declarations: PaintRule['declarations'], where?: true): PaintRule =>
@@ -163,17 +173,22 @@ export function themeCss(theme: Theme = themeById(undefined)): string {
  * of the document's own `css:`, so an author rule on the body wins. Same three modes as the theme.
  */
 export function sheetClassWashCss(classAttrs: readonly (string | undefined)[], theme: Theme = themeById(undefined)): string {
+  const rules = (mode: ThemeMode): string[] => washRules(mode, classAttrs, theme).map(cssRule);
+  if (!rules('light').length) return '';
+  return [...rules('light'),
+    '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
+    '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');
+}
+
+/** The wash rules of one mode, as `sheetClassWashCss` writes them; the draw.io export reads them in its rule table. */
+export function washRules(mode: ThemeMode, classAttrs: readonly (string | undefined)[], theme: Theme = themeById(undefined)): PaintRule[] {
   const assignment = washAssignment(classAttrs);
   const used = [...new Set(classAttrs.map(attr => washToken(attr)).filter((token): token is string => token !== undefined)
     .map(token => assignment.get(token)).filter((at): at is number => at !== undefined))].sort((a, b) => a - b);
   // A theme that keeps a sheet class's body plain (snack) has no `sheetWash` and states no wash.
   const wash = theme.sheetWash;
-  if (!used.length || wash === undefined) return '';
-  const rules = (mode: ThemeMode): string[] => used.map(at =>
-    `.node-body:where(.pg-wash-${at}){fill:${wash(at, mode)}}`);
-  return [...rules('light'),
-    '@media (prefers-color-scheme: dark){', ...rules('dark').map(rule => `  ${rule}`), '}',
-    '@media print{', ...rules('print').map(rule => `  ${rule}`), '}'].join('\n');
+  if (wash === undefined) return [];
+  return used.map(at => rule('node-body', [washClassName(at)], [['fill', wash(at, mode)]], true));
 }
 
 /** The class every text outside a node body carries: its halo (ticket 162). */

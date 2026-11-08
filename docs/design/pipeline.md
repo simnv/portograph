@@ -2145,8 +2145,11 @@ bands are not replanned around it, and the anchor is that drawn-geometry union r
 canvas, so re-deriving the legend from a published model puts it back in exactly the same place.
 It exists only when the document draws more than one symbol or more than one line style — or a
 port role beside any other variant, since nothing else says what a role's paint means — lists exactly the classes present (known profile classes in declaration
-order, then author classes by first use; a link without a class contributes the profile's default
-line style; each role token of a drawn pill's `class` contributes one `port:<role>` entry, drawn as
+order, then author classes by first use; a class with several tokens is keyed by the profile class that paints it, so `router extra`
+shares the router row and `dashed extra` the dashed row, and stage 3 gives `router extra` the router icon (draw.io ticket 8); a
+link without a class contributes the profile's default
+line style; a line row whose links are all overlay links draws an overlay sample, the paint those links take (audit A1-16);
+each role token of a drawn pill's `class` contributes one `port:<role>` entry, drawn as
 a 26 × 10 pill with that role's paint, while status tokens contribute nothing), and records the
 same effective stroke width `score` measures. `LayoutModel.legend` and its `role: 'legend'` labels
 are stage 9's claims: the validator re-derives both and rejects a forged, moved or removed legend.
@@ -2224,10 +2227,18 @@ or a shadow — is held by that one parser policy on both routes, not restated p
 The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
 one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
 
-**What both renderers compute is stated once** (`render/shared.ts`, draw.io ticket 13). The theme sheet is a table of paint rules
-(`paintRules`): the SVG writes it as CSS, and the draw.io export resolves each cell's paint from the same table by the CSS cascade
-(`resolvePaint`: the more specific rule wins, then the later one), on the classes the SVG element carries. A class token the theme
-does not know, or the order of the tokens, changes the paint in neither. The glyph box in an icon tile (`iconGlyphBox`: the inset,
+**What both renderers compute is stated once** (`render/shared.ts`, draw.io tickets 13 and 8). The theme sheet is a table of paint
+rules (`paintRules`, and `washRules` for the sheet's own node classes): the SVG writes it as CSS, and the draw.io export reads the same
+table and the document's `css:` (`authorRules` in `render/author-css.ts`) and resolves each cell's paint by the CSS cascade
+(`PaintSheet`, `computePaint`): an important declaration wins, then the more specific rule, then the later one; a property no rule
+states is inherited from the element's parent (every paint property but `opacity`), and the opacity a cell is drawn at is the
+product of `opacity` along the path. The match runs on the path of class attributes from the SVG root to the element (`paintPath`,
+`svgClass`, which the SVG writes too), so a descendant or child rule reaches both renderers. A mode reads the light rules and, for
+dark or print, that mode's rules on top, as a browser reads the unconditional rules and the matching `@media` blocks. A class token
+the theme does not know, or the order of the tokens, changes the paint in neither. What draw.io cannot carry of the author's rules (a
+selector beyond class compounds and the two combinators, a property beyond fill, stroke, their opacities, `opacity` and the dash, an
+at-rule other than a plain `@media`, or a value draw.io has no key for, such as a stroke on a text) is named in one
+`DRAWIO_CSS_UNMAPPED` warning. The glyph box in an icon tile (`iconGlyphBox`: the inset,
 1.5 px or the card's own, is at most a quarter of each tile side) and the runs of a path (`pathRuns`: a new run where a segment does
 not start at the end of the one before, at the planar tolerance) are the other two. The SVG starts a subpath per run; draw.io writes
 a connector per run.

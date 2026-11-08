@@ -169,10 +169,13 @@ export function washAssignment(classAttrs: readonly (string | undefined)[]): Was
   return new Map(own.map((token, at) => [token, free[at % free.length]!]));
 }
 
+/** The structural class of one wash palette entry. */
+export const washClassName = (at: number): string => `pg-wash-${at}`;
+
 /** The structural class that carries a sheet class's wash on a node body; the one resolution both exports share. */
 export const washClass = (classAttr: string | undefined, assignment: WashAssignment): string | undefined => {
   const token = washToken(classAttr), at = token === undefined ? undefined : assignment.get(token);
-  return at === undefined ? undefined : `pg-wash-${at}`;
+  return at === undefined ? undefined : washClassName(at);
 };
 
 /** Body fill of one palette entry in one mode. */
@@ -191,6 +194,15 @@ export interface LinkClassStyle {
   cap?: 'round';
   label: string;
   strokes: Modal<string>;
+}
+
+/**
+ * The profile link class a link's `class` paints with: of its tokens that the profile styles, the one declared last (its
+ * `.link-line.<class>` rule wins the cascade); `undefined` when no token is styled. The legend keys a line by it (ticket 8).
+ */
+export function linkStyleClass(classAttr: string | undefined): string | undefined {
+  const rank = (token: string): number => NETWORK_LINK_CLASSES.findIndex(([name]) => name === token && name !== LEGEND_DEFAULT_CLASS);
+  return (classAttr ?? '').split(/\s+/).filter(token => token && rank(token) >= 0).sort((a, b) => rank(b) - rank(a))[0];
 }
 
 /** The class key a link without an authored `class:` contributes to the legend. */
