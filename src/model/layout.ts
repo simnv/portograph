@@ -498,7 +498,8 @@ export interface Obstacle extends OwnedElement {
 }
 
 export interface Diagnostic {
-  stage: 'parse' | 'model' | 'placement' | 'final-geometry';
+  /** `render`: a renderer's own diagnostic, which no stage of the pipeline records on the model (the draw.io export's). */
+  stage: 'parse' | 'model' | 'placement' | 'final-geometry' | 'render';
   severity: 'info' | 'warning' | 'error';
   code: string;
   message: string;
