@@ -1,0 +1,19 @@
+# Expected: `bar-fan` with its `links` in the reverse order: the same drawing as `bar-fan`, link for link and box for box. Link
+# order is never input (decision review D-Q1, ticket DR-04): the parser lists the links in one canonical order, so the drop to the
+# bar is read first whatever the order the author wrote. Before the ticket this order was refused ("Groups bar and leaves overlap",
+# audit T-03). Every gate passes.
+# Test-only input owned by ticket DR-04; test/pipeline/link-order.test.ts reads it.
+portograph: 2
+groups:
+  parents: { tier: 0 }
+  bar: { tier: 1, shape: bar }
+  leaves: { tier: 1 }
+nodes:
+  parent: { group: parents, ports: [{ name: p, side: bottom }] }
+  b: { group: bar, ports: [{ name: p, side: top }] }
+  c1: { group: leaves, ports: [{ name: p, side: top }] }
+  c2: { group: leaves, ports: [{ name: p, side: top }] }
+links:
+  - [parent.p#1, c2.p]
+  - [parent.p#1, c1.p]
+  - [parent.p#1, b.p]

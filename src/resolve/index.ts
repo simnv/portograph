@@ -101,10 +101,10 @@ function anonymousPort(model: LayoutModel, nodeId: string): PortRef {
 }
 
 function unsupported(model: LayoutModel, sourceIndex: number, technique: 'stub' | 'group-link', owners: Owner[]): void {
-  // The parser reports explicit fallbacks already. Preserve its source path and avoid a duplicate.
-  const path = `$.links[${sourceIndex}].route`;
-  if (model.diagnostics.some(diagnostic => diagnostic.code === 'ROUTE_UNSUPPORTED'
-    && 'path' in diagnostic && diagnostic.path === path)) return;
+  // The parser reports explicit fallbacks already, at the source path of the authored link. `sourceIndex` is the canonical place of
+  // the link, not its authored one (ticket DR-04), so the parser's report is found by the authored route, not by its path.
+  if (model.document.links[sourceIndex]?.route === technique && model.diagnostics.some(diagnostic => diagnostic.code === 'ROUTE_UNSUPPORTED'
+    && 'path' in diagnostic)) return;
   report(model, 'ROUTE_UNSUPPORTED', unsupportedMessage(technique), owners, 'warning');
 }
 

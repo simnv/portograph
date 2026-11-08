@@ -135,8 +135,13 @@ Compact endpoint grammar (`node` and `group` are identifiers as above):
 | `node` | an anonymous port |
 | `group` | a group-link endpoint |
 
-Allocation of `*` and free-name lookups happens in **link order** at model time and is recorded
-in the model as explicit `(node, name, ordinal)` triples; the layout JSON never contains `*`.
+Allocation of `*` and free-name lookups happens in the **canonical link order** at model time and is
+recorded in the model as explicit `(node, name, ordinal)` triples; the layout JSON never contains `*`.
+The order of `links` is never input (decision review D-Q1, ticket DR-04, 2026-11-08): the parser lists
+the links by the smaller declared rank of the two ends, then the larger (nodes, then groups, in
+declaration order; the direction of a link is no key), the rank of a numbered port in its node's list, then the content of the link
+(`src/parse/link-order.ts`). A sheet that wants a port per link in a set order names the ports
+with `#n`; writing the links in another order does not move a wildcard to another port.
 
 Options:
 

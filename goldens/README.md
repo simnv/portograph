@@ -182,6 +182,7 @@ is a standalone schema-v2 document. `stage-inputs.yaml` is separate test data.
 | [port-roles](synthetic/port-roles.yaml) | 9, 11 | Paint pills by role and status; list every role as a pill swatch in the legend; move nothing. |
 | [transit-fan](synthetic/transit-fan.yaml) | 7a, 7e, 8 | One port feeds three children through a transit tier: lanes in the children's order, one shared stem tree, gates pass. |
 | [bar-fan](synthetic/bar-fan.yaml) | 7d, 7e | A bar drop and two remainders from one port: the drop is split under the tree's junction ids and joins as the straight leaf. |
+| [bar-fan-with-its-links-reversed](synthetic/bar-fan-with-its-links-reversed.yaml) | 0 | Ticket DR-04: `bar-fan` with `links` reversed draws the same; link order is never input (the parser's canonical order). |
 | [unfittable-link-label](synthetic/unfittable-link-label.yaml) | 9 | Keep the full tooltip and report one omitted visible label (with its stage precondition; the whole pipeline reserves run and band room and places the full label on the longest run, ADR-0014). |
 | [fitting-link-label](synthetic/fitting-link-label.yaml) | 9 | Place the measured label along the longest segment — rotated to read bottom-to-top on a vertical run — with no collision. |
 | [a-link-label-stays-clear-of-a-group-border](synthetic/a-link-label-stays-clear-of-a-group-border.yaml) | 7f, 9 | A link label stays in one region: the run's midpoint lies near the upper group's bottom border, so 7f reserves the window between the two borders and stage 9 slides the label into it, 8 px clear of each border. |
