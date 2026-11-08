@@ -875,6 +875,14 @@ export interface StaggerRow {
   /** The centre distance of each consecutive pair of members, `order.length - 1` entries (ticket 51: a gap between two parents is wider). */
   pitches: number[];
   step: number;
+  /**
+   * The feeding chain of a wrapped rank cell (fan wrap, decision review 2026-11, D-Q4): the column units (top-level frames and one-rank
+   * groups, sorted by id) on the feed side of the row's block that stage 5 moves as one block in x, so that their feeds into the block
+   * stand over the block's feed ports. The first stage 5 that seats the row decides it; every later run reads it and moves the same units.
+   * `[]`: decided, no chain (no unit feeds the block, or each feeder is a shared parent). Absent: the row is no rank cell (a plain row has no
+   * block and no chain). Publication and restore check that a chain still stands over its block (`validateStaggerRows`).
+   */
+  chain?: string[];
 }
 /**
  * One feed split (ticket 73): the feeding side of the step `tier` (child) and `authority` (the adjacent sub-tier toward the anchor) right of x `at`

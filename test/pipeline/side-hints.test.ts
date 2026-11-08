@@ -287,10 +287,13 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // centring stretched is trimmed to its ports after 7f and `bodyTrims` records it; no route changes. The no-hint claim is the second check.
   // Architecture-2 ticket 73 re-baselined all four: every published model gains `feedSplits: []` and its freeze copy, and the hash without that
   // key is the old one (38dcd21f37d7d0d4, 4a5fd53ee2ebe075, e07856b562bce4c8 and 98b3b139a5a1657b).
+  // Decision review 2026-11, ticket 07 (fan wrap, D-Q4) re-baselined `a-linked-node-steps-out-of-a-straight-chord` (9ab27642f6cac98d before): its
+  // `hosts` row (two hubs, two members each) is no fan, so no group passes the rules before a draft and `groupArrangements` is absent; main's
+  // layout without that key hashes to the new value, so the geometry is unchanged.
   const main: Record<string, string> = {
     'a-group-holds-both-ends-of-a-bundle': '7fb6875900425312',
     'a-bus-in-a-rank-gap-grows-the-gap': '42ca7e1559f49ea9',
-    'a-linked-node-steps-out-of-a-straight-chord': '9ab27642f6cac98d',
+    'a-linked-node-steps-out-of-a-straight-chord': 'f0a31e77eb97590d',
     'a-bar-end-keeps-its-corridor': 'a21df2bb8798fc03',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {

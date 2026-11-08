@@ -23,12 +23,15 @@ const dropX = (model: LayoutModel): number => {
   const link = model.links.find(item => item.attachments?.from.node === 'b-edge' && item.attachments.to.node === 'core-2')!;
   return findPort(model, link.attachments!.to)!.anchor!.x;
 };
-const run = (): Promise<LayoutModel> => layout(parse(readFileSync(new URL('../../goldens/synthetic/a-frame-keeps-out-of-a-foreign-drop.yaml', import.meta.url), 'utf8')),
-  { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const source = (): string => readFileSync(new URL('../../goldens/synthetic/a-frame-keeps-out-of-a-foreign-drop.yaml', import.meta.url), 'utf8');
+const run = (yaml = source()): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+/** The sheet with West's leaves on one line (`layout.autoArrange: false`): the premise of ticket 75, before the fan wrap (D-Q4, ticket 07). */
+const oneLine = (): Promise<LayoutModel> => run(source().replace('\ngroups:', '\nlayout: { autoArrange: false }\ngroups:'));
 
 describe('a frame keeps out of the clearance of a foreign drop (ticket 75)', () => {
   it('the second site stands clear of the drop to core-2, and G6 finds no segment along a group edge', async () => {
-    const model = await run();
+    // With West on one line the chain above stands right of West gateway, and the link from b-edge to core-2 drops beside the frame of top-b.
+    const model = await oneLine();
     const drop = dropX(model);
     const frame = model.frames!.find(item => item.id === 'top-b')!.box;
     // The port stands outside the frame, to its left, clear of the edge by the clearance and half a stroke at least.
@@ -36,6 +39,16 @@ describe('a frame keeps out of the clearance of a foreign drop (ticket 75)', () 
     expect(frame.x - drop).toBeGreaterThanOrEqual(GROUP_EDGE_LINK_CLEARANCE + 0.5);
     expect(score(model).snapshot.gates.G6.violations.filter(item => item.code === 'segment-group-edge')).toEqual([]);
     // The published placement is a fixed point of the rule.
+    expect(keepOutShifts(model).size).toBe(0);
+  }, 120000);
+
+  it('with the fan wrap the chain stands over West gateway, and the published placement is a fixed point of the rule as well', async () => {
+    // West's leaves stand on two lines and the feeding chain (top-a, top-b, core, dist) moves over West gateway (D-Q4, ticket 07): the link
+    // from b-edge to core-2 is one straight chord, not a drop beside the frame edge.
+    const model = await run();
+    const link = model.links.find(item => item.attachments?.from.node === 'b-edge' && item.attachments.to.node === 'core-2')!;
+    expect(link.path!.segments).toHaveLength(1);
+    expect(score(model).snapshot.gates.G6.violations.filter(item => item.code === 'segment-group-edge')).toEqual([]);
     expect(keepOutShifts(model).size).toBe(0);
   }, 120000);
 
