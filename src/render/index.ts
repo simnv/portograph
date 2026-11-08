@@ -22,6 +22,7 @@ import type { Theme } from '../profiles/network/themes.js';
 import { authorClass, classes, element, escapeStyle, escapeText, num } from './svg.js';
 import { boxClasses, frameTitled, groupLabelClasses, iconGlyphBox, legendSwatchClass, linkClassToken, pathRuns, svgClass } from './shared.js';
 import { legendLineOverlay } from '../layout/legend.js';
+import { busTooltip, linkTooltipLines, shortenedText } from './tooltips.js';
 
 export { OVERLAY_ENDPOINT_RADIUS };
 const MASK_ID = 'pg-overlay-mask';
@@ -151,8 +152,8 @@ function textElement(label: LayoutLabel, locks: GeometryLocks, structural: strin
   const start = label.textAlign === 'start';
   const spans = lines.map((line, index) => element('tspan',
     { x: start ? box.x : middle.x, y: first + index * lineHeight }, escapeText(line))).join('');
-  const title = label.tooltip !== undefined && label.tooltip !== label.text
-    ? element('title', {}, escapeText(label.tooltip)) : '';
+  const shortened = shortenedText(label);
+  const title = shortened !== undefined ? element('title', {}, escapeText(shortened)) : '';
   return element('text', {
     class: classes(structural, extra, locks.font(label.fontFamily ?? FONT_FAMILY, label.fontSize ?? 9, label.fontWeight ?? 400)),
     'data-owner': owner,
@@ -360,11 +361,7 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
    * aggregated glyph: the members are still drawn one by one.
    */
   const linkTooltip = (link: LayoutLink): string => {
-    const lines = layout.labels.filter(label => label.role === 'link' && label.omitted
-      && label.tooltip !== undefined && label.owner.kind === 'link' && label.owner.id === link.id)
-      .map(label => label.tooltip!);
-    const group = link.groupLink === undefined ? undefined : layout.groupLinks.find(item => item.id === link.groupLink);
-    if (group) lines.push(`${group.groups[0]} – ${group.groups[1]}: ${group.members.length} links`);
+    const lines = linkTooltipLines(layout, link);
     return lines.length ? element('title', {}, escapeText(lines.join('\n'))) : '';
   };
 
@@ -424,25 +421,12 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     // The trunk of a three-row join is one line per pair of neighbouring bars, in the head bus's group (mesh-bus.md, section 12.7).
     const joins = bus.trunk?.joins ?? [];
     const trunk = joins.slice(1).map((point, index) => line(joins[index]!, point, 'trunk')).join('');
-    const authoredLabels = [...bus.members, ...(bus.cross ?? [])].flatMap(id => {
-      const link = memberOf(id), text = link === undefined ? undefined : layout.document.links[link.sourceIndex]?.label;
-      return text ? [`${id}: ${text}`] : [];
-    });
-    const partner = bus.joined === undefined ? undefined : (layout.meshBuses ?? []).find(item => item.id === bus.joined);
-    const upper = bus.cross !== undefined ? bus : partner;
-    const joinLines = partner === undefined ? [] : [`joined with: ${partner.id} (${bus.meshNodes ?? bus.nodes.length} nodes in all)`,
-      `mesh: ${[...bus.nodes, ...partner.nodes].join(', ')}`, `cross links: ${(upper?.cross ?? []).join(', ')}`];
-    const meshBuses = bus.mesh === undefined ? [] : (layout.meshBuses ?? []).filter(item => item.mesh === bus.mesh);
-    const trunkLines = bus.mesh === undefined ? [] : [`joined by trunk: ${meshBuses.map(item => item.id).join(', ')} (${bus.meshNodes ?? bus.nodes.length} nodes in all)`,
-      ...(bus.trunk === undefined ? [] : [`mesh: ${meshBuses.flatMap(item => item.nodes).join(', ')}`, `cross links: ${(bus.cross ?? []).join(', ')}`])];
-    const lines = [`${bus.class ?? 'unclassed'} mesh: ${bus.nodes.join(', ')}`, `links: ${bus.members.join(', ')}`, ...joinLines, ...trunkLines,
-      ...(bus.dissolved.length ? [`group-links: ${bus.dissolved.join(', ')}`] : []), ...authoredLabels];
     const runs = [bus.bar!, ...bus.stubs!, ...(bus.riser?.from !== undefined && bus.riser.to !== undefined ? [{ from: bus.riser.from, to: bus.riser.to }] : []),
       ...joins.slice(1).map((point, index) => ({ from: joins[index]!, to: point }))];
     return element('g', { class: svgClass.meshBus(authored), 'data-id': bus.id, 'data-members': bus.members.join(' '),
       ...(bus.joined !== undefined ? { 'data-joined': bus.joined } : {}), ...(bus.mesh !== undefined ? { 'data-mesh': bus.mesh } : {}),
       ...lineMask(crossedTextCutouts(layout, runs, linkStrokeWidth(first) / 2, undefined, visible)) },
-      element('title', {}, escapeText(lines.join('\n'))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join('') + riser + trunk);
+      element('title', {}, escapeText(busTooltip(layout, bus))) + line(bus.bar!.from, bus.bar!.to) + bus.stubs!.map(stub => line(stub.from, stub.to)).join('') + riser + trunk);
   }).join('');
   const byId = new Map(layout.links.map(link => [link.id, link]));
   const bundleOf = new Map(layout.bundles.map(bundle => [bundle.id, bundle]));
