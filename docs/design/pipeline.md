@@ -801,7 +801,8 @@ stage 8 among the reserved parts (§ 8); nothing in placement seats it.
 
 The plan writes no model geometry. Stage 8 reads it again on frozen placement (`allocateGapRuns`)
 and reserves every planned part tip to tip. A gap whose parts are all planned asks the router for
-nothing. A part with no lane terminal on either boundary is planned all the same: the old
+nothing. Publication and restore read it again too, on the model as stage 8 received it, and keep
+each planned part in its link's path with its owner and its traversal (decision D-Q2, § 8). A part with no lane terminal on either boundary is planned all the same: the old
 allocation seated only runs with a lane.
 
 **A node side that feeds another tier nests its own stems (ADR-0015 rule 1).** A side carries one
@@ -1883,6 +1884,15 @@ the same shape the region rules produce. Publication and restore then check the 
 structurally — complete anchored path, orthogonal and connected, exact reserved runs, perpendicular
 stems of at least the reserved reach, link ownership of every routed gap, and no entry into a
 reservation the link does not own — because route geometry cannot be re-derived without the router.
+The runs placement planned for stage 8 can be derived again, and they are kept as the fixed and
+shared runs are (decision D-Q2, ADR-0010): `validateRoutedPaths` calls the one producer
+(`placementRuns`: the row-gap legs and the tier-gap parts) on the model as stage 8 received it
+(`preRoute`: the router's paths, removals and stub marks taken away), and each planned segment must
+lie inside one straight piece of the path with the same link owner, running the planned way, in the
+planned order. A collinear merge with the same owner passes; a run moved off its line, given another
+owner, reversed or reordered is refused by name, even where another route would pass the gates.
+The plan leaves out every link `frozenChords` names, so each name must hold a routed chord in the
+published geometry (`isRoutedChord`), or the model is refused.
 
 `overlay` links: never routed and never sent to the worker. Their path is the one
 `src/layout/overlay-paths.ts` derives from the two ports placement froze, and stage 8 only publishes
