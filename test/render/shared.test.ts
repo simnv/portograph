@@ -114,6 +114,7 @@ describe('paint rules', () => {
   it('keep the known paint of a class with a further token (S-03)', () => {
     const plain = drawio(model(m => { m.document.nodes[nodeId]!.class = 'router'; }));
     const extra = drawio(model(m => { m.document.nodes[nodeId]!.class = 'router extra'; }));
+    expect(style(plain, `pg-iconTile~${nodeId}`)).toBeDefined();
     expect(style(extra, `pg-iconTile~${nodeId}`)).toEqual(style(plain, `pg-iconTile~${nodeId}`));
     expect(style(extra, portCell)!['fillColor']).toBe(style(plain, portCell)!['fillColor']);
     const link = (klass: string): string => drawio(model(m => { m.document.links[0]!.class = klass; }));
@@ -141,12 +142,10 @@ describe('fixture drawio-class-tokens', () => {
     const laid = linkLabels(await route(bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml)))))))), { createAttempt: createAvoidAttempt }));
     for (const theme of ['auto', 'light', 'dark'] as const) {
       const xml = drawio(laid, { theme });
-      const tile = (node: string): Record<string, string> | undefined => style(xml, `pg-iconTile~${node}`);
       const pill = (node: string, name: string): Record<string, string> => {
         const { fillColor, strokeColor, dashPattern, fontColor } = style(xml, `pg-port~${node}~${name}~1`)!;
         return { fillColor: fillColor!, strokeColor: strokeColor!, dashPattern: dashPattern!, fontColor: fontColor! };
       };
-      expect(tile('extra-router'), theme).toEqual(tile('plain-router'));
       expect(pill('extra-router', 'down'), theme).toEqual(pill('plain-router', 'down'));
       expect(pill('border', 'one'), theme).toEqual(pill('border', 'two'));
       expect(pill('border', 'one').dashPattern, theme).toBe('2 2');
