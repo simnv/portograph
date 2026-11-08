@@ -137,6 +137,9 @@ export function placementRuns(model: LayoutModel, plans?: Parameters<typeof allo
   return { legs, gapRuns: allocateGapRuns(model, plans) };
 }
 
+/** Whether `link` turns in a row gap: then its leg is its one planned run, and its tier-gap runs are neither stitched nor required. */
+const holdsLeg = (placed: PlacementRuns, link: string): boolean => placed.legs.has(link);
+
 /** One run placement planned for a link: its row-gap leg, or its tier-gap run of the planned gap `index` in its traversal order. */
 export interface PlannedRun { kind: 'leg' | 'tier-gap'; index: number; segments: readonly PathSegment[] }
 
@@ -146,8 +149,7 @@ export interface PlannedRun { kind: 'leg' | 'tier-gap'; index: number; segments:
  * validator agreed if they ever do. An empty list: placement planned no run for the link, and nothing is required of its path.
  */
 export function plannedRunsOf(placed: PlacementRuns, link: string): PlannedRun[] {
-  const leg = placed.legs.get(link);
-  if (leg) return [{ kind: 'leg', index: 0, segments: [leg] }];
+  if (holdsLeg(placed, link)) return [{ kind: 'leg', index: 0, segments: [placed.legs.get(link)!] }];
   return placed.gapRuns.filter(run => run.link === link).sort((a, b) => a.index - b.index)
     .map(run => ({ kind: 'tier-gap', index: run.index, segments: run.segments }));
 }
@@ -215,10 +217,10 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
   // A leg's run is derived here rather than stored on the link, because `fixedSegments` belongs to
   // the lanes rule, which runs long before this geometry exists. It is still a reserved run, so it
   // is an obstacle to every link but its own from the start — a batch that ran earlier, or one this
-  // link shares, would otherwise be free to cross geometry the stitcher inserts verbatim.
-  // The tier gaps a transit link crosses are allocated the same way and for the same reason
-  // (ADR-0015 rule 1): the room is reserved before the first batch runs, so no batch can consume
-  // the corridor another link's own lane opens into.
+  // link shares, would otherwise be free to cross geometry the stitcher inserts verbatim. The tier
+  // gaps a transit link crosses are allocated the same way and for the same reason (ADR-0015 rule 1):
+  // the room is reserved before the first batch runs, so no batch can consume the corridor another
+  // link's own lane opens into. Both come from one producer, which the validator calls again.
   const placed = placementRuns(model, plans, gaps), legs = placed.legs;
   // Every reserved run a claim must keep out of: the ones the model already holds — a pinned path,
   // a lane run, an outward shared prefix — and the ones this pass adds as it goes, a leg, a tier-gap
@@ -236,8 +238,8 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
   const sharing = new Map<string, Set<string>>();
   for (const run of placed.gapRuns) {
     if (run.shares?.length) sharing.set(run.link, new Set([...sharing.get(run.link) ?? [], ...run.shares]));
-    // A link with a leg holds that one run (`plannedRunsOf`).
-    if (legs.has(run.link)) continue;
+    // A link with a leg holds that one run, as the validator reads it (`plannedRunsOf`).
+    if (holdsLeg(placed, run.link)) continue;
     const link = model.links.find(item => item.id === run.link)!;
     const runs = gapRuns.get(run.link) ?? new Map<number, PathSegment[]>();
     runs.set(run.index, run.segments);
