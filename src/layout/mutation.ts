@@ -637,6 +637,8 @@ export function restoreFinalLayout(json: string): LayoutModel {
 const permissions: Record<PlacementRule, { move: boolean; reorder: boolean }> = {
   rows: { move: true, reorder: false }, lanes: { move: true, reorder: false },
   flanks: { move: true, reorder: true }, centre: { move: true, reorder: true },
+  // 7e and 7f give an empty callback: their producers run after the checks below, so a rule check here reads only what a caller authored.
+  // The producer output is judged by publication (`protect`), the second boundary (D-Q3, DR-11).
   bars: { move: true, reorder: true }, bundles: { move: true, reorder: true }, bands: { move: true, reorder: false },
   route: { move: false, reorder: false }, 'link-labels': { move: false, reorder: false },
   validate: { move: false, reorder: false }, emit: { move: false, reorder: false },
@@ -788,7 +790,6 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     for (const [index, lane] of draft.lanes.entries()) if (!equal(lane.bounds, model.lanes[index]!.bounds)) same(lane.bounds, supplied.lanes[index]!.bounds, 'Callback lane extent contradicts current geometry');
   }
   const before = placement(model), after = placement(draft);
-  if (rule === 'bands') same(after, before, 'Bands callback cannot author placement or derived claims');
   const changed = !equal(before, after);
   if (changed && !permission.move) throw new Error(`${rule} cannot change placement`);
   if (changed && hasUnsupportedClaims(model)) throw new Error(`${rule} requires an unimplemented claim rebuild`);
@@ -854,7 +855,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     same(omit(node, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), omit(old, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), 'Undeclared node field changed');
     node.ports.forEach((port, index) => {
       same(omit(port, ['engineOrder', 'anchor', 'pill']), omit(old.ports[index]!, ['engineOrder', 'anchor', 'pill']), 'Undeclared port field changed');
-      if ((rule === 'bundles' || rule === 'centre') && !bundledPorts.has(JSON.stringify(port.ref))) same(port.engineOrder, old.ports[index]!.engineOrder, `${rule === 'bundles' ? 'Bundles' : 'Centring'} cannot reorder unrelated ports`);
+      if (rule === 'centre' && !bundledPorts.has(JSON.stringify(port.ref))) same(port.engineOrder, old.ports[index]!.engineOrder, 'Centring cannot reorder unrelated ports');
     });
     same(node.sizeFloor, old.sizeFloor, 'Stored content floor changed');
     same(node.contentSize, old.contentSize, 'Measured content changed');
@@ -926,16 +927,6 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
         });
         same({ ...node, ports: node.ports.map(port => omit(port, ['engineOrder', 'anchor', 'pill'])) }, { ...old, ports: old.ports.map(port => omit(port, ['engineOrder', 'anchor', 'pill'])) }, 'Centring cannot move anchor tier or flanks');
       }
-    }
-    if (rule === 'bundles') {
-      same(node.size, old.size, 'Bundles cannot resize nodes');
-      same(node.bounds!.x, old.bounds!.x, 'Bundles cannot translate nodes horizontally');
-      const dy = node.bounds!.y - old.bounds!.y;
-      if (dy < 0) throw new Error('Bundles may only grow tier gaps');
-      node.ports.forEach((port, index) => {
-        const prior = old.ports[index]!;
-        if (!bundledPorts.has(JSON.stringify(port.ref))) same(port.anchor, { x: prior.anchor!.x, y: prior.anchor!.y + dy }, 'Bundles must translate unrelated anchors with nodes');
-      });
     }
     if (rule === 'flanks') {
       if (node.size!.width < old.size!.width || node.size!.height < old.size!.height) throw new Error('Flanks cannot shrink nodes');
