@@ -3,6 +3,7 @@ import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { GROUP_LABEL_LINK_CLEARANCE } from '../theme/geometry.js';
 import { tierGapPlans } from '../layout/gap-plan.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
+import { isTurn } from '../geometry/planar.js';
 import { unfitGaps, unfitMessage } from '../layout/gap-room.js';
 import { bodiesPassedOver } from '../layout/overlay-paths.js';
 import { withLayoutMutation } from '../layout/mutation.js';
@@ -172,11 +173,8 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
  */
 function titlesDetoured(model: LayoutModel, link: LayoutLink, planned: readonly Point[]): string[] {
   const segments = link.path?.segments ?? [], reach = 2 * GROUP_LABEL_LINK_CLEARANCE;
-  // A turn only: a seam between two collinear pieces is no bend.
-  const bends = segments.slice(1).filter((segment, at) => {
-    const prior = segments[at]!;
-    return Math.abs((prior.to.x - prior.from.x) * (segment.to.y - segment.from.y) - (prior.to.y - prior.from.y) * (segment.to.x - segment.from.x)) > 1e-6;
-  }).map(segment => segment.from).filter(point => !planned.some(turn => Math.abs(turn.x - point.x) <= PLACEMENT_EPS && Math.abs(turn.y - point.y) <= PLACEMENT_EPS));
+  // A turn only (`isTurn`, the predicate `pathBends` counts with): a seam between two collinear pieces is no bend.
+  const bends = segments.slice(1).filter((segment, at) => isTurn(segments[at]!, segment)).map(segment => segment.from).filter(point => !planned.some(turn => Math.abs(turn.x - point.x) <= PLACEMENT_EPS && Math.abs(turn.y - point.y) <= PLACEMENT_EPS));
   return model.labels.filter(label => label.role === 'group' && !label.omitted && label.bounds !== undefined && label.crossedBy?.includes(link.id) !== true
     && bends.some(point => point.x >= label.bounds!.x - reach && point.x <= label.bounds!.x + label.bounds!.width + reach
       && point.y >= label.bounds!.y - reach && point.y <= label.bounds!.y + label.bounds!.height + reach)).map(label => label.id);

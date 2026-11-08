@@ -1,8 +1,11 @@
 import type { Point, Side } from '../model/geometry.js';
+import { isTurn } from '../geometry/planar.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
- * The polyline readers of the course plan (architecture ticket 15, phases 2 to 4): the corners and the proper crossings of orthogonal polylines, and the
- * fewest-corner route between two stems. The turns of a polyline are exact by construction (a corner is a corner). The decision itself is in
+ * The polyline builders of the course plan (architecture ticket 15, phases 2 to 4): the fewest-corner route between two stems and the natural
+ * course. The course round counts the turns of a polyline with `pointTurns` (`geometry/planar.ts`) and its crossings with `polylinesCross`
+ * (`read/crossings.ts`), the predicates of every other reader (D-Q6). The decision itself is in
  * `course-measure.ts`, which reads the 7f baseline and its routed result; the estimate of the natural course from stage 5 was dropped (the redesign of 2026-10-05).
  */
 
@@ -14,31 +17,21 @@ const OUT: Record<Side, Point> = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, 
 const OPPOSITE: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
 const HEADINGS: Side[] = ['top', 'right', 'bottom', 'left'];
 const BEND = 1000;
-const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
+/** Coordinate equality of the grid and the polyline points, in px: the reservation tolerance, strict at the bound. */
+const near = (a: number, b: number): boolean => Math.abs(a - b) < PLACEMENT_EPS;
 const samePoint = (a: Point, b: Point): boolean => near(a.x, b.x) && near(a.y, b.y);
 const step = (p: Point, side: Side, by: number): Point => ({ x: p.x + OUT[side].x * by, y: p.y + OUT[side].y * by });
 
-/** Drops repeated points and the middle point of three collinear ones. */
+/** Drops repeated points, and the middle point of three where the polyline makes no turn (`isTurn`, the turn predicate `pointTurns` counts with). */
 export function simplify(points: readonly Point[]): Point[] {
   const kept: Point[] = [];
   for (const point of points) if (kept.length === 0 || !samePoint(kept.at(-1)!, point)) kept.push(point);
   const out: Point[] = [];
   for (const point of kept) {
-    while (out.length >= 2) {
-      const a = out.at(-2)!, b = out.at(-1)!;
-      const collinear = near((b.x - a.x) * (point.y - b.y) - (b.y - a.y) * (point.x - b.x), 0);
-      const sameWay = (b.x - a.x) * (point.x - b.x) + (b.y - a.y) * (point.y - b.y) > 0;
-      if (collinear && sameWay) out.pop(); else break;
-    }
+    while (out.length >= 2 && !isTurn({ from: out.at(-2)!, to: out.at(-1)! }, { from: out.at(-1)!, to: point })) out.pop();
     out.push(point);
   }
   return out;
-}
-
-/** The corners of a polyline, counting a reversal as one, as `pathBends` does for a drawn path. */
-export function polylineTurns(points: readonly Point[]): number {
-  const p = simplify(points);
-  return Math.max(0, p.length - 2);
 }
 
 /**
@@ -90,19 +83,4 @@ export function naturalPolyline(from: Point, fromSide: Side, to: Point, toSide: 
   if (toSide === OPPOSITE[fromSide] && along > 0 && near((to.x - from.x) * OUT[fromSide].y - (to.y - from.y) * OUT[fromSide].x, 0)) return [from, to];
   const sA = step(from, fromSide, stem), sB = step(to, toSide, stem);
   return simplify([from, ...orthogonalRoute(sA, fromSide, sB, OPPOSITE[toSide]), to]);
-}
-
-// ---- crossings ----------------------------------------------------------------------------------------------------------------------
-
-/** The proper crossings of two polylines: interior points of both segments, so a shared end or a shared stem is no crossing. */
-export function polylineCrossings(a: readonly Point[], b: readonly Point[]): number {
-  let count = 0;
-  for (let i = 1; i < a.length; i++) for (let j = 1; j < b.length; j++) {
-    const p = a[i - 1]!, q = a[i]!, r = b[j - 1]!, s = b[j]!;
-    const ax = q.x - p.x, ay = q.y - p.y, bx = s.x - r.x, by = s.y - r.y, cross = ax * by - ay * bx;
-    if (near(cross, 0)) continue;
-    const t = ((r.x - p.x) * by - (r.y - p.y) * bx) / cross, u = ((r.x - p.x) * ay - (r.y - p.y) * ax) / cross;
-    if (t > 1e-3 && t < 1 - 1e-3 && u > 1e-3 && u < 1 - 1e-3) count++;
-  }
-  return count;
 }

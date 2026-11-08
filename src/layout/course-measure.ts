@@ -1,4 +1,5 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
+import { pointTurns } from '../geometry/planar.js';
 import type { Course, Lane, LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import { courseGeometry, ringsOf } from './course-lanes.js';
 import { probeBypassLanes, probeGapLane } from './lanes.js';
@@ -6,9 +7,8 @@ import { bypassGeometry } from './course-bypass.js';
 import { carriesTitle, GROUP_LABEL_GEOMETRY } from './bands.js';
 import { contentBox } from './regions.js';
 import { gapGeometry, gapPolyline } from './course-gap.js';
-import { polylineCrossings, polylineTurns } from './course-plan.js';
 import { authoredSide, groupShape } from './grid.js';
-import { crossingsOf, strictCrossing } from './read/crossings.js';
+import { crossingsOf, polylinesCross, strictCrossing } from './read/crossings.js';
 import { linkFacts, overlayFacts, type EndFacts, type LinkFacts } from './read/courses.js';
 import { profiles, drawnOverlays, read, pathBends, reading, routedFamily, routedBends, compare, lazyCount, type Reading } from './objective.js';
 import { measurePortPill } from '../text/index.js';
@@ -58,11 +58,12 @@ export function stepRoute(found: LinkFacts, turns: number | undefined, crossings
 /** The course a step takes: fewer turns than the step (one: an L), and no crossing. */
 export const stepGain = (turns: number, crossings: number): boolean => turns < STEP_TURNS && crossings === 0;
 /**
- * The drawn links of `model` that the polyline `points` of link `id` crosses: every link with a path that is not removed, routed and overlay alike. One count
+ * The drawn links of `model` that the polyline `points` of link `id` crosses, each once (per link: `polylinesCross` counts a pair once): every link with
+ * a path that is not removed, routed and overlay alike. One count
  * for the offer (the promised polyline on the routed baseline) and the judge (the published path on the routed trial) of a step course (R1).
  */
 export function drawnCrossings(model: LayoutModel, id: string, points: readonly Point[]): number {
-  return model.links.filter(other => other.id !== id && other.path !== undefined && other.removed !== true && polylineCrossings(points, pointsOf(other)) > 0).length;
+  return model.links.filter(other => other.id !== id && other.path !== undefined && other.removed !== true && polylinesCross(points, pointsOf(other))).length;
 }
 
 const pointsOf = (link: LayoutLink): Point[] => {
@@ -118,9 +119,10 @@ export function measureCourses(base: LayoutModel, routedBase: LayoutModel, refus
   const facts = linkFacts(base);
   const paths = new Map<string, Point[]>();
   for (const link of routedBase.links) if (link.layer === 'routed' && link.removed !== true) paths.set(link.id, pointsOf(link));
+  // Per link: the other routed links the polyline crosses, each once however many points they share (`polylinesCross`, a pair once).
   const crossedBy = (id: string, points: readonly Point[]): number => {
     let count = 0;
-    for (const [other, path] of paths) if (other !== id && path.length > 1 && polylineCrossings(points, path) > 0) count++;
+    for (const [other, path] of paths) if (other !== id && path.length > 1 && polylinesCross(points, path)) count++;
     return count;
   };
   const nodes = { ...base.nodes };
@@ -198,7 +200,7 @@ function bypassCandidate(base: LayoutModel, link: LayoutLink, found: LinkFacts, 
   if (geometry === undefined) return undefined;
   const admitted = probeBypassLanes(base, link, course);
   if ('why' in admitted) return { why: admitted.why };
-  const turns = polylineTurns(geometry.polyline);
+  const turns = pointTurns(geometry.polyline);
   if (turns0 !== undefined && turns > turns0) return undefined;
   return { course, turns, crossings: crossedBy(link.id, geometry.polyline), points: geometry.polyline };
 }
@@ -267,7 +269,7 @@ export function perimeterBest(base: LayoutModel, link: LayoutLink, found: LinkFa
           if (geometry === undefined) continue;
         }
       }
-      const turns = polylineTurns(geometry.polyline), crossings = crossedBy(link.id, geometry.polyline);
+      const turns = pointTurns(geometry.polyline), crossings = crossedBy(link.id, geometry.polyline);
       const mean = (found.from.anchor.x + found.to.anchor.x) / 2, edge = s === 'left' ? Math.min(...Object.values(base.groups).map(group => group.bounds?.x ?? Infinity)) : Math.max(...Object.values(base.groups).map(group => (group.bounds?.x ?? -Infinity) + (group.bounds?.width ?? 0)));
       const candidate = { turns, crossings, added: added([a, b]), distance: Math.abs(mean - edge) };
       const better = candidate.turns - best.turns || candidate.crossings - best.crossings || candidate.added - best.added || candidate.distance - best.distance;
@@ -351,7 +353,7 @@ function gapCourse(base: LayoutModel, found: LinkFacts, usageOf: (model: LayoutM
     const geometry = gapGeometry({ ...base, courses: [course] }, found.link, course);
     if (geometry === undefined) continue;
     const points = gapPolyline(geometry, x, geometry.extent);
-    const turns = polylineTurns(points), crossings = crossedBy(found.link.id, points);
+    const turns = pointTurns(points), crossings = crossedBy(found.link.id, points);
     if (turns < best.turns || (turns === best.turns && crossings < best.crossings)) Object.assign(best, { turns, crossings, course, points, lane: admitted.lane });
   }
   if (best.course === undefined) return undefined;
@@ -501,9 +503,10 @@ export function measureOverlayCourses(base: LayoutModel, routedBase: LayoutModel
   /** One pass over `order`: each link takes the best course its ends admit against the paths and lanes chosen before it. */
   const pass = (order: readonly LayoutLink[]): { link: LayoutLink; best: PerimeterBest; turns0: number }[] => {
     const paths = new Map(fixedPaths), stack: Lane[] = [...base.lanes.filter(lane => lane.kind === 'perimeter')];
+    // Per link: the other links the polyline crosses, each once however many points they share (`polylinesCross`, a pair once).
     const crossedBy = (id: string, points: readonly Point[]): number => {
       let count = 0;
-      for (const [other, path] of paths) if (other !== id && path.length > 1 && polylineCrossings(points, path) > 0) count++;
+      for (const [other, path] of paths) if (other !== id && path.length > 1 && polylinesCross(points, path)) count++;
       return count;
     };
     const chosen: { link: LayoutLink; best: PerimeterBest; turns0: number }[] = [];

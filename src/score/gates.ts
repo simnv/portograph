@@ -1,6 +1,6 @@
 import type { Frame, LayoutLink, LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
-import { EPS, bottom, contains, horizontal, intersection, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
+import { EPS, bottom, contains, horizontal, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 
 /** A rejection box kept by its far edges; see `gates`. `measurable` is false beyond `REJECT_LIMIT`. */
 interface Span { x: number; y: number; right: number; bottom: number; measurable: boolean }
@@ -28,6 +28,7 @@ import { faceKey, plannedTurns, portTurn, turnOrderViolated, turnRanker, type Tu
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
+import { strictCrossing } from '../layout/read/crossings.js';
 
 /**
  * The two runs on either side of one tread of an orthogonal staircase: the same link's segments
@@ -183,10 +184,7 @@ export function parallelClearance(model: LayoutModel, routed: Segment[], fail: (
     if (diagonal) {
       // Only a strict crossing — interior of both runs — excuses the pair; an endpoint or T contact
       // still owes the clearance.
-      const point = intersection(a.segment, b.segment);
-      const strict = point !== undefined
-        && ![a.segment.from, a.segment.to, b.segment.from, b.segment.to].some(end => samePoint(end, point));
-      if (strict) continue;
+      if (strictCrossing(a.segment, b.segment)) continue;
     }
     // One link's own staircase tread is not a clearance pair. Stage 7a reserves a lane at a fixed x
     // and states that routing completes the attachment jog, so a tread shorter than the clearance

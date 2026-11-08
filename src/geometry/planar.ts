@@ -43,7 +43,38 @@ export function segmentRectDistance(s: PathSegment, r: Rect): number {
   return Math.min(rectDistance(pointRect(s.from), r), rectDistance(pointRect(s.to), r),
     ...[{ x: r.x, y: r.y }, { x: right(r), y: r.y }, { x: r.x, y: bottom(r) }, { x: right(r), y: bottom(r) }].map(p => pointSegmentDistance(p, s)));
 }
-export function intersection(a: PathSegment, b: PathSegment): Point | undefined {
+/** A segment by its two ends: a published `PathSegment`, or a piece of a polyline that has no owner yet. */
+export interface Piece { from: Point; to: Point }
+
+/**
+ * Whether a path turns where piece `b` follows piece `a`: a change of direction, or a reversal. A collinear piece that goes on the
+ * same way is no turn. The determinant and the dot product are in px squared and compare at `EPS` (the number, not a distance).
+ */
+export function isTurn(a: Piece, b: Piece): boolean {
+  const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
+  return !near(ax * by - ay * bx, 0) || ax * bx + ay * by < -EPS;
+}
+
+/**
+ * The turns of a path, by its pieces (CODING_STANDARDS R7: the one bend count of readers and gates; `pathBends` reads a link with it). A
+ * piece whose two ends are one point (`samePoint`) has no direction: it is skipped, and the next piece is compared with the one before it.
+ */
+export function pieceTurns(pieces: readonly Piece[]): number {
+  let turns = 0, last: Piece | undefined;
+  for (const piece of pieces) {
+    if (samePoint(piece.from, piece.to)) continue;
+    if (last !== undefined && isTurn(last, piece)) turns++;
+    last = piece;
+  }
+  return turns;
+}
+
+/** The turns of a polyline given by its points: `pieceTurns` of its pieces. */
+export function pointTurns(points: readonly Point[]): number {
+  return pieceTurns(points.slice(1).map((to, index) => ({ from: points[index]!, to })));
+}
+
+export function intersection(a: Piece, b: Piece): Point | undefined {
   const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
   const cross = ax * by - ay * bx;
   if (cross === 0) return undefined;

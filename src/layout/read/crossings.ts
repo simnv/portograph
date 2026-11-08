@@ -1,6 +1,6 @@
 import type { Point } from '../../model/geometry.js';
-import type { LayoutModel, PathSegment } from '../../model/layout.js';
-import { EPS, intersection, samePoint } from '../../geometry/planar.js';
+import type { LayoutModel } from '../../model/layout.js';
+import { EPS, intersection, samePoint, type Piece } from '../../geometry/planar.js';
 
 /**
  * Shared readers: how many crossings. "A crossing" is several quantities, and each is a named mode. They share
@@ -10,8 +10,9 @@ import { EPS, intersection, samePoint } from '../../geometry/planar.js';
  * | mode | counts | reader |
  * | --- | --- | --- |
  * | strict segment crossing | two segments that meet at a point that is no end of either | `strictCrossing` (here) |
+ * | crossed polylines | two polylines with one strict segment crossing, a pair once | `polylinesCross` (here), the course round |
  * | links crossed by one link | other links, once each, whatever the number of points | `crossingsOf` (here), the side judge |
- * | pairs of overlay paths | a pair once, a meeting at least `EPS` from the ends of both segments | `overlayCrossingPairs` (here), the 7f rank move |
+ * | pairs of overlay paths | a pair once, with one strict segment crossing | `overlayCrossingPairs` (here), the 7f rank move |
  * | points of drawn overlay links | each distinct point, shared-port pairs excluded | `overlayCrossingPoints` (here), the overlay window |
  * | published routed crossings | the set of (pair, point) over routed segments | `metrics` in `src/score/metrics.ts` |
  * | order inversions between two tiers | routed links as centre lines, a sign flip | `regionCrossings` in `overlay-order.ts` |
@@ -21,8 +22,12 @@ import { EPS, intersection, samePoint } from '../../geometry/planar.js';
  * | render note | a crossing the picture notes | `noteCrossings` in `render/index.ts` |
  */
 
-/** Whether two routed segments cross strictly: crossing is allowed, closeness is not (G6). A meeting at an end of either is no crossing. */
-export function strictCrossing(a: PathSegment, b: PathSegment): boolean {
+/**
+ * Whether two segments cross strictly: crossing is allowed, closeness is not (G6). A meeting at an end of either is no crossing. The one
+ * proper-crossing predicate (D-Q6): the end is excluded at the planar `EPS` in pixels, never at a fraction of the segment, so a crossing
+ * 5 px inside a long segment counts.
+ */
+export function strictCrossing(a: Piece, b: Piece): boolean {
   const point = intersection(a, b);
   return point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
 }
@@ -35,13 +40,25 @@ export function crossingsOf(model: LayoutModel, id: string): number {
     && one.some(a => other.path!.segments.some(b => strictCrossing(a, b)))).length;
 }
 
+/**
+ * Mode `crossed polylines`. Whether two polylines, given by their points, cross: one piece of one crosses one piece of the other strictly
+ * (`strictCrossing`). The aggregation is per pair: a pair that crosses at several points is one. A shared end or a shared stem is no
+ * crossing. Read by the course round (`course-measure.ts`), which counts the links one polyline crosses.
+ */
+export function polylinesCross(a: readonly Point[], b: readonly Point[]): boolean {
+  for (let i = 1; i < a.length; i++) for (let j = 1; j < b.length; j++) {
+    if (strictCrossing({ from: a[i - 1]!, to: a[i]! }, { from: b[j - 1]!, to: b[j]! })) return true;
+  }
+  return false;
+}
+
 /** A path as the pair count reads it: its segments. */
 export type Trace = readonly { from: { x: number; y: number }; to: { x: number; y: number } }[];
 
 /**
- * Mode `pairs`. The pairs of paths that cross: one segment of one meets one segment of the other in a point that is inside both (at
- * least EPS from each end). A touch at an end, and parallel segments, are no crossing. A pair counts once, and a pair that shares a
- * port counts like any other. Read by the 7f rank move (`chord-clear.ts`).
+ * Mode `pairs`. The pairs of paths that cross: one segment of one crosses one segment of the other strictly (`strictCrossing`). A
+ * touch at an end, and parallel segments, are no crossing. A pair counts once, and a pair that shares a port counts like any other. Read
+ * by the 7f rank move (`chord-clear.ts`).
  */
 export function overlayCrossingPairs(paths: readonly Trace[]): number {
   let found = 0;
@@ -50,13 +67,7 @@ export function overlayCrossingPairs(paths: readonly Trace[]): number {
       // A crossing lies inside both segments, so boxes that do not meet hold none.
       if (Math.max(a.from.x, a.to.x) < Math.min(b.from.x, b.to.x) || Math.max(b.from.x, b.to.x) < Math.min(a.from.x, a.to.x)
         || Math.max(a.from.y, a.to.y) < Math.min(b.from.y, b.to.y) || Math.max(b.from.y, b.to.y) < Math.min(a.from.y, a.to.y)) return false;
-      const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
-      const d = ax * by - ay * bx;
-      if (Math.abs(d) < 1e-9) return false;
-      const cx = b.from.x - a.from.x, cy = b.from.y - a.from.y;
-      const t = (cx * by - cy * bx) / d, u = (cx * ay - cy * ax) / d;
-      const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
-      return t * la > EPS && (1 - t) * la > EPS && u * lb > EPS && (1 - u) * lb > EPS;
+      return strictCrossing(a, b);
     }));
     if (meets) found++;
   }

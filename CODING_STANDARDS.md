@@ -85,7 +85,7 @@ Check: grep `catch {`, early `return true` and `continue` in guards. Ask what th
 ### R7. Measure the full set with the right counters.
 
 Report before and after, on every sheet: Q, crossings, canvas, gate results, turns, removed links, bent routed links and bent overlay links.
-Count bends with `pathBends` (`src/layout/objective.ts`), not `segments - 1`. A report that names one metric is not accepted.
+Count bends with `pathBends` (`src/layout/objective.ts`; on a polyline, `pointTurns` of `src/geometry/planar.ts`), not `segments - 1`. Count a proper crossing with `strictCrossing` (`src/layout/read/crossings.ts`), never with a private copy. A report that names one metric is not accepted.
 For architecture-2 refactor steps, no fixture may get worse on the recorded metrics without explicit acceptance.
 Use `npm run corpus` and `npm run gate:compare`.
 

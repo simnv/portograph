@@ -93,7 +93,8 @@ worse.
 `counts` gives the raw counts of each link family, beside Q and outside it (Q reads only the routed
 layer). For `routed` and for `overlay`: `links`, `bent` (links with at least one bend) and `turns`
 (the bends of all links), and the `crossings`. A bend is a change of direction or a reversal between
-two segments (`pathBends`); a zero-length or collinear piece is no bend. Every count reads the
+two segments (`pathBends`, which reads `pieceTurns`, the one turn predicate of readers and gates); a zero-length or
+collinear piece is no bend, and the pieces on both sides of a zero-length piece are compared. Every count reads the
 published `path.segments`. Removed and pathless links are excluded, and so are stubs from the routed
 family. The routed `crossings` is the count that Q uses. The overlay `crossings` has one number per
 named mode of `src/layout/read/crossings.ts`, kept apart: `pairs` (path pairs that cross) and
