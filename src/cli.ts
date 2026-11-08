@@ -7,6 +7,7 @@
  * that owns the real work. Nothing in this file touches the file system, the process or a worker.
  */
 import type { Diagnostic, Layer, Owner } from './model/index.js';
+import { checkOptions } from './render/check-options.js';
 import type { ThemeMode } from './profiles/network/theme.js';
 
 export const VERBS = [
@@ -136,7 +137,6 @@ export function helpText(): string {
   ].join('\n');
 }
 
-const LAYERS: readonly Layer[] = ['routed', 'overlay'];
 
 /** The formats `render` can write. The SVG carries all three palettes; a draw.io file carries one. */
 export const FORMATS = ['svg', 'drawio'] as const;
@@ -173,11 +173,11 @@ function parseTheme(value: string): ThemeMode | 'auto' {
 
 function parseLayers(value: string): Layer[] {
   const names = value.split(',').map((name) => name.trim());
-  if (!names.length || names.some((name) => name === '')) throw new UsageError('--layers needs a comma separated list of routed, overlay');
-  for (const name of names) {
-    if (!LAYERS.includes(name as Layer)) throw new UsageError(`--layers does not know '${name}'; use routed, overlay or both`);
-  }
-  return names as Layer[];
+  const listed = names.filter((name) => name !== '');
+  if (listed.length !== names.length && listed.length) throw new UsageError('--layers needs a comma separated list of routed, overlay');
+  // One rule decides which selections are valid: the renderers' own check.
+  try { checkOptions({ layers: listed as Layer[] }); } catch (error) { throw new UsageError(`--layers: ${(error as Error).message}`); }
+  return listed as Layer[];
 }
 
 /**

@@ -1,3 +1,4 @@
+import { checkOptions } from './check-options.js';
 import type { Point, Rect } from '../model/geometry.js';
 import type {
   Bundle, Layer, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, PathSegment,
@@ -66,14 +67,6 @@ export function linkVisible(model: LayoutModel, link: LayoutLink, options: Rende
   if (layer !== 'overlay') return true;
   const authored = documentClass(model, link);
   return authored === undefined || model.document.overlays?.[authored] !== 'hidden';
-}
-
-function checkOptions(options: RenderOptions): void {
-  if (options.layers === undefined) return;
-  if (!options.layers.length) throw new Error('Layer selection must name at least one of routed, overlay');
-  for (const layer of options.layers) {
-    if (layer !== 'routed' && layer !== 'overlay') throw new Error(`Unknown link layer ${String(layer)}`);
-  }
 }
 
 /** `d` for one chain of segments: one subpath per run (`pathRuns`), so a new one starts wherever the model's chain breaks. */
