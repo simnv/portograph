@@ -108,6 +108,36 @@ overlay number.
 removed link has no path, no label, and no place in the score or the gates. It is not a gate
 failure, so the count is the only signal. Read it on every render.
 
+## Q is a regression guard, not a referee
+
+Q gates a branch. A drop in Q on a sheet is a finding. A rise in Q is not proof of a better
+drawing. Q catches a worse drawing of the same sheet. Q does not choose between two drawings
+that the user can accept. The weights stay: crossings 0.30, bends 0.15 (decision review,
+ruling of 2026-11-07).
+
+Evidence: three pairs of drawings where the user chose the better one. Q' puts bends before
+crossings (bends 0.30, crossings 0.15) and halves compactness (0.05). Q'' changes only the
+bends and crossings weights and keeps compactness at 0.10.
+
+| Pair | Changed sheets | Q agrees | Q' agrees | Q'' agrees |
+|---|---|---|---|---|
+| Ticket 73 (accepted canvas rows) | 10 | 5 | 8 | 7 |
+| Ticket 83 (the X; area growth accepted) | 7 | 4 | 4 | 4 |
+| Gap-24 on NTP (tier gap 60 kept over 24) | 1 | 1 | 1 | 1 |
+| Total | 18 | 10 | 13 | 12 |
+
+Sources: `.scratch/decision-review-2026-11/results/P3.md` (Q and Q'), `P3b.md` (Q'' bound from
+stored totals only, open on 16 of 18 sheets), `P3c.md` (Q'' from stored components; the totals
+above). Q and Q' in P3c equal the P3 values on every row.
+
+No weight choice makes one score agree with the user on all three pairs. The misses on
+ticket 83 (3 of 7 sheets) are canvas growth with equal bends and crossings. The misses on
+ticket 73 are canvas only (a-bar-spans-left, two-titles) or canvas growth (a-nested-stem).
+No Q term scores a straight facing link or a vertical link. A change of the weights does not fix these.
+
+Rule: where Q and the user differ, the user's eye decides. Compare paired renders and read the
+checklist below. Do not tune a weight to match one pair.
+
 ## Thresholds — assertions vs advisories
 
 | Metric | ≤ 30 nodes | ≤ 100 nodes | Kind |
