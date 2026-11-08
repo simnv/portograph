@@ -1,20 +1,15 @@
 import { readFileSync } from 'node:fs';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { centre, flanks, lanes, restoreLayoutModel, rows } from '../../src/internal.js';
 import type { Diagnostic, LayoutModel } from '../../src/index.js';
-import { validateSkeletonBands } from '../../src/layout/skeleton-geometry.js';
+import { alignFlanks } from '../../src/layout/flanks.js';
 import { rebuildRegions } from '../../src/layout/regions.js';
 import { refitCanvas } from '../../src/layout/link-labels.js';
 import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
-
-vi.mock('../../src/layout/skeleton-geometry.js', async importOriginal => {
-  const original = await importOriginal<typeof import('../../src/layout/skeleton-geometry.js')>();
-  return { ...original, validateSkeletonBands: vi.fn(original.validateSkeletonBands) };
-});
 
 // Ticket DR-01 (audit T-07, M-1): the clearance, containment and band checks of publication hold for every model, whatever diagnostics it
 // carries. Only the centring exemption reads PLACEMENT_NON_CONVERGENCE (ADR-0010).
@@ -106,12 +101,13 @@ it('restore refuses a geometry break beside a centring item that the code excuse
 }, 60000);
 
 it('flanks refuses a run whose flank growth leaves a band conflict, with a named PlacementRefusal and no diagnostic', async () => {
-  const staged = lanes(rows(await placed(withoutJointOrder(yaml))));
-  // No input reaches the condition today (no corpus or sweep sheet); the band check of the stage is made to report one conflict, once.
-  vi.mocked(validateSkeletonBands).mockReturnValueOnce(['tier band 1 overlaps tier band 0']);
+  // No input reaches the condition today (no corpus or sweep sheet). The draft of the stage is given the conflict that flank growth could leave: a group on its sibling.
+  const draft = deep(lanes(rows(await placed(withoutJointOrder(yaml)))));
+  moveGroup(draft, 'lonely', -70, 0);
+  rebuildRegions(draft);
   let refusal: unknown;
-  try { flanks(staged); } catch (error) { refusal = error; }
+  try { alignFlanks(draft); } catch (error) { refusal = error; }
   expect(refusal).toBeInstanceOf(PlacementRefusal);
-  expect(refusal).toMatchObject({ code: 'skeleton', stage: 'flanks', message: expect.stringMatching(/Flank growth of .* exceeds the available tier band: tier band 1 overlaps tier band 0/) });
-  expect(staged.diagnostics.map(d => d.code)).not.toContain(code);
+  expect(refusal).toMatchObject({ code: 'skeleton', stage: 'flanks', message: expect.stringMatching(/Flank growth of .* exceeds the available tier band: /) });
+  expect(draft.diagnostics.map(d => d.code)).not.toContain(code);
 }, 60000);
