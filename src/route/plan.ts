@@ -74,8 +74,21 @@ export interface LinkPlan {
  * (ADR-0015 rule 1), so the strip is a corridor one port owns rather than one the side shares.
  */
 export interface StemReservation {
-  link: string; node: string; side: Side; port: string; nested: boolean; bounds: Rect;
+  link: string; node: string; side: Side; port: string; nested: boolean;
+  /** The stem's cover, with the reach beyond its checkpoint (`reachBeyondCheckpoints`). */
+  bounds: Rect;
   /** The stem's centreline, from the port anchor to its checkpoint. */
+  segment: Pick<PathSegment, 'from' | 'to'>;
+}
+
+/**
+ * One routed gap's head-on approach to a lane: the run from the lane terminal to the approach
+ * checkpoint, with the clearance a reserved run carries. Placement fixed both points, so it is a
+ * reservation like a stem, and the batches before its owner leave it alone (ticket 18).
+ */
+export interface ApproachReservation {
+  link: string; lane: string; bounds: Rect;
+  /** The approach's centreline, from the lane terminal to its checkpoint. */
   segment: Pick<PathSegment, 'from' | 'to'>;
 }
 
@@ -92,6 +105,8 @@ export interface RoutePlan {
   obstacles: RouteObstacle[];
   /** Reserved outward stems, in plan order; a batch avoids those of the links still to be routed. */
   stems: StemReservation[];
+  /** Reserved lane approaches, in plan order; a batch avoids those of the links still to be routed. */
+  approaches: ApproachReservation[];
   /** libavoid parameters for this diagram (`routeParameters`). */
   parameters: Record<string, number>;
   /**
@@ -234,6 +249,7 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
   }
   const usage = portUsage(model), pins = new Map<string, RoutePin[]>(), boxes = groupBoxes(model);
   const remainders: string[] = [], overlay: string[] = [], links: LinkPlan[] = [], stems: StemReservation[] = [];
+  const approaches: ApproachReservation[] = [];
   const claims: { segment: PathSegment; covers: RouteObstacle[] }[] = [];
   for (const link of model.links) {
     if (link.path || !drawn(link)) continue;
@@ -314,9 +330,16 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
             asked.splice(1, 0, ...entryCheckpoint(model, link, 'from', from.port!, from.checkpoint, end.point, obstacles, boxes)
               .map(checkpoint => ({ checkpoint, terminal: from.point, producer: `entry:${portId(from.port!.ref)}` })));
           }
-          // Only an attachment stem is reserved against the batches still to run. Reserving the lane
-          // approach as well was measured and left out; see `.scratch/stress/issues/02`.
+          // Every approach placement fixed is reserved against the batches still to run: the
+          // attachment stem, and the head-on approach to a lane (ticket 18). Without the second, an
+          // earlier batch may lay its row through the approach point, and libavoid then drops it.
           for (const item of asked) {
+            if (item.producer.startsWith('lane:')) {
+              approaches.push({ link: link.id, lane: item.producer.slice('lane:'.length),
+                bounds: stemBounds(model, link, item.terminal, item.checkpoint),
+                segment: { from: { ...item.terminal }, to: { x: item.checkpoint.x, y: item.checkpoint.y } } });
+              continue;
+            }
             if (item.node === undefined || item.side === undefined || item.port === undefined) continue;
             stems.push({ link: link.id, node: item.node, side: item.side, port: item.port,
               nested: sideNested(model, item.node, item.side, gaps),
@@ -341,6 +364,7 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
       }),
       ports: (['from', 'to'] as const).map(end => portId(link.attachments![end])) });
   }
+  reachBeyondCheckpoints(model, stems, approaches);
   for (const [node, list] of pins) {
     const shape = obstacles.find(item => item.id === `node:${node}`);
     if (shape) shape.pins = [...list].sort((a, b) => a.classId - b.classId);
@@ -371,7 +395,7 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
   }
   // A run's inner points are its turns: it starts and ends on a tip or a mouth, where it continues its stem or its lane.
   const plannedTurns = new Map([...gapRuns].map(([link, runs]) => [link, [...runs.values()].flatMap(segments => segments.slice(1).map(segment => ({ ...segment.from })))]));
-  return { remainders, overlay, links, obstacles, stems, parameters: routeParameters(model), plannedTurns,
+  return { remainders, overlay, links, obstacles, stems, approaches, parameters: routeParameters(model), plannedTurns,
     batches: [...batches.values()].map((ids, index) => ({ id: `batch-${index}`, links: ids })) };
 }
 
@@ -568,9 +592,39 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
 }
 
 /**
- * The reserved stems a batch must leave alone: those of the links no batch has routed yet. An
- * earlier batch is otherwise free to run through the outward stem of a link it has never seen, and
- * that link then has no route to its own port.
+ * A pending stem also reserves the room its checkpoint is reached through: one router stem beyond
+ * the checkpoint, on the stem's own line (ticket 18). The stem's cover alone ends one clearance past
+ * the checkpoint, so an earlier batch may run along that edge and close the pocket the later link
+ * turns into, and libavoid then has no way to the checkpoint. The reach stops one clearance short of
+ * every other link's reserved stem or lane approach, so it never covers a point another
+ * reservation owns: two facing stems share the room between their checkpoints.
+ */
+function reachBeyondCheckpoints(model: LayoutModel, stems: StemReservation[], approaches: ApproachReservation[]): void {
+  const others = [...stems, ...approaches];
+  for (const stem of stems) {
+    const link = model.links.find(item => item.id === stem.link)!;
+    const clearance = GROUP_LABEL_GEOMETRY.nodeClearance + (linkStrokeWidth(link) + routedStroke(model)) / 2;
+    const { from: terminal, to: checkpoint } = stem.segment;
+    const dx = checkpoint.x - terminal.x, dy = checkpoint.y - terminal.y, span = Math.hypot(dx, dy) || 1;
+    const ux = dx / span, uy = dy / span;
+    let reach: number = GROUP_LABEL_GEOMETRY.routerStem;
+    for (const other of others) {
+      if (other.link === stem.link) continue;
+      for (const point of [other.segment.from, other.segment.to]) {
+        const ahead = (point.x - checkpoint.x) * ux + (point.y - checkpoint.y) * uy;
+        const across = Math.abs((point.x - checkpoint.x) * uy - (point.y - checkpoint.y) * ux);
+        if (ahead > 0 && across <= clearance + PLACEMENT_EPS) reach = Math.min(reach, Math.max(0, ahead - clearance - PLACEMENT_EPS));
+      }
+    }
+    stem.bounds = stemBounds(model, link, terminal, { x: checkpoint.x + reach * ux, y: checkpoint.y + reach * uy });
+  }
+}
+
+/**
+ * The reserved stems and lane approaches a batch must leave alone: those of the links no batch has
+ * routed yet. An earlier batch is otherwise free to run through the outward stem or the head-on
+ * lane approach of a link it has never seen, and that link then has no route to its own port or
+ * lane (ticket 18).
  *
  * A stem at a **port** this batch also attaches to is left out: one port carries one stem, and the
  * links that share it share the strip. Other ports on the same side still own their future stems;
@@ -581,10 +635,15 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
 export function pendingStemObstacles(plan: RoutePlan, batch: { links: string[] }, pending: Set<string>): RouteObstacle[] {
   const own = plan.links.filter(item => batch.links.includes(item.link));
   const ports = new Set(own.flatMap(item => item.ports));
-  return plan.stems.flatMap((stem, index) => {
-    if (!pending.has(stem.link) || ports.has(stem.port)) return [];
-    return [{ id: `stem:${index}:${stem.link}`, bounds: stem.bounds, consumers: [] }];
-  });
+  return [
+    ...plan.stems.flatMap((stem, index) => {
+      if (!pending.has(stem.link) || ports.has(stem.port)) return [];
+      return [{ id: `stem:${index}:${stem.link}`, bounds: stem.bounds, consumers: [] }];
+    }),
+    // A lane approach is one link's alone: no port is shared there, so nothing exempts it.
+    ...plan.approaches.flatMap((approach, index) => pending.has(approach.link)
+      ? [{ id: `approach:${index}:${approach.link}`, bounds: approach.bounds, consumers: [] }] : []),
+  ];
 }
 
 const asPoint = (point: Point): RouteEndpoint => ({ kind: 'point', x: point.x, y: point.y });

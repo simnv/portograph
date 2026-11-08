@@ -1752,14 +1752,25 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
   **anchor column** by half a pitch less a half strip — 0.5 px at the defaults, and the pitch only
   grows — so the router can always reach the port under one. A port on another side of the same node
   stands in its own strip and keeps its reservation.
+  A pending stem also covers the room its checkpoint is reached through: one router stem beyond the
+  checkpoint, on the stem's own line (ticket 18). Without it, an earlier batch may run along the edge
+  of the stem's cover and close the pocket the later link turns into. That reach stops one clearance
+  short of every other link's reserved stem or lane approach, so two facing stems share the room
+  between their checkpoints.
   These rectangles are added per batch. They never enter the ownership exclusions, so they cannot
   change a batch; they remain for the attachments no planned part reaches.
+- **the head-on approach of every lane end that a routed gap joins, for every batch before its
+  owner's** (ticket 18): the run from the lane terminal to its approach checkpoint, with the
+  clearance of a stem. Placement fixed both points, so an earlier batch may not lay its row through
+  the approach point. Nothing exempts it: no port is shared there. Measured on the corpus
+  (470 sheets, 2026-11-08): this cover changes one sheet. It repairs one removed link, but alone
+  it let that link run along a neighbour's row (G4). With the stem reach above, it repairs one and
+  breaks none. Stress ticket 02 measured an older form over 322 diagrams: 12 repaired, 4 broken.
 - **every planned tier-gap part** (§ 7a, in the height § 7f reserved for it), tip to tip: the upper
   leg, the run on its row and the lower leg, a Z part's two rows and middle drop, or the one vertical
   of a drop. Each is covered by the clearance a reserved run carries, for every batch from the first.
-  This is the head-on approach to a lane, reserved rather than covered by a rectangle. Measured over
-  322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4. The wall it put in a tier gap
-  pushed other links into routes their own checkpoints could not meet. A part's **row** does not
+  This is the head-on approach to a lane, reserved rather than covered by a rectangle, where the plan
+  seats the part; a residual gap keeps the approach cover above. A part's **row** does not
   obstruct the **residual** links of that gap, which the plan names as its crossers. Its verticals
   obstruct them, and a route can pass those by, except a residual part that stands within `k` of a
   vertical: it is granted the cover of that vertical alone. The owner is not given the row either.

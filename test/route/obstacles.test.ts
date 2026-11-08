@@ -220,16 +220,18 @@ nodes:
 links: [[a.p, b.p], [m.q, c.p]]`);
     const plan = planRoute(model);
     expect(plan.batches).toEqual([{ id: 'batch-0', links: ['link-1'] }, { id: 'batch-1', links: ['link-2'] }]);
-    // Each remainder reserves one stem at each of its two ports, and nothing else: the approach to
-    // a lane is measured and deliberately left out (`.scratch/stress/issues/02`).
+    // Each remainder reserves one stem at each of its two ports. `link-1` crosses the middle tier in
+    // a lane, and each gap that joins the lane reserves its approach (ticket 18).
+    expect(plan.approaches.map(item => [item.link, item.lane])).toEqual([['link-1', 'lane:"link-1":1'], ['link-1', 'lane:"link-1":1']]);
     expect(plan.stems.map(item => [item.link, item.node]))
       .toEqual([['link-1', 'a'], ['link-1', 'b'], ['link-2', 'm'], ['link-2', 'c']]);
-    // A stem covers its reserved reach with the clearance a reserved run carries.
+    // A stem covers its reserved reach, and one router stem beyond its checkpoint (ticket 18), with
+    // the clearance a reserved run carries.
     const port = findPort(model, model.links[1]!.attachments!.to)!;
-    const tip = stemCheckpoint(model, port);
+    const tip = stemCheckpoint(model, port), beyond = GROUP_LABEL_GEOMETRY.routerStem;
     const clearance = GROUP_LABEL_GEOMETRY.nodeClearance + (linkStrokeWidth(model.links[1]!) + routedStroke(model)) / 2;
-    expect(plan.stems[3]!.bounds).toEqual({ x: port.anchor!.x - clearance, y: tip.y - clearance,
-      width: 2 * clearance, height: port.anchor!.y - tip.y + 2 * clearance });
+    expect(plan.stems[3]!.bounds).toEqual({ x: port.anchor!.x - clearance, y: tip.y - beyond - clearance,
+      width: 2 * clearance, height: port.anchor!.y - tip.y + beyond + 2 * clearance });
     // The first batch avoids the stems of the link it has not routed; the second has none left.
     const pending = new Set(['link-2']);
     expect(pendingStemObstacles(plan, plan.batches[0]!, pending).map(item => item.id))

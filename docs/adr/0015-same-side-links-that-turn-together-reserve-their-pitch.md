@@ -730,3 +730,15 @@ and it is a decline now rather than an obstacle; a foreign one could in principl
 on the re-derivation the same way. Over 1 103 corpus inputs and the whole suite none does, and the
 four sides that nest are stable across every stage from `bands` on. If one ever did, the answer
 is the same as the title's: decline on something frozen, not on something placed.
+
+## Thirteenth amendment (2026-11-08, decision-review ticket 18): a residual lane approach is reserved
+
+The sixth amendment did not reinstate the lane-approach cover of stress ticket 02, because the plan
+seats the run. A gap the plan leaves to the router still joins its lane head-on through an approach
+point that placement fixed. With link order canonical (DR-04), an earlier batch laid its row through
+that point, and the later link was removed. Stage 8 now covers that approach for every batch before
+its owner's, as it covers a pending stem. A pending stem also covers one router stem beyond its
+checkpoint, stopped one clearance short of every other link's stem or approach, so an earlier route
+cannot close the pocket the later link turns into. Measured on 470 sheets under the canonical order
+and both reversals: one sheet changes, one removed link is repaired, none is broken, and no gate
+fails anew. See `pipeline.md` § 8.
