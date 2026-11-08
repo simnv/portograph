@@ -7,6 +7,7 @@ import { findPort } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { fitRegionGroup, bottom, groupInsets, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
+import { holdsMove } from './move-reservations.js';
 import { rowGap } from './sides-two.js';
 import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
 import { gridChains } from './grid.js';
@@ -826,7 +827,17 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         const required = 30 + 4 * q * inversions + 2 * q * (list.length + 1) + fan + 2 * edgeMargin(routedStrokeWidth(model)), threshold = rightNode!.bounds!.x;
         const delta = Math.max(0, required - (threshold - right(left!.bounds!)));
         const tier = model.groups[model.document.nodes[rightNode!.id]!.group]!.tier;
-        if (delta) for (const group of Object.values(model.groups).filter(g => g.tier === tier)) {
+        const row = Object.values(model.groups).filter(g => g.tier === tier);
+        // The room moves whole groups in x without their lanes, so it is no forced write: it asks the guard of every reservation (R2, DR-11, W09).
+        // Refused, no room is taken. The bundle then draws straight members where its gap holds the member pitch (ADR-0017), or refuses by
+        // name (`BUNDLE_CROSSOVER_CAPACITY`), and `BUNDLE_ROOM_HELD` names the room it did not take.
+        const whole = row.filter(group => group.bounds !== undefined && group.nodes.every(id => model.nodes[id]!.bounds!.x >= threshold));
+        const held = delta > 0 && !holdsMove(model, whole.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + delta } })), false);
+        if (held && !model.diagnostics.some(item => item.code === 'BUNDLE_ROOM_HELD' && item.owners?.some(owner => 'id' in owner && owner.id === bundle.id))) {
+          model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'BUNDLE_ROOM_HELD', owners: [{ kind: 'bundle', id: bundle.id }],
+            message: `The crossover room of ${bundle.id} (${delta.toFixed(1)} px right of ${rightNode!.id}) would break a reservation, so it is not taken.` });
+        }
+        if (delta && !held) for (const group of row) {
           const moved = group.nodes.filter(id => model.nodes[id]!.bounds!.x >= threshold);
           if (moved.length === group.nodes.length) moveGroup(model, group, delta, 0);
           else for (const id of moved) { model.nodes[id]!.bounds!.x += delta; model.nodes[id]!.ports.forEach(p => { p.anchor!.x += delta; }); }
