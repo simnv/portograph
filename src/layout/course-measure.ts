@@ -19,6 +19,7 @@ import { portKey } from './sides-one.js';
 import type { ScoreCounts } from '../score/types.js';
 import { portId } from './skeleton-graph.js';
 import { overlayChordAdmitted } from './frame-paths.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 /**
  * The course round's measure and judge (architecture ticket 15, phase 4; the redesign of 2026-10-05). `measureCourses` reads the 7f baseline and its routed
@@ -255,7 +256,7 @@ export function perimeterBest(base: LayoutModel, link: LayoutLink, found: LinkFa
       let ring = 0;
       if (stack !== undefined) {
         const first = geometry;
-        ring = stack.filter(other => other.side === s && other.bounds.y < first.bounds.y + first.bounds.height - 1e-6 && other.bounds.y + other.bounds.height > first.bounds.y + 1e-6).length;
+        ring = stack.filter(other => other.side === s && other.bounds.y < first.bounds.y + first.bounds.height - PLACEMENT_EPS && other.bounds.y + other.bounds.height > first.bounds.y + PLACEMENT_EPS).length;
         if (ring > 0) { geometry = courseGeometry(probe, link, course, { ...lane, ring }, occ, ringsOf(stack), stack); if (geometry === undefined) continue; }
       }
       if (!overlay && !geometry.aligned && lane.aligned === true) {
@@ -445,7 +446,7 @@ export function judgeCourseTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   const separationNew = separationWorse(routedTrial, routedBase);
   if (separationNew.length > 0) return verdict(false, `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`);
   // Growth: optional growth stays within today's bound (5 %), and only the reserved width of a perimeter lane and the depth of a padding row may exceed it (Q2).
-  const room = reservedGrowth(routedTrial), cap = (was: number | undefined, extra: number): number => (was ?? 0) * (1 + GROWTH_BOUND) + extra + 1e-6;
+  const room = reservedGrowth(routedTrial), cap = (was: number | undefined, extra: number): number => (was ?? 0) * (1 + GROWTH_BOUND) + extra + PLACEMENT_EPS;
   if ((routedTrial.canvas?.width ?? 0) > cap(routedBase.canvas?.width, room.width) || (routedTrial.canvas?.height ?? 0) > cap(routedBase.canvas?.height, room.height)) {
     return verdict(false, `the routed trial grows the canvas past ${GROWTH_BOUND * 100} % and the width its lanes reserve`);
   }
@@ -561,7 +562,7 @@ export function judgeOverlayTrial(routedBase: LayoutModel, routedTrial: LayoutMo
   if (separationNew.length > 0) return verdict(false, `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`);
   // The growth a lane reserves counts only beyond what the baseline already reserves.
   const was = reservedGrowth(routedBase), reserved = reservedGrowth(routedTrial);
-  const room = { width: Math.max(0, reserved.width - was.width), height: Math.max(0, reserved.height - was.height) }, cap = (before: number | undefined, extra: number): number => (before ?? 0) * (1 + GROWTH_BOUND) + extra + 1e-6;
+  const room = { width: Math.max(0, reserved.width - was.width), height: Math.max(0, reserved.height - was.height) }, cap = (before: number | undefined, extra: number): number => (before ?? 0) * (1 + GROWTH_BOUND) + extra + PLACEMENT_EPS;
   if ((routedTrial.canvas?.width ?? 0) > cap(routedBase.canvas?.width, room.width) || (routedTrial.canvas?.height ?? 0) > cap(routedBase.canvas?.height, room.height)) {
     return verdict(false, `the routed trial grows the canvas past ${GROWTH_BOUND * 100} % and the width its lanes reserve`);
   }

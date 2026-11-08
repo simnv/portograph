@@ -8,7 +8,7 @@ import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, pathStrokeWidth } from '../them
 import { EPS, intersection, overlapSegment, samePoint, segmentDistance } from '../geometry/planar.js';
 import { MEMBER_GAP, MIN_STEM, clearOfGroupEdges, clone, coordinate, edgeMargin, facing, inversionPairs, members, normal, outward, pitch, type DepthPair, type Member } from './bundle-geometry.js';
 import { bundleTurnSpan } from './bundle-need.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { COALESCE_PRODUCT_EPS, PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
 
 export class BundleFeasibilityError extends PlacementRefusal {
@@ -55,7 +55,7 @@ function coalesce(segments: PathSegment[]): PathSegment[] {
   const compatible = (a: PathSegment, b: PathSegment): boolean => {
     if (!samePoint(a.to, b.from)) return false;
     const ax = a.to.x - a.from.x, ay = a.to.y - a.from.y, bx = b.to.x - b.from.x, by = b.to.y - b.from.y;
-    if (Math.abs(ax * by - ay * bx) > 1e-9 || ax * bx + ay * by <= 1e-9) return false;
+    if (Math.abs(ax * by - ay * bx) > COALESCE_PRODUCT_EPS || ax * bx + ay * by <= COALESCE_PRODUCT_EPS) return false;
     // Only the bundle's own geometry. Everything else a member's path carries is immutable and is
     // matched verbatim somewhere: a junction's stems are counted one per junction from the root by
     // the tree validator (and ticket 41's continuation is collinear with its stem on purpose), and

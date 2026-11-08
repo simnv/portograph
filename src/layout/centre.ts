@@ -38,6 +38,7 @@ import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, tapTarget, ow
 import { faceKey } from './turn-order.js';
 import { untrimmedModel } from './end-trim.js';
 import { standsVertical, strandedGrowth } from './given-back.js';
+import { RISER_DEPTH_EPS } from './tolerance.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -1071,7 +1072,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
    * branch is not the producer's common path.
    */
   const keptRefusal = (keptGroup: LayoutGroup, stepGroup: LayoutGroup, stepNodes: readonly LayoutNode[]): { reason: AlignmentDeclineReason; by: string } | null => {
-    const deeper = [...riserPenetrations(model, keptGroup)].filter(([key, depth]) => depth > (startPenetration.get(key) ?? 0) + 1e-9).map(([key]) => key).sort()[0];
+    const deeper = [...riserPenetrations(model, keptGroup)].filter(([key, depth]) => depth > (startPenetration.get(key) ?? 0) + RISER_DEPTH_EPS).map(([key]) => key).sort()[0];
     if (deeper !== undefined) return { reason: 'riser', by: deeper };
     const lane = [...chordLaneCrossings(model, keptGroup)].filter(pair => !startCrossings.has(pair)).sort()[0];
     if (lane !== undefined) return { reason: 'lane-crossing', by: lane };
