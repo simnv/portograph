@@ -76,7 +76,8 @@ import { FONT_FAMILY, measureText } from '../text/index.js';
 import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { boxesBehind, groupShapes } from './frame-order.js';
 import { backdropColour } from '../profiles/network/theme.js';
-import { checkOptions, linkVisible } from './index.js';
+import { checkOptions } from './check-options.js';
+import { linkVisible } from './index.js';
 import { authorClass, classes, element, num } from './svg.js';
 import {
   PaintSheet, boxClasses, groupLabelClasses, iconGlyphBox, legendSwatchClass, linkClassToken, paintPath, pathRuns, svgClass,
@@ -596,13 +597,19 @@ const cellId = (kind: string, ...parts: readonly string[]): string =>
   parts.length ? `pg-${kind}~${parts.map(part).join('~')}` : `pg-${kind}`;
 
 /**
- * The locks of a generated part (a joint, a port mark, an icon tile or glyph): it belongs to its
- * owner, so it cannot be moved, resized, edited, connected or deleted apart from it, and it takes
- * no pointer. The owner still moves and resizes, and carries the part (mxGraph moves children).
+ * The locks of a generated part (a joint, a port mark, an icon tile or glyph, a legend swatch): it
+ * belongs to its owner, so it cannot be moved, resized, rotated, edited or connected apart from it.
+ * The owner still moves and resizes, and carries the part (mxGraph moves children).
+ * `pointerEvents=0` acts only where a shape has no fill; a filled part still takes the click, and
+ * draw.io passes that click to the parent, so the owner is the thing selected.
+ * A part is deletable alone (so that ungroup leaves no stuck cell), except where `UNDELETABLE`
+ * is added: the joints and the marks bind link ends, and a link would lose an end.
  */
 const FIXED: Readonly<Record<string, StyleValue>> = {
-  movable: 0, resizable: 0, rotatable: 0, editable: 0, connectable: 0, deletable: 0, pointerEvents: 0,
+  movable: 0, resizable: 0, rotatable: 0, editable: 0, connectable: 0, pointerEvents: 0,
 };
+/** The one addition to `FIXED` for the cells that bind link ends. */
+const UNDELETABLE: Readonly<Record<string, StyleValue>> = { deletable: 0 };
 
 export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string {
   checkOptions(options);
@@ -1451,7 +1458,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
         vertex(cellId('overlayMark', stableId(link), mark.end), mark.host?.cell ?? layerId('overlay'),
           styleString(['ellipse'], {
-            ...markPaint(paintPath.overlayEndpoint(root, authored)), points: '[]', ...FIXED,
+            ...markPaint(paintPath.overlayEndpoint(root, authored)), points: '[]', ...FIXED, ...UNDELETABLE,
           }), mark.host ? relative(box, mark.host.box) : box);
       }
     }
@@ -1548,7 +1555,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const box = { x: spot.at.x - JOINT / 2, y: spot.at.y - JOINT / 2, width: JOINT, height: JOINT };
       vertex(spot.id, host.cell, styleString(['ellipse'], {
         fillColor: 'none', strokeColor: 'none', points: '[]',
-        ...FIXED,
+        ...FIXED, ...UNDELETABLE,
       }), relative(box, host.box));
     }
     /** The style that pins an edge end to the centre of its joint. */
@@ -1569,7 +1576,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
       vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),
-        styleString(['ellipse'], { ...markPaint(paintPath.overlayEndpoint(root, authorClass(bus.class))), points: '[]', ...FIXED }),
+        styleString(['ellipse'], { ...markPaint(paintPath.overlayEndpoint(root, authorClass(bus.class))), points: '[]', ...FIXED, ...UNDELETABLE }),
         pill ? relative(box, pill.box) : box);
     }
     // The bar, one piece between each two neighbouring joints.
@@ -1684,7 +1691,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         // `shape=line` draws the sample across its own box, so the swatch is a vertex like every
         // other one and sits in the row rather than floating over it.
         vertex(cellId('legendSwatch', entry.id), cellId('legendRow', entry.id), styleString([], {
-          shape: 'line', points: '[]',
+          shape: 'line', points: '[]', ...FIXED,
           strokeColor: colour(linePath, 'stroke'), strokeWidth: entry.strokeWidth ?? DEFAULT_STROKE_WIDTHS.path,
           opacity: percent(alpha(linePath, 'stroke-opacity')),
           ...dashEntries(single(linePath, paint => paint.get('stroke-dasharray'))),
@@ -1699,7 +1706,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
           arcSize: (entry.radius ?? CORNER_RADII.pill) * 2,
           fillColor: pillFill(pillPath, undefined),
           strokeColor: pillShape.strokeColor,
-          strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
+          strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]', ...FIXED,
           opacity: pillShape.opacity, ...dashEntries(single(pillPath, paint => paint.get('stroke-dasharray'))),
         }), swatch);
       } else if (entry.icon) {
@@ -1708,7 +1715,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         vertex(cellId('legendBody', entry.id), cellId('legendRow', entry.id), styleString([], {
           rounded: 1, absoluteArcSize: 1, arcSize: legendKeyRadius(theme, grow) * 2,
           ...shapePaint(inEntry(svgClass.nodeBody(keyClass, washClass(keyClass, washes)))),
-          strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]',
+          strokeWidth: DEFAULT_STROKE_WIDTHS.pill, points: '[]', ...FIXED,
         }), { x: body.x - grow, y: body.y - grow, width: body.width + 2 * grow, height: body.height + 2 * grow });
         const resolved = iconPaint(inEntry(classes('icon-tile', keyClass)), inEntry(classes('node-icon', keyClass)));
         const native = iconSet === 'cisco19' ? CISCO19[iconKey(entry.icon)] : undefined;

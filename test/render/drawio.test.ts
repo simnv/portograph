@@ -74,10 +74,12 @@ interface Cell {
 }
 
 /** A generated part carries every lock a joint carries (DX-12). */
-function expectFixed(cell: { style: Record<string, string> }): void {
-  for (const key of ['movable', 'resizable', 'rotatable', 'editable', 'connectable', 'deletable', 'pointerEvents']) {
+function expectFixed(cell: { style: Record<string, string> }, deletable = true): void {
+  for (const key of ['movable', 'resizable', 'rotatable', 'editable', 'connectable', 'pointerEvents']) {
     expect(cell.style[key], key).toBe('0');
   }
+  // Only the cells that bind link ends (joints, marks) cannot be deleted alone.
+  expect(cell.style['deletable']).toBe(deletable ? undefined : '0');
 }
 
 it('rejects an empty layer selection in draw.io as in SVG', async () => {
@@ -1243,6 +1245,17 @@ describe('connection grid, rotation and tiles', () => {
     }
   }, 60000);
 
+  it('locks every legend swatch, tile and body to its row (DX-12)', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    const kinds = new Set(model.legend!.entries.map(item => item.kind));
+    expect(kinds.has('line') && kinds.has('port') && kinds.has('symbol')).toBe(true);
+    const parts = [...all.values()].filter(cell => /^pg-legend(Swatch|Tile|Body)~/.test(cell.id));
+    expect(parts.length).toBeGreaterThanOrEqual(model.legend!.entries.length);
+    for (const cell of parts) expectFixed(cell);
+    expect([...all.keys()].some(key => key.startsWith('pg-legendBody~'))).toBe(true);
+  }, 60000);
+
   it('applies the same guard to a legend swatch', async () => {
     const model = await pipeline(fixture('drawio-constructs'));
     const entry = model.legend!.entries.find(item => item.kind === 'symbol' && item.icon)!;
@@ -1816,7 +1829,7 @@ describe('link ends and nested groups move with their owner (issue 03)', () => {
     // A mark is fixed to its owner, as a joint is (DX-12, S-08).
     const marks = [...all.values()].filter(cell => /^pg-(overlay|bus)Mark~/.test(cell.id));
     expect(marks.length).toBeGreaterThan(0);
-    for (const cell of marks) expectFixed(cell);
+    for (const cell of marks) expectFixed(cell, false);
   }, 60000);
 });
 
