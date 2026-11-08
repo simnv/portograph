@@ -20,10 +20,16 @@ rule in this document. A change to a rule increments the schema version.
 <object id="pg-port~sw1~eth2~1" label="eth2" pg-kind="port" pg-id="sw1:eth2"
         pg-node="sw1" pg-port="eth2" ifname="eth2">
   <mxCell style="…" vertex="1" parent="pg-node~sw1">
-    <mxGeometry x="…" y="…" width="…" height="…" as="geometry"/>
+    <mxGeometry x="…" y="…" width="…" height="…" relative="1" as="geometry">
+      <mxPoint x="…" y="…" as="offset"/>
+    </mxGeometry>
   </mxCell>
 </object>
 ```
+
+A pill, a node icon and a node description have `relative="1"` geometry: `x` and `y` are a
+fraction of the node's size and the offset is in px, so the cell stays on its face when a user
+resizes the node. The geometry is not part of the binding.
 
 draw.io keeps the attributes when a user edits the diagram. Its *Edit Data* dialog shows them. An
 SVG or PNG export from draw.io keeps them only when it embeds the diagram XML.
