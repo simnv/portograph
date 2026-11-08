@@ -9,6 +9,7 @@ import { orderedNodeIds } from '../model/model.js';
 import { iconKey, iconPath } from '../profiles/network/icons.js';
 import { EPS, right } from '../geometry/planar.js';
 import { effectiveLayer, labelArea, validate } from '../score/model.js';
+import { visibleEnd } from '../layout/path-end.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, anonymousDotRadius, linkStrokeWidth } from '../theme/geometry.js';
 import { washAssignment, washClass } from '../profiles/network/theme.js';
@@ -538,7 +539,8 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     // `.link-line` rules, so a document `css:` rule that recolours the line recolours the dot.
     const radius = anonymousDotRadius(linkStrokeWidth(link));
     return ends.map(end => {
-      const point = end === 'from' ? segments[0]!.from : segments.at(-1)!.to;
+      // An anonymous end draws no pill, so its visible end is the path end itself (`visibleEnd`, D-Q7).
+      const point = visibleEnd(layout, link, end) ?? (end === 'from' ? segments[0]!.from : segments.at(-1)!.to);
       return element('circle', { class: classes(svgClass.linkDot(linkClassToken(layout, link), overlay), locks.stroke(radius)),
         style: 'stroke-dasharray:none', 'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: radius / 2 });
     }).join('');
@@ -552,7 +554,9 @@ export function render(layout: LayoutModel, options: RenderOptions = {}): string
     const segments = link.path!.segments;
     if (!segments.length) return [];
     const bare = dotEnds(layout.document, link);
-    return ([['from', segments[0]!.from], ['to', segments.at(-1)!.to]] as const).filter(([end]) => !bare.includes(end)).map(([end, point]) =>
+    // The mark stands where the line is seen to end (`visibleEnd`, D-Q7): an overlay path is chord-built and ends on that point.
+    return ([['from', visibleEnd(layout, link, 'from') ?? segments[0]!.from], ['to', visibleEnd(layout, link, 'to') ?? segments.at(-1)!.to]] as const)
+      .filter(([end]) => !bare.includes(end)).map(([end, point]) =>
       element('circle', { class: svgClass.overlayEndpoint(linkClassToken(layout, link)),
         'data-owner': link.id, 'data-end': end, cx: point.x, cy: point.y, r: OVERLAY_ENDPOINT_RADIUS }));
   }).join('') + overlayDots;

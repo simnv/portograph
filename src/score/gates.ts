@@ -18,9 +18,9 @@ interface Span { x: number; y: number; right: number; bottom: number; measurable
 const REJECT_LIMIT = 2 ** 26;
 const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
-import { anchorOnBoundary, barContact, bundlePair, effectiveLayer, endpoints, fanCrossings, groupBoxes, groupConsumers, incident, junctionFan, labelArea, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, endpoints, fanCrossings, groupBoxes, groupConsumers, incident, junctionFan, labelArea, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
 import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../geometry/oriented.js';
-import { overlayEndpoint } from '../layout/overlay-paths.js';
+import { pathEnd } from '../layout/path-end.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { diagonalMayCross, linkFreeMargin } from '../layout/diagonal-text.js';
 import { portId } from '../layout/skeleton-graph.js';
@@ -405,20 +405,17 @@ export function gates(model: LayoutModel, routed: Segment[], counters: ScoreCoun
   }
   counters.lanesUsed = lanesUsed.size;
   for (const link of model.links) {
-    const ends = endpoints(link), from = linkPort(model, link, 'from'), to = linkPort(model, link, 'to'), path = link.path?.segments;
+    const from = linkPort(model, link, 'from'), to = linkPort(model, link, 'to'), path = link.path?.segments;
     if (!from || !to) { fail('G7', 'missing-port', [link.id], 'Link attachment references a missing port'); continue; }
     if (path?.length) {
-      // Where each family really meets its port. A routed path ends on the anchor, under its own
-      // pill. An overlay path ends on the port's outward **face**: the overlay layer is masked out
-      // of the pill, so an anchor-to-face run is never drawn, and the maintainer asked for the line
-      // and its endpoint mark to start on the pill's side (stress ticket 30). The gate still names
-      // exactly one point per end — `overlayEndpoint`, the producer's own — and an end that states
-      // no side has no face to read and keeps its anchor.
-      // A straight link inside one frame (ticket 34) ends on the face too: one segment, no stem.
-      const overlay = effectiveLayer(link) !== 'routed' || isRoutedChord(model, link);
-      const at = (item: typeof from, ref: { node: string }): Point =>
-        (overlay ? overlayEndpoint(model.nodes[ref.node], item) : undefined) ?? item.anchor!;
-      if (!samePoint(path[0]!.from, at(from, ends.from)) || !samePoint(path.at(-1)!.to, at(to, ends.to))) fail('G7', 'endpoint-anchor', [link.id], 'Link endpoints must equal the point their ports state');
+      // Where each producer really meets its port: the path-end rule (`pathEnd`, D-Q7). A
+      // stem-built path ends on the anchor, under its own pill. A chord-built path (an overlay
+      // path, a routed chord) ends on the port's outward **face**: the overlay layer is masked out
+      // of the pill, so an anchor-to-face run is never drawn, and a chord has no stem (stress
+      // ticket 30, ticket 34). The gate names exactly one point per end, the one the stage-8
+      // validator reads, and an end that states no side has no face and keeps its anchor.
+      const head = pathEnd(model, link, 'from'), tail = pathEnd(model, link, 'to');
+      if (!head || !tail || !samePoint(path[0]!.from, head) || !samePoint(path.at(-1)!.to, tail)) fail('G7', 'endpoint-anchor', [link.id], 'Link endpoints must equal the point their ports state');
       for (let i = 1; i < path.length; i++) if (!samePoint(path[i - 1]!.to, path[i]!.from)) fail('G7', 'disconnected-path', [link.id], 'Consecutive routed segments must connect');
     }
     if (!routedLinks.has(link)) continue;

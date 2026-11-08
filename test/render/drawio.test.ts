@@ -1361,30 +1361,17 @@ describe('maintainer edit principles', () => {
     expect(cell.points[0]).toEqual({ x: off.x - model.canvas!.x, y: off.y - model.canvas!.y });
   }, 60000);
 
-  it('reads the guard off the polyline draw.io draws, terminals included', async () => {
-    // Codex round 1: the guard read the waypoints alone. An end is pinned to the pill's outward
-    // midpoint, not to the port anchor the path starts from, so a pill that does not sit on its own
-    // anchor's axis moves the endpoint *across* that axis — and a link whose every waypoint is
-    // square is then drawn as a diagonal the orthogonal router would answer with a corner nothing
-    // reserved.
+  it('reads the style off the polyline draw.io draws, terminals included, exactly (D-Q7)', async () => {
+    // Codex round 1 found that an end pinned to the pill's outward midpoint could move *across* the
+    // stem, and a 1 px style tolerance hid it. Since D-Q7 each end is pinned at `visibleEnd`, a point
+    // of the path's own stem, so the drawn polyline is the model polyline and the style is read from
+    // it exactly. A short stem inside its pill is covered in `path-end.test.ts`.
     const model = await pipeline(fixture('drawio-constructs'));
     const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
     const square = cells(drawio(model)).get(id('link', stable(model, link.id)))!;
     // Ticket 34: the overlay is a U, square from terminal to terminal, so it is a square connector.
     expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     expect(square.points).toHaveLength(2);
-    const skewed = structuredClone(model);
-    const ref = link.attachments!.from;
-    // The pill moved — a hand edit the model knows nothing about. Since ticket 34 the path leaves the
-    // top pill by a vertical leg (the U), so moving the pill in y keeps the pinned endpoint on that
-    // leg's axis and skews nothing; moving it 12 px in x moves the pinned endpoint off the leg's axis,
-    // which is the case this guard is for.
-    skewed.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
-      && item.ref.ordinal === ref.ordinal)!.pill!.bounds.x += 12;
-    const cell = cells(drawio(skewed)).get(id('link', stable(model, link.id)))!;
-    expect(cell.points).toEqual(square.points);
-    expect(cell.style['edgeStyle']).toBe('none');
-    expect(cell.style['jettySize']).toBeUndefined();
   }, 60000);
 
   it('leaves an overlay end that draws no pill by the node it terminates on', async () => {
