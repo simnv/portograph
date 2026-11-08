@@ -303,13 +303,14 @@ it('ticket 45: a fan track steps past the node standing in its corridor (ADR-001
   expect(report.passed).toBe(true);
   for (const gate of ['G2', 'G4', 'G6'] as const) expect(report.gates[gate]!.violations).toEqual([]);
   const wall = model.nodes['wide']!.bounds!, target = model.nodes['sub']!.ports[0]!.anchor!;
-  const track = model.links[1]!.sharedRuns!.from!.at(-1)!.to.y;
+  const toSub = model.links.find(link => link.attachments?.to.node === 'sub')!;
+  const track = toSub.sharedRuns!.from!.at(-1)!.to.y;
   // The coordinate the branch wanted is inside the wall; the track it took is clear of it, on the
   // side the branch came from.
   expect(target.y - 15).toBeGreaterThan(wall.y);
   expect(track).toBeLessThanOrEqual(wall.y - 10);
   // The reserved run really crosses the wall's own span, so the step was not free.
-  const reach = model.links[1]!.sharedRuns!.from!.at(-1)!;
+  const reach = toSub.sharedRuns!.from!.at(-1)!;
   expect(Math.max(reach.from.x, reach.to.x)).toBeGreaterThan(wall.x);
 }, 60000);
 

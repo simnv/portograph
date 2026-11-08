@@ -36,8 +36,8 @@ describe('a link leaves its own group through a reserved exit (architecture tick
 
   it('a ranked group: a branch that turns short of the clearance off the stem is its own tread, so no gate fails', async () => {
     const model = await check('a-link-leaves-a-ranked-group-through-its-frame');
-    // link-1 turns off the stem by less than the clearance and rises; the stem is also link-2's run.
-    const [stem, tread] = model.links.find(link => link.id === 'link-1')!.path!.segments;
+    // link-2 turns off the stem by less than the clearance and rises; the stem is also link-3's run.
+    const [stem, tread] = model.links.find(link => link.id === 'link-2')!.path!.segments;
     expect(model.frames!.map(frame => frame.id)).toEqual(['home']);
     expect(tread!.owner).toEqual(stem!.owner);
     expect(Math.abs(tread!.to.x - tread!.from.x)).toBeLessThan(10);
@@ -45,7 +45,7 @@ describe('a link leaves its own group through a reserved exit (architecture tick
 
   it('a link into a child group is not walled out of the parent (finding 1)', async () => {
     const model = await check('a-link-from-a-parent-group-into-its-child');
-    const link = model.links.find(item => item.id === 'link-1')!;
+    const link = model.links.find(item => item.id === 'link-2')!;
     // Both ends stand in the parent box by ancestry, so no run is extended out of it.
     const box = model.frames!.find(frame => frame.id === 'site')!.box;
     for (const end of link.sharedRuns?.from ?? []) {
@@ -59,7 +59,7 @@ describe('a link leaves its own group through a reserved exit (architecture tick
     // Each fan ends outside the group on the junction row, and the two exits stand on one y: bands of different owners are not one.
     const ends = model.links.flatMap(link => { const last = (link.sharedRuns?.from ?? []).at(-1); return last ? [{ id: link.id, to: last.to }] : []; })
       .filter(item => item.to.y > box.y && (item.to.x < box.x - 10 || item.to.x > box.x + box.width + 10));
-    expect(ends.map(item => item.id).sort()).toEqual(['link-1', 'link-4']);
+    expect(ends.map(item => item.id).sort()).toEqual(['link-1', 'link-3']);
     expect(ends[0]!.to.y).toBe(ends[1]!.to.y);
   }, 60000);
 });

@@ -16,11 +16,11 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
   // Measured after stage 7f: the two provider feeds are all libavoid is left. Each is one straight
   // run between two anchors on one x with a clear corridor. Ticket 50: each is a planned drop, reserved tip to tip between its two claimed
   // stems (one piece before), so stage 8 asks for no route at all — the prototype's idle router, and byte-for-byte the geometry libavoid returned.
-  expect(routeRemainders(before)).toEqual(['link-1', 'link-2']);
+  expect(routeRemainders(before)).toEqual(['link-2', 'link-3']);
   expect(before.links.filter(link => !link.path)).toHaveLength(2);
   const plan = planRoute(before);
   expect(plan.batches).toEqual([]);
-  expect(plan.links.filter(item => ['link-1', 'link-2'].includes(item.link))
+  expect(plan.links.filter(item => ['link-2', 'link-3'].includes(item.link))
     .map(item => item.pieces.map(piece => piece.kind))).toEqual([['straight', 'allocated', 'straight'], ['straight', 'allocated', 'straight']]);
   expect(plan.overlay).toEqual([]);
 
@@ -30,7 +30,7 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
 
   // Unused label-band space is traversable; the actual group label remains an obstacle.
   // Both feeds still reach their exact top ports, with at least the required outward stem.
-  for (const id of ['link-1', 'link-2']) {
+  for (const id of ['link-2', 'link-3']) {
     const segments = model.links.find(link => link.id === id)!.path!.segments;
     const stem = segments.at(-1)!;
     expect(stem.from.x).toBe(stem.to.x);

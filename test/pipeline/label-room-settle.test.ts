@@ -124,14 +124,14 @@ it('at the pass bound a settle gives up no room across a tier gap: the solve own
 it('a forged record of the label rooms given up is refused (ticket 27, R5)', async () => {
   const model = await run(fixture);
   expect(() => validateGroupLabelBands(model)).not.toThrow();
-  for (const record of [['nope'], ['link-1'], ['link-4', 'link-4'], ['link-4', 'link-3'], []]) {
+  for (const record of [['nope'], ['link-3'], ['link-4', 'link-4'], ['link-4', 'link-2'], []]) {
     const forged = structuredClone(model);
     forged.labelRoomUnsettled = record;
     expect(labelRoomUnsettledFault(forged)).toBeDefined();
     expect(() => validateGroupLabelBands(forged)).toThrow(/label rooms 7f gave up is forged/);
   }
   const honest = structuredClone(model);
-  honest.labelRoomUnsettled = ['link-3', 'link-4'];
+  honest.labelRoomUnsettled = ['link-2', 'link-4'];
   expect(labelRoomUnsettledFault(honest)).toBeUndefined();
 }, 120000);
 

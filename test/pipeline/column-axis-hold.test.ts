@@ -58,7 +58,7 @@ describe('columns hold their feed axis after rows and centre', () => {
   }, 60000);
 
   it('frames that hold overlay ends are pulled back under their feeds all the same', async () => {
-    // The feeds are `link-1` and `link-2`. A sync between the two locations (same tier, face to face) and an overlay
+    // The feeds are `link-2` and `link-4`. A sync between the two locations (same tier, face to face) and an overlay
     // link parallel to each feed do not pin a frame: the overlay target agrees with the feed target, and a
     // same-tier partner cannot be bent by a move in x. Each is measured alone and all three together.
     const overlay = readFileSync(new URL('../../goldens/synthetic/overlay-ends-keep-the-feed-axis.yaml', import.meta.url), 'utf8');
@@ -67,7 +67,7 @@ describe('columns hold their feed axis after rows and centre', () => {
     const stem = links.slice(0, -3).join('\n');
     for (const source of [overlay, `${stem}\n${sync}\n`, `${stem}\n${parallel.join('\n')}\n`]) {
       const model = await run(source);
-      expect(linkJog(model, 'link-1') + linkJog(model, 'link-2')).toBeLessThanOrEqual(1);
+      expect(linkJog(model, 'link-2') + linkJog(model, 'link-4')).toBeLessThanOrEqual(1);
       expect(owners(model, COLUMN_AXIS_HELD)).toEqual([]);
     }
   }, 180000);

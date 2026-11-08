@@ -110,18 +110,18 @@ describe('interleaved links of one tier gap cross on the row of the earlier link
   it('lets a lane-end piece the lane allocation left unseated hold the row between its port tip and its lane approach', async () => {
     const model = await routed('an-unseated-lane-end-piece-holds-the-row-between-its-tips');
     expect(model.removedLinks ?? []).toEqual([]);
-    const earlier = model.links.find(link => link.id === 'link-7')!, later = model.links.find(link => link.id === 'link-8')!;
+    const earlier = model.links.find(link => link.id === 'link-3')!, later = model.links.find(link => link.id === 'link-4')!;
     expect(earlier.fixedSegments).toHaveLength(1);
     // The piece runs from the stem tip of its port to the approach point one router stem short of the lane.
     // The plan reserves that piece tip to mouth on one row of its own; the routed path runs on it and on no other.
     const plan = await planRows('an-unseated-lane-end-piece-holds-the-row-between-its-tips');
-    const wanted = plan.get('link-7')!;
+    const wanted = plan.get('link-3')!;
     expect(wanted).toHaveLength(1);
     expect(horizontals(earlier)).toEqual([expect.closeTo(wanted[0]!, 6)]);
     const crossings = strictCrossings(earlier, later);
     expect(crossings).toHaveLength(1);
-    // The crossing lies on a reserved row: a run of link-7 or of link-8 (a Z part here) over the other's leg.
-    expect([...wanted, ...plan.get('link-8')!].some(y => Math.abs(y - crossings[0]!.y) < 1e-6)).toBe(true);
+    // The crossing lies on a reserved row: a run of link-3 or of link-4 (a Z part here) over the other's leg.
+    expect([...wanted, ...plan.get('link-4')!].some(y => Math.abs(y - crossings[0]!.y) < 1e-6)).toBe(true);
     gatesPass(model);
   }, 60000);
 });

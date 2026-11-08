@@ -218,8 +218,8 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
     const model = await run(transit);
     expect(errors(model)).toEqual([]);
     const west = frame(model, 'west');
-    const own = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-4');
-    const foreign = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-5');
+    const own = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-3');
+    const foreign = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-2');
     // The link from gate-a to deep-a skips the tier of `mid`: its lane stands inside the canton frame.
     expect(own).toHaveLength(1);
     expect(holds(west, own[0]!.bounds)).toBe(true);

@@ -22,10 +22,10 @@ const barEnd = readFileSync(new URL('../../goldens/synthetic/a-bar-end-keeps-its
  * an obstacle for the owner as well, and the reserved stems of the links a batch has not routed yet
  * are obstacles too.
  *
- * Since ticket 02 the corridor of the unseated child follows it, so `link-3` descends on its own
+ * Since ticket 02 the corridor of the unseated child follows it, so `link-2` descends on its own
  * corridor rather than reaching it sideways. The rule this test states is the one that survives
  * either geometry: whatever a link's path does inside one of its own corridors, it does on that
- * corridor's centre. `link-1` and `link-3` each still run the whole length of theirs, and the
+ * corridor's centre. `link-1` and `link-2` each still run the whole length of theirs, and the
  * assertion below is checked against that rather than passing on an empty selection.
  */
 it('keeps a routed gap out of the corridor its own link reserved', async () => {
@@ -34,8 +34,8 @@ it('keeps a routed gap out of the corridor its own link reserved', async () => {
   // (ticket 75: the centring settles at a fixed point, so it no longer reports a stall for it).
   expect(before.diagnostics.map(item => item.code)).toContain('LANE_FOLLOWS_ITS_CHILD');
   const plan = planRoute(before);
-  // Ticket 50: every part of every gap is a planned part now (the columns of link-1, link-2 and link-3 as drops, link-4 and the
-  // link-3 row as stepped parts), so the router is asked for nothing: `link-4`, the one link it still routed, holds a row of its own
+  // Ticket 50: every part of every gap is a planned part now (the columns of link-1, link-3 and link-2 as drops, link-4 and the
+  // link-2 row as stepped parts), so the router is asked for nothing: `link-4`, the one link it still routed, holds a row of its own
   // (327.25) and its stems are claimed. The reproducer's contract, checked below on the published paths, holds by reservation
   // instead of by the router keeping out of the corridor. A residual link in this shape needs ticket 51's fixture.
   expect(plan.batches.map(batch => batch.links)).toEqual([]);
@@ -71,8 +71,8 @@ it('keeps a routed gap out of the corridor its own link reserved', async () => {
  */
 it('moves a corridor to the child 7c could not seat under it', async () => {
   const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
-  const link = model.links.find(item => item.id === 'link-3')!;
-  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-3')!;
+  const link = model.links.find(item => item.id === 'link-2')!;
+  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-2')!;
   const child = model.nodes['node-ba002']!.ports[0]!;
   expect(model.diagnostics.map(item => item.code)).toContain('LANE_FOLLOWS_ITS_CHILD');
   expect(lane.x).toBe(child.anchor!.x);
@@ -105,7 +105,7 @@ it('moves a corridor to the child 7c could not seat under it', async () => {
  */
 it('keeps a corridor that would leave the centring invariant unverified', async () => {
   const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(twoRuns))))))));
-  const lane = model.lanes.find(item => item.id === 'lane:"link-3":2')!;
+  const lane = model.lanes.find(item => item.id === 'lane:"link-2":2')!;
   const child = model.nodes.d!.ports[0]!;
   expect(child.anchor!.x).not.toBe(lane.x);
   expect(lane.x).toBe(59);

@@ -10,16 +10,16 @@ import { nodeTier } from '../../src/layout/read/tier.js';
 import { createColdAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
-// Ticket 15 (architecture-2): a port with one link stands over the port it feeds. The row repack pushed `leaf-c` right of the corridor of link-6; the
+// Ticket 15 (architecture-2): a port with one link stands over the port it feeds. The row repack pushed `leaf-c` right of the corridor of link-3; the
 // source port `p11` stood where the corridor was, so the link jogged although the face had room. The fixture also holds the control: `p13` has no room
-// for a move of that size, so link-7 keeps its jog and a diagnostic names it.
+// for a move of that size, so link-6 keeps its jog and a diagnostic names it.
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-single-feed-port-follows-its-child-over-a-pushed-row.yaml', import.meta.url), 'utf8');
 const xs = (link: { path?: { segments: { from: { x: number }; to: { x: number } }[] } }): Set<string> =>
   new Set((link.path?.segments ?? []).flatMap(segment => [segment.from.x.toFixed(1), segment.to.x.toFixed(1)]));
 
 it('draws the link of the pushed child as one vertical segment, with the port order and the publication check unchanged', async () => {
   const model = JSON.parse(JSON.stringify(await layout(parse(fixture), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt }))) as Awaited<ReturnType<typeof layout>>;
-  const link = model.links.find(item => item.id === 'link-6')!;
+  const link = model.links.find(item => item.id === 'link-3')!;
   expect(xs(link).size).toBe(1);
   const bottom = model.nodes['core-sw']!.ports.filter(port => port.side === 'bottom').sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.anchor!.x);
   expect(bottom).toEqual([...bottom].sort((a, b) => a - b));
@@ -28,9 +28,9 @@ it('draws the link of the pushed child as one vertical segment, with the port or
 
 it('keeps the jog of a port that has no room and names the link', async () => {
   const model = await layout(parse(fixture), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
-  const link = model.links.find(item => item.id === 'link-7')!;
+  const link = model.links.find(item => item.id === 'link-6')!;
   expect(xs(link).size).toBeGreaterThan(1);
-  expect(model.diagnostics.some(item => item.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-7'))).toBe(true);
+  expect(model.diagnostics.some(item => item.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-6'))).toBe(true);
 }, 120000);
 
 it('decides a face the same way whatever the order of the links', async () => {
@@ -44,8 +44,8 @@ it('decides a face the same way whatever the order of the links', async () => {
 it('puts a source port back when the corridor of its link did not follow', async () => {
   const laid = await layout(parse(fixture), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
   const model = JSON.parse(JSON.stringify(laid)) as typeof laid;
-  const link = model.links.find(item => item.id === 'link-6')!;
-  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-6')!;
+  const link = model.links.find(item => item.id === 'link-3')!;
+  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-3')!;
   const source = model.nodes['core-sw']!.ports.find(port => port.ref.name === 'p11')!;
   expect(link).toBeDefined();
   // The state 7f starts from: the corridor and the source port stand where 7a left them, 12 px off the child.
@@ -65,18 +65,18 @@ it('adopts the reseat of a free corridor and takes back the port of a blocked on
   const portOf = (link: string): NonNullable<typeof model.links[number]['attachments']>['from'] => model.links.find(item => item.id === link)!.attachments!.from;
   const sourceOf = (link: string) => model.nodes[portOf(link).node]!.ports.find(port => port.ref.name === portOf(link).name)!;
   const laneOf = (link: string) => model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link)!;
-  // link-6 is the blocked one (its corridor stays); link-5 is free (the reseat moves its corridor).
-  for (const link of ['link-6', 'link-5']) { laneOf(link).x -= 12; laneOf(link).bounds.x -= 12; sourceOf(link).anchor!.x -= 12; }
-  const free = sourceOf('link-5').anchor!.x, blocked = sourceOf('link-6').anchor!.x;
+  // link-3 is the blocked one (its corridor stays); link-2 is free (the reseat moves its corridor).
+  for (const link of ['link-3', 'link-2']) { laneOf(link).x -= 12; laneOf(link).bounds.x -= 12; sourceOf(link).anchor!.x -= 12; }
+  const free = sourceOf('link-2').anchor!.x, blocked = sourceOf('link-3').anchor!.x;
   const seated = seatLaneSources(model, centreContext(model, model.anchorTier!).steps);
-  expect(sourceOf('link-5').anchor!.x).toBeCloseTo(free + 12, 1);
-  expect(sourceOf('link-6').anchor!.x).toBeCloseTo(blocked + 12, 1);
+  expect(sourceOf('link-2').anchor!.x).toBeCloseTo(free + 12, 1);
+  expect(sourceOf('link-3').anchor!.x).toBeCloseTo(blocked + 12, 1);
   // What `reseatLanes` does for the free link.
-  laneOf('link-5').x += 12; laneOf('link-5').bounds.x += 12;
+  laneOf('link-2').x += 12; laneOf('link-2').bounds.x += 12;
   seated.reconcile();
-  expect(sourceOf('link-5').anchor!.x).toBeCloseTo(laneOf('link-5').x, 1);
-  expect(sourceOf('link-6').anchor!.x).toBeCloseTo(blocked, 1);
-  expect(sourceOf('link-6').anchor!.x).toBeCloseTo(laneOf('link-6').x, 1);
+  expect(sourceOf('link-2').anchor!.x).toBeCloseTo(laneOf('link-2').x, 1);
+  expect(sourceOf('link-3').anchor!.x).toBeCloseTo(blocked, 1);
+  expect(sourceOf('link-3').anchor!.x).toBeCloseTo(laneOf('link-3').x, 1);
 }, 120000);
 
 // The offset rule. A group step centres on the mean x of its parent ports against the mean x of its child ports; a move of one port changes it by its own share.
@@ -127,19 +127,19 @@ it('takes moves in port order only while their sum stays within half a pixel', a
 }, 120000);
 
 // Follow-up (codex option d): a move that changes the offset is free when the group fills the column of its frame. `site-zone`, a zone of a canton
-// member, is as wide as its column, so its step cannot shift it; the port of `gw` over `srv` moves, link-2 is one segment, and the move is recorded. A
+// member, is as wide as its column, so its step cannot shift it; the port of `gw` over `srv` moves, link-9 is one segment, and the move is recorded. A
 // group that stands in no frame column has no such wall (the row above): its moves stay declined.
-// Since architecture-2 ticket 54 the plain `drawio-nested-groups` holds link-2 as a frame chord (no title refuses it), so the fixture authors it orthogonal.
+// Since architecture-2 ticket 54 the plain `drawio-nested-groups` holds link-9 as a frame chord (no title refuses it), so the fixture authors it orthogonal.
 const nested = readFileSync(new URL('../../goldens/synthetic/a-feed-port-moves-over-its-child-at-a-wall.yaml', import.meta.url), 'utf8');
 it('takes a move that changes the offset when the group fills the column of its frame, and records it', async () => {
   const model = await layout(parse(nested), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
-  const link = model.links.find(item => item.id === 'link-2')!;
+  const link = model.links.find(item => item.id === 'link-3')!;
   expect(link.path!.segments.every(segment => Math.abs(segment.from.x - segment.to.x) <= 0.5)).toBe(true);
-  expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_AT_WALL' && item.severity === 'info' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-2'))).toBe(true);
+  expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_AT_WALL' && item.severity === 'info' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-3'))).toBe(true);
   expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_SHIFTS_GROUP')).toBe(false);
   // The stale jog an earlier pass named for the link is gone with the jog.
-  expect(model.diagnostics.some(item => item.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-2'))).toBe(false);
-  expect(model.parentWallMoves?.map(record => record.link)).toEqual(['link-2']);
+  expect(model.diagnostics.some(item => item.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-3'))).toBe(false);
+  expect(model.parentWallMoves?.map(record => record.link)).toEqual(['link-3']);
   expect(centreViolations(model)).toEqual([]);
 }, 120000);
 
@@ -165,7 +165,7 @@ it('gives a wall move back when a later replay widens the column, and keeps it w
   const widened = replay(200, 30);
   expect(widened.x).toBeCloseTo(widened.from, 6);
   expect(widened.model.parentWallMoves).toBeUndefined();
-  const codes = widened.model.diagnostics.filter(item => item.owners?.some(owner => 'id' in owner && owner.id === 'link-2')).map(item => item.code);
+  const codes = widened.model.diagnostics.filter(item => item.owners?.some(owner => 'id' in owner && owner.id === 'link-3')).map(item => item.code);
   expect(codes).toContain('CENTRE_PARENT_MOVE_SHIFTS_GROUP');
   expect(codes).not.toContain('CENTRE_PARENT_MOVE_AT_WALL');
 }, 120000);
@@ -185,5 +185,5 @@ it('withdraws a wall move in a centreDraft replay before the passes centre on it
     Object.defineProperty(attemptCounters, 'centringPasses', { configurable: true, enumerable: true, writable: true, value });
   }
   expect(recordAtFirstPass).toBeUndefined();
-  expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_SHIFTS_GROUP' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-2'))).toBe(true);
+  expect(model.diagnostics.some(item => item.code === 'CENTRE_PARENT_MOVE_SHIFTS_GROUP' && item.owners?.some(owner => 'id' in owner && owner.id === 'link-3'))).toBe(true);
 }, 120000);

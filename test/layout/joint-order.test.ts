@@ -54,7 +54,7 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
     const [joint, alone] = await Promise.all([run(FACE), run(off(FACE))]);
     expect(joint.groups.aggr!.rowOrderDecision).toEqual({ rule: 'feed-order', before: ['ag0', 'ag1', 'ag2', 'ag3', 'ag4'], after: ['ag2', 'ag4', 'ag0', 'ag1', 'ag3'] });
     expect(alone.groups.aggr!.rowOrderDecision!.rule).toBe('kept');
-    expect(sides(joint)).toEqual(['link-10 left of aggr', 'link-11 right of aggr']);
+    expect(sides(joint)).toEqual(['link-3 left of aggr', 'link-6 right of aggr']);
     expect(sides(alone)).toEqual([]);
     expect([crossings(joint), bends(joint)]).toEqual([1, 6]);
     expect([crossings(alone), bends(alone)]).toEqual([7, 8]);
@@ -74,7 +74,7 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
 
   it('reserves the corridor sides that 7a allocates and every later stage keeps (a-transit-side-is-decided-in-stage-4)', async () => {
     const [joint, alone] = await Promise.all([run(SIDES), run(off(SIDES))]);
-    expect(sides(joint)).toEqual(['link-12 left of aggr', 'link-13 right of aggr']);
+    expect(sides(joint)).toEqual(['link-4 left of aggr', 'link-8 right of aggr']);
     const aggr = joint.groups.aggr!.bounds!;
     for (const { payload } of ofKind(joint.reservations ?? [], 'corridorSide')) {
       const lane = joint.lanes.find(item => item.owner.kind === 'link' && item.owner.id === payload.link && item.tier === payload.tier)!;

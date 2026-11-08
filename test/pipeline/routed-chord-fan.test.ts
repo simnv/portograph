@@ -111,8 +111,8 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
 
   it('keeps a re-run that gives up a cross-frame chord only to clear a pair the kept placement holds under the clearance', async () => {
     const after = await run();
-    const [a, b, c] = ['link-4', 'link-5', 'link-6'].map(id => after.links.find(item => item.id === id)!);
-    expect(crossChords(after).map(link => link.id)).toEqual(expect.arrayContaining(['link-4', 'link-5', 'link-6']));
+    const [a, b, c] = ['link-2', 'link-4', 'link-6'].map(id => after.links.find(item => item.id === id)!);
+    expect(crossChords(after).map(link => link.id)).toEqual(expect.arrayContaining(['link-2', 'link-4', 'link-6']));
     // The kept placement: the second chord forged to end 4 px left of the first, on the same row, so that the pair stands under the clearance.
     const before = structuredClone(after) as LayoutModel;
     const one = before.links.find(item => item.id === a!.id)!.path!.segments[0]!;

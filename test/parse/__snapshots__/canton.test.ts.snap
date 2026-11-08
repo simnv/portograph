@@ -175,19 +175,7 @@ exports[`canton groups: schema (canton-groups ticket 1) > a document without can
       },
       "to": {
         "anonymous": true,
-        "node": "ntp",
-        "ordinal": 1,
-      },
-    },
-    {
-      "from": {
-        "anonymous": true,
-        "node": "ntp",
-        "ordinal": 2,
-      },
-      "to": {
-        "anonymous": true,
-        "node": "fw",
+        "node": "crt",
         "ordinal": 1,
       },
     },
@@ -199,7 +187,7 @@ exports[`canton groups: schema (canton-groups ticket 1) > a document without can
       },
       "to": {
         "anonymous": true,
-        "node": "crt",
+        "node": "ntp",
         "ordinal": 1,
       },
     },
@@ -224,6 +212,18 @@ exports[`canton groups: schema (canton-groups ticket 1) > a document without can
       "to": {
         "anonymous": true,
         "node": "srv",
+        "ordinal": 1,
+      },
+    },
+    {
+      "from": {
+        "anonymous": true,
+        "node": "ntp",
+        "ordinal": 2,
+      },
+      "to": {
+        "anonymous": true,
+        "node": "fw",
         "ordinal": 1,
       },
     },

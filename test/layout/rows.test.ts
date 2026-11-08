@@ -68,7 +68,7 @@ describe('stage 6 rows on the golden', () => {
     expect(model.stage).toBe('rows');
     expect(serializeLayoutModel(input)).toBe(before);
     expect(Object.isFrozen(model.links)).toBe(true);
-    for (const id of ['link-3', 'link-4']) {
+    for (const id of ['link-8', 'link-1']) {
       const { link, from, to } = endpoints(model, id);
       expect(link.bundle).toBe('bundle-1');
       expect(from.side).toBe('right'); expect(to.side).toBe('left');

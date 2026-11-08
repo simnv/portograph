@@ -62,10 +62,10 @@ it('the windows of a diagonal run agree with labelCrossesBorder and the G3 segme
 
 it('G3 reads a turned label by its turned rectangle: a real overlap with a node and a routed segment fails, a corner of the upright box does not (ticket 20)', async () => {
   const model = await run(fixture('a-diagonal-label-rises-past-a-third-group'));
-  const node = model.nodes['u']!.bounds!, drop = model.links.find(link => link.id === 'link-1')!.path!.segments[0]!;
+  const node = model.nodes['u']!.bounds!, drop = model.links.find(link => link.id === 'link-3')!.path!.segments[0]!;
   const turned = (id: string, centre: { x: number; y: number }, degrees: number) => {
     const area = { centre, width: 60, height: 10, degrees };
-    return { id, owner: { kind: 'link' as const, id: 'link-1' }, layer: 'routed' as const, role: 'link' as const, text: 'x',
+    return { id, owner: { kind: 'link' as const, id: 'link-3' }, layer: 'routed' as const, role: 'link' as const, text: 'x',
       textRotation: degrees, turnedSize: { width: 60, height: 10 }, bounds: orientedBounds(area) };
   };
   const hits = (label: ReturnType<typeof turned>): string[] => {
@@ -75,7 +75,7 @@ it('G3 reads a turned label by its turned rectangle: a real overlap with a node 
   };
   // Across the node's middle and across the drop: both are hits, and G3 fails.
   expect(hits(turned('label:test:node', { x: node.x + node.width / 2, y: node.y + node.height / 2 }, 30))).toContain('u');
-  expect(hits(turned('label:test:drop', { x: drop.from.x, y: (drop.from.y + drop.to.y) / 2 }, 30))).toContain('link-1');
+  expect(hits(turned('label:test:drop', { x: drop.from.x, y: (drop.from.y + drop.to.y) / 2 }, 30))).toContain('link-3');
   // Turned by 45° off the node's top-left corner: the upright box reaches into the node, the turned rectangle stays outside it.
   const beside = turned('label:test:corner', { x: node.x - 22, y: node.y - 22 }, -45);
   expect(rectOverlap(beside.bounds, node)).toBe(true);

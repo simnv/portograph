@@ -36,11 +36,11 @@ async function whole(name: string): Promise<{ placed: LayoutModel; routed: Layou
 describe('a residual part publishes with its findings named (ticket 51)', () => {
   it('names a lateral port that crosses the gap (lateral-port) and removes nothing', async () => {
     const { placed: model, routed } = await whole('a-lateral-port-link-crosses-a-tier-gap');
-    expect(residual(model)).toEqual(['link-7:lateral-port']);
-    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: a lateral port crosses the gap.']);
+    expect(residual(model)).toEqual(['link-2:lateral-port']);
+    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-2 is left to the router in the tier gap above tier 1: a lateral port crosses the gap.']);
     expect(routed.removedLinks ?? []).toEqual([]);
-    // Ticket 59: the jog of link-4's drop, which stands on its upper x, keeps the group-edge margin (10) from the top of `access`.
-    const jog = tierGapPlans(model).flatMap(({ plan }) => plan.parts).find(part => part.link === 'link-4')!;
+    // Ticket 59: the jog of link-6's drop, which stands on its upper x, keeps the group-edge margin (10) from the top of `access`.
+    const jog = tierGapPlans(model).flatMap(({ plan }) => plan.parts).find(part => part.link === 'link-6')!;
     expect(jog.shape === 'drop' && jog.stand === 'upper' && jog.jog !== undefined).toBe(true);
     // jog = bandTop - max(depth + k, e): k the row pitch, e the group-edge margin from the top of `access`.
     const k = nudgingDistance(model), e = GROUP_EDGE_LINK_CLEARANCE + routedStroke(model) / 2;
@@ -51,33 +51,33 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
 
   it('names a same-boundary U-turn (u-turn): both ports face the gap from one band, no gap between them', async () => {
     const { placed: model, routed } = await whole('a-same-boundary-u-turn-beside-a-tier-gap');
-    expect(residual(model)).toEqual(['link-7:u-turn']);
-    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: both ends stand on one boundary.']);
+    expect(residual(model)).toEqual(['link-2:u-turn']);
+    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-2 is left to the router in the tier gap above tier 1: both ends stand on one boundary.']);
     expect(routed.removedLinks ?? []).toEqual([]);
     expect(failing(routed)).toEqual([]);
   }, 120000);
 
   it('names a port that faces away from the gap (faces-away), not a u-turn', async () => {
     const { placed: model, routed } = await whole('a-port-facing-away-from-a-tier-gap-is-left-to-the-router');
-    expect(residual(model)).toEqual(['link-7:faces-away']);
-    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: a port faces away from the gap.']);
+    expect(residual(model)).toEqual(['link-2:faces-away']);
+    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-2 is left to the router in the tier gap above tier 1: a port faces away from the gap.']);
     expect(routed.removedLinks ?? []).toEqual([]);
-    // Ticket 52: the grant is the cover of the crossed vertical, not of the whole part. link-7 holds the cover of link-3's upper leg and
-    // not that of its lower leg (the segments are leg, row, leg); the wide grant of the whole part let link-7 run 3.83 px beside a
-    // leg it never crosses (G6 parallel-clearance link-3 / link-7), and the narrow one routes clear.
-    expect(allocateGapRuns(model).find(run => run.link === 'link-3')!.grants).toEqual([['link-7'], [], []]);
+    // Ticket 52: the grant is the cover of the crossed vertical, not of the whole part. link-2 holds the cover of link-4's upper leg and
+    // not that of its lower leg (the segments are leg, row, leg); the wide grant of the whole part let link-2 run 3.83 px beside a
+    // leg it never crosses (G6 parallel-clearance link-4 / link-2), and the narrow one routes clear.
+    expect(allocateGapRuns(model).find(run => run.link === 'link-4')!.grants).toEqual([['link-2'], [], []]);
     expect(failing(routed)).toEqual([]);
   }, 120000);
 
   it('names a part in a row cycle with its own code (TIER_GAP_ROW_CYCLE)', async () => {
     const { placed: model, routed } = await whole('a-row-cycle-leaves-a-part-to-the-router');
-    expect(residual(model).sort()).toEqual(['link-6:row-cycle', 'link-7:u-turn']);
+    expect(residual(model).sort()).toEqual(['link-7:row-cycle', 'link-1:u-turn']);
     expect(codes(model).sort()).toEqual([
-      'TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: both ends stand on one boundary.',
-      'TIER_GAP_ROW_CYCLE|link-6 is left to the router in the tier gap above tier 1: its rows form a cycle.',
+      'TIER_GAP_PART_RESIDUAL|link-1 is left to the router in the tier gap above tier 1: both ends stand on one boundary.',
+      'TIER_GAP_ROW_CYCLE|link-7 is left to the router in the tier gap above tier 1: its rows form a cycle.',
     ]);
     expect(routed.removedLinks ?? []).toEqual([]);
-    expect(failing(routed)).toEqual(['G6:parallel-clearance:link-5/link-6']);
+    expect(failing(routed)).toEqual(['G6:parallel-clearance:link-5/link-7']);
   }, 120000);
 
   it('leaves no leg under a title to the router, and names a leg over a shared run (crosses-shared-run) on the corpus fixtures', async () => {

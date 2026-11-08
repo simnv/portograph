@@ -286,13 +286,13 @@ describe('the lane shapes of a course (ticket 15, phase 1)', () => {
   }, 60000);
 
   it.each<[string, Over]>([
-    ['a perimeter id of another link', { id: 'perimeter:link-2' }],
+    ['a perimeter id of another link', { id: 'perimeter:link-4' }],
     ['a gap id with no ordinal', { id: 'gap-lane:link-1:', kind: 'gap', ring: undefined }],
     ['a span that is not ordered', { span: { top: 2, bottom: 0 } }],
     ['no span', { span: undefined }],
     ['a perimeter lane with no ring', { ring: undefined }],
     ['a gap lane with a ring', { id: 'gap-lane:link-1:0', kind: 'gap' }],
-    ['an owner with no course', { owner: { kind: 'link', id: 'link-3' }, id: 'perimeter:link-3' }],
+    ['an owner with no course', { owner: { kind: 'link', id: 'link-6' }, id: 'perimeter:link-6' }],
   ])('refuses %s', async (_name, over) => {
     const model = await planned();
     expect(() => validateCourseLane(model, lane(model, over))).toThrow();

@@ -48,15 +48,15 @@ describe('the column-gap course on hand-solve 09 (ticket 15, phase 5)', () => {
 
   it('owns one column-gap lane in the free column beside the core, and the path is the reserved geometry', async () => {
     const model = await layout(parse(source(AROUND)), options);
-    const lanes = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-6');
-    expect(lanes.map(lane => [lane.id, lane.kind, lane.side, lane.span])).toEqual([['gap-lane:link-6:0', 'gap', 'left', { top: 1, bottom: 1 }]]);
+    const lanes = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-4');
+    expect(lanes.map(lane => [lane.id, lane.kind, lane.side, lane.span])).toEqual([['gap-lane:link-4:0', 'gap', 'left', { top: 1, bottom: 1 }]]);
     const lane = lanes[0]!, core = model.groups['core']!.bounds!, branch = model.groups['neighbour']!.bounds!;
     // The lane stands between the neighbour and the core, clear of both.
     expect(lane.bounds.x).toBeGreaterThanOrEqual(branch.x + branch.width);
     expect(lane.bounds.x + lane.bounds.width).toBeLessThanOrEqual(core.x);
     // Its run and the side run are in the path as reserved; the U row stands in the tier gap below band 1, under both bodies.
-    const segments = link(model, 6).path!.segments;
-    expect(link(model, 6).fixedSegments!.every(run => segments.some(segment => JSON.stringify(segment.from) === JSON.stringify(run.from) && JSON.stringify(segment.to) === JSON.stringify(run.to)))).toBe(true);
+    const segments = link(model, 4).path!.segments;
+    expect(link(model, 4).fixedSegments!.every(run => segments.some(segment => JSON.stringify(segment.from) === JSON.stringify(run.from) && JSON.stringify(segment.to) === JSON.stringify(run.to)))).toBe(true);
     const band = model.tierBands.find(item => item.tier === 1)!.bounds!, below = model.tierBands.find(item => item.tier === 2)!.bounds!;
     const rows = segments.filter(segment => segment.from.y === segment.to.y && segment.from.x !== segment.to.x && segment.from.y > band.y + band.height);
     expect(rows).toHaveLength(1);
@@ -92,12 +92,12 @@ describe('the column-gap course on hand-solve 09 (ticket 15, phase 5)', () => {
 describe('the offer and 7a share one admission test', () => {
   it('admits the lane the published layout holds, at the same x, and refuses a column that a lane or a body closes', async () => {
     const model = await layout(parse(source(AROUND)), options);
-    const lane = model.lanes.find(item => item.id === 'gap-lane:link-6:0')!, course = model.courses!.find(item => item.link === 'link-6')!;
-    const admitted = probeGapLane(model, link(model, 6), course);
+    const lane = model.lanes.find(item => item.id === 'gap-lane:link-4:0')!, course = model.courses!.find(item => item.link === 'link-4')!;
+    const admitted = probeGapLane(model, link(model, 4), course);
     expect('lane' in admitted && Math.abs(admitted.lane.x - lane.x) < 1e-6).toBe(true);
     // A lane already reserved in the column leaves no room (reserved lanes count, as in 7a).
     const blocker = { ...lane, id: 'gap-lane:other:0', owner: { kind: 'link' as const, id: 'other' }, bounds: { ...lane.bounds } };
-    const closed = probeGapLane(model, link(model, 6), course, [blocker]);
+    const closed = probeGapLane(model, link(model, 4), course, [blocker]);
     expect('why' in closed).toBe(true);
     // A course whose ends stand in two bands is refused by the same test.
     const across = probeGapLane(model, link(model, 1), { ...course, link: 'link-1' });

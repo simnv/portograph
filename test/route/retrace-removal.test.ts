@@ -23,7 +23,7 @@ describe('a retracing route removes its link and not the sheet (ticket 46)', () 
   it('publishes the sheet with the retracing link removed, every other link drawn and the validator passing', async () => {
     // On main `a-retracing-route-removes-its-link.yaml` fails with `PIPELINE_FAILED: Routed path on link-6 retraces itself`. Ticket 50
     // reserves every part of that fixture, so the router is never asked and cannot retrace. The mechanism is the same for any routed
-    // link: the real router answers everything here, and the answer for `link-8` is forged to walk back down the column it has
+    // link: the real router answers everything here, and the answer for `link-10` is forged to walk back down the column it has
     // drawn (A-B-A-C).
     const forge = (points: Point[]): Point[] => {
       const [start, tip, ...rest] = points;
@@ -39,7 +39,7 @@ describe('a retracing route removes its link and not the sheet (ticket 46)', () 
           if (type !== 'message') return worker.addEventListener(type, listener);
           worker.addEventListener(type, event => {
             const data = event.data as { routes?: { connector: string; points: Point[] }[] } | undefined;
-            const routes = data?.routes?.map(item => item.connector.startsWith('link-8#') ? { ...item, points: forge(item.points) } : item);
+            const routes = data?.routes?.map(item => item.connector.startsWith('link-10#') ? { ...item, points: forge(item.points) } : item);
             listener(routes ? { ...event, data: { ...data, routes } } : event);
           });
         },
@@ -49,13 +49,13 @@ describe('a retracing route removes its link and not the sheet (ticket 46)', () 
     };
     const model = await layout(parse(text('three-lateral-legs-stay-with-the-router.yaml')), { createElkAttempt: createAttempt, createRouteAttempt: forging });
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
-    expect(model.removedLinks).toEqual(['link-8']);
+    expect(model.removedLinks).toEqual(['link-10']);
     const warning = model.diagnostics.find(item => item.code === 'ROUTE_GAP_REJECTED')!;
     expect(warning.severity).toBe('warning');
-    expect(warning.message).toContain('link-8 was removed');
-    expect(warning.message).toContain('Routed path on link-8 retraces itself');
-    for (const link of model.links) if (link.id !== 'link-8' && link.technique !== 'stub') expect(link.path, link.id).toBeDefined();
-    expect(model.links.find(link => link.id === 'link-8')!.path).toBeUndefined();
+    expect(warning.message).toContain('link-10 was removed');
+    expect(warning.message).toContain('Routed path on link-10 retraces itself');
+    for (const link of model.links) if (link.id !== 'link-10' && link.technique !== 'stub') expect(link.path, link.id).toBeDefined();
+    expect(model.links.find(link => link.id === 'link-10')!.path).toBeUndefined();
     expect(() => validateRoutedPaths(model, true)).not.toThrow();
     expect(render(model)).toContain('<svg');
   }, 120000);

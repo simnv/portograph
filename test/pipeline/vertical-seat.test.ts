@@ -27,9 +27,9 @@ const lean = (model: LayoutModel, id: string): number => {
 
 describe('a step keeps the vertical it reached', () => {
   const text = source('a-step-keeps-the-vertical-it-reached');
-  it('keeps link-11 vertical once reached: 8 bends, one gap growth, no gap short', async () => {
+  it('keeps link-12 vertical once reached: 8 bends, one gap growth, no gap short', async () => {
     const model = await run(text);
-    expect(lean(model, 'link-11')).toBeLessThanOrEqual(0.5);
+    expect(lean(model, 'link-12')).toBeLessThanOrEqual(0.5);
     expect(bends(model)).toBe(8);
     expect(count(model, 'TIER_GAP_GROWN')).toBe(1);
     expect(count(model, 'TIER_GAP_PART_UNFIT')).toBe(0);
@@ -50,41 +50,41 @@ describe('a step keeps the vertical it reached', () => {
 });
 
 describe('a frame chord stands over its child before the freeze (ticket 55)', () => {
-  it('holds link-2 as a chord with no lean', async () => {
+  it('holds link-3 as a chord with no lean', async () => {
     const model = await run(source('drawio-nested-groups'));
-    expect(model.frozenChords).toContain('link-2');
+    expect(model.frozenChords).toContain('link-3');
     // Bends cannot see a lean: a chord is one segment at any angle.
-    expect(lean(model, 'link-2')).toBeLessThanOrEqual(0.5);
+    expect(lean(model, 'link-3')).toBeLessThanOrEqual(0.5);
   }, 120000);
 });
 
 describe('the chord clearance reader (chordNearPairs)', () => {
   it('names a foreign body moved next to a held chord, and only a pair the move can change', async () => {
     const model = await run(source('drawio-nested-groups'));
-    const link = model.links.find(item => item.id === 'link-2')!;
+    const link = model.links.find(item => item.id === 'link-3')!;
     const ends = new Set([link.attachments!.from.node, link.attachments!.to.node]);
     const foreign = Object.keys(model.nodes).find(id => !ends.has(id))!;
-    expect(chordNearPairs(model, new Set([foreign])).has(`link-2@${foreign}`)).toBe(false);
+    expect(chordNearPairs(model, new Set([foreign])).has(`link-3@${foreign}`)).toBe(false);
     // The body moved to stand 4 px beside the middle of the chord, under the 10 px clearance.
     const one = findPort(model, link.attachments!.from)!.anchor!, two = findPort(model, link.attachments!.to)!.anchor!;
     const box = model.nodes[foreign]!.bounds!;
     const moved = { ...model, nodes: { ...model.nodes, [foreign]: { ...model.nodes[foreign]!, bounds: { ...box, x: (one.x + two.x) / 2 + 4, y: (one.y + two.y) / 2 - box.height / 2 } } } };
-    expect(chordNearPairs(moved, new Set([foreign])).has(`link-2@${foreign}`)).toBe(true);
+    expect(chordNearPairs(moved, new Set([foreign])).has(`link-3@${foreign}`)).toBe(true);
     // A move of no node changes no body pair: the pair is not read.
-    expect(chordNearPairs(moved, new Set()).has(`link-2@${foreign}`)).toBe(false);
+    expect(chordNearPairs(moved, new Set()).has(`link-3@${foreign}`)).toBe(false);
   }, 120000);
 });
 
 describe('the settle after the 7f rounds and the kept verticals', () => {
-  it('holds link-28 of a-band-holds-the-group-that-set-its-edge as a chord', async () => {
+  it('holds link-29 of a-band-holds-the-group-that-set-its-edge as a chord', async () => {
     const model = await run(source('a-band-holds-the-group-that-set-its-edge'));
-    expect(model.frozenChords).toContain('link-28');
+    expect(model.frozenChords).toContain('link-29');
   }, 180000);
   it('leaves the transit port of src0 on its lane in a-group-shift-leaves-a-chord-clear-of-a-lane (5 bends)', async () => {
     const model = await run(source('a-group-shift-leaves-a-chord-clear-of-a-lane'));
     expect(bends(model)).toBe(5);
-    const link = model.links.find(item => item.id === 'link-12')!;
-    const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-12')!;
+    const link = model.links.find(item => item.id === 'link-4')!;
+    const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-4')!;
     expect(findPort(model, link.attachments!.from)!.anchor!.x).toBeCloseTo(lane.x, 6);
     expect(lane.x).toBeCloseTo(93, 6);
   }, 120000);

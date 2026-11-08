@@ -57,8 +57,8 @@ describe('the offer', () => {
     const base = await before(SHEETS.rank);
     const offer = measureOverlayCourses(base, base);
     // 07: link 7 has 4 turns on main and gains; links 8, 9 and 10 are straight, so no course can gain by the unified order and none is offered.
-    expect([...offer.promised].map(([id, item]) => [id, item.turns, item.base])).toEqual([['link-7', 2, 4]]);
-    expect(offer.courses).toMatchObject([{ link: 'link-7', kind: 'overlay', side: 'left', from: { face: 'left' }, to: { face: 'left' }, runs: ['perimeter'] }]);
+    expect([...offer.promised].map(([id, item]) => [id, item.turns, item.base])).toEqual([['link-5', 2, 4]]);
+    expect(offer.courses).toMatchObject([{ link: 'link-5', kind: 'overlay', side: 'left', from: { face: 'left' }, to: { face: 'left' }, runs: ['perimeter'] }]);
     const chord = await before(SHEETS.chord);
     expect([...measureOverlayCourses(chord, chord).promised.values()]).toEqual([{ turns: 2, base: 4 }, { turns: 2, base: 4 }]);
   }, 60000);
@@ -73,7 +73,7 @@ describe('the course, reserved and drawn', () => {
   it('02: a lane of the overlay layer stands in each margin, and the path is the lane\'s geometry from face to face', async () => {
     const model = await run(SHEETS.chord);
     const lanes = model.lanes.filter(lane => lane.kind === 'perimeter');
-    expect(lanes.map(lane => [lane.id, lane.layer, lane.side, lane.ring])).toEqual([['perimeter:link-5', 'overlay', 'left', 0], ['perimeter:link-6', 'overlay', 'right', 0]]);
+    expect(lanes.map(lane => [lane.id, lane.layer, lane.side, lane.ring])).toEqual([['perimeter:link-2', 'overlay', 'left', 0], ['perimeter:link-4', 'overlay', 'right', 0]]);
     for (const item of overlays(model)) {
       const lane = lanes.find(entry => entry.owner.kind === 'link' && entry.owner.id === item.id)!, segments = item.path!.segments;
       // The router never sees an overlay: it reserves no fixed segment, and the path is derived from the lane.
@@ -95,12 +95,12 @@ describe('the course, reserved and drawn', () => {
     const courses: Course[] = [
       { link: 'link-9', kind: 'overlay', side: 'right', from: { face: 'right' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] },
       { link: 'link-10', kind: 'overlay', side: 'right', from: { face: 'right' }, to: { face: 'right' }, runs: ['perimeter'] },
-      { link: 'link-7', kind: 'overlay', side: 'left', from: { face: 'left' }, to: { face: 'left' }, runs: ['perimeter'] },
-      { link: 'link-8', kind: 'overlay', side: 'left', from: { face: 'left' }, to: { face: 'bottom' }, runs: ['perimeter', 'padding'] },
+      { link: 'link-5', kind: 'overlay', side: 'left', from: { face: 'left' }, to: { face: 'left' }, runs: ['perimeter'] },
+      { link: 'link-6', kind: 'overlay', side: 'left', from: { face: 'left' }, to: { face: 'bottom' }, runs: ['perimeter', 'padding'] },
     ];
     const model = await run(SHEETS.rank, { testCourses: courses });
     const ring = (id: string): number => model.lanes.find(lane => lane.id === `perimeter:${id}`)!.ring!;
-    expect(ring('link-8')).toBeGreaterThan(ring('link-7'));
+    expect(ring('link-6')).toBeGreaterThan(ring('link-5'));
     const y = (n: number): number => link(model, n).path!.segments[0]!.from.y;
     expect(y(8)).toBeLessThan(y(7));
     expect(score(model).snapshot.counts.overlay.crossings.pairs).toBe(0);
@@ -118,15 +118,15 @@ describe('the course, reserved and drawn', () => {
 describe('the round', () => {
   it('shares the re-runs: with none left it takes no course, and an admitted chord stays', async () => {
     const none = await run(SHEETS.chord, { testMaxReruns: 0 });
-    expect(turnsOf(link(none, 5))).toBe(4);
-    expect(turnsOf(link(await run(SHEETS.chord), 5))).toBe(2);
+    expect(turnsOf(link(none, 3))).toBe(4);
+    expect(turnsOf(link(await run(SHEETS.chord), 2))).toBe(2);
     const straight = await run(SHEETS.straight);
     expect(pure(straight)).toBe(pure(await before(SHEETS.straight)));
   }, 60000);
 
   it('names each course it takes, and loses no promise', async () => {
     const model = await run(SHEETS.chord);
-    expect(model.diagnostics.filter(item => item.code === 'COURSE_TAKEN').map(item => (item.owners![0] as { id: string }).id).sort()).toEqual(['link-5', 'link-6']);
+    expect(model.diagnostics.filter(item => item.code === 'COURSE_TAKEN').map(item => (item.owners![0] as { id: string }).id).sort()).toEqual(['link-2', 'link-4']);
     expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);
   }, 60000);
 });

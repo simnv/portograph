@@ -112,7 +112,7 @@ it('reserves the columns of a gap whose runs keep one x and leaves the golden wh
   const before = await place(golden);
   expect(before.lanes.length).toBe(4);
   const runs = allocateGapRuns(before);
-  expect(runs.map(run => run.link)).toEqual(['link-1', 'link-2']);
+  expect(runs.map(run => run.link)).toEqual(['link-2', 'link-3']);
   for (const run of runs) {
     expect(run.segments).toHaveLength(1);
     expect(run.segments.every(vertical)).toBe(true);
@@ -158,7 +158,7 @@ it('grows a tier gap to the rows it must seat', async () => {
 it('steps a row past a group edge instead of ending the search', async () => {
   // Stress ticket 06. The first position for a row runs along the top group's edge. Ticket 50: the plan starts a part whose tip
   // stands in the group padding at `low + e`, e = 10 + stroke / 2 = 10.75 px (spec 2.2 O5), so the first row of the gap stands at
-  // 131.75 and the rows after it at the pitch k (143.25, 154.75, then link-1 at 166.25). Old numbers: half a pitch inside the boundary
+  // 131.75 and the rows after it at the pitch k (143.25, 154.75, then link-3 at 166.25). Old numbers: half a pitch inside the boundary
   // plus one pitch, 26.25 px, and one row where the plan reserves three.
   const model = await place(read('a-row-steps-past-a-group-edge.yaml'));
   const { gap, plan } = tierGapPlans(model).find(entry => entry.gap.above === 0 && entry.gap.below === 1)!;
@@ -271,7 +271,7 @@ it('plans a tier gap whose nested stems stand close without the 2k pocket a rout
 }, 120000);
 
 it('grows the gap of the band that sets the group edge to the rows of its 25 parts (ranked-groups tickets 25 and 50)', async () => {
-  // Ticket 25 grew this gap 23 px for the two far stems of link-35 and link-37. The plan seats every part of the gap on a row of
+  // Ticket 25 grew this gap 23 px for the two far stems of link-36 and link-38. The plan seats every part of the gap on a row of
   // its own at the pitch k = 11.5 (spans of 21 stepped parts overlap, so 18 distinct rows from 10.75 to 206.25 px below the low
   // boundary, three of them shared by parts whose spans do not touch), and the last row keeps k + 30 px (a lower leg of depth 30)
   // above the band below: H = 206.25 + 41.5 - 11.5 = 236.25 px against a room of 49.25. The router discovered those rows before
@@ -281,9 +281,9 @@ it('grows the gap of the band that sets the group edge to the rows of its 25 par
   const before = await beforeBands(orthogonalLinks(read('a-band-holds-the-group-that-set-its-edge.yaml')));
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-  // The plan is read once (ticket 57): link-16 and link-36 ask the same height, and the first part in the plan's order names it (link-36 since
-  // ticket 65, where the kept verticals change the x of the parts; link-16 before).
-  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-36#0\)/)]);
+  // The plan is read once (ticket 57): link-17 and link-37 ask the same height, and the first part in the plan's order names it (link-37 since
+  // ticket 65, where the kept verticals change the x of the parts; link-17 before).
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-37#0\)/)]);
   const busy = tierGapPlans(after).filter(item => item.plan.parts.length > 20);
   expect(busy).toHaveLength(1);
   expect(busy[0]!.plan.height).toBeCloseTo(236.25, 9);
