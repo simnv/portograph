@@ -136,7 +136,8 @@ function paintValue(property: string, raw: string): string | undefined {
 }
 
 /** A CSS colour as `#rrggbb`, or `undefined` for a form draw.io cannot pair into `light-dark()` (alpha below 1, `var()`, `currentColor`). */
-export function cssColour(value: string): string | undefined {
+export function cssColour(raw: string): string | undefined {
+  const value = raw.trim().toLowerCase();
   const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/.exec(value)?.[1];
   if (hex !== undefined) {
     const full = hex.length <= 4 ? [...hex].map(digit => digit + digit).join('') : hex;
@@ -147,7 +148,7 @@ export function cssColour(value: string): string | undefined {
     const parts = rgb.split(/\s*[,/]\s*|\s+/).filter(Boolean);
     if (parts.length < 3 || parts.length > 4) return undefined;
     if (parts.length === 4 && !/^(1|1\.0*|100%)$/.test(parts[3]!)) return undefined;
-    const channels = parts.slice(0, 3).map(part => /^\d*\.?\d+%$/.test(part) ? Number(part.slice(0, -1)) * 2.55
+    const channels = parts.slice(0, 3).map(part => /^\d*\.?\d+%$/.test(part) ? Number(part.slice(0, -1)) / 100 * 255
       : /^\d*\.?\d+$/.test(part) ? Number(part) : Number.NaN);
     if (channels.some(channel => !Number.isFinite(channel))) return undefined;
     return `#${channels.map(channel => Math.round(Math.min(255, Math.max(0, channel))).toString(16).padStart(2, '0')).join('')}`;

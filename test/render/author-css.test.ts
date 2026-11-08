@@ -158,12 +158,14 @@ describe('fixture drawio-author-css', async () => {
   const laid = linkLabels(await route(bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml)))))))), { createAttempt: createAvoidAttempt }));
   const style = (xml: string, id: string): Record<string, string> => {
     const tag = flatCells(xml).match(new RegExp(`<mxCell id="${id.replace(/[~.]/g, '\\$&')}"[^>]*>`))?.[0];
+    expect(tag, id).toBeDefined();
     const text = tag?.match(/ style="([^"]*)"/)?.[1] ?? '';
     return Object.fromEntries(text.split(';').filter(entry => entry.includes('=')).map(entry => [entry.slice(0, entry.indexOf('=')), entry.slice(entry.indexOf('=') + 1)]));
   };
   const linkCell = (xml: string, from: string): Record<string, string> => {
     const id = flatCells(xml).match(new RegExp(`<mxCell id="(pg-link~${from}[^"]*)"`))![1]!;
-    return style(xml, id.replace(/&gt;/g, '>'));
+    // The id as the file spells it (`&gt;` for the `>` of a stable link id).
+    return style(xml, id);
   };
 
   it('paints the draw.io cells with the author rules, as the SVG cascade does', () => {
