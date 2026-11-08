@@ -5,6 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { LINK_LABEL_GEOMETRY, haloSize, reservedLinkRuns } from '../../src/layout/link-labels.js';
 import { labelBorders, labelRunWindows, windowHolds } from '../../src/layout/run-label-box.js';
 import { labelRoomUnsettledFault, reserveLinkLabelRoom, tierGapShortfall, validateGroupLabelBands, type LinkLabelShortfall } from '../../src/layout/bands.js';
+import { holdsMove } from '../../src/layout/move-reservations.js';
 import { solveTierGaps } from '../../src/layout/gap-room.js';
 import { attemptTimings, resetAttemptTimings } from '../../src/layout/attempt-timings.js';
 import { replayGridAndBands, replayRegions, settleRound, type AttemptTraceEvent, type SettleStep } from '../../src/layout/placement-attempt.js';
@@ -129,3 +130,16 @@ it('a forged record of the label rooms given up is refused (ticket 27, R5)', asy
   expect(labelRoomUnsettledFault(honest)).toBeUndefined();
 }, 120000);
 
+
+// Decision review ticket DR-02 (F1): no settle reserves the label room again, so a 7f move that shrinks a same-tier room is held (`labelRoom` of
+// `holdsMove`, `label-room-guard.ts`). Without the hold the close-up shortened the runs of the two labelled links and the layout threw.
+it('a close-up keeps the row room of a same-tier labelled link (ticket DR-02)', async () => {
+  const model = await run(readFileSync(new URL('../../goldens/synthetic/a-close-up-keeps-the-row-room-of-a-same-tier-label.yaml', import.meta.url), 'utf8'));
+  expect(() => validateGroupLabelBands(model)).not.toThrow();
+  const shortfalls: LinkLabelShortfall[] = [];
+  reserveLinkLabelRoom(structuredClone(model), shortfalls);
+  expect(shortfalls.filter(item => item.axis === 'row' || item.axis === 'row window')).toEqual([]);
+  // A move that shifts the ends of a described same-tier link apart is judged by the producer's reading; one that moves nothing is not.
+  const group = model.groups[model.document.nodes['loc-b-ac1']!.group]!;
+  expect(holdsMove(model, [{ group, bounds: { ...group.bounds! } }], false, ['labelRoom'])).toBe(true);
+}, 120000);

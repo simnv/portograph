@@ -1056,7 +1056,7 @@ order of its tier. A node moves alone, inside the box its group has and in its r
 straight overlay count rises, `laneSidesHold` passes, every routed link that ran on one axis or held a chord still does, and
 a copy of the model run through one round of the close-up and the keep-out (`settleRound`; it grows no tier gap since architecture-2 ticket 57) has no G6 or G5 finding that the same
 copy without the move lacks (`parallelClearance` and `portOrder`, the gates' own predicates). Left bent: a chord blocked by
-two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the close-up and the label room
+two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the close-up and the keep-out
 are measured on the geometry that stands. `refreshHeldWarnings` withdraws only a warning that states a jog.
 
 ### 7d — bars
@@ -1230,9 +1230,9 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 ### 7f — group label bands, tier gap room, group label bands again
 
 7f does these things, in this order (architecture-2 ticket 57): it reserves the height of the group label bands on the y axis only
-(`topUpBandClearance`); it runs the rounds (the close-up of the cantons, the keep-out, the label room, the steps over a chord), which
+(`topUpBandClearance`); it runs the rounds (the close-up of the cantons, the keep-out, the steps over a chord), which
 grow no tier gap; when the rounds did not replay the draft and the centring left its non-convergence or a violation the publication would
-refuse, it settles the centring once on the frozen geometry (one `replayRegions` and label room, architecture-2 ticket 65: the bands'
+refuse, it settles the centring once on the frozen geometry (one `replayRegions`, architecture-2 ticket 65: the bands'
 single budget gave no pass after it); it lets a corridor whose child 7c could not seat follow that child (`reseatLanes`, § 7a); it settles the overlay ports;
 it solves the tier gaps once (`solveTierGaps`, `gap-room.ts`): the stem depths are recorded, every plan and every label room across a gap
 is read once, and each gap grows by what it lacks; it trims each node body to its ports and content (the end trim, below, architecture-2
@@ -1564,6 +1564,7 @@ label placement decides: with no window the label may lie across a border, with 
 a place on a link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that
 names no described link. The settled chord and rank judges, as the lane reseat, refuse a move that names a new link in the room set
 (`noNewFindings('room')`, `roomFindings`): a room given up, and a room a reservation would still grow.
+A move that runs after the reservation keeps a same-tier row room: `holdsMove` has the kind `labelRoom` (`label-room-guard.ts`), which refuses a move that shifts the ends of a described same-tier link apart and leaves a row shortfall the model did not have (decision review ticket DR-02, R2). Nothing reserves the room again.
 Publication and restore re-run the reservation on a copy and reject a model it would still change.
 
 **Linked groups share a grid (ADR-0012).** Before labels are planned, groups joined by vertical

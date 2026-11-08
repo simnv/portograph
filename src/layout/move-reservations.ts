@@ -16,6 +16,7 @@ import { foreignOverExtensions, trunkHeads, trunkXAfter } from './trunk.js';
 import { lanesHoldGrowth } from './growth-guard.js';
 import { chordsHold } from './frame-paths.js';
 import { findPort } from './row-paths.js';
+import { rowRoomHolds, rowRoomShortNow } from './label-room-guard.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 const isSpanLane = (lane: { kind?: string }): boolean => lane.kind === 'span';
 
@@ -23,7 +24,7 @@ const isSpanLane = (lane: { kind?: string }): boolean => lane.kind === 'span';
 export type ProposedMove = ProposedBox[];
 type Maker = (model: LayoutModel, proposed: ProposedMove) => Reservation[];
 /** The derived kinds a move is held to, in the order the guards were chained. */
-export type MoveKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'sideAlignment' | 'spanCorridor' | 'groupExit';
+export type MoveKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'sideAlignment' | 'spanCorridor' | 'groupExit' | 'labelRoom';
 
 /** The routed ports of the member rows that stand in a riser keep-out now: a move may not take one deeper. */
 const riserKeepOut: Maker = (model, proposed) => {
@@ -56,7 +57,12 @@ const spanCorridor: Maker = model => {
 /** The exits 7e reserved (architecture ticket 13): a move keeps the end of each beyond the margin of the boxes it leaves, and its strip clear of every other group. */
 const groupExit: Maker = model => model.groupExits?.length
   ? [transient('groupExit', { kind: 'command', id: 'move' }, 'exits', 'bands', { exits: model.groupExits })] : [];
-const MAKERS: readonly (readonly [MoveKind, Maker])[] = [['riserKeepOut', riserKeepOut], ['trunkExtension', trunkExtension], ['laneSide', laneSide], ['sideAlignment', sideAlignment], ['spanCorridor', spanCorridor], ['groupExit', groupExit]];
+/** The row rooms of the labelled same-tier links that are short now: a move that shifts the two ends of such a link apart may not add one (DR-02). */
+const labelRoom: Maker = (model, proposed) => {
+  const short = rowRoomShortNow(model, proposed);
+  return short === undefined ? [] : [transient('labelRoom', { kind: 'command', id: 'move' }, 'rows', 'bands', { short })];
+};
+const MAKERS: readonly (readonly [MoveKind, Maker])[] = [['riserKeepOut', riserKeepOut], ['trunkExtension', trunkExtension], ['laneSide', laneSide], ['sideAlignment', sideAlignment], ['spanCorridor', spanCorridor], ['groupExit', groupExit], ['labelRoom', labelRoom]];
 
 /** The reservations a move is held to, with their evidence read from `model` as it stands. */
 export function moveReservations(model: LayoutModel, proposed: ProposedMove): Reservations {
@@ -85,6 +91,7 @@ function holdsMoveEntry(entry: Reservation, model: LayoutModel, proposed: Propos
       return true;
     }
     case 'groupExit': return groupExitsHold(model, entry.payload.exits, proposed);
+    case 'labelRoom': return rowRoomHolds(model, proposed, entry.payload.short);
     default: return true;
   }
 }
