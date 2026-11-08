@@ -31,7 +31,8 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   // The original rounds have MAX_RERUNS + 1 placements; ticket 83 adds at most one failed probe per named block.
   // Every started run stays counted. The probes preserve the legacy optimisation allowance when a block is declined.
   env.placements++; attemptCounters.placeStarts++;
-  if (env.placements - env.blockProbes > env.placeCap) throw new PlacementBudgetExceeded(env.placements - 1);
+  // The comparison run of the fan-wrap acceptance gate is outside the cap as well (one per command, `env.gateRuns`).
+  if (env.placements - env.blockProbes - env.gateRuns > env.placeCap) throw new PlacementBudgetExceeded(env.placements - 1);
   const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return env.step(stage, run); };
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4) are declined in the next: the ledger names them, or all of them once the budget is spent.
   const declinedTrunks = declinedTrunksOf(reservations);

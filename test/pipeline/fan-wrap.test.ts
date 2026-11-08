@@ -17,6 +17,7 @@ import { reversed } from '../../scripts/r3-lib.mjs';
 const NAME = 'a-leaf-cell-wider-than-its-block-wraps';
 const CHAIN = 'a-feeding-chain-moves-over-its-wrapped-block';
 const KEY = 'a-chain-of-tiers-packs-over-its-feeds-final-x';
+const DECLINED = 'a-wrap-that-loses-a-straight-link-is-declined';
 const CELL = 'west-zone#2';
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -138,6 +139,13 @@ describe('fan wrap: the feeding chain stands over its wrapped block (D-Q4)', () 
     expect(failedGates(model)).toEqual([]);
   }, 60000);
 
+  it('refuses, at stage 5 and by name, a chain whose near units need different moves (each near unit must stand over its own feeds)', async () => {
+    const model = await run(fixture('locations-stack-as-columns-over-columns'));
+    expect(model.staggerRows).toBeUndefined();
+    const entry = model.groupArrangements!['x-zone#2']!;
+    expect(entry.chosen === 'row' && entry.reason).toMatch(/its feeding chain \(a, b\) cannot stand over its block with one move: a needs [-\d.]+ px, b [-\d.]+ px$/);
+  }, 60000);
+
   it('keeps a shared parent out of the chain: Core one feeds both gateways, so the chain is decided empty and the wrap stands', async () => {
     const model = await run(fixture(NAME));
     expect(lines(model, CELL)).toBe(2);
@@ -159,7 +167,7 @@ describe('fan wrap: the feeding chain stands over its wrapped block (D-Q4)', () 
     const moved = copy();
     for (const port of moved.nodes['dist-1']!.ports) if (port.anchor) port.anchor.x += 30;
     moved.diagnostics.push({ stage: 'placement', severity: 'info', code: 'FAN_WRAP_DECLINED', message: 'forged', owners: [{ kind: 'group', id: CELL }] });
-    expect(() => restoreLayoutModel(JSON.stringify(moved))).toThrow(/feeding chain \(core, dist\) no longer stands over its block \(-30\.00 px off\)/);
+    expect(() => restoreLayoutModel(JSON.stringify(moved))).toThrow(/feeding chain \(core, dist\) no longer stands over its block \(dist -30\.00 px off\)/);
     // Absent and empty differ: a rank cell always carries its decided chain (`[]` = no chain); a plain row carries none.
     const absent = copy();
     delete absent.staggerRows![0]!.chain;
@@ -183,13 +191,50 @@ describe('fan wrap: the acceptance gate (D-Q4)', () => {
     expect(wrapGateVerdict(plain, wrapped)).toMatch(/^the complete placement is [\d.]+ x [\d.]+ px with two lines, not less area than [\d.]+ x [\d.]+ px without$/);
   }, 60000);
 
-  it('lets the two lines stand ungated, by name, when the placement budget leaves no run to compare them with', async () => {
-    const model = await layout(parse(fixture(NAME)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 1 });
-    expect(lines(model, CELL)).toBe(2);
-    expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_UNGATED').map(note => note.message))
-      .toEqual([`The two lines of ${CELL} stand without the acceptance gate: the placement budget leaves no run to compare them with.`]);
-    expect((await run(fixture(NAME))).diagnostics.filter(note => note.code === 'FAN_WRAP_UNGATED')).toEqual([]);
-  }, 60000);
+  it('declines, end to end and by name, a wrap that loses a straight link, also when the placement budget is one re-run', async () => {
+    for (const testMaxReruns of [undefined, 1]) {
+      const model = await layout(parse(fixture(DECLINED)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(testMaxReruns ? { testMaxReruns } : {}) });
+      expect(model.staggerRows, `testMaxReruns ${testMaxReruns}`).toBeUndefined();
+      expect(lines(model, CELL)).toBe(1);
+      expect(model.groupArrangements![CELL]).toEqual({ chosen: 'row', reason: 'the acceptance gate declined the two lines (FAN_WRAP_DECLINED names why)' });
+      expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED').map(note => note.message))
+        .toEqual([`The two lines of ${CELL} are declined: the link link-34 is straight without the two lines and not with them.`]);
+    }
+  }, 120000);
+
+  it('compares against a run with no stagger at all: the comparison cannot choose another row (R1)', async () => {
+    // Two six-leaf rows under two switches: stage 5 wraps `ra`; `rb` keeps its row by the aspect rule. A comparison run in decide mode would
+    // wrap `rb` once `ra` is declined, and publish it unjudged.
+    const six = [1, 2, 3, 4, 5, 6];
+    const nodes = (row: string): string => six.map(i => `  ${row}${i}: { group: ${row}, class: server }\n`).join('');
+    const links = (row: string, hub: string): string => six.map(i => `  - [${hub}, ${row}${i}]\n`).join('');
+    const yaml = `portograph: 2
+groups:
+  u0: { tier: 0 }
+  u1: { tier: 1 }
+  core: { tier: 2 }
+  acca: { tier: 3 }
+  accb: { tier: 3 }
+  a: { tier: 4 }
+  b: { tier: 4 }
+nodes:
+  n0: { group: u0, class: router }
+  n1: { group: u1, class: router }
+  r1: { group: core, class: router }
+  sw1: { group: acca, class: switch }
+  sw2: { group: accb, class: switch }
+${nodes('a')}${nodes('b')}links:
+  - [n0, n1]
+  - [n1, r1]
+  - [r1, sw1]
+  - [r1, sw2]
+${links('a', 'sw1')}${links('b', 'sw2')}`;
+    const model = await run(yaml);
+    expect(model.staggerRows?.map(row => row.group)).toEqual(['a']);
+    const entry = model.groupArrangements!.b!;
+    expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: /);
+    expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED')).toEqual([]);
+  }, 120000);
 
   it('names a straight link the wrap would lose', async () => {
     const wrapped = await run(fixture(NAME));

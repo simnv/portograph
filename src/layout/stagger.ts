@@ -594,24 +594,36 @@ function blockOf(model: LayoutModel, plan: StaggerRow): { tiers: Unit[][]; index
  * to the block and a node of the block, the chain port on the face toward the block and the block port on the row's feed face, with both x.
  * The one reader of where the chain stands: the stage-5 move (`standChain`) and the publication check (`validateChain`) call it (R1).
  */
-function chainFeeds(model: LayoutModel, plan: StaggerRow): { link: string; from: number; to: number }[] {
+function chainFeeds(model: LayoutModel, plan: StaggerRow): ChainFeed[] {
   if (!plan.chain?.length) return [];
   const { tiers, index, block, step } = blockOf(model, plan), chain = new Set(plan.chain);
-  const near = new Set((tiers[index + step] ?? []).filter(unit => chain.has(unit.id)).flatMap(unit => unit.groups.map(group => group.id)));
+  const near = new Map((tiers[index + step] ?? []).filter(unit => chain.has(unit.id)).flatMap(unit => unit.groups.map(group => [group.id, unit.id] as const)));
   const inBlock = new Set(block.groups.map(group => group.id)), groupOf = (ref: PortRef): string => model.document.nodes[ref.node]!.group;
-  const feeds: { link: string; from: number; to: number }[] = [];
+  const feeds: ChainFeed[] = [];
   for (const link of model.links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
     for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]] as const) {
-      if (!near.has(groupOf(own)) || !inBlock.has(groupOf(other))) continue;
+      const unit = near.get(groupOf(own));
+      if (unit === undefined || !inBlock.has(groupOf(other))) continue;
       const a = findPort(model, own), b = findPort(model, other);
-      if (a?.anchor && b?.anchor && a.side === opposite(plan.side) && b.side === plan.side) feeds.push({ link: link.id, from: a.anchor.x, to: b.anchor.x });
+      if (a?.anchor && b?.anchor && a.side === opposite(plan.side) && b.side === plan.side) feeds.push({ unit, link: link.id, from: a.anchor.x, to: b.anchor.x });
     }
   }
   return feeds;
 }
-/** The x move that stands the chain over its block: the mean of (block port x - chain port x) over its feeds. */
-const chainOffset = (feeds: readonly { from: number; to: number }[]): number => feeds.reduce((sum, feed) => sum + feed.to - feed.from, 0) / feeds.length;
+/** One feed of a chain into its block: the near chain unit, the link, the x of the chain port and of the block port. */
+interface ChainFeed { unit: string; link: string; from: number; to: number }
+/**
+ * The offset of each near unit of a chain, sorted by unit id: the mean of (block port x - chain port x) over the unit's own feeds. A chain
+ * stands over its block when every offset is zero; one move stands it there only when all offsets are equal.
+ */
+function unitOffsets(feeds: readonly ChainFeed[]): [string, number][] {
+  const units = [...new Set(feeds.map(feed => feed.unit))].sort(compareId);
+  return units.map(unit => {
+    const own = feeds.filter(feed => feed.unit === unit);
+    return [unit, own.reduce((sum, feed) => sum + feed.to - feed.from, 0) / own.length];
+  });
+}
 
 /**
  * Decides the feeding chain of a wrapped rank cell once (fan wrap, D-Q4; `StaggerRow.chain`). From the block, tier by tier toward the row's
@@ -645,7 +657,7 @@ function decideChain(model: LayoutModel, plan: StaggerRow, claimed: ReadonlySet<
 
 /**
  * Moves the stored chain of a wrapped rank cell as one block in x (fan wrap, D-Q4), after the re-pack of its tier: its feeds into the block
- * stand over the block's ports at their mean (`chainOffset`). Whole units move (every cell of a chain frame, a flank with its group), so every
+ * stand over the block's ports (`unitOffsets`: every near unit needs the same move). Whole units move (every cell of a chain frame, a flank with its group), so every
  * reservation inside a unit holds. The move must keep a beside gap (`besideGap`) from every group box and frame beside the chain on its own
  * rows; a chain with no room for the whole move, or with no feed left, refuses the row by name (a stagger refusal: the first run keeps the row
  * one line, a later run is cut). Each run measures the move on its own stage-5 geometry; the units are the stored decision.
@@ -654,7 +666,14 @@ function standChain(model: LayoutModel, plan: StaggerRow): void {
   if (!plan.chain?.length) return;
   const feeds = chainFeeds(model, plan);
   if (!feeds.length) refuse(plan, `its feeding chain (${plan.chain.join(', ')}) has no feed into its block`);
-  const dx = chainOffset(feeds), chain = new Set(plan.chain);
+  // One move for the whole chain: every near unit must need the same move, so each stands over its own feeds afterwards (D-Q4 review: the
+  // mean of two units that need different moves stands neither over its block).
+  const offsets = unitOffsets(feeds), dx = offsets[0]![1];
+  const other = offsets.find(([, offset]) => Math.abs(offset - dx) > PLACEMENT_EPS);
+  if (other !== undefined) {
+    refuse(plan, `its feeding chain (${plan.chain.join(', ')}) cannot stand over its block with one move: ${offsets[0]![0]} needs ${dx.toFixed(2)} px, ${other[0]} ${other[1].toFixed(2)} px`);
+  }
+  const chain = new Set(plan.chain);
   const moving = Object.values(model.groups).filter(group => chain.has(columnUnitId(model, group.id))).sort((a, b) => compareId(a.id, b.id));
   const movingIds = new Set(moving.map(group => group.id)), frames = deriveFrames(model) ?? [];
   // The boxes that stand beside each other: the moving groups and the chain's frames against every unframed group and top-level frame that stays.
@@ -678,7 +697,7 @@ function standChain(model: LayoutModel, plan: StaggerRow): void {
 
 /**
  * The publication check of a stored chain (fan wrap, D-Q4): its units are sorted, distinct, held by no other row's chain, and stand on the
- * document tiers on the feed side of the block; and the chain still stands over its block (`chainFeeds`, `chainOffset`): no later stage moved
+ * document tiers on the feed side of the block; and the chain still stands over its block (`chainFeeds`, `unitOffsets`, each near unit on its own): no later stage moved
  * it off. Geometry and the record only; no diagnostic excuses it (R5).
  */
 function validateChain(model: LayoutModel, plan: StaggerRow, claimed: ReadonlySet<string>): void {
@@ -688,9 +707,10 @@ function validateChain(model: LayoutModel, plan: StaggerRow, claimed: ReadonlySe
   if (chain.some((id, i) => (i > 0 && compareId(chain[i - 1]!, id) >= 0) || claimed.has(id) || !beyond.has(id))) {
     throw new PlacementRefusal('stagger', `Stagger row ${plan.group}: invalid feeding chain`, { owners });
   }
-  const feeds = chainFeeds(model, plan), offset = feeds.length ? chainOffset(feeds) : undefined;
-  if (offset === undefined || Math.abs(offset) > PLACEMENT_EPS) {
-    throw new PlacementRefusal('stagger', `Stagger row ${plan.group}: the feeding chain (${chain.join(', ')}) no longer stands over its block (${offset === undefined ? 'no feed' : `${offset.toFixed(2)} px off`})`, { owners });
+  // Each near unit on its own: a mean would pass two units moved by equal and opposite amounts.
+  const feeds = chainFeeds(model, plan), off = unitOffsets(feeds).find(([, offset]) => Math.abs(offset) > PLACEMENT_EPS);
+  if (!feeds.length || off !== undefined) {
+    throw new PlacementRefusal('stagger', `Stagger row ${plan.group}: the feeding chain (${chain.join(', ')}) no longer stands over its block (${off === undefined ? 'no feed' : `${off[0]} ${off[1].toFixed(2)} px off`})`, { owners });
   }
 }
 
@@ -722,8 +742,6 @@ function placedStraight(model: LayoutModel): Set<string> {
 
 /** The diagnostic code of a stage-5 stagger that the acceptance gate declines (fan wrap, D-Q4; ADR-0024, second amendment). */
 export const FAN_WRAP_DECLINED = 'FAN_WRAP_DECLINED';
-/** The diagnostic code of a stage-5 stagger that stands without the acceptance gate: the placement budget left no run to compare it with. */
-export const FAN_WRAP_UNGATED = 'FAN_WRAP_UNGATED';
 
 /**
  * The acceptance gate of the stagger stage 5 chose (fan wrap, D-Q4): the complete placement with the two lines (`wrapped`, after 7f, before

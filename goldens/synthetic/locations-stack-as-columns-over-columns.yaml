@@ -5,7 +5,8 @@
 # widest cell, so no frame overlaps a frame of its tier and every cell stands inside its column. Every
 # routed link between the two tiers is drawn.
 # Test-only input owned by ranked-groups ticket 09; test/pipeline/frame-columns.test.ts reads the layout.
-# Fan wrap (D-Q4, ticket 07): the three access nodes of the X zone stand on two lines (a fan of three under one hub).
+# Fan wrap (D-Q4, ticket 07): the three access nodes of the X zone stay on one line. Their block passes the block trigger, but its feeding
+# chain (`a`, `b`) cannot stand over the two X gateways with one move, so stage 5 refuses the two lines by name.
 portograph: 2
 groups:
   a: { tier: 0, label: Site A }

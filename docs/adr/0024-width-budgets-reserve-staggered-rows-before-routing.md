@@ -90,15 +90,17 @@ The user ruled that a tier block must not be much wider than its sheet because o
 - Objective: the stage-5 canvas area, strictly less, replaces "at least one pitch narrower". A plain row must also come out nearer square.
 - Re-pack. After the seat, a wrapped rank cell packs its document tier again (`packTier`), so the sibling units close up.
 - Feeding chain. The units on the feed side that feed the block, tier by tier, without a shared parent, are its feeding chain. The first
-  seat decides it once (`StaggerRow.chain`; `[]` for no chain, absent for a plain row); every seat moves those units as one block in x so
-  their feeds stand over the block, or refuses the row by name when the boxes beside the chain leave no room. 7c grows no chain body and
-  centres a chain node only on its feeds inside the chain or into the block. Publication and restore check that the chain still stands over
-  its block.
+  seat decides it once (`StaggerRow.chain`; `[]` for no chain, absent for a plain row). Every seat moves those units as one block in x by
+  one move, so that each unit on the tier next to the block stands over its own feeds. A chain whose near units need different moves, or
+  whose move the boxes beside it do not leave room for, refuses the row by name. 7c grows no chain body and centres a chain node only on its
+  feeds inside the chain or into the block, which keeps each near unit over its feeds. Publication and restore check each near unit on its
+  own.
 - Acceptance gate. A stagger that stage 5 chose stands only when the complete placement (after 7f, before routing) takes less area than
-  the same run without it, keeps every link that run places straight, and shortens no hard separation. The run without it is one more
-  placement run within `MAX_RERUNS`. A declined stagger stays one line; the record names the gate, and the info diagnostic
-  `FAN_WRAP_DECLINED` names the reason. When the budget leaves no run that can still choose, the stagger stands ungated with
-  `FAN_WRAP_UNGATED`.
+  the same placement without it, keeps every link that placement makes straight, and shortens no hard separation. The comparison run keeps
+  the first run's record with every chosen stagger a row and places no stagger at all, so it cannot choose another one. It is one placement
+  per command outside `MAX_RERUNS` and the placement cap, so it is always available, and its state is its own: a kept stagger goes on as if
+  it had not run. A declined stagger stays one line; the record names the gate, and the info diagnostic `FAN_WRAP_DECLINED` names the reason.
+  A stagger refusal in the wrapped run's 7f declines it the same way.
 
 Evidence: `.scratch/decision-review-2026-11/poc/fanwrap/results.md` and `poc/fanwrap-v4/results.md`. On the key sheet
 `a-chain-of-tiers-packs-over-its-feeds-final-x` the canvas goes from 2937 x 1069 to 1845 x 1126 px (area -33.8 %), with no bend and no

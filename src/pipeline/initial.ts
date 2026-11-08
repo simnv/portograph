@@ -4,7 +4,7 @@
  */
 import type { LayoutModel } from '../model/index.js';
 import { SolidBlockRefusal, TrunkBlocked } from '../layout/placement-refusal.js';
-import { FAN_WRAP_DECLINED, FAN_WRAP_UNGATED, staggerRefusal, wrapGateVerdict } from '../layout/stagger.js';
+import { FAN_WRAP_DECLINED, staggerRefusal, wrapGateVerdict } from '../layout/stagger.js';
 import type { Diagnostic } from '../model/index.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
@@ -62,24 +62,26 @@ for (;;) {
 };
 await placeFirst();
 // The acceptance gate of the stagger stage 5 chose (fan wrap, D-Q4; ADR-0024, second amendment): the two lines stand only when the complete
-// placement beats the same run without them (`wrapGateVerdict`). One more placement run, with every chosen stagger declined, gives that run; it
-// shares `MAX_RERUNS`. Both models are judged after 7f, as trials, so the baseline's own 7f run is not spent here. A run that chose no stagger
-// is not gated. The gate runs only while the run without the lines can still choose its own arrangement (a run at the budget's end chooses
-// none and declines every trunk, so it is no fair alternative); otherwise the lines stand ungated, with `FAN_WRAP_UNGATED`.
+// placement beats the same placement without them (`wrapGateVerdict`). The comparison run keeps the first run's record with every chosen
+// stagger a row, and places no stagger at all (keep mode, no rows), so it cannot choose another one. It is one placement more per command, by
+// construction: it spends no `MAX_RERUNS` (`env.gateRuns` lifts the placement cap by one), so it is always available. Its state (the ledger, the
+// declined blocks, the re-run count) is its own: a kept wrap goes on exactly as if the comparison had not run. Both models are judged after 7f,
+// as trials; `bands` is a function of its model, so the baseline's own 7f run of a kept wrap is the trial that passed here.
 const wraps = (env.arrangedRows ?? []).filter(group => first.groupArrangements?.[group]?.chosen === 'stagger').sort();
 const gateNotes: Diagnostic[] = [];
-const owners = wraps.map(id => ({ kind: 'group' as const, id }));
-if (wraps.length && env.reruns + 1 >= env.maxReruns) {
-  gateNotes.push({ stage: 'placement', severity: 'info', code: FAN_WRAP_UNGATED, owners,
-    message: `The two lines of ${wraps.join(', ')} stand without the acceptance gate: the placement budget leaves no run to compare them with.` });
-} else if (wraps.length) {
-  const wrapped = first, saved = env.declinedArrangements, arranged = env.arrangedRows;
-  env.declinedArrangements = new Map([...(saved ?? []), ...wraps.map(group => [group, `the acceptance gate kept the complete placement without them (${FAN_WRAP_DECLINED})`] as const)]);
-  env.reruns++;
+if (wraps.length) {
+  const wrapped = first, owners = wraps.map(id => ({ kind: 'group' as const, id }));
+  const saved = { kept, declinedSolidBlocks: env.declinedSolidBlocks, blockProbes: env.blockProbes, reruns: env.reruns, arranged: env.arranged,
+    staggerRows: env.staggerRows, groupArrangements: env.groupArrangements, arrangedRows: env.arrangedRows, declinedArrangements: env.declinedArrangements };
+  const record = JSON.parse(JSON.stringify(wrapped.groupArrangements)) as NonNullable<LayoutModel['groupArrangements']>;
+  for (const id of wraps) record[id] = { chosen: 'row', reason: `the acceptance gate declined the two lines (${FAN_WRAP_DECLINED} names why)` };
+  env.arranged = true; env.groupArrangements = record; delete env.staggerRows;
+  if (env.declinedSolidBlocks !== undefined) env.declinedSolidBlocks = new Map(env.declinedSolidBlocks);
+  env.gateRuns++;
   await placeFirst();
   const plain = first;
-  // A stagger refusal in 7f of the wrapped run declines the lines by name. The run without them is the one the command would keep, so a
-  // refusal there leaves no alternative: the lines stand. Any other error (a deadline included) ends the command.
+  // A stagger refusal in 7f of the wrapped run declines the lines by name. A refusal in 7f of the run without them leaves the wrapped run the
+  // only placement that stands: it beats a placement that cannot be made. Any other error (a deadline included) ends the command.
   const banded = async (model: LayoutModel): Promise<LayoutModel | Error> => {
     try { return (await env.bands(model, true)).model; } catch (error) { if (staggerRefusal(error)) return error; throw error; }
   };
@@ -89,9 +91,13 @@ if (wraps.length && env.reruns + 1 >= env.maxReruns) {
     gateNotes.push({ stage: 'placement', severity: 'info', code: FAN_WRAP_DECLINED, message: `The two lines of ${wraps.join(', ')} are declined: ${verdict}.`, owners });
     first = plain;
   } else {
-    first = wrapped;
-    if (arranged === undefined) delete env.arrangedRows; else env.arrangedRows = arranged;
-    if (saved === undefined) delete env.declinedArrangements; else env.declinedArrangements = saved;
+    first = wrapped; kept = saved.kept; env.blockProbes = saved.blockProbes; env.reruns = saved.reruns;
+    if (saved.declinedSolidBlocks === undefined) delete env.declinedSolidBlocks; else env.declinedSolidBlocks = saved.declinedSolidBlocks;
+    if (saved.arranged === undefined) delete env.arranged; else env.arranged = saved.arranged;
+    if (saved.staggerRows === undefined) delete env.staggerRows; else env.staggerRows = saved.staggerRows;
+    if (saved.groupArrangements === undefined) delete env.groupArrangements; else env.groupArrangements = saved.groupArrangements;
+    if (saved.arrangedRows === undefined) delete env.arrangedRows; else env.arrangedRows = saved.arrangedRows;
+    if (saved.declinedArrangements === undefined) delete env.declinedArrangements; else env.declinedArrangements = saved.declinedArrangements;
   }
 }
 // Stage 5 of this run chose each group's arrangement (ticket 51). Every later placement run of the command keeps that choice, not a new one,
