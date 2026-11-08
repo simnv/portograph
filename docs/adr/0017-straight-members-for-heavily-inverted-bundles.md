@@ -2,6 +2,8 @@
 
 Date: 2026-09-14 · Status: accepted (maintainer, 2026-09-14; drafted from ticket 26) · Decisions: ticket 26
 
+Amended 2026-11-07 (user, decision review P5; ticket DR-03): the inversion threshold and the length test are gone. See the Amendment.
+
 ## Problem
 
 `author-ordered-bundle` forces three inversions; the orthogonal crossover staircase is long and
@@ -34,3 +36,23 @@ gains a segment-pair intersection for non-axis-aligned segments; `author-ordered
 - Keep the staircase but raise the member pitch: still busy; rejected by the maintainer's remark.
 - Diagonals for every inverted bundle regardless of count: a single inversion is cleaner as a
   crossover; the threshold keeps the common case orthogonal.
+
+## Amendment (decision review 2026-11, ticket DR-03, 2026-11-07)
+
+The user's ruling: a bundle is straight when the gap holds the member pitch. The inversion
+threshold `⌊members / 2⌋` and the length test (factor 1.5) are removed. A facing bundle with at
+least one strict endpoint inversion and no lane of its own draws straight members when both hold:
+
+1. The gap: the channel between the two placed faces, along the bundle's normal, holds both stems.
+   With `start` the deepest source anchor plus `MIN_STEM` (15 px) and `end` the shallowest target
+   anchor less `MIN_STEM`, `end - start > 0`.
+2. The pitch: every pair of member segments G6 would measure (stems included; a pair that strictly
+   crosses, two members tied at a port, and two axis-aligned runs on different axes excepted) keeps
+   the bundle member pitch: segment distance at least the 16 px member gap plus the half strokes of
+   the two members, 17.5 px between centrelines at default strokes.
+
+Otherwise the bundle keeps the staircase. Nothing is moved: placement reserves the staircase
+capacity, and the test reads that geometry. The decision review measured the old threshold on 467
+sheets: it changed no drawing, because every bundle that reached it had three inversions of three
+members (`.scratch/decision-review-2026-11/results/P5.md`). The second alternative above ("a single
+inversion is cleaner as a crossover") is the one this amendment overrules.

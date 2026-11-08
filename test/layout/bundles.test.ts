@@ -11,7 +11,9 @@ import { bars } from '../../src/layout/bars.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { score } from '../../src/score/index.js';
 import { intersection, samePoint } from '../../src/score/geometry.js';
-import { placed } from './phase-two-fixture.js';
+import { createAttempt, placed } from './phase-two-fixture.js';
+import { createAvoidAttempt } from '../route/fixture.js';
+import { layout, parse } from '../../src/index.js';
 import { straightMembers } from '../../src/layout/bundle-paths.js';
 import { MIN_STEM, bundleFanRows, edgeMargin, fanDepth, fanEnd, inversionPairs, members, pitch, treeCohorts, type Member } from '../../src/layout/bundle-geometry.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
@@ -247,7 +249,7 @@ it('reserves horizontal crossover length before drawing an authored permutation'
   for (const gate of ['G2', 'G4', 'G5', 'G6', 'G7'] as const) expect(score(model).snapshot.gates[gate], gate).toMatchObject({ passed: true });
 });
 
-it('ADR-0017: a heavily inverted bundle draws straight members instead of an orthogonal staircase', async () => {
+it('ADR-0017: a fully inverted bundle draws straight members instead of an orthogonal staircase', async () => {
   const model = run(await throughBars(reversed));
   const bundle = model.bundles[0]!;
   expect(bundle.inversions).toBe(3);
@@ -270,18 +272,53 @@ it('ADR-0017: a heavily inverted bundle draws straight members instead of an ort
   expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 });
 
-it('ADR-0017: one inversion in a three-member bundle keeps the orthogonal crossover', async () => {
-  // Author order `p, q, r` against `p, r, q`: only the last pair inverts.
+it('ADR-0017 as amended (DR-03): one inversion draws straight members when the gap holds the member pitch', async () => {
+  // Author order `p, q, r` against `p, r, q`: only the last pair inverts. The inversion count plays no
+  // part (user ruling, 2026-11-07): the two crossed members take one diagonal each, `p` stays one run.
   const oneInversion = reversed.replace('{name: p, side: top, order: 2}, {name: q, side: top, order: 1}, {name: r, side: top, order: 0}',
     '{name: p, side: top, order: 0}, {name: q, side: top, order: 2}, {name: r, side: top, order: 1}');
   const model = run(await throughBars(oneInversion));
   expect(model.bundles[0]!.inversions).toBe(1);
-  expect(model.links.flatMap(link => link.path!.segments.filter(segment => segment.straight === true))).toEqual([]);
-  expect(score(model).snapshot.gates.G5.passed).toBe(true);
+  expect(model.links.flatMap(link => link.path!.segments.filter(segment => segment.straight === true))).toHaveLength(2);
+  expect(strictCrossings(model)).toBe(1);
+  const scored = score(model);
+  for (const gate of ['G2', 'G4', 'G5', 'G6', 'G7'] as const) expect(scored.snapshot.gates[gate], gate).toMatchObject({ passed: true });
 });
 
+it('ADR-0017 as amended (DR-03): the gap that does not hold both stems keeps the staircase', () => {
+  // One inversion, but the two faces stand 20 px apart: two 15 px stems do not fit, so the gap does
+  // not hold the member pitch whatever the inversion count.
+  const list = [[0, 0], [35, 70], [70, 35]].map(([a, b], i) => ({
+    link: { id: `l${i}` },
+    a: { side: 'bottom', anchor: { x: a!, y: 0 } },
+    b: { side: 'top', anchor: { x: b!, y: 20 } },
+    reversed: false,
+  })) as unknown as Member[];
+  const bundle = { id: 'b', members: list.map(m => m.link.id), nodes: ['a', 'b'], owner: { kind: 'bundle', id: 'b' } } as unknown as Bundle;
+  const model = { lanes: [], links: list.map(m => m.link), bundles: [bundle] } as unknown as LayoutModel;
+  expect(inversionPairs(list).length).toBe(1);
+  expect(straightMembers(model, bundle, list)).toBe(false);
+  // The same members with a deep gap: the pitch holds, so they draw straight.
+  const deep = list.map(m => ({ ...m, b: { ...m.b, anchor: { ...m.b.anchor!, y: 200 } } }));
+  expect(straightMembers(model, bundle, deep)).toBe(true);
+});
+
+it('DR-03 fixture: a bundle with two inversions draws straight when the gap holds the pitch', async () => {
+  const text = readFileSync('goldens/synthetic/a-bundle-with-two-inversions-draws-straight-when-the-gap-holds-the-pitch.yaml', 'utf8');
+  const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const bundle = model.bundles[0]!;
+  expect(bundle.members).toHaveLength(4);
+  expect(bundle.inversions).toBe(2);
+  const members = model.links.filter(link => link.bundle === bundle.id);
+  expect(members.flatMap(link => link.path!.segments.filter(segment => segment.straight === true))).toHaveLength(4);
+  for (const link of members) expect(link.path!.segments.filter(segment => segment.straight === true)).toHaveLength(1);
+  expect(strictCrossings(model)).toBe(2);
+  const scored = score(model);
+  for (const [gate, result] of Object.entries(scored.snapshot.gates)) expect(result, gate).toMatchObject({ passed: true });
+}, 60000);
+
 it('ADR-0017: parallel straight members keep the member gap between their diagonals', async () => {
-  // `[2, 3, 1]`: two inversions select straight mode, and two of the three members stay parallel —
+  // `[2, 3, 1]`: two inversions, straight members, and two of the three members stay parallel —
   // their perpendicular distance, not their track spacing, has to hold the gap (Codex round 3).
   const partial = reversed.replace('{name: p, side: top, order: 2}, {name: q, side: top, order: 1}, {name: r, side: top, order: 0}',
     '{name: p, side: top, order: 1}, {name: q, side: top, order: 2}, {name: r, side: top, order: 0}');
@@ -309,11 +346,11 @@ it('ADR-0017: keeps the staircase when a diagonal would pass too close to anothe
   const bundle = { id: 'b', members: list.map(m => m.link.id), nodes: ['a', 'b'], owner: { kind: 'bundle', id: 'b' } } as unknown as Bundle;
   const model = { lanes: [], links: list.map(m => m.link), bundles: [bundle] } as unknown as LayoutModel;
   expect(inversionPairs(list).length).toBe(6);
-  expect(straightMembers(model, bundle, list, 16)).toBe(false);
+  expect(straightMembers(model, bundle, list)).toBe(false);
 });
 
 it('ADR-0017: a four-member permutation with non-parallel near-misses keeps the member gap', async () => {
-  // `[2, 4, 1, 3]`: three inversions select straight mode, and the closest non-crossing pair is not
+  // `[2, 4, 1, 3]`: three inversions, straight members, and the closest non-crossing pair is not
   // parallel, so the clearance test measures the true minimum distance rather than a track offset
   // (Codex round 4).
   const four = `portograph: 2

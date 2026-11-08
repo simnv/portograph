@@ -323,7 +323,7 @@ function validatePublication(model: LayoutModel, baseline: LayoutModel, intermed
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
   validateJoins(model);
-  validateGeometry(model, diagnosed(model));
+  validateGeometry(model);
   validateFreeze(model);
   validateRegionClaims(model, intermediate);
 }
@@ -447,7 +447,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
   if (stages.indexOf(model.stage) >= stages.indexOf('route')) validateRoutedPaths(model, stages.indexOf(model.stage) > stages.indexOf('route'));
   if (stages.indexOf(model.stage) >= stages.indexOf('link-labels')) validateLinkLabels(model);
 }
-function validateGeometry(model: LayoutModel, allowNonConvergence = false): void {
+function validateGeometry(model: LayoutModel): void {
   jsonValue(model);
   validatePlacementStructure(model);
   if (model.runtime.stages.some(entry => !stages.includes(entry.stage) || entry.durationMs < 0)
@@ -516,18 +516,18 @@ function validateGeometry(model: LayoutModel, allowNonConvergence = false): void
     if (!group.bounds || group.bounds.width < 0 || group.bounds.height < 0) throw new Error('Invalid group bounds');
     same([...(group.rowOrder ?? [])].sort(), [...group.nodes].sort(), 'Invalid row order');
     for (const [index, id] of group.nodes.entries()) {
-      if (!allowNonConvergence) for (const otherId of group.nodes.slice(index + 1)) {
+      for (const otherId of group.nodes.slice(index + 1)) {
         const a = model.nodes[id]!.bounds!, b = model.nodes[otherId]!.bounds!, gap = nodeGap(model, id, otherId);
         const dx = Math.max(a.x - b.x - b.width, b.x - a.x - a.width, 0);
         const dy = Math.max(a.y - b.y - b.height, b.y - a.y - a.height, 0);
         if (Math.hypot(dx, dy) < gap - PLACEMENT_EPS) throw new Error(`Nodes ${id} and ${otherId} violate clearance`);
       }
       const box = model.nodes[id]!.bounds!, outer = group.bounds;
-      if (!allowNonConvergence && (box.x < outer.x || box.y < outer.y || box.x + box.width > outer.x + outer.width + PLACEMENT_EPS
+      if ((box.x < outer.x || box.y < outer.y || box.x + box.width > outer.x + outer.width + PLACEMENT_EPS
         || box.y + box.height > outer.y + outer.height + PLACEMENT_EPS)) throw new Error(`Node ${id} is outside its group`);
     }
   }
-  if (!allowNonConvergence && Object.keys(model.groups).length) {
+  if (Object.keys(model.groups).length) {
     // Report what the check found. A fixed sentence hid its own diagnosis and cost three rebuilds.
     const bandErrors = validateSkeletonBands(model);
     if (bandErrors.length) throw new Error(`Invalid group or tier geometry: ${bandErrors.join('; ')}`);
