@@ -96,6 +96,12 @@ direction, for example the transmit counter of the `pg-from` port.
 `pg-from` and `pg-to` name a port cell only when the end is a named port. An anonymous port has no
 cell, and the link ends on the node cell.
 
+A link end is pinned to its visible end (`visibleEnd`, D-Q7): on a port that draws a pill, the
+pill's outward face on the path's own stem, or the approach point on the pill's tangential edge for
+an end on an approach; on an anonymous port, the path end on the node cell. The interior waypoints
+are the published path. `edgeStyle` follows that polyline: `none` for a run with no bend,
+`orthogonalEdgeStyle` for a square run, and `none` for a run with a diagonal.
+
 ### 3.1 Labels
 
 A link label is in one of two places:
@@ -111,6 +117,11 @@ The labels are plain text: the style has no `html` key, and a label of more than
 lines one newline (`&#10;`) apart. An SVG export of the file draws each line as a native `<text>`,
 not as a `<foreignObject>` with a PNG fallback. The export does not set `placeholders`, so draw.io
 shows a `%name%` in a label as it is.
+
+Label placement is a render option (`--labels`). `on-run`, the default, centres a link label on the
+segment that supports it and fills the label with the backdrop. It moves a label only, never a route.
+`measured` keeps the box stage 9 placed, beside its run, as the SVG draws it. Use `measured` to verify
+an export against the layout model: every label then decodes to its measured centre.
 
 A node's `label` is its name only. Plain text has one font per cell, so a node's description is a
 separate, unbound text cell (`pg-nodeDescription~<node>`), a child of the node cell.

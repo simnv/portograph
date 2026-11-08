@@ -3,7 +3,7 @@ import { type Area, areaInside, areaOverlap, isOriented } from '../geometry/orie
 import { frameSubtreeCells } from '../model/index.js';
 import { readCache } from '../model/read-cache.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
-import { overlayEndpoint } from '../layout/overlay-paths.js';
+import { pathEnd } from '../layout/path-end.js';
 import { endPort } from '../layout/approach.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, length, near, pointRect, right, samePoint, vertical } from './geometry.js';
@@ -210,8 +210,8 @@ export function incident(model: LayoutModel, s: Segment, node: string): boolean 
     const p = linkPort(model, s.link, end);
     if (p !== undefined && ends[end].node === node && s.index === index && isRoutedChord(model, s.link)) {
       // A straight link inside one frame leaves the port's own face at any angle (ticket 34).
-      const face = overlayEndpoint(model.nodes[node], p) ?? p.anchor!;
-      return samePoint(first ? s.segment.from : s.segment.to, face);
+      const face = pathEnd(model, s.link, end);
+      return face !== undefined && samePoint(first ? s.segment.from : s.segment.to, face);
     }
     return ends[end].node === node && s.index === index && p !== undefined && outward(p, s.segment, first);
   });

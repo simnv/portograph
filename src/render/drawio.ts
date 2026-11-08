@@ -16,8 +16,8 @@
  *    trunk pieces are single straight pieces and were already `none`. Every run with a bend takes the
  *    rule below. `edgeStyle=orthogonalEdgeStyle;jettySize=0` draws a square route on the reserved route. Over 61
  *    link edges in four diagrams, 59 render within 0.05 px of the model polyline — the orthogonal
- *    router rounds a waypoint to 0.1 px — and 2 within 0.51 px, which is an endpoint defect the
- *    export has with `edgeStyle=none` as well. No waypoint is dropped and no edge is re-routed.
+ *    router rounds a waypoint to 0.1 px — and 2 within 0.51 px, an endpoint defect that pinning each end
+ *    to its `visibleEnd` on the path's own stem removed (D-Q7). No waypoint is dropped and no edge is re-routed.
  *    `jettySize=0` is the one key that matters: without it an edge whose two ends leave the same
  *    node side gains a 10 px loop, and `jettySize=auto` doubles that. `orthogonalLoop`, `curved` and
  *    the perimeter spacing keys are no-ops; `elbowEdgeStyle` re-routes by up to 265 px and is
@@ -70,6 +70,7 @@ import { washAssignment, washClass } from '../profiles/network/theme.js';
 import { legendKeyRadius, themeById } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
 import { effectiveLayer, validate } from '../score/model.js';
+import { visibleEnd } from '../layout/path-end.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { boxesBehind, groupShapes } from './frame-order.js';
@@ -241,6 +242,18 @@ const OUTWARD: Readonly<Record<Side, Point>> = {
   left: { x: 0, y: 0.5 }, right: { x: 1, y: 0.5 },
 };
 
+/**
+ * A point as a constraint fraction of `box`. A fraction within `EPS` px of an edge or of the middle is
+ * written exactly, so a pinned end on a face midpoint reads `1` and `0.5`, not a rounding residue.
+ */
+const fractionIn = (box: Rect, at: Point): Point => {
+  const along = (value: number, start: number, size: number): number => {
+    const exact = [0, 0.5, 1].find(fraction => Math.abs(start + fraction * size - value) <= EPS);
+    return exact ?? (value - start) / size;
+  };
+  return { x: along(at.x, box.x, box.width), y: along(at.y, box.y, box.height) };
+};
+
 /** A side's outward normal: the direction a link leaves the pill on that side. */
 const NORMAL: Readonly<Record<Side, Point>> = {
   top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
@@ -270,20 +283,6 @@ const isStraight = (points: readonly Point[], within = EPS): boolean => {
     return ok;
   });
 };
-
-/**
- * How far a **drawn** endpoint may sit off its segment's axis and still count as a square route.
- *
- * The waypoints are square or they are not, and that is tested exactly. The two ends are not
- * waypoints: draw.io resolves them from the terminal cell's own box, and the export puts a pill's
- * outward midpoint up to half a pixel off the model's stem axis — a defect with its own ticket,
- * present under `edgeStyle=none` as well. Both styles draw that residue at the same size: the
- * orthogonal router as a half-pixel jog, `edgeStyle=none` as a half-pixel diagonal, and the measured
- * 0.51 px worst case is exactly it. Anything larger is a real corner, and there the router would
- * invent a turn nothing reserved — so the link keeps `edgeStyle=none` and the line is drawn as
- * stated. A port that draws no pill and terminates on its node's box is the case that needs this.
- */
-const SQUARE_ENDPOINT_TOLERANCE = 1;
 
 /**
  * How many connection points one side may offer beyond its real anchors. This is a guard against a
@@ -1055,38 +1054,35 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   }
 
   /**
-   * Where an edge terminates, and on which cell. A port that draws a pill terminates on the **pill**,
-   * at the middle of its outward edge, for two reasons. It makes the connector a real connection:
-   * the pill is the port, so moving the port or its node carries the line, which pinning to the
-   * node's box never did. And it is what the SVG makes visible — a pill straddles the boundary and
-   * is painted over the inner half of its own stem, so the stroke the reader sees starts at the
-   * pill's outer edge. The reserved waypoints are untouched; only the endpoint moves, by the pill's
-   * half depth, onto the point the diagram already showed.
+   * Where an edge terminates, and on which cell. `seen` is the end's visible point in model space
+   * (`visibleEnd`, the path-end rule of D-Q7), and the edge is pinned to it. A port that draws a pill
+   * terminates on the **pill**, for two reasons. It makes the connector a real connection: the pill
+   * is the port, so moving the port or its node carries the line, which pinning to the node's box
+   * never did. And it is what the SVG makes visible — a pill straddles the boundary and is painted
+   * over the inner half of its own stem, so the stroke the reader sees starts on the pill's outward
+   * face, on the path's own stem; an end on an approach (ticket 15, phase 6) meets the pill on a
+   * tangential edge, and is pinned there. The reserved waypoints are untouched; only a stem-built
+   * endpoint moves, by the pill's half depth, onto the point the diagram already showed.
    */
-  const terminal = (end: 'exit' | 'entry', ref: { node: string; name?: string; ordinal: number }):
+  const terminal = (end: 'exit' | 'entry', ref: { node: string; name?: string; ordinal: number }, seen: Point | undefined):
   { cell: string; style: Readonly<Record<string, StyleValue>>; at: Point; anonymous?: true } | undefined => {
     const node = layout.nodes[ref.node];
     const port = node?.ports.find(item => item.ref.node === ref.node && item.ref.name === ref.name
       && item.ref.ordinal === ref.ordinal);
     if (!node?.bounds || !port?.anchor) return undefined;
+    const at = seen ?? port.anchor;
     // Both fractions must be present or draw.io drops the constraint entirely, and `exitPerimeter`
     // defaults to 1, which would project the point onto the perimeter instead of using it.
-    const fix = (at: Point): Readonly<Record<string, StyleValue>> =>
-      ({ [`${end}X`]: at.x, [`${end}Y`]: at.y, [`${end}Dx`]: 0, [`${end}Dy`]: 0, [`${end}Perimeter`]: 0 });
+    const fix = (fraction: Point): Readonly<Record<string, StyleValue>> =>
+      ({ [`${end}X`]: fraction.x, [`${end}Y`]: fraction.y, [`${end}Dx`]: 0, [`${end}Dy`]: 0, [`${end}Perimeter`]: 0 });
     // `at` is where draw.io really puts the endpoint: the constraint fraction resolved against the
     // terminal cell's own box. The exported waypoints do not hold it, and an edge label is stated
     // relative to the whole drawn polyline, terminals included, so it has to be known here.
     if (port.pill && port.ref.anonymous !== true && port.side) {
-      const pill = port.pill.bounds, outward = OUTWARD[port.side];
-      return {
-        cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), style: fix(outward),
-        at: shift({ x: pill.x + outward.x * pill.width, y: pill.y + outward.y * pill.height }),
-      };
+      return { cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), style: fix(fractionIn(port.pill.bounds, at)), at: shift(at) };
     }
-    return { cell: cellId('node', ref.node), style: fix({
-      x: (port.anchor.x - node.bounds.x) / node.bounds.width,
-      y: (port.anchor.y - node.bounds.y) / node.bounds.height,
-    }), at: shift(port.anchor), ...(port.ref.anonymous === true ? { anonymous: true as const } : {}) };
+    return { cell: cellId('node', ref.node), style: fix(fractionIn(node.bounds, at)), at: shift(at),
+      ...(port.ref.anonymous === true ? { anonymous: true as const } : {}) };
   };
 
   /**
@@ -1101,21 +1097,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   };
 
   /**
-   * The pill a link ends on, in page space: its cell, its box, the point on its outward edge the
-   * connector really starts from, and the direction that edge faces. Nothing here is measured — the
-   * box is the one stage 9 reserved and the outward point is the one `terminal` already pins to.
+   * The pill a link ends on, in page space: its cell, its box, and the direction its outward edge
+   * faces. Nothing here is measured — the box is the one stage 9 reserved. Where on the pill the
+   * connector really ends is `visibleEnd`, which `terminal` pins to.
    */
-  interface PillEnd { cell: string; box: Rect; at: Point; out: Point }
+  interface PillEnd { cell: string; box: Rect; out: Point }
   const pillEnd = (ref: { node: string; name?: string; ordinal: number }): PillEnd | undefined => {
     const port = layout.nodes[ref.node]?.ports.find(item => item.ref.node === ref.node
       && item.ref.name === ref.name && item.ref.ordinal === ref.ordinal);
     if (!port?.pill || port.ref.anonymous === true || !port.side) return undefined;
-    const box = shiftRect(port.pill.bounds), outward = OUTWARD[port.side];
-    return {
-      cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), box,
-      at: { x: box.x + outward.x * box.width, y: box.y + outward.y * box.height },
-      out: NORMAL[port.side],
-    };
+    return { cell: cellId('port', ref.node, ref.name!, String(ref.ordinal)), box: shiftRect(port.pill.bounds), out: NORMAL[port.side] };
   };
 
   /**
@@ -1124,7 +1115,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
    * child of that shape and stated from its top-left, so the shape carries it. Only a port whose node
    * the model does not hold leaves the mark on the overlay layer.
    */
-  const markHost = (ref: { node: string; name?: string; ordinal: number }): { cell: string; box: Rect; at?: Point } | undefined => {
+  const markHost = (ref: { node: string; name?: string; ordinal: number }): { cell: string; box: Rect } | undefined => {
     const pill = pillEnd(ref);
     if (pill) return pill;
     const bounds = layout.nodes[ref.node]?.bounds;
@@ -1286,12 +1277,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       else sheet.at(mode, dot);
     }
     const from = link.attachments?.from, to = link.attachments?.to;
-    const head = from ? terminal('exit', from) : undefined;
-    const tail = to ? terminal('entry', to) : undefined;
+    // Where the stroke is seen to end (`visibleEnd`, D-Q7): every pin and every end mark reads it.
+    const seenFrom = visibleEnd(layout, link, 'from'), seenTo = visibleEnd(layout, link, 'to');
+    const head = from ? terminal('exit', from, seenFrom) : undefined;
+    const tail = to ? terminal('entry', to, seenTo) : undefined;
     const headHost = overlay && from ? markHost(from) : undefined;
     const tailHost = overlay && to ? markHost(to) : undefined;
-    // What draw.io draws is not what the model holds: a pinned end sits on the pill's outward edge,
-    // not on the port anchor the waypoints start from. An edge label's coordinates are fractions of
+    // What draw.io draws is not what the model holds: a pinned end sits on its visible point, on the
+    // pill's edge, not on the port anchor a stem-built path's waypoints start from. An edge label's coordinates are fractions of
     // that drawn polyline, so it is resolved here — the waypoints themselves are untouched.
     const shown: Connector[] = runs.map((run, index) => {
       const points = [...run.points];
@@ -1323,16 +1316,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // family reaches it: a routed declared straight bundle member (ADR-0017) and an overlay link
       // the straight branch answered with an angled segment. See fact 1 for the four in the corpus.
       //
-      // Both polylines are tested, because they differ: the waypoints exactly, and the polyline
-      // draw.io really draws — the pinned terminals included — within the endpoint tolerance. A port
-      // that draws no pill terminates on its node's box, which can leave the drawn line diagonal
-      // while every waypoint is square, and that is a corner the router would invent.
+      // Both polylines are tested, the waypoints and the polyline draw.io really draws, the pinned
+      // terminals included, and both exactly. A pinned end stands on its `visibleEnd`, on the path's
+      // own stem, so the two agree; an end off its stem is a defect, and it shows as a diagonal
+      // under `edgeStyle=none`, never as a corner the orthogonal router would invent.
       //
       // A run with no bend is the exception (maintainer, 2026-10-23): it is a straight connector,
       // `edgeStyle=none`, because a straight line is easier to edit in draw.io than an orthogonal one.
       // It is tested on both polylines, as `square` is. Only a run with a bend keeps the orthogonal style.
-      const straight = isStraight(points) && isStraight(shown[index]!.points, SQUARE_ENDPOINT_TOLERANCE);
-      const square = !straight && axisAligned(points) && axisAligned(shown[index]!.points, SQUARE_ENDPOINT_TOLERANCE);
+      const straight = isStraight(points) && isStraight(shown[index]!.points);
+      const square = !straight && axisAligned(points) && axisAligned(shown[index]!.points);
       // A connector holds one polyline; a path whose segment chain breaks becomes one connector per
       // run, each dangling where the chain did. Only the ends that are really ends are pinned.
       const style = styleString([], {
@@ -1369,18 +1362,19 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // pill moved by hand carries its mark with it, where an absolute mark stayed behind. A port
       // that draws no pill is a child of its node, stated from the node's top-left (issue 03), at the
       // point the model gives. It paints with its host now, not with the overlay layer.
-      // On a pill the mark sits on the pill's outward point, where the connector really ends: the
-      // anchor is the pill's centre, and a mark there covers the port's name (maintainer, 2026-09-15).
+      // The mark sits on the end's `visibleEnd`, where the connector really ends: on a pill that is the
+      // pill's outward point, not the anchor at its centre, where a mark covers the port's name
+      // (maintainer, 2026-09-15).
       const ends = link.path!.segments;
       const marks = [
-        { end: 'from', at: ends[0]!.from, host: headHost },
-        { end: 'to', at: ends[ends.length - 1]!.to, host: tailHost },
+        { end: 'from', at: seenFrom ?? ends[0]!.from, host: headHost },
+        { end: 'to', at: seenTo ?? ends[ends.length - 1]!.to, host: tailHost },
       ] as const;
       const bare = dotEnds(layout.document, link);
       for (const mark of marks) {
         // A bare end is closed by the connector's own oval, so it takes no second mark.
         if (bare.includes(mark.end) && (mark.end === 'from' ? head : tail)) continue;
-        const at = mark.host?.at ?? shift(mark.at);
+        const at = shift(mark.at);
         const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
           width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
         vertex(cellId('overlayMark', stableId(link), mark.end), mark.host?.cell ?? layerId('overlay'),
@@ -1490,14 +1484,15 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       ({ ...(from ? centred('exit') : {}), ...(to ? centred('entry') : {}) });
     for (const stub of bus.stubs) {
       const ref = bus.ports.find(port => port.node === stub.node)!;
-      const head = terminal('exit', ref), pill = markHost(ref);
+      // A stub starts on its port's outward face (`overlayEndpoint`, the bus producer's own point).
+      const head = terminal('exit', ref, stub.from), pill = markHost(ref);
       const to = shift(stub.to);
       const points = [head?.at ?? shift(stub.from), to];
       const end = jointAt(mine, to);
       // A stub is one straight run (port face to bar) and both its ends move with one node, so `edgeStyle=none` keeps it straight.
       edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(false, { ...(head?.style ?? {}), ...(end ? centred('entry') : {}) }), points,
         { source: head?.cell, target: end, sourcePoint: head ? undefined : points[0], targetPoint: end ? undefined : points[1] });
-      const at = pill?.at ?? shift(stub.from);
+      const at = shift(stub.from);
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
       vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),

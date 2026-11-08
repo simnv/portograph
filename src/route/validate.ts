@@ -1,5 +1,5 @@
 import type { Point } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
+import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 import { stemReach } from '../layout/bands.js';
 import { endPort } from '../layout/approach.js';
@@ -8,7 +8,8 @@ import { EPS, horizontal, length, near, retracingRuns, samePoint, segmentRect, v
 import { outward } from '../score/model.js';
 import { effectiveLayer, placementRuns, plannedRunsOf, reversedRuns, type PlannedRun } from './plan.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
-import { sharedBlockers, overlayEndpoint, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
+import { pathEnd } from '../layout/path-end.js';
+import { sharedBlockers, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
 import { ownedLanes, stubCandidate } from './paths.js';
 import { MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
 
@@ -200,19 +201,15 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
     if (!path && !requireComplete) continue;
     if (!path || !path.segments.length) throw new Error(`Stage 8 left ${link.id} without a path`);
     if (path.layer !== effectiveLayer(link)) throw new Error(`Path layer on ${link.id} contradicts its effective layer`);
-    const ends = link.attachments!;
     const from = endPort(model, link, 'from'), to = endPort(model, link, 'to');
     if (!from?.anchor || !to?.anchor) throw new Error(`Link ${link.id} references a missing port`);
-    // Where a path has to meet its two ports. A routed path ends on the anchor, and the pill is
-    // painted over the inner half of its stem. An overlay path ends on the port's own outward
-    // **face**, because the overlay layer is masked out of the pill and a run inside it would never
-    // be drawn (stress ticket 30); `overlayEndpoint` names that point, and an end with no side to
-    // leave by has no face and keeps its anchor. The rule is the same one in both families — a path
-    // starts and ends where its ports are — read at the point each family really draws.
-    const attach = (port: LayoutPort, node: string): Point => (effectiveLayer(link) === 'routed' && !isRoutedChord(model, link)
-      ? undefined : overlayEndpoint(model.nodes[node], port)) ?? port.anchor!;
-    if (!samePoint(path.segments[0]!.from, attach(from, ends.from.node))
-      || !samePoint(path.segments.at(-1)!.to, attach(to, ends.to.node))) {
+    // Where a path has to meet its two ports: the path-end rule by producer (`pathEnd`). A
+    // stem-built path ends on the anchor, and the pill is painted over the inner half of its stem.
+    // A chord-built path (an overlay path, a routed chord) ends on the port's own outward **face**,
+    // because the overlay layer is masked out of the pill and a chord has no stem (stress ticket 30,
+    // ticket 34). G7 `endpoint-anchor` and the renderers read the same module.
+    if (!samePoint(path.segments[0]!.from, pathEnd(model, link, 'from')!)
+      || !samePoint(path.segments.at(-1)!.to, pathEnd(model, link, 'to')!)) {
       throw new Error(`Path on ${link.id} does not start and end at its ports`);
     }
     // `fixed` decides which contract this path answers to, so a restored value that merely looks
