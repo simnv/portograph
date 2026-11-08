@@ -1,0 +1,49 @@
+# Expected (drawio-export ticket 07): in the draw.io export a pill, the icon and the description of a node are `relative="1"`
+# children of the node, so a node resized by hand keeps each of them where it belongs. A pill keeps its face, and a fixed px
+# distance from the nearer corner of that face (a pill nearer the far corner is measured from that corner: fraction 1 and a
+# negative offset). The icon and the description follow the node's name: a fixed distance from the top, measured from the
+# top centre (from the top-left on a card). Before an edit every cell is where `layout.json` puts it.
+# Cases: `hub` holds pills on all four faces, two or three per face, so each face has a pill nearer each corner; it has an icon
+# and a description. `top` and `low` hold one linked pill per used port. The layout, SVG and draw.io output agree.
+# Test-only input owned by drawio-export ticket 07; test/render/drawio.test.ts reads it, and the real-mxGraph resize probe in
+# `.scratch/drawio-export/probes-07/` loads its export.
+portograph: 2
+groups:
+  upper: { tier: 0, label: Upper }
+  middle: { tier: 1, label: Middle }
+  lower: { tier: 2, label: Lower }
+nodes:
+  top:
+    group: upper
+    class: router
+    label: Top
+    ports:
+      - { name: d1, side: bottom }
+      - { name: d2, side: bottom }
+  hub:
+    group: middle
+    class: router
+    label: Hub
+    description: rev 2
+    ports:
+      - { name: u1, side: top }
+      - { name: u2, side: top }
+      - { name: l1, side: left }
+      - { name: l2, side: left }
+      - { name: r1, side: right }
+      - { name: r2, side: right }
+      - { name: b1, side: bottom }
+      - { name: b2, side: bottom }
+      - { name: b3, side: bottom }
+  low:
+    group: lower
+    class: tbr
+    label: Low
+    ports:
+      - { name: u1, side: top }
+      - { name: u2, side: top }
+links:
+  - [top.d1, hub.u1]
+  - [top.d2, hub.u2]
+  - [hub.b1, low.u1]
+  - [hub.b3, low.u2]
