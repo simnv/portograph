@@ -178,10 +178,11 @@ describe('fixture drawio-author-css', async () => {
     expect(style(auto, 'pg-port~border-1~up~1')['fontColor']).toBe('light-dark(#1e3a8a,#1e3a8a)');
     const unused = style(auto, 'pg-port~core-1~spare~1');
     expect([unused['opacity'], unused['textOpacity']]).toEqual(['30', '30']);
-    expect(linkCell(auto, 'core-2.down')['dashPattern']).toBe('6 3');
-    expect(linkCell(auto, 'core-1.down')['dashPattern']).toBeUndefined();
-    expect(linkCell(auto, 'core-1.down')['fontColor']).toBe('light-dark(#1e40af,#1e40af)');
-    const overlay = linkCell(auto, 'access-1.alt');
+    expect(linkCell(auto, 'core-2:down')['dashPattern']).toBe('6 3');
+    expect(linkCell(auto, 'core-1:down')['dashPattern']).toBeUndefined();
+    // The 10G label turns with its run, so it is a child label cell of the connector.
+    expect(style(auto, 'pg-linkLabel~core-1:down-&gt;access-1:up')['fontColor']).toBe('light-dark(#1e40af,#1e40af)');
+    const overlay = linkCell(auto, 'access-1:alt');
     expect([overlay['strokeColor'], overlay['opacity']]).toEqual(['light-dark(#008080,#008080)', '50']);
     expect(style(drawio(laid, { theme: 'print' }), 'pg-group~core')['dashPattern']).toBe('2 2');
     expect(style(auto, 'pg-group~core')['dashPattern']).toBeUndefined();
