@@ -22,7 +22,9 @@ vi.mock('../../src/layout/overlay-paths.js', async importOriginal => {
   type Read = typeof actual.overlayPath;
   const worse = (read: Read): Read => (model, link, blockers) => {
     const path = read(model, link, blockers);
-    return state.armed && link.id === 'link-6' && (model.groups['key']?.bounds?.x ?? 1) < 0 ? { ...path, segments: Array.from({ length: 8 }, () => path.segments).flat() } : path;
+    // Eight copies, every other one reversed: seven reversals, which the turn predicate (`pieceTurns`) counts as seven turns.
+    const back = [...path.segments].reverse().map(segment => ({ ...segment, from: segment.to, to: segment.from }));
+    return state.armed && link.id === 'link-6' && (model.groups['key']?.bounds?.x ?? 1) < 0 ? { ...path, segments: Array.from({ length: 8 }, (_, index) => index % 2 === 0 ? path.segments : back).flat() } : path;
   };
   return { ...actual, overlayPath: worse(actual.overlayPath), overlayBasePath: worse(actual.overlayBasePath) };
 });

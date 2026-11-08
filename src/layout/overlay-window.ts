@@ -29,7 +29,10 @@ import { drawn, drawnCrossings, overlayCrossingPoints, portKey, type Drawn } fro
 export const CHORD_WINDOW_TRIALS = 32;
 /** The event points judged for one group (ticket 147): they only break ties inside a maximum-straight interval, so fewer are enough. */
 export const EVENT_TRIALS = 8;
-/** A parameter this close to the fixed end stands for the end itself; the interval of a shift there is unbounded. */
+/**
+ * A parameter this close to the fixed end stands for the end itself; the interval of a shift there is unbounded. Dimensionless (a fraction
+ * along a chord): the window clamps its denominator at it, and `through` skips an event within it of the motion rate (strict edge).
+ */
 const NEAR_END = 1e-9;
 /** A shift larger than this is no candidate: the interval it ends is unbounded on that side. */
 const UNBOUNDED = 1e7;
@@ -243,7 +246,7 @@ export function windowTarget(model: LayoutModel, group: LayoutGroup, input: Wind
     const dy = m.y - f.y;
     if (Math.abs(dy) <= EPS) return [];
     const t = (p.y - f.y) / dy;
-    if (t < 0 || t > 1 || Math.abs(t - rate) < 1e-9) return [];
+    if (t < 0 || t > 1 || Math.abs(t - rate) < NEAR_END) return [];
     const dx = (p.x - f.x - (m.x - f.x) * t) / (t - rate);
     return [{ low: dx, high: dx }];
   };
