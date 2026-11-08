@@ -107,6 +107,36 @@ overlay number.
 removed link has no path, no label, and no place in the score or the gates. It is not a gate
 failure, so the count is the only signal. Read it on every render.
 
+## Q is a regression guard, not a referee
+
+Q gates a branch. A drop in Q on a sheet is a finding. A rise in Q is not proof of a better
+drawing. Q catches a worse drawing of the same sheet. Q does not choose between two drawings
+that the user can accept. The weights stay: crossings 0.30, bends 0.15 (decision review,
+ruling of 2026-11-07).
+
+Evidence: three pairs of drawings where the user chose the better one. Q' puts bends before
+crossings (bends 0.30, crossings 0.15) and halves compactness (0.05). Q'' changes only the
+bends and crossings weights and keeps compactness at 0.10.
+
+| Pair | Changed sheets | Q agrees | Q' agrees | Q'' agrees |
+|---|---|---|---|---|
+| Ticket 73 (accepted canvas rows) | 10 | 5 | 8 | 7 |
+| Ticket 83 (the X; area growth accepted) | 7 | 4 | 4 | 4 |
+| Gap-24 on NTP (tier gap 60 kept over 24) | 1 | 1 | 1 | 1 |
+| Total | 18 | 10 | 13 | 12 |
+
+Sources: `.scratch/decision-review-2026-11/results/P3.md` (Q and Q'), `P3b.md` (Q'' bound from
+stored totals only, open on 16 of 18 sheets), `P3c.md` (Q'' from stored components; the totals
+above). Q and Q' in P3c equal the P3 values on every row.
+
+No weight choice makes one score agree with the user on all three pairs. The misses on
+ticket 83 (3 of 7 sheets) are canvas growth with equal bends and crossings. The misses on
+ticket 73 are canvas only (a-bar-spans-left, two-titles) or canvas growth (a-nested-stem).
+No Q term scores a straight facing link or a vertical link. A change of the weights does not fix these.
+
+Rule: where Q and the user differ, the user's eye decides. Compare paired renders and read the
+checklist below. Do not tune a weight to match one pair.
+
 ## Thresholds — assertions vs advisories
 
 | Metric | ≤ 30 nodes | ≤ 100 nodes | Kind |
@@ -229,9 +259,8 @@ command, the time is simply not a promise.
     ports level on one side are joined by a U whose run stands one overlay port clearance beyond the
     pill tips, never by a line on the tips (architecture-2 ticket 34, user 2026-10-25).
 
-A **straight bundle member** is the single diagonal between the two stems of a heavily inverted
-bundle (ADR-0017: more inversions than half the members, or a staircase more than half as long again
-as the straight members, and only when the existing geometry holds the member gap between every pair of member segments G6 would measure, stems included). It carries `straight: true`, which G5 accepts only on a member of a bundle that owns the
+A **straight bundle member** is the single diagonal between the two stems of an inverted
+bundle (ADR-0017 as amended by ticket DR-03: when the gap holds the member pitch, that is, the channel between the placed faces holds both stems and the existing geometry holds the member gap between every pair of member segments G6 would measure, stems included; the inversion count and the drawn length play no part). It carries `straight: true`, which G5 accepts only on a member of a bundle that owns the
 segment, and only one per member — a second is a staircase of its own. G4 indexes such a segment — before the axis buckets, whatever its angle — on a uniform grid over the
 cells its run crosses and their neighbours, so an overlap longer than 1 px always shares a cell, and
 measures that overlap along the run. An ordinary run joins that grid too, in the cells a declared
