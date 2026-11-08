@@ -6,14 +6,21 @@
  *
  * What draw.io can carry is a subset. A rule outside it is not dropped in silence: it is listed in `unmapped`, and the export names
  * it in one `DRAWIO_CSS_UNMAPPED` warning. The subset:
- * - a selector of class compounds (`.a.b`, `*`), joined by the descendant (space) or child (`>`) combinator; an id, a type, an
- *   attribute, a pseudo-class or another combinator is outside it;
+ * - a selector of class compounds (`.a.b`, `*`), joined by the descendant (space) or child (`>`) combinator, whose subject names a
+ *   class. An id, a type, an attribute, a pseudo-class or another combinator is outside it, and so is a subject without a class
+ *   (`*`, `.x *`): it also matches the unclassed `<tspan>` of each text and the glyph `<path>` in each `<use>`, which no cell is;
+ * - a rule without nested rules: a nested rule or at-rule (CSS nesting) is outside it, and the rule's own declarations still map;
  * - `fill`, `stroke`, `fill-opacity`, `stroke-opacity`, `opacity` and `stroke-dasharray`, with a colour as `#rgb`, `#rrggbb`, a
  *   colour name or `rgb()`, a number or a percentage, a dash list, `none` or `inherit`; a custom property is skipped, since only a
  *   `var()` reads it and a `var()` value is outside the subset;
  * - `@media` with `all`, `screen`, `print` and `(prefers-color-scheme: light | dark)`, joined by `and` or listed with commas. The
  *   modes are those of the theme: light is a screen in the light scheme, dark a screen in the dark scheme, and print a print in
- *   the light scheme, so a dark and a print rule are read on top of the light rules, as a browser reads them.
+ *   the light scheme, so a dark and a print rule are read on top of the light rules, as a browser reads them. A query that
+ *   matches none of the three modes (`print and (prefers-color-scheme: dark)`) is outside it.
+ *
+ * A value a browser refuses (`rgb(1,2,3,)`, `rgb(100%,0,0)`, `1,,2`) is refused here too, so the earlier valid value stays in
+ * force in both renderers; it is listed with the rest. Every pattern here is linear in its input (R4: a long run of digits or
+ * spaces in an author value costs no more than its length).
  */
 import postcss from 'postcss';
 import type { ChildNode, Rule } from 'postcss';
@@ -44,7 +51,9 @@ export function authorRules(css: string | undefined): AuthorRules {
       if (node.type === 'rule') { addRule(node, modes, rules, unmapped); continue; }
       const media = node.name.toLowerCase() === 'media' ? mediaModes(node.params) : undefined;
       if (media === undefined) { unmapped.push(`@${node.name} ${node.params}`.trim()); continue; }
-      walk(node.nodes ?? [], modes.filter(mode => media.includes(mode)));
+      const next = modes.filter(mode => media.includes(mode));
+      if (!next.length) { unmapped.push(`@media ${node.params} (matches no mode)`); continue; }
+      walk(node.nodes ?? [], next);
     }
   };
   walk(root.nodes, MODES);
@@ -69,7 +78,7 @@ const IDENT = /^-?[_a-zA-Z][_a-zA-Z0-9-]*$/;
 
 /** A selector as the rule table states it, or `undefined` for one outside the subset. */
 function parseSelector(selector: string): Pick<PaintRule, 'element' | 'tokens' | 'context'> | undefined {
-  const parts = selector.trim().replace(/\s*>\s*/g, ' > ').split(/\s+/);
+  const parts = selector.split(/(>)/).flatMap(piece => piece === '>' ? ['>'] : piece.trim().split(/\s+/).filter(Boolean));
   const compounds: { classes: string[]; child: boolean }[] = [];
   for (const [index, part] of parts.entries()) {
     if (part === '>') {
@@ -86,7 +95,8 @@ function parseSelector(selector: string): Pick<PaintRule, 'element' | 'tokens' |
     compounds.push({ classes, child: false });
   }
   const subject = compounds.pop();
-  if (subject === undefined) return undefined;
+  // A subject without a class also matches the unclassed text spans and glyph paths, which no draw.io cell stands for.
+  if (subject === undefined || !subject.classes.length) return undefined;
   const [element, ...tokens] = subject.classes;
   return { element: element ?? '*', tokens, ...(compounds.length ? { context: compounds } : {}) };
 }
@@ -96,7 +106,12 @@ function addRule(node: Rule, modes: readonly ThemeMode[], rules: PaintRule[], un
   const text = selectors.join(', ');
   const normal: [string, string][] = [], important: [string, string][] = [];
   for (const child of node.nodes) {
-    if (child.type !== 'decl') continue;
+    if (child.type === 'comment') continue;
+    if (child.type !== 'decl') {
+      // CSS nesting: a rule or at-rule inside this one.
+      unmapped.push(`${text} { ${child.type === 'rule' ? child.selector : `@${child.name} ${child.params}`.trim()} { … } }`);
+      continue;
+    }
     const property = child.prop.toLowerCase();
     if (property.startsWith('--')) continue;
     const value = paintValue(property, child.value);
@@ -113,6 +128,10 @@ function addRule(node: Rule, modes: readonly ThemeMode[], rules: PaintRule[], un
   }
 }
 
+/** An unsigned CSS number without exponent, and one with a sign and an exponent; both match in linear time. */
+const UNSIGNED = '(?:\\d+(?:\\.\\d+)?|\\.\\d+)';
+const NUMBER = `[+-]?${UNSIGNED}(?:e[+-]?\\d+)?`;
+
 const COLOUR_PROPERTIES = new Set(['fill', 'stroke']);
 const OPACITY_PROPERTIES = new Set(['fill-opacity', 'stroke-opacity', 'opacity']);
 
@@ -122,14 +141,17 @@ function paintValue(property: string, raw: string): string | undefined {
   if (value === 'inherit') return OPACITY_PROPERTIES.has(property) || COLOUR_PROPERTIES.has(property) || property === 'stroke-dasharray' ? value : undefined;
   if (COLOUR_PROPERTIES.has(property)) return value === 'none' || value === 'transparent' ? 'none' : cssColour(value);
   if (OPACITY_PROPERTIES.has(property)) {
-    const match = /^(\d*\.?\d+(?:e[+-]?\d+)?)(%?)$/.exec(value);
+    const match = new RegExp(`^(${NUMBER})(%?)$`).exec(value);
     if (match === null) return undefined;
     return String(Math.min(1, Math.max(0, Number(match[1]) / (match[2] ? 100 : 1))));
   }
   if (property === 'stroke-dasharray') {
     if (value === 'none') return value;
-    const lengths = value.split(/[\s,]+/).filter(Boolean);
-    if (!lengths.length || !lengths.every(length => /^\d*\.?\d+(?:px)?$/.test(length))) return undefined;
+    // Commas and spaces separate the lengths; an empty item between two commas, or at either end, makes the value invalid.
+    const items = value.split(',').map(item => item.trim());
+    if (items.some(item => item === '')) return undefined;
+    const lengths = items.flatMap(item => item.split(/\s+/));
+    if (!lengths.every(length => new RegExp(`^${UNSIGNED}(?:px)?$`).test(length))) return undefined;
     return lengths.map(length => String(Number(length.replace(/px$/, '')))).join(' ');
   }
   return undefined;
@@ -143,18 +165,31 @@ export function cssColour(raw: string): string | undefined {
     const full = hex.length <= 4 ? [...hex].map(digit => digit + digit).join('') : hex;
     return full.length === 8 && !full.endsWith('ff') ? undefined : `#${full.slice(0, 6)}`;
   }
-  const rgb = /^rgba?\(\s*([^)]*)\)$/.exec(value)?.[1];
-  if (rgb !== undefined) {
-    const parts = rgb.split(/\s*[,/]\s*|\s+/).filter(Boolean);
-    if (parts.length < 3 || parts.length > 4) return undefined;
-    if (parts.length === 4 && !/^(1|1\.0*|100%)$/.test(parts[3]!)) return undefined;
-    const channels = parts.slice(0, 3).map(part => /^\d*\.?\d+%$/.test(part) ? Number(part.slice(0, -1)) / 100 * 255
-      : /^\d*\.?\d+$/.test(part) ? Number(part) : Number.NaN);
-    if (channels.some(channel => !Number.isFinite(channel))) return undefined;
-    return `#${channels.map(channel => Math.round(Math.min(255, Math.max(0, channel))).toString(16).padStart(2, '0')).join('')}`;
-  }
+  const rgb = /^rgba?\(([^)]*)\)$/.exec(value)?.[1];
+  if (rgb !== undefined) return rgbColour(rgb.trim());
   const named = NAMED.get(value);
   return named === undefined ? undefined : `#${named}`;
+}
+
+/**
+ * The colour of the arguments of `rgb()` or `rgba()`, as a browser reads them: the legacy form, three numbers or three
+ * percentages and an optional alpha, comma separated; or the modern form, three numbers or percentages in any mix separated by
+ * spaces, and an optional alpha after `/`. Any other shape is invalid, and an alpha below 1 cannot be carried.
+ */
+function rgbColour(args: string): string | undefined {
+  const number = new RegExp(`^${NUMBER}$`), percent = new RegExp(`^${NUMBER}%$`);
+  const legacy = args.includes(',');
+  const [body = '', alpha, ...rest] = legacy ? [args] : args.split('/').map(part => part.trim());
+  if (rest.length || alpha === '') return undefined;
+  const parts = legacy ? args.split(',').map(part => part.trim()) : body.split(/\s+/).filter(Boolean);
+  const channels = parts.slice(0, 3), last = legacy ? parts[3] : alpha;
+  if (channels.length !== 3 || (legacy ? parts.length > 4 : parts.length !== 3) || parts.some(part => part === '')) return undefined;
+  const kinds = channels.map(part => number.test(part) ? 'number' : percent.test(part) ? 'percent' : undefined);
+  if (kinds.includes(undefined) || (legacy && new Set(kinds).size > 1)) return undefined;
+  if (last !== undefined && !(number.test(last) || percent.test(last))) return undefined;
+  if (last !== undefined && Number(last.replace(/%$/, '')) / (last.endsWith('%') ? 100 : 1) < 1) return undefined;
+  const levels = channels.map((part, at) => kinds[at] === 'percent' ? Number(part.slice(0, -1)) / 100 * 255 : Number(part));
+  return `#${levels.map(level => Math.round(Math.min(255, Math.max(0, level))).toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** The CSS named colours (CSS Color Module Level 4, section 6.1). */

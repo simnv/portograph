@@ -1391,6 +1391,24 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }
   }
 
+  // ---- merge trunks -------------------------------------------------------------------------
+  // The SVG paints a merge trunk once, as its own line under `.merge-run`, and takes it out of each member's line; draw.io draws each
+  // member's whole path. A rule that paints the trunk unlike the lines of its members is therefore not carried, and is named in the
+  // warning; a trunk painted like its members is carried by their connectors.
+  const strokeLook = (path: PaintPath): string => JSON.stringify([...(adaptive ? ['light', 'dark'] as const : [mode]).map(of => sheet.peek(of, path).get('stroke')),
+    sheet.peek(mode, path).get('stroke-dasharray'), sheet.peek(mode, path).opacity() * Number(sheet.peek(mode, path).get('stroke-opacity') ?? 1)]);
+  for (const bundle of layout.bundles) {
+    for (const run of bundle.mergeRuns ?? []) {
+      const members = run.members.map(id => byId.get(id)).filter((link): link is LayoutLink => link !== undefined);
+      if (!members.some(visible)) continue;
+      const shared = new Set(members.map(member => linkClass(member)));
+      const authored = shared.size === 1 ? [...shared][0] : undefined;
+      const trunk: PaintPath = [root, 'links', classes('merge-run', authored), svgClass.linkLine(authored, false)];
+      const like = members.filter(visible).every(member => strokeLook(paintPath.linkLine(root, linkClass(member), effectiveLayer(member) === 'overlay')) === strokeLook(trunk));
+      if (like) { colour(trunk, 'stroke'); single(trunk, paint => paint.get('stroke-dasharray')); alpha(trunk, 'stroke-opacity'); } else sheet.at(mode, trunk);
+    }
+  }
+
   // ---- mesh buses ---------------------------------------------------------------------------
   // The bar is one edge with `edgeStyle=none` and two free points; each stub is an edge from its port's cell to a free point on the
   // bar, orthogonal with `jettySize=0`, as an axis-aligned overlay is exported. All take the class stroke and dash an overlay link

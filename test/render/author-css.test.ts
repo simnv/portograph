@@ -65,6 +65,50 @@ describe('author rules', () => {
   });
 });
 
+describe('author rules draw.io cannot carry (review of draw.io ticket 8)', () => {
+  it('lists a rule whose subject has no class: it also matches the text spans and the glyph paths, which no cell is', () => {
+    const { rules, unmapped } = authorRules('* { fill: #ff0000 }\n.x * { fill: #ff0000 }\n.node-label * { fill: #ff0000 }\n*.pill { fill: #00ff00 }\n.node * > .pill { stroke: #0000ff }');
+    expect(rules.map(rule => rule.source)).toEqual(['*.pill', '.node * > .pill']);
+    expect(unmapped).toEqual(['* { … }', '.x * { … }', '.node-label * { … }']);
+  });
+
+  it('lists a nested rule or at-rule (CSS nesting), and keeps the declarations of the rule around it', () => {
+    const { rules, unmapped } = authorRules([
+      '.node.access { stroke: #111111; .pill { fill: #ff00ff } }',
+      '.group { & .group-box { stroke: #00ffff } }',
+      '.pill { @media print { fill: #ff0000 } }',
+    ].join('\n'));
+    expect(rules.map(rule => [rule.source, rule.declarations])).toEqual([['.node.access', [['stroke', '#111111']]]]);
+    expect(unmapped).toEqual(['.node.access { .pill { … } }', '.group { & .group-box { … } }', '.pill { @media print { … } }']);
+  });
+
+  it('lists a media query that matches no mode', () => {
+    expect(authorRules('@media print and (prefers-color-scheme: dark) { .pill { fill: #ff0000 } }').unmapped)
+      .toEqual(['@media print and (prefers-color-scheme: dark) (matches no mode)']);
+    expect(authorRules('@media print { @media (prefers-color-scheme: dark) { .pill { fill: #ff0000 } } }').unmapped)
+      .toEqual(['@media (prefers-color-scheme: dark) (matches no mode)']);
+  });
+
+  it('refuses a value a browser refuses, so the earlier valid value stays in force', () => {
+    for (const value of ['rgb(255,0,0,)', 'rgb(100%,0,0)', 'rgb(1 2)', 'rgb(1, 2 3)', 'rgb(1 2 3 / )']) expect(cssColour(value), value).toBeUndefined();
+    expect([cssColour('rgb(100% 0 50%)'), cssColour('rgb(255, 0, 0, 1)'), cssColour('rgb(1 2 3 / 100%)')]).toEqual(['#ff0080', '#ff0000', '#010203']);
+    const { rules, unmapped } = authorRules('.pill { fill: #00ff00; fill: rgb(255,0,0,); stroke-dasharray: 2 2; stroke-dasharray: 1,,2 }');
+    expect(rules[0]!.declarations).toEqual([['fill', '#00ff00'], ['stroke-dasharray', '2 2']]);
+    expect(unmapped).toEqual(['.pill { fill: rgb(255,0,0,) }', '.pill { stroke-dasharray: 1,,2 }']);
+    expect(authorRules('.pill { stroke-dasharray: 1, 2 3 }').rules[0]!.declarations).toEqual([['stroke-dasharray', '1 2 3']]);
+    for (const value of ['1,', ',1', '1 ,, 2']) expect(authorRules(`.pill { stroke-dasharray: ${value} }`).rules, value).toEqual([]);
+  });
+
+  it('reads a long run of digits or spaces in linear time (R4)', () => {
+    const digits = '1'.repeat(300_000), spaces = ' '.repeat(300_000);
+    const css = [`.pill { opacity: ${digits}x; fill-opacity: .${digits}; stroke-dasharray: ${digits}x }`,
+      `.pill { fill: rgb(${digits}x); stroke: rgb(${spaces}x }`, `.a${spaces}.b { fill: #000 }`].join('\n');
+    const start = performance.now();
+    authorRules(css);
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+});
+
 describe('the cascade on a path', () => {
   const rule = (element: string, declarations: PaintRule['declarations'], extra: Partial<PaintRule> = {}): PaintRule =>
     ({ element, tokens: [], declarations, ...extra });
