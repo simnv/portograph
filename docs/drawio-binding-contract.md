@@ -190,7 +190,7 @@ These cells have no binding attributes:
   when you reorder the links.
 
 Known difference: draw.io draws plain text at its own line pitch, `round(size × 1.2)`, and has no
-style to change it. The first baseline is exact. When the model pitch of a multi-line label differs,
+style to change it. The first baseline is within about 0.5 px (measured at 11 px). When the model pitch of a multi-line label differs,
 its further lines can sit about 1 px a line off the SVG, and the export reports `DRAWIO_LINE_PITCH`.
 
 ## 6. Versioning
