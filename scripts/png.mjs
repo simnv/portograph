@@ -4,11 +4,13 @@
  * Usage: npm run png -- <in.svg> [out.png] [--width N]
  *
  * The output defaults to the input path with `.png`; the width defaults to 1600 px.
+ * resvg ignores `:where()`, so the SVG text goes through `flattenWhere` first (the file is not changed).
  * System fonts load, so the render's `Verdana` resolves to a real face.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { Resvg } from '@resvg/resvg-js';
+import { flattenWhere } from './png-lib.mjs';
 
 const DEFAULT_WIDTH = 1600;
 const USAGE = 'Usage: npm run png -- <in.svg> [out.png] [--width N]';
@@ -30,7 +32,7 @@ if (positional.length < 1 || positional.length > 2 || !Number.isInteger(width) |
 const [input, given] = positional;
 const output = given ?? input.replace(/\.svg$/i, '') + '.png';
 
-const resvg = new Resvg(readFileSync(input), {
+const resvg = new Resvg(flattenWhere(readFileSync(input, 'utf8')), {
   background: 'white',
   fitTo: { mode: 'width', value: width },
   font: { loadSystemFonts: true, defaultFontFamily: 'Verdana' },
