@@ -1,0 +1,38 @@
+# Expected: a group shift leaves a held chord clear of a transit lane. `src` feeds six switches of `access`; the transit links
+# src0 -> snk1 and src1 -> snk0 pass `access` in corridors. With the joint order off (`layout.feedOrder: false`, as its tests pin it) the
+# centre rule gives snk0 back with its partner src1 (bends 5, G5 alone), src0 keeps its transit port on its lane, and the course
+# round keeps every hard separation of its baseline.
+# DR-04 copy of a-group-shift-leaves-a-chord-clear-of-a-lane with `access` declared before `src`. Links take the canonical order (group
+# declaration order, then node order inside the group); with this declaration the canonical order is near the written one and
+# the sheet shows the scenario above again. The original keeps its declaration for the tests that read it.
+portograph: 2
+groups:
+  access: { tier: 1 }
+  src: { tier: 0 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  src0: { group: src, class: router, ports: [] }
+  src1: { group: src, class: router, ports: [] }
+  acc0: { group: access, class: switch, ports: [] }
+  acc1: { group: access, class: switch, ports: [] }
+  acc2: { group: access, class: switch, ports: [] }
+  acc3: { group: access, class: switch, ports: [] }
+  acc4: { group: access, class: switch, ports: [] }
+  acc5: { group: access, class: switch, ports: [] }
+  snk0: { group: edge-near, class: server, ports: [] }
+  snk1: { group: edge-far, class: server, ports: [] }
+links:
+  - [src0, acc0]
+  - [src0, acc1]
+  - [src0, acc2]
+  - [src1, acc3]
+  - [src1, acc4]
+  - [src1, acc5]
+  - [acc0, snk0]
+  - [acc1, snk1]
+  - [acc2, snk1]
+  - [acc3, snk0]
+  - [acc5, snk1]
+  - [src0, snk1]
+  - [src1, snk0]

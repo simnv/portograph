@@ -86,7 +86,7 @@ it('a flank link around a neighbour takes a column-gap course and passes every g
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(score(model).snapshot.gates['G6']!.violations).toEqual([]);
   expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
-  expect(model.courses?.map(course => course.link)).toEqual(['link-5', 'link-6']);
+  expect(model.courses?.map(course => course.link)).toEqual(['link-4', 'link-6']);
 });
 
 // Cause D (ticket 12) was first fixed by the course round (ticket 15, phase 4). Since ticket 09 (architecture-2) the flank port keeps its place after the bundle
@@ -95,7 +95,7 @@ it('a flank link across a neighbour beside a bundle is not removed and takes the
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-flank-link-across-a-neighbour-enters-a-bundle-envelope.yaml', import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(model.links.filter(link => link.removed === true)).toEqual([]);
-  expect(model.courses?.map(course => course.link)).toEqual(['link-6']);
+  expect(model.courses?.map(course => course.link)).toEqual(['link-7']);
 });
 
 it('a right flank beside a canton bundle lays out and passes every gate', async () => {

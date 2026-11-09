@@ -113,6 +113,8 @@ export function createLayoutModel(input: NormalisedDocument): LayoutModel {
   }));
   const model: LayoutModel = {
     document, stage: 'normalised', groups, nodes,
+    // `link-<n>` names a link by its place in `document.links`, which is the parser's canonical order (`canonicalLinkOrder`, ticket
+    // DR-04), never the place the author wrote it in.
     links: document.links.map((link, sourceIndex) => ({
       id: `link-${sourceIndex + 1}`, sourceIndex,
       owner: { kind: 'link', id: `link-${sourceIndex + 1}` },

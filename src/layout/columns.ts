@@ -398,6 +398,16 @@ function packStep(model: LayoutModel, tiers: Unit[][], index: number, authority:
     return;
   }
   const run = [...tier].sort((a, b) => place(a) - place(b) || compareId(a.id, b.id));
+  // Canton order is author input (decision review D-Q1, ticket DR-04): with no `sequence` (the first pack of stage 4), the cantons
+  // of the run take the slots the cantons hold, in the order the document declares them; every other unit keeps its slot. The
+  // overlay order of frames (ticket 57) may move them later, with a `sequence`.
+  if (sequence === undefined) {
+    // The expanded document lists its frames in the declaration order of the authored groups (`deriveDocumentFrames`).
+    const declared = new Map(Object.keys(model.document.frames ?? {}).map((id, at) => [id, at]));
+    const slots = run.flatMap((unit, at) => isCantonUnit(model, unit) ? [at] : []);
+    const cantons = slots.map(at => run[at]!).sort((a, b) => declared.get(a.id)! - declared.get(b.id)!);
+    slots.forEach((at, k) => { run[at] = cantons[k]!; });
+  }
   const wishes = run.map(unit => centres.get(unit));
   // Left edge of each unit once packed a band gap apart, and where its column would stand if it had its way.
   let lefts: number[];

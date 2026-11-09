@@ -17,7 +17,7 @@ describe('a port with two parents has one seat (architecture ticket 12)', () => 
     // The three ports need 72.5 px (the ticket 08 control); main stood at 569 px.
     expect(Math.abs(r.bounds!.width - 72.5)).toBeLessThanOrEqual(1);
     expect(model.diagnostics.some(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toBe(false);
-    expect(remainders(model)).toContain('link-4');
+    expect(remainders(model)).toContain('link-1');
   }, 60000);
 
   it('keeps the width of a lone port fed by two parents and seats it under the first feed', async () => {

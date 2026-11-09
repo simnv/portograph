@@ -777,11 +777,11 @@ it('a diagonal label rising past a third group stays clear of every border (tick
   const model = await run(fixture('a-diagonal-label-rises-past-a-third-group'));
   expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ON_BORDER')).toEqual([]);
   // The second line crosses the first at its middle: its label yields to the first one's band, and no window clear of it can be made.
-  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-3' }]]);
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-2' }]]);
   const report = score(model).snapshot;
   expect(report.counters.labelBorderCrossings).toBeUndefined();
   expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
-  const first = model.labels.find(label => label.id === 'label:link:link-2')!;
+  const first = model.labels.find(label => label.id === 'label:link:link-1')!;
   expect(first.omitted).toBeUndefined();
   expect(first.onLine).toBe(true);
   expect(first.turnedSize).toBeDefined();
@@ -799,35 +799,35 @@ it('a diagonal label keeps the window placement grew for it from the label of a 
   const report = score(model).snapshot;
   expect(report.counters.labelBorderCrossings).toBeUndefined();
   expect(Object.values(report.gates).filter(gate => gate.severity === 'error' && !gate.passed)).toEqual([]);
-  const short = model.labels.find(label => label.id === 'label:link:link-10')!, long = model.labels.find(label => label.id === 'label:link:link-6')!;
+  const short = model.labels.find(label => label.id === 'label:link:link-6')!, long = model.labels.find(label => label.id === 'label:link:link-7')!;
   expect(short.onLine).toBe(true);
   expect(long.onLine).toBe(true);
   const walls = groupBoxes(model).map(item => item.bounds);
   expect(walls.filter(box => labelCrossesBorder(labelArea(short), box))).toEqual([]);
   // The longer line yields, as 7f recorded: its label keeps clear of the short line's band; the short line yields to nothing.
-  expect(model.labelYields!['link-6']).toContain('link-10');
-  expect(model.labelYields!['link-10']).toEqual([]);
+  expect(model.labelYields!['link-7']).toContain('link-6');
+  expect(model.labelYields!['link-6']).toEqual([]);
   const line = (id: string) => model.links.find(link => link.id === id)!.path!.segments[0]!;
-  expect(labelBands(model, 'link-6').map(band => band.segment)).toContainEqual({ from: line('link-10').from, to: line('link-10').to });
-  expect(labelBands(model, 'link-10')).toEqual([]);
+  expect(labelBands(model, 'link-7').map(band => band.segment)).toContainEqual({ from: line('link-6').from, to: line('link-6').to });
+  expect(labelBands(model, 'link-6')).toEqual([]);
   expect(areaDistance(labelArea(short), labelArea(long))).toBeGreaterThan(0);
   expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
   // The record is read, not decided again (R1): replayed on the published geometry it does not change.
   expect(recordLabelYields(structuredClone(model), walls)).toBe(false);
   // Stage 9 reads the record: a model whose record says the short line yields places the labels by it.
   const flipped = structuredClone(model);
-  flipped.labelYields = { ...flipped.labelYields!, 'link-6': flipped.labelYields!['link-6']!.filter(id => id !== 'link-10'), 'link-10': ['link-6'] };
-  expect(labelBands(flipped, 'link-10').map(band => band.segment)).toEqual([{ from: line('link-6').from, to: line('link-6').to }]);
+  flipped.labelYields = { ...flipped.labelYields!, 'link-7': flipped.labelYields!['link-7']!.filter(id => id !== 'link-6'), 'link-6': ['link-7'] };
+  expect(labelBands(flipped, 'link-6').map(band => band.segment)).toEqual([{ from: line('link-7').from, to: line('link-7').to }]);
   // R6: a recorded yield that names no label on a diagonal line is not applied, and stage 9 names it.
   const stale = structuredClone(model);
-  stale.labelYields = { ...stale.labelYields!, 'link-10': ['link-1'] };
+  stale.labelYields = { ...stale.labelYields!, 'link-6': ['link-1'] };
   const unapplied: string[] = [];
-  expect(labelBands(stale, 'link-10', unapplied)).toEqual([]);
+  expect(labelBands(stale, 'link-6', unapplied)).toEqual([]);
   expect(unapplied).toEqual(['link-1']);
   stale.labels = stale.labels.filter(label => label.role !== 'link' && label.role !== 'legend' && label.role !== 'mesh-bus');
   delete stale.legend;
   produceLinkLabels(stale);
-  expect(stale.diagnostics.filter(item => item.code === 'LINK_LABEL_YIELD_UNAPPLIED').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-10' }]]);
+  expect(stale.diagnostics.filter(item => item.code === 'LINK_LABEL_YIELD_UNAPPLIED').map(item => item.owners)).toEqual([[{ kind: 'link', id: 'link-6' }]]);
 }, 120000);
 
 // R5: the validator reads the yield record and refuses a forged or incomplete one.
@@ -837,10 +837,10 @@ it('a forged label yield record is refused (ticket 20)', async () => {
   const forge = (edit: (yields: Record<string, string[]>) => void): LayoutModel => {
     const copy = structuredClone(model); edit(copy.labelYields!); return copy;
   };
-  expect(() => validateGroupLabelBands(forge(yields => { yields['link-10'] = ['link-6']; }))).toThrow(/yield to each other/);
-  expect(() => validateGroupLabelBands(forge(yields => { yields['link-10'] = ['link-10']; }))).toThrow(/yields to itself/);
+  expect(() => validateGroupLabelBands(forge(yields => { yields['link-6'] = ['link-7']; }))).toThrow(/yield to each other/);
+  expect(() => validateGroupLabelBands(forge(yields => { yields['link-6'] = ['link-6']; }))).toThrow(/yields to itself/);
   expect(() => validateGroupLabelBands(forge(yields => { yields['link-1'] = []; }))).toThrow(/carries no label on a diagonal line/);
-  expect(() => validateGroupLabelBands(forge(yields => { yields['link-6'] = yields['link-6']!.filter(id => id !== 'link-10'); }))).toThrow(/undecided/);
+  expect(() => validateGroupLabelBands(forge(yields => { yields['link-7'] = yields['link-7']!.filter(id => id !== 'link-6'); }))).toThrow(/undecided/);
 }, 120000);
 
 // Review: two labelled diagonals from one node meet at the shared end. One yields; band avoidance is on the line only, and both stand.

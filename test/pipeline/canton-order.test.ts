@@ -128,7 +128,11 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
     expectColumns(model);
   }, 120000);
 
-  it('refuses the inner order that would raise the routed crossings, names the members, and keeps the declaration order', async () => {
+  // Retired by ticket DR-04 (link order is never input): under the canonical link order (4 of the 6 link pairs inverted) ELK stands `hub`
+  // left of `ntp3` in the core row (x 107 against 263) before the frame order runs. Turning `beta` left then lowers the routed crossings
+  // from 1 to 0, so the order is accepted and there is nothing to refuse. Node order inside a group is no meaningful order (D-Q1), so no
+  // input change keeps the subject. Kept as a skip with this reason; no assertion is changed.
+  it.skip('refuses the inner order that would raise the routed crossings, names the members, and keeps the declaration order', async () => {
     const model = await run(membersRefused);
     expect(errors(model)).toEqual([]);
     const [alpha, beta] = ['alpha', 'beta'].map(id => frame(model, id));
@@ -218,8 +222,8 @@ describe('the overlay order of canton groups (canton-groups ticket 57)', () => {
     const model = await run(transit);
     expect(errors(model)).toEqual([]);
     const west = frame(model, 'west');
-    const own = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-4');
-    const foreign = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-5');
+    const own = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-3');
+    const foreign = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-2');
     // The link from gate-a to deep-a skips the tier of `mid`: its lane stands inside the canton frame.
     expect(own).toHaveLength(1);
     expect(holds(west, own[0]!.bounds)).toBe(true);

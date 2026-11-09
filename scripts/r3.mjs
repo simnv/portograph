@@ -13,8 +13,8 @@
  * (fewer than two entries, or an anchor inside it) prints `SKIP <reason>`.
  *
  * Exit code: 0 when every reversal is SAME (or SKIP), 1 when one differs or fails, 2 for a usage error.
- * A difference is a lead, not always a defect: node order can be meaningful (the row order of a group,
- * R3), and a link without an `id` takes `link-<index>`, so its id follows the order. Give links ids.
+ * A difference is a lead. On `links` it is a defect: the parser lists the links in one canonical order, and `link-<n>` is the
+ * place of a link in it (ticket DR-04). On `nodes` it may be a change of the author's input order; a refusal is a defect (decision review D-Q1).
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

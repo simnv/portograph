@@ -108,7 +108,7 @@ describe('the four fixtures of ticket 57', () => {
     // More than one row (the run clearance of 11.5 px).
     expect(growth[0]!.px).toBeGreaterThanOrEqual(11.5);
     const gap = tierGaps(model);
-    for (const id of ['link-1', 'link-4']) {
+    for (const id of ['link-1', 'link-5']) {
       expect(model.frozenChords).toContain(id);
       const link = model.links.find(item => item.id === id)!;
       expect(link.technique).toBe('straight');
@@ -213,8 +213,8 @@ describe('a restore refuses a forged tier gap (R5)', () => {
     rebuildRegions(forged);
     forged.freeze!.placement!.regions = structuredClone(forged.regions);
     expect(tierGaps(forged).high - tierGaps(forged).low).toBeCloseTo(high - low - short, 6);
-    // The restore does not read the plan (a routed model plans no part); the nested stem of link-2 no longer fits the short gap.
-    expect(() => restoreFinalLayout(JSON.stringify(forged))).toThrow(/Port stem on link-2 is shorter than/);
+    // The restore does not read the plan (a routed model plans no part); the nested stem of link-3 no longer fits the short gap.
+    expect(() => restoreFinalLayout(JSON.stringify(forged))).toThrow(/Port stem on link-3 is shorter than/);
   }, 120000);
 
   it('refuses a canton label band with a wrong height', async () => {

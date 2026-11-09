@@ -106,16 +106,16 @@ describe('the row bypass', () => {
     expect(codes(model)).toContain('ROW_BYPASS_PLANNED');
     expect(codes(model)).not.toContain('PORT_TURN_MISSED');
     expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
-    const link = model.links.find(item => item.id === 'link-4')!;
+    const link = model.links.find(item => item.id === 'link-2')!;
     expect(link.fixedSegments).toHaveLength(6);
     expect(link.path!.segments.map(segment => [segment.from, segment.to])).toEqual(link.fixedSegments!.map(segment => [segment.from, segment.to]));
-    expect(model.courses).toMatchObject([{ link: 'link-4', kind: 'bypass', edge: 'top', runs: ['gap', 'padding', 'gap'] }]);
-    expect(model.lanes.map(lane => lane.id).sort()).toEqual(['gap-lane:link-4:0', 'gap-lane:link-4:1']);
+    expect(model.courses).toMatchObject([{ link: 'link-2', kind: 'bypass', edge: 'top', runs: ['gap', 'padding', 'gap'] }]);
+    expect(model.lanes.map(lane => lane.id).sort()).toEqual(['gap-lane:link-2:0', 'gap-lane:link-2:1']);
   });
 
   it('puts the closing link in the upper slot of both faces', async () => {
     const model = await layout(parse(fixture(ring)), options);
-    const link = model.links.find(item => item.id === 'link-4')!;
+    const link = model.links.find(item => item.id === 'link-2')!;
     const slot = (node: string, side: 'left' | 'right'): number => {
       const ref = link.attachments!.from.node === node ? link.attachments!.from : link.attachments!.to;
       return model.nodes[node]!.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).findIndex(port => port.ref.ordinal === ref.ordinal);
@@ -145,14 +145,14 @@ describe('the carried turn order and the budget', () => {
   it('a bypass trial orders the faces of the bypass link only, and later runs keep that scope (finding 3)', async () => {
     const model = await layout(parse(fixture('a-ring-closes-above-its-row')), options);
     expect(model.turnOrder).toBe(true);
-    expect(model.turnLinks).toEqual(['link-4']);
+    expect(model.turnLinks).toEqual(['link-2']);
   });
 
   it('a run for some links orders their faces and no other face (finding 3)', async () => {
     const full = await layout(parse(solve09()), { ...options, testTurnOrder: false });
     const courses = full.courses!;
     const all = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnOrder: true });
-    const scoped = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-5'] });
+    const scoped = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-6'] });
     expect(all.freeze?.turnOrder).toContainEqual({ node: 'core-1', side: 'left' });
     expect(scoped.freeze?.turnOrder).toEqual([{ node: 'mg-1', side: 'bottom' }]);
     const none = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-1'] });

@@ -47,7 +47,6 @@ const skeletonOf = async (yaml: string): Promise<LayoutModel> => {
 const crossings = (model: LayoutModel): number => { const { count, faint } = score(model).snapshot.metrics.crossings; return count - (faint ?? 0); };
 const bends = (model: LayoutModel): number => { const { routed, overlay } = score(model).snapshot.counts; return routed.turns + overlay.turns; };
 const sides = (model: LayoutModel): string[] => ofKind(model.reservations ?? [], 'corridorSide').map(({ payload }) => `${payload.link} ${payload.side} of ${payload.group}`).sort();
-const swap = (text: string): string => text.replace(/\b(left|right)\b/, side => side === 'left' ? 'right' : 'left');
 
 describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
   it('turns the anchor row with the sink order and the corridor sides, where no sweep judges it (a-free-row-follows-both-tiers)', async () => {
@@ -86,19 +85,14 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
     expect([crossings(alone), bends(alone)]).toEqual([6, 5]);
   }, 120000);
 
-  it('decides the mirror image on mirrored input, and the published crossings stay (R3)', async () => {
+  it('lays the mirrored input out: it publishes, refuses nothing and removes no link (R3)', async () => {
+    // Decision review D-Q1 (ticket DR-04): the node order inside a group is not meaningful, and `nodes` reversed is gated on feasibility
+    // only. So the mirror of these sheets must publish with no refusal and no removed link; its stage-4 decision, crossings and bends may
+    // differ from the mirror image of the written sheet.
     for (const yaml of [FACE, SINKS, SIDES]) {
-      const [one, two] = await Promise.all([skeletonOf(yaml), skeletonOf(mirror(yaml))]);
-      expect(two.groups.aggr!.rowOrderDecision!.after).toEqual([...one.groups.aggr!.rowOrderDecision!.after].reverse());
-      expect(sides(two)).toEqual(sides(one).map(swap).sort());
-      expect(ofKind(two.reservations ?? [], 'groupOrder').map(({ payload }) => [...payload.order].reverse()))
-        .toEqual(ofKind(one.reservations ?? [], 'groupOrder').map(({ payload }) => [...payload.order]));
+      const model = await run(mirror(yaml));
+      expect(model.removedLinks ?? []).toEqual([]);
     }
-    const published = await Promise.all([FACE, mirror(FACE), SINKS, mirror(SINKS), SIDES, mirror(SIDES)].map(run));
-    expect(published.map(crossings)).toEqual([1, 1, 1, 1, 1, 1]);
-    // Bends follow the stages after 4 on the first two shapes (main's own mirror of the a-face shape goes from 7 to 15 crossings); the sheet
-    // whose later stages are symmetric publishes the same bends (2 and 2 before the feed split of architecture-2 ticket 73).
-    expect(published.map(bends)).toEqual([6, 8, 4, 6, 0, 0]);
   }, 300000);
 
   it('the 7c predictor raises no published crossing; where the draft counts a crossing the published sheet never had, it gains none (the oracle)', async () => {

@@ -234,6 +234,7 @@ describe('group lift: the units below a hanging component move down', () => {
   it('on the key sheet, East gateway stands level with Dist two, the feed is one horizontal segment, West moves down two bands, and the narrower form is kept', async () => {
     expect(LIFT_AREA_TOLERANCE).toBe(0.05);
     const model = await keyRun();
+    // DR-04: the ids follow the canonical link order: the East feed Dist two to East gateway is link-11, the West feed Dist one to West gateway link-10.
     // Side and Middle rise as one component; East rises one band beside Dist and pushes West down two bands; at most LIFT_TRIALS trials.
     expect(model.groupLifts!.find(item => item.units.includes('mid'))).toMatchObject({ units: ['mid', 'side'], offset: 3, side: 'left' });
     expect(traces.length).toBeLessThanOrEqual(LIFT_TRIALS);
@@ -242,11 +243,11 @@ describe('group lift: the units below a hanging component move down', () => {
     expect(model.groupLifts!.find(item => item.units.includes('west'))).toMatchObject({ offset: 0, reason: `capped: the sheet has made its ${LIFT_TRIALS} lift trials` });
     expect(model.diagnostics.filter(note => note.code === 'GROUP_LIFT_CAPPED').map(note => note.owners)).toEqual([[{ kind: 'group', id: 'west' }]]);
     const east = model.groupLifts!.find(item => item.units.includes('east'))!;
-    expect(east).toMatchObject({ units: ['east'], offset: 1, from: [4, 5, 6], to: [3, 4, 5], side: 'right', sideEntry: ['link-8'], push: { at: 3, by: 2 } });
+    expect(east).toMatchObject({ units: ['east'], offset: 1, from: [4, 5, 6], to: [3, 4, 5], side: 'right', sideEntry: ['link-11'], push: { at: 3, by: 2 } });
     expect(east.reason).toMatch(/tolerated/);
     const centre = (id: string): number => model.nodes[id]!.bounds!.y + model.nodes[id]!.bounds!.height / 2;
     expect(centre('east-gw')).toBeCloseTo(centre('dist-2'), 6);
-    const feed = model.links.find(link => link.id === 'link-8')!.path!.segments;
+    const feed = model.links.find(link => link.id === 'link-11')!.path!.segments;
     expect(feed).toHaveLength(1);
     expect(feed[0]!.from.y).toBeCloseTo(feed[0]!.to.y, 6);
     // The fed node never stands above its feeder; the whole East group (gateway on top) stands above West, which moved down.
@@ -255,7 +256,7 @@ describe('group lift: the units below a hanging component move down', () => {
     expect(eastBox.y + eastBox.height).toBeLessThan(west.y);
     expect(model.groups['west#0']!.tier).toBe(6);
     // A vertical feed across the pushed bands stays vertical (the centre rule reads the band past the lifted ones).
-    const drop = model.links.find(link => link.id === 'link-6')!.path!.segments;
+    const drop = model.links.find(link => link.id === 'link-10')!.path!.segments;
     expect(drop).toHaveLength(1);
     expect(drop[0]!.from.x).toBeCloseTo(drop[0]!.to.x, 6);
     expect(model.canvas!.width).toBeLessThan(1400);
@@ -287,7 +288,7 @@ describe('group lift: the units below a hanging component move down', () => {
       return JSON.stringify(copy);
     };
     expect(() => restoreLayoutModel(declined(entry => { entry.push = { at: 3, by: 1 }; }))).toThrow(/declined entry/);
-    expect(() => restoreLayoutModel(declined(entry => { entry.sideEntry = ['link-6']; }))).toThrow(/declined entry/);
+    expect(() => restoreLayoutModel(declined(entry => { entry.sideEntry = ['link-10']; }))).toThrow(/declined entry/);
   }, 180000);
 });
 

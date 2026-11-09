@@ -100,10 +100,13 @@ describe('semantic resolution', () => {
 
   it('preserves explicit overlay and bundle overrides across class family defaults', () => {
     const model = resolve(input(['[a, c, {route: overlay}]', '[a, c, {route: bundle, class: flow}]', '[c, a]']));
-    expect(model.links[0]).toMatchObject({ family: 'routed', layer: 'overlay', technique: 'overlay' });
-    expect(model.links[0]).not.toHaveProperty('bundle');
-    expect(model.links[1]).toMatchObject({ family: 'overlay', layer: 'routed', technique: 'bundle' });
-    expect(model.bundles[0]?.members).toEqual(['link-2', 'link-3']);
+    // Link ids follow the canonical order (DR-04), so each link is read by its authored route, not by its position.
+    const byRoute = (route: string) => model.links.find(link => model.document.links[link.sourceIndex]?.route === route)!;
+    const reverse = model.links.find(link => model.document.links[link.sourceIndex]?.route === undefined)!;
+    expect(byRoute('overlay')).toMatchObject({ family: 'routed', layer: 'overlay', technique: 'overlay' });
+    expect(byRoute('overlay')).not.toHaveProperty('bundle');
+    expect(byRoute('bundle')).toMatchObject({ family: 'overlay', layer: 'routed', technique: 'bundle' });
+    expect(model.bundles[0]?.members).toEqual([byRoute('bundle').id, reverse.id].sort());
   });
 
   it('records a stub request and routes the member with its M1 warning', () => {
@@ -275,12 +278,14 @@ links:
       [{ node: 'a', name: 'p', ordinal: 1 }, 'bottom', 4],
       [{ node: 'a', name: 'p', ordinal: 2 }, 'top', 1],
     ]);
-    expect(model.links[0]?.attachments?.from).toEqual({ node: 'a', name: 'p', ordinal: 2 });
-    model.links[0]!.attachments!.from.ordinal = 9;
+    // The link that names a.p#2 is found by its end: link ids follow the canonical order (DR-04), not the authored one.
+    const named = model.links.find(link => model.document.links[link.sourceIndex]?.label === 'Named')!;
+    expect(named.attachments?.from).toEqual({ node: 'a', name: 'p', ordinal: 2 });
+    named.attachments!.from.ordinal = 9;
     model.nodes.a!.ports[0]!.authorOrder = 9;
     model.document.title = 'Changed';
     expect(JSON.stringify(doc)).toBe(original);
-    expect(model.links[0]?.from).toEqual({ node: 'a', name: 'p', ordinal: 2 });
+    expect(named.from).toEqual({ node: 'a', name: 'p', ordinal: 2 });
     expect(model.document.nodes.a?.ports[0]?.order).toBe(4);
   });
 
@@ -332,7 +337,7 @@ links: [[a, c, {class: dashed}], [a, d, {class: dashed}], [b, c, {class: dashed}
     const model = resolve(input(['[a, c]', '[a, d]', '[b, c]', '[b, d]', '[a, c, {route: straight}]']));
     expect(model.groupLinks).toEqual([]);
     expect(model.bundles).toEqual([]);
-    expect(model.links[4]?.technique).toBe('straight');
+    expect(model.links.find(link => model.document.links[link.sourceIndex]?.route === 'straight')?.technique).toBe('straight');
   });
 
   it('resolves an empty diagram without inventing layout geometry', () => {

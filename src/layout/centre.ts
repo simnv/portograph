@@ -3,7 +3,7 @@ import { portEndInsets } from './port-insets.js';
 import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { laneSidesHold, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, rightWallReach, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { holdsMove, resizeEvidence, resizeHolds } from './move-reservations.js';
 import { cellReach } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
@@ -391,6 +391,14 @@ function columnWindow(model: LayoutModel, context: CentreContext, tier: number, 
  * Space before use: a widening this room cannot hold is declined here. It is not discovered as an
  * overlap at stage 8.
  */
+/**
+ * The right edge a later group may reach before the move guard (`laneSidesHold`) refuses to clear it (`rightWallReach`: per lane wall, with the
+ * occupied reach the guard measures toward that lane). The tail reads it so that a step never takes room `packClear` cannot give back (ticket DR-04:
+ * two sibling boxes overlapped at publication).
+ */
+function guardWall(model: LayoutModel, id: string): number {
+  return rightWallReach(model, model.groups[id]!);
+}
 function tailReservation(model: LayoutModel, context: CentreContext, tier: number, order: string[]): Map<string, number> {
   const result = new Map<string, number>();
   let bound = Infinity;
@@ -398,7 +406,7 @@ function tailReservation(model: LayoutModel, context: CentreContext, tier: numbe
   // exact for the whole tier step. It costs one pass over the groups of the tier.
   for (const id of [...order].reverse()) {
     result.set(id, bound);
-    bound = Math.min(bound, reservedWindow(model, context, tier, id).high) - model.groups[id]!.bounds!.width - bandGap(model);
+    bound = Math.min(bound, reservedWindow(model, context, tier, id).high, guardWall(model, id)) - model.groups[id]!.bounds!.width - bandGap(model);
   }
   return result;
 }
@@ -481,7 +489,11 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
     else if (wide) conflicts.add(child);
     else rival.set(child, [...(rival.get(child) ?? [seat]), feed]);
   }
-  for (const [child, candidates] of rival) {
+  // The rivals of a seat are read in an order of the drawing, never of `links` (R3, ticket DR-04): a feed from a bar first, because 7d shapes
+  // the bar under the port wherever it stands and a port over another feed would stand the bar over that feed's node; then by x.
+  const onBar = (feed: Feed): number => model.document.groups[model.document.nodes[feed.parent.ref.node]!.group]!.shape === 'bar' ? 0 : 1;
+  for (const [child, list] of rival) {
+    const candidates = [...list].sort((a, b) => onBar(a) - onBar(b) || a.x - b.x || a.key.localeCompare(b.key));
     const first = candidates[0]!, node = model.nodes[first.child.ref.node]!, side = first.child.side!;
     const others = new Map<string, number>();
     for (const [key, feed] of seats) if (key !== child && !rival.has(key) && feed.child.ref.node === node.id && feed.child.side === side) others.set(key, feed.x);

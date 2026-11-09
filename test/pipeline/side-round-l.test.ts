@@ -12,7 +12,8 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /** Ticket 116 (docs/design/side-faces.md, Q109): an overlay link turns once into a lateral side. */
-const L_FIXTURE = 'an-overlay-turns-once-into-a-lateral-side';
+// DR-04: the copy with `west` declared last; under the canonical link order the original draws the overlay link straight (no L).
+const L_FIXTURE = 'an-overlay-turns-once-into-a-lateral-side-west-last';
 const yaml = readFileSync(new URL(`../../goldens/synthetic/${L_FIXTURE}.yaml`, import.meta.url), 'utf8');
 const run = (extra: Partial<Parameters<typeof layout>[1]> = {}, text = yaml): Promise<LayoutModel> =>
   layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...extra });

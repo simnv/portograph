@@ -1,0 +1,34 @@
+# Expected: the scenario of `overlay-links-reorder-an-indifferent-tier` under the canonical link order (ticket DR-04). The groups, nodes
+# and links are the same; the groups are declared N, M, P, Q, B, A, so that the canonical order (groups in declaration order, then nodes
+# inside a group) seats the links as the original's written order did. With the joint order off (`layout.feedOrder: false`, the test
+# pins it) the layout is the original's before DR-04: ELK puts `P` left of `Q`, the overlay-weighted order moves `Q` to the left,
+# three of the four overlay links are one segment and the score counts one crossing; only the link ids differ.
+# Test-only input; test/pipeline/overlay-order.test.ts reads it.
+portograph: 2
+groups:
+  N: { tier: 1, label: Rack N }
+  M: { tier: 1, label: Group M }
+  P: { tier: 0, label: Group P }
+  Q: { tier: 0, label: Group Q }
+  B: { tier: 2, label: Group B }
+  A: { tier: 2, label: Group A }
+nodes:
+  p0: { group: P, class: server, label: p0 }
+  q0: { group: Q, class: server, label: q0 }
+  q1: { group: Q, class: server, label: q1 }
+  m0: { group: M, class: server, label: m0 }
+  m1: { group: M, class: server, label: m1 }
+  m2: { group: M, class: server, label: m2 }
+  k0: { group: N, class: server, label: k0 }
+  a0: { group: A, class: server, label: a0 }
+  a1: { group: A, class: server, label: a1 }
+  b0: { group: B, class: server, label: b0 }
+links:
+  - [m0, a0]
+  - [q0, k0]
+  - [k0, a1]
+  - [k0, b0]
+  - [p0, b0, { route: overlay }]
+  - [q0, a1, { route: overlay }]
+  - [p0, a0, { route: overlay }]
+  - [q0, b0, { route: overlay }]

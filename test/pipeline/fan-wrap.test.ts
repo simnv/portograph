@@ -198,7 +198,7 @@ describe('fan wrap: the acceptance gate (D-Q4)', () => {
       expect(lines(model, CELL)).toBe(1);
       expect(model.groupArrangements![CELL]).toEqual({ chosen: 'row', reason: 'the acceptance gate declined the two lines (FAN_WRAP_DECLINED names why)' });
       expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED').map(note => note.message))
-        .toEqual([`The two lines of ${CELL} are declined: the link link-34 is straight without the two lines and not with them.`]);
+        .toEqual([`The two lines of ${CELL} are declined: the link link-3 is straight without the two lines and not with them.`]);
     }
   }, 120000);
 

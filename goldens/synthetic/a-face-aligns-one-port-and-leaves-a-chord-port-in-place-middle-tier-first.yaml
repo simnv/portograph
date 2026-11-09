@@ -1,0 +1,39 @@
+# Expected: The face of acc0 aligns one port and leaves the port of a held chord in place (ticket 100 review 3; the user's drawing of
+# 2026-11-03 is the target of the compact-node family). After the end trim of 7f (architecture-2 ticket 68) the sinks are as wide as their
+# ports and content need: snk0 116 px and snk1 56 px (806 and 662 px before). Then `edge-far` closes up toward `edge-near` by the width
+# the trim freed (ticket 69, 388 px), and the corridor of link-11 follows snk1: the canvas is 730 px (1118 after the trim alone, 1633
+# before it), bends 8 and crossings 7 as before. Tests `routed-chord-centring.test.ts` and `vertical-seat.test.ts` read the layout.
+# Since architecture-2 ticket 72 (the joint stage-4 order): `access` turns to acc2 acc4 acc0 acc1 acc3, link-10 passes left and
+# link-11 right of it; crossings 1, bends 6, canvas 722 x 484, G5 and G6 pass. The tests of other rules that read this sheet pin
+# `layout.feedOrder: false`.
+# DR-04 copy of a-face-aligns-one-port-and-leaves-a-chord-port-in-place with `access` declared before `src`. Links take the canonical order (group
+# declaration order, then node order inside the group); with this declaration the canonical order is near the written one and
+# the sheet shows the scenario above again. The original keeps its declaration for the tests that read it.
+portograph: 2
+groups:
+  access: { tier: 1 }
+  src: { tier: 0 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  src0: { group: src, class: router, ports: [] }
+  src1: { group: src, class: router, ports: [] }
+  acc0: { group: access, class: switch, ports: [] }
+  acc1: { group: access, class: switch, ports: [] }
+  acc2: { group: access, class: switch, ports: [] }
+  acc3: { group: access, class: switch, ports: [] }
+  acc4: { group: access, class: switch, ports: [] }
+  snk0: { group: edge-near, class: server, ports: [] }
+  snk1: { group: edge-far, class: server, ports: [] }
+links:
+  - [src0, acc0]
+  - [src1, acc1]
+  - [src1, acc3]
+  - [src0, acc4]
+  - [acc0, snk1]
+  - [acc1, snk0]
+  - [acc2, snk0]
+  - [acc3, snk1]
+  - [acc4, snk0]
+  - [src0, snk0]
+  - [src1, snk1]

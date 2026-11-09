@@ -72,7 +72,8 @@ describe('a stranded growth is given back', () => {
 
 describe('the user\'s tier-gap sheet', () => {
   it('srv0 is at most 70 px and the sheet has at most 8 bends (12 on main)', async () => {
-    const model = await run('a-tier-gap-plan-orders-every-part');
+    // DR-04: the copy that declares `access` before `src`, so the canonical link order lays the user's shape out again.
+    const model = await run('a-tier-gap-plan-orders-every-part-middle-tier-first');
     expect(model.givenBack?.['srv0']).toBeDefined();
     expect(model.nodes['srv0']!.bounds!.width).toBeLessThanOrEqual(70);
     expect(bends(model)).toBeLessThanOrEqual(8);
@@ -82,14 +83,14 @@ describe('the user\'s tier-gap sheet', () => {
 // The three regression classes of the per-step prototype (verdict sideface-fable, section 2): each sheet as main or better.
 describe('the three regression classes of a per-step decline', () => {
   it('transit corridor: a-face gives nothing back, as the parent src1 would chase a corridor that follows a narrow snk1 (bends 8, crossings 7)', async () => {
-    const model = await run('a-face-aligns-one-port-and-leaves-a-chord-port-in-place');
+    const model = await run('a-face-aligns-one-port-and-leaves-a-chord-port-in-place-middle-tier-first'); // DR-04: the copy with `access` first
     expect(model.givenBack).toBeUndefined();
     expect(bends(model)).toBe(8);
     expect(score(model).snapshot.metrics.crossings.count).toBe(7);
   }, 120000);
 
   it('sibling cascade: a-group-shift gives snk0 back with its partner src1 and keeps bends 5 and G5 alone', async () => {
-    const model = await run('a-group-shift-leaves-a-chord-clear-of-a-lane');
+    const model = await run('a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first'); // DR-04: the copy with `access` first
     expect(Object.keys(model.givenBack ?? {})).toEqual(['snk0', 'src1']);
     expect(bends(model)).toBe(5);
     expect(failing(model)).toEqual(['G5']);

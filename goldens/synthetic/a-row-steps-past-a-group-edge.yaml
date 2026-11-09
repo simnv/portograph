@@ -22,15 +22,17 @@
 #
 # The rows keep their declared order (`layout.corridorRowOrder: false`, architecture-2 ticket 17): the claim above
 # needs the crossings that order makes, and the corridor row order would remove them.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group), so the groups are
+# declared gb, gd, ge, gf, ga, gc; the canonical order is then the written one and the layout is the one this sheet was written for.
 portograph: 2
 layout: { corridorRowOrder: false }
 groups:
-  ga: { tier: 0, label: "Top A" }
   gb: { tier: 0, label: "Top B" }
-  gc: { tier: 1, label: "Middle" }
   gd: { tier: 2, label: "Foot A" }
   ge: { tier: 2, label: "Foot B" }
   gf: { tier: 2, label: "Foot C" }
+  ga: { tier: 0, label: "Top A" }
+  gc: { tier: 1, label: "Middle" }
 nodes:
   n1: { group: gf, class: rr, label: "n1" }
   n2: { group: gd, class: provider, label: "n2" }

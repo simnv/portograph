@@ -8,13 +8,19 @@ import { score } from '../../src/score/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
-import { withoutJointOrderOn } from '../layout/joint-off.js';
+import { withoutJointOrder, withoutJointOrderOn } from '../layout/joint-off.js';
 
 /**
  * Ranked-groups ticket 50 (`docs/design/tier-gap-rows.md`, Section 5, ticket 2): 7f grows every tier gap by the plan's `H` and stage 8
  * reserves the planned parts tip to tip. The fixtures are the four shapes of Section 2.4, through the real router.
  */
-const read = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
+/** The v5-4-0 shape with its groups declared so that the canonical link order (ticket DR-04) is the original's written order. */
+const V540 = 'a-tier-gap-plan-orders-every-part-lower-groups-first';
+// The copy is read with the joint order off, as its original is (`JOINT_REORDERED`).
+const read = (name: string): string => {
+  const text = readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+  return name === V540 ? withoutJointOrder(text) : withoutJointOrderOn(name, text);
+};
 const place = async (name: string, orthogonal = false): Promise<LayoutModel> =>
   bands(bundles(bars(centre(flanks(lanes(rows(await placed(orthogonal ? orthogonalLinks(read(name)) : read(name)))))))));
 const growth = (model: LayoutModel): number[] => model.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN')
@@ -52,22 +58,24 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
   }, 120000);
 
   it('grows the v5-4-0 shape 9.25 px in its upper gap and 22.5 px in its lower gap, and removes nothing', async () => {
-    // The spec's 9.25 + 10: the upper 9.25 is link-3's row. Its leg to the nested tip stands under the `access` group label; since ticket 62
-    // placement nudges that label off the leg, so link-3 is planned (it was residual, `leg-blocked`, before). The lower 10 is measured after
-    // the 12.5 px main grew (12.5 + 10 = 22.5). Since ticket 57 the gaps are solved once, after the last move in x; since ticket 65 the settle
-    // after the rounds puts src at the spec's x again, so the upper gap grows link-3's 9.25 as the spec says (ticket 57 grew nothing there).
-    const { placed: model, routed } = await whole('a-tier-gap-plan-orders-every-part');
+    // The spec's 9.25 + 10: the upper 9.25 is the row of isp0 to sw2 (link-3 of the original, link-5 of the copy). Its leg to the nested tip
+    // stands under the `access` group label; since ticket 62 placement nudges that label off the leg, so the link is planned (it was residual,
+    // `leg-blocked`, before). The lower 10 is measured after the 12.5 px main grew (12.5 + 10 = 22.5). Since ticket 57 the gaps are solved
+    // once, after the last move in x; since ticket 65 the settle after the rounds puts src at the spec's x again, so the upper gap grows that
+    // row's 9.25 as the spec says (ticket 57 grew nothing there). Ticket DR-04: in the copy the canonical
+    // link order gives each node its links in the original's written order.
+    const { placed: model, routed } = await whole(V540);
     expect(growth(model)).toEqual([9.25, 22.5]);
     expect(tierGapPlans(model).flatMap(({ plan }) => plan.residual.map(item => `${item.link}:${item.reason}`))).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_PART_RESIDUAL').map(item => item.message)).toEqual([]);
     expect(routed.removedLinks ?? []).toEqual([]);
-    // Placement's own finding, also on main: the port order of `isp0`. The two G6 findings of the residual link-3 are gone with it.
+    // Placement's own finding, also on main: the port order of `isp0`. The two G6 findings of the residual row are gone with it.
     expect(failing(routed)).toEqual(['G5:port-order', 'G5:port-order']);
   }, 120000);
 
   // The same shape with the course round on (the published path): the round may take a course here, and the result must not be worse than the shape without it.
   it('the v5-4-0 shape with the course round on removes nothing and has no gate finding the plain run does not have', async () => {
-    const name = 'a-tier-gap-plan-orders-every-part';
+    const name = V540;
     const plain = failing(await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] }));
     const model = await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.removedLinks ?? []).toEqual([]);

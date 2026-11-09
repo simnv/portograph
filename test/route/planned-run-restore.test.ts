@@ -104,10 +104,11 @@ describe('restore keeps the runs placement planned (D-Q2)', () => {
 });
 
 describe('the P-05 F2 cases', () => {
-  // Audit P-05 F2 found them on saved P-04 models; they are laid out here again from the same YAML.
+  // Audit P-05 F2 found them on saved P-04 models; they are laid out here again from the same YAML. DR-04: the ids follow the canonical link
+  // order (fl-1 to east-1 was link-5, c2.b to b1 was link-4 in the written order).
   const cases = [
-    { name: 'two-skirts-from-one-face-nest', link: 'link-5', options: { testTurnOrder: true } },
-    { name: 'a-fan-track-keeps-the-group-edge-margin', link: 'link-4', options: {} },
+    { name: 'two-skirts-from-one-face-nest', link: 'link-6', options: { testTurnOrder: true } },
+    { name: 'a-fan-track-keeps-the-group-edge-margin', link: 'link-3', options: {} },
   ] as const;
   it.each(cases)('$name: refuses the planned row of $link moved four pixels', async ({ name, link, options }) => {
     const model = await built(name, synthetic(name), options);

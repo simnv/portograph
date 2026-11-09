@@ -45,7 +45,7 @@ describe('a link leaves its own group through a reserved exit (architecture tick
 
   it('a link into a child group is not walled out of the parent (finding 1)', async () => {
     const model = await check('a-link-from-a-parent-group-into-its-child');
-    const link = model.links.find(item => item.id === 'link-1')!;
+    const link = model.links.find(item => item.id === 'link-2')!;
     // Both ends stand in the parent box by ancestry, so no run is extended out of it.
     const box = model.frames!.find(frame => frame.id === 'site')!.box;
     for (const end of link.sharedRuns?.from ?? []) {

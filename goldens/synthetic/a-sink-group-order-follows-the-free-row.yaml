@@ -3,8 +3,8 @@
 # `aggr` and of the sink groups decided apart, the sinks stand interleaved under the row: crossings 5, bends 6, canvas 477 x 484 (as
 # with `layout: { feedOrder: false }`, the shape of a-stranded-growth-is-given-back). The joint order turns `aggr` to ag2 ag4 ag0 ag1 ag3
 # and seats `leaf-near` left of `leaf-far` with it (the `groupOrder` entry; its premise is the free row `aggr` in that order):
-# crossings 1, bends 4, canvas 471 x 484. Mirrored, the decision is the mirror image (`groupOrder` leaf-far, leaf-near) and crossings stay
-# 1; bends are 6, from the stages after 4. Tests: test/layout/joint-order.test.ts.
+# crossings 1, bends 4, canvas 471 x 484. Mirrored, the sheet is held to feasibility only (decision
+# D-Q1): it publishes, refuses nothing and removes no link. Tests: test/layout/joint-order.test.ts.
 portograph: 2
 groups:
   spine: { tier: 0 }

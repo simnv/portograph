@@ -20,7 +20,7 @@ const run = (name: string): Promise<LayoutModel> => layout(parse(source(name)), 
 /** The same with no course round: the baseline that the phase-1 shape tests hand-build their courses on. */
 const runPlain = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
 
-/** `link-<n>` is the n-th link of the document. */
+/** `link-<n>` is the n-th link in the canonical link order (ticket DR-04), not in the order the sheet writes them. */
 const link = (model: LayoutModel, n: number): LayoutLink => model.links.find(item => item.id === `link-${n}`)!;
 const sideOf = (model: LayoutModel, n: number, end: 'from' | 'to'): Side => findPort(model, link(model, n).attachments![end])!.side!;
 /** The corners of a routed or overlay path: where the direction changes between two segments. */
@@ -74,8 +74,8 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
   // takes a course: each sync link is a bracket in the outer margin, on lateral faces, with 2 turns and no crossing, as the solve.
   it('02 (phase 7): S1-T1 left/left, S2-T2 right/right; overlay turns 8 -> 4', async () => {
     const model = await run(SHEETS.chord);
-    expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), sideOf(model, 6, 'from'), sideOf(model, 6, 'to')]).toEqual(['left', 'left', 'right', 'right']);
-    expect([turns(model, 5), turns(model, 6)]).toEqual([2, 2]);
+    expect([sideOf(model, 2, 'from'), sideOf(model, 2, 'to'), sideOf(model, 4, 'from'), sideOf(model, 4, 'to')]).toEqual(['left', 'left', 'right', 'right']);
+    expect([turns(model, 2), turns(model, 4)]).toEqual([2, 2]);
     expect(counts(model).overlay.turns).toBe(4);
     expect(counts(model).overlay.crossings.pairs).toBe(0);
     expect(counts(model).routed.crossings).toBe(0);
@@ -85,8 +85,8 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
   // Architecture ticket 22: the nine mesh links draw as spanning chords, which leaves N2-C1 and C1-S2 poor routes, and the course round takes the two courses of the solve.
   it('04 (phase 4, after the span round): N2-C1 leaves N2 by the top face, C1-S2 enters S2 from the bottom; crossings 19 -> 9, bent 8 -> 2, turns 16 -> 4', async () => {
     const model = await run(SHEETS.mesh);
-    expect(sideOf(model, 1, 'from')).toBe('top');
-    expect(sideOf(model, 2, 'to')).toBe('bottom');
+    expect(sideOf(model, 4, 'from')).toBe('top');
+    expect(sideOf(model, 11, 'to')).toBe('bottom');
     expect(counts(model).routed.crossings).toBeLessThanOrEqual(9);
     expect(counts(model).routed.bent).toBe(2);
     expect(counts(model).routed.turns).toBe(4);
@@ -98,8 +98,8 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
   it('05 / 12 D (phase 4): the flank link into the canton member is drawn, not removed, into its right face, with 1 turn', async () => {
     const model = await run(SHEETS.across);
     expect(model.links.filter(item => item.removed === true).map(item => item.id)).toEqual([]);
-    expect(sideOf(model, 6, 'to')).toBe('right');
-    expect(turns(model, 6)).toBe(1);
+    expect(sideOf(model, 7, 'to')).toBe('right');
+    expect(turns(model, 7)).toBe(1);
   }, 60000);
 
   it.fails('06 (render ticket, not reached): the flank stands beside the frame and every gate holds', async () => {
@@ -111,8 +111,8 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
   // bent 1 -> 4, turns 7). The library is better by `unified` than the solve (overlay bent 1, turns 2, crossings 0) and does not draw its faces for links 8 to 10.
   it('07 (phase 7): TS1-C1 takes the left/left bracket (2 turns); the three straight chords stay; overlay bent 1, turns 2, no crossing', async () => {
     const model = await run(SHEETS.lowerRank);
-    expect([sideOf(model, 7, 'from'), sideOf(model, 7, 'to'), turns(model, 7)]).toEqual(['left', 'left', 2]);
-    for (const n of [8, 9, 10]) expect(turns(model, n)).toBe(0);
+    expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), turns(model, 5)]).toEqual(['left', 'left', 2]);
+    for (const n of [6, 9, 10]) expect(turns(model, n)).toBe(0);
     expect(counts(model).overlay.bent).toBe(1);
     expect(counts(model).overlay.turns).toBe(2);
     expect(counts(model).overlay.crossings.pairs).toBe(0);
@@ -122,22 +122,22 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
 
   it('08 (phase 4): OOB top -> left margin -> SRV 1 left (3 turns)', async () => {
     const model = await run(SHEETS.canton);
-    expect([sideOf(model, 6, 'from'), sideOf(model, 6, 'to'), turns(model, 6)]).toEqual(['top', 'left', 3]);
-    expect([sideOf(model, 7, 'from'), sideOf(model, 7, 'to')]).toEqual(['right', 'top']);
+    expect([sideOf(model, 2, 'from'), sideOf(model, 2, 'to'), turns(model, 2)]).toEqual(['top', 'left', 3]);
+    expect([sideOf(model, 3, 'from'), sideOf(model, 3, 'to')]).toEqual(['right', 'top']);
   }, 60000);
 
   // The solve drops the link straight into SRV 2 (1 turn). The aligned perimeter lane is a feed of 7c (`centringFeeds`), so SRV 2 is seated under it.
   it('08 (phase 4): OOB right -> drop -> SRV 2 top (1 turn), and no course loses its shape', async () => {
     const model = await run(SHEETS.canton);
-    expect(turns(model, 7)).toBe(1);
+    expect(turns(model, 3)).toBe(1);
     expect(model.diagnostics.filter(item => item.code === 'COURSE_SHAPE_LOST')).toEqual([]);
   }, 60000);
 
   // The solve keeps Mgmt-Dist at 4 turns (right/left). The library takes a column-gap course for both links (6 turns, 1 crossing, against the solve's 7 and 2) and beats the solve.
   it('09 / 12 C (phase 5): Mgmt-Core leaves the bottom face and enters Core left in 3 turns; Mgmt-Dist does the same in 3; G6 holds; the solve is beaten', async () => {
     const model = await run(SHEETS.around);
+    expect([sideOf(model, 4, 'from'), sideOf(model, 4, 'to'), turns(model, 4)]).toEqual(['bottom', 'left', 3]);
     expect([sideOf(model, 6, 'from'), sideOf(model, 6, 'to'), turns(model, 6)]).toEqual(['bottom', 'left', 3]);
-    expect([sideOf(model, 5, 'from'), sideOf(model, 5, 'to'), turns(model, 5)]).toEqual(['bottom', 'left', 3]);
     expect(counts(model).routed.turns).toBe(6);
     // Ticket 24: the turn round orders the two skirts of the face by their planned first turn, so the self crossing of the far-end order is gone (it was 1).
     expect(counts(model).routed.crossings).toBe(0);
@@ -286,13 +286,13 @@ describe('the lane shapes of a course (ticket 15, phase 1)', () => {
   }, 60000);
 
   it.each<[string, Over]>([
-    ['a perimeter id of another link', { id: 'perimeter:link-2' }],
+    ['a perimeter id of another link', { id: 'perimeter:link-4' }],
     ['a gap id with no ordinal', { id: 'gap-lane:link-1:', kind: 'gap', ring: undefined }],
     ['a span that is not ordered', { span: { top: 2, bottom: 0 } }],
     ['no span', { span: undefined }],
     ['a perimeter lane with no ring', { ring: undefined }],
     ['a gap lane with a ring', { id: 'gap-lane:link-1:0', kind: 'gap' }],
-    ['an owner with no course', { owner: { kind: 'link', id: 'link-3' }, id: 'perimeter:link-3' }],
+    ['an owner with no course', { owner: { kind: 'link', id: 'link-6' }, id: 'perimeter:link-6' }],
   ])('refuses %s', async (_name, over) => {
     const model = await planned();
     expect(() => validateCourseLane(model, lane(model, over))).toThrow();

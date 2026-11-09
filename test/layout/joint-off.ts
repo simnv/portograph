@@ -10,7 +10,7 @@ export function withoutJointOrder(yaml: string): string {
   return yaml.replace(/^portograph: 2\n/m, 'portograph: 2\nlayout: { feedOrder: false }\n');
 }
 
-/** The corpus sheets whose layout the joint order changes (ticket 72, `gate:compare` against main 6a373b17: 38 sheets). */
+/** The corpus sheets whose layout the joint order changes (ticket 72, `gate:compare` against main 6a373b17: 38 sheets), and the DR-04 copies of three of them (`-middle-tier-first`). */
 export const JOINT_REORDERED: ReadonlySet<string> = new Set([
   'a-band-holds-the-group-that-set-its-edge',
   'a-bent-member-passes-a-linked-peer-whose-links-stay-straight',
@@ -25,7 +25,9 @@ export const JOINT_REORDERED: ReadonlySet<string> = new Set([
   'a-declined-feed-grows-no-body',
   'a-diagonal-crosses-a-link-label',
   'a-face-aligns-one-port-and-leaves-a-chord-port-in-place',
+  'a-face-aligns-one-port-and-leaves-a-chord-port-in-place-middle-tier-first',
   'a-group-shift-leaves-a-chord-clear-of-a-lane',
+  'a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first',
   'a-hub-face-orders-its-ports-so-its-links-do-not-cross',
   'a-label-on-a-held-chord-gets-room-in-its-tier-gap',
   'a-link-leaves-its-group-through-a-door',
@@ -44,6 +46,7 @@ export const JOINT_REORDERED: ReadonlySet<string> = new Set([
   'a-straight-gap-needs-no-router',
   'a-stranded-growth-is-given-back',
   'a-tier-gap-plan-orders-every-part',
+  'a-tier-gap-plan-orders-every-part-middle-tier-first',
   'detoured-stem-checkpoint',
   'facing-rows-link-direct-as-families',
   'overlay-links-reorder-an-indifferent-tier',

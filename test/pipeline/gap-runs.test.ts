@@ -271,7 +271,7 @@ it('plans a tier gap whose nested stems stand close without the 2k pocket a rout
 }, 120000);
 
 it('grows the gap of the band that sets the group edge to the rows of its 25 parts (ranked-groups tickets 25 and 50)', async () => {
-  // Ticket 25 grew this gap 23 px for the two far stems of link-35 and link-37. The plan seats every part of the gap on a row of
+  // Ticket 25 grew this gap 23 px for the two far stems of link-36 and link-38. The plan seats every part of the gap on a row of
   // its own at the pitch k = 11.5 (spans of 21 stepped parts overlap, so 18 distinct rows from 10.75 to 206.25 px below the low
   // boundary, three of them shared by parts whose spans do not touch), and the last row keeps k + 30 px (a lower leg of depth 30)
   // above the band below: H = 206.25 + 41.5 - 11.5 = 236.25 px against a room of 49.25. The router discovered those rows before
@@ -281,9 +281,9 @@ it('grows the gap of the band that sets the group edge to the rows of its 25 par
   const before = await beforeBands(orthogonalLinks(read('a-band-holds-the-group-that-set-its-edge.yaml')));
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-  // The plan is read once (ticket 57): link-16 and link-36 ask the same height, and the first part in the plan's order names it (link-36 since
-  // ticket 65, where the kept verticals change the x of the parts; link-16 before).
-  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-36#0\)/)]);
+  // The plan is read once (ticket 57): link-17 and link-37 ask the same height, and the first part in the plan's order names it (link-37 since
+  // ticket 65, where the kept verticals change the x of the parts; link-17 before).
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-37#0\)/)]);
   const busy = tierGapPlans(after).filter(item => item.plan.parts.length > 20);
   expect(busy).toHaveLength(1);
   expect(busy[0]!.plan.height).toBeCloseTo(236.25, 9);

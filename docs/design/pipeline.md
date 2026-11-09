@@ -44,6 +44,14 @@ structure, identifiers), **model-time** (after normalisation: tier inference, fa
 port allocation), **placement-time** (capacity, facing ports — see stage 7b) and **final-geometry**
 (gates). A diagnostic is never emitted before its inputs exist.
 
+Link order is never input (ticket DR-04, ADR-0002 r1). The parser lists the links in the canonical link order
+(`src/parse/link-order.ts`): the smaller declared rank of the two ends, then the larger (a node by the declaration
+order of its group, then by its own declaration order inside the group; group ends after every node), then the rank
+of each end's numbered port in its node's list (a wildcard, an unnumbered name and a bare end rank first), then the
+content of the link, and last its direction. It allocates the ends in four passes, each in that order: numbered
+ports, unnumbered names, wildcards, bare ends. Every later stage reads `document.links` in that order (link ids,
+ELK edge order); `layout()` does not sort a document again (a document built in code must list its links that way).
+
 ## Stage 1 — resolve techniques (semantic)
 
 For every link, in this fixed order, from the document only:
@@ -1827,12 +1835,17 @@ Registered as obstacles, each expanded once in the adapter and never in the mode
   stands in its own strip and keeps its reservation.
   These rectangles are added per batch. They never enter the ownership exclusions, so they cannot
   change a batch; they remain for the attachments no planned part reaches.
+- **the head-on approach of every lane end that a routed gap joins, for every batch before its
+  owner's** (ticket 18): the run from the lane terminal to its approach checkpoint, with the
+  clearance of a stem. Placement fixed both points, so an earlier batch may not lay its row through
+  the approach point. Nothing exempts it: no port is shared there. Measured on the corpus
+  (470 sheets, 2026-11-08): this cover changes one sheet and repairs one removed link. Stress
+  ticket 02 measured an older form over 322 diagrams: 12 repaired, 4 broken (Q35, Q130).
 - **every planned tier-gap part** (§ 7a, in the height § 7f reserved for it), tip to tip: the upper
   leg, the run on its row and the lower leg, a Z part's two rows and middle drop, or the one vertical
   of a drop. Each is covered by the clearance a reserved run carries, for every batch from the first.
-  This is the head-on approach to a lane, reserved rather than covered by a rectangle. Measured over
-  322 diagrams, a 23 × 38 px cover repaired 8 failures and broke 4. The wall it put in a tier gap
-  pushed other links into routes their own checkpoints could not meet. A part's **row** does not
+  This is the head-on approach to a lane, reserved rather than covered by a rectangle, where the plan
+  seats the part; a residual gap keeps the approach cover above. A part's **row** does not
   obstruct the **residual** links of that gap, which the plan names as its crossers. Its verticals
   obstruct them, and a route can pass those by, except a residual part that stands within `k` of a
   vertical: it is granted the cover of that vertical alone. The owner is not given the row either.
@@ -2173,7 +2186,7 @@ then the same two passes run with drawn overlay runs ignored; then the pair repe
 shortened text, strict first and relaxed after, and among the clear shortened candidates the
 one keeping the most characters wins (ADR-0014); then the label is omitted with its full text as
 `tooltip`. Four rungs in all: whole text clear of the overlay, whole text across it, shortened text
-clear of it, shortened text across it. Authored labels run in link order, then merge runs in bundle and run order, so
+clear of it, shortened text across it. Authored labels run in the canonical link order (stage 0), then merge runs in bundle and run order, so
 an accepted label is an obstacle for every later one.
 
 **A link label stays in one region.** A label never lies across the border of a drawn group or

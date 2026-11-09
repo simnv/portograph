@@ -66,7 +66,7 @@ describe('a column axis lands on its feed', () => {
     const gates = score(model).snapshot.gates;
     expect(gates.G6.violations).toEqual([]);
     expect(gates.G9.violations).toEqual([]);
-    for (const [id, source, gateway] of [['link-1', 'as0', 'aw'], ['link-2', 'bs0', 'bw']] as const) {
+    for (const [id, source, gateway] of [['link-1', 'as0', 'aw'], ['link-3', 'bs0', 'bw']] as const) {
       const link = model.links.find(item => item.id === id)!;
       expect([link.attachments!.from.node, link.attachments!.to.node]).toEqual([source, gateway]);
       const xs = link.path!.segments.flatMap(segment => [segment.from.x, segment.to.x]);

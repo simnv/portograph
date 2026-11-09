@@ -71,9 +71,9 @@ describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
   }, 60000);
 
   it('refuses a scripted hint on a link that 7f straightens by itself: the routed trial gives no gain (review M1; crossings are no criterion)', async () => {
-    // On this input 7f straightens link-6 by itself. A scripted hint on its probe end passes the shape test but makes it cross link-5.
+    // On this input 7f straightens link-2 by itself. A scripted hint on its probe end passes the shape test but makes it cross link-1.
     const plain = await run(TWO_TIERS, undefined, 0);
-    const link = plain.links.find(item => item.id === 'link-6')!;
+    const link = plain.links.find(item => item.id === 'link-2')!;
     const model = await run(TWO_TIERS, (call, real) => call === 1 ? offerOf(portKey(link.attachments!.from), 'right', link.id) : real());
     // The trial's route gives the same bends as the baseline (7f straightens the link by itself), so the round refuses it for no gain.
     expect(model.diagnostics.find(item => item.code === 'SIDE_HINT_REFUSED')!.message).toContain('gives no gain');
@@ -84,11 +84,11 @@ describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
 
   it('refuses a hint for a chord that the trial 7e does not hold, and keeps the baseline (review M1, ticket 117)', async () => {
     const far = 'a-location-router-leaves-a-lateral-side-toward-a-far-provider';
-    // The baseline is the sheet with no side offer, the other rounds as they run: on this sheet the course round offers link-3 the L of a step (ticket 09
+    // The baseline is the sheet with no side offer, the other rounds as they run: on this sheet the course round offers link-2 the L of a step (ticket 09
     // of architecture-2, follow-up), so a run with no re-run at all is not the baseline the refused hint must keep.
     const none = (): SideOffer => ({ hints: new Map(), promised: new Map(), capped: false });
     const plain = await run(far, none);
-    expect(plain.courses?.map(item => item.link)).toEqual(['link-3']);
+    expect(plain.courses?.map(item => item.link)).toEqual(['link-2']);
     const link = plain.links.find(item => item.attachments!.from.node === 'east-router' && item.attachments!.to.node === 'provider')!;
     // The left face of the east router faces away from its peer: the chord leaves inward, so 7e cannot hold it. The scripted offer promises the straight shape.
     const model = await run(far, call => call === 1 ? offerOf(portKey(link.attachments!.from), 'left', link.id) : { hints: new Map(), promised: new Map(), capped: false });

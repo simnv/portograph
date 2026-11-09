@@ -25,7 +25,8 @@ const SHEETS = {
   wide: 'a-link-over-a-wide-middle-frame-keeps-its-lane',
   // Since architecture-2 ticket 65 the link of `wide` stands straight on its transit lane, so no offer reads it; this sheet's transit is refused by its frame.
   walled: 'a-link-transits-a-child-frame',
-  share: 'a-chord-and-a-lane-share-a-middle-tier',
+  // Ticket DR-04: the copy of `a-chord-and-a-lane-share-a-middle-tier` whose canonical link order gives each node its links in the written order.
+  share: 'a-chord-and-a-lane-share-a-middle-tier-bottom-group-first',
   label: 'a-labelled-chord-across-a-middle-tier-keeps-its-label-on-the-line',
 };
 interface Run { model: LayoutModel; offer: SpanOffer | undefined; base: LayoutModel | undefined; routedBase: LayoutModel | undefined }
@@ -43,7 +44,7 @@ const hinted = (item: LayoutLink): LayoutLink => ({ ...item, spanHint: true });
 describe('chordKind of a hinted link', () => {
   it('reads a hinted link on tiers 0 and 2 as a cross-frame chord, and an unhinted one as none', async () => {
     const model = await runPlain(SHEETS.mesh);
-    const mesh = link(model, 3);
+    const mesh = link(model, 1);
     expect(documentTierGap(model, mesh)).toBe(2);
     expect(chordKind(model, mesh)).toBeUndefined();
     expect(chordKind(model, hinted(mesh))).toBe('cross');
@@ -52,7 +53,7 @@ describe('chordKind of a hinted link', () => {
 
   it('is no candidate on consecutive tiers, and a hint there changes nothing', async () => {
     const model = await runPlain(SHEETS.mesh);
-    const near = link(model, 1);
+    const near = link(model, 4);
     expect(documentTierGap(model, near)).toBeUndefined();
     expect(spanCandidate(model, near)).toBe(false);
     expect(chordKind(model, hinted(near))).toBe(chordKind(model, near));
@@ -62,14 +63,14 @@ describe('chordKind of a hinted link', () => {
 describe('the shadow offer (measureSpans)', () => {
   it('offers the nine mesh links of case 04 and none of the two tier-gap links', async () => {
     const { offer } = await run(SHEETS.mesh);
-    expect(offer!.candidates).toEqual(['link-3', 'link-4', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10', 'link-11']);
+    expect(offer!.candidates).toEqual(['link-1', 'link-2', 'link-3', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10']);
     expect(offer!.links).toEqual(offer!.candidates);
     expect([...offer!.refused]).toEqual([]);
   }, 60000);
 
   it('offers the one bent link over three tier gaps', async () => {
     const { offer } = await run(SHEETS.three);
-    expect(offer!.links).toEqual(['link-4']);
+    expect(offer!.links).toEqual(['link-1']);
   }, 60000);
 
   it('refuses a link over a middle frame with the frame wall, and offers nothing', async () => {
@@ -111,7 +112,7 @@ describe('the corridor reader (spanVerdict)', () => {
 
   it('passes a chord whose corridor is clear, and reads overlay geometry as no wall', async () => {
     const { base } = await run(SHEETS.three);
-    expect('segment' in spanVerdict(base!, link(base!, 4))).toBe(true);
+    expect('segment' in spanVerdict(base!, link(base!, 1))).toBe(true);
   }, 60000);
 
   it('lets two chords that cross strictly stand, and refuses two that run side by side under the clearance', async () => {
@@ -127,22 +128,22 @@ describe('restore', () => {
   it('refuses a span hint that the freeze does not list', async () => {
     const model = await runPlain(SHEETS.mesh);
     const tampered = JSON.parse(JSON.stringify(model)) as LayoutModel;
-    tampered.links.find(item => item.id === 'link-3')!.spanHint = true;
+    tampered.links.find(item => item.id === 'link-1')!.spanHint = true;
     expect(() => restoreFinalLayout(JSON.stringify(tampered))).toThrow(/span hints/i);
   }, 60000);
 
   it('refuses a span hint on a link that is no candidate', async () => {
     const model = await runPlain(SHEETS.mesh);
     const tampered = JSON.parse(JSON.stringify(model)) as LayoutModel;
-    tampered.links.find(item => item.id === 'link-1')!.spanHint = true;
-    tampered.freeze!.spans = ['link-1'];
+    tampered.links.find(item => item.id === 'link-4')!.spanHint = true;
+    tampered.freeze!.spans = ['link-4'];
     expect(() => restoreFinalLayout(JSON.stringify(tampered))).toThrow(/no spanning-chord candidate/);
   }, 60000);
 
   it('refuses a frozen span list that names a link without the hint', async () => {
     const model = await runPlain(SHEETS.mesh);
     const tampered = JSON.parse(JSON.stringify(model)) as LayoutModel;
-    tampered.freeze!.spans = ['link-3'];
+    tampered.freeze!.spans = ['link-1'];
     expect(() => restoreFinalLayout(JSON.stringify(tampered))).toThrow(/span hints/i);
   }, 60000);
 
@@ -150,7 +151,7 @@ describe('restore', () => {
     const unhinted = await runPlain(SHEETS.three);
     expect(() => restoreFinalLayout(JSON.stringify(unhinted))).not.toThrow();
     const { model } = await run(SHEETS.three);
-    expect(model.freeze?.spans).toEqual(['link-4']);
+    expect(model.freeze?.spans).toEqual(['link-1']);
     expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
   }, 60000);
 });
@@ -162,7 +163,7 @@ describe('the span round on the sheets', () => {
     expect(model.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit')).toEqual([]);
     expect(model.links.filter(item => item.layer === 'routed' && (pathBends(item) ?? 0) > 0)).toHaveLength(2);
     expect(score(model).snapshot.metrics.bends.total).toBe(4);
-    expect(model.freeze?.spans).toEqual(['link-3', 'link-4', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10', 'link-11']);
+    expect(model.freeze?.spans).toEqual(['link-1', 'link-2', 'link-3', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10']);
     expect(model.diagnostics.filter(item => item.code === 'SPAN_CHORD_BLOCKED')).toEqual([]);
   }, 60000);
 
@@ -213,8 +214,9 @@ describe('the span round on the sheets', () => {
   }, 60000);
 
   // A refused span trial spends placements and fan re-runs; it must not starve the course round that main runs (a-tier-gap-plan-orders-every-part: Q 0.6466 -> 0.4481, G5 failing).
+  // Ticket DR-04: the copy whose canonical link order gives each node its links in the original's written order.
   it('a refused span trial does not starve the course round', async () => {
-    const text = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part.yaml', import.meta.url), 'utf8'));
+    const text = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part-lower-groups-first.yaml', import.meta.url), 'utf8'));
     const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true };
     const model = await layout(parse(text), options);
     const plain = await layout(parse(text), { ...options, testSpanHints: [] });
@@ -235,7 +237,7 @@ describe('the span round on the sheets', () => {
     const corridors = model.lanes.filter(lane => lane.kind === 'span');
     expect(corridors.length).toBeGreaterThan(0);
     expect(corridors.every(lane => lane.bounds.width > Math.max(...plainWidth) + 5)).toBe(true);
-    const label = model.labels.find(item => item.role === 'link' && item.owner.kind === 'link' && item.owner.id === 'link-4')!;
+    const label = model.labels.find(item => item.role === 'link' && item.owner.kind === 'link' && item.owner.id === 'link-1')!;
     expect(label.omitted).not.toBe(true);
     expect(label.onLine).toBe(true);
     for (const lane of corridors) {
@@ -261,7 +263,7 @@ describe('the span round refuses what it must', () => {
 
 describe('judgeSpanTrial', () => {
   const forcedMesh = (): Promise<LayoutModel> => layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testSpanHints: MESH_IDS });
-  const MESH_IDS = ['link-3', 'link-4', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10', 'link-11'];
+  const MESH_IDS = ['link-1', 'link-2', 'link-3', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10'];
   let chords: LayoutModel;
   beforeAll(async () => { chords = await forcedMesh(); }, 60000);
   const routedPlain = async (): Promise<LayoutModel> => (await layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testSpanHints: [], testCourses: [] }));
@@ -283,7 +285,7 @@ describe('judgeSpanTrial', () => {
   it('refuses a trial with a new gate finding', async () => {
     const base = await routedPlain();
     const trial = JSON.parse(JSON.stringify(chords)) as LayoutModel;
-    const victim = trial.links.find(item => item.id === 'link-3')!, other = trial.links.find(item => item.id === 'link-11')!;
+    const victim = trial.links.find(item => item.id === 'link-1')!, other = trial.links.find(item => item.id === 'link-10')!;
     victim.path = JSON.parse(JSON.stringify(other.path));
     expect(judgeSpanTrial(base, trial, []).reason).toBe('gate');
     expect(judgeSpanTrial(base, trial, []).kept).toBe(false);
@@ -299,30 +301,30 @@ describe('judgeSpanTrial', () => {
   it('refuses a trial that names a blocked chord, and one that removes a link', async () => {
     const base = await routedPlain();
     const blocked = JSON.parse(JSON.stringify(chords)) as LayoutModel;
-    blocked.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'SPAN_CHORD_BLOCKED', message: 'x', owners: [{ kind: 'link', id: 'link-3' }] });
+    blocked.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'SPAN_CHORD_BLOCKED', message: 'x', owners: [{ kind: 'link', id: 'link-1' }] });
     expect(judgeSpanTrial(base, blocked, MESH_IDS).reason).toBe('blocked');
     const removed = JSON.parse(JSON.stringify(chords)) as LayoutModel;
-    delete removed.links.find(item => item.id === 'link-1')!.path;
-    removed.links.find(item => item.id === 'link-1')!.removed = true;
+    delete removed.links.find(item => item.id === 'link-4')!.path;
+    removed.links.find(item => item.id === 'link-4')!.removed = true;
     expect(judgeSpanTrial(base, removed, MESH_IDS).reason).toBe('removed');
   }, 60000);
 
   it('is read by the other judges: a new blocked chord refuses a course trial', async () => {
     const trial = JSON.parse(JSON.stringify(chords)) as LayoutModel;
-    trial.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'SPAN_CHORD_BLOCKED', message: 'x', owners: [{ kind: 'link', id: 'link-4' }] });
-    expect(spanBlockedNew(chords, trial)).toEqual(['link-4']);
+    trial.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'SPAN_CHORD_BLOCKED', message: 'x', owners: [{ kind: 'link', id: 'link-2' }] });
+    expect(spanBlockedNew(chords, trial)).toEqual(['link-2']);
     expect(spanBlockedNew(trial, chords)).toEqual([]);
     expect(judgeCourseTrial(chords, trial, new Map()).kept).toBe(false);
   }, 60000);
 
   it('names a hinted link that ends orthogonal, whatever diagnostic says so (the freeze refuses it: ROUTED_CHORD_REFUSED)', async () => {
     const trial = JSON.parse(JSON.stringify(chords)) as LayoutModel;
-    const victim = trial.links.find(item => item.id === 'link-4')!;
+    const victim = trial.links.find(item => item.id === 'link-2')!;
     expect(victim.spanHint).toBe(true);
     victim.technique = 'orthogonal';
     victim.path = { ...victim.path!, fixed: false as never, segments: [victim.path!.segments[0]!, { ...victim.path!.segments[0]!, straight: false as never }] };
-    trial.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED', message: 'x', owners: [{ kind: 'link', id: 'link-4' }] });
-    expect(spanBlockedNew(chords, trial)).toEqual(['link-4']);
+    trial.diagnostics.push({ stage: 'placement', severity: 'info', code: 'ROUTED_CHORD_REFUSED', message: 'x', owners: [{ kind: 'link', id: 'link-2' }] });
+    expect(spanBlockedNew(chords, trial)).toEqual(['link-2']);
     expect(judgeCourseTrial(chords, trial, new Map()).kept).toBe(false);
   }, 60000);
 });

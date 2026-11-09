@@ -96,11 +96,11 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
   it('05 / 12 D: the flank link steps on the baseline and takes the L into the right face, with the turn it promised (ticket 09 follow-up)', async () => {
     const model = await layout(parse(source(ACROSS)), options);
     expect(model.links.filter(item => item.removed === true)).toEqual([]);
-    expect(side(model, 6, 'to')).toBe('right');
-    expect(side(model, 6, 'from')).toBe('bottom');
-    expect(turns(model, 6)).toBe(1);
-    expect(model.courses!.map(course => course.link)).toEqual(['link-6']);
-    expect(model.lanes.some(lane => lane.kind === 'perimeter' && lane.owner.kind === 'link' && lane.owner.id === 'link-6')).toBe(true);
+    expect(side(model, 7, 'to')).toBe('right');
+    expect(side(model, 7, 'from')).toBe('bottom');
+    expect(turns(model, 7)).toBe(1);
+    expect(model.courses!.map(course => course.link)).toEqual(['link-7']);
+    expect(model.lanes.some(lane => lane.kind === 'perimeter' && lane.owner.kind === 'link' && lane.owner.id === 'link-7')).toBe(true);
     expect(codes(model)).toContain('COURSE_TAKEN');
     expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
     // The kept layout restores: the course, its port faces and its lane are invariants of the published model.
@@ -109,7 +109,7 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
 
   it('a flank course keeps its lane and its faces when the published model is restored', async () => {
     const model = await layout(parse(source(AROUND)), options);
-    expect(model.courses!.map(course => course.link)).toEqual(['link-5', 'link-6']);
+    expect(model.courses!.map(course => course.link)).toEqual(['link-4', 'link-6']);
     const restored = restoreLayoutModel(JSON.stringify(model));
     expect(restored.courses).toEqual(model.courses);
   }, 60000);
@@ -117,11 +117,11 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
   // Case 08: OOB leaves its top face, runs under the title of WAN into the left margin and enters SRV 1 from the left in 3 turns.
   it('08: OOB to SRV 1 leaves the top face, runs in the left margin and enters the left face in 3 turns', async () => {
     const model = await layout(parse(source(CANTON)), options);
-    expect([side(model, 6, 'from'), side(model, 6, 'to'), turns(model, 6)]).toEqual(['top', 'left', 3]);
-    expect(side(model, 7, 'from')).toBe('right');
-    expect(side(model, 7, 'to')).toBe('top');
-    // Link 7 drops straight into SRV 2: the aligned lane is a feed of 7c, so the promise holds (1 turn) and nothing is lost.
-    expect(turns(model, 7)).toBe(1);
+    expect([side(model, 2, 'from'), side(model, 2, 'to'), turns(model, 2)]).toEqual(['top', 'left', 3]);
+    expect(side(model, 3, 'from')).toBe('right');
+    expect(side(model, 3, 'to')).toBe('top');
+    // Link 3 drops straight into SRV 2: the aligned lane is a feed of 7c, so the promise holds (1 turn) and nothing is lost.
+    expect(turns(model, 3)).toBe(1);
     expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
     expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
     // No link goes round the canton and comes back under it: both OOB links and the Core jogs are shorter than the 18 turns of the baseline.
@@ -133,12 +133,12 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
   // the other mesh links gain two turns (one bottom port fewer on N2 re-spaces the rest): 16 turns become 18 against 19 crossings becoming 9.
   it('04: forced, N2-C1 leaves N2 by the top face and C1-S2 enters S2 from the bottom, 2 turns each', async () => {
     const courses: Course[] = [
-      { link: 'link-1', kind: 'skirt', side: 'right', from: { face: 'top' }, to: { face: 'top' }, runs: ['padding', 'perimeter', 'tier-gap'] },
-      { link: 'link-2', kind: 'skirt', side: 'right', from: { face: 'bottom' }, to: { face: 'bottom' }, runs: ['tier-gap', 'perimeter', 'padding'] },
+      { link: 'link-4', kind: 'skirt', side: 'right', from: { face: 'top' }, to: { face: 'top' }, runs: ['padding', 'perimeter', 'tier-gap'] },
+      { link: 'link-11', kind: 'skirt', side: 'right', from: { face: 'bottom' }, to: { face: 'bottom' }, runs: ['tier-gap', 'perimeter', 'padding'] },
     ];
     const model = await layout(parse(source(MESH)), { ...options, testCourses: courses });
-    expect([side(model, 1, 'from'), side(model, 1, 'to'), turns(model, 1)]).toEqual(['top', 'top', 2]);
-    expect([side(model, 2, 'from'), side(model, 2, 'to'), turns(model, 2)]).toEqual(['bottom', 'bottom', 2]);
+    expect([side(model, 4, 'from'), side(model, 4, 'to'), turns(model, 4)]).toEqual(['top', 'top', 2]);
+    expect([side(model, 11, 'from'), side(model, 11, 'to'), turns(model, 11)]).toEqual(['bottom', 'bottom', 2]);
     expect(score(model).snapshot.counts.routed.crossings).toBeLessThanOrEqual(9);
     expect(Object.values(score(model).snapshot.gates).filter(gate => !gate.passed).length).toBeLessThanOrEqual(1);
   }, 60000);
@@ -148,14 +148,14 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
     const model = await layout(parse(source(MESH)), { ...options, testSpanHints: [] });
     expect(model.courses).toBeUndefined();
     expect(model.lanes.some(lane => lane.kind === 'perimeter')).toBe(false);
-    expect(side(model, 1, 'from')).toBe('bottom');
+    expect(side(model, 4, 'from')).toBe('bottom');
   }, 60000);
 
   it('04: after the span round the nine mesh links are chords, and the round takes the two courses (architecture ticket 22)', async () => {
     const model = await layout(parse(source(MESH)), options);
-    expect(model.courses?.map(course => course.link)).toEqual(['link-1', 'link-2']);
+    expect(model.courses?.map(course => course.link)).toEqual(['link-4', 'link-11']);
     expect(model.lanes.filter(lane => lane.kind === 'span')).toHaveLength(9);
-    expect([turns(model, 1), turns(model, 2)]).toEqual([2, 2]);
+    expect([turns(model, 4), turns(model, 11)]).toEqual([2, 2]);
     expect(score(model).snapshot.counts.routed.crossings).toBeLessThanOrEqual(9);
     expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
   }, 60000);
@@ -164,7 +164,7 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
   // upper end's group but stands beside South: it must not refuse that widening, or the title falls on the drop and the trial loses the course.
   it('04: a perimeter lane walls the groups of its span when aligned, and gives way when its x is derived', async () => {
     const model = await layout(parse(source(MESH)), options);
-    const lane = model.lanes.find(item => item.id === 'perimeter:link-2')!, core = model.groups.core!, south = model.groups.south!;
+    const lane = model.lanes.find(item => item.id === 'perimeter:link-11')!, core = model.groups.core!, south = model.groups.south!;
     expect([lane.tier, lane.span, lane.aligned]).toEqual([core.tier, { top: south.tier, bottom: south.tier }, true]);
     expect(core.bounds!.x).toBeLessThan(lane.x);
     expect(right(core.bounds!)).toBeGreaterThan(right(lane.bounds));
@@ -194,8 +194,8 @@ describe('the course round on the hand-solve sheets (ticket 15, phase 4)', () =>
   // crossing against the solve's 7 and 2): the library beats the hand solve on this sheet.
   it('both flank links take a column-gap course', async () => {
     const model = await layout(parse(source(AROUND)), options);
-    expect(model.courses?.map(course => [course.link, course.runs])).toEqual([['link-5', ['u', 'gap']], ['link-6', ['u', 'gap']]]);
-    expect(model.lanes.filter(lane => lane.kind === 'gap').map(lane => lane.id)).toEqual(['gap-lane:link-5:0', 'gap-lane:link-6:0']);
+    expect(model.courses?.map(course => [course.link, course.runs])).toEqual([['link-4', ['u', 'gap']], ['link-6', ['u', 'gap']]]);
+    expect(model.lanes.filter(lane => lane.kind === 'gap').map(lane => lane.id)).toEqual(['gap-lane:link-4:0', 'gap-lane:link-6:0']);
     expect(codes(model)).toContain('COURSE_TAKEN');
     expect(codes(model)).not.toContain('COURSE_SHAPE_LOST');
   }, 60000);
@@ -226,7 +226,8 @@ describe('the judge reads what the trial publishes (review of phase 4)', () => {
   // The course of link-13 here once left two root groups 58.9 px apart (the band gap is 60): no gate measured it, the hard entry of the x catalogue does. The linked-group
   // grid no longer widens a box into the band gap of its neighbour (architecture ticket 19), so the baseline holds the gap and the course is taken without breaking it.
   it('keeps every hard separation the baseline holds, the course of link-13 included', async () => {
-    const model = await layout(parse(source('a-group-shift-leaves-a-chord-clear-of-a-lane')), options);
+    // DR-04: the copy that declares `access` before `src`; with it the canonical order gives link-13 (src1 -> snk0) its course again.
+    const model = await layout(parse(source('a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first')), options);
     expect(model.courses?.some(course => course.link === 'link-13') ?? false).toBe(true);
     expect([...constraintFindings(model)]).toEqual([]);
   }, 60000);
@@ -245,10 +246,10 @@ describe('a step course never costs the course of a poor route (ticket 09 follow
 
   it('records the step links of an offer, and leaves them out on request', async () => {
     const model = await stepped();
-    expect(turns(model, 6)).toBe(2);
+    expect(turns(model, 7)).toBe(2);
     const offer = measureCourses(model, model);
-    expect(offer.courses.map(item => item.link)).toEqual(['link-6']);
-    expect(offer.steps).toEqual(['link-6']);
+    expect(offer.courses.map(item => item.link)).toEqual(['link-7']);
+    expect(offer.steps).toEqual(['link-7']);
     expect(measureCourses(model, model, new Set(), false).courses).toEqual([]);
   }, 60000);
 
@@ -260,7 +261,7 @@ describe('a step course never costs the course of a poor route (ticket 09 follow
     const env = { options: {} } as unknown as Env;
     const fresh = (): State => ({ base: model, routedBase: model, sideNotes: [] }) as unknown as State;
     const refusal = { at: 'verdict' as const, why: 'no gain' };
-    // A mixed offer: the step of link-6 and a poor-route course of another link.
+    // A mixed offer: the step of link-7 and a poor-route course of another link.
     let s = fresh();
     const first = (await courseRound.measure(env, s))!;
     const poor: Course = { link: 'link-1', kind: 'skirt', side: 'left', from: { face: 'left' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] };
@@ -286,34 +287,34 @@ describe('a step course never costs the course of a poor route (ticket 09 follow
   it('the judge refuses a step course that publishes a crossing', async () => {
     const base = await stepped();
     const published = await layout(parse(source(ACROSS)), options);
-    expect(published.courses!.map(item => item.link)).toEqual(['link-6']);
-    // The trial: the published model with one more routed path across the middle of the first straight piece of link-6.
+    expect(published.courses!.map(item => item.link)).toEqual(['link-7']);
+    // The trial: the published model with one more routed path across the middle of the first straight piece of link-7.
     const trial = structuredClone(published) as LayoutModel;
-    const piece = link(trial, 6).path!.segments.find(segment => Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > 20)!;
+    const piece = link(trial, 7).path!.segments.find(segment => Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > 20)!;
     const mid = { x: (piece.from.x + piece.to.x) / 2, y: (piece.from.y + piece.to.y) / 2 }, level = piece.from.y === piece.to.y;
     const across = level ? { from: { x: mid.x, y: mid.y - 10 }, to: { x: mid.x, y: mid.y + 10 } } : { from: { x: mid.x - 10, y: mid.y }, to: { x: mid.x + 10, y: mid.y } };
     trial.links.push({ ...link(trial, 1), id: 'probe', path: { ...link(trial, 1).path!, segments: [{ ...piece, ...across }] } });
-    const promised = new Map([['link-6', 1]]);
-    expect(judgeCourseTrial(base, trial, promised, new Set(['link-6'])).reason).toMatch(/a step course publishes a crossing \(link-6\)/);
+    const promised = new Map([['link-7', 1]]);
+    expect(judgeCourseTrial(base, trial, promised, new Set(['link-7'])).reason).toMatch(/a step course publishes a crossing \(link-7\)/);
     expect(judgeCourseTrial(base, trial, promised).reason).not.toMatch(/step course/);
   }, 60000);
 
   it('the offer and the judge count the same crossings: every drawn link, overlay included, and no removed link', async () => {
     const model = await layout(parse(source(ACROSS)), options);
-    const own = link(model, 6), points = [own.path!.segments[0]!.from, ...own.path!.segments.map(segment => segment.to)];
-    expect(drawnCrossings(model, 'link-6', points)).toBe(0);
+    const own = link(model, 7), points = [own.path!.segments[0]!.from, ...own.path!.segments.map(segment => segment.to)];
+    expect(drawnCrossings(model, 'link-7', points)).toBe(0);
     const piece = own.path!.segments.find(segment => Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > 20)!;
     const mid = { x: (piece.from.x + piece.to.x) / 2, y: (piece.from.y + piece.to.y) / 2 }, level = piece.from.y === piece.to.y;
     const across = level ? { from: { x: mid.x, y: mid.y - 10 }, to: { x: mid.x, y: mid.y + 10 } } : { from: { x: mid.x - 10, y: mid.y }, to: { x: mid.x + 10, y: mid.y } };
     const other = { ...link(model, 1), id: 'probe', path: { ...link(model, 1).path!, segments: [{ ...piece, ...across }] } };
-    expect(drawnCrossings({ ...model, links: [...model.links, { ...other, layer: 'overlay' as const }] }, 'link-6', points)).toBe(1);
-    expect(drawnCrossings({ ...model, links: [...model.links, { ...other, removed: true }] }, 'link-6', points)).toBe(0);
+    expect(drawnCrossings({ ...model, links: [...model.links, { ...other, layer: 'overlay' as const }] }, 'link-7', points)).toBe(1);
+    expect(drawnCrossings({ ...model, links: [...model.links, { ...other, removed: true }] }, 'link-7', points)).toBe(0);
   }, 60000);
 });
 
 describe('the courses a placement run reserves', () => {
   it('refuses a course whose faces cannot join one lane', async () => {
-    const bad: Course[] = [{ link: 'link-6', kind: 'skirt', side: 'right', from: { face: 'left' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] }];
+    const bad: Course[] = [{ link: 'link-7', kind: 'skirt', side: 'right', from: { face: 'left' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] }];
     await expect(layout(parse(source(ACROSS)), { ...options, testCourses: bad })).rejects.toThrow();
   }, 60000);
 });
@@ -321,9 +322,9 @@ describe('the courses a placement run reserves', () => {
 describe('a perimeter lane is read beside the box 7a stands it by (architecture-2 ticket 22)', () => {
   it('a row order that lets the grid widen the upper group keeps the course into the natural face, with two turns', async () => {
     const model = await layout(parse(source('a-course-lane-stands-beside-the-box-before-the-grid-widens-it')), options);
-    // link-5 is f1 to s1: it leaves f1 by a padding row, runs right over the row and drops into s1's top face.
-    expect(side(model, 5, 'to')).toBe('top');
-    expect(turns(model, 5)).toBe(2);
+    // link-2 is f1 to s1: it leaves f1 by a padding row, runs right over the row and drops into s1's top face.
+    expect(side(model, 2, 'to')).toBe('top');
+    expect(turns(model, 2)).toBe(2);
     expect(model.diagnostics.find(item => item.code === 'COURSE_TAKEN')?.message).toContain('2 turns promised');
     // The extent the measure reads: never past the box, and never short of the nodes.
     for (const group of Object.values(model.groups)) {

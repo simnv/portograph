@@ -27,6 +27,12 @@ export type { LayoutOptions, LayoutProgress } from './options.js';
 /**
  * Stages 1–9. The returned model is frozen and protected: retain it, because `score`, `render` and
  * the serialised layout JSON must all describe the same geometry.
+ *
+ * Link order (ticket DR-04): `parse` lists `document.links` in the canonical link order and allocates the ports in it, so a parsed
+ * document is order-free. This function does not sort again: it reads `document.links` in the order given, as a link id `link-<n>` and
+ * the order ELK reads the edges. A document built in code is order-free only when its links are in the canonical order; build it with
+ * `parse`, or list the links as `parse` would. The canonical key reads the authored ends (a `*` ranks before a numbered port), which a
+ * normalised document no longer holds, so the order cannot be derived again here.
  */
 export async function layout(document: NormalisedDocument, options: LayoutOptions = {}): Promise<LayoutModel> {
   const run = (): Promise<LayoutModel> => document.layout?.maxWidth !== undefined ? fitWidthBudget(document, options, layoutOnce) : layoutOnce(document, options);

@@ -1,0 +1,21 @@
+# Expected: two crossing parts in the tier gap form a row cycle that no Z split opens, so the plan leaves the later one, link-3 (u.e to v.c),
+# to the router (TIER_GAP_ROW_CYCLE). The port order is authored, and the two straight drops at the ends (u.a to v.a, u.f to v.f) hold `v`
+# under `u`. The weight-12 link widens the routed stroke, so `keep` (the node clearance plus the widest routed stroke) is wider than the port
+# pitch: the ends of the other parts and of the two drops cover the whole span of each crossing part, and neither has a free middle. The
+# result does not depend on the order of `links` (ticket DR-04). The diagram publishes and removes nothing.
+# Test-only input owned by ticket DR-04; test/pipeline/residual-parts.test.ts reads the placed and the routed model.
+portograph: 2
+groups:
+  upper: { tier: 0 }
+  lower: { tier: 1 }
+nodes:
+  u: { group: upper, class: router, ports: [{ name: a, side: bottom, order: 1 }, { name: b, side: bottom, order: 2 }, { name: c, side: bottom, order: 3 }, { name: d, side: bottom, order: 4 }, { name: e, side: bottom, order: 5 }, { name: f, side: bottom, order: 6 }] }
+  h1: { group: upper, class: router }
+  v: { group: lower, class: switch, ports: [{ name: a, side: top, order: 1 }, { name: b, side: top, order: 2 }, { name: c, side: top, order: 3 }, { name: d, side: top, order: 4 }, { name: e, side: top, order: 5 }, { name: f, side: top, order: 6 }] }
+  h2: { group: lower, class: switch }
+links:
+  - [u.a, v.a, { route: orthogonal }]
+  - [u.f, v.f, { route: orthogonal }]
+  - [u.b, v.d, { route: orthogonal }]
+  - [u.e, v.c, { route: orthogonal }]
+  - [h1, h2, { weight: 12 }]

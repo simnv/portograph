@@ -128,12 +128,35 @@ export function laneSidesHold(model: LayoutModel, proposed: ProposedBox[], repor
   if (!chordsHold(model, proposed, report)) return false;
   return proposed.every(({ group, bounds }) => {
     // A lane of either kind keeps the side of every group of a sub-tier it stands beside.
-    const sameTier = model.lanes.filter(lane => wallBeside(lane, group.tier!) && !(lane.group === group.id && bypassLane(model, lane))).every(lane => {
+    const sameTier = laneWallsBeside(model, group).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));
       return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - PLACEMENT_EPS : right(box) <= lane.bounds.x + PLACEMENT_EPS;
     });
     return sameTier;
   }) && (!frames || sideLaneFramesHold(model, proposed));
+}
+/**
+ * The right edge `group`'s box may reach, moved as a whole, before `laneSidesHold` refuses it: for each lane wall right of it
+ * (`laneWallsBeside`, an aligned perimeter lane of another tier included), the wall less the occupied reach the guard measures toward that
+ * lane (`occupiedAt` with the lane's link), the nearest of them. Infinite with no such wall. One reading with the guard (R1): the centre
+ * rule's tail reserves this edge (ticket DR-04).
+ */
+export function rightWallReach(model: LayoutModel, group: LayoutGroup): number {
+  let reach = Infinity;
+  for (const lane of laneWallsBeside(model, group)) {
+    if (group.bounds!.x >= lane.x) continue;
+    const box = occupiedAt(model, group, group.bounds!, laneLink(model, lane));
+    reach = Math.min(reach, lane.bounds.x - (right(box) - right(group.bounds!)));
+  }
+  return reach;
+}
+/**
+ * The lanes that keep the side of `group`: every lane that is a wall beside its sub-tier (`wallBeside`), but a bypass stem in the group's own gaps. One
+ * reader for the move guard (`laneSidesHold`) and for the windows the centre rule reserves before it moves (`centreContext`), so a step never takes room
+ * that the guard then forbids the group after it to give back (ticket DR-04: an aligned perimeter lane of another tier walled a group the window left free).
+ */
+export function laneWallsBeside(model: LayoutModel, group: LayoutGroup): Lane[] {
+  return model.lanes.filter(lane => wallBeside(lane, group.tier!) && !(lane.group === group.id && bypassLane(model, lane)));
 }
 /**
  * Whether a lane is a wall beside the groups of a sub-tier. A perimeter lane stands beside the sub-tiers of its span: its `tier` is the one of its upper end's
@@ -1484,7 +1507,7 @@ function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: Layo
 }
 /**
  * Stage 7a, after the side lanes: the perimeter lane of each course (ticket 15). The id, owner, side, ring and span are fixed here; the x is derived at the
- * replay that follows (`rebuildLaneExtents`). Rings are taken in course order: a lane stands outside every earlier lane of its side whose extent it meets.
+ * replay that follows (`rebuildLaneExtents`). Rings are taken in course order: a lane stands one ring outside the outermost earlier lane of its side whose extent it meets.
  */
 function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
   const placed: Lane[] = [];
@@ -1496,7 +1519,10 @@ function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: La
     const geometry = (ring: number) => courseGeometry(model, link, course, { ...draft, ring }, (group, item) => occ(group, item), ringsOf(placed), placed);
     const first = geometry(0);
     if (first === undefined) throw new CourseRefusal(`The course of ${link.id} cannot join one lane`);
-    const ring = placed.filter(lane => lane.side === course.side && lane.bounds.y < bottom(first.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > first.bounds.y + PLACEMENT_EPS).length;
+    // One ring beyond the outermost earlier lane it meets. A count of the lanes it meets is no ring: where the earlier lanes it meets are rings 0 and 2
+    // (ring 1 met only a lane it does not meet), the count gives 2 and the two lanes stand on one x (ticket DR-04: a sheet with its `nodes` reversed).
+    const met = placed.filter(lane => lane.side === course.side && lane.bounds.y < bottom(first.bounds) - PLACEMENT_EPS && bottom(lane.bounds) > first.bounds.y + PLACEMENT_EPS);
+    const ring = met.length ? Math.max(...met.map(lane => lane.ring ?? 0)) + 1 : 0;
     const used = ring === 0 ? first : geometry(ring)!;
     const host = model.groups[model.document.nodes[used.upper.ref.node]!.group]!;
     const lane: Lane = { id: draft.id, kind: 'perimeter', owner: { kind: 'link', id: link.id }, layer: link.layer === 'overlay' ? 'overlay' : 'routed', group: host.id, tier: host.tier!, side: course.side,

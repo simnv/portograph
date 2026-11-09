@@ -305,13 +305,14 @@ it('ticket 45: a fan track steps past the node standing in its corridor (ADR-001
   expect(report.passed).toBe(true);
   for (const gate of ['G2', 'G4', 'G6'] as const) expect(report.gates[gate]!.violations).toEqual([]);
   const wall = model.nodes['wide']!.bounds!, target = model.nodes['sub']!.ports[0]!.anchor!;
-  const track = model.links[1]!.sharedRuns!.from!.at(-1)!.to.y;
+  const toSub = model.links.find(link => link.attachments?.to.node === 'sub')!;
+  const track = toSub.sharedRuns!.from!.at(-1)!.to.y;
   // The coordinate the branch wanted is inside the wall; the track it took is clear of it, on the
   // side the branch came from.
   expect(target.y - 15).toBeGreaterThan(wall.y);
   expect(track).toBeLessThanOrEqual(wall.y - 10);
   // The reserved run really crosses the wall's own span, so the step was not free.
-  const reach = model.links[1]!.sharedRuns!.from!.at(-1)!;
+  const reach = toSub.sharedRuns!.from!.at(-1)!;
   expect(Math.max(reach.from.x, reach.to.x)).toBeGreaterThan(wall.x);
 }, 60000);
 
@@ -319,7 +320,7 @@ it('ticket 45: a fan track steps past the node standing in its corridor (ADR-001
 // span, and the track turns inside the frame); the case fails until the fixture holds the scenario again.
 it.fails('architecture-2 ticket 18: a fan track keeps the group edge margin of the box its branch leaves', async () => {
   // The branch to `c1` wants the x of `c1`'s port, 7.4 px outside the left edge of the frame `home`. The track
-  // rose there, within the edge margin (G6 `segment-group-edge [link-2, home]`); no group exit is reserved,
+  // rose there, within the edge margin (G6 `segment-group-edge [link-1, home]`); no group exit is reserved,
   // because the run already ends outside the box. The branch now keeps the port's column out past the
   // frame's margin, turns there and rises on `c1`'s own column: one L, no step back in the tier gap.
   const model = await run(fixture('a-fan-track-keeps-the-group-edge-margin'));

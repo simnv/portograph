@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { LayoutModel } from '../../src/index.js';
+import type { LayoutLink, LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
 import { routerEntryPoints } from '../../src/layout/bands.js';
 import { chordKind, chordVerdict, chordsHold, edgeLeavers, expectedFramePath } from '../../src/layout/frame-paths.js';
@@ -60,16 +60,18 @@ describe('what is a cross-frame candidate', () => {
   it('takes a link whose upper port is on the bottom and whose lower port is on the top, and nothing else', async () => {
     const plain = parse(fixture(STRAIGHT));
     const base = await run(fixture(STRAIGHT));
-    expect(crossLinks(base).map(link => link.id)).toEqual(['link-3', 'link-4', 'link-5', 'link-6']);
+    expect(crossLinks(base).map(link => link.id)).toEqual(['link-2', 'link-3', 'link-5', 'link-6']);
     // A side port is no candidate: the router of the east frame leaves by its left side.
     const side = await run(fixture(STRAIGHT).replace('east-router: { group: east, class: router, label: East router }',
       'east-router: { group: east, class: router, label: East router, ports: [{ name: w, side: left }] }').replace('[east-router, provider-1,', '[east-router.w, provider-1,'));
-    expect(chordKind(side, side.links[2]!)).toBeUndefined();
-    expect(side.links[2]!.technique).not.toBe('straight');
+    // Link ids follow the canonical order (DR-04), so the link east-router to provider-1 (authored third, canonical link-2) is found by its ends.
+    const ofRouter = (m: LayoutModel): LayoutLink => m.links.find(link => [link.attachments?.from.node, link.attachments?.to.node].sort().join() === 'east-router,provider-1')!;
+    expect(chordKind(side, ofRouter(side))).toBeUndefined();
+    expect(ofRouter(side).technique).not.toBe('straight');
     // `route: orthogonal` is no candidate; the other links of the pair still are.
     const orthogonal = await run(fixture(STRAIGHT).replace('[east-router, provider-1, { class: dashed }]', '[east-router, provider-1, { class: dashed, route: orthogonal }]'));
-    expect(chordKind(orthogonal, orthogonal.links[2]!)).toBeUndefined();
-    expect(orthogonal.links[2]!.path!.segments.length).toBeGreaterThan(1);
+    expect(chordKind(orthogonal, ofRouter(orthogonal))).toBeUndefined();
+    expect(ofRouter(orthogonal).path!.segments.length).toBeGreaterThan(1);
     expect(crossLinks(orthogonal)).toHaveLength(3);
     expect(plain.links.length).toBe(6);
   }, 120000);
@@ -98,7 +100,7 @@ links:
   - [x3, p2, { class: dashed }]
   - [y, p1, { class: dashed }]`;
     const model = await run(yaml);
-    const link = model.links[4]!;
+    const link = model.links.find(item => item.attachments?.from.node === 'y' && item.attachments.to.node === 'p1' || item.attachments?.from.node === 'p1' && item.attachments.to.node === 'y')!;
     expect(chordKind(model, link)).toBe('cross');
     expect(link.technique).toBe('orthogonal');
     expect(refusals(model)).toContain(`${link.id}:transit`);

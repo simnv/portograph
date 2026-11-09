@@ -1,0 +1,15 @@
+# Expected: `s.*` takes p2, because the other link names p1 (`s.p1#1`). The parser allocates the ends in passes, each in the canonical
+# link order: numbered ports, then unnumbered names, then wildcards, then bare ends (ticket DR-04). Group `low` declares `y` before `x`,
+# so the wildcard link stands first in the canonical order; it still does not take p1. No SHARED_PORT, in every order of `links`.
+# Test-only input owned by ticket DR-04; test/parse/parser.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0 }
+  low: { tier: 1 }
+nodes:
+  y: { group: low }
+  x: { group: low }
+  s: { group: top, ports: [{ name: p1, side: bottom }, { name: p2, side: bottom }] }
+links:
+  - [s.p1#1, x]
+  - [s.*, y]

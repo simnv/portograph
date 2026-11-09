@@ -117,15 +117,15 @@ nodes:
   b: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}
   c: {group: low, ports: [{name: p, side: top}]}
 links: [[a.p, b.p], [a.p, b.q], [a.p, c.p], [a.p, m.p]]`;
-  // Links 1 and 2 are bundle members, which stage 7e owns, so only link-3 is a transit feed here
+  // Links 2 and 3 are bundle members (canonical order, DR-04), which stage 7e owns, so only link-4 is a transit feed here
   // and it yields to the adjacent feed. Stage 7e may later move a.p for its members; that is its call.
   const model = centre(flanks(lanes(rows(await placed(yaml)))));
   expect(model.anchorTier).toBe(2);
-  expect(model.links.map(link => link.bundle ?? null)).toEqual(['bundle-1', 'bundle-1', null, null]);
+  expect(model.links.map(link => link.bundle ?? null)).toEqual([null, 'bundle-1', 'bundle-1', null]);
   expect(model.nodes.a!.ports[0]!.anchor!.x).toBe(model.nodes.m!.ports[0]!.anchor!.x);
   expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toEqual([]);
   const yielded = model.diagnostics.filter(d => d.code === 'CENTRE_FAN_REMAINDER' && /shares its child port/.test(d.message));
-  expect(yielded.map(d => d.owners?.map(owner => 'id' in owner ? owner.id : owner.kind))).toEqual([['link-3']]);
+  expect(yielded.map(d => d.owners?.map(owner => 'id' in owner ? owner.id : owner.kind))).toEqual([['link-4']]);
   // The full placement still converges once bundles have claimed their members.
   expect(bundles(bars(model)).diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toEqual([]);
 }, 60000);

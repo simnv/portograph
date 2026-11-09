@@ -99,9 +99,9 @@ describe('golden render', () => {
 
     // Structural and author classes stay separate tokens.
     expect(block(svg, 'EAC-01')).toContain('class="node router"');
-    expect(block(svg, 'link-5')).toContain('class="link dotted"');
-    expect(block(svg, 'link-13')).toContain('class="link dashed"');
-    expect(block(svg, 'link-1')).toContain('class="link"');
+    expect(block(svg, 'link-4')).toContain('class="link dotted"');
+    expect(block(svg, 'link-21')).toContain('class="link dashed"');
+    expect(block(svg, 'link-2')).toContain('class="link"');
   }, 60000);
 
   it('lists exactly the classes present, once, in profile order', async () => {

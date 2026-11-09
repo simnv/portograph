@@ -10,8 +10,9 @@
  *
  * Fails on: a dirty tree or a merge conflict, a typecheck, lint or test failure, any WORSE row of
  * `gate:compare` (canvas aside, unless --strict), any NEW-FAIL row (a sheet only the head has that fails),
- * and any link the sweep removes that main keeps. It also prints the R3 check (`npm run r3`) of the sheets
- * whose hash changed; that report does not fail the gate.
+ * and any link the sweep removes that main keeps. It also runs the R3 check (`npm run r3`) on the sheets
+ * whose hash changed: a `links` line that is not SAME or SKIP fails the gate (link order is never input, ticket DR-04), and so does a
+ * `nodes` line that refuses the sheet (decision review D-Q1); another `nodes` difference is a report only.
  * The base files `/tmp/pg-main-<sha>.tsv` and `/tmp/pg-main-<sha>-sweep.txt` are reused when
  * they exist; otherwise they are built in a detached worktree `.claude/worktrees/gate-main` under
  * the main checkout. See docs/agents/gates.md.
@@ -89,18 +90,30 @@ function ensureBase(sha, baseTsv, baseSweep) {
   measure(worktree, baseTsv, baseSweep, needTsv && needSweep ? undefined : needTsv ? 'corpus' : 'sweep');
 }
 
-/** R3 report (it does not fail the gate): `npm run r3` on `files` through `node scripts/r3.mjs`, which runs inside this job's lock; at most R3_MAX sheets. */
-function reportR3(files) {
-  if (files.length === 0) return say('r3: no sheet with a new hash');
+/**
+ * The R3 check: `npm run r3` on `files` through `node scripts/r3.mjs`, which runs inside this job's lock; at most R3_MAX sheets. Returns
+ * the reasons it fails the gate: a `links` reversal that differs or fails (link order is never input, ticket DR-04), and a `nodes`
+ * reversal that refuses the sheet (decision review D-Q1: the order of `nodes` is author input, but never a refusal). A `nodes`
+ * reversal that only differs is reported.
+ */
+function checkR3(files) {
+  if (files.length === 0) { say('r3: no sheet with a new hash'); return []; }
   const checked = files.slice(0, R3_MAX);
-  say(`r3: ${checked.length} of ${files.length} changed sheets (report only; a difference does not fail the gate)${files.length > checked.length ? `; the rest: npm run r3 -- <sheet>...` : ''}`);
+  say(`r3: ${checked.length} of ${files.length} changed sheets (a links difference or a refusal fails the gate; a nodes difference is a report)${files.length > checked.length ? `; the rest: npm run r3 -- <sheet>...` : ''}`);
   const result = run('node', [join(ROOT, 'scripts', 'r3.mjs'), ...checked]);
   const lines = result.stdout.trimEnd().split('\n').filter(Boolean);
   const different = lines.filter((line) => !/\t(SAME( .*)?|SKIP .*)$/.test(line));
   if (different.length > 0) say(`r3: ${different.length} of ${lines.length} reversals differ or failed:\n${different.join('\n')}`);
   else if (result.ok) say(`r3: ${lines.length} reversals, all SAME or SKIP`);
   // Exit 1 means a difference or an ERROR line (shown above); anything else is a crash of the script.
-  if (result.status !== 0 && result.status !== 1) say(`r3: the script failed (exit ${result.status})\n${tail(result.out)}`);
+  if (result.status !== 0 && result.status !== 1) {
+    say(`r3: the script failed (exit ${result.status})\n${tail(result.out)}`);
+    return [`r3 script failed (exit ${result.status})`];
+  }
+  return different.filter((line) => {
+    const [, kind = '', text = ''] = line.split('\t');
+    return kind === 'links' || kind === 'written' || /^(ERROR|TIMEOUT)/.test(text);
+  }).map((line) => { const [sheet, kind] = line.split('\t'); return `r3 ${kind} ${sheet}`; });
 }
 
 /** Links a sweep file removes that the base sweep did not, as `name:id`; a new ERROR or TIMEOUT counts as one. */
@@ -174,7 +187,7 @@ function main(argv) {
     if (row.flag === 'NEW-FAIL') reasons.push(`NEW-FAIL ${row.file} ${row.column} ${row.head}`);
     else if (strict || row.column !== 'W') reasons.push(`WORSE ${row.file} ${row.column} ${row.base} -> ${row.head}`);
   }
-  reportR3(changedSheets(compared.stdout));
+  reasons.push(...checkR3(changedSheets(compared.stdout)));
 
   const diff = run('diff', [baseSweep, headSweep]);
   say(diff.stdout.trim() === '' ? 'sweep: no change' : `sweep diff:\n${diff.stdout.trimEnd()}`);

@@ -56,6 +56,8 @@ it('routes the measured JPEG golden remainder and scores the complete diagram', 
 
   // Placement is frozen: stage 8 adds paths only, and the result restores byte-equal.
   expect(model.freeze!.placement).toEqual(before.freeze!.placement);
-  expect(model.links.slice(2).map(link => link.path)).toEqual(before.links.slice(2).map(link => link.path));
+  // The two remainders are link-1 and link-2 (the provider feeds stand first in the canonical link order too); every other path is kept.
+  const kept = (links: typeof model.links) => links.filter(link => !['link-1', 'link-2'].includes(link.id)).map(link => link.path);
+  expect(kept(model.links)).toEqual(kept(before.links));
   expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 }, 60000);

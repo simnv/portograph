@@ -122,7 +122,7 @@ it('keeps a corridor that would leave the centring invariant unverified', async 
 it('leaves a corridor whose link has a bar end where 7a put it', async () => {
   const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(barEnd))))))));
   // The precondition: a child really is off its corridor here as well.
-  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
+  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-2')!;
   expect(model.nodes.c1!.ports[0]!.anchor!.x).not.toBe(lane.x);
   expect(model.diagnostics.map(item => item.code)).not.toContain('LANE_FOLLOWS_ITS_CHILD');
   // The corridors stay where 7a put them, which is where the bar takes its ports from (7d): each lane x is the x of a port of the spine, and no lane was moved by the bar's width.
@@ -136,16 +136,17 @@ it('leaves a corridor whose link has a bar end where 7a put it', async () => {
  * keeps the answer out of the authoring: both directions move the corridor next to the child and
  * leave the corridor next to the alignment end where 7a put it.
  */
+// The lower groups are declared first, so the canonical link order (ticket DR-04) numbers the links as they are written.
 const twoTierTransit = (reversed: boolean): string => {
   const pair = (a: string, b: string) => reversed ? `[${b}, ${a}]` : `[${a}, ${b}]`;
   return `portograph: 2
 groups:
+  low-b: {tier: 10}
+  low-a: {tier: 10}
   up-a: {tier: 7}
   up-b: {tier: 7}
   mid: {tier: 8}
   mid2: {tier: 9}
-  low-a: {tier: 10}
-  low-b: {tier: 10}
   tail: {tier: 12}
 nodes:
   node-ca002: {group: up-b, class: provider, label: node-ca002}

@@ -34,7 +34,10 @@ function lineWindows(model: LayoutModel, id: string): { longest: number; holds: 
 // Architecture-2 ticket 27: the step over a chord turned link-4's line after the producer reserved its window, and nothing reserved the
 // room again, so `validateGroupLabelBands` threw. Every settle round now reserves the room on the geometry it settles.
 it('a 7f move that turns a labelled line keeps the window its label holds (ticket 27)', async () => {
-  const model = await run(fixture);
+  // DR-04 with DR-08: under the canonical link order the group lift raises g2b and g2a (main declines it: link-3 loses its straight
+  // line there). That is another sheet (486 x 337 px, not 337 x 496), where link-4's longest window is its label width less 6e-14 px. The
+  // subject of ticket 27 is read on the unlifted sheet, with the lift off, as DR-08 pins its subject tests.
+  const model = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
   const window = lineWindows(model, 'link-4');
   expect(window.holds).toBe(true);
   expect(window.longest).toBeGreaterThanOrEqual(window.width);
@@ -119,14 +122,14 @@ it('a settle round hands a tier-gap label room to the solve, which reserves it o
 it('a forged record of the label rooms given up is refused (ticket 27, R5)', async () => {
   const model = await run(fixture);
   expect(() => validateGroupLabelBands(model)).not.toThrow();
-  for (const record of [['nope'], ['link-1'], ['link-4', 'link-4'], ['link-4', 'link-3'], []]) {
+  for (const record of [['nope'], ['link-3'], ['link-4', 'link-4'], ['link-4', 'link-2'], []]) {
     const forged = structuredClone(model);
     forged.labelRoomUnsettled = record;
     expect(labelRoomUnsettledFault(forged)).toBeDefined();
     expect(() => validateGroupLabelBands(forged)).toThrow(/label rooms 7f gave up is forged/);
   }
   const honest = structuredClone(model);
-  honest.labelRoomUnsettled = ['link-3', 'link-4'];
+  honest.labelRoomUnsettled = ['link-2', 'link-4'];
   expect(labelRoomUnsettledFault(honest)).toBeUndefined();
 }, 120000);
 

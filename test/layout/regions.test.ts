@@ -59,7 +59,7 @@ describe('real golden region stages', () => {
     expect(beforePairs.filter(pair => pair.group.id === 'tbr-left').map(pair => pair.own.engineOrder)).toEqual([0, 2, 4, 6]);
     // Ticket 08 reads the slots the flank face took at stage 5, before the flank stage normalizes its primary block.
     // Ticket 156: protected x separation retains the original far-end sort and primary alignment.
-    expect(beforePairs.filter(pair => pair.group.id === 'tbr-right').map(pair => pair.own.engineOrder)).toEqual([0, 2, 4, 6]);
+    expect(beforePairs.filter(pair => pair.group.id === 'tbr-right').map(pair => pair.own.engineOrder)).toEqual([1, 3, 5, 7]);
     for (const id of ['TBR-001', 'TBR-002']) {
       const primaryPorts = new Set(beforePairs.filter(pair => pair.own.ref.node === id).map(pair => pair.own.ref.ordinal));
       const otherOrder = (m: LayoutModel) => [...m.nodes[id]!.ports].filter(port => !primaryPorts.has(port.ref.ordinal)).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.ref);
@@ -412,8 +412,8 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     }
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 
-    // Stress ticket 08: `m1|top` carries the two links, 12 px apart, and `link-3` travels over
-    // `link-4`'s port. Rule 1 nests the two stems, so the earlier batch's route no longer covers
+    // Stress ticket 08: `m1|top` carries the two links, 12 px apart, and `link-2` travels over
+    // `link-3`'s port. Rule 1 nests the two stems, so the earlier batch's route no longer covers
     // the later link's reserved turn, and the diagram publishes.
     // Ticket 50: both links are planned parts, so their stems are claimed and no batch reserves them (`plan.stems` is empty); the nesting
     // is read from the stem plan that placed the tips.
@@ -423,7 +423,7 @@ links: [[a.p, c.p], [a.q, b.p]]`;
       return stemPlan(model, port).depth;
     };
     expect(plan.stems.filter(stem => stem.node === 'm1')).toEqual([]);
-    expect(depth('link-3')).toBeGreaterThan(depth('link-4') + 17);
+    expect(depth('link-2')).toBeGreaterThan(depth('link-3') + 17);
     const routed = await route(model, { createAttempt: createAvoidAttempt });
     for (const link of routed.links) expect(link.path, link.id).toBeDefined();
     const report = score(routed).snapshot;

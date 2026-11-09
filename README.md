@@ -63,6 +63,9 @@ const report = score(model);
 const svg = render(model);
 ```
 
+`layout` reads `document.links` in the order given. `parse` lists them in the canonical link order (`docs/design/schema.md`),
+so a parsed document is order-free; a document built in code is order-free only when it lists its links in that order.
+
 To set a width budget, add `layout: { nodeContent: card, maxWidth: 1500 }` to the document.
 If the published sheet is wider, portograph tries eligible rows widest first and puts alternate
 members on a second line. It preserves feed order and clear vertical drops. A budget it cannot

@@ -106,7 +106,9 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // Architecture-2 ticket 54: each group title gains only `crossedBy: []`, and nothing else in the layout differs (e78c0a9d3cded778 before).
     // Architecture-2 ticket 57: the model gains only `stemDepths`; the hash without that key is the old one (84b1668cbefa3b25).
     // Architecture-2 ticket 73: without `feedSplits` the hash is the old 7149b9a576a2ee40.
-    expect(hash(model)).toBe('79188b2a83e27b6e');
+    // Ticket DR-04: link-2 and link-3 change ids in the canonical link order (and so in their anonymous port ordinals); an id-free diff against
+    // the layout before DR-04 shows the same canvas, bodies, ports, paths, boxes and labels (79188b2a83e27b6e before).
+    expect(hash(model)).toBe('32e6ad72742765ec');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);

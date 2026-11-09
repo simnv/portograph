@@ -14,6 +14,7 @@ import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 /**
  * Ranked-groups ticket 51 (`docs/design/tier-gap-rows.md`, Section 1 item 6 and Section 2.2): every reason a part of a tier gap is
@@ -36,11 +37,11 @@ async function whole(name: string): Promise<{ placed: LayoutModel; routed: Layou
 describe('a residual part publishes with its findings named (ticket 51)', () => {
   it('names a lateral port that crosses the gap (lateral-port) and removes nothing', async () => {
     const { placed: model, routed } = await whole('a-lateral-port-link-crosses-a-tier-gap');
-    expect(residual(model)).toEqual(['link-7:lateral-port']);
-    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: a lateral port crosses the gap.']);
+    expect(residual(model)).toEqual(['link-2:lateral-port']);
+    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-2 is left to the router in the tier gap above tier 1: a lateral port crosses the gap.']);
     expect(routed.removedLinks ?? []).toEqual([]);
-    // Ticket 59: the jog of link-4's drop, which stands on its upper x, keeps the group-edge margin (10) from the top of `access`.
-    const jog = tierGapPlans(model).flatMap(({ plan }) => plan.parts).find(part => part.link === 'link-4')!;
+    // Ticket 59: the jog of link-6's drop, which stands on its upper x, keeps the group-edge margin (10) from the top of `access`.
+    const jog = tierGapPlans(model).flatMap(({ plan }) => plan.parts).find(part => part.link === 'link-6')!;
     expect(jog.shape === 'drop' && jog.stand === 'upper' && jog.jog !== undefined).toBe(true);
     // jog = bandTop - max(depth + k, e): k the row pitch, e the group-edge margin from the top of `access`.
     const k = nudgingDistance(model), e = GROUP_EDGE_LINK_CLEARANCE + routedStroke(model) / 2;
@@ -51,37 +52,47 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
 
   it('names a same-boundary U-turn (u-turn): both ports face the gap from one band, no gap between them', async () => {
     const { placed: model, routed } = await whole('a-same-boundary-u-turn-beside-a-tier-gap');
-    expect(residual(model)).toEqual(['link-7:u-turn']);
-    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: both ends stand on one boundary.']);
+    expect(residual(model)).toEqual(['link-2:u-turn']);
+    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-2 is left to the router in the tier gap above tier 1: both ends stand on one boundary.']);
     expect(routed.removedLinks ?? []).toEqual([]);
     expect(failing(routed)).toEqual([]);
   }, 120000);
 
   it('names a port that faces away from the gap (faces-away), not a u-turn', async () => {
     const { placed: model, routed } = await whole('a-port-facing-away-from-a-tier-gap-is-left-to-the-router');
-    expect(residual(model)).toEqual(['link-7:faces-away']);
-    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: a port faces away from the gap.']);
+    expect(residual(model)).toEqual(['link-2:faces-away']);
+    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-2 is left to the router in the tier gap above tier 1: a port faces away from the gap.']);
     expect(routed.removedLinks ?? []).toEqual([]);
-    // Ticket 52: the grant is the cover of the crossed vertical, not of the whole part. link-7 holds the cover of link-3's upper leg and
-    // not that of its lower leg (the segments are leg, row, leg); the wide grant of the whole part let link-7 run 3.83 px beside a
-    // leg it never crosses (G6 parallel-clearance link-3 / link-7), and the narrow one routes clear.
-    expect(allocateGapRuns(model).find(run => run.link === 'link-3')!.grants).toEqual([['link-7'], [], []]);
+    // Ticket 52: the grant is the cover of the crossed vertical, not of the whole part. link-2 holds the cover of link-4's upper leg and
+    // not that of its lower leg (the segments are leg, row, leg); the wide grant of the whole part let link-2 run 3.83 px beside a
+    // leg it never crosses (G6 parallel-clearance link-4 / link-2), and the narrow one routes clear.
+    expect(allocateGapRuns(model).find(run => run.link === 'link-4')!.grants).toEqual([['link-2'], [], []]);
     expect(failing(routed)).toEqual([]);
   }, 120000);
 
   it('names a part in a row cycle with its own code (TIER_GAP_ROW_CYCLE)', async () => {
-    const { placed: model, routed } = await whole('a-row-cycle-leaves-a-part-to-the-router');
-    expect(residual(model).sort()).toEqual(['link-6:row-cycle', 'link-7:u-turn']);
-    expect(codes(model).sort()).toEqual([
-      'TIER_GAP_PART_RESIDUAL|link-7 is left to the router in the tier gap above tier 1: both ends stand on one boundary.',
-      'TIER_GAP_ROW_CYCLE|link-6 is left to the router in the tier gap above tier 1: its rows form a cycle.',
-    ]);
+    // Ticket DR-04: a cycle is left to the router only where no part on it has a free middle (the fixture header says why none has one).
+    const { placed: model, routed } = await whole('a-row-cycle-with-no-free-middle-is-left-to-the-router');
+    expect(residual(model)).toEqual(['link-3:row-cycle']);
+    expect(codes(model)).toEqual(['TIER_GAP_ROW_CYCLE|link-3 is left to the router in the tier gap above tier 1: its rows form a cycle.']);
     expect(routed.removedLinks ?? []).toEqual([]);
-    expect(failing(routed)).toEqual(['G6:parallel-clearance:link-5/link-6']);
+    expect(failing(routed)).toEqual([]);
+    // Link order is never input: with `links` reversed the same part is residual.
+    expect(residual(await place(reversed(read('a-row-cycle-with-no-free-middle-is-left-to-the-router'), 'links')))).toEqual(['link-3:row-cycle']);
+  }, 120000);
+
+  it('opens a row cycle with a middle drop where a part on it has a free middle (ticket DR-04)', async () => {
+    // Before DR-04 the latest part of this cycle (in link order) was residual; now a part of the cycle that has a free middle is split.
+    const { placed: model, routed } = await whole('a-row-cycle-leaves-a-part-to-the-router');
+    expect(residual(model)).toEqual(['link-1:u-turn']);
+    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-1 is left to the router in the tier gap above tier 1: both ends stand on one boundary.']);
+    expect(tierGapPlans(model).flatMap(({ plan }) => plan.parts).filter(part => part.shape === 'z').length).toBeGreaterThan(0);
+    expect(routed.removedLinks ?? []).toEqual([]);
+    expect(failing(routed)).toEqual([]);
   }, 120000);
 
   it('leaves no leg under a title to the router, and names a leg over a shared run (crosses-shared-run) on the corpus fixtures', async () => {
-    // A title yields to the legs under it (architecture-2 ticket 54): the fixture whose wide titles once left link-8 and link-11 to the router
+    // A title yields to the legs under it (architecture-2 ticket 54): the fixture whose wide titles once left link-10 and link-14 to the router
     // (`leg-blocked`) plans every part now.
     expect(residual(await place(read('a-title-no-position-clears-leaves-the-leg-to-the-router')))).toEqual([]);
     expect(residual(await place(read('a-tier-gap-plan-orders-every-part')))).toEqual([]);
@@ -91,7 +102,7 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
   }, 120000);
 });
 
-/** Three tiers, a transit lane for link-2 through tier 1, and planned parts in both gaps. */
+/** Three tiers, a transit lane for link-4 through tier 1, and planned parts in both gaps. */
 const transit = `portograph: 2
 groups:
   top: { tier: 0 }
@@ -123,29 +134,29 @@ describe('shapes the placement stages do not build, on an edited placed model (t
 
   it('names a span across two gaps without a lane (spans-two-gaps) in both gaps, and the router is left the link', async () => {
     const model = await edited(item => {
-      const link = item.links.find(entry => entry.id === 'link-2')!;
+      const link = item.links.find(entry => entry.id === 'link-4')!;
       delete link.fixedSegments;
-      item.lanes = item.lanes.filter(lane => !(lane.owner.kind === 'link' && lane.owner.id === 'link-2'));
+      item.lanes = item.lanes.filter(lane => !(lane.owner.kind === 'link' && lane.owner.id === 'link-4'));
     });
-    expect(residual(model).sort()).toEqual(['link-2:spans-two-gaps', 'link-2:spans-two-gaps']);
+    expect(residual(model).sort()).toEqual(['link-4:spans-two-gaps', 'link-4:spans-two-gaps']);
     solveTierGaps(model, replayGridAndBands);
     const named = codes(model).filter(item => item.startsWith('TIER_GAP_PART_RESIDUAL')).map(item => item.replace(/tier \d/g, 'tier N'));
-    expect(named).toEqual(Array(2).fill('TIER_GAP_PART_RESIDUAL|link-2 is left to the router in the tier gap above tier N: its part spans two tier gaps without a lane.'));
+    expect(named).toEqual(Array(2).fill('TIER_GAP_PART_RESIDUAL|link-4 is left to the router in the tier gap above tier N: its part spans two tier gaps without a lane.'));
     // Stage 8 plans the edited model without throwing: the residual link has no planned part to reserve.
     expect(() => planRoute(model)).not.toThrow();
   }, 120000);
 
   it('names a lane end that stands on no boundary of the gap (off-boundary)', async () => {
     const model = await edited(item => {
-      for (const segment of item.links.find(entry => entry.id === 'link-2')!.fixedSegments ?? []) { segment.from.y += 4; segment.to.y -= 4; }
+      for (const segment of item.links.find(entry => entry.id === 'link-4')!.fixedSegments ?? []) { segment.from.y += 4; segment.to.y -= 4; }
     });
-    expect(residual(model)).toContain('link-2:off-boundary');
+    expect(residual(model)).toContain('link-4:off-boundary');
   }, 120000);
 
   it('names a span that crosses the reserved run of a through lane (crosses-lane)', async () => {
     const model = await edited(item => {
       const above = item.tierBands.find(entry => entry.tier === 0)!.bounds!, below = item.tierBands.find(entry => entry.tier === 1)!.bounds!;
-      const lane = item.lanes.find(entry => entry.owner.kind === 'link' && entry.owner.id === 'link-2')!;
+      const lane = item.lanes.find(entry => entry.owner.kind === 'link' && entry.owner.id === 'link-4')!;
       // The lane's box stands over the whole gap, from the band above to the band below: a wall.
       lane.bounds = { ...lane.bounds, y: above.y + above.height - 1, height: below.y - above.y - above.height + 2 };
     });

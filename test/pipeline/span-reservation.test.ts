@@ -20,7 +20,7 @@ const source = (name: string): string => readFileSync(new URL(`../../goldens/syn
 const MESH = 'a-mesh-across-a-middle-tier-draws-straight-chords-beside-its-frame';
 const THREE = 'a-chord-over-three-tier-gaps-passes-two-middle-tiers';
 const LABEL = 'a-labelled-chord-across-a-middle-tier-keeps-its-label-on-the-line';
-const MESH_LINKS = ['link-3', 'link-4', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10', 'link-11'];
+const MESH_LINKS = ['link-1', 'link-2', 'link-3', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10'];
 const forced = (name: string, hints: string[]): Promise<LayoutModel> =>
   layout(parse(source(name)), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: hints });
 const plain = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: [] });
@@ -118,24 +118,24 @@ describe('the spanCorridor move reservation', () => {
 
 describe('a chord over three tier gaps', () => {
   it('reserves one corridor in each transited tier', async () => {
-    const model = await forced(THREE, ['link-4']);
-    const link = model.links.find(item => item.id === 'link-4')!;
+    const model = await forced(THREE, ['link-1']);
+    const link = model.links.find(item => item.id === 'link-1')!;
     expect(isRoutedChord(model, link)).toBe(true);
-    expect(model.lanes.filter(lane => lane.kind === 'span').map(lane => lane.id)).toEqual(['span:link-4:1', 'span:link-4:2']);
+    expect(model.lanes.filter(lane => lane.kind === 'span').map(lane => lane.id)).toEqual(['span:link-1:1', 'span:link-1:2']);
     expect(model.diagnostics.filter(item => item.code === 'SPAN_CHORD_BLOCKED')).toEqual([]);
     expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
     expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
   }, 60000);
 
   it('refuses a hint on a link that is no candidate, in the placement run', async () => {
-    await expect(forced(THREE, ['link-1'])).rejects.toThrow(/no spanning-chord candidate/);
+    await expect(forced(THREE, ['link-2'])).rejects.toThrow(/no spanning-chord candidate/);
   }, 60000);
 });
 
 describe('a labelled chord', () => {
   it('is reserved and published as every other chord', async () => {
-    const model = await forced(LABEL, ['link-4']);
-    expect(isRoutedChord(model, model.links.find(item => item.id === 'link-4')!)).toBe(true);
+    const model = await forced(LABEL, ['link-1']);
+    expect(isRoutedChord(model, model.links.find(item => item.id === 'link-1')!)).toBe(true);
     expect(score(model).snapshot.gates.G3!.passed).toBe(true);
   }, 60000);
 });
