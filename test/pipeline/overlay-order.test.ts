@@ -9,7 +9,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
 
 const names = {
-  indifferent: 'overlay-links-reorder-an-indifferent-tier',
+  // Ticket DR-04: the copy of `overlay-links-reorder-an-indifferent-tier` whose group declarations give the written link order's layout.
+  indifferent: 'overlay-links-reorder-an-indifferent-tier-groups-redeclared',
   crossings: 'an-overlay-reorder-is-refused-for-routed-crossings',
   bend: 'an-overlay-reorder-is-refused-when-a-link-would-bend',
   partners: 'a-row-orders-its-nodes-by-overlay-partners',

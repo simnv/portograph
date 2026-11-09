@@ -31,7 +31,8 @@ vi.mock('../../src/layout/lanes.js', async importOriginal => {
   } };
 });
 
-const SHEET = 'goldens/synthetic/a-chord-and-a-lane-share-a-middle-tier.yaml';
+// Ticket DR-04: the copy of `a-chord-and-a-lane-share-a-middle-tier` whose canonical link order gives each node its links in the written order.
+const SHEET = 'goldens/synthetic/a-chord-and-a-lane-share-a-middle-tier-bottom-group-first.yaml';
 const SPAN_SHEET = 'goldens/synthetic/a-chord-over-three-tier-gaps-passes-two-middle-tiers.yaml';
 const FAN_SHEET = 'goldens/synthetic/a-fan-spreads-its-ports-so-its-chords-hold-clearance.yaml'; // one fan re-run
 const run = async (at: number, sheet = SHEET, bundlesAt = 0): Promise<{ starts: number; runs: number; stage: string | undefined }> => {

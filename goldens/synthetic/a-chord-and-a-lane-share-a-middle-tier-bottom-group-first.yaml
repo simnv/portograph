@@ -1,0 +1,25 @@
+# Expected: the scenario of `a-chord-and-a-lane-share-a-middle-tier` under the canonical link order (ticket DR-04). The groups and nodes are the same; `bottom` is declared before `middle`,
+# so the canonical order (groups in declaration order, then nodes inside a group) gives each node its links in the order the
+# original writes them. With the joint order off (`layout.feedOrder: false`, the tests pin it) the layout is the original's
+# before DR-04: the same nodes, ports and paths; only the link ids differ.
+# Test-only input; test/pipeline/span-chords.test.ts and test/pipeline/refund-injection.test.ts read it.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0, label: Top }
+  bottom: { tier: 2, label: Bottom }
+  middle: { tier: 1, label: Middle }
+nodes:
+  a1: { group: top, class: router, label: A1 }
+  a2: { group: top, class: router, label: A2 }
+  m1: { group: middle, class: router, label: M1 }
+  m2: { group: middle, class: router, label: M2 }
+  d1: { group: bottom, class: switch, label: D1 }
+  d2: { group: bottom, class: switch, label: D2 }
+links:
+  - [a1, d1]
+  - [a2, d2]
+  - [a2, m1]
+  - [m1, d1]
+  - [a1, m2]
+  - [m2, d2]

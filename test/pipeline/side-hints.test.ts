@@ -287,11 +287,14 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // centring stretched is trimmed to its ports after 7f and `bodyTrims` records it; no route changes. The no-hint claim is the second check.
   // Architecture-2 ticket 73 re-baselined all four: every published model gains `feedSplits: []` and its freeze copy, and the hash without that
   // key is the old one (38dcd21f37d7d0d4, 4a5fd53ee2ebe075, e07856b562bce4c8 and 98b3b139a5a1657b).
+  // Ticket DR-04 (link order is never input) re-baselined three: their link ids and anonymous port ordinals follow the canonical link order. An
+  // id-free diff against the layouts before DR-04 shows the same canvas, node bodies, port anchors and sides, link paths, group boxes and labels.
+  // The hashes were 42ca7e1559f49ea9, 9ab27642f6cac98d and a21df2bb8798fc03.
   const main: Record<string, string> = {
     'a-group-holds-both-ends-of-a-bundle': '7fb6875900425312',
-    'a-bus-in-a-rank-gap-grows-the-gap': '42ca7e1559f49ea9',
-    'a-linked-node-steps-out-of-a-straight-chord': '9ab27642f6cac98d',
-    'a-bar-end-keeps-its-corridor': 'a21df2bb8798fc03',
+    'a-bus-in-a-rank-gap-grows-the-gap': '92a03918704346a8',
+    'a-linked-node-steps-out-of-a-straight-chord': 'c3ade365edabf0c6',
+    'a-bar-end-keeps-its-corridor': 'fbe95e96d87d86e8',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {
     const { model } = await run(fixture(name));

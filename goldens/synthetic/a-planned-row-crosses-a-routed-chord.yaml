@@ -6,11 +6,13 @@
 # crosses a chord strictly is no G6 finding, and the plan keeps every leg and drop 10 px from the chords it does not cross.
 # Every gate passes.
 # Test-only input owned by ranked-groups ticket 101; test/pipeline/routed-chord-gap.test.ts reads the layout.
+# `west` is declared before `east` (ticket DR-04): under the canonical link order this gives the layout the written order gave before,
+# with East on the left; only the link ids differ.
 portograph: 2
 profile: network
 groups:
-  east: { tier: 1, label: East }
   west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
   providers: { tier: 2, label: Providers of the upstream transit service }
 nodes:
   east-core: { group: east, class: router, label: East core router of the site }
