@@ -581,7 +581,7 @@ const nearerEnd = (start: number, length: number, size: number): 0 | 0.5 | 1 => 
  * A pill keeps its face across, and a fixed px distance from the nearer corner of that face along it
  * (user, 2026-11-08): a pill nearer the far corner is measured from that corner, fraction 1 and a
  * negative offset. A pill centred on its face stays centred: fraction 0.5 and an offset of minus half its length (user, 2026-11-09). The side is the one the pipeline decided; a pill without one is measured from the
- * nearer edge on both axes.
+ * nearer edge on each axis, except that `nearerEnd` gives it fraction 0.5 on any axis where it is centred within `EPS`.
  */
 const onFace = (pill: Rect, node: Anchored['node'], side: Side | undefined): Anchored => ({
   ...pill, node,

@@ -1962,6 +1962,8 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
     x: Number(cell.geometry['x']) * size.width + (cell.offset?.x ?? 0),
     y: Number(cell.geometry['y']) * size.height + (cell.offset?.y ?? 0),
   });
+  /** The centre tolerance of the export, mirroring `EPS` in src/render/drawio.ts (1e-6 px today). */
+  const CENTRE_EPS = 1e-6;
   const RESIZES = [{ dw: 40, dh: 30 }, { dw: -20, dh: -10 }];
 
   it.each(['drawio-face-children-stay-on-resize', 'a-card-node-holds-its-ports-on-every-face', 'a-theme-paints-and-moves-nothing'])(
@@ -1993,8 +1995,8 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
           const start = horizontal ? local.x : local.y, extent = horizontal ? pill.width : pill.height;
           const along = horizontal ? size.width : size.height;
           const middle = start + extent / 2 - along / 2;
-          const centred = Math.abs(middle) <= 1e-6;
-          const far = middle > 1e-6;
+          const centred = Math.abs(middle) <= CENTRE_EPS;
+          const far = middle > CENTRE_EPS;
           expect(Number(cell.geometry[horizontal ? 'x' : 'y']), cell.id).toBe(centred ? 0.5 : far ? 1 : 0);
           for (const { dw, dh } of RESIZES) {
             const resized = { width: size.width + dw, height: size.height + dh };
