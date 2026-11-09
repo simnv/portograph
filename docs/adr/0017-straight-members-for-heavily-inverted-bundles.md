@@ -51,8 +51,24 @@ least one strict endpoint inversion and no lane of its own draws straight member
    the bundle member pitch: segment distance at least the 16 px member gap plus the half strokes of
    the two members, 17.5 px between centrelines at default strokes.
 
-Otherwise the bundle keeps the staircase. Nothing is moved: placement reserves the staircase
-capacity, and the test reads that geometry. The decision review measured the old threshold on 467
+Otherwise the bundle keeps the staircase. (Superseded in part by the second amendment below: at
+DR-03 placement still reserved the staircase capacity, and the test read that geometry.) The decision review measured the old threshold on 467
 sheets: it changed no drawing, because every bundle that reached it had three inversions of three
 members (`.scratch/decision-review-2026-11/results/P5.md`). The second alternative above ("a single
 inversion is cleaner as a crossover") is the one this amendment overrules.
+
+## Amendment 2 (ticket DR-16, 2026-11-09)
+
+Placement decides the shape, once, and reserves only what that shape needs (the pipeline's one
+load-bearing rule; R1, R2). When stage 7e reserves the channel of an inverted facing bundle without
+lanes, it runs the test above on the geometry its move would leave: first in the channel a bundle of
+the same members without inversions needs (`facingBundleNeed` with no inversion term), then in the
+staircase channel. It records the answer on `Bundle.straight` and reserves the lesser channel in
+which the test holds, or the staircase channel when it holds in neither. The test cannot fail in a
+deeper channel once it holds in a shallower one: a deeper channel only makes the diagonals steeper.
+A fanned bundle (a shared port, or a fan at either end) keeps the staircase: its channel tracks are
+fan leaves, which only the bundle paths place. Where the crossover room of a side-facing bundle is
+refused (`BUNDLE_ROOM_HELD`), and between the rows of one tier, where no gap grows, the shape is
+decided on the channel as it stands. The bundle paths and restore read `Bundle.straight` and never
+run the test again. On `a-bundle-with-two-inversions-draws-straight-when-the-gap-holds-the-pitch`
+the channel goes from 366.5 px to 139 px, and the X opens from 11.9 to 35.6 degrees.

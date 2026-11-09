@@ -675,7 +675,7 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
       || (link.fixedSegments !== undefined && !laneStage) || (link.sharedRuns !== undefined && !bundleStage))
     || (!laneStage && (model.lanes.length > 0 || model.regions.length > 0)) || (!barStage && model.barDrops.length > 0)
     || (!bundleStage && model.junctions.length > 0)
-    || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined || b.lead !== undefined))
+    || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined || b.lead !== undefined || b.straight !== undefined))
     || model.obstacles.length > 0 || (!bandsStage && model.labelBands.length > 0)
     || (!labelStage && model.legend !== undefined)
     || nonNodeLabels.some(label => !(bandsStage && label.role === 'group')

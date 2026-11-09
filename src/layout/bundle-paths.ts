@@ -222,8 +222,8 @@ function straightMember(item: Member, start: number, end: number, n: Point, hori
  * strictly crosses and except two axis-aligned runs on different axes. Distances are measured
  * between finite segments — the closest points of two non-crossing runs lie at an endpoint of one of
  * them — minus the pair's own strokes. Members tied at a port are left out: their shared stem
- * belongs to the fan stage 7e builds, which G6 exempts. Nothing is moved to make room; a bundle that
- * fails this keeps the orthogonal staircase.
+ * belongs to the fan stage 7e builds, which G6 exempts. Placement runs this in the channel it is about
+ * to reserve (ticket DR-16); a bundle that fails it keeps the orthogonal staircase.
  */
 function straightFeasible(list: Member[], start: number, end: number, n: Point, horizontal: boolean): boolean {
   const owner = { kind: 'bundle' as const, id: 'clearance' };
@@ -248,25 +248,30 @@ function straightFeasible(list: Member[], start: number, end: number, n: Point, 
 }
 
 /**
- * Whether an inverted bundle draws straight members (ADR-0017): it does when the gap holds the member
- * pitch. The gap is the channel the placed faces leave, measured along the bundle's normal: both stems
+ * Whether an inverted bundle can draw straight members (ADR-0017): it can when the gap holds the member
+ * pitch. The gap is the channel between the faces, measured along the bundle's normal: both stems
  * (`MIN_STEM` each) must fit in it with room to spare. The pitch is the bundle member pitch of
  * `CONTEXT.md`: every pair of member segments G6 would measure (stems included, a strictly crossing
  * pair excepted) keeps the member gap plus the pair's own strokes, 17.5 px between centrelines at
  * default strokes. The inversion count and the drawn length play no part (user ruling, 2026-11-07).
- * Nothing is moved to make straight members fit; a bundle whose gap does not hold the pitch keeps the
- * orthogonal staircase. Only a facing bundle without lanes qualifies, like the staircase. (An authored
- * override is out of scope: `route: straight` is a per-link key and stage 1 excludes such links from
- * bundles.)
+ * Only a facing bundle without lanes qualifies, like the staircase. (An authored override is out of
+ * scope: `route: straight` is a per-link key and stage 1 excludes such links from bundles.)
+ *
+ * Placement asks this once per reservation (`straightReservation`, ticket DR-16) and records the answer
+ * on `Bundle.straight`; the router reads that record and never asks again (R1). `grow` is the depth
+ * placement is about to add to the channel: the test reads the far ends `grow` px deeper along the
+ * normal, which is the geometry the move leaves, because the move translates one face along the normal.
  */
-export function straightMembers(model: LayoutModel, bundle: Bundle, list: Member[]): boolean {
+export function straightMembers(model: LayoutModel, bundle: Bundle, list: Member[], grow = 0): boolean {
   if (!inversionPairs(list).length || !facing(list) || model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id))) return false;
   const n = normal(list[0]!.a.side!), depth = (p: Point): number => n.x * p.x + n.y * p.y;
-  const start = Math.max(...list.map(m => depth(m.a.anchor!))) + MIN_STEM;
-  const end = Math.min(...list.map(m => depth(m.b.anchor!))) - MIN_STEM;
+  const moved = grow === 0 ? list
+    : list.map(m => ({ ...m, b: { ...m.b, anchor: { x: m.b.anchor!.x + n.x * grow, y: m.b.anchor!.y + n.y * grow } } }));
+  const start = Math.max(...moved.map(m => depth(m.a.anchor!))) + MIN_STEM;
+  const end = Math.min(...moved.map(m => depth(m.b.anchor!))) - MIN_STEM;
   // The gap: both stems must exist between the two rows. The pitch: the clearance test.
   if (end - start <= 0) return false;
-  return straightFeasible(list, start, end, n, n.x !== 0);
+  return straightFeasible(moved, start, end, n, n.x !== 0);
 }
 
 /**
@@ -434,7 +439,8 @@ export function rebuildBundlePaths(model: LayoutModel): void {
     bundle.memberGap = 16; bundle.memberPitch = q; bundle.inversions = inversions;
     delete bundle.mergeRuns;
     const fans = bundleFans(model, bundle, list, q), channel = fans?.members ?? list;
-    const straight = straightMembers(model, bundle, channel);
+    // Placement decided the shape once and reserved its depth (`Bundle.straight`, ticket DR-16); the router reads the record (R1).
+    const straight = bundle.straight === true;
     const crossing = inversions && facing(list) && !model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id))
       ? straight ? straightPaths(bundle, channel) : crossedPaths(bundle, channel, q) : undefined;
     const parallel = !inversions && facing(list) ? parallelPaths(model, bundle, channel, q) : undefined;

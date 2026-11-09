@@ -10,6 +10,7 @@ import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { holdsMove, holdsNodeMove } from './move-reservations.js';
 import { rowGap } from './sides-two.js';
 import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
+import { straightMembers } from './bundle-paths.js';
 import { gridChains } from './grid.js';
 import { BUNDLE_EDGE_EPS, PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 import { sidePillBodyReach } from './pill-reach.js';
@@ -532,6 +533,22 @@ export function orderBundles(model: LayoutModel): void {
   }
 }
 
+/**
+ * Placement's one shape decision for an inverted facing bundle without lanes (ADR-0017 as amended by tickets DR-03 and DR-16),
+ * and the depth it reserves. `have` is the channel the faces leave now; `straight` and `staircase` are the needs of the two
+ * shapes (`facingBundleNeed`). The bundle draws straight members when the gap holds the member pitch (`straightMembers`) in the
+ * channel the straight need leaves, or else in the one the staircase need leaves; it reserves the lesser of the two in which
+ * the test holds, so the canvas does not keep a staircase depth that no staircase uses. Otherwise it keeps the staircase and
+ * its depth. A fanned bundle (`fanned`) keeps the staircase: its channel tracks are the fan leaves, which only the paths of 7e
+ * place. The answer is written on `Bundle.straight`, which the router reads (R1).
+ */
+function straightReservation(model: LayoutModel, bundle: Bundle, list: Member[], fanned: boolean, have: number, straight: number, staircase: number): number {
+  const holds = (need: number): boolean => !fanned && straightMembers(model, bundle, list, Math.max(0, need - have));
+  if (holds(straight)) { bundle.straight = true; return straight; }
+  bundle.straight = holds(staircase);
+  return staircase;
+}
+
 /** Geometry-only plan. No path, lane owner, bar reservation or envelope is written here. */
 export function prepareBundleGeometry(model: LayoutModel): void {
   // A diagram with no bundle still reserves the depth of its plain fans (ticket 20); one with
@@ -539,8 +556,9 @@ export function prepareBundleGeometry(model: LayoutModel): void {
   if (!model.bundles.length && !treeCohorts(model).some(({ port }) => axis(port.side!) === 'x')) return;
   const oldBands = clone(model.tierBands);
   orderBundles(model);
-  // Every seat below decides its lead again; a block it does not seat along x has none.
-  for (const bundle of model.bundles) delete bundle.lead;
+  // Every seat below decides its lead again; a block it does not seat along x has none. The reservation below decides the
+  // shape of every inverted facing bundle again (`straightReservation`); a bundle it does not reach has none.
+  for (const bundle of model.bundles) { delete bundle.lead; delete bundle.straight; }
   const planned = new Map<string, Map<LayoutPort, number>>();
   const set = (port: LayoutPort, value: number): void => {
     const key = JSON.stringify([port.ref.node, port.side]);
@@ -819,20 +837,26 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     if (!facing(list)) continue;
     const q0 = pitch(model, bundle);
     const fan = fanDepth(model, trees, bundle, list, 'a', q0) + fanDepth(model, trees, bundle, list, 'b', q0);
+    const laned = model.lanes.some(lane => lane.owner.kind === 'link' && bundle.members.includes(lane.owner.id));
+    // A member that shares a port, or a fan at either end, puts the channel tracks on fan leaves.
+    const fanned = fan > 0 || (['a', 'b'] as const).some(end => new Set(list.map(m => portId(m[end].ref))).size < list.length);
     if (axis(list[0]!.a.side!) === 'y') {
       if (inversions) {
         const q = pitch(model, bundle), [left, rightNode] = bundle.nodes.map(id => model.nodes[id]!).sort((a, b) => a.bounds!.x - b.bounds!.x);
         // Join, leave and fan rows may each move one edge margin off a group edge (ADR-0013), the
         // same allowance the other axis carries.
-        const required = 30 + 4 * q * inversions + 2 * q * (list.length + 1) + fan + 2 * edgeMargin(routedStrokeWidth(model)), threshold = rightNode!.bounds!.x;
-        const delta = Math.max(0, required - (threshold - right(left!.bounds!)));
+        const margin = edgeMargin(routedStrokeWidth(model)), threshold = rightNode!.bounds!.x, have = threshold - right(left!.bounds!);
+        const staircase = 30 + 4 * q * inversions + 2 * q * (list.length + 1) + fan + 2 * margin;
+        // A bundle with a lane keeps the staircase room and has no shape record, as before.
+        const required = laned ? staircase : straightReservation(model, bundle, list, fanned, have, facingBundleNeed(0, list.length, q, 0, fan, margin), staircase);
+        const delta = Math.max(0, required - have);
         const tier = model.groups[model.document.nodes[rightNode!.id]!.group]!.tier;
         const row = Object.values(model.groups).filter(g => g.tier === tier);
         // The room moves groups in x without their lanes, so it is no forced write: it asks the guard of every reservation (R2, DR-11, W09).
         // A group wholly right of the threshold moves whole. A group that straddles it (often the group of `rightNode`) moves the nodes right
         // of it and is refitted (`fitRegionGroup`): its box grows right by at most `delta`, so the guard reads that widened box (the moved bodies'
-        // own guards by `holdsNodeMove`). Refused, no room is taken. The bundle then draws straight members where its gap holds the member pitch
-        // (ADR-0017), or refuses by name (`BUNDLE_CROSSOVER_CAPACITY`), and `BUNDLE_ROOM_HELD` names the room it did not take.
+        // own guards by `holdsNodeMove`). Refused, no room is taken, and the shape is decided on the channel as it stands: straight members
+        // where its gap holds the member pitch (ADR-0017), or refuses by name (`BUNDLE_CROSSOVER_CAPACITY`), and `BUNDLE_ROOM_HELD` names the room it did not take.
         const rightOf = (group: LayoutGroup): string[] => group.nodes.filter(id => model.nodes[id]!.bounds!.x >= threshold);
         const whole = row.filter(group => group.bounds !== undefined && rightOf(group).length === group.nodes.length);
         const part = row.filter(group => group.bounds !== undefined && rightOf(group).length > 0 && rightOf(group).length < group.nodes.length);
@@ -840,6 +864,8 @@ export function prepareBundleGeometry(model: LayoutModel): void {
           ...part.map(group => ({ group, bounds: { ...group.bounds!, width: group.bounds!.width + delta }, dx: 0 }))], false)
           && part.every(group => holdsNodeMove(model, group, rightOf(group), delta));
         const held = delta > 0 && !roomHolds();
+        // Refused, the channel stays as it stands, and the shape is decided on that channel.
+        if (held && !laned) bundle.straight = !fanned && straightMembers(model, bundle, list);
         if (held && !model.diagnostics.some(item => item.code === 'BUNDLE_ROOM_HELD' && item.owners?.some(owner => 'id' in owner && owner.id === bundle.id))) {
           model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'BUNDLE_ROOM_HELD', owners: [{ kind: 'bundle', id: bundle.id }],
             message: `The crossover room of ${bundle.id} (${delta.toFixed(1)} px right of ${rightNode!.id}) would break a reservation, so it is not taken.` });
@@ -857,17 +883,22 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const upper = a.bounds!.y < b.bounds!.y ? a : b, lower = upper === a ? b : a;
     const upperTier = model.groups[model.document.nodes[upper.id]!.group]!.tier!, lowerTier = model.groups[model.document.nodes[lower.id]!.group]!.tier!;
     if (upperTier >= lowerTier && stacked.has(bundle.id)) checkStackedChannel(model, bundle, upper, lower);
-    if (upperTier >= lowerTier || model.lanes.some(lane => bundle.members.includes(lane.owner.kind === 'link' ? lane.owner.id : ''))) continue;
+    if (laned) continue;
+    // No tier gap grows between the rows of one tier: the shape is decided on the channel as it stands.
+    if (upperTier >= lowerTier) { if (inversions) bundle.straight = !fanned && straightMembers(model, bundle, list); continue; }
     const mergeMembers = list.filter(m => m.link.technique === 'merge').length;
     // A merge trunk interleaves its join and leave rows only where the members meet on one port.
     const shared = (['a', 'b'] as const).some(end => new Set(list.map(m => portId(m[end].ref))).size < list.length);
     const mergeAllowance = shared && mergeMembers >= 2 ? (2 * list.length + 1) * q : 0;
     // Join, leave and fan rows may each move one edge margin off a group edge (ADR-0013).
-    const general = facingBundleNeed(mergeAllowance, list.length, q, inversions, fan, edgeMargin(routedStrokeWidth(model)));
+    const need = (crossings: number): number => facingBundleNeed(mergeAllowance, list.length, q, crossings, fan, edgeMargin(routedStrokeWidth(model)));
     // An unshared merge trunk needs its interleaved join and leave rows between the two stems too.
     const mergeTrunk = mergeMembers >= 2 ? 2 * MIN_STEM + (2 * mergeMembers - 1) * q + 2 * edgeMargin(routedStrokeWidth(model)) : 0;
-    const required = Math.max(general, mergeTrunk);
-    const delta = Math.max(0, required - (lower.bounds!.y - bottom(upper.bounds!)));
+    const have = lower.bounds!.y - bottom(upper.bounds!);
+    const required = inversions
+      ? straightReservation(model, bundle, list, fanned, have, Math.max(need(0), mergeTrunk), Math.max(need(inversions), mergeTrunk))
+      : Math.max(need(0), mergeTrunk);
+    const delta = Math.max(0, required - have);
     if (delta) for (const group of Object.values(model.groups).filter(g => g.tier! >= lowerTier)) moveGroup(model, group, 0, delta);
   }
   rebuildBands(model);

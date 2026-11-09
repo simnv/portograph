@@ -1170,9 +1170,15 @@ minimum of one. Contradictory intermediate lane order fails with
 Route a clear full-width centreline and offset its members. Aligned clear bundles stay straight.
 Bent channels expose `envelopeParts` as swept rectangles and `envelope` as their union. Author
 inversions use isolated adjacent-swap cells, unless the gap holds the member pitch (ADR-0017 as
-amended by ticket DR-03: both stems fit between the placed faces and the existing geometry holds
-the member gap), when each member is drawn as stem, one straight diagonal, stem instead; the
-inversion count plays no part, and an infeasible bundle keeps the staircase. Every strict crossed member pair is independently
+amended by ticket DR-03: both stems fit between the faces and the member segments hold the member
+gap), when each member is drawn as stem, one straight diagonal, stem instead; the inversion count
+plays no part, and an infeasible bundle keeps the staircase. The reservation of the facing channel
+decides the shape once (ticket DR-16, `straightReservation`) and records it on `Bundle.straight`:
+straight when the test holds in the channel of the same members without inversions, or else in the
+staircase channel; it reserves the lesser of the two in which the test holds, and the staircase depth
+otherwise. A fanned bundle (a shared port or a fan at either end) keeps the staircase, because its
+channel tracks are fan leaves that only the paths place. The paths and restore read the record and
+never test again (R1). Every strict crossed member pair is independently
 checked against the endpoint inversions; undeclared bend contacts and overlaps fail. Complete
 member paths follow authored source-to-target direction even when bundle orientation differs.
 Lane runs and the latest rebuilt bar hints/slots remain constraints. Every actual `barCross`
@@ -1274,8 +1280,10 @@ record lacks fails the producer postcondition, whatever diagnostic the model car
 
 The crossover room of an inverted side-facing bundle moves groups in x without their lanes, so it
 asks `holdsMove` first: for a group wholly right of the threshold, its moved box; for a group that
-straddles the threshold, its box widened by the room, and `holdsNodeMove` for its moved nodes. Refused, no room is taken (`BUNDLE_ROOM_HELD`): the bundle draws
-straight members where its gap holds the member pitch (ADR-0017), or refuses by name.
+straddles the threshold, its box widened by the room, and `holdsNodeMove` for its moved nodes. The room is the straight
+depth when the bundle is decided straight there (ticket DR-16), and the staircase depth otherwise. Refused, no room is taken
+(`BUNDLE_ROOM_HELD`), the shape is decided again on the channel as it stands: the bundle draws straight members where its gap
+holds the member pitch (ADR-0017), or refuses by name.
 
 For facing, non-inverted members whose endpoint tracks differ, each bend receives a distinct
 member-pitch row. Members moving toward smaller tangent coordinates turn in increasing source

@@ -17,6 +17,7 @@ import { layout, parse } from '../../src/index.js';
 import { straightMembers } from '../../src/layout/bundle-paths.js';
 import { MIN_STEM, bundleFanRows, edgeMargin, fanDepth, fanEnd, inversionPairs, members, pitch, treeCohorts, type Member } from '../../src/layout/bundle-geometry.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
+import { facingBundleNeed } from '../../src/layout/bundle-need.js';
 import { routedStroke as routedStrokeWidth } from '../../src/layout/bands.js';
 import type { Bundle } from '../../src/model/index.js';
 
@@ -301,6 +302,9 @@ it('ADR-0017 as amended (DR-03): the gap that does not hold both stems keeps the
   // The same members with a deep gap: the pitch holds, so they draw straight.
   const deep = list.map(m => ({ ...m, b: { ...m.b, anchor: { ...m.b.anchor!, y: 200 } } }));
   expect(straightMembers(model, bundle, deep)).toBe(true);
+  // DR-16: placement asks with the depth it is about to add; the far ends then stand that much deeper.
+  expect(straightMembers(model, bundle, list, 180)).toBe(true);
+  expect(straightMembers(model, bundle, list, 10)).toBe(false);
 });
 
 it('DR-03 fixture: a bundle with two inversions draws straight when the gap holds the pitch', async () => {
@@ -316,6 +320,31 @@ it('DR-03 fixture: a bundle with two inversions draws straight when the gap hold
   const scored = score(model);
   for (const [gate, result] of Object.entries(scored.snapshot.gates)) expect(result, gate).toMatchObject({ passed: true });
 }, 60000);
+
+it('DR-16: placement decides straight members once and reserves only the straight depth', async () => {
+  const text = readFileSync('goldens/synthetic/a-bundle-with-two-inversions-draws-straight-when-the-gap-holds-the-pitch.yaml', 'utf8');
+  const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const bundle = model.bundles[0]!;
+  expect(bundle.straight).toBe(true);
+  const [upper, lower] = bundle.nodes.map(id => model.nodes[id]!).sort((a, b) => a.bounds!.y - b.bounds!.y);
+  const gap = lower!.bounds!.y - (upper!.bounds!.y + upper!.bounds!.height);
+  const q = pitch(model, bundle), margin = edgeMargin(routedStrokeWidth(model));
+  // The staircase depth of two inversions is not reserved: the gap is the straight need, the channel of four members without inversions.
+  expect(gap).toBeLessThan(facingBundleNeed(0, 4, q, 2, 0, margin));
+  expect(gap).toBeCloseTo(facingBundleNeed(0, 4, q, 0, 0, margin), 6);
+  // The router reads the record: a forged staircase record cannot replay the straight members it stored.
+  const forged = JSON.parse(JSON.stringify(model)) as LayoutModel;
+  forged.bundles[0]!.straight = false;
+  expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow();
+  expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
+}, 60000);
+
+it('DR-16: a bundle without an inversion has no shape record', async () => {
+  const model = run(await throughBars(reversed.replace('{name: p, side: top, order: 2}, {name: q, side: top, order: 1}, {name: r, side: top, order: 0}',
+    '{name: p, side: top, order: 0}, {name: q, side: top, order: 1}, {name: r, side: top, order: 2}')));
+  expect(model.bundles[0]!.inversions).toBe(0);
+  expect(model.bundles[0]!.straight).toBeUndefined();
+});
 
 it('ADR-0017: parallel straight members keep the member gap between their diagonals', async () => {
   // `[2, 3, 1]`: two inversions, straight members, and two of the three members stay parallel —

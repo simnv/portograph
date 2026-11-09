@@ -304,7 +304,7 @@ limits, not a quality or workability claim (D11, decision review 2026-11-07).
     pill tips, never by a line on the tips (architecture-2 ticket 34, user 2026-10-25).
 
 A **straight bundle member** is the single diagonal between the two stems of an inverted
-bundle (ADR-0017 as amended by ticket DR-03: when the gap holds the member pitch, that is, the channel between the placed faces holds both stems and the existing geometry holds the member gap between every pair of member segments G6 would measure, stems included; the inversion count and the drawn length play no part). It carries `straight: true`, which G5 accepts only on a member of a bundle that owns the
+bundle (ADR-0017 as amended by ticket DR-03: when the gap holds the member pitch, that is, the channel between the placed faces holds both stems and the existing geometry holds the member gap between every pair of member segments G6 would measure, stems included; the inversion count and the drawn length play no part; placement decides it once and reserves only the straight depth, ticket DR-16). It carries `straight: true`, which G5 accepts only on a member of a bundle that owns the
 segment, and only one per member — a second is a staircase of its own. G4 indexes such a segment — before the axis buckets, whatever its angle — on a uniform grid over the
 cells its run crosses and their neighbours, so an overlap longer than 1 px always shares a cell, and
 measures that overlap along the run. An ordinary run joins that grid too, in the cells a declared
