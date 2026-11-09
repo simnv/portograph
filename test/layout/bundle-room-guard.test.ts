@@ -11,14 +11,26 @@ import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { placed } from './phase-two-fixture.js';
 
 // Two groups side by side in one tier; the bundle between them leaves right and enters left with every member inverted (the authored order is
-// reversed), so 7e takes crossover room by moving the right group in x (W09 of the post-7a writer table).
+// reversed), so 7e takes crossover room by moving the right group in x (W09 of the post-7a writer table). Two members share `a.p` and `b.p`,
+// so the bundle is fanned and keeps the staircase room (ticket DR-16: an unfanned one is decided straight and needs no room here).
 const inverted = `portograph: 2
 groups: {ga: {tier: 0}, gb: {tier: 0}}
 nodes:
   a: {group: ga, ports: [{name: p, side: right, order: 0}, {name: q, side: right, order: 1}, {name: r, side: right, order: 2}]}
   b: {group: gb, ports: [{name: p, side: left, order: 2}, {name: q, side: left, order: 1}, {name: r, side: left, order: 0}]}
-links: [[a.p, b.p], [b.q, a.q], [a.r, b.r]]`;
+links: [[a.p, b.p], [a.p, b.p], [b.q, a.q], [a.r, b.r]]`;
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
+
+describe('DR-16: the side-facing room of an unfanned inverted bundle', () => {
+  it('is decided straight where the gap already holds the member pitch, and takes no room', async () => {
+    const unfanned = inverted.replace('[[a.p, b.p], [a.p, b.p], ', '[[a.p, b.p], ');
+    const base = await bars(centre(flanks(lanes(rows(await placed(unfanned))))));
+    const free = copy(base);
+    prepareBundleGeometry(free);
+    expect(free.bundles[0]!.straight).toBe(true);
+    expect(free.groups['gb']!.bounds!.x).toBe(base.groups['gb']!.bounds!.x);
+  }, 60000);
+});
 
 describe('W09: the crossover room of an inverted bundle asks the guard (DR-11)', () => {
   it('moves the right group when every reservation holds, and takes no room, named, when one would break', async () => {
@@ -29,6 +41,7 @@ describe('W09: the crossover room of an inverted bundle asks the guard (DR-11)',
     const dx = free.groups['gb']!.bounds!.x - was.x;
     expect(dx).toBeGreaterThan(1);
     expect(free.diagnostics.some(item => item.code === 'BUNDLE_ROOM_HELD')).toBe(false);
+    expect(free.bundles[0]!.straight).toBe(false);
     // A reserved exit of a link from `a` where gb lands after the move: far right of gb where it stands, met by gb moved by dx.
     const link = base.links.find(item => item.attachments?.from.node === 'a')!, landed = free.groups['gb']!.bounds!;
     const margin = routedStroke(base) / 2 + GROUP_EDGE_LINK_CLEARANCE, x = landed.x + landed.width / 2, y = landed.y + landed.height / 2;
