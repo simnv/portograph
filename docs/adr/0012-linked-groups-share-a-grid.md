@@ -34,5 +34,5 @@ The grid widens a core in place, and a flank stood a band gap from the old box, 
 
 ## Amendment (ruling P2, 2026-11-07)
 
-The 30 % cap on union growth (`GROUP_GRID_MAX_GROWTH`) stays. `.scratch/decision-review-2026-11/results/P2.md`, shows cap 0 gives 4 sheets more bends and 2 G6 findings, and cap 0.10 the same bend rises and 1 G6 finding; automatic union growth is not obsolete.
+The 30 % cap on union growth (`GROUP_GRID_MAX_GROWTH`) stays. `.scratch/decision-review-2026-11/results/P2.md` shows that cap 0 gives 4 sheets more bends and 2 G6 findings, and cap 0.10 gives the same 4 sheets more bends and 1 G6 finding; automatic union growth is not obsolete.
 Q cannot see what the grid buys: its grid-alignment term counts node matches and did not move on any sheet.
