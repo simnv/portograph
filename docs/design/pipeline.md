@@ -1909,11 +1909,29 @@ alone sets it. The layout JSON gains `LayoutLink.removed` and `removedLinks` (bo
 none), and the score counts `removedLinks`. A removed link also stores the answer the stage judged,
 `LayoutLink.rejectedRoute`: the router's points for each routed gap of the link, in plan order (empty
 when the link has no routed gap). Publication and restore judge that answer again with `tryStitch`,
-on the link's plan (`planRoute`) for the model as stage 8 received it (`preRoute`), and refuse a
-removal the judgement does not reproduce: no stored answer, an answer for a gap the plan does not
-hold, or an answer that stitches into a usable path (decision-review ticket 14). The router does not
-run again, so this proves that the stored answer is unusable, as a routed path is proven from its
-stored segments; it does not prove that the router had to give that answer. A warning proves nothing (R5). The renderer and the drawio export draw a link only
+on the link's plan (`planRoute`) for the model as stage 8 received it (`preRoute`: the router's
+paths, removals, stub marks, and stage 9's link, multiplicity and mesh-bus labels and legend taken
+away), and refuse by name (decision-review ticket 14):
+
+1. a removed link with no stored answer (a layout written before this version stores none; lay the
+   sheet out again);
+2. a stored answer on a link that is not removed;
+3. a removed link stage 8 does not route;
+4. an answer for a gap the plan does not hold, or one gap twice, or out of plan order;
+5. an answer below the floor every router answer reaches (`routerAnswerFloor`): fewer than two
+   finite points, or an answer that meets both ends of its gap and is not orthogonal or has a
+   zero-length segment;
+6. an answer the judgement cannot read (a fatal stitch error, such as a gap with no answer);
+7. an answer that stitches into a usable path.
+
+The floor asks only what was measured on every removal stage 8 wrote in the full test suite (137,
+2026-11-09). It does not ask that an answer meet its ends, be orthogonal when it misses one, or keep
+two distinct points: libavoid answers from a node centre when it drops a checkpoint (86 answers miss
+an end, 29 of them with a diagonal), and 28 answers were two equal points. The router does not run
+again, so this is the proof level: the stored answer is unusable and has a router answer's shape, as
+a routed path is proven from its stored segments. It does not prove that the router had to give that
+answer. A well-formed scribble that the judgement rejects (an answer with one end moved 1 px) still
+passes; only routing again at restore would refuse it. A warning proves nothing (R5). The renderer and the drawio export draw a link only
 where it has a path, so a removed link is not drawn; `score` skips it. With `strictCheckpoints`
 every case keeps the throw.
 

@@ -77,6 +77,13 @@ function usable(model: LayoutModel, seen: Map<string, Point[][]>): { connector: 
   return [{ connector: gaps[0]!, points: found! }];
 }
 
+/** The one routed gap of `LINK` on the published placement. */
+function gapOf(model: LayoutModel): { connector: string; from: Point; to: Point } {
+  const pieces = planRoute(preRoute(model)).links.find(item => item.link === LINK)!.pieces.flatMap(piece => piece.kind === 'gap' ? [piece] : []);
+  expect(pieces.length).toBe(1);
+  return pieces[0]!;
+}
+
 describe('restore refuses a forged link removal (decision-review ticket 14)', () => {
   const seen = new Map<string, Point[][]>();
   let memo: Promise<LayoutModel> | undefined;
@@ -94,7 +101,7 @@ describe('restore refuses a forged link removal (decision-review ticket 14)', ()
 
   it('refuses a removal with no stored answer, though the warning names it (R5)', async () => {
     const model = await drawn();
-    expect(() => restore(forged(model))).toThrow(`Removed link ${LINK} carries no rejected router answer`);
+    expect(() => restore(forged(model))).toThrow(`Removed link ${LINK} carries no rejected router answer (a layout written before decision-review ticket 14 stores none`);
   }, 120000);
 
   it('refuses a removal whose stored answer is the usable one the router gave', async () => {
@@ -107,6 +114,39 @@ describe('restore refuses a forged link removal (decision-review ticket 14)', ()
     expect(() => restore(forged(model, []))).toThrow(`Removed link ${LINK} cannot be judged again: Router returned no route for`);
     const foreign = [{ connector: 'link-11#0', points: [{ x: 0, y: 0 }, { x: 0, y: 10 }] }];
     expect(() => restore(forged(model, foreign))).toThrow(`Removed link ${LINK} stores a router answer that is not one for its planned gaps`);
+  }, 120000);
+
+  it('refuses the five forgeries the floor can tell from a router answer, by name', async () => {
+    const model = await drawn(), gap = gapOf(model), [good] = usable(model, seen), points = good!.points;
+    const floor = `Removed link ${LINK} stores an answer for ${gap.connector} that no router gives`;
+    const answer = (list: Point[]) => [{ connector: gap.connector, points: list }];
+    expect(() => restore(forged(model, answer([])))).toThrow(`${floor}: fewer than two finite points`);
+    expect(() => restore(forged(model, answer([gap.from])))).toThrow(`${floor}: fewer than two finite points`);
+    expect(gap.from.x !== gap.to.x && gap.from.y !== gap.to.y).toBe(true);
+    expect(() => restore(forged(model, answer([gap.from, gap.to])))).toThrow(`${floor}: it meets both ends of its gap and is not orthogonal`);
+    // An inner corner moved 1 px across, and an inner corner dropped: both ends are still met, so the answer must be orthogonal.
+    expect(points.length).toBeGreaterThan(3);
+    const moved = clone(points); moved[1]!.x += 1; moved[1]!.y += 1;
+    expect(() => restore(forged(model, answer(moved)))).toThrow(`${floor}: it meets both ends of its gap and is not orthogonal`);
+    expect(() => restore(forged(model, answer(points.filter((_, index) => index !== 2))))).toThrow(`${floor}: it meets both ends of its gap and is not orthogonal`);
+  }, 120000);
+
+  it('accepts a well-formed answer that misses an end: libavoid gives such answers, and only routing again could refuse it', async () => {
+    // The limit of the proof: an end moved 1 px is what libavoid answers when it drops a checkpoint (measured, `routerAnswerFloor`).
+    const model = await drawn(), [good] = usable(model, seen), points = clone(good!.points);
+    points[0]!.x += 1;
+    expect(restore(forged(model, [{ connector: good!.connector, points }])).removedLinks).toEqual([LINK]);
+  }, 120000);
+
+  it('plans the removed link without the labels stage 9 adds after routing', async () => {
+    // A link label owned by another link, laid over the corridor of LINK, and a legend: neither existed when stage 8 planned.
+    const model = await drawn(), along = model.links.find(item => item.id === LINK)!.path!.segments[1]!;
+    const labelled = clone(model);
+    labelled.labels.push({ id: 'label:link:forged', text: 'x', role: 'link', owner: { kind: 'link', id: 'link-11' }, layer: 'routed',
+      bounds: { x: Math.min(along.from.x, along.to.x) - 4, y: Math.min(along.from.y, along.to.y) - 4, width: Math.abs(along.to.x - along.from.x) + 8, height: Math.abs(along.to.y - along.from.y) + 8 } });
+    expect(preRoute(labelled).labels).toEqual(preRoute(model).labels);
+    expect(preRoute(labelled).labels.some(label => ['link', 'legend', 'mesh-bus'].includes(label.role ?? ''))).toBe(false);
+    expect(planRoute(preRoute(labelled))).toEqual(planRoute(preRoute(model)));
   }, 120000);
 
   it('restores a removal stage 8 made, and refuses the same record moved or swapped for a usable answer', async () => {

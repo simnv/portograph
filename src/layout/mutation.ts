@@ -41,7 +41,7 @@ import { moveBands } from './gap-room.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
-import { validateRoutedPaths } from '../route/validate.js';
+import { stageNineLabel, validateRoutedPaths } from '../route/validate.js';
 import { placementAttempt, type AttemptTraceEvent } from './placement-attempt.js';
 import { judgePostconditions } from './postconditions.js';
 import { columnOf } from './read/arrangement.js';
@@ -679,7 +679,7 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
     || model.obstacles.length > 0 || (!bandsStage && model.labelBands.length > 0)
     || (!labelStage && model.legend !== undefined)
     || nonNodeLabels.some(label => !(bandsStage && label.role === 'group')
-      && !(labelStage && (label.role === 'link' || label.role === 'legend' || label.role === 'mesh-bus')));
+      && !(labelStage && stageNineLabel(label)));
 }
 function rebuildBoxes(model: LayoutModel): void {
   for (const group of Object.values(model.groups)) {

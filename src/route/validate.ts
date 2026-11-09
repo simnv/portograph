@@ -1,5 +1,5 @@
 import type { Point } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
+import type { LayoutLabel, LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 import { stemReach } from '../layout/bands.js';
 import { endPort } from '../layout/approach.js';
@@ -10,7 +10,7 @@ import { effectiveLayer, placementRuns, plannedRunsOf, planRoute, reversedRuns, 
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { pathEnd } from '../layout/path-end.js';
 import { sharedBlockers, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
-import { ownedLanes, stubCandidate, tryStitch } from './paths.js';
+import { ownedLanes, simplify, stubCandidate, tryStitch } from './paths.js';
 import { MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
 
 
@@ -66,9 +66,9 @@ export function reservationConflicts(model: LayoutModel): ReservationConflict[] 
 }
 
 /**
- * The model as stage 8 received it: the router's paths, its removals (with their rejected answers) and the stub marks taken away; a
- * rule's own (`fixed`) path kept. The planned-run producers (`placementRuns`) and the route plan (`planRoute`) read only a link that has
- * no path and is not removed, so the validator asks them of this view and of nothing else. Only the link list is copied.
+ * The model as stage 8 received it: the router's paths, its removals (with their rejected answers), the stub marks and stage 9's
+ * labels and legend taken away; a rule's own (`fixed`) path kept. The planned-run producers (`placementRuns`) and the route plan (`planRoute`) read only a link that has
+ * no path and is not removed, so the validator asks them of this view and of nothing else. Only the link and label lists are copied.
  */
 export function preRoute(model: LayoutModel): LayoutModel {
   const view: LayoutModel = { ...model, links: model.links.map(link => {
@@ -78,7 +78,18 @@ export function preRoute(model: LayoutModel): LayoutModel {
     return kept;
   }) };
   delete view.removedLinks;
+  // Stage 9 adds the link, multiplicity and mesh-bus labels and the legend after routing. The route plan reads labels
+  // (`routeObstacles`, the straight-run claim), so a label on a removed link's undrawn corridor would change its plan.
+  if (model.legend !== undefined || model.labels.some(stageNineLabel)) {
+    view.labels = model.labels.filter(label => !stageNineLabel(label));
+    delete view.legend;
+  }
   return view;
+}
+
+/** A label stage 9 publishes after routing (a link, multiplicity or mesh-bus label, or a legend entry); no earlier stage writes one. */
+export function stageNineLabel(label: LayoutLabel): boolean {
+  return label.role === 'link' || label.role === 'legend' || label.role === 'mesh-bus';
 }
 
 /**
@@ -170,11 +181,35 @@ const finitePoint = (point: unknown): boolean => typeof point === 'object' && po
   && Number.isFinite((point as Point).x) && Number.isFinite((point as Point).y);
 
 /**
+ * What every answer the router gives has, so a stored one that lacks it is no router answer (DR-14), or undefined when it has it.
+ * Measured on the 137 removals stage 8 wrote in the full test suite (2026-11-09; real libavoid answers and the tests' rewritten ones):
+ * every answer holds at least 2 finite points, and every answer that meets both of its gap's ends, after `simplify` (as `gapSegments`
+ * reads it), is orthogonal with no zero-length segment. The other parts of the stitch's shape check are not asked: 86 answers miss
+ * an end (69 the end, 46 the start: libavoid drops a checkpoint it cannot reach and answers from a node centre), 29 of them with a
+ * diagonal, and 28 are two equal points (`Router returned no usable route`). So an answer that misses an end passes this floor, and
+ * the judgement (`tryStitch`) rejects it.
+ */
+function routerAnswerFloor(points: readonly Point[], from: Point, to: Point): string | undefined {
+  if (points.length < 2 || !points.every(finitePoint)) return 'fewer than two finite points';
+  const simplified = simplify([...points]);
+  if (!samePoint(simplified[0]!, from) || !samePoint(simplified.at(-1)!, to)) return undefined;
+  for (let index = 1; index < simplified.length; index++) {
+    const segment = { from: simplified[index - 1]!, to: simplified[index]! };
+    if (!near(segment.from.x, segment.to.x) && !near(segment.from.y, segment.to.y)) return 'it meets both ends of its gap and is not orthogonal';
+    if (samePoint(segment.from, segment.to)) return 'it meets both ends of its gap and has a zero-length segment';
+  }
+  return undefined;
+}
+
+/**
  * Every removal is stage 8's own rejection, judged again (DR-14). A removed link stores the router answer stage 8 judged
  * (`rejectedRoute`); the one judgement (`tryStitch`) runs again on that answer, with the link's plan (`planRoute`) on the placement as
- * stage 8 received it (`preRoute`). A removal the judgement does not reproduce (the answer stitches into a path, or names a gap the plan
- * does not hold) is refused by name. The router does not run again: this proves that the stored answer is unusable, exactly as a
- * routed path is proven from its stored segments, not that the router had to give that answer. No removed link: nothing is planned.
+ * stage 8 received it (`preRoute`). Seven refusals, each by name: no stored answer; an answer on a link that is not removed (in
+ * `validateRoutedPaths`); a link stage 8 does not route; an answer for a gap the plan does not hold; an answer below the floor every
+ * router answer reaches (`routerAnswerFloor`); an answer the judgement cannot read; an answer that stitches into a usable path.
+ * The router does not run again: this proves that the stored answer is unusable and has a router answer's shape, not that the router
+ * had to give it. A well-formed answer the judgement rejects still passes; only routing again would refuse it. No removed link: nothing
+ * is planned.
  */
 function removalsReproduced(model: LayoutModel): void {
   const removed = model.links.filter(link => link.removed === true);
@@ -182,15 +217,21 @@ function removalsReproduced(model: LayoutModel): void {
   const view = preRoute(model), plan = planRoute(view);
   for (const link of removed) {
     const answer = link.rejectedRoute;
-    if (!Array.isArray(answer)) throw new Error(`Removed link ${link.id} carries no rejected router answer`);
+    if (!Array.isArray(answer)) {
+      throw new Error(`Removed link ${link.id} carries no rejected router answer (a layout written before decision-review ticket 14 stores none; lay the sheet out again)`);
+    }
     const item = plan.links.find(candidate => candidate.link === link.id);
     if (item === undefined) throw new Error(`Removed link ${link.id} is no link stage 8 routes`);
-    const gaps = item.pieces.flatMap(piece => piece.kind === 'gap' ? [piece.connector] : []);
+    const gaps = item.pieces.flatMap(piece => piece.kind === 'gap' ? [piece] : []), ids = gaps.map(gap => gap.connector);
     const named = answer.map(entry => (entry as { connector?: unknown } | null)?.connector);
-    // Each entry is one gap of this plan, once, in plan order, with finite points.
-    if (named.some((id, index) => typeof id !== 'string' || !gaps.includes(id) || (index > 0 && gaps.indexOf(id) <= gaps.indexOf(named[index - 1] as string)))
-      || answer.some(entry => !Array.isArray(entry.points) || !entry.points.every(finitePoint))) {
+    // Each entry is one gap of this plan, once, in plan order.
+    if (named.some((id, index) => typeof id !== 'string' || !ids.includes(id) || (index > 0 && ids.indexOf(id) <= ids.indexOf(named[index - 1] as string)))
+      || answer.some(entry => !Array.isArray(entry.points))) {
       throw new Error(`Removed link ${link.id} stores a router answer that is not one for its planned gaps`);
+    }
+    for (const entry of answer) {
+      const gap = gaps.find(piece => piece.connector === entry.connector)!, reason = routerAnswerFloor(entry.points, gap.from, gap.to);
+      if (reason !== undefined) throw new Error(`Removed link ${link.id} stores an answer for ${entry.connector} that no router gives: ${reason}`);
     }
     const routes = new Map(answer.map(entry => [entry.connector, entry.points]));
     let done: ReturnType<typeof tryStitch>;
