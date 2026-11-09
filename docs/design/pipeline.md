@@ -1934,8 +1934,9 @@ them (`straightRun`), and that answer meets both ends of a pin's gap. No zero-le
 again, so this is the proof level: the stored answer is unusable and has a router answer's shape, as
 a routed path is proven from its stored segments. It does not prove that the router had to give that
 answer. A well-formed scribble that the judgement rejects still passes: an answer with one end moved
-1 px or one end point dropped, and the bare diagonal between the two ends of a gap with checkpoints.
-Only routing again at restore would refuse it. A warning proves nothing (R5). The renderer and the drawio export draw a link only
+1 px or one end point dropped, the bare diagonal between the two ends of a gap with checkpoints, and
+an inner change (a corner moved, an inner point dropped) that also skips a checkpoint, as the bare
+diagonal does. Only routing again at restore would refuse it. A warning proves nothing (R5). The renderer and the drawio export draw a link only
 where it has a path, so a removed link is not drawn; `score` skips it. With `strictCheckpoints`
 every case keeps the throw.
 
