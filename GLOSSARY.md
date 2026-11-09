@@ -234,6 +234,7 @@ Their straight or orthogonal paths are chosen together when the orthogonal arran
 **Fan family**:
 Dashed or dotted routed links from at least two hubs in one tier group to at least three units on the next tier above or below.
 Every hub links to every unit, and straight members are chosen together while refused members remain orthogonal.
+Solid links form no family, and dashed and dotted family members cross at the 0.09 cost. A complete solid block is a separate rule (CONTEXT.md, "Complete solid blocks", tickets 81 and 83): joint admission with full-weight crossings, the 600 px cap and the 34-degree face pitch (D5, decision review 2026-11-07).
 
 **Overlay**:
 A link family drawn thin and translucent beneath routed links, with paths derived from placement rather than routed.

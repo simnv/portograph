@@ -1518,9 +1518,11 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
   }
 
   // ---- mesh buses ---------------------------------------------------------------------------
-  // The bar is one edge with `edgeStyle=none` and two free points; each stub is an edge from its port's cell to a free point on the
-  // bar, orthogonal with `jettySize=0`, as an axis-aligned overlay is exported. All take the class stroke and dash an overlay link
-  // takes, on the overlay layer, and the label is a text child of the bar piece nearest to it (DX-06), so it follows the bus.
+  // The bar has no free point: a joint (`pg-busJoint`, an invisible locked vertex that is a child of a node) sits at each stub end, the
+  // bar ends and the riser ends, and the bar is one `edgeStyle=none` straight edge between each two neighbouring joints. A stub is one
+  // straight `edgeStyle=none` edge from its port's pill (or node) to its joint; the riser and the trunk pieces bind to joints the same
+  // way. All take the class stroke and dash an overlay link takes, on the overlay layer, and the label is a text child of the bar
+  // piece nearest to it (DX-06), so it follows the bus.
   for (const bus of layout.meshBuses ?? []) {
     if (bus.bar === undefined || bus.stubs === undefined) continue;
     const first = bus.members.map(id => byId.get(id)).find(link => link !== undefined && visible(link));

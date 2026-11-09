@@ -29,7 +29,9 @@ neighbour's leg (tickets 45, 46). That is the pipeline's one rule broken, in one
    `growTierGaps` takes it to a fixed point on trial copies (at most six rounds; from the third
    round a gap never gives back an earlier ask) and grows the gap by `H` less the room it has. There
    is no probe. (Amended: the fixed point is gone; one solve reads `H` once. See the amendment of
-   architecture-2 ticket 57 at the end.)
+   architecture-2 ticket 57 at the end.) **Current text (decision review D2, 2026-11-07):** one solve reads the planned gap demand and
+   reserves the missing room once (ticket 57). Stage 8 consumes the plan and allocates no row. The router grants and seating rules are
+   superseded.
 3. **Stage 8 consumes the plan.** `allocateGapRuns` returns every planned part tip to tip as
    reserved geometry; the stem from a port anchor to its tip is claimed straight. A gap whose parts
    are all planned asks the router for nothing. Publication and restore keep each planned part with
@@ -37,6 +39,8 @@ neighbour's leg (tickets 45, 46). That is the pipeline's one rule broken, in one
 4. **A residual part is named, never silent.** A part the plan declines (`spans-two-gaps`,
    `lateral-port`, `u-turn`, `faces-away`, `off-boundary`, `crosses-lane`, `crosses-shared-run`,
    `leg-blocked`, `row-cycle`) is routed by libavoid among the reserved parts.
+   (D14, decision review 2026-11-07: a residual part publishes by design, with its findings; a failed gate fails the branch at
+   `gate:compare`, ADR-0010 amendment of the same date.)
    `TIER_GAP_PART_RESIDUAL` (`TIER_GAP_ROW_CYCLE` for a cycle) names it with the reason. It is
    granted the crossing of every planned row of its gap, and the cover of each planned vertical that
    stands within `k` of its span, that vertical's cover alone. Two verticals of two nodes within `k`

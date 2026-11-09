@@ -607,6 +607,8 @@ room or decides the split again.
 
 ## Stage 6 — rows
 
+Group titles in stage 6 (D7, decision review 2026-11-07; ruling V3): every group is labelled. The title edge is fixed from natural sides (the edge with fewer incident link ports, ADR-0011), and its height is reserved; the title itself is placed at the end of 7f (`placeGroupTitles`). An axis-aligned link never runs under a title or label by placement. A diagonal may cross a title or its own label, with a halo and a `crossedBy` record (ADR-0023). No placement step bends a link to clear a title.
+
 Per tier: all unstaggered `row`-shape nodes share one top y. A reserved stagger keeps both lines and its pitch; each line is a row to later horizontal repacks. Repack horizontally again if the flattening
 created overlap (nodes ELK stacked at one x). After `flattenRows`, `reseatBands` seats the bands
 again: each band starts one `tierGapMin` under the band above, or `gapBandDemand` under it when that is more, and its groups, nodes and
@@ -1477,7 +1479,7 @@ with `TIER_GAP_PART_UNFIT`, never a silent discovery.
 
 For every group: band height = label height + 8, inside the padding of the **title edge**: the
 horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
-at the bottom and no link routes around it; ties, including groups linked only sideways, keep the
+at the bottom, where the title has the longest free span (it may still be crossed and then yields with a halo, `crossedBy`; D7, D16, ruling V3 2026-11-07); ties, including groups linked only sideways, keep the
 top (ADR-0011). A bottom band grows the group downward. Every group's nodes move down by the largest
 top-band shift of their tier, so mixed title edges and unequal clearances keep the tier's node row
 level and flanks stay level with their peers. The label is placed last (`placeGroupTitles`, above): centred when
@@ -2071,7 +2073,7 @@ more than two intermediate tier bands (measured by their vertical extent, since 
 sits in the margin beside its tier) or whose arc length exceeds 3× the direct anchor distance is
 marked `stubCandidate` and warned about; M1 keeps the technique and the full routed path.
 
-**Measured on the JPEG golden:** stage 7 leaves exactly two links, `link-1` and `link-2`, the two
+**Measured on the JPEG golden** (a dated measurement, 2026-09; D17, decision review 2026-11-07): stage 7 leaves exactly two links, `link-1` and `link-2`, the two
 provider feeds into EAC-01 and EAC-02; the rules claim 24 of 26. Each of the two is one straight run
 between two anchors on one x with a clear corridor, so stage 8 claims both and no ownership batch is
 formed: the prototype's idle router, reached by a different road. The geometry is byte-for-byte the
@@ -2299,10 +2301,10 @@ fallback.
 and one per stub, each `link-line overlay-line <class>`, so the class stroke and dash apply; a `<title>` lists the members, the dissolved
 group-links and the members' authored labels. The member `<g class="link">` elements are not emitted, and one endpoint mark per stub is drawn
 above the mask at the port face. The bus label is drawn on the label layer (`link-label mesh-bus-label`). `document.overlays` hides the bus
-with its class. The draw.io export writes the bar as one `edgeStyle=none` edge with two free points, each stub as an
-`edgeStyle=none` edge (a run with no bend is straight, Q118) from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
-vertex on the `labels` layer; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
-Ticket 97: the riser of a joined pair is one more `<path class="link-line overlay-line <class> riser">` in the upper bus's group, both groups carry `data-joined`, the tooltip names both buses, the members and the cross links, and a cross link draws no `<g class="link">`. draw.io: the riser is one `edgeStyle=none` edge with two free points on the overlay layer (`pg-busRiser~<bus>`).
+with its class. The draw.io export writes a joint (an invisible locked vertex, a child of a node) at each stub end and bar end, the bar as one
+straight `edgeStyle=none` edge between each two neighbouring joints, each stub as an `edgeStyle=none` edge (a run with no bend is
+straight, Q118) from its port's cell to its joint, a mark per stub on its pill, and the label as a text child of the nearest bar piece; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
+Ticket 97: the riser of a joined pair is one more `<path class="link-line overlay-line <class> riser">` in the upper bus's group, both groups carry `data-joined`, the tooltip names both buses, the members and the cross links, and a cross link draws no `<g class="link">`. draw.io: the riser is one `edgeStyle=none` edge on the overlay layer (`pg-busRiser~<bus>`), bound at each end to a joint of its bar.
 
 An inline `<style>` holds the profile theme, the generated geometry locks and the parser-filtered
 document `css:`, in that order. The theme is three paint-only sheets emitted from one data table

@@ -403,12 +403,13 @@ today. The members' one authored label (Section 3, *Identity*: all members carry
 none) goes to the bus tooltip once, with the member list and the dissolved
 group-links, and leaves no omission record.
 
-**draw.io.** The bar is one edge with `edgeStyle=none` and two free points, no terminals. Each
-stub is an edge from the port's cell (the pill, or the node) to a target point on the bar,
+**draw.io.** The bar has no free point. A joint (`pg-busJoint`, an invisible locked vertex, a child of a node) sits at each
+stub end and bar end, and the bar is one `edgeStyle=none` edge between each two neighbouring joints. Each
+stub is an edge from the port's cell (the pill, or the node) to its joint,
 `edgeStyle=none`: a stub is one straight run, and a run with no bend is exported straight (decisions-log Q118). Both take the
 class stroke and dash the exporter already resolves for an overlay, on the `overlay` layer above
 the diagram, so an across-frames stub draws over the frame edge it crosses, as a routed leg does.
-The label is a text vertex on the `labels` layer, as a link label is. Verified with the drawio CLI
+The label is a text child of the nearest bar piece. Verified with the drawio CLI
 as the overlay export was (Q70): the drawn bar and stubs read back within 0.05 px.
 
 ## 7. Diagnostics
@@ -777,8 +778,7 @@ names both buses, the members, the cross links and the dissolved group-links.
 `document.overlays` hides both buses and the riser with the class. The riser is in the masked
 overlay layer, below routed links and labels.
 
-**draw.io.** The riser is one edge, `edgeStyle=none`, with two free points and no terminals, as a
-bar is, on the `overlay` layer, in the class stroke and dash. Verified with the drawio CLI
+**draw.io.** The riser is one edge, `edgeStyle=none`, bound at each end to a joint of its bar, on the `overlay` layer, in the class stroke and dash. Verified with the drawio CLI
 (`-x -f svg`) as for the bar: the drawn riser reads back within 0.05 px.
 
 ### 11.9 Diagnostics

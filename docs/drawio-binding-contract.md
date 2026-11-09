@@ -94,7 +94,7 @@ All attribute values are strings. A reader must parse numbers and booleans.
 | `pg-run` | link, split into runs only | the index of this run, from `0` |
 | `pg-runs` | link, split into runs only | the number of runs |
 | `pg-of` | link label, node icon | the `pg-id` of the link that owns the label, or of the node that owns the icon |
-| `pg-symbol` | node, only when the node is drawn with a symbol | the text after `symbol:` in the id of that symbol's legend row, with `%` and `~` escaped as `%25` and `%7e`. The legend cells of the symbol have the id `pg-legendRow~symbol:<value>`. A node has the attribute also when the sheet draws no legend. A node without a symbol has none. Optional: it does not change the schema version |
+| `pg-symbol` | node, only when the node has a class | the text after `symbol:` in the id of the legend row of the node's class, with `%` and `~` escaped as `%25` and `%7e`. The legend cells of the class have the id `pg-legendRow~symbol:<value>`. A "symbol" is the class variant that the legend lists, not a drawn icon: a node of a class that has no icon cell has the attribute too. When one class is drawn with two icons, the value is `<class>:<icon>`. A node has the attribute also when the sheet draws no legend. A node with no class has none. Optional: it does not change the schema version |
 | `pg-rules` | root cell `id="0"` | reserved, not written in version 1. It will hold binding rules as one YAML or JSON string, versioned with `pg-schema` |
 
 A link from `pg-from` to `pg-to` has the YAML direction. Use it to select the counter for each
@@ -186,8 +186,12 @@ These cells have no binding attributes:
 - group and frame boxes,
 - mesh bus bars, stubs, joints and risers (a mesh bus member link has no link cell),
 - overlay end marks, icon tiles, node descriptions and the legend,
+- the canvas background (layer `Canvas`),
 - the count label of a merge bundle. Its cell id comes from the bundle number, which can change
   when you reorder the links.
+
+A decoration (port mark, bus joint, icon tile) is locked to its owner: no move, resize, edit or connect on its own. Marks and joints
+cannot be deleted alone, because link ends bind to them. A reader can ignore a locked cell with no `pg-kind`.
 
 Known difference: draw.io draws plain text at its own line pitch, `round(size × 1.2)`, and has no
 style to change it. The first baseline is within about 0.5 px (measured at 11 px). When the model pitch of a multi-line label differs,
