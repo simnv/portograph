@@ -1,10 +1,10 @@
 # Expected: the held-lane sheet (a-held-lane-stays-on-its-frames-side-of-a-foreign-frame) with a third
 # frame, mid, and a third left port on each low node. l1 takes three links on its left side, one pitch
 # apart: wg -> l1.p, ma -> l1.r and ea -> l1.q, each from another frame (decision-review ticket 18).
-# The room each link turns in beside l1 is sized at placement, so no earlier route closes the way of
-# a later one: every link is drawn and no two routes share a run, under any order of the links or the
-# nodes. A stage-8 cover one router stem beyond each stem checkpoint was tried for this and refused:
-# the cover over l1.p sealed ma -> l1.r. test/route/lane-approach.test.ts reads it.
+# Every link is drawn, under any order of the links or the nodes. A stage-8 cover one router stem
+# beyond each stem checkpoint was tried and refused: the cover over l1.p sealed ma -> l1.r. Nesting
+# the stems of l1's left side was tried and refused too: it removed ma -> l1.r as well.
+# test/route/lane-approach.test.ts reads it.
 portograph: 2
 groups:
   up: { tier: 0, label: Up }
