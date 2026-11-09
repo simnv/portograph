@@ -126,7 +126,7 @@ async function run(request, emit) {
     if (assetError) throw assetError;
     router = nodeRuntime.createNodeRouteFactory();
   } catch (error) {
-    return failure('processing', `a packaged worker asset is unavailable: ${error.message}`, 'WORKER_ASSET');
+    return failure('processing', `a solver worker or module is unavailable: ${error.message}`, 'WORKER_ASSET');
   }
 
   let model;

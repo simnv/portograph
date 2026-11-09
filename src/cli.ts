@@ -25,7 +25,7 @@ export type Verb = (typeof VERBS)[number]['name'];
  * `gateFailure` means a *complete* score report says an enforced gate or assertion failed — the
  * artifacts are still written, because a failing report is the useful output. `inputError` covers
  * usage, unreadable files, invalid YAML or JSON, and the node-count refusal. `processingFailure`
- * covers a command deadline, a missing packaged worker asset and any internal pipeline failure:
+ * covers a command deadline, a missing solver worker or module and any internal pipeline failure:
  * calling one of those an input error would blame the author for the tool's own limit.
  */
 export const EXIT = {

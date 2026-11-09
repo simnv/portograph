@@ -83,7 +83,7 @@
     "gate:compare": "node scripts/gate-compare.mjs",
     "gate:branch": "node scripts/with-lock.mjs gate:branch -- node scripts/gate-branch.mjs",
     "png": "node scripts/png.mjs",
-    "prepublishOnly": "vite build"
+    "prepack": "vite build 1>&2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -10,7 +10,7 @@ const cli = process.env.PATH.split(path.delimiter).map(dir => path.join(dir, 'pl
 if (!cli) throw new Error('Run through npx --package=playwright');
 const { chromium } = require(path.join(path.dirname(realpathSync(cli)), 'index.js'));
 const dist = path.resolve('dist');
-// The solver files come from the installed elkjs and libavoid-js; the page serves them under their own names, the factory defaults.
+// The solver files come from the installed elkjs and libavoid-js; the page serves them under the factory defaults.
 const elk = path.dirname(require.resolve('elkjs/package.json'));
 const avoid = path.dirname(require.resolve('libavoid-js')); // the package exports only its root (dist/index-node.mjs)
 const yaml = [
@@ -28,7 +28,7 @@ const yaml = [
   const server = createServer((req, res) => {
     const scripts = { '/api.js': path.join(dist, 'portograph.umd.cjs'), '/esm.js': path.join(dist, 'portograph.js'),
       '/elk-api.js': path.join(elk, 'lib/elk-api.js'), '/elk-worker.min.js': path.join(elk, 'lib/elk-worker.min.js'),
-      '/portograph-avoid-worker.mjs': path.join(dist, 'portograph-avoid-worker.mjs'), '/index.js': path.join(avoid, 'index.js') };
+      '/portograph-avoid-worker.mjs': path.join(dist, 'portograph-avoid-worker.mjs'), '/libavoid.mjs': path.join(avoid, 'index.js') };
     if (req.url === '/libavoid.wasm') {
       res.setHeader('Content-Type', 'application/wasm');
       return res.end(readFileSync(path.join(avoid, 'libavoid.wasm')));
@@ -101,7 +101,7 @@ const yaml = [
       try { await api.route(placed, { createAttempt: missing, routeBudgetMs: 20000 }); }
       catch (error) { out.missingWasm = !(error instanceof api.RouteDeadlineError) && String(error.message).length > 0; }
       const stall = () => ({ worker: new Worker('/stall.mjs', { type: 'module' }),
-        assets: { moduleUrl: '/index.js', wasmUrl: '/libavoid.wasm' } });
+        assets: { moduleUrl: '/libavoid.mjs', wasmUrl: '/libavoid.wasm' } });
       const started = performance.now();
       try { await api.route(placed, { createAttempt: stall, routeBudgetMs: 150 }); }
       catch (error) { out.deadline = error instanceof api.RouteDeadlineError; }
