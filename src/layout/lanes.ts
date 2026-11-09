@@ -1029,13 +1029,17 @@ export function corridorReader(model: LayoutModel): { farEnd: (link: LayoutLink)
  * The allocation order of the transit lanes with every facing pair nested (decision review ticket 23). `sorted` is the source order; each lane is reserved
  * beside the lanes before it in its tier, so a later lane of one margin stands farther out. On a right margin the source order puts the outer lane last,
  * but on a left margin it puts the lane of the leftmost source innermost, and two lanes of a pair then cross each other on both faces. Stage 5 ordered both
- * faces of a facing pair by one key per link, the x at the held node (`facingPairs`, `facingPairKeys`); the port anchors at that node are the record of
+ * faces of a facing pair by one key per link, the x at the held node (`facingPairs`, `pairedFaceKey`); the port anchors at that node are the record of
  * that order, and 7a reads them, not its own key (R1). The links of a pair whose lanes, in the transited tier next to the held node, pass one side of one
  * group (`corridorSide`, the side 7a takes, read on the occupied box before any lane) keep their slots in `sorted` and fill them inner lane first: on the left side the larger x at the
  * held node first, on the right side the smaller. Their lanes then stand in the faces' order, outer lane for the outer port. Links of no pair, and a pair
  * whose lanes take two sides or two groups, keep the source order. Ties keep `sorted` (a stable sort; its last key is `sourceIndex`).
+ * What this does not hold: the side is read before any plan, as the frame pass reads it (the side the target asks for, else the source's) and as the tier
+ * pass prefers it. The tier pass can still keep a lane on the source's side where the target asks for the other side and no direct plan exists there (it
+ * starts from `corridorSide(core, sx)` and moves to the target's margin only when the stacked x crosses the group); a pair placed that way nests in the
+ * order read for the other side, which crosses.
  */
-function nestFacingPairs(model: LayoutModel, sorted: LayoutLink[], targetX: (link: LayoutLink, tier: number) => number | undefined): LayoutLink[] {
+export function nestFacingPairs(model: LayoutModel, sorted: LayoutLink[], targetX: (link: LayoutLink, tier: number) => number | undefined): LayoutLink[] {
   const result = [...sorted], slot = new Map(sorted.map((link, index) => [link.id, index]));
   for (const pair of facingPairs(model, ref => findPort(model, ref)?.side)) {
     const members = pair.links.filter(link => slot.has(link.id));

@@ -5,6 +5,8 @@ import { busOfPort } from './bus.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
 import { portId as portKey } from './skeleton-graph.js';
 import { farCoordinate } from './peers.js';
+import { pairedFaceKey } from './parallel-sets.js';
+import { findPort } from './row-paths.js';
 import { plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { added as namesAdded, constraintFindings, gateFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { compare, lazyCount, profiles, reading, routedBends, type Reading } from './objective.js';
@@ -22,13 +24,16 @@ export interface TurnOffer {
 
 /**
  * The faces where the planned first turns would change the order of the ports. It reads the kept 7f model (final anchors, kept courses and lane hints) with the
- * comparator of stage 5: the free ports of a face (not authored, not the bus port) sorted by the turn order, against the same ports sorted by the far end alone
+ * comparator of stage 5: the free ports of a face (not authored, not the bus port) sorted by the turn order, against the same ports sorted by the face key alone
+ * (`pairedFaceKey`: a facing pair's shared key, else the far end)
  * and against the order they stand in. A face is offered when the turns move it and it does not stand in the turn order already. Authored order wins, so an
  * authored port is never part of the comparison.
  */
 export function measureTurnOrder(base: LayoutModel): TurnOffer {
   const offer: TurnOffer = { faces: [] };
   const turns = plannedTurns(base, true), plain = plannedTurns(base, false);
+  // Stage 5's face key: a facing pair's shared key, else the far coordinate (`pairedFaceKey`, R1).
+  const faceKey = pairedFaceKey(base, (ref, at) => farCoordinate(base, ref, at), ref => findPort(base, ref)?.side);
   for (const id of orderedNodeIds(base.document)) {
     const node = base.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
@@ -36,7 +41,7 @@ export function measureTurnOrder(base: LayoutModel): TurnOffer {
       const ports = node.ports.filter(port => port.side === side && port.anchor !== undefined && port.authorOrder === undefined && busOfPort(base, port.ref) === undefined)
         .sort((a, b) => a.anchor![along] - b.anchor![along]);
       if (ports.length < 2) continue;
-      const far = (port: LayoutPort): number => farCoordinate(base, port.ref, side);
+      const far = (port: LayoutPort): number => faceKey(port.ref, side);
       const sorted = (planned: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => {
         const slots = new Map(ports.map(port => [port, { far: far(port), ...(planned.get(portKey(port.ref)) ?? {}) } as TurnPort] as const));
         const by = turnOrder([...slots.values()]);

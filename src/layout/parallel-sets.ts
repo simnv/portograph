@@ -20,9 +20,10 @@ const FACING: Readonly<Record<Side, Side>> = { top: 'bottom', bottom: 'top', lef
  * The parallel sets of a model with final sides (stage 5, architecture-2 ticket 80). Every bundle is a set, whatever its faces. Every other group of two or
  * more links between one node pair is a set too when it holds a routed link and an overlay link (technique `overlay`; two layers, any family class), its links
  * leave one face of each node and the two faces face each other (top with bottom, left with right). Two links of one layer without a bundle are no set: two
- * overlay links between one pair can still cross, and nothing owns their order yet. The caller guards the ports of a set.
+ * overlay links between one pair can still cross, and nothing owns their order yet. The caller guards the ports of a set. `sideOf` reads a port's side: the
+ * final side by default; the stage-4 prediction of the face order passes the sizing side it reads every other face with (`facingPairs`, R1).
  */
-export function parallelSets(model: LayoutModel): ParallelSet[] {
+export function parallelSets(model: LayoutModel, sideOf: (ref: PortRef) => Side | undefined = ref => findPort(model, ref)?.side): ParallelSet[] {
   const sets: ParallelSet[] = [];
   for (const bundle of model.bundles) {
     if (bundle.nodes[0] === bundle.nodes[1]) continue;
@@ -32,7 +33,7 @@ export function parallelSets(model: LayoutModel): ParallelSet[] {
   for (const link of model.links) {
     const ends = link.attachments;
     if (ends === undefined || ends.from.node === ends.to.node) continue;
-    const from = findPort(model, ends.from)?.side, to = findPort(model, ends.to)?.side;
+    const from = sideOf(ends.from), to = sideOf(ends.to);
     if (from === undefined || to === undefined || FACING[from] !== to) continue;
     // The pair is written upper-key first, so a link written either way meets its partners in one group.
     const forward = ends.from.node < ends.to.node;
@@ -79,15 +80,17 @@ export function visitOrder(model: LayoutModel, base: readonly string[], sets: re
 
 /**
  * A facing pair (decision review ticket 17): two or more routed links between one node pair whose ends leave facing faces (top with bottom, left with right),
- * each end on a port with one peer (`allPeers`, the peers stage 5 sorts a face by), with no link of a parallel set (a set orders itself). `held` is the end
- * 7c keeps where it stands: the node nearer the anchor tier (`laneSource`'s rule); on a tie, the node whose face of the pair is `top` or `left` (the lower
- * or the right node). Content only (R3): no link order and no authored direction decides it. `sideOf` reads a port's side: the final side at stage 5 and
- * in 7a, the sizing estimate in the stage-4 prediction (`overlay-order.ts`). Stage 5 orders both faces of a pair by one key per link (`facingPairKeys`);
- * 7a nests the pair's transit lanes in that order (decision review ticket 23, `allocateLanes`).
+ * each end on a port with one peer (`allPeers`, the peers stage 5 sorts a face by), with no link of a parallel set (a set orders itself; read with the same
+ * `sideOf`). `held` is the node whose tier is nearer the anchor tier (`selectAnchorTier`); on a tie, the node whose face of the pair is `top` or `left`
+ * (the lower or the right node). Where the distances differ this is the end `laneSource` aligns to; on a tie `laneSource` keeps each link's authored
+ * source, so the two can differ, and the pair reads only `held`. Content only (R3): no link order and no authored direction decides it. `sideOf` reads a
+ * port's side: the final side at stage 5, in 7a and in the turn passes, the sizing estimate in the stage-4 prediction (`overlay-order.ts`). Stage 5 and the
+ * turn passes order both faces of a pair by one key per link (`pairedFaceKey`); 7a nests the pair's transit lanes in that order (decision review ticket 23,
+ * `allocateLanes`).
  */
 export interface FacingPair { links: readonly LayoutLink[]; held: string }
 export function facingPairs(model: LayoutModel, sideOf: (ref: PortRef) => Side | undefined): FacingPair[] {
-  const inSet = new Set(parallelSets(model).flatMap(set => set.links.map(link => link.id)));
+  const inSet = new Set(parallelSets(model, sideOf).flatMap(set => set.links.map(link => link.id)));
   const peers = allPeers(model), peerCount = (ref: PortRef): number => (peers.get(portId(ref)) ?? []).length;
   const groups = new Map<string, LayoutLink[]>();
   for (const link of model.links) {
@@ -114,13 +117,16 @@ export function facingPairs(model: LayoutModel, sideOf: (ref: PortRef) => Side |
 }
 
 /**
- * The shared sort key of the links of a facing pair (`facingPairs`, decision review ticket 17). Stage 5 sorts a face by the far ends' provisional anchors,
- * so the two faces of a pair read each other's draft slots: where the stage-4 draft crosses two links of the pair, both faces flip, and the two faces
- * disagree whatever lane order follows (G5 fails on one face). So the pair is ordered once, from both ends: every port of the pair, on both faces, takes
- * the coordinate of its link's end at the held node (`far`, the face sort's own reader, read from the other end), and the other ports of each face sort
- * against that. Both faces read one key per link, so the pair keeps one order at both ends; equal keys keep the face sort's own tie order.
+ * The key a port of `side` is sorted by in a face order (decision review ticket 17): the port's facing-pair key where it has one, else `far`, the stage's own
+ * far-end reader. Stage 5 sorts a face by the far ends' provisional anchors, so the two faces of a pair read each other's draft slots: where the stage-4 draft
+ * crosses two links of the pair, both faces flip and disagree whatever lane order follows (G5 fails on one face). So the pair is ordered once, from both
+ * ends: every port of the pair, on both faces, takes the coordinate of its link's end at the held node (`far` read from the other end), and the other ports
+ * of each face sort against that. Both faces read one key per link, so the pair keeps one order at both ends; equal keys keep the sort's own tie order.
+ * The one reader of that rule: stage 5 and its stage-4 prediction (`faceSortKey`), and the turn passes of 7a and of the turn round (`laneFaceOrder`,
+ * `measureTurnOrder`), so a turn pass never sorts a pair against the order stage 5 gave it (R1). The pair keys are read once, when it is called, before
+ * any face is sorted (stage 5 sorts face after face on moving anchors); the other ports read `far` on every lookup.
  */
-export function facingPairKeys(model: LayoutModel, far: (ref: PortRef, side: Side) => number, sideOf: (ref: PortRef) => Side | undefined): Map<string, number> {
+export function pairedFaceKey(model: LayoutModel, far: (ref: PortRef, side: Side) => number, sideOf: (ref: PortRef) => Side | undefined): (ref: PortRef, side: Side) => number {
   const keys = new Map<string, number>();
   for (const { links, held } of facingPairs(model, sideOf)) {
     for (const link of links) {
@@ -129,5 +135,5 @@ export function facingPairKeys(model: LayoutModel, far: (ref: PortRef, side: Sid
       keys.set(portId(ends.from), at); keys.set(portId(ends.to), at);
     }
   }
-  return keys;
+  return (ref, side) => keys.get(portId(ref)) ?? far(ref, side);
 }

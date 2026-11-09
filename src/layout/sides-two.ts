@@ -31,7 +31,7 @@ import { routedLinksAt, unreservedPeers } from './peers.js';
 import { arrangeGroups, seatStaggerRows } from './stagger.js';
 import { reserveColumns, seatColumn } from './column-arrangement.js';
 import { ofKind } from './reservations.js';
-import { facingPairKeys, parallelSets, visitOrder, type ParallelSet } from './parallel-sets.js';
+import { pairedFaceKey, parallelSets, visitOrder, type ParallelSet } from './parallel-sets.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 const key = portId;
 
@@ -833,14 +833,13 @@ export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, rea
   return list.length ? list.reduce((sum, peer) => sum + coordinate(peer), 0) / list.length : Infinity;
 }
 /**
- * The key a port of `side` is sorted by in the provisional engine order: the port's facing-pair key (`facingPairKeys`, decision review ticket 17) where it
- * has one, else `farCoordinate`. One reader for stage 5 and for the stage-4 prediction of that order (`overlay-order.ts`, R1). Read on one geometry:
- * the pair keys are fixed when it is called. `sideOf` reads a port's side (the final side by default).
+ * The key a port of `side` is sorted by in the provisional engine order: `pairedFaceKey` (decision review ticket 17) over `farCoordinate`. One reader for
+ * stage 5 and for the stage-4 prediction of that order (`overlay-order.ts`, R1); the turn passes read the same `pairedFaceKey` over their own far reader.
+ * `sideOf` reads a port's side (the final side by default).
  */
 export function faceSortKey(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>,
   sideOf: (port: LayoutPort | undefined) => Side | undefined = port => port?.side): (ref: PortRef, side: Side) => number {
-  const facing = facingPairKeys(model, (ref, side) => farCoordinate(model, peers, ref, side), ref => sideOf(findPort(model, ref)));
-  return (ref, side) => facing.get(key(ref)) ?? farCoordinate(model, peers, ref, side);
+  return pairedFaceKey(model, (ref, side) => farCoordinate(model, peers, ref, side), ref => sideOf(findPort(model, ref)));
 }
 /** The keys of every mesh-bus port (`busOfPort` answers a bus for exactly these). A caller that sorts many faces reads it once. */
 export function busPortKeys(model: LayoutModel): Set<string> {

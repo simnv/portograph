@@ -66,7 +66,8 @@ export function allPeers(model: LayoutModel): Map<string, PortRef[]> {
 
 /**
  * The coordinate along `side` that a port's run goes to: the mean of its peers' ports over all links (x on a horizontal face, y on a lateral one), or `Infinity`
- * with no peer. The key of the far-end order of stage 5, read again by the turn round and by the 7a pass.
+ * with no peer. The far-end key of the turn round and of the 7a turn pass: they read it through `pairedFaceKey` (`parallel-sets.ts`), as stage 5 reads its own
+ * far coordinate, so a port of a facing pair sorts by the pair's shared key there too.
  */
 export function farCoordinate(model: LayoutModel, ref: PortRef, side: 'top' | 'right' | 'bottom' | 'left'): number {
   const horizontal = side === 'top' || side === 'bottom';

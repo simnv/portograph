@@ -15,7 +15,7 @@ import { reversed } from '../../scripts/r3-lib.mjs';
 
 /**
  * Decision review ticket 17: two routed links between one node pair whose ends leave facing faces (the router's bottom face and the switch's top face, one
- * link written each way) are ordered once, from both ends (`facingPairKeys`). Before, each face sorted by the other face's draft slots; the stage-4 draft
+ * link written each way) are ordered once, from both ends (`facingPairs`, `pairedFaceKey`). Before, each face sorted by the other face's draft slots; the stage-4 draft
  * crosses the pair, so both faces flipped and disagreed in every input order. Held: the two faces order the pair alike as written, with `links` reversed and
  * with `nodes` reversed, and every gate passes in all three orders (7a nests the pair's two lanes left of the zone in the face order, decision review
  * ticket 23, `test/layout/lane-nesting.test.ts`).

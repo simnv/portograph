@@ -568,15 +568,18 @@ overlay port of such a set where stage 5 put it. What this does not hold: which 
 authored direction of the links (stage 4 gives ELK each edge in its authored direction); two overlay links between one pair, and two routed links without a bundle, are no set
 (as sets they changed 8 older sheets and made 2 worse) and can still cross (`an-overlay-frame-reorder-is-refused-with-six-sync-links`).
 
-**A facing pair is ordered once, from both ends** (decision review ticket 17, `facingPairKeys`, `parallel-sets.ts`). A facing pair is two or more routed
-links between one node pair, outside every parallel set, whose ends leave facing faces, each end on a port with one peer. Each face sorted by the other
-face's draft slots, so where the stage-4 draft crossed two links of the pair both faces flipped and disagreed, and G5 failed on one face in every input
-order. Now every port of the pair, on both faces, sorts by the coordinate of its link's end at the **held node**, read before any face is sorted; the other
-ports of each face sort against it. The held node is the end 7c keeps where it stands: the end nearer the anchor tier (`laneSource`'s rule), and on a tie
-the node whose face of the pair is `top` or `left`. One key per link gives one order at both ends; content decides the held node, not link order or
-direction (R3). `faceSortKey` is the one reader of the face key, for stage 5 and for the stage-4 prediction of its order (`overlay-order.ts`, R1).
-`facingPairs` is the one reader of which links form a pair and which node is held, for stage 5 and for 7a, which nests the pair's lanes in this order
-(decision review ticket 23, § 7a).
+**A facing pair is ordered once, from both ends** (decision review ticket 17, `facingPairs`, `pairedFaceKey`, `parallel-sets.ts`). A facing pair is two or
+more routed links between one node pair, outside every parallel set, whose ends leave facing faces, each end on a port with one peer. Each face sorted by
+the other face's draft slots, so where the stage-4 draft crossed two links of the pair both faces flipped and disagreed, and G5 failed on one face in every
+input order. Now every port of the pair, on both faces, sorts by the coordinate of its link's end at the **held node**, read before any face is sorted; the
+other ports of each face sort against it. The held node is the node whose tier is nearer the anchor tier (`selectAnchorTier`), and on a tie the node whose
+face of the pair is `top` or `left`. Where the distances differ it is the end `laneSource` aligns to; on a tie `laneSource` keeps each link's authored
+source, so a pair written both ways has two lane sources but one held node. One key per link gives one order at both ends; content decides the held node,
+not link order or direction (R3). `pairedFaceKey` is the one reader of the face key: stage 5 and the stage-4 prediction of its order read it over
+`farCoordinate` (`faceSortKey`, `overlay-order.ts`), and the turn passes (`laneFaceOrder` in 7a, `measureTurnOrder` in the turn round) over their far
+coordinate, so no turn pass sorts a pair against the order stage 5 gave it (R1). The pair and the parallel sets it leaves out read one port side: the final
+side, or the sizing side in the stage-4 prediction. `facingPairs` is the one reader of which links form a pair and which node is held, for these and for
+7a, which nests the pair's lanes in this order (decision review ticket 23, § 7a).
 
 Stage 5 also produces measured node and description labels, icon bounds, named pills and exact
 port-associated pill labels. Centre content inside its asymmetric content insets. Anonymous ports
@@ -903,9 +906,11 @@ lane of one margin stands farther out. On a right margin the outer port then get
 of the left port stands inside the lane of the right port, and the two lanes cross where they leave the faces and again where they enter them. Stage 5 has
 ordered both faces of a facing pair (§ 5) by one key per link, the x at the held node, and the port anchors at that node are the record of that order. So
 the links of one pair keep the slots the source order gives them and fill them inner lane first: on the left side of the group the larger x at the held
-node first, on the right side the smaller. The side is the one 7a takes (`corridorSide`, or the side stage 4 reserved), read on the occupied box of the
-group nearest the source in the transited tier next to the held node, before any lane stands. A pair whose links would take two sides or two groups, and
-every link of no pair, keep the source order. The rule is limited to facing pairs because only there are both ends ordered by one decision: put in the
+node first, on the right side the smaller. The side is read before any lane stands, on the occupied box of the group nearest the source in the transited
+tier next to the held node: the side stage 4 reserved, else the side the target asks for, else the source's (`corridorSide`). That is the side the frame pass
+takes and the side the tier pass prefers. What this does not hold: the tier pass starts from the source's side (`corridorSide(core, sx)`) and moves to the
+target's margin only when a direct plan exists there or the stacked x crosses the group, so a pair can still end on the side not read here and nest the wrong
+way round. A pair whose links would take two sides or two groups, and every link of no pair, keep the source order. The rule is limited to facing pairs because only there are both ends ordered by one decision: put in the
 source order of every link, the same nesting moved 20 sheets and made 5 worse (bends, crossings, a G6), branch `dr-23-lane-nesting`, attempt 1.
 
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
