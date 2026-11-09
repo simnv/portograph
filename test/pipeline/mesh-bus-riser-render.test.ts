@@ -103,6 +103,9 @@ describe('the riser publishes paths, renders and exports (ticket 97)', () => {
     expect(JSON.stringify(restoreLayoutModel(JSON.stringify(model)))).toBe(JSON.stringify(model));
   }, 60000);
 
+  // Ticket DR-04 re-baselined two snapshots. `a-riser-between-cantons-crosses-no-canton-edge` draws West left of East, the canton declaration order
+  // (before: East left; an id-free diff shows the same layout with the two cantons swapped). `a-cross-link-with-another-label-keeps-two-buses` is
+  // the layout before DR-04 moved 13 px right, canvas origin included. In both, link ids and anonymous port ordinals follow the canonical link order.
   for (const name of [...JOINED, 'a-cross-link-with-another-label-keeps-two-buses'] as const) {
     it(`snapshots the SVG and the draw.io export of ${name}`, async () => {
       const model = await run(fixture(name));
