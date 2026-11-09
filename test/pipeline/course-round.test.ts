@@ -222,11 +222,12 @@ describe('the judge reads what the trial publishes (review of phase 4)', () => {
     expect(judgeCourseTrial(base, structuredClone(base) as LayoutModel, new Map()).reason).not.toMatch(/min-separation|minimum separation|hard constraint/);
   }, 60000);
 
-  // The course of link-10 here once left two root groups 58.9 px apart (the band gap is 60): no gate measured it, the hard entry of the x catalogue does. The linked-group
+  // The course of link-13 here once left two root groups 58.9 px apart (the band gap is 60): no gate measured it, the hard entry of the x catalogue does. The linked-group
   // grid no longer widens a box into the band gap of its neighbour (architecture ticket 19), so the baseline holds the gap and the course is taken without breaking it.
-  it('keeps every hard separation the baseline holds, the course of link-10 included', async () => {
-    const model = await layout(parse(source('a-group-shift-leaves-a-chord-clear-of-a-lane')), options);
-    expect(model.courses?.some(course => course.link === 'link-10') ?? false).toBe(true);
+  it('keeps every hard separation the baseline holds, the course of link-13 included', async () => {
+    // DR-04: the copy that declares `access` before `src`; with it the canonical order gives link-13 (src1 -> snk0) its course again.
+    const model = await layout(parse(source('a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first')), options);
+    expect(model.courses?.some(course => course.link === 'link-13') ?? false).toBe(true);
     expect([...constraintFindings(model)]).toEqual([]);
   }, 60000);
 

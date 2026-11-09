@@ -43,11 +43,16 @@ const ROWS: Row[] = [
   // Ticket 57 (the tier gaps solved once, after the rounds): no settle round grows a gap and replays for it. three-continents 22/100/50/5 (24/105/54/5
   // before); a-tier-gap-plan 1/24/10/3, one round (2/56/14/3: its second round was the growth's; 2/48/14/3 and two bodies since ticket 65); two-interleaved 1/6/7/3 and a-tier-gap-grows 1/4/7/3
   // (one centring pass each, the replay after the growth).
-  row('three-continents', '22/100/50/5', 2, 2, 5, 2, 2, { preCentre: 2, baseChord: 1 }),
+  // DR-04 (link order is never input): links take the canonical order, and no group declaration tried (two) brings it near the written order
+  // on this sheet. Laid out in the written order on the DR-04 code the sheet still reads 22/100/50/5, 2 runs, preCentre 2 (and derives 41/19/2),
+  // so the counts below follow from the order alone: 19/63/44/5, 3 place runs (one fan re-run more), preCentre 3. Attempts, rounds, open
+  // rounds, chord moves, the base 7f and the findings (no body on a frozen chord, the cantons settle) are unchanged.
+  row('three-continents', '19/63/44/5', 3, 2, 5, 2, 2, { preCentre: 3, baseChord: 1 }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
   // Ticket 65: the settle after the rounds puts src back at the spec's x, a direct member then crowds a planned part, and the attempt body runs
   // once more with it refused (two bodies of one round each, one settle and its eight passes each): 2/48/14/3 and 2 rounds (1/24/10/3 and 1 before).
-  row('a-tier-gap-plan-orders-every-part', '2/48/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
+  // DR-04: the copy that declares `access` before `src`, so the canonical link order lays the shape of the spec out again.
+  row('a-tier-gap-plan-orders-every-part-middle-tier-first', '2/48/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
   row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/6/7/3', 1, 1, 1, 0, 0),
   row('a-tier-gap-grows-to-its-rows', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 54: one centring pass fewer (1/5/7/3 before).
@@ -142,8 +147,9 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
   // Ticket 57: the gap rounds are gone; the tier gaps are solved once per 7f attempt body (`gapSolves` = the attempts and their retries),
   // and no settle round replays for a growth: three-continents 41/19 (43/21 and 25 gap rounds before), the others 0/0 (5, 2, 2, 1 gap
   // rounds), the chord-step fixture 10/10 (13 gap rounds).
+  // DR-04: three-continents 26/16 (41/19 in the written order; see its row above).
   it.each([
-    ['three-continents', 41, 19, 2], ['a-tier-gap-plan-orders-every-part', 2, 0, 2], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 1],
+    ['three-continents', 26, 16, 2], ['a-tier-gap-plan-orders-every-part-middle-tier-first', 2, 0, 2], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 1],
     ['a-tier-gap-grows-to-its-rows', 0, 0, 1], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 1], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 3],
   ] as const)('derives once: %s replays %i, settled copies %i, gap solves %i', async (name, replays, trials, solves) => {
     resetAttemptCounters(); attemptCounters.ledger = true;
