@@ -61,7 +61,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # prepublishOnly builds dist/ first.
+      # npm publish runs prepack, which builds dist/ first.
       - name: Publish
         run: npm publish --provenance --access public
 
