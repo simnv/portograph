@@ -13,19 +13,27 @@ describe('schema normalisation', () => {
     expect(parse(yaml)).toEqual(JSON.parse(readFileSync('goldens/m1-sip-edge.expected.json', 'utf8')));
   });
 
-  it('allocates free names and wildcards in link order without changing name-local ordinals', () => {
-    const result = parseWithDiagnostics(source({ links: [['a.p#2', 'b.p'], ['a.*', 'b.p'], ['a.p', 'b'], ['a.*', 'b'], ['a.*', 'b']] }));
+  it('allocates free names and wildcards in the canonical link order without changing name-local ordinals', () => {
+    // Ticket DR-04: link order is never input. The canonical order puts the explicit `a.p#2` last (a numbered port ranks after a wildcard,
+    // an unnumbered name and a bare end), so the wildcards take p#1, q#1 and p#2, the fourth is anonymous, and `a.p` and `a.p#2` share.
+    // A sixth link keeps the anonymous case that the written order once gave with five.
+    const links = [['a.p#2', 'b.p'], ['a.*', 'b.p'], ['a.p', 'b'], ['a.*', 'b'], ['a.*', 'b'], ['a.*', 'b']];
+    const result = parseWithDiagnostics(source({ links }));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.document.links.map(l => l.from)).toEqual([
-      { node: 'a', name: 'p', ordinal: 2 }, { node: 'a', name: 'p', ordinal: 1 },
       { node: 'a', name: 'p', ordinal: 1 }, { node: 'a', name: 'q', ordinal: 1 },
-      { node: 'a', anonymous: true, ordinal: 1 },
+      { node: 'a', name: 'p', ordinal: 2 }, { node: 'a', anonymous: true, ordinal: 1 },
+      { node: 'a', name: 'p', ordinal: 1 }, { node: 'a', name: 'p', ordinal: 2 },
     ]);
     expect(result.diagnostics).toEqual(expect.arrayContaining([
-      expect.objectContaining({ stage: 'model', severity: 'warning', code: 'SHARED_PORT', path: '$.links[1].to' }),
-      expect.objectContaining({ code: 'WILDCARD_ANONYMOUS', path: '$.links[4].from' }),
+      expect.objectContaining({ stage: 'model', severity: 'warning', code: 'SHARED_PORT', path: '$.links[0].to' }),
+      expect.objectContaining({ code: 'SHARED_PORT', path: '$.links[2].from' }),
+      expect.objectContaining({ code: 'WILDCARD_ANONYMOUS', path: '$.links[5].from' }),
     ]));
+    // The same ports with `links` reversed.
+    const back = parseWithDiagnostics(source({ links: [...links].reverse() }));
+    expect(back.ok && back.document.links).toEqual(result.document.links);
   });
 
   it('makes compact and structured endpoint forms equivalent, including groups', () => {

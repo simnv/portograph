@@ -14,6 +14,7 @@ import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+import { reversed } from '../../scripts/r3-lib.mjs';
 
 /**
  * Ranked-groups ticket 51 (`docs/design/tier-gap-rows.md`, Section 1 item 6 and Section 2.2): every reason a part of a tier gap is
@@ -70,14 +71,24 @@ describe('a residual part publishes with its findings named (ticket 51)', () => 
   }, 120000);
 
   it('names a part in a row cycle with its own code (TIER_GAP_ROW_CYCLE)', async () => {
-    const { placed: model, routed } = await whole('a-row-cycle-leaves-a-part-to-the-router');
-    expect(residual(model).sort()).toEqual(['link-7:row-cycle', 'link-1:u-turn']);
-    expect(codes(model).sort()).toEqual([
-      'TIER_GAP_PART_RESIDUAL|link-1 is left to the router in the tier gap above tier 1: both ends stand on one boundary.',
-      'TIER_GAP_ROW_CYCLE|link-7 is left to the router in the tier gap above tier 1: its rows form a cycle.',
-    ]);
+    // Ticket DR-04: a cycle is left to the router only where no part on it has a free middle (the fixture header says why none has one).
+    const { placed: model, routed } = await whole('a-row-cycle-with-no-free-middle-is-left-to-the-router');
+    expect(residual(model)).toEqual(['link-3:row-cycle']);
+    expect(codes(model)).toEqual(['TIER_GAP_ROW_CYCLE|link-3 is left to the router in the tier gap above tier 1: its rows form a cycle.']);
     expect(routed.removedLinks ?? []).toEqual([]);
-    expect(failing(routed)).toEqual(['G6:parallel-clearance:link-5/link-7']);
+    expect(failing(routed)).toEqual([]);
+    // Link order is never input: with `links` reversed the same part is residual.
+    expect(residual(await place(reversed(read('a-row-cycle-with-no-free-middle-is-left-to-the-router'), 'links')))).toEqual(['link-3:row-cycle']);
+  }, 120000);
+
+  it('opens a row cycle with a middle drop where a part on it has a free middle (ticket DR-04)', async () => {
+    // Before DR-04 the latest part of this cycle (in link order) was residual; now a part of the cycle that has a free middle is split.
+    const { placed: model, routed } = await whole('a-row-cycle-leaves-a-part-to-the-router');
+    expect(residual(model)).toEqual(['link-1:u-turn']);
+    expect(codes(model)).toEqual(['TIER_GAP_PART_RESIDUAL|link-1 is left to the router in the tier gap above tier 1: both ends stand on one boundary.']);
+    expect(tierGapPlans(model).flatMap(({ plan }) => plan.parts).filter(part => part.shape === 'z').length).toBeGreaterThan(0);
+    expect(routed.removedLinks ?? []).toEqual([]);
+    expect(failing(routed)).toEqual([]);
   }, 120000);
 
   it('leaves no leg under a title to the router, and names a leg over a shared run (crosses-shared-run) on the corpus fixtures', async () => {

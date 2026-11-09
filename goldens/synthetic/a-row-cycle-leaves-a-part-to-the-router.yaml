@@ -1,6 +1,6 @@
-# Expected: the plan finds a cycle it cannot break for link-6 and leaves it to the router
-# (TIER_GAP_ROW_CYCLE). The link between the bottom ports of r0 and r3 is a same-boundary U-turn, also residual; its stems are what
-# put the rows of link-5 and link-6 in the cycle. The diagram publishes and removes nothing.
+# Expected: the stems of the same-boundary U-turn between the bottom ports of r0 and r3 (residual, TIER_GAP_PART_RESIDUAL) put rows of the
+# tier gap in a cycle. Since ticket DR-04 a part of the cycle that has a free middle is split (a Z with a middle drop), so no part is
+# TIER_GAP_ROW_CYCLE here; `a-row-cycle-with-no-free-middle-is-left-to-the-router` keeps that code. The diagram publishes and removes nothing.
 # Test-only input owned by ranked-groups ticket 51; test/pipeline/residual-parts.test.ts reads the placed and the routed model.
 portograph: 2
 groups:
