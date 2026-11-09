@@ -2,10 +2,8 @@
 # Scan the staged diff (added lines only) for denylist terms.
 # Prints file and line number of each hit, never the term. Exit 1 on a hit.
 list="${PORTOGRAPH_DENYLIST:-$HOME/.config/portograph/denylist}"
-if [ ! -f "$list" ]; then
-  echo "pre-commit: denylist not found, check skipped"
-  exit 0
-fi
+# No denylist file (a contributor's clone): skip the check without a word.
+[ -f "$list" ] || exit 0
 tmp=$(mktemp -d) || exit 1
 trap 'rm -rf "$tmp"' EXIT
 grep -v '^[[:space:]]*#' "$list" | grep -v '^[[:space:]]*$' > "$tmp/terms"

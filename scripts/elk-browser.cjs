@@ -9,14 +9,17 @@ const cli = process.env.PATH.split(path.delimiter).map(dir => path.join(dir, 'pl
 if (!cli) throw new Error('Run through npx --package=playwright');
 const { chromium } = require(path.join(path.dirname(realpathSync(cli)), 'index.js'));
 const dist = path.resolve('dist');
+// The solver files come from the installed elkjs; the page serves them under the names the factories default to.
+const elk = path.dirname(require.resolve('elkjs/package.json'));
 (async () => {
   const server = createServer((req, res) => {
-    const assets = { '/api.js': 'portograph.umd.cjs', '/portograph-elk-worker.js': 'portograph-elk-worker.js' };
+    const assets = { '/api.js': path.join(dist, 'portograph.umd.cjs'), '/elk-api.js': path.join(elk, 'lib/elk-api.js'),
+      '/portograph-elk-worker.js': path.join(elk, 'lib/elk-worker.min.js') };
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    if (assets[req.url]) return res.end(readFileSync(path.join(dist, assets[req.url])));
+    if (assets[req.url]) return res.end(readFileSync(assets[req.url]));
     if (req.url === '/favicon.ico') { res.writeHead(204); return res.end(); }
     if (req.url === '/stall.js') return res.end('postMessage({ ready: true }); while (true) {}');
-    if (req.url === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end('<!doctype html><meta charset="utf-8"><script src="/api.js"></script>'); }
+    if (req.url === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end('<!doctype html><meta charset="utf-8"><script src="/elk-api.js"></script><script src="/api.js"></script>'); }
     res.writeHead(404); res.end('missing');
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

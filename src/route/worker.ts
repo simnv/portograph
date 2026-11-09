@@ -125,8 +125,9 @@ export async function withRouteSession<T>(createAttempt: CreateRouteAttempt, bud
 }
 
 /**
- * Serve `portograph-avoid-worker.mjs`, `portograph-avoid.mjs` and `portograph-libavoid.wasm`
- * beside the page, or pass their URLs. Asset locations are always explicit: nothing is inferred
+ * Serve `portograph-avoid-worker.mjs` (in dist/), and libavoid-js's `dist/index.js` and
+ * `dist/libavoid.wasm` as `portograph-avoid.mjs` and `portograph-libavoid.wasm`, beside the page, or
+ * pass their URLs. Asset locations are always explicit: nothing is inferred
  * from `cwd` or `document.currentScript`, so the page must be served over HTTP.
  */
 export function createBrowserRouteFactory(options: Partial<RouteAssets & { workerUrl: string }> = {}): CreateRouteAttempt {

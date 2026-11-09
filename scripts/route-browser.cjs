@@ -10,6 +10,9 @@ const cli = process.env.PATH.split(path.delimiter).map(dir => path.join(dir, 'pl
 if (!cli) throw new Error('Run through npx --package=playwright');
 const { chromium } = require(path.join(path.dirname(realpathSync(cli)), 'index.js'));
 const dist = path.resolve('dist');
+// The solver files come from the installed elkjs and libavoid-js; the page serves them under the names the factories default to.
+const elk = path.dirname(require.resolve('elkjs/package.json'));
+const avoid = path.dirname(require.resolve('libavoid-js')); // the package exports only its root (dist/index-node.mjs)
 const yaml = [
   'portograph: 2',
   'groups: {top: {tier: 0}, mid: {tier: 1}, low: {tier: 2}}',
@@ -23,20 +26,23 @@ const yaml = [
 
 (async () => {
   const server = createServer((req, res) => {
-    const scripts = { '/api.js': 'portograph.umd.cjs', '/esm.js': 'portograph.js',
-      '/portograph-elk-worker.js': 'portograph-elk-worker.js',
-      '/portograph-avoid-worker.mjs': 'portograph-avoid-worker.mjs', '/portograph-avoid.mjs': 'portograph-avoid.mjs' };
+    const scripts = { '/api.js': path.join(dist, 'portograph.umd.cjs'), '/esm.js': path.join(dist, 'portograph.js'),
+      '/elk-api.js': path.join(elk, 'lib/elk-api.js'), '/portograph-elk-worker.js': path.join(elk, 'lib/elk-worker.min.js'),
+      '/portograph-avoid-worker.mjs': path.join(dist, 'portograph-avoid-worker.mjs'), '/portograph-avoid.mjs': path.join(avoid, 'index.js') };
     if (req.url === '/portograph-libavoid.wasm') {
       res.setHeader('Content-Type', 'application/wasm');
-      return res.end(readFileSync(path.join(dist, 'portograph-libavoid.wasm')));
+      return res.end(readFileSync(path.join(avoid, 'libavoid.wasm')));
     }
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    if (scripts[req.url]) return res.end(readFileSync(path.join(dist, scripts[req.url])));
+    // The ES bundle imports `elkjs/lib/elk-api.js`; a bundler resolves it, and this page maps it to the global the script sets.
+    if (req.url === '/elk-api.mjs') return res.end('export default globalThis.ELK;');
+    if (scripts[req.url]) return res.end(readFileSync(scripts[req.url]));
     if (req.url === '/stall.mjs') return res.end('postMessage({ ready: true }); while (true) {}');
     if (req.url === '/favicon.ico') { res.writeHead(204); return res.end(); }
     if (req.url === '/') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      return res.end('<!doctype html><meta charset="utf-8"><script src="/api.js"></script>'
+      return res.end('<!doctype html><meta charset="utf-8"><script type="importmap">{"imports":{"elkjs/lib/elk-api.js":"/elk-api.mjs"}}</script>'
+        + '<script src="/elk-api.js"></script><script src="/api.js"></script>'
         + '<script type="module">import * as esm from "/esm.js"; globalThis.portographEsm = esm;</script>');
     }
     res.writeHead(404); res.end('missing');

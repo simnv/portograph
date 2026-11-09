@@ -25,8 +25,8 @@ Renders: [`prototype/out/out-tall2-av.png`](prototype/out/out-tall2-av.png) →
 
 ## Use
 
-Needs Node 22 or newer. Install from a tarball (`npm pack`) or from the git repository; a git
-install builds the package on `npm install` (the `prepare` script).
+Needs Node 22 or newer. Install from npm, or from a tarball: in a clone, run `npm ci`,
+`npm run build` and `npm pack`. The solvers `elkjs` and `libavoid-js` install as dependencies.
 
 ```sh
 npm install ./portograph-0.1.0.tgz

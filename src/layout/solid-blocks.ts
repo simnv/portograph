@@ -176,7 +176,7 @@ export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutMo
       const ports = Object.values(link.attachments!).map(ref => findPort(geometry, ref)!).sort((a, b) => a.anchor!.y - b.anchor!.y);
       return ports[0]!.side !== 'bottom' || ports[1]!.side !== 'top';
     })) { declined.set(family.id, 'non-facing-ports'); continue; }
-    let required = 0, above = Infinity, below = -Infinity, gap = 0;
+    let required = 0, above = Infinity, below = -Infinity, gap: number;
     for (const link of links) {
       const ends = Object.values(link.attachments!).map(ref => ({ ref, port: findPort(geometry, ref)!, tier: model.groups[model.document.nodes[ref.node]!.group]!.tier! })).sort((a, b) => a.tier - b.tier);
       const upper = ends[0]!, lower = ends[1]!, a = upper.port.anchor!, b = lower.port.anchor!;

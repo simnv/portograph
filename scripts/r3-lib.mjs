@@ -76,7 +76,7 @@ function reversedFlow(yaml, key) {
     return document.toString();
   } catch (error) {
     // The library cannot write an alias that stands before its anchor.
-    throw new Error(`reversed: reversing \`${key}:\` puts an alias before its anchor (an anchor inside the block): ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`reversed: reversing \`${key}:\` puts an alias before its anchor (an anchor inside the block): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 

@@ -67,7 +67,7 @@ export function createWorkerElkAttempt(worker: ElkWorker): ElkAttempt {
   };
 }
 
-/** Serve the emitted portograph-elk-worker.js asset beside the page, or pass its absolute URL. */
+/** Serve elkjs's `lib/elk-worker.min.js` beside the page as portograph-elk-worker.js, or pass its URL. */
 export function createBrowserElkFactory(workerUrl = 'portograph-elk-worker.js'): CreateElkAttempt {
   return () => {
     if (host.Worker === undefined) throw new Error('A real Worker is required; Node callers must supply createNodeElkFactory()');
