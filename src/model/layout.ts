@@ -281,10 +281,17 @@ export interface LayoutLink {
   sharedRuns?: { from?: PathSegment[]; to?: PathSegment[] };
   stubCandidate?: boolean;
   /**
-   * Stage 8 discarded this link's route because the router skipped a required checkpoint
-   * (`ROUTE_CHECKPOINT_SKIPPED`). A removed link has no path and is not drawn; `LayoutModel.removedLinks` lists it.
+   * Stage 8 discarded this link's route: the router skipped a required checkpoint (`ROUTE_CHECKPOINT_SKIPPED`) or the stitch
+   * refused it (`ROUTE_GAP_REJECTED`). A removed link has no path and is not drawn; `LayoutModel.removedLinks` lists it.
    */
   removed?: true;
+  /**
+   * The router answer stage 8 judged unusable: the points of each routed gap of this link, in plan order (DR-14). Present exactly
+   * on a removed link; empty when the link has no routed gap and the stitch refused its planned pieces alone. Publication and
+   * restore judge it again with `tryStitch` on the placement as stage 8 received it (`preRoute`), and refuse a removal it does not
+   * reproduce. The record proves that this answer is unusable, not that the router had to give it.
+   */
+  rejectedRoute?: { connector: string; points: Point[] }[];
   /**
    * The face of the named pill that one end of this link meets, when it differs from the port's side (architecture ticket 15,
    * Section 1). Present only on a shared named port and only on a tangential face: a lateral port takes `top` or `bottom`, a top or
