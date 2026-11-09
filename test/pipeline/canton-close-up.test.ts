@@ -37,7 +37,9 @@ function expectIdempotent(model: LayoutModel): void {
 // Ranked-groups ticket 65: the cantons of a merged step close up to a band gap. Each assertion reads the model after the whole layout.
 describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
   it('three cantons stand a band gap apart when the anchor sub-tier stands inside their span', async () => {
-    const model = await run('three-canton-groups-close-up-to-a-band-gap');
+    // DR-04: every layout here reads the copy that declares canton `b` first, which keeps the canton order b, a, c that ELK gave before. The
+    // original stands a, b, c in declaration order, where a straight overlay link holds canton a off the close-up (COLUMN_AXIS_HELD).
+    const model = await run('three-canton-groups-close-up-to-a-band-gap-canton-b-first');
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(cantonBoxes(model)).toHaveLength(3);
     // Measured before the rule: with Arial 100 and 148 px on a canvas 2049.3 px wide. Snack-theme ticket 157 measured it again with Verdana,
@@ -58,7 +60,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     // step, the MPLS row, stands centred on it within one column slack (measured 1.5 px).
     // With the side round on, m1 (in mpls) takes a lateral side (ticket 117, link-4 freed) and 7c drops that link's pull (side-faces.md, Section 7), so the
     // centre is read on the layout with the round off; the gaps above are read on both.
-    const plain = await layout(parse(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8')),
+    const plain = await layout(parse(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap-canton-b-first.yaml', import.meta.url), 'utf8')),
       { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
     // Ticket 25: the zones of canton a stand under their feeds, the location frames take other widths, and the MPLS row no longer stands
     // over the block centre (95 px right of it; its children span centre is the block centre). 7c moves the parent ports, not the row, and
@@ -74,7 +76,7 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
     expect(apart.length).toBeGreaterThan(0);
     expect(apart.filter(id => !infeasible.has(id))).toEqual([]);
     // With the rule off the subject stands: the MPLS row is centred on the block within one column slack.
-    const off = await layout(parse(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8').replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n')),
+    const off = await layout(parse(readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap-canton-b-first.yaml', import.meta.url), 'utf8').replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n')),
       { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
     const block = (cantonBoxes(off)[0]!.x + right(cantonBoxes(off)[2]!)) / 2, mpls = off.groups['mpls']!.bounds!;
     expect(Math.abs(mpls.x + mpls.width / 2 - block)).toBeLessThan(COLUMN_SLACK);
@@ -82,7 +84,9 @@ describe('cantons close up to a band gap (ranked-groups ticket 65)', () => {
   }, 120000);
 
   it('three continents stand a band gap apart, the equality of the earlier lower bound', async () => {
-    const model = await run('three-continents');
+    // DR-04: the copy with `top-3` declared first stands the top row as before DR-04; the original takes the canton order c, b, a
+    // (the overlay order of cantons, fewer routed crossings) on a canvas 1578.6 px wide.
+    const model = await run('three-continents-top-3-first');
     // Measured before the rule: with Arial 86.4 and 100 px on a canvas 1372.7 px wide. Snack-theme ticket 157 measured it again with Verdana,
     // with the close-up off (`closeUp` and `closeCantons` returning false): the gaps are 60.1 and 59.9 px (the rows rule now packs them) on a
     // canvas 1451.6 px wide; with the close-up on, the canvas is 1418.3 px wide.
