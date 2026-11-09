@@ -5,7 +5,7 @@ import { restoreFinalLayout } from '../../src/internal.js';
 import type { Point } from '../../src/model/geometry.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { planRoute } from '../../src/route/plan.js';
-import { tryStitch } from '../../src/route/paths.js';
+import { skippedCheckpoint, tryStitch } from '../../src/route/paths.js';
 import { preRoute } from '../../src/route/validate.js';
 import type { CreateRouteAttempt, RouteWorker } from '../../src/route/worker.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -116,37 +116,58 @@ describe('restore refuses a forged link removal (decision-review ticket 14)', ()
     expect(() => restore(forged(model, foreign))).toThrow(`Removed link ${LINK} stores a router answer that is not one for its planned gaps`);
   }, 120000);
 
-  it('refuses the five forgeries the floor can tell from a router answer, by name', async () => {
+  it('refuses the forgeries the floor can tell from a router answer, by name', async () => {
     const model = await drawn(), gap = gapOf(model), [good] = usable(model, seen), points = good!.points;
+    const item = planRoute(preRoute(model)).links.find(candidate => candidate.link === LINK)!;
     const floor = `Removed link ${LINK} stores an answer for ${gap.connector} that no router gives`;
+    const orthogonal = `${floor}: it meets both ends of its gap, honours its checkpoints and is not orthogonal`;
     const answer = (list: Point[]) => [{ connector: gap.connector, points: list }];
     expect(() => restore(forged(model, answer([])))).toThrow(`${floor}: fewer than two finite points`);
     expect(() => restore(forged(model, answer([gap.from])))).toThrow(`${floor}: fewer than two finite points`);
+    // An inner corner moved 1 px across, and an inner corner dropped. The first such change that still honours the checkpoints
+    // (`skippedCheckpoint`) meets both ends, so the answer must be orthogonal.
+    const honours = (list: Point[]): boolean => skippedCheckpoint(item, new Map([[gap.connector, list]])) === undefined;
+    const inner = points.slice(1, -1).map((_, index) => index + 1);
+    const moved = inner.map(at => points.map((point, index) => index === at ? { x: point.x + 1, y: point.y + 1 } : { ...point })).find(honours);
+    const dropped = inner.map(at => points.filter((_, index) => index !== at)).find(list => honours(list) && list.some((point, index) => index > 0
+      && point.x !== list[index - 1]!.x && point.y !== list[index - 1]!.y));
+    expect(moved).toBeDefined();
+    expect(dropped).toBeDefined();
+    expect(() => restore(forged(model, answer(moved!)))).toThrow(orthogonal);
+    expect(() => restore(forged(model, answer(dropped!)))).toThrow(orthogonal);
+  }, 120000);
+
+  it('restores the answer libavoid gives when it drops a checkpoint: the two ends of the gap and a diagonal', async () => {
+    // `straightRun` (plan.ts): libavoid answers with the two port anchors and a diagonal between them. The judgement removes the
+    // link (`ROUTE_CHECKPOINT_SKIPPED`); the floor must not refuse it. The same answer as a forgery is part of the stated limit.
+    const model = await drawn(), gap = gapOf(model), item = planRoute(preRoute(model)).links.find(candidate => candidate.link === LINK)!;
     expect(gap.from.x !== gap.to.x && gap.from.y !== gap.to.y).toBe(true);
-    expect(() => restore(forged(model, answer([gap.from, gap.to])))).toThrow(`${floor}: it meets both ends of its gap and is not orthogonal`);
-    // An inner corner moved 1 px across, and an inner corner dropped: both ends are still met, so the answer must be orthogonal.
-    expect(points.length).toBeGreaterThan(3);
-    const moved = clone(points); moved[1]!.x += 1; moved[1]!.y += 1;
-    expect(() => restore(forged(model, answer(moved)))).toThrow(`${floor}: it meets both ends of its gap and is not orthogonal`);
-    expect(() => restore(forged(model, answer(points.filter((_, index) => index !== 2))))).toThrow(`${floor}: it meets both ends of its gap and is not orthogonal`);
+    const diagonal = [{ ...gap.from }, { ...gap.to }];
+    const done = tryStitch(preRoute(model), item, new Map([[gap.connector, diagonal]]));
+    expect('rejection' in done && done.rejection.code).toBe('ROUTE_CHECKPOINT_SKIPPED');
+    expect(restore(forged(model, [{ connector: gap.connector, points: diagonal }])).removedLinks).toEqual([LINK]);
   }, 120000);
 
   it('accepts a well-formed answer that misses an end: libavoid gives such answers, and only routing again could refuse it', async () => {
-    // The limit of the proof: an end moved 1 px is what libavoid answers when it drops a checkpoint (measured, `routerAnswerFloor`).
+    // The limit of the proof (measured, `routerAnswerFloor`): an end moved 1 px, and an end point dropped.
     const model = await drawn(), [good] = usable(model, seen), points = clone(good!.points);
-    points[0]!.x += 1;
-    expect(restore(forged(model, [{ connector: good!.connector, points }])).removedLinks).toEqual([LINK]);
+    const shifted = clone(points); shifted[0]!.x += 1;
+    expect(restore(forged(model, [{ connector: good!.connector, points: shifted }])).removedLinks).toEqual([LINK]);
+    expect(restore(forged(model, [{ connector: good!.connector, points: points.slice(0, -1) }])).removedLinks).toEqual([LINK]);
   }, 120000);
 
   it('plans the removed link without the labels stage 9 adds after routing', async () => {
-    // A link label owned by another link, laid over the corridor of LINK, and a legend: neither existed when stage 8 planned.
+    // A link label owned by another link, laid over the corridor of LINK: it did not exist when stage 8 planned.
     const model = await drawn(), along = model.links.find(item => item.id === LINK)!.path!.segments[1]!;
+    const label = { id: 'label:link:forged', text: 'x', role: 'link' as const, owner: { kind: 'link' as const, id: 'link-11' }, layer: 'routed' as const,
+      bounds: { x: Math.min(along.from.x, along.to.x) - 4, y: Math.min(along.from.y, along.to.y) - 4, width: Math.abs(along.to.x - along.from.x) + 8, height: Math.abs(along.to.y - along.from.y) + 8 } };
     const labelled = clone(model);
-    labelled.labels.push({ id: 'label:link:forged', text: 'x', role: 'link', owner: { kind: 'link', id: 'link-11' }, layer: 'routed',
-      bounds: { x: Math.min(along.from.x, along.to.x) - 4, y: Math.min(along.from.y, along.to.y) - 4, width: Math.abs(along.to.x - along.from.x) + 8, height: Math.abs(along.to.y - along.from.y) + 8 } });
+    labelled.labels.push(label);
     expect(preRoute(labelled).labels).toEqual(preRoute(model).labels);
-    expect(preRoute(labelled).labels.some(label => ['link', 'legend', 'mesh-bus'].includes(label.role ?? ''))).toBe(false);
     expect(planRoute(preRoute(labelled))).toEqual(planRoute(preRoute(model)));
+    // Kept, the label changes the plan: without the filter in `preRoute` the restored plan would not be stage 8's.
+    const kept = preRoute(model);
+    expect(planRoute({ ...kept, labels: [...kept.labels, label] })).not.toEqual(planRoute(kept));
   }, 120000);
 
   it('restores a removal stage 8 made, and refuses the same record moved or swapped for a usable answer', async () => {

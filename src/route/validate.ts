@@ -6,11 +6,11 @@ import { endPort } from '../layout/approach.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EPS, horizontal, length, near, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { outward } from '../score/model.js';
-import { effectiveLayer, placementRuns, plannedRunsOf, planRoute, reversedRuns, type PlannedRun } from './plan.js';
+import { effectiveLayer, placementRuns, plannedRunsOf, planRoute, reversedRuns, type LinkPlan, type PlannedRun } from './plan.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { pathEnd } from '../layout/path-end.js';
 import { sharedBlockers, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
-import { ownedLanes, simplify, stubCandidate, tryStitch } from './paths.js';
+import { ownedLanes, simplify, skippedCheckpoint, stubCandidate, tryStitch } from './paths.js';
 import { MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
 
 
@@ -183,20 +183,21 @@ const finitePoint = (point: unknown): boolean => typeof point === 'object' && po
 /**
  * What every answer the router gives has, so a stored one that lacks it is no router answer (DR-14), or undefined when it has it.
  * Measured on the 137 removals stage 8 wrote in the full test suite (2026-11-09; real libavoid answers and the tests' rewritten ones):
- * every answer holds at least 2 finite points, and every answer that meets both of its gap's ends, after `simplify` (as `gapSegments`
- * reads it), is orthogonal with no zero-length segment. The other parts of the stitch's shape check are not asked: 86 answers miss
- * an end (69 the end, 46 the start: libavoid drops a checkpoint it cannot reach and answers from a node centre), 29 of them with a
- * diagonal, and 28 are two equal points (`Router returned no usable route`). So an answer that misses an end passes this floor, and
- * the judgement (`tryStitch`) rejects it.
+ * every answer holds at least 2 finite points. The other parts of the stitch's shape check are asked only where no answer can fail
+ * them: 86 answers miss an end of their gap (69 the end, 46 the start), 29 of them with a diagonal, and 28 are two equal points
+ * (`Router returned no usable route`). An answer that skips a checkpoint (`skippedCheckpoint`) is not asked to be orthogonal either:
+ * libavoid, when it drops a checkpoint it cannot reach, answers with the two port anchors and a diagonal between them (`straightRun`
+ * in `plan.ts`, commit ec27424a), and a gap of a pin ends on those anchors. So only an answer that meets both ends of its gap and
+ * honours its checkpoints must be orthogonal. No zero-length check: `simplify` already drops equal consecutive points.
  */
-function routerAnswerFloor(points: readonly Point[], from: Point, to: Point): string | undefined {
+function routerAnswerFloor(item: LinkPlan, gap: { connector: string; from: Point; to: Point }, points: readonly Point[]): string | undefined {
   if (points.length < 2 || !points.every(finitePoint)) return 'fewer than two finite points';
   const simplified = simplify([...points]);
-  if (!samePoint(simplified[0]!, from) || !samePoint(simplified.at(-1)!, to)) return undefined;
+  if (!samePoint(simplified[0]!, gap.from) || !samePoint(simplified.at(-1)!, gap.to)) return undefined;
+  if (skippedCheckpoint(item, new Map([[gap.connector, [...points]]])) !== undefined) return undefined;
   for (let index = 1; index < simplified.length; index++) {
-    const segment = { from: simplified[index - 1]!, to: simplified[index]! };
-    if (!near(segment.from.x, segment.to.x) && !near(segment.from.y, segment.to.y)) return 'it meets both ends of its gap and is not orthogonal';
-    if (samePoint(segment.from, segment.to)) return 'it meets both ends of its gap and has a zero-length segment';
+    const from = simplified[index - 1]!, to = simplified[index]!;
+    if (!near(from.x, to.x) && !near(from.y, to.y)) return 'it meets both ends of its gap, honours its checkpoints and is not orthogonal';
   }
   return undefined;
 }
@@ -230,7 +231,7 @@ function removalsReproduced(model: LayoutModel): void {
       throw new Error(`Removed link ${link.id} stores a router answer that is not one for its planned gaps`);
     }
     for (const entry of answer) {
-      const gap = gaps.find(piece => piece.connector === entry.connector)!, reason = routerAnswerFloor(entry.points, gap.from, gap.to);
+      const gap = gaps.find(piece => piece.connector === entry.connector)!, reason = routerAnswerFloor(item, gap, entry.points);
       if (reason !== undefined) throw new Error(`Removed link ${link.id} stores an answer for ${entry.connector} that no router gives: ${reason}`);
     }
     const routes = new Map(answer.map(entry => [entry.connector, entry.points]));
