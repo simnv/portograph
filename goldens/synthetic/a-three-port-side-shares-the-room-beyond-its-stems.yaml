@@ -1,0 +1,44 @@
+# Expected: the held-lane sheet (a-held-lane-stays-on-its-frames-side-of-a-foreign-frame) with a third
+# frame, mid, and a third left port on each low node. l1 takes three links on its left side, one pitch
+# apart: wg -> l1.p, ma -> l1.r and ea -> l1.q, each from another frame (decision-review ticket 18).
+# The room each link turns in beside l1 is sized at placement, so no earlier route closes the way of
+# a later one: every link is drawn and no two routes share a run, under any order of the links or the
+# nodes. A stage-8 cover one router stem beyond each stem checkpoint was tried for this and refused:
+# the cover over l1.p sealed ma -> l1.r. test/route/lane-approach.test.ts reads it.
+portograph: 2
+groups:
+  up: { tier: 0, label: Up }
+  east: { tier: 1, label: East }
+  mid: { tier: 1, label: Mid }
+  west: { tier: 1, label: West }
+  low: { tier: 2, label: Low }
+nodes:
+  u1: { group: up, class: provider, label: U1 }
+  eg: { group: east, class: router, label: Eg }
+  ed: { group: east, class: switch, label: Ed }
+  ea: { group: east, class: server, label: Ea }
+  mg: { group: mid, class: router, label: Mg }
+  ma: { group: mid, class: server, label: Ma }
+  wg: { group: west, class: router, label: Wg }
+  wd: { group: west, class: switch, label: Wd }
+  wa: { group: west, class: server, label: Wa }
+  l0: { group: low, class: server, label: L0 wide low node of the main building room, ports: [{ name: p, side: left }, { name: q, side: left }, { name: r, side: left }] }
+  l1: { group: low, class: server, label: L1 wide low node of the main building room, ports: [{ name: p, side: left }, { name: q, side: left }, { name: r, side: left }] }
+  l2: { group: low, class: server, label: L2 wide low node, ports: [{ name: p, side: left }, { name: q, side: left }] }
+links:
+  - [eg, ed]
+  - [ed, ea]
+  - [wg, wd]
+  - [wd, wa]
+  - [mg, ma]
+  - [u1, eg]
+  - [u1, wg]
+  - [u1, mg]
+  - [wg, l1.p]
+  - [eg, l0.p]
+  - [mg, l2.p]
+  - [wa, l0.q]
+  - [ea, l1.q]
+  - [ma, l1.r]
+  - [wd, l2.q]
+  - [ed, l0.r]

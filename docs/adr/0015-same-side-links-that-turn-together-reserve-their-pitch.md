@@ -157,7 +157,8 @@ link-free margin every group edge keeps (ADR-0013), whichever link the group bel
 
 **What this supersedes.** The lane-approach cover measured in stress ticket 02 (12 repaired, 4
 broken over 322 diagrams) is not reinstated: it was a rectangle standing in for a reservation, and
-this is the reservation. The pending-stem rectangles of stress ticket 02 stay for the attachments no
+this is the reservation. (The thirteenth amendment reinstates it for a gap the plan leaves to the
+router.) The pending-stem rectangles of stress ticket 02 stay for the attachments no
 gap allocation reaches. The adapter's re-solve without direction masks stays: it is a property of
 this libavoid build, not of the reservation model.
 
@@ -737,8 +738,4 @@ The sixth amendment did not reinstate the lane-approach cover of stress ticket 0
 seats the run. A gap the plan leaves to the router still joins its lane head-on through an approach
 point that placement fixed. With link order canonical (DR-04), an earlier batch laid its row through
 that point, and the later link was removed. Stage 8 now covers that approach for every batch before
-its owner's, as it covers a pending stem. A pending stem also covers one router stem beyond its
-checkpoint, stopped one clearance short of every other link's stem or approach, so an earlier route
-cannot close the pocket the later link turns into. Measured on 470 sheets under the canonical order
-and both reversals: one sheet changes, one removed link is repaired, none is broken, and no gate
-fails anew. See `pipeline.md` § 8.
+its owner's, as it covers a pending stem (Q130). See `pipeline.md` § 8.

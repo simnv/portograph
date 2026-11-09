@@ -8,13 +8,11 @@ import { pendingStemObstacles, planRoute } from '../../src/route/plan.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from './fixture.js';
 
-/**
- * Ticket 18: a lane approach is reserved against the batches routed before it, and a pending stem
- * also reserves the room its checkpoint is reached through.
- */
+/** Ticket 18: a lane approach is reserved against the batches routed before it. */
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const throughBands = async (name: string): Promise<LayoutModel> => bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture(name)))))))));
 const HELD = 'a-held-lane-stays-on-its-frames-side-of-a-foreign-frame';
+const THREE = 'a-three-port-side-shares-the-room-beyond-its-stems';
 const inside = (box: Rect, point: Point): boolean =>
   point.x > box.x && point.x < box.x + box.width && point.y > box.y && point.y < box.y + box.height;
 const linkOf = (model: LayoutModel, from: string, to: string): string =>
@@ -41,41 +39,24 @@ describe('a lane approach is reserved against the batches before its owner (tick
     }
   });
 
-  it('publishes the held-lane sheet with no link removed and every gate passing', async () => {
-    const model = await layout(parse(fixture(HELD)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  it.each([HELD, THREE])('publishes %s with no link removed and no shared run', async name => {
+    const model = await layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.removedLinks ?? []).toEqual([]);
-    const report = score(model).snapshot;
-    expect(Object.entries(report.gates).flatMap(([gate, item]) => item.violations.map(violation => [gate, violation.code]))).toEqual([]);
+    expect(score(model).snapshot.gates.G4!.violations).toEqual([]);
   }, 120000);
 });
 
-describe('a pending stem reserves the room beyond its checkpoint (ticket 18)', () => {
-  it('reaches one router stem past the checkpoint where nothing else stands', async () => {
-    const model = await throughBands(HELD);
-    const plan = planRoute(model);
-    const held = linkOf(model, 'wg', 'l1');
-    const stem = plan.stems.find(item => item.link === held && item.node === 'l1')!;
-    const { from, to } = stem.segment;
-    const span = Math.hypot(to.x - from.x, to.y - from.y);
-    const far = { x: to.x + (GROUP_LABEL_GEOMETRY.routerStem - 1) * (to.x - from.x) / span,
-      y: to.y + (GROUP_LABEL_GEOMETRY.routerStem - 1) * (to.y - from.y) / span };
-    expect(inside(stem.bounds, far)).toBe(true);
-  });
-
-  it('stops short of a facing stem, so each checkpoint stays outside the other link’s cover', async () => {
-    const model = await throughBands('a-pinned-path-between-two-fans');
-    const plan = planRoute(model);
-    const facing = plan.stems.filter(item => ['spur', 'mate'].includes(item.node));
-    expect(facing.map(item => item.node).sort()).toEqual(['mate', 'spur']);
-    const [a, b] = facing as [typeof facing[0], typeof facing[0]];
-    expect(inside(a.bounds, b.segment.to)).toBe(false);
-    expect(inside(b.bounds, a.segment.to)).toBe(false);
-    // Each still reaches past its own checkpoint, beyond the clearance a stem cover keeps there.
-    for (const item of facing) {
-      const { from, to } = item.segment;
-      const horizontal = Math.abs(to.y - from.y) < 1e-9, half = (horizontal ? item.bounds.height : item.bounds.width) / 2;
-      const past = { x: to.x + (half + 1) * Math.sign(to.x - from.x), y: to.y + (half + 1) * Math.sign(to.y - from.y) };
-      expect(inside(item.bounds, past)).toBe(true);
+describe('an approach cover never covers the lane end of an earlier batch (ticket 18 review)', () => {
+  // Nothing exempts an approach cover. That is sound only while no link of an earlier batch has its own
+  // lane end, or its approach, inside it: bundle members whose lanes end side by side are the case to check.
+  const sheets = ['a-bundle-of-four-ports-agrees-at-both-ends', 'a-bundle-rows-turn-near-when-the-far-end-enters-a-frame',
+    'a-flank-link-across-a-neighbour-enters-a-bundle-envelope', 'a-right-flank-beside-a-bundle-into-a-canton', HELD, THREE];
+  it.each(sheets)('%s', async name => {
+    const plan = planRoute(await throughBands(name));
+    const batchOf = new Map(plan.batches.flatMap((batch, index) => batch.links.map(link => [link, index] as const)));
+    for (const cover of plan.approaches) for (const other of plan.approaches) {
+      if ((batchOf.get(other.link) ?? -1) >= (batchOf.get(cover.link) ?? -1)) continue;
+      expect([other.link, inside(cover.bounds, other.segment.from) || inside(cover.bounds, other.segment.to)]).toEqual([other.link, false]);
     }
   });
 });

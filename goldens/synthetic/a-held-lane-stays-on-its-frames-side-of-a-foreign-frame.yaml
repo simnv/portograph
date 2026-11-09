@@ -9,8 +9,8 @@
 # other and both lanes stand outside the frame they are foreign to.
 # Stage 8 (decision-review ticket 18): the two held links end their lanes on one tier boundary, so the
 # first one routed may lay its row through the approach point of the other. The approach is reserved
-# against every batch before its owner, and the stem at l1.p reserves the room beyond its checkpoint,
-# so neither eg -> l0 nor ea -> l1 seals the way of wg -> l1. test/route/lane-approach.test.ts reads it.
+# against every batch before its owner, so eg -> l0 does not seal the way of wg -> l1.
+# test/route/lane-approach.test.ts reads it.
 # Test-only input owned by ranked-groups ticket 26; test/pipeline/frame-held-lanes.test.ts reads the stages.
 portograph: 2
 groups:

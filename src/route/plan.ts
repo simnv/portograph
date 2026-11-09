@@ -74,9 +74,7 @@ export interface LinkPlan {
  * (ADR-0015 rule 1), so the strip is a corridor one port owns rather than one the side shares.
  */
 export interface StemReservation {
-  link: string; node: string; side: Side; port: string; nested: boolean;
-  /** The stem's cover, with the reach beyond its checkpoint (`reachBeyondCheckpoints`). */
-  bounds: Rect;
+  link: string; node: string; side: Side; port: string; nested: boolean; bounds: Rect;
   /** The stem's centreline, from the port anchor to its checkpoint. */
   segment: Pick<PathSegment, 'from' | 'to'>;
 }
@@ -364,7 +362,6 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
       }),
       ports: (['from', 'to'] as const).map(end => portId(link.attachments![end])) });
   }
-  reachBeyondCheckpoints(model, stems, approaches);
   for (const [node, list] of pins) {
     const shape = obstacles.find(item => item.id === `node:${node}`);
     if (shape) shape.pins = [...list].sort((a, b) => a.classId - b.classId);
@@ -589,35 +586,6 @@ function stemBounds(model: LayoutModel, link: LayoutLink, terminal: Point, check
   const x = Math.min(terminal.x, checkpoint.x) - clearance, y = Math.min(terminal.y, checkpoint.y) - clearance;
   return { x, y, width: Math.abs(checkpoint.x - terminal.x) + 2 * clearance,
     height: Math.abs(checkpoint.y - terminal.y) + 2 * clearance };
-}
-
-/**
- * A pending stem also reserves the room its checkpoint is reached through: one router stem beyond
- * the checkpoint, on the stem's own line (ticket 18). The stem's cover alone ends one clearance past
- * the checkpoint, so an earlier batch may run along that edge and close the pocket the later link
- * turns into, and libavoid then has no way to the checkpoint. The reach stops one clearance short of
- * every other link's reserved stem or lane approach, so it never covers a point another
- * reservation owns: two facing stems share the room between their checkpoints.
- */
-function reachBeyondCheckpoints(model: LayoutModel, stems: StemReservation[], approaches: ApproachReservation[]): void {
-  const others = [...stems, ...approaches];
-  for (const stem of stems) {
-    const link = model.links.find(item => item.id === stem.link)!;
-    const clearance = GROUP_LABEL_GEOMETRY.nodeClearance + (linkStrokeWidth(link) + routedStroke(model)) / 2;
-    const { from: terminal, to: checkpoint } = stem.segment;
-    const dx = checkpoint.x - terminal.x, dy = checkpoint.y - terminal.y, span = Math.hypot(dx, dy) || 1;
-    const ux = dx / span, uy = dy / span;
-    let reach: number = GROUP_LABEL_GEOMETRY.routerStem;
-    for (const other of others) {
-      if (other.link === stem.link) continue;
-      for (const point of [other.segment.from, other.segment.to]) {
-        const ahead = (point.x - checkpoint.x) * ux + (point.y - checkpoint.y) * uy;
-        const across = Math.abs((point.x - checkpoint.x) * uy - (point.y - checkpoint.y) * ux);
-        if (ahead > 0 && across <= clearance + PLACEMENT_EPS) reach = Math.min(reach, Math.max(0, ahead - clearance - PLACEMENT_EPS));
-      }
-    }
-    stem.bounds = stemBounds(model, link, terminal, { x: checkpoint.x + reach * ux, y: checkpoint.y + reach * uy });
-  }
 }
 
 /**
