@@ -145,8 +145,11 @@ Amendment (2026-11-07, decision review D9, D10, D14, D15; user rulings P1 and th
 - Failed gates (D14). A failed gate fails the branch at `gate:compare` and sets the `score` exit code. The files are written with their
   findings. `TIER_GAP_PART_RESIDUAL` (ADR-0021 decision 4) and a non-converged centring publish by design, with their findings.
 - Non-convergence (D15, ticket DR-01). One serialized code relaxes one named check, read only at restore and only from its named emitter and
-  stage. Today that is the centring exemption: `PLACEMENT_NON_CONVERGENCE` excuses the centring check and nothing else, and an alignment the
-  replay cannot confirm is recorded as `CENTRE_INVARIANT_UNVERIFIED`. The three model-wide relaxations that any `PLACEMENT_NON_CONVERGENCE`
+  stage. Today that is the centring exemption: the centre emitter's `CENTRE_ALIGNMENT_OPEN` (stage `placement`) excuses a centring item, and only
+  for a link it names in `owners` (DR-15); `PLACEMENT_NON_CONVERGENCE` of any emitter excuses nothing. An alignment the
+  replay cannot confirm is recorded as `CENTRE_INVARIANT_UNVERIFIED`. The record is made where the centre step stalled; at the end of 7f its
+  owners are set to the links the publication check flags. Limits: a forged `CENTRE_ALIGNMENT_OPEN` at stage `placement` that names the right link
+  passes, and excuses only that link (R5 stored-record exception); a link opened after the last centre step, with budget left, is refused and not replayed. The three model-wide relaxations that any `PLACEMENT_NON_CONVERGENCE`
   code switched on in `validateGeometry` (node-to-node clearance, node inside its group, group and tier band geometry) are deleted; every other exemption derives from geometry and the stored record (CODING_STANDARDS R5).
   The sentence "Required rectangle fields, row sequence and authored flank side remain structural checks even after a non-convergence
   diagnostic" holds without exception.

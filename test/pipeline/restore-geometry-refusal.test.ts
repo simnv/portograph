@@ -88,18 +88,26 @@ it('restore refuses a geometry break beside a centring item that the code excuse
     for (const port of m.nodes.b!.ports) { port.anchor!.x -= 5; if (port.pill) port.pill.bounds.x -= 5; }
     for (const label of m.labels) if (label.owner.kind === 'node' && label.owner.id === 'b' && label.bounds) label.bounds.x -= 5;
   };
+  const centred = deep(model);
+  slide(centred);
+  let item = '';
+  try { restoreLayoutModel(JSON.stringify(centred)); } catch (error) { item = /Centring invariant violated: (\S+):/.exec((error as Error).message)?.[1] ?? ''; }
+  expect(item, 'no code').not.toBe('');
+  // DR-15 (R5): only the centre emitter's CENTRE_ALIGNMENT_OPEN that names the item's link excuses the item. Every PLACEMENT_NON_CONVERGENCE, even one that
+  // names the link, excuses nothing; the message text is never read.
   for (const [emitter, diagnostic] of Object.entries(codes)) {
-    const centred = deep(model);
-    slide(centred);
-    expect(() => restoreLayoutModel(JSON.stringify(centred)), 'no code').toThrow(/Centring invariant violated/);
-    centred.diagnostics.push(diagnostic);
-    const kept = restoreLayoutModel(JSON.stringify(centred));
-    expect(kept.diagnostics.filter(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED'), emitter).toHaveLength(1);
-    // The same file with a node moved onto its sibling: the exempt item passes, the break does not.
-    const broken = deep(centred);
-    moveNode(broken, 'spare', -(broken.nodes.spare!.bounds!.x - broken.nodes.b!.bounds!.x) + 10, 0);
-    expect(() => restoreLayoutModel(JSON.stringify(broken)), emitter).toThrow(/violate clearance/);
+    const refused = deep(centred);
+    refused.diagnostics.push({ ...diagnostic, owners: [{ kind: 'link', id: item }] });
+    expect(() => restoreLayoutModel(JSON.stringify(refused)), emitter).toThrow(/Centring invariant violated/);
   }
+  const named = deep(centred);
+  named.diagnostics.push({ ...warn('any text'), code: 'CENTRE_ALIGNMENT_OPEN', owners: [{ kind: 'link', id: item }] });
+  const kept = restoreLayoutModel(JSON.stringify(named));
+  expect(kept.diagnostics.filter(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED')).toHaveLength(1);
+  // The same file with a node moved onto its sibling: the exempt item passes, the break does not.
+  const broken = deep(named);
+  moveNode(broken, 'spare', -(broken.nodes.spare!.bounds!.x - broken.nodes.b!.bounds!.x) + 10, 0);
+  expect(() => restoreLayoutModel(JSON.stringify(broken))).toThrow(/violate clearance/);
 }, 60000);
 
 it('flanks refuses a run whose flank growth leaves a band conflict, with a named PlacementRefusal and no diagnostic', async () => {

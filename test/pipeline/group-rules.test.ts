@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { centre, flanks, lanes, restoreLayoutModel, rows } from '../../src/internal.js';
-import type { LayoutModel } from '../../src/index.js';
+import type { Diagnostic, LayoutModel } from '../../src/index.js';
+import { flagUnverifiedCentring, nameOpenCentring } from '../../src/layout/centre.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
@@ -70,8 +71,33 @@ links: [[a.p, b.p, {route: orthogonal}]]`)))));
   }
   // A spent shared budget is the one state geometry cannot witness: such a model keeps its last
   // state, but the unverified alignment is recorded on it and the final gates judge the result.
-  const spent = JSON.parse(JSON.stringify(forged)) as LayoutModel;
-  spent.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE', message: 'forged', owners: [{ kind: 'group', id: 'low' }] });
+  // DR-15 (R5): only the centre emitter's CENTRE_ALIGNMENT_OPEN, at the placement stage, with the item's link as owner, excuses an item. The message is never
+  // read; a placement non-convergence code with the link, the wrong stage and a link the record does not name excuse nothing.
+  const note = (over: Partial<Diagnostic>): LayoutModel => {
+    const copy = JSON.parse(JSON.stringify(forged)) as LayoutModel;
+    copy.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_ALIGNMENT_OPEN', message: 'any text', owners: [{ kind: 'link', id: 'link-1' }], ...over });
+    return copy;
+  };
+  for (const over of [{ code: 'PLACEMENT_NON_CONVERGENCE' }, { stage: 'final-geometry' as const }, { owners: [{ kind: 'group' as const, id: 'low' }] }, { owners: [] }, { owners: [{ kind: 'link' as const, id: 'link-2' }] }]) {
+    expect(() => restoreLayoutModel(JSON.stringify(note(over))), JSON.stringify(over)).toThrow(/Centring invariant violated/);
+  }
+  // A post-centre move that opens a link is not named by the end of 7f unless the centre step recorded a stall: the publication then refuses it.
+  const opened = JSON.parse(JSON.stringify(forged)) as LayoutModel;
+  nameOpenCentring(opened);
+  expect(opened.diagnostics.map(d => d.code)).not.toContain('CENTRE_ALIGNMENT_OPEN');
+  expect(() => restoreLayoutModel(JSON.stringify(opened))).toThrow(/Centring invariant violated/);
+  // A placement non-convergence of another emitter (sides-two, cantons, label room) arms nothing: no record, so restore refuses the open link.
+  const foreign = JSON.parse(JSON.stringify(forged)) as LayoutModel;
+  foreign.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE', message: 'The cantons did not settle', owners: [] });
+  flagUnverifiedCentring(foreign);
+  nameOpenCentring(foreign);
+  expect(foreign.diagnostics.map(d => d.code)).not.toContain('CENTRE_ALIGNMENT_OPEN');
+  expect(() => restoreLayoutModel(JSON.stringify(foreign))).toThrow(/Centring invariant violated/);
+  // With the stall recorded, the end of 7f sets the owners to exactly the links the publication flags.
+  const recorded0 = note({ owners: [{ kind: 'link', id: 'link-9' }] });
+  nameOpenCentring(recorded0);
+  expect(recorded0.diagnostics.find(d => d.code === 'CENTRE_ALIGNMENT_OPEN')!.owners).toEqual([{ kind: 'link', id: 'link-1' }]);
+  const spent = note({});
   const restored = restoreLayoutModel(JSON.stringify(spent));
   expect(restored.diagnostics.filter(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED').map(d => d.message)).toEqual([expect.stringMatching(/link-1/)]);
 }, 60000);
@@ -99,9 +125,8 @@ links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`))))))
   slid.nodes.c!.bounds!.x += 5;
   for (const port of slid.nodes.c!.ports) { port.anchor!.x += 5; if (port.pill) port.pill.bounds.x += 5; }
   for (const label of slid.labels) if (label.owner.kind === 'node' && label.owner.id === 'c' && label.bounds) label.bounds.x += 5;
-  const recorded = restoreLayoutModel(JSON.stringify(slid));
-  expect(recorded.diagnostics.filter(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED').map(d => d.message)).toEqual([expect.stringMatching(/link-2/)]);
-  expect(recorded.diagnostics.filter(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED')[0]!.message).not.toMatch(/link-1/);
+  // The emitter named no link (its one open alignment is excused by the replay: CENTRE_ALIGNMENT_INFEASIBLE), so the slid link-2 is a new violation that no stored owner excuses (DR-15, R5).
+  expect(() => restoreLayoutModel(JSON.stringify(slid))).toThrow(/Centring invariant violated: link-2/);
 
   // One child group legitimately blocked by its neighbour excuses nothing about the other group.
   const twoChildren = centre(flanks(lanes(rows(await placed(`portograph: 2
@@ -124,6 +149,9 @@ links: [[a.p, c.p, {route: orthogonal}], [b.p, d.p, {route: orthogonal}]]`)))));
   expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/link-1(?!.*link-2)/);
   // Only a model that reports a spent budget records the forged c instead.
   forged.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE', message: 'forged', owners: [] });
+  expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/Centring invariant violated/);
+  forged.diagnostics.pop();
+  forged.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_ALIGNMENT_OPEN', message: 'forged', owners: [{ kind: 'link', id: 'link-1' }] });
   const kept = restoreLayoutModel(JSON.stringify(forged));
   const notes = kept.diagnostics.filter(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED').map(d => d.message);
   expect(notes).toEqual([expect.stringMatching(/link-1/)]);
