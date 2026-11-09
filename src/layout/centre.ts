@@ -1445,7 +1445,12 @@ export function flagUnverifiedCentring(model: LayoutModel): void {
  */
 export function nameOpenCentring(model: LayoutModel): void {
   const named = new Set(model.diagnostics.filter(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE').flatMap(d => (d.owners ?? []).filter(o => o.kind === 'link').map(o => (o as { id: string }).id)));
-  const items = publishedCentreViolations(model, true).filter(item => !item.startsWith(ALIGNMENT_TARGETS_DIFFER));
+  // A check that only names owners adds no verdict to a test's tap.
+  const sink = verdictTap.sink;
+  delete verdictTap.sink;
+  let found: string[];
+  try { found = publishedCentreViolations(model, true); } finally { if (sink !== undefined) verdictTap.sink = sink; }
+  const items = found.filter(item => !item.startsWith(ALIGNMENT_TARGETS_DIFFER));
   if (items.some(item => { const link = centreItemLink(model, item); return link === undefined || !named.has(link); })) {
     reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.', items);
   }
