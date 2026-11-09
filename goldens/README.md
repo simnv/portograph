@@ -382,3 +382,5 @@ Ticket 83 rule fixtures, retaining the prototype filenames:
 | `synthetic/a-solid-block-proves-the-cap-before-region-placement.yaml` | A wide 2x6 block declines at stage 5 before the costly region probe (ticket 83 N2). |
 | `synthetic/a-solid-block-keeps-authored-lateral-faces.yaml` | Authored lateral ports decline solid-block ownership; no accidental side-entry permission (ticket 83 B1). |
 | `synthetic/a-solid-block-follower-seat-keeps-its-siblings.yaml` | Reversed links retain the 2x4 block and follower-group order while follower seats refuse sibling overlap or tier-gap invasion before mutation (ticket 83 recheck R1). |
+| `synthetic/a-held-lane-stays-on-its-frames-side-of-a-foreign-frame.yaml` | A lane approach is reserved against the batches before its owner: every link is drawn under any input order (decision-review ticket 18; G4 left, ticket 19). |
+| `synthetic/a-three-port-side-shares-the-room-beyond-its-stems.yaml` | Three left ports of one node, each fed from another frame: every link is drawn under any input order; a stem reach beyond the checkpoint was refused (ticket 18). |

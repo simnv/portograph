@@ -157,7 +157,8 @@ link-free margin every group edge keeps (ADR-0013), whichever link the group bel
 
 **What this supersedes.** The lane-approach cover measured in stress ticket 02 (12 repaired, 4
 broken over 322 diagrams) is not reinstated: it was a rectangle standing in for a reservation, and
-this is the reservation. The pending-stem rectangles of stress ticket 02 stay for the attachments no
+this is the reservation. (The thirteenth amendment reinstates it for a gap the plan leaves to the
+router.) The pending-stem rectangles of stress ticket 02 stay for the attachments no
 gap allocation reaches. The adapter's re-solve without direction masks stays: it is a property of
 this libavoid build, not of the reservation model.
 
@@ -730,3 +731,11 @@ and it is a decline now rather than an obstacle; a foreign one could in principl
 on the re-derivation the same way. Over 1 103 corpus inputs and the whole suite none does, and the
 four sides that nest are stable across every stage from `bands` on. If one ever did, the answer
 is the same as the title's: decline on something frozen, not on something placed.
+
+## Thirteenth amendment (2026-11-08, decision-review ticket 18): a residual lane approach is reserved
+
+The sixth amendment did not reinstate the lane-approach cover of stress ticket 02, because the plan
+seats the run. A gap the plan leaves to the router still joins its lane head-on through an approach
+point that placement fixed. With link order canonical (DR-04), an earlier batch laid its row through
+that point, and the later link was removed. Stage 8 now covers that approach for every batch before
+its owner's, as it covers a pending stem (Q130). See `pipeline.md` § 8.
