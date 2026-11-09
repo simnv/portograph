@@ -56,6 +56,8 @@ jobs:
         env:
           SKIP_TESTS: ${{ inputs.skip-tests }}
           STRICT: ${{ inputs.strict }}
+          # The host health check guards a shared workstation; a CI VM runs only this job.
+          PORTOGRAPH_MAX_LOAD: "100"
         run: |
           args=()
           if [ "$SKIP_TESTS" = "true" ]; then args+=(--skip-tests); fi

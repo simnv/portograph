@@ -10,11 +10,12 @@ updates:
         update-types: [minor, patch]
     ignore:
       # Layout-solver bumps are manual: any new version can move every layout, and the goldens must be reviewed.
-      # Both are 0.x, where a minor release is a breaking one, so minor bumps are ignored too.
+      # Every version is ignored, patch releases too: a 0.x patch can move layouts as well.
       - dependency-name: elkjs
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: libavoid-js
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # @types/node follows engines.node (>=22): only its 22.x line.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directories:

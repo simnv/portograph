@@ -45,6 +45,8 @@ jobs:
       - name: Test
         env:
           PORTOGRAPH_TEST_WORKERS: "2"
+          # The host health check guards a shared workstation; a CI VM runs only this job, so the load limit is lifted.
+          PORTOGRAPH_MAX_LOAD: "100"
         run: npm test
 
       - name: Build
