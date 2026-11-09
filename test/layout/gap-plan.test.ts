@@ -26,6 +26,8 @@ const rowsOf = (plan: GapPlan): Record<string, number[]> =>
   Object.fromEntries(plan.parts.filter(part => part.rows.length).map(part => [short(part.id), part.rows]));
 const pairs = (plan: GapPlan): string[] => plan.crossings.map(item => [short(item.run).replace(/[ab]$/, ''), short(item.vertical)].sort().join('x')).sort();
 const BAND_GAP = 60;
+/** The v5-4-0 shape with `access` declared before `src` (DR-04): the canonical link order lays the spec's shape out again. */
+const V540 = 'a-tier-gap-plan-orders-every-part-middle-tier-first';
 
 function expectRows(plan: GapPlan, expected: Record<string, number[]>): void {
   const got = rowsOf(plan);
@@ -98,41 +100,43 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     expect(plan.growth).toBe(0);
   });
 
-  it('plans both gaps of the v5-4-0 shape: rows, forced crossings, link-2 planned clear of the label, growth 0 after 7f', async () => {
-    const model = await placeBent('a-tier-gap-plan-orders-every-part');
+  it('plans both gaps of the v5-4-0 shape: rows, forced crossings, link-5 planned clear of the label, growth 0 after 7f', async () => {
+    // DR-04: the copy that declares `access` before `src`; with it the canonical link order lays the shape of the spec out again. The
+    // spec's link-3 is link-5 here (written 1 to 12 are canonical 1, 3, 5, 7, 9, 2, 4, 6, 8, 10, 11, 12).
+    const model = await placeBent(V540);
     const [upper, lower] = tierGapPlans(model).filter(({ plan }) => plan.order.length);
-    // The spec's link-3 (link-2 in the canonical order; row 179.5, the term that asked for 9.25 px) stands 102.5 under the `access` group label. Ticket 50 declined it
+    // The spec's link-3 (row 179.5, the term that asked for 9.25 px) stands 102.5 under the `access` group label. Ticket 50 declined it
     // (`leg-blocked`); since ticket 62 the label is nudged along its edge off the leg at placement, so the plan lays it as the spec does.
     expect(upper!.plan.residual.map(item => `${short(item.id)}:${item.reason}`)).toEqual([]);
     expect(lower!.plan.residual).toEqual([]);
 
     // The spec numbers (tier-gap-rows.md, section 2.4). Ticket 57 left src at x -124.65 without the centring replay after its growth; since
     // ticket 65 the step keeps the verticals it reached and the settle after the 7f rounds puts src at -203.47 again.
-    expect(upper!.plan.order.map(short)).toEqual(['4', '1', '3', '5', '2']);
-    expectRows(upper!.plan, { 4: [146], 1: [157.5], 3: [157.5], 5: [169], 2: [180.5] }); // Verdana metrics (snack-theme ticket 157): 145, 156.5, 156.5, 168 and 179.5 with Arial.
-    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['3>2:O1', '3>5:O2', '4>1:O2']);
-    // The seven interleaved pairs of the spec, link-2's included, and two on link-6's drop.
-    expect(pairs(upper!.plan)).toEqual(['2x4', '2x5', '3x4', '3x5', '3x6', '4x5', '4x6']);
-    // Link-2's row is the term that asks for 9.25 px above the band gap, the spec's H = 69.25; 7f grew the gap to it, so nothing more is asked.
+    expect(upper!.plan.order.map(short)).toEqual(['11', '1', '9', '3', '5']);
+    expectRows(upper!.plan, { 11: [146], 1: [157.5], 9: [157.5], 3: [169], 5: [180.5] }); // Verdana metrics (snack-theme ticket 157): 145, 156.5, 156.5, 168 and 179.5 with Arial.
+    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['11>1:O2', '9>3:O2', '9>5:O1']);
+    // The seven interleaved pairs of the spec, link-5's included, and two on link-7's drop.
+    expect(pairs(upper!.plan)).toEqual(['11x3', '11x5', '11x7', '11x9', '3x5', '3x9', '7x9']);
+    // Link-5's row is the term that asks for 9.25 px above the band gap, the spec's H = 69.25; 7f grew the gap to it, so nothing more is asked.
     expect(upper!.plan.height).toBeCloseTo(69.25, 6);
     expect(upper!.plan.growth).toBe(0);
-    expect(upper!.plan.setBy).toBe('link-2#0');
+    expect(upper!.plan.setBy).toBe('link-5#0');
 
-    expect(lower!.plan.order.map(short)).toEqual(['7.1', '12', '10', '9', '11']);
-    expectRows(lower!.plan, { '7.1': [315], 12: [326.5], 10: [338], 9: [349.5], 11: [361] }); // Verdana metrics (snack-theme ticket 157): 313, 324.5, 336, 347.5 and 359 with Arial.
-    // Architecture-2 ticket 69: after the end trim `edge-near` closes up by 63.5 px, and 7.1 no longer shares a vertical with 9 (the O2 edge
-    // `7.1>9` of the spec goes); the rows, the crossings and H stay.
+    expect(lower!.plan.order.map(short)).toEqual(['12.1', '10', '6', '4', '8']);
+    expectRows(lower!.plan, { '12.1': [315], 10: [326.5], 6: [338], 4: [349.5], 8: [361] }); // Verdana metrics (snack-theme ticket 157): 313, 324.5, 336, 347.5 and 359 with Arial.
+    // Architecture-2 ticket 69: after the end trim `edge-near` closes up by 63.5 px, and 12.1 no longer shares a vertical with 4 (the O2 edge
+    // `12.1>4` of the spec goes); the rows, the crossings and H stay.
     expect(lower!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort())
-      .toEqual(['10>9:O1', '12>10:O1', '12>11:O1', '12>9:O1', '7.1>10:O1', '7.1>12:O1']);
-    // 9x11 and 10x11, and four on link-4's drop.
-    expect(pairs(lower!.plan)).toEqual(['10x11', '10x4.1', '11x4.1', '11x9', '12x4.1', '4.1x9']);
+      .toEqual(['10>4:O1', '10>6:O1', '10>8:O1', '12.1>10:O1', '12.1>6:O1', '6>4:O1']);
+    // 4x8 and 6x8, and four on link-11's drop.
+    expect(pairs(lower!.plan)).toEqual(['10x11.1', '11.1x4', '11.1x6', '11.1x8', '4x8', '6x8']);
     // The lanes overhang from the band above: the plan measures from the clipped low boundary (300 under Verdana, 298 with Arial; the 9.25 px of the upper gap later); the spec quotes
     // 82.5 from the band bottom (278), the same 10.75 px further. 7f grew the gap to H (71.75 from the clipped low), so it asks for nothing more.
     expect(lower!.gap.low).toBeCloseTo(300, 6); // Verdana metrics (snack-theme ticket 157): 298 with Arial.
     expect(lower!.plan.height).toBeCloseTo(71.75, 6);
     expect(lower!.plan.bandTop - lower!.gap.low).toBeCloseTo(71.75, 6);
     expect(lower!.plan.growth).toBe(0);
-    expect(lower!.plan.setBy).toBe('link-11#0');
+    expect(lower!.plan.setBy).toBe('link-8#0');
   });
 
   it('reads the same plan through tierGapPlan and tierGapPlans, and writes nothing to the model', async () => {
@@ -341,12 +345,12 @@ describe('the tier-gap plan on hand-built parts', () => {
 
 // Each entry is `run|vertical|kind` (2.1): a run crosses the upper leg of a part whose upper x lies inside its span and whose row is below it, the
 // lower leg of one whose lower x lies inside and whose row is above it, and every drop inside its span. Hand-derived from the rows and x of the plan:
-// upper gap, link-3 (38.9 to 245.5, row 156.5) over link-5's upper x 140 and the drop at 174, and link-2's lower leg; link-4 (-29.1 to 307.5, row 145) over the same and
-// over link-3's upper x 38.9. Lower gap, links 9 and 10 (rows 347.5 and 336) over link-11's upper x 174 and the drop at 307.5, link-11 (row
-// 359) and link-12 (row 324.5) over the drop.
+// upper gap, link-9 (38.9 to 245.5, row 156.5) over link-3's upper x 140 and the drop at 174, and link-5's lower leg; link-11 (-29.1 to 307.5, row 145) over the same and
+// over link-9's upper x 38.9. Lower gap, links 4 and 6 (rows 347.5 and 336) over link-8's upper x 174 and the drop at 307.5, link-8 (row
+// 359) and link-10 (row 324.5) over the drop. The ids are those of the DR-04 copy (V540).
 // Ticket 57 left src at x -124.65, where these kinds differed; ticket 65 restores the spec's x -203.47 and with it the kinds below.
-const KINDS_UPPER: string[] = ['2|5|lower-leg', '3|5|upper-leg', '3|6|drop', '4|2|upper-leg', '4|3|upper-leg', '4|5|upper-leg', '4|6|drop'];
-const KINDS_LOWER: string[] = ['10|11|upper-leg', '10|4.1|drop', '11|4.1|drop', '12|4.1|drop', '9|11|upper-leg', '9|4.1|drop'];
+const KINDS_UPPER: string[] = ['11|3|upper-leg', '11|5|upper-leg', '11|7|drop', '11|9|upper-leg', '5|3|lower-leg', '9|3|upper-leg', '9|7|drop'];
+const KINDS_LOWER: string[] = ['10|11.1|drop', '4|11.1|drop', '4|8|upper-leg', '6|11.1|drop', '6|8|upper-leg', '8|11.1|drop'];
 
 /** Three tiers, a transit lane for link-4 through tier 1, and planned parts in both gaps (the pipeline test `residual-parts.test.ts` reads the same text). */
 const transit = `portograph: 2
@@ -432,7 +436,7 @@ describe('the follow-ups of ticket 48 (ticket 51)', () => {
   }, 60000);
 
   it('names the kind of every forced crossing of the v5-4-0 shape, not only the pair', async () => {
-    const model = await placeBent('a-tier-gap-plan-orders-every-part');
+    const model = await placeBent(V540);
     const [upper, lower] = tierGapPlans(model).filter(({ plan }) => plan.order.length);
     const kinds = (plan: GapPlan): string[] => plan.crossings.map(item => `${short(item.run)}|${short(item.vertical)}|${item.kind}`).sort();
     expect(kinds(upper!.plan)).toEqual(KINDS_UPPER);

@@ -58,11 +58,16 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * but the centring keeps other geometry and settles once more, so the judges are called a different number of times and on other geometry. The full
  * streams were compared with main 2f00e003: no figures main judged get another verdict; only `three-continents` judges figures main never judged
  * (12 `pickTarget`, 3 `windowsHold`, 2 `sheetGains`, 1 `settleKeepOut`, 1 `centreGroupStep`).
+ * Decision review DR-04 (link order is never input; cantons stand in the declaration order of their groups): no judge source changed.
+ * `three-continents` was re-recorded: links take the canonical order, and the sheet laid out in its written order on the DR-04 code gives
+ * the recorded digests exactly, so the new ones follow from the order alone. `three-canton-groups-close-up-to-a-band-gap` is replaced by its
+ * copy `-canton-b-first`, which declares canton `b` first (the canton order ELK gave before) and calls the ten judges main called on the
+ * original (`judgeTrial` and `pickRankMove` included; the original now calls eight); its digests are recorded from the copy.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',
   'a-side-hint-moves-a-port-to-a-lateral-side', 'a-chord-hint-and-a-lane-hint-never-share-a-batch', 'a-location-router-leaves-a-lateral-side-toward-a-far-provider',
-  'a-fan-spreads-its-ports-so-its-chords-hold-clearance', 'three-canton-groups-close-up-to-a-band-gap', 'a-canton-member-frame-slides-off-a-straight-chord',
+  'a-fan-spreads-its-ports-so-its-chords-hold-clearance', 'three-canton-groups-close-up-to-a-band-gap-canton-b-first', 'a-canton-member-frame-slides-off-a-straight-chord',
   'three-continents', 'a-group-with-routed-links-steps-off-a-straight-chord', 'a-linked-node-steps-out-of-a-straight-chord', 'overlay-links-reorder-two-locations',
   'an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack', 'a-declined-grown-member-stops-at-an-overlay-chord', 'a-held-lane-between-two-cantons-refuses-the-close-up',
 ];

@@ -36,17 +36,17 @@
     "centreGroupStep": "12 a622fea3b2b40907",
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
-  "three-canton-groups-close-up-to-a-band-gap": {
-    "attemptCheap": "142 a0e441c1e4589897",
-    "centreGroupStep": "784 e09c46898f46a990",
-    "closeUp": "10 bfb2eab7e78eb477",
-    "holdsSettled": "4 af06a53353ac7514",
+  "three-canton-groups-close-up-to-a-band-gap-canton-b-first": {
+    "attemptCheap": "142 348a16597fa595b0",
+    "centreGroupStep": "882 a62794ea5ec63f7d",
+    "closeUp": "10 0eafacb749a676f9",
+    "holdsSettled": "4 e89c4b645a2df1eb",
     "judgeTrial": "1 cbf69f5f691d95cd",
-    "pickRankMove": "4 ff0e7e5c98ed9ce5",
-    "pickTarget": "96 2f5e187d1d31af65",
+    "pickRankMove": "4 48b3104acefbefdc",
+    "pickTarget": "108 be9a265db9d192c4",
     "pullTier": "252 1d429b2f849547b7",
-    "sheetGains": "10 e7a15228f9fbb3c5",
-    "windowsHold": "13 41448175885d9227"
+    "sheetGains": "11 7a33818caf2f69ae",
+    "windowsHold": "15 c74a892df43701da"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
     "centreGroupStep": "9 7831835520a204ed",
@@ -54,15 +54,15 @@
     "pullTier": "12 54cf982033f571d4"
   },
   "three-continents": {
-    "attemptCheap": "68 c1d6ed90784367bd",
-    "centreGroupStep": "2148 35b3f38dc83be5eb",
-    "holdsSettled": "16 5f5344c4f7a7c14f",
-    "judgeTrial": "1 42dd08f8c2a37c4c",
-    "pickTarget": "306 5696e2430063279e",
-    "pullTier": "445 5badae188fb033c5",
-    "settleKeepOut": "12 de7e03b80d55e4f2",
-    "sheetGains": "42 403b0dd7d4e45132",
-    "windowsHold": "80 d6f27ba10f9ec580"
+    "attemptCheap": "69 394976c342463eb2",
+    "centreGroupStep": "1503 18bbdd157872699f",
+    "holdsSettled": "12 d6f8123fbd4e6ad3",
+    "judgeTrial": "1 cbf69f5f691d95cd",
+    "pickTarget": "222 371900302d1243da",
+    "pullTier": "392 1b2901e5c45cb084",
+    "settleKeepOut": "1 32f73c220c3cecee",
+    "sheetGains": "3 d61e61c10c2c0421",
+    "windowsHold": "21 871a1c71727589f9"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
     "centreGroupStep": "8 a0aee1f9cf73c946",

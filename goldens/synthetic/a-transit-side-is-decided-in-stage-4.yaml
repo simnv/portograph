@@ -4,12 +4,14 @@
 # crossings 6, bends 5, canvas 718 x 484, gate G5 (as with `layout: { feedOrder: false }`, the shape of
 # a-group-shift-leaves-a-chord-clear-of-a-lane). The joint order turns `aggr` to ag1 ag2 ag5 ag0 ag3 ag4 and reserves link-12 left and
 # link-13 right of `aggr` (`corridorSide`); 7a allocates the lanes on those sides, `farCoordinate` sorts the ports toward them, and the
-# check at 7a and after holds: crossings 1, bends 2, canvas 651 x 484, no gate fails. Mirrored, the decision is the mirror image and the
-# sheet publishes the same crossings and bends. Tests: test/layout/joint-order.test.ts.
+# check at 7a and after holds: crossings 1, bends 2, canvas 651 x 484, no gate fails. Mirrored, the sheet is held to feasibility only
+# (decision D-Q1): it publishes, refuses nothing and removes no link. Tests: test/layout/joint-order.test.ts.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group), so `aggr` is declared
+# before `spine`; the canonical order is then the written order and the link ids above hold.
 portograph: 2
 groups:
-  spine: { tier: 0 }
   aggr: { tier: 1 }
+  spine: { tier: 0 }
   leaf-far: { tier: 2 }
   leaf-near: { tier: 2 }
 nodes:

@@ -3,10 +3,12 @@
 # `sink-far`, so the move is no translation and the replay could not move it back by the record. The close-up is declined
 # (`CLOSE_UP_DECLINED`, "the port ... of sw-3 would not move with its node"), and `side` stays where the trim left it, with its two
 # straight drops. Layout as main. Test `test/layout/close-up.test.ts` reads the layout.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group), so `access` is declared
+# before `src`; the canonical order is then the written order.
 portograph: 2
 groups:
-  src: { tier: 0 }
   access: { tier: 1 }
+  src: { tier: 0 }
   side: { tier: 1 }
   far: { tier: 2 }
   near: { tier: 2 }
