@@ -4,7 +4,7 @@ import { NODE_CONTENT_STYLES } from '../profiles/network/content.js';
 import { BOTTOM_CLASSES, TOP_CLASSES } from '../profiles/network/tiers.js';
 import { DEFAULT_THEME_ID, findTheme, unknownThemeMessage } from '../profiles/network/themes.js';
 import { filterCss } from './css.js';
-import { canonicalLinkOrder } from './link-order.js';
+import { canonicalLinkOrder, endPass } from './link-order.js';
 import { own, ParseError, put, Validation } from './validation.js';
 import type { LocateDiagnostic, SourceDiagnostic, SourceLocation } from './validation.js';
 
@@ -368,10 +368,22 @@ function links(value: unknown, doc: NormalisedDocument, v: Validation): void {
   // Link order is never input (decision review D-Q1, ticket DR-04): the links are resolved, and listed, in the canonical order of
   // `canonicalLinkOrder`. So a wildcard or an unnumbered named port takes the same port whatever the order of `links`, an anonymous
   // port's ordinal is its occurrence in that order, and every later stage reads one order.
-  for (const record of canonicalLinkOrder(doc, records)) {
-    const { index, path, options } = record;
-    const from = endpoint(record.fromValue, `${path}.from`, doc, used, index, v);
-    const to = endpoint(record.toValue, `${path}.to`, doc, used, index, v);
+  // The ends are allocated in four passes, each in the canonical order (`endPass`): numbered ports, unnumbered names, wildcards, bare
+  // ends. So a port an end names is claimed before a wildcard runs, and `n.*` never takes a port another link names (ADR-0002 r1).
+  const ordered = canonicalLinkOrder(doc, records);
+  const ends = new Map<LinkRecord, { from?: Endpoint | undefined; to?: Endpoint | undefined }>(ordered.map(record => [record, {}]));
+  for (const pass of [0, 1, 2, 3] as const) {
+    for (const record of ordered) {
+      const resolved = ends.get(record)!;
+      for (const side of ['from', 'to'] as const) {
+        const value = side === 'from' ? record.fromValue : record.toValue;
+        if (endPass(value, doc) === pass) resolved[side] = endpoint(value, `${record.path}.${side}`, doc, used, record.index, v);
+      }
+    }
+  }
+  for (const record of ordered) {
+    const { options } = record, path = record.path;
+    const { from, to } = ends.get(record)!;
     if (record.route === 'group-link' && (from?.group === undefined || to?.group === undefined)) v.report('GROUP_LINK_ENDPOINTS', `${path}.route`, 'group-link requires two group endpoints');
     // Bundle cardinality for merge is owned by stage 1, after grouping.
     if (from !== undefined && to !== undefined) doc.links.push({ ...options, from, to });

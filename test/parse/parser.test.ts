@@ -13,27 +13,49 @@ describe('schema normalisation', () => {
     expect(parse(yaml)).toEqual(JSON.parse(readFileSync('goldens/m1-sip-edge.expected.json', 'utf8')));
   });
 
-  it('allocates free names and wildcards in the canonical link order without changing name-local ordinals', () => {
-    // Ticket DR-04: link order is never input. The canonical order puts the explicit `a.p#2` last (a numbered port ranks after a wildcard,
-    // an unnumbered name and a bare end), so the wildcards take p#1, q#1 and p#2, the fourth is anonymous, and `a.p` and `a.p#2` share.
-    // A sixth link keeps the anonymous case that the written order once gave with five.
-    const links = [['a.p#2', 'b.p'], ['a.*', 'b.p'], ['a.p', 'b'], ['a.*', 'b'], ['a.*', 'b'], ['a.*', 'b']];
+  it('allocates named ports before wildcards, in the canonical link order, without changing name-local ordinals', () => {
+    // Ticket DR-04: link order is never input, and the ends are allocated in passes (numbered ports, unnumbered names, wildcards, bare
+    // ends), each in the canonical order. So `a.p#2` and `a.p` claim p#2 and p#1 first, the first wildcard takes q#1, the two others are
+    // anonymous, and `b.p` is shared by the two links that name it.
+    const links = [['a.p#2', 'b.p'], ['a.*', 'b.p'], ['a.p', 'b'], ['a.*', 'b'], ['a.*', 'b']];
     const result = parseWithDiagnostics(source({ links }));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.document.links.map(l => l.from)).toEqual([
-      { node: 'a', name: 'p', ordinal: 1 }, { node: 'a', name: 'q', ordinal: 1 },
-      { node: 'a', name: 'p', ordinal: 2 }, { node: 'a', anonymous: true, ordinal: 1 },
-      { node: 'a', name: 'p', ordinal: 1 }, { node: 'a', name: 'p', ordinal: 2 },
+      { node: 'a', name: 'q', ordinal: 1 }, { node: 'a', anonymous: true, ordinal: 1 },
+      { node: 'a', anonymous: true, ordinal: 2 }, { node: 'a', name: 'p', ordinal: 1 },
+      { node: 'a', name: 'p', ordinal: 2 },
     ]);
     expect(result.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ stage: 'model', severity: 'warning', code: 'SHARED_PORT', path: '$.links[0].to' }),
-      expect.objectContaining({ code: 'SHARED_PORT', path: '$.links[2].from' }),
-      expect.objectContaining({ code: 'WILDCARD_ANONYMOUS', path: '$.links[5].from' }),
+      expect.objectContaining({ code: 'WILDCARD_ANONYMOUS', path: '$.links[3].from' }),
+      expect.objectContaining({ code: 'WILDCARD_ANONYMOUS', path: '$.links[4].from' }),
     ]));
-    // The same ports with `links` reversed.
-    const back = parseWithDiagnostics(source({ links: [...links].reverse() }));
-    expect(back.ok && back.document.links).toEqual(result.document.links);
+    // The same ports with `links` reversed and rotated.
+    for (const order of [[...links].reverse(), [...links.slice(2), ...links.slice(0, 2)]]) {
+      const other = parseWithDiagnostics(source({ links: order }));
+      expect(other.ok && other.document.links).toEqual(result.document.links);
+    }
+  });
+
+  it('a wildcard skips a port that another link names, in every order of links (ticket DR-04)', () => {
+    const text = readFileSync('goldens/synthetic/a-wildcard-skips-a-port-another-link-names.yaml', 'utf8');
+    const written = parseWithDiagnostics(text);
+    const swapped = text.replace(/( {2}- \[s\.p1#1, x\]\n)( {2}- \[s\.\*, y\]\n)/, '$2$1');
+    expect(swapped).not.toBe(text);
+    for (const order of [text, swapped]) {
+      const result = parseWithDiagnostics(order);
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      const port = (node: string) => result.document.links.find(link => link.to.node === node)!.from;
+      expect(port('x')).toEqual({ node: 's', name: 'p1', ordinal: 1 });
+      expect(port('y')).toEqual({ node: 's', name: 'p2', ordinal: 1 });
+      expect(result.diagnostics.filter(d => d.code === 'SHARED_PORT')).toEqual([]);
+      expect(written.ok && written.document.links).toEqual(result.document.links);
+    }
+    // The links written with structured ends name the same ports.
+    const structured = parseWithDiagnostics(text.replace('  - [s.p1#1, x]', '  - { from: { node: s, port: p1, ordinal: 1 }, to: x }').replace('  - [s.*, y]', '  - { from: { node: s, port: \'*\' }, to: y }'));
+    expect(structured.ok && structured.document.links).toEqual(written.ok && written.document.links);
   });
 
   it('ranks a structured endpoint as its compact form in the canonical link order (ticket DR-04)', () => {

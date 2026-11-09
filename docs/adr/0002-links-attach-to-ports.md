@@ -27,8 +27,9 @@ a generated link id and the order ELK reads the edges in no longer follow the po
 `links`. The parser lists the links in one canonical order: the smaller declared rank of the two ends,
 then the larger (a node by the declaration order of its group, then by its own declaration order inside the group; group ends after
 every node, in declaration order; the direction of a link is no key), the rank of a numbered port in its node's
-list, then the content of the link (`src/parse/link-order.ts`). It resolves `*`, an unnumbered port name
-and a bare end in that order, so `*` is the next free port in the canonical order, and an anonymous
+list, then the content of the link (`src/parse/link-order.ts`). It resolves the ends in four passes, each in that
+order: numbered ports, unnumbered port names, `*`, bare ends; so `*` is the next port in the canonical order that no
+other end names, and an anonymous
 port's ordinal is its occurrence in that order. A generated link id `link-<n>` is the place of the link
 in that order, and `link-<n>-<k>` the k-th member of an expanded group end. Node and group declaration
 order stay author input. A sheet that

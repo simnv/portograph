@@ -44,6 +44,14 @@ structure, identifiers), **model-time** (after normalisation: tier inference, fa
 port allocation), **placement-time** (capacity, facing ports — see stage 7b) and **final-geometry**
 (gates). A diagnostic is never emitted before its inputs exist.
 
+Link order is never input (ticket DR-04, ADR-0002 r1). The parser lists the links in the canonical link order
+(`src/parse/link-order.ts`): the smaller declared rank of the two ends, then the larger (a node by the declaration
+order of its group, then by its own declaration order inside the group; group ends after every node), then the rank
+of each end's numbered port in its node's list (a wildcard, an unnumbered name and a bare end rank first), then the
+content of the link, and last its direction. It allocates the ends in four passes, each in that order: numbered
+ports, unnumbered names, wildcards, bare ends. Every later stage reads `document.links` in that order (link ids,
+ELK edge order); `layout()` does not sort a document again (a document built in code must list its links that way).
+
 ## Stage 1 — resolve techniques (semantic)
 
 For every link, in this fixed order, from the document only:
@@ -2178,7 +2186,7 @@ then the same two passes run with drawn overlay runs ignored; then the pair repe
 shortened text, strict first and relaxed after, and among the clear shortened candidates the
 one keeping the most characters wins (ADR-0014); then the label is omitted with its full text as
 `tooltip`. Four rungs in all: whole text clear of the overlay, whole text across it, shortened text
-clear of it, shortened text across it. Authored labels run in link order, then merge runs in bundle and run order, so
+clear of it, shortened text across it. Authored labels run in the canonical link order (stage 0), then merge runs in bundle and run order, so
 an accepted label is an obstacle for every later one.
 
 **A link label stays in one region.** A label never lies across the border of a drawn group or

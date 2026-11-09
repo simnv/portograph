@@ -26,6 +26,18 @@ function endText(value: unknown, doc: NormalisedDocument): EndText {
   };
 }
 
+/**
+ * The allocation pass of one authored end (ticket DR-04): 0 a numbered port (`n.p#k`), 1 an unnumbered port name (`n.p`), 2 a wildcard
+ * (`n.*`), 3 a bare node, a group or an end that does not parse. The parser resolves every end of pass 0 in the canonical link order, then
+ * every end of pass 1, and so on, so an end that names its port claims it before any wildcard or free-name lookup can take it.
+ */
+export function endPass(value: unknown, doc: NormalisedDocument): 0 | 1 | 2 | 3 {
+  const end = endText(value, doc);
+  if (end.group !== undefined || end.node === undefined || end.name === undefined) return 3;
+  if (end.name === '*') return 2;
+  return end.ordinal === undefined ? 1 : 0;
+}
+
 /** Object keys in code-unit order, so equal metadata gives equal text. */
 function canonical(value: Meta | unknown): unknown {
   if (value === null || typeof value !== 'object') return value;

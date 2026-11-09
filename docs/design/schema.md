@@ -131,11 +131,13 @@ Compact endpoint grammar (`node` and `group` are identifiers as above):
 |---|---|
 | `node.port` | the **first free** port of that name; if all are taken, the first one (shared) |
 | `node.port#n` | the n-th port of that name |
-| `node.*` | the next free port of any name, in declaration order; none free → a new anonymous port |
+| `node.*` | the next free port of any name, in declaration order, that no other end of the sheet names (wildcards are allocated after named ends); none free → a new anonymous port |
 | `node` | an anonymous port |
 | `group` | a group-link endpoint |
 
-Allocation of `*` and free-name lookups happens in the **canonical link order** at model time and is
+Allocation of `*` and free-name lookups happens in the **canonical link order** at model time, in four
+passes: every numbered port (`n.p#k`) first, then every unnumbered name, then every `*`, then every bare
+node end, each pass in that order, so a `*` never takes a port that another link names. It is
 recorded in the model as explicit `(node, name, ordinal)` triples; the layout JSON never contains `*`.
 The order of `links` is never input (decision review D-Q1, ticket DR-04, 2026-11-08): the parser lists
 the links by the smaller declared rank of the two ends, then the larger (a node by the declaration order
