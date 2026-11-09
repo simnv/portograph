@@ -297,12 +297,11 @@ export function centreContext(model: LayoutModel, anchor: number, columns: reado
   }
   const groupOrder = new Map(steps.map(step => [step.tier, Object.values(model.groups).filter(group => group.tier === step.tier && !group.flank)
     .sort((a, b) => a.bounds!.x - b.bounds!.x).map(group => group.id)]));
-  // Preserve which side of each fixed lane contains each group: the lanes the move guard reads (`laneWallsBeside`), so that the tail a step reserves
-  // for the groups after it holds them where the guard lets them stand.
+  // Preserve which side of each fixed lane contains each group.
   const limits = new Map<string, { low: number; high: number }>();
   for (const group of Object.values(model.groups)) {
     let low = -Infinity, high = Infinity;
-    for (const lane of laneWallsBeside(model, group)) {
+    for (const lane of model.lanes.filter(lane => lane.tier === group.tier)) {
       if (group.bounds!.x >= lane.x) low = Math.max(low, right(lane.bounds)); else high = Math.min(high, lane.bounds.x);
     }
     limits.set(group.id, { low, high });
@@ -377,6 +376,15 @@ function columnWindow(model: LayoutModel, context: CentreContext, tier: number, 
  * Space before use: a widening this room cannot hold is declined here. It is not discovered as an
  * overlap at stage 8.
  */
+/**
+ * The right edge a later group may reach before the move guard (`laneSidesHold`) refuses to clear it: the nearest lane wall right of it that the guard
+ * reads (`laneWallsBeside`, an aligned perimeter lane of another tier included), less the reach of its occupied box. Infinite with no such wall. The
+ * tail reads it so that a step never takes room `packClear` cannot give back (ticket DR-04: two sibling boxes overlapped at publication).
+ */
+function guardWall(model: LayoutModel, id: string): number {
+  const group = model.groups[id]!, walls = laneWallsBeside(model, group).filter(lane => lane.x > group.bounds!.x).map(lane => lane.bounds.x);
+  return walls.length ? Math.min(...walls) - occupiedOverhang(model, group).right : Infinity;
+}
 function tailReservation(model: LayoutModel, context: CentreContext, tier: number, order: string[]): Map<string, number> {
   const result = new Map<string, number>();
   let bound = Infinity;
@@ -384,7 +392,7 @@ function tailReservation(model: LayoutModel, context: CentreContext, tier: numbe
   // exact for the whole tier step. It costs one pass over the groups of the tier.
   for (const id of [...order].reverse()) {
     result.set(id, bound);
-    bound = Math.min(bound, reservedWindow(model, context, tier, id).high) - model.groups[id]!.bounds!.width - bandGap(model);
+    bound = Math.min(bound, reservedWindow(model, context, tier, id).high, guardWall(model, id)) - model.groups[id]!.bounds!.width - bandGap(model);
   }
   return result;
 }
