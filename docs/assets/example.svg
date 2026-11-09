@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="portograph network" viewBox="-17.80610148111981 -0.5 524.0874328613281 615.5" width="524.0874328613281" height="615.5"><defs><style type="text/css">.pg-canvas{fill:#f2f2f3}
+.group-box{fill:#eef6ff;fill-opacity:0.55;stroke:#94bce3;stroke-dasharray:none}
+.group-label{fill:#416180}
+.node-body{fill:#ffffff;stroke:#749dc4}
+.node-label{fill:#1d1f20}
+.node-description{fill:#5d5d60;fill-opacity:1}
+.icon-tile{fill:#597ea3;stroke:#416180}
+.node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
+.pill{fill:#d6ebff;stroke:#749dc4}
+.pill-label{fill:#2c455d}
+.link-line{fill:none;stroke:#2c455d}
+.link-label{fill:#5d5d60}
+.multiplicity-label{fill:#416180}
+.legend-label{fill:#424244}
+.overlay-line{stroke:#7b7fc4;stroke-opacity:0.7}
+.overlay-endpoint{fill:#7b7fc4;stroke:none}
+.node-body:where(.provider){fill:#e7eaf4}
+.icon-tile.provider{fill:#7f8aa9;stroke:#4c5573}
+.node-icon.provider{stroke:#ffffff}
+.pill.provider{fill:#dfe3f0;stroke:#7f8aa9}
+.pill-label.provider{fill:#353c55}
+.node-body:where(.router){fill:#dbeff1}
+.icon-tile.router{fill:#4f9aa6;stroke:#2f6670}
+.node-icon.router{stroke:#ffffff}
+.pill.router{fill:#cfe9ec;stroke:#4f9aa6}
+.pill-label.router{fill:#20484f}
+.node-body:where(.tbr){fill:#e8e9f8}
+.icon-tile.tbr{fill:#7b7fc4;stroke:#4d5190}
+.node-icon.tbr{stroke:#ffffff}
+.pill.tbr{fill:#e0e1f6;stroke:#7b7fc4}
+.pill-label.tbr{fill:#363966}
+.node-body:where(.rr){fill:#eeebe5}
+.icon-tile.rr{fill:#9a9184;stroke:#625b50}
+.node-icon.rr{stroke:#ffffff}
+.pill.rr{fill:#e8e4dc;stroke:#9a9184}
+.pill-label.rr{fill:#46413a}
+.link-line.dotted{stroke:#2f6670;stroke-dasharray:1 3;stroke-linecap:round}
+.link-line.dashed{stroke:#4d5190;stroke-dasharray:4 4}
+.link-line.signal{stroke:#4d5190;stroke-dasharray:4 4}
+.pill.uplink{fill:#94bce3}
+.pill-label.uplink{fill:#2c455d}
+.pill.downlink{fill:#d6ebff}
+.pill-label.downlink{fill:#2c455d}
+.pill.peer{fill:#c4c6ea}
+.pill-label.peer{fill:#363966}
+.pill.mgmt{fill:#d3cdc1}
+.pill-label.mgmt{fill:#46413a}
+.pill.lag{fill:#a9d6db}
+.pill-label.lag{fill:#20484f}
+.pill.loopback{fill:none;stroke:#94bce3}
+.pill.up{stroke:#2c455d}
+.pill.down{stroke:#597ea3;stroke-dasharray:2 2}
+.pill.admin-down{stroke:#98989b;stroke-dasharray:2 2;fill:#e7e7ea}
+.pill-label.admin-down{fill:#5d5d60}
+.pill.degraded{stroke:#1d1f20;stroke-dasharray:none}
+.port.unused{opacity:0.45}
+@media (prefers-color-scheme: dark){
+  .pg-canvas{fill:#1d2d3d}
+  .group-box{fill:#2c455d;fill-opacity:0.55;stroke:#597ea3;stroke-dasharray:none}
+  .group-label{fill:#b5d9fd}
+  .node-body{fill:#1d2d3d;stroke:#94bce3}
+  .node-label{fill:#eef6ff}
+  .node-description{fill:#b5d9fd;fill-opacity:1}
+  .icon-tile{fill:#597ea3;stroke:#b5d9fd}
+  .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
+  .pill{fill:#2c455d;stroke:#94bce3}
+  .pill-label{fill:#d6ebff}
+  .link-line{fill:none;stroke:#b5d9fd}
+  .link-label{fill:#b5d9fd}
+  .multiplicity-label{fill:#d6ebff}
+  .legend-label{fill:#d6ebff}
+  .overlay-line{stroke:#7b7fc4;stroke-opacity:0.7}
+  .overlay-endpoint{fill:#7b7fc4;stroke:none}
+  .node-body:where(.provider){fill:#283448}
+  .icon-tile.provider{fill:#7f8aa9;stroke:#c3cadf}
+  .node-icon.provider{stroke:#ffffff}
+  .pill.provider{fill:#353c55;stroke:#a3adc7}
+  .pill-label.provider{fill:#dfe3f0}
+  .node-body:where(.router){fill:#1e3945}
+  .icon-tile.router{fill:#4f9aa6;stroke:#a9d6db}
+  .node-icon.router{stroke:#ffffff}
+  .pill.router{fill:#20484f;stroke:#7dbcc4}
+  .pill-label.router{fill:#cfe9ec}
+  .node-body:where(.tbr){fill:#28324f}
+  .icon-tile.tbr{fill:#7b7fc4;stroke:#c4c6ea}
+  .node-icon.tbr{stroke:#ffffff}
+  .pill.tbr{fill:#363966;stroke:#a2a5d9}
+  .pill-label.tbr{fill:#e0e1f6}
+  .node-body:where(.rr){fill:#2f363c}
+  .icon-tile.rr{fill:#9a9184;stroke:#d3cdc1}
+  .node-icon.rr{stroke:#ffffff}
+  .pill.rr{fill:#46413a;stroke:#b8b0a2}
+  .pill-label.rr{fill:#e8e4dc}
+  .link-line.dotted{stroke:#7dbcc4;stroke-dasharray:1 3;stroke-linecap:round}
+  .link-line.dashed{stroke:#a2a5d9;stroke-dasharray:4 4}
+  .link-line.signal{stroke:#a2a5d9;stroke-dasharray:4 4}
+  .pill.uplink{fill:#597ea3}
+  .pill-label.uplink{fill:#eef6ff}
+  .pill.downlink{fill:#2c455d}
+  .pill-label.downlink{fill:#eef6ff}
+  .pill.peer{fill:#363966}
+  .pill-label.peer{fill:#e0e1f6}
+  .pill.mgmt{fill:#46413a}
+  .pill-label.mgmt{fill:#e8e4dc}
+  .pill.lag{fill:#20484f}
+  .pill-label.lag{fill:#cfe9ec}
+  .pill.loopback{fill:none;stroke:#749dc4}
+  .pill.up{stroke:#d6ebff}
+  .pill.down{stroke:#94bce3;stroke-dasharray:2 2}
+  .pill.admin-down{stroke:#749dc4;stroke-dasharray:2 2;fill:#1d2d3d}
+  .pill-label.admin-down{fill:#94bce3}
+  .pill.degraded{stroke:#ffffff;stroke-dasharray:none}
+  .port.unused{opacity:0.45}
+}
+@media print{
+  .pg-canvas{fill:#ffffff}
+  .group-box{fill:none;fill-opacity:1;stroke:#98989b;stroke-dasharray:none}
+  .group-label{fill:#5d5d60}
+  .node-body{fill:#ffffff;stroke:#424244}
+  .node-label{fill:#000000}
+  .node-description{fill:#5d5d60;fill-opacity:1}
+  .icon-tile{fill:#7a7a7d;stroke:#2b2b2d}
+  .node-icon{fill:none;stroke:#ffffff;stroke-linecap:round;stroke-linejoin:round}
+  .pill{fill:#f5f5f8;stroke:#7a7a7d}
+  .pill-label{fill:#000000}
+  .link-line{fill:none;stroke:#000000}
+  .link-label{fill:#5d5d60}
+  .multiplicity-label{fill:#000000}
+  .legend-label{fill:#000000}
+  .overlay-line{stroke:#7a7a7d;stroke-opacity:0.55}
+  .overlay-endpoint{fill:#7a7a7d;stroke:none}
+  .node-body:where(.provider){fill:#f7f7f8}
+  .icon-tile.provider{fill:#d4d4d7;stroke:#2b2b2d}
+  .node-icon.provider{stroke:#2b2b2d}
+  .pill.provider{fill:#f5f5f8;stroke:#7a7a7d}
+  .pill-label.provider{fill:#000000}
+  .node-body:where(.router){fill:#e2e2e2}
+  .icon-tile.router{fill:#5d5d60;stroke:#2b2b2d}
+  .node-icon.router{stroke:#ffffff}
+  .pill.router{fill:#f5f5f8;stroke:#7a7a7d}
+  .pill-label.router{fill:#000000}
+  .node-body:where(.tbr){fill:#e7e7e8}
+  .icon-tile.tbr{fill:#7a7a7d;stroke:#2b2b2d}
+  .node-icon.tbr{stroke:#ffffff}
+  .pill.tbr{fill:#f5f5f8;stroke:#7a7a7d}
+  .pill-label.tbr{fill:#000000}
+  .node-body:where(.rr){fill:#d9d9d9}
+  .icon-tile.rr{fill:#2b2b2d;stroke:#2b2b2d}
+  .node-icon.rr{stroke:#ffffff}
+  .pill.rr{fill:#f5f5f8;stroke:#7a7a7d}
+  .pill-label.rr{fill:#000000}
+  .link-line.dotted{stroke:#5d5d60;stroke-dasharray:1 3;stroke-linecap:round}
+  .link-line.dashed{stroke:#5d5d60;stroke-dasharray:4 4}
+  .link-line.signal{stroke:#5d5d60;stroke-dasharray:4 4}
+  .pill.uplink{fill:#b7b7ba}
+  .pill-label.uplink{fill:#000000}
+  .pill.downlink{fill:#f5f5f8}
+  .pill-label.downlink{fill:#000000}
+  .pill.peer{fill:#d4d4d7}
+  .pill-label.peer{fill:#000000}
+  .pill.mgmt{fill:#e7e7ea}
+  .pill-label.mgmt{fill:#000000}
+  .pill.lag{fill:#98989b}
+  .pill-label.lag{fill:#000000}
+  .pill.loopback{fill:none;stroke:#98989b}
+  .pill.up{stroke:#000000}
+  .pill.down{stroke:#5d5d60;stroke-dasharray:2 2}
+  .pill.admin-down{stroke:#7a7a7d;stroke-dasharray:2 2;fill:#ffffff}
+  .pill-label.admin-down{fill:#7a7a7d}
+  .pill.degraded{stroke:#000000;stroke-dasharray:3 1}
+  .port.unused{opacity:0.45}
+}
+.node-body:where(.pg-wash-4){fill:#e3f1e0}
+.node-body:where(.pg-wash-5){fill:#f6e5e8}
+@media (prefers-color-scheme: dark){
+  .node-body:where(.pg-wash-4){fill:#243a35}
+  .node-body:where(.pg-wash-5){fill:#382d3a}
+}
+@media print{
+  .node-body:where(.pg-wash-4){fill:#f2f2f3}
+  .node-body:where(.pg-wash-5){fill:#e7e7e8}
+}
+.pg-halo{paint-order:stroke fill;stroke-width:4px;stroke-linejoin:round;stroke-opacity:1;stroke-dasharray:none}
+.pg-halo.pg-halo-0{stroke:#f2f2f3}
+.pg-halo.pg-halo-1{stroke:#f0f4fa}
+@media (prefers-color-scheme: dark){
+  .pg-halo.pg-halo-0{stroke:#1d2d3d}
+  .pg-halo.pg-halo-1{stroke:#253a4f}
+}
+@media print{
+  .pg-halo.pg-halo-0{stroke:#ffffff}
+  .pg-halo.pg-halo-1{stroke:#ffffff}
+}
+.pg-w-1{stroke-width:1px!important}
+.pg-w-1_5{stroke-width:1.5px!important}
+.pg-f-9-700{font-family:Verdana, DejaVu Sans, sans-serif!important;font-size:9px!important;font-weight:700!important;letter-spacing:normal!important;font-stretch:normal!important;text-transform:none!important;word-spacing:normal!important;writing-mode:horizontal-tb!important;dominant-baseline:auto!important}
+.pg-f-9-400{font-family:Verdana, DejaVu Sans, sans-serif!important;font-size:9px!important;font-weight:400!important;letter-spacing:normal!important;font-stretch:normal!important;text-transform:none!important;word-spacing:normal!important;writing-mode:horizontal-tb!important;dominant-baseline:auto!important}
+.pg-f-12-700{font-family:Verdana, DejaVu Sans, sans-serif!important;font-size:12px!important;font-weight:700!important;letter-spacing:normal!important;font-stretch:normal!important;text-transform:none!important;word-spacing:normal!important;writing-mode:horizontal-tb!important;dominant-baseline:auto!important}</style><symbol id="pg-icon-cloud" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></symbol><symbol id="pg-icon-router" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></symbol><symbol id="pg-icon-server" viewBox="0 0 24 24"><path d="M4 4h16v4H4zM4 10h16v4H4zM4 16h16v4H4z"/></symbol><symbol id="pg-icon-switch" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol></defs><rect class="pg-canvas" x="-17.80610148111981" y="-0.5" width="524.0874328613281" height="615.5"/><g class="groups"><g class="group" data-id="internet" data-node-class="provider"><rect class="group-box provider pg-w-1" x="33.180013020833314" y="12" width="161.5" height="129.5" rx="4" ry="4"/></g><g class="group" data-id="core" data-node-class="router"><rect class="group-box router pg-w-1" x="-4.556101481119811" y="201.5" width="244.3037109375" height="163" rx="4" ry="4"/></g><g class="group" data-id="servers" data-node-class="Server"><rect class="group-box Server pg-w-1" x="362.4077962239583" y="201.5" width="131.37353515625" height="163" rx="4" ry="4"/></g><g class="group" data-id="access" data-node-class="Switch"><rect class="group-box Switch pg-w-1" x="-4.556101481119811" y="424.5" width="244.3037109375" height="128.5" rx="4" ry="4"/></g></g><g class="links"><g class="link" data-id="link-1"><path class="link-line pg-w-1_5" d="M78.18001302083331 121 L78.18001302083331 245"/></g><g class="link" data-id="link-2"><path class="link-line pg-w-1_5" d="M149.68001302083331 121 L149.68001302083331 245"/></g><g class="link" data-id="link-3"><path class="link-line pg-w-1_5" d="M98.09575398763019 294.75 L131.0957539876302 294.75"/></g><g class="link" data-id="link-4"><path class="link-line pg-w-1_5" d="M52.51982625325519 344 L62.99175008138019 445"/></g><g class="link" data-id="link-5"><path class="link-line pg-w-1_5" d="M73.51982625325519 344 L148.1997578938802 445"/></g><g class="link dashed" data-id="link-6"><path class="link-line dashed pg-w-1_5" d="M207.2476094563802 294.75 L396.4077962239583 294.75"/></g><g class="link" data-id="link-7"><path class="link-line pg-w-1_5" d="M158.6716817220052 344 L83.99175008138019 445"/></g><g class="link" data-id="link-8"><path class="link-line pg-w-1_5" d="M179.6716817220052 344 L169.1997578938802 445"/></g></g><g class="nodes"><g class="node provider" data-id="isp-a"><rect class="node-body provider pg-w-1_5" x="53.180013020833314" y="55" width="50" height="53.5" rx="4" ry="4"/><rect class="icon-tile provider pg-w-1" x="72.18001302083331" y="65" width="12" height="12" rx="2" ry="2"/><use class="node-icon provider pg-w-1_5" href="#pg-icon-cloud" x="73.68001302083331" y="66.5" width="9" height="9"/><text class="node-label provider pg-f-9-700" data-owner="isp-a" text-anchor="middle"><tspan x="78.18001302083331" y="90.04833984375">ISP A</tspan></text><g class="port provider" data-id="isp-a.wan#1"><rect class="pill provider pg-w-1" x="72.68001302083331" y="96" width="11" height="25" rx="2" ry="2"/><text class="pill-label provider pg-f-9-400" data-owner="isp-a.wan#1" text-anchor="middle" transform="rotate(-90 78.18001302083331 108.5)"><tspan x="78.18001302083331" y="112.04833984375">wan</tspan></text></g></g><g class="node provider" data-id="isp-b"><rect class="node-body provider pg-w-1_5" x="124.68001302083331" y="55" width="50" height="53.5" rx="4" ry="4"/><rect class="icon-tile provider pg-w-1" x="143.68001302083331" y="65" width="12" height="12" rx="2" ry="2"/><use class="node-icon provider pg-w-1_5" href="#pg-icon-cloud" x="145.18001302083331" y="66.5" width="9" height="9"/><text class="node-label provider pg-f-9-700" data-owner="isp-b" text-anchor="middle"><tspan x="149.68001302083331" y="90.04833984375">ISP B</tspan></text><g class="port provider" data-id="isp-b.wan#1"><rect class="pill provider pg-w-1" x="144.18001302083331" y="96" width="11" height="25" rx="2" ry="2"/><text class="pill-label provider pg-f-9-400" data-owner="isp-b.wan#1" text-anchor="middle" transform="rotate(-90 149.68001302083331 108.5)"><tspan x="149.68001302083331" y="112.04833984375">wan</tspan></text></g></g><g class="node router" data-id="core-1"><rect class="node-body router pg-w-1_5" x="27.94389851888019" y="257.5" width="70.15185546875" height="74.5" rx="4" ry="4"/><rect class="icon-tile router pg-w-1" x="54.01982625325519" y="274" width="12" height="12" rx="2" ry="2"/><use class="node-icon router pg-w-1_5" href="#pg-icon-router" x="55.51982625325519" y="275.5" width="9" height="9"/><text class="node-label router pg-f-9-700" data-owner="core-1" text-anchor="middle"><tspan x="60.01982625325519" y="299.04833984375">core-1</tspan></text><text class="node-description router pg-f-9-400" data-owner="core-1" text-anchor="middle"><tspan x="60.01982625325519" y="314.04833984375">192.0.2.1</tspan></text><g class="port router uplink" data-id="core-1.wan#1"><rect class="pill router uplink pg-w-1" x="72.68001302083331" y="245" width="11" height="25" rx="2" ry="2"/><text class="pill-label router uplink pg-f-9-400" data-owner="core-1.wan#1" text-anchor="middle" transform="rotate(-90 78.18001302083331 257.5)"><tspan x="78.18001302083331" y="261.04833984375">wan</tspan></text></g><g class="port router" data-id="core-1.te1#1"><rect class="pill router pg-w-1" x="86.09575398763019" y="289.25" width="24" height="11" rx="2" ry="2"/><text class="pill-label router pg-f-9-400" data-owner="core-1.te1#1" text-anchor="middle"><tspan x="98.09575398763019" y="298.29833984375">te1</tspan></text></g><g class="port router" data-id="core-1.ge1#1"><rect class="pill router pg-w-1" x="47.01982625325519" y="320" width="11" height="24" rx="2" ry="2"/><text class="pill-label router pg-f-9-400" data-owner="core-1.ge1#1" text-anchor="middle" transform="rotate(-90 52.51982625325519 332)"><tspan x="52.51982625325519" y="335.54833984375">ge1</tspan></text></g><g class="port router" data-id="core-1.ge2#1"><rect class="pill router pg-w-1" x="68.01982625325519" y="320" width="11" height="24" rx="2" ry="2"/><text class="pill-label router pg-f-9-400" data-owner="core-1.ge2#1" text-anchor="middle" transform="rotate(-90 73.51982625325519 332)"><tspan x="73.51982625325519" y="335.54833984375">ge2</tspan></text></g></g><g class="node router" data-id="core-2"><rect class="node-body router pg-w-1_5" x="131.0957539876302" y="257.5" width="76.15185546875" height="74.5" rx="4" ry="4"/><rect class="icon-tile router pg-w-1" x="163.1716817220052" y="274" width="12" height="12" rx="2" ry="2"/><use class="node-icon router pg-w-1_5" href="#pg-icon-router" x="164.6716817220052" y="275.5" width="9" height="9"/><text class="node-label router pg-f-9-700" data-owner="core-2" text-anchor="middle"><tspan x="169.1716817220052" y="299.04833984375">core-2</tspan></text><text class="node-description router pg-f-9-400" data-owner="core-2" text-anchor="middle"><tspan x="169.1716817220052" y="314.04833984375">192.0.2.2</tspan></text><g class="port router uplink" data-id="core-2.wan#1"><rect class="pill router uplink pg-w-1" x="144.18001302083331" y="245" width="11" height="25" rx="2" ry="2"/><text class="pill-label router uplink pg-f-9-400" data-owner="core-2.wan#1" text-anchor="middle" transform="rotate(-90 149.68001302083331 257.5)"><tspan x="149.68001302083331" y="261.04833984375">wan</tspan></text></g><g class="port router" data-id="core-2.te1#1"><rect class="pill router pg-w-1" x="119.09575398763019" y="289.25" width="24" height="11" rx="2" ry="2"/><text class="pill-label router pg-f-9-400" data-owner="core-2.te1#1" text-anchor="middle"><tspan x="131.0957539876302" y="298.29833984375">te1</tspan></text></g><g class="port router" data-id="core-2.te2#1"><rect class="pill router pg-w-1" x="195.2476094563802" y="289.25" width="24" height="11" rx="2" ry="2"/><text class="pill-label router pg-f-9-400" data-owner="core-2.te2#1" text-anchor="middle"><tspan x="207.2476094563802" y="298.29833984375">te2</tspan></text></g><g class="port router" data-id="core-2.ge1#1"><rect class="pill router pg-w-1" x="153.1716817220052" y="320" width="11" height="24" rx="2" ry="2"/><text class="pill-label router pg-f-9-400" data-owner="core-2.ge1#1" text-anchor="middle" transform="rotate(-90 158.6716817220052 332)"><tspan x="158.6716817220052" y="335.54833984375">ge1</tspan></text></g><g class="port router" data-id="core-2.ge2#1"><rect class="pill router pg-w-1" x="174.1716817220052" y="320" width="11" height="24" rx="2" ry="2"/><text class="pill-label router pg-f-9-400" data-owner="core-2.ge2#1" text-anchor="middle" transform="rotate(-90 179.6716817220052 332)"><tspan x="179.6716817220052" y="335.54833984375">ge2</tspan></text></g></g><g class="node Server" data-id="nms"><rect class="node-body Server pg-wash-4 pg-w-1_5" x="396.4077962239583" y="263.75" width="77.37353515625" height="62" rx="4" ry="4"/><rect class="icon-tile Server pg-w-1" x="432.8445638020833" y="273.75" width="12" height="12" rx="2" ry="2"/><use class="node-icon Server pg-w-1_5" href="#pg-icon-server" x="434.3445638020833" y="275.25" width="9" height="9"/><text class="node-label Server pg-f-9-700" data-owner="nms" text-anchor="middle"><tspan x="438.8445638020833" y="298.79833984375">NMS</tspan></text><text class="node-description Server pg-f-9-400" data-owner="nms" text-anchor="middle"><tspan x="438.8445638020833" y="313.79833984375">192.0.2.10</tspan></text><g class="port Server" data-id="nms.eth0#1"><rect class="pill Server pg-w-1" x="382.9077962239583" y="289.25" width="27" height="11" rx="2" ry="2"/><text class="pill-label Server pg-f-9-400" data-owner="nms.eth0#1" text-anchor="middle"><tspan x="396.4077962239583" y="298.29833984375">eth0</tspan></text></g></g><g class="node Switch" data-id="acc-1"><rect class="node-body Switch pg-wash-5 pg-w-1_5" x="41.63774617513019" y="457" width="63.7080078125" height="53" rx="4" ry="4"/><rect class="icon-tile Switch pg-w-1" x="67.49175008138019" y="473" width="12" height="12" rx="2" ry="2"/><use class="node-icon Switch pg-w-1_5" href="#pg-icon-switch" x="68.99175008138019" y="474.5" width="9" height="9"/><text class="node-label Switch pg-f-9-700" data-owner="acc-1" text-anchor="middle"><tspan x="73.49175008138019" y="498.04833984375">Access 1</tspan></text><g class="port Switch" data-id="acc-1.up1#1"><rect class="pill Switch pg-w-1" x="57.49175008138019" y="445" width="11" height="24" rx="2" ry="2"/><text class="pill-label Switch pg-f-9-400" data-owner="acc-1.up1#1" text-anchor="middle" transform="rotate(-90 62.99175008138019 457)"><tspan x="62.99175008138019" y="460.54833984375">up1</tspan></text></g><g class="port Switch" data-id="acc-1.up2#1"><rect class="pill Switch pg-w-1" x="78.49175008138019" y="445" width="11" height="24" rx="2" ry="2"/><text class="pill-label Switch pg-f-9-400" data-owner="acc-1.up2#1" text-anchor="middle" transform="rotate(-90 83.99175008138019 457)"><tspan x="83.99175008138019" y="460.54833984375">up2</tspan></text></g></g><g class="node Switch" data-id="acc-2"><rect class="node-body Switch pg-wash-5 pg-w-1_5" x="126.84575398763019" y="457" width="63.7080078125" height="53" rx="4" ry="4"/><rect class="icon-tile Switch pg-w-1" x="152.6997578938802" y="473" width="12" height="12" rx="2" ry="2"/><use class="node-icon Switch pg-w-1_5" href="#pg-icon-switch" x="154.1997578938802" y="474.5" width="9" height="9"/><text class="node-label Switch pg-f-9-700" data-owner="acc-2" text-anchor="middle"><tspan x="158.6997578938802" y="498.04833984375">Access 2</tspan></text><g class="port Switch" data-id="acc-2.up1#1"><rect class="pill Switch pg-w-1" x="142.6997578938802" y="445" width="11" height="24" rx="2" ry="2"/><text class="pill-label Switch pg-f-9-400" data-owner="acc-2.up1#1" text-anchor="middle" transform="rotate(-90 148.1997578938802 457)"><tspan x="148.1997578938802" y="460.54833984375">up1</tspan></text></g><g class="port Switch" data-id="acc-2.up2#1"><rect class="pill Switch pg-w-1" x="163.6997578938802" y="445" width="11" height="24" rx="2" ry="2"/><text class="pill-label Switch pg-f-9-400" data-owner="acc-2.up2#1" text-anchor="middle" transform="rotate(-90 169.1997578938802 457)"><tspan x="169.1997578938802" y="460.54833984375">up2</tspan></text></g></g></g><g class="labels"><text class="group-label pg-halo pg-halo-1 provider pg-f-12-700" data-owner="internet" text-anchor="middle"><tspan x="113.93001302083331" y="28.064453125">Internet</tspan></text><text class="group-label pg-halo pg-halo-1 router pg-f-12-700" data-owner="core" text-anchor="middle"><tspan x="117.59575398763019" y="217.564453125">Core</tspan></text><text class="group-label pg-halo pg-halo-1 Server pg-f-12-700" data-owner="servers" text-anchor="middle"><tspan x="428.0945638020833" y="217.564453125">Servers</tspan></text><text class="group-label pg-halo pg-halo-1 Switch pg-f-12-700" data-owner="access" text-anchor="middle"><tspan x="117.59575398763019" y="546.064453125">Access</tspan></text><text class="link-label pg-halo pg-halo-0 pg-f-9-400" data-owner="link-1" text-anchor="middle" transform="rotate(-90 88.43001302083331 183)"><tspan x="88.43001302083331" y="186.54833984375">1G</tspan></text><text class="link-label pg-halo pg-halo-0 pg-f-9-400" data-owner="link-2" text-anchor="middle" transform="rotate(-90 159.93001302083331 183)"><tspan x="159.93001302083331" y="186.54833984375">1G</tspan></text></g><g class="legend" data-id="legend"><g class="legend-entry legend-symbol provider" data-id="symbol:provider"><rect class="node-body provider pg-w-1" x="-7.056101481119811" y="572" width="16" height="16" rx="4" ry="4"/><rect class="icon-tile provider pg-w-1" x="-5.056101481119811" y="574" width="12" height="12" rx="2" ry="2"/><use class="node-icon provider pg-w-1_5" href="#pg-icon-cloud" x="-3.5561014811198106" y="575.5" width="9" height="9"/><text class="legend-label pg-halo pg-halo-0 pg-f-9-400" data-owner="symbol:provider" text-anchor="middle"><tspan x="31.61186726888019" y="583.54833984375">Provider</tspan></text></g><g class="legend-entry legend-symbol router" data-id="symbol:router"><rect class="node-body router pg-w-1" x="66.27983601888019" y="572" width="16" height="16" rx="4" ry="4"/><rect class="icon-tile router pg-w-1" x="68.27983601888019" y="574" width="12" height="12" rx="2" ry="2"/><use class="node-icon router pg-w-1_5" href="#pg-icon-router" x="69.77983601888019" y="575.5" width="9" height="9"/><text class="legend-label pg-halo pg-halo-0 pg-f-9-400" data-owner="symbol:router" text-anchor="middle"><tspan x="101.36186726888019" y="583.54833984375">Router</tspan></text></g><g class="legend-entry legend-symbol Server" data-id="symbol:Server"><rect class="node-body Server pg-wash-4 pg-w-1" x="132.4438985188802" y="572" width="16" height="16" rx="4" ry="4"/><rect class="icon-tile Server pg-w-1" x="134.4438985188802" y="574" width="12" height="12" rx="2" ry="2"/><use class="node-icon Server pg-w-1_5" href="#pg-icon-server" x="135.9438985188802" y="575.5" width="9" height="9"/><text class="legend-label pg-halo pg-halo-0 pg-f-9-400" data-owner="symbol:Server" text-anchor="middle"><tspan x="167.3853047688802" y="583.54833984375">Server</tspan></text></g><g class="legend-entry legend-symbol Switch" data-id="symbol:Switch"><rect class="node-body Switch pg-wash-5 pg-w-1" x="198.3267110188802" y="572" width="16" height="16" rx="4" ry="4"/><rect class="icon-tile Switch pg-w-1" x="200.3267110188802" y="574" width="12" height="12" rx="2" ry="2"/><use class="node-icon Switch pg-w-1_5" href="#pg-icon-switch" x="201.8267110188802" y="575.5" width="9" height="9"/><text class="legend-label pg-halo pg-halo-0 pg-f-9-400" data-owner="symbol:Switch" text-anchor="middle"><tspan x="233.2856953938802" y="583.54833984375">Switch</tspan></text></g><g class="legend-entry legend-port uplink" data-id="port:uplink"><rect class="pill uplink pg-w-1" x="266.2446797688802" y="575" width="26" height="10" rx="2" ry="2"/><text class="legend-label pg-halo pg-halo-0 pg-f-9-400" data-owner="port:uplink" text-anchor="middle"><tspan x="312.3225606282552" y="583.54833984375">Uplink</tspan></text></g><g class="legend-entry legend-line default" data-id="line:default"><line class="link-line pg-w-1_5" x1="344.4004414876302" y1="580" x2="368.4004414876302" y2="580"/><text class="legend-label pg-halo pg-halo-0 pg-f-9-400" data-owner="line:default" text-anchor="middle"><tspan x="400.2512715657552" y="583.54833984375">Default link</tspan></text></g><g class="legend-entry legend-line dashed" data-id="line:dashed"><line class="link-line dashed pg-w-1_5" x1="-5.056101481119811" y1="597.5" x2="18.94389851888019" y2="597.5"/><text class="legend-label pg-halo pg-halo-0 pg-f-9-400" data-owner="line:dashed" text-anchor="middle"><tspan x="51.35283406575519" y="601.04833984375">Dashed link</tspan></text></g></g></svg>
