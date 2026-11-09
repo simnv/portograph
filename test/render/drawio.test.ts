@@ -1989,11 +1989,13 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
           const horizontal = port.side === 'top' || port.side === 'bottom';
           // The face across: the side the pipeline decided.
           expect(Number(cell.geometry[horizontal ? 'y' : 'x']), cell.id).toBe(port.side === 'bottom' || port.side === 'right' ? 1 : 0);
-          // Along the face: the nearer corner, the start on a tie.
+          // Along the face: the nearer corner, or the centre for a centred pill.
           const start = horizontal ? local.x : local.y, extent = horizontal ? pill.width : pill.height;
           const along = horizontal ? size.width : size.height;
-          const far = start + extent / 2 > along / 2;
-          expect(Number(cell.geometry[horizontal ? 'x' : 'y']), cell.id).toBe(far ? 1 : 0);
+          const middle = start + extent / 2 - along / 2;
+          const centred = Math.abs(middle) <= 1e-6;
+          const far = middle > 1e-6;
+          expect(Number(cell.geometry[horizontal ? 'x' : 'y']), cell.id).toBe(centred ? 0.5 : far ? 1 : 0);
           for (const { dw, dh } of RESIZES) {
             const resized = { width: size.width + dw, height: size.height + dh };
             const moved = drawnIn(cell, resized);
@@ -2003,7 +2005,12 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
             const before = horizontal ? local.y + pill.height / 2 - (port.side === 'bottom' ? size.height : 0)
               : local.x + pill.width / 2 - (port.side === 'right' ? size.width : 0);
             expect(across, `${cell.id} ${dw}/${dh}`).toBeCloseTo(before, 6);
-            // Its corner distance along the face is kept.
+            // A centred pill stays centred; an off-centre pill keeps its corner distance along the face.
+            if (centred) {
+              const now = horizontal ? moved.x : moved.y, length = horizontal ? resized.width : resized.height;
+              expect(now + extent / 2, `${cell.id} ${dw}/${dh}`).toBeCloseTo(length / 2, 6);
+              continue;
+            }
             const corner = (from: number, length: number): number => (far ? length - from - extent : from);
             expect(corner(horizontal ? moved.x : moved.y, horizontal ? resized.width : resized.height), `${cell.id} ${dw}/${dh}`)
               .toBeCloseTo(corner(start, along), 6);
@@ -2028,7 +2035,7 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
       expect(followers).toBeGreaterThan(0);
     }, 60000);
 
-  it.each([1e-13, -1e-13])('measures a pill centred to within float noise (%s px) from the start corner', async noise => {
+  it.each([1e-13, -1e-13])('gives a pill centred to within float noise (%s px) the centre form', async noise => {
     // The pipeline freezes its model; the noise goes into a copy.
     const model = structuredClone(await pipeline(fixture('a-card-node-holds-its-ports-on-every-face')));
     const node = model.nodes['crowd']!;
@@ -2038,6 +2045,22 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
     expect(pill.x + pill.width / 2).toBeCloseTo(node.bounds!.x + node.bounds!.width / 2, 9);
     port.pill!.bounds = { ...pill, x: pill.x + noise };
     const cell = cells(drawio(model)).get(id('port', 'crowd', port.ref.name!, String(port.ref.ordinal)))!;
-    expect([cell.geometry['x'], cell.geometry['y']]).toEqual(['0', '0']);
+    expect([cell.geometry['x'], cell.geometry['y']]).toEqual(['0.5', '0']);
+    expect(cell.offset!.x).toBeCloseTo(-pill.width / 2, 9);
+  }, 60000);
+
+  it('reaches both a centred pill and an off-centre pill in the resize fixture', async () => {
+    const model = await pipeline(fixture('drawio-face-children-stay-on-resize'));
+    const all = cells(drawio(model));
+    const fractions = new Set<string>();
+    for (const [key, node] of Object.entries(model.nodes)) {
+      for (const port of node.ports) {
+        if (!port.pill || port.ref.anonymous === true) continue;
+        const cell = all.get(id('port', key, port.ref.name!, String(port.ref.ordinal)))!;
+        fractions.add(String(cell.geometry[port.side === 'top' || port.side === 'bottom' ? 'x' : 'y']));
+      }
+    }
+    expect(fractions.has('0.5'), 'a centred pill').toBe(true);
+    expect(fractions.has('0') || fractions.has('1'), 'an off-centre pill').toBe(true);
   }, 60000);
 });
