@@ -1,4 +1,4 @@
-import type { ElkNode } from 'elkjs/lib/elk-api.js';
+import type { ElkNode } from './elk-graph.js';
 import type { Rect } from '../model/geometry.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';

@@ -29,9 +29,9 @@ it('fails on a hit, prints file:line and not the term', () => {
   expect(r.stdout.toLowerCase()).not.toContain('secret-host');
 });
 
-it('passes without a hit and skips when the file is absent', () => {
+it('passes without a hit and skips silently when the file is absent', () => {
   expect(run('other\n').status).toBe(0);
   const r = run(null);
   expect(r.status).toBe(0);
-  expect(r.stdout).toContain('skipped');
+  expect(r.stdout).toBe('');
 });

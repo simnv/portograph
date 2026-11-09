@@ -309,7 +309,7 @@ export function fanCohorts(model: LayoutModel, pending?: PendingFixed): { cohort
   const result: { port: LayoutPort; links: LayoutLink[] }[] = [], excluded: { port: LayoutPort; link: LayoutLink }[] = [];
   for (const { port, links } of incidence.values()) {
     if (new Set(links.map(link => link.id)).size !== links.length) continue;
-    let active = links;
+    let active: LayoutLink[];
     {
       const at = portId(port.ref);
       /**

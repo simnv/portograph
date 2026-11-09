@@ -1,7 +1,7 @@
 /**
  * What the gate scripts (`corpus.mjs`, `sweep.mjs`, `r3.mjs`) share: the pipeline as the command line runs it.
  *
- * The scripts load the built library in `dist/` and its packaged workers, the way `bin/compute.mjs`
+ * The scripts load the built library in `dist/` and the solver workers, the way `bin/compute.mjs`
  * does, so a gate measures what `portograph render` produces. One warm ELK worker serves every
  * sheet; the router starts a worker per session and ends it with the session. `npm run corpus` and
  * `npm run sweep` build `dist/` before they run, so the measurement is never of a stale build.
@@ -33,7 +33,7 @@ export async function openPipeline() {
   if (!existsSync(fileURLToPath(entry))) throw new Error('dist/ is missing; run `npm run build` first');
   const api = await import(entry.href);
   const Worker = require('web-worker');
-  const elkWorkerUrl = fileURLToPath(new URL('portograph-elk-worker.js', dist));
+  const elkWorkerUrl = require.resolve('elkjs/lib/elk-worker.min.js');
   const newElk = () => {
     const warm = require('../dist/warm-elk.cjs').createWarmElk(api.createWorkerElkAttempt, () => new Worker(elkWorkerUrl));
     warm.warm();

@@ -49,7 +49,7 @@ describe('producer postconditions of 7e and 7f (DR-11)', () => {
   it('a laid-out sheet has none, and the sink changes no byte of the layout', async () => {
     const plain = async (): Promise<string> => serializeLayoutModel({ ...(await run('a-hemmed-fan-branch-keeps-its-stem')), runtime: { stages: [] } } as LayoutModel);
     const off = await plain();
-    let on = '';
+    let on: string;
     const seen: PostconditionViolation[] = [];
     postconditionSink.hook = violation => seen.push(violation);
     try { on = await plain(); } finally { delete postconditionSink.hook; }

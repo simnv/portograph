@@ -24,8 +24,9 @@ async function loadLibrary() {
   try {
     return await import('../dist/portograph.js');
   } catch (error) {
-    if (error && error.code === 'ERR_MODULE_NOT_FOUND') {
-      throw new Error('portograph: build output missing; run `npm run build` first');
+    // A missing solver package is also ERR_MODULE_NOT_FOUND; only a missing bundle means "build first".
+    if (error && error.code === 'ERR_MODULE_NOT_FOUND' && !existsSync(new URL('../dist/portograph.js', import.meta.url))) {
+      throw new Error('portograph: build output missing; run `npm run build` first', { cause: error });
     }
     throw error;
   }
@@ -127,7 +128,7 @@ function publishArtifacts(entries) {
       for (const [path, backup] of saved.reverse()) renameSync(backup, path);
     } catch (rollbackError) {
       removeTemporary = false;
-      throw new Error(`${error.message}; rollback failed: ${rollbackError.message}; retained backups in ${temporary}`);
+      throw new Error(`${error.message}; rollback failed: ${rollbackError.message}; retained backups in ${temporary}`, { cause: rollbackError });
     }
     throw error;
   } finally {

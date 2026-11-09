@@ -177,6 +177,14 @@ The root also exports the error classes `ParseError`, `ResolveError`, `CommandDe
 
 `portograph/internal` exports the stage functions and the tables. It can change in any release.
 
+In a browser, the page must serve four files over HTTP. Put `elkjs/lib/elk-worker.min.js` and
+`portograph/dist/portograph-avoid-worker.mjs` beside the page. In the directory of that worker, serve
+`libavoid-js/dist/index.js` as `libavoid.mjs`, and `libavoid-js/dist/libavoid.wasm` as it is. To use other locations, give the URLs to
+`createBrowserElkFactory(url)` and `createBrowserRouteFactory({ workerUrl, moduleUrl, wasmUrl })`.
+A bundler resolves the `elkjs/lib/elk-api.js` import of the ES build. Without a bundler, load
+`elkjs/lib/elk-api.js` with a script tag before the UMD build `portograph/internal`
+(`dist/portograph.umd.cjs`).
+
 The library does not read the system fonts, so its output depends on the document only. The
 `FONT_MISSING` check below is in the CLI only.
 

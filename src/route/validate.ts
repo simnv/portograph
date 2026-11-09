@@ -237,7 +237,7 @@ function removalsReproduced(model: LayoutModel): void {
     const routes = new Map(answer.map(entry => [entry.connector, entry.points]));
     let done: ReturnType<typeof tryStitch>;
     try { done = tryStitch(view, item, routes); }
-    catch (error) { throw new Error(`Removed link ${link.id} cannot be judged again: ${(error as Error).message}`); }
+    catch (error) { throw new Error(`Removed link ${link.id} cannot be judged again: ${(error as Error).message}`, { cause: error }); }
     if (!('rejection' in done)) throw new Error(`Removed link ${link.id} has a usable stored route; its removal is not reproduced`);
   }
 }

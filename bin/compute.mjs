@@ -5,8 +5,7 @@
 //
 // This process writes no artifact and no diagnostic of its own. It returns strings to the parent,
 // which owns stdout, stderr and the files.
-import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import * as nodeModule from 'node:module';
 
 // Node 22.1 and newer keep the compiled code of the library and of its packages on disk between runs; older Node has no such call. The cache holds compiled code only.
@@ -110,10 +109,9 @@ async function run(request, emit) {
   let assetError;
   try {
     nodeRuntime = require('../dist/node.cjs');
-    // The warm worker is internal to the CLI: it is built here from the packaged worker asset, not exported by `portograph/node`.
+    // The warm worker is internal to the CLI: it is built here on the worker file of the installed `elkjs`, not exported by `portograph/node`.
     const Worker = require('web-worker');
-    const workerUrl = fileURLToPath(new URL('../dist/portograph-elk-worker.js', import.meta.url));
-    if (!existsSync(workerUrl)) throw new Error(`portograph ELK worker asset is missing: ${workerUrl}`);
+    const workerUrl = require.resolve('elkjs/lib/elk-worker.min.js');
     elk = require('../dist/warm-elk.cjs').createWarmElk(api.createWorkerElkAttempt, () => new Worker(workerUrl));
     elk.warm();
   } catch (error) {
@@ -128,7 +126,7 @@ async function run(request, emit) {
     if (assetError) throw assetError;
     router = nodeRuntime.createNodeRouteFactory();
   } catch (error) {
-    return failure('processing', `a packaged worker asset is unavailable: ${error.message}`, 'WORKER_ASSET');
+    return failure('processing', `a solver worker or module is unavailable: ${error.message}`, 'WORKER_ASSET');
   }
 
   let model;

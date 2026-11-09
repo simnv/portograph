@@ -13,7 +13,7 @@ try {
   floor = execFileSync('npx', ['--yes', '--package=node@22.0.0', 'node', '-p', 'process.execPath'],
     { encoding: 'utf8', timeout: 300000 }).trim();
 } catch (error) {
-  throw new Error(`Node 22.0 floor runtime is unavailable: ${error.message}`);
+  throw new Error(`Node 22.0 floor runtime is unavailable: ${error.message}`, { cause: error });
 }
 if (!existsSync(floor)) throw new Error(`Node 22.0 floor runtime is unavailable at ${floor}`);
 
