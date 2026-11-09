@@ -29,7 +29,7 @@ import { faceKey, laneFaceOrder } from './turn-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
-import { centreItemLink, publishedCentreViolations, selectAnchorTier } from './centre.js';
+import { CENTRE_ALIGNMENT_OPEN, centreItemLink, publishedCentreViolations, selectAnchorTier } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentTargetsFault } from './alignment-targets.js';
 import { givenBackFault } from './given-back.js';
 import { checkBodyTrims } from './end-trim.js';
@@ -649,12 +649,11 @@ const permissions: Record<PlacementRule, { move: boolean; reorder: boolean }> = 
   validate: { move: false, reorder: false }, emit: { move: false, reorder: false },
 };
 /**
- * Whether the stored placement diagnostics excuse every centring item (DR-15, R5). An item is excused only for a link that a placement-stage
- * `PLACEMENT_NON_CONVERGENCE` names in its owners, as the centre emitter writes them; the message text is never read, and a code with no
- * such owner (another emitter, or a forged one) excuses nothing.
+ * Whether the stored placement diagnostics excuse every centring item (DR-15, R5). An item is excused only for a link that the centre emitter's
+ * `CENTRE_ALIGNMENT_OPEN` record, at the placement stage, names in its owners. No other code excuses an item, and the message text is never read.
  */
 function diagnosed(model: LayoutModel, items: readonly string[]): boolean {
-  const named = new Set(model.diagnostics.filter(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')
+  const named = new Set(model.diagnostics.filter(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)
     .flatMap(d => (d.owners ?? []).flatMap(o => o.kind === 'link' ? [o.id] : [])));
   return items.every(item => { const link = centreItemLink(model, item); return link !== undefined && named.has(link); });
 }

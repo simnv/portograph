@@ -93,15 +93,15 @@ it('restore refuses a geometry break beside a centring item that the code excuse
   let item = '';
   try { restoreLayoutModel(JSON.stringify(centred)); } catch (error) { item = /Centring invariant violated: (\S+):/.exec((error as Error).message)?.[1] ?? ''; }
   expect(item, 'no code').not.toBe('');
-  // DR-15 (R5): only a diagnostic that names the item's link as owner, as the centre emitter writes it, excuses the item. The other emitters' codes
-  // (which name no link), a forged message and the centre message with no owner excuse nothing; the message text is never read.
+  // DR-15 (R5): only the centre emitter's CENTRE_ALIGNMENT_OPEN that names the item's link excuses the item. Every PLACEMENT_NON_CONVERGENCE, even one that
+  // names the link, excuses nothing; the message text is never read.
   for (const [emitter, diagnostic] of Object.entries(codes)) {
     const refused = deep(centred);
-    refused.diagnostics.push({ ...diagnostic, owners: [] });
+    refused.diagnostics.push({ ...diagnostic, owners: [{ kind: 'link', id: item }] });
     expect(() => restoreLayoutModel(JSON.stringify(refused)), emitter).toThrow(/Centring invariant violated/);
   }
   const named = deep(centred);
-  named.diagnostics.push({ ...codes['centre.ts']!, owners: [{ kind: 'link', id: item }] });
+  named.diagnostics.push({ ...warn('any text'), code: 'CENTRE_ALIGNMENT_OPEN', owners: [{ kind: 'link', id: item }] });
   const kept = restoreLayoutModel(JSON.stringify(named));
   expect(kept.diagnostics.filter(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED')).toHaveLength(1);
   // The same file with a node moved onto its sibling: the exempt item passes, the break does not.
