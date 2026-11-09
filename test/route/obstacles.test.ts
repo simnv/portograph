@@ -220,8 +220,9 @@ nodes:
 links: [[a.p, b.p], [m.q, c.p]]`);
     const plan = planRoute(model);
     expect(plan.batches).toEqual([{ id: 'batch-0', links: ['link-1'] }, { id: 'batch-1', links: ['link-2'] }]);
-    // Each remainder reserves one stem at each of its two ports, and nothing else: the approach to
-    // a lane is measured and deliberately left out (`.scratch/stress/issues/02`).
+    // Each remainder reserves one stem at each of its two ports. `link-1` crosses the middle tier in
+    // a lane, and each gap that joins the lane reserves its approach (ticket 18).
+    expect(plan.approaches.map(item => [item.link, item.lane])).toEqual([['link-1', 'lane:"link-1":1'], ['link-1', 'lane:"link-1":1']]);
     expect(plan.stems.map(item => [item.link, item.node]))
       .toEqual([['link-1', 'a'], ['link-1', 'b'], ['link-2', 'm'], ['link-2', 'c']]);
     // A stem covers its reserved reach with the clearance a reserved run carries.
