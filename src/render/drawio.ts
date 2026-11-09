@@ -592,19 +592,21 @@ const onFace = (pill: Rect, node: Anchored['node'], side: Side | undefined): Anc
 });
 
 /**
- * A bus mark or joint that hangs on a node itself (an anonymous port, a bus bar end). Its face is the face it lies beyond (top or bottom first), else the face nearest its centre,
- * and it then follows the pill rule (`onFace`), so a resized node keeps it on that face: the mark on the face, a joint at the same
- * px distance beyond it (issue 17, R1). `box` is stated from the node's top-left.
+ * A bus mark or joint that hangs on a node itself (an anonymous port, a bus bar end). Its face is the one the pipeline decided:
+ * `MeshBus.side` (top or bottom, stage 5) or `trunk.side` (left or right), passed as `side`. It then follows the pill rule
+ * (`onFace`), so a resized node keeps it on that face: the mark on the face, a joint at the same px beyond it (issue 17, R1).
+ * Only a cell with no stored side finds its face again from the geometry (the fallback): the face it lies beyond, top or bottom
+ * first, else the nearest. `along` pins the fraction along the face to the one of the stub's mark, so a joint and its mark never
+ * skew when the node is resized. `box` is stated from the node's top-left.
  */
-const onNearestFace = (box: Rect, node: Anchored['node']): Anchored => {
+const onNearestFace = (box: Rect, node: Anchored['node'], side?: Side, along?: number): Anchored => {
   const x = box.x + box.width / 2, y = box.y + box.height / 2;
-  // A bar runs across and a stub runs along the face-normal, so a point beyond the top or bottom belongs to that face, then one beyond a side.
-  if (y < -EPS) return onFace(box, node, 'top');
-  if (y > node.height + EPS) return onFace(box, node, 'bottom');
-  if (x < -EPS) return onFace(box, node, 'left');
-  if (x > node.width + EPS) return onFace(box, node, 'right');
   const away: [Side, number][] = [['top', Math.abs(y)], ['bottom', Math.abs(y - node.height)], ['left', Math.abs(x)], ['right', Math.abs(x - node.width)]];
-  return onFace(box, node, away.reduce((best, item) => item[1] < best[1] ? item : best)[0]);
+  const found: Side = side ?? (y < -EPS ? 'top' : y > node.height + EPS ? 'bottom' : x < -EPS ? 'left' : x > node.width + EPS ? 'right'
+    : away.reduce((best, item) => item[1] < best[1] ? item : best)[0]);
+  const on = onFace(box, node, found);
+  if (along === undefined) return on;
+  return found === 'top' || found === 'bottom' ? { ...on, fraction: { ...on.fraction, x: along } } : { ...on, fraction: { ...on.fraction, y: along } };
 };
 
 /** The `exit`/`entry` constraint that pins a connector end to the centre of an `Anchored` box: its fraction, plus the px rest. */
@@ -1580,12 +1582,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // name enters them, so no node name can collide with one.
     const JOINT = 2;
     type PortKey = { node: string; name?: string; ordinal: number };
-    interface Spot { at: Point; ref: PortKey; id: string }
+    interface Spot { at: Point; ref: PortKey; id: string; stub?: string; side?: Side }
     /** The joints of one bus, left to right: a stub's end, the bar's two ends, and where a riser meets the bar. */
     const spots = (of: typeof bus): Spot[] => {
       if (of.bar === undefined || of.stubs === undefined) return [];
-      const found: { at: Point; ref: PortKey }[] = [];
-      const add = (at: Point, ref?: PortKey): void => {
+      const found: { at: Point; ref: PortKey; stub?: string; side?: Side }[] = [];
+      const trunkHead = layout.meshBuses?.find(other => other.trunk?.buses.includes(of.id));
+      const add = (at: Point, ref?: PortKey, stub?: string): void => {
         if (found.some(item => sameJoint(item.at, at))) return;
         let host = ref, gap = Infinity;
         if (host === undefined) {
@@ -1595,9 +1598,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
             if (distance < gap) { gap = distance; host = candidate; }
           }
         }
-        if (host !== undefined && markHost(host) !== undefined) found.push({ at, ref: host });
+        // The stored face: a bar end at a trunk join takes the trunk's side, any other point the bus's side.
+        const trunkSide = trunkHead?.trunk?.joins?.some(join => sameJoint(shift(join), at)) ? trunkHead.trunk.side : undefined;
+        const side = trunkSide ?? of.side;
+        if (host !== undefined && markHost(host) !== undefined) found.push({ at, ref: host, ...(stub === undefined ? {} : { stub }), ...(side === undefined ? {} : { side }) });
       };
-      for (const stub of of.stubs) add(shift(stub.to), of.ports.find(port => port.node === stub.node));
+      for (const stub of of.stubs) add(shift(stub.to), of.ports.find(port => port.node === stub.node), stub.node);
       add(shift(of.bar.from)); add(shift(of.bar.to));
       if (of.riser?.from !== undefined) add(shift(of.riser.from));
       const upper = layout.meshBuses?.find(other => other.joined === of.id && other.riser?.to !== undefined);
@@ -1606,9 +1612,16 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       return found.map((item, index) => ({ ...item, id: cellId('busJoint', of.id, String(index)) }));
     };
     const mine = spots(bus);
+    const markSize = 2 * OVERLAY_ENDPOINT_RADIUS;
     /** A box on a node (not a pill) follows the node's faces; on a pill it stays absolute, as the pill itself carries it. */
-    const hung = (host: { cell: string; box: Rect }, box: Rect): Rect | Anchored =>
-      host.cell.startsWith('pg-node~') ? onNearestFace(box, host.box) : box;
+    const hung = (host: { cell: string; box: Rect }, box: Rect, side?: Side, along?: number): Rect | Anchored =>
+      host.cell.startsWith('pg-node~') ? onNearestFace(box, host.box, side, along) : box;
+    /** A stub's mark: its box on its host, and the host's face rule applied (null host: the overlay layer). */
+    const markOf = (stub: { node: string; from: Point }, side: Side | undefined): { pill: ReturnType<typeof markHost>; box: Rect; mark: Rect | Anchored } => {
+      const pill = markHost(bus.ports.find(port => port.node === stub.node)!), at = shift(stub.from);
+      const box = { x: at.x - markSize / 2, y: at.y - markSize / 2, width: markSize, height: markSize };
+      return { pill, box, mark: pill ? hung(pill, relative(box, pill.box), side) : box };
+    };
     // The bus tooltip of the SVG, with the text of a bus label that had no room to be drawn (`busTooltip`). It rides on every piece of the bus.
     const busTip = withTooltip({}, busTooltip(layout, bus));
     const jointAt = (list: readonly Spot[], at: Point): string | undefined => list.find(item => sameJoint(item.at, at))?.id;
@@ -1618,7 +1631,12 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       vertex(spot.id, host.cell, styleString(['ellipse'], {
         fillColor: 'none', strokeColor: 'none', points: '[]',
         ...FIXED, ...UNDELETABLE,
-      }), hung(host, relative(box, host.box)));
+      }), hung(host, relative(box, host.box), spot.side, (() => {
+        // A joint at a stub's end takes the fraction along the face of that stub's mark.
+        const stub = bus.stubs?.find(item => item.node === spot.stub);
+        const mark = stub === undefined ? undefined : markOf(stub, bus.side).mark;
+        return mark !== undefined && isAnchored(mark) && host.cell.startsWith('pg-node~') ? (spot.side === 'left' || spot.side === 'right' ? mark.fraction.y : mark.fraction.x) : undefined;
+      })()));
     }
     /** The style that pins an edge end to the centre of its joint. */
     const centred = (end: 'exit' | 'entry'): Readonly<Record<string, StyleValue>> =>
@@ -1630,11 +1648,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // A stub starts on its port's outward face (`overlayEndpoint`, the bus producer's own point).
       const head = terminal('exit', ref, stub.from), pill = markHost(ref);
       const to = shift(stub.to);
-      const at = shift(stub.from);
-      const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
-        width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
-      // A mark on a node follows its face; the stub's start is pinned to the mark's own centre, so it stays on the mark.
-      const mark = pill ? hung(pill, relative(box, pill.box)) : box;
+      const { mark } = markOf(stub, bus.side);
+      // `head` and `pill` both come from `ref`, so on a node they name the same cell and `pinnedTo` runs. When the port has a pill,
+      // the mark is a child of the pill and absolute (not Anchored), so there is nothing to pin.
       const exit = head && pill && head.cell === pill.cell && isAnchored(mark) ? pinnedTo('exit', mark) : undefined;
       const points = [head?.at ?? shift(stub.from), to];
       const end = jointAt(mine, to);

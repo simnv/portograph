@@ -2062,6 +2062,11 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
         if (mark.parent !== id('node', stub.node)) continue;
         hung++;
         const local = { x: stub.from.x - node.x, y: stub.from.y - node.y };
+        // The joint at the stub's end takes the mark's fraction along the face, so they never skew when the node is resized.
+        const joint = all.get(edge.target!)!;
+        if (joint.parent === mark.parent) {
+          expect(joint.geometry['x'], joint.id).toBe(mark.geometry['x']);
+        }
         for (const grow of [{ dw: 0, dh: 0 }, ...RESIZES]) {
           const size = { width: node.width + grow.dw, height: node.height + grow.dh };
           expect(mark.geometry['relative'], mark.id).toBe('1');
@@ -2090,6 +2095,24 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
     expect(hung).toBeGreaterThan(0);
     expect(joints).toBeGreaterThan(0);
     expect(canvas).toBeDefined();
+  }, 60000);
+
+  it('pins a joint to its mark\'s fraction even when it lies off the mark by more than EPS (ticket 17)', async () => {
+    const model = structuredClone(await pipeline(fixture('drawio-bus-marks-stay-on-face')));
+    // Slant every stub end 3 px to the side, so no joint lies on the centre line of its mark.
+    for (const bus of model.meshBuses ?? []) for (const stub of bus.stubs ?? []) (stub as { to: Point }).to = { x: stub.to.x + 3, y: stub.to.y };
+    const all = cells(drawio(model));
+    let checked = 0;
+    for (const bus of model.meshBuses ?? []) {
+      for (const stub of bus.stubs ?? []) {
+        const mark = all.get(id('busMark', bus.id, stub.node))!, joint = all.get(all.get(id('busStub', bus.id, stub.node))!.target!)!;
+        if (mark.parent !== id('node', stub.node) || joint.parent !== mark.parent) continue;
+        checked++;
+        expect(Math.abs(stub.to.x - stub.from.x)).toBeGreaterThan(CENTRE_EPS);
+        expect(joint.geometry['x'], joint.id).toBe(mark.geometry['x']);
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   }, 60000);
 
   it('reaches both a centred pill and an off-centre pill in the resize fixture', async () => {
