@@ -1,0 +1,24 @@
+# Expected: Two routed links between `u` (tier 0) and `v` (tier 2), one written each way, cross the middle tier, which holds the most nodes and so is the
+# anchor tier. Both ends stand one tier from the anchor, so `v` (its face of the pair is `top`) is the held node. Stage 5 orders both faces of the pair by
+# one key per link, the x at `v` (decision review ticket 17). 7a reserves the two lanes on the left margin of `middle` inner lane first, so the lane of the
+# left port stands outside the lane of the right port (decision review ticket 23): the two links drop straight and do not cross. Every gate passes as
+# written, with `links` reversed and with `nodes` reversed. On main before ticket 23 G5 failed in every input order, with 4 bends and 2 crossings (1 with
+# `nodes` reversed): the lanes nested the wrong way round. Test-only input; test/layout/lane-nesting.test.ts reads it.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  middle: { tier: 1 }
+  lower: { tier: 2 }
+nodes:
+  u: { group: upper, class: router }
+  m1: { group: middle, class: server }
+  m2: { group: middle, class: server }
+  m3: { group: middle, class: server }
+  v: { group: lower, class: switch }
+  w: { group: lower, class: switch }
+links:
+  - [u, v, { class: physical, route: orthogonal }]
+  - [v, u, { class: physical, route: orthogonal }]
+  - [u, m3, { class: physical, route: orthogonal }]
+  - [m1, w, { class: physical, route: orthogonal }]

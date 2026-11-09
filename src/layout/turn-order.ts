@@ -5,6 +5,7 @@ import { portId } from './skeleton-graph.js';
 import { COURSE_STEM, endMode } from './course-rows.js';
 import { laneSource } from './lanes.js';
 import { farCoordinate } from './peers.js';
+import { pairedFaceKey } from './parallel-sets.js';
 import { bypassRowY } from './course-bypass.js';
 import { busOfPort } from './bus.js';
 import { groupShape } from './grid.js';
@@ -281,7 +282,7 @@ export function turnScope(model: LayoutModel, node: string, side: Side): boolean
 const linksAtPort = (model: LayoutModel, ref: PortRef): LayoutLink[] => model.links.filter(link => [link.attachments?.from, link.attachments?.to].some(end => end !== undefined && portId(end) === portId(ref)));
 
 /**
- * The order the turn order gives one face of the model (Section 4): the same sort as stage 5, over the planned turns that stand now (courses, side lanes and, once 7a has
+ * The order the turn order gives one face of the model (Section 4): the same sort as stage 5 (a facing pair by its shared key, `pairedFaceKey`), over the planned turns that stand now (courses, side lanes and, once 7a has
  * reserved them, transit lanes). Authored order wins, the bus port stands last. `undefined` when the face is not the turn order's to place in 7a: it is out of the run's
  * scope, a bundle member, a bar or an unplaced port is on it, no transit lane fixes a turn on it, or the position of one of its ports is reserved by something else (a
  * course of any kind, a side or gap lane, a span chord): stage 5 placed those, and 7a leaves the face as it is.
@@ -297,7 +298,9 @@ export function laneFaceOrder(model: LayoutModel, node: string, side: Side): Lay
   const planned = plannedTurns(model);
   if (ports.some(reserved) || !ports.some(port => planned.has(portId(port.ref)))) return undefined;
   const isBus = (port: LayoutPort): number => (busOfPort(model, port.ref) !== undefined ? 1 : 0);
-  const slots = new Map(ports.map(port => [port, { far: farCoordinate(model, port.ref, side), ...(planned.get(portId(port.ref)) ?? {}) } as TurnPort] as const));
+  // Stage 5's face key: a facing pair's shared key, else the far coordinate (`pairedFaceKey`, R1).
+  const faceKey = pairedFaceKey(model, (ref, at) => farCoordinate(model, ref, at), ref => findPort(model, ref)?.side);
+  const slots = new Map(ports.map(port => [port, { far: faceKey(port.ref, side), ...(planned.get(portId(port.ref)) ?? {}) } as TurnPort] as const));
   const by = turnOrder([...slots.values()]);
   const current = [...ports].sort((a, b) => a.engineOrder! - b.engineOrder!);
   const sorted = [...current].sort((a, b) => isBus(a) - isBus(b) || by(slots.get(a)!, slots.get(b)!));
