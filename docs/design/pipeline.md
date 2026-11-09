@@ -575,8 +575,8 @@ order. Now every port of the pair, on both faces, sorts by the coordinate of its
 ports of each face sort against it. The held node is the end 7c keeps where it stands: the end nearer the anchor tier (`laneSource`'s rule), and on a tie
 the node whose face of the pair is `top` or `left`. One key per link gives one order at both ends; content decides the held node, not link order or
 direction (R3). `faceSortKey` is the one reader of the face key, for stage 5 and for the stage-4 prediction of its order (`overlay-order.ts`, R1).
-What this does not hold: 7a sorts transit lanes by their `laneSource` x and stands each later lane farther out, so two lanes of a pair on the left margin
-of a group nest opposite to both faces and cross (`an-allocated-run-ends-on-the-tip-of-a-lone-port` as written).
+`facingPairs` is the one reader of which links form a pair and which node is held, for stage 5 and for 7a, which nests the pair's lanes in this order
+(decision review ticket 23, § 7a).
 
 Stage 5 also produces measured node and description labels, icon bounds, named pills and exact
 port-associated pill labels. Centre content inside its asymmetric content insets. Anonymous ports
@@ -896,6 +896,17 @@ test reads, so it neither takes a slot nor stops the side from nesting.
 
 A gap does not grow for a nested stem, and neither does a band: the label band's clearance reads
 only the entry points on its own side, and the side that carries the title never nests.
+
+**The lanes of a facing pair nest in the order of its faces** (decision review ticket 23, `nestFacingPairs`). 7a reserves the transit lanes in source
+order (the alignment end's x, then the far end's x, then `sourceIndex`), and each lane stands beside the lanes reserved before it in its tier, so a later
+lane of one margin stands farther out. On a right margin the outer port then gets the outer lane. On a left margin the order is the wrong way round: the lane
+of the left port stands inside the lane of the right port, and the two lanes cross where they leave the faces and again where they enter them. Stage 5 has
+ordered both faces of a facing pair (§ 5) by one key per link, the x at the held node, and the port anchors at that node are the record of that order. So
+the links of one pair keep the slots the source order gives them and fill them inner lane first: on the left side of the group the larger x at the held
+node first, on the right side the smaller. The side is the one 7a takes (`corridorSide`, or the side stage 4 reserved), read on the occupied box of the
+group nearest the source in the transited tier next to the held node, before any lane stands. A pair whose links would take two sides or two groups, and
+every link of no pair, keep the source order. The rule is limited to facing pairs because only there are both ends ordered by one decision: put in the
+source order of every link, the same nesting moved 20 sheets and made 5 worse (bends, crossings, a G6), branch `dr-23-lane-nesting`, attempt 1.
 
 A link transiting several tiers reserves a lane at each, ordered from source to target even for
 upward links. Prefer in-span corridors. When they do not fit, retain source geometry, reserve an

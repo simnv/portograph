@@ -27,6 +27,7 @@ import { corridorSideOf, corridorStandsOn } from './reservations.js';
 import { nodeTier, transitTiers } from './read/tier.js';
 import { isSpanLane, replaySpanLane, spanCorridor, spanLaneId, SpanRefusal, SpanReservationRefusal } from './span-lanes.js';
 import { orderPortsByLanes } from './turn-order.js';
+import { facingPairs } from './parallel-sets.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkRing } from './trunk.js';
 import { PlacementRefusal } from './placement-refusal.js';
 
@@ -1024,6 +1025,40 @@ export function corridorReader(model: LayoutModel): { farEnd: (link: LayoutLink)
   return { farEnd, target };
 }
 
+/**
+ * The allocation order of the transit lanes with every facing pair nested (decision review ticket 23). `sorted` is the source order; each lane is reserved
+ * beside the lanes before it in its tier, so a later lane of one margin stands farther out. On a right margin the source order puts the outer lane last,
+ * but on a left margin it puts the lane of the leftmost source innermost, and two lanes of a pair then cross each other on both faces. Stage 5 ordered both
+ * faces of a facing pair by one key per link, the x at the held node (`facingPairs`, `facingPairKeys`); the port anchors at that node are the record of
+ * that order, and 7a reads them, not its own key (R1). The links of a pair whose lanes, in the transited tier next to the held node, pass one side of one
+ * group (`corridorSide`, the side 7a takes, read on the occupied box before any lane) keep their slots in `sorted` and fill them inner lane first: on the left side the larger x at the
+ * held node first, on the right side the smaller. Their lanes then stand in the faces' order, outer lane for the outer port. Links of no pair, and a pair
+ * whose lanes take two sides or two groups, keep the source order. Ties keep `sorted` (a stable sort; its last key is `sourceIndex`).
+ */
+function nestFacingPairs(model: LayoutModel, sorted: LayoutLink[], targetX: (link: LayoutLink, tier: number) => number | undefined): LayoutLink[] {
+  const result = [...sorted], slot = new Map(sorted.map((link, index) => [link.id, index]));
+  for (const pair of facingPairs(model, ref => findPort(model, ref)?.side)) {
+    const members = pair.links.filter(link => slot.has(link.id));
+    if (members.length < 2) continue;
+    const heldX = (link: LayoutLink): number => findPort(model, link.attachments!.from.node === pair.held ? link.attachments!.from : link.attachments!.to)!.anchor!.x;
+    const margins = members.map(link => {
+      // The transited tier next to the held node: the authored direction does not decide which (R3).
+      const near = nodeTier(model, pair.held), tier = [...transitTiers(model, link)].sort((a, b) => Math.abs(a - near) - Math.abs(b - near) || a - b)[0]!;
+      const sx = findPort(model, laneSource(model, link))!.anchor!.x;
+      const reserved = corridorSideOf(model.reservations, link.id, tier);
+      const main = Object.values(model.groups).filter(group => group.tier === tier && !group.flank);
+      const host = (reserved === undefined ? undefined : model.groups[reserved.group]) ?? transitedCore(main, sx);
+      return host?.bounds === undefined ? undefined : { host: host.id, side: reserved?.side ?? corridorSide(occupied(model, host, link, []), sx, targetX(link, tier)) };
+    });
+    const first = margins[0];
+    if (first === undefined || margins.some(item => item?.host !== first.host || item.side !== first.side)) continue;
+    const sign = first.side === 'left' ? -1 : 1;
+    const slots = members.map(link => slot.get(link.id)!).sort((a, b) => a - b);
+    const nested = [...members].sort((a, b) => sign * (heldX(a) - heldX(b)) || slot.get(a.id)! - slot.get(b.id)!);
+    slots.forEach((at, index) => { result[at] = nested[index]!; });
+  }
+  return result;
+}
 /** Allocate all corridors before publishing x. Intermediate occupied margins may translate horizontally. */
 export function allocateLanes(model: LayoutModel): void {
   if (model.lanes.length || model.links.some(link => link.fixedSegments)) throw new Error('Lanes can be allocated only once');
@@ -1038,7 +1073,8 @@ export function allocateLanes(model: LayoutModel): void {
   }]));
   // Retain the source-side order through every intermediate tier, including same-node bundles.
   // Links sharing one alignment-end anchor follow their far ends' x, so the lanes of a fan from one
-  // port keep the children's row order and 7c can align every child under its own lane.
+  // port keep the children's row order and 7c can align every child under its own lane. The links of
+  // a facing pair then fill their slots inner lane first (`nestFacingPairs`, decision review ticket 23).
   const corridors = corridorReader(model);
   const farEnd = corridors.farEnd;
   const farX = (link: LayoutLink) => findPort(model, farEnd(link))!.anchor!.x;
@@ -1047,8 +1083,8 @@ export function allocateLanes(model: LayoutModel): void {
     const far = corridors.target(link, tier);
     return far === undefined ? undefined : findPort(model, far)!.anchor!.x;
   };
-  const links = model.links.filter(link => ownsTransitLanes(model, link)).sort((a, b) =>
-    findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex);
+  const links = nestFacingPairs(model, model.links.filter(link => ownsTransitLanes(model, link)).sort((a, b) =>
+    findPort(model, laneSource(model, a))!.anchor!.x - findPort(model, laneSource(model, b))!.anchor!.x || farX(a) - farX(b) || a.sourceIndex - b.sourceIndex), targetX);
   // The alignment-end groups stay, and so does every group the lane stage's guard holds (`heldSourceGroups`): a link with a course
   // or a spanning chord owns no lane here, but its source group may not move either (ticket 17 found a plan that moved one).
   const fixedSources = fixedSourceGroups(model);

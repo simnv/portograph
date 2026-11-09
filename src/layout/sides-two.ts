@@ -839,9 +839,7 @@ export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, rea
  */
 export function faceSortKey(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>,
   sideOf: (port: LayoutPort | undefined) => Side | undefined = port => port?.side): (ref: PortRef, side: Side) => number {
-  const inSet = new Set(parallelSets(model).flatMap(set => set.links.map(link => link.id)));
-  const facing = facingPairKeys(model, (ref, side) => farCoordinate(model, peers, ref, side), ref => (peers.get(key(ref)) ?? []).length, inSet,
-    ref => sideOf(findPort(model, ref)));
+  const facing = facingPairKeys(model, (ref, side) => farCoordinate(model, peers, ref, side), ref => sideOf(findPort(model, ref)));
   return (ref, side) => facing.get(key(ref)) ?? farCoordinate(model, peers, ref, side);
 }
 /** The keys of every mesh-bus port (`busOfPort` answers a bus for exactly these). A caller that sorts many faces reads it once. */

@@ -50,7 +50,7 @@ export function routedLinksAt(model: LayoutModel): Map<string, LayoutLink[]> {
 
 const allPeerCache = new WeakMap<LayoutModel['links'], Map<string, PortRef[]>>();
 /** Every peer of every port over all links, as stage 5 reads them (a link from a port to itself counts once). */
-function allPeers(model: LayoutModel): Map<string, PortRef[]> {
+export function allPeers(model: LayoutModel): Map<string, PortRef[]> {
   const cached = allPeerCache.get(model.links);
   if (cached) return cached;
   const index = new Map<string, PortRef[]>();
