@@ -136,6 +136,21 @@ export function laneSidesHold(model: LayoutModel, proposed: ProposedBox[], repor
   }) && (!frames || sideLaneFramesHold(model, proposed));
 }
 /**
+ * The right edge `group`'s box may reach, moved as a whole, before `laneSidesHold` refuses it: for each lane wall right of it
+ * (`laneWallsBeside`, an aligned perimeter lane of another tier included), the wall less the occupied reach the guard measures toward that
+ * lane (`occupiedAt` with the lane's link), the nearest of them. Infinite with no such wall. One reading with the guard (R1): the centre
+ * rule's tail reserves this edge (ticket DR-04).
+ */
+export function rightWallReach(model: LayoutModel, group: LayoutGroup): number {
+  let reach = Infinity;
+  for (const lane of laneWallsBeside(model, group)) {
+    if (group.bounds!.x >= lane.x) continue;
+    const box = occupiedAt(model, group, group.bounds!, laneLink(model, lane));
+    reach = Math.min(reach, lane.bounds.x - (right(box) - right(group.bounds!)));
+  }
+  return reach;
+}
+/**
  * The lanes that keep the side of `group`: every lane that is a wall beside its sub-tier (`wallBeside`), but a bypass stem in the group's own gaps. One
  * reader for the move guard (`laneSidesHold`) and for the windows the centre rule reserves before it moves (`centreContext`), so a step never takes room
  * that the guard then forbids the group after it to give back (ticket DR-04: an aligned perimeter lane of another tier walled a group the window left free).

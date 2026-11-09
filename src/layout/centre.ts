@@ -3,7 +3,7 @@ import { portEndInsets } from './port-insets.js';
 import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { laneSidesHold, laneWallsBeside, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, rightWallReach, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { holdsMove, resizeEvidence, resizeHolds } from './move-reservations.js';
 import { cellReach } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
@@ -392,13 +392,12 @@ function columnWindow(model: LayoutModel, context: CentreContext, tier: number, 
  * overlap at stage 8.
  */
 /**
- * The right edge a later group may reach before the move guard (`laneSidesHold`) refuses to clear it: the nearest lane wall right of it that the guard
- * reads (`laneWallsBeside`, an aligned perimeter lane of another tier included), less the reach of its occupied box. Infinite with no such wall. The
- * tail reads it so that a step never takes room `packClear` cannot give back (ticket DR-04: two sibling boxes overlapped at publication).
+ * The right edge a later group may reach before the move guard (`laneSidesHold`) refuses to clear it (`rightWallReach`: per lane wall, with the
+ * occupied reach the guard measures toward that lane). The tail reads it so that a step never takes room `packClear` cannot give back (ticket DR-04:
+ * two sibling boxes overlapped at publication).
  */
 function guardWall(model: LayoutModel, id: string): number {
-  const group = model.groups[id]!, walls = laneWallsBeside(model, group).filter(lane => lane.x > group.bounds!.x).map(lane => lane.bounds.x);
-  return walls.length ? Math.min(...walls) - occupiedOverhang(model, group).right : Infinity;
+  return rightWallReach(model, model.groups[id]!);
 }
 function tailReservation(model: LayoutModel, context: CentreContext, tier: number, order: string[]): Map<string, number> {
   const result = new Map<string, number>();
