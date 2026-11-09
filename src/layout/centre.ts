@@ -1422,7 +1422,9 @@ function openLinks(model: LayoutModel): string[] {
   let found: string[];
   try { found = publishedCentreViolations(model, true); } finally { if (sink !== undefined) verdictTap.sink = sink; }
   const links = new Set<string>();
-  for (const item of found) { const link = centreItemLink(model, item); if (link !== undefined) links.add(link); }
+  // The publication (`ahead` off) excuses a held cross chord; the producer form read here does not, so the same excuse is applied.
+  const crossChord = (id: string): boolean => withSharedLinkKinds(() => { const link = model.links.find(item => item.id === id); return link !== undefined && isRoutedChord(model, link) && chordKind(model, link) === 'cross'; });
+  for (const item of found) { const link = centreItemLink(model, item); if (link !== undefined && !crossChord(link)) links.add(link); }
   return [...links];
 }
 /**
@@ -1450,9 +1452,11 @@ function reportStall(model: LayoutModel, unresolved: string[], message = 'Center
  * publication runs, run here, says so, so that a model never publishes an unexplained centring violation (ticket 75).
  */
 export function flagUnverifiedCentring(model: LayoutModel): void {
-  if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) {
-    if (centreViolations(model, true).length > 0) reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.');
-  } else recordOpen(model, false);
+  // Only the centre step's own record arms the naming; a placement non-convergence of another emitter does not (DR-15, R5).
+  if (model.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) recordOpen(model, false);
+  else if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model, true).length > 0) {
+    reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.');
+  }
 }
 /**
  * The end of 7f (DR-15). Where the centre step has recorded a stall, the end trim and the moves after it may open other links; the record is

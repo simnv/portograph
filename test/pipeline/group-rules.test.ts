@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { centre, flanks, lanes, restoreLayoutModel, rows } from '../../src/internal.js';
 import type { Diagnostic, LayoutModel } from '../../src/index.js';
-import { nameOpenCentring } from '../../src/layout/centre.js';
+import { flagUnverifiedCentring, nameOpenCentring } from '../../src/layout/centre.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../../src/theme/geometry.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
@@ -86,6 +86,13 @@ links: [[a.p, b.p, {route: orthogonal}]]`)))));
   nameOpenCentring(opened);
   expect(opened.diagnostics.map(d => d.code)).not.toContain('CENTRE_ALIGNMENT_OPEN');
   expect(() => restoreLayoutModel(JSON.stringify(opened))).toThrow(/Centring invariant violated/);
+  // A placement non-convergence of another emitter (sides-two, cantons, label room) arms nothing: no record, so restore refuses the open link.
+  const foreign = JSON.parse(JSON.stringify(forged)) as LayoutModel;
+  foreign.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE', message: 'The cantons did not settle', owners: [] });
+  flagUnverifiedCentring(foreign);
+  nameOpenCentring(foreign);
+  expect(foreign.diagnostics.map(d => d.code)).not.toContain('CENTRE_ALIGNMENT_OPEN');
+  expect(() => restoreLayoutModel(JSON.stringify(foreign))).toThrow(/Centring invariant violated/);
   // With the stall recorded, the end of 7f sets the owners to exactly the links the publication flags.
   const recorded0 = note({ owners: [{ kind: 'link', id: 'link-9' }] });
   nameOpenCentring(recorded0);
