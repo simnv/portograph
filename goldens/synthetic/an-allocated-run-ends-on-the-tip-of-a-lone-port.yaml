@@ -5,6 +5,8 @@
 # tip band and its run is left to the router). The port row lies closer than one stem to the gap, so the seated run
 # ends on the stem tip, not at the gap boundary, and the router meets its checkpoint on the path (ticket 14, rule A).
 # Test-only input owned by ranked-groups ticket 14; test/pipeline/allocated-run-beyond-stem.test.ts reads the layout.
+# The two router-switch links, one written each way, leave facing faces: stage 5 orders both faces of the pair from one key per link (decision review
+# ticket 17); test/layout/facing-pair-order.test.ts reads the order in every input order. As written, 7a still nests their two lanes opposite to the faces.
 portograph: 2
 profile: network
 groups:

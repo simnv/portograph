@@ -1,7 +1,7 @@
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
-import { busPortKeys, farCoordinate, lanePitchFloors, portPeers, seatAuthored, sortFace } from './sides-two.js';
+import { busPortKeys, faceSortKey, lanePitchFloors, portPeers, seatAuthored, sortFace } from './sides-two.js';
 import { groupShape } from './grid.js';
 import { corridorReader, corridorSide, corridorXOnSide, directPlan, fixedSourceGroups, laneSource, laneWidth, ownsTransitLanes, reservedCorridorX, selectAnchorTier, transitedCore, transitTiers } from './lanes.js';
 import { crosses } from './overlay-paths.js';
@@ -71,7 +71,7 @@ export function readDraft(model: LayoutModel) {
    * What one measurement reads again and again on one geometry: the groups of each sub-tier left to right, and the predicted x of each
    * port. `measureRange` empties it, because a candidate moves the geometry between two measurements.
    */
-  const memo = { groups: new Map<number, LayoutGroup[]>(), port: new Map<string, number>() };
+  const memo: { groups: Map<number, LayoutGroup[]>; port: Map<string, number>; key?: (ref: PortRef, side: Side) => number } = { groups: new Map(), port: new Map() };
   const groupsAt = (tier: number): LayoutGroup[] => {
     let list = memo.groups.get(tier);
     if (list === undefined) {
@@ -84,7 +84,7 @@ export function readDraft(model: LayoutModel) {
   /**
    * The x a port on a top or bottom face is predicted to hold (ticket 17 and its follow-up). The draft has no final port x yet: `sides-two`
    * centres the ports of a face over the node at the face's pitch, in its provisional engine order, and gives the face of an alignment
-   * end at least the lane width as pitch. This reads that order with the same functions (`farCoordinate`, `sortFace`, `seatAuthored`,
+   * end at least the lane width as pitch. This reads that order with the same functions (`faceSortKey`, `sortFace`, `seatAuthored`,
    * `lanePitchFloors`; R1) on the draft, without the planned first turns (stage 5 plans them later) and without a bundle's pitch. A port is on
    * the face of its side, else of its sizing side (`sideOf`, as stage 3 reads it); one whose side is not `top` or `bottom` is read at its
    * node centre. Links that share a node meet at their own ports, not at one centre:
@@ -100,7 +100,9 @@ export function readDraft(model: LayoutModel) {
     }
     // The whole face at once: one order gives the x of each of its ports.
     const ports = node.ports.filter(port => sideOf(port) === side);
-    const face = seatAuthored(sortFace(model, ports, new Map(ports.map(port => [port, { far: farCoordinate(model, peers, port.ref, side) }])), buses));
+    // The stage-5 face key (`faceSortKey`: a facing pair's shared key, else the far coordinate), on this geometry.
+    const faceKey = memo.key ??= faceSortKey(model, peers, sideOf);
+    const face = seatAuthored(sortFace(model, ports, new Map(ports.map(port => [port, { far: faceKey(port.ref, side) }])), buses));
     const pitch = Math.max(node.sidePitch?.[side] ?? 0, floors.get(`${ref.node}\u0000${side}`)?.width ?? 0);
     face.forEach((port, at) => memo.port.set(portId(port.ref), centre(ref.node) + (at - (face.length - 1) / 2) * pitch));
     return memo.port.get(id)!;
@@ -231,7 +233,7 @@ export function readDraft(model: LayoutModel) {
    * and also counts `blocked`: the routed links inside one sub-tier with a body between their ends.
    */
   const measureRange = (low: number, high: number, aligned = false, crossOnly = false): { crossings: number; straight: number; blocked: number } => {
-    memo.groups.clear(); memo.port.clear();
+    memo.groups.clear(); memo.port.clear(); delete memo.key;
     let crossings = 0;
     for (let a = low - 1; a <= high; a++) if (a >= 0 && a + 1 < tiers.length) crossings += regionCrossings(a, a + 1);
     const boxes = bodies(), rows = aligned ? rowBoxes() : undefined;

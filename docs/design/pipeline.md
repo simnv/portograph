@@ -568,6 +568,16 @@ overlay port of such a set where stage 5 put it. What this does not hold: which 
 authored direction of the links (stage 4 gives ELK each edge in its authored direction); two overlay links between one pair, and two routed links without a bundle, are no set
 (as sets they changed 8 older sheets and made 2 worse) and can still cross (`an-overlay-frame-reorder-is-refused-with-six-sync-links`).
 
+**A facing pair is ordered once, from both ends** (decision review ticket 17, `facingPairKeys`, `parallel-sets.ts`). A facing pair is two or more routed
+links between one node pair, outside every parallel set, whose ends leave facing faces, each end on a port with one peer. Each face sorted by the other
+face's draft slots, so where the stage-4 draft crossed two links of the pair both faces flipped and disagreed, and G5 failed on one face in every input
+order. Now every port of the pair, on both faces, sorts by the coordinate of its link's end at the **held node**, read before any face is sorted; the other
+ports of each face sort against it. The held node is the end 7c keeps where it stands: the end nearer the anchor tier (`laneSource`'s rule), and on a tie
+the node whose face of the pair is `top` or `left`. One key per link gives one order at both ends; content decides the held node, not link order or
+direction (R3). `faceSortKey` is the one reader of the face key, for stage 5 and for the stage-4 prediction of its order (`overlay-order.ts`, R1).
+What this does not hold: 7a sorts transit lanes by their `laneSource` x and stands each later lane farther out, so two lanes of a pair on the left margin
+of a group nest opposite to both faces and cross (`an-allocated-run-ends-on-the-tip-of-a-lone-port` as written).
+
 Stage 5 also produces measured node and description labels, icon bounds, named pills and exact
 port-associated pill labels. Centre content inside its asymmetric content insets. Anonymous ports
 receive anchors only. `rebuildNodeGeometry(draft, ids, 'current')` lets later rules retain their

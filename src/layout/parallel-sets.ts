@@ -1,6 +1,10 @@
+import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { findPort } from './row-paths.js';
+import { portId } from './skeleton-graph.js';
+import { selectAnchorTier } from './lanes.js';
+import { nodeTierIfAny } from './read/tier.js';
 
 /** Two or more links between one pair of nodes whose ends share one face at each node: one set, one side order at both ends. */
 export interface ParallelSet {
@@ -70,4 +74,48 @@ export function visitOrder(model: LayoutModel, base: readonly string[], sets: re
     done.add(next); result.push(next);
   }
   return result;
+}
+
+/**
+ * The shared sort key of the links of a facing pair (decision review ticket 17). A facing pair is two or more routed links between one node pair whose ends
+ * leave facing faces (top with bottom, left with right), each end on a port with one peer, with no link of a parallel set (`inSet`: a set orders itself).
+ * Stage 5 sorts a face by the far ends' provisional anchors, so the two faces of a pair read each other's draft slots: where the stage-4 draft crosses two
+ * links of the pair, both faces flip, and the two faces disagree whatever lane order follows (G5 fails on one face). So the pair is ordered once, from
+ * both ends: every port of the pair, on both faces, takes the coordinate of its link's end at the held node (`far`, the face sort's own reader, read
+ * from the other end), and the other ports of each face sort against that. The held node is the end 7c keeps where it stands: the end nearer the anchor
+ * tier (`laneSource`'s rule); on a tie, the node whose face of the pair is `top` or `left` (the lower or the right node). Content only (R3): no link
+ * order and no authored direction decides it. Both faces read one key per link, so the pair keeps one order at both ends; equal keys keep the face
+ * sort's own tie order. `sideOf` reads a port's side: the final side at stage 5, the sizing estimate in the stage-4 prediction (`overlay-order.ts`).
+ */
+export function facingPairKeys(model: LayoutModel, far: (ref: PortRef, side: Side) => number, peerCount: (ref: PortRef) => number,
+  inSet: ReadonlySet<string>, sideOf: (ref: PortRef) => Side | undefined): Map<string, number> {
+  const groups = new Map<string, LayoutLink[]>();
+  for (const link of model.links) {
+    const ends = link.attachments;
+    if (ends === undefined || ends.from.node === ends.to.node || inSet.has(link.id) || link.technique === 'overlay' || link.meshBus !== undefined) continue;
+    const from = sideOf(ends.from), to = sideOf(ends.to);
+    if (from === undefined || to === undefined || FACING[from] !== to || peerCount(ends.from) !== 1 || peerCount(ends.to) !== 1) continue;
+    const forward = ends.from.node < ends.to.node;
+    const id = JSON.stringify([forward ? [ends.from.node, ends.to.node] : [ends.to.node, ends.from.node], forward ? from : to]);
+    const group = groups.get(id) ?? [];
+    group.push(link); groups.set(id, group);
+  }
+  const keys = new Map<string, number>(), anchor = selectAnchorTier(model);
+  const distance = (node: string): number => {
+    const tier = nodeTierIfAny(model, node);
+    return anchor === undefined || tier === undefined ? Infinity : Math.abs(tier - anchor);
+  };
+  for (const links of groups.values()) {
+    if (links.length < 2) continue;
+    const { from, to } = links[0]!.attachments!;
+    const near = distance(from.node) !== distance(to.node) ? (distance(from.node) < distance(to.node) ? from : to)
+      : (sideOf(from) === 'top' || sideOf(from) === 'left' ? from : to);
+    const held = near.node;
+    for (const link of links) {
+      const ends = link.attachments!, other = ends.from.node === held ? ends.to : ends.from;
+      const at = far(other, sideOf(other)!);
+      keys.set(portId(ends.from), at); keys.set(portId(ends.to), at);
+    }
+  }
+  return keys;
 }

@@ -31,7 +31,7 @@ import { routedLinksAt, unreservedPeers } from './peers.js';
 import { arrangeGroups, seatStaggerRows } from './stagger.js';
 import { reserveColumns, seatColumn } from './column-arrangement.js';
 import { ofKind } from './reservations.js';
-import { parallelSets, visitOrder, type ParallelSet } from './parallel-sets.js';
+import { facingPairKeys, parallelSets, visitOrder, type ParallelSet } from './parallel-sets.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 const key = portId;
 
@@ -832,6 +832,18 @@ export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, rea
   };
   return list.length ? list.reduce((sum, peer) => sum + coordinate(peer), 0) / list.length : Infinity;
 }
+/**
+ * The key a port of `side` is sorted by in the provisional engine order: the port's facing-pair key (`facingPairKeys`, decision review ticket 17) where it
+ * has one, else `farCoordinate`. One reader for stage 5 and for the stage-4 prediction of that order (`overlay-order.ts`, R1). Read on one geometry:
+ * the pair keys are fixed when it is called. `sideOf` reads a port's side (the final side by default).
+ */
+export function faceSortKey(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>,
+  sideOf: (port: LayoutPort | undefined) => Side | undefined = port => port?.side): (ref: PortRef, side: Side) => number {
+  const inSet = new Set(parallelSets(model).flatMap(set => set.links.map(link => link.id)));
+  const facing = facingPairKeys(model, (ref, side) => farCoordinate(model, peers, ref, side), ref => (peers.get(key(ref)) ?? []).length, inSet,
+    ref => sideOf(findPort(model, ref)));
+  return (ref, side) => facing.get(key(ref)) ?? farCoordinate(model, peers, ref, side);
+}
 /** The keys of every mesh-bus port (`busOfPort` answers a bus for exactly these). A caller that sorts many faces reads it once. */
 export function busPortKeys(model: LayoutModel): Set<string> {
   return new Set(meshBuses(model).flatMap(bus => bus.ports.map(key)));
@@ -1035,11 +1047,13 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   // The faces that a planned first turn moved (ticket 24): the order with the turns differs from the order with the overlay brackets alone.
   const turned: { node: string; side: Side }[] = [];
   const sortOrder = orderedNodeIds(model.document), buses = busPortKeys(model);
+  // A facing pair (decision review ticket 17) orders both of its faces by one key per link, read once here from the anchors before any face is sorted.
+  const faceKey = faceSortKey(model, peers);
   for (const id of visitOrder(model, [...sortOrder.filter(item => leaders.has(item)), ...sortOrder.filter(item => !leaders.has(item))], mixed, leaders)) {
     const node = model.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
       const ports = node.ports.filter(port => port.side === side);
-      const far = (ref: PortRef): number => farCoordinate(model, peers, ref, side);
+      const far = (ref: PortRef): number => faceKey(ref, side);
       // The bus port is the last port in engine order on its side, after a peerless port too (`sortFace`; an authored `order:` still wins below).
       // Two overlay courses that leave one lateral face are brackets of one margin and nest (ticket 15, P2): the lane that runs farther along its margin stands outside
       // the other, so its port stands where its run does not cross the other's. One comparator on one y scale (`turnOrder`): a routed port is not pushed past the brackets by their order.
