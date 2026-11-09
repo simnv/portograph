@@ -281,10 +281,17 @@ export interface LayoutLink {
   sharedRuns?: { from?: PathSegment[]; to?: PathSegment[] };
   stubCandidate?: boolean;
   /**
-   * Stage 8 discarded this link's route because the router skipped a required checkpoint
-   * (`ROUTE_CHECKPOINT_SKIPPED`). A removed link has no path and is not drawn; `LayoutModel.removedLinks` lists it.
+   * Stage 8 discarded this link's route: the router skipped a required checkpoint (`ROUTE_CHECKPOINT_SKIPPED`) or the stitch
+   * refused it (`ROUTE_GAP_REJECTED`). A removed link has no path and is not drawn; `LayoutModel.removedLinks` lists it.
    */
   removed?: true;
+  /**
+   * The router answer stage 8 judged unusable: the points of each routed gap of this link, in plan order (DR-14). Present exactly
+   * on a removed link; empty when the link has no routed gap and the stitch refused its planned pieces alone. Publication and
+   * restore judge it again with `tryStitch` on the placement as stage 8 received it (`preRoute`), and refuse a removal it does not
+   * reproduce. The record proves that this answer is unusable, not that the router had to give it.
+   */
+  rejectedRoute?: { connector: string; points: Point[] }[];
   /**
    * The face of the named pill that one end of this link meets, when it differs from the port's side (architecture ticket 15,
    * Section 1). Present only on a shared named port and only on a tangential face: a lateral port takes `top` or `bottom`, a top or
@@ -363,6 +370,16 @@ export interface Bundle extends OwnedElement {
   /** Swept channel rectangles; consumers prefer these over the union for bent channels. */
   envelopeParts?: Rect[];
   inversions?: number;
+  /**
+   * The shape placement chose for an inverted facing bundle without lanes (7e, `prepareBundleGeometry`; ADR-0017, ticket DR-16):
+   * `true`, each member draws stem, one diagonal, stem, and placement reserved only that depth; `false`, the members draw the
+   * orthogonal staircase in the staircase depth. Absent when the question does not arise: no strict inversion, the ends do not
+   * face, a member has a lane, or the bundles stage has not run. Between the reservation and the paths of one 7e pass it is also
+   * absent on a fanned bundle: placement reserved the staircase depth, and `rebuildBundlePaths` decides the shape on the fan-leaf
+   * channel and records it. Restore reads it and never decides again (R1); a stored `true` whose channel does not hold the
+   * member pitch refuses (`BUNDLE_CROSSOVER_CAPACITY`).
+   */
+  straight?: boolean;
   /**
    * The end the seat of a block along x (7e, `prepareBundleGeometry`) lined the block up from: the node whose first port stands
    * farthest along the tier, so the other end grows to it and follows it (architecture-2 ticket 74). The column pull reads it: a column

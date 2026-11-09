@@ -124,10 +124,12 @@ export async function route(model: LayoutModel, options: RouteOptions = {}): Pro
   const { paths, rejections } = stitchPaths(model, plan, answer.routes, answer.stitched, options.ordinaryOverlay === true);
   return withLayoutMutation(model, 'route', draft => {
     for (const { link, path } of paths) draft.links.find(item => item.id === link)!.path = path;
-    // A removed link keeps no path and is listed; one warning names the link and why its route was unusable.
+    // A removed link keeps no path and is listed; one warning names the link and why its route was unusable. The answer judged
+    // is stored (`rejectedRoute`), so publication and restore judge it again and refuse a removal they do not reproduce (DR-14).
     for (const item of rejections) {
       const link = draft.links.find(candidate => candidate.id === item.link)!;
       link.removed = true;
+      link.rejectedRoute = item.answer;
       draft.diagnostics.push({ stage: 'final-geometry', severity: 'warning', code: item.code,
         message: rejectionMessage(link.id, item), owners: [{ ...link.owner }] });
     }

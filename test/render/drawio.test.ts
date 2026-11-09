@@ -2051,6 +2051,70 @@ describe('a pill stays on its face when its node is resized (drawio-export 07)',
     expect(cell.offset!.x).toBeCloseTo(-pill.width / 2, 9);
   }, 60000);
 
+  it('keeps each bus mark and joint on a node on its face when the node is resized, and each stub start on its mark (ticket 17)', async () => {
+    const model = await pipeline(fixture('drawio-bus-marks-stay-on-face'));
+    const all = cells(drawio(model)), canvas = model.canvas!;
+    let hung = 0, joints = 0;
+    for (const bus of model.meshBuses ?? []) {
+      for (const stub of bus.stubs ?? []) {
+        const mark = all.get(id('busMark', bus.id, stub.node))!, edge = all.get(id('busStub', bus.id, stub.node))!;
+        const node = model.nodes[stub.node]!.bounds!;
+        if (mark.parent !== id('node', stub.node)) continue;
+        hung++;
+        const local = { x: stub.from.x - node.x, y: stub.from.y - node.y };
+        // The joint at the stub's end takes the mark's fraction along the face, so they never skew when the node is resized.
+        const joint = all.get(edge.target!)!;
+        if (joint.parent === mark.parent) {
+          expect(joint.geometry['x'], joint.id).toBe(mark.geometry['x']);
+        }
+        for (const grow of [{ dw: 0, dh: 0 }, ...RESIZES]) {
+          const size = { width: node.width + grow.dw, height: node.height + grow.dh };
+          expect(mark.geometry['relative'], mark.id).toBe('1');
+          // The mark's centre lies on its face; the stub's start is pinned to the same point.
+          const at = drawnIn(mark, size);
+          const exit = { x: Number(edge.style['exitX']) * size.width + Number(edge.style['exitDx']), y: Number(edge.style['exitY']) * size.height + Number(edge.style['exitDy']) };
+          expect(exit.x, edge.id).toBeCloseTo(at.x + Number(mark.geometry['width']) / 2, 6);
+          expect(exit.y, edge.id).toBeCloseTo(at.y + Number(mark.geometry['height']) / 2, 6);
+          const face = Number(mark.geometry['y']);
+          expect(face === 0 || face === 1, mark.id).toBe(true);
+          expect(at.y + Number(mark.geometry['height']) / 2, mark.id).toBeCloseTo(face * size.height, 6);
+          if (grow.dw === 0 && grow.dh === 0) {
+            // Before any edit the mark is where the layout put it.
+            expect(at.x + Number(mark.geometry['width']) / 2, mark.id).toBeCloseTo(local.x, 6);
+            expect(at.y + Number(mark.geometry['height']) / 2, mark.id).toBeCloseTo(local.y, 6);
+          }
+        }
+      }
+    }
+    for (const cell of all.values()) {
+      if (!cell.id.startsWith('pg-busJoint~') || cell.parent === undefined || !cell.parent.startsWith('pg-node~')) continue;
+      joints++;
+      expect(cell.geometry['relative'], cell.id).toBe('1');
+      expect(Number(cell.geometry['y']) === 0 || Number(cell.geometry['y']) === 1 || Number(cell.geometry['x']) === 0 || Number(cell.geometry['x']) === 1, cell.id).toBe(true);
+    }
+    expect(hung).toBeGreaterThan(0);
+    expect(joints).toBeGreaterThan(0);
+    expect(canvas).toBeDefined();
+  }, 60000);
+
+  it('pins a joint to its mark\'s fraction even when it lies off the mark by more than EPS (ticket 17)', async () => {
+    const model = structuredClone(await pipeline(fixture('drawio-bus-marks-stay-on-face')));
+    // Slant every stub end 3 px to the side, so no joint lies on the centre line of its mark.
+    for (const bus of model.meshBuses ?? []) for (const stub of bus.stubs ?? []) (stub as { to: Point }).to = { x: stub.to.x + 3, y: stub.to.y };
+    const all = cells(drawio(model));
+    let checked = 0;
+    for (const bus of model.meshBuses ?? []) {
+      for (const stub of bus.stubs ?? []) {
+        const mark = all.get(id('busMark', bus.id, stub.node))!, joint = all.get(all.get(id('busStub', bus.id, stub.node))!.target!)!;
+        if (mark.parent !== id('node', stub.node) || joint.parent !== mark.parent) continue;
+        checked++;
+        expect(Math.abs(stub.to.x - stub.from.x)).toBeGreaterThan(CENTRE_EPS);
+        expect(joint.geometry['x'], joint.id).toBe(mark.geometry['x']);
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  }, 60000);
+
   it('reaches both a centred pill and an off-centre pill in the resize fixture', async () => {
     const model = await pipeline(fixture('drawio-face-children-stay-on-resize'));
     const all = cells(drawio(model));

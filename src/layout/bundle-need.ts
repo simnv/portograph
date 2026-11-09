@@ -13,7 +13,9 @@ export const bundleTurnSpan = (turning: number, q: number): number => Math.max(0
 /**
  * The channel between the faces of a facing bundle across a tier gap, which stage 7e grows the gap to: `lead` (a merge
  * trunk's rows), the fan depth of both ends, both stems, a row per member (or the crossover of the inverted pairs) and an
- * edge margin each side. The terms are added in the order 7e always added them.
+ * edge margin each side. The terms are added in the order 7e always added them. An inverted bundle that placement
+ * decided straight (`Bundle.straight`, ADR-0017, ticket DR-16) passes `inversions` 0: its members draw stem, one
+ * diagonal, stem, and its channel is the one a bundle of the same members without inversions takes.
  */
 export const facingBundleNeed = (lead: number, members: number, q: number, inversions: number, fan: number, margin: number): number =>
   lead + fan + 2 * BUNDLE_STEM + (inversions ? 4 * q * inversions + 2 * q * (members + 1) : q * (members + 1)) + 2 * margin;

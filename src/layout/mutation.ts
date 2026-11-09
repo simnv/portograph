@@ -29,7 +29,7 @@ import { faceKey, laneFaceOrder } from './turn-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
-import { publishedCentreViolations, selectAnchorTier } from './centre.js';
+import { CENTRE_ALIGNMENT_OPEN, centreItemLink, publishedCentreViolations, selectAnchorTier } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentTargetsFault } from './alignment-targets.js';
 import { givenBackFault } from './given-back.js';
 import { checkBodyTrims } from './end-trim.js';
@@ -41,7 +41,7 @@ import { moveBands } from './gap-room.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
-import { validateRoutedPaths } from '../route/validate.js';
+import { stageNineLabel, validateRoutedPaths } from '../route/validate.js';
 import { placementAttempt, type AttemptTraceEvent } from './placement-attempt.js';
 import { judgePostconditions } from './postconditions.js';
 import { columnOf } from './read/arrangement.js';
@@ -370,7 +370,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
       // A spent shared budget is producer state geometry cannot witness (ADR-0010). A model that
       // reports it keeps its last state and is judged by the final gates; the unverified alignments
       // are recorded on it. Every other model must hold the invariant exactly.
-      if (!diagnosed(model)) throw new PlacementRefusal('centring', `Centring invariant violated: ${centring.join('; ')}`, { stage: model.stage });
+      if (!diagnosed(model, centring)) throw new PlacementRefusal('centring', `Centring invariant violated: ${centring.join('; ')}`, { stage: model.stage });
       const message = `Centring invariant unverified after a spent budget: ${centring.join('; ')}`;
       if (!model.diagnostics.some(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED' && d.message === message)) {
         model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_INVARIANT_UNVERIFIED', message });
@@ -648,8 +648,14 @@ const permissions: Record<PlacementRule, { move: boolean; reorder: boolean }> = 
   route: { move: false, reorder: false }, 'link-labels': { move: false, reorder: false },
   validate: { move: false, reorder: false }, emit: { move: false, reorder: false },
 };
-function diagnosed(model: LayoutModel): boolean {
-  return model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE');
+/**
+ * Whether the stored placement diagnostics excuse every centring item (DR-15, R5). An item is excused only for a link that the centre emitter's
+ * `CENTRE_ALIGNMENT_OPEN` record, at the placement stage, names in its owners. No other code excuses an item, and the message text is never read.
+ */
+function diagnosed(model: LayoutModel, items: readonly string[]): boolean {
+  const named = new Set(model.diagnostics.filter(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)
+    .flatMap(d => (d.owners ?? []).flatMap(o => o.kind === 'link' ? [o.id] : [])));
+  return items.every(item => { const link = centreItemLink(model, item); return link !== undefined && named.has(link); });
 }
 function claims(model: LayoutModel) {
   return { links: model.links, lanes: model.lanes, bundles: model.bundles, junctions: model.junctions,
@@ -675,11 +681,11 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
       || (link.fixedSegments !== undefined && !laneStage) || (link.sharedRuns !== undefined && !bundleStage))
     || (!laneStage && (model.lanes.length > 0 || model.regions.length > 0)) || (!barStage && model.barDrops.length > 0)
     || (!bundleStage && model.junctions.length > 0)
-    || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined || b.lead !== undefined))
+    || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined || b.lead !== undefined || b.straight !== undefined))
     || model.obstacles.length > 0 || (!bandsStage && model.labelBands.length > 0)
     || (!labelStage && model.legend !== undefined)
     || nonNodeLabels.some(label => !(bandsStage && label.role === 'group')
-      && !(labelStage && (label.role === 'link' || label.role === 'legend' || label.role === 'mesh-bus')));
+      && !(labelStage && stageNineLabel(label)));
 }
 function rebuildBoxes(model: LayoutModel): void {
   for (const group of Object.values(model.groups)) {
@@ -770,8 +776,8 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
       throw new Error(`Path on ${link.id} is derived by the transaction from final anchors; callbacks cannot edit it`);
     }
   }
-  // The route rule owns exactly the remaining paths and their stub marks; nothing else may move.
-  const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate', 'removed'] : ['fixedSegments'];
+  // The route rule owns exactly the remaining paths, their stub marks and its removals with the answers it rejected; nothing else may move.
+  const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate', 'removed', 'rejectedRoute'] : ['fixedSegments'];
   const otherClaims = (value: LayoutModel) => ({ ...claims(value), lanes: [], links: value.links.map(link => omit(link, linkFields)) });
   // Stage 9's producer owns every link and multiplicity label, exactly as 7f owns group labels.
   if (rule === 'link-labels') same(draft.labels, model.labels, 'Link-label callback cannot author labels');

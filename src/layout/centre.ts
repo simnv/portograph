@@ -1407,9 +1407,45 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
   // nothing, so it reports only what the check finds off its feed.
   if (ran || timed('centre-violations', () => centreViolations(model, true)).length > 0) reportStall(model, [...unresolved]);
 }
+/** The link a centring item names; undefined for an item that no link of the model owns. The item text starts with its feed's link id (`readCentreViolations`). */
+export function centreItemLink(model: LayoutModel, item: string): string | undefined {
+  let found: string | undefined;
+  for (const link of model.links) if (item.startsWith(`${link.id}: `) && (found === undefined || link.id.length > found.length)) found = link.id;
+  return found;
+}
+/** The code of the record that the centre step spent its budget or stopped at a fixed point with an alignment open (DR-15). Restore reads its link owners. */
+export const CENTRE_ALIGNMENT_OPEN = 'CENTRE_ALIGNMENT_OPEN';
+/** The links of the alignments the publication check finds off their feeds on this model. The check only names owners: it adds no verdict to a test's tap. */
+function openLinks(model: LayoutModel, excuseChords: boolean): string[] {
+  const sink = verdictTap.sink;
+  delete verdictTap.sink;
+  let found: string[];
+  try { found = publishedCentreViolations(model, true); } finally { if (sink !== undefined) verdictTap.sink = sink; }
+  const links = new Set<string>();
+  // The publication (`ahead` off) excuses a held cross chord; the producer form read here does not, so at the end of 7f (`excuseChords`) the same excuse
+  // is applied. Earlier drafts have no settled link kinds, so they name every link and the end of 7f narrows the names.
+  const crossChord = (id: string): boolean => withSharedLinkKinds(() => { const link = model.links.find(item => item.id === id); return link !== undefined && isRoutedChord(model, link) && chordKind(model, link) === 'cross'; });
+  for (const item of found) { const link = centreItemLink(model, item); if (link !== undefined && !(excuseChords && crossChord(link))) links.add(link); }
+  return [...links];
+}
+/**
+ * Writes the record of the open alignments. `replace` sets the owners to exactly the links the publication check flags now; otherwise they are added.
+ * The record is made only by the centre emitter, and only where the centre step stalled (R5: the exemption is limited to its owner and stage).
+ */
+function recordOpen(model: LayoutModel, replace: boolean): void {
+  const links = openLinks(model, replace);
+  let record = model.diagnostics.find(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN);
+  if (record === undefined) {
+    record = { stage: 'placement', severity: 'warning', code: CENTRE_ALIGNMENT_OPEN, message: 'Alignments the centre step left off their feeds; routing and the final gates decide the retained geometry.', owners: [] };
+    model.diagnostics.push(record);
+  }
+  const owners = replace ? [] : (record.owners ??= []);
+  if (replace) record.owners = owners;
+  for (const id of links) if (!owners.some(o => o.kind === 'link' && o.id === id)) owners.push({ kind: 'link', id });
+}
 function reportStall(model: LayoutModel, unresolved: string[], message = 'Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.'): void {
-  if (model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) return;
-  placementWarning(model, 'PLACEMENT_NON_CONVERGENCE', message, unresolved, 'group');
+  if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) placementWarning(model, 'PLACEMENT_NON_CONVERGENCE', message, unresolved, 'group');
+  recordOpen(model, false);
 }
 /**
  * A replay that centred and then rebuilt what depends on the centring (bundle anchors, bars, regions) can leave an alignment
@@ -1417,9 +1453,19 @@ function reportStall(model: LayoutModel, unresolved: string[], message = 'Center
  * publication runs, run here, says so, so that a model never publishes an unexplained centring violation (ticket 75).
  */
 export function flagUnverifiedCentring(model: LayoutModel): void {
-  if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model, true).length > 0) {
+  // Only the centre step's own record arms the naming; a placement non-convergence of another emitter does not (DR-15, R5).
+  if (model.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) recordOpen(model, false);
+  else if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model, true).length > 0) {
     reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.');
   }
+}
+/**
+ * The end of 7f (DR-15). Where the centre step has recorded a stall, the end trim and the moves after it may open other links; the record is
+ * set to exactly the links the publication check flags. Where no stall is recorded nothing is named: an alignment open then is a defect of a
+ * move after the centre step, and the publication refuses it.
+ */
+export function nameOpenCentring(model: LayoutModel): void {
+  if (model.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) recordOpen(model, true);
 }
 /**
  * The parts of the model that a replayed centring step only reads. The check runs one step per group, each on its own copy; these parts are copied once, frozen
