@@ -371,6 +371,16 @@ export interface Bundle extends OwnedElement {
   envelopeParts?: Rect[];
   inversions?: number;
   /**
+   * The shape placement chose for an inverted facing bundle without lanes (7e, `prepareBundleGeometry`; ADR-0017, ticket DR-16):
+   * `true`, each member draws stem, one diagonal, stem, and placement reserved only that depth; `false`, the members draw the
+   * orthogonal staircase in the staircase depth. Absent when the question does not arise: no strict inversion, the ends do not
+   * face, a member has a lane, or the bundles stage has not run. Between the reservation and the paths of one 7e pass it is also
+   * absent on a fanned bundle: placement reserved the staircase depth, and `rebuildBundlePaths` decides the shape on the fan-leaf
+   * channel and records it. Restore reads it and never decides again (R1); a stored `true` whose channel does not hold the
+   * member pitch refuses (`BUNDLE_CROSSOVER_CAPACITY`).
+   */
+  straight?: boolean;
+  /**
    * The end the seat of a block along x (7e, `prepareBundleGeometry`) lined the block up from: the node whose first port stands
    * farthest along the tier, so the other end grows to it and follows it (architecture-2 ticket 74). The column pull reads it: a column
    * whose every feed is the far end of a block it leads has no x to reach (`feedsFollow`). Absent before the bundles stage (a lead then is
