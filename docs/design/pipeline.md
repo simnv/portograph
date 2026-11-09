@@ -1906,7 +1906,14 @@ route: `ROUTE_GAP_REJECTED`, with the reason. Only a `GapRejected` is a rejectio
 path that retraces itself is one (ticket 46; `validateRoutedPaths` keeps the same check as an
 assertion). Any other error stays fatal. A removed link loses its routes, adds no protective run, and keeps no label. Stage 8
 alone sets it. The layout JSON gains `LayoutLink.removed` and `removedLinks` (both absent when
-none), and the score counts `removedLinks`. The renderer and the drawio export draw a link only
+none), and the score counts `removedLinks`. A removed link also stores the answer the stage judged,
+`LayoutLink.rejectedRoute`: the router's points for each routed gap of the link, in plan order (empty
+when the link has no routed gap). Publication and restore judge that answer again with `tryStitch`,
+on the link's plan (`planRoute`) for the model as stage 8 received it (`preRoute`), and refuse a
+removal the judgement does not reproduce: no stored answer, an answer for a gap the plan does not
+hold, or an answer that stitches into a usable path (decision-review ticket 14). The router does not
+run again, so this proves that the stored answer is unusable, as a routed path is proven from its
+stored segments; it does not prove that the router had to give that answer. A warning proves nothing (R5). The renderer and the drawio export draw a link only
 where it has a path, so a removed link is not drawn; `score` skips it. With `strictCheckpoints`
 every case keeps the throw.
 

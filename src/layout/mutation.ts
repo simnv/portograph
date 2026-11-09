@@ -770,8 +770,8 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
       throw new Error(`Path on ${link.id} is derived by the transaction from final anchors; callbacks cannot edit it`);
     }
   }
-  // The route rule owns exactly the remaining paths and their stub marks; nothing else may move.
-  const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate', 'removed'] : ['fixedSegments'];
+  // The route rule owns exactly the remaining paths, their stub marks and its removals with the answers it rejected; nothing else may move.
+  const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate', 'removed', 'rejectedRoute'] : ['fixedSegments'];
   const otherClaims = (value: LayoutModel) => ({ ...claims(value), lanes: [], links: value.links.map(link => omit(link, linkFields)) });
   // Stage 9's producer owns every link and multiplicity label, exactly as 7f owns group labels.
   if (rule === 'link-labels') same(draft.labels, model.labels, 'Link-label callback cannot author labels');

@@ -69,13 +69,15 @@ export interface RouteRejection {
   connector?: string;
   checkpoint?: Point;
   producer?: string;
+  /** The router answer judged, per routed gap of the link that has one, in plan order; stage 8 stores it as `LayoutLink.rejectedRoute` (DR-14). */
+  answer: { connector: string; points: Point[] }[];
 }
 
 /**
  * The first required checkpoint any routed gap of this link skips, or undefined when the link's routes
  * honour them all. A connector with no route yet is not judged.
  */
-export function skippedCheckpoint(plan: LinkPlan, routes: Map<string, Point[]>): RouteRejection | undefined {
+export function skippedCheckpoint(plan: LinkPlan, routes: Map<string, Point[]>): Omit<RouteRejection, 'answer'> | undefined {
   for (const piece of plan.pieces) {
     if (piece.kind !== 'gap') continue;
     const points = routes.get(piece.connector);
@@ -270,12 +272,20 @@ export type Stitched = { path: LayoutPath } | { rejection: RouteRejection };
  */
 export function tryStitch(model: LayoutModel, plan: LinkPlan, routes: Map<string, Point[]>): Stitched {
   const skipped = skippedCheckpoint(plan, routes);
-  if (skipped) return { rejection: skipped };
+  if (skipped) return { rejection: { ...skipped, answer: answerOf(plan, routes) } };
   try { return { path: stitchPath(model, plan, routes) }; }
   catch (error) {
     if (!(error instanceof GapRejected)) throw error;
-    return { rejection: { link: plan.link, code: 'ROUTE_GAP_REJECTED', reason: error.message } };
+    return { rejection: { link: plan.link, code: 'ROUTE_GAP_REJECTED', reason: error.message, answer: answerOf(plan, routes) } };
   }
+}
+
+/** The points the router returned for each routed gap of one link, in plan order; a gap with no answer is left out. Only the plan's own gaps are read. */
+function answerOf(plan: LinkPlan, routes: ReadonlyMap<string, Point[]>): { connector: string; points: Point[] }[] {
+  return plan.pieces.flatMap(piece => {
+    const points = piece.kind === 'gap' ? routes.get(piece.connector) : undefined;
+    return piece.kind === 'gap' && points ? [{ connector: piece.connector, points: points.map(point => ({ x: point.x, y: point.y })) }] : [];
+  });
 }
 
 /**

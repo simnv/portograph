@@ -5,7 +5,8 @@
 # here by the port side. The tests that need a router-laid link (a forged answer, a retracing route, the reserved stem checkpoints) read it.
 # G5 and G6 fail, as on the source fixture on main 552ca5b2; the fixture is a router input, not a quality claim.
 # Test-only input owned by architecture-2 ticket 54; test/route/checkpoint-removal.test.ts, test/route/retrace-removal.test.ts,
-# test/route/foreign-reservation-removal.test.ts and test/pipeline/detoured-stem.test.ts read it.
+# test/route/foreign-reservation-removal.test.ts, test/route/forged-removal-restore.test.ts (a removal forged on the finished layout
+# is refused at restore, decision-review ticket 14) and test/pipeline/detoured-stem.test.ts read it.
 #
 # Five links are authored `route: orthogonal` (ticket 162), and the rows keep their declared order (`layout.corridorRowOrder: false`).
 portograph: 2
