@@ -4,6 +4,8 @@ Status: accepted (maintainer, 2026-09-12)
 
 Amended by ADR-0019 (2026-09-29): the group box that is the obstacle is the frame of a group, and a link that ends in a cell of a group is not foreign to that frame.
 
+Amended 2026-11-07 (decision review D8): foreign drawn frames stay obstacles, except a link's own endpoint boxes, bars, the lane margin, and the boxes an admitted fan member records in `fanAdmissions[].crosses` and the validator verifies (`fanBoxes` in `src/score/gates.ts`, DL-Q126). Node bodies and foreign pills keep their checks.
+
 A group box is not only a container. Two rules follow:
 
 1. **No link through a foreign group.** A routed link never enters a group it does not attach

@@ -12,7 +12,7 @@ scorer then reports the overlap (`test` fixture in ticket 36: one bar drop plus 
 Stage 7e cannot re-own the drop: `withLayoutMutation` rejects a callback that edits a path the bars
 transaction derived, and 7d cannot name a junction 7e has not built.
 
-## Decision (proposed): option (a)
+## Decision: option (a)
 
 Stage 7d — and, deferred to ticket 37, stages 6 and 7b for their fixed paths — splits the first
 segment of any fixed path that leaves a port with two or more routed links into a stem segment owned

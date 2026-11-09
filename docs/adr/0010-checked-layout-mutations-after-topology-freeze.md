@@ -65,7 +65,7 @@ bundle producers must extend this check alongside their own order/path validatio
 
 Stage 7c initializes the anchor tier from main-tier node count, including bars and excluding
 flanks, with the lowest effective tier breaking ties. It uses one shared eight-pass budget across
-all groups and replay calls. Infeasible alignment stays an orthogonal routing remainder. The
+all groups and replay calls (and the give-back trial and the restart, below: D9). Infeasible alignment stays an orthogonal routing remainder. The
 ordered replay API rebuilds regions, fixed-owner lane extents, bounded centering, measured node
 geometry, row paths and flank paths. A later stage must still obey its declared movement scope.
 
@@ -132,3 +132,21 @@ Amendment (2026-10-05, ticket 15, phase 4, review): the perimeter lanes of one s
 Amendment (2026-11-08, decision D-Q2, decision-review ticket 10): publication and full restore keep every run placement planned for stage 8, as they keep the fixed and shared runs: each tier-gap part (`allocateGapRuns`, ADR-0021 decision 3) and each row-gap leg (`legReservation`) stays in its link's path with its owner and its traversal, even where another route would pass the gates. No record is added. `validateRoutedPaths` calls the one producer (`placementRuns`) on the model as stage 8 received it (`preRoute`: the router's paths, removals and stub marks taken away) and requires each planned segment inside one straight piece of the path with the same link owner, running the planned way, in the planned order. A collinear merge with the same owner passes; a run moved off its line, given another owner, reversed or reordered is refused, and the error names the link. The plan leaves out every link `frozenChords` names, so restore first requires each name to hold a routed chord in the published geometry (`isRoutedChord`, the predicate the freeze writes the record with): a forged name cannot take a planned run out of the check.
 
 Amendment (2026-11-08, DR-11, decision D-Q3): the callbacks of 7e and 7f are empty and their producers run after the rule checks, so the old `bundles` and `bands` diff checks read an unchanged draft; they are deleted. The producer is the judge: postconditions read the net draft of `bundles` and `bands` after every dependent rebuild and before commit, against the entry model, and a breach of a reservation that held at entry refuses the transaction (`PostconditionRefusal`). A producer refusal (that one, or a bundle path with no room) withdraws the trial of every round, by one rule in the round runner, and fails the main line by name. Publication and restore stay the second boundary. A newly blocked frozen chord and a new wall in a span corridor stay advisory, for output neutrality: each such break that publishes is named again by its own finding (`STRAIGHT_LINK_BLOCKED`, `SPAN_CHORD_BLOCKED`). A group exit is a held promise: its direction and the boxes it leaves are stored, its coordinates follow the box, and a change of direction is a replan that the derivation refuses after the final freeze. A required missing exit is read from the geometry and the record, never from `GROUP_EXIT_BLOCKED` (R5). Every `moveGroup` site after 7a states its guard, its proof by construction or its withdrawal path in `src/layout/box-writers.ts`, and `npm run lint` fails on a site not in that table. A direct write to a node box is outside the table; its doc names those writes.
+
+Amendment (2026-11-07, decision review D9, D10, D14, D15; user rulings P1 and the obsolescence of the model-wide relaxation):
+
+- Centring budget (D9). One eight-pass centring budget is shared across groups and replays. Beside it stand one bounded give-back trial that
+  is discarded whole and one restart: the passes run once more from the same input on a second eight-pass budget (`centreGivingBack`,
+  `centre.ts`, ticket 71, R4). Each count has its own scope. A discarded run still consumes work. Budget policy stays open (T-27, PQ-7).
+- Lanes (D10). Lane identity, owner and width are fixed after 7a. Perimeter lane x is derived from the boxes by the course reader
+  (amendment 2026-10-05). `reseatLanes` may change a lane's side and position before the gap solve under one declared rule (`chooseReseat`).
+  Not every late writer was guarded (audit P-06); ticket DR-11 lists every `moveGroup` site after 7a in `box-writers.ts` and holds the group
+  exit (PQ-10 is settled as held). A direct write to a node box stays outside that table.
+- Failed gates (D14). A failed gate fails the branch at `gate:compare` and sets the `score` exit code. The files are written with their
+  findings. `TIER_GAP_PART_RESIDUAL` (ADR-0021 decision 4) and a non-converged centring publish by design, with their findings.
+- Non-convergence (D15, ticket DR-01). One serialized code relaxes one named check, read only at restore and only from its named emitter and
+  stage. Today that is the centring exemption: `PLACEMENT_NON_CONVERGENCE` excuses the centring check and nothing else, and an alignment the
+  replay cannot confirm is recorded as `CENTRE_INVARIANT_UNVERIFIED`. The three model-wide relaxations that any `PLACEMENT_NON_CONVERGENCE`
+  code switched on in `validateGeometry` (node-to-node clearance, node inside its group, group and tier band geometry) are deleted; every other exemption derives from geometry and the stored record (CODING_STANDARDS R5).
+  The sentence "Required rectangle fields, row sequence and authored flank side remain structural checks even after a non-convergence
+  diagnostic" holds without exception.

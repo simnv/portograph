@@ -26,6 +26,8 @@ above that the tool warns and offers `collapsed:` groups; above 1,000 it refuses
 
 *Amendment (2026-11-01):* the whole-command deadline is now 120 s (`COMMAND_DEADLINE_MS`, user decision, "for now"): the real NTP sheet reached 60 s and wrote nothing. "Workable" follows: layout under 120 s. The per-stage ELK deadlines and `MAX_RERUNS` (3) are unchanged.
 
+*Amendment (2026-11-07, decision review D11):* the command limit is 120 s. The supported band ends at 100 nodes (policy, `docs/design/quality.md` "Size bands"). The parser's 1,000-node limit and `--force` are input limits, not a quality or workability claim; the "workable" wording above is history. The per-tier fallback runs on an ELK exception only; a deadline ends the command (amendment 2026-09-30). The warning `LARGE_DIAGRAM` still advises `collapsed:` groups, but the parser ignores `collapsed` with `COLLAPSED_UNSUPPORTED`: the advice needs the code change of audit ticket T-28, not text alone (D17, audit m-22).
+
 ## Consequences
 - Two code paths for tiering, both tested at 100 / 300 / 1,000 synthetic nodes, with fallback
   exercised by injected failure — never by relying on a particular ELK crash.

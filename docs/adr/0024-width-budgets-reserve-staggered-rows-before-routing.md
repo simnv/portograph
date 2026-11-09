@@ -7,7 +7,7 @@ Status: accepted for implementation (owner request, 2026-10-31). Ticket: snack-t
 `layout.maxWidth` is a positive finite budget for the published canvas width, in pixels.
 It is an operational input. Placement receives the document without that field, so a sheet
 that already fits produces the exact normal output, including the echoed document.
-An absent budget takes the original pipeline path and records no stagger decision.
+An absent width budget skips the budget-driven trials. Stage 5 may still stagger an eligible row of four or more members by the aspect rule (amendment 2026-11-02; D12, decision review 2026-11-07, which replaces the earlier claim that an absent budget records no stagger decision); authored `shape` and `autoArrange: false` keep their contracts.
 
 Measure the normal published width first. Above the budget, try eligible rows in descending
 published width, then group id. A row has at least three members; every member has routed links,

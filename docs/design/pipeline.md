@@ -571,6 +571,8 @@ room or decides the split again.
 
 ## Stage 6 — rows
 
+Group titles in stage 6 (D7, decision review 2026-11-07; ruling V3): every group is labelled. The title edge is fixed from natural sides (the edge with fewer incident link ports, ADR-0011), and its height is reserved; the title itself is placed at the end of 7f (`placeGroupTitles`). An axis-aligned link never runs under a title or label by placement. A diagonal may cross a title or its own label, with a halo and a `crossedBy` record (ADR-0023). No placement step bends a link to clear a title.
+
 Per tier: all unstaggered `row`-shape nodes share one top y. A reserved stagger keeps both lines and its pitch; each line is a row to later horizontal repacks. Repack horizontally again if the flattening
 created overlap (nodes ELK stacked at one x). After `flattenRows`, `reseatBands` seats the bands
 again: each band starts one `tierGapMin` under the band above, or `gapBandDemand` under it when that is more, and its groups, nodes and
@@ -1441,7 +1443,7 @@ with `TIER_GAP_PART_UNFIT`, never a silent discovery.
 
 For every group: band height = label height + 8, inside the padding of the **title edge**: the
 horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
-at the bottom and no link routes around it; ties, including groups linked only sideways, keep the
+at the bottom, where the title has the longest free span (it may still be crossed and then yields with a halo, `crossedBy`; D7, D16, ruling V3 2026-11-07); ties, including groups linked only sideways, keep the
 top (ADR-0011). A bottom band grows the group downward. Every group's nodes move down by the largest
 top-band shift of their tier, so mixed title edges and unequal clearances keep the tier's node row
 level and flanks stay level with their peers. The label is placed last (`placeGroupTitles`, above): centred when
@@ -2035,7 +2037,7 @@ more than two intermediate tier bands (measured by their vertical extent, since 
 sits in the margin beside its tier) or whose arc length exceeds 3× the direct anchor distance is
 marked `stubCandidate` and warned about; M1 keeps the technique and the full routed path.
 
-**Measured on the JPEG golden:** stage 7 leaves exactly two links, `link-1` and `link-2`, the two
+**Measured on the JPEG golden** (a dated measurement, 2026-09; D17, decision review 2026-11-07): stage 7 leaves exactly two links, `link-1` and `link-2`, the two
 provider feeds into EAC-01 and EAC-02; the rules claim 24 of 26. Each of the two is one straight run
 between two anchors on one x with a clear corridor, so stage 8 claims both and no ownership batch is
 formed: the prototype's idle router, reached by a different road. The geometry is byte-for-byte the
