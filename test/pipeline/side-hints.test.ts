@@ -295,10 +295,12 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // Decision review 2026-11, ticket 07 (fan wrap, D-Q4) re-baselined `a-linked-node-steps-out-of-a-straight-chord` (9ab27642f6cac98d before): its
   // `hosts` row (two hubs, two members each) is no fan, so no group passes the rules before a draft and `groupArrangements` is absent; main's
   // layout without that key hashes to the new value, so the geometry is unchanged.
+  // With both (DR-04 ids, ticket 07 without `groupArrangements`): the DR-04 layout of that sheet less the key hashes to f9b8916c527c5f88
+  // (f0a31e77eb97590d with main's ids).
   const main: Record<string, string> = {
     'a-group-holds-both-ends-of-a-bundle': '7fb6875900425312',
     'a-bus-in-a-rank-gap-grows-the-gap': '92a03918704346a8',
-    'a-linked-node-steps-out-of-a-straight-chord': 'f0a31e77eb97590d',
+    'a-linked-node-steps-out-of-a-straight-chord': 'f9b8916c527c5f88',
     'a-bar-end-keeps-its-corridor': 'fbe95e96d87d86e8',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {

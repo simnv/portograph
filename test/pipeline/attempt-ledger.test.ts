@@ -48,7 +48,8 @@ const ROWS: Row[] = [
   // so the counts below follow from the order alone: 19/63/44/5, 3 place runs (one fan re-run more), preCentre 3. Attempts, rounds, open
   // rounds, chord moves, the base 7f and the findings (no body on a frozen chord, the cantons settle) are unchanged.
   // Decision review ticket DR-02: a trial copy's room set is read from `roomShort` (13 candidate copies more, 50 to 63); no other count moves.
-  row('three-continents', '19/63/44/5', 3, 2, 5, 2, 2, { preCentre: 3, baseChord: 1 }),
+  // With both (merge of DR-02 into DR-04): 8 candidate copies more, 44 to 52; no other count moves.
+  row('three-continents', '19/63/52/5', 3, 2, 5, 2, 2, { preCentre: 3, baseChord: 1 }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
   // Ticket 65: the settle after the rounds puts src back at the spec's x, a direct member then crowds a planned part, and the attempt body runs
   // once more with it refused (two bodies of one round each, one settle and its eight passes each): 2/48/14/3 and 2 rounds (1/24/10/3 and 1 before).
