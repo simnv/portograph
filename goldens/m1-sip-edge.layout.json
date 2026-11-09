@@ -334,18 +334,6 @@
     "links": [
       {
         "from": {
-          "node": "EBR-01",
-          "name": "100G",
-          "ordinal": 2
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 2
-        }
-      },
-      {
-        "from": {
           "node": "provider-1",
           "name": "100G",
           "ordinal": 1
@@ -430,6 +418,18 @@
           "node": "EBR-02",
           "name": "100G",
           "ordinal": 1
+        }
+      },
+      {
+        "from": {
+          "node": "EBR-01",
+          "name": "100G",
+          "ordinal": 2
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 2
         }
       },
       {
@@ -3404,64 +3404,6 @@
         "id": "link-1"
       },
       "from": {
-        "node": "EBR-01",
-        "name": "100G",
-        "ordinal": 2
-      },
-      "to": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 2
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "EBR-01",
-          "name": "100G",
-          "ordinal": 2
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 2
-        }
-      },
-      "bundle": "bundle-1",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-1"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 426.81005859375,
-              "y": 270.25
-            },
-            "to": {
-              "x": 466.81005859375,
-              "y": 270.25
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-1"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-2",
-      "sourceIndex": 1,
-      "owner": {
-        "kind": "link",
-        "id": "link-2"
-      },
-      "from": {
         "node": "provider-1",
         "name": "100G",
         "ordinal": 1
@@ -3489,7 +3431,7 @@
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-2"
+          "id": "link-1"
         },
         "layer": "routed",
         "fixed": true,
@@ -3505,7 +3447,7 @@
             },
             "owner": {
               "kind": "link",
-              "id": "link-2"
+              "id": "link-1"
             },
             "straight": true
           }
@@ -3513,11 +3455,11 @@
       }
     },
     {
-      "id": "link-3",
-      "sourceIndex": 2,
+      "id": "link-2",
+      "sourceIndex": 1,
       "owner": {
         "kind": "link",
-        "id": "link-3"
+        "id": "link-2"
       },
       "from": {
         "node": "provider-2",
@@ -3547,7 +3489,7 @@
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-3"
+          "id": "link-2"
         },
         "layer": "routed",
         "fixed": true,
@@ -3563,7 +3505,7 @@
             },
             "owner": {
               "kind": "link",
-              "id": "link-3"
+              "id": "link-2"
             },
             "straight": true
           }
@@ -3571,11 +3513,11 @@
       }
     },
     {
-      "id": "link-4",
-      "sourceIndex": 3,
+      "id": "link-3",
+      "sourceIndex": 2,
       "owner": {
         "kind": "link",
-        "id": "link-4"
+        "id": "link-3"
       },
       "from": {
         "node": "TBR-001",
@@ -3601,12 +3543,12 @@
           "ordinal": 2
         }
       },
-      "bundle": "bundle-2",
+      "bundle": "bundle-1",
       "technique": "bundle",
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-4"
+          "id": "link-3"
         },
         "layer": "routed",
         "fixed": true,
@@ -3622,18 +3564,18 @@
             },
             "owner": {
               "kind": "bundle",
-              "id": "bundle-2"
+              "id": "bundle-1"
             }
           }
         ]
       }
     },
     {
-      "id": "link-5",
-      "sourceIndex": 4,
+      "id": "link-4",
+      "sourceIndex": 3,
       "owner": {
         "kind": "link",
-        "id": "link-5"
+        "id": "link-4"
       },
       "from": {
         "node": "TBR-001",
@@ -3659,12 +3601,12 @@
           "ordinal": 3
         }
       },
-      "bundle": "bundle-2",
+      "bundle": "bundle-1",
       "technique": "bundle",
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-5"
+          "id": "link-4"
         },
         "layer": "routed",
         "fixed": true,
@@ -3680,18 +3622,18 @@
             },
             "owner": {
               "kind": "bundle",
-              "id": "bundle-2"
+              "id": "bundle-1"
             }
           }
         ]
       }
     },
     {
-      "id": "link-6",
-      "sourceIndex": 5,
+      "id": "link-5",
+      "sourceIndex": 4,
       "owner": {
         "kind": "link",
-        "id": "link-6"
+        "id": "link-5"
       },
       "from": {
         "node": "TBR-001",
@@ -3717,12 +3659,12 @@
           "ordinal": 4
         }
       },
-      "bundle": "bundle-2",
+      "bundle": "bundle-1",
       "technique": "bundle",
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-6"
+          "id": "link-5"
         },
         "layer": "routed",
         "fixed": true,
@@ -3738,18 +3680,18 @@
             },
             "owner": {
               "kind": "bundle",
-              "id": "bundle-2"
+              "id": "bundle-1"
             }
           }
         ]
       }
     },
     {
-      "id": "link-7",
-      "sourceIndex": 6,
+      "id": "link-6",
+      "sourceIndex": 5,
       "owner": {
         "kind": "link",
-        "id": "link-7"
+        "id": "link-6"
       },
       "from": {
         "node": "TBR-001",
@@ -3775,12 +3717,12 @@
           "ordinal": 5
         }
       },
-      "bundle": "bundle-2",
+      "bundle": "bundle-1",
       "technique": "bundle",
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-7"
+          "id": "link-6"
         },
         "layer": "routed",
         "fixed": true,
@@ -3796,18 +3738,18 @@
             },
             "owner": {
               "kind": "bundle",
-              "id": "bundle-2"
+              "id": "bundle-1"
             }
           }
         ]
       }
     },
     {
-      "id": "link-8",
-      "sourceIndex": 7,
+      "id": "link-7",
+      "sourceIndex": 6,
       "owner": {
         "kind": "link",
-        "id": "link-8"
+        "id": "link-7"
       },
       "from": {
         "node": "EBR-01",
@@ -3833,12 +3775,12 @@
           "ordinal": 1
         }
       },
-      "bundle": "bundle-1",
+      "bundle": "bundle-2",
       "technique": "bundle",
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-8"
+          "id": "link-7"
         },
         "layer": "routed",
         "fixed": true,
@@ -3854,7 +3796,65 @@
             },
             "owner": {
               "kind": "bundle",
-              "id": "bundle-1"
+              "id": "bundle-2"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-8",
+      "sourceIndex": 7,
+      "owner": {
+        "kind": "link",
+        "id": "link-8"
+      },
+      "from": {
+        "node": "EBR-01",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "to": {
+        "node": "EBR-02",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "EBR-01",
+          "name": "100G",
+          "ordinal": 2
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 2
+        }
+      },
+      "bundle": "bundle-2",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-8"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 426.81005859375,
+              "y": 270.25
+            },
+            "to": {
+              "x": 466.81005859375,
+              "y": 270.25
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-2"
             }
           }
         ]
@@ -7304,81 +7304,18 @@
     {
       "id": "bundle-1",
       "nodes": [
-        "EBR-01",
-        "EBR-02"
-      ],
-      "members": [
-        "link-1",
-        "link-8"
-      ],
-      "owner": {
-        "kind": "bundle",
-        "id": "bundle-1"
-      },
-      "layer": "routed",
-      "memberGap": 16,
-      "memberPitch": 17.5,
-      "inversions": 0,
-      "envelope": {
-        "x": 426.06005859375,
-        "y": 269.5,
-        "width": 41.5,
-        "height": 19
-      },
-      "rows": {
-        "x": 426.06005859375,
-        "y": 269.5,
-        "width": 41.5,
-        "height": 19
-      },
-      "envelopeParts": [
-        {
-          "x": 426.06005859375,
-          "y": 269.5,
-          "width": 41.5,
-          "height": 19
-        }
-      ],
-      "centreline": {
-        "owner": {
-          "kind": "bundle",
-          "id": "bundle-1"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 426.81005859375,
-              "y": 279
-            },
-            "to": {
-              "x": 466.81005859375,
-              "y": 279
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-1"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "bundle-2",
-      "nodes": [
         "EAC-01",
         "TBR-001"
       ],
       "members": [
+        "link-3",
         "link-4",
         "link-5",
-        "link-6",
-        "link-7"
+        "link-6"
       ],
       "owner": {
         "kind": "bundle",
-        "id": "bundle-2"
+        "id": "bundle-1"
       },
       "layer": "routed",
       "memberGap": 16,
@@ -7407,7 +7344,7 @@
       "centreline": {
         "owner": {
           "kind": "bundle",
-          "id": "bundle-2"
+          "id": "bundle-1"
         },
         "layer": "routed",
         "fixed": true,
@@ -7420,6 +7357,69 @@
             "to": {
               "x": 69.64013671875,
               "y": 296.5
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "bundle-2",
+      "nodes": [
+        "EBR-01",
+        "EBR-02"
+      ],
+      "members": [
+        "link-7",
+        "link-8"
+      ],
+      "owner": {
+        "kind": "bundle",
+        "id": "bundle-2"
+      },
+      "layer": "routed",
+      "memberGap": 16,
+      "memberPitch": 17.5,
+      "inversions": 0,
+      "envelope": {
+        "x": 426.06005859375,
+        "y": 269.5,
+        "width": 41.5,
+        "height": 19
+      },
+      "rows": {
+        "x": 426.06005859375,
+        "y": 269.5,
+        "width": 41.5,
+        "height": 19
+      },
+      "envelopeParts": [
+        {
+          "x": 426.06005859375,
+          "y": 269.5,
+          "width": 41.5,
+          "height": 19
+        }
+      ],
+      "centreline": {
+        "owner": {
+          "kind": "bundle",
+          "id": "bundle-2"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 426.81005859375,
+              "y": 279
+            },
+            "to": {
+              "x": 466.81005859375,
+              "y": 279
             },
             "owner": {
               "kind": "bundle",
@@ -13431,8 +13431,8 @@
   },
   "anchorTier": 1,
   "frozenChords": [
-    "link-2",
-    "link-3"
+    "link-1",
+    "link-2"
   ],
   "stemDepths": [],
   "bodyTrims": {

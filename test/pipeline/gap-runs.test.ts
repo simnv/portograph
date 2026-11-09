@@ -112,7 +112,7 @@ it('reserves the columns of a gap whose runs keep one x and leaves the golden wh
   const before = await place(golden);
   expect(before.lanes.length).toBe(4);
   const runs = allocateGapRuns(before);
-  expect(runs.map(run => run.link)).toEqual(['link-2', 'link-3']);
+  expect(runs.map(run => run.link)).toEqual(['link-1', 'link-2']);
   for (const run of runs) {
     expect(run.segments).toHaveLength(1);
     expect(run.segments.every(vertical)).toBe(true);

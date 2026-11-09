@@ -209,7 +209,8 @@ describe('two facing pills keep a visible wire', () => {
     expect(visible).toBeGreaterThanOrEqual(PILL_WIRE_GAP - DEFAULT_STROKE_WIDTHS.pill - 1e-9);
     expect(visible).toBeGreaterThan(1);
     // The link really crosses that gap, so the wire is drawn rather than hidden under the pills.
-    const link = model.links.find(item => item.id === 'link-1')!;
+    // DR-04: EBR-01:100G to EBR-02:100G (main's link-3) is link-7 in the canonical link order.
+    const link = model.links.find(item => item.id === 'link-7')!;
     const segment = link.path!.segments[0]!;
     expect(Math.min(segment.from.x, segment.to.x)).toBeLessThanOrEqual(leftPill.x + leftPill.width);
     expect(Math.max(segment.from.x, segment.to.x)).toBeGreaterThanOrEqual(rightPill.x);

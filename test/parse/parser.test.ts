@@ -36,6 +36,22 @@ describe('schema normalisation', () => {
     expect(back.ok && back.document.links).toEqual(result.document.links);
   });
 
+  it('ranks a structured endpoint as its compact form in the canonical link order (ticket DR-04)', () => {
+    // The YAML reader gives a structured endpoint as a map; the canonical order reads its node, port, ordinal and group as it reads the
+    // compact text, so a structured group link ranks after every node link, and the written form and order of the links change nothing.
+    const compact = source({ links: [['g', 'g', { route: 'group-link' }], ['a.q', 'b'], ['a.p#2', 'b.p']] });
+    const structured = source({ links: [
+      { from: { node: 'a', port: 'p', ordinal: 2 }, to: { node: 'b', port: 'p' } },
+      { from: { node: 'a', port: 'q' }, to: { node: 'b' } },
+      { from: { group: 'g' }, to: { group: 'g' }, route: 'group-link' },
+    ] });
+    const links = parse(compact).links;
+    expect(links.map(link => link.from)).toEqual([
+      { node: 'a', name: 'q', ordinal: 1 }, { node: 'a', name: 'p', ordinal: 2 }, { group: 'g' },
+    ]);
+    expect(parse(structured).links).toEqual(links);
+  });
+
   it('makes compact and structured endpoint forms equivalent, including groups', () => {
     const compact = source({ links: [['a.p#2', 'b.p'], ['a.*', 'b'], ['g', 'g', { route: 'group-link' }]] });
     const structured = source({ links: [

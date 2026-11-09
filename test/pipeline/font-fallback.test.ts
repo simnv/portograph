@@ -19,9 +19,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // Architecture-2 ticket 74 re-baselined synthetic/drawio-constructs: its bundle gains only `lead` (the hash without that key is the old
 // one: b956d053...).
 // DR-04 re-baselined m1-sip-edge (70e112a3... before): link ids and anonymous port ordinals follow the canonical link order; every
-// node box, port, path and the canvas are byte-identical (user approval, 2026-11-09).
+// node box, port, path and the canvas are byte-identical (user approval, 2026-11-09). The parser fix for structured endpoints changed the ids
+// once more (e124d93a... before), again with the same geometry (user approval).
 const baselines = {
-  'm1-sip-edge': 'e124d93aeba5062563784ef6a786c0d4017a85f5fc463345a24f657d86e2dc32',
+  'm1-sip-edge': '44413304d477acb120c1cc29753338b7c794f18a669d4b52c7d0bd4769bb89da',
   'synthetic/drawio-constructs': '2f8dee6c7b7047b40bf5a1619e6d7f35e61c80fbbd3c0bbd97dcbb25f6ebab96',
 };
 

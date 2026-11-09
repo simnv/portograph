@@ -68,9 +68,11 @@ describe('stage 6 rows on the golden', () => {
     expect(model.stage).toBe('rows');
     expect(serializeLayoutModel(input)).toBe(before);
     expect(Object.isFrozen(model.links)).toBe(true);
-    for (const id of ['link-8', 'link-1']) {
+    // DR-04: the EBR pair (main's link-3 and link-4 in bundle-1) is link-7 and link-8 in the canonical link order, and its bundle is
+    // bundle-2 (bundle ids follow the first member's place in that order).
+    for (const id of ['link-7', 'link-8']) {
       const { link, from, to } = endpoints(model, id);
-      expect(link.bundle).toBe('bundle-1');
+      expect(link.bundle).toBe('bundle-2');
       expect(from.side).toBe('right'); expect(to.side).toBe('left');
       expect(from.anchor!.y).toBe(to.anchor!.y);
       expect(link.path).toBeUndefined();

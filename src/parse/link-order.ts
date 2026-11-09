@@ -15,12 +15,14 @@ function endText(value: unknown, doc: NormalisedDocument): EndText {
     return { node: match[1]!, ...(match[2] === undefined ? {} : { name: match[2] }), ...(match[3] === undefined ? {} : { ordinal: Number(match[3]) }) };
   }
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
-  const fields = value as Record<string, unknown>;
-  if (typeof fields.group === 'string') return { group: fields.group };
+  // The YAML reader gives a structured endpoint as a `Map` (`Validation.map` reads it the same way); a plain object is read too.
+  const field = (key: string): unknown => value instanceof Map ? (value as Map<unknown, unknown>).get(key) : (value as Record<string, unknown>)[key];
+  const group = field('group'), node = field('node'), port = field('port'), ordinal = field('ordinal');
+  if (typeof group === 'string') return { group };
   return {
-    ...(typeof fields.node === 'string' ? { node: fields.node } : {}),
-    ...(typeof fields.port === 'string' ? { name: fields.port } : {}),
-    ...(typeof fields.ordinal === 'number' ? { ordinal: fields.ordinal } : {}),
+    ...(typeof node === 'string' ? { node } : {}),
+    ...(typeof port === 'string' ? { name: port } : {}),
+    ...(typeof ordinal === 'number' ? { ordinal } : {}),
   };
 }
 
