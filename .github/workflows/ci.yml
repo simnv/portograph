@@ -40,7 +40,10 @@ jobs:
         run: npm run lint
 
       # Through scripts/test-runner.mjs, as everywhere: on Linux it takes the lock with util-linux flock.
+      # The runner VM runs nothing else: two vitest workers (the local default is one). About 13 min on one worker locally.
       - name: Test
+        env:
+          PORTOGRAPH_TEST_WORKERS: "2"
         run: npm test
 
       - name: Build
