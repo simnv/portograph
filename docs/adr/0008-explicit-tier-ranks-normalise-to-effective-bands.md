@@ -31,7 +31,8 @@ found during routing. The command runs once with no lift and once per trial; a t
 its published result. The bound is `LIFT_TRIALS` = 2 trials per command (R4), with
 `GROUP_LIFT_CAPPED` for a component past it (the value of the lift PoCs, choice L6; each trial
 is one more whole command run under its own placement cap, so a command has at most 1 + `LIFT_TRIALS`
-lift runs). With `layout.maxWidth` the lift is decided once, by the first run, and every width-budget
+lift runs). Above `LIFT_SIZE_CAP` = 450 nodes plus links the round admits no trial and records each
+component with `GROUP_LIFT_SIZE_CAPPED` (a count, not a clock; data in `docs/design/quality.md`, size bands). With `layout.maxWidth` the lift is decided once, by the first run, and every width-budget
 stagger trial applies that record (`fixedLifts`) and decides none. A deadline (the command's, or a
 per-attempt timer of ELK or the router) ends the command; it never declines a trial (R4). The area tolerance is `LIFT_AREA_TOLERANCE` = 5 %: a lift set may cost
 up to 5 % area over the smallest kept set when its canvas is narrower or nearer square

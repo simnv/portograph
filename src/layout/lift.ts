@@ -24,6 +24,7 @@ import { compareId, bandGap } from './skeleton-graph.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { GROUP_PADDING } from './group-padding.js';
 import { hintRefusal } from './side-hints.js';
+import { groupShape } from './grid.js';
 import { NO_MOVE_EPS, SIGN_EPS } from './tolerance.js';
 
 /**
@@ -40,6 +41,15 @@ export const LIFT_MIN_GAIN = 0.01;
  * no sheet separates 5 % from 10 % (lift-v3 PoC, T table), so T rests on that one sheet.
  */
 export const LIFT_AREA_TOLERANCE = 0.05;
+/**
+ * The size cap of the lift round (R4, a count, never the clock): a document whose node count plus link count is above it admits no lift
+ * trial, because each trial is one more whole command run and the first run of such a sheet already takes a large part of the command
+ * deadline. Every component is recorded as capped (`GROUP_LIFT_SIZE_CAPPED`). The value and its measurements: `docs/design/quality.md`,
+ * "Size bands".
+ */
+export const LIFT_SIZE_CAP = 450;
+/** The size the cap reads: the document's node count plus its link count. */
+export const liftSize = (document: LayoutModel['document']): number => Object.keys(document.nodes).length + document.links.length;
 /** The least drop of the canvas width, in px, that counts as narrower for the tolerated area rule of the judge. */
 export const LIFT_NARROWER_PX = 1;
 /**
@@ -77,6 +87,9 @@ export function liftUnits(model: LayoutModel): { units: Map<string, LiftUnit>; u
       id = frame;
     } else if (source?.parent !== undefined) id = source.parent;
     if (source?.shape === 'bar') scope = 'a bar';
+    // A group that is not a row (grid, ring, free) may not move in x inside the rows rule, where `holdLifts` runs: out of the first slice, so
+    // no trial run is spent on a lift the rows guard refuses.
+    else if (groupShape(model, group.id) !== 'row' && scope === undefined) scope = `a ${groupShape(model, group.id)} group`;
     const tier = documentTierOf(model, group.id) ?? group.tier ?? 0;
     const unit = units.get(id) ?? { id, groups: [], tier };
     unit.groups.push(group.id);

@@ -6,7 +6,7 @@
  * ends the whole command and never picks a layout.
  */
 import type { Diagnostic, GroupLift, LayoutModel } from '../model/index.js';
-import { LIFT_AREA_TOLERANCE, LIFT_TRIALS, liftEntry, measureLifts } from '../layout/lift.js';
+import { LIFT_AREA_TOLERANCE, LIFT_SIZE_CAP, LIFT_TRIALS, liftSize, liftEntry, measureLifts } from '../layout/lift.js';
 import { judgeLift } from '../layout/lift-judge.js';
 import type { LayoutOptions } from './options.js';
 import { restoreLayoutModel } from '../layout/mutation.js';
@@ -35,7 +35,19 @@ export async function decideLifts(document: LayoutModel['document'], options: La
     if (candidate === undefined) break;
     for (const id of candidate.component.units) decided.add(id);
     const name = candidate.component.units.join(', ');
-    if (candidate.offset === 0) { record.push(liftEntry(best, candidate, 0, candidate.reason!)); continue; }
+    if (candidate.offset === 0) {
+      const entry = liftEntry(best, candidate, 0, candidate.reason!);
+      record.push(entry);
+      if (candidate.component.scope !== undefined) note('GROUP_LIFT_OUT_OF_SLICE', `The float component ${name} is not tried: ${candidate.reason}.`, entry);
+      continue;
+    }
+    if (liftSize(document) > LIFT_SIZE_CAP) {
+      const reason = `capped: the sheet has ${liftSize(document)} nodes and links, above the lift size cap of ${LIFT_SIZE_CAP}`;
+      const entry = liftEntry(best, candidate, 0, reason);
+      record.push(entry);
+      note('GROUP_LIFT_SIZE_CAPPED', `The float component ${name} is not tried: the sheet has ${liftSize(document)} nodes and links, above the lift size cap of ${LIFT_SIZE_CAP}.`, entry);
+      continue;
+    }
     if (trials >= LIFT_TRIALS) {
       const entry = liftEntry(best, candidate, 0, `capped: the sheet has made its ${LIFT_TRIALS} lift trials`);
       record.push(entry);

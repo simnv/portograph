@@ -555,7 +555,7 @@ export interface LayoutModel {
   groupArrangements?: Record<string, GroupArrangement>;
   /**
    * D-Q5 (ticket 08): the group lifts of the command (`lift.ts`, decided by `decideLifts` on whole command runs). Absent = nothing decided: the document has no float
-   * component in the first slice (none, or each holds a flank, a bar or a canton member), `layout.autoArrange: false`, the `testLiftOff` option, or a model older than the rule (as `groupArrangements` when stage 5 has nothing
+   * component in the first slice (none, or each holds a flank, a bar, a canton member or a group that is not a row), `layout.autoArrange: false`, the `testLiftOff` option, or a model older than the rule (as `groupArrangements` when stage 5 has nothing
    * to choose). `[]` = decided, none: the document has a float component, but none could rise a whole band on the no-lift run. Otherwise one entry
    * per float component measured on the runs: lifted (`offset` > 0) or declined (`offset` 0) with the reason. The document tier is never rewritten: a lifted member's
    * `LayoutGroup.tier` (its band) is its `to` band.

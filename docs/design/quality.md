@@ -161,14 +161,35 @@ The whole-command deadline is 120 s (`COMMAND_DEADLINE_MS` in `src/cli.ts`); it 
 | Nodes | Links | Shape | Time | Measured outcome |
 |---|---|---|---|---|
 | 120 | 200 | tiers × fan-out | 4.0 s | publishes, 989 draw.io cells |
-| 300 | 810 | tiers × fan-out | **51 s** | publishes, 3,363 draw.io cells |
+| 300 | 810 | tiers × fan-out (the 2026-09 generator) | **51 s** | publishes, 3,363 draw.io cells; stale, see below |
 | 100 | 389 | degree-64 hub, wide tier, transit | 30.0 s | takes the deadline path, no artifact |
 
 Evidence: `.scratch/stress/spec.md` for the first two rows, ticket 17 for the third. The first two
 are pipeline times measured with the deadline out of the way: the layout is produced, and the row
-says what it produced. Under the 120 s default command the 51 s row fits, with 69 s to spare on that machine (9 s under the former 60 s default); under the old
-30 s deadline it was a failure, and the CLI ended the run and wrote nothing. The third row was measured under the deadline and reached
-it.
+says what it produced. The third row was measured under the deadline and reached it.
+
+The 300-node row is stale. Measured again on 2026-11-09 on main (f1feee2a), with the current
+generator (`scripts/scale-input.mjs` through `scripts/scale-bench.mjs`, degree-61 hub) and the
+120 s CLI deadline; `--testLiftOff` is not needed because main has no group lift:
+
+| Sheet | Nodes | Links | Nodes + links | Time | Measured outcome |
+|---|---|---|---|---|---|
+| NTP (real sheet) | 106 | 312 | 418 | 17.6 s | publishes |
+| hub-100 | 100 | 389 | 489 | 81.8 s | publishes |
+| hub-150 | 150 | 613 | 763 | 120 s | `COMMAND_DEADLINE`, stopped in the bands stage |
+| hub-200 | 200 | 778 | 978 | 120 s | `COMMAND_DEADLINE`, stopped after bundles |
+| hub-300 | 300 | 1,167 | 1,467 | 120 s | `COMMAND_DEADLINE`, stopped after bundles |
+
+The current generator at 300 nodes does not publish under the 120 s deadline.
+
+**Group lift size cap.** The group lift (stage 4, ADR-0008 amendment) runs the pipeline again for each
+trial, up to `LIFT_TRIALS` = 2. A trial on NTP takes 29 s, beside 18 s for the run with no lift.
+The lift round admits no trial when the sheet has more than `LIFT_SIZE_CAP` = 450 nodes plus links
+(`src/layout/lift.ts`); each float component then gets a `GROUP_LIFT_SIZE_CAPPED` note and a declined
+record entry. The count is deterministic (R4), not a clock. 450 sits between NTP (418: the first run
+takes 18 s, 15 % of the deadline) and hub-100 (489: 82 s, 68 %); the target is a first run near 40 %
+of the deadline (48 s), and no measured sheet falls between the two. No corpus sheet is above the
+cap (the largest is NTP at 418; the next is 151).
 
 So node count alone does not decide the time; link count and degree decide it beside the node
 count. 100 is a **policy choice, not a measured ceiling**: it is where the threshold table above

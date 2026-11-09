@@ -4,7 +4,8 @@ import { layout, parse, score, serializeLayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { resolve } from '../../src/resolve/index.js';
-import { aspectGap, floatComponents, LIFT_AREA_TOLERANCE, LIFT_TRIALS, validateGroupLifts } from '../../src/layout/lift.js';
+import { aspectGap, floatComponents, LIFT_AREA_TOLERANCE, LIFT_SIZE_CAP, LIFT_TRIALS, liftSize, validateGroupLifts } from '../../src/layout/lift.js';
+import { decideLifts } from '../../src/pipeline/lift-round.js';
 import { judgeLift } from '../../src/layout/lift-judge.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -97,6 +98,33 @@ describe('group lift: the fixture and the key sheet', () => {
     expect(lifted.diagnostics.filter(note => note.code === 'GROUP_LIFT_TAKEN')).toHaveLength(1);
   }, 120000);
 
+});
+
+describe('group lift: the size cap', () => {
+  it('admits no trial above LIFT_SIZE_CAP nodes and links: one run, every component capped by name', async () => {
+    const plain = await layout(parse(fixture(KEY)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
+    // The same model, read as the run of a document with more links than the cap allows (the cap reads the document's counts only).
+    const big = { ...plain.document, links: [...plain.document.links, ...Array.from({ length: LIFT_SIZE_CAP }, () => plain.document.links[0]!)] };
+    expect(liftSize(big)).toBeGreaterThan(LIFT_SIZE_CAP);
+    let runs = 0;
+    const model = await decideLifts(big, {}, () => { runs++; return Promise.resolve(plain); });
+    expect(runs).toBe(1);
+    expect(model.groupLifts!.length).toBeGreaterThan(0);
+    for (const entry of model.groupLifts!) expect(entry.offset).toBe(0);
+    expect(model.diagnostics.filter(note => note.code === 'GROUP_LIFT_SIZE_CAPPED').length).toBeGreaterThan(0);
+  }, 180000);
+});
+
+describe('group lift: a group that is not a row stays out of the first slice', () => {
+  it('runs no trial for a linkless grid group (the rows guard refuses its move in x) and names it by an info note', async () => {
+    const tried: string[][] = [];
+    const model = await layout(parse(fixture('a-kept-vertical-leaves-a-straight-overlay-straight')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      testLiftTrace: event => tried.push(event.entry.units) });
+    expect(tried.some(units => units.includes('spares'))).toBe(false);
+    expect(model.groupLifts!.find(item => item.units.includes('spares'))).toMatchObject({ offset: 0, reason: 'out of the first slice: it holds a grid group' });
+    expect(model.diagnostics.filter(note => note.code === 'GROUP_LIFT_OUT_OF_SLICE').map(note => [note.severity, note.owners])).toEqual([['info', [{ kind: 'group', id: 'spares' }]]]);
+    expect(model.diagnostics.filter(note => note.code.startsWith('GROUP_LIFT_') && note.severity === 'warning')).toEqual([]);
+  }, 180000);
 });
 
 describe('group lift: the record (absent and empty)', () => {
