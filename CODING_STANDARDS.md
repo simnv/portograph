@@ -68,7 +68,7 @@ Check: grep `Date.now|performance.now` in `src/layout`; a hit outside the budget
 ### R5. A validator trusts geometry and the stored record, not a diagnostic.
 
 A diagnostic in a serialised model can be forged or stale. Do not excuse a violation because a diagnostic names it.
-The one accepted exception is ADR-0010: a non-converged centring keeps its last state, records `CENTRE_INVARIANT_UNVERIFIED`, and the final gates judge it.
+The one accepted exception is ADR-0010: a non-converged centring keeps its last state, records `CENTRE_INVARIANT_UNVERIFIED`, and the final gates judge it. One serialized code relaxes one named check, read only at restore from its named emitter (D15, 2026-11-07); no code relaxes a check model-wide.
 Limit every exemption to the owner and the stage that prove it.
 
 Evidence: m1-example-diagram ticket 19 (a forged `CENTRE_ALIGNMENT_INFEASIBLE` bypassed the invariant; an exemption covered sibling owners);

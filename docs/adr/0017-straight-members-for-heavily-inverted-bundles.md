@@ -21,7 +21,7 @@ The choice is automatic. (An authored override was considered: `route: straight`
 and stage 1 excludes such links from bundles, so forcing straight members would need a new
 bundle-level key — out of scope here, and the threshold covers the maintainer's case.)
 Gates: G5 still requires the two perpendicular stems, and accepts `straight: true` only on a member
-of a bundle that owns the segment; G4 indexes a diagonal on a uniform grid by the cells it crosses and measures the overlap
+of a bundle that owns the segment (D4, decision review 2026-11-07: also on a stored, owned routed chord that is one face-to-face segment under its chord rules, `straightOk` in `src/score/gates.ts`; DL-Q93, Q108, Q122, checklist 12); G4 indexes a diagonal on a uniform grid by the cells it crosses and measures the overlap
 along the run; G6 measures its clearance by segment distance to anything it does not cross; the
 crossing counter counts one crossing per crossing pair. Rendering:
 the same stroke class as the member; the legend line sample stays horizontal.

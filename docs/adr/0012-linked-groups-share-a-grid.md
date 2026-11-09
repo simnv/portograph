@@ -31,3 +31,8 @@ The grid widens a box in place, and the derived frame widens with it. A beside r
 ## Amendment (2026-10-04, ticket 07): the grid keeps flank gaps by moving the flanks
 
 The grid widens a core in place, and a flank stood a band gap from the old box, so the widening could close the gap (m1-sip-edge: `tbr-left` ended 14.76 px from `datacenter`). The grid now moves each flank on the widened core's rows outward by what the widening took, so every flank keeps the band gap. The canvas may grow by that amount. The moved flank's node geometry is refit and the region producers are replayed, because the bundle and row paths reserved beside the flank stood where it was.
+
+## Amendment (ruling P2, 2026-11-07)
+
+The 30 % cap on union growth (`GROUP_GRID_MAX_GROWTH`) stays. `.scratch/decision-review-2026-11/results/P2.md`, shows cap 0 gives 4 sheets more bends and 2 G6 findings, and cap 0.10 the same bend rises and 1 G6 finding; automatic union growth is not obsolete.
+Q cannot see what the grid buys: its grid-alignment term counts node matches and did not move on any sheet.

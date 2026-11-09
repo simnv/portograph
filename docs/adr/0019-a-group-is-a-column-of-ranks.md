@@ -50,7 +50,7 @@ is correct. Placement is the cause, for two reasons.
 5. **Overlay links weight order and place the free.** A frame with no routed link to another tier
    takes the mean x of its overlay partners. The order of frames in a tier and of nodes in a cell
    weights routed and overlay partners equally. A re-order stays only if the routed crossing count
-   does not rise. See Consequences.
+   does not rise. See Consequences. **Veto kept (D19, decision review V2, third round, 2026-11-07):** a re-order that adds a routed crossing to straighten overlay links stays refused. Placement cannot see the routed bends that decide the gain: the draft predictor of the second round saw no gain (V2b: precision 16 % for a link not aligned), and the stricter predictor of the third round had precision 45 % and recall 17 % (V2c; 384 predicted-straight links end bent). A placement-time bend predictor was built and measured as ticket 09 (`bend-predictor.ts`): precision 24.5 %, recall 32.1 %, against targets of 80 % and 60 %; a trial round with the veto removed kept one sheet of six. The veto stays and the predictor is not merged.
 6. **`ranked` is the default shape.** A ranked group with one rank is a `row` in every respect.
    `row` forces one rank. `grid` and `bar` stay explicit.
 
