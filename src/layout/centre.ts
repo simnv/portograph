@@ -2,7 +2,7 @@ import { portEndInsets } from './port-insets.js';
 import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
-import { laneSidesHold, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
+import { laneSidesHold, laneWallsBeside, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { holdsMove, resizeEvidence, resizeHolds } from './move-reservations.js';
 import { cellReach } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
@@ -297,11 +297,12 @@ export function centreContext(model: LayoutModel, anchor: number, columns: reado
   }
   const groupOrder = new Map(steps.map(step => [step.tier, Object.values(model.groups).filter(group => group.tier === step.tier && !group.flank)
     .sort((a, b) => a.bounds!.x - b.bounds!.x).map(group => group.id)]));
-  // Preserve which side of each fixed lane contains each group.
+  // Preserve which side of each fixed lane contains each group: the lanes the move guard reads (`laneWallsBeside`), so that the tail a step reserves
+  // for the groups after it holds them where the guard lets them stand.
   const limits = new Map<string, { low: number; high: number }>();
   for (const group of Object.values(model.groups)) {
     let low = -Infinity, high = Infinity;
-    for (const lane of model.lanes.filter(lane => lane.tier === group.tier)) {
+    for (const lane of laneWallsBeside(model, group)) {
       if (group.bounds!.x >= lane.x) low = Math.max(low, right(lane.bounds)); else high = Math.min(high, lane.bounds.x);
     }
     limits.set(group.id, { low, high });

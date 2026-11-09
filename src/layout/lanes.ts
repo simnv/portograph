@@ -128,12 +128,20 @@ export function laneSidesHold(model: LayoutModel, proposed: ProposedBox[], repor
   if (!chordsHold(model, proposed, report)) return false;
   return proposed.every(({ group, bounds }) => {
     // A lane of either kind keeps the side of every group of a sub-tier it stands beside.
-    const sameTier = model.lanes.filter(lane => wallBeside(lane, group.tier!) && !(lane.group === group.id && bypassLane(model, lane))).every(lane => {
+    const sameTier = laneWallsBeside(model, group).every(lane => {
       const box = occupiedAt(model, group, bounds, laneLink(model, lane));
       return group.bounds!.x >= lane.x ? box.x >= right(lane.bounds) - PLACEMENT_EPS : right(box) <= lane.bounds.x + PLACEMENT_EPS;
     });
     return sameTier;
   }) && (!frames || sideLaneFramesHold(model, proposed));
+}
+/**
+ * The lanes that keep the side of `group`: every lane that is a wall beside its sub-tier (`wallBeside`), but a bypass stem in the group's own gaps. One
+ * reader for the move guard (`laneSidesHold`) and for the windows the centre rule reserves before it moves (`centreContext`), so a step never takes room
+ * that the guard then forbids the group after it to give back (ticket DR-04: an aligned perimeter lane of another tier walled a group the window left free).
+ */
+export function laneWallsBeside(model: LayoutModel, group: LayoutGroup): Lane[] {
+  return model.lanes.filter(lane => wallBeside(lane, group.tier!) && !(lane.group === group.id && bypassLane(model, lane)));
 }
 /**
  * Whether a lane is a wall beside the groups of a sub-tier. A perimeter lane stands beside the sub-tiers of its span: its `tier` is the one of its upper end's
