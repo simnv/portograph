@@ -51,7 +51,8 @@ it('publishes the narrowest valid result with a diagnostic when the budget is un
   const document = parse(source);
   document.layout!.maxWidth = 1;
   const model = await layout(document, options);
-  expect(model.staggerRows?.map(row => row.group)).toEqual(['clients', 'sensors']);
+  // D-Q4: `clients` (hubs feed 4 and 2 members) is no fan for stage 5, so the width-budget search gives the rows, in its own order.
+  expect(model.staggerRows?.map(row => row.group)).toEqual(['sensors', 'clients']);
   expect(model.diagnostics.filter(note => note.code === 'WIDTH_BUDGET_UNMET')).toHaveLength(1);
   expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
   expect(model.canvas!.width).toBeLessThan(1500);

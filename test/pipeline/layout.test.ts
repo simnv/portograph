@@ -202,7 +202,8 @@ links: [[a.p, b.p]]`;
       };
     };
     await layout(parsed.document, {
-      diagnostics: parsed.diagnostics, createElkAttempt: elk, createRouteAttempt: createAvoidAttempt,
+      // The group lift (ticket 08) is off: its trials are whole runs on the same budget, and this test pins the shares of one run.
+      diagnostics: parsed.diagnostics, createElkAttempt: elk, createRouteAttempt: createAvoidAttempt, testLiftOff: true,
       budget: createBudget(20000, now), clock,
     });
     // One ELK attempt at min(10 s policy, 20 s left), then the router at the 16 s that remain.

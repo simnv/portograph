@@ -1,0 +1,41 @@
+# Expected: A float component rises as a whole into the empty bands above it (D-Q5, ticket 08). `lab` (tier 1) feeds `lab-floor`
+# (tier 2) and has no link to any other group, so the two are one float component: no link of either layer leaves it to a lower tier.
+# Beside the tall `campus` frame (three sub-tiers), the one row of `lab-floor` widens the bands of tier 2; one band up, `lab` stands
+# beside `core` and `lab-floor` beside `dist`, over the campus frame and out of its bands, and the canvas is narrower. The feeds from
+# Lab one stay straight, every straight link stays straight, and the document tiers do not change: only the bands do (`groupLifts`).
+# `dist` is no float component: it feeds `campus`, a lower tier. `campus` (fed from directly above by `dist`) may rise only through a
+# level side entry; its trial is declined on area, so it stays.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  dist: { tier: 1, label: Distribution }
+  lab: { tier: 1, label: Lab }
+  campus: { tier: 2, label: Campus }
+  campus-zone: { parent: campus, label: Campus zone }
+  lab-floor: { tier: 2, label: Lab floor }
+nodes:
+  core-1: { group: core, class: router, label: Core one }
+  dist-1: { group: dist, class: router, label: Dist one }
+  lab-1: { group: lab, class: router, label: Lab one }
+  campus-gw: { group: campus, class: router, label: Campus gateway }
+  campus-sw: { group: campus-zone, class: switch, label: Campus switch }
+  campus-a1: { group: campus-zone, class: access, label: Access 1 }
+  campus-a2: { group: campus-zone, class: access, label: Access 2 }
+  campus-a3: { group: campus-zone, class: access, label: Access 3 }
+  campus-a4: { group: campus-zone, class: access, label: Access 4 }
+  campus-a5: { group: campus-zone, class: access, label: Access 5 }
+  campus-a6: { group: campus-zone, class: access, label: Access 6 }
+  floor-1: { group: lab-floor, class: switch, label: Floor one }
+  floor-2: { group: lab-floor, class: access, label: Floor two }
+links:
+  - [core-1, dist-1]
+  - [dist-1, campus-gw]
+  - [campus-gw, campus-sw]
+  - [campus-sw, campus-a1]
+  - [campus-sw, campus-a2]
+  - [campus-sw, campus-a3]
+  - [campus-sw, campus-a4]
+  - [campus-sw, campus-a5]
+  - [campus-sw, campus-a6]
+  - [lab-1, floor-1]
+  - [lab-1, floor-2]

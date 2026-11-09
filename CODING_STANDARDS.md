@@ -68,7 +68,7 @@ Check: grep `Date.now|performance.now` in `src/layout`; a hit outside the budget
 ### R5. A validator trusts geometry and the stored record, not a diagnostic.
 
 A diagnostic in a serialised model can be forged or stale. Do not excuse a violation because a diagnostic names it.
-The one accepted exception is ADR-0010: a non-converged centring keeps its last state, records `CENTRE_INVARIANT_UNVERIFIED`, and the final gates judge it.
+The one accepted exception is ADR-0010: a non-converged centring keeps its last state, records `CENTRE_INVARIANT_UNVERIFIED`, and the final gates judge it. One serialized code relaxes one named check, read only at restore from its named emitter (D15, 2026-11-07); no code relaxes a check model-wide.
 Limit every exemption to the owner and the stage that prove it.
 
 Evidence: m1-example-diagram ticket 19 (a forged `CENTRE_ALIGNMENT_INFEASIBLE` bypassed the invariant; an exemption covered sibling owners);
@@ -85,7 +85,7 @@ Check: grep `catch {`, early `return true` and `continue` in guards. Ask what th
 ### R7. Measure the full set with the right counters.
 
 Report before and after, on every sheet: Q, crossings, canvas, gate results, turns, removed links, bent routed links and bent overlay links.
-Count bends with `pathBends` (`src/layout/objective.ts`), not `segments - 1`. A report that names one metric is not accepted.
+Count bends with `pathBends` (`src/layout/objective.ts`; on a polyline, `pointTurns` of `src/geometry/planar.ts`), not `segments - 1`. Count a proper crossing with `strictCrossing` (`src/layout/read/crossings.ts`), never with a private copy. A report that names one metric is not accepted.
 For architecture-2 refactor steps, no fixture may get worse on the recorded metrics without explicit acceptance.
 Use `npm run corpus` and `npm run gate:compare`.
 
@@ -105,6 +105,18 @@ Do not add code for one sheet. Name the general principle and the other sheets i
 Fixtures, tests, docs and commit messages use invented names and documentation address ranges. The denylist hook checks staged lines.
 Check: ask which other sheet the rule changes.
 
+### R10. A tolerance has a named owner, a unit and an edge.
+
+Compare at a name, never at a raw small literal (`1e-6`, `0.000001`, `Number.EPSILON`, `10 ** -6`). Placement and routing names live in `src/layout/tolerance.ts`
+(`PLACEMENT_EPS` for reservation arithmetic in px, `NO_MOVE_EPS` for every move guard, `SIGN_EPS` for products in px squared,
+and the named depths, keys, grains and solver stops); published geometry reads `EPS` of `src/geometry/planar.ts`.
+Two numbers that are equal answer two questions: do not merge them, and do not borrow a distance for a product.
+Count turns and crossings with the shared predicates (R7), not with a private threshold.
+
+Evidence: audit 2026-11 P-08 (62 unowned literals, a 1e-3 fraction that dropped a crossing 5 px inside a segment) and P-06-F7
+(two no-move thresholds in one guard set); stress tickets 13 and 19.
+Check: `test/lint/tolerance-literals.test.ts` refuses a raw literal outside the two owner files and the named exceptions it lists.
+
 ## Tests
 
 A rule-level ticket adds a fixture in `goldens/synthetic/`, a `goldens/README.md` row, and a test that loads the fixture. Corpus tests scan that directory for invariants.
@@ -112,6 +124,6 @@ Never change the golden to make a test pass. The maintainer approves a new golde
 
 ## Checklist (rule ids)
 
-R1 R2 R3 R4 R5 R6 R7 R8 R9
+R1 R2 R3 R4 R5 R6 R7 R8 R9 R10
 
 When a review finds a defect class a second time, add it here as a new R-id.

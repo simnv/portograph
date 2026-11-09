@@ -67,7 +67,8 @@ To set a width budget, add `layout: { nodeContent: card, maxWidth: 1500 }` to th
 If the published sheet is wider, portograph tries eligible rows widest first and puts alternate
 members on a second line. It preserves feed order and clear vertical drops. A budget it cannot
 meet produces `WIDTH_BUDGET_UNMET` with the narrowest valid result tried. Without `maxWidth`,
-the output stays unchanged.
+portograph still puts a wide fan of leaves on two lines when that makes the canvas smaller and keeps
+every straight link (ADR-0024); `layout: { autoArrange: false }` keeps every row on one line.
 
 ### Font: Verdana is required
 

@@ -42,6 +42,13 @@ override → aggregation → visibility → bundle → straight → orthogonal.
   class, enum, WASM handle or asset URL — reaches the layout model.
 - Semantic technique choice (override, aggregation, family, bundle membership) is made before
   placement (pipeline stage 1); only geometry-dependent choices wait for a trial route.
-- The JPEG golden's remainder is two links of twenty-six, measured in ticket 13: the rules claim
+- The JPEG golden's remainder is two links of twenty-six, a dated measurement of ticket 13 (2026-09; D17, decision review 2026-11-07): the rules claim
   the rest, and libavoid routes those two through every gate. Sheets with substantial remainder
   demand, including the NTP golden, remain untested.
+
+## Amendment (decision review D13 and ruling V4, 2026-11-07)
+
+Techniques drawn: override, overlay family (aggregation and visibility by class), bundle, straight, orthogonal. `stub` is diagnostic-only;
+`group-link` records and draws its members routed. The stub thresholds and the complete-bipartite collapse are parked. A long crossing link
+is kept whole: it is not turned into a labelled stub pair. The 2026-11-07 stub drawing (NTP crossings 324 to 53) was rejected, because
+labels overlap and groups look cut off.

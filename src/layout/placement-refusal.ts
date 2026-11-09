@@ -7,9 +7,9 @@ import type { Owner } from '../model/index.js';
 
 /**
  * What refused: a side hint, a course, a span corridor, a trunk join, the centring invariant, the skeleton (ELK), a bundle path, the placement budget, a reservation of
- * the ledger or a stagger reservation (its seat, its stage-5 proof or its validator; ticket 51).
+ * the ledger, a stagger reservation (its seat, its stage-5 proof or its validator; ticket 51), a solid block, or a producer postcondition of 7e or 7f (DR-11).
  */
-export type RefusalCode = 'side' | 'course' | 'span' | 'trunk' | 'centring' | 'skeleton' | 'bundle' | 'budget' | 'ledger' | 'stagger' | 'solid-block';
+export type RefusalCode = 'side' | 'course' | 'span' | 'trunk' | 'centring' | 'skeleton' | 'bundle' | 'budget' | 'ledger' | 'stagger' | 'solid-block' | 'postcondition';
 
 export interface RefusalDetail {
   /** The pipeline or model stage that refused, when the source knows it. */
@@ -48,9 +48,27 @@ export class TrunkBlocked extends SideHintRefusal {
 /** A refusal that stage 7f may also give (a trial's bands run): the centring invariant and the budget are the command's, never a trial's. */
 export const refusedAtBands = (error: unknown): error is PlacementRefusal => error instanceof PlacementRefusal && error.code !== 'centring' && error.code !== 'budget';
 
+/**
+ * A refusal of a producer of 7e or 7f (DR-11): a postcondition of the net draft (`PostconditionRefusal`) or a bundle path with no room
+ * (`BundleFeasibilityError`, code `bundle`; W09 can end there when its guard refuses the room). Every round withdraws its trial on one, at its
+ * placement run and at its 7f run alike; the main line fails by name. One rule for every round: the round runner (`round.ts`) asks it before the
+ * round's own `tolerates`.
+ */
+export const producerRefusal = (error: unknown): error is PlacementRefusal => error instanceof PlacementRefusal && (error.code === 'postcondition' || error.code === 'bundle');
+
 /** The whole block is declined before freeze; the next run restores its original placement owners. */
 export class SolidBlockRefusal extends PlacementRefusal {
   constructor(readonly blocks: ReadonlyMap<string, string>) {
     super('solid-block', [...blocks].map(([id, why]) => id + ': ' + why).join('; '), { stage: 'bundles' });
+  }
+}
+
+/**
+ * The net draft of 7e or 7f breaks a reservation that held at entry (DR-11, `postconditions.ts`). In a round's trial it withdraws the trial; in the
+ * main line the command fails and names the reservation.
+ */
+export class PostconditionRefusal extends PlacementRefusal {
+  constructor(readonly rule: 'bundles' | 'bands', readonly findings: readonly { kind: string; subject: string; detail: string }[]) {
+    super('postcondition', `Postcondition of ${rule} failed: ${findings.map(item => `${item.kind} ${item.subject}: ${item.detail}`).join('; ')}`, { stage: rule });
   }
 }

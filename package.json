@@ -51,7 +51,7 @@
     "test:full": "node scripts/test-runner.mjs --full",
     "test:runner": "node --test scripts/test-runner.check.mjs scripts/test-runner-lock.check.mjs scripts/test-runner-safety.check.mjs scripts/test-runner-hardening.check.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.json --noEmit --module NodeNext --moduleResolution NodeNext",
-    "lint": "eslint . && node scripts/check-no-raw-vitest.mjs",
+    "lint": "eslint . && node scripts/check-no-raw-vitest.mjs && node scripts/check-box-writers.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
     "corpus": "node scripts/with-lock.mjs corpus -- npm run corpus:run --silent --",
     "corpus:run": "vite build --logLevel error && node scripts/corpus.mjs",

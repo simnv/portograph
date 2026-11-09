@@ -7,6 +7,8 @@ import { measureSpans, type SpanOffer } from '../../src/layout/span-measure.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+// The group lift (ticket 08) is off in these tests: with it, `exits` (it links to no lower tier) rises one band beside `ranked#1`, so no
+// rank band stands between the ends of the two chords. `lift.test.ts` tests the lift.
 
 /**
  * Architecture-2 ticket 35, part 1 (docs/design/routed-chords.md, Section 14.1). A link across one document tier gap whose ends stand on sub-tiers
@@ -17,7 +19,7 @@ const ONE_GAP = 'a-link-across-one-document-tier-gap-is-straight-when-nothing-st
 const STILL = 'a-span-corridor-passes-a-lane-beside-a-unit-it-does-not-move';
 // Since architecture-2 ticket 65 the shared-end sheet offers no span link; this sheet offers link-1, and one re-run is kept.
 const KEPT = 'own-lane-is-an-obstacle';
-const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
+const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true };
 interface Run { model: LayoutModel; offer: SpanOffer | undefined; base: LayoutModel | undefined; routedBase: LayoutModel | undefined }
 const run = async (name: string, extra: Record<string, unknown> = {}): Promise<Run> => {
   let offer: SpanOffer | undefined, base: LayoutModel | undefined, routedBase: LayoutModel | undefined;

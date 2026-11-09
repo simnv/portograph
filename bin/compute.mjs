@@ -54,7 +54,8 @@ async function run(request, emit) {
   // One place decides what `render` writes, so the restored-layout path and the from-YAML path can
   // never drift apart on it.
   const primaryArtifact = (model) => format === 'drawio'
-    ? drawio(model, { ...(layers ? { layers } : {}), ...(theme ? { theme } : {}), ...(labels ? { labels } : {}), ...(icons ? { icons } : {}) })
+    ? drawio(model, { ...(layers ? { layers } : {}), ...(theme ? { theme } : {}), ...(labels ? { labels } : {}), ...(icons ? { icons } : {}),
+      onDiagnostic: (diagnostic) => say(diagnostic) })
     : render(model, layers ? { layers } : {});
   // Timings change on every run. The published artifacts leave them out unless `--timings` asks.
   const published = (model) => (timings ? model : { ...model, runtime: { stages: [] } });

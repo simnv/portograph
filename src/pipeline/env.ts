@@ -12,7 +12,7 @@ import type { Reservations } from '../layout/reservations.js';
 import { route, ROUTE_BUDGET_MS } from '../route/index.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 import type { LayoutOptions } from './options.js';
-import type { GroupArrangement, StaggerRow } from '../model/layout.js';
+import type { GroupArrangement, GroupLift, StaggerRow } from '../model/layout.js';
 import { FAN_ROUNDS, MAX_RERUNS } from './limits.js';
 
 /** What stage 7f did to a model, with the copy of its first settled state (`lastAttempt`): phase 3b's trigger. */
@@ -23,6 +23,8 @@ export interface Env {
   declinedSolidBlocks?: Map<string, string>;
   /** Failed probes, each excluding a new named block; separate from the legacy optimisation budget. */
   blockProbes: number;
+  /** The placements of the fan-wrap acceptance gate's comparison run (D-Q4; one run per command, with its trunk re-runs): like the probes, outside the placement cap. */
+  gateRuns: number;
   staggerRows?: StaggerRow[];
   /** Ticket 51: the arrangement stage 5 of the first placement run chose; every later run of the command keeps it (R1). */
   groupArrangements?: Record<string, GroupArrangement>;
@@ -30,6 +32,8 @@ export interface Env {
   arranged?: boolean;
   /** Ticket 51: the groups an earlier attempt of the first run staggered and a later stage refused, with the refusal; they stay rows. */
   declinedArrangements?: Map<string, string>;
+  /** D-Q5: the group lifts every placement run applies as band input (`lift.ts`); absent before the decision. */
+  groupLifts?: GroupLift[];
   /** Ticket 51: the groups stage 5 of the latest placement run staggered by its own choice (read when that run is refused). */
   arrangedRows?: string[];
   readonly document: NormalisedDocument;
@@ -75,7 +79,7 @@ export function createEnv(document: NormalisedDocument, options: LayoutOptions):
   };
   const trialAbort = (stage: string): void => { if (budget.remainingMs() <= 0) throw new CommandDeadlineError(0, stage); };
   const env: Env = {
-    document, options, budget, clock, now, report, step, timed, trialAbort, placements: 0, reruns: 0, blockProbes: 0, stage3Sizes: new WeakMap(), maxReruns: options.testMaxReruns ?? MAX_RERUNS,
+    document, options, budget, clock, now, report, step, timed, trialAbort, placements: 0, reruns: 0, blockProbes: 0, gateRuns: 0, stage3Sizes: new WeakMap(), maxReruns: options.testMaxReruns ?? MAX_RERUNS,
     // The cap on placements per command: the first run and the effective re-run budget (the fan rounds at the start run within FAN_ROUNDS even with a budget of 0).
     placeCap: Math.max(options.testMaxReruns ?? MAX_RERUNS, FAN_ROUNDS) + 1,
     place: (reservations, abort) => place(env, reservations, abort),

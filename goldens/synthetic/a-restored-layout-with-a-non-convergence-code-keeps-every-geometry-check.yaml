@@ -1,3 +1,7 @@
+# Expected: a restored layout keeps every geometry check whatever non-convergence code it carries (ticket DR-01): a forged clearance,
+# containment or band violation is refused with no code and with each emitter's message. With the group lift (D-Q5, ticket 08) the corpus
+# layout differs: `lonely` has no link, so it is a float component and rises into band 0 beside `up`. The forged cases move `lonely` inside
+# its tier band, so `restore-geometry-refusal.test.ts` reads the layout with the lift off.
 portograph: 2
 groups: {up: {tier: 0}, low: {tier: 1}, lonely: {tier: 1}}
 nodes:

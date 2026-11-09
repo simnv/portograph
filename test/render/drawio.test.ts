@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, Point } from '../../src/index.js';
 import { linkIds } from '../../src/model/index.js';
-import { drawio, render } from '../../src/index.js';
+import { drawio, layout, parse, render } from '../../src/index.js';
 import { bands } from '../../src/layout/bands.js';
 import { bars } from '../../src/layout/bars.js';
 import { bundles } from '../../src/layout/bundles.js';
@@ -17,7 +17,7 @@ import { route } from '../../src/route/index.js';
 import { effectiveLayer } from '../../src/score/model.js';
 import { OVERLAY_ENDPOINT_RADIUS } from '../../src/theme/geometry.js';
 import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
-import { placed } from '../layout/phase-two-fixture.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { flatCells, inFile } from './drawio-cells.js';
 
@@ -66,7 +66,27 @@ interface Cell {
   /** The ends the edge leaves free (`sourcePoint`, `targetPoint`): a free end stays behind when a node moves. */
   free: string[];
   offset?: Point;
+  /**
+   * A `relative="1"` vertex in a vertex (a pill, an icon, a description: issue 07), resolved the way
+   * mxGraph draws it: the parent's size times the fraction, plus the offset, from the parent's top-left.
+   */
+  at?: Point;
 }
+
+/** A generated part carries every lock a joint carries (DX-12). */
+function expectFixed(cell: { style: Record<string, string> }, deletable = true): void {
+  for (const key of ['movable', 'resizable', 'rotatable', 'editable', 'connectable', 'pointerEvents']) {
+    expect(cell.style[key], key).toBe('0');
+  }
+  // Only the cells that bind link ends (joints, marks) cannot be deleted alone.
+  expect(cell.style['deletable']).toBe(deletable ? undefined : '0');
+}
+
+it('rejects an empty layer selection in draw.io as in SVG', async () => {
+  const model = await pipeline('portograph: 2\ngroups: {g: {tier: 0}}\nnodes:\n  a: {group: g}\nlinks: []\n');
+  expect(() => drawio(model, { layers: [] })).toThrow('Layer selection must name at least one');
+  expect(() => render(model, { layers: [] })).toThrow('Layer selection must name at least one');
+});
 
 /** Every `<mxCell>`, with its style string split the way draw.io splits it. */
 function cells(xml: string): Map<string, Cell> {
@@ -101,11 +121,19 @@ function cells(xml: string): Map<string, Cell> {
       ...(offsetTag ? { offset: { x: Number(offsetTag[1]), y: Number(offsetTag[2]) } } : {}),
     });
   }
+  for (const cell of found.values()) {
+    const parent = cell.parent === undefined ? undefined : found.get(cell.parent);
+    if (!cell.vertex || cell.geometry['relative'] !== '1' || !parent?.vertex) continue;
+    cell.at = {
+      x: Number(cell.geometry['x'] ?? 0) * Number(parent.geometry['width'] ?? 0) + (cell.offset?.x ?? 0),
+      y: Number(cell.geometry['y'] ?? 0) * Number(parent.geometry['height'] ?? 0) + (cell.offset?.y ?? 0),
+    };
+  }
   return found;
 }
 
 const box = (cell: Cell): { x: number; y: number; width: number; height: number } => ({
-  x: Number(cell.geometry['x'] ?? 0), y: Number(cell.geometry['y'] ?? 0),
+  x: cell.at?.x ?? Number(cell.geometry['x'] ?? 0), y: cell.at?.y ?? Number(cell.geometry['y'] ?? 0),
   width: Number(cell.geometry['width'] ?? 0), height: Number(cell.geometry['height'] ?? 0),
 });
 
@@ -355,6 +383,15 @@ links: [{from: a.p, to: b.p, route: merge}, {from: b.q, to: a.q, route: merge}, 
     // The export's polyline is a few px off the path (terminals), so the arc length is checked to within 10 px.
     expect(Math.abs((Number(cell.geometry['x']) / 2 + 0.5) * total - middle)).toBeLessThan(10);
     expect(middle).toBeGreaterThan(at(support.segment + 1));
+  }, 60000);
+
+  it('states the page background as the canvas pair, and one overlay opacity for light and dark (DX-09)', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const attr = (xml: string): string => /<mxGraphModel[^>]* background="([^"]*)"/.exec(xml)![1]!;
+    expect(attr(drawio(model))).toBe(`light-dark(${NETWORK_THEME.light.background},${NETWORK_THEME.dark.background})`);
+    expect(attr(drawio(model, { theme: 'dark' }))).toBe(NETWORK_THEME.dark.background);
+    // A number cannot be paired in a style, so the palette holds one overlay opacity for both modes.
+    expect(NETWORK_THEME.dark.overlay.opacity).toBe(NETWORK_THEME.light.overlay.opacity);
   }, 60000);
 
   it('carries both appearances in one file, because draw.io inverts a colour it is given alone', async () => {
@@ -699,8 +736,8 @@ describe('link labels', () => {
   const absolute = (all: Map<string, Cell>, key: string): { x: number; y: number; width: number; height: number } => {
     let at: Cell | undefined = all.get(key), x = 0, y = 0;
     while (at) {
-      x += Number(at.geometry['x'] ?? 0);
-      y += Number(at.geometry['y'] ?? 0);
+      x += box(at).x;
+      y += box(at).y;
       at = at.parent === undefined ? undefined : all.get(at.parent);
     }
     return { ...box(all.get(key)!), x, y };
@@ -1174,11 +1211,16 @@ describe('connection grid, rotation and tiles', () => {
     expect(cell.style['horizontal']).toBeUndefined();
   }, 60000);
 
-  it('leaves out a glyph a tile has no room for, rather than writing a negative box', async () => {
+  it('leaves out the glyph of a tile with no area, rather than writing a negative box', async () => {
     const model = await pipeline(fixture('drawio-constructs'));
     for (const icons of ['profile', 'cisco19'] as const) {
       const normal = cells(drawio(model, { icons }));
       expect(normal.has(id('icon', 'a'))).toBe(true);
+      expectFixed(normal.get(id('icon', 'a'))!);
+      if (normal.has(id('iconTile', 'a'))) expectFixed(normal.get(id('iconTile', 'a'))!);
+      // The owner stays free: the node carries no lock.
+      expect(normal.get(id('node', 'a'))!.style['movable']).toBeUndefined();
+      expect(normal.get(id('node', 'a'))!.style['resizable']).toBeUndefined();
       for (const cell of normal.values()) {
         expect(box(cell).width).toBeGreaterThanOrEqual(0);
         expect(box(cell).height).toBeGreaterThanOrEqual(0);
@@ -1199,15 +1241,28 @@ describe('connection grid, rotation and tiles', () => {
         expect(box(cell).height).toBeGreaterThanOrEqual(0);
       }
 
-      // A tile 2 px across keeps the tile and drops the glyph: there is something to draw, and no
-      // room inside it for the inset the glyph needs.
+      // A tile 2 px across keeps the tile and the glyph (draw.io ticket 13, S-10): the inset is at
+      // most a quarter of the side (`iconGlyphBox`), so the glyph box is 1 px wide, as in the SVG.
       const tight = structuredClone(model);
       tight.nodes['a']!.icon!.bounds.width = 2;
       tight.nodes['a']!.icon!.icon = 'cloud';
       const some = cells(drawio(tight, { icons }));
       expect(some.has(id('iconTile', 'a'))).toBe(true);
-      expect(some.has(id('icon', 'a'))).toBe(false);
+      expect(some.has(id('icon', 'a'))).toBe(true);
+      expect(box(some.get(id('icon', 'a'))!).width).toBeGreaterThan(0);
+      expect(box(some.get(id('icon', 'a'))!).width).toBeLessThanOrEqual(1);
     }
+  }, 60000);
+
+  it('locks every legend swatch, tile and body to its row (DX-12)', async () => {
+    const model = await pipeline(fixture('drawio-constructs'));
+    const all = cells(drawio(model));
+    const kinds = new Set(model.legend!.entries.map(item => item.kind));
+    expect(kinds.has('line') && kinds.has('port') && kinds.has('symbol')).toBe(true);
+    const parts = [...all.values()].filter(cell => /^pg-legend(Swatch|Tile|Body)~/.test(cell.id));
+    expect(parts.length).toBeGreaterThanOrEqual(model.legend!.entries.length);
+    for (const cell of parts) expectFixed(cell);
+    expect([...all.keys()].some(key => key.startsWith('pg-legendBody~'))).toBe(true);
   }, 60000);
 
   it('applies the same guard to a legend swatch', async () => {
@@ -1337,30 +1392,17 @@ describe('maintainer edit principles', () => {
     expect(cell.points[0]).toEqual({ x: off.x - model.canvas!.x, y: off.y - model.canvas!.y });
   }, 60000);
 
-  it('reads the guard off the polyline draw.io draws, terminals included', async () => {
-    // Codex round 1: the guard read the waypoints alone. An end is pinned to the pill's outward
-    // midpoint, not to the port anchor the path starts from, so a pill that does not sit on its own
-    // anchor's axis moves the endpoint *across* that axis — and a link whose every waypoint is
-    // square is then drawn as a diagonal the orthogonal router would answer with a corner nothing
-    // reserved.
+  it('reads the style off the polyline draw.io draws, terminals included, exactly (D-Q7)', async () => {
+    // Codex round 1 found that an end pinned to the pill's outward midpoint could move *across* the
+    // stem, and a 1 px style tolerance hid it. Since D-Q7 each end is pinned at `visibleEnd`, a point
+    // of the path's own stem, so the drawn polyline is the model polyline and the style is read from
+    // it exactly. A short stem inside its pill is covered in `path-end.test.ts`.
     const model = await pipeline(fixture('drawio-constructs'));
     const link = model.links.find(item => effectiveLayer(item) === 'overlay' && item.path)!;
     const square = cells(drawio(model)).get(id('link', stable(model, link.id)))!;
     // Ticket 34: the overlay is a U, square from terminal to terminal, so it is a square connector.
     expect(square.style['edgeStyle']).toBe('orthogonalEdgeStyle');
     expect(square.points).toHaveLength(2);
-    const skewed = structuredClone(model);
-    const ref = link.attachments!.from;
-    // The pill moved — a hand edit the model knows nothing about. Since ticket 34 the path leaves the
-    // top pill by a vertical leg (the U), so moving the pill in y keeps the pinned endpoint on that
-    // leg's axis and skews nothing; moving it 12 px in x moves the pinned endpoint off the leg's axis,
-    // which is the case this guard is for.
-    skewed.nodes[ref.node]!.ports.find(item => item.ref.name === ref.name
-      && item.ref.ordinal === ref.ordinal)!.pill!.bounds.x += 12;
-    const cell = cells(drawio(skewed)).get(id('link', stable(model, link.id)))!;
-    expect(cell.points).toEqual(square.points);
-    expect(cell.style['edgeStyle']).toBe('none');
-    expect(cell.style['jettySize']).toBeUndefined();
   }, 60000);
 
   it('leaves an overlay end that draws no pill by the node it terminates on', async () => {
@@ -1780,6 +1822,10 @@ describe('link ends and nested groups move with their owner (issue 03)', () => {
     for (const cell of all.values()) {
       if (cell.id.startsWith('pg-overlayMark~') || cell.id.startsWith('pg-busMark~')) expect(all.get(cell.parent!)!.vertex).toBe(true);
     }
+    // A mark is fixed to its owner, as a joint is (DX-12, S-08).
+    const marks = [...all.values()].filter(cell => /^pg-(overlay|bus)Mark~/.test(cell.id));
+    expect(marks.length).toBeGreaterThan(0);
+    for (const cell of marks) expectFixed(cell, false);
   }, 60000);
 });
 
@@ -1879,5 +1925,119 @@ describe('a sheet class wash reads the same in the SVG and in draw.io (ticket 09
     // The key paints the wash behind a class's tile, in both.
     expect(svg).toMatch(/<rect class="node-body switch pg-wash-\d+/);
     expect([...all.values()].filter(cell => cell.id.startsWith('pg-legendBody~')).length).toBeGreaterThan(0);
+  }, 60000);
+  // DX-06 (audit A1-01, A1-06, A1-08): a title or a bus label is the child of what it names, never of a layer.
+  it('hangs a crossed group title on its group and a bus label on its bar, never on a layer', async () => {
+    const titled = cells(drawio(await pipeline(fixture('a-group-title-yields-with-a-halo'))));
+    expect(titled.get(id('group', 'access'))!.value).toBeDefined();
+    // A crossed title in the text-child form: aws-nested-vpc has crossed titles that are not centred bands.
+    const aws = await layout(parse(readFileSync(new URL('../../goldens/real/aws-nested-vpc.yaml', import.meta.url), 'utf8')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const crossedIds = aws.labels.filter(item => item.role === 'group' && (item.crossedBy?.length ?? 0) > 0 && item.owner.kind === 'group')
+      .map(item => item.owner.kind === 'group' ? item.owner.id.replace(/#\d+$/, '') : '');
+    const awsCells = cells(drawio(aws));
+    const children = crossedIds.filter(owner => awsCells.has(id('groupTitle', owner)));
+    expect(children.length, 'a crossed title in the text-child form').toBeGreaterThan(0);
+    for (const owner of children) expect(awsCells.get(id('groupTitle', owner))!.parent).toBe(id('group', owner));
+    const labelled = fixture('a-full-mesh-on-one-row-draws-as-one-bus').replace(/class: sync \}/g, 'class: sync, label: Sync }');
+    const model = await pipeline(labelled);
+    const all = cells(drawio(model));
+    const bus = model.meshBuses![0]!;
+    const label = all.get(id('busLabel', bus.id))!;
+    expect(label, 'the bus has a label cell').toBeDefined();
+    expect(all.get(label.parent!)!.edge).toBe(true);
+    expect(label.parent!.startsWith(`pg-bus~${bus.id}~`)).toBe(true);
+    for (const cell of all.values()) {
+      if (/^pg-(groupTitle|busLabel)~/.test(cell.id)) expect(cell.parent, cell.id).not.toMatch(/^pg-layer~/);
+    }
+  }, 60000);
+});
+
+describe('a pill stays on its face when its node is resized (drawio-export 07)', () => {
+  /**
+   * Where mxGraph draws a `relative="1"` child of a node of size `size`: the node's top-left plus the fraction of its size plus
+   * the offset. The exported fraction and offset, read back, under the node size a maintainer's resize leaves.
+   */
+  const drawnIn = (cell: Cell, size: { width: number; height: number }): Point => ({
+    x: Number(cell.geometry['x']) * size.width + (cell.offset?.x ?? 0),
+    y: Number(cell.geometry['y']) * size.height + (cell.offset?.y ?? 0),
+  });
+  const RESIZES = [{ dw: 40, dh: 30 }, { dw: -20, dh: -10 }];
+
+  it.each(['drawio-face-children-stay-on-resize', 'a-card-node-holds-its-ports-on-every-face', 'a-theme-paints-and-moves-nothing'])(
+    'keeps each pill on its face, a fixed px distance from the nearer corner, and the icon and description with the name (%s)', async name => {
+      const model = await pipeline(fixture(name));
+      const all = cells(drawio(model));
+      let pills = 0, followers = 0;
+      for (const [key, node] of Object.entries(model.nodes)) {
+        const nodeCell = all.get(id('node', key))!;
+        const size = { width: node.bounds!.width, height: node.bounds!.height };
+        // A card (ticket 159) starts its text at the left: its name and description say `textAlign: start`.
+        const card = model.labels.some(label => label.owner.kind === 'node' && label.owner.id === key
+          && (label.role === 'node' || label.role === 'description') && label.textAlign === 'start');
+        if (name === 'a-card-node-holds-its-ports-on-every-face') expect(card, key).toBe(nodeCell.style['align'] === 'left');
+        for (const port of node.ports) {
+          if (!port.pill || port.ref.anonymous === true) continue;
+          const cell = all.get(id('port', key, port.ref.name!, String(port.ref.ordinal)))!;
+          pills++;
+          expect(cell.geometry['relative'], cell.id).toBe('1');
+          // Before any edit the pill is where the layout put it.
+          const pill = port.pill.bounds, local = { x: pill.x - node.bounds!.x, y: pill.y - node.bounds!.y };
+          const at = drawnIn(cell, size);
+          expect(at.x, cell.id).toBeCloseTo(local.x, 6);
+          expect(at.y, cell.id).toBeCloseTo(local.y, 6);
+          const horizontal = port.side === 'top' || port.side === 'bottom';
+          // The face across: the side the pipeline decided.
+          expect(Number(cell.geometry[horizontal ? 'y' : 'x']), cell.id).toBe(port.side === 'bottom' || port.side === 'right' ? 1 : 0);
+          // Along the face: the nearer corner, the start on a tie.
+          const start = horizontal ? local.x : local.y, extent = horizontal ? pill.width : pill.height;
+          const along = horizontal ? size.width : size.height;
+          const far = start + extent / 2 > along / 2;
+          expect(Number(cell.geometry[horizontal ? 'x' : 'y']), cell.id).toBe(far ? 1 : 0);
+          for (const { dw, dh } of RESIZES) {
+            const resized = { width: size.width + dw, height: size.height + dh };
+            const moved = drawnIn(cell, resized);
+            // On its face: the pill's centre stays on the face line it straddled.
+            const across = horizontal ? moved.y + pill.height / 2 - (port.side === 'bottom' ? resized.height : 0)
+              : moved.x + pill.width / 2 - (port.side === 'right' ? resized.width : 0);
+            const before = horizontal ? local.y + pill.height / 2 - (port.side === 'bottom' ? size.height : 0)
+              : local.x + pill.width / 2 - (port.side === 'right' ? size.width : 0);
+            expect(across, `${cell.id} ${dw}/${dh}`).toBeCloseTo(before, 6);
+            // Its corner distance along the face is kept.
+            const corner = (from: number, length: number): number => (far ? length - from - extent : from);
+            expect(corner(horizontal ? moved.x : moved.y, horizontal ? resized.width : resized.height), `${cell.id} ${dw}/${dh}`)
+              .toBeCloseTo(corner(start, along), 6);
+          }
+        }
+        // The icon and the description follow the name: from the top, centred, or from the left on a card.
+        for (const kind of ['icon', 'iconTile', 'nodeDescription']) {
+          const cell = all.get(id(kind, key));
+          if (cell === undefined) continue;
+          followers++;
+          expect(cell.geometry['relative'], cell.id).toBe('1');
+          expect([Number(cell.geometry['x']), Number(cell.geometry['y'])], cell.id).toEqual([card ? 0 : 0.5, 0]);
+          for (const { dw, dh } of RESIZES) {
+            const resized = { width: size.width + dw, height: size.height + dh };
+            const was = drawnIn(cell, size), now = drawnIn(cell, resized);
+            expect(now.y, cell.id).toBeCloseTo(was.y, 6);
+            expect(now.x, cell.id).toBeCloseTo(card ? was.x : was.x + dw / 2, 6);
+          }
+        }
+      }
+      expect(pills).toBeGreaterThan(0);
+      expect(followers).toBeGreaterThan(0);
+    }, 60000);
+
+  it.each([1e-13, -1e-13])('measures a pill centred to within float noise (%s px) from the start corner', async noise => {
+    // The pipeline freezes its model; the noise goes into a copy.
+    const model = structuredClone(await pipeline(fixture('a-card-node-holds-its-ports-on-every-face')));
+    const node = model.nodes['crowd']!;
+    const port = node.ports.find(item => item.side === 'top' && item.pill !== undefined)!;
+    const pill = port.pill!.bounds;
+    // The fixture centres this pill on its face exactly; the noise is what float arithmetic leaves on a centred pill.
+    expect(pill.x + pill.width / 2).toBeCloseTo(node.bounds!.x + node.bounds!.width / 2, 9);
+    port.pill!.bounds = { ...pill, x: pill.x + noise };
+    const cell = cells(drawio(model)).get(id('port', 'crowd', port.ref.name!, String(port.ref.ordinal)))!;
+    expect([cell.geometry['x'], cell.geometry['y']]).toEqual(['0', '0']);
   }, 60000);
 });

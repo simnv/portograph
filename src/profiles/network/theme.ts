@@ -169,10 +169,13 @@ export function washAssignment(classAttrs: readonly (string | undefined)[]): Was
   return new Map(own.map((token, at) => [token, free[at % free.length]!]));
 }
 
+/** The structural class of one wash palette entry. */
+export const washClassName = (at: number): string => `pg-wash-${at}`;
+
 /** The structural class that carries a sheet class's wash on a node body; the one resolution both exports share. */
 export const washClass = (classAttr: string | undefined, assignment: WashAssignment): string | undefined => {
   const token = washToken(classAttr), at = token === undefined ? undefined : assignment.get(token);
-  return at === undefined ? undefined : `pg-wash-${at}`;
+  return at === undefined ? undefined : washClassName(at);
 };
 
 /** Body fill of one palette entry in one mode. */
@@ -191,6 +194,15 @@ export interface LinkClassStyle {
   cap?: 'round';
   label: string;
   strokes: Modal<string>;
+}
+
+/**
+ * The profile link class a link's `class` paints with: of its tokens that the profile styles, the one declared last (its
+ * `.link-line.<class>` rule wins the cascade); `undefined` when no token is styled. The legend keys a line by it (ticket 8).
+ */
+export function linkStyleClass(classAttr: string | undefined): string | undefined {
+  const rank = (token: string): number => NETWORK_LINK_CLASSES.findIndex(([name]) => name === token && name !== LEGEND_DEFAULT_CLASS);
+  return (classAttr ?? '').split(/\s+/).filter(token => token && rank(token) >= 0).sort((a, b) => rank(b) - rank(a))[0];
 }
 
 /** The class key a link without an authored `class:` contributes to the legend. */
@@ -289,6 +301,13 @@ export interface ThemePaint {
   overlay: { stroke: string; opacity: number; mark: string; dash?: string };
 }
 
+/**
+ * The opacity of an overlay link in light and dark, decided once (DX-09, audit A1-05). A draw.io style cannot pair a number
+ * by mode (`light-dark(70,60)` resolves opaque, measured), so an auto export carries one value; the dark SVG takes the same
+ * value, and the two renderers agree. Print keeps its own 0.55: it is an explicit mode in both.
+ */
+export const OVERLAY_OPACITY = 0.7;
+
 export const NETWORK_THEME: Modal<ThemePaint> = {
   light: {
     background: '#f2f2f3',
@@ -299,7 +318,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[200], stroke: STEEL[500], text: STEEL[800] },
     link: { stroke: STEEL[800], label: NEUTRAL[700], multiplicity: STEEL[700] },
     legend: { text: NEUTRAL[800] },
-    overlay: { stroke: INDIGO[500], opacity: 0.7, mark: INDIGO[500] },
+    overlay: { stroke: INDIGO[500], opacity: OVERLAY_OPACITY, mark: INDIGO[500] },
   },
   dark: {
     background: STEEL[900],
@@ -310,7 +329,7 @@ export const NETWORK_THEME: Modal<ThemePaint> = {
     pill: { fill: STEEL[800], stroke: STEEL[400], text: STEEL[200] },
     link: { stroke: STEEL[300], label: STEEL[300], multiplicity: STEEL[200] },
     legend: { text: STEEL[200] },
-    overlay: { stroke: INDIGO[500], opacity: 0.6, mark: INDIGO[500] },
+    overlay: { stroke: INDIGO[500], opacity: OVERLAY_OPACITY, mark: INDIGO[500] },
   },
   print: {
     background: WHITE,

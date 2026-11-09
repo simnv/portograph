@@ -4,7 +4,8 @@ import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import type { Course, Lane, LayoutLink, LayoutModel } from '../../src/index.js';
 import type { Side } from '../../src/model/geometry.js';
-import { naturalPolyline, polylineCrossings, polylineTurns, simplify } from '../../src/layout/course-plan.js';
+import { naturalPolyline, simplify } from '../../src/layout/course-plan.js';
+import { polylinesCross } from '../../src/layout/read/crossings.js';
 import { drawnCrossings, judgeCourseTrial, measureCourses, placedExtent, poorRoute, stepGain, stepRoute } from '../../src/layout/course-measure.js';
 import { COURSE_VISITS, course as courseRound } from '../../src/pipeline/rounds.js';
 import type { Env } from '../../src/pipeline/env.js';
@@ -14,7 +15,7 @@ import { constraintFindings } from '../../src/layout/trial-findings.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { laneSidesHold } from '../../src/layout/lanes.js';
-import { right } from '../../src/geometry/planar.js';
+import { pointTurns, right } from '../../src/geometry/planar.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
@@ -39,8 +40,8 @@ const AROUND = 'a-flank-link-around-a-neighbour-runs-along-the-core-edge';
 describe('the polyline readers', () => {
   it('simplify drops repeated points and collinear middles, and keeps a reversal', () => {
     expect(simplify([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 5 }, { x: 0, y: 9 }])).toEqual([{ x: 0, y: 0 }, { x: 0, y: 9 }]);
-    expect(polylineTurns([{ x: 0, y: 0 }, { x: 0, y: 5 }, { x: 4, y: 5 }, { x: 4, y: 0 }])).toBe(2);
-    expect(polylineTurns([{ x: 0, y: 0 }, { x: 0, y: 5 }, { x: 0, y: 2 }])).toBe(1);
+    expect(pointTurns([{ x: 0, y: 0 }, { x: 0, y: 5 }, { x: 4, y: 5 }, { x: 4, y: 0 }])).toBe(2);
+    expect(pointTurns([{ x: 0, y: 0 }, { x: 0, y: 5 }, { x: 0, y: 2 }])).toBe(1);
   });
 
   it.each<[string, { x: number; y: number }, Side, { x: number; y: number }, Side, number]>([
@@ -50,16 +51,16 @@ describe('the polyline readers', () => {
     ['a U under two nodes', { x: 0, y: 0 }, 'bottom', { x: 80, y: 0 }, 'bottom', 2],
   ])('naturalPolyline: %s', (_name, a, from, b, into, expected) => {
     const points = naturalPolyline(a, from, b, into);
-    expect(polylineTurns(points)).toBe(expected);
+    expect(pointTurns(points)).toBe(expected);
     expect(points[0]).toEqual(a);
     expect(points.at(-1)).toEqual(b);
   });
 
   it('counts proper crossings only', () => {
     const across = [{ x: 0, y: 5 }, { x: 10, y: 5 }];
-    expect(polylineCrossings(across, [{ x: 5, y: 0 }, { x: 5, y: 10 }])).toBe(1);
-    expect(polylineCrossings(across, [{ x: 10, y: 0 }, { x: 10, y: 10 }])).toBe(0);
-    expect(polylineCrossings(across, [{ x: 0, y: 5 }, { x: 0, y: 10 }])).toBe(0);
+    expect(polylinesCross(across, [{ x: 5, y: 0 }, { x: 5, y: 10 }])).toBe(true);
+    expect(polylinesCross(across, [{ x: 10, y: 0 }, { x: 10, y: 10 }])).toBe(false);
+    expect(polylinesCross(across, [{ x: 0, y: 5 }, { x: 0, y: 10 }])).toBe(false);
   });
 });
 

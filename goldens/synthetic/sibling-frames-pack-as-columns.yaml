@@ -5,6 +5,8 @@
 # cell, and every cell of a frame, and the child frame inside it, stands inside its own column. No frame
 # overlaps another, so the stage-8 obstacle of one location never holds a node of the other.
 # Test-only input owned by ranked-groups ticket 09; test/pipeline/frame-columns.test.ts reads the layout.
+# Fan wrap (D-Q4, ticket 07): the four access nodes of `west-zone` stand on two lines; the ISP feeds both locations (a shared
+# parent), so no feeding chain moves.
 portograph: 2
 groups:
   upstream: { tier: 0, label: Upstream }

@@ -16,20 +16,21 @@ import { foreignOverExtensions, trunkHeads, trunkXAfter } from './trunk.js';
 import { lanesHoldGrowth } from './growth-guard.js';
 import { chordsHold } from './frame-paths.js';
 import { findPort } from './row-paths.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { rowRoomHolds, rowRoomShortNow, rowRoomShortOf } from './label-room-guard.js';
+import { NO_MOVE_EPS, PLACEMENT_EPS } from './tolerance.js';
 const isSpanLane = (lane: { kind?: string }): boolean => lane.kind === 'span';
 
 /** The boxes a stage proposes; `ProposedBox.dx` says whether the bodies move with a box (a move) or stay (a widening). */
 export type ProposedMove = ProposedBox[];
 type Maker = (model: LayoutModel, proposed: ProposedMove) => Reservation[];
 /** The derived kinds a move is held to, in the order the guards were chained. */
-export type MoveKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'sideAlignment' | 'spanCorridor' | 'groupExit';
+export type MoveKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'sideAlignment' | 'spanCorridor' | 'groupExit' | 'labelRoom';
 
 /** The routed ports of the member rows that stand in a riser keep-out now: a move may not take one deeper. */
 const riserKeepOut: Maker = (model, proposed) => {
   const upper = (model.meshBuses ?? []).find(bus => bus.riser !== undefined && bus.cross !== undefined);
   if (upper === undefined) return [];
-  const maxDepth = proposed.flatMap(({ group, bounds }) => Math.abs(bounds.x - group.bounds!.x) <= 1e-9 ? [] : [...riserPenetrations(model, group)]);
+  const maxDepth = proposed.flatMap(({ group, bounds }) => Math.abs(bounds.x - group.bounds!.x) <= NO_MOVE_EPS ? [] : [...riserPenetrations(model, group)]);
   return [transient('riserKeepOut', { kind: 'mesh-bus', id: upper.id }, 'move', 'lanes', { bus: upper.id, maxDepth })];
 };
 /** The foreign units that stand across a bar extension of a trunk join now: a move may not add one. */
@@ -56,7 +57,12 @@ const spanCorridor: Maker = model => {
 /** The exits 7e reserved (architecture ticket 13): a move keeps the end of each beyond the margin of the boxes it leaves, and its strip clear of every other group. */
 const groupExit: Maker = model => model.groupExits?.length
   ? [transient('groupExit', { kind: 'command', id: 'move' }, 'exits', 'bands', { exits: model.groupExits })] : [];
-const MAKERS: readonly (readonly [MoveKind, Maker])[] = [['riserKeepOut', riserKeepOut], ['trunkExtension', trunkExtension], ['laneSide', laneSide], ['sideAlignment', sideAlignment], ['spanCorridor', spanCorridor], ['groupExit', groupExit]];
+/** The row rooms of the labelled same-tier links that are short now: a move that shifts the two ends of such a link apart may not add one (DR-02). */
+const labelRoom: Maker = (model, proposed) => {
+  const short = rowRoomShortNow(model, proposed);
+  return short === undefined ? [] : [transient('labelRoom', { kind: 'command', id: 'move' }, 'rows', 'bands', { short })];
+};
+const MAKERS: readonly (readonly [MoveKind, Maker])[] = [['riserKeepOut', riserKeepOut], ['trunkExtension', trunkExtension], ['laneSide', laneSide], ['sideAlignment', sideAlignment], ['spanCorridor', spanCorridor], ['groupExit', groupExit], ['labelRoom', labelRoom]];
 
 /** The reservations a move is held to, with their evidence read from `model` as it stands. */
 export function moveReservations(model: LayoutModel, proposed: ProposedMove): Reservations {
@@ -70,7 +76,7 @@ function holdsMoveEntry(entry: Reservation, model: LayoutModel, proposed: Propos
       const before = new Map(entry.payload.maxDepth);
       return proposed.every(({ group, bounds }) => {
         const dx = bounds.x - group.bounds!.x;
-        return Math.abs(dx) <= 1e-9 || riserNoDeeper(before, riserPenetrations(model, group, dx));
+        return Math.abs(dx) <= NO_MOVE_EPS || riserNoDeeper(before, riserPenetrations(model, group, dx));
       });
     }
     case 'trunkExtension': {
@@ -85,6 +91,7 @@ function holdsMoveEntry(entry: Reservation, model: LayoutModel, proposed: Propos
       return true;
     }
     case 'groupExit': return groupExitsHold(model, entry.payload.exits, proposed);
+    case 'labelRoom': return rowRoomHolds(model, proposed, entry.payload.short);
     default: return true;
   }
 }
@@ -106,7 +113,7 @@ export function holdsMove(model: LayoutModel, proposed: ProposedMove, report = t
  * keep-out of its facing ports and the far port of an aligned side lane. A node that leaves its lane's x is refused, as a unit that does.
  */
 export function holdsNodeMove(model: LayoutModel, group: LayoutGroup, ids: readonly string[], dx: number): boolean {
-  if (Math.abs(dx) <= 1e-9) return true;
+  if (Math.abs(dx) <= NO_MOVE_EPS) return true;
   const bounds = { ...group.bounds!, x: group.bounds!.x + dx };
   if (!holdsMove(model, [{ group: { ...group, nodes: [...ids] }, bounds }], false, ['riserKeepOut', 'sideAlignment'])) return false;
   // A node slide leaves the container in place. Omit its id so the chord trial moves only these bodies.
@@ -130,6 +137,8 @@ export interface ResizeEvidence {
   trunks: Map<string, Set<string>>;
   /** The side lanes whose far port, a port of the group, stands on the lane x. */
   farOnLane: string[];
+  /** The links with a row shortfall; a resize adds none (DR-02). Absent when no link has a label. */
+  rowShort?: string[] | undefined;
 }
 const overExtensions = (model: LayoutModel): Map<string, Set<string>> =>
   new Map(trunkHeads(model).map(head => [head.id, new Set(foreignOverExtensions(model, head).map(item => `${item.group}|${item.bus}`))]));
@@ -141,13 +150,13 @@ export function resizeEvidence(model: LayoutModel, group: LayoutGroup): ResizeEv
     const far = sideLaneSource(link, lane), port = findPort(model, far);
     return group.nodes.includes(far.node) && port?.anchor !== undefined && Math.abs(port.anchor.x - lane.x) <= PLACEMENT_EPS ? [lane.id] : [];
   });
-  return { box: { ...group.bounds! }, riser: riserPenetrations(model, group), breaches: spanBreaches(model), trunks: overExtensions(model), farOnLane };
+  return { box: { ...group.bounds! }, riser: riserPenetrations(model, group), breaches: spanBreaches(model), trunks: overExtensions(model), farOnLane, rowShort: rowRoomShortOf(model) };
 }
 /**
  * Whether a resize of `group`, made on `model`, keeps what `evidence` read before it: every reserved lane window and span corridor meets the new box no
  * more than it met the old one (`lanesHoldGrowth`), every lane of the tier keeps its side of the occupied extent (`laneSidesHold`), no facing port goes
- * deeper in a riser keep-out, no new wall stands in a span corridor, no new foreign unit stands across a trunk extension, and every far port that stood
- * on its side lane still does. The exits of 7e are a record a resize does not read: a model that has them refuses (R6).
+ * deeper in a riser keep-out, no new wall stands in a span corridor, no new foreign unit stands across a trunk extension, every far port that stood
+ * on its side lane still does, and no same-tier link has a row room short that was not short before (DR-02). The exits of 7e are a record a resize does not read: a model that has them refuses (R6).
  */
 export function resizeHolds(model: LayoutModel, group: LayoutGroup, evidence: ResizeEvidence): boolean {
   if (model.groupExits?.length) return false;
@@ -155,6 +164,8 @@ export function resizeHolds(model: LayoutModel, group: LayoutGroup, evidence: Re
   if (!laneSidesHold(model, [{ group, bounds: group.bounds! }], false)) return false;
   if (!riserNoDeeper(evidence.riser, riserPenetrations(model, group))) return false;
   if ([...spanBreaches(model)].some(key => !evidence.breaches.has(key))) return false;
+  // The label room of a same-tier link (DR-02): the resize moves row nodes apart or together, and nothing reserves the room again.
+  if (evidence.rowShort !== undefined && (rowRoomShortOf(model) ?? []).some(id => !evidence.rowShort!.includes(id))) return false;
   for (const [head, pairs] of overExtensions(model)) for (const pair of pairs) if (!evidence.trunks.get(head)?.has(pair)) return false;
   return evidence.farOnLane.every(id => {
     const lane = model.lanes.find(item => item.id === id), link = lane === undefined ? undefined : laneLink(model, lane);

@@ -1,5 +1,5 @@
 /** The options and progress events of `layout`: the public surface of the pipeline seam. */
-import type { Course, Diagnostic, LayoutModel, LayoutStage, Size } from '../model/index.js';
+import type { Course, Diagnostic, GroupLift, LayoutModel, LayoutStage, Size } from '../model/index.js';
 import type { CreateElkAttempt, ElkClock } from '../layout/elk-worker.js';
 import type { CreateRouteAttempt } from '../route/index.js';
 import type { AttemptTraceEvent } from '../layout/placement-attempt.js';
@@ -69,4 +69,10 @@ export interface LayoutOptions {
   /** Test only: rebuild the unmoved baseline even when the filter finds no offer (counts the filter's misses). */
   testRebuildAlways?: boolean;
   testSideTrace?: (event: Record<string, unknown>) => void;
+  /** Internal (D-Q5): the lift record every placement run of this command applies; no lift is decided (the runs of `decideLifts`). */
+  fixedLifts?: GroupLift[];
+  /** Test only (D-Q5): no lift decision; the record stays absent (the no-lift drawing of a sheet). */
+  testLiftOff?: boolean;
+  /** Test only (D-Q5): each lift trial, with the published baseline and the published trial (undefined when the run refused it). */
+  testLiftTrace?: (event: { entry: GroupLift; routedBase: LayoutModel; routedTrial: LayoutModel | undefined; reason: string | undefined }) => void;
 }

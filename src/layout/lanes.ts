@@ -15,7 +15,7 @@ import { admitBypassLanes, bypassGeometry, bypassLaneExtent, bypassLaneId, isByp
 import { RING_PITCH, endMode } from './course-rows.js';
 import { groupShape } from './grid.js';
 import { compareId, portId } from './skeleton-graph.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { LANE_ORDER_SIGN_EPS, NO_MOVE_EPS, PLACEMENT_EPS, RISER_DEPTH_EPS } from './tolerance.js';
 import { moveGroup, union } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { withStageMutation } from './mutation.js';
@@ -240,13 +240,13 @@ export function riserPenetrations(model: LayoutModel, group: LayoutGroup, dx = 0
   const keep = riserKeepOut(model) - PLACEMENT_EPS, result = new Map<string, number>();
   for (const item of facingRoutedPorts(model, group)) for (const port of item.ports) {
     const depth = keep - Math.abs(port.x + dx - item.riser);
-    if (depth > 1e-9) result.set(`${port.node}:${port.ordinal}`, Math.max(result.get(`${port.node}:${port.ordinal}`) ?? 0, depth));
+    if (depth > RISER_DEPTH_EPS) result.set(`${port.node}:${port.ordinal}`, Math.max(result.get(`${port.node}:${port.ordinal}`) ?? 0, depth));
   }
   return result;
 }
 /** Whether no port is deeper in the keep-out in `after` than in `before`. A port is judged by itself: a move that frees one port does not pay for pushing another deeper. */
 export function riserNoDeeper(before: ReadonlyMap<string, number>, after: ReadonlyMap<string, number>): boolean {
-  return [...after].every(([key, depth]) => depth <= (before.get(key) ?? 0) + 1e-9);
+  return [...after].every(([key, depth]) => depth <= (before.get(key) ?? 0) + RISER_DEPTH_EPS);
 }
 /**
  * A move of a member row keeps every routed port of its facing edge `k` plus half a stroke from the riser x, as a move is measured against a lane
@@ -256,7 +256,7 @@ export function riserNoDeeper(before: ReadonlyMap<string, number>, after: Readon
 function riserKeepOutHolds(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[]): boolean {
   return proposed.every(({ group, bounds }) => {
     const dx = bounds.x - group.bounds!.x;
-    if (Math.abs(dx) <= 1e-9) return true;
+    if (Math.abs(dx) <= NO_MOVE_EPS) return true;
     return riserNoDeeper(riserPenetrations(model, group), riserPenetrations(model, group, dx));
   });
 }
@@ -267,7 +267,7 @@ function riserKeepOutHolds(model: LayoutModel, proposed: { group: LayoutGroup; b
 export function sideLanesHold(model: LayoutModel, proposed: { group: LayoutGroup; bounds: Rect }[], report = true): boolean {
   return proposed.every(({ group, bounds }) => {
     const dx = bounds.x - group.bounds!.x;
-    if (Math.abs(dx) <= PLACEMENT_EPS) return true;
+    if (Math.abs(dx) <= NO_MOVE_EPS) return true;
     return model.lanes.filter(isSideLane).every(lane => {
       const link = laneLink(model, lane);
       if (!link?.attachments) return true;
@@ -558,7 +558,7 @@ function feedOrderHolds(model: LayoutModel, lane: Lane, link: LayoutLink, cx: nu
     const peer = model.links.find(item => item.id === (other.owner as { id: string }).id);
     if (!peer || peer.bundle || !peer.attachments) continue;
     const peerChild = findPort(model, laneChild(model, peer))?.anchor;
-    if (peerChild && (cx - other.x) * (anchor.x - peerChild.x) < -1e-9) return false;
+    if (peerChild && (cx - other.x) * (anchor.x - peerChild.x) < -LANE_ORDER_SIGN_EPS) return false;
   }
   return true;
 }

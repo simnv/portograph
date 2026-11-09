@@ -9,6 +9,9 @@
 # keeps its lane, but its fallback leg then crowds the two chords (`leg`, ticket 29 part B): it is not on this sheet.
 # `r-head` has a long label, so its cell is wide and the `Ranked` title fits beside the chord of the entry feed: the title room of a
 # chord that leans is ticket 35 part 2, not this sheet.
+# With the group lift (D-Q5, ticket 08) the corpus layout differs: `exits` links to no lower tier, so it is a float component and rises one
+# band, beside `ranked#1`; the two links from `branch` then join adjacent bands, with no rank band between, and draw straight. No input change
+# keeps `exits` down (every link into it comes from above). The span round is tested on this sheet with the lift off (`one-gap-span.test.ts`).
 # Test-only input owned by architecture-2 ticket 35; test/pipeline/one-gap-span.test.ts reads it.
 portograph: 2
 profile: network

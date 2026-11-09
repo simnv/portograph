@@ -1,3 +1,4 @@
+import { liftedGroups } from './lift.js';
 import { portEndInsets } from './port-insets.js';
 import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
@@ -38,6 +39,7 @@ import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, tapTarget, ow
 import { faceKey } from './turn-order.js';
 import { untrimmedModel } from './end-trim.js';
 import { standsVertical, strandedGrowth } from './given-back.js';
+import { RISER_DEPTH_EPS } from './tolerance.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -113,12 +115,12 @@ function alignedEdges(node: LayoutNode, side: Side, index: number, x: number, co
   return { low: x - index * pitch - inset.low, high: x + (count - 1 - index) * pitch + inset.high };
 }
 /** The keep decision of `alignSide` without its mutation: the targets a side keeps, none when the side is declined as a whole (architecture ticket 12). */
-function keptTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void = () => {}): { index: number; x: number; key: string }[] {
+function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void = () => {}): { index: number; x: number; key: string }[] {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
   const box = node.bounds!, oldRight = right(box);
   if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return [];
-  const allowance = alignmentAllowance(node, side);
+  const allowance = alignmentAllowance(model, node, side);
   /** The width the body ends with when the port at `index` is aligned to `x`. */
   const reach = (index: number, x: number): number => { const edges = alignedEdges(node, side, index, x, ports.length, pitch); return Math.max(oldRight, edges.high) - Math.min(box.x, edges.low); };
   for (const [index, port] of ports.entries()) {
@@ -156,12 +158,12 @@ function keptTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, 
  * one parent far to the left, one far to the right — decline the whole side, because widening to the
  * outer one is the same growth by another name.
  */
-function alignSide(node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void,
+function alignSide(model: LayoutModel, node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void,
   avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }, held: ReadonlyMap<string, (x: number) => boolean> = new Map()): Set<string> {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!;
   const box = node.bounds!, oldRight = right(box);
-  const kept = keptTargets(node, side, targets, limit, stops, stopped);
+  const kept = keptTargets(model, node, side, targets, limit, stops, stopped);
   if (!kept.length) return new Set();
   const first = kept[0]!, last = kept[kept.length - 1]!;
   // The width the alignment needs is what each edge moved outward, added to the width the node
@@ -288,8 +290,21 @@ export interface CentreContext {
 /** Everything one centring pass reads but never writes: step order, winners, group order, lane windows. */
 export function centreContext(model: LayoutModel, anchor: number, columns: readonly FrameColumn[] = frameColumns(model)): CentreContext {
   const tiers = model.tierBands.map(band => band.tier), index = tiers.indexOf(anchor);
-  const steps = [...tiers.slice(index + 1).map((tier, i) => ({ tier, authority: tiers[index + i]! })),
+  const plainSteps = [...tiers.slice(index + 1).map((tier, i) => ({ tier, authority: tiers[index + i]! })),
     ...tiers.slice(0, index).reverse().map((tier, i) => ({ tier, authority: tiers[index - i]! }))];
+  // D-Q5 (S13): a push leaves bands that hold only lifted groups between a feeder and the units it fed before the push. A tier whose
+  // authority is such a band is centred once more on the nearest band toward the anchor that holds a group that did not lift, so a vertical
+  // feed across the pushed bands stays vertical (the feed is reserved here, at placement).
+  const lifted = liftedGroups(model);
+  const liftOnly = (tier: number): boolean => lifted.size > 0 && model.tierBands.some(band => band.tier === tier && band.groups.length > 0
+    && band.groups.every(id => lifted.has(id) || model.groups[id]?.flank !== undefined));
+  const steps = plainSteps.flatMap(step => {
+    if (liftOnly(step.tier) || !liftOnly(step.authority)) return [step];
+    const at = tiers.indexOf(step.authority), dir = at > tiers.indexOf(step.tier) ? 1 : -1;
+    let far = at;
+    while (far >= 0 && far < tiers.length && liftOnly(tiers[far]!) && tiers[far] !== anchor) far += dir;
+    return far >= 0 && far < tiers.length ? [step, { tier: step.tier, authority: tiers[far]! }] : [step];
+  });
   const winners = new Map<string, string>();
   for (const step of steps) for (const feed of [...centringFeeds(model, step.tier, step.authority)].sort((a, b) => model.nodes[a.child.ref.node]!.bounds!.x - model.nodes[b.child.ref.node]!.bounds!.x || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
     const key = `${step.tier}:${feed.key}`;
@@ -570,7 +585,7 @@ function alignedExtentOf(model: LayoutModel, context: CentreContext, tier: numbe
     bodyLow = Math.min(bodyLow, body.x); bodyHigh = Math.max(bodyHigh, right(body));
     const moved: LayoutNode = { ...node, bounds: { ...body, x: body.x + dx }, ports: node.ports.map(port => ({ ...port, anchor: { ...port.anchor!, x: port.anchor!.x + dx } })) };
     const limit = siblingLimit(model, group, node);
-    const targets = keptTargets(moved, 'bottom', wanted, { low: limit.low + dx, high: limit.high + dx }, overlayStops(model, moved));
+    const targets = keptTargets(model, moved, 'bottom', wanted, { low: limit.low + dx, high: limit.high + dx }, overlayStops(model, moved));
     grownLow = Math.min(grownLow, body.x + dx); grownHigh = Math.max(grownHigh, right(body) + dx);
     if (!targets.length) continue;
     kept = true;
@@ -680,7 +695,7 @@ function spreadParent(model: LayoutModel, context: CentreContext, tier: number, 
   const parents = mean(feeds.map(feed => feed.parent.anchor!.x)), children = mean(feeds.map(feed => feed.child.anchor!.x));
   const targets = new Map(feeds.map(feed => [feed.key, parents + feed.child.anchor!.x - children]));
   const unbounded = { low: -Infinity, high: Infinity }, stops = overlayStops(model, node);
-  if (keptTargets(node, 'bottom', targets, unbounded, stops).length !== feeds.length) return decline('the body would grow past its alignment allowance or onto an overlay link');
+  if (keptTargets(model, node, 'bottom', targets, unbounded, stops).length !== feeds.length) return decline('the body would grow past its alignment allowance or onto an overlay link');
   const saved = JSON.stringify({ group, nodes: group.nodes.map(id => model.nodes[id]!) }), evidence = resizeEvidence(model, group);
   const restore = (): void => {
     const copy = JSON.parse(saved) as { group: LayoutGroup; nodes: LayoutNode[] };
@@ -690,7 +705,7 @@ function spreadParent(model: LayoutModel, context: CentreContext, tier: number, 
   const undo = (why: string): undefined => { restore(); return decline(why); };
   // The face and the body, then the row.
   const oldX = node.bounds!.x, oldRight = right(node.bounds!);
-  if (alignSide(node, 'bottom', targets, unbounded, stops, () => {}, riserAvoidance(model, authority, 'bottom')).size !== feeds.length) {
+  if (alignSide(model, node, 'bottom', targets, unbounded, stops, () => {}, riserAvoidance(model, authority, 'bottom')).size !== feeds.length) {
     return undo('a port would stand on the keep-out of a mesh-bus riser');
   }
   const growth = { low: oldX - node.bounds!.x, high: right(node.bounds!) - oldRight };
@@ -988,7 +1003,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     let stoppedBy: string | undefined;
     for (const side of ['top', 'bottom'] as const) {
       const box = node.bounds!, fromX = box.x, fromWidth = box.width;
-      const kept = alignSide(node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'), heldChordPorts(model, node));
+      const kept = alignSide(model, node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'), heldChordPorts(model, node));
       for (const key of kept) aligned.add(key);
       // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
       if (box.x < fromX - EPS || box.width > fromWidth + EPS) for (const key of kept) notes.grown.set(key, { low: box.x - wanted.get(key)!, high: right(box) - wanted.get(key)! });
@@ -1084,7 +1099,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
    * branch is not the producer's common path.
    */
   const keptRefusal = (keptGroup: LayoutGroup, stepGroup: LayoutGroup, stepNodes: readonly LayoutNode[]): { reason: AlignmentDeclineReason; by: string } | null => {
-    const deeper = [...riserPenetrations(model, keptGroup)].filter(([key, depth]) => depth > (startPenetration.get(key) ?? 0) + 1e-9).map(([key]) => key).sort()[0];
+    const deeper = [...riserPenetrations(model, keptGroup)].filter(([key, depth]) => depth > (startPenetration.get(key) ?? 0) + RISER_DEPTH_EPS).map(([key]) => key).sort()[0];
     if (deeper !== undefined) return { reason: 'riser', by: deeper };
     const lane = [...chordLaneCrossings(model, keptGroup)].filter(pair => !startCrossings.has(pair)).sort()[0];
     if (lane !== undefined) return { reason: 'lane-crossing', by: lane };

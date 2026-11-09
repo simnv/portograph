@@ -1,13 +1,15 @@
 import type { Rect } from '../model/geometry.js';
-import type { Legend, LegendEntry, LayoutLabel, LayoutModel } from '../model/layout.js';
+import type { Legend, LegendEntry, LayoutLabel, LayoutLink, LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
-import { LEGEND_DEFAULT_CLASS, NETWORK_PORT_STATUS, classDisplayLabel, classOrder } from '../profiles/network/theme.js';
+import { LEGEND_DEFAULT_CLASS, NETWORK_PORT_STATUS, classDisplayLabel, classOrder, linkStyleClass, nodeClassStyle, washToken } from '../profiles/network/theme.js';
 import { resolveNodeIcon } from '../profiles/network/icons.js';
 import { authorClass } from '../model/classes.js';
 import { bottom, boundingBox } from '../geometry/planar.js';
 import { measureText } from '../text/index.js';
+import { effectiveLayer } from '../score/model.js';
 import { DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { LEGEND_GEOMETRY as theme } from '../theme/legend.js';
+import { LEGEND_FIT_EPS } from './tolerance.js';
 
 const OWNER = { kind: 'legend', id: 'legend' } as const;
 
@@ -142,18 +144,52 @@ export function nodeSymbolIds(model: LayoutModel): Map<string, string> {
   for (const id of orderedNodeIds(model.document)) {
     const node = model.document.nodes[id]!;
     if (node.class === undefined || node.class === '' || !model.nodes[id]) continue;
-    const set = icons.get(node.class) ?? new Set<string>();
+    const key = symbolKey(node.class);
+    const set = icons.get(key) ?? new Set<string>();
     set.add(resolveNodeIcon(node) ?? '');
-    icons.set(node.class, set);
+    icons.set(key, set);
   }
   const ids = new Map<string, string>();
   for (const id of orderedNodeIds(model.document)) {
     const node = model.document.nodes[id]!;
     if (node.class === undefined || node.class === '' || !model.nodes[id]) continue;
-    const qualified = (icons.get(node.class)?.size ?? 0) > 1;
-    ids.set(id, `symbol:${token(node.class)}${qualified ? `:${token(resolveNodeIcon(node) ?? '')}` : ''}`);
+    const key = symbolKey(node.class);
+    const qualified = (icons.get(key)?.size ?? 0) > 1;
+    ids.set(id, `symbol:${token(key)}${qualified ? `:${token(resolveNodeIcon(node) ?? '')}` : ''}`);
   }
   return ids;
+}
+
+/**
+ * The legend key of a node class: the profile class that paints the node (`washToken`, the profile class declared last) when the
+ * class has one, else the class as written. A node of class `router extra` draws a router, so it shares the router's row; a token
+ * the profile does not know adds no row of its own (drawio-export ticket 8).
+ */
+export function symbolKey(classAttr: string): string {
+  const painted = washToken(classAttr);
+  return painted !== undefined && nodeClassStyle(painted) !== undefined ? painted : classAttr;
+}
+
+/**
+ * The legend key of a link: the profile link class its class paints with (`linkStyleClass`), else its class as written, else
+ * `default`. A link of class `dashed extra` draws a dashed line, so it shares the `dashed` row (drawio-export ticket 8).
+ */
+export function lineKey(model: LayoutModel, link: LayoutLink): string {
+  const value = model.document.links[link.sourceIndex]?.class;
+  return linkStyleClass(authorClass(value)) ?? value ?? LEGEND_DEFAULT_CLASS;
+}
+
+/** The links a legend line row stands for: every link it keys, stubs apart (`legendVariants` reads the same set). */
+const keyedLinks = (model: LayoutModel, key: string): LayoutLink[] =>
+  model.links.filter(link => link.technique !== 'stub' && lineKey(model, link) === key);
+
+/**
+ * Whether a legend line row draws its sample as an overlay line: when every link it keys is an overlay link. A row then takes the
+ * paint its links take, the overlay stroke and opacity for a class the theme does not style (audit A1-16), in both renderers.
+ */
+export function legendLineOverlay(model: LayoutModel, key: string): boolean {
+  const links = keyedLinks(model, key);
+  return links.length > 0 && links.every(link => effectiveLayer(link) === 'overlay');
 }
 
 /**
@@ -177,11 +213,11 @@ export function legendVariants(model: LayoutModel): { symbols: Variant[]; lines:
     seen.add(symbol);
     const icon = resolveNodeIcon(node) ?? '';
     symbols.push({ id: symbol,
-      kind: 'symbol', key: node.class!, ...(icon ? { icon } : {}), order: symbols.length });
+      kind: 'symbol', key: symbolKey(node.class!), ...(icon ? { icon } : {}), order: symbols.length });
   }
   for (const link of model.links) {
     if (link.technique === 'stub') continue;
-    const key = model.document.links[link.sourceIndex]?.class ?? LEGEND_DEFAULT_CLASS;
+    const key = lineKey(model, link);
     const identity = JSON.stringify(['line', key]);
     if (seen.has(identity)) continue;
     seen.add(identity);
@@ -260,7 +296,7 @@ export function produceLegend(model: LayoutModel): void {
   let row: Measured[] = [], used = 0;
   for (const item of measured) {
     const advance = row.length ? theme.columnGap + item.width : item.width;
-    if (row.length && used + advance > limit + 1e-9) { rows.push(row); row = [item]; used = item.width; continue; }
+    if (row.length && used + advance > limit + LEGEND_FIT_EPS) { rows.push(row); row = [item]; used = item.width; continue; }
     row.push(item);
     used += advance;
   }

@@ -47,6 +47,7 @@ const ROWS: Row[] = [
   // on this sheet. Laid out in the written order on the DR-04 code the sheet still reads 22/100/50/5, 2 runs, preCentre 2 (and derives 41/19/2),
   // so the counts below follow from the order alone: 19/63/44/5, 3 place runs (one fan re-run more), preCentre 3. Attempts, rounds, open
   // rounds, chord moves, the base 7f and the findings (no body on a frozen chord, the cantons settle) are unchanged.
+  // Decision review ticket DR-02: a trial copy's room set is read from `roomShort` (13 candidate copies more, 50 to 63); no other count moves.
   row('three-continents', '19/63/44/5', 3, 2, 5, 2, 2, { preCentre: 3, baseChord: 1 }),
   // Ticket 22: a direct family on this sheet, and the crowding check of the attempt runs it a second round (1/40/10/3, 1 round before).
   // Ticket 65: the settle after the rounds puts src back at the spec's x, a direct member then crowds a planned part, and the attempt body runs
@@ -93,14 +94,16 @@ const ROWS: Row[] = [
   // Verdana metrics (snack-theme ticket 157): 13/28/35/6 (15/30/39/6 with Arial).
   // Ticket 162: two feeds a title refused are chords before centring, which takes them off (pre-7f chords lost 2, 0 before).
   // Ticket 54: no title refuses the feeds (pre-7f chords lost 0) and nine centring passes fewer (13/28/35/6 before).
-  row('a-chord-step-moves-a-group-off-a-straight-chord', '13/19/35/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
+  // Decision review ticket DR-02: no settle ends on the label room, so a trial copy's room set is read from `roomShort` (nine candidate copies more, 35 to 44); no other count moves.
+  row('a-chord-step-moves-a-group-off-a-straight-chord', '13/19/44/6', 2, 3, 5, 0, 2, { baseChord: 1 }),
 ];
 
 interface Reading { counters: string; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: string; probe: number; preChords: number; preCentre: number; base7f: string; events: AttemptTraceEvent[] }
 async function ledger(text: string, on = true): Promise<Reading> {
   resetAttemptCounters(); attemptCounters.ledger = on;
   const events: AttemptTraceEvent[] = [];
-  await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], ...(on ? { attemptTrace: event => events.push(event) } : {}) });
+  // The group lift (ticket 08) is off: the ledger counts one command, and each lift trial is one more whole command run.
+  await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true, ...(on ? { attemptTrace: event => events.push(event) } : {}) });
   const c = attemptCounters, i = c.invalidations, placed = c.placements.slice(0, 1 + i.fanReruns), base = c.attemptLog[0]!;
   return { counters: [c.settleCalls, c.centringPasses, c.candidateCopies, c.validationReplays].join('/'),
     runs: c.placeRuns, attempts: c.attempts, rounds: c.rounds, open: c.openRounds, chord: c.chordRoundsMoved, baseChord: base.chordRoundsMoved,
@@ -153,7 +156,7 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
     ['a-tier-gap-grows-to-its-rows', 0, 0, 1], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 1], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 3],
   ] as const)('derives once: %s replays %i, settled copies %i, gap solves %i', async (name, replays, trials, solves) => {
     resetAttemptCounters(); attemptCounters.ledger = true;
-    await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] });
+    await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true });
     expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapSolves]).toEqual([replays, trials, solves]);
     // Exactly one solve per 7f attempt body: an attempt and its retries (a crowded direct member runs the body again, ticket 22), each body one
     // entry of the attempt log. Since ticket 65 a-tier-gap-plan retries once (its replays are the settle after the rounds, once per body).
@@ -162,7 +165,7 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
 
   it('reads nothing of the model when the ledger and the trace are off', async () => {
     resetAttemptCounters(); attemptCounters.ledger = false;
-    await layout(parse(golden('a-member-title-widens-a-beside-row')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    await layout(parse(golden('a-member-title-widens-a-beside-row')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
     const i = attemptCounters.invalidations;
     // The cheap counters run; the ones that need a read of the links stay at zero and the logs hold no entry. (With the ledger on this fixture loses 1 routed aligned link.)
     // Two 7f runs: the baseline and the course trial that gives link-3 the L of a step (architecture-2 ticket 09, follow-up; one trial, kept).

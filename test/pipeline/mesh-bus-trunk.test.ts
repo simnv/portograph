@@ -220,7 +220,7 @@ describe('a mesh over three rows: fixtures and draw.io (architecture ticket 21, 
     const model = await run(caseEleven());
     const xml = drawio(model);
     const head = trunkOf(model);
-    const pieces = [...xml.matchAll(/<mxCell id="pg-busTrunk~mesh-bus-1~(\d+)"[^>]*source="([^"]+)" target="([^"]+)"/g)];
+    const pieces = [...xml.matchAll(/id="pg-busTrunk~mesh-bus-1~(\d+)"(?:[^>]*>\s*<mxCell)?[^>]*source="([^"]+)" target="([^"]+)"/g)];
     expect(pieces).toHaveLength(head.trunk!.buses.length - 1);
     expect(pieces[0]![3]).toBe(pieces[1]![2]);
     for (const piece of pieces) {
@@ -228,7 +228,7 @@ describe('a mesh over three rows: fixtures and draw.io (architecture ticket 21, 
       expect(xml).toContain(`id="${piece[2]}"`);
       expect(xml).toContain(`id="${piece[3]}"`);
     }
-    expect(xml).toMatch(/pg-busTrunk~mesh-bus-1~0"[^>]*style="[^"]*edgeStyle=none/);
+    expect(xml).toMatch(/pg-busTrunk~mesh-bus-1~0"(?:[^>]*>\s*<mxCell)?[^>]*style="[^"]*edgeStyle=none/);
   });
 });
 

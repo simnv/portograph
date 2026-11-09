@@ -29,13 +29,17 @@ snapshots.
 A failed gate fails the diagram (subject to the size table below). Overlay-layer elements are
 out of scope for G2, G4 and G6.
 
+What a failed gate does (D14, decision review 2026-11-07; PQ-2): it fails the branch at `gate:compare` and sets the `score` exit code. The
+files are still written, with their findings. `TIER_GAP_PART_RESIDUAL` (checklist 11) and a non-converged centring (ADR-0010) publish by
+design, with their findings. `Q` is a regression guard beside the gates, not a referee (section "Q is a regression guard, not a referee").
+
 | # | Gate | Applies to | Exceptions (by ownership) |
 |---|---|---|---|
 | G1 | **No node overlap; containment** | node–node rectangles; node inside its group box; group boxes inside their tier band; no group–group overlap | — |
-| G2 | **No routed segment through a foreign node or group** | routed segments × node rectangles; routed segments × group boxes the link does not attach inside (ADR-0013) | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported); a link owning a lane in the group's margin or crossing a declared bar of the group |
+| G2 | **No routed segment through a foreign node or group** | routed segments × node rectangles; routed segments × group boxes the link does not attach inside (ADR-0013) | a segment's own endpoint nodes; a drop crossing a **bar** it does not terminate on (`barCross`, reported); a link owning a lane in the group's margin or crossing a declared bar of the group; the boxes an admitted fan member records in `fanAdmissions[].crosses`, which the validator verifies (`fanBoxes` in `src/score/gates.ts`, DL-Q126; D8, decision review 2026-11-07). Foreign drawn frames stay obstacles, and so do node bodies and foreign pills |
 | G3 | **No label collision** | every label bbox × every other label bbox, node rectangle, pill, routed segment (area-aware; a turned label's area is its turned text rectangle, not its upright box, ticket 20); a **group title** also owns an 8 px link-free margin no routed segment may enter, except a segment of a link the title names in `crossedBy` (it found no free span and yields with a halo, architecture-2 ticket 54); a horizontal segment through the title text is a hit all the same | a label vs its **owner** (node label inside its node; pill text inside its own pill and over its own incident stem within that pill; a link label on the clearance zone — never the body — of the **one** segment its persisted `support` reference names, and only when that reference's link is its own owner); overlay layer |
 | G4 | **No collinear overlap** | pairs of routed segments on the same line sharing > 1 px | validated counted merge runs of selected bundle members (reported as `bundledLength`); exact source/target shared-run trees at one port; lane-owner runs vs their own lane |
-| G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; every other segment axis-aligned unless it is a declared **straight bundle member** (`straight: true`, ADR-0017); port order on a side matches far-end order | author `order:`; overlay; stub |
+| G5 | **Ports exit correctly** | every routed link: first/last segment perpendicular to its side, ≥ 15 px; every other segment axis-aligned unless it is a declared **straight bundle member** (`straight: true`, ADR-0017) or a stored, owned routed chord (below); port order on a side matches far-end order | author `order:`; overlay; stub. `straight: true` is accepted on a member of an owning bundle (its own stems and member gap) and on a stored, owned routed chord that is one face-to-face segment under its chord rules (`straightOk` in `src/score/gates.ts`; DL-Q93, Q108, Q122, checklist 12; D4, decision review 2026-11-07) |
 | G6 | **Clearances** (stroke-aware, centre-to-centre minus half strokes) | node–node ≥ 20; routed segment–foreign node ≥ 10; parallel routed segments ≥ 10; a routed segment on or outside a group box runs no closer than 10 px beyond its half stroke parallel to its edge (ADR-0013) | incident node–segment contact at the anchor; bundle members (`memberGap` = 16 applies); `barCross` contacts; junction fans; one link's own staircase tread; against another member's copy of a verified junction stem, a member's segment that is its staircase tread or its own neighbour segment |
 | G7 | **Attachment** | every link endpoint = a port anchor; every anchor on its node's boundary | — |
 | G8 | **Tier contract** | every group's box within its tier's band; tier bands in order, non-overlapping | — |
@@ -93,7 +97,8 @@ worse.
 `counts` gives the raw counts of each link family, beside Q and outside it (Q reads only the routed
 layer). For `routed` and for `overlay`: `links`, `bent` (links with at least one bend) and `turns`
 (the bends of all links), and the `crossings`. A bend is a change of direction or a reversal between
-two segments (`pathBends`); a zero-length or collinear piece is no bend. Every count reads the
+two segments (`pathBends`, which reads `pieceTurns`, the one turn predicate of readers and gates); a zero-length or
+collinear piece is no bend, and the pieces on both sides of a zero-length piece are compared. Every count reads the
 published `path.segments`. Removed and pathless links are excluded, and so are stubs from the routed
 family. The routed `crossings` is the count that Q uses. The overlay `crossings` has one number per
 named mode of `src/layout/read/crossings.ts`, kept apart: `pairs` (path pairs that cross) and
@@ -160,14 +165,43 @@ The whole-command deadline is 120 s (`COMMAND_DEADLINE_MS` in `src/cli.ts`); it 
 | Nodes | Links | Shape | Time | Measured outcome |
 |---|---|---|---|---|
 | 120 | 200 | tiers × fan-out | 4.0 s | publishes, 989 draw.io cells |
-| 300 | 810 | tiers × fan-out | **51 s** | publishes, 3,363 draw.io cells |
+| 300 | 810 | tiers × fan-out (the 2026-09 generator) | **51 s** | publishes, 3,363 draw.io cells; stale, see below |
 | 100 | 389 | degree-64 hub, wide tier, transit | 30.0 s | takes the deadline path, no artifact |
 
 Evidence: `.scratch/stress/spec.md` for the first two rows, ticket 17 for the third. The first two
 are pipeline times measured with the deadline out of the way: the layout is produced, and the row
-says what it produced. Under the 120 s default command the 51 s row fits, with 69 s to spare on that machine (9 s under the former 60 s default); under the old
-30 s deadline it was a failure, and the CLI ended the run and wrote nothing. The third row was measured under the deadline and reached
-it.
+says what it produced. The third row was measured under the deadline and reached it.
+
+The 300-node row is stale. Measured again on 2026-11-09 on main (f1feee2a), with the current
+generator (`scripts/scale-input.mjs` through `scripts/scale-bench.mjs`, degree-61 hub) and the
+120 s CLI deadline; `--testLiftOff` is not needed because main has no group lift:
+
+| Sheet | Nodes | Links | Nodes + links | Time | Measured outcome |
+|---|---|---|---|---|---|
+| NTP (real sheet) | 106 | 312 | 418 | 17.6 s | publishes |
+| hub-100 | 100 | 389 | 489 | 81.8 s | publishes |
+| hub-150 | 150 | 613 | 763 | 120 s | `COMMAND_DEADLINE`, stopped in the bands stage |
+| hub-200 | 200 | 778 | 978 | 120 s | `COMMAND_DEADLINE`, stopped after bundles |
+| hub-300 | 300 | 1,167 | 1,467 | 120 s | `COMMAND_DEADLINE`, stopped after bundles |
+
+The current generator at 300 nodes does not publish under the 120 s deadline.
+
+**Group lift size cap.** The group lift (stage 4, ADR-0008 amendment) runs the whole command again for
+each trial, up to `LIFT_TRIALS` = 2, so a lifted command takes up to three first runs. The lift round
+admits no trial when the sheet has more than `LIFT_SIZE_CAP` = 150 nodes plus links
+(`src/layout/lift.ts`); each float component then gets a `GROUP_LIFT_SIZE_CAPPED` note and a declined
+record entry. The count is deterministic (R4), not a clock. The target is a whole lifted command near
+40 % of the deadline (48 s), so a first run near 16 s. Measured 2026-11-09, CLI `layout`, one job on
+the machine, main 2be72fbc against the branch with the cap at 450:
+
+| Sheet | Nodes + links | Main | With lift trials | Lift gain |
+|---|---|---|---|---|
+| a-corridor-moves-after-the-grid-settles | 151 | 19 s | 50 s | none (same metrics) |
+| NTP | 418 | 26 s | 71 s | none (same metrics) |
+
+Under load the two lifted runs failed in `gate:branch` (corpus `TIMEOUT after 120 s`, and an ELK
+attempt deadline on NTP); main passed. Every corpus sheet that the lift changes has 92 nodes plus
+links or fewer, so 150 keeps every gain and takes the trials off both slow sheets.
 
 So node count alone does not decide the time; link count and degree decide it beside the node
 count. 100 is a **policy choice, not a measured ceiling**: it is where the threshold table above
@@ -183,7 +217,8 @@ deadline, and the only measurement that failed at 100 nodes is the degree-64 hub
 
 The supported band ends at 100 nodes, where it was 300 before. `--force` itself is only required
 above 1,000 nodes (`src/parse/index.ts`, ADR-0006); between 101 and 1,000 nodes nothing refuses the
-command, the time is simply not a promise.
+command, the time is simply not a promise. The parser's 1,000-node limit and `--force` are input
+limits, not a quality or workability claim (D11, decision review 2026-11-07).
 
 ## Test design
 
@@ -217,13 +252,22 @@ command, the time is simply not a promise.
 ## The checklist (the spec half of Q7)
 
 1. Hierarchy reads top-to-bottom; providers/external at the top, backbone/core at the bottom.
-2. Segments all horizontal or all vertical within a tier; mixed only to flag a special segment.
+2. Segments all horizontal or all vertical within a tier; mixed only to flag a special segment. Runs in tier gaps, lanes and bars are
+   axis-aligned where their technique requires it. An admitted frame, cross-frame, fan or solid-block chord is one straight segment at any
+   angle (items 12 and 13). A mixed segment flags nothing (D6, decision review 2026-11-07).
 3. Ports leave perpendicular; parallel links bundled or evenly spaced.
 4. Redundant pairs sit side by side.
-5. Every group is labelled; labels never sit on links.
+5. Every group is labelled; labels never sit on links. The title edge is fixed from natural sides: the horizontal edge with fewer
+   incident link ports gives the title the longest free span (ADR-0011; ruling V3, 2026-11-07). Its height is reserved and the title is
+   placed at the end of 7f. An axis-aligned link never runs under a title or label by placement; a diagonal may cross a title or its own
+   label, with a halo and a `crossedBy` record (ADR-0023). No placement step bends a link to clear a title (D7).
 6. Colour encodes role or link property; the diagram survives removal of colour.
 7. Link property encoded consistently: weight = speed, style = class.
-8. No crossing that a topology rewrite could avoid — bar, stub, duplicated cloud.
+8. No crossing that a topology rewrite could avoid — bar, stub, duplicated cloud. A complete solid block keeps its traceable X: no bus,
+   merged trunk, mirrored hub or outer detour is proposed to remove its crossings. A long crossing link is kept whole; it is not turned
+   into a labelled stub pair (ruling V4, 2026-11-07: the stub drawing, NTP crossings 324 to 53, was rejected because labels overlap and
+   groups look cut off; `stub` stays diagnostic-only). The rewrite advice (stub pair, duplicated cloud) applies outside a complete solid
+   block only (D20).
 9. Whitespace is even; object : gutter ≈ 60 : 40.
 10. A legend exists when more than one symbol or line style is used — generated, not authored. A
     port role (a pill painted to mean something) needs one as soon as any other variant — a second

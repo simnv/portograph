@@ -5,6 +5,8 @@
 # a drop running along a frame edge closer than the edge clearance, which only routing would discover. Placement reserves the
 # clearance: the frame stands where the drop is clear of its edges.
 # Test-only input owned by ranked-groups ticket 75; test/pipeline/frame-keeps-out-of-a-drop.test.ts reads the layout.
+# Fan wrap (D-Q4, ticket 07): West's leaves stand on two lines and the chain above moves over West gateway, so the link from
+# `b-edge` to `core-2` is one straight chord; the test lays the sheet out with `layout.autoArrange: false` for the drop of ticket 75.
 portograph: 2
 groups:
   top-a: { tier: 0, label: Site A }

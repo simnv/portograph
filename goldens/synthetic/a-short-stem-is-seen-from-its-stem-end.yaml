@@ -1,0 +1,21 @@
+# Expected: up-2 has a named port on its bottom side, and its link to low-1 passes the core tier as one straight vertical line. The
+# stem is 15 px and the turned pill is 31 px deep, so the stem ends 0.5 px inside the pill. The visible end is the stem end, not the
+# pill face beyond it (D-Q7, `visibleEnd`), and draw.io exports the straight link as `edgeStyle=none` (Q118), not as orthogonal.
+# `layout.autoArrange: false` keeps the arrangement as written: no group lift (D-Q5, ticket 08) takes `lower` into the core band, and
+# no other rule of the sheet depends on it.
+# Source: decision-review ticket 13 review (M1, M2).
+portograph: 2
+profile: network
+layout: { autoArrange: false }
+groups:
+  upper: { tier: 0, label: Upper }
+  core: { tier: 1, label: Core }
+  lower: { tier: 2, label: Lower }
+nodes:
+  up-1: { group: upper, class: router, ports: [100G] }
+  up-2: { group: upper, class: router, ports: [100G] }
+  core-1: { group: core, class: router, ports: [100G] }
+  low-1: { group: lower, class: router, ports: [100G, 100G] }
+links:
+  - [up-1.100G, core-1.*]
+  - [up-2.100G, low-1.*]

@@ -28,6 +28,13 @@ Three principles, each learned the hard way:
    Dimensions never shrink below their current content or author floor. Anything a later stage
    moves must be re-validated; placement freezes after stage 7f.
 
+Every stage that counts turns or crossings reads one predicate for each (decision review 2026-11, D-Q6). A turn is
+`pieceTurns` of `src/geometry/planar.ts` (`pathBends` reads a link with it): a change of direction or a reversal, a
+collinear or zero-length piece is no turn. A proper crossing is `strictCrossing` of `src/layout/read/crossings.ts`: two
+segments meet at a point that is farther than the planar `EPS` from every end, never a fraction of the segment. The course
+round counts the links a polyline crosses with `polylinesCross`, a pair once. Tolerances have named owners
+(`src/layout/tolerance.ts`, `src/geometry/planar.ts`); `CODING_STANDARDS.md` R10 states the rule.
+
 ---
 
 ## Stage 0 — parse
@@ -439,6 +446,42 @@ premise at the end of stage 4, and `validateReservations` on every later snapsho
 `layout.feedOrder: false` writes no entry: ELK's order and the overlay side stand (a test input whose subject needs the declared order
 pins it so). On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone of Location 4 stands under its feeds.
 
+**Group lift (decision review 2026-11, D-Q5, ticket 08; ADR-0008 amendment).** A **float component** (`CONTEXT.md`) may stand in
+bands above its document tier's bands. The decision is band input, made before any placement run of a command: `decideLifts`
+(`src/pipeline/lift-round.ts`) runs the command once with no lift, measures the components on its published model (`measureLifts`, a
+band estimate: each band as wide as its units side by side, the widest band times the stacked heights) and runs the command once more
+per candidate, widest estimated gain first, with the record as `LayoutOptions.fixedLifts`. At most `LIFT_TRIALS` = 2 trials per command
+(R4; a component past it is recorded with `GROUP_LIFT_CAPPED`). Above `LIFT_SIZE_CAP` = 150 nodes plus links no trial runs and each
+component is recorded with `GROUP_LIFT_SIZE_CAPPED` (`docs/design/quality.md`, size bands). A component out of the first slice is recorded
+declined with a `GROUP_LIFT_OUT_OF_SLICE` info note and no trial; each trial run has its own placement cap and shares the caller's one
+budget. A deadline error ends the command (`isDeadlineError`, shared with the width budget); a trial whose run fails on another error is
+declined, with a warning unless placement refused it by name. With `layout.maxWidth` the first run decides the lift and every stagger trial
+applies the record (`fixedLifts`). A rise is a candidate when its estimate drops the area by `LIFT_MIN_GAIN` or more, or when it is narrower or nearer square by
+`LIFT_SHAPE_STEP` (shape admission: the estimate is too coarse for a push). The judge (`judgeLift`) reads the published results: no
+link removed, every straight link still straight, a vertical link still vertical and every routed link on its faces (except the
+trial's side entries), no link with more bends, no new gate, hard-constraint or separation finding, the unified order (bent links,
+turns, crossings including routed-with-overlay pairs) not worse, and the area below the no-lift run and below the smallest kept run,
+or at most `LIFT_AREA_TOLERANCE` = 5 % above it when the canvas is narrower or nearer square (`|ln W/H|`). The published model of the
+best run carries the whole record; a restore validates it.
+
+A rise is bounded by its feeds from above: a fed node rises until it stands in its feeder node's band, never above it (a **level side
+entry**; `GroupLift.sideEntry`), and a stub, bundle member or mesh-bus feed keeps the fed unit below its feeder's unit. When a level
+side entry leaves the component hanging below the feeder's band, every unit outside the component whose top band is below that band
+moves down by the component's bands below it (`GroupLift.push`; S11: only when the rise does not fit in the empty space beside the
+units below). A declined side-entry rise falls back once, inside the trial cap, to the best rise that keeps every feeder above (S8).
+
+The record is read, never decided again (R1). Stage 1 applies it (`applyLifts`: each member in its `to` band, then the push; a record
+the document does not give is refused). Stage 2 turns each side entry to the lateral faces that face each other (`liftFaces`; a
+bundle or mesh-bus port keeps its face). The column packer gives the units of each lifted component tiers of their own, packed last
+from the component's lowest tier upward (`columnTiers`, `sweepSteps`), and stage 4 seats the component beside the units and link
+corridors of the bands it shares, on its recorded side, a band gap away (`seatLifts`); every later column pass holds that gap
+(`holdLifts`), and stage 5 seats it again after a fan wrap moves its feeding chain (a lifted unit does not stop the chain). The chord
+kind (`chordKindOf`) makes a side entry a cross-frame chord on its lateral faces. 7c centres a tier whose authority band holds only
+lifted groups once more on the next band toward the anchor (S13), so a vertical feed across pushed bands stays vertical.
+`validateGroupLifts` runs at every publication and at restore: whole units, a float component, each member in its recorded band
+(after later pushes), every routed feed from above below its feeder or, for a recorded side entry, level with it, and the side
+entries the record names.
+
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the
 fallback: one ELK run per tier band without partitioning, bands stacked in tier order with the
@@ -537,9 +580,9 @@ run geometry and ownership checks. Plain `JSON.parse` does not resume placement.
 bundle and group-link semantics with `resolve(document)`. This proves serialized
 self-consistency, not historical authenticity. See ADR-0010.
 
-A **stagger** is reserved at the end of stage 5, before the topology freeze (ADR-0024; tickets 166 and 51). `staggerRows` holds the existing feed order, exit face, the centre pitch of each gap and the line step. Odd members stand away from the feeds. The pitch reserves same-line node and pill clearance and the router's stroke-expanded obstacle beside each passing vertical. A gap between the members of two parents is wider: it also holds both parents, seated over their drops, a row gap apart. The members of each parent are one run of the order. Ordinary feeding faces take their child x positions before transit lanes are reserved; bar faces retain stage 7d's span rule. The containing frames and tier bands grow for both lines. The seat then proves every drop, or refuses the row by name: the far end is the horizontal face over the member; the vertical from the parent face to the member meets no foreign body, pill or group box, and where it crosses a tier between (a transit) it clears the occupied box of each group there by half a lane, as 7a stands the lane; the parent port stands over the member; and the anchor tier is the row's tier or lies beyond it, so the centre rule (7c) moves the parents over the row and not the row under them. The freeze stores the decision, and every publication and restore checks the two lines, the pitches and current port corridors.
+A **stagger** is reserved at the end of stage 5, before the topology freeze (ADR-0024; tickets 166 and 51). `staggerRows` holds the existing feed order, exit face, the centre pitch of each gap and the line step. Odd members stand away from the feeds. The pitch reserves same-line node and pill clearance and the router's stroke-expanded obstacle beside each passing vertical. A gap between the members of two parents is wider: it also holds both parents, seated over their drops, a row gap apart. The members of each parent are one run of the order. Ordinary feeding faces take their child x positions before transit lanes are reserved; bar faces retain stage 7d's span rule. The containing frames and tier bands grow for both lines. A wrapped rank cell (a **fan wrap**, decision review 2026-11, D-Q4) then packs its document tier again (`packTier`, the column packer's own rule), so the sibling units close up to the narrower block, and its **feeding chain** stands over it again: the first seat of the row decides the chain once (`StaggerRow.chain`, column units sorted by id; `[]` when no unit qualifies) and every seat moves those units as one block in x, by one move that stands each unit on the tier next to the block over its own feeds into the block (`chainFeeds`, `unitOffsets`), before the feeding faces are seated. Near units that need different moves refuse the row by name. A chain is, from the block tier by tier toward the row's feeds, every unit with a routed link into the units that joined on the tier before; a node that also links to another unit of that tier is a shared parent and keeps its unit out, and a unit of an earlier row's chain or a unit that holds a stagger row stays out. Whole units move, so every reservation inside a unit holds. A move that would bring a chain box nearer than `besideGap` to a box beside it, or a stored chain with no feed left, refuses the row by name. The seat then proves every drop, or refuses the row by name: the far end is the horizontal face over the member; the vertical from the parent face to the member meets no foreign body, pill or group box, and where it crosses a tier between (a transit) it clears the occupied box of each group there by half a lane, as 7a stands the lane; the parent port stands over the member; and the anchor tier is the row's tier or lies beyond it, so the centre rule (7c) moves the parents over the row and not the row under them. The freeze stores the decision, and every publication and restore checks the two lines, the pitches and current port corridors, and that a rank cell carries its chain record (a plain row none) and that each near unit of a chain still stands over its own feeds (the same `chainFeeds` and `unitOffsets` readers, offset within `PLACEMENT_EPS`; a mean would pass two units moved by equal and opposite amounts); a stage that moved a unit off refuses as a stagger refusal. 7c reads the chain (`chainBlockOf`): a chain node does not grow for an alignment, and it is centred only on its feeds inside its chain or into its block.
 
-Two sources give the rows. With `layout.maxWidth`, the width-budget search tries rows on complete runs (ADR-0024). Without a budget, stage 5 of the first placement run chooses itself (`arrangeGroups`, ticket 51), right before the seat. It skips a group with an authored `shape` (any shape the author wrote), a flank, a rank cell, a group of fewer than four members, and a group whose members do not each have one plain routed link out of the row through one face. It tries the remaining candidate rows widest first, each on a draft of the model: the group's band must be the one widest band, the sheet must be wider than tall, the seated draft must pass the seat's proof and the freeze validation, and the sheet must come out at least one pitch narrower and nearer square (`|ln(W/H)|` strictly smaller; W and H are the stage-5 canvas that `stackBands` sets from the band extents, before and on the draft). A draft that a stage-5 stagger refusal refuses is dropped and the row stays; the reason of an aspect refusal starts with `aspect:`. Any other error of a draft, the freeze validation included, is a defect: it ends the run and is never recorded as a reason. The seat refuses by name a parent that, seated over its drops and the other links of its feeding face, breaks one of the freeze's own tests: clearance to a node of its group, the row order, the pitch, capacity and authored order of every port of that face (an overlay or unused port is not seated), or the band and flank tests of its tier. `groupArrangements` records `stagger`, or `row` with the reason, for every group; there is no record when no group passes the rules before a draft and no group takes the column (below), or under `layout.autoArrange: false`. Every later placement run of the command keeps the record and the rows; it does not choose again, also when the first run chose nothing. When a later stage of the first run refuses a stagger it chose, the run is placed once more with those rows declined (one line, the refusal as the reason), within `MAX_RERUNS`; a fan re-run that a kept stagger refuses is cut and the baseline stands.
+Two sources give the rows. With `layout.maxWidth`, the width-budget search tries rows on complete runs (ADR-0024). Without a budget, stage 5 of the first placement run chooses itself (`arrangeGroups`, ticket 51; D-Q4), right before the seat. It skips a group with an authored `shape` (any shape the author wrote), a flank, a group of fewer than three members, a group whose members do not each have one plain routed link out of the row through one face, and a row where a hub feeds fewer than three of its members (a **fan** is one hub with three or more members; the runs of several hubs stand side by side, and interleaved runs are refused by the seat). It tries the remaining candidate rows widest first, each on a draft of the model, behind one of two triggers (`triggerReason`). A rank cell takes the **block trigger**: its one line must be wider than the widest other group of its block (its top-level frame with the child frames), read on the one-line stage-5 model; the reason of a block refusal starts with `block:`. A plain row takes the **aspect trigger**: its band must be the one widest band and the sheet wider than tall. The seated draft must then pass the seat's proof and the freeze validation, and meet the objective (`objectiveReason`): a stage-5 canvas area strictly less, and for a plain row also nearer square (`|ln(W/H)|` strictly smaller; W and H are the stage-5 canvas that `stackBands` sets from the band extents, before and on the draft). A draft that a stage-5 stagger refusal refuses is dropped and the row stays; the reason of an aspect refusal starts with `aspect:`. Any other error of a draft, the freeze validation included, is a defect: it ends the run and is never recorded as a reason. The seat refuses by name a parent that, seated over its drops and the other links of its feeding face, breaks one of the freeze's own tests: clearance to a node of its group, the row order, the pitch, capacity and authored order of every port of that face (an overlay or unused port is not seated), or the band and flank tests of its tier. `groupArrangements` records `stagger`, or `row` with the reason, for every group; there is no record when no group passes the rules before a draft and no group takes the column (below), or under `layout.autoArrange: false`. Every later placement run of the command keeps the record and the rows; it does not choose again, also when the first run chose nothing. When a later stage of the first run refuses a stagger it chose, the run is placed once more with those rows declined (one line, the refusal as the reason), within `MAX_RERUNS`; a fan re-run that a kept stagger refuses is cut and the baseline stands. **The acceptance gate** (D-Q4) then judges the staggers the first run chose. One comparison run keeps the first run's record with every chosen stagger a `row` (reason: the acceptance gate, `FAN_WRAP_DECLINED`) and places no stagger at all, so it cannot choose another one; both models go through 7f as trials (`wrapGateVerdict`). The two lines stand only when the complete placement takes less area, every link the comparison places straight (facing faces on one axis, a held routed chord, an overlay link drawn as one segment) stays straight, and no hard separation is shorter. Otherwise the comparison is kept, with an info diagnostic `FAN_WRAP_DECLINED` that names the reason. A stagger refusal in the wrapped run's 7f declines the lines too. The comparison run is one placement run per command; it spends no `MAX_RERUNS`, and its placements, trunk re-runs included, stand outside the placement cap (`env.gateRuns`), so it is always available, and its ledger, declined blocks and re-run count are its own: a kept stagger goes on as if it had not run.
 
 A **column arrangement** (ticket 52) is decided in the same run, earlier in stage 5: after the first re-size, on final sides, and before the rows are repacked and the faces sorted (`reserveColumns`, `column-arrangement.ts`). It reads stage-1 and stage-4 facts only. A group takes the column when it is a flank, or a tier group with a flank beside it and a lateral link, and all of these hold: no authored `shape`, not a rank cell, two or more members, one facing group (a tier group with a flank on each side keeps the row; so does a flank whose primary peer another flank shares), and every member has exactly one link, a plain routed lateral link through the facing faces to the **one** node of the facing group that all members link to, on a port of its own with no authored side or order, and that node's facing face holds no other port. The prediction is structural: a row of two or more members beside one facing node hides every member but the nearest behind the nearest body, and the column predicts 0 crossings, 0 removed links and straight links, so an admitted column is never worse than its row (the row's routes are not read at stage 5). The facing face takes the column's centre pitch (the tallest member plus the node gap) and the nodes are sized again; the repack seats the members one on each line, centred on one x, from the row's top, in the stage-4 order (all members share one peer, so the order of their ports follows); the face sort then orders the facing ports by the members' y, so the links keep the order of their ports, and `stackBands` grows the band. 7b keeps each member's face as it is, and its one translation levels every pair. `groupArrangements` records `column`, or `row` with the column's reason for every flank group and every tier group with a lateral link that stays a row; the record exists when a group took the column or a stagger draft was tried, and later placement runs seat the recorded columns again (a recorded column that a later run no longer admits refuses that run by name). Rows, the row-order check and `packRowsOf` read a column as one member per line (`columnOf`), and publication and restore check one centre x and one centre pitch (`validateColumns`).
 
@@ -563,6 +606,8 @@ pair has its room (`feedPairRoom`, the one reader of a recorded pair, which the 
 room or decides the split again.
 
 ## Stage 6 — rows
+
+Group titles in stage 6 (D7, decision review 2026-11-07; ruling V3): every group is labelled. The title edge is fixed from natural sides (the edge with fewer incident link ports, ADR-0011), and its height is reserved; the title itself is placed at the end of 7f (`placeGroupTitles`). An axis-aligned link never runs under a title or label by placement. A diagonal may cross a title or its own label, with a halo and a `crossedBy` record (ADR-0023). No placement step bends a link to clear a title.
 
 Per tier: all unstaggered `row`-shape nodes share one top y. A reserved stagger keeps both lines and its pitch; each line is a row to later horizontal repacks. Repack horizontally again if the flattening
 created overlap (nodes ELK stacked at one x). After `flattenRows`, `reseatBands` seats the bands
@@ -794,7 +839,8 @@ stage 8 among the reserved parts (§ 8); nothing in placement seats it.
 
 The plan writes no model geometry. Stage 8 reads it again on frozen placement (`allocateGapRuns`)
 and reserves every planned part tip to tip. A gap whose parts are all planned asks the router for
-nothing. A part with no lane terminal on either boundary is planned all the same: the old
+nothing. Publication and restore read it again too, on the model as stage 8 received it, and keep
+each planned part in its link's path with its owner and its traversal (decision D-Q2, § 8). A part with no lane terminal on either boundary is planned all the same: the old
 allocation seated only runs with a lane.
 
 **A node side that feeds another tier nests its own stems (ADR-0015 rule 1).** A side carries one
@@ -893,7 +939,7 @@ from a bar span or an earlier rule, aligns inside the width it has (ticket 29). 
 overlay chord. An overlay link with no end on the node, whose chord reaches the rows of the body and
 is not already under the body, stops the growth on its side at the chord less the node clearance
 (20 px) and half the node stroke. A port the stop declines stays at pitch from the last kept one, and
-the feed is reported `CENTRE_ALIGNMENT_INFEASIBLE`; the stop is reported `ALIGNMENT_STOPPED_AT_OVERLAY`.
+the feed is reported `CENTRE_ALIGNMENT_INFEASIBLE`; the stop is reported `ALIGNMENT_STOPPED_AT_OVERLAY`. A node of a stored feeding chain (stage 5, fan wrap) has no growth allowance at all (`alignmentAllowance` returns its width), and `centringFeeds` gives it only its feeds from its own chain or its block: stage 5 stood the chain over the block, and a feed from elsewhere would pull it off. A group lift can leave bands that hold only lifted groups (a push leaves them between a feeder and the units it fed before; `GroupLift.push`, stage 4): a tier whose authority band holds only lifted groups (and their flanks) is centred a second time on the nearest band toward the anchor that holds a group that did not lift (`centreContext`), so a vertical feed across those bands stays vertical; with no such band the step list is unchanged.
 The bound of `ALIGNMENT_MAX_GROWTH` is unchanged. A body that has grown wider than its own width
 does not move past the same chord when centring moves its group. A body that has not grown moves as
 before. Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
@@ -1054,9 +1100,9 @@ interval, nearest first. A group moves whole, keeps the band gap to the groups, 
 canton for a member), stays inside the box of the whole layout, and, when it holds a routed link, keeps its place in the
 order of its tier. A node moves alone, inside the box its group has and in its row's order. A candidate stays only when the
 straight overlay count rises, `laneSidesHold` passes, every routed link that ran on one axis or held a chord still does, and
-a copy of the model run through one round of the close-up, the keep-out and the label room (`settleRound`; it grows no tier gap since architecture-2 ticket 57) has no G6 or G5 finding that the same
+a copy of the model run through one round of the close-up and the keep-out (`settleRound`; it grows no tier gap since architecture-2 ticket 57) has no G6 or G5 finding that the same
 copy without the move lacks (`parallelClearance` and `portOrder`, the gates' own predicates). Left bent: a chord blocked by
-two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the close-up and the label room
+two groups, and a blocker in a frame of several cells. A step that moved runs the round again, so the close-up and the keep-out
 are measured on the geometry that stands. `refreshHeldWarnings` withdraws only a warning that states a jog.
 
 ### 7d — bars
@@ -1212,6 +1258,17 @@ identity, side, authored precedence and floors reject before replay can repair t
 replay is reusable by stage 7f and consumes one caller-owned eight-pass centering budget. The final
 scorer still requires every complete path; a stage-11 subset score is not a full golden result.
 
+A group exit (`model.groupExits`) is a held promise (DR-11): its direction and the boxes it leaves
+are a stored decision, and each replay derives only its coordinates again. A replay offers a held
+end its held direction alone while that direction is free; any other outcome is a replan, allowed
+before the final freeze and refused after it. A required exit that the geometry admits and the
+record lacks fails the producer postcondition, whatever diagnostic the model carries.
+
+The crossover room of an inverted side-facing bundle moves groups in x without their lanes, so it
+asks `holdsMove` first: for a group wholly right of the threshold, its moved box; for a group that
+straddles the threshold, its box widened by the room, and `holdsNodeMove` for its moved nodes. Refused, no room is taken (`BUNDLE_ROOM_HELD`): the bundle draws
+straight members where its gap holds the member pitch (ADR-0017), or refuses by name.
+
 For facing, non-inverted members whose endpoint tracks differ, each bend receives a distinct
 member-pitch row. Members moving toward smaller tangent coordinates turn in increasing source
 order; those moving toward larger coordinates turn in decreasing order. This avoids bend contact
@@ -1231,9 +1288,9 @@ or immutable lane; local slots remain valid and the bundle bends instead.
 ### 7f — group label bands, tier gap room, group label bands again
 
 7f does these things, in this order (architecture-2 ticket 57): it reserves the height of the group label bands on the y axis only
-(`topUpBandClearance`); it runs the rounds (the close-up of the cantons, the keep-out, the label room, the steps over a chord), which
+(`topUpBandClearance`); it runs the rounds (the close-up of the cantons, the keep-out, the steps over a chord), which
 grow no tier gap; when the rounds did not replay the draft and the centring left its non-convergence or a violation the publication would
-refuse, it settles the centring once on the frozen geometry (one `replayRegions` and label room, architecture-2 ticket 65: the bands'
+refuse, it settles the centring once on the frozen geometry (one `replayRegions`, architecture-2 ticket 65: the bands'
 single budget gave no pass after it); it lets a corridor whose child 7c could not seat follow that child (`reseatLanes`, § 7a); it settles the overlay ports;
 it solves the tier gaps once (`solveTierGaps`, `gap-room.ts`): the stem depths are recorded, every plan and every label room across a gap
 is read once, and each gap grows by what it lacks; it trims each node body to its ports and content (the end trim, below, architecture-2
@@ -1422,7 +1479,7 @@ with `TIER_GAP_PART_UNFIT`, never a silent discovery.
 
 For every group: band height = label height + 8, inside the padding of the **title edge**: the
 horizontal edge with fewer incident routed link ports, so a group fed from above carries its title
-at the bottom and no link routes around it; ties, including groups linked only sideways, keep the
+at the bottom, where the title has the longest free span (it may still be crossed and then yields with a halo, `crossedBy`; D7, D16, ruling V3 2026-11-07); ties, including groups linked only sideways, keep the
 top (ADR-0011). A bottom band grows the group downward. Every group's nodes move down by the largest
 top-band shift of their tier, so mixed title edges and unequal clearances keep the tier's node row
 level and flanks stay level with their peers. The label is placed last (`placeGroupTitles`, above): centred when
@@ -1554,23 +1611,18 @@ whose longest run lies wholly across the axis the room grows on are diagnosed `L
 Room that lies beyond a reserved lane is inserted, and the lane and everything beyond it move out
 with it (`insertRoomAt`; label room wins over an adjacent lane, architecture-2 ticket 23). Moves settle pills before the next link measures; the
 reservation re-runs after the grid inside the 7f loop and any movement replays the region producers. That group's band clearance also
-reserves the label's room beside the detour run under the title. **The room is the last step of every settle
-(architecture-2 ticket 27).** A later 7f move moves a labelled line's end in x (the step over a chord, a lower rank move, the
-canton close-up, the keep-out, the linkless step): the line turns, and its window shrinks below the room the producer reserved.
-`settleRound` therefore runs the close-up and the keep-out, and then the room (`settleRoom`): `reserveLinkLabelRoom`. It grows no tier gap
-(ticket 57): a label room across a tier gap is recorded as a shortfall and not moved, the solve at the end of 7f pays it with height, and
-the validator and the room check (`roomHolds`) count a tier-gap shortfall as a fault. When
-it reserved, the replay, the close-up, the keep-out and the room again, until a pass reserves nothing, so nothing moves after the last
-reading of the room. The linkless step of the last round and its replay are followed by the same `settleRoom`. No measure proves that the
-passes end (the reservation only grows the room, but the replay and the close-up move x), so `LABEL_ROOM_PASSES` (4) bounds them: after
-that many reservations the rooms a reservation would still grow are given up, recorded (`labelRoomUnsettled`) and named
-(`LINK_LABEL_ROOM_UNSETTLED`). The reservation then reserves nothing for those links (`LINK_LABEL_ROOM_UNRESERVED`) and the label placement
-decides: with no window the label may lie across a border, with `LINK_LABEL_ON_BORDER`, and stage 9's collision test refuses a place on a
-link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that names no
-described link. A chord trial (`trialSettle`)
-runs the same round on its copy, so the judges read, and the draft adopts, a copy whose rooms hold. The settled chord and rank judges, as
-the lane reseat, refuse a move that names a new link in the room set (`noNewFindings('room')`, `roomFindings`): a room given up, and, for a
-copy that did not end a settle on its room, a room a reservation would still grow.
+reserves the label's room beside the detour run under the title. **Label room is reserved by the producer and by the tier-gap
+solve only (ADR-0014 r2, amended 2026-11-07; decision review ticket DR-02).** A settle round (`settleRound`) runs the close-up and the
+keep-out and reserves no label room: architecture-2 ticket 27 once ended each round on `reserveLinkLabelRoom` with a bound of 4 passes
+(`LABEL_ROOM_PASSES`), and ticket DR-02 deleted that loop because the bound at 0 changed no drawing on 467 sheets. A label room across a
+tier gap is recorded as a shortfall and not moved; the solve at the end of 7f pays it with height, and the validator and the room check
+(`roomHolds`) count a tier-gap shortfall as a fault. A room the solve cannot open is given up (`labelRoomUnsettled`, named
+`LINK_LABEL_ROOM_UNSETTLED`, see 7f solve). The reservation then reserves nothing for those links (`LINK_LABEL_ROOM_UNRESERVED`) and the
+label placement decides: with no window the label may lie across a border, with `LINK_LABEL_ON_BORDER`, and stage 9's collision test refuses
+a place on a link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that
+names no described link. The settled chord and rank judges, as the lane reseat, refuse a move that names a new link in the room set
+(`noNewFindings('room')`, `roomFindings`): a room given up, and a room a reservation would still grow.
+A move that runs after the reservation keeps a same-tier row room: `holdsMove` has the kind `labelRoom` (`label-room-guard.ts`), which refuses a move that shifts the ends of a described same-tier link apart and leaves a row shortfall the model did not have (decision review ticket DR-02, R2). Nothing reserves the room again.
 Publication and restore re-run the reservation on a copy and reject a model it would still change.
 
 **Linked groups share a grid (ADR-0012).** Before labels are planned, groups joined by vertical
@@ -1634,6 +1686,18 @@ is kept, and final gates decide whether the diagram fails.
 The bands transaction owns this production after its callback checks, reuses one centring budget
 across every replay, and captures placement only after the final coherent claims. A callback cannot
 publish provisional bands or labels for the finalizer to repair.
+
+The callbacks of 7e and 7f are empty, so their rule checks never see the producer output. The
+producer postconditions (`postconditions.ts`, DR-11) judge it: on the net draft, after every
+dependent rebuild and before commit, each reservation that held at entry still holds (riser
+keep-out, trunk extension, lane sides, side alignment, group exit, the stored ledger). A breach
+refuses the transaction with a `PostconditionRefusal`. A producer refusal (that one, or a bundle
+path with no room) withdraws the trial of every round, by one rule in the round runner
+(`producerRefusal`), and fails the main line by name. A newly blocked frozen chord and a new wall
+in a span corridor stay advisory, for output neutrality: each such break that publishes is named
+again by its own finding (`STRAIGHT_LINK_BLOCKED`, `SPAN_CHORD_BLOCKED`). The `moveGroup` writers,
+with the guard or proof of each, are listed in `box-writers.ts`; a direct write to a node box is
+outside that table, and its doc names those writes.
 
 After 7f, the successful `bands` transaction captures `freeze.placement`, including node content
 and pill geometry, group geometry, tier bands, regions, lanes and group-label placement. Later
@@ -1710,6 +1774,15 @@ same producer and compares, as for every overlay path, and G7 reads each end at 
 straight nor bent and enter neither the bends nor the crossings metric (routed geometry only, as no overlay path does). The verticals that cross
 each bar in the published layout are counted (`busVerticals`) beside the stage-5 leg count (`busLegCounts`); no gate reads them.
 Ticket 97: a cross link of a joined pair takes the path stub, bar run, riser, bar run, stub (three to five orthogonal segments, `busMemberPath`); `route/validate` derives it again from the published stubs, bars and riser x, and G7 reads its ends at the port face.
+
+**The path-end rule, by producer** (D-Q7, audit T-05). A **stem-built** path (orthogonal, bundle,
+merge, and a straight link drawn anchor to anchor with its stems) starts and ends on the port
+**anchor**; the pill is painted over the inner half of its stem. A **chord-built** path (an overlay
+path; a routed chord: straight, fan family, direct family) starts and ends on the port's outward
+**face** (`overlayEndpoint`). An end on an approach (ticket 15, phase 6) ends on the approach point,
+which is on the pill's tangential edge. `pathEnd` in `src/layout/path-end.ts` states the point;
+`route/validate`, G7 `endpoint-anchor` and the score's incident-segment test read it, so the
+producer, the validator and the gate cannot drift apart.
 
 **Group boxes are obstacles for foreign links (ADR-0013).** Every group box, grown by the 10 px
 edge margin, obstructs each link that neither attaches inside it, nor owns a lane in its margin,
@@ -1881,6 +1954,15 @@ the same shape the region rules produce. Publication and restore then check the 
 structurally — complete anchored path, orthogonal and connected, exact reserved runs, perpendicular
 stems of at least the reserved reach, link ownership of every routed gap, and no entry into a
 reservation the link does not own — because route geometry cannot be re-derived without the router.
+The runs placement planned for stage 8 can be derived again, and they are kept as the fixed and
+shared runs are (decision D-Q2, ADR-0010): `validateRoutedPaths` calls the one producer
+(`placementRuns`: the row-gap legs and the tier-gap parts) on the model as stage 8 received it
+(`preRoute`: the router's paths, removals and stub marks taken away), and each planned segment must
+lie inside one straight piece of the path with the same link owner, running the planned way, in the
+planned order. A collinear merge with the same owner passes; a run moved off its line, given another
+owner, reversed or reordered is refused by name, even where another route would pass the gates.
+The plan leaves out every link `frozenChords` names, so each name must hold a routed chord in the
+published geometry (`isRoutedChord`), or the model is refused.
 
 `overlay` links: never routed and never sent to the worker. Their path is the one
 `src/layout/overlay-paths.ts` derives from the two ports placement froze, and stage 8 only publishes
@@ -1890,7 +1972,7 @@ outward faces — the pill's, or the node's when the port draws none — at what
 nothing else. The path **begins and ends on that face**, which is also where the endpoint mark is
 drawn: the anchor is the pill's centre, the overlay layer is masked out of every pill, and a run from
 the anchor was never drawn (*"path should also start on the point"*, maintainer, 2026-09-16, stress
-ticket 30). `overlayEndpoint` names the point; `route/validate` and G7 `endpoint-anchor` read it, so
+ticket 30). `overlayEndpoint` names the point; `route/validate` and G7 `endpoint-anchor` read it through `pathEnd`, so
 both still name exactly one point per end, and an end that states no side has no face to read and
 keeps its anchor.
 
@@ -1996,7 +2078,7 @@ more than two intermediate tier bands (measured by their vertical extent, since 
 sits in the margin beside its tier) or whose arc length exceeds 3× the direct anchor distance is
 marked `stubCandidate` and warned about; M1 keeps the technique and the full routed path.
 
-**Measured on the JPEG golden:** stage 7 leaves exactly two links, `link-1` and `link-2`, the two
+**Measured on the JPEG golden** (a dated measurement, 2026-09; D17, decision review 2026-11-07): stage 7 leaves exactly two links, `link-1` and `link-2`, the two
 provider feeds into EAC-01 and EAC-02; the rules claim 24 of 26. Each of the two is one straight run
 between two anchors on one x with a clear corridor, so stage 8 claims both and no ownership batch is
 formed: the prototype's idle router, reached by a different road. The geometry is byte-for-byte the
@@ -2150,8 +2232,11 @@ bands are not replanned around it, and the anchor is that drawn-geometry union r
 canvas, so re-deriving the legend from a published model puts it back in exactly the same place.
 It exists only when the document draws more than one symbol or more than one line style — or a
 port role beside any other variant, since nothing else says what a role's paint means — lists exactly the classes present (known profile classes in declaration
-order, then author classes by first use; a link without a class contributes the profile's default
-line style; each role token of a drawn pill's `class` contributes one `port:<role>` entry, drawn as
+order, then author classes by first use; a class with several tokens is keyed by the profile class that paints it, so `router extra`
+shares the router row and `dashed extra` the dashed row, and stage 3 gives `router extra` the router icon (draw.io ticket 8); a
+link without a class contributes the profile's default
+line style; a line row whose links are all overlay links draws an overlay sample, the paint those links take (audit A1-16);
+each role token of a drawn pill's `class` contributes one `port:<role>` entry, drawn as
 a 26 × 10 pill with that role's paint, while status tokens contribute nothing), and records the
 same effective stroke width `score` measures. `LayoutModel.legend` and its `role: 'legend'` labels
 are stage 9's claims: the validator re-derives both and rejects a forged, moved or removed legend.
@@ -2207,14 +2292,24 @@ mark or bar body carries `data-owner` and, for a mark, `data-end`, instead of re
 Every text node and attribute is XML-escaped, including the inline style, so no source string is
 interpolated as markup.
 
+**Visible ends.** Both renderers draw the reserved path and read where its stroke is seen to end
+from one helper, `visibleEnd` (`src/layout/path-end.ts`), always a point of the path: for a
+stem-built end on a pill, the first point where the path leaves the pill (the pill's outward face on
+the stem, or the stem end when a 15 px stem is shorter than the pill's half depth); for a
+chord-built end, an end on an approach, and an end on a port that draws no pill, the path end. The SVG puts the overlay endpoint marks and the bare-end dots on it. The
+draw.io export pins each connector end to it on the port's pill cell (`exitX`/`exitY` from the
+point, so an approach end is pinned on the tangential edge), and chooses `edgeStyle` from the
+waypoints and the pinned polyline, both exactly: an end off its stem is never hidden by a style
+fallback.
+
 **A mesh bus** (ticket 84) is one `<g class="mesh-bus overlay <class>" data-id data-members>` in the masked overlay layer: one `<path>` for the bar
 and one per stub, each `link-line overlay-line <class>`, so the class stroke and dash apply; a `<title>` lists the members, the dissolved
 group-links and the members' authored labels. The member `<g class="link">` elements are not emitted, and one endpoint mark per stub is drawn
 above the mask at the port face. The bus label is drawn on the label layer (`link-label mesh-bus-label`). `document.overlays` hides the bus
-with its class. The draw.io export writes the bar as one `edgeStyle=none` edge with two free points, each stub as an
-`edgeStyle=none` edge (a run with no bend is straight, Q118) from its port's cell to a free point on the bar, a mark per stub on its pill, and the label as a text
-vertex on the `labels` layer; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
-Ticket 97: the riser of a joined pair is one more `<path class="link-line overlay-line <class> riser">` in the upper bus's group, both groups carry `data-joined`, the tooltip names both buses, the members and the cross links, and a cross link draws no `<g class="link">`. draw.io: the riser is one `edgeStyle=none` edge with two free points on the overlay layer (`pg-busRiser~<bus>`).
+with its class. The draw.io export writes a joint (an invisible locked vertex, a child of a node) at each stub end and bar end, the bar as one
+straight `edgeStyle=none` edge between each two neighbouring joints, each stub as an `edgeStyle=none` edge (a run with no bend is
+straight, Q118) from its port's cell to its joint, a mark per stub on its pill, and the label as a text child of the nearest bar piece; the drawn bar and stubs read back from the drawio CLI (`-x -f svg`) within 0.05 px.
+Ticket 97: the riser of a joined pair is one more `<path class="link-line overlay-line <class> riser">` in the upper bus's group, both groups carry `data-joined`, the tooltip names both buses, the members and the cross links, and a cross link draws no `<g class="link">`. draw.io: the riser is one `edgeStyle=none` edge on the overlay layer (`pg-busRiser~<bus>`), bound at each end to a joint of its bar.
 
 An inline `<style>` holds the profile theme, the generated geometry locks and the parser-filtered
 document `css:`, in that order. The theme is three paint-only sheets emitted from one data table
@@ -2228,6 +2323,22 @@ declaration either. The generated locks restate the measured stroke widths and t
 or a shadow — is held by that one parser policy on both routes, not restated per element.
 The renderer uses no CSS custom property for a locked value, so an author `--name` cannot reach
 one either. The locked set is in `schema.md`; `css:` may set colour, fill, dash and opacity.
+
+**What both renderers compute is stated once** (`render/shared.ts`, draw.io tickets 13 and 8). The theme sheet is a table of paint
+rules (`paintRules`, and `washRules` for the sheet's own node classes): the SVG writes it as CSS, and the draw.io export reads the same
+table and the document's `css:` (`authorRules` in `render/author-css.ts`) and resolves each cell's paint by the CSS cascade
+(`PaintSheet`, `computePaint`): an important declaration wins, then the more specific rule, then the later one; a property no rule
+states is inherited from the element's parent (every paint property but `opacity`), and the opacity a cell is drawn at is the
+product of `opacity` along the path. The match runs on the path of class attributes from the SVG root to the element (`paintPath`,
+`svgClass`, which the SVG writes too), so a descendant or child rule reaches both renderers. A mode reads the light rules and, for
+dark or print, that mode's rules on top, as a browser reads the unconditional rules and the matching `@media` blocks. A class token
+the theme does not know, or the order of the tokens, changes the paint in neither. What draw.io cannot carry of the author's rules (a
+selector beyond class compounds and the two combinators, a property beyond fill, stroke, their opacities, `opacity` and the dash, an
+at-rule other than a plain `@media`, or a value draw.io has no key for, such as a stroke on a text) is named in one
+`DRAWIO_CSS_UNMAPPED` warning. The glyph box in an icon tile (`iconGlyphBox`: the inset,
+1.5 px or the card's own, is at most a quarter of each tile side) and the runs of a path (`pathRuns`: a new run where a segment does
+not start at the end of the one before, at the planar tolerance) are the other two. The SVG starts a subpath per run; draw.io writes
+a connector per run.
 
 **Every text outside node bodies carries a halo** (ticket 162, ADR-0023): group titles, link, multiplicity and bus labels and
 legend labels have the class `pg-halo` and a depth class `pg-halo-<n>`, where `n` counts the group boxes behind the text's centre

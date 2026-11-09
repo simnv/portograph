@@ -43,7 +43,7 @@ describe('the default theme is the designed sheet', () => {
       '': { '.icon-tile': 'fill:#597ea3;stroke:#416180', '.overlay-line': 'stroke:#7b7fc4;stroke-opacity:0.7', '.overlay-endpoint': 'fill:#7b7fc4;stroke:none', '.pill-label.admin-down': 'fill:#5d5d60', '.pill.degraded': 'stroke:#1d1f20;stroke-dasharray:none' },
       [DARK]: {
         '.icon-tile': 'fill:#597ea3;stroke:#b5d9fd',
-        '.overlay-line': 'stroke:#7b7fc4;stroke-opacity:0.6', '.overlay-endpoint': 'fill:#7b7fc4;stroke:none',
+        '.overlay-line': 'stroke:#7b7fc4;stroke-opacity:0.7', '.overlay-endpoint': 'fill:#7b7fc4;stroke:none',
         '.pill.uplink': 'fill:#597ea3', '.pill.downlink': 'fill:#2c455d', '.pill.peer': 'fill:#363966',
         '.pill-label.peer': 'fill:#e0e1f6', '.pill.mgmt': 'fill:#46413a', '.pill-label.mgmt': 'fill:#e8e4dc',
         '.pill.lag': 'fill:#20484f', '.pill-label.lag': 'fill:#cfe9ec', '.pill.degraded': 'stroke:#ffffff;stroke-dasharray:none',

@@ -243,7 +243,7 @@ function farEndOf(model: LayoutModel, node: string, facing: ReadonlySet<number>)
  */
 function wouldBend(model: LayoutModel, node: string, far: string, low: number, high: number): boolean {
   const x = centreOf(model, node), off = Math.max(0, low - x, x - high);
-  return off >= straightLengthLimit([model.nodes[node]!, model.nodes[far]!]) - 1e-6;
+  return off >= straightLengthLimit([model.nodes[node]!, model.nodes[far]!]) - PLACEMENT_EPS;
 }
 
 /** The members of `group` that a routed link joins to `far`. */
@@ -329,7 +329,7 @@ function pullTowardFarEnds(model: LayoutModel, group: LayoutGroup): string[] {
       const before = Math.abs(centre(node) - goal);
       const undo = saveGroups(model, [group]);
       order[at] = next; order[at + step] = node;
-      if (!reseatRow(model, group, order, true) || Math.abs(centre(node) - goal) >= before - 1e-6 || (linked.has(next) && !staysDirect(next))) { undo(); continue; }
+      if (!reseatRow(model, group, order, true) || Math.abs(centre(node) - goal) >= before - PLACEMENT_EPS || (linked.has(next) && !staysDirect(next))) { undo(); continue; }
       if (linked.has(next)) passed.add(next);
       served.add(node);
       moved = true;
@@ -385,7 +385,7 @@ function pullsAcross(model: LayoutModel, group: LayoutGroup, from: readonly stri
   const before = new Map([...fars].map(([node, far]) => [node, { x: centreOf(model, node), goal: predictedCentre(model, group, far) }]));
   undo();
   if (!seated) return [];
-  return [...before].filter(([node, { x, goal }]) => Math.abs(now.get(node)! - goal) >= Math.abs(x - goal) - 1e-6).map(([node]) => node);
+  return [...before].filter(([node, { x, goal }]) => Math.abs(now.get(node)! - goal) >= Math.abs(x - goal) - PLACEMENT_EPS).map(([node]) => node);
 }
 
 /**

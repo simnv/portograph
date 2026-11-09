@@ -1,10 +1,12 @@
 # Expected: The uplink meets the trunk pill from above and the firewall link leaves it to the right: 2 turns instead
 # of 3, and SHARED_PORT stays a warning (ticket 15 phase 6).
+# draw.io pins the uplink end on the approach point, the model end, so the export draws the path square (D-Q7).
 # One switch port (trunk) carries a link up to the WAN router and a link to a
 # firewall on a right flank. Stage 2 reads the side of a port from the document: the two peers
 # tie, the tie goes to right, and the uplink leaves through the right face. The side a port
 # needs is known only when its paths are drawn (ADR-0009: port topology freezes before geometry).
-# Source: 12-one-port-two-directions.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts reads it.
+# Source: 12-one-port-two-directions.yaml. Test-only input owned by architecture ticket 15; test/pipeline/outside-lanes.test.ts and
+# test/render/path-end.test.ts read it.
 portograph: 2
 profile: network
 groups:

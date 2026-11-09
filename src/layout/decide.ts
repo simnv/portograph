@@ -146,7 +146,7 @@ export interface AdoptedCopy { copy: LayoutModel; baseDiagnostics: number; origi
 
 /**
  * The links whose label room a replay of the reservation would still grow on `model` (`reserveLinkLabelRoom` on a copy). The judges read it
- * through `roomFindings`; the settle reads it at its pass bound to give those rooms up (placement-attempt.ts, `settleRoom`).
+ * through `roomFindings`.
  */
 export function roomShort(model: LayoutModel): Set<string> {
   const shortfalls: LinkLabelShortfall[] = [];
@@ -156,28 +156,24 @@ export function roomShort(model: LayoutModel): Set<string> {
 }
 
 /**
- * The `room` set of the 7f judges (architecture-2 ticket 27): the links whose label room 7f gave up (`labelRoomUnsettled`) and, unless the model
- * ended a settle on its label room (`settled`: the last pass reserved nothing or gave the rest up, and nothing moved after it), the links whose room
- * a reservation would still grow (`roomShort`). The chord step, the rank move and the lane reseat read it through this one function (R1).
+ * The `room` set of the 7f judges (architecture-2 ticket 27): the links whose label room 7f gave up (`labelRoomUnsettled`) and the links whose
+ * room a reservation would still grow (`roomShort`). The chord step, the rank move and the lane reseat read it through this one function (R1).
  */
-export function roomFindings(model: LayoutModel, settled: boolean): Set<string> {
+export function roomFindings(model: LayoutModel): Set<string> {
   const found = new Set(model.labelRoomUnsettled ?? []);
-  if (!settled) for (const id of roomShort(model)) found.add(id);
+  for (const id of roomShort(model)) found.add(id);
   return found;
 }
 
-/** Whether a `follow` result says its copy ended a settle on the label room (`SettleReading.roomSettled`, placement-attempt.ts). */
-const roomSettled = (result: unknown): boolean => typeof result === 'object' && result !== null && (result as { roomSettled?: unknown }).roomSettled === true;
-
 /**
  * The verdict on a settled copy. Its `room` set (ticket 27) is read when a gate first asks for it, once: the judges ask it last, of a candidate the
- * order lets through, and the copy is not changed while the decision that reads it runs. A copy that ended its settle on the room reads the record only.
+ * order lets through, and the copy is not changed while the decision that reads it runs.
  */
-const verdict = (model: LayoutModel, overlays: readonly LayoutLink[], settled: boolean): Verdict => {
+const verdict = (model: LayoutModel, overlays: readonly LayoutLink[]): Verdict => {
   let room: Set<string> | undefined;
   return { ...timed('verdict-read', () => read(model, { overlays, routed: { straight: 'aligned' }, crossings: 'pairs', growth: true })),
     sets: { crowded: timed('verdict-crowded', () => crowded(model)), disordered: timed('verdict-disordered', () => disordered(model)), residuals: timed('verdict-residuals', () => residuals(model)),
-      get room() { return (room ??= timed('verdict-room', () => roomFindings(model, settled))); } },
+      get room() { return (room ??= timed('verdict-room', () => roomFindings(model))); } },
     drift: timed('verdict-drift', () => drift(model)), separation: lazySeparation(() => separationShortfalls(model)) };
 };
 
@@ -236,7 +232,7 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
         if (attemptTimings.on) attemptTimings.hooks.enter?.(probe);
         const result = follow!(probe);
         if (attemptTimings.on) attemptTimings.hooks.exit?.(probe);
-        const read = verdict(probe, overlays, roomSettled(result));
+        const read = verdict(probe, overlays);
         copies.set(read, { copy: probe, baseDiagnostics, original, result });
         return read;
       });
@@ -384,7 +380,7 @@ export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes']
   settle(settled);
   /** The picture of a model in the order of the user: the overlay and the placed routed links, and the findings of G6 and G5 (one candidate, so one position). */
   const picture = (model: LayoutModel): Reading => ({ ...read(model, { overlays: drawnOverlays(model), routed: { straight: 'aligned' }, crossings: 'pairs' }), tie: [0] });
-  const after: Reading = { ...picture(settled), sets: { centring: new Set(centreViolations(settled)), room: roomFindings(settled, false),
+  const after: Reading = { ...picture(settled), sets: { centring: new Set(centreViolations(settled)), room: roomFindings(settled),
     crowded: crowded(settled), disordered: disordered(settled) },
     separation: lazySeparation(() => separationShortfalls(settled)),
     facts: { lanesHold: lanesHoldTheirChild(settled, followed), chordsClear: blockedChords(settled).length === 0 } };
@@ -394,7 +390,7 @@ export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes']
   // A reseat may not put a wall in a span corridor that was clear (architecture ticket 22).
   const heldBreaches = spanBreaches(draft);
   if ([...spanBreaches(settled)].some(key => !heldBreaches.has(key))) return false;
-  const held: Reading = { ...picture(draft), sets: { centring: new Set(centreViolations(draft)), room: roomFindings(draft, false),
+  const held: Reading = { ...picture(draft), sets: { centring: new Set(centreViolations(draft)), room: roomFindings(draft),
     crowded: crowded(draft), disordered: disordered(draft) },
     separation: lazySeparation(() => separationShortfalls(draft)) };
   if (!readingHolds(after, held, judges.laneReseat)) return false;

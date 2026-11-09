@@ -1,5 +1,5 @@
 import { GROUP_EDGE_LINK_CLEARANCE, routedStrokeWidth } from '../theme/geometry.js';
-import type { Bundle, LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment, Point, Side } from '../model/index.js';
+import type { Bundle, LayoutGroup, LayoutLink, LayoutModel, LayoutNode, LayoutPort, PathSegment, Point, Side } from '../model/index.js';
 import { repackOverlaps } from './rows.js';
 import { applyBundleOrder } from './bundle-order.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
@@ -7,10 +7,11 @@ import { findPort } from './row-paths.js';
 import { bandGap, portId } from './skeleton-graph.js';
 import { fitRegionGroup, bottom, groupInsets, right } from './regions.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
+import { holdsMove, holdsNodeMove } from './move-reservations.js';
 import { rowGap } from './sides-two.js';
 import { bundleChannelNeed, facingBundleNeed } from './bundle-need.js';
 import { gridChains } from './grid.js';
-import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
+import { BUNDLE_EDGE_EPS, PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 import { sidePillBodyReach } from './pill-reach.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 
@@ -47,8 +48,8 @@ export function edgeMargin(strokeWidth: number): number { return GROUP_EDGE_LINK
 export function clearOfGroupEdges(value: number, pairs: DepthPair[], direction: 1 | -1, margin: number = GROUP_EDGE_LINK_CLEARANCE): number {
   let result = value;
   for (let guard = 0; guard < 8; guard++) {
-    const blocking = pairs.find(([lo, hi]) => !(result > lo + 1e-9 && result < hi - 1e-9)
-      && (Math.abs(result - lo) < margin - 1e-9 || Math.abs(result - hi) < margin - 1e-9));
+    const blocking = pairs.find(([lo, hi]) => !(result > lo + BUNDLE_EDGE_EPS && result < hi - BUNDLE_EDGE_EPS)
+      && (Math.abs(result - lo) < margin - BUNDLE_EDGE_EPS || Math.abs(result - hi) < margin - BUNDLE_EDGE_EPS));
     if (!blocking) return result;
     const edge = Math.abs(result - blocking[0]) <= Math.abs(result - blocking[1]) ? blocking[0] : blocking[1];
     result = edge + direction * margin;
@@ -826,8 +827,25 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         const required = 30 + 4 * q * inversions + 2 * q * (list.length + 1) + fan + 2 * edgeMargin(routedStrokeWidth(model)), threshold = rightNode!.bounds!.x;
         const delta = Math.max(0, required - (threshold - right(left!.bounds!)));
         const tier = model.groups[model.document.nodes[rightNode!.id]!.group]!.tier;
-        if (delta) for (const group of Object.values(model.groups).filter(g => g.tier === tier)) {
-          const moved = group.nodes.filter(id => model.nodes[id]!.bounds!.x >= threshold);
+        const row = Object.values(model.groups).filter(g => g.tier === tier);
+        // The room moves groups in x without their lanes, so it is no forced write: it asks the guard of every reservation (R2, DR-11, W09).
+        // A group wholly right of the threshold moves whole. A group that straddles it (often the group of `rightNode`) moves the nodes right
+        // of it and is refitted (`fitRegionGroup`): its box grows right by at most `delta`, so the guard reads that widened box (the moved bodies'
+        // own guards by `holdsNodeMove`). Refused, no room is taken. The bundle then draws straight members where its gap holds the member pitch
+        // (ADR-0017), or refuses by name (`BUNDLE_CROSSOVER_CAPACITY`), and `BUNDLE_ROOM_HELD` names the room it did not take.
+        const rightOf = (group: LayoutGroup): string[] => group.nodes.filter(id => model.nodes[id]!.bounds!.x >= threshold);
+        const whole = row.filter(group => group.bounds !== undefined && rightOf(group).length === group.nodes.length);
+        const part = row.filter(group => group.bounds !== undefined && rightOf(group).length > 0 && rightOf(group).length < group.nodes.length);
+        const roomHolds = (): boolean => holdsMove(model, [...whole.map(group => ({ group, bounds: { ...group.bounds!, x: group.bounds!.x + delta } })),
+          ...part.map(group => ({ group, bounds: { ...group.bounds!, width: group.bounds!.width + delta }, dx: 0 }))], false)
+          && part.every(group => holdsNodeMove(model, group, rightOf(group), delta));
+        const held = delta > 0 && !roomHolds();
+        if (held && !model.diagnostics.some(item => item.code === 'BUNDLE_ROOM_HELD' && item.owners?.some(owner => 'id' in owner && owner.id === bundle.id))) {
+          model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'BUNDLE_ROOM_HELD', owners: [{ kind: 'bundle', id: bundle.id }],
+            message: `The crossover room of ${bundle.id} (${delta.toFixed(1)} px right of ${rightNode!.id}) would break a reservation, so it is not taken.` });
+        }
+        if (delta && !held) for (const group of row) {
+          const moved = rightOf(group);
           if (moved.length === group.nodes.length) moveGroup(model, group, delta, 0);
           else for (const id of moved) { model.nodes[id]!.bounds!.x += delta; model.nodes[id]!.ports.forEach(p => { p.anchor!.x += delta; }); }
           fitRegionGroup(model, group);

@@ -18,6 +18,13 @@ group insets, initial space reservation and restore validation all read the side
 the group downward without moving its nodes. Placement, publication and restore compute the side
 from the same topology, so it needs no separate persistence check.
 
+## Amendment (decision review V3 and D16, 2026-11-07)
+
+The purpose of this ADR is the longest free span, not a title that no link crosses. The edge with fewer link ports gives the title the longest
+free span; it may still be crossed, and the crossing is recorded (`crossedBy`, ADR-0023). The user kept this rule on 2026-11-07 (V3): a title
+that always stands on top moved bottom titles from 864 to 1 and raised crossed titles from 110 to 395 (`.scratch/decision-review-2026-11/results/V3.md`). The "Why" above that says the
+conflict "before it exists" is history: since ticket 54 a title yields to its links and takes the halo.
+
 ## Amendment (architecture-2 ticket 54, 2026-11-02)
 
 The edge is read on natural sides from stage 5 on (`groupTitleEdge`, `frameTitleSide`) and never changes after. The edge flip for a

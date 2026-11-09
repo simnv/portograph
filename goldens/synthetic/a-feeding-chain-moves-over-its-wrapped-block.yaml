@@ -1,0 +1,85 @@
+# Expected: The feeding chain of a wrapped rank cell moves as one block over the cell's block (fan wrap, decision D-Q4, ticket 07).
+# Two locations stand in the lowest tier. `west` holds a gateway, a hub and twenty-four leaves fed by the hub; its leaf cell stands on
+# two lines, and the column packer packs the tier again, so `west` is narrower and `east` closes up. Above stand a chain of
+# one-rank tiers: `dist` feeds both gateways, `core` feeds `dist`. Stage 5 decides the chain once (`staggerRows[].chain` = core, dist)
+# and moves it as one block in x, so Dist one stands over West gateway again; no body of the chain grows to reach a feed (Dist one
+# keeps its own width), and the feed to East gateway takes its bend. The overlay link Core two to East hub stays one straight segment.
+# The acceptance gate keeps the two lines: less area and every straight link kept. Publication checks that the chain still stands over
+# its block. Test-only input; test/pipeline/fan-wrap.test.ts reads the layout.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  dist: { tier: 1, label: Dist }
+  west: { tier: 2, label: West }
+  west-zone: { parent: west, label: West zone }
+  east: { tier: 2, label: East }
+  east-zone: { parent: east, label: East zone }
+nodes:
+  core-1: { group: core, class: router, label: Core one }
+  core-2: { group: core, class: router, label: Core two }
+  dist-1: { group: dist, class: router, label: Dist one }
+  dist-2: { group: dist, class: router, label: Dist two }
+  w-gw: { group: west, class: router, label: West gateway }
+  w-hub: { group: west-zone, class: switch, label: West hub }
+  w-1: { group: west-zone, class: access, label: West 1 }
+  w-2: { group: west-zone, class: access, label: West 2 }
+  w-3: { group: west-zone, class: access, label: West 3 }
+  w-4: { group: west-zone, class: access, label: West 4 }
+  w-5: { group: west-zone, class: access, label: West 5 }
+  w-6: { group: west-zone, class: access, label: West 6 }
+  w-7: { group: west-zone, class: access, label: West 7 }
+  w-8: { group: west-zone, class: access, label: West 8 }
+  w-9: { group: west-zone, class: access, label: West 9 }
+  w-10: { group: west-zone, class: access, label: West 10 }
+  w-11: { group: west-zone, class: access, label: West 11 }
+  w-12: { group: west-zone, class: access, label: West 12 }
+  w-13: { group: west-zone, class: access, label: West 13 }
+  w-14: { group: west-zone, class: access, label: West 14 }
+  w-15: { group: west-zone, class: access, label: West 15 }
+  w-16: { group: west-zone, class: access, label: West 16 }
+  w-17: { group: west-zone, class: access, label: West 17 }
+  w-18: { group: west-zone, class: access, label: West 18 }
+  w-19: { group: west-zone, class: access, label: West 19 }
+  w-20: { group: west-zone, class: access, label: West 20 }
+  w-21: { group: west-zone, class: access, label: West 21 }
+  w-22: { group: west-zone, class: access, label: West 22 }
+  w-23: { group: west-zone, class: access, label: West 23 }
+  w-24: { group: west-zone, class: access, label: West 24 }
+  e-gw: { group: east, class: router, label: East gateway }
+  e-hub: { group: east-zone, class: switch, label: East hub }
+  e-1: { group: east-zone, class: access, label: East 1 }
+  e-2: { group: east-zone, class: access, label: East 2 }
+links:
+  - [core-1, dist-1]
+  - [core-2, dist-2]
+  - [dist-1, w-gw]
+  - [dist-2, e-gw]
+  - [w-gw, w-hub]
+  - [w-hub, w-1]
+  - [w-hub, w-2]
+  - [w-hub, w-3]
+  - [w-hub, w-4]
+  - [w-hub, w-5]
+  - [w-hub, w-6]
+  - [w-hub, w-7]
+  - [w-hub, w-8]
+  - [w-hub, w-9]
+  - [w-hub, w-10]
+  - [w-hub, w-11]
+  - [w-hub, w-12]
+  - [w-hub, w-13]
+  - [w-hub, w-14]
+  - [w-hub, w-15]
+  - [w-hub, w-16]
+  - [w-hub, w-17]
+  - [w-hub, w-18]
+  - [w-hub, w-19]
+  - [w-hub, w-20]
+  - [w-hub, w-21]
+  - [w-hub, w-22]
+  - [w-hub, w-23]
+  - [w-hub, w-24]
+  - [e-gw, e-hub]
+  - [e-hub, e-1]
+  - [e-hub, e-2]
+  - [core-2, e-hub, { route: overlay }]

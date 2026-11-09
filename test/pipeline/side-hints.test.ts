@@ -30,7 +30,9 @@ async function run(yaml: string, hints?: Hints, floors?: ReadonlyMap<string, { w
     const attempt = createAttempt();
     return { layout: graph => { graphs.push(JSON.stringify(graph)); return attempt.layout(graph); }, terminateWorker: () => attempt.terminateWorker() };
   };
-  const model = await layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt,
+  // The group lift (ticket 08) is off: these tests pin the side-hint rounds of one command (hashes recorded on main before the lift; the lift
+  // record joins the JSON and its trial runs are whole commands). The lift has its own tests (`lift.test.ts`) and the corpus gate.
+  const model = await layout(parse(yaml), { createElkAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true,
     ...(hints ? { testSideHints: hints } : {}), ...(floors ? { testNodeFloors: floors } : {}) });
   return { model, graph: JSON.parse(graphs[0]!) };
 }
@@ -290,10 +292,13 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // Ticket DR-04 (link order is never input) re-baselined three: their link ids and anonymous port ordinals follow the canonical link order. An
   // id-free diff against the layouts before DR-04 shows the same canvas, node bodies, port anchors and sides, link paths, group boxes and labels.
   // The hashes were 42ca7e1559f49ea9, 9ab27642f6cac98d and a21df2bb8798fc03.
+  // Decision review 2026-11, ticket 07 (fan wrap, D-Q4) re-baselined `a-linked-node-steps-out-of-a-straight-chord` (9ab27642f6cac98d before): its
+  // `hosts` row (two hubs, two members each) is no fan, so no group passes the rules before a draft and `groupArrangements` is absent; main's
+  // layout without that key hashes to the new value, so the geometry is unchanged.
   const main: Record<string, string> = {
     'a-group-holds-both-ends-of-a-bundle': '7fb6875900425312',
     'a-bus-in-a-rank-gap-grows-the-gap': '92a03918704346a8',
-    'a-linked-node-steps-out-of-a-straight-chord': 'c3ade365edabf0c6',
+    'a-linked-node-steps-out-of-a-straight-chord': 'f0a31e77eb97590d',
     'a-bar-end-keeps-its-corridor': 'fbe95e96d87d86e8',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {

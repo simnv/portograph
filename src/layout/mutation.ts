@@ -1,5 +1,6 @@
 import { validateReservations } from './reservations.js';
 import { validateStaggerRows } from './stagger.js';
+import { validateGroupLifts } from './lift.js';
 import { validateFeedSplits } from './feed-split.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
@@ -42,6 +43,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
 import { validateRoutedPaths } from '../route/validate.js';
 import { placementAttempt, type AttemptTraceEvent } from './placement-attempt.js';
+import { judgePostconditions } from './postconditions.js';
 import { columnOf } from './read/arrangement.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
@@ -172,6 +174,8 @@ function validateDocument(model: LayoutModel): LayoutModel {
   const resolved = resolve(model.document, {
     ...(model.declinedTrunks === undefined ? {} : { declinedTrunks: new Map(model.declinedTrunks.map(key => [key, 'declined'] as const)) }),
     ...(model.declinedSolidBlocks === undefined ? {} : { declinedSolidBlocks: new Map(model.declinedSolidBlocks.map(item => [item.family, item.reason])) }),
+    // D-Q5: the lifted bands are the document's bands moved by the record; `applyLifts` refuses a record the document does not give.
+    ...(Array.isArray(model.groupLifts) ? { groupLifts: model.groupLifts } : {}),
   });
   same(semantics(model), semantics(resolved), 'Resolved semantics differ from document');
   same(Object.keys(model.nodes).sort(), Object.keys(resolved.nodes).sort(), 'Node membership differs from document');
@@ -320,6 +324,7 @@ function validateJoins(model: LayoutModel): void {
 function validatePublication(model: LayoutModel, baseline: LayoutModel, intermediate = false): void {
   jsonValue(model);
   validateStaggerRows(model);
+  validateGroupLifts(model);
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
   validateJoins(model);
@@ -637,6 +642,8 @@ export function restoreFinalLayout(json: string): LayoutModel {
 const permissions: Record<PlacementRule, { move: boolean; reorder: boolean }> = {
   rows: { move: true, reorder: false }, lanes: { move: true, reorder: false },
   flanks: { move: true, reorder: true }, centre: { move: true, reorder: true },
+  // 7e and 7f give an empty callback: their producers run after the checks below, so a rule check here reads only what a caller authored.
+  // The producer postconditions (`postconditions.ts`) judge the producer output; publication (`protect`) is the second boundary (D-Q3, DR-11).
   bars: { move: true, reorder: true }, bundles: { move: true, reorder: true }, bands: { move: true, reorder: false },
   route: { move: false, reorder: false }, 'link-labels': { move: false, reorder: false },
   validate: { move: false, reorder: false }, emit: { move: false, reorder: false },
@@ -738,7 +745,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // compared it with its replay (architecture-2 ticket 66).
     ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets'] : []),
     // The end trim of 7f records the bodies and boxes it narrowed (architecture-2 ticket 68); every later rule keeps the record.
-    ...(rule === 'bands' ? ['bodyTrims'] : [])];
+    ...(rule === 'bands' ? ['bodyTrims'] : []),
+    // D-Q5: the publication writes the command's lift record (`decideLifts`); the entries it adds after the kept run are declined and move no band.
+    ...(rule === 'link-labels' ? ['groupLifts'] : [])];
   same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
@@ -788,7 +797,6 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     for (const [index, lane] of draft.lanes.entries()) if (!equal(lane.bounds, model.lanes[index]!.bounds)) same(lane.bounds, supplied.lanes[index]!.bounds, 'Callback lane extent contradicts current geometry');
   }
   const before = placement(model), after = placement(draft);
-  if (rule === 'bands') same(after, before, 'Bands callback cannot author placement or derived claims');
   const changed = !equal(before, after);
   if (changed && !permission.move) throw new Error(`${rule} cannot change placement`);
   if (changed && hasUnsupportedClaims(model)) throw new Error(`${rule} requires an unimplemented claim rebuild`);
@@ -854,7 +862,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     same(omit(node, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), omit(old, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), 'Undeclared node field changed');
     node.ports.forEach((port, index) => {
       same(omit(port, ['engineOrder', 'anchor', 'pill']), omit(old.ports[index]!, ['engineOrder', 'anchor', 'pill']), 'Undeclared port field changed');
-      if ((rule === 'bundles' || rule === 'centre') && !bundledPorts.has(JSON.stringify(port.ref))) same(port.engineOrder, old.ports[index]!.engineOrder, `${rule === 'bundles' ? 'Bundles' : 'Centring'} cannot reorder unrelated ports`);
+      if (rule === 'centre' && !bundledPorts.has(JSON.stringify(port.ref))) same(port.engineOrder, old.ports[index]!.engineOrder, 'Centring cannot reorder unrelated ports');
     });
     same(node.sizeFloor, old.sizeFloor, 'Stored content floor changed');
     same(node.contentSize, old.contentSize, 'Measured content changed');
@@ -927,16 +935,6 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
         same({ ...node, ports: node.ports.map(port => omit(port, ['engineOrder', 'anchor', 'pill'])) }, { ...old, ports: old.ports.map(port => omit(port, ['engineOrder', 'anchor', 'pill'])) }, 'Centring cannot move anchor tier or flanks');
       }
     }
-    if (rule === 'bundles') {
-      same(node.size, old.size, 'Bundles cannot resize nodes');
-      same(node.bounds!.x, old.bounds!.x, 'Bundles cannot translate nodes horizontally');
-      const dy = node.bounds!.y - old.bounds!.y;
-      if (dy < 0) throw new Error('Bundles may only grow tier gaps');
-      node.ports.forEach((port, index) => {
-        const prior = old.ports[index]!;
-        if (!bundledPorts.has(JSON.stringify(port.ref))) same(port.anchor, { x: prior.anchor!.x, y: prior.anchor!.y + dy }, 'Bundles must translate unrelated anchors with nodes');
-      });
-    }
     if (rule === 'flanks') {
       if (node.size!.width < old.size!.width || node.size!.height < old.size!.height) throw new Error('Flanks cannot shrink nodes');
       const group = model.groups[model.document.nodes[id]!.group]!;
@@ -986,6 +984,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   if (rule === 'bars') rebuildBarDrops(draft);
   // The last centring reading that reads the record is the publication of 7f: the routed layout publishes without it (architecture-2 ticket 66).
   if (rule === 'route') delete draft.alignmentTargets;
+  // The producers of 7e and 7f write after the rule checks above: their output is judged here, on the net draft after every dependent rebuild
+  // and before commit (DR-11). Publication (`protect`) stays the second boundary.
+  if (rule === 'bundles' || rule === 'bands') judgePostconditions(model, draft, rule);
   draft.stage = rule;
   draft.runtime.stages.push({ stage: rule, durationMs: Date.now() - started });
   if (rule === 'bands') draft.freeze!.placement = clone(placement(draft));

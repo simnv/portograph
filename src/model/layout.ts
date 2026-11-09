@@ -177,6 +177,38 @@ export interface Frame {
   tier: number;
 }
 
+/** One float component of `LayoutModel.groupLifts` (D-Q5). */
+export interface GroupLift {
+  /** The units (top-level frames and plain tier groups) of the component, sorted. */
+  units: string[];
+  /** The layout groups of those units, sorted; `tiers`, `from` and `to` are parallel to it. */
+  members: string[];
+  /** The document tier of each member: never rewritten. */
+  tiers: number[];
+  /** The band (sub-tier) each member stands in without the lift, and with it. Equal when the entry is declined. */
+  from: number[];
+  to: number[];
+  /** Whole bands risen; 0 when declined. */
+  offset: number;
+  /** The side the component stands on beside the units of the bands it rises into, read on the placed model it was measured on. */
+  side: 'left' | 'right';
+  /** The links straight (both layers) in the routed baseline that the judge kept straight; empty when declined. */
+  straight: string[];
+  reason: string;
+  /**
+   * The routed feeds from a unit of a higher document tier that the rise brings level with their feeder node (a level side entry, D-Q5): each
+   * leaves the feeder and enters the fed node on the lateral faces that face each other (`liftFaces`). The judge does not hold it vertical or on
+   * its faces, only straight or no more bends. Absent on a declined entry and when the rise keeps every feeder above.
+   */
+  sideEntry?: string[];
+  /**
+   * A level side entry leaves part of the component below its feeder's band. Every unit outside the
+   * members whose top band is below band `at` (the feeder's band) moves down `by` bands, so the component's lower bands are its own.
+   * Absent when nothing moves down.
+   */
+  push?: { at: number; by: number };
+}
+
 export interface TierBand {
   tier: number;
   groups: string[];
@@ -498,7 +530,8 @@ export interface Obstacle extends OwnedElement {
 }
 
 export interface Diagnostic {
-  stage: 'parse' | 'model' | 'placement' | 'final-geometry';
+  /** `render`: a renderer's own diagnostic, which no stage of the pipeline records on the model (the draw.io export's). */
+  stage: 'parse' | 'model' | 'placement' | 'final-geometry' | 'render';
   severity: 'info' | 'warning' | 'error';
   code: string;
   message: string;
@@ -520,6 +553,14 @@ export interface LayoutModel {
    * gave the rows. Present = one entry per group, and a group is `stagger` exactly when `staggerRows` holds it; a `column` group stands one member on each line (`validateColumns`).
    */
   groupArrangements?: Record<string, GroupArrangement>;
+  /**
+   * D-Q5 (ticket 08): the group lifts of the command (`lift.ts`, decided by `decideLifts` on whole command runs). Absent = nothing decided: the document has no float
+   * component in the first slice (none, or each holds a flank, a bar, a canton member or a group that is not a row), `layout.autoArrange: false`, the `testLiftOff` option, or a model older than the rule (as `groupArrangements` when stage 5 has nothing
+   * to choose). `[]` = decided, none: the document has a float component, but none could rise a whole band on the no-lift run. Otherwise one entry
+   * per float component measured on the runs: lifted (`offset` > 0) or declined (`offset` 0) with the reason. The document tier is never rewritten: a lifted member's
+   * `LayoutGroup.tier` (its band) is its `to` band.
+   */
+  groupLifts?: GroupLift[];
   /**
    * Architecture-2 ticket 73: the feed splits stage 5 made (`feed-split.ts`), in the order it made them. Absent = not decided: no stage 5 of this
    * pipeline ran on the model (a model before `sides-two`, or one frozen by hand); `[]` = stage 5 decided and split nothing (no anchor tier, no
@@ -693,8 +734,8 @@ export interface LayoutModel {
    */
   stemDepths?: StemDepth[];
   /**
-   * The described links whose label room 7f gave up (architecture-2 ticket 27): a settle round reserved the room and replayed
-   * `LABEL_ROOM_PASSES` times and a pass still reserved more, so the room of the links still short then is left to the label placement
+   * The described links whose label room 7f gave up (architecture-2 ticket 27): the tier-gap solve read the room
+   * `LABEL_SOLVE_READS` times and a read still asked for more, so the room of the links still short then is left to the label placement
    * (`LINK_LABEL_ROOM_UNRESERVED`, as for a room no growth can open). No gate judges that label: G3 leaves out overlay labels and
    * `labelBorderCrossings` is a counter. When no window holds it, stage 9 places it across a border with `LINK_LABEL_ON_BORDER`; its own
    * collision test still refuses a place on a link. The reservation reads the record
@@ -875,6 +916,14 @@ export interface StaggerRow {
   /** The centre distance of each consecutive pair of members, `order.length - 1` entries (ticket 51: a gap between two parents is wider). */
   pitches: number[];
   step: number;
+  /**
+   * The feeding chain of a wrapped rank cell (fan wrap, decision review 2026-11, D-Q4): the column units (top-level frames and one-rank
+   * groups, sorted by id) on the feed side of the row's block that stage 5 moves as one block in x, so that their feeds into the block
+   * stand over the block's feed ports. The first stage 5 that seats the row decides it; every later run reads it and moves the same units.
+   * `[]`: decided, no chain (no unit feeds the block, or each feeder is a shared parent). Absent: the row is no rank cell (a plain row has no
+   * block and no chain). Publication and restore check that a chain still stands over its block (`validateStaggerRows`).
+   */
+  chain?: string[];
 }
 /**
  * One feed split (ticket 73): the feeding side of the step `tier` (child) and `authority` (the adjacent sub-tier toward the anchor) right of x `at`

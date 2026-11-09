@@ -32,6 +32,7 @@ import { arrangeGroups, seatStaggerRows } from './stagger.js';
 import { reserveColumns, seatColumn } from './column-arrangement.js';
 import { ofKind } from './reservations.js';
 import { parallelSets, visitOrder, type ParallelSet } from './parallel-sets.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 const key = portId;
 
 /**
@@ -760,7 +761,7 @@ export function sweepTiers(model: LayoutModel): void {
   // A frame that spans bands is moved whole by the band that holds a fixed group beside it, so a band swept before it stands as that move left it: the bands are swept
   // again until nothing moves. Every move is to the right and by a positive amount, so the rounds end; the bound is a guard.
   let moved = true, anyMixed = false;
-  const shift = (group: LayoutGroup, dx: number): void => { if (dx > PLACEMENT_EPS_SWEEP) moved = true; moveGroup(model, group, dx, 0); };
+  const shift = (group: LayoutGroup, dx: number): void => { if (dx > PLACEMENT_EPS) moved = true; moveGroup(model, group, dx, 0); };
   for (let round = 0; moved && round < 16; round++) {
     moved = false;
   for (const band of model.tierBands) {
@@ -787,7 +788,6 @@ export function sweepTiers(model: LayoutModel): void {
   }
   if (moved) placementWarning(model, 'PLACEMENT_NON_CONVERGENCE', 'The sweep that seats the groups of a tier beside the frames did not settle in 16 rounds; the geometry kept is still checked by the publication and the final gates.', [], 'group');
 }
-const PLACEMENT_EPS_SWEEP = 1e-6;
 
 /** The far ends of the links of every port, by port key (a link from a port to itself counts once). Stage 5 orders a face by them. */
 export function portPeers(model: LayoutModel): Map<string, PortRef[]> {

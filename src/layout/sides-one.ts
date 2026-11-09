@@ -7,6 +7,7 @@ import { chainSides } from './grid-chains.js';
 import { gridChains } from './grid.js';
 import { checkSideHints, NO_SIDE_HINTS, type SideHints } from './side-hints.js';
 import { SideHintRefusal } from './placement-refusal.js';
+import { liftFaces } from './lift.js';
 
 /** Complete tie priority for direction votes and unused-port allocation. */
 export const SIDE_TIE_ORDER: readonly Side[] = ['bottom', 'right', 'top', 'left'];
@@ -172,6 +173,15 @@ export function sidesOne(model: LayoutModel, hints: SideHints = NO_SIDE_HINTS, l
   }
   // A mesh bus port stands on the bus edge, never on a lateral side. Stage 2 gives it a provisional bus side
   // for sizing, read from the stage-2 sides of every node of the row (mesh-bus.md, section 4).
+  // D-Q5: a recorded side entry leaves its feeder and enters the fed node on the lateral faces that face each other (the
+  // component stands on its recorded side of the feeder). The record decides the faces; nothing later re-decides them.
+  for (const [key, side] of liftFaces(model)) {
+    const [node] = JSON.parse(key) as [string];
+    const port = model.nodes[node]?.ports.find(item => portKey(item.ref) === key);
+    if (port === undefined || port.sideHint === true || port.courseHint === true) continue;
+    port.side = side;
+    delete port.sizingSide;
+  }
   for (const bus of meshBuses(model)) {
     const side = busSide(model, bus, true);
     for (const ref of bus.ports) {

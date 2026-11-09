@@ -7,7 +7,7 @@ Status: accepted for implementation (owner request, 2026-10-31). Ticket: snack-t
 `layout.maxWidth` is a positive finite budget for the published canvas width, in pixels.
 It is an operational input. Placement receives the document without that field, so a sheet
 that already fits produces the exact normal output, including the echoed document.
-An absent budget takes the original pipeline path and records no stagger decision.
+An absent width budget skips the budget-driven trials. Stage 5 may still stagger an eligible row of four or more members by the aspect rule (amendment 2026-11-02; D12, decision review 2026-11-07, which replaces the earlier claim that an absent budget records no stagger decision); authored `shape` and `autoArrange: false` keep their contracts.
 
 Measure the normal published width first. Above the budget, try eligible rows in descending
 published width, then group id. A row has at least three members; every member has routed links,
@@ -76,3 +76,32 @@ link to one node of the facing group stands one member on each line. Stage 5 of 
 placement run decides it on final sides, before the nodes are sized again, and the facing face
 takes the column's centre pitch, so every link is level and straight. It spends no placement
 run, and the record exists when a group took the column or a stagger draft was tried.
+
+## Second amendment (2026-11-08, decision review 2026-11, D-Q4, ticket 07): fan wrap, two triggers, area objective
+
+The user ruled that a tier block must not be much wider than its sheet because one row of leaves stands on one line under one hub
+(mock A: two staggered lines, straight vertical drops, the hub spans them). The first amendment changes as follows.
+
+- Candidates. A rank cell is admitted. A row has three or more members, and every hub of the row feeds three or more of them (a **fan**;
+  the runs of several hubs stand side by side, and the seat refuses interleaved runs). The other rules stay.
+- Two triggers, in one place (`triggerReason`, `src/layout/stagger.ts`). A rank cell takes the **block trigger**: its one line is wider
+  than the widest other group of its tier block (its top-level frame with the child frames). A plain row, which has no other block content,
+  keeps the aspect rule: its band is the one widest band and the sheet is wider than tall.
+- Objective: the stage-5 canvas area, strictly less, replaces "at least one pitch narrower". A plain row must also come out nearer square.
+- Re-pack. After the seat, a wrapped rank cell packs its document tier again (`packTier`), so the sibling units close up.
+- Feeding chain. The units on the feed side that feed the block, tier by tier, without a shared parent, are its feeding chain. The first
+  seat decides it once (`StaggerRow.chain`; `[]` for no chain, absent for a plain row). Every seat moves those units as one block in x by
+  one move, so that each unit on the tier next to the block stands over its own feeds. A chain whose near units need different moves, or
+  whose move the boxes beside it do not leave room for, refuses the row by name. 7c grows no chain body and centres a chain node only on its
+  feeds inside the chain or into the block, which keeps each near unit over its feeds. Publication and restore check each near unit on its
+  own.
+- Acceptance gate. A stagger that stage 5 chose stands only when the complete placement (after 7f, before routing) takes less area than
+  the same placement without it, keeps every link that placement makes straight, and shortens no hard separation. The comparison run keeps
+  the first run's record with every chosen stagger a row and places no stagger at all, so it cannot choose another one. It is one placement
+  run per command whose placements stand outside `MAX_RERUNS` and the placement cap, so it is always available, and its state is its own: a kept stagger goes on as if
+  it had not run. A declined stagger stays one line; the record names the gate, and the info diagnostic `FAN_WRAP_DECLINED` names the reason.
+  A stagger refusal in the wrapped run's 7f declines it the same way.
+
+Evidence: `.scratch/decision-review-2026-11/poc/fanwrap/results.md` and `poc/fanwrap-v4/results.md`. On the key sheet
+`a-chain-of-tiers-packs-over-its-feeds-final-x` the canvas goes from 2937 x 1069 to 1845 x 1126 px (area -33.8 %), with no bend and no
+straight link lost.

@@ -13,17 +13,24 @@ rule in this document. A change to a rule increments the schema version.
 - A bound cell is an `<object>` element around an `<mxCell>`. The `<object>` holds the cell `id`,
   the `label` (the old `value`) and the binding attributes. The inner `<mxCell>` holds `style`,
   `vertex` or `edge`, `parent`, `source`, `target` and the geometry. It has no `id` and no `value`.
-- All other cells (groups, icon tiles, legend, mesh buses, overlay marks, layers) are bare `<mxCell>`
-  elements, as before.
+- All other cells (groups, icon tiles, legend, overlay marks, layers) are bare `<mxCell>`
+  elements, as before. A mesh bus piece and a text cell that only needs a `tooltip` are an `<object>`
+  with `tooltip` and no `pg-kind`. Such an `<object>` is not a binding; a reader keys on `pg-kind`.
 
 ```xml
 <object id="pg-port~sw1~eth2~1" label="eth2" pg-kind="port" pg-id="sw1:eth2"
         pg-node="sw1" pg-port="eth2" ifname="eth2">
   <mxCell style="…" vertex="1" parent="pg-node~sw1">
-    <mxGeometry x="…" y="…" width="…" height="…" as="geometry"/>
+    <mxGeometry x="…" y="…" width="…" height="…" relative="1" as="geometry">
+      <mxPoint x="…" y="…" as="offset"/>
+    </mxGeometry>
   </mxCell>
 </object>
 ```
+
+A pill, a node icon and a node description have `relative="1"` geometry: `x` and `y` are a
+fraction of the node's size and the offset is in px, so the cell stays on its face when a user
+resizes the node. The geometry is not part of the binding.
 
 draw.io keeps the attributes when a user edits the diagram. Its *Edit Data* dialog shows them. An
 SVG or PNG export from draw.io keeps them only when it embeds the diagram XML.
@@ -87,7 +94,7 @@ All attribute values are strings. A reader must parse numbers and booleans.
 | `pg-run` | link, split into runs only | the index of this run, from `0` |
 | `pg-runs` | link, split into runs only | the number of runs |
 | `pg-of` | link label, node icon | the `pg-id` of the link that owns the label, or of the node that owns the icon |
-| `pg-symbol` | node, only when the node is drawn with a symbol | the text after `symbol:` in the id of that symbol's legend row, with `%` and `~` escaped as `%25` and `%7e`. The legend cells of the symbol have the id `pg-legendRow~symbol:<value>`. A node has the attribute also when the sheet draws no legend. A node without a symbol has none. Optional: it does not change the schema version |
+| `pg-symbol` | node, only when the node has a class | the text after `symbol:` in the id of the legend row of the node's class, with `%` and `~` escaped as `%25` and `%7e`. The legend cells of the class have the id `pg-legendRow~symbol:<value>`. A "symbol" is the class variant that the legend lists, not a drawn icon: a node of a class that has no icon cell has the attribute too. When one class is drawn with two icons, the value is `<class>:<icon>`. A node has the attribute also when the sheet draws no legend. A node with no class has none. Optional: it does not change the schema version |
 | `pg-rules` | root cell `id="0"` | reserved, not written in version 1. It will hold binding rules as one YAML or JSON string, versioned with `pg-schema` |
 
 A link from `pg-from` to `pg-to` has the YAML direction. Use it to select the counter for each
@@ -95,6 +102,13 @@ direction, for example the transmit counter of the `pg-from` port.
 
 `pg-from` and `pg-to` name a port cell only when the end is a named port. An anonymous port has no
 cell, and the link ends on the node cell.
+
+A link end is pinned to its visible end (`visibleEnd`, D-Q7), a point of the path: on a port that
+draws a pill, the first point where the path leaves the pill (its outward face on the stem, or the
+stem end when the stem is shorter than the pill's half depth), or the approach point on the pill's
+tangential edge for an end on an approach; on an anonymous port, the path end on the node cell. The interior waypoints
+are the published path. `edgeStyle` follows that polyline: `none` for a run with no bend,
+`orthogonalEdgeStyle` for a square run, and `none` for a run with a diagonal.
 
 ### 3.1 Labels
 
@@ -111,6 +125,11 @@ The labels are plain text: the style has no `html` key, and a label of more than
 lines one newline (`&#10;`) apart. An SVG export of the file draws each line as a native `<text>`,
 not as a `<foreignObject>` with a PNG fallback. The export does not set `placeholders`, so draw.io
 shows a `%name%` in a label as it is.
+
+Label placement is a render option (`--labels`). `on-run`, the default, centres a link label on the
+segment that supports it and fills the label with the backdrop. It moves a label only, never a route.
+`measured` keeps the box stage 9 placed, beside its run, as the SVG draws it. Use `measured` to verify
+an export against the layout model: every label then decodes to its measured centre.
 
 A node's `label` is its name only. Plain text has one font per cell, so a node's description is a
 separate, unbound text cell (`pg-nodeDescription~<node>`), a child of the node cell.
@@ -147,6 +166,14 @@ Rules:
 - The `pg-` attributes come first. The meta attributes come after them, in sorted key order.
 - `tooltip` and `link` are not reserved. draw.io shows `tooltip` when the pointer is on the cell
   and makes the cell a hyperlink with `link`.
+- The export also writes generated text into `tooltip`, as the SVG writes it in `<title>`: the full
+  text of a shortened or omitted link label (on the link, or on the label cell), the members of a
+  group-link fallback, and the tooltip of a mesh bus (on every piece of the bus; these pieces carry
+  `tooltip` and no `pg-` attribute). draw.io shows `tooltip` as HTML: the generated text has `&`, `<`
+  and `>` escaped, and an author `meta.tooltip` is written raw, so it may hold draw.io HTML. When a
+  cell also has an author `meta.tooltip`, the author text comes first, then a new line, then the
+  generated text. A reader that binds by `pg-kind` ignores a
+  cell with no `pg-kind`.
 - No cell inherits the root `meta:`. A reader can use it as a default for every cell.
 
 Common keys for a network diagram: `host`, `job`, `instance`, `ifname`, `device`, `capacity`
@@ -159,8 +186,16 @@ These cells have no binding attributes:
 - group and frame boxes,
 - mesh bus bars, stubs, joints and risers (a mesh bus member link has no link cell),
 - overlay end marks, icon tiles, node descriptions and the legend,
+- the canvas background (layer `Canvas`),
 - the count label of a merge bundle. Its cell id comes from the bundle number, which can change
   when you reorder the links.
+
+A decoration (port mark, bus joint, icon tile) is locked to its owner: no move, resize, edit or connect on its own. Marks and joints
+cannot be deleted alone, because link ends bind to them. A reader can ignore a locked cell with no `pg-kind`.
+
+Known difference: draw.io draws plain text at its own line pitch, `round(size × 1.2)`, and has no
+style to change it. The first baseline is within about 0.5 px (measured at 11 px). When the model pitch of a multi-line label differs,
+its further lines can sit about 1 px a line off the SVG, and the export reports `DRAWIO_LINE_PITCH`.
 
 ## 6. Versioning
 

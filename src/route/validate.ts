@@ -1,14 +1,15 @@
 import type { Point } from '../model/geometry.js';
-import type { LayoutLink, LayoutModel, LayoutPort, PathSegment } from '../model/layout.js';
+import type { LayoutLink, LayoutModel, PathSegment } from '../model/layout.js';
 import { equal } from '../model/json-equality.js';
 import { stemReach } from '../layout/bands.js';
 import { endPort } from '../layout/approach.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
-import { EPS, horizontal, length, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
+import { EPS, horizontal, length, near, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { outward } from '../score/model.js';
-import { effectiveLayer, reversedRuns } from './plan.js';
+import { effectiveLayer, placementRuns, plannedRunsOf, reversedRuns, type PlannedRun } from './plan.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
-import { sharedBlockers, overlayEndpoint, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
+import { pathEnd } from '../layout/path-end.js';
+import { sharedBlockers, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
 import { ownedLanes, stubCandidate } from './paths.js';
 import { MIN_STEM, reservations, TOLERANCE, shrink } from './reservations.js';
 
@@ -64,6 +65,105 @@ export function reservationConflicts(model: LayoutModel): ReservationConflict[] 
   return result;
 }
 
+/**
+ * The model as stage 8 received it: the router's paths, its removals and the stub marks taken away; a rule's own (`fixed`) path kept.
+ * The planned-run producers (`placementRuns`) read only a link that has no path and is not removed, so the validator asks them of this
+ * view and of nothing else. Only the link list is copied.
+ */
+export function preRoute(model: LayoutModel): LayoutModel {
+  const view: LayoutModel = { ...model, links: model.links.map(link => {
+    if (link.path?.fixed === true || (link.path === undefined && link.removed === undefined && link.stubCandidate === undefined)) return link;
+    const kept = { ...link };
+    delete kept.path; delete kept.removed; delete kept.stubCandidate;
+    return kept;
+  }) };
+  delete view.removedLinks;
+  return view;
+}
+
+/**
+ * A maximal straight piece of a path: consecutive segments of one link owner on one line and in one direction, joined end to end.
+ * The stitcher joins a planned run to the routed gap beyond it where they are one straight run, and a lane corridor cuts a run in
+ * two (`laneRuns`), so a planned segment lies inside a chain and need not equal one segment of the path.
+ */
+interface Chain { from: Point; to: Point; owner: string }
+
+function chainsOf(segments: readonly PathSegment[]): Chain[] {
+  const chains: Chain[] = [];
+  let open = false;
+  for (const segment of segments) {
+    if (segment.owner.kind !== 'link') { open = false; continue; }
+    const tail = chains.at(-1);
+    const line = (axis: 'x' | 'y', cross: 'x' | 'y'): boolean => near(tail!.from[cross], tail!.to[cross]) && near(segment.from[cross], segment.to[cross])
+      && Math.sign(tail!.to[axis] - tail!.from[axis]) === Math.sign(segment.to[axis] - segment.from[axis]);
+    const along = tail !== undefined && open && tail.owner === segment.owner.id && samePoint(tail.to, segment.from) && (line('y', 'x') || line('x', 'y'));
+    if (along) tail.to = segment.to;
+    else chains.push({ from: segment.from, to: segment.to, owner: segment.owner.id });
+    open = true;
+  }
+  return chains;
+}
+
+/**
+ * The first planned run that `segments` does not keep, or undefined when it keeps them all (decision D-Q2). Each planned segment lies
+ * inside one chain of the path (`chainsOf`): on the same line, with the same link owner, running the planned way, and the chains that
+ * hold the planned segments come in the planned order. A collinear merge with the same owner therefore passes; a run moved off its
+ * line, given another owner, reversed or reordered is lost. No planned run (an empty list) requires nothing.
+ */
+export function lostPlannedRun(segments: readonly PathSegment[], planned: readonly PlannedRun[]): PlannedRun | undefined {
+  const chains = chainsOf(segments);
+  let cursor = 0;
+  for (const run of planned) {
+    for (const segment of run.segments) {
+      const owner = segment.owner.kind === 'link' ? segment.owner.id : undefined;
+      const axis = vertical(segment) ? 'y' : 'x', cross = axis === 'y' ? 'x' : 'y';
+      const low = Math.min(segment.from[axis], segment.to[axis]), high = Math.max(segment.from[axis], segment.to[axis]);
+      const sign = Math.sign(segment.to[axis] - segment.from[axis]);
+      const found = chains.findIndex((chain, index) => index >= cursor && chain.owner === owner
+        && Math.abs(chain.from[cross] - segment.from[cross]) <= EPS && Math.abs(chain.to[cross] - segment.from[cross]) <= EPS
+        && Math.min(chain.from[axis], chain.to[axis]) <= low + EPS && Math.max(chain.from[axis], chain.to[axis]) >= high - EPS
+        && Math.sign(chain.to[axis] - chain.from[axis]) === sign);
+      if (found < 0) return run;
+      cursor = found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * `frozenChords` names exactly the links that hold a routed chord: `freezeChords` writes the links `isRoutedChord` holds, and from then
+ * on a named link keeps its chord. The tier-gap plan leaves every named link out (`tierGapPlan`), so a name the published geometry does
+ * not hold would take that link's planned runs out of `plannedRunsKept`. The record is read against the geometry, never trusted (R5).
+ * Absent: not frozen yet, no name to check. Empty: frozen with no chord held.
+ */
+function frozenChordsHeld(model: LayoutModel): void {
+  for (const id of model.frozenChords ?? []) {
+    const link = model.links.find(item => item.id === id);
+    if (link === undefined || !isRoutedChord(model, link)) throw new Error(`frozenChords names ${id}, which holds no routed chord`);
+  }
+}
+
+/**
+ * Every run placement planned for a routed link stays in its path, with its owner and traversal (decision D-Q2), as the fixed and
+ * shared runs do (`reservedPositions`), even where another route would pass the gates. The one producer (`placementRuns`) runs again
+ * on the published or restored placement, seen as stage 8 received it; nothing new is recorded. A producer that cannot read the
+ * placement throws, and the model is refused (R6).
+ */
+function plannedRunsKept(model: LayoutModel): void {
+  frozenChordsHeld(model);
+  let placed: ReturnType<typeof placementRuns> | undefined;
+  for (const link of model.links) {
+    if (!drawn(link) || !link.path || link.path.fixed === true || effectiveLayer(link) !== 'routed') continue;
+    placed ??= placementRuns(preRoute(model));
+    const lost = lostPlannedRun(link.path.segments, plannedRunsOf(placed, link.id));
+    if (!lost) continue;
+    const owner = lost.segments[0]!.owner, name = owner.kind === 'link' ? owner.id : owner.kind;
+    throw new Error(lost.kind === 'leg'
+      ? `Routed path on ${link.id} does not keep the leg placement planned for ${name} in its row gap`
+      : `Routed path on ${link.id} does not keep the run placement planned for ${name} in its tier gap (part ${lost.index})`);
+  }
+}
+
 const drawn = (link: LayoutLink): boolean => link.technique !== 'stub' && link.removed !== true && link.attachments !== undefined;
 
 /**
@@ -80,8 +180,8 @@ export function retraces(id: string, segments: PathSegment[]): void {
 /**
  * Stage 8 publication and restore contract. Route geometry cannot be re-derived without the
  * router, so every claim it makes is checked structurally instead: complete source-to-target
- * paths, exact reserved runs, perpendicular stems, link ownership of the routed gaps, and the
- * reservations the public gates do not cover.
+ * paths, exact reserved runs, the runs placement planned (`plannedRunsKept`), perpendicular stems,
+ * link ownership of the routed gaps, and the reservations the public gates do not cover.
  */
 export function validateRoutedPaths(model: LayoutModel, requireComplete = false): void {
   // Built on the first overlay link and shared by the rest; a diagram with none pays nothing.
@@ -101,19 +201,16 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
     if (!path && !requireComplete) continue;
     if (!path || !path.segments.length) throw new Error(`Stage 8 left ${link.id} without a path`);
     if (path.layer !== effectiveLayer(link)) throw new Error(`Path layer on ${link.id} contradicts its effective layer`);
-    const ends = link.attachments!;
     const from = endPort(model, link, 'from'), to = endPort(model, link, 'to');
     if (!from?.anchor || !to?.anchor) throw new Error(`Link ${link.id} references a missing port`);
-    // Where a path has to meet its two ports. A routed path ends on the anchor, and the pill is
-    // painted over the inner half of its stem. An overlay path ends on the port's own outward
-    // **face**, because the overlay layer is masked out of the pill and a run inside it would never
-    // be drawn (stress ticket 30); `overlayEndpoint` names that point, and an end with no side to
-    // leave by has no face and keeps its anchor. The rule is the same one in both families — a path
-    // starts and ends where its ports are — read at the point each family really draws.
-    const attach = (port: LayoutPort, node: string): Point => (effectiveLayer(link) === 'routed' && !isRoutedChord(model, link)
-      ? undefined : overlayEndpoint(model.nodes[node], port)) ?? port.anchor!;
-    if (!samePoint(path.segments[0]!.from, attach(from, ends.from.node))
-      || !samePoint(path.segments.at(-1)!.to, attach(to, ends.to.node))) {
+    // Where a path has to meet its two ports: the path-end rule by producer (`pathEnd`). A
+    // stem-built path ends on the anchor, and the pill is painted over the inner half of its stem.
+    // A chord-built path (an overlay path, a routed chord) ends on the port's own outward **face**,
+    // because the overlay layer is masked out of the pill and a chord has no stem (stress ticket 30,
+    // ticket 34). G7 `endpoint-anchor` and the renderers read the same module.
+    const head = pathEnd(model, link, 'from'), tail = pathEnd(model, link, 'to');
+    if (head === undefined || tail === undefined) throw new Error(`Link ${link.id} references a missing port`);
+    if (!samePoint(path.segments[0]!.from, head) || !samePoint(path.segments.at(-1)!.to, tail)) {
       throw new Error(`Path on ${link.id} does not start and end at its ports`);
     }
     // `fixed` decides which contract this path answers to, so a restored value that merely looks
@@ -207,6 +304,8 @@ export function validateRoutedPaths(model: LayoutModel, requireComplete = false)
   if (conflicts.length) {
     throw new Error(`Routed path on ${conflicts[0]!.link} enters reserved ${conflicts[0]!.reservation}`);
   }
+  // After the older, more specific refusals: a route that enters a reservation is named for that.
+  plannedRunsKept(model);
   // Derived metadata last: a route that is wrong about where it goes must be reported for that,
   // not for the stub mark that disagrees with it.
   for (const link of model.links) {
