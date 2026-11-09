@@ -5,12 +5,13 @@
 # row's key orders, the order of the sink groups and the two corridor sides together, at the predicted 7c seats of the sinks: `aggr` turns
 # to ag2 ag4 ag0 ag1 ag3 (`feed-order`), link-10 passes left of `aggr` and link-11 right of it (`corridorSide`): crossings 1, bends 6,
 # canvas 722 x 484, no gate fails. Same shape as a-face-aligns-one-port-and-leaves-a-chord-port-in-place. Mirrored (every group and node
-# declared the other way round) the stage-4 decision is the mirror image and crossings stay 1; bends are 8, from the stages after 4 (main's
-# own mirror goes from 7 to 15 crossings). Tests: test/layout/joint-order.test.ts.
+# declared the other way round) the sheet is held to feasibility only (decision D-Q1): it publishes, refuses nothing and removes no link. Tests: test/layout/joint-order.test.ts.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group), so `aggr` is declared
+# before `spine`; the canonical order is then the written order and the link ids above hold.
 portograph: 2
 groups:
-  spine: { tier: 0 }
   aggr: { tier: 1 }
+  spine: { tier: 0 }
   leaf-far: { tier: 2 }
   leaf-near: { tier: 2 }
 nodes:
