@@ -1417,9 +1417,9 @@ export function centreItemLink(model: LayoutModel, item: string): string | undef
  * The centre emitter's report of a stall. It names the groups whose step stayed unresolved and the links of the centring items it found off their feeds;
  * restore excuses an item only for a link named here (DR-15, R5: the exemption is limited to its owner and stage).
  */
-function reportStall(model: LayoutModel, unresolved: string[], message = 'Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.'): void {
+function reportStall(model: LayoutModel, unresolved: string[], message = 'Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.', items?: readonly string[]): void {
   const links = new Set<string>();
-  for (const item of centreViolations(model, true)) { const link = centreItemLink(model, item); if (link !== undefined) links.add(link); }
+  for (const item of items ?? centreViolations(model, true)) { const link = centreItemLink(model, item); if (link !== undefined) links.add(link); }
   const owners: Extract<Owner, { id: string }>[] = [...unresolved.map(id => ({ kind: 'group' as const, id })), ...[...links].map(id => ({ kind: 'link' as const, id }))];
   const known = model.diagnostics.find(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE' && d.message === message);
   if (known === undefined) { model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE', message, owners }); return; }
@@ -1436,6 +1436,18 @@ export function flagUnverifiedCentring(model: LayoutModel): void {
   const open = centreViolations(model, true).filter(item => { const link = centreItemLink(model, item); return link === undefined || !named.has(link); });
   if (open.length > 0) {
     reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.');
+  }
+}
+/**
+ * The last word of the centre emitter on a 7f draft (DR-15): after the end trim, the check that the publication will run is run here, and each
+ * alignment it finds off its feed whose link no placement diagnostic names yet is named. The end trim and the rebuilds that follow the centre rule
+ * move geometry the passes could not read, so the links named earlier may miss one; restore excuses only the links named here (R5).
+ */
+export function nameOpenCentring(model: LayoutModel): void {
+  const named = new Set(model.diagnostics.filter(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE').flatMap(d => (d.owners ?? []).filter(o => o.kind === 'link').map(o => (o as { id: string }).id)));
+  const items = publishedCentreViolations(model, true).filter(item => !item.startsWith(ALIGNMENT_TARGETS_DIFFER));
+  if (items.some(item => { const link = centreItemLink(model, item); return link === undefined || !named.has(link); })) {
+    reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.', items);
   }
 }
 /**

@@ -6,7 +6,7 @@ import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFami
 import { refuseChords, refuseStemCrowded } from './fan-admission.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
-import { centreContext, centreViolations, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
+import { centreContext, centreViolations, nameOpenCentring, refreshAlignmentDeclines, refreshWindowDeclines } from './centre.js';
 import { type LaneFollow, sideLaneFindings, spanLaneFindings, rebuildLaneExtents, reseatLanes } from './lanes.js';
 import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
@@ -414,6 +414,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // A pair of labels on diagonal lines whose bands first meet on the geometry that publishes is decided here, once; a pair decided
   // earlier keeps its direction (`recordLabelYields`). Stage 9 and the validator read the record.
   recordLabelYields(draft, labelBorders(draft));
+  // The alignments the publication will find off their feeds are named by the centre emitter, after the last move (DR-15).
+  nameOpenCentring(draft);
   // A move 7f cannot refuse (a title band's room, a tier gap's rows) may still leave a body on a held chord.
   // The chord is kept, its link is named, and the final gates judge it; it never falls back (ticket 34).
   for (const id of blockedChords(draft)) {
