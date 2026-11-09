@@ -125,9 +125,9 @@ export async function withRouteSession<T>(createAttempt: CreateRouteAttempt, bud
 }
 
 /**
- * Serve `portograph-avoid-worker.mjs` (in dist/), and libavoid-js's `dist/index.js` and
- * `dist/libavoid.wasm` as `portograph-avoid.mjs` and `portograph-libavoid.wasm`, beside the page, or
- * pass their URLs. Asset locations are always explicit: nothing is inferred
+ * Serve portograph's `dist/portograph-avoid-worker.mjs` beside the page, and libavoid-js's
+ * `dist/index.js` and `dist/libavoid.wasm` under their own names beside that worker, or pass their
+ * URLs. Asset locations are always explicit: nothing is inferred
  * from `cwd` or `document.currentScript`, so the page must be served over HTTP.
  */
 export function createBrowserRouteFactory(options: Partial<RouteAssets & { workerUrl: string }> = {}): CreateRouteAttempt {
@@ -138,8 +138,8 @@ export function createBrowserRouteFactory(options: Partial<RouteAssets & { worke
   };
   const workerUrl = resolve(options.workerUrl ?? './portograph-avoid-worker.mjs', base);
   const assets: RouteAssets = {
-    moduleUrl: resolve(options.moduleUrl ?? './portograph-avoid.mjs', workerUrl),
-    wasmUrl: resolve(options.wasmUrl ?? './portograph-libavoid.wasm', workerUrl),
+    moduleUrl: resolve(options.moduleUrl ?? './index.js', workerUrl),
+    wasmUrl: resolve(options.wasmUrl ?? './libavoid.wasm', workerUrl),
   };
   return () => {
     if (host.Worker === undefined) throw new Error('A real Worker is required; Node callers must supply createNodeRouteFactory()');

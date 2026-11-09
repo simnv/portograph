@@ -10,7 +10,7 @@ const cli = process.env.PATH.split(path.delimiter).map(dir => path.join(dir, 'pl
 if (!cli) throw new Error('Run through npx --package=playwright');
 const { chromium } = require(path.join(path.dirname(realpathSync(cli)), 'index.js'));
 const dist = path.resolve('dist');
-// The solver files come from the installed elkjs and libavoid-js; the page serves them under the names the factories default to.
+// The solver files come from the installed elkjs and libavoid-js; the page serves them under their own names, the factory defaults.
 const elk = path.dirname(require.resolve('elkjs/package.json'));
 const avoid = path.dirname(require.resolve('libavoid-js')); // the package exports only its root (dist/index-node.mjs)
 const yaml = [
@@ -27,9 +27,9 @@ const yaml = [
 (async () => {
   const server = createServer((req, res) => {
     const scripts = { '/api.js': path.join(dist, 'portograph.umd.cjs'), '/esm.js': path.join(dist, 'portograph.js'),
-      '/elk-api.js': path.join(elk, 'lib/elk-api.js'), '/portograph-elk-worker.js': path.join(elk, 'lib/elk-worker.min.js'),
-      '/portograph-avoid-worker.mjs': path.join(dist, 'portograph-avoid-worker.mjs'), '/portograph-avoid.mjs': path.join(avoid, 'index.js') };
-    if (req.url === '/portograph-libavoid.wasm') {
+      '/elk-api.js': path.join(elk, 'lib/elk-api.js'), '/elk-worker.min.js': path.join(elk, 'lib/elk-worker.min.js'),
+      '/portograph-avoid-worker.mjs': path.join(dist, 'portograph-avoid-worker.mjs'), '/index.js': path.join(avoid, 'index.js') };
+    if (req.url === '/libavoid.wasm') {
       res.setHeader('Content-Type', 'application/wasm');
       return res.end(readFileSync(path.join(avoid, 'libavoid.wasm')));
     }
@@ -59,7 +59,7 @@ const yaml = [
     const result = await page.evaluate(async ({ source, golden }) => {
       const placedWith = async api => {
         const model = api.sizeNodes(api.sidesOne(api.resolve(api.parse(source))));
-        await api.skeleton(model, { createAttempt: api.createBrowserElkFactory('/portograph-elk-worker.js') });
+        await api.skeleton(model, { createAttempt: api.createBrowserElkFactory() });
         return api.bands(api.bundles(api.bars(api.centre(api.flanks(api.lanes(api.rows(api.sidesTwo(model))))))));
       };
       const out = {};
@@ -77,7 +77,7 @@ const yaml = [
         const parsed = api.parseWithDiagnostics(golden);
         if (!parsed.ok) throw new Error('Golden must parse');
         const final = await api.layout(parsed.document, { diagnostics: parsed.diagnostics,
-          createElkAttempt: api.createBrowserElkFactory('/portograph-elk-worker.js'),
+          createElkAttempt: api.createBrowserElkFactory(),
           createRouteAttempt: api.createBrowserRouteFactory(), budget: api.createBudget(30000) });
         const report = api.score(final).snapshot;
         const restored = api.restoreFinalLayout(api.serializeLayoutModel(final));
@@ -97,11 +97,11 @@ const yaml = [
       }
       const api = globalThis.portograph;
       const placed = await placedWith(api);
-      const missing = api.createBrowserRouteFactory({ wasmUrl: '/portograph-libavoid.wasm.missing' });
+      const missing = api.createBrowserRouteFactory({ wasmUrl: '/libavoid.wasm.missing' });
       try { await api.route(placed, { createAttempt: missing, routeBudgetMs: 20000 }); }
       catch (error) { out.missingWasm = !(error instanceof api.RouteDeadlineError) && String(error.message).length > 0; }
       const stall = () => ({ worker: new Worker('/stall.mjs', { type: 'module' }),
-        assets: { moduleUrl: '/portograph-avoid.mjs', wasmUrl: '/portograph-libavoid.wasm' } });
+        assets: { moduleUrl: '/index.js', wasmUrl: '/libavoid.wasm' } });
       const started = performance.now();
       try { await api.route(placed, { createAttempt: stall, routeBudgetMs: 150 }); }
       catch (error) { out.deadline = error instanceof api.RouteDeadlineError; }

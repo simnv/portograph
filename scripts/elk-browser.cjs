@@ -9,12 +9,12 @@ const cli = process.env.PATH.split(path.delimiter).map(dir => path.join(dir, 'pl
 if (!cli) throw new Error('Run through npx --package=playwright');
 const { chromium } = require(path.join(path.dirname(realpathSync(cli)), 'index.js'));
 const dist = path.resolve('dist');
-// The solver files come from the installed elkjs; the page serves them under the names the factories default to.
+// The solver files come from the installed elkjs; the page serves them under their own names, the factory defaults.
 const elk = path.dirname(require.resolve('elkjs/package.json'));
 (async () => {
   const server = createServer((req, res) => {
     const assets = { '/api.js': path.join(dist, 'portograph.umd.cjs'), '/elk-api.js': path.join(elk, 'lib/elk-api.js'),
-      '/portograph-elk-worker.js': path.join(elk, 'lib/elk-worker.min.js') };
+      '/elk-worker.min.js': path.join(elk, 'lib/elk-worker.min.js') };
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     if (assets[req.url]) return res.end(readFileSync(assets[req.url]));
     if (req.url === '/favicon.ico') { res.writeHead(204); return res.end(); }
@@ -40,7 +40,7 @@ const elk = path.dirname(require.resolve('elkjs/package.json'));
         worker.terminate = () => { terminated++; stop(); };
         return api.createWorkerElkAttempt(worker);
       };
-      const success = await api.runElkAttempt(graph, factory('/portograph-elk-worker.js'), 3000);
+      const success = await api.runElkAttempt(graph, factory('/elk-worker.min.js'), 3000);
       const busy = new Worker('/stall.js');
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('stall worker did not start')), 2000);
@@ -53,12 +53,12 @@ const elk = path.dirname(require.resolve('elkjs/package.json'));
       try { await api.runElkAttempt(graph, () => api.createWorkerElkAttempt(busy), 40); }
       catch (error) { deadline = error instanceof api.ElkDeadlineError; }
       const elapsedMs = performance.now() - started;
-      const fallback = await api.runElkAttempt(graph, factory('/portograph-elk-worker.js'), 3000);
+      const fallback = await api.runElkAttempt(graph, factory('/elk-worker.min.js'), 3000);
       let bootstrap = false;
       try { await api.runElkAttempt(graph, factory('/missing-worker.js'), 1000); }
       catch (error) { bootstrap = !(error instanceof api.ElkDeadlineError); }
       const model = api.sizeNodes(api.sidesOne(api.resolve(api.parse('portograph: 2\ngroups: {a: {tier: 0}, b: {tier: 1}}\nnodes: {n: {group: a}, m: {group: b}}\nlinks: [[n, m]]'))));
-      await api.skeleton(model, { createAttempt: api.createBrowserElkFactory('/portograph-elk-worker.js') });
+      await api.skeleton(model, { createAttempt: api.createBrowserElkFactory() });
       return { success: success.children[0].width, fallback: fallback.children[0].id,
         deadline, elapsedMs, created, terminated, bootstrap, stage: model.stage,
         bands: model.tierBands.map(band => ({ tier: band.tier, bounds: band.bounds })) };

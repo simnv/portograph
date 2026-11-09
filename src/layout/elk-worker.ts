@@ -1,5 +1,5 @@
 import ElkImport from 'elkjs/lib/elk-api.js';
-import type { ElkNode } from 'elkjs/lib/elk-api.js';
+import type { ElkNode } from './elk-graph.js';
 
 export interface ElkAttempt {
   layout(graph: ElkNode): Promise<ElkNode>;
@@ -67,8 +67,8 @@ export function createWorkerElkAttempt(worker: ElkWorker): ElkAttempt {
   };
 }
 
-/** Serve elkjs's `lib/elk-worker.min.js` beside the page as portograph-elk-worker.js, or pass its URL. */
-export function createBrowserElkFactory(workerUrl = 'portograph-elk-worker.js'): CreateElkAttempt {
+/** Serve elkjs's `lib/elk-worker.min.js` beside the page under its own name, or pass its URL. */
+export function createBrowserElkFactory(workerUrl = 'elk-worker.min.js'): CreateElkAttempt {
   return () => {
     if (host.Worker === undefined) throw new Error('A real Worker is required; Node callers must supply createNodeElkFactory()');
     return createWorkerElkAttempt(new host.Worker(workerUrl));
