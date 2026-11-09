@@ -1,0 +1,48 @@
+name: Set up portograph
+description: Install Node.js and the locked dependencies, and optionally Verdana for renders.
+inputs:
+  node-version:
+    description: The Node.js version.
+    required: true
+  verdana:
+    description: Install Verdana (ttf-mscorefonts-installer). Renders measure text with it; the tests do not need it.
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+
+    # The installer downloads the fonts from SourceForge, so the Verdana files are cached in the user font directory.
+    - name: Restore Verdana
+      id: verdana
+      if: inputs.verdana == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.local/share/fonts/msttcorefonts
+        key: verdana-${{ runner.os }}-1
+
+    - name: Install Verdana
+      if: inputs.verdana == 'true' && steps.verdana.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        echo 'ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true' | sudo debconf-set-selections
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttf-mscorefonts-installer
+        mkdir -p ~/.local/share/fonts/msttcorefonts
+        cp /usr/share/fonts/truetype/msttcorefonts/Verdana*.ttf ~/.local/share/fonts/msttcorefonts/
+
+    - name: Register Verdana
+      if: inputs.verdana == 'true'
+      shell: bash
+      run: |
+        test -f ~/.local/share/fonts/msttcorefonts/Verdana.ttf
+        fc-cache -f ~/.local/share/fonts
+        fc-list : family | grep -i verdana

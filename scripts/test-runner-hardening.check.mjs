@@ -1,7 +1,8 @@
 /**
  * Checks of the hardening rules with tiny node children (no vitest): untorn records, a watchdog that
  * keeps watching on read errors and must be alive before a job starts, a lost lock (keeper exit,
- * replaced file), lockf failures with back-off, and a stale PORTOGRAPH_LOCK_HELD. Run with
+ * replaced file), keeper failures with back-off, a busy answer from the platform's keeper (`lockf` on
+ * macOS and BSD, `flock` on Linux), and a stale PORTOGRAPH_LOCK_HELD. Run with
  * `npm run test:runner`.
  */
 import assert from 'node:assert/strict';
@@ -16,6 +17,8 @@ import { alive, readLock, runJob, sleep, startTime, takeFlock, writeRecord } fro
 const here = (name) => fileURLToPath(new URL(name, import.meta.url));
 const LIB = here('./test-runner-lib.mjs');
 const WATCHDOG = here('./test-watchdog.mjs');
+// The real keeper binary of this platform, as test-runner-lib.mjs picks it.
+const KEEPER = process.platform === 'linux' ? '/usr/bin/flock' : '/usr/bin/lockf';
 // The fixtures must not wait for the host: the admission limits are off unless a case sets them.
 process.env.PORTOGRAPH_MIN_FREE_PCT ??= '0';
 process.env.PORTOGRAPH_MAX_LOAD ??= '1e9';
@@ -36,20 +39,27 @@ const withEnv = async (values, work) => {
 
 test('F2: a reader never sees a torn record while the holder rewrites it', async () => {
   const lock = fresh();
+  const stop = `${lock}.stop`;
+  const wanted = 200;
   writeFileSync(lock, '');
+  // The writer rewrites until the reader has read `wanted` records, so a fast host cannot end the overlap early.
   const writer = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { existsSync } from 'node:fs';
     import { writeRecord } from ${JSON.stringify(LIB)};
-    for (let i = 0; i < 4000; i += 1) writeRecord(${JSON.stringify(lock)}, i % 2 === 0 ? { pid: 1, job: 'short' } : { pid: 2, job: 'x'.repeat(800), pending: 'y'.repeat(800) });`], { stdio: 'ignore' });
+    for (let i = 0; !existsSync(${JSON.stringify(stop)}); i += 1) writeRecord(${JSON.stringify(lock)}, i % 2 === 0 ? { pid: 1, job: 'short' } : { pid: 2, job: 'x'.repeat(800), pending: 'y'.repeat(800) });`], { stdio: 'ignore' });
   const done = exited(writer);
   let reads = 0;
-  let finished = false;
-  done.then(() => { finished = true; });
-  while (!finished) {
-    const text = readFileSync(lock, 'utf8');
-    if (text !== '') { JSON.parse(text); reads += 1; }
-    await sleep(0);
+  try {
+    while (reads < wanted && writer.exitCode === null) {
+      const text = readFileSync(lock, 'utf8');
+      if (text !== '') { JSON.parse(text); reads += 1; }
+      await sleep(0);
+    }
+  } finally {
+    writeFileSync(stop, '');
+    await done;
   }
-  assert.ok(reads > 50, `read ${reads} records`);
+  assert.equal(reads, wanted, `read ${reads} records before the writer ended`);
 });
 
 test('F2: the watchdog keeps watching on a read error and exits on a record that names another job', async () => {
@@ -90,7 +100,7 @@ test('F1: the keeper exiting during a job stops the job group and writes no reco
   assert.equal(await until(() => existsSync(pids)), true);
   await sleep(300);
   const listing = spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' }).stdout.split('\n');
-  const keeper = listing.map((line) => line.trim().split(/\s+/)).find((fields) => Number(fields[1]) === process.pid && fields[2]?.endsWith('lockf'));
+  const keeper = listing.map((line) => line.trim().split(/\s+/)).find((fields) => Number(fields[1]) === process.pid && fields[2] === KEEPER);
   assert.ok(keeper, 'keeper found');
   process.kill(Number(keeper[0]), 'SIGKILL');
   const result = await running;
@@ -115,17 +125,29 @@ test('F3: a replaced lock file stops the job before the next step', async () => 
   assert.equal(existsSync(marker), false, 'the second step did not start');
 });
 
-test('F4: lockf failing with exit 71 or a signal is retried with a back-off', async () => {
+test('F4: the keeper failing with exit 71 or a signal is retried with a back-off', async () => {
   const lock = fresh();
   const count = join(dir, 'lockf-count');
   const fake = join(dir, 'fake-lockf');
   writeFileSync(count, '0');
-  writeFileSync(fake, `#!/bin/sh\nn=$(cat ${count}); echo $((n + 1)) > ${count}\nif [ "$n" -eq 0 ]; then exit 71; fi\nif [ "$n" -eq 1 ]; then kill -9 $$; fi\nexec /usr/bin/lockf "$@"\n`);
+  writeFileSync(fake, `#!/bin/sh\nn=$(cat ${count}); echo $((n + 1)) > ${count}\nif [ "$n" -eq 0 ]; then exit 71; fi\nif [ "$n" -eq 1 ]; then kill -9 $$; fi\nexec ${KEEPER} "$@"\n`);
   chmodSync(fake, 0o755);
   const result = await withEnv({ PORTOGRAPH_LOCKF: fake }, () => job(lock));
   assert.equal(result.code, 0);
-  assert.ok(Number(readFileSync(count, 'utf8')) >= 3, 'lockf ran after both failures');
+  assert.ok(Number(readFileSync(count, 'utf8')) >= 3, 'the keeper ran after both failures');
   assert.equal(held(lock), false);
+});
+
+test('F4: a busy lock is a wait, not a keeper failure (flock on Linux answers 75 only with -E 75)', async () => {
+  const lock = fresh();
+  const holder = await takeFlock(lock);
+  try {
+    const started = Date.now();
+    await assert.rejects(takeFlock(lock, { timeoutMs: 1500 }), /stays busy/);
+    assert.ok(Date.now() - started < 5000, 'gave up after the timeout, not after eight keeper failures');
+  } finally { await holder.release(); }
+  const again = await takeFlock(lock, { timeoutMs: 3000 });
+  await again.release();
 });
 
 test('F5: a stale PORTOGRAPH_LOCK_HELD throws at once and does not queue', async () => {

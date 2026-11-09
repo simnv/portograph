@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Layout-solver bumps are manual: any new version can move every layout, and the goldens must be reviewed.
+      # Both are 0.x, where a minor release is a breaking one, so minor bumps are ignored too.
+      - dependency-name: elkjs
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: libavoid-js
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/setup
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
