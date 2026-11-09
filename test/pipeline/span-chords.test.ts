@@ -23,7 +23,8 @@ const SHEETS = {
   wide: 'a-link-over-a-wide-middle-frame-keeps-its-lane',
   // Since architecture-2 ticket 65 the link of `wide` stands straight on its transit lane, so no offer reads it; this sheet's transit is refused by its frame.
   walled: 'a-link-transits-a-child-frame',
-  share: 'a-chord-and-a-lane-share-a-middle-tier',
+  // Ticket DR-04: the copy of `a-chord-and-a-lane-share-a-middle-tier` whose canonical link order gives each node its links in the written order.
+  share: 'a-chord-and-a-lane-share-a-middle-tier-bottom-group-first',
   label: 'a-labelled-chord-across-a-middle-tier-keeps-its-label-on-the-line',
 };
 interface Run { model: LayoutModel; offer: SpanOffer | undefined; base: LayoutModel | undefined; routedBase: LayoutModel | undefined }
@@ -211,8 +212,9 @@ describe('the span round on the sheets', () => {
   }, 60000);
 
   // A refused span trial spends placements and fan re-runs; it must not starve the course round that main runs (a-tier-gap-plan-orders-every-part: Q 0.6466 -> 0.4481, G5 failing).
+  // Ticket DR-04: the copy whose canonical link order gives each node its links in the original's written order.
   it('a refused span trial does not starve the course round', async () => {
-    const text = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part.yaml', import.meta.url), 'utf8'));
+    const text = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part-lower-groups-first.yaml', import.meta.url), 'utf8'));
     const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
     const model = await layout(parse(text), options);
     const plain = await layout(parse(text), { ...options, testSpanHints: [] });

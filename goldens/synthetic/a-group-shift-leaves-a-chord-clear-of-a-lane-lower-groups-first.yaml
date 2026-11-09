@@ -1,0 +1,36 @@
+# Expected: the scenario of `a-group-shift-leaves-a-chord-clear-of-a-lane` under the canonical link order (ticket DR-04). The groups and nodes are the same; `access` is declared before `src`,
+# so the canonical order (groups in declaration order, then nodes inside a group) gives each node its links in the order the
+# original writes them. With the joint order off (`layout.feedOrder: false`, the tests pin it) the layout is the original's
+# before DR-04: the same nodes, ports and paths; only the link ids differ.
+# Test-only input; test/pipeline/vertical-seat.test.ts reads it.
+portograph: 2
+groups:
+  access: { tier: 1 }
+  src: { tier: 0 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  src0: { group: src, class: router, ports: [] }
+  src1: { group: src, class: router, ports: [] }
+  acc0: { group: access, class: switch, ports: [] }
+  acc1: { group: access, class: switch, ports: [] }
+  acc2: { group: access, class: switch, ports: [] }
+  acc3: { group: access, class: switch, ports: [] }
+  acc4: { group: access, class: switch, ports: [] }
+  acc5: { group: access, class: switch, ports: [] }
+  snk0: { group: edge-near, class: server, ports: [] }
+  snk1: { group: edge-far, class: server, ports: [] }
+links:
+  - [src0, acc0]
+  - [src0, acc1]
+  - [src0, acc2]
+  - [src1, acc3]
+  - [src1, acc4]
+  - [src1, acc5]
+  - [acc0, snk0]
+  - [acc1, snk1]
+  - [acc2, snk1]
+  - [acc3, snk0]
+  - [acc5, snk1]
+  - [src0, snk1]
+  - [src1, snk0]

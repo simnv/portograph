@@ -1,0 +1,34 @@
+# Expected: the scenario of `a-tier-gap-plan-orders-every-part` under the canonical link order (ticket DR-04). The groups and nodes are the same; `access` is declared before `src`,
+# so the canonical order (groups in declaration order, then nodes inside a group) gives each node its links in the order the
+# original writes them. With the joint order off (`layout.feedOrder: false`, the tests pin it) the layout is the original's
+# before DR-04: the same nodes, ports and paths; only the link ids differ.
+# Test-only input; test/pipeline/tier-gap-plan.test.ts and test/pipeline/span-chords.test.ts read it.
+portograph: 2
+groups:
+  access: { tier: 1 }
+  src: { tier: 0 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  isp0: { group: src, class: router, ports: [] }
+  isp1: { group: src, class: router, ports: [] }
+  sw0: { group: access, class: switch, ports: [] }
+  sw1: { group: access, class: switch, ports: [] }
+  sw2: { group: access, class: switch, ports: [] }
+  sw3: { group: access, class: switch, ports: [] }
+  sw4: { group: access, class: switch, ports: [] }
+  srv0: { group: edge-near, class: server, ports: [] }
+  srv1: { group: edge-far, class: server, ports: [] }
+links:
+  - [isp0, sw0]
+  - [isp1, sw1]
+  - [isp0, sw2]
+  - [isp1, sw3]
+  - [isp0, sw4]
+  - [sw0, srv1]
+  - [sw1, srv0]
+  - [sw2, srv0]
+  - [sw3, srv1]
+  - [sw4, srv0]
+  - [isp0, srv1]
+  - [isp1, srv0]
