@@ -54,7 +54,7 @@ least one strict endpoint inversion and no lane of its own draws straight member
 Otherwise the bundle keeps the staircase. (Superseded in part by the second amendment below: at
 DR-03 placement still reserved the staircase capacity, and the test read that geometry.) The decision review measured the old threshold on 467
 sheets: it changed no drawing, because every bundle that reached it had three inversions of three
-members (`.scratch/decision-review-2026-11/results/P5.md`). The second alternative above ("a single
+members (a measurement on the sheet set). The second alternative above ("a single
 inversion is cleaner as a crossover") is the one this amendment overrules.
 
 ## Amendment 2 (ticket DR-16, 2026-11-09)

@@ -1,6 +1,5 @@
 /**
- * The network profile's visual theme, as data. Every value comes from the maintainer's design pass
- * recorded in `ref/theme-handoff/` (decisions log Q22): the Industry steel ramp plus four analogous
+ * The network profile's visual theme, as data. Every value comes from the delivered design sheet: the Industry steel ramp plus four analogous
  * hues on one OKLCH lightness scale, assigned to the node classes by legend order. The theme has
  * three modes — light, dark behind `prefers-color-scheme`, and a greyscale print sheet in which the
  * dash patterns carry the link and status meaning.
@@ -73,7 +72,7 @@ export const NETWORK_NODE_CLASSES: readonly (readonly [string, NodeClassStyle])[
 /**
  * The icon tile, glyph and pill of one node class in one mode. In print the pill collapses to the
  * base greyscale pill: a `@media` block adds no specificity, so without a print rule of its own the
- * light `.pill.<class>` rule would keep its hue on paper (handoff amendment 1, `ref/theme-handoff/`).
+ * light `.pill.<class>` rule would keep its hue on paper (review amendment 1).
  */
 export function nodeClassPaint(style: NodeClassStyle, mode: ThemeMode):
 { tile: { fill: string; stroke: string }; glyph: string; pill: PillPaint } {

@@ -1,5 +1,5 @@
-# Expected: A free client group fed from two locations stands where its overlay links cross least (ranked-groups ticket 147, decisions-log
-# Q112). Tier 1 holds two locations side by side, `west` and `east`, two load balancers each, hung from `core` by routed links. Tier 2 holds
+# Expected: A free client group fed from two locations stands where its overlay links cross least (ranked-groups ticket 147).
+# Tier 1 holds two locations side by side, `west` and `east`, two load balancers each, hung from `core` by routed links. Tier 2 holds
 # `upper-clients` and tier 3 holds `shared-clients`; both have no routed link, and each of their servers syncs with all four load balancers
 # (two partners under each location). The bodies of the upper group stand near the chords of the lower group.
 # Ticket 143's rule put the lower group at the x with the most straight chords; the crossings-first rule puts it at the x where its links

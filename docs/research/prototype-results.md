@@ -6,7 +6,7 @@ Renders: `prototype/out/`. Target: `docs/design/target-example.jpeg` — 15 node
 groups: providers on top, a datacenter row of four routers, TBR-001/002 flanking with eight
 side-ports each, a route-reflector box centred below, two backbone rows at the bottom.
 
-Input: `ref/d3-fd/…` `demo/public/diagram.yaml` converted to ELK JSON (`prototype/build.mjs`).
+Input: the predecessor's `demo/public/diagram.yaml` converted to ELK JSON (`prototype/build.mjs`).
 
 ## Phase 1 — what ELK can and cannot do (2026-09-09)
 

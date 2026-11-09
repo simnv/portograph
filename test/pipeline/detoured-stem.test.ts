@@ -8,7 +8,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const fixture = readFileSync(new URL('../../goldens/synthetic/detoured-stem-checkpoint.yaml', import.meta.url), 'utf8');
 
 /**
- * Stress-test reproducer (`.scratch/stress/issues/01`). `b1 → b2` and `b3 → b4` are the two
+ * Stress-test reproducer. `b1 → b2` and `b3 → b4` are the two
  * diagonals of one rectangle, so they cross; their groups differ, so they land in two ownership
  * batches and the first path becomes a wall the second has to go round. On that detour libavoid
  * dropped the source stem checkpoint — its direction mask is one this build cannot meet — and

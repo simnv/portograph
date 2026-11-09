@@ -8,6 +8,7 @@ import { rebuildLaneExtents, spanBreaches } from '../../src/layout/lanes.js';
 import { SpanRefusal, SpanReservationRefusal } from '../../src/layout/span-lanes.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { readSheet } from '../hand-solves.js';
 
 /**
  * The review checks of architecture ticket 22: the chord walls of `spanBreaches`, the span-breach check of `chooseReseat`, and the whole-leg check of a hinted link.
@@ -15,8 +16,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
  */
 const LABELLED = 'goldens/synthetic/a-labelled-chord-across-a-middle-tier-keeps-its-label-on-the-line.yaml';
 const MESH_IDS = ['link-1', 'link-2', 'link-3', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10'];
-const source = (name: string): string => readFileSync(new URL(`../../${name}`, import.meta.url), 'utf8');
-const CASE04 = 'ref/hand-solves/04-mesh-across-a-tier.yaml';
+const source = (name: string): string => (name.startsWith('hand-solves/') ? readSheet(name) : readFileSync(new URL(`../../${name}`, import.meta.url), 'utf8'));
+const CASE04 = 'hand-solves/04-mesh-across-a-tier.yaml';
 const run = (file: string, extra: object): Promise<LayoutModel> => layout(parse(source(file)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...extra });
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 

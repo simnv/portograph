@@ -22,7 +22,7 @@ from the same topology, so it needs no separate persistence check.
 
 The purpose of this ADR is the longest free span, not a title that no link crosses. The edge with fewer link ports gives the title the longest
 free span; it may still be crossed, and the crossing is recorded (`crossedBy`, ADR-0023). The user kept this rule on 2026-11-07 (V3): a title
-that always stands on top moved bottom titles from 864 to 1 and raised crossed titles from 110 to 395 (`.scratch/decision-review-2026-11/results/V3.md`). The "Why" above that says the
+that always stands on top moved bottom titles from 864 to 1 and raised crossed titles from 110 to 395 (a measurement on the sheet set). The "Why" above that says the
 conflict "before it exists" is history: since ticket 54 a title yields to its links and takes the halo.
 
 ## Amendment (architecture-2 ticket 54, 2026-11-02)

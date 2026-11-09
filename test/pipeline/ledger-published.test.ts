@@ -6,6 +6,7 @@ import { holds } from '../../src/layout/reservation-checks.js';
 import { ofKind, spanEntries } from '../../src/layout/reservations.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { RING_IN_A_ROW } from '../hand-solves.js';
 
 const SPAN_SHEET = 'goldens/synthetic/a-chord-over-three-tier-gaps-passes-two-middle-tiers.yaml';
 
@@ -22,7 +23,7 @@ describe('the ledger a layout publishes (architecture 2, ticket 03)', () => {
   }, 120000);
 
   it('writes an empty ledger for a sheet that reserves nothing, and restore refuses a ledger of the wrong shape', async () => {
-    const model = await layout(parse(readFileSync('ref/hand-solves/01-ring-in-a-row.yaml', 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(parse(RING_IN_A_ROW), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.reservations).toBeDefined();
     const json = JSON.parse(JSON.stringify(model)) as { reservations: Record<string, unknown>[] };
     expect(() => restoreLayoutModel(JSON.stringify(json))).not.toThrow();

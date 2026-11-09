@@ -1,6 +1,6 @@
 # ADR-0023: A diagonal may cross text
 
-Status: accepted (owner, 2026-10-31). Ticket: `.scratch/snack-theme/issues/162-a-diagonal-may-cross-text.md`.
+Status: accepted (owner, 2026-10-31). Ticket 162.
 Amends the group title link-margin of the M1 review (2026-09-11), Q108 for diagonal chords, and the title
 cutout of the overlay mask (canton-groups ticket 60).
 

@@ -1,7 +1,7 @@
 /**
  * The corpus gate: every `goldens/**\/*.yaml` laid out and scored, one TSV line per sheet.
  *
- * Usage: npm run corpus -- <out.tsv>      (builds dist/ first; see docs/agents/gates.md)
+ * Usage: npm run corpus -- <out.tsv>      (builds dist/ first; see docs/gates.md)
  *
  * Columns, after a header line:
  *   file     the sheet, relative to the repository root

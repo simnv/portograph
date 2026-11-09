@@ -15,7 +15,7 @@ const twoRuns = readFileSync(new URL('../../goldens/synthetic/two-runs-share-a-t
 const barEnd = readFileSync(new URL('../../goldens/synthetic/a-bar-end-keeps-its-corridor.yaml', import.meta.url), 'utf8');
 
 /**
- * Stress-test reproducer (`.scratch/stress/issues/02`). Two groups of one tier are fed from nearly
+ * Stress-test reproducer. Two groups of one tier are fed from nearly
  * the same x, so 7c can seat only one of them; the other keeps its port far from the lane 7a
  * reserved for its link. Stage 8 then had to route that gap sideways into the link's own corridor,
  * and the stitcher refused the geometry. A lane admits only its owner's collinear run, so it is now
@@ -64,7 +64,7 @@ it('keeps a routed gap out of the corridor its own link reserved', async () => {
 }, 60000);
 
 /**
- * Ticket 02 of `.scratch/synthetics-review`. The child 7c could not seat is the same one, and the
+ * The child that 7c could not seat is the same one, and the
  * corridor now follows it: 7f moves the lane to the child's port x, because the corridor there is
  * free and the corridors of the tier keep the order of the children they serve. The link then
  * descends straight into its port and turns once, in the tier gap above.

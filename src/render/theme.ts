@@ -89,7 +89,7 @@ export function cssRule(paintRule: PaintRule): string {
  * The paint rules of one theme mode. Colour, fill, dash and opacity only: every rule here is at
  * the same specificity a document `css:` rule can reach, and the document's filtered CSS is
  * appended after the whole theme, so an author still owns the palette. The order and the
- * declarations are those of `ref/theme-handoff/portograph-theme.css` plus its recorded amendments,
+ * declarations are those of the delivered design sheet plus its recorded amendments,
  * which a test compares against.
  */
 export function paintRules(mode: ThemeMode, theme: Theme = themeById(undefined)): PaintRule[] {

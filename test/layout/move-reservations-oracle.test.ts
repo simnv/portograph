@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { Rect } from '../../src/model/geometry.js';
@@ -8,6 +7,7 @@ import { foreignOverExtensions, trunkHeads, trunkXAfter } from '../../src/layout
 import { NO_MOVE_EPS } from '../../src/layout/tolerance.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { readSheet } from '../hand-solves.js';
 
 type Proposed = { group: LayoutGroup; bounds: Rect }[];
 
@@ -52,12 +52,12 @@ const SHEETS = [
   'goldens/synthetic/a-corridor-moves-after-the-grid-settles.yaml',
   'goldens/synthetic/a-chord-and-a-lane-share-a-middle-tier.yaml',
   'goldens/synthetic/a-chord-over-three-tier-gaps-passes-two-middle-tiers.yaml',
-  'ref/hand-solves/04-mesh-across-a-tier.yaml',
+  'hand-solves/04-mesh-across-a-tier.yaml',
 ];
 
 describe('holdsMove against the guards it replaced', () => {
   it('gives the verdict of the old chain on every move a layout asks about', async () => {
-    for (const sheet of SHEETS) await layout(parse(readFileSync(sheet, 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    for (const sheet of SHEETS) await layout(parse(readSheet(sheet)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(seen.calls).toBeGreaterThan(0);
     expect(seen.differences).toEqual([]);
   }, 300000);

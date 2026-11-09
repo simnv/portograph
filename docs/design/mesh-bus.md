@@ -2,7 +2,7 @@
 
 Status: design (ticket 81, 2026-09-30; amended the same day for a bus across frames, and by
 ticket 93 for a mesh over two rows, Section 11). Decisions Q105, Q106 and Q107. Implementation:
-tickets 82 to 85, and 94, 96 and 97 for Section 11, under `.scratch/ranked-groups/issues/`.
+tickets 82 to 85, and 94, 96 and 97 for Section 11.
 Section 12 (a trunk across three rows or more): architecture ticket 21, decided 2026-10-10.
 
 > **Amended by architecture-2 ticket 54 (2026-11-02, titles last).** A title no longer moves to the
@@ -406,7 +406,7 @@ group-links, and leaves no omission record.
 **draw.io.** The bar has no free point. A joint (`pg-busJoint`, an invisible locked vertex, a child of a node) sits at each
 stub end and bar end, and the bar is one `edgeStyle=none` edge between each two neighbouring joints. Each
 stub is an edge from the port's cell (the pill, or the node) to its joint,
-`edgeStyle=none`: a stub is one straight run, and a run with no bend is exported straight (decisions-log Q118). Both take the
+`edgeStyle=none`: a stub is one straight run, and a run with no bend is exported straight. Both take the
 class stroke and dash the exporter already resolves for an overlay, on the `overlay` layer above
 the diagram, so an across-frames stub draws over the frame edge it crosses, as a routed leg does.
 The label is a text child of the nearest bar piece. Verified with the drawio CLI
@@ -860,13 +860,13 @@ Open for later:
 ## 12. A mesh over three rows or more: one trunk in the margin (architecture ticket 21)
 
 Status: decided by the user 2026-10-10 (all six recommendations). The decisions are recorded in
-`.scratch/architecture/issues/21-bus-trunk-across-rows.md`. This section amends Q107 (Section 11.3, check 4,
+ticket 21. This section amends Q107 (Section 11.3, check 4,
 `three-rows`) and answers Section 11.11, open item 2.
 
 ### 12.1 The problem
 
 Section 11 joins two rows only. A complete graph over three rows or more is refused (`three-rows`), so each row
-draws its own bus and every cross link stays a plain overlay line. Hand solve 11 (`ref/hand-solves/11-*`): nine
+draws its own bus and every cross link stays a plain overlay line. Hand solve 11: nine
 nodes on three tiers, 36 `sync` links. Measured on main 08e9428: three buses of 3 links each, 27 plain overlay
 lines, 5 of them bent (16 turns), overlay crossings 83 pairs and 100 points, canvas 402.5 x 571.
 

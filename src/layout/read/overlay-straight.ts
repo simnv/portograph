@@ -6,8 +6,8 @@ import { sharedBlockers, overlayBasePath, straightChord, type ShapeQuery } from 
  * Shared readers: "is this overlay link straight?" The question has two answers, and both are named modes. They differ on one
  * input: a link that the overlay rule cannot draw (two pills overlap on both axes, or the diagram blocks every way round) keeps
  * the one segment between its two faces. That segment is one segment, so it is straight as drawn, and it is no straight chord.
- * On the published NTP model the two modes agree (38 of 54), so the difference is latent; it is listed in
- * `.scratch/architecture/issues/03-shared-readers.md` for the ticket that unifies it.
+ * On the published NTP model the two modes agree (38 of 54), so the difference is latent; it is a known difference, left to
+ * ticket 74, which unifies it.
  *
  * Both modes read the ordinary overlay (`overlayBasePath`, which straightens exactly the links `overlayPath` does, and `straightChord`), never `publishedOverlayPath`: under the opt-in
  * `layout.overlayOverBodies` only stage 8 lets a link pass over a body, and placement must not take that option as a reason to

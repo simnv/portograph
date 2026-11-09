@@ -2,8 +2,8 @@
 # bar end) are `relative="1"` children of the node, so a node resized by hand keeps each on its face: the mark on the face, the joint
 # the same px beyond it, and the stub's start stays on its mark. Before an edit every cell is where `layout.json` puts it.
 # Cases: a `sync` mesh over two rows joins two buses; the upper bar stands below the bottom edge, the lower bar above the top edge.
-# Test-only input owned by drawio-export ticket 17; test/render/drawio.test.ts reads it, and the real-mxGraph resize probe in
-# .scratch/drawio-export/probes-07 resizes its nodes.
+# Test-only input owned by drawio-export ticket 17; test/render/drawio.test.ts reads it, and a real-mxGraph resize probe
+# resizes its nodes.
 portograph: 2
 groups:
   top: { tier: 0, label: Top }

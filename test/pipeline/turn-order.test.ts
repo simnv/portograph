@@ -12,13 +12,14 @@ import { turn } from '../../src/pipeline/rounds.js';
 import type { State } from '../../src/pipeline/state.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { FLANK_LINK_AROUND_A_NEIGHBOUR } from '../hand-solves.js';
 
 /**
  * Architecture ticket 24, phase 2: the stage-5 key of a turn-ordered run (`testTurnOrder`) and G5 on the faces it placed. The hand solve 09 has one self
  * crossing today: the two column-gap skirts of Mgmt 1 leave one bottom face in far-end order, and the nearer lane crosses the stem of the farther one.
  */
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
-const solve09 = (): string => readFileSync(new URL('../../ref/hand-solves/09-flank-link-around-a-neighbour.yaml', import.meta.url), 'utf8');
+const solve09 = (): string => FLANK_LINK_AROUND_A_NEIGHBOUR;
 const counts = (model: LayoutModel) => score(model).snapshot.counts.routed;
 
 describe('the turn order of a forced run (hand solve 09)', () => {

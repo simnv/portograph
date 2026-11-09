@@ -178,7 +178,7 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
   }, 60000);
 
   // Known to fail since snack-theme ticket 157: with the Verdana metrics the sheet publishes 6 bent overlays, not 4. Ticket 160
-  // (.scratch/snack-theme/issues/160-a-chord-move-is-judged-on-the-nested-ports.md) owns the cause. `it.fails` keeps the suite green and
+  // owns the cause. `it.fails` keeps the suite green and
   // reports this test once 160 brings the count back to 4; then make it a plain `it` again.
   it.fails('ticket 14 note, phase 3b: a-cross-link-with-another-label-keeps-two-buses publishes 4 bent overlays', async () => {
     const model = await run(SHEETS.buses);

@@ -130,8 +130,8 @@ bends and crossings weights and keeps compactness at 0.10.
 | Gap-24 on NTP (tier gap 60 kept over 24) | 1 | 1 | 1 | 1 |
 | Total | 18 | 10 | 13 | 12 |
 
-Sources: `.scratch/decision-review-2026-11/results/P3.md` (Q and Q'), `P3b.md` (Q'' bound from
-stored totals only, open on 16 of 18 sheets), `P3c.md` (Q'' from stored components; the totals
+Sources: three measurements. P3 gives Q and Q'; P3b the Q'' bound from
+stored totals only (open on 16 of 18 sheets); P3c Q'' from stored components (the totals
 above). Q and Q' in P3c equal the P3 values on every row.
 
 No weight choice makes one score agree with the user on all three pairs. The misses on
@@ -168,7 +168,7 @@ The whole-command deadline is 120 s (`COMMAND_DEADLINE_MS` in `src/cli.ts`); it 
 | 300 | 810 | tiers × fan-out (the 2026-09 generator) | **51 s** | publishes, 3,363 draw.io cells; stale, see below |
 | 100 | 389 | degree-64 hub, wide tier, transit | 30.0 s | takes the deadline path, no artifact |
 
-Evidence: `.scratch/stress/spec.md` for the first two rows, ticket 17 for the third. The first two
+Evidence: the stress measurements for the first two rows, ticket 17 for the third. The first two
 are pipeline times measured with the deadline out of the way: the layout is produced, and the row
 says what it produced. The third row was measured under the deadline and reached it.
 

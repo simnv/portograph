@@ -10,9 +10,9 @@
    - Header: add a line `# Sessions: <n> overlay (class flow) from the drawing: a-b EBGP, ...` and keep the dropped-annotations line for callouts.
    - Session links get ids `ses-01`, `ses-02`, ... in drawing reading order.
 2. LANs with 3+ members: astra's cloud node (`lan-<idx>`, class cloud, icon cloud, one leg per member) stands.
-3. Location: `goldens/bgplab/<category>-<lab>.yaml`, in the corpus gate, as decided. Failing sheets: `.scratch/architecture-2/fixtures/bgplab/`.
-4. Records are LIGHT: the YAML header (drop the `# Record:` line) plus one coordinator-owned `ref/corpora/bgplab/manifest.md`
-   (one row per lab: lab, sheet or alias-of, status admitted|pending|alias, reason, ticket) and `ref/corpora/bgplab/LICENSE.md`.
+3. Location: `goldens/bgplab/<category>-<lab>.yaml`, in the corpus gate, as decided. A failing sheet waits in a local scratch directory, outside the repository.
+4. Records are LIGHT: the YAML header (drop the `# Record:` line) plus one coordinator-owned `corpora/bgplab/manifest.md`
+   (one row per lab: lab, sheet or alias-of, status admitted|pending|alias, reason, ticket) and `corpora/bgplab/LICENSE.md`.
    No per-lab review JSON, no SHA-256 hashes, no copied reference PNGs.
    A conversion worker writes per lab, in its own /tmp dir: `<slug>.yaml`, `<slug>.svg`, `<slug>.png`, `notes.md` (fidelity result,
    gates, removed links, warnings, runtime, alias nomination, open conflicts), and one batch `manifest-rows.md`.

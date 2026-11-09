@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { resolve } from '../../src/resolve/index.js';
@@ -24,6 +26,7 @@ const geometry = (model: Awaited<ReturnType<typeof layout>>): unknown => {
   if (copy.reservations) copy.reservations = copy.reservations.map(entry => ({ ...entry, revision: 0 }));
   return { ...copy, diagnostics: [], runtime: { stages: [] } };
 };
+const generator = fileURLToPath(new URL('../../scripts/gen-fabric.mjs', import.meta.url));
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 // These five review probes use one-line records; node declaration order is meaningful for block ties.
 const reviewFixtures = [
@@ -145,7 +148,8 @@ describe('ticket 83 under-cap solid blocks', () => {
     try { expect(model.canvas!.height).toBe((await lay(source)).canvas!.height); } finally { baseline.enabled = false; }
   });
   it.each(['h0-ebgp', 'h0-ibgp', 'h1-ebgp', 'h1-ibgp'])('reserves the complete 4×8 block and its hosts, %s', async name => {
-    const source = readFileSync(new URL('../../.scratch/stress/fabric/s04-l08-' + name + '.yaml', import.meta.url), 'utf8');
+    const [hosts, mode] = name.split('-') as [string, string];
+    const source = execFileSync(process.execPath, [generator, '--spines', '4', '--leafs', '8', '--hostsPerLeaf', hosts.slice(1), '--mode', mode], { encoding: 'utf8' });
     const model = await lay(source), snapshot = score(model).snapshot;
     expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(32);
     expect(snapshot.counts.routed.turns).toBe(0);
