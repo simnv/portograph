@@ -30,7 +30,9 @@ rule in this document. A change to a rule increments the schema version.
 
 A pill, a node icon and a node description have `relative="1"` geometry: `x` and `y` are a
 fraction of the node's size and the offset is in px, so the cell stays on its face when a user
-resizes the node. The geometry is not part of the binding.
+resizes the node. Along its face a pill keeps a fixed px distance from the nearer corner; a pill
+centred on its face (within 1e-6 px) keeps the centre: fraction 0.5 and an offset of minus half its
+length. The geometry is not part of the binding.
 
 draw.io keeps the attributes when a user edits the diagram. Its *Edit Data* dialog shows them. An
 SVG or PNG export from draw.io keeps them only when it embeds the diagram XML.

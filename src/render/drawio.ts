@@ -90,7 +90,7 @@ import {
 const GLYPH_STROKE = DEFAULT_STROKE_WIDTHS.glyph;
 /**
  * The export's own distance tolerance, in px: axis alignment, offsets along a run, a joint shared by bus pieces, and a pill's
- * corner tie (`nearerEnd`). It is
+ * centre test (`nearerEnd`). It is
  * the renderer owner of the D-Q6 tolerance table and answers only questions the SVG does not ask. A question both renderers
  * ask reads the shared rule instead: where a path breaks into runs is `pathRuns` (`render/shared.ts`, planar `EPS`).
  */
@@ -568,15 +568,19 @@ const relative = (box: Rect, origin: Point): Rect =>
 interface Anchored extends Rect { fraction: Point; node: { width: number; height: number } }
 
 /**
- * 1 when the middle of `[start, start + length]` is past the middle of `size` by more than `EPS`, else 0. A tie takes the
- * start, also a tie off by float noise: many pills are centred on their face, and some are off by up to 2e-13 px.
+ * The fraction along a face of the pill's anchor. A pill whose middle is at the middle of `size` within `EPS` gets 0.5, so
+ * a resized node keeps it centred (user, 2026-11-09); many pills are centred on their face, and some are off by up to 2e-13 px.
+ * A pill off centre gets 1 when its middle is past the middle, else 0: a fixed px distance from the nearer corner.
  */
-const nearerEnd = (start: number, length: number, size: number): 0 | 1 => (start + length / 2 - size / 2 > EPS ? 1 : 0);
+const nearerEnd = (start: number, length: number, size: number): 0 | 0.5 | 1 => {
+  const off = start + length / 2 - size / 2;
+  return Math.abs(off) <= EPS ? 0.5 : off > 0 ? 1 : 0;
+};
 
 /**
  * A pill keeps its face across, and a fixed px distance from the nearer corner of that face along it
  * (user, 2026-11-08): a pill nearer the far corner is measured from that corner, fraction 1 and a
- * negative offset. The side is the one the pipeline decided; a pill without one is measured from the
+ * negative offset. A pill centred on its face stays centred: fraction 0.5 and an offset of minus half its length (user, 2026-11-09). The side is the one the pipeline decided; a pill without one is measured from the
  * nearer edge on both axes.
  */
 const onFace = (pill: Rect, node: Anchored['node'], side: Side | undefined): Anchored => ({
