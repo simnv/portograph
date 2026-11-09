@@ -3,8 +3,6 @@
 # The gap between `near` and `far` grows by that width, and `far` then moves left toward `near` by the width the trim freed (592 px),
 # its order and the band gap kept. `bodyTrims.shifts` records the move; the replay moves it back. Canvas 1002 to 410 px; bends,
 # crossings and routed links as before. Test `test/layout/close-up.test.ts` reads the layout.
-# The nodes are declared so that the canonical link order (decision review D-Q1, ticket DR-04) is the order the links are written in;
-# the order of the nodes inside each group is unchanged.
 portograph: 2
 groups:
   src: { tier: 0 }
@@ -13,13 +11,13 @@ groups:
   far: { tier: 2 }
   near: { tier: 2 }
 nodes:
-  sw-1: { group: access, class: switch, ports: [] }
-  sink-near: { group: near, class: server, ports: [] }
-  sw-2: { group: access, class: switch, ports: [] }
   src-a: { group: src, class: router, ports: [] }
   src-b: { group: src, class: router, ports: [] }
-  sink-far: { group: far, class: server, ports: [] }
+  sw-1: { group: access, class: switch, ports: [] }
+  sw-2: { group: access, class: switch, ports: [] }
   sw-3: { group: side, class: switch, ports: [] }
+  sink-near: { group: near, class: server, ports: [] }
+  sink-far: { group: far, class: server, ports: [] }
 links:
   - [sw-1, sink-near]
   - [sw-2, sink-near]

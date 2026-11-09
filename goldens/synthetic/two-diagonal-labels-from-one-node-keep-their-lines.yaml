@@ -3,8 +3,6 @@
 # (`model.labelYields`): link-1 yields to link-2. Band avoidance applies to candidates on the line only; near the shared node the bands
 # lie inside `lower`, which the windows leave out anyway. Both labels stand on their lines, and the tier gap does not grow for the
 # yield (the canvas main had). Test-only input; test/pipeline/link-label-rules.test.ts reads it.
-# The nodes are declared so that the canonical link order (decision review D-Q1, ticket DR-04) is the order the links are written in;
-# the order of the nodes inside each group is unchanged.
 portograph: 2
 profile: network
 groups:
@@ -12,9 +10,9 @@ groups:
   lower: { tier: 1, label: Lower }
 nodes:
   p: { group: upper, class: cloud, icon: cloud, label: P, description: left peer }
-  h: { group: lower, class: router, icon: router, label: H, description: hub router }
   m: { group: upper, class: cloud, icon: cloud, label: M, description: middle peer }
   q: { group: upper, class: cloud, icon: cloud, label: Q, description: right peer }
+  h: { group: lower, class: router, icon: router, label: H, description: hub router }
   s: { group: lower, class: router, icon: router, label: S, description: side router }
 links:
   - [h, p, { label: hub to the left, route: overlay, class: overlay }]

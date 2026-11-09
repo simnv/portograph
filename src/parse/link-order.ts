@@ -33,15 +33,20 @@ function canonical(value: Meta | unknown): unknown {
 
 /**
  * The canonical order of the links of a document (decision review D-Q1; ticket DR-04): link order is never input. Keys, in order:
- * the smaller declared rank of the two ends, then the larger (nodes in declaration order, then groups in declaration order; the
+ * the smaller declared rank of the two ends, then the larger (nodes by the declaration order of their group, then by their own
+ * declaration order inside the group; then group ends in declaration order; the
  * direction of the link is no key), the rank of the port each of the two ends names with its ordinal in its node's authored list (a
  * wildcard, an unnumbered name and a bare end rank before every numbered port), and last the content of the link (its two ends in
  * that order, class, route, label, weight, id, metadata, and last its direction). Two links equal in every key are the same link twice, so their order
- * changes nothing. The position of a link in `links` is no key. Measured against source-then-target on the corpus: NTP bends 46
- * instead of 78, 32 fewer bends in sum, the same NEW-FAIL count.
+ * changes nothing. The position of a link in `links` is no key.
  */
 export function canonicalLinkOrder<T extends UnresolvedLink>(doc: NormalisedDocument, records: readonly T[]): T[] {
-  const nodes = new Map(orderedNodeIds(doc).map((id, index) => [id, index]));
+  // A node ranks by the declaration order of its group, then by its own declaration order inside that group (user ruling 2026-11-09):
+  // the interleaving of nodes of different groups in `nodes` is no key, so it does not move a link.
+  const groupAt = new Map(orderedGroupIds(doc).map((id, index) => [id, index]));
+  const declared = orderedNodeIds(doc), nodeAt = new Map(declared.map((id, index) => [id, index]));
+  const grouped = [...declared].sort((a, b) => (groupAt.get(doc.nodes[a]!.group) ?? -1) - (groupAt.get(doc.nodes[b]!.group) ?? -1) || nodeAt.get(a)! - nodeAt.get(b)!);
+  const nodes = new Map(grouped.map((id, index) => [id, index]));
   const groups = new Map(orderedGroupIds(doc).map((id, index) => [id, nodes.size + index]));
   const rank = (end: EndText): number => end.group !== undefined ? groups.get(end.group) ?? -1 : end.node !== undefined ? nodes.get(end.node) ?? -1 : -1;
   const portRank = (end: EndText): number => {
