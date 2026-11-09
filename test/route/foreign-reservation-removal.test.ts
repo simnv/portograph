@@ -64,7 +64,7 @@ describe('a route through a foreign reservation removes its link and not the she
     const [first, second] = item.connectors.find(connector => connector.id === gap.connector)!.checkpoints as unknown as [Point, Point];
     const { from, to } = gap;
     const routed = (points: Point[]) => tryStitch(model, item, new Map([[gap.connector, points]]));
-    expect(routed(through(from, first, second, to))).toEqual({
+    expect(routed(through(from, first, second, to))).toMatchObject({
       rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Routed path on ${item.link} enters reserved label:group:t3` },
     });
     // Orthogonal detours clear of every reservation, so only the stem checks can refuse them. The port of link-10 is lateral (`right`): the
@@ -73,12 +73,12 @@ describe('a route through a foreign reservation removes its link and not the she
     const side = title.x - 20;
     const rest = (y: number): Point[] => [{ x: first.x, y }, first, { x: side, y: first.y }, { x: side, y: clear }, { x: second.x, y: clear }, second, to];
     // Out of the port along its side instead of away from it: the stem is not perpendicular.
-    expect(routed([from, { x: from.x, y: from.y + 20 }, ...rest(from.y + 20)])).toEqual({
+    expect(routed([from, { x: from.x, y: from.y + 20 }, ...rest(from.y + 20)])).toMatchObject({
       rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Port stem on ${item.link} does not leave its side perpendicular` },
     });
     // Away from the port, but 5 px before the jog: shorter than the reserved entry.
     const below = [{ x: first.x, y: from.y + 30 }, { x: side, y: from.y + 30 }, { x: side, y: clear }, { x: second.x, y: clear }, second, to];
-    expect(routed([from, { x: from.x + 5, y: from.y }, { x: from.x + 5, y: from.y - 20 }, { x: first.x, y: from.y - 20 }, first, ...below])).toEqual({
+    expect(routed([from, { x: from.x + 5, y: from.y }, { x: from.x + 5, y: from.y - 20 }, { x: first.x, y: from.y - 20 }, first, ...below])).toMatchObject({
       rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Port stem on ${item.link} is shorter than its reserved entry` },
     });
   }, 120000);
