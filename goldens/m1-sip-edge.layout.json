@@ -334,6 +334,18 @@
     "links": [
       {
         "from": {
+          "node": "EBR-01",
+          "name": "100G",
+          "ordinal": 2
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 2
+        }
+      },
+      {
+        "from": {
           "node": "provider-1",
           "name": "100G",
           "ordinal": 1
@@ -357,30 +369,6 @@
         }
       },
       {
-        "from": {
-          "node": "EBR-01",
-          "name": "100G",
-          "ordinal": 1
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 1
-        }
-      },
-      {
-        "from": {
-          "node": "EBR-01",
-          "name": "100G",
-          "ordinal": 2
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 2
-        }
-      },
-      {
         "class": "dotted",
         "from": {
           "node": "TBR-001",
@@ -401,7 +389,7 @@
           "ordinal": 2
         },
         "to": {
-          "node": "EBR-01",
+          "node": "EAC-01",
           "name": "100G",
           "ordinal": 3
         }
@@ -416,7 +404,7 @@
         "to": {
           "node": "EAC-01",
           "name": "100G",
-          "ordinal": 3
+          "ordinal": 4
         }
       },
       {
@@ -427,9 +415,21 @@
           "ordinal": 4
         },
         "to": {
+          "node": "EAC-01",
+          "name": "100G",
+          "ordinal": 5
+        }
+      },
+      {
+        "from": {
           "node": "EBR-01",
           "name": "100G",
-          "ordinal": 4
+          "ordinal": 1
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 1
         }
       },
       {
@@ -440,9 +440,9 @@
           "ordinal": 5
         },
         "to": {
-          "node": "EAC-01",
+          "node": "EBR-01",
           "name": "100G",
-          "ordinal": 4
+          "ordinal": 3
         }
       },
       {
@@ -455,7 +455,7 @@
         "to": {
           "node": "EBR-01",
           "name": "100G",
-          "ordinal": 5
+          "ordinal": 4
         }
       },
       {
@@ -466,7 +466,7 @@
           "ordinal": 7
         },
         "to": {
-          "node": "EAC-01",
+          "node": "EBR-01",
           "name": "100G",
           "ordinal": 5
         }
@@ -480,110 +480,6 @@
         },
         "to": {
           "node": "EBR-01",
-          "name": "100G",
-          "ordinal": 6
-        }
-      },
-      {
-        "class": "dashed",
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 1
-        },
-        "to": {
-          "node": "EAC-02",
-          "name": "100G",
-          "ordinal": 2
-        }
-      },
-      {
-        "class": "dashed",
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 2
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 3
-        }
-      },
-      {
-        "class": "dashed",
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 3
-        },
-        "to": {
-          "node": "EAC-02",
-          "name": "100G",
-          "ordinal": 3
-        }
-      },
-      {
-        "class": "dashed",
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 4
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 4
-        }
-      },
-      {
-        "class": "dashed",
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 5
-        },
-        "to": {
-          "node": "EAC-02",
-          "name": "100G",
-          "ordinal": 4
-        }
-      },
-      {
-        "class": "dashed",
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 6
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 5
-        }
-      },
-      {
-        "class": "dashed",
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 7
-        },
-        "to": {
-          "node": "EAC-02",
-          "name": "100G",
-          "ordinal": 5
-        }
-      },
-      {
-        "class": "dashed",
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 8
-        },
-        "to": {
-          "node": "EBR-02",
           "name": "100G",
           "ordinal": 6
         }
@@ -598,6 +494,146 @@
           "node": "EBB-01",
           "name": "100G",
           "ordinal": 1
+        }
+      },
+      {
+        "from": {
+          "node": "EBR-01",
+          "name": "100G",
+          "ordinal": 8
+        },
+        "to": {
+          "node": "EBB-02",
+          "name": "100G",
+          "ordinal": 1
+        }
+      },
+      {
+        "class": "dashed",
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 1
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 3
+        }
+      },
+      {
+        "class": "dashed",
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 2
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 4
+        }
+      },
+      {
+        "class": "dashed",
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 3
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 5
+        }
+      },
+      {
+        "class": "dashed",
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 4
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 6
+        }
+      },
+      {
+        "from": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 7
+        },
+        "to": {
+          "node": "EBB-01",
+          "name": "100G",
+          "ordinal": 3
+        }
+      },
+      {
+        "from": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 8
+        },
+        "to": {
+          "node": "EBB-02",
+          "name": "100G",
+          "ordinal": 3
+        }
+      },
+      {
+        "class": "dashed",
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 5
+        },
+        "to": {
+          "node": "EAC-02",
+          "name": "100G",
+          "ordinal": 2
+        }
+      },
+      {
+        "class": "dashed",
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 6
+        },
+        "to": {
+          "node": "EAC-02",
+          "name": "100G",
+          "ordinal": 3
+        }
+      },
+      {
+        "class": "dashed",
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 7
+        },
+        "to": {
+          "node": "EAC-02",
+          "name": "100G",
+          "ordinal": 4
+        }
+      },
+      {
+        "class": "dashed",
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 8
+        },
+        "to": {
+          "node": "EAC-02",
+          "name": "100G",
+          "ordinal": 5
         }
       },
       {
@@ -614,30 +650,6 @@
       },
       {
         "from": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 7
-        },
-        "to": {
-          "node": "EBB-01",
-          "name": "100G",
-          "ordinal": 3
-        }
-      },
-      {
-        "from": {
-          "node": "EBR-01",
-          "name": "100G",
-          "ordinal": 8
-        },
-        "to": {
-          "node": "EBB-02",
-          "name": "100G",
-          "ordinal": 1
-        }
-      },
-      {
-        "from": {
           "node": "RR-02",
           "name": "100G",
           "ordinal": 1
@@ -646,18 +658,6 @@
           "node": "EBB-02",
           "name": "100G",
           "ordinal": 2
-        }
-      },
-      {
-        "from": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 8
-        },
-        "to": {
-          "node": "EBB-02",
-          "name": "100G",
-          "ordinal": 3
         }
       }
     ]
@@ -2269,43 +2269,6 @@
           },
           "layer": "routed",
           "side": "right",
-          "engineOrder": 4,
-          "anchor": {
-            "x": 69.64013671875,
-            "y": 353
-          },
-          "pill": {
-            "size": {
-              "width": 31,
-              "height": 11
-            },
-            "bounds": {
-              "x": 54.14013671875,
-              "y": 347.5,
-              "width": 31,
-              "height": 11
-            },
-            "textRotation": 0,
-            "radius": 2,
-            "owner": {
-              "kind": "node",
-              "id": "TBR-001"
-            },
-            "layer": "routed"
-          }
-        },
-        {
-          "ref": {
-            "node": "TBR-001",
-            "name": "100G",
-            "ordinal": 3
-          },
-          "owner": {
-            "kind": "node",
-            "id": "TBR-001"
-          },
-          "layer": "routed",
-          "side": "right",
           "engineOrder": 1,
           "anchor": {
             "x": 69.64013671875,
@@ -2335,44 +2298,7 @@
           "ref": {
             "node": "TBR-001",
             "name": "100G",
-            "ordinal": 4
-          },
-          "owner": {
-            "kind": "node",
-            "id": "TBR-001"
-          },
-          "layer": "routed",
-          "side": "right",
-          "engineOrder": 5,
-          "anchor": {
-            "x": 69.64013671875,
-            "y": 370.5
-          },
-          "pill": {
-            "size": {
-              "width": 31,
-              "height": 11
-            },
-            "bounds": {
-              "x": 54.14013671875,
-              "y": 365,
-              "width": 31,
-              "height": 11
-            },
-            "textRotation": 0,
-            "radius": 2,
-            "owner": {
-              "kind": "node",
-              "id": "TBR-001"
-            },
-            "layer": "routed"
-          }
-        },
-        {
-          "ref": {
-            "node": "TBR-001",
-            "name": "100G",
-            "ordinal": 5
+            "ordinal": 3
           },
           "owner": {
             "kind": "node",
@@ -2409,7 +2335,7 @@
           "ref": {
             "node": "TBR-001",
             "name": "100G",
-            "ordinal": 6
+            "ordinal": 4
           },
           "owner": {
             "kind": "node",
@@ -2417,10 +2343,10 @@
           },
           "layer": "routed",
           "side": "right",
-          "engineOrder": 6,
+          "engineOrder": 3,
           "anchor": {
             "x": 69.64013671875,
-            "y": 388
+            "y": 322.75
           },
           "pill": {
             "size": {
@@ -2429,7 +2355,81 @@
             },
             "bounds": {
               "x": 54.14013671875,
-              "y": 382.5,
+              "y": 317.25,
+              "width": 31,
+              "height": 11
+            },
+            "textRotation": 0,
+            "radius": 2,
+            "owner": {
+              "kind": "node",
+              "id": "TBR-001"
+            },
+            "layer": "routed"
+          }
+        },
+        {
+          "ref": {
+            "node": "TBR-001",
+            "name": "100G",
+            "ordinal": 5
+          },
+          "owner": {
+            "kind": "node",
+            "id": "TBR-001"
+          },
+          "layer": "routed",
+          "side": "right",
+          "engineOrder": 4,
+          "anchor": {
+            "x": 69.64013671875,
+            "y": 353
+          },
+          "pill": {
+            "size": {
+              "width": 31,
+              "height": 11
+            },
+            "bounds": {
+              "x": 54.14013671875,
+              "y": 347.5,
+              "width": 31,
+              "height": 11
+            },
+            "textRotation": 0,
+            "radius": 2,
+            "owner": {
+              "kind": "node",
+              "id": "TBR-001"
+            },
+            "layer": "routed"
+          }
+        },
+        {
+          "ref": {
+            "node": "TBR-001",
+            "name": "100G",
+            "ordinal": 6
+          },
+          "owner": {
+            "kind": "node",
+            "id": "TBR-001"
+          },
+          "layer": "routed",
+          "side": "right",
+          "engineOrder": 5,
+          "anchor": {
+            "x": 69.64013671875,
+            "y": 370.5
+          },
+          "pill": {
+            "size": {
+              "width": 31,
+              "height": 11
+            },
+            "bounds": {
+              "x": 54.14013671875,
+              "y": 365,
               "width": 31,
               "height": 11
             },
@@ -2454,10 +2454,10 @@
           },
           "layer": "routed",
           "side": "right",
-          "engineOrder": 3,
+          "engineOrder": 6,
           "anchor": {
             "x": 69.64013671875,
-            "y": 322.75
+            "y": 388
           },
           "pill": {
             "size": {
@@ -2466,7 +2466,7 @@
             },
             "bounds": {
               "x": 54.14013671875,
-              "y": 317.25,
+              "y": 382.5,
               "width": 31,
               "height": 11
             },
@@ -2577,43 +2577,6 @@
           },
           "layer": "routed",
           "side": "left",
-          "engineOrder": 0,
-          "anchor": {
-            "x": 788.57470703125,
-            "y": 270.25
-          },
-          "pill": {
-            "size": {
-              "width": 31,
-              "height": 11
-            },
-            "bounds": {
-              "x": 773.07470703125,
-              "y": 264.75,
-              "width": 31,
-              "height": 11
-            },
-            "textRotation": 0,
-            "radius": 2,
-            "owner": {
-              "kind": "node",
-              "id": "TBR-002"
-            },
-            "layer": "routed"
-          }
-        },
-        {
-          "ref": {
-            "node": "TBR-002",
-            "name": "100G",
-            "ordinal": 2
-          },
-          "owner": {
-            "kind": "node",
-            "id": "TBR-002"
-          },
-          "layer": "routed",
-          "side": "left",
           "engineOrder": 4,
           "anchor": {
             "x": 788.57470703125,
@@ -2643,44 +2606,7 @@
           "ref": {
             "node": "TBR-002",
             "name": "100G",
-            "ordinal": 3
-          },
-          "owner": {
-            "kind": "node",
-            "id": "TBR-002"
-          },
-          "layer": "routed",
-          "side": "left",
-          "engineOrder": 1,
-          "anchor": {
-            "x": 788.57470703125,
-            "y": 287.75
-          },
-          "pill": {
-            "size": {
-              "width": 31,
-              "height": 11
-            },
-            "bounds": {
-              "x": 773.07470703125,
-              "y": 282.25,
-              "width": 31,
-              "height": 11
-            },
-            "textRotation": 0,
-            "radius": 2,
-            "owner": {
-              "kind": "node",
-              "id": "TBR-002"
-            },
-            "layer": "routed"
-          }
-        },
-        {
-          "ref": {
-            "node": "TBR-002",
-            "name": "100G",
-            "ordinal": 4
+            "ordinal": 2
           },
           "owner": {
             "kind": "node",
@@ -2717,44 +2643,7 @@
           "ref": {
             "node": "TBR-002",
             "name": "100G",
-            "ordinal": 5
-          },
-          "owner": {
-            "kind": "node",
-            "id": "TBR-002"
-          },
-          "layer": "routed",
-          "side": "left",
-          "engineOrder": 2,
-          "anchor": {
-            "x": 788.57470703125,
-            "y": 305.25
-          },
-          "pill": {
-            "size": {
-              "width": 31,
-              "height": 11
-            },
-            "bounds": {
-              "x": 773.07470703125,
-              "y": 299.75,
-              "width": 31,
-              "height": 11
-            },
-            "textRotation": 0,
-            "radius": 2,
-            "owner": {
-              "kind": "node",
-              "id": "TBR-002"
-            },
-            "layer": "routed"
-          }
-        },
-        {
-          "ref": {
-            "node": "TBR-002",
-            "name": "100G",
-            "ordinal": 6
+            "ordinal": 3
           },
           "owner": {
             "kind": "node",
@@ -2791,7 +2680,7 @@
           "ref": {
             "node": "TBR-002",
             "name": "100G",
-            "ordinal": 7
+            "ordinal": 4
           },
           "owner": {
             "kind": "node",
@@ -2799,10 +2688,10 @@
           },
           "layer": "routed",
           "side": "left",
-          "engineOrder": 3,
+          "engineOrder": 7,
           "anchor": {
             "x": 788.57470703125,
-            "y": 322.75
+            "y": 405.5
           },
           "pill": {
             "size": {
@@ -2811,7 +2700,118 @@
             },
             "bounds": {
               "x": 773.07470703125,
-              "y": 317.25,
+              "y": 400,
+              "width": 31,
+              "height": 11
+            },
+            "textRotation": 0,
+            "radius": 2,
+            "owner": {
+              "kind": "node",
+              "id": "TBR-002"
+            },
+            "layer": "routed"
+          }
+        },
+        {
+          "ref": {
+            "node": "TBR-002",
+            "name": "100G",
+            "ordinal": 5
+          },
+          "owner": {
+            "kind": "node",
+            "id": "TBR-002"
+          },
+          "layer": "routed",
+          "side": "left",
+          "engineOrder": 0,
+          "anchor": {
+            "x": 788.57470703125,
+            "y": 270.25
+          },
+          "pill": {
+            "size": {
+              "width": 31,
+              "height": 11
+            },
+            "bounds": {
+              "x": 773.07470703125,
+              "y": 264.75,
+              "width": 31,
+              "height": 11
+            },
+            "textRotation": 0,
+            "radius": 2,
+            "owner": {
+              "kind": "node",
+              "id": "TBR-002"
+            },
+            "layer": "routed"
+          }
+        },
+        {
+          "ref": {
+            "node": "TBR-002",
+            "name": "100G",
+            "ordinal": 6
+          },
+          "owner": {
+            "kind": "node",
+            "id": "TBR-002"
+          },
+          "layer": "routed",
+          "side": "left",
+          "engineOrder": 1,
+          "anchor": {
+            "x": 788.57470703125,
+            "y": 287.75
+          },
+          "pill": {
+            "size": {
+              "width": 31,
+              "height": 11
+            },
+            "bounds": {
+              "x": 773.07470703125,
+              "y": 282.25,
+              "width": 31,
+              "height": 11
+            },
+            "textRotation": 0,
+            "radius": 2,
+            "owner": {
+              "kind": "node",
+              "id": "TBR-002"
+            },
+            "layer": "routed"
+          }
+        },
+        {
+          "ref": {
+            "node": "TBR-002",
+            "name": "100G",
+            "ordinal": 7
+          },
+          "owner": {
+            "kind": "node",
+            "id": "TBR-002"
+          },
+          "layer": "routed",
+          "side": "left",
+          "engineOrder": 2,
+          "anchor": {
+            "x": 788.57470703125,
+            "y": 305.25
+          },
+          "pill": {
+            "size": {
+              "width": 31,
+              "height": 11
+            },
+            "bounds": {
+              "x": 773.07470703125,
+              "y": 299.75,
               "width": 31,
               "height": 11
             },
@@ -2836,10 +2836,10 @@
           },
           "layer": "routed",
           "side": "left",
-          "engineOrder": 7,
+          "engineOrder": 3,
           "anchor": {
             "x": 788.57470703125,
-            "y": 405.5
+            "y": 322.75
           },
           "pill": {
             "size": {
@@ -2848,7 +2848,7 @@
             },
             "bounds": {
               "x": 773.07470703125,
-              "y": 400,
+              "y": 317.25,
               "width": 31,
               "height": 11
             },
@@ -3404,6 +3404,64 @@
         "id": "link-1"
       },
       "from": {
+        "node": "EBR-01",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "to": {
+        "node": "EBR-02",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "EBR-01",
+          "name": "100G",
+          "ordinal": 2
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 2
+        }
+      },
+      "bundle": "bundle-1",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-1"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 426.81005859375,
+              "y": 270.25
+            },
+            "to": {
+              "x": 466.81005859375,
+              "y": 270.25
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-2",
+      "sourceIndex": 1,
+      "owner": {
+        "kind": "link",
+        "id": "link-2"
+      },
+      "from": {
         "node": "provider-1",
         "name": "100G",
         "ordinal": 1
@@ -3431,7 +3489,7 @@
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-1"
+          "id": "link-2"
         },
         "layer": "routed",
         "fixed": true,
@@ -3447,7 +3505,7 @@
             },
             "owner": {
               "kind": "link",
-              "id": "link-1"
+              "id": "link-2"
             },
             "straight": true
           }
@@ -3455,11 +3513,11 @@
       }
     },
     {
-      "id": "link-2",
-      "sourceIndex": 1,
+      "id": "link-3",
+      "sourceIndex": 2,
       "owner": {
         "kind": "link",
-        "id": "link-2"
+        "id": "link-3"
       },
       "from": {
         "node": "provider-2",
@@ -3489,7 +3547,7 @@
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-2"
+          "id": "link-3"
         },
         "layer": "routed",
         "fixed": true,
@@ -3505,67 +3563,9 @@
             },
             "owner": {
               "kind": "link",
-              "id": "link-2"
+              "id": "link-3"
             },
             "straight": true
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-3",
-      "sourceIndex": 2,
-      "owner": {
-        "kind": "link",
-        "id": "link-3"
-      },
-      "from": {
-        "node": "EBR-01",
-        "name": "100G",
-        "ordinal": 1
-      },
-      "to": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 1
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "EBR-01",
-          "name": "100G",
-          "ordinal": 1
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 1
-        }
-      },
-      "bundle": "bundle-1",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-3"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 426.81005859375,
-              "y": 287.75
-            },
-            "to": {
-              "x": 466.81005859375,
-              "y": 287.75
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-1"
-            }
           }
         ]
       }
@@ -3576,64 +3576,6 @@
       "owner": {
         "kind": "link",
         "id": "link-4"
-      },
-      "from": {
-        "node": "EBR-01",
-        "name": "100G",
-        "ordinal": 2
-      },
-      "to": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 2
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "EBR-01",
-          "name": "100G",
-          "ordinal": 2
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 2
-        }
-      },
-      "bundle": "bundle-1",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-4"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 426.81005859375,
-              "y": 270.25
-            },
-            "to": {
-              "x": 466.81005859375,
-              "y": 270.25
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-1"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-5",
-      "sourceIndex": 4,
-      "owner": {
-        "kind": "link",
-        "id": "link-5"
       },
       "from": {
         "node": "TBR-001",
@@ -3664,7 +3606,7 @@
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-5"
+          "id": "link-4"
         },
         "layer": "routed",
         "fixed": true,
@@ -3677,6 +3619,64 @@
             "to": {
               "x": 237.04541015625,
               "y": 270.25
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-2"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-5",
+      "sourceIndex": 4,
+      "owner": {
+        "kind": "link",
+        "id": "link-5"
+      },
+      "from": {
+        "node": "TBR-001",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "to": {
+        "node": "EAC-01",
+        "name": "100G",
+        "ordinal": 3
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "TBR-001",
+          "name": "100G",
+          "ordinal": 2
+        },
+        "to": {
+          "node": "EAC-01",
+          "name": "100G",
+          "ordinal": 3
+        }
+      },
+      "bundle": "bundle-2",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-5"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 69.64013671875,
+              "y": 287.75
+            },
+            "to": {
+              "x": 237.04541015625,
+              "y": 287.75
             },
             "owner": {
               "kind": "bundle",
@@ -3696,12 +3696,12 @@
       "from": {
         "node": "TBR-001",
         "name": "100G",
-        "ordinal": 2
+        "ordinal": 3
       },
       "to": {
-        "node": "EBR-01",
+        "node": "EAC-01",
         "name": "100G",
-        "ordinal": 3
+        "ordinal": 4
       },
       "family": "routed",
       "layer": "routed",
@@ -3709,15 +3709,15 @@
         "from": {
           "node": "TBR-001",
           "name": "100G",
-          "ordinal": 2
+          "ordinal": 3
         },
         "to": {
-          "node": "EBR-01",
+          "node": "EAC-01",
           "name": "100G",
-          "ordinal": 3
+          "ordinal": 4
         }
       },
-      "bundle": "bundle-3",
+      "bundle": "bundle-2",
       "technique": "bundle",
       "path": {
         "owner": {
@@ -3730,15 +3730,15 @@
           {
             "from": {
               "x": 69.64013671875,
-              "y": 353
+              "y": 305.25
             },
             "to": {
-              "x": 324.81005859375,
-              "y": 353
+              "x": 237.04541015625,
+              "y": 305.25
             },
             "owner": {
               "kind": "bundle",
-              "id": "bundle-3"
+              "id": "bundle-2"
             }
           }
         ]
@@ -3754,12 +3754,12 @@
       "from": {
         "node": "TBR-001",
         "name": "100G",
-        "ordinal": 3
+        "ordinal": 4
       },
       "to": {
         "node": "EAC-01",
         "name": "100G",
-        "ordinal": 3
+        "ordinal": 5
       },
       "family": "routed",
       "layer": "routed",
@@ -3767,12 +3767,12 @@
         "from": {
           "node": "TBR-001",
           "name": "100G",
-          "ordinal": 3
+          "ordinal": 4
         },
         "to": {
           "node": "EAC-01",
           "name": "100G",
-          "ordinal": 3
+          "ordinal": 5
         }
       },
       "bundle": "bundle-2",
@@ -3788,11 +3788,11 @@
           {
             "from": {
               "x": 69.64013671875,
-              "y": 287.75
+              "y": 322.75
             },
             "to": {
               "x": 237.04541015625,
-              "y": 287.75
+              "y": 322.75
             },
             "owner": {
               "kind": "bundle",
@@ -3810,30 +3810,30 @@
         "id": "link-8"
       },
       "from": {
-        "node": "TBR-001",
-        "name": "100G",
-        "ordinal": 4
-      },
-      "to": {
         "node": "EBR-01",
         "name": "100G",
-        "ordinal": 4
+        "ordinal": 1
+      },
+      "to": {
+        "node": "EBR-02",
+        "name": "100G",
+        "ordinal": 1
       },
       "family": "routed",
       "layer": "routed",
       "attachments": {
         "from": {
-          "node": "TBR-001",
-          "name": "100G",
-          "ordinal": 4
-        },
-        "to": {
           "node": "EBR-01",
           "name": "100G",
-          "ordinal": 4
+          "ordinal": 1
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 1
         }
       },
-      "bundle": "bundle-3",
+      "bundle": "bundle-1",
       "technique": "bundle",
       "path": {
         "owner": {
@@ -3845,16 +3845,16 @@
         "segments": [
           {
             "from": {
-              "x": 69.64013671875,
-              "y": 370.5
+              "x": 426.81005859375,
+              "y": 287.75
             },
             "to": {
-              "x": 324.81005859375,
-              "y": 370.5
+              "x": 466.81005859375,
+              "y": 287.75
             },
             "owner": {
               "kind": "bundle",
-              "id": "bundle-3"
+              "id": "bundle-1"
             }
           }
         ]
@@ -3873,9 +3873,9 @@
         "ordinal": 5
       },
       "to": {
-        "node": "EAC-01",
+        "node": "EBR-01",
         "name": "100G",
-        "ordinal": 4
+        "ordinal": 3
       },
       "family": "routed",
       "layer": "routed",
@@ -3886,12 +3886,12 @@
           "ordinal": 5
         },
         "to": {
-          "node": "EAC-01",
+          "node": "EBR-01",
           "name": "100G",
-          "ordinal": 4
+          "ordinal": 3
         }
       },
-      "bundle": "bundle-2",
+      "bundle": "bundle-3",
       "technique": "bundle",
       "path": {
         "owner": {
@@ -3904,15 +3904,15 @@
           {
             "from": {
               "x": 69.64013671875,
-              "y": 305.25
+              "y": 353
             },
             "to": {
-              "x": 237.04541015625,
-              "y": 305.25
+              "x": 324.81005859375,
+              "y": 353
             },
             "owner": {
               "kind": "bundle",
-              "id": "bundle-2"
+              "id": "bundle-3"
             }
           }
         ]
@@ -3933,7 +3933,7 @@
       "to": {
         "node": "EBR-01",
         "name": "100G",
-        "ordinal": 5
+        "ordinal": 4
       },
       "family": "routed",
       "layer": "routed",
@@ -3946,7 +3946,7 @@
         "to": {
           "node": "EBR-01",
           "name": "100G",
-          "ordinal": 5
+          "ordinal": 4
         }
       },
       "bundle": "bundle-3",
@@ -3962,11 +3962,11 @@
           {
             "from": {
               "x": 69.64013671875,
-              "y": 388
+              "y": 370.5
             },
             "to": {
               "x": 324.81005859375,
-              "y": 388
+              "y": 370.5
             },
             "owner": {
               "kind": "bundle",
@@ -3989,7 +3989,7 @@
         "ordinal": 7
       },
       "to": {
-        "node": "EAC-01",
+        "node": "EBR-01",
         "name": "100G",
         "ordinal": 5
       },
@@ -4002,12 +4002,12 @@
           "ordinal": 7
         },
         "to": {
-          "node": "EAC-01",
+          "node": "EBR-01",
           "name": "100G",
           "ordinal": 5
         }
       },
-      "bundle": "bundle-2",
+      "bundle": "bundle-3",
       "technique": "bundle",
       "path": {
         "owner": {
@@ -4020,15 +4020,15 @@
           {
             "from": {
               "x": 69.64013671875,
-              "y": 322.75
+              "y": 388
             },
             "to": {
-              "x": 237.04541015625,
-              "y": 322.75
+              "x": 324.81005859375,
+              "y": 388
             },
             "owner": {
               "kind": "bundle",
-              "id": "bundle-2"
+              "id": "bundle-3"
             }
           }
         ]
@@ -4100,470 +4100,6 @@
         "id": "link-13"
       },
       "from": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 1
-      },
-      "to": {
-        "node": "EAC-02",
-        "name": "100G",
-        "ordinal": 2
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 1
-        },
-        "to": {
-          "node": "EAC-02",
-          "name": "100G",
-          "ordinal": 2
-        }
-      },
-      "bundle": "bundle-4",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-13"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 788.57470703125,
-              "y": 270.25
-            },
-            "to": {
-              "x": 656.57470703125,
-              "y": 270.25
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-4"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-14",
-      "sourceIndex": 13,
-      "owner": {
-        "kind": "link",
-        "id": "link-14"
-      },
-      "from": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 2
-      },
-      "to": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 3
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 2
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 3
-        }
-      },
-      "bundle": "bundle-5",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-14"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 788.57470703125,
-              "y": 353
-            },
-            "to": {
-              "x": 568.81005859375,
-              "y": 353
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-5"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-15",
-      "sourceIndex": 14,
-      "owner": {
-        "kind": "link",
-        "id": "link-15"
-      },
-      "from": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 3
-      },
-      "to": {
-        "node": "EAC-02",
-        "name": "100G",
-        "ordinal": 3
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 3
-        },
-        "to": {
-          "node": "EAC-02",
-          "name": "100G",
-          "ordinal": 3
-        }
-      },
-      "bundle": "bundle-4",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-15"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 788.57470703125,
-              "y": 287.75
-            },
-            "to": {
-              "x": 656.57470703125,
-              "y": 287.75
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-4"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-16",
-      "sourceIndex": 15,
-      "owner": {
-        "kind": "link",
-        "id": "link-16"
-      },
-      "from": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 4
-      },
-      "to": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 4
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 4
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 4
-        }
-      },
-      "bundle": "bundle-5",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-16"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 788.57470703125,
-              "y": 370.5
-            },
-            "to": {
-              "x": 568.81005859375,
-              "y": 370.5
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-5"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-17",
-      "sourceIndex": 16,
-      "owner": {
-        "kind": "link",
-        "id": "link-17"
-      },
-      "from": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 5
-      },
-      "to": {
-        "node": "EAC-02",
-        "name": "100G",
-        "ordinal": 4
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 5
-        },
-        "to": {
-          "node": "EAC-02",
-          "name": "100G",
-          "ordinal": 4
-        }
-      },
-      "bundle": "bundle-4",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-17"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 788.57470703125,
-              "y": 305.25
-            },
-            "to": {
-              "x": 656.57470703125,
-              "y": 305.25
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-4"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-18",
-      "sourceIndex": 17,
-      "owner": {
-        "kind": "link",
-        "id": "link-18"
-      },
-      "from": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 6
-      },
-      "to": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 5
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 6
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 5
-        }
-      },
-      "bundle": "bundle-5",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-18"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 788.57470703125,
-              "y": 388
-            },
-            "to": {
-              "x": 568.81005859375,
-              "y": 388
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-5"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-19",
-      "sourceIndex": 18,
-      "owner": {
-        "kind": "link",
-        "id": "link-19"
-      },
-      "from": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 7
-      },
-      "to": {
-        "node": "EAC-02",
-        "name": "100G",
-        "ordinal": 5
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 7
-        },
-        "to": {
-          "node": "EAC-02",
-          "name": "100G",
-          "ordinal": 5
-        }
-      },
-      "bundle": "bundle-4",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-19"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 788.57470703125,
-              "y": 322.75
-            },
-            "to": {
-              "x": 656.57470703125,
-              "y": 322.75
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-4"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-20",
-      "sourceIndex": 19,
-      "owner": {
-        "kind": "link",
-        "id": "link-20"
-      },
-      "from": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 8
-      },
-      "to": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 6
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "TBR-002",
-          "name": "100G",
-          "ordinal": 8
-        },
-        "to": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 6
-        }
-      },
-      "bundle": "bundle-5",
-      "technique": "bundle",
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-20"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 788.57470703125,
-              "y": 405.5
-            },
-            "to": {
-              "x": 568.81005859375,
-              "y": 405.5
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-5"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-21",
-      "sourceIndex": 20,
-      "owner": {
-        "kind": "link",
-        "id": "link-21"
-      },
-      "from": {
         "node": "EBR-01",
         "name": "100G",
         "ordinal": 7
@@ -4600,15 +4136,15 @@
           },
           "owner": {
             "kind": "link",
-            "id": "link-21"
+            "id": "link-13"
           },
-          "lane": "lane:\"link-21\":2"
+          "lane": "lane:\"link-13\":2"
         }
       ],
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-21"
+          "id": "link-13"
         },
         "layer": "routed",
         "fixed": true,
@@ -4624,9 +4160,9 @@
             },
             "owner": {
               "kind": "link",
-              "id": "link-21"
+              "id": "link-13"
             },
-            "lane": "lane:\"link-21\":2"
+            "lane": "lane:\"link-13\":2"
           },
           {
             "from": {
@@ -4639,9 +4175,9 @@
             },
             "owner": {
               "kind": "link",
-              "id": "link-21"
+              "id": "link-13"
             },
-            "lane": "lane:\"link-21\":2"
+            "lane": "lane:\"link-13\":2"
           },
           {
             "from": {
@@ -4654,9 +4190,620 @@
             },
             "owner": {
               "kind": "link",
-              "id": "link-21"
+              "id": "link-13"
             },
-            "lane": "lane:\"link-21\":2"
+            "lane": "lane:\"link-13\":2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-14",
+      "sourceIndex": 13,
+      "owner": {
+        "kind": "link",
+        "id": "link-14"
+      },
+      "from": {
+        "node": "EBR-01",
+        "name": "100G",
+        "ordinal": 8
+      },
+      "to": {
+        "node": "EBB-02",
+        "name": "100G",
+        "ordinal": 1
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "EBR-01",
+          "name": "100G",
+          "ordinal": 8
+        },
+        "to": {
+          "node": "EBB-02",
+          "name": "100G",
+          "ordinal": 1
+        }
+      },
+      "technique": "orthogonal",
+      "fixedSegments": [
+        {
+          "from": {
+            "x": 396.31005859375,
+            "y": 509.5
+          },
+          "to": {
+            "x": 396.31005859375,
+            "y": 651.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-14"
+          },
+          "lane": "lane:\"link-14\":2"
+        }
+      ],
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-14"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 396.31005859375,
+              "y": 424.25
+            },
+            "to": {
+              "x": 396.31005859375,
+              "y": 509.5
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-14"
+            },
+            "lane": "lane:\"link-14\":2"
+          },
+          {
+            "from": {
+              "x": 396.31005859375,
+              "y": 509.5
+            },
+            "to": {
+              "x": 396.31005859375,
+              "y": 651.5
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-14"
+            },
+            "lane": "lane:\"link-14\":2"
+          },
+          {
+            "from": {
+              "x": 396.31005859375,
+              "y": 651.5
+            },
+            "to": {
+              "x": 396.31005859375,
+              "y": 814.75
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-14"
+            },
+            "lane": "lane:\"link-14\":2",
+            "barCross": [
+              "EBB-01"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-15",
+      "sourceIndex": 14,
+      "owner": {
+        "kind": "link",
+        "id": "link-15"
+      },
+      "from": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 1
+      },
+      "to": {
+        "node": "EBR-02",
+        "name": "100G",
+        "ordinal": 3
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 1
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 3
+        }
+      },
+      "bundle": "bundle-4",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-15"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 788.57470703125,
+              "y": 353
+            },
+            "to": {
+              "x": 568.81005859375,
+              "y": 353
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-4"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-16",
+      "sourceIndex": 15,
+      "owner": {
+        "kind": "link",
+        "id": "link-16"
+      },
+      "from": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "to": {
+        "node": "EBR-02",
+        "name": "100G",
+        "ordinal": 4
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 2
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 4
+        }
+      },
+      "bundle": "bundle-4",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-16"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 788.57470703125,
+              "y": 370.5
+            },
+            "to": {
+              "x": 568.81005859375,
+              "y": 370.5
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-4"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-17",
+      "sourceIndex": 16,
+      "owner": {
+        "kind": "link",
+        "id": "link-17"
+      },
+      "from": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 3
+      },
+      "to": {
+        "node": "EBR-02",
+        "name": "100G",
+        "ordinal": 5
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 3
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 5
+        }
+      },
+      "bundle": "bundle-4",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-17"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 788.57470703125,
+              "y": 388
+            },
+            "to": {
+              "x": 568.81005859375,
+              "y": 388
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-4"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-18",
+      "sourceIndex": 17,
+      "owner": {
+        "kind": "link",
+        "id": "link-18"
+      },
+      "from": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 4
+      },
+      "to": {
+        "node": "EBR-02",
+        "name": "100G",
+        "ordinal": 6
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 4
+        },
+        "to": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 6
+        }
+      },
+      "bundle": "bundle-4",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-18"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 788.57470703125,
+              "y": 405.5
+            },
+            "to": {
+              "x": 568.81005859375,
+              "y": 405.5
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-4"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-19",
+      "sourceIndex": 18,
+      "owner": {
+        "kind": "link",
+        "id": "link-19"
+      },
+      "from": {
+        "node": "EBR-02",
+        "name": "100G",
+        "ordinal": 7
+      },
+      "to": {
+        "node": "EBB-01",
+        "name": "100G",
+        "ordinal": 3
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 7
+        },
+        "to": {
+          "node": "EBB-01",
+          "name": "100G",
+          "ordinal": 3
+        }
+      },
+      "technique": "orthogonal",
+      "fixedSegments": [
+        {
+          "from": {
+            "x": 497.31005859375,
+            "y": 509.5
+          },
+          "to": {
+            "x": 497.31005859375,
+            "y": 651.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-19"
+          },
+          "lane": "lane:\"link-19\":2"
+        }
+      ],
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-19"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 497.31005859375,
+              "y": 424.25
+            },
+            "to": {
+              "x": 497.31005859375,
+              "y": 509.5
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-19"
+            },
+            "lane": "lane:\"link-19\":2"
+          },
+          {
+            "from": {
+              "x": 497.31005859375,
+              "y": 509.5
+            },
+            "to": {
+              "x": 497.31005859375,
+              "y": 651.5
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-19"
+            },
+            "lane": "lane:\"link-19\":2"
+          },
+          {
+            "from": {
+              "x": 497.31005859375,
+              "y": 651.5
+            },
+            "to": {
+              "x": 497.31005859375,
+              "y": 736.75
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-19"
+            },
+            "lane": "lane:\"link-19\":2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-20",
+      "sourceIndex": 19,
+      "owner": {
+        "kind": "link",
+        "id": "link-20"
+      },
+      "from": {
+        "node": "EBR-02",
+        "name": "100G",
+        "ordinal": 8
+      },
+      "to": {
+        "node": "EBB-02",
+        "name": "100G",
+        "ordinal": 3
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "EBR-02",
+          "name": "100G",
+          "ordinal": 8
+        },
+        "to": {
+          "node": "EBB-02",
+          "name": "100G",
+          "ordinal": 3
+        }
+      },
+      "technique": "orthogonal",
+      "fixedSegments": [
+        {
+          "from": {
+            "x": 538.31005859375,
+            "y": 509.5
+          },
+          "to": {
+            "x": 538.31005859375,
+            "y": 651.5
+          },
+          "owner": {
+            "kind": "link",
+            "id": "link-20"
+          },
+          "lane": "lane:\"link-20\":2"
+        }
+      ],
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-20"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 538.31005859375,
+              "y": 424.25
+            },
+            "to": {
+              "x": 538.31005859375,
+              "y": 509.5
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-20"
+            },
+            "lane": "lane:\"link-20\":2"
+          },
+          {
+            "from": {
+              "x": 538.31005859375,
+              "y": 509.5
+            },
+            "to": {
+              "x": 538.31005859375,
+              "y": 651.5
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-20"
+            },
+            "lane": "lane:\"link-20\":2"
+          },
+          {
+            "from": {
+              "x": 538.31005859375,
+              "y": 651.5
+            },
+            "to": {
+              "x": 538.31005859375,
+              "y": 814.75
+            },
+            "owner": {
+              "kind": "link",
+              "id": "link-20"
+            },
+            "lane": "lane:\"link-20\":2",
+            "barCross": [
+              "EBB-01"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-21",
+      "sourceIndex": 20,
+      "owner": {
+        "kind": "link",
+        "id": "link-21"
+      },
+      "from": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 5
+      },
+      "to": {
+        "node": "EAC-02",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 5
+        },
+        "to": {
+          "node": "EAC-02",
+          "name": "100G",
+          "ordinal": 2
+        }
+      },
+      "bundle": "bundle-5",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-21"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 788.57470703125,
+              "y": 270.25
+            },
+            "to": {
+              "x": 656.57470703125,
+              "y": 270.25
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-5"
+            }
           }
         ]
       }
@@ -4667,6 +4814,180 @@
       "owner": {
         "kind": "link",
         "id": "link-22"
+      },
+      "from": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 6
+      },
+      "to": {
+        "node": "EAC-02",
+        "name": "100G",
+        "ordinal": 3
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 6
+        },
+        "to": {
+          "node": "EAC-02",
+          "name": "100G",
+          "ordinal": 3
+        }
+      },
+      "bundle": "bundle-5",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-22"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 788.57470703125,
+              "y": 287.75
+            },
+            "to": {
+              "x": 656.57470703125,
+              "y": 287.75
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-5"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-23",
+      "sourceIndex": 22,
+      "owner": {
+        "kind": "link",
+        "id": "link-23"
+      },
+      "from": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 7
+      },
+      "to": {
+        "node": "EAC-02",
+        "name": "100G",
+        "ordinal": 4
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 7
+        },
+        "to": {
+          "node": "EAC-02",
+          "name": "100G",
+          "ordinal": 4
+        }
+      },
+      "bundle": "bundle-5",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-23"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 788.57470703125,
+              "y": 305.25
+            },
+            "to": {
+              "x": 656.57470703125,
+              "y": 305.25
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-5"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-24",
+      "sourceIndex": 23,
+      "owner": {
+        "kind": "link",
+        "id": "link-24"
+      },
+      "from": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 8
+      },
+      "to": {
+        "node": "EAC-02",
+        "name": "100G",
+        "ordinal": 5
+      },
+      "family": "routed",
+      "layer": "routed",
+      "attachments": {
+        "from": {
+          "node": "TBR-002",
+          "name": "100G",
+          "ordinal": 8
+        },
+        "to": {
+          "node": "EAC-02",
+          "name": "100G",
+          "ordinal": 5
+        }
+      },
+      "bundle": "bundle-5",
+      "technique": "bundle",
+      "path": {
+        "owner": {
+          "kind": "link",
+          "id": "link-24"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 788.57470703125,
+              "y": 322.75
+            },
+            "to": {
+              "x": 656.57470703125,
+              "y": 322.75
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-5"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "link-25",
+      "sourceIndex": 24,
+      "owner": {
+        "kind": "link",
+        "id": "link-25"
       },
       "from": {
         "node": "RR-01",
@@ -4696,7 +5017,7 @@
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-22"
+          "id": "link-25"
         },
         "layer": "routed",
         "fixed": true,
@@ -4712,231 +5033,18 @@
             },
             "owner": {
               "kind": "link",
-              "id": "link-22"
+              "id": "link-25"
             }
           }
         ]
       }
     },
     {
-      "id": "link-23",
-      "sourceIndex": 22,
+      "id": "link-26",
+      "sourceIndex": 25,
       "owner": {
         "kind": "link",
-        "id": "link-23"
-      },
-      "from": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 7
-      },
-      "to": {
-        "node": "EBB-01",
-        "name": "100G",
-        "ordinal": 3
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 7
-        },
-        "to": {
-          "node": "EBB-01",
-          "name": "100G",
-          "ordinal": 3
-        }
-      },
-      "technique": "orthogonal",
-      "fixedSegments": [
-        {
-          "from": {
-            "x": 497.31005859375,
-            "y": 509.5
-          },
-          "to": {
-            "x": 497.31005859375,
-            "y": 651.5
-          },
-          "owner": {
-            "kind": "link",
-            "id": "link-23"
-          },
-          "lane": "lane:\"link-23\":2"
-        }
-      ],
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-23"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 497.31005859375,
-              "y": 424.25
-            },
-            "to": {
-              "x": 497.31005859375,
-              "y": 509.5
-            },
-            "owner": {
-              "kind": "link",
-              "id": "link-23"
-            },
-            "lane": "lane:\"link-23\":2"
-          },
-          {
-            "from": {
-              "x": 497.31005859375,
-              "y": 509.5
-            },
-            "to": {
-              "x": 497.31005859375,
-              "y": 651.5
-            },
-            "owner": {
-              "kind": "link",
-              "id": "link-23"
-            },
-            "lane": "lane:\"link-23\":2"
-          },
-          {
-            "from": {
-              "x": 497.31005859375,
-              "y": 651.5
-            },
-            "to": {
-              "x": 497.31005859375,
-              "y": 736.75
-            },
-            "owner": {
-              "kind": "link",
-              "id": "link-23"
-            },
-            "lane": "lane:\"link-23\":2"
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-24",
-      "sourceIndex": 23,
-      "owner": {
-        "kind": "link",
-        "id": "link-24"
-      },
-      "from": {
-        "node": "EBR-01",
-        "name": "100G",
-        "ordinal": 8
-      },
-      "to": {
-        "node": "EBB-02",
-        "name": "100G",
-        "ordinal": 1
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "EBR-01",
-          "name": "100G",
-          "ordinal": 8
-        },
-        "to": {
-          "node": "EBB-02",
-          "name": "100G",
-          "ordinal": 1
-        }
-      },
-      "technique": "orthogonal",
-      "fixedSegments": [
-        {
-          "from": {
-            "x": 396.31005859375,
-            "y": 509.5
-          },
-          "to": {
-            "x": 396.31005859375,
-            "y": 651.5
-          },
-          "owner": {
-            "kind": "link",
-            "id": "link-24"
-          },
-          "lane": "lane:\"link-24\":2"
-        }
-      ],
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-24"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 396.31005859375,
-              "y": 424.25
-            },
-            "to": {
-              "x": 396.31005859375,
-              "y": 509.5
-            },
-            "owner": {
-              "kind": "link",
-              "id": "link-24"
-            },
-            "lane": "lane:\"link-24\":2"
-          },
-          {
-            "from": {
-              "x": 396.31005859375,
-              "y": 509.5
-            },
-            "to": {
-              "x": 396.31005859375,
-              "y": 651.5
-            },
-            "owner": {
-              "kind": "link",
-              "id": "link-24"
-            },
-            "lane": "lane:\"link-24\":2"
-          },
-          {
-            "from": {
-              "x": 396.31005859375,
-              "y": 651.5
-            },
-            "to": {
-              "x": 396.31005859375,
-              "y": 814.75
-            },
-            "owner": {
-              "kind": "link",
-              "id": "link-24"
-            },
-            "lane": "lane:\"link-24\":2",
-            "barCross": [
-              "EBB-01"
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-25",
-      "sourceIndex": 24,
-      "owner": {
-        "kind": "link",
-        "id": "link-25"
+        "id": "link-26"
       },
       "from": {
         "node": "RR-02",
@@ -4966,7 +5074,7 @@
       "path": {
         "owner": {
           "kind": "link",
-          "id": "link-25"
+          "id": "link-26"
         },
         "layer": "routed",
         "fixed": true,
@@ -4982,116 +5090,8 @@
             },
             "owner": {
               "kind": "link",
-              "id": "link-25"
-            },
-            "barCross": [
-              "EBB-01"
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": "link-26",
-      "sourceIndex": 25,
-      "owner": {
-        "kind": "link",
-        "id": "link-26"
-      },
-      "from": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 8
-      },
-      "to": {
-        "node": "EBB-02",
-        "name": "100G",
-        "ordinal": 3
-      },
-      "family": "routed",
-      "layer": "routed",
-      "attachments": {
-        "from": {
-          "node": "EBR-02",
-          "name": "100G",
-          "ordinal": 8
-        },
-        "to": {
-          "node": "EBB-02",
-          "name": "100G",
-          "ordinal": 3
-        }
-      },
-      "technique": "orthogonal",
-      "fixedSegments": [
-        {
-          "from": {
-            "x": 538.31005859375,
-            "y": 509.5
-          },
-          "to": {
-            "x": 538.31005859375,
-            "y": 651.5
-          },
-          "owner": {
-            "kind": "link",
-            "id": "link-26"
-          },
-          "lane": "lane:\"link-26\":2"
-        }
-      ],
-      "path": {
-        "owner": {
-          "kind": "link",
-          "id": "link-26"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 538.31005859375,
-              "y": 424.25
-            },
-            "to": {
-              "x": 538.31005859375,
-              "y": 509.5
-            },
-            "owner": {
-              "kind": "link",
               "id": "link-26"
             },
-            "lane": "lane:\"link-26\":2"
-          },
-          {
-            "from": {
-              "x": 538.31005859375,
-              "y": 509.5
-            },
-            "to": {
-              "x": 538.31005859375,
-              "y": 651.5
-            },
-            "owner": {
-              "kind": "link",
-              "id": "link-26"
-            },
-            "lane": "lane:\"link-26\":2"
-          },
-          {
-            "from": {
-              "x": 538.31005859375,
-              "y": 651.5
-            },
-            "to": {
-              "x": 538.31005859375,
-              "y": 814.75
-            },
-            "owner": {
-              "kind": "link",
-              "id": "link-26"
-            },
-            "lane": "lane:\"link-26\":2",
             "barCross": [
               "EBB-01"
             ]
@@ -6172,93 +6172,6 @@
       }
     },
     {
-      "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":3}",
-      "owner": {
-        "kind": "node",
-        "id": "TBR-001"
-      },
-      "layer": "routed",
-      "role": "pill",
-      "port": {
-        "node": "TBR-001",
-        "name": "100G",
-        "ordinal": 3
-      },
-      "text": "100G",
-      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-      "fontSize": 9,
-      "fontWeight": 400,
-      "lineHeight": 11,
-      "lines": [
-        "100G"
-      ],
-      "textRotation": 0,
-      "bounds": {
-        "x": 57.568359375,
-        "y": 282.25,
-        "width": 24.1435546875,
-        "height": 11
-      }
-    },
-    {
-      "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":5}",
-      "owner": {
-        "kind": "node",
-        "id": "TBR-001"
-      },
-      "layer": "routed",
-      "role": "pill",
-      "port": {
-        "node": "TBR-001",
-        "name": "100G",
-        "ordinal": 5
-      },
-      "text": "100G",
-      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-      "fontSize": 9,
-      "fontWeight": 400,
-      "lineHeight": 11,
-      "lines": [
-        "100G"
-      ],
-      "textRotation": 0,
-      "bounds": {
-        "x": 57.568359375,
-        "y": 299.75,
-        "width": 24.1435546875,
-        "height": 11
-      }
-    },
-    {
-      "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":7}",
-      "owner": {
-        "kind": "node",
-        "id": "TBR-001"
-      },
-      "layer": "routed",
-      "role": "pill",
-      "port": {
-        "node": "TBR-001",
-        "name": "100G",
-        "ordinal": 7
-      },
-      "text": "100G",
-      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-      "fontSize": 9,
-      "fontWeight": 400,
-      "lineHeight": 11,
-      "lines": [
-        "100G"
-      ],
-      "textRotation": 0,
-      "bounds": {
-        "x": 57.568359375,
-        "y": 317.25,
-        "width": 24.1435546875,
-        "height": 11
-      }
-    },
-    {
       "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":2}",
       "owner": {
         "kind": "node",
@@ -6282,7 +6195,36 @@
       "textRotation": 0,
       "bounds": {
         "x": 57.568359375,
-        "y": 347.5,
+        "y": 282.25,
+        "width": 24.1435546875,
+        "height": 11
+      }
+    },
+    {
+      "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":3}",
+      "owner": {
+        "kind": "node",
+        "id": "TBR-001"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "TBR-001",
+        "name": "100G",
+        "ordinal": 3
+      },
+      "text": "100G",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "100G"
+      ],
+      "textRotation": 0,
+      "bounds": {
+        "x": 57.568359375,
+        "y": 299.75,
         "width": 24.1435546875,
         "height": 11
       }
@@ -6311,7 +6253,36 @@
       "textRotation": 0,
       "bounds": {
         "x": 57.568359375,
-        "y": 365,
+        "y": 317.25,
+        "width": 24.1435546875,
+        "height": 11
+      }
+    },
+    {
+      "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":5}",
+      "owner": {
+        "kind": "node",
+        "id": "TBR-001"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "TBR-001",
+        "name": "100G",
+        "ordinal": 5
+      },
+      "text": "100G",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "100G"
+      ],
+      "textRotation": 0,
+      "bounds": {
+        "x": 57.568359375,
+        "y": 347.5,
         "width": 24.1435546875,
         "height": 11
       }
@@ -6328,6 +6299,35 @@
         "node": "TBR-001",
         "name": "100G",
         "ordinal": 6
+      },
+      "text": "100G",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "100G"
+      ],
+      "textRotation": 0,
+      "bounds": {
+        "x": 57.568359375,
+        "y": 365,
+        "width": 24.1435546875,
+        "height": 11
+      }
+    },
+    {
+      "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":7}",
+      "owner": {
+        "kind": "node",
+        "id": "TBR-001"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "TBR-001",
+        "name": "100G",
+        "ordinal": 7
       },
       "text": "100G",
       "fontFamily": "Verdana, DejaVu Sans, sans-serif",
@@ -6398,64 +6398,6 @@
       "lineHeight": 11
     },
     {
-      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":1}",
-      "owner": {
-        "kind": "node",
-        "id": "TBR-002"
-      },
-      "layer": "routed",
-      "role": "pill",
-      "port": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 1
-      },
-      "text": "100G",
-      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-      "fontSize": 9,
-      "fontWeight": 400,
-      "lineHeight": 11,
-      "lines": [
-        "100G"
-      ],
-      "textRotation": 0,
-      "bounds": {
-        "x": 776.5029296875,
-        "y": 264.75,
-        "width": 24.1435546875,
-        "height": 11
-      }
-    },
-    {
-      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":3}",
-      "owner": {
-        "kind": "node",
-        "id": "TBR-002"
-      },
-      "layer": "routed",
-      "role": "pill",
-      "port": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 3
-      },
-      "text": "100G",
-      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-      "fontSize": 9,
-      "fontWeight": 400,
-      "lineHeight": 11,
-      "lines": [
-        "100G"
-      ],
-      "textRotation": 0,
-      "bounds": {
-        "x": 776.5029296875,
-        "y": 282.25,
-        "width": 24.1435546875,
-        "height": 11
-      }
-    },
-    {
       "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":5}",
       "owner": {
         "kind": "node",
@@ -6479,94 +6421,7 @@
       "textRotation": 0,
       "bounds": {
         "x": 776.5029296875,
-        "y": 299.75,
-        "width": 24.1435546875,
-        "height": 11
-      }
-    },
-    {
-      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":7}",
-      "owner": {
-        "kind": "node",
-        "id": "TBR-002"
-      },
-      "layer": "routed",
-      "role": "pill",
-      "port": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 7
-      },
-      "text": "100G",
-      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-      "fontSize": 9,
-      "fontWeight": 400,
-      "lineHeight": 11,
-      "lines": [
-        "100G"
-      ],
-      "textRotation": 0,
-      "bounds": {
-        "x": 776.5029296875,
-        "y": 317.25,
-        "width": 24.1435546875,
-        "height": 11
-      }
-    },
-    {
-      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":2}",
-      "owner": {
-        "kind": "node",
-        "id": "TBR-002"
-      },
-      "layer": "routed",
-      "role": "pill",
-      "port": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 2
-      },
-      "text": "100G",
-      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-      "fontSize": 9,
-      "fontWeight": 400,
-      "lineHeight": 11,
-      "lines": [
-        "100G"
-      ],
-      "textRotation": 0,
-      "bounds": {
-        "x": 776.5029296875,
-        "y": 347.5,
-        "width": 24.1435546875,
-        "height": 11
-      }
-    },
-    {
-      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":4}",
-      "owner": {
-        "kind": "node",
-        "id": "TBR-002"
-      },
-      "layer": "routed",
-      "role": "pill",
-      "port": {
-        "node": "TBR-002",
-        "name": "100G",
-        "ordinal": 4
-      },
-      "text": "100G",
-      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-      "fontSize": 9,
-      "fontWeight": 400,
-      "lineHeight": 11,
-      "lines": [
-        "100G"
-      ],
-      "textRotation": 0,
-      "bounds": {
-        "x": 776.5029296875,
-        "y": 365,
+        "y": 264.75,
         "width": 24.1435546875,
         "height": 11
       }
@@ -6595,7 +6450,36 @@
       "textRotation": 0,
       "bounds": {
         "x": 776.5029296875,
-        "y": 382.5,
+        "y": 282.25,
+        "width": 24.1435546875,
+        "height": 11
+      }
+    },
+    {
+      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":7}",
+      "owner": {
+        "kind": "node",
+        "id": "TBR-002"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 7
+      },
+      "text": "100G",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "100G"
+      ],
+      "textRotation": 0,
+      "bounds": {
+        "x": 776.5029296875,
+        "y": 299.75,
         "width": 24.1435546875,
         "height": 11
       }
@@ -6612,6 +6496,122 @@
         "node": "TBR-002",
         "name": "100G",
         "ordinal": 8
+      },
+      "text": "100G",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "100G"
+      ],
+      "textRotation": 0,
+      "bounds": {
+        "x": 776.5029296875,
+        "y": 317.25,
+        "width": 24.1435546875,
+        "height": 11
+      }
+    },
+    {
+      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":1}",
+      "owner": {
+        "kind": "node",
+        "id": "TBR-002"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 1
+      },
+      "text": "100G",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "100G"
+      ],
+      "textRotation": 0,
+      "bounds": {
+        "x": 776.5029296875,
+        "y": 347.5,
+        "width": 24.1435546875,
+        "height": 11
+      }
+    },
+    {
+      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":2}",
+      "owner": {
+        "kind": "node",
+        "id": "TBR-002"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "text": "100G",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "100G"
+      ],
+      "textRotation": 0,
+      "bounds": {
+        "x": 776.5029296875,
+        "y": 365,
+        "width": 24.1435546875,
+        "height": 11
+      }
+    },
+    {
+      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":3}",
+      "owner": {
+        "kind": "node",
+        "id": "TBR-002"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 3
+      },
+      "text": "100G",
+      "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+      "fontSize": 9,
+      "fontWeight": 400,
+      "lineHeight": 11,
+      "lines": [
+        "100G"
+      ],
+      "textRotation": 0,
+      "bounds": {
+        "x": 776.5029296875,
+        "y": 382.5,
+        "width": 24.1435546875,
+        "height": 11
+      }
+    },
+    {
+      "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":4}",
+      "owner": {
+        "kind": "node",
+        "id": "TBR-002"
+      },
+      "layer": "routed",
+      "role": "pill",
+      "port": {
+        "node": "TBR-002",
+        "name": "100G",
+        "ordinal": 4
       },
       "text": "100G",
       "fontFamily": "Verdana, DejaVu Sans, sans-serif",
@@ -7228,10 +7228,10 @@
   ],
   "lanes": [
     {
-      "id": "lane:\"link-21\":2",
+      "id": "lane:\"link-13\":2",
       "owner": {
         "kind": "link",
-        "id": "link-21"
+        "id": "link-13"
       },
       "layer": "routed",
       "group": "route-reflector",
@@ -7246,10 +7246,10 @@
       }
     },
     {
-      "id": "lane:\"link-24\":2",
+      "id": "lane:\"link-14\":2",
       "owner": {
         "kind": "link",
-        "id": "link-24"
+        "id": "link-14"
       },
       "layer": "routed",
       "group": "route-reflector",
@@ -7264,10 +7264,10 @@
       }
     },
     {
-      "id": "lane:\"link-23\":2",
+      "id": "lane:\"link-19\":2",
       "owner": {
         "kind": "link",
-        "id": "link-23"
+        "id": "link-19"
       },
       "layer": "routed",
       "group": "route-reflector",
@@ -7282,10 +7282,10 @@
       }
     },
     {
-      "id": "lane:\"link-26\":2",
+      "id": "lane:\"link-20\":2",
       "owner": {
         "kind": "link",
-        "id": "link-26"
+        "id": "link-20"
       },
       "layer": "routed",
       "group": "route-reflector",
@@ -7308,8 +7308,8 @@
         "EBR-02"
       ],
       "members": [
-        "link-3",
-        "link-4"
+        "link-1",
+        "link-8"
       ],
       "owner": {
         "kind": "bundle",
@@ -7371,10 +7371,10 @@
         "TBR-001"
       ],
       "members": [
+        "link-4",
         "link-5",
-        "link-7",
-        "link-9",
-        "link-11"
+        "link-6",
+        "link-7"
       ],
       "owner": {
         "kind": "bundle",
@@ -7436,9 +7436,9 @@
         "TBR-001"
       ],
       "members": [
-        "link-6",
-        "link-8",
+        "link-9",
         "link-10",
+        "link-11",
         "link-12"
       ],
       "owner": {
@@ -7497,83 +7497,18 @@
     {
       "id": "bundle-4",
       "nodes": [
-        "EAC-02",
-        "TBR-002"
-      ],
-      "members": [
-        "link-13",
-        "link-15",
-        "link-17",
-        "link-19"
-      ],
-      "owner": {
-        "kind": "bundle",
-        "id": "bundle-4"
-      },
-      "layer": "routed",
-      "memberGap": 16,
-      "memberPitch": 17.5,
-      "inversions": 0,
-      "envelope": {
-        "x": 655.82470703125,
-        "y": 269.5,
-        "width": 133.5,
-        "height": 54
-      },
-      "rows": {
-        "x": 655.82470703125,
-        "y": 269.5,
-        "width": 133.5,
-        "height": 54
-      },
-      "envelopeParts": [
-        {
-          "x": 655.82470703125,
-          "y": 269.5,
-          "width": 133.5,
-          "height": 54
-        }
-      ],
-      "centreline": {
-        "owner": {
-          "kind": "bundle",
-          "id": "bundle-4"
-        },
-        "layer": "routed",
-        "fixed": true,
-        "segments": [
-          {
-            "from": {
-              "x": 656.57470703125,
-              "y": 296.5
-            },
-            "to": {
-              "x": 788.57470703125,
-              "y": 296.5
-            },
-            "owner": {
-              "kind": "bundle",
-              "id": "bundle-4"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "bundle-5",
-      "nodes": [
         "EBR-02",
         "TBR-002"
       ],
       "members": [
-        "link-14",
+        "link-15",
         "link-16",
-        "link-18",
-        "link-20"
+        "link-17",
+        "link-18"
       ],
       "owner": {
         "kind": "bundle",
-        "id": "bundle-5"
+        "id": "bundle-4"
       },
       "layer": "routed",
       "memberGap": 16,
@@ -7602,7 +7537,7 @@
       "centreline": {
         "owner": {
           "kind": "bundle",
-          "id": "bundle-5"
+          "id": "bundle-4"
         },
         "layer": "routed",
         "fixed": true,
@@ -7615,6 +7550,71 @@
             "to": {
               "x": 788.57470703125,
               "y": 379.25
+            },
+            "owner": {
+              "kind": "bundle",
+              "id": "bundle-4"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "bundle-5",
+      "nodes": [
+        "EAC-02",
+        "TBR-002"
+      ],
+      "members": [
+        "link-21",
+        "link-22",
+        "link-23",
+        "link-24"
+      ],
+      "owner": {
+        "kind": "bundle",
+        "id": "bundle-5"
+      },
+      "layer": "routed",
+      "memberGap": 16,
+      "memberPitch": 17.5,
+      "inversions": 0,
+      "envelope": {
+        "x": 655.82470703125,
+        "y": 269.5,
+        "width": 133.5,
+        "height": 54
+      },
+      "rows": {
+        "x": 655.82470703125,
+        "y": 269.5,
+        "width": 133.5,
+        "height": 54
+      },
+      "envelopeParts": [
+        {
+          "x": 655.82470703125,
+          "y": 269.5,
+          "width": 133.5,
+          "height": 54
+        }
+      ],
+      "centreline": {
+        "owner": {
+          "kind": "bundle",
+          "id": "bundle-5"
+        },
+        "layer": "routed",
+        "fixed": true,
+        "segments": [
+          {
+            "from": {
+              "x": 656.57470703125,
+              "y": 296.5
+            },
+            "to": {
+              "x": 788.57470703125,
+              "y": 296.5
             },
             "owner": {
               "kind": "bundle",
@@ -7733,7 +7733,7 @@
   "barDrops": [
     {
       "layer": "routed",
-      "link": "link-21",
+      "link": "link-13",
       "source": {
         "node": "EBR-01",
         "name": "100G",
@@ -7768,93 +7768,15 @@
         }
       ],
       "barCross": [],
-      "id": "bar-drop:link-21",
+      "id": "bar-drop:link-13",
       "owner": {
         "kind": "link",
-        "id": "link-21"
+        "id": "link-13"
       }
     },
     {
       "layer": "routed",
-      "link": "link-22",
-      "source": {
-        "node": "RR-01",
-        "name": "100G",
-        "ordinal": 1
-      },
-      "port": {
-        "node": "EBB-01",
-        "name": "100G",
-        "ordinal": 2
-      },
-      "slotX": 215.64013671875,
-      "span": {
-        "min": 185.64013671875,
-        "max": 568.31005859375
-      },
-      "hint": [
-        {
-          "x": 215.64013671875,
-          "y": 604.75
-        },
-        {
-          "x": 215.64013671875,
-          "y": 736.75
-        }
-      ],
-      "barCross": [],
-      "id": "bar-drop:link-22",
-      "owner": {
-        "kind": "link",
-        "id": "link-22"
-      }
-    },
-    {
-      "layer": "routed",
-      "link": "link-23",
-      "source": {
-        "node": "EBR-02",
-        "name": "100G",
-        "ordinal": 7
-      },
-      "port": {
-        "node": "EBB-01",
-        "name": "100G",
-        "ordinal": 3
-      },
-      "slotX": 497.31005859375,
-      "span": {
-        "min": 185.64013671875,
-        "max": 568.31005859375
-      },
-      "hint": [
-        {
-          "x": 497.31005859375,
-          "y": 424.25
-        },
-        {
-          "x": 497.31005859375,
-          "y": 509.5
-        },
-        {
-          "x": 497.31005859375,
-          "y": 651.5
-        },
-        {
-          "x": 497.31005859375,
-          "y": 736.75
-        }
-      ],
-      "barCross": [],
-      "id": "bar-drop:link-23",
-      "owner": {
-        "kind": "link",
-        "id": "link-23"
-      }
-    },
-    {
-      "layer": "routed",
-      "link": "link-24",
+      "link": "link-14",
       "source": {
         "node": "EBR-01",
         "name": "100G",
@@ -7891,54 +7813,59 @@
       "barCross": [
         "EBB-01"
       ],
-      "id": "bar-drop:link-24:cross:EBB-01",
+      "id": "bar-drop:link-14:cross:EBB-01",
       "owner": {
         "kind": "barCross",
         "node": "EBB-01",
-        "link": "link-24"
+        "link": "link-14"
       }
     },
     {
       "layer": "routed",
-      "link": "link-25",
+      "link": "link-19",
       "source": {
-        "node": "RR-02",
+        "node": "EBR-02",
         "name": "100G",
-        "ordinal": 1
+        "ordinal": 7
       },
       "port": {
-        "node": "EBB-02",
+        "node": "EBB-01",
         "name": "100G",
-        "ordinal": 2
+        "ordinal": 3
       },
-      "slotX": 287.14013671875,
+      "slotX": 497.31005859375,
       "span": {
         "min": 185.64013671875,
         "max": 568.31005859375
       },
       "hint": [
         {
-          "x": 287.14013671875,
-          "y": 604.75
+          "x": 497.31005859375,
+          "y": 424.25
         },
         {
-          "x": 287.14013671875,
-          "y": 814.75
+          "x": 497.31005859375,
+          "y": 509.5
+        },
+        {
+          "x": 497.31005859375,
+          "y": 651.5
+        },
+        {
+          "x": 497.31005859375,
+          "y": 736.75
         }
       ],
-      "barCross": [
-        "EBB-01"
-      ],
-      "id": "bar-drop:link-25:cross:EBB-01",
+      "barCross": [],
+      "id": "bar-drop:link-19",
       "owner": {
-        "kind": "barCross",
-        "node": "EBB-01",
-        "link": "link-25"
+        "kind": "link",
+        "id": "link-19"
       }
     },
     {
       "layer": "routed",
-      "link": "link-26",
+      "link": "link-20",
       "source": {
         "node": "EBR-02",
         "name": "100G",
@@ -7969,6 +7896,79 @@
         },
         {
           "x": 538.31005859375,
+          "y": 814.75
+        }
+      ],
+      "barCross": [
+        "EBB-01"
+      ],
+      "id": "bar-drop:link-20:cross:EBB-01",
+      "owner": {
+        "kind": "barCross",
+        "node": "EBB-01",
+        "link": "link-20"
+      }
+    },
+    {
+      "layer": "routed",
+      "link": "link-25",
+      "source": {
+        "node": "RR-01",
+        "name": "100G",
+        "ordinal": 1
+      },
+      "port": {
+        "node": "EBB-01",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "slotX": 215.64013671875,
+      "span": {
+        "min": 185.64013671875,
+        "max": 568.31005859375
+      },
+      "hint": [
+        {
+          "x": 215.64013671875,
+          "y": 604.75
+        },
+        {
+          "x": 215.64013671875,
+          "y": 736.75
+        }
+      ],
+      "barCross": [],
+      "id": "bar-drop:link-25",
+      "owner": {
+        "kind": "link",
+        "id": "link-25"
+      }
+    },
+    {
+      "layer": "routed",
+      "link": "link-26",
+      "source": {
+        "node": "RR-02",
+        "name": "100G",
+        "ordinal": 1
+      },
+      "port": {
+        "node": "EBB-02",
+        "name": "100G",
+        "ordinal": 2
+      },
+      "slotX": 287.14013671875,
+      "span": {
+        "min": 185.64013671875,
+        "max": 568.31005859375
+      },
+      "hint": [
+        {
+          "x": 287.14013671875,
+          "y": 604.75
+        },
+        {
+          "x": 287.14013671875,
           "y": 814.75
         }
       ],
@@ -10026,43 +10026,6 @@
               },
               "layer": "routed",
               "side": "right",
-              "engineOrder": 4,
-              "anchor": {
-                "x": 69.64013671875,
-                "y": 353
-              },
-              "pill": {
-                "size": {
-                  "width": 31,
-                  "height": 11
-                },
-                "bounds": {
-                  "x": 54.14013671875,
-                  "y": 347.5,
-                  "width": 31,
-                  "height": 11
-                },
-                "textRotation": 0,
-                "radius": 2,
-                "owner": {
-                  "kind": "node",
-                  "id": "TBR-001"
-                },
-                "layer": "routed"
-              }
-            },
-            {
-              "ref": {
-                "node": "TBR-001",
-                "name": "100G",
-                "ordinal": 3
-              },
-              "owner": {
-                "kind": "node",
-                "id": "TBR-001"
-              },
-              "layer": "routed",
-              "side": "right",
               "engineOrder": 1,
               "anchor": {
                 "x": 69.64013671875,
@@ -10092,44 +10055,7 @@
               "ref": {
                 "node": "TBR-001",
                 "name": "100G",
-                "ordinal": 4
-              },
-              "owner": {
-                "kind": "node",
-                "id": "TBR-001"
-              },
-              "layer": "routed",
-              "side": "right",
-              "engineOrder": 5,
-              "anchor": {
-                "x": 69.64013671875,
-                "y": 370.5
-              },
-              "pill": {
-                "size": {
-                  "width": 31,
-                  "height": 11
-                },
-                "bounds": {
-                  "x": 54.14013671875,
-                  "y": 365,
-                  "width": 31,
-                  "height": 11
-                },
-                "textRotation": 0,
-                "radius": 2,
-                "owner": {
-                  "kind": "node",
-                  "id": "TBR-001"
-                },
-                "layer": "routed"
-              }
-            },
-            {
-              "ref": {
-                "node": "TBR-001",
-                "name": "100G",
-                "ordinal": 5
+                "ordinal": 3
               },
               "owner": {
                 "kind": "node",
@@ -10166,7 +10092,7 @@
               "ref": {
                 "node": "TBR-001",
                 "name": "100G",
-                "ordinal": 6
+                "ordinal": 4
               },
               "owner": {
                 "kind": "node",
@@ -10174,10 +10100,10 @@
               },
               "layer": "routed",
               "side": "right",
-              "engineOrder": 6,
+              "engineOrder": 3,
               "anchor": {
                 "x": 69.64013671875,
-                "y": 388
+                "y": 322.75
               },
               "pill": {
                 "size": {
@@ -10186,7 +10112,81 @@
                 },
                 "bounds": {
                   "x": 54.14013671875,
-                  "y": 382.5,
+                  "y": 317.25,
+                  "width": 31,
+                  "height": 11
+                },
+                "textRotation": 0,
+                "radius": 2,
+                "owner": {
+                  "kind": "node",
+                  "id": "TBR-001"
+                },
+                "layer": "routed"
+              }
+            },
+            {
+              "ref": {
+                "node": "TBR-001",
+                "name": "100G",
+                "ordinal": 5
+              },
+              "owner": {
+                "kind": "node",
+                "id": "TBR-001"
+              },
+              "layer": "routed",
+              "side": "right",
+              "engineOrder": 4,
+              "anchor": {
+                "x": 69.64013671875,
+                "y": 353
+              },
+              "pill": {
+                "size": {
+                  "width": 31,
+                  "height": 11
+                },
+                "bounds": {
+                  "x": 54.14013671875,
+                  "y": 347.5,
+                  "width": 31,
+                  "height": 11
+                },
+                "textRotation": 0,
+                "radius": 2,
+                "owner": {
+                  "kind": "node",
+                  "id": "TBR-001"
+                },
+                "layer": "routed"
+              }
+            },
+            {
+              "ref": {
+                "node": "TBR-001",
+                "name": "100G",
+                "ordinal": 6
+              },
+              "owner": {
+                "kind": "node",
+                "id": "TBR-001"
+              },
+              "layer": "routed",
+              "side": "right",
+              "engineOrder": 5,
+              "anchor": {
+                "x": 69.64013671875,
+                "y": 370.5
+              },
+              "pill": {
+                "size": {
+                  "width": 31,
+                  "height": 11
+                },
+                "bounds": {
+                  "x": 54.14013671875,
+                  "y": 365,
                   "width": 31,
                   "height": 11
                 },
@@ -10211,10 +10211,10 @@
               },
               "layer": "routed",
               "side": "right",
-              "engineOrder": 3,
+              "engineOrder": 6,
               "anchor": {
                 "x": 69.64013671875,
-                "y": 322.75
+                "y": 388
               },
               "pill": {
                 "size": {
@@ -10223,7 +10223,7 @@
                 },
                 "bounds": {
                   "x": 54.14013671875,
-                  "y": 317.25,
+                  "y": 382.5,
                   "width": 31,
                   "height": 11
                 },
@@ -10328,43 +10328,6 @@
               },
               "layer": "routed",
               "side": "left",
-              "engineOrder": 0,
-              "anchor": {
-                "x": 788.57470703125,
-                "y": 270.25
-              },
-              "pill": {
-                "size": {
-                  "width": 31,
-                  "height": 11
-                },
-                "bounds": {
-                  "x": 773.07470703125,
-                  "y": 264.75,
-                  "width": 31,
-                  "height": 11
-                },
-                "textRotation": 0,
-                "radius": 2,
-                "owner": {
-                  "kind": "node",
-                  "id": "TBR-002"
-                },
-                "layer": "routed"
-              }
-            },
-            {
-              "ref": {
-                "node": "TBR-002",
-                "name": "100G",
-                "ordinal": 2
-              },
-              "owner": {
-                "kind": "node",
-                "id": "TBR-002"
-              },
-              "layer": "routed",
-              "side": "left",
               "engineOrder": 4,
               "anchor": {
                 "x": 788.57470703125,
@@ -10394,44 +10357,7 @@
               "ref": {
                 "node": "TBR-002",
                 "name": "100G",
-                "ordinal": 3
-              },
-              "owner": {
-                "kind": "node",
-                "id": "TBR-002"
-              },
-              "layer": "routed",
-              "side": "left",
-              "engineOrder": 1,
-              "anchor": {
-                "x": 788.57470703125,
-                "y": 287.75
-              },
-              "pill": {
-                "size": {
-                  "width": 31,
-                  "height": 11
-                },
-                "bounds": {
-                  "x": 773.07470703125,
-                  "y": 282.25,
-                  "width": 31,
-                  "height": 11
-                },
-                "textRotation": 0,
-                "radius": 2,
-                "owner": {
-                  "kind": "node",
-                  "id": "TBR-002"
-                },
-                "layer": "routed"
-              }
-            },
-            {
-              "ref": {
-                "node": "TBR-002",
-                "name": "100G",
-                "ordinal": 4
+                "ordinal": 2
               },
               "owner": {
                 "kind": "node",
@@ -10468,44 +10394,7 @@
               "ref": {
                 "node": "TBR-002",
                 "name": "100G",
-                "ordinal": 5
-              },
-              "owner": {
-                "kind": "node",
-                "id": "TBR-002"
-              },
-              "layer": "routed",
-              "side": "left",
-              "engineOrder": 2,
-              "anchor": {
-                "x": 788.57470703125,
-                "y": 305.25
-              },
-              "pill": {
-                "size": {
-                  "width": 31,
-                  "height": 11
-                },
-                "bounds": {
-                  "x": 773.07470703125,
-                  "y": 299.75,
-                  "width": 31,
-                  "height": 11
-                },
-                "textRotation": 0,
-                "radius": 2,
-                "owner": {
-                  "kind": "node",
-                  "id": "TBR-002"
-                },
-                "layer": "routed"
-              }
-            },
-            {
-              "ref": {
-                "node": "TBR-002",
-                "name": "100G",
-                "ordinal": 6
+                "ordinal": 3
               },
               "owner": {
                 "kind": "node",
@@ -10542,7 +10431,7 @@
               "ref": {
                 "node": "TBR-002",
                 "name": "100G",
-                "ordinal": 7
+                "ordinal": 4
               },
               "owner": {
                 "kind": "node",
@@ -10550,10 +10439,10 @@
               },
               "layer": "routed",
               "side": "left",
-              "engineOrder": 3,
+              "engineOrder": 7,
               "anchor": {
                 "x": 788.57470703125,
-                "y": 322.75
+                "y": 405.5
               },
               "pill": {
                 "size": {
@@ -10562,7 +10451,118 @@
                 },
                 "bounds": {
                   "x": 773.07470703125,
-                  "y": 317.25,
+                  "y": 400,
+                  "width": 31,
+                  "height": 11
+                },
+                "textRotation": 0,
+                "radius": 2,
+                "owner": {
+                  "kind": "node",
+                  "id": "TBR-002"
+                },
+                "layer": "routed"
+              }
+            },
+            {
+              "ref": {
+                "node": "TBR-002",
+                "name": "100G",
+                "ordinal": 5
+              },
+              "owner": {
+                "kind": "node",
+                "id": "TBR-002"
+              },
+              "layer": "routed",
+              "side": "left",
+              "engineOrder": 0,
+              "anchor": {
+                "x": 788.57470703125,
+                "y": 270.25
+              },
+              "pill": {
+                "size": {
+                  "width": 31,
+                  "height": 11
+                },
+                "bounds": {
+                  "x": 773.07470703125,
+                  "y": 264.75,
+                  "width": 31,
+                  "height": 11
+                },
+                "textRotation": 0,
+                "radius": 2,
+                "owner": {
+                  "kind": "node",
+                  "id": "TBR-002"
+                },
+                "layer": "routed"
+              }
+            },
+            {
+              "ref": {
+                "node": "TBR-002",
+                "name": "100G",
+                "ordinal": 6
+              },
+              "owner": {
+                "kind": "node",
+                "id": "TBR-002"
+              },
+              "layer": "routed",
+              "side": "left",
+              "engineOrder": 1,
+              "anchor": {
+                "x": 788.57470703125,
+                "y": 287.75
+              },
+              "pill": {
+                "size": {
+                  "width": 31,
+                  "height": 11
+                },
+                "bounds": {
+                  "x": 773.07470703125,
+                  "y": 282.25,
+                  "width": 31,
+                  "height": 11
+                },
+                "textRotation": 0,
+                "radius": 2,
+                "owner": {
+                  "kind": "node",
+                  "id": "TBR-002"
+                },
+                "layer": "routed"
+              }
+            },
+            {
+              "ref": {
+                "node": "TBR-002",
+                "name": "100G",
+                "ordinal": 7
+              },
+              "owner": {
+                "kind": "node",
+                "id": "TBR-002"
+              },
+              "layer": "routed",
+              "side": "left",
+              "engineOrder": 2,
+              "anchor": {
+                "x": 788.57470703125,
+                "y": 305.25
+              },
+              "pill": {
+                "size": {
+                  "width": 31,
+                  "height": 11
+                },
+                "bounds": {
+                  "x": 773.07470703125,
+                  "y": 299.75,
                   "width": 31,
                   "height": 11
                 },
@@ -10587,10 +10587,10 @@
               },
               "layer": "routed",
               "side": "left",
-              "engineOrder": 7,
+              "engineOrder": 3,
               "anchor": {
                 "x": 788.57470703125,
-                "y": 405.5
+                "y": 322.75
               },
               "pill": {
                 "size": {
@@ -10599,7 +10599,7 @@
                 },
                 "bounds": {
                   "x": 773.07470703125,
-                  "y": 400,
+                  "y": 317.25,
                   "width": 31,
                   "height": 11
                 },
@@ -11324,10 +11324,10 @@
       ],
       "lanes": [
         {
-          "id": "lane:\"link-21\":2",
+          "id": "lane:\"link-13\":2",
           "owner": {
             "kind": "link",
-            "id": "link-21"
+            "id": "link-13"
           },
           "layer": "routed",
           "group": "route-reflector",
@@ -11342,10 +11342,10 @@
           }
         },
         {
-          "id": "lane:\"link-24\":2",
+          "id": "lane:\"link-14\":2",
           "owner": {
             "kind": "link",
-            "id": "link-24"
+            "id": "link-14"
           },
           "layer": "routed",
           "group": "route-reflector",
@@ -11360,10 +11360,10 @@
           }
         },
         {
-          "id": "lane:\"link-23\":2",
+          "id": "lane:\"link-19\":2",
           "owner": {
             "kind": "link",
-            "id": "link-23"
+            "id": "link-19"
           },
           "layer": "routed",
           "group": "route-reflector",
@@ -11378,10 +11378,10 @@
           }
         },
         {
-          "id": "lane:\"link-26\":2",
+          "id": "lane:\"link-20\":2",
           "owner": {
             "kind": "link",
-            "id": "link-26"
+            "id": "link-20"
           },
           "layer": "routed",
           "group": "route-reflector",
@@ -11503,7 +11503,7 @@
       "sharedRuns": [],
       "fixedSegments": [
         {
-          "link": "link-21",
+          "link": "link-13",
           "segments": [
             {
               "from": {
@@ -11516,34 +11516,14 @@
               },
               "owner": {
                 "kind": "link",
-                "id": "link-21"
+                "id": "link-13"
               },
-              "lane": "lane:\"link-21\":2"
+              "lane": "lane:\"link-13\":2"
             }
           ]
         },
         {
-          "link": "link-23",
-          "segments": [
-            {
-              "from": {
-                "x": 497.31005859375,
-                "y": 509.5
-              },
-              "to": {
-                "x": 497.31005859375,
-                "y": 651.5
-              },
-              "owner": {
-                "kind": "link",
-                "id": "link-23"
-              },
-              "lane": "lane:\"link-23\":2"
-            }
-          ]
-        },
-        {
-          "link": "link-24",
+          "link": "link-14",
           "segments": [
             {
               "from": {
@@ -11556,14 +11536,34 @@
               },
               "owner": {
                 "kind": "link",
-                "id": "link-24"
+                "id": "link-14"
               },
-              "lane": "lane:\"link-24\":2"
+              "lane": "lane:\"link-14\":2"
             }
           ]
         },
         {
-          "link": "link-26",
+          "link": "link-19",
+          "segments": [
+            {
+              "from": {
+                "x": 497.31005859375,
+                "y": 509.5
+              },
+              "to": {
+                "x": 497.31005859375,
+                "y": 651.5
+              },
+              "owner": {
+                "kind": "link",
+                "id": "link-19"
+              },
+              "lane": "lane:\"link-19\":2"
+            }
+          ]
+        },
+        {
+          "link": "link-20",
           "segments": [
             {
               "from": {
@@ -11576,9 +11576,9 @@
               },
               "owner": {
                 "kind": "link",
-                "id": "link-26"
+                "id": "link-20"
               },
-              "lane": "lane:\"link-26\":2"
+              "lane": "lane:\"link-20\":2"
             }
           ]
         }
@@ -12541,93 +12541,6 @@
           }
         },
         {
-          "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":3}",
-          "owner": {
-            "kind": "node",
-            "id": "TBR-001"
-          },
-          "layer": "routed",
-          "role": "pill",
-          "port": {
-            "node": "TBR-001",
-            "name": "100G",
-            "ordinal": 3
-          },
-          "text": "100G",
-          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-          "fontSize": 9,
-          "fontWeight": 400,
-          "lineHeight": 11,
-          "lines": [
-            "100G"
-          ],
-          "textRotation": 0,
-          "bounds": {
-            "x": 57.568359375,
-            "y": 282.25,
-            "width": 24.1435546875,
-            "height": 11
-          }
-        },
-        {
-          "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":5}",
-          "owner": {
-            "kind": "node",
-            "id": "TBR-001"
-          },
-          "layer": "routed",
-          "role": "pill",
-          "port": {
-            "node": "TBR-001",
-            "name": "100G",
-            "ordinal": 5
-          },
-          "text": "100G",
-          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-          "fontSize": 9,
-          "fontWeight": 400,
-          "lineHeight": 11,
-          "lines": [
-            "100G"
-          ],
-          "textRotation": 0,
-          "bounds": {
-            "x": 57.568359375,
-            "y": 299.75,
-            "width": 24.1435546875,
-            "height": 11
-          }
-        },
-        {
-          "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":7}",
-          "owner": {
-            "kind": "node",
-            "id": "TBR-001"
-          },
-          "layer": "routed",
-          "role": "pill",
-          "port": {
-            "node": "TBR-001",
-            "name": "100G",
-            "ordinal": 7
-          },
-          "text": "100G",
-          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-          "fontSize": 9,
-          "fontWeight": 400,
-          "lineHeight": 11,
-          "lines": [
-            "100G"
-          ],
-          "textRotation": 0,
-          "bounds": {
-            "x": 57.568359375,
-            "y": 317.25,
-            "width": 24.1435546875,
-            "height": 11
-          }
-        },
-        {
           "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":2}",
           "owner": {
             "kind": "node",
@@ -12651,7 +12564,36 @@
           "textRotation": 0,
           "bounds": {
             "x": 57.568359375,
-            "y": 347.5,
+            "y": 282.25,
+            "width": 24.1435546875,
+            "height": 11
+          }
+        },
+        {
+          "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":3}",
+          "owner": {
+            "kind": "node",
+            "id": "TBR-001"
+          },
+          "layer": "routed",
+          "role": "pill",
+          "port": {
+            "node": "TBR-001",
+            "name": "100G",
+            "ordinal": 3
+          },
+          "text": "100G",
+          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+          "fontSize": 9,
+          "fontWeight": 400,
+          "lineHeight": 11,
+          "lines": [
+            "100G"
+          ],
+          "textRotation": 0,
+          "bounds": {
+            "x": 57.568359375,
+            "y": 299.75,
             "width": 24.1435546875,
             "height": 11
           }
@@ -12680,7 +12622,36 @@
           "textRotation": 0,
           "bounds": {
             "x": 57.568359375,
-            "y": 365,
+            "y": 317.25,
+            "width": 24.1435546875,
+            "height": 11
+          }
+        },
+        {
+          "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":5}",
+          "owner": {
+            "kind": "node",
+            "id": "TBR-001"
+          },
+          "layer": "routed",
+          "role": "pill",
+          "port": {
+            "node": "TBR-001",
+            "name": "100G",
+            "ordinal": 5
+          },
+          "text": "100G",
+          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+          "fontSize": 9,
+          "fontWeight": 400,
+          "lineHeight": 11,
+          "lines": [
+            "100G"
+          ],
+          "textRotation": 0,
+          "bounds": {
+            "x": 57.568359375,
+            "y": 347.5,
             "width": 24.1435546875,
             "height": 11
           }
@@ -12697,6 +12668,35 @@
             "node": "TBR-001",
             "name": "100G",
             "ordinal": 6
+          },
+          "text": "100G",
+          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+          "fontSize": 9,
+          "fontWeight": 400,
+          "lineHeight": 11,
+          "lines": [
+            "100G"
+          ],
+          "textRotation": 0,
+          "bounds": {
+            "x": 57.568359375,
+            "y": 365,
+            "width": 24.1435546875,
+            "height": 11
+          }
+        },
+        {
+          "id": "pill:{\"node\":\"TBR-001\",\"name\":\"100G\",\"ordinal\":7}",
+          "owner": {
+            "kind": "node",
+            "id": "TBR-001"
+          },
+          "layer": "routed",
+          "role": "pill",
+          "port": {
+            "node": "TBR-001",
+            "name": "100G",
+            "ordinal": 7
           },
           "text": "100G",
           "fontFamily": "Verdana, DejaVu Sans, sans-serif",
@@ -12767,64 +12767,6 @@
           "lineHeight": 11
         },
         {
-          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":1}",
-          "owner": {
-            "kind": "node",
-            "id": "TBR-002"
-          },
-          "layer": "routed",
-          "role": "pill",
-          "port": {
-            "node": "TBR-002",
-            "name": "100G",
-            "ordinal": 1
-          },
-          "text": "100G",
-          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-          "fontSize": 9,
-          "fontWeight": 400,
-          "lineHeight": 11,
-          "lines": [
-            "100G"
-          ],
-          "textRotation": 0,
-          "bounds": {
-            "x": 776.5029296875,
-            "y": 264.75,
-            "width": 24.1435546875,
-            "height": 11
-          }
-        },
-        {
-          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":3}",
-          "owner": {
-            "kind": "node",
-            "id": "TBR-002"
-          },
-          "layer": "routed",
-          "role": "pill",
-          "port": {
-            "node": "TBR-002",
-            "name": "100G",
-            "ordinal": 3
-          },
-          "text": "100G",
-          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-          "fontSize": 9,
-          "fontWeight": 400,
-          "lineHeight": 11,
-          "lines": [
-            "100G"
-          ],
-          "textRotation": 0,
-          "bounds": {
-            "x": 776.5029296875,
-            "y": 282.25,
-            "width": 24.1435546875,
-            "height": 11
-          }
-        },
-        {
           "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":5}",
           "owner": {
             "kind": "node",
@@ -12848,94 +12790,7 @@
           "textRotation": 0,
           "bounds": {
             "x": 776.5029296875,
-            "y": 299.75,
-            "width": 24.1435546875,
-            "height": 11
-          }
-        },
-        {
-          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":7}",
-          "owner": {
-            "kind": "node",
-            "id": "TBR-002"
-          },
-          "layer": "routed",
-          "role": "pill",
-          "port": {
-            "node": "TBR-002",
-            "name": "100G",
-            "ordinal": 7
-          },
-          "text": "100G",
-          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-          "fontSize": 9,
-          "fontWeight": 400,
-          "lineHeight": 11,
-          "lines": [
-            "100G"
-          ],
-          "textRotation": 0,
-          "bounds": {
-            "x": 776.5029296875,
-            "y": 317.25,
-            "width": 24.1435546875,
-            "height": 11
-          }
-        },
-        {
-          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":2}",
-          "owner": {
-            "kind": "node",
-            "id": "TBR-002"
-          },
-          "layer": "routed",
-          "role": "pill",
-          "port": {
-            "node": "TBR-002",
-            "name": "100G",
-            "ordinal": 2
-          },
-          "text": "100G",
-          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-          "fontSize": 9,
-          "fontWeight": 400,
-          "lineHeight": 11,
-          "lines": [
-            "100G"
-          ],
-          "textRotation": 0,
-          "bounds": {
-            "x": 776.5029296875,
-            "y": 347.5,
-            "width": 24.1435546875,
-            "height": 11
-          }
-        },
-        {
-          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":4}",
-          "owner": {
-            "kind": "node",
-            "id": "TBR-002"
-          },
-          "layer": "routed",
-          "role": "pill",
-          "port": {
-            "node": "TBR-002",
-            "name": "100G",
-            "ordinal": 4
-          },
-          "text": "100G",
-          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
-          "fontSize": 9,
-          "fontWeight": 400,
-          "lineHeight": 11,
-          "lines": [
-            "100G"
-          ],
-          "textRotation": 0,
-          "bounds": {
-            "x": 776.5029296875,
-            "y": 365,
+            "y": 264.75,
             "width": 24.1435546875,
             "height": 11
           }
@@ -12964,7 +12819,36 @@
           "textRotation": 0,
           "bounds": {
             "x": 776.5029296875,
-            "y": 382.5,
+            "y": 282.25,
+            "width": 24.1435546875,
+            "height": 11
+          }
+        },
+        {
+          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":7}",
+          "owner": {
+            "kind": "node",
+            "id": "TBR-002"
+          },
+          "layer": "routed",
+          "role": "pill",
+          "port": {
+            "node": "TBR-002",
+            "name": "100G",
+            "ordinal": 7
+          },
+          "text": "100G",
+          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+          "fontSize": 9,
+          "fontWeight": 400,
+          "lineHeight": 11,
+          "lines": [
+            "100G"
+          ],
+          "textRotation": 0,
+          "bounds": {
+            "x": 776.5029296875,
+            "y": 299.75,
             "width": 24.1435546875,
             "height": 11
           }
@@ -12981,6 +12865,122 @@
             "node": "TBR-002",
             "name": "100G",
             "ordinal": 8
+          },
+          "text": "100G",
+          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+          "fontSize": 9,
+          "fontWeight": 400,
+          "lineHeight": 11,
+          "lines": [
+            "100G"
+          ],
+          "textRotation": 0,
+          "bounds": {
+            "x": 776.5029296875,
+            "y": 317.25,
+            "width": 24.1435546875,
+            "height": 11
+          }
+        },
+        {
+          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":1}",
+          "owner": {
+            "kind": "node",
+            "id": "TBR-002"
+          },
+          "layer": "routed",
+          "role": "pill",
+          "port": {
+            "node": "TBR-002",
+            "name": "100G",
+            "ordinal": 1
+          },
+          "text": "100G",
+          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+          "fontSize": 9,
+          "fontWeight": 400,
+          "lineHeight": 11,
+          "lines": [
+            "100G"
+          ],
+          "textRotation": 0,
+          "bounds": {
+            "x": 776.5029296875,
+            "y": 347.5,
+            "width": 24.1435546875,
+            "height": 11
+          }
+        },
+        {
+          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":2}",
+          "owner": {
+            "kind": "node",
+            "id": "TBR-002"
+          },
+          "layer": "routed",
+          "role": "pill",
+          "port": {
+            "node": "TBR-002",
+            "name": "100G",
+            "ordinal": 2
+          },
+          "text": "100G",
+          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+          "fontSize": 9,
+          "fontWeight": 400,
+          "lineHeight": 11,
+          "lines": [
+            "100G"
+          ],
+          "textRotation": 0,
+          "bounds": {
+            "x": 776.5029296875,
+            "y": 365,
+            "width": 24.1435546875,
+            "height": 11
+          }
+        },
+        {
+          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":3}",
+          "owner": {
+            "kind": "node",
+            "id": "TBR-002"
+          },
+          "layer": "routed",
+          "role": "pill",
+          "port": {
+            "node": "TBR-002",
+            "name": "100G",
+            "ordinal": 3
+          },
+          "text": "100G",
+          "fontFamily": "Verdana, DejaVu Sans, sans-serif",
+          "fontSize": 9,
+          "fontWeight": 400,
+          "lineHeight": 11,
+          "lines": [
+            "100G"
+          ],
+          "textRotation": 0,
+          "bounds": {
+            "x": 776.5029296875,
+            "y": 382.5,
+            "width": 24.1435546875,
+            "height": 11
+          }
+        },
+        {
+          "id": "pill:{\"node\":\"TBR-002\",\"name\":\"100G\",\"ordinal\":4}",
+          "owner": {
+            "kind": "node",
+            "id": "TBR-002"
+          },
+          "layer": "routed",
+          "role": "pill",
+          "port": {
+            "node": "TBR-002",
+            "name": "100G",
+            "ordinal": 4
           },
           "text": "100G",
           "fontFamily": "Verdana, DejaVu Sans, sans-serif",
@@ -13431,8 +13431,8 @@
   },
   "anchorTier": 1,
   "frozenChords": [
-    "link-1",
-    "link-2"
+    "link-2",
+    "link-3"
   ],
   "stemDepths": [],
   "bodyTrims": {
