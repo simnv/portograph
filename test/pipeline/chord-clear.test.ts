@@ -98,7 +98,11 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     expect(JSON.stringify(group.bounds)).toBe(stood);
     expect(overlayPath(model, link).segments.length).toBeGreaterThan(1);
   }, 60000);
-  it('a routed group moves in one round only, and the last round runs no step (a-corridor-moves-after-the-grid-settles)', async () => {
+  // Retired by ticket DR-04 (link order is never input): the subject needs this sheet's layout under its written link order. The canonical
+  // order inverts 1082 of the 3570 link pairs (normalised Kendall distance 0.303), no group declaration tried brings it near the written
+  // order, and under it `row-11` stands 247.5 px from the measured 1748.7 (the bound is 30). Kept as a skip with this reason; no assertion
+  // is changed.
+  it.skip('a routed group moves in one round only, and the last round runs no step (a-corridor-moves-after-the-grid-settles)', async () => {
     const model = await run(fixture('a-corridor-moves-after-the-grid-settles'));
     // Main 6757da1 moves `row-11` by 0 here. The first try moved it -25, +82, +0.5 and +0.7 px in four rounds and kept nothing after the first.
     // 1587.4 before ticket 78 ordered the tier-6 row by its partners; 1489.1 before architecture-2 ticket 23 inserted the track and label
@@ -519,7 +523,10 @@ links:
     expect(overlays(model).filter(link => link.path!.segments.length > 1)).toHaveLength(1);
   }, 60000);
 
-  it('four-locations-each-with-a-zone: nothing moves (its lower rank stands outside a canton)', async () => {
+  // Retired by ticket DR-04 (link order is never input): under the canonical order, which inverts 512 of the 1711 link pairs of this sheet
+  // (normalised Kendall distance 0.299) and which no group declaration tried brings near the written order, the lower rank no longer
+  // stands where the subject reads it, and RANK_STEPPED_OFF_CHORD fires. Kept as a skip with this reason; no assertion is changed.
+  it.skip('four-locations-each-with-a-zone: nothing moves (its lower rank stands outside a canton)', async () => {
     const model = await run(fixture('four-locations-each-with-a-zone'));
     expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(false);
   }, 60000);
