@@ -1416,15 +1416,16 @@ export function centreItemLink(model: LayoutModel, item: string): string | undef
 /** The code of the record that the centre step spent its budget or stopped at a fixed point with an alignment open (DR-15). Restore reads its link owners. */
 export const CENTRE_ALIGNMENT_OPEN = 'CENTRE_ALIGNMENT_OPEN';
 /** The links of the alignments the publication check finds off their feeds on this model. The check only names owners: it adds no verdict to a test's tap. */
-function openLinks(model: LayoutModel): string[] {
+function openLinks(model: LayoutModel, excuseChords: boolean): string[] {
   const sink = verdictTap.sink;
   delete verdictTap.sink;
   let found: string[];
   try { found = publishedCentreViolations(model, true); } finally { if (sink !== undefined) verdictTap.sink = sink; }
   const links = new Set<string>();
-  // The publication (`ahead` off) excuses a held cross chord; the producer form read here does not, so the same excuse is applied.
+  // The publication (`ahead` off) excuses a held cross chord; the producer form read here does not, so at the end of 7f (`excuseChords`) the same excuse
+  // is applied. Earlier drafts have no settled link kinds, so they name every link and the end of 7f narrows the names.
   const crossChord = (id: string): boolean => withSharedLinkKinds(() => { const link = model.links.find(item => item.id === id); return link !== undefined && isRoutedChord(model, link) && chordKind(model, link) === 'cross'; });
-  for (const item of found) { const link = centreItemLink(model, item); if (link !== undefined && !crossChord(link)) links.add(link); }
+  for (const item of found) { const link = centreItemLink(model, item); if (link !== undefined && !(excuseChords && crossChord(link))) links.add(link); }
   return [...links];
 }
 /**
@@ -1432,7 +1433,7 @@ function openLinks(model: LayoutModel): string[] {
  * The record is made only by the centre emitter, and only where the centre step stalled (R5: the exemption is limited to its owner and stage).
  */
 function recordOpen(model: LayoutModel, replace: boolean): void {
-  const links = openLinks(model);
+  const links = openLinks(model, replace);
   let record = model.diagnostics.find(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN);
   if (record === undefined) {
     record = { stage: 'placement', severity: 'warning', code: CENTRE_ALIGNMENT_OPEN, message: 'Alignments the centre step left off their feeds; routing and the final gates decide the retained geometry.', owners: [] };
