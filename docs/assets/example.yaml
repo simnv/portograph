@@ -1,0 +1,32 @@
+# A small site: two uplinks, a core pair, a server flank and two access switches.
+portograph: 2
+groups:
+  internet: { tier: 0, label: Internet }
+  core: { tier: 1, label: Core }
+  servers: { align: right, of: core, label: Servers }
+  access: { tier: 2, label: Access }
+nodes:
+  isp-a: { group: internet, class: provider, label: ISP A, ports: [wan] }
+  isp-b: { group: internet, class: provider, label: ISP B, ports: [wan] }
+  core-1:
+    group: core
+    class: router
+    description: 192.0.2.1
+    ports: [{ name: wan, class: uplink }, te1, ge1, ge2]
+  core-2:
+    group: core
+    class: router
+    description: 192.0.2.2
+    ports: [{ name: wan, class: uplink }, te1, te2, ge1, ge2]
+  nms: { group: servers, class: Server, icon: server, label: NMS, description: 192.0.2.10, ports: [eth0] }
+  acc-1: { group: access, class: Switch, icon: switch, label: Access 1, ports: [up1, up2] }
+  acc-2: { group: access, class: Switch, icon: switch, label: Access 2, ports: [up1, up2] }
+links:
+  - [isp-a.wan, core-1.wan, { label: 1G }]
+  - [isp-b.wan, core-2.wan, { label: 1G }]
+  - [core-1.te1, core-2.te1]
+  - [core-2.te2, nms.eth0, { class: dashed }]
+  - [core-1.ge1, acc-1.up1]
+  - [core-1.ge2, acc-2.up1]
+  - [core-2.ge1, acc-1.up2]
+  - [core-2.ge2, acc-2.up2]

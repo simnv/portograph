@@ -1,0 +1,52 @@
+name: Bug report
+description: A diagram that is wrong, an error, or a crash.
+labels: [needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not put real host names, IP addresses or other private data in the YAML. Use names such as `core-1` and addresses from `192.0.2.0/24`.
+  - type: textarea
+    id: input
+    attributes:
+      label: YAML input
+      description: The smallest YAML file that shows the problem.
+      render: yaml
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: The command or the library call that you ran.
+      placeholder: portograph render site.yaml --output site.svg
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `portograph --version`, and of `node --version`.
+      placeholder: portograph 0.1.0, Node.js v22.12.0
+    validations:
+      required: true
+  - type: textarea
+    id: render
+    attributes:
+      label: Render
+      description: Attach the SVG or a PNG of it. Mark the part that is wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What a correct drawing or result shows.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Messages
+      description: The messages on stderr, if there are any.
+      render: text
