@@ -43,11 +43,11 @@ export const LIFT_MIN_GAIN = 0.01;
 export const LIFT_AREA_TOLERANCE = 0.05;
 /**
  * The size cap of the lift round (R4, a count, never the clock): a document whose node count plus link count is above it admits no lift
- * trial, because each trial is one more whole command run and the first run of such a sheet already takes a large part of the command
- * deadline. Every component is recorded as capped (`GROUP_LIFT_SIZE_CAPPED`). The value and its measurements: `docs/design/quality.md`,
+ * trial, because each trial is one more whole command run: a lifted command takes up to 1 + `LIFT_TRIALS` first runs, and the cap keeps
+ * that near 40 % of the command deadline. Every component is recorded as capped (`GROUP_LIFT_SIZE_CAPPED`). The value and its measurements: `docs/design/quality.md`,
  * "Size bands".
  */
-export const LIFT_SIZE_CAP = 450;
+export const LIFT_SIZE_CAP = 150;
 /** The size the cap reads: the document's node count plus its link count. */
 export const liftSize = (document: LayoutModel['document']): number => Object.keys(document.nodes).length + document.links.length;
 /** The least drop of the canvas width, in px, that counts as narrower for the tolerated area rule of the judge. */

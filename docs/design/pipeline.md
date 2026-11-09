@@ -451,7 +451,7 @@ bands above its document tier's bands. The decision is band input, made before a
 (`src/pipeline/lift-round.ts`) runs the command once with no lift, measures the components on its published model (`measureLifts`, a
 band estimate: each band as wide as its units side by side, the widest band times the stacked heights) and runs the command once more
 per candidate, widest estimated gain first, with the record as `LayoutOptions.fixedLifts`. At most `LIFT_TRIALS` = 2 trials per command
-(R4; a component past it is recorded with `GROUP_LIFT_CAPPED`). Above `LIFT_SIZE_CAP` = 450 nodes plus links no trial runs and each
+(R4; a component past it is recorded with `GROUP_LIFT_CAPPED`). Above `LIFT_SIZE_CAP` = 150 nodes plus links no trial runs and each
 component is recorded with `GROUP_LIFT_SIZE_CAPPED` (`docs/design/quality.md`, size bands). A component out of the first slice is recorded
 declined with a `GROUP_LIFT_OUT_OF_SLICE` info note and no trial; each trial run has its own placement cap and shares the caller's one
 budget. A deadline error ends the command (`isDeadlineError`, shared with the width budget); a trial whose run fails on another error is

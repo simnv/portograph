@@ -186,14 +186,22 @@ generator (`scripts/scale-input.mjs` through `scripts/scale-bench.mjs`, degree-6
 
 The current generator at 300 nodes does not publish under the 120 s deadline.
 
-**Group lift size cap.** The group lift (stage 4, ADR-0008 amendment) runs the pipeline again for each
-trial, up to `LIFT_TRIALS` = 2. A trial on NTP takes 29 s, beside 18 s for the run with no lift.
-The lift round admits no trial when the sheet has more than `LIFT_SIZE_CAP` = 450 nodes plus links
+**Group lift size cap.** The group lift (stage 4, ADR-0008 amendment) runs the whole command again for
+each trial, up to `LIFT_TRIALS` = 2, so a lifted command takes up to three first runs. The lift round
+admits no trial when the sheet has more than `LIFT_SIZE_CAP` = 150 nodes plus links
 (`src/layout/lift.ts`); each float component then gets a `GROUP_LIFT_SIZE_CAPPED` note and a declined
-record entry. The count is deterministic (R4), not a clock. 450 sits between NTP (418: the first run
-takes 18 s, 15 % of the deadline) and hub-100 (489: 82 s, 68 %); the target is a first run near 40 %
-of the deadline (48 s), and no measured sheet falls between the two. No corpus sheet is above the
-cap (the largest is NTP at 418; the next is 151).
+record entry. The count is deterministic (R4), not a clock. The target is a whole lifted command near
+40 % of the deadline (48 s), so a first run near 16 s. Measured 2026-11-09, CLI `layout`, one job on
+the machine, main 2be72fbc against the branch with the cap at 450:
+
+| Sheet | Nodes + links | Main | With lift trials | Lift gain |
+|---|---|---|---|---|
+| a-corridor-moves-after-the-grid-settles | 151 | 19 s | 50 s | none (same metrics) |
+| NTP | 418 | 26 s | 71 s | none (same metrics) |
+
+Under load the two lifted runs failed in `gate:branch` (corpus `TIMEOUT after 120 s`, and an ELK
+attempt deadline on NTP); main passed. Every corpus sheet that the lift changes has 92 nodes plus
+links or fewer, so 150 keeps every gain and takes the trials off both slow sheets.
 
 So node count alone does not decide the time; link count and degree decide it beside the node
 count. 100 is a **policy choice, not a measured ceiling**: it is where the threshold table above
