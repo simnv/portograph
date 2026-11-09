@@ -1,52 +1,145 @@
 # portograph
 
-**YAML in → a diagram an engineer would have drawn, out.**
+[![CI](https://github.com/simnv/portograph/actions/workflows/ci.yml/badge.svg)](https://github.com/simnv/portograph/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/portograph)](https://www.npmjs.com/package/portograph)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-Nodes with ports on their edges, grouped into tiers; links that attach to ports and are routed
-per region — straight where they can be, orthogonal where they must be, bundled, dropped onto bars,
-or drawn as an overlay when they are flows rather than cables. Network diagrams first; software
-architecture and electrical panels next.
+Write nodes, ports and links in YAML, and portograph draws the diagram as SVG or draw.io.
 
-Pronounced **POR-to-graf** · Портограф.
+Each node has its ports on its sides, and each link attaches to a port. Each node is in a group,
+and each group is on a tier, from top to bottom. A link between two facing ports is a
+straight line when nothing is in its path. Other links turn at right angles in the gaps between
+the tiers. The first target is network diagrams.
 
-## Status
+<img src="docs/assets/example.png" alt="Two ISPs above a core router pair, a server flank to the right, and two access switches below that connect to both core routers" width="640">
 
-**M1 implementation is in progress.** The YAML-to-SVG pipeline and CLI are implemented; final golden visual approval is pending.
-The repository also holds the design record and prototype results below.
-These measurements use the prototype topology; the JPEG golden has different wiring:
+<details>
+<summary>The YAML for this diagram (<code>docs/assets/example.yaml</code>)</summary>
 
-| tall2 (solver + router) | **tall5 (solver + router + nine region rules)** |
-|---|---|
-| 11 crossings, 60 bends | **0 crossings, 0 overlaps, 4 bends** |
-
-Renders: [`prototype/out/out-tall2-av.png`](prototype/out/out-tall2-av.png) →
-[`prototype/out/out-tall5-av.png`](prototype/out/out-tall5-av.png). Target:
-[`docs/design/target-example.jpeg`](docs/design/target-example.jpeg).
-
-## Use
-
-Needs Node 22 or newer. Install from a tarball (`npm pack`) or from the git repository; a git
-install builds the package on `npm install` (the `prepare` script).
-
-```sh
-npm install ./portograph-0.1.0.tgz
-npx portograph render diagram.yaml --output diagram.svg      # also writes diagram.layout.json and diagram.score.json
-npx portograph render diagram.yaml --format drawio --output diagram.drawio
-npx portograph score diagram.layout.json
-cat diagram.yaml | npx portograph layout - > diagram.layout.json    # - reads stdin; stdout is the default output
-npx portograph layout diagram.yaml --diagnostics json 2> diagnostics.jsonl
+```yaml
+portograph: 2
+groups:
+  internet: { tier: 0, label: Internet }
+  core: { tier: 1, label: Core }
+  servers: { align: right, of: core, label: Servers }
+  access: { tier: 2, label: Access }
+nodes:
+  isp-a: { group: internet, class: provider, label: ISP A, ports: [wan] }
+  isp-b: { group: internet, class: provider, label: ISP B, ports: [wan] }
+  core-1:
+    group: core
+    class: router
+    description: 192.0.2.1
+    ports: [{ name: wan, class: uplink }, te1, ge1, ge2]
+  core-2:
+    group: core
+    class: router
+    description: 192.0.2.2
+    ports: [{ name: wan, class: uplink }, te1, te2, ge1, ge2]
+  nms: { group: servers, class: Server, icon: server, label: NMS, description: 192.0.2.10, ports: [eth0] }
+  acc-1: { group: access, class: Switch, icon: switch, label: Access 1, ports: [up1, up2] }
+  acc-2: { group: access, class: Switch, icon: switch, label: Access 2, ports: [up1, up2] }
+links:
+  - [isp-a.wan, core-1.wan, { label: 1G }]
+  - [isp-b.wan, core-2.wan, { label: 1G }]
+  - [core-1.te1, core-2.te1]
+  - [core-2.te2, nms.eth0, { class: dashed }]
+  - [core-1.ge1, acc-1.up1]
+  - [core-1.ge2, acc-2.up1]
+  - [core-2.ge1, acc-1.up2]
+  - [core-2.ge2, acc-2.up2]
 ```
 
-A diagnostic names the file, line and column of the YAML it is about, for example
-`portograph: error: UNKNOWN_KEY at diagram.yaml:7:5 ($.nodes.a.colour): Unknown key colour`.
-`--diagnostics json` writes the same as one JSON object per line. The layout and score JSON hold no
-timings, so two runs on one input write the same bytes; `--timings` adds them. Run
-`npx portograph --help` for every option.
+</details>
 
-As a library (ESM or CommonJS), the package root exports `parse`, `parseWithDiagnostics`, `layout`,
-`score`, `render`, `drawio`, `migrate`, `restoreFinalLayout`, `serializeLayoutModel`, the error
-classes and the types. `portograph/node` supplies the worker factories for Node. The stage
-functions and tables are in `portograph/internal`, which has no stability promise.
+## Install
+
+portograph needs Node.js 22 or newer.
+
+```sh
+npm i -g portograph
+```
+
+To run it once without an install, use `npx portograph`.
+
+## Quick start
+
+Save the YAML above as `site.yaml`, then run:
+
+```sh
+portograph render site.yaml --output site.svg
+```
+
+This command writes three files: `site.svg`, `site.layout.json` and `site.score.json`. Open the
+SVG in a browser. The layout JSON holds every position and path, and the score JSON holds the
+quality checks.
+
+For draw.io, set the format:
+
+```sh
+portograph render site.yaml --format drawio --output site.drawio
+```
+
+## CLI
+
+```text
+portograph <verb> [options] <file>
+```
+
+| Verb | Input | Output |
+|---|---|---|
+| `render` | YAML or layout JSON | SVG or draw.io, plus the layout JSON and the score JSON |
+| `layout` | YAML | layout JSON |
+| `score` | layout JSON | the gate results and the score, as JSON |
+| `migrate` | YAML in the older d3-fd `diagram:` format | YAML in the current format (v2) |
+
+Each command takes exactly one file. A file name of `-` reads stdin. Options can come before or
+after the file.
+
+| Option | Verbs | What it does |
+|---|---|---|
+| `--output <path>` | all | Writes the main output to this path. Without it, the main output goes to stdout. |
+| `--diagnostics text\|json` | all | Sets the format of the messages on stderr. `json` writes one JSON object per line. |
+| `--format svg\|drawio` | `render` | Sets the format of the main output. The default is `svg`. |
+| `--layers routed,overlay` | `render` | Draws only these link families. |
+| `--theme auto\|light\|dark\|print` | `render` | Sets the draw.io palette. The default `auto` puts light and dark in one file. |
+| `--labels on-run\|measured` | `render` | Sets where draw.io puts link labels: on the link (default) or in the box that the layout calculated. |
+| `--icons cisco19\|profile` | `render` | Sets the draw.io glyphs: the Cisco shapes of draw.io (default), or an image embedded in the file. |
+| `--timings` | `layout`, `render`, `score` | Keeps the stage timings in the JSON. Without it, two runs on one input write the same bytes. |
+| `--allow-gate-failures` | `render`, `score` | Reports a failed gate, but exits with 0. |
+| `--force` | all | Lays out a document with more than 1,000 nodes. |
+| `-h`, `--help` | | Shows the help. |
+| `-V`, `--version` | | Shows the version. |
+
+More examples:
+
+```sh
+cat site.yaml | portograph layout - > site.layout.json
+portograph score site.layout.json
+portograph render site.layout.json --layers routed --output routed.svg
+portograph layout site.yaml --diagnostics json 2> diagnostics.jsonl
+```
+
+Each diagnostic gives the file, line and column of the YAML that it is about:
+
+```text
+portograph: error: UNKNOWN_KEY at site.yaml:7:5 ($.nodes.a.colour): Unknown key colour
+```
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | The command succeeded. |
+| 1 | A hard gate failed. The command still writes all its files. |
+| 2 | An input error: usage, a file it cannot read, invalid YAML or JSON, or the node limit. |
+| 3 | A processing failure: the 120-second command deadline, a missing worker file, or an internal error. |
+
+Set `PORTOGRAPH_PROGRESS=1` to see the stage timings on stderr.
+
+## Library
+
+The package is ESM and CommonJS. It has types.
 
 ```js
 import { parseWithDiagnostics, layout, score, render } from 'portograph';
@@ -63,92 +156,71 @@ const report = score(model);
 const svg = render(model);
 ```
 
-`layout` reads `document.links` in the order given. `parse` lists them in the canonical link order (`docs/design/schema.md`),
-so a parsed document is order-free; a document built in code is order-free only when it lists its links in that order.
+The package root exports these functions:
 
-To set a width budget, add `layout: { nodeContent: card, maxWidth: 1500 }` to the document.
-If the published sheet is wider, portograph tries eligible rows widest first and puts alternate
-members on a second line. It preserves feed order and clear vertical drops. A budget it cannot
-meet produces `WIDTH_BUDGET_UNMET` with the narrowest valid result tried. Without `maxWidth`,
-portograph still puts a wide fan of leaves on two lines when that makes the canvas smaller and keeps
-every straight link (ADR-0024); `layout: { autoArrange: false }` keeps every row on one line.
+| Export | What it does |
+|---|---|
+| `parse(text)` | Parses YAML into a document. It throws `ParseError` on an error. |
+| `parseWithDiagnostics(text)` | Parses YAML and returns `{ ok, document, diagnostics }`. It does not throw. |
+| `layout(document, options)` | Lays out a document and returns the layout model. |
+| `score(model)` | Returns the gate results and the score. |
+| `render(model, options)` | Returns the SVG text. |
+| `drawio(model, options)` | Returns the draw.io document. |
+| `serializeLayoutModel(model)`, `restoreFinalLayout(json)` | Write and read the layout JSON. |
+| `migrate(text)`, `migrateWithDiagnostics(text)` | Convert d3-fd YAML to the current format. |
+| `createBudget(ms)` | Makes one time budget that all the solver calls of a layout share. |
+| `createBrowserElkFactory()`, `createBrowserRouteFactory()` | Make the solver workers in a browser. |
 
-### Font: Verdana is required
+The root also exports the error classes `ParseError`, `ResolveError`, `CommandDeadlineError`,
+`ElkDeadlineError` and `RouteDeadlineError`, and the types. `portograph/node` exports
+`createNodeElkFactory` and `createNodeRouteFactory`, which make the solver workers in Node.js.
 
-Every sheet is set in Verdana (weights 400 and 700), in the SVG and in the draw.io export, and all
-text is measured from Verdana's glyph advances (`src/text/font-metrics.ts`, numbers only, no font
-files). The emitted font list is `Verdana, DejaVu Sans, sans-serif`. The fallbacks prevent a default
-serif face when Verdana is absent. Their widths can differ from the measured widths.
-Install Verdana for the measured text fit on each viewer or converter: it ships with macOS and
-Windows; on Linux install it from the `ttf-mscorefonts-installer` package or copy the font files
-into `~/.local/share/fonts`. `portograph render` and `portograph layout` write a `FONT_MISSING`
-warning to stderr when they find no Verdana in the usual font directories. The check is the CLI's
-alone: the library does not read the machine's fonts, so its output depends on the document only.
-`uv run scripts/font-metrics.py` regenerates the table from the macOS font files.
+`portograph/internal` exports the stage functions and the tables. It can change in any release.
 
-## Read in this order
+The library does not read the system fonts, so its output depends on the document only. The
+`FONT_MISSING` check below is in the CLI only.
 
-1. [`CONTEXT.md`](CONTEXT.md) — the vocabulary and invariants. Everything else uses these words.
-   [`GLOSSARY.md`](GLOSSARY.md) gives short definitions grouped by topic.
-2. [`docs/design/pipeline.md`](docs/design/pipeline.md) — the stages, in order, with the region
-   rules defined precisely.
-3. [`docs/design/schema.md`](docs/design/schema.md) — the YAML format.
-4. [`docs/design/quality.md`](docs/design/quality.md) — gates, score, thresholds.
-5. [`docs/adr/`](docs/adr/) — the architecture decisions, one per file. Read ADR-0019 for the ranked-group
-   model (ranks, rank cells, frames).
+## The YAML format
 
-## Research behind it
+[`docs/design/schema.md`](docs/design/schema.md) gives every key. The words that it uses, for
+example tier, flank and bundle, are defined in [`GLOSSARY.md`](GLOSSARY.md) and
+[`CONTEXT.md`](CONTEXT.md).
 
-- [`docs/research/layout-engines.md`](docs/research/layout-engines.md) — why elkjs, verified
-  against current registries and docs.
-- [`docs/research/aesthetics.md`](docs/research/aesthetics.md) — what is experimentally known
-  about readable graph drawings, and the scorer derived from it.
-- [`docs/research/codex-routing-review.md`](docs/research/codex-routing-review.md) — the
-  adversarial review of the routing design: 29 findings, 17 that would break output, all folded in.
-- [`docs/research/codex-design-review.md`](docs/research/codex-design-review.md) — the second
-  adversarial review, of the whole record: 55 findings, all folded in (all folded into the design record).
-- [`docs/research/naming.md`](docs/research/naming.md) — twenty-nine names vetted against
-  registries, GitHub, DNS and trademark sources; why `portograph`.
-- [`docs/research/prototype-results.md`](docs/research/prototype-results.md) — sixteen ELK variants
-  and five region-rule iterations, with metrics.
+## Font: install Verdana
 
-## Working conventions
+portograph measures all text with the glyph widths of Verdana, and the SVG and the draw.io file
+ask for Verdana. The font list in the output is `Verdana, DejaVu Sans, sans-serif`. If a viewer
+does not have Verdana, it uses a fallback font. That font has different widths, so the text can
+be too wide for its box.
 
-See [`AGENTS.md`](AGENTS.md): decisions live in
-`docs/adr/`, vocabulary in `CONTEXT.md`. Every ticket is reviewed adversarially by codex (code) and
-a PNG read of each render (`npm run png`) before merge; correctness and metric regressions block.
+Verdana comes with macOS and Windows. On Linux, install the `ttf-mscorefonts-installer` package,
+or copy the font files into `~/.local/share/fonts`. `portograph render` and `portograph layout`
+write the warning `FONT_MISSING` when they do not find Verdana.
 
-## Toolchain
+## How it works
 
-TypeScript · elkjs 0.12 (layered; tiers by partitioning with per-band fallback) · libavoid-js for
-links the region rules do not claim · Vite lib build + `vite-plugin-dts` · Vitest · zero DOM in the
-core. Supported Node versions: 22 or newer.
+The pipeline has one main rule. If placement can reserve a route, a size or a spacing, it does so
+before the router starts. Placement sizes the lanes, the bars, the bundles and the gaps between
+the tiers, so routing never moves a node to make room. The router draws only the links that the
+region rules do not draw.
 
-Run `npm ci`, then `npm run build`, `npm test`, `npm run typecheck`, and `npm run lint`.
-The staged JSON model, font measurements and port geometry helpers are in `portograph/internal`.
-See [text measurement](docs/design/text-measurement.md) for font and pill conventions.
+[ELK](https://github.com/kieler/elkjs) places the skeleton, and
+[libavoid](https://github.com/Aksem/libavoid-js) routes the remaining links. The stages, in order,
+are in [`docs/design/pipeline.md`](docs/design/pipeline.md). The gates and the score are in
+[`docs/design/quality.md`](docs/design/quality.md), and the decisions are in
+[`docs/adr/`](docs/adr/).
 
-```sh
-node bin/portograph.mjs render goldens/m1-sip-edge.yaml --output diagram.svg
-node bin/portograph.mjs layout goldens/m1-sip-edge.yaml --output diagram.layout.json
-node bin/portograph.mjs score diagram.layout.json
-node bin/portograph.mjs render diagram.layout.json --layers routed
-node bin/portograph.mjs migrate test/fixtures/migration/legacy.yaml
-```
+## Showcase
 
-`render --output diagram.svg` writes the SVG, `diagram.layout.json` and `diagram.score.json`
-from the same final model. Without `--output`, stdout contains only the requested artifact;
-diagnostics go to stderr. `render` accepts YAML or validated final layout JSON, regardless of file
-extension. `score` accepts final layout JSON. Options may precede or follow the one required file.
+The NTP example sheet from drawthe.net, drawn by portograph:
 
-Exit codes are 0 for success, 1 for a computed gate failure, 2 for input or output-file errors,
-and 3 for processing failure or the 120-second command deadline. A computed gate failure still
-writes the complete artifact set; `--allow-gate-failures` changes only its exit code. Link, port
-and degree limits warn and continue; more than 1,000 nodes requires `--force`.
-Set `PORTOGRAPH_PROGRESS=1` to see stage timings and worker startup on stderr.
+![The NTP example sheet from drawthe.net, drawn by portograph](docs/assets/ntp.png)
 
-The CLI enforces its deadline in a separate process, including synchronous placement and scoring;
-library calls remain portable and use the supplied worker factories and optional shared budget.
-The generated degree-64 hub / wide-tier / long-transit benchmark reached the old 30-second (then 60-second, now 120-second)
-deadline at 100, 300 and 1,000 nodes. Those cases contain 389, 1,167 and 3,890 links. The simple 50-link aligned case passes every gate with zero crossings;
-the high-fan scale cases remain a performance limit. Run `node scripts/scale-bench.mjs` to reproduce.
+## Contributing
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before you open a pull request. To report a security
+problem, read [`SECURITY.md`](SECURITY.md).
+
+## License
+
+Apache-2.0. See [`LICENSE`](LICENSE).
