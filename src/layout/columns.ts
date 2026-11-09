@@ -4,6 +4,7 @@ import { frameSubtreeCells } from '../model/model.js';
 import { CELL_TO_CHILD_FRAME_GAP, cellReach, deriveFrames, frameNodes } from './frames.js';
 import { GROUP_PADDING } from './group-padding.js';
 import { selectAnchorTier } from './lanes.js';
+import { holdLifts, liftedGroups } from './lift.js';
 import { holdsMove } from './move-reservations.js';
 import { findPort } from './row-paths.js';
 import { cellTier } from './read/tier.js';
@@ -34,7 +35,7 @@ export const COLUMN_AXIS_HELD = 'COLUMN_AXIS_HELD';
 export interface Column { x: number; width: number }
 
 /** Everything that stands in one column: the cells of a frame and of its child frames, or one group. */
-export interface Unit { id: string; frame: boolean; groups: LayoutGroup[]; low: number; high: number }
+export interface Unit { id: string; frame: boolean; groups: LayoutGroup[]; low: number; high: number; /** D-Q5: the `groupLifts` entry of a lifted unit. */ lift?: number }
 
 /**
  * The frames and one-rank groups of a model, grouped by document tier. A document tier is not stored:
@@ -57,12 +58,24 @@ function columnTiers(model: LayoutModel, only?: string): Unit[][] {
     if (!group.flank && group.frame === undefined) units.push({ id: group.id, frame: false, groups: [group], low: group.tier!, high: group.tier! });
   }
   units.sort((a, b) => a.low - b.low || a.high - b.high || compareId(a.id, b.id));
+  // D-Q5: a lifted unit shares bands with units of other document tiers, so it is no member of the tier its bands touch. The units of each
+  // lifted component stand in tiers of their own, one per document tier, after every other tier (top first); `sweepSteps` packs them last.
+  const lifted = liftedGroups(model), liftOf = (unit: Unit): number | undefined => lifted.get(unit.groups[0]!.id);
   const tiers: Unit[][] = [];
   let reachTo = -Infinity;
-  for (const unit of units) {
+  for (const unit of units.filter(item => liftOf(item) === undefined)) {
     if (tiers.length && unit.low <= reachTo) tiers[tiers.length - 1]!.push(unit); else tiers.push([unit]);
     reachTo = Math.max(reachTo, unit.high);
   }
+  const record = model.groupLifts ?? [], liftedTiers = new Map<string, Unit[]>();
+  for (const unit of units) {
+    const entry = liftOf(unit);
+    if (entry === undefined) continue;
+    unit.lift = entry;
+    const lift = record[entry]!, key = `${String(entry).padStart(4, '0')}:${String(lift.tiers[lift.members.indexOf(unit.groups[0]!.id)]).padStart(4, '0')}`;
+    liftedTiers.set(key, [...(liftedTiers.get(key) ?? []), unit]);
+  }
+  for (const key of [...liftedTiers.keys()].sort()) tiers.push(liftedTiers.get(key)!);
   return tiers;
 }
 
@@ -264,10 +277,20 @@ export function unitOrder(unit: Unit): number {
  */
 function sweepSteps(model: LayoutModel, tiers: Unit[][]): { index: number; authority: number | undefined }[] {
   const anchor = selectAnchorTier(model);
-  const first = Math.max(0, tiers.findIndex(tier => tier.some(unit => anchor !== undefined && unit.low <= anchor && anchor <= unit.high)));
-  return [{ index: first, authority: undefined },
-    ...tiers.slice(first + 1).map((_, i) => ({ index: first + 1 + i, authority: first + i })),
+  // D-Q5: the tiers of lifted components come last (`columnTiers`); each component is packed from its lowest tier upward, after the others.
+  const plain = tiers.findIndex(tier => tier[0]!.lift !== undefined), count = plain < 0 ? tiers.length : plain;
+  const first = Math.max(0, tiers.slice(0, count).findIndex(tier => tier.some(unit => anchor !== undefined && unit.low <= anchor && anchor <= unit.high)));
+  const steps: { index: number; authority: number | undefined }[] = count === 0 ? [] : [{ index: first, authority: undefined },
+    ...tiers.slice(first + 1, count).map((_, i) => ({ index: first + 1 + i, authority: first + i })),
     ...tiers.slice(0, first).map((_, i) => ({ index: first - 1 - i, authority: first - i }))];
+  for (let end = tiers.length - 1; end >= count;) {
+    let start = end;
+    while (start - 1 >= count && tiers[start - 1]![0]!.lift === tiers[end]![0]!.lift) start--;
+    steps.push({ index: end, authority: undefined });
+    for (let at = end - 1; at >= start; at--) steps.push({ index: at, authority: at + 1 });
+    end = start - 1;
+  }
+  return steps;
 }
 
 /**
@@ -439,7 +462,9 @@ export function besideGap(model: LayoutModel, aFrame: boolean, bFrame: boolean):
 export function separateFrameColumns(model: LayoutModel): boolean {
   const shifts = columnShifts(model, COLUMN_SLACK);
   for (const [group, dx] of shifts) moveGroup(model, group, dx, 0);
-  return shifts.size > 0;
+  // D-Q5: a lifted component keeps its beside gap from the columns this pass moved (`holdLifts`).
+  const held = holdLifts(model, (group, dx) => moveGroup(model, group, dx, 0), COLUMN_SLACK);
+  return shifts.size > 0 || held;
 }
 
 /**
@@ -488,7 +513,10 @@ export function holdColumnAxes(model: LayoutModel, slack = COLUMN_SLACK): boolea
     if (authority === undefined) moved = closeUp(model, tiers, index, slack) || moved;
     else if (tiers[index]!.some(unit => unit.frame)) moved = pullTier(model, tiers, index, feedReader(model, tiers, index, authority), slack) || moved;
   }
-  return holdMemberWalls(model) || moved;
+  const walls = holdMemberWalls(model);
+  // D-Q5: a lifted component keeps its beside gap from the columns this pass moved (`holdLifts`).
+  const held = holdLifts(model, (group, dx) => moveGroup(model, group, dx, 0), slack);
+  return walls || moved || held;
 }
 
 /**

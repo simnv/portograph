@@ -11,10 +11,12 @@ import { sizeNodes } from '../../src/layout/size.js';
 import { skeleton } from '../../src/layout/skeleton.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+// The group lift (ticket 08) is off in these tests: with it, `stack` (it links to no lower tier) rises one band, so the bus no longer
+// stands in the middle cell the tie rule reads. `lift.test.ts` tests the lift.
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> =>
-  layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
 const gates = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id);
 /** The same document with the mesh opted out (`route: overlay`), which is main's layout. */
 const withoutBus = (yaml: string): string => yaml.replace(/class: sync \}/g, 'class: sync, route: overlay }');

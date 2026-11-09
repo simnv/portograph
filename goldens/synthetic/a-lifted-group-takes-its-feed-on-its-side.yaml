@@ -1,0 +1,64 @@
+# Expected: A lifted group takes its feed on its side, level with its feeder (decision review 2026-11, D-Q5 revised twice: "lift up
+# and in", then "a side entry is level"). `branch` (tier 2) is fed by Dist two only and links to no lower tier, so it is a float
+# component, although its feeder stands directly above it. Beside the wide `campus` frame, `branch` widens the canvas. It rises until
+# Branch gateway stands in the band of Dist two, never above it: Dist two feeds Branch gateway by one horizontal segment into the side
+# of the group (a side entry, `groupLifts[].sideEntry`). The group keeps all its members, gateway on top; Branch zone hangs below the
+# band of Dist, and the campus frame moves down one band to make room (`groupLifts[].push`), so the group stands inside the horizontal
+# span of the campus frame. The canvas is narrower and smaller than with no lift; no link gains a bend; the drop from Dist one to
+# Campus gateway stays vertical.
+portograph: 2
+groups:
+  core: { tier: 0, label: Core }
+  dist: { tier: 1, label: Distribution }
+  campus: { tier: 2, label: Campus }
+  campus-zone: { parent: campus, label: Campus zone }
+  branch: { tier: 2, label: Branch }
+  branch-zone: { parent: branch, label: Branch zone }
+nodes:
+  core-1: { group: core, class: router, label: Core one }
+  core-2: { group: core, class: router, label: Core two }
+  dist-1: { group: dist, class: router, label: Dist one }
+  dist-2: { group: dist, class: router, label: Dist two }
+  campus-gw: { group: campus, class: router, label: Campus gateway }
+  campus-sw: { group: campus-zone, class: switch, label: Campus switch }
+  campus-a1: { group: campus-zone, class: access, label: Access 1 }
+  campus-a2: { group: campus-zone, class: access, label: Access 2 }
+  campus-a3: { group: campus-zone, class: access, label: Access 3 }
+  campus-a4: { group: campus-zone, class: access, label: Access 4 }
+  campus-a5: { group: campus-zone, class: access, label: Access 5 }
+  campus-a6: { group: campus-zone, class: access, label: Access 6 }
+  campus-a7: { group: campus-zone, class: access, label: Access 7 }
+  campus-a8: { group: campus-zone, class: access, label: Access 8 }
+  campus-a9: { group: campus-zone, class: access, label: Access 9 }
+  campus-a10: { group: campus-zone, class: access, label: Access 10 }
+  campus-a11: { group: campus-zone, class: access, label: Access 11 }
+  campus-a12: { group: campus-zone, class: access, label: Access 12 }
+  campus-a13: { group: campus-zone, class: access, label: Access 13 }
+  campus-a14: { group: campus-zone, class: access, label: Access 14 }
+  campus-a15: { group: campus-zone, class: access, label: Access 15 }
+  campus-a16: { group: campus-zone, class: access, label: Access 16 }
+  branch-gw: { group: branch, class: router, label: Branch gateway }
+  branch-1: { group: branch-zone, class: switch, label: Branch one }
+links:
+  - [core-1, dist-1]
+  - [core-2, dist-2]
+  - [dist-1, campus-gw]
+  - [dist-2, branch-gw]
+  - [campus-gw, campus-sw]
+  - [campus-sw, campus-a1]
+  - [campus-sw, campus-a2]
+  - [campus-sw, campus-a3]
+  - [campus-sw, campus-a4]
+  - [campus-sw, campus-a5]
+  - [campus-sw, campus-a6]
+  - [campus-sw, campus-a7]
+  - [campus-sw, campus-a8]
+  - [campus-sw, campus-a9]
+  - [campus-sw, campus-a10]
+  - [campus-sw, campus-a11]
+  - [campus-sw, campus-a12]
+  - [campus-sw, campus-a13]
+  - [campus-sw, campus-a14]
+  - [campus-sw, campus-a15]
+  - [campus-sw, campus-a16]
+  - [branch-gw, branch-1]

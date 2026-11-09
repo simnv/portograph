@@ -1,5 +1,6 @@
 import { validateReservations } from './reservations.js';
 import { validateStaggerRows } from './stagger.js';
+import { validateGroupLifts } from './lift.js';
 import { validateFeedSplits } from './feed-split.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
@@ -173,6 +174,8 @@ function validateDocument(model: LayoutModel): LayoutModel {
   const resolved = resolve(model.document, {
     ...(model.declinedTrunks === undefined ? {} : { declinedTrunks: new Map(model.declinedTrunks.map(key => [key, 'declined'] as const)) }),
     ...(model.declinedSolidBlocks === undefined ? {} : { declinedSolidBlocks: new Map(model.declinedSolidBlocks.map(item => [item.family, item.reason])) }),
+    // D-Q5: the lifted bands are the document's bands moved by the record; `applyLifts` refuses a record the document does not give.
+    ...(Array.isArray(model.groupLifts) ? { groupLifts: model.groupLifts } : {}),
   });
   same(semantics(model), semantics(resolved), 'Resolved semantics differ from document');
   same(Object.keys(model.nodes).sort(), Object.keys(resolved.nodes).sort(), 'Node membership differs from document');
@@ -321,6 +324,7 @@ function validateJoins(model: LayoutModel): void {
 function validatePublication(model: LayoutModel, baseline: LayoutModel, intermediate = false): void {
   jsonValue(model);
   validateStaggerRows(model);
+  validateGroupLifts(model);
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
   validateTechniques(model, baseline);
   validateJoins(model);
@@ -741,7 +745,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // compared it with its replay (architecture-2 ticket 66).
     ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets'] : []),
     // The end trim of 7f records the bodies and boxes it narrowed (architecture-2 ticket 68); every later rule keeps the record.
-    ...(rule === 'bands' ? ['bodyTrims'] : [])];
+    ...(rule === 'bands' ? ['bodyTrims'] : []),
+    // D-Q5: the publication writes the command's lift record (`decideLifts`); the entries it adds after the kept run are declined and move no band.
+    ...(rule === 'link-labels' ? ['groupLifts'] : [])];
   same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');

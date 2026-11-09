@@ -10,6 +10,8 @@ import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+// The group lift (ticket 08) is off in these tests: with it, `lonely` (no link) rises into band 0 beside `up`, and the forged cases move
+// `lonely` inside its tier band of the layout without the lift. `lift.test.ts` tests the lift.
 
 // Ticket DR-01 (audit T-07, M-1): the clearance, containment and band checks of publication hold for every model, whatever diagnostics it
 // carries. Only the centring exemption reads PLACEMENT_NON_CONVERGENCE (ADR-0010).
@@ -58,7 +60,7 @@ const breaks: Record<string, { apply: (m: LayoutModel) => void; message: RegExp 
 };
 
 it('restore accepts the unbroken layout with and without a non-convergence code', async () => {
-  const base = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const base = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
   expect(base.diagnostics.map(d => d.code)).not.toContain(code);
   for (const diagnostic of [undefined, ...Object.values(codes)]) {
     const model = deep(base);
@@ -68,7 +70,7 @@ it('restore accepts the unbroken layout with and without a non-convergence code'
 }, 60000);
 
 it('restore refuses a forged clearance, containment or band violation, with no code and with each emitter message', async () => {
-  const base = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const base = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
   for (const [name, item] of Object.entries(breaks)) {
     for (const [emitter, diagnostic] of [['none', undefined], ...Object.entries(codes)] as const) {
       const model = deep(base);

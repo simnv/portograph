@@ -16,8 +16,9 @@ const fixture = (name: string): string => readFileSync(new URL(`../../goldens/sy
 const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 // The two packing tests pin the side round off: they check the packing over the final x of the feeds, and a kept lane trial (ticket 119) moves `core`/`dist` and makes
 // link-5 straight (the canvas does not widen), which puts the frames 22.2 px from the centre instead of 18.4 px, over COLUMN_SLACK. That is a gain of the round, and the
-// round-on test below states it.
-const runOff = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
+// round-on test below states it. They pin the group lift (ticket 08) off too: on the chain sheet the lift moves Site A and Site B 21.6 px off
+// Core's centre (over COLUMN_SLACK); their feeds into Core are diagonals with and without the lift, and `lift.test.ts` checks the lifted sheet.
+const runOff = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0, testLiftOff: true });
 const centre = (box: { x: number; width: number }): number => box.x + box.width / 2;
 const frame = (model: LayoutModel, id: string) => model.frames!.find(item => item.id === id)!;
 

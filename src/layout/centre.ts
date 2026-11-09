@@ -1,3 +1,4 @@
+import { liftedGroups } from './lift.js';
 import { portEndInsets } from './port-insets.js';
 import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
@@ -289,8 +290,21 @@ export interface CentreContext {
 /** Everything one centring pass reads but never writes: step order, winners, group order, lane windows. */
 export function centreContext(model: LayoutModel, anchor: number, columns: readonly FrameColumn[] = frameColumns(model)): CentreContext {
   const tiers = model.tierBands.map(band => band.tier), index = tiers.indexOf(anchor);
-  const steps = [...tiers.slice(index + 1).map((tier, i) => ({ tier, authority: tiers[index + i]! })),
+  const plainSteps = [...tiers.slice(index + 1).map((tier, i) => ({ tier, authority: tiers[index + i]! })),
     ...tiers.slice(0, index).reverse().map((tier, i) => ({ tier, authority: tiers[index - i]! }))];
+  // D-Q5 (S13): a push leaves bands that hold only lifted groups between a feeder and the units it fed before the push. A tier whose
+  // authority is such a band is centred once more on the nearest band toward the anchor that holds a group that did not lift, so a vertical
+  // feed across the pushed bands stays vertical (the feed is reserved here, at placement).
+  const lifted = liftedGroups(model);
+  const liftOnly = (tier: number): boolean => lifted.size > 0 && model.tierBands.some(band => band.tier === tier && band.groups.length > 0
+    && band.groups.every(id => lifted.has(id) || model.groups[id]?.flank !== undefined));
+  const steps = plainSteps.flatMap(step => {
+    if (liftOnly(step.tier) || !liftOnly(step.authority)) return [step];
+    const at = tiers.indexOf(step.authority), dir = at > tiers.indexOf(step.tier) ? 1 : -1;
+    let far = at;
+    while (far >= 0 && far < tiers.length && liftOnly(tiers[far]!) && tiers[far] !== anchor) far += dir;
+    return far >= 0 && far < tiers.length ? [step, { tier: step.tier, authority: tiers[far]! }] : [step];
+  });
   const winners = new Map<string, string>();
   for (const step of steps) for (const feed of [...centringFeeds(model, step.tier, step.authority)].sort((a, b) => model.nodes[a.child.ref.node]!.bounds!.x - model.nodes[b.child.ref.node]!.bounds!.x || portId(a.child.ref).localeCompare(portId(b.child.ref)))) {
     const key = `${step.tier}:${feed.key}`;

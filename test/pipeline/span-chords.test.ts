@@ -11,6 +11,8 @@ import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+// The group lift (ticket 08) is off in these tests: every lift trial on these sheets is declined, but each trial is one more whole run,
+// and the trace the tests read is the last run's offer, not the command's. `lift.test.ts` tests the lift.
 
 /**
  * Architecture ticket 22, spanning chords (docs/design/routed-chords.md, Section 14). Phase 1: the shapes and the corridor reader; phase 3: the offer, the
@@ -29,12 +31,12 @@ const SHEETS = {
 interface Run { model: LayoutModel; offer: SpanOffer | undefined; base: LayoutModel | undefined; routedBase: LayoutModel | undefined }
 const run = async (name: string): Promise<Run> => {
   let offer: SpanOffer | undefined, base: LayoutModel | undefined, routedBase: LayoutModel | undefined;
-  const model = await layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+  const model = await layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true,
     testSideTrace: event => { if (event.ev === 'spans') { offer = event.offer as SpanOffer; base = event.base as LayoutModel; routedBase = event.routedBase as LayoutModel; } } });
   return { model, offer, base, routedBase };
 };
 /** The sheet with no span round: the baseline as main publishes it (a forced, empty hint list skips the round). */
-const runPlain = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: [] });
+const runPlain = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testSpanHints: [] });
 const link = (model: LayoutModel, n: number): LayoutLink => model.links.find(item => item.id === `link-${n}`)!;
 const hinted = (item: LayoutLink): LayoutLink => ({ ...item, spanHint: true });
 
@@ -166,7 +168,7 @@ describe('the span round on the sheets', () => {
 
   it('04 copy: the same sheet as the forced hints give, and every gate passes', async () => {
     const { model } = await run(SHEETS.mesh);
-    const forcedModel = await layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: [...model.freeze!.spans!] });
+    const forcedModel = await layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testSpanHints: [...model.freeze!.spans!] });
     expect(model.canvas).toEqual(forcedModel.canvas);
     expect(score(model).snapshot.Q).toBeCloseTo(score(forcedModel).snapshot.Q, 9);
     expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
@@ -191,9 +193,9 @@ describe('the span round on the sheets', () => {
   // the course is lost, with the default budget it is kept. Follow-up: reserve the leg pitch in stage 5, so that the chord and the lane of this sheet are both taken.
   it('a chord and a lane share a middle tier: a trial that loses its chord is refused before 7f', async () => {
     const refused: string[] = [];
-    const model = await layout(parse(source(SHEETS.share)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+    const model = await layout(parse(source(SHEETS.share)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true,
       testSideTrace: event => { if (event.ev === 'span-refused') refused.push(`${String(event.why)}`); } });
-    const plain = await layout(parse(source(SHEETS.share)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: [] });
+    const plain = await layout(parse(source(SHEETS.share)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testSpanHints: [] });
     const count = (m: LayoutModel, code: string): number => m.diagnostics.filter(item => item.code === code).length;
     expect(refused).toEqual(['promise']);
     expect(count(model, 'SPAN_CHORD_TAKEN')).toBe(0);
@@ -202,7 +204,7 @@ describe('the span round on the sheets', () => {
   }, 60000);
 
   it('a chord and a lane share a middle tier: with one re-run the course keeps it (the span round leaves a re-run to the round after it)', async () => {
-    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 1 };
+    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testMaxReruns: 1 };
     const model = await layout(parse(source(SHEETS.share)), options);
     const plain = await layout(parse(source(SHEETS.share)), { ...options, testSpanHints: [] });
     const count = (m: LayoutModel, code: string): number => m.diagnostics.filter(item => item.code === code).length;
@@ -213,7 +215,7 @@ describe('the span round on the sheets', () => {
   // A refused span trial spends placements and fan re-runs; it must not starve the course round that main runs (a-tier-gap-plan-orders-every-part: Q 0.6466 -> 0.4481, G5 failing).
   it('a refused span trial does not starve the course round', async () => {
     const text = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part.yaml', import.meta.url), 'utf8'));
-    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
+    const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true };
     const model = await layout(parse(text), options);
     const plain = await layout(parse(text), { ...options, testSpanHints: [] });
     expect(model.lanes.filter(lane => lane.kind === 'perimeter')).toHaveLength(plain.lanes.filter(lane => lane.kind === 'perimeter').length);
@@ -246,7 +248,7 @@ describe('the span round on the sheets', () => {
 
 describe('the span round refuses what it must', () => {
   it('leaves the sheet as it was when the budget allows no re-run', async () => {
-    const plain = await layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testMaxReruns: 0 });
+    const plain = await layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testCourses: [], testMaxReruns: 0 });
     expect(plain.links.some(item => item.spanHint !== undefined)).toBe(false);
     expect(plain.lanes.filter(lane => (lane.kind ?? 'transit') === 'transit')).toHaveLength(9);
   }, 60000);
@@ -258,11 +260,11 @@ describe('the span round refuses what it must', () => {
 });
 
 describe('judgeSpanTrial', () => {
-  const forcedMesh = (): Promise<LayoutModel> => layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: MESH_IDS });
+  const forcedMesh = (): Promise<LayoutModel> => layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testSpanHints: MESH_IDS });
   const MESH_IDS = ['link-3', 'link-4', 'link-5', 'link-6', 'link-7', 'link-8', 'link-9', 'link-10', 'link-11'];
   let chords: LayoutModel;
   beforeAll(async () => { chords = await forcedMesh(); }, 60000);
-  const routedPlain = async (): Promise<LayoutModel> => (await layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSpanHints: [], testCourses: [] }));
+  const routedPlain = async (): Promise<LayoutModel> => (await layout(parse(source(SHEETS.mesh)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testSpanHints: [], testCourses: [] }));
 
   it('keeps a trial that publishes every chord and gains', async () => {
     const base = await routedPlain();

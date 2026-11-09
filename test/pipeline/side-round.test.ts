@@ -7,6 +7,7 @@ import { systemElkClock } from '../../src/layout/elk-worker.js';
 import { measureSides } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+// The group lift (ticket 08) is off in these tests: they pin the bytes main makes, and main has no lift. `lift.test.ts` tests the lift.
 
 /** Ticket 115 (docs/design/side-faces.md, Q109): the side round straightens an overlay link from a lateral side. */
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -21,7 +22,7 @@ const hash = (model: LayoutModel): string => createHash('sha256').update(without
 interface Counted { model: LayoutModel; places: number }
 async function run(name: string, extra: Partial<Parameters<typeof layout>[1]> = {}): Promise<Counted> {
   let places = 0;
-  const model = await layout(parse(fixture(name)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false, ...extra });
+  const model = await layout(parse(fixture(name)), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testOverlayCourses: false, ...extra });
   return { model, places };
 }
 const codes = (model: LayoutModel): string[] => model.diagnostics.map(item => item.code);
@@ -125,7 +126,7 @@ describe('the probe', () => {
     // A narrow client stands near: the straight segment from the server's right face is clear but nearly parallel to that face (review L1).
     const yaml = fixture(PAST_SIBLING).replace('label: Client, size: { width: 170', 'label: Client, size: { width: 90');
     let places = 0;
-    const model = await layout(parse(yaml), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
+    const model = await layout(parse(yaml), { createElkAttempt: () => { places++; return createAttempt(); }, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testOverlayCourses: false });
     expect(model.links.find(item => item.layer === 'overlay')!.path!.segments.length).toBeGreaterThan(1);
     expect(places).toBe(1);
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);

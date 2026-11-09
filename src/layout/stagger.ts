@@ -19,6 +19,7 @@ import { nodeTier } from './read/tier.js';
 import { straightCorridorClear } from './row-paths.js';
 import { validateColumns, type ColumnPlan } from './column-arrangement.js';
 import { besideGap, documentTiers, packTier, tierUnitsOf, unitOf, type Unit } from './columns.js';
+import { liftedGroups, seatLifts } from './lift.js';
 import { deriveFrames } from './frames.js';
 import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { straightOverlaysAsDrawn } from './read/overlay-straight.js';
@@ -326,6 +327,8 @@ export function seatStaggerRows(model: LayoutModel): void {
     standChain(model, plan);
   }
   const seated = seatFeeds(model);
+  // D-Q5: a lifted component stands beside the units of the bands it shares; the chain moved and the feeds were seated, so it is seated again.
+  seatLifts(model, (group, dx) => moveGroup(model, group, dx, 0), () => deriveFrames(model));
   stackBands(model, true);
   rebuildNodeGeometry(model, Object.keys(model.nodes), 'current');
   // The freeze's band test (`validateSkeletonBands`), by name: first each seated parent's band, whose group the seat widened, then every band.
@@ -676,11 +679,14 @@ function standChain(model: LayoutModel, plan: StaggerRow): void {
   const chain = new Set(plan.chain);
   const moving = Object.values(model.groups).filter(group => chain.has(columnUnitId(model, group.id))).sort((a, b) => compareId(a.id, b.id));
   const movingIds = new Set(moving.map(group => group.id)), frames = deriveFrames(model) ?? [];
+  // A lifted unit (D-Q5, `groupLifts`) does not stop the chain: `seatLifts` seats it again beside the moved chain after this move.
+  const lifted = new Set([...liftedGroups(model).keys()].map(id => columnUnitId(model, id)));
   // The boxes that stand beside each other: the moving groups and the chain's frames against every unframed group and top-level frame that stays.
   const boxes = (inChain: boolean): { box: { x: number; y: number; width: number; height: number }; frame: boolean }[] => [
-    ...Object.values(model.groups).filter(group => group.bounds && group.nodes.length && movingIds.has(group.id) === inChain && (inChain || group.frame === undefined))
+    ...Object.values(model.groups).filter(group => group.bounds && group.nodes.length && movingIds.has(group.id) === inChain
+      && (inChain || (group.frame === undefined && !lifted.has(columnUnitId(model, group.id)))))
       .map(group => ({ box: group.bounds!, frame: false })),
-    ...frames.filter(frame => frame.parent === undefined && chain.has(frame.id) === inChain).map(frame => ({ box: frame.box, frame: true }))];
+    ...frames.filter(frame => frame.parent === undefined && chain.has(frame.id) === inChain && (inChain || !lifted.has(frame.id))).map(frame => ({ box: frame.box, frame: true }))];
   let low = -Infinity, high = Infinity;
   const others = boxes(false);
   for (const own of boxes(true)) for (const other of others) {

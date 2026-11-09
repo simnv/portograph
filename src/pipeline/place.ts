@@ -36,7 +36,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return env.step(stage, run); };
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4) are declined in the next: the ledger names them, or all of them once the budget is spent.
   const declinedTrunks = declinedTrunksOf(reservations);
-  const resolved = stepIn('resolve', () => resolve(env.document, { ...(env.declinedSolidBlocks ? { declinedSolidBlocks: env.declinedSolidBlocks } : {}), ...(env.options.diagnostics ? { diagnostics: env.options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}) }));
+  const resolved = stepIn('resolve', () => resolve(env.document, { ...(env.declinedSolidBlocks ? { declinedSolidBlocks: env.declinedSolidBlocks } : {}), ...(env.options.diagnostics ? { diagnostics: env.options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}), ...(env.groupLifts !== undefined ? { groupLifts: env.groupLifts } : {}) }));
   resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
   if (env.staggerRows?.length) resolved.staggerRows = JSON.parse(JSON.stringify(env.staggerRows)) as typeof env.staggerRows;
   if (env.groupArrangements !== undefined) resolved.groupArrangements = JSON.parse(JSON.stringify(env.groupArrangements)) as typeof env.groupArrangements;

@@ -2,6 +2,9 @@
 # every link owns a lane in that tier, in the children's x order, and all three leave the parent on
 # one shared stem tree (7e) whose leaves start each routed remainder, so no first stem is drawn twice
 # and every gate passes.
+# With the group lift (D-Q5, ticket 08) the corpus layout differs: `middle` has no link, so it is a float component and rises beside `top`;
+# the fan then passes an empty band, draws no lane in a middle group, and every gate still passes. No input change keeps `middle` down
+# (every link into it comes from above). The lanes in a middle group are tested on this sheet with the lift off (`fan-shared-stem.test.ts`).
 # Test-only input owned by ticket 20; it needs no stage precondition because the whole pipeline runs.
 portograph: 2
 groups:

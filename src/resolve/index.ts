@@ -2,11 +2,12 @@ import { detectSolidBlocks } from './solid-blocks.js';
 import {
   createLayoutModel, groupNodeIds, orderedGroupIds, orderedNodeIds, unsupportedMessage,
   type Diagnostic, type Endpoint, type Layer, type LayoutLink, type LayoutModel,
-  type NormalisedDocument, type Owner, type PortRef,
+  type NormalisedDocument, type Owner, type PortRef, type GroupLift,
 } from '../model/index.js';
 import { enclosedBundle } from '../layout/grid.js';
 import { stackChains } from '../layout/grid-chains.js';
 import { expandRankedGroups } from '../layout/rank-cells.js';
+import { applyLifts } from '../layout/lift.js';
 import { detectMeshBuses } from './mesh-bus.js';
 import { detectFanFamilies } from './fan-family.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -19,6 +20,8 @@ export interface ResolveOptions {
   declinedTrunks?: ReadonlyMap<string, string>;
   /** Blocks refused by a placement probe; resolve restores their original ownership. */
   declinedSolidBlocks?: ReadonlyMap<string, string>;
+  /** D-Q5: the group lifts to apply as band input (`lift.ts`, `applyLifts`); the document is not changed. */
+  groupLifts?: readonly GroupLift[];
 }
 
 export class ResolveError extends Error {
@@ -396,6 +399,8 @@ export function resolve(input: NormalisedDocument, options: ResolveOptions = {})
   // The rank derivation reads the model before expansion and needs the ports as written, so only
   // the final model is searched for mesh buses: rows exist only once the groups are cells.
   const final = expanded === undefined ? model : resolveBeforeExpansion(expanded, options);
+  // The bands of the lifted groups (D-Q5) are stage-4 input: set before the sides, the mesh buses and the fan families read them.
+  if (options.groupLifts !== undefined) { applyLifts(final, options.groupLifts); final.groupLifts = JSON.parse(JSON.stringify(options.groupLifts)) as GroupLift[]; }
   detectMeshBuses(final, options.declinedTrunks);
   // The fan families read the resolved links and the frames, so they are found on the final model too (architecture-2 ticket 40).
   detectFanFamilies(final);

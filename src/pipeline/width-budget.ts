@@ -7,9 +7,7 @@ import { staggerCandidates } from '../layout/stagger.js';
 import { restoreLayoutModel } from '../layout/mutation.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { pathBends } from '../layout/objective.js';
-import { CommandDeadlineError } from './budget.js';
-import { ElkDeadlineError } from '../layout/elk-worker.js';
-import { RouteDeadlineError } from '../route/index.js';
+import { isDeadlineError } from './deadline.js';
 
 type Run = (document: NormalisedDocument, options: LayoutOptions, rows?: StaggerRow[]) => Promise<LayoutModel>;
 
@@ -32,6 +30,11 @@ export async function fitWidthBudget(input: NormalisedDocument, options: LayoutO
   if (Object.keys(document.layout!).length === 0) delete document.layout;
   let best = await run(document, options);
   if (best.canvas!.width <= budget) return best;
+  // The group lift (D-Q5) is decided once, by the first run; every stagger trial applies its record (`fixedLifts`) and decides none, so a
+  // command runs at most 1 + LIFT_TRIALS lift runs and then one run per stagger trial. The lift notes of the first run stay the command's.
+  const first = best;
+  const trialOptions: LayoutOptions = first.groupLifts !== undefined ? { ...options, fixedLifts: first.groupLifts } : options;
+  const liftNotes = first.diagnostics.filter(note => note.code.startsWith('GROUP_LIFT_'));
   const notes: Diagnostic[] = [];
   const tried = new Set<string>();
   // Each normal row is visited once, widest first. This finite traversal bounds the complete pipeline trials.
@@ -40,10 +43,10 @@ export async function fitWidthBudget(input: NormalisedDocument, options: LayoutO
     if (row === undefined) break;
     tried.add(row.group);
     let trial: LayoutModel;
-    try { trial = await run(document, options, [...(best.staggerRows ?? []), row]); }
+    try { trial = await run(document, trialOptions, [...(best.staggerRows ?? []), row]); }
     catch (error) {
       // A deadline ends the command; it never chooses which geometry to publish (R4).
-      if (error instanceof CommandDeadlineError || error instanceof ElkDeadlineError || error instanceof RouteDeadlineError) throw error;
+      if (isDeadlineError(error)) throw error;
       notes.push({ stage: 'placement', severity: 'warning', code: 'ROW_STAGGER_REFUSED', owners: [{ kind: 'group', id: row.group }],
         message: `The stagger trial was refused: ${String(error)}` });
       continue;
@@ -61,5 +64,6 @@ export async function fitWidthBudget(input: NormalisedDocument, options: LayoutO
   }
   if (best.canvas!.width > budget) notes.push({ stage: 'placement', severity: 'warning', code: 'WIDTH_BUDGET_UNMET',
     message: `The narrowest valid result tried is ${best.canvas!.width.toFixed(2)} px wide; the width budget is ${budget} px.` });
+  if (best !== first) notes.unshift(...liftNotes);
   return notes.length === 0 ? best : restoreLayoutModel(JSON.stringify({ ...best, diagnostics: [...best.diagnostics, ...notes] }));
 }

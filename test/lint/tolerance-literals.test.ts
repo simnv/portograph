@@ -25,6 +25,7 @@ const EXCEPTIONS = new Set([
   'src/layout/constraints/evaluate.ts:RESIDUAL_TOLERANCE', // residual of a constraint solve, px
   'src/render/drawio.ts:EPS', // renderer distance owner, px
   'src/render/drawio.ts:PHASE_GRAIN', // renderer phase grain
+  'src/layout/lift.ts:LIFT_MIN_GAIN', // least estimated area drop of a lift candidate, a fraction of the canvas area
 ]);
 
 const value = (text: string): number => Number(text.replace(/_/g, ''));

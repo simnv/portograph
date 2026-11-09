@@ -4,7 +4,8 @@ import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import { orderedGroupIds } from '../model/model.js';
 import { bandGap, tierGapMin, compareId, greatestPeers, groupId, nodeGap, nodeId, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { isGridGroup, packGrid } from './grid.js';
-import { rebuildFrames } from './frames.js';
+import { deriveFrames, rebuildFrames } from './frames.js';
+import { seatLifts } from './lift.js';
 import { packFrameColumns, type Column } from './columns.js';
 import { GROUP_PADDING } from './regions.js';
 import { bottom, contains as rectContains, EPS, rectOverlap, right } from '../geometry/planar.js';
@@ -230,6 +231,12 @@ export function placeFlanksAndPeers(model: LayoutModel, orderColumns?: (columns:
   const columns = packFrameColumns(model);
   // The columns are packed, so their widths are known: the caller may re-order the frames (ticket 06b) and re-pack the tiers it changes.
   orderColumns?.(columns);
+  // D-Q5: a lifted component moves as a whole beside the units of the bands it now shares, a band gap from them.
+  seatLifts(model, (group, dx) => {
+    moveGroup(model, group, dx, 0);
+    const column = columns.get(group.id);
+    if (column !== undefined) columns.set(group.id, { ...column, x: column.x + dx });
+  }, () => deriveFrames(model));
   for (const tier of new Set(Object.values(model.groups).map(group => group.tier))) {
     const groups = Object.values(model.groups).filter(group => !group.flank && group.tier === tier).sort((a, b) => a.bounds!.x - b.bounds!.x || compareId(a.id, b.id));
     let end = -Infinity;

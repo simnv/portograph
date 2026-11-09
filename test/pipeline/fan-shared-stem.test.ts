@@ -10,8 +10,10 @@ import type { LayoutModel, Owner } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+// The group lift (ticket 08) is off in these tests: with it, `middle` (no link) rises beside `top`, so the fan passes an empty band and
+// owns no lane in a middle group. `lift.test.ts` tests the lift.
 
-const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
 const fixture = (name: string) => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 
 /** Every link of the fan leaves the parent anchor on one identical first stem, and no two paths overlap. */

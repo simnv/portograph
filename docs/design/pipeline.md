@@ -446,6 +446,42 @@ premise at the end of stage 4, and `validateReservations` on every later snapsho
 `layout.feedOrder: false` writes no entry: ELK's order and the overlay side stand (a test input whose subject needs the declared order
 pins it so). On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone of Location 4 stands under its feeds.
 
+**Group lift (decision review 2026-11, D-Q5, ticket 08; ADR-0008 amendment).** A **float component** (`CONTEXT.md`) may stand in
+bands above its document tier's bands. The decision is band input, made before any placement run of a command: `decideLifts`
+(`src/pipeline/lift-round.ts`) runs the command once with no lift, measures the components on its published model (`measureLifts`, a
+band estimate: each band as wide as its units side by side, the widest band times the stacked heights) and runs the command once more
+per candidate, widest estimated gain first, with the record as `LayoutOptions.fixedLifts`. At most `LIFT_TRIALS` = 2 trials per command
+(R4; a component past it is recorded with `GROUP_LIFT_CAPPED`). Above `LIFT_SIZE_CAP` = 150 nodes plus links no trial runs and each
+component is recorded with `GROUP_LIFT_SIZE_CAPPED` (`docs/design/quality.md`, size bands). A component out of the first slice is recorded
+declined with a `GROUP_LIFT_OUT_OF_SLICE` info note and no trial; each trial run has its own placement cap and shares the caller's one
+budget. A deadline error ends the command (`isDeadlineError`, shared with the width budget); a trial whose run fails on another error is
+declined, with a warning unless placement refused it by name. With `layout.maxWidth` the first run decides the lift and every stagger trial
+applies the record (`fixedLifts`). A rise is a candidate when its estimate drops the area by `LIFT_MIN_GAIN` or more, or when it is narrower or nearer square by
+`LIFT_SHAPE_STEP` (shape admission: the estimate is too coarse for a push). The judge (`judgeLift`) reads the published results: no
+link removed, every straight link still straight, a vertical link still vertical and every routed link on its faces (except the
+trial's side entries), no link with more bends, no new gate, hard-constraint or separation finding, the unified order (bent links,
+turns, crossings including routed-with-overlay pairs) not worse, and the area below the no-lift run and below the smallest kept run,
+or at most `LIFT_AREA_TOLERANCE` = 5 % above it when the canvas is narrower or nearer square (`|ln W/H|`). The published model of the
+best run carries the whole record; a restore validates it.
+
+A rise is bounded by its feeds from above: a fed node rises until it stands in its feeder node's band, never above it (a **level side
+entry**; `GroupLift.sideEntry`), and a stub, bundle member or mesh-bus feed keeps the fed unit below its feeder's unit. When a level
+side entry leaves the component hanging below the feeder's band, every unit outside the component whose top band is below that band
+moves down by the component's bands below it (`GroupLift.push`; S11: only when the rise does not fit in the empty space beside the
+units below). A declined side-entry rise falls back once, inside the trial cap, to the best rise that keeps every feeder above (S8).
+
+The record is read, never decided again (R1). Stage 1 applies it (`applyLifts`: each member in its `to` band, then the push; a record
+the document does not give is refused). Stage 2 turns each side entry to the lateral faces that face each other (`liftFaces`; a
+bundle or mesh-bus port keeps its face). The column packer gives the units of each lifted component tiers of their own, packed last
+from the component's lowest tier upward (`columnTiers`, `sweepSteps`), and stage 4 seats the component beside the units and link
+corridors of the bands it shares, on its recorded side, a band gap away (`seatLifts`); every later column pass holds that gap
+(`holdLifts`), and stage 5 seats it again after a fan wrap moves its feeding chain (a lifted unit does not stop the chain). The chord
+kind (`chordKindOf`) makes a side entry a cross-frame chord on its lateral faces. 7c centres a tier whose authority band holds only
+lifted groups once more on the next band toward the anchor (S13), so a vertical feed across pushed bands stays vertical.
+`validateGroupLifts` runs at every publication and at restore: whole units, a float component, each member in its recorded band
+(after later pushes), every routed feed from above below its feeder or, for a recorded side entry, level with it, and the side
+entries the record names.
+
 **Time and failure:** ELK runs in a worker with a deadline (`layoutBudgetMs`, default 10 s at
 ≤ 300 nodes, 20 s above). On exception **or deadline**, terminate the worker and run the
 fallback: one ELK run per tier band without partitioning, bands stacked in tier order with the
@@ -903,7 +939,7 @@ from a bar span or an earlier rule, aligns inside the width it has (ticket 29). 
 overlay chord. An overlay link with no end on the node, whose chord reaches the rows of the body and
 is not already under the body, stops the growth on its side at the chord less the node clearance
 (20 px) and half the node stroke. A port the stop declines stays at pitch from the last kept one, and
-the feed is reported `CENTRE_ALIGNMENT_INFEASIBLE`; the stop is reported `ALIGNMENT_STOPPED_AT_OVERLAY`. A node of a stored feeding chain (stage 5, fan wrap) has no growth allowance at all (`alignmentAllowance` returns its width), and `centringFeeds` gives it only its feeds from its own chain or its block: stage 5 stood the chain over the block, and a feed from elsewhere would pull it off.
+the feed is reported `CENTRE_ALIGNMENT_INFEASIBLE`; the stop is reported `ALIGNMENT_STOPPED_AT_OVERLAY`. A node of a stored feeding chain (stage 5, fan wrap) has no growth allowance at all (`alignmentAllowance` returns its width), and `centringFeeds` gives it only its feeds from its own chain or its block: stage 5 stood the chain over the block, and a feed from elsewhere would pull it off. A group lift can leave bands that hold only lifted groups (a push leaves them between a feeder and the units it fed before; `GroupLift.push`, stage 4): a tier whose authority band holds only lifted groups (and their flanks) is centred a second time on the nearest band toward the anchor that holds a group that did not lift (`centreContext`), so a vertical feed across those bands stays vertical; with no such band the step list is unchanged.
 The bound of `ALIGNMENT_MAX_GROWTH` is unchanged. A body that has grown wider than its own width
 does not move past the same chord when centring moves its group. A body that has not grown moves as
 before. Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to

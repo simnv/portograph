@@ -9,13 +9,15 @@ import { segmentRectDistance } from '../../src/score/geometry.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from '../layout/joint-off.js';
+// The group lift (ticket 08) is off in these tests: with it, the lower component (`hub`/`low`/`mid`, or `low`/`x`) rises one band, so
+// the ends no longer stand a transit band apart. `lift.test.ts` tests the lift.
 
 /**
  * Ranked-groups ticket 99 (Q108, docs/design/routed-chords.md): a routed link between two frames or free groups on consecutive
  * document tiers takes one straight segment from face to face when that segment is clear.
  */
 const fixture = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
 const STRAIGHT = 'a-routed-link-between-frames-draws-straight';
 const FOREIGN = 'a-routed-link-between-frames-keeps-orthogonal-past-a-foreign-frame';
 const refusals = (model: LayoutModel): string[] => model.diagnostics.filter(item => item.code === 'ROUTED_CHORD_REFUSED')
