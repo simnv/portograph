@@ -3,10 +3,12 @@
 # The gap between `near` and `far` grows by that width, and `far` then moves left toward `near` by the width the trim freed (592 px),
 # its order and the band gap kept. `bodyTrims.shifts` records the move; the replay moves it back. Canvas 1002 to 410 px; bends,
 # crossings and routed links as before. Test `test/layout/close-up.test.ts` reads the layout.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group), so `access` is declared
+# before `src`; the canonical order is then the written order.
 portograph: 2
 groups:
-  src: { tier: 0 }
   access: { tier: 1 }
+  src: { tier: 0 }
   side: { tier: 1 }
   far: { tier: 2 }
   near: { tier: 2 }
