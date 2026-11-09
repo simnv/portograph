@@ -6,11 +6,14 @@
 # target agree). Both frames hold overlay ends, and both must still be pulled back under their feeds: the
 # rows rule pushes `two` right and the pass pulls it back to a jog of 0.
 # Test-only input owned by ranked-groups ticket 16; test/pipeline/column-axis-hold.test.ts reads the layout.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group). `two` is declared
+# first, then `one`, then `west`: ELK stands `two` left of `one` as before, and the test that adds an overlay link from west-1
+# to two-s5 shows its held column again.
 portograph: 2
 groups:
-  west: { tier: 0, label: West }
-  one: { tier: 1, label: Location one }
   two: { tier: 1, label: Location two }
+  one: { tier: 1, label: Location one }
+  west: { tier: 0, label: West }
 nodes:
   west-1: { group: west, class: switch, label: West 1 }
   west-2: { group: west, class: switch, label: West 2 }

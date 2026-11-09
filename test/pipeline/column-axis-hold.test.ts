@@ -21,6 +21,9 @@ const linkJog = (model: LayoutModel, id: string): number => {
   const segments = model.links.find(link => link.id === id)!.path!.segments;
   return Math.abs(segments[0]!.from.x - segments.at(-1)!.to.x);
 };
+/** The id of the routed link from `from` to `to`. */
+const feedId = (model: LayoutModel, from: string, to: string): string =>
+  model.links.find(link => link.layer !== 'overlay' && link.attachments!.from.node === from && link.attachments!.to.node === to)!.id;
 const owners = (model: LayoutModel, code: string): string[] => model.diagnostics.filter(diagnostic => diagnostic.code === code).flatMap(diagnostic => (diagnostic.owners ?? []).flatMap(owner => 'id' in owner ? [owner.id] : []));
 
 /**
@@ -58,7 +61,7 @@ describe('columns hold their feed axis after rows and centre', () => {
   }, 60000);
 
   it('frames that hold overlay ends are pulled back under their feeds all the same', async () => {
-    // The feeds are `link-2` and `link-4`. A sync between the two locations (same tier, face to face) and an overlay
+    // The feeds are the routed links west-5 to one-gw and west-9 to two-gw (read by their ends: their ids follow the canonical order, DR-04). A sync between the two locations (same tier, face to face) and an overlay
     // link parallel to each feed do not pin a frame: the overlay target agrees with the feed target, and a
     // same-tier partner cannot be bent by a move in x. Each is measured alone and all three together.
     const overlay = readFileSync(new URL('../../goldens/synthetic/overlay-ends-keep-the-feed-axis.yaml', import.meta.url), 'utf8');
@@ -67,7 +70,7 @@ describe('columns hold their feed axis after rows and centre', () => {
     const stem = links.slice(0, -3).join('\n');
     for (const source of [overlay, `${stem}\n${sync}\n`, `${stem}\n${parallel.join('\n')}\n`]) {
       const model = await run(source);
-      expect(linkJog(model, 'link-2') + linkJog(model, 'link-4')).toBeLessThanOrEqual(1);
+      expect(linkJog(model, feedId(model, 'west-5', 'one-gw')) + linkJog(model, feedId(model, 'west-9', 'two-gw'))).toBeLessThanOrEqual(1);
       expect(owners(model, COLUMN_AXIS_HELD)).toEqual([]);
     }
   }, 180000);

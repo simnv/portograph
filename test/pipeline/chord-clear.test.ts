@@ -255,7 +255,9 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
   }, 60000);
 
   it('a slide the column rules would undo is refused in a real layout (three-canton-groups-close-up-to-a-band-gap)', async () => {
-    const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
+    // DR-04: the copy that declares canton `b` first (the cantons stand b, a, c, as ELK placed them before canton order followed the
+    // declaration), with the groups declared so that the canonical link order is near the written one.
+    const model = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap-canton-b-first')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false });
     // A slide of a member frame by 63 px straightened two chords in an earlier build and left the finished layout off the fixed point of the
     // column rules: `packBesideRows` moved it back. The published layout is their fixed point: asked again on a copy (as `drift` in decide.ts
     // asks them), they move no group. The canvas is the one of main under Verdana (1996.2; 1921.3 under Arial), not one widened by such a
@@ -399,7 +401,8 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
   it('a move that straightens three links and bends one (+3 / -1, no crossing added) is taken', async () => {
     const model = copy(await run(fixture(NAME)));
     restore(model);
-    // Two more sync links that end like link-7, and client 1 far to the left: link-6 is straight, the other three bend.
+    // Two more sync links that end like link-7, and client 1 far to the left: link-5 is straight, the other three bend. (DR-04: link-5 is
+    // up-a -> c-1, link-7 up-b -> c-2 in the canonical order; the geometry is the one the test was written for.)
     const seven = model.links.find(link => link.id === 'link-7')!;
     for (const id of ['link-7b', 'link-7c']) model.links.push({ ...JSON.parse(JSON.stringify(seven)) as typeof seven, id });
     const client = model.nodes['c-1']!;
@@ -407,12 +410,12 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
     for (const port of client.ports) if (port.anchor) port.anchor.x -= 200;
     rebuildNodeGeometry(model, ['c-1'], 'current');
     const straight = (probe: LayoutModel): string[] => overlays(probe).filter(link => overlayPath(probe, link).segments.length === 1).map(link => link.id);
-    expect(straight(model)).toEqual(['link-6']);
+    expect(straight(model)).toEqual(['link-5']);
     const at = x(model, 'low-a');
-    // On the settled copy of a move a body stands on the chord of link-6 (core-1 is no end of a sync link): the move bends it.
+    // On the settled copy of a move a body stands on the chord of link-5 (core-1 is no end of a sync link): the move bends it.
     const bend = (probe: LayoutModel): void => {
       if (Math.abs(x(probe, 'low-a') - at) < 1) return;
-      const chord = straightChord(probe, probe.links.find(link => link.id === 'link-6')!, undefined, true)!, body = probe.nodes['core-1']!.bounds!;
+      const chord = straightChord(probe, probe.links.find(link => link.id === 'link-5')!, undefined, true)!, body = probe.nodes['core-1']!.bounds!;
       body.x = (chord.from.x + chord.to.x) / 2 - body.width / 2;
       body.y = (chord.from.y + chord.to.y) / 2 - body.height / 2;
     };

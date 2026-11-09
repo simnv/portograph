@@ -145,8 +145,9 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     const packed = await placed(fixture(name)), model = await run(name);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     const west = frameOf(model, 'west');
-    const own = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-4');
-    const foreign = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-5');
+    // DR-04: in the canonical link order gate-a -> deep-a is link-3 and top-b -> sink-a is link-2; the layout is the one the test was written for.
+    const own = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-3');
+    const foreign = model.lanes.filter(lane => lane.owner.kind === 'link' && lane.owner.id === 'link-2');
     expect(own).toHaveLength(1);
     // The lane of gate-a to deep-a stands inside the canton frame, which grew to hold it.
     expect(own[0]!.bounds.x).toBeGreaterThanOrEqual(west.box.x - 1e-6);
@@ -286,7 +287,9 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     return [packBesideRows(clone), holdMemberWalls(clone), holdColumnAxes(clone, 0)];
   };
   it('three-canton-groups-close-up-to-a-band-gap with a side hint on m1 and the feed order on: the finished layout is the fixed point of the pack (ticket 25)', async () => {
-    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
+    // DR-04: the copy that declares canton `b` first (the cantons stand b, a, c, as ELK placed them before canton order followed the
+    // declaration), with the groups declared so that the canonical link order is near the written one.
+    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap-canton-b-first')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
       testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
     expect(settled(hinted)).toEqual([false, false, false]);
     expect(hinted.diagnostics.filter(item => item.code === 'GROUP_GRID_NON_CONVERGENCE')).toEqual([]);
@@ -294,10 +297,11 @@ describe('canton member walls (canton-groups ticket 56)', () => {
     expect(hinted.canvas!.width).toBeCloseTo(1996, -1);
   }, 60000);
   it('three-canton-groups-close-up-to-a-band-gap with a side hint on m1: the finished layout is the fixed point of the pack (ticket 136)', async () => {
-    // The hint frees link-4 to the left face of m1 (the port the side round offers); the wider node changes the grid of a linked pair after 7f packed the row.
+    // The hint frees link-2 (m1 -> loc-a1-gw) to the left face of m1 (the port the side round offers); the wider node changes the grid of a linked pair after 7f packed the row.
+    // DR-04: the copy that declares canton `b` first, as in the test above.
     // The feed order is off here (ticket 25): with it on, the zones of canton a stand under their feeds and the grid no longer meets the pack,
     // so the subject is gone; the rule-on run is checked in the test below.
-    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap').replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
+    const hinted = await layout(parse(fixture('three-canton-groups-close-up-to-a-band-gap-canton-b-first').replace('portograph: 2\n', 'portograph: 2\nlayout: { feedOrder: false }\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testOverlayCourses: false,
       testSideHints: new Map([[portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never), 'left' as const]]) });
     // The hint took: the port is a hinted lateral port (the fixture is not the plain layout by another name).
     const port = hinted.nodes['m1']!.ports.find(item => portKey(item.ref) === portKey({ node: 'm1', anonymous: true, name: null, ordinal: 2 } as never))!;
@@ -440,7 +444,8 @@ describe('a drop from a wide parent stands vertical (architecture-2 ticket 31)',
     expect(model.alignedExtents).toEqual({});
     const declined = model.diagnostics.filter(item => item.code === 'CENTRE_WINDOW_DECLINED');
     expect(declined.length).toBe(1);
-    expect(declined[0]!.owners).toEqual([{ kind: 'group', id: 'providers#0' }, ...['link-1', 'link-2', 'link-3', 'link-4'].map(id => ({ kind: 'link', id }))]);
-    expect(declined[0]!.message).toMatch(/^providers#0 declines its alignment: .*, so link-1, link-2, link-3, link-4 keep a jog; routing completes them\.$/);
+    // DR-04: the canonical link order puts the sync link clock -> lab first, so the four provider links are link-2 to link-5.
+    expect(declined[0]!.owners).toEqual([{ kind: 'group', id: 'providers#0' }, ...['link-2', 'link-3', 'link-4', 'link-5'].map(id => ({ kind: 'link', id }))]);
+    expect(declined[0]!.message).toMatch(/^providers#0 declines its alignment: .*, so link-2, link-3, link-4, link-5 keep a jog; routing completes them\.$/);
   }, 60000);
 });

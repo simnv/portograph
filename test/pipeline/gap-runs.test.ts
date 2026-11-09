@@ -158,7 +158,7 @@ it('grows a tier gap to the rows it must seat', async () => {
 it('steps a row past a group edge instead of ending the search', async () => {
   // Stress ticket 06. The first position for a row runs along the top group's edge. Ticket 50: the plan starts a part whose tip
   // stands in the group padding at `low + e`, e = 10 + stroke / 2 = 10.75 px (spec 2.2 O5), so the first row of the gap stands at
-  // 131.75 and the rows after it at the pitch k (143.25, 154.75, then link-3 at 166.25). Old numbers: half a pitch inside the boundary
+  // 131.75 and the rows after it at the pitch k (143.25, 154.75, then link-1 at 166.25). Old numbers: half a pitch inside the boundary
   // plus one pitch, 26.25 px, and one row where the plan reserves three.
   const model = await place(read('a-row-steps-past-a-group-edge.yaml'));
   const { gap, plan } = tierGapPlans(model).find(entry => entry.gap.above === 0 && entry.gap.below === 1)!;
