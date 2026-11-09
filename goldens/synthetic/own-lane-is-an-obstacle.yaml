@@ -13,13 +13,15 @@
 # it is the port order stage 5 fixed from the far parent anchors, not a seating question
 # (synthetics-review ticket 04).
 # Every gate passes. Q = 0.6704306872522211.
+# The lower groups are declared first, so the canonical link order (ticket DR-04: groups in declaration order, then
+# nodes inside a group) is the order the links are written in, and `node-ba001` takes the first port of `node-aa001`.
 portograph: 2
 groups:
+  low-b: { tier: 9, label: "Row 15" }
+  low-a: { tier: 9, label: "Zone 16" }
   up-a: { tier: 7, label: "Upper Zone" }
   up-b: { tier: 7, label: "Row 13" }
   mid: { tier: 8, label: "Row 14" }
-  low-a: { tier: 9, label: "Zone 16" }
-  low-b: { tier: 9, label: "Row 15" }
   tail: { tier: 12, label: "Edge Outlets" }
 nodes:
   node-ca002: { group: up-b, class: provider, label: "node-ca002" }

@@ -22,10 +22,10 @@ const barEnd = readFileSync(new URL('../../goldens/synthetic/a-bar-end-keeps-its
  * an obstacle for the owner as well, and the reserved stems of the links a batch has not routed yet
  * are obstacles too.
  *
- * Since ticket 02 the corridor of the unseated child follows it, so `link-1` descends on its own
+ * Since ticket 02 the corridor of the unseated child follows it, so `link-3` descends on its own
  * corridor rather than reaching it sideways. The rule this test states is the one that survives
  * either geometry: whatever a link's path does inside one of its own corridors, it does on that
- * corridor's centre. `link-2` and `link-1` each still run the whole length of theirs, and the
+ * corridor's centre. `link-1` and `link-3` each still run the whole length of theirs, and the
  * assertion below is checked against that rather than passing on an empty selection.
  */
 it('keeps a routed gap out of the corridor its own link reserved', async () => {
@@ -34,8 +34,8 @@ it('keeps a routed gap out of the corridor its own link reserved', async () => {
   // (ticket 75: the centring settles at a fixed point, so it no longer reports a stall for it).
   expect(before.diagnostics.map(item => item.code)).toContain('LANE_FOLLOWS_ITS_CHILD');
   const plan = planRoute(before);
-  // Ticket 50: every part of every gap is a planned part now (the columns of link-2, link-4 and link-1 as drops, link-3 and the
-  // link-1 row as stepped parts), so the router is asked for nothing: `link-3`, the one link it still routed, holds a row of its own
+  // Ticket 50: every part of every gap is a planned part now (the columns of link-1, link-2 and link-3 as drops, link-4 and the
+  // link-3 row as stepped parts), so the router is asked for nothing: `link-4`, the one link it still routed, holds a row of its own
   // (327.25) and its stems are claimed. The reproducer's contract, checked below on the published paths, holds by reservation
   // instead of by the router keeping out of the corridor. A residual link in this shape needs ticket 51's fixture.
   expect(plan.batches.map(batch => batch.links)).toEqual([]);
@@ -71,8 +71,8 @@ it('keeps a routed gap out of the corridor its own link reserved', async () => {
  */
 it('moves a corridor to the child 7c could not seat under it', async () => {
   const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(fixture))))))));
-  const link = model.links.find(item => item.id === 'link-1')!;
-  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
+  const link = model.links.find(item => item.id === 'link-3')!;
+  const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-3')!;
   const child = model.nodes['node-ba002']!.ports[0]!;
   expect(model.diagnostics.map(item => item.code)).toContain('LANE_FOLLOWS_ITS_CHILD');
   expect(lane.x).toBe(child.anchor!.x);
@@ -82,7 +82,7 @@ it('moves a corridor to the child 7c could not seat under it', async () => {
   // 7a and 7c reads the new one.
   expect(link.fixedSegments!.map(run => [run.from.x, run.to.x])).toEqual([[lane.x, lane.x]]);
   // The other corridor of the tier keeps its own child, and the two keep the children's order.
-  const other = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-2')!;
+  const other = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-1')!;
   expect(other.x).toBe(model.nodes['node-ba001']!.ports[0]!.anchor!.x);
   expect(other.x).toBeLessThan(lane.x);
   // Nothing moved for the corridor: the rule runs after the last centring replay, so the child's
@@ -136,16 +136,17 @@ it('leaves a corridor whose link has a bar end where 7a put it', async () => {
  * keeps the answer out of the authoring: both directions move the corridor next to the child and
  * leave the corridor next to the alignment end where 7a put it.
  */
+// The lower groups are declared first, so the canonical link order (ticket DR-04) numbers the links as they are written.
 const twoTierTransit = (reversed: boolean): string => {
   const pair = (a: string, b: string) => reversed ? `[${b}, ${a}]` : `[${a}, ${b}]`;
   return `portograph: 2
 groups:
+  low-b: {tier: 10}
+  low-a: {tier: 10}
   up-a: {tier: 7}
   up-b: {tier: 7}
   mid: {tier: 8}
   mid2: {tier: 9}
-  low-a: {tier: 10}
-  low-b: {tier: 10}
   tail: {tier: 12}
 nodes:
   node-ca002: {group: up-b, class: provider, label: node-ca002}
