@@ -1,5 +1,5 @@
 # Expected: Two free one-cell members of a canton stand one under the other, and the lower one stands where its overlay chords are
-# straight (ranked-groups ticket 143, decisions-log Q112). The canton `west` holds two ranked members, `left` and `right` (a router
+# straight (ranked-groups ticket 143). The canton `west` holds two ranked members, `left` and `right` (a router
 # row and a zone rank of two servers each, fed from the core row on tier 0), and below them the free members `upper-clients`
 # (tier 3) and `lower-clients` (tier 4). Neither client member has a routed link. Every server of the two zone ranks syncs with
 # every client server by an overlay link. The mean of the partners is the canton axis for both client members, so on the mean the

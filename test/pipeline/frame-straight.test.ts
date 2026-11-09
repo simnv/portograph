@@ -51,8 +51,8 @@ describe('a held chord is a wall from stage 7f on', () => {
   // aligned one port of `srv` and grew the body, which put the frame of `beta` 9.9 px from the held chord link-6 (the margin is 10.75 px), and stood
   // `lab` off the mean of its feeds. The step read the frozen chords (`blockedChordsAt`) and was declined: no frame stood on a held chord.
   // The premise holds with card nodes only (`layout.nodeContent: card`). Ticket 164 (card default) owns the fix: the centring guard threw on the
-  // stacked a-corridor-moves-after-the-grid-settles ("Linked groups do not share the grid"), so it moved to
-  // `.scratch/snack-theme/164-centring-blocked-chords.patch`. Until 164 landed it, this test pinned the defect: link-6 was blocked.
+  // stacked a-corridor-moves-after-the-grid-settles ("Linked groups do not share the grid"), so the guard was removed.
+  // Until 164 landed it, this test pinned the defect: link-6 was blocked.
   // Architecture-2 ticket 54 (titles last) clears it: the title of `beta` no longer widens its cell in 7f, so nothing pushes `gamma` after the freeze
   // and no frame comes to stand on link-6. The assertions of the patch are back (no blocked chord, no STRAIGHT_LINK_BLOCKED).
   it('a centring step after the freeze stands no frame on the held chord link-6 (a-member-title-widens-a-beside-row, card nodes; ticket 54)', async () => {

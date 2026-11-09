@@ -349,9 +349,8 @@ to reach this; ticket 103 measures it.
 
 ## 14. Spanning chords (architecture ticket 22)
 
-Status: decided by the user 2026-10-11 (all six recommendations of ticket 22); it amends Q108 when phase 4 merges. Evidence and measures:
-`.scratch/architecture/issues/22-a-chord-spans-several-tier-gaps.md`. Hand solve: case 04, principle P6 and
-contradiction 7 of `ref/hand-solves/ANALYSIS.md`.
+Status: decided by the user 2026-10-11 (all six recommendations of ticket 22); it amends Q108 when phase 4 merges. Evidence and measures: ticket 22. Hand solve: case 04, principle P6 and
+contradiction 7 of the hand-solve analysis.
 
 ### 14.1 Rule
 

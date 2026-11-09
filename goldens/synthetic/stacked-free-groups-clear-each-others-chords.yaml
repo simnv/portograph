@@ -1,5 +1,5 @@
-# Expected: Two free groups on consecutive tiers stand where the overlay chords to the lower one are straight (ranked-groups ticket 143,
-# decisions-log Q112). This is the plain-group variant of `stacked-free-members-clear-each-others-chords`: no canton. The routed
+# Expected: Two free groups on consecutive tiers stand where the overlay chords to the lower one are straight (ranked-groups ticket 143).
+# This is the plain-group variant of `stacked-free-members-clear-each-others-chords`: no canton. The routed
 # groups `west` and `east` stand on tier 1 under the core row. The free groups `upper-clients` (tier 2) and `lower-clients` (tier 3) have
 # no routed link. Every server of `west` and `east` syncs with every client server by an overlay link. The mean of the partners is the
 # axis for both groups, so on the mean the chords to `lower-clients` cross the body row of `upper-clients` and bend; the rule moves

@@ -4,7 +4,7 @@ import type { LinkClassStyle, Modal, PillPaint, PortRoleStyle, PortStatusStyle, 
 /**
  * The `snack` theme: the default brand of the Snack UI kit (`@snack-uikit/figma-tokens` 19.0.5,
  * `build/css/brand.module.css`; the "gold" brand is not used), in light, dark and print.
- * Ticket 158, `.scratch/snack-theme/spec.md`.
+ * Ticket 158.
  *
  * - Node and group bodies are neutral (`background1-level`); the page is `background`. The class hue sits on the
  *   icon tile and the pills only.

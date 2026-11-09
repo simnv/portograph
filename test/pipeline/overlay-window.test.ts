@@ -39,7 +39,7 @@ const crossingsOf = (model: LayoutModel): number => {
 
 const CANTON = 'stacked-free-members-clear-each-others-chords', PLAIN = 'stacked-free-groups-clear-each-others-chords';
 
-// Ranked-groups ticket 143 (decisions-log Q112): a free group or a free canton member stands where its overlay chords are straight.
+// Ranked-groups ticket 143: a free group or a free canton member stands where its overlay chords are straight.
 describe('overlay window rule (ticket 143)', () => {
   // On the mean of the partners four chords to `lower-clients` cross the row of `upper-clients`.
   it('a free canton member stands where the chords to it are straight, not at the mean of its partners', async () => {

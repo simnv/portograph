@@ -14,27 +14,9 @@ during placement. This is the pipeline's one load-bearing rule.
 - [`docs/design/pipeline.md`](docs/design/pipeline.md): when you change or reason about a stage.
   Read that stage's section only (`## Stage N`; stage 7 has subsections 7a to 7f).
 - [`docs/adr/`](docs/adr/): when a rule or decision is in question. Pick by file name.
-- [`docs/design/decisions-log.md`](docs/design/decisions-log.md): when you need the history of a choice.
-- [`docs/agents/worker-contract.md`](docs/agents/worker-contract.md): when you are an Orca worker, at the start of the task. Report header, commits, locked jobs, renders.
 - [`docs/design/quality.md`](docs/design/quality.md): when you judge a render.
-- [`ref/README.md`](ref/README.md): reference corpus behind the design.
+- [`docs/gates.md`](docs/gates.md): when you run tests or measure a change.
 
-## Agent skills
+## Gates
 
-### Issue tracker
-
-Issues are markdown files in `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`. The live
-tracker is `.scratch/architecture-2/README.md` (status table); its issues are in
-`.scratch/architecture-2/issues/`.
-
-### Triage labels
-
-Five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
-
-### Gates
-
-`npm run gate:branch` is the one command before a merge request; `corpus`, `sweep` and `gate:compare` are its parts. Tests run only through `scripts/test-runner.mjs` (`npm test`); never call `vitest run` raw. See `docs/agents/gates.md`.
-
-### Domain docs
-
-Single context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+`npm run gate:branch` is the one command before a merge request; `corpus`, `sweep` and `gate:compare` are its parts. Tests run only through `scripts/test-runner.mjs` (`npm test`); never call `vitest run` raw. How to run each one: [`docs/gates.md`](docs/gates.md).

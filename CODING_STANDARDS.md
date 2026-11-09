@@ -7,11 +7,11 @@ This file does not repeat other documents. Read them for their topics:
 [`CONTEXT.md`](CONTEXT.md) (vocabulary, invariants), [`docs/adr/`](docs/adr/) (decisions),
 [`docs/design/pipeline.md`](docs/design/pipeline.md) (stages),
 [`docs/design/quality.md`](docs/design/quality.md) (gates G1 to G9),
-[`docs/agents/`](docs/agents/issue-tracker.md) (tickets, labels).
+[`docs/gates.md`](docs/gates.md) (tests and measurement).
 Use the `CONTEXT.md` terms exactly. TypeScript flags, ESLint and `.githooks/pre-commit` enforce style, imports and the denylist.
 
 Gates, in order: `npm run typecheck`, `npm run lint`, the tests you touched, the golden, then `npm test`.
-For corpus and sweep measurement, see [`docs/agents/gates.md`](docs/agents/gates.md).
+For corpus and sweep measurement, see [`docs/gates.md`](docs/gates.md).
 
 ## Rules
 
@@ -54,7 +54,7 @@ Allocate conflicting candidates together. Do not let the first one win. Write th
 `sourceIndex` is a last key only.
 
 Evidence: architecture-2 tickets 13 (greedy exit choice, then joint allocation, then a content tie-break) and 15 (movers took link order).
-Check: `npm run r3 -- <sheet.yaml>...` runs the sheet with `links` reversed and with `nodes` reversed and prints `SAME` or the first differing path (`docs/agents/gates.md`). In a test, reverse a block with `reversed(yaml, 'links' | 'nodes')` from `scripts/r3-lib.mjs`. Every `.sort(` needs a total order.
+Check: `npm run r3 -- <sheet.yaml>...` runs the sheet with `links` reversed and with `nodes` reversed and prints `SAME` or the first differing path (`docs/gates.md`). In a test, reverse a block with `reversed(yaml, 'links' | 'nodes')` from `scripts/r3-lib.mjs`. Every `.sort(` needs a total order.
 
 ### R4. Bound work by count, never by time.
 

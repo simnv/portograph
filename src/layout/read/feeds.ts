@@ -9,7 +9,7 @@ import { chainBlockOf, columnUnitId } from './chain.js';
 
 /**
  * Shared readers: "what feeds this group?" Two modes, and they are not one answer. Ticket 74 unifies them; until then each is
- * named for the pass that reads it, and the differences are the ticket's list (also in `.scratch/architecture/issues/03-shared-readers.md`):
+ * named for the pass that reads it, and the differences are the ticket's list:
  *
  * | | `centringFeeds` (7c centring) | `columnPullFeeds` (column pull) |
  * | --- | --- | --- |

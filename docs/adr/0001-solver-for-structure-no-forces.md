@@ -3,7 +3,7 @@
 Date: 2026-09-10 · Status: accepted · Decisions: Q1, Q11, Q12
 
 ## Context
-The predecessor (`ref/d3-fd`) placed everything with d3-force plus custom forces. Its rule-based
+The predecessor placed everything with d3-force plus custom forces. Its rule-based
 components (port stacking, sizing, orthogonal segments) reproduced the target; every simulated
 component (tier order, group placement, containment) diverged, because a force model cannot
 represent "above". All five reference sources agree layout carries meaning.

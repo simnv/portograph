@@ -1,7 +1,7 @@
 # Lateral sides for links between tiers (design)
 
 Q109. Status: design (2026-09-30), amended after the Opus review the same day (H1, H2, M1 to M6,
-L1 to L6). Tickets 114 to 122 under `.scratch/ranked-groups/issues/`.
+L1 to L6). Tickets 114 to 122.
 
 ## 1. Problem
 

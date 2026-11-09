@@ -2,7 +2,7 @@
  * The sweep gate: every sheet under `test/fixtures/sweep/` laid out, one line per sheet with the
  * links stage 8 removed, and the count `N removed of M` on standard output.
  *
- * Usage: npm run sweep -- <out.txt> [--only name,name]      (builds dist/ first; see docs/agents/gates.md)
+ * Usage: npm run sweep -- <out.txt> [--only name,name]      (builds dist/ first; see docs/gates.md)
  *
  * Line format: `<name>\tremoved=<link ids, comma-separated, or ->`; a sheet that fails to lay out
  * gets `<name>\tERROR <message>`. The removed ids are the model's `removedLinks`, the list the

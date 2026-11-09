@@ -28,7 +28,7 @@ const beforeBands = async (fixture: string): Promise<LayoutModel> =>
   bundles(bars(centre(flanks(lanes(rows(await placed(fixture)))))));
 
 /**
- * Stress-test reproducers (`.scratch/stress/issues/04`). ADR-0015 rule 1 allocates the runs that
+ * Stress-test reproducers. ADR-0015 rule 1 allocates the runs that
  * cross a tier gap before the first ownership batch runs, so no batch can take the corridor a
  * later link's own lane opens into.
  */

@@ -2388,7 +2388,7 @@ Ticket 97: the riser of a joined pair is one more `<path class="link-line overla
 
 An inline `<style>` holds the profile theme, the generated geometry locks and the parser-filtered
 document `css:`, in that order. The theme is three paint-only sheets emitted from one data table
-(`ref/theme-handoff/`, ticket 32): light, then dark behind `@media (prefers-color-scheme: dark)`,
+(ticket 32): light, then dark behind `@media (prefers-color-scheme: dark)`,
 then greyscale behind `@media print`; a document's `css:` follows all three, so an author's rule
 still wins in every mode. **CSS may not change geometry**: the parser strips every locked
 property from `css:` with a warning, and `restoreFinalLayout` re-runs that same filter over a

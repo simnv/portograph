@@ -8,7 +8,7 @@ import { heldLock } from './scripts/test-runner-lib.mjs';
 // Tests run only through scripts/test-runner.mjs (host-wide lock, one worker, group kill). A raw
 // `npx vitest`, `vitest` or startVitest call loads this config without the held lock and stops here.
 if ((process.env.VITEST !== undefined || /node_modules[\\/]vitest[\\/]/.test(process.argv[1] ?? '')) && heldLock() === undefined) {
-  throw new Error('vitest runs only through `npm test` (scripts/test-runner.mjs); see docs/agents/gates.md');
+  throw new Error('vitest runs only through `npm test` (scripts/test-runner.mjs); see docs/gates.md');
 }
 
 // Library build: one bundle of everything (`src/internal.ts`), ES + UMD, declarations from

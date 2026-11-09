@@ -313,8 +313,7 @@ function levelRun(from: Point, to: Point, out: Point, step: number, blockers: Sh
  * maintainer drew by hand in draw.io. When every candidate is blocked, the shortest that clears the
  * link's own two end boxes is taken instead: the eight ways are read off those two boxes alone, so
  * a shape that lands on all of them cannot be dodged without searching, and going round the pill is
- * the principle that must survive (`.scratch/drawio-export/issues/02-maintainer-edit-principles.md`,
- * principle 2). Only when even that fails does the caller keep the straight segment.
+ * the principle that must survive (maintainer-edit principle 2). Only when even that fails does the caller keep the straight segment.
  */
 function between(head: OverlayEnd, tail: OverlayEnd, blockers: ShapeQuery, collect?: Point[][]): Point[] | undefined {
   const from = head.clear, to = tail.clear;

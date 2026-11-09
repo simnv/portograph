@@ -633,7 +633,7 @@ function closeUp(model: LayoutModel, tiers: Unit[][], index: number, slack: numb
     // A link that stood as one segment and is not one after the move has been bent by it. In 7f (slack 0) the node bodies, read
     // exactly, decide; a frame box counts only while the rows rule can still slide cells inside it.
     // The count reading (ADR-0019: the straight overlay links do not fall): a block move swaps chords, and one that bends while another
-    // straightens is no loss. `pullTier` reads each link, as its moves are small (decisions-log Q102).
+    // straightens is no loss. `pullTier` reads each link, as its moves are small.
     const segments = straightOverlays(model);
     const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
     const bent = straightFell(segments, straight, true) || (slack > 0 && segments.some(({ ends, from, to }) => tier.some(unit => {

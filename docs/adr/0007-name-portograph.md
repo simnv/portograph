@@ -4,7 +4,7 @@ Date: 2026-09-10 · Status: accepted · Decision: Q17
 
 ## Context
 Constraint: European/Latin root, pronounceable by Russian speakers with 1:1 transliteration.
-Twenty-nine candidates vetted (`docs/design/decisions-log.md` → Naming). `portgraph` is a generic
+Twenty-nine candidates vetted (the maintainer's naming review). `portgraph` is a generic
 CS term with an active same-concept Rust crate and is too descriptive to trademark; `tierlay`
 reads badly in Russian; `portlay` is a live SaaS; the Russian-word set had IT collisions.
 

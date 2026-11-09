@@ -15,7 +15,7 @@
  * `nodes` line that refuses the sheet (decision review D-Q1); another `nodes` difference is a report only.
  * The base files `/tmp/pg-main-<sha>.tsv` and `/tmp/pg-main-<sha>-sweep.txt` are reused when
  * they exist; otherwise they are built in a detached worktree `.claude/worktrees/gate-main` under
- * the main checkout. See docs/agents/gates.md.
+ * the main checkout. See docs/gates.md.
  */
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, readFileSync, renameSync } from 'node:fs';

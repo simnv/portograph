@@ -5,7 +5,7 @@
  * (pid, start, group); the next flock holder, or the watchdog, kills and verifies the survivors of
  * the previous record's group under the flock. Also: a child in its own process group, a wall-clock
  * limit, bounded output and a verified group kill. `scripts/test-runner.mjs` is the one entry point;
- * see docs/agents/gates.md.
+ * see docs/gates.md.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, ftruncateSync, openSync, readFileSync, statSync, writeSync } from 'node:fs';
@@ -269,7 +269,7 @@ export async function takeFlock(path, { timeoutMs = Infinity, onWait = () => {} 
     }
     if (outcome === 'busy') {
       failures = 0;
-      if (Date.now() >= end) throw new Error(`the lock ${path} stays busy; see "stuck lock" in docs/agents/gates.md`);
+      if (Date.now() >= end) throw new Error(`the lock ${path} stays busy; see "stuck lock" in docs/gates.md`);
       if (!announced) { onWait(readLock(path) ?? {}); announced = true; }
       continue;
     }
@@ -287,7 +287,7 @@ export async function cleanupRecord(path, graceMs = 3000, flock) {
   const record = readLock(path);
   if (record === undefined || (record.pgid == null && !record.pending)) return;
   if (!(await killJobGroups(record, graceMs))) {
-    throw new Error(`processes of the previous job (pid ${record.pid}, group ${record.pgid}) will not die; see "stuck lock" in docs/agents/gates.md`);
+    throw new Error(`processes of the previous job (pid ${record.pid}, group ${record.pgid}) will not die; see "stuck lock" in docs/gates.md`);
   }
   if (flock) flock.write({}); else writeRecord(path, {});
 }
@@ -427,7 +427,7 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
   const inherited = heldLock(lockPath) !== undefined;
   // A stale or foreign PORTOGRAPH_LOCK_HELD must not queue behind a lock this process could never get.
   if (!inherited && process.env.PORTOGRAPH_LOCK_HELD) throw new Error('PORTOGRAPH_LOCK_HELD is set but the held lock is not valid (the holder is gone, or this process stands outside its group); not queueing');
-  const lock = inherited ? undefined : await acquireLock(job, { path: lockPath, graceMs, onWait: (owner) => stderr.write(`waiting for the test lock (pid ${owner.pid ?? '?'}, ${owner.job ?? '?'}); a stuck lock: see docs/agents/gates.md\n`) , onHealthWait: (line) => stderr.write(`[test-runner] ${line}\n`), onWarn: (line) => stderr.write(`[test-runner] warning: ${line}\n`) });
+  const lock = inherited ? undefined : await acquireLock(job, { path: lockPath, graceMs, onWait: (owner) => stderr.write(`waiting for the test lock (pid ${owner.pid ?? '?'}, ${owner.job ?? '?'}); a stuck lock: see docs/gates.md\n`) , onHealthWait: (line) => stderr.write(`[test-runner] ${line}\n`), onWarn: (line) => stderr.write(`[test-runner] warning: ${line}\n`) });
   const flock = lock ? held.get(lockPath) : undefined;
   if (lock) {
     // Double fork: a short-lived node starts the watchdog, prints its pid and exits, so launchd adopts the watchdog.

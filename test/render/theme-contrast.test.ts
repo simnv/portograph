@@ -5,7 +5,7 @@ import { THEMES, themeLinkClass, themeById } from '../../src/profiles/network/th
 import type { Theme } from '../../src/profiles/network/themes.js';
 
 /**
- * The contrast rules of `.scratch/snack-theme/spec.md`, run on every theme in every mode (ticket 158):
+ * The contrast rules, run on every theme in every mode (ticket 158):
  *   text            4.5:1 on its fill, washes included;
  *   glyph           3:1 on its tile;
  *   tile            3:1 on the body, or its stroke is;
@@ -100,7 +100,7 @@ const failures = (theme: Theme, mode: ThemeMode): { label: string; detail: strin
     .map(pair => ({ label: `${pair.rule}: ${pair.name}`, detail: `${pair.rule}: ${pair.name} ${pair.a} on ${pair.b} ${ratio(pair.a, pair.b).toFixed(2)} < ${pair.need}` }));
 
 /**
- * The `network` theme is the delivered design (`ref/theme-handoff/`). Its borders, pill strokes and overlay are steel and
+ * The `network` theme is the delivered design. Its borders, pill strokes and overlay are steel and
  * neutral steps chosen before these rules existed, and several are under 3:1. They are pinned here by label so none grows
  * and a fix removes its line; the rules say what a redesign of the network sheet must reach. The shortfall the rules found
  * in a glyph on a class tile, the print tbr tile (2.88:1), is fixed (now 4.2:1) and is not in the list. The `snack` theme
