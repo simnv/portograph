@@ -1,0 +1,73 @@
+name: gate
+
+# By hand only: npm run gate:branch for the branch you pick, measured against origin/main.
+# The run takes about as long as on a workstation; the result is the last log line,
+# GATE PASS or GATE FAIL, and the corpus and sweep files are uploaded as an artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      skip-tests:
+        description: Skip npm test (a change to documents only)
+        type: boolean
+        default: false
+      strict:
+        description: A larger canvas fails the gate too
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Refuse main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "::error::run the gate on a branch; gate:branch compares a branch with main"
+          exit 1
+
+      # The whole history: gate:branch merges main into the branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # gate:branch merges and measures the local main, so it must equal origin/main. The merge is local and never pushed.
+      - name: Prepare main
+        run: |
+          git branch --force main origin/main
+          git config user.name "gate"
+          git config user.email "gate@localhost"
+
+      # The corpus measures text with the checked-in Verdana advances; no font is needed.
+      - uses: ./.github/actions/setup
+        with:
+          node-version: 24
+          verdana: "false"
+
+      - name: Gate
+        env:
+          SKIP_TESTS: ${{ inputs.skip-tests }}
+          STRICT: ${{ inputs.strict }}
+        run: |
+          args=()
+          if [ "$SKIP_TESTS" = "true" ]; then args+=(--skip-tests); fi
+          if [ "$STRICT" = "true" ]; then args+=(--strict); fi
+          npm run gate:branch -- "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/gate.log"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: gate
+          path: |
+            ${{ runner.temp }}/gate.log
+            /tmp/pg-*.tsv
+            /tmp/pg-*-sweep.txt
+          if-no-files-found: warn

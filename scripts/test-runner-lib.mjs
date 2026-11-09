@@ -1,7 +1,7 @@
 /**
- * Heavy-job runner core. Admission is a kernel flock on the lock file, held through a `lockf` keeper
- * child that lives while the runner's pipe is open, so the kernel frees it when the runner dies and
- * nothing is ever unlinked or reclaimed. The file content is only a record of the holder's job
+ * Heavy-job runner core. Admission is a kernel flock on the lock file, held through a keeper child
+ * (`lockf` on macOS and BSD, util-linux `flock` on Linux) that lives while the runner's pipe is open,
+ * so the kernel frees it when the runner dies and nothing is ever unlinked or reclaimed. The file content is only a record of the holder's job
  * (pid, start, group); the next flock holder, or the watchdog, kills and verifies the survivors of
  * the previous record's group under the flock. Also: a child in its own process group, a wall-clock
  * limit, bounded output and a verified group kill. `scripts/test-runner.mjs` is the one entry point;
@@ -14,8 +14,16 @@ import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
 export const LOCK_PATH = process.env.PORTOGRAPH_TEST_LOCK ?? '/tmp/portograph-test.lock';
-// PORTOGRAPH_LOCKF and PORTOGRAPH_WATCHDOG replace the lockf binary and the watchdog script; the fixtures use them.
-const lockfPath = () => process.env.PORTOGRAPH_LOCKF ?? '/usr/bin/lockf';
+// PORTOGRAPH_LOCKF and PORTOGRAPH_WATCHDOG replace the keeper binary and the watchdog script; the fixtures use them.
+const linux = process.platform === 'linux';
+const lockfPath = () => process.env.PORTOGRAPH_LOCKF ?? (linux ? '/usr/bin/flock' : '/usr/bin/lockf');
+/**
+ * The keeper's arguments: take the flock on `path` within 1 s, exit 75 when it stays busy, keep the file
+ * (nothing is unlinked), and run `command` while the flock is held. `lockf -k -t 1` on macOS and BSD;
+ * on Linux `flock -w 1 -E 75` (its default busy code is 1, which this file reads as a keeper failure).
+ */
+const keeperArgs = (path, command) => (linux ? ['-w', '1', '-E', '75', path, ...command] : ['-k', '-t', '1', path, ...command]);
+const keeperName = linux ? 'flock' : 'lockf';
 const watchdogPath = () => process.env.PORTOGRAPH_WATCHDOG ?? fileURLToPath(new URL('./test-watchdog.mjs', import.meta.url));
 // PORTOGRAPH_HEALTH_PROBE replaces the memory and load probe: an executable that prints JSON {freePct, load1, swapUsedMb, cpus}.
 const probePath = () => process.env.PORTOGRAPH_HEALTH_PROBE;
@@ -218,9 +226,9 @@ export function heldLock(path = LOCK_PATH) {
 }
 
 /**
- * Take the kernel flock on `path`, blocking up to `timeoutMs`. The flock lives in a `lockf` keeper
- * whose command waits on a pipe from this process; it ends, and the kernel frees the flock, when
- * `release()` runs or this process dies. Busy answers (exit 75) wait; `lockf` failing to run (exit 71,
+ * Take the kernel flock on `path`, blocking up to `timeoutMs`. The flock lives in a keeper (see
+ * `keeperArgs`) whose command waits on a pipe from this process; it ends, and the kernel frees the flock, when
+ * `release()` runs or this process dies. Busy answers (exit 75) wait; the keeper failing to run (exit 71,
  * a signal, EAGAIN and the like) backs off and retries. Throws on timeout or after 8 such failures.
  * The returned handle has `write(record)` (false once the lock is lost), `onLost(fn)` and `release()`.
  * The lock is lost when the keeper exits before `release()` or the lock file's inode changes.
@@ -232,10 +240,10 @@ export async function takeFlock(path, { timeoutMs = Infinity, onWait = () => {} 
   for (;;) {
     let keeper;
     const outcome = await new Promise((resolve) => {
-      try { keeper = spawn(lockfPath(), ['-k', '-t', '1', path, '/bin/sh', '-c', 'echo locked; exec /bin/cat'], { stdio: ['pipe', 'pipe', 'ignore'], detached: true }); } catch (error) { resolve(`retry: ${error.message}`); return; }
+      try { keeper = spawn(lockfPath(), keeperArgs(path, ['/bin/sh', '-c', 'echo locked; exec /bin/cat']), { stdio: ['pipe', 'pipe', 'ignore'], detached: true }); } catch (error) { resolve(`retry: ${error.message}`); return; }
       let seen = '';
       keeper.stdout.on('data', (chunk) => { seen += chunk; if (seen.includes('locked')) resolve('locked'); });
-      keeper.on('exit', (code, signal) => resolve(code === 75 ? 'busy' : `retry: lockf ended with ${signal ?? `exit ${code}`}`));
+      keeper.on('exit', (code, signal) => resolve(code === 75 ? 'busy' : `retry: ${keeperName} ended with ${signal ?? `exit ${code}`}`));
       keeper.on('error', (error) => resolve(`retry: ${error.message}`));
     });
     if (outcome === 'locked') {
@@ -430,7 +438,7 @@ export async function runJob({ job, steps, limitMs, graceMs = 3000, lockPath = L
   const lock = inherited ? undefined : await acquireLock(job, { path: lockPath, graceMs, onWait: (owner) => stderr.write(`waiting for the test lock (pid ${owner.pid ?? '?'}, ${owner.job ?? '?'}); a stuck lock: see docs/gates.md\n`) , onHealthWait: (line) => stderr.write(`[test-runner] ${line}\n`), onWarn: (line) => stderr.write(`[test-runner] warning: ${line}\n`) });
   const flock = lock ? held.get(lockPath) : undefined;
   if (lock) {
-    // Double fork: a short-lived node starts the watchdog, prints its pid and exits, so launchd adopts the watchdog.
+    // Double fork: a short-lived node starts the watchdog, prints its pid and exits, so init (launchd on macOS) adopts the watchdog.
     const launcher = spawn(process.execPath, ['-e', `const c = require('node:child_process').spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: 'ignore' }); c.on('error', () => {}); process.stdout.write(String(c.pid)); c.unref();`, watchdogPath(), String(process.pid), lock.start, lockPath, String(watchdogPollMs)], { stdio: ['ignore', 'pipe', 'ignore'] });
     let printed = '';
     launcher.stdout.on('data', (chunk) => { printed += chunk; });

@@ -1,5 +1,5 @@
 # Expected: Preserve the target JPEG's 12 nodes and 26 links across four tiers, two flanks, and two stacked bars.
-# Source: docs/design/target-example.jpeg; differences from the prototype are listed in README.md.
+# Source: docs/design/target-example.jpeg; see "Differences from the prototype" in goldens/README.md.
 portograph: 2
 profile: network
 groups:

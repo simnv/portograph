@@ -18,7 +18,7 @@ The runner starts vitest in its own process group, with `--maxWorkers=$PORTOGRAP
 
 ## One heavy job at a time
 
-Tests, `corpus`, `sweep`, `r3` and `gate:branch` take one lock (`/tmp/portograph-test.lock`), so only one heavy job runs on a machine. A line `waiting for the test lock (pid N, job)` is normal: another job holds the lock, and yours starts when it ends. Run each command in the foreground with a command timeout of 60 min or more.
+Tests, `corpus`, `sweep`, `r3` and `gate:branch` take one lock (`/tmp/portograph-test.lock`), so only one heavy job runs on a machine. The lock is a kernel flock, held through `lockf` on macOS and BSD and through `flock` (util-linux) on Linux. A line `waiting for the test lock (pid N, job)` is normal: another job holds the lock, and yours starts when it ends. Run each command in the foreground with a command timeout of 60 min or more.
 
 Before a heavy job starts, the runner reads free memory and the load. If free memory is below `PORTOGRAPH_MIN_FREE_PCT` (default 20) or the load is above `PORTOGRAPH_MAX_LOAD` (default 2 x CPU count), the job waits and prints `waiting for the host`. After 15 min (`PORTOGRAPH_ADMIT_WAIT_MS`) it fails.
 
@@ -68,3 +68,9 @@ git worktree remove .claude/worktrees/gate-main
 ```
 
 Merge `main` into the branch first, so the two differ by the branch alone. Keep the base worktree inside the repository checkout: it finds `node_modules` by walking up. Never symlink or commit `node_modules`.
+
+## GitHub workflows
+
+- `ci.yml` runs on a push to `main` and on each pull request, on Node 22 and 24: typecheck, lint, `npm test`, the build, and a render of `goldens/m1-sip-edge.yaml` that it uploads as an artifact. The runners get Verdana from `ttf-mscorefonts-installer`.
+- `gate.yml` runs `npm run gate:branch` on a branch that you pick, by hand only (Actions, gate, Run workflow). It compares the branch with `origin/main` and uploads the log and the corpus and sweep files.
+- `release.yml` runs on a tag `v<version>` that equals the `package.json` version. It runs the `ci.yml` checks, publishes to npm with trusted publishing (no token), and creates a GitHub release with generated notes.
