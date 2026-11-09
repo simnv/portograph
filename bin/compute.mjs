@@ -135,6 +135,8 @@ async function run(request, emit) {
       diagnostics: parsed.diagnostics,
       createElkAttempt: () => {
         const attempt = elk.attempt();
+        // The test hook of the parent (`PORTOGRAPH_COMMAND_DEADLINE_FROM`) starts its deadline clock here, before the progress line.
+        if (process.env.PORTOGRAPH_COMMAND_DEADLINE_FROM === 'elk-worker') emit({ type: 'elk-worker' });
         if (progress) emit({ type: 'progress', text: 'portograph: ELK worker started' });
         return attempt;
       },

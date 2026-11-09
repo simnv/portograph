@@ -187,20 +187,51 @@ links:
   it('terminates real layout computation and its worker-host process at the command deadline', async () => {
     const input = join(temp, 'deadline.yaml'), output = join(temp, 'deadline.svg');
     writeFileSync(input, generateScaleYaml({ nodes: 1000 }).yaml);
-    const started = Date.now();
-    const result = await command(['render', input, '--output', output],
-      { PORTOGRAPH_COMMAND_DEADLINE_MS: '500', PORTOGRAPH_PROGRESS: '1' });
+    // The deadline clock starts when the ELK worker starts, not at the command start: parse and size
+    // of this sheet take 0.4 s on a fast host and more than 1 s on a loaded one. ELK alone runs for
+    // about 25 s on a fast host, so the deadline always lands during real ELK work.
+    const deadlineMs = 1000;
+    const result = await new Promise<{ code: number | null; stdout: string; stderr: string; afterElkMs: number }>(resolve => {
+      const child = spawn(process.execPath, [cli, 'render', input, '--output', output], { cwd: temp,
+        env: { ...process.env, PORTOGRAPH_FONT_DIRS: join(temp, 'fonts'), PORTOGRAPH_PROGRESS: '1',
+          PORTOGRAPH_COMMAND_DEADLINE_MS: String(deadlineMs), PORTOGRAPH_COMMAND_DEADLINE_FROM: 'elk-worker' } });
+      let stdout = '', stderr = '', elkSeenAt: number | undefined;
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stderr.on('data', chunk => {
+        stderr += chunk;
+        if (elkSeenAt === undefined && stderr.includes('portograph: ELK worker started')) elkSeenAt = Date.now();
+      });
+      child.on('close', code => resolve({ code, stdout, stderr, afterElkMs: Date.now() - (elkSeenAt ?? Number.NaN) }));
+    });
     expect(result.code, result.stderr).toBe(3);
-    expect(result.stderr).toContain('COMMAND_DEADLINE');
+    expect(result.stderr).toContain(`COMMAND_DEADLINE: the command did not finish within ${deadlineMs} ms after the ELK worker started`);
     expect(result.stderr).toContain('portograph: size took');
     expect(result.stderr).toContain('portograph: ELK worker started');
-    expect(Date.now() - started).toBeLessThan(5000);
+    // The kill landed inside ELK: the skeleton stage never finished.
+    expect(result.stderr).not.toContain('portograph: skeleton took');
+    // The parent arms the deadline before it writes the ELK line, so only the kill can end the run this soon.
+    expect(result.afterElkMs).toBeLessThan(deadlineMs + 3000);
     expect(result.stdout).toBe('');
     const match = /compute process (\d+)/.exec(result.stderr);
     expect(match).not.toBeNull();
     expect(() => process.kill(Number(match![1]), 0)).toThrow();
     expect(readdirSync(temp).filter(name => /^deadline\.(svg|layout\.json|score\.json)$/.test(name))).toEqual([]);
-  }, 15000);
+  }, 30000);
+
+  it('counts the command deadline from the command start without the test hook, and refuses an unknown hook value', async () => {
+    const output = join(temp, 'early.svg');
+    const result = await command(['render', golden, '--output', output], { PORTOGRAPH_COMMAND_DEADLINE_MS: '1', PORTOGRAPH_PROGRESS: '1' });
+    expect(result.code, result.stderr).toBe(3);
+    expect(result.stderr).toContain('COMMAND_DEADLINE: the command did not finish within 1 ms;');
+    expect(result.stdout).toBe('');
+    const match = /compute process (\d+)/.exec(result.stderr);
+    expect(match).not.toBeNull();
+    expect(() => process.kill(Number(match![1]), 0)).toThrow();
+    expect(readdirSync(temp).filter(name => name.startsWith('early.'))).toEqual([]);
+    const unknown = await command(['render', golden, '--output', output], { PORTOGRAPH_COMMAND_DEADLINE_FROM: 'start' });
+    expect(unknown.code).toBe(2);
+    expect(unknown.stderr).toContain('PORTOGRAPH_COMMAND_DEADLINE_FROM must be elk-worker');
+  });
 
   it('writes the same bytes on two runs, and keeps the stage timings only on request', async () => {
     const [a, b] = [join(temp, 'det-a.svg'), join(temp, 'det-b.svg')];

@@ -50,15 +50,30 @@ function deadlineMs(fallback) {
 }
 
 /**
+ * When the deadline clock starts. A test hook only: `PORTOGRAPH_COMMAND_DEADLINE_FROM=elk-worker`
+ * starts the `PORTOGRAPH_COMMAND_DEADLINE_MS` clock when the first ELK worker starts, so a test can
+ * prove the kill during real ELK work on a host of any speed. Until then, the shipped deadline holds.
+ */
+function deadlinePlan(fallback) {
+  const limitMs = deadlineMs(fallback);
+  const from = process.env.PORTOGRAPH_COMMAND_DEADLINE_FROM;
+  if (from === undefined) return { startMs: limitMs };
+  if (from !== 'elk-worker') throw new Error(`portograph: PORTOGRAPH_COMMAND_DEADLINE_FROM must be elk-worker`);
+  return { startMs: fallback, elkMs: limitMs };
+}
+
+/**
  * Run the compute job in a child process under one absolute deadline.
  *
  * Returns `{ ok: true, result }`, or `{ ok: false, kind, message, diagnostics }` where `kind` is
  * `input` or `processing`. Progress and diagnostics reach `io.err` while the child still runs, so
  * a long command is not silent.
  */
-function compute(request, io, limitMs, inputText) {
+function compute(request, io, plan, inputText) {
   return new Promise((resolve) => {
-    const deadlineAt = Date.now() + limitMs;
+    // The child's own budget always counts from the start. The test hook moves only this process's deadline.
+    const commandDeadlineAt = Date.now() + plan.startMs;
+    let deadlineAt = commandDeadlineAt, limitText = `${plan.startMs} ms`, timer, elkArmed = false;
     let child;
     try {
       child = fork(COMPUTE, [], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
@@ -75,7 +90,7 @@ function compute(request, io, limitMs, inputText) {
     const finish = (value) => {
       if (settled) return;
       if (value.ok && Date.now() >= deadlineAt) value = { ok: false, kind: 'processing', code: 'COMMAND_DEADLINE',
-        message: `the command did not finish within ${limitMs} ms; no artifacts were published` };
+        message: `the command did not finish within ${limitText}; no artifacts were published` };
       settled = true;
       clearTimeout(timer);
       // Whatever the outcome, this process tree stops here: SIGKILL cannot be caught or delayed,
@@ -84,21 +99,31 @@ function compute(request, io, limitMs, inputText) {
       child.once('exit', () => resolve(value));
       child.kill('SIGKILL');
     };
-    const timer = setTimeout(() => {
-      finish({ ok: false, kind: 'processing', code: 'COMMAND_DEADLINE',
-        message: `the command did not finish within ${limitMs} ms; no layout, score or gate result was produced` });
-    }, Math.max(1, deadlineAt - Date.now()));
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        finish({ ok: false, kind: 'processing', code: 'COMMAND_DEADLINE',
+          message: `the command did not finish within ${limitText}; no layout, score or gate result was produced` });
+      }, Math.max(1, deadlineAt - Date.now()));
+    };
+    arm();
 
     child.on('message', (message) => {
       if (message.type === 'diagnostic' || message.type === 'progress') io.err.write(`${message.text}\n`);
       else if (message.type === 'result') finish(message.value);
+      else if (message.type === 'elk-worker' && plan.elkMs !== undefined && !elkArmed && !settled) {
+        elkArmed = true;
+        deadlineAt = Date.now() + plan.elkMs;
+        limitText = `${plan.elkMs} ms after the ELK worker started`;
+        arm();
+      }
     });
     child.on('error', (error) => finish({ ok: false, kind: 'processing', message: `compute process failed: ${error.message}` }));
     // A queued result message is delivered before this turn of the loop ends; defer so an exit
     // that follows a successful send is not mistaken for a silent death.
     child.on('exit', (code, signal) => setImmediate(() => finish({ ok: false, kind: 'processing',
       message: `compute process ended without a result (${signal ? `signal ${signal}` : `exit code ${code}`})` })));
-    child.send({ type: 'run', request, inputText, deadlineAt });
+    child.send({ type: 'run', request, inputText, deadlineAt: commandDeadlineAt });
   });
 }
 
@@ -201,9 +226,9 @@ export async function main(argv, io = { out: process.stdout, err: process.stderr
     return EXIT.inputError;
   }
 
-  let limitMs;
+  let plan;
   try {
-    limitMs = deadlineMs(COMMAND_DEADLINE_MS);
+    plan = deadlinePlan(COMMAND_DEADLINE_MS);
   } catch (error) {
     io.err.write(`${error.message}\n`);
     return EXIT.inputError;
@@ -224,7 +249,7 @@ export async function main(argv, io = { out: process.stdout, err: process.stderr
     io.err.write(`${formatStatus(command.diagnostics, 'warning', 'FONT_MISSING', VERDANA_WARNING, true)}\n`);
   }
 
-  const outcome = await compute(command, io, limitMs, inputText);
+  const outcome = await compute(command, io, plan, inputText);
   if (outcome.ok) return writeArtifacts(command, outcome.result, io, library);
   io.err.write(`${formatStatus(command.diagnostics, 'error', outcome.code ?? (outcome.kind === 'input' ? 'INVALID_INPUT' : 'FAILED'), outcome.message, Boolean(outcome.code))}\n`);
   return outcome.kind === 'input' ? EXIT.inputError : EXIT.processingFailure;
