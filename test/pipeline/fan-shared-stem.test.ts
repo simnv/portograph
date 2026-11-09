@@ -318,7 +318,7 @@ it('ticket 45: a fan track steps past the node standing in its corridor (ADR-001
 // span, and the track turns inside the frame); the case fails until the fixture holds the scenario again.
 it.fails('architecture-2 ticket 18: a fan track keeps the group edge margin of the box its branch leaves', async () => {
   // The branch to `c1` wants the x of `c1`'s port, 7.4 px outside the left edge of the frame `home`. The track
-  // rose there, within the edge margin (G6 `segment-group-edge [link-2, home]`); no group exit is reserved,
+  // rose there, within the edge margin (G6 `segment-group-edge [link-1, home]`); no group exit is reserved,
   // because the run already ends outside the box. The branch now keeps the port's column out past the
   // frame's margin, turns there and rises on `c1`'s own column: one L, no step back in the tier gap.
   const model = await run(fixture('a-fan-track-keeps-the-group-edge-margin'));
