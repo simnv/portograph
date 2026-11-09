@@ -592,6 +592,29 @@ const onFace = (pill: Rect, node: Anchored['node'], side: Side | undefined): Anc
 });
 
 /**
+ * A bus mark or joint that hangs on a node itself (an anonymous port, a bus bar end). Its face is the face it lies beyond (top or bottom first), else the face nearest its centre,
+ * and it then follows the pill rule (`onFace`), so a resized node keeps it on that face: the mark on the face, a joint at the same
+ * px distance beyond it (issue 17, R1). `box` is stated from the node's top-left.
+ */
+const onNearestFace = (box: Rect, node: Anchored['node']): Anchored => {
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  // A bar runs across and a stub runs along the face-normal, so a point beyond the top or bottom belongs to that face, then one beyond a side.
+  if (y < -EPS) return onFace(box, node, 'top');
+  if (y > node.height + EPS) return onFace(box, node, 'bottom');
+  if (x < -EPS) return onFace(box, node, 'left');
+  if (x > node.width + EPS) return onFace(box, node, 'right');
+  const away: [Side, number][] = [['top', Math.abs(y)], ['bottom', Math.abs(y - node.height)], ['left', Math.abs(x)], ['right', Math.abs(x - node.width)]];
+  return onFace(box, node, away.reduce((best, item) => item[1] < best[1] ? item : best)[0]);
+};
+
+/** The `exit`/`entry` constraint that pins a connector end to the centre of an `Anchored` box: its fraction, plus the px rest. */
+const pinnedTo = (end: 'exit' | 'entry', box: Anchored): Readonly<Record<string, number>> => ({
+  [`${end}X`]: box.fraction.x, [`${end}Y`]: box.fraction.y,
+  [`${end}Dx`]: box.x + box.width / 2 - box.fraction.x * box.node.width, [`${end}Dy`]: box.y + box.height / 2 - box.fraction.y * box.node.height,
+  [`${end}Perimeter`]: 0,
+});
+
+/**
  * An icon or a description follows the node's name. The name is the node's own top-aligned label,
  * so draw.io keeps it at a fixed distance from the top, centred or, on a card, from the left: the
  * cell is measured from the top centre, or from the top-left on a card.
@@ -600,8 +623,10 @@ const asName = (box: Rect, node: Anchored['node'], card: boolean): Anchored =>
   ({ ...box, node, fraction: { x: card ? 0 : 0.5, y: 0 } });
 
 /** The `mxGeometry` of a vertex: from the parent's top-left, or relative to the point an `Anchored` box names. */
+const isAnchored = (box: Rect | Anchored): box is Anchored => 'fraction' in box;
+
 const vertexGeometry = (box: Rect | Anchored): string => {
-  if (!('fraction' in box)) return element('mxGeometry', { x: box.x, y: box.y, width: box.width, height: box.height, as: 'geometry' });
+  if (!isAnchored(box)) return element('mxGeometry', { x: box.x, y: box.y, width: box.width, height: box.height, as: 'geometry' });
   const { fraction, node } = box;
   return element('mxGeometry', { x: fraction.x, y: fraction.y, width: box.width, height: box.height, relative: 1, as: 'geometry' },
     element('mxPoint', { x: box.x - fraction.x * node.width, y: box.y - fraction.y * node.height, as: 'offset' }));
@@ -1546,9 +1571,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       });
     };
     // Every end of the bus geometry is a joint: a 2 px invisible, locked vertex, a child of a member's node or pill and
-    // stated from its top-left, so a node dragged by hand carries its stub's end and its piece of the bar with it. A joint and a
-    // bus mark keep absolute geometry: on a node (not a pill) a resize leaves them at their old offset, unlike a pill (issue 07);
-    // a follow-up ticket covers them. A free
+    // stated from its top-left, so a node dragged by hand carries its stub's end and its piece of the bar with it. On a node (not a
+    // pill) a joint and a bus mark take the pill rule (`onNearestFace`, issue 17): the node face nearest them, a fixed px from
+    // the nearer corner, so a resize keeps them on it; a stub's start is pinned to its mark (`pinnedTo`). A free
     // end (`sourcePoint`/`targetPoint`) stays behind, and draw.io shows it as a loose handle (issue 04).
     // The bar is one edge per pair of neighbouring joints, so a move bends the bar beside the moved node only, and every
     // stub stays on its own joint. Ids are `pg-busJoint~<bus>~<n>`, with `n` the joint's place along the bar: no author
@@ -1581,6 +1606,9 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       return found.map((item, index) => ({ ...item, id: cellId('busJoint', of.id, String(index)) }));
     };
     const mine = spots(bus);
+    /** A box on a node (not a pill) follows the node's faces; on a pill it stays absolute, as the pill itself carries it. */
+    const hung = (host: { cell: string; box: Rect }, box: Rect): Rect | Anchored =>
+      host.cell.startsWith('pg-node~') ? onNearestFace(box, host.box) : box;
     // The bus tooltip of the SVG, with the text of a bus label that had no room to be drawn (`busTooltip`). It rides on every piece of the bus.
     const busTip = withTooltip({}, busTooltip(layout, bus));
     const jointAt = (list: readonly Spot[], at: Point): string | undefined => list.find(item => sameJoint(item.at, at))?.id;
@@ -1590,7 +1618,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       vertex(spot.id, host.cell, styleString(['ellipse'], {
         fillColor: 'none', strokeColor: 'none', points: '[]',
         ...FIXED, ...UNDELETABLE,
-      }), relative(box, host.box));
+      }), hung(host, relative(box, host.box)));
     }
     /** The style that pins an edge end to the centre of its joint. */
     const centred = (end: 'exit' | 'entry'): Readonly<Record<string, StyleValue>> =>
@@ -1602,17 +1630,20 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
       // A stub starts on its port's outward face (`overlayEndpoint`, the bus producer's own point).
       const head = terminal('exit', ref, stub.from), pill = markHost(ref);
       const to = shift(stub.to);
-      const points = [head?.at ?? shift(stub.from), to];
-      const end = jointAt(mine, to);
-      // A stub is one straight run (port face to bar) and both its ends move with one node, so `edgeStyle=none` keeps it straight.
-      edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(false, { ...(head?.style ?? {}), ...(end ? centred('entry') : {}) }), points,
-        { source: head?.cell, target: end, sourcePoint: head ? undefined : points[0], targetPoint: end ? undefined : points[1] }, undefined, busTip);
       const at = shift(stub.from);
       const box = { x: at.x - OVERLAY_ENDPOINT_RADIUS, y: at.y - OVERLAY_ENDPOINT_RADIUS,
         width: 2 * OVERLAY_ENDPOINT_RADIUS, height: 2 * OVERLAY_ENDPOINT_RADIUS };
+      // A mark on a node follows its face; the stub's start is pinned to the mark's own centre, so it stays on the mark.
+      const mark = pill ? hung(pill, relative(box, pill.box)) : box;
+      const exit = head && pill && head.cell === pill.cell && isAnchored(mark) ? pinnedTo('exit', mark) : undefined;
+      const points = [head?.at ?? shift(stub.from), to];
+      const end = jointAt(mine, to);
+      // A stub is one straight run (port face to bar) and both its ends move with one node, so `edgeStyle=none` keeps it straight.
+      edgeCell(cellId('busStub', bus.id, stub.node), layerId('overlay'), stroke(false, { ...(head?.style ?? {}), ...exit, ...(end ? centred('entry') : {}) }), points,
+        { source: head?.cell, target: end, sourcePoint: head ? undefined : points[0], targetPoint: end ? undefined : points[1] }, undefined, busTip);
       vertex(cellId('busMark', bus.id, stub.node), pill?.cell ?? layerId('overlay'),
         styleString(['ellipse'], { ...markPaint(paintPath.overlayEndpoint(root, authorClass(bus.class))), points: '[]', ...FIXED, ...UNDELETABLE }),
-        pill ? relative(box, pill.box) : box);
+        mark);
     }
     // The bar, one piece between each two neighbouring joints.
     const pieces: { id: string; points: Point[] }[] = [];

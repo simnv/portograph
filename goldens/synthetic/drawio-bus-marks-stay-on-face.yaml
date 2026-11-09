@@ -1,0 +1,62 @@
+# Expected (drawio-export ticket 17): in the draw.io export a bus mark and a bus joint that hang on a node (an anonymous bus port, a
+# bar end) are `relative="1"` children of the node, so a node resized by hand keeps each on its face: the mark on the face, the joint
+# the same px beyond it, and the stub's start stays on its mark. Before an edit every cell is where `layout.json` puts it.
+# Cases: a `sync` mesh over two rows joins two buses; the upper bar stands below the bottom edge, the lower bar above the top edge.
+# Test-only input owned by drawio-export ticket 17; test/render/drawio.test.ts reads it, and the real-mxGraph resize probe in
+# .scratch/drawio-export/probes-07 resizes its nodes.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  g1: { tier: 1 }
+  g2: { tier: 1 }
+  g3: { tier: 1 }
+  mid: { tier: 2, label: Middle }
+  low: { tier: 3, label: Low }
+nodes:
+  core: { group: top, class: router, label: Core }
+  a1: { group: g1, class: router, label: A1 }
+  a2: { group: g2, class: router, label: A2 }
+  a3: { group: g3, class: router, label: A3 }
+  m1: { group: mid, class: router, label: M1 }
+  m2: { group: mid, class: router, label: M2 }
+  b1: { group: low, class: router, label: B1 }
+  b2: { group: low, class: router, label: B2 }
+  b3: { group: low, class: router, label: B3 }
+  b4: { group: low, class: router, label: B4 }
+  b5: { group: low, class: router, label: B5 }
+links:
+  - [core, a1]
+  - [core, a2]
+  - [core, a3]
+  - [a1, m1]
+  - [a3, m2]
+  - [m1, b1]
+  - [m2, b5]
+  - { from: a1, to: a2, class: sync }
+  - { from: a1, to: a3, class: sync }
+  - { from: a2, to: a3, class: sync }
+  - { from: b1, to: b2, class: sync }
+  - { from: b1, to: b3, class: sync }
+  - { from: b1, to: b4, class: sync }
+  - { from: b1, to: b5, class: sync }
+  - { from: b2, to: b3, class: sync }
+  - { from: b2, to: b4, class: sync }
+  - { from: b2, to: b5, class: sync }
+  - { from: b3, to: b4, class: sync }
+  - { from: b3, to: b5, class: sync }
+  - { from: b4, to: b5, class: sync }
+  - { from: a1, to: b1, class: sync }
+  - { from: a1, to: b2, class: sync }
+  - { from: a1, to: b3, class: sync }
+  - { from: a1, to: b4, class: sync }
+  - { from: a1, to: b5, class: sync }
+  - { from: a2, to: b1, class: sync }
+  - { from: a2, to: b2, class: sync }
+  - { from: a2, to: b3, class: sync }
+  - { from: a2, to: b4, class: sync }
+  - { from: a2, to: b5, class: sync }
+  - { from: a3, to: b1, class: sync }
+  - { from: a3, to: b2, class: sync }
+  - { from: a3, to: b3, class: sync }
+  - { from: a3, to: b4, class: sync }
+  - { from: a3, to: b5, class: sync }
