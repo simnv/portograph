@@ -5,8 +5,8 @@
 # top centre (from the top-left on a card). Before an edit every cell is where `layout.json` puts it.
 # Cases: `hub` holds pills on all four faces, two or three per face, so each face has a pill nearer each corner; it has an icon
 # and a description. `top` and `low` hold one linked pill per used port. The layout, SVG and draw.io output agree.
-# Test-only input owned by drawio-export ticket 07; test/render/drawio.test.ts reads it, and the real-mxGraph resize probe in
-# `.scratch/drawio-export/probes-07/` loads its export.
+# Test-only input owned by drawio-export ticket 07; test/render/drawio.test.ts reads it, and a real-mxGraph resize probe
+# loads its export.
 portograph: 2
 groups:
   upper: { tier: 0, label: Upper }

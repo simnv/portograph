@@ -9,11 +9,12 @@ import { holdsMove } from '../../src/layout/move-reservations.js';
 import { EDGE_MARGIN, RING_PITCH } from '../../src/layout/course-rows.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { SYNC_MESH_ON_THREE_ROWS } from '../hand-solves.js';
 
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const gates = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id);
 const codes = (model: LayoutModel, code: string) => model.diagnostics.filter(item => item.code === code);
-const caseEleven = (): string => readFileSync(new URL('../../ref/hand-solves/11-sync-mesh-on-three-rows.yaml', import.meta.url), 'utf8');
+const caseEleven = (): string => SYNC_MESH_ON_THREE_ROWS;
 
 /** A mesh of `ids` rows, one group per row on tiers 0, 1, 2 ..., a full `sync` mesh, and a routed spine from the first node of each row to the next. */
 function mesh(rows: string[][], extraGroups = '', extraNodes = '', extraLinks = ''): string {

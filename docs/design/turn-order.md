@@ -1,7 +1,7 @@
 # Port order from the planned first turn (design, proposed)
 
 Status: accepted (architecture ticket 24; user decisions 2026-10-11). Evidence: hand solves 01 and 09, principle P2
-of `ref/hand-solves/ANALYSIS.md`. This document states the rule and the round that offers it. The ticket has the
+of the hand-solve analysis. This document states the rule and the round that offers it. The ticket has the
 measurements and the phases.
 
 The user's decisions: stage 5 and a 7a pass (Section 4); **an offer, not a fixed rule**, judged by `unified` and paid

@@ -26,7 +26,7 @@ Backbone share one x-extent, and both TBR flanks share the Datacenter's y-extent
 
 ## Amendment (2026-09-30, ticket 136): the grid gives way to the pack
 
-The grid widens a box in place, and the derived frame widens with it. A beside row (`packBesideRows`) stood packed against the narrower frame. On a hinted run the pack moved the row and the grid put the moved box back onto the extent of its partner, so the two rules stepped against each other and no round bound could end it. The published layout must be at the fixed point of the pack, so the grid gives way: it refuses a widening that changes which groups the pack would move (judged row by row, on a copy), and the pair keeps its own extents. `GROUP_GRID_YIELDS_TO_PACK` (info) names the pair. A row that stood open before the grid is packed once after it, and the pair of rules ends by a round bound of 2; a grid that still widens after that leaves the grid aligned and raises `GROUP_GRID_NON_CONVERGENCE`, which the next call that settles withdraws. Publication and restore read the same refusal, because they re-run the grid function itself. See Q110 in `docs/design/decisions-log.md`.
+The grid widens a box in place, and the derived frame widens with it. A beside row (`packBesideRows`) stood packed against the narrower frame. On a hinted run the pack moved the row and the grid put the moved box back onto the extent of its partner, so the two rules stepped against each other and no round bound could end it. The published layout must be at the fixed point of the pack, so the grid gives way: it refuses a widening that changes which groups the pack would move (judged row by row, on a copy), and the pair keeps its own extents. `GROUP_GRID_YIELDS_TO_PACK` (info) names the pair. A row that stood open before the grid is packed once after it, and the pair of rules ends by a round bound of 2; a grid that still widens after that leaves the grid aligned and raises `GROUP_GRID_NON_CONVERGENCE`, which the next call that settles withdraws. Publication and restore read the same refusal, because they re-run the grid function itself.
 
 ## Amendment (2026-10-04, ticket 07): the grid keeps flank gaps by moving the flanks
 
@@ -34,5 +34,5 @@ The grid widens a core in place, and a flank stood a band gap from the old box, 
 
 ## Amendment (ruling P2, 2026-11-07)
 
-The 30 % cap on union growth (`GROUP_GRID_MAX_GROWTH`) stays. `.scratch/decision-review-2026-11/results/P2.md` shows that cap 0 gives 4 sheets more bends and 2 G6 findings, and cap 0.10 gives the same 4 sheets more bends and 1 G6 finding; automatic union growth is not obsolete.
+The 30 % cap on union growth (`GROUP_GRID_MAX_GROWTH`) stays. a measurement on the sheet set shows that cap 0 gives 4 sheets more bends and 2 G6 findings, and cap 0.10 gives the same 4 sheets more bends and 1 G6 finding; automatic union growth is not obsolete.
 Q cannot see what the grid buys: its grid-alignment term counts node matches and did not move on any sheet.

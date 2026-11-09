@@ -11,8 +11,8 @@ Pronounced **POR-to-graf** · Портограф.
 
 ## Status
 
-**M1 implementation is in progress.** The YAML-to-SVG pipeline and CLI are implemented; final golden visual approval is pending. Follow the [implementation map](.scratch/m1-example-diagram/map.md) for ticket status.
-The repository also holds the design record, reference corpus, and prototype results below.
+**M1 implementation is in progress.** The YAML-to-SVG pipeline and CLI are implemented; final golden visual approval is pending.
+The repository also holds the design record and prototype results below.
 These measurements use the prototype topology; the JPEG golden has different wiring:
 
 | tall2 (solver + router) | **tall5 (solver + router + nine region rules)** |
@@ -90,15 +90,12 @@ alone: the library does not read the machine's fonts, so its output depends on t
 
 1. [`CONTEXT.md`](CONTEXT.md) — the vocabulary and invariants. Everything else uses these words.
    [`GLOSSARY.md`](GLOSSARY.md) gives short definitions grouped by topic.
-2. [`docs/design/decisions-log.md`](docs/design/decisions-log.md) — every design question, its
-   answer, and what evidence amended it.
-3. [`docs/design/pipeline.md`](docs/design/pipeline.md) — the stages, in order, with the region
+2. [`docs/design/pipeline.md`](docs/design/pipeline.md) — the stages, in order, with the region
    rules defined precisely.
-4. [`docs/design/schema.md`](docs/design/schema.md) — the YAML format.
-5. [`docs/design/quality.md`](docs/design/quality.md) — gates, score, thresholds.
-6. [`docs/adr/`](docs/adr/) — the architecture decisions, one per file. Read ADR-0019 for the ranked-group
+3. [`docs/design/schema.md`](docs/design/schema.md) — the YAML format.
+4. [`docs/design/quality.md`](docs/design/quality.md) — gates, score, thresholds.
+5. [`docs/adr/`](docs/adr/) — the architecture decisions, one per file. Read ADR-0019 for the ranked-group
    model (ranks, rank cells, frames).
-7. [`.scratch/m1-example-diagram/`](.scratch/m1-example-diagram/) — milestone 1 spec and tickets.
 
 ## Research behind it
 
@@ -109,17 +106,15 @@ alone: the library does not read the machine's fonts, so its output depends on t
 - [`docs/research/codex-routing-review.md`](docs/research/codex-routing-review.md) — the
   adversarial review of the routing design: 29 findings, 17 that would break output, all folded in.
 - [`docs/research/codex-design-review.md`](docs/research/codex-design-review.md) — the second
-  adversarial review, of the whole record: 55 findings, all folded in (see the decisions log).
+  adversarial review, of the whole record: 55 findings, all folded in (all folded into the design record).
 - [`docs/research/naming.md`](docs/research/naming.md) — twenty-nine names vetted against
   registries, GitHub, DNS and trademark sources; why `portograph`.
 - [`docs/research/prototype-results.md`](docs/research/prototype-results.md) — sixteen ELK variants
   and five region-rule iterations, with metrics.
-- [`ref/`](ref/README.md) — the reference corpus: five published sources on diagram layout, the
-  Network Sketcher layout-rules extraction, and the analysis of the predecessor project (`d3-fd`).
 
 ## Working conventions
 
-See [`AGENTS.md`](AGENTS.md): tickets live in `.scratch/<feature>/issues/`, decisions in
+See [`AGENTS.md`](AGENTS.md): decisions live in
 `docs/adr/`, vocabulary in `CONTEXT.md`. Every ticket is reviewed adversarially by codex (code) and
 a PNG read of each render (`npm run png`) before merge; correctness and metric regressions block.
 

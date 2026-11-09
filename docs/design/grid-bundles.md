@@ -19,7 +19,7 @@ Both faults have one cause: **nobody decided the bundle's direction before the r
 takes a lateral side because its peer is on the same tier (stage 2 table), and the packer does not know that the
 two ends must stand one over the other.
 
-Hand solve 10 (`ref/hand-solves/10-bundle-in-a-grid.*`, page `solve`) keeps the author's grid. S3 stands under S2
+Hand solve 10 keeps the author's grid. S3 stands under S2
 and the bundle turns from `right`/`left` to `bottom`/`top`: two short vertical members in the row gap.
 
 ## 2. Rule

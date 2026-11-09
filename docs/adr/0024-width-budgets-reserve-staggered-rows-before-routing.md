@@ -102,6 +102,6 @@ The user ruled that a tier block must not be much wider than its sheet because o
   it had not run. A declined stagger stays one line; the record names the gate, and the info diagnostic `FAN_WRAP_DECLINED` names the reason.
   A stagger refusal in the wrapped run's 7f declines it the same way.
 
-Evidence: `.scratch/decision-review-2026-11/poc/fanwrap/results.md` and `poc/fanwrap-v4/results.md`. On the key sheet
+Evidence: two proofs of concept on the fan wrap. On the key sheet
 `a-chain-of-tiers-packs-over-its-feeds-final-x` the canvas goes from 2937 x 1069 to 1845 x 1126 px (area -33.8 %), with no bend and no
 straight link lost.

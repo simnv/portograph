@@ -21,8 +21,8 @@ Use these paths, with `bgplab` as the first source identifier:
 | Content | Location |
 | --- | --- |
 | Approved distinct sheets | `goldens/bgplab/<lab-slug>.yaml` |
-| All-lab manifest, review records, reference PNGs and full upstream notice | `ref/corpora/bgplab/` |
-| Faithful but failing or unresolved sheets | `.scratch/architecture-2/fixtures/bgplab/<lab-slug>.yaml` |
+| All-lab manifest, review records, reference PNGs and full upstream notice | `corpora/bgplab/` |
+| Faithful but failing or unresolved sheets | a local scratch directory, outside the repository |
 | Temporary renders, logs and conversion drafts | `/tmp/bgplab/conversions/` |
 
 Admitted sheets join the existing corpus command automatically. Do not add duplicate YAML copies under another `goldens/` directory. There is no need for a second permanent bgplab render command initially: an explicit pending-file list can use the locked CLI render command in the Recipe.
@@ -130,7 +130,7 @@ Use `<category>-<original-lab-directory>.yaml`, lower case, replacing `_` with `
 # Author: Ivan Pepelnjak (bgplab/bgplab)
 # Fetched: 2026-11-06
 # Conversion: authored from static YAML and reference PNG; recipe bgplab-v1
-# Record: ref/corpora/bgplab/reviews/policy-e-wedgies.json
+# Record: corpora/bgplab/reviews/policy-e-wedgies.json
 # Kept: <N real nodes, AS/site boxes, P physical pairs, L LANs, S stubs, names>
 # Added: <synthetic medium IDs and exact participants; source-only visible labels>
 # Simplified: <two-member LANs, orientation, icon substitutions; or none>
@@ -143,7 +143,7 @@ portograph: 2
 profile: network
 ```
 
-Replace placeholders, use the actual source-capture date, and add fixed-commit URLs for every YAML dependency that contributed a retained fact. If no reference exists, write `Reference: none; static-source reconstruction` and identify the hierarchy evidence. Store SHA-256 hashes of input files and reference images in the review record. Preserve the complete upstream licence notice in `ref/corpora/bgplab/LICENSE.md`; a header URL alone is not the notice copy.
+Replace placeholders, use the actual source-capture date, and add fixed-commit URLs for every YAML dependency that contributed a retained fact. If no reference exists, write `Reference: none; static-source reconstruction` and identify the hierarchy evidence. Store SHA-256 hashes of input files and reference images in the review record. Preserve the complete upstream licence notice in `corpora/bgplab/LICENSE.md`; a header URL alone is not the notice copy.
 
 ## 8. Batches without collisions
 
@@ -168,7 +168,7 @@ Use a typed parameter record: positive integer `spines`, `leafs`, `hostsPerLeaf`
 
 For iBGP use AS 65000, RR spines, leaf routers, and an AS canton over tier-0 spines and tier-1 leaves; hosts belong to tier 2 outside it. For EBGP use spine AS 65100 and leaf AS 65000+i, with one box per AS; no spines are labelled RR. Physical links stay routed; neither mode synthesizes session overlays.
 
-Proposed scale matrix: S×L = 1×2, 2×4, 4×8, 8×32, 16×64; each with 0/1 host per leaf and both modes. Keep these 20 generated cases and parameters under `.scratch/stress/fabric/`, with a future explicit locked `stress:fabric` command and bounded per-case runtime. No claim that the largest cases meet 120 seconds. Reuse the stress reporting conventions, but treat old measurements as historical.
+Proposed scale matrix: S×L = 1×2, 2×4, 4×8, 8×32, 16×64; each with 0/1 host per leaf and both modes. Keep these 20 generated cases and parameters in a local scratch directory, with a future explicit locked `stress:fabric` command and bounded per-case runtime. No claim that the largest cases meet 120 seconds. Reuse the stress reporting conventions, but treat old measurements as historical.
 
 Initially consider at most two additional passing small goldens: 2×4 iBGP without hosts and 2×4 EBGP with hosts, under `goldens/fabric/`. Admit only if their grouping/role contract adds coverage beyond bgplab, `private-datacenter-spine-leaf.yaml` and `avd-dual-dc-l3ls.yaml`. The shared-AS canton versus separate-AS groups is the useful distinction; more 2×4 physical meshes alone add little. Use names such as `s02-l04-h1-ebgp.yaml`.
 
@@ -176,7 +176,7 @@ Do not place the full matrix in `test/fixtures/sweep/`: sweep runs in every bran
 
 ## Later external sources
 
-Apply the same contract under `goldens/<source>/` and `ref/corpora/<source>/`: pinned source, notice, full inventory, authored semantics, source-link ledger, absolute admission checks and documented aliases. Keep source-specific parsers outside the engine. Cross-source duplicates can point to an existing canonical sheet while retaining their own provenance; a new source must add a distinct retained layout contract to justify another gate row. Sources without a PNG use an explicitly marked static reconstruction review.
+Apply the same contract under `goldens/<source>/` and `corpora/<source>/`: pinned source, notice, full inventory, authored semantics, source-link ledger, absolute admission checks and documented aliases. Keep source-specific parsers outside the engine. Cross-source duplicates can point to an existing canonical sheet while retaining their own provenance; a new source must add a distinct retained layout contract to justify another gate row. Sources without a PNG use an explicitly marked static reconstruction review.
 
 ## Recipe
 

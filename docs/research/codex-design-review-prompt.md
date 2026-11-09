@@ -1,6 +1,6 @@
 You are reviewing the design record of `portograph` — a TypeScript library/CLI that turns YAML (nodes with ports, links, groups in tiers) into a laid-out SVG diagram. Implementation has not started. Your job is ADVERSARIAL: find what will break, contradict itself, or cannot be built as written. No praise, no summaries of what the docs say.
 
-Read, in this order: CLAUDE.md, AGENTS.md, CONTEXT.md, docs/design/decisions-log.md, docs/design/pipeline.md, docs/design/schema.md, docs/design/quality.md, docs/adr/*.md, .scratch/m1-example-diagram/spec.md and every issues/*.md. Consult docs/research/codex-routing-review.md (your predecessor's findings) to check they were actually folded in, and prototype/regions.mjs to see what the rules really do vs what pipeline.md claims.
+Read, in this order: AGENTS.md, CONTEXT.md, the decisions log, docs/design/pipeline.md, docs/design/schema.md, docs/design/quality.md, docs/adr/*.md, the M1 spec and every M1 ticket. Consult docs/research/codex-routing-review.md (your predecessor's findings) to check they were actually folded in, and prototype/regions.mjs to see what the rules really do vs what pipeline.md claims.
 
 Attack along these axes, citing file:line for every finding:
 1. INTERNAL CONTRADICTIONS between documents — numbers, rule order, stage names, defaults, terms (e.g. CONTEXT.md vs pipeline.md vs quality.md vs schema.md vs tickets).

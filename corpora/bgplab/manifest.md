@@ -16,7 +16,7 @@ Ticket 78. One row per lab: all 54 labs of the source, plus the two drawing-only
   Admission rule: the sheet lays out, 0 error-severity gates, 0 removed links, and a fidelity review against the reference PNG.
   The conversion workers rendered every sheet once with that result; the corpus run of the branch confirms it.
 
-Counts: 56 labs = 44 admitted + 10 alias + 2 pending. 0 sheets wait in `.scratch/architecture-2/fixtures/bgplab/`.
+Counts: 56 labs = 44 admitted + 10 alias + 2 pending. No sheet waits outside `goldens/bgplab/`.
 
 | lab | sheet | status | alias-of | reason |
 | --- | --- | --- | --- | --- |

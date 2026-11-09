@@ -12,7 +12,7 @@ import { withoutJointOrder } from '../layout/joint-off.js';
 const fixture = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-straight-gap-needs-no-router.yaml', import.meta.url), 'utf8'));
 
 /**
- * Stress-test reproducer (`.scratch/stress/issues/07`). `m2 → l1` is one straight run between two
+ * Stress-test reproducer. `m2 → l1` is one straight run between two
  * port anchors on one x, and the two links out of `h1` cross it at the 15 px depth every stem turns
  * at. One of those crossings is routed first and covers the reserved approach of `m2 → l1`;
  * libavoid cannot reach the checkpoint, drops it and answers with the two node centres. Nothing in

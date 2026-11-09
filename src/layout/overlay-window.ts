@@ -7,7 +7,7 @@ import { gains, lazyCount, profiles, reading, tapVerdict, type Reading } from '.
 import { drawn, drawnCrossings, overlayCrossingPoints, portKey, type Drawn } from './read/crossings.js';
 
 /**
- * The window rule of the overlay barycentre (ranked-groups ticket 143, decisions-log Q112).
+ * The window rule of the overlay barycentre.
  *
  * The mean of a free group's partners is the place that keeps the sum of its overlay chord lengths short, and it says nothing about
  * the bodies the chords pass. Two free groups that stand one under the other near the canton axis put the upper one on the chords of
@@ -18,7 +18,7 @@ import { drawn, drawnCrossings, overlayCrossingPoints, portKey, type Drawn } fro
  * the one that keeps the most chords straight, the nearest the mean on a tie. It reads only *settled* geometry: the shapes of a free
  * group that the pass has not placed yet are left out, so a second run finds the same x. There is no clock: the bound is a count.
  *
- * **Crossings first** (ticket 147, decisions-log Q112, user decision 2026-09-30). The objective is lexicographic: the fewest overlay
+ * **Crossings first** (ticket 147). The objective is lexicographic: the fewest overlay
  * crossings, then the most straight chords, then the nearest to the mean, then the smaller x. The crossings are counted between the
  * paths of the group's own counted overlay links at the candidate x (the straight chord, or the planned orthogonal path where a shape
  * stands on it) and every overlay link whose two groups are settled. Routed links are not counted: their paths do not exist yet at

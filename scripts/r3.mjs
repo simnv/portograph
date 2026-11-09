@@ -1,7 +1,7 @@
 /**
  * The R3 check (CODING_STANDARDS.md): is the layout independent of the order of the input?
  *
- * Usage: npm run r3 -- <sheet.yaml>...      (builds dist/ first; see docs/agents/gates.md)
+ * Usage: npm run r3 -- <sheet.yaml>...      (builds dist/ first; see docs/gates.md)
  *
  * Each sheet is laid out as written, with its `links` in the reverse order and with its `nodes` in the
  * reverse order, the way `portograph render` lays out (the built library; `corpus` does the same). For

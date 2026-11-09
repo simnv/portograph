@@ -1,8 +1,30 @@
-node_modules
+# deps and build
+node_modules/
 dist/
+coverage/
+*.tgz
+
+# OS and editor
 .DS_Store
+.vscode/
+.idea/
+
+# logs and caches
 *.log
 __pycache__/
-examples/
+.ruff_cache/
+
+# draw.io backups
 .$*.bkp
 *.drawio.bkp
+
+# local, never published
+examples/
+.claude/
+skills/
+.codegraph/
+.scratch/
+docs/agents/
+CLAUDE.md
+docs/design/decisions-log.md
+ref/

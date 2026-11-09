@@ -64,7 +64,7 @@ describe('overlay paths', () => {
     // Architecture-2 ticket 34, the user's word on `drawio-constructs` (2026-10-25: "purple line looks wrong, no margins"): an
     // overlay never rides along a face. The segment between two level faces on one side runs **along** both pills' outward edges,
     // so the straight branch refuses it and the path is a U whose run stands one overlay port clearance beyond the pill tips. This
-    // reverses the 2026-09-16 reading "level counts as leaving" (decisions log Q121), under which this case was the one horizontal
+    // reverses the 2026-09-16 reading "level counts as leaving", under which this case was the one horizontal
     // segment at y 87. `goldens/synthetic/drawio-constructs.yaml` is the fixture.
     expect(path({
       nodes: [{ id: 'a', bounds: { x: 0, y: 100, width: 60, height: 40 } },

@@ -1,9 +1,9 @@
-import { readFileSync } from 'node:fs';
 import postcss from 'postcss';
 import { describe, expect, it } from 'vitest';
 import { sheetClassWashCss, themeCss, themeRules } from '../../src/render/theme.js';
 import { NETWORK_NODE_CLASSES, NETWORK_THEME, WASH_PALETTE, nodeBodyFill, washAssignment, washToken } from '../../src/profiles/network/theme.js';
 import { themeById, themeWashFill } from '../../src/profiles/network/themes.js';
+import { DELIVERED_THEME_CSS } from './delivered-theme.js';
 
 /** Every rule as `[at-rule, selector, declarations]`, in source order, comments and spacing aside. */
 function rules(css: string): [string, string, string[]][] {
@@ -19,7 +19,7 @@ function rules(css: string): [string, string, string[]][] {
 }
 
 describe('the default theme is the designed sheet', () => {
-  const handoff = readFileSync(new URL('../../ref/theme-handoff/portograph-theme.css', import.meta.url), 'utf8');
+  const handoff = DELIVERED_THEME_CSS;
 
   type Rule = [string, string, string[]];
   const BODY: Record<string, Record<string, string>> = {
@@ -32,7 +32,7 @@ describe('the default theme is the designed sheet', () => {
 
   /**
    * The delivered sheet with every review amendment applied in place, as one ordered sequence.
-   * Amendments are recorded in `ref/theme-handoff/README.md`, "Amendments found in review":
+   * The amendments, numbered:
    * 1 print restates the class pills and the role text; 2 dark role fills; 3 print role steps;
    * 4 degraded dash per mode; 5 admin-down text; 8 the print tbr tile; 9 the default tile. A rule's position in the cascade matters as much
    * as its declarations — `.pill.mgmt` must follow `.pill.router` for a `router mgmt` pill to be

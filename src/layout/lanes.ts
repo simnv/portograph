@@ -564,8 +564,7 @@ function laneChild(model: LayoutModel, link: LayoutLink): PortRef {
  * Whether the child node keeps its feed order. The order the move can break is the order of the
  * corridors of one tier against the order of the children they serve: two that swap put each
  * link's descent across the other's. The order of a *node's* feeds cannot break here, because this
- * rule runs after the last centring replay — the measurement behind the rule's condition is in
- * decisions-log Q48.
+ * rule runs after the last centring replay; a swap among the corridors is the one order it can break.
  */
 function feedOrderHolds(model: LayoutModel, lane: Lane, link: LayoutLink, cx: number): boolean {
   const anchor = findPort(model, laneChild(model, link))!.anchor!;
