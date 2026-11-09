@@ -16,6 +16,9 @@ updates:
       # @types/node follows engines.node (>=22): only its 22.x line.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # TypeScript 7 (the Go port) is a separate migration.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directories:
