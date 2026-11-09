@@ -41,7 +41,7 @@ import { moveBands } from './gap-room.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { produceLinkLabels, validateLinkLabels } from './link-labels.js';
-import { validateRoutedPaths } from '../route/validate.js';
+import { stageNineLabel, validateRoutedPaths } from '../route/validate.js';
 import { placementAttempt, type AttemptTraceEvent } from './placement-attempt.js';
 import { judgePostconditions } from './postconditions.js';
 import { columnOf } from './read/arrangement.js';
@@ -681,11 +681,11 @@ function hasUnsupportedClaims(model: LayoutModel): boolean {
       || (link.fixedSegments !== undefined && !laneStage) || (link.sharedRuns !== undefined && !bundleStage))
     || (!laneStage && (model.lanes.length > 0 || model.regions.length > 0)) || (!barStage && model.barDrops.length > 0)
     || (!bundleStage && model.junctions.length > 0)
-    || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined || b.lead !== undefined))
+    || (!bundleStage && model.bundles.some(b => b.rows !== undefined || b.centreline !== undefined || b.envelope !== undefined || b.envelopeParts !== undefined || b.memberGap !== undefined || b.inversions !== undefined || b.memberPitch !== undefined || b.mergeRuns !== undefined || b.lead !== undefined || b.straight !== undefined))
     || model.obstacles.length > 0 || (!bandsStage && model.labelBands.length > 0)
     || (!labelStage && model.legend !== undefined)
     || nonNodeLabels.some(label => !(bandsStage && label.role === 'group')
-      && !(labelStage && (label.role === 'link' || label.role === 'legend' || label.role === 'mesh-bus')));
+      && !(labelStage && stageNineLabel(label)));
 }
 function rebuildBoxes(model: LayoutModel): void {
   for (const group of Object.values(model.groups)) {
@@ -776,8 +776,8 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
       throw new Error(`Path on ${link.id} is derived by the transaction from final anchors; callbacks cannot edit it`);
     }
   }
-  // The route rule owns exactly the remaining paths and their stub marks; nothing else may move.
-  const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate', 'removed'] : ['fixedSegments'];
+  // The route rule owns exactly the remaining paths, their stub marks and its removals with the answers it rejected; nothing else may move.
+  const linkFields = rule === 'route' ? ['fixedSegments', 'path', 'stubCandidate', 'removed', 'rejectedRoute'] : ['fixedSegments'];
   const otherClaims = (value: LayoutModel) => ({ ...claims(value), lanes: [], links: value.links.map(link => omit(link, linkFields)) });
   // Stage 9's producer owns every link and multiplicity label, exactly as 7f owns group labels.
   if (rule === 'link-labels') same(draft.labels, model.labels, 'Link-label callback cannot author labels');

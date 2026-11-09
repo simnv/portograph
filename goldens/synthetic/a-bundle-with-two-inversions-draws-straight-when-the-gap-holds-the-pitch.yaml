@@ -1,4 +1,4 @@
-# Expected: Four bundle members, two strict endpoint inversions (target order 2, 1, 4, 3). The gap between the two faces holds both stems, and every pair of member segments keeps the member pitch, so each member draws stem, one diagonal, stem (ADR-0017); two member crossings, none outside the bundle, every gate passes.
+# Expected: Four bundle members, two strict endpoint inversions (target order 2, 1, 4, 3). The gap between the two faces holds both stems, and every pair of member segments keeps the member pitch, so each member draws stem, one diagonal, stem (ADR-0017). Placement decides that shape and reserves only the straight depth, the channel of four members without inversions, not the staircase depth (ticket DR-16); two member crossings, none outside the bundle, every gate passes.
 portograph: 2
 profile: network
 groups:

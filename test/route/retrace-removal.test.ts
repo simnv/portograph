@@ -75,6 +75,8 @@ describe('a retracing route removes its link and not the sheet (ticket 46)', () 
     const points: Point[] = [from, first, { x: first.x, y: row + 40 }, { x: first.x + 30, y: row + 40 }, { x: first.x + 30, y: row + 20 },
       { x: first.x, y: row + 20 }, { x: first.x, y: row }, { x: second.x, y: row }, second, to];
     const done = tryStitch(model, item, new Map([[gap.connector, points]]));
-    expect(done).toEqual({ rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Routed path on ${item.link} retraces itself` } });
+    // The rejection carries the answer it judged; stage 8 stores it on the removed link (`rejectedRoute`, decision-review ticket 14).
+    expect(done).toEqual({ rejection: { link: item.link, code: 'ROUTE_GAP_REJECTED', reason: `Routed path on ${item.link} retraces itself`,
+      answer: [{ connector: gap.connector, points: points.map(({ x, y }) => ({ x, y })) }] } });
   }, 120000);
 });

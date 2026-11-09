@@ -1170,9 +1170,18 @@ minimum of one. Contradictory intermediate lane order fails with
 Route a clear full-width centreline and offset its members. Aligned clear bundles stay straight.
 Bent channels expose `envelopeParts` as swept rectangles and `envelope` as their union. Author
 inversions use isolated adjacent-swap cells, unless the gap holds the member pitch (ADR-0017 as
-amended by ticket DR-03: both stems fit between the placed faces and the existing geometry holds
-the member gap), when each member is drawn as stem, one straight diagonal, stem instead; the
-inversion count plays no part, and an infeasible bundle keeps the staircase. Every strict crossed member pair is independently
+amended by ticket DR-03: both stems fit between the faces and the member segments hold the member
+gap), when each member is drawn as stem, one straight diagonal, stem instead; the inversion count
+plays no part, and an infeasible bundle keeps the staircase. The reservation of the facing channel
+decides the shape once (ticket DR-16, `straightReservation`) and records it on `Bundle.straight`:
+straight when the test holds in the channel of the same members without inversions, or else in the
+staircase channel; it reserves the lesser of the two in which the test holds, and the staircase depth
+otherwise. A fanned bundle (a shared port or a fan at either end) gets the staircase depth and no
+record from the reservation, because its channel tracks are fan leaves that only the paths place:
+the paths run the test on the fan-leaf channel and record the answer. The side-facing rooms (which
+move nodes in x) are reserved before the tier-gap channels, so each shape is decided on the x its
+paths read. Restore reads the record and never tests again (R1); a stored `true` whose channel does
+not hold the member pitch refuses as `BUNDLE_CROSSOVER_CAPACITY` (R5). Every strict crossed member pair is independently
 checked against the endpoint inversions; undeclared bend contacts and overlaps fail. Complete
 member paths follow authored source-to-target direction even when bundle orientation differs.
 Lane runs and the latest rebuilt bar hints/slots remain constraints. Every actual `barCross`
@@ -1274,8 +1283,10 @@ record lacks fails the producer postcondition, whatever diagnostic the model car
 
 The crossover room of an inverted side-facing bundle moves groups in x without their lanes, so it
 asks `holdsMove` first: for a group wholly right of the threshold, its moved box; for a group that
-straddles the threshold, its box widened by the room, and `holdsNodeMove` for its moved nodes. Refused, no room is taken (`BUNDLE_ROOM_HELD`): the bundle draws
-straight members where its gap holds the member pitch (ADR-0017), or refuses by name.
+straddles the threshold, its box widened by the room, and `holdsNodeMove` for its moved nodes. The room is the straight
+depth when the bundle is decided straight there (ticket DR-16), and the staircase depth otherwise. Refused, no room is taken
+(`BUNDLE_ROOM_HELD`), the shape is decided again on the channel as it stands: the bundle draws straight members where its gap
+holds the member pitch (ADR-0017), or refuses by name.
 
 For facing, non-inverted members whose endpoint tracks differ, each bend receives a distinct
 member-pitch row. Members moving toward smaller tangent coordinates turn in increasing source
@@ -1906,7 +1917,37 @@ route: `ROUTE_GAP_REJECTED`, with the reason. Only a `GapRejected` is a rejectio
 path that retraces itself is one (ticket 46; `validateRoutedPaths` keeps the same check as an
 assertion). Any other error stays fatal. A removed link loses its routes, adds no protective run, and keeps no label. Stage 8
 alone sets it. The layout JSON gains `LayoutLink.removed` and `removedLinks` (both absent when
-none), and the score counts `removedLinks`. The renderer and the drawio export draw a link only
+none), and the score counts `removedLinks`. A removed link also stores the answer the stage judged,
+`LayoutLink.rejectedRoute`: the router's points for each routed gap of the link, in plan order (empty
+when the link has no routed gap). Publication and restore judge that answer again with `tryStitch`,
+on the link's plan (`planRoute`) for the model as stage 8 received it (`preRoute`: the router's
+paths, removals, stub marks, and stage 9's link, multiplicity and mesh-bus labels and legend taken
+away), and refuse by name (decision-review ticket 14):
+
+1. a removed link with no stored answer (a layout written before this version stores none; lay the
+   sheet out again);
+2. a stored answer on a link that is not removed;
+3. a removed link stage 8 does not route;
+4. an answer for a gap the plan does not hold, or one gap twice, or out of plan order;
+5. an answer below the floor every router answer reaches (`routerAnswerFloor`): fewer than two
+   finite points, or an answer that meets both ends of its gap, honours its checkpoints and is not
+   orthogonal;
+6. an answer the judgement cannot read (a fatal stitch error, such as a gap with no answer);
+7. an answer that stitches into a usable path.
+
+The floor asks only what was measured on every removal stage 8 wrote in the full test suite (137,
+2026-11-09). It does not ask that an answer meet its ends, or be orthogonal when it misses one, or
+keep two distinct points: 86 answers missed an end, 29 of them with a diagonal, and 28 answers were
+two equal points. Nor does it ask an answer that skips a checkpoint to be orthogonal: libavoid,
+when it drops a checkpoint it cannot reach, answers with the two port anchors and a diagonal between
+them (`straightRun`), and that answer meets both ends of a pin's gap. No zero-length check is needed:
+`simplify` drops equal consecutive points. The router does not run
+again, so this is the proof level: the stored answer is unusable and has a router answer's shape, as
+a routed path is proven from its stored segments. It does not prove that the router had to give that
+answer. A well-formed scribble that the judgement rejects still passes: an answer with one end moved
+1 px or one end point dropped, the bare diagonal between the two ends of a gap with checkpoints, and
+an inner change (a corner moved, an inner point dropped) that also skips a checkpoint, as the bare
+diagonal does. Only routing again at restore would refuse it. A warning proves nothing (R5). The renderer and the drawio export draw a link only
 where it has a path, so a removed link is not drawn; `score` skips it. With `strictCheckpoints`
 every case keeps the throw.
 
