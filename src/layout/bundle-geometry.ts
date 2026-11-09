@@ -539,11 +539,13 @@ export function orderBundles(model: LayoutModel): void {
  * shapes (`facingBundleNeed`). The bundle draws straight members when the gap holds the member pitch (`straightMembers`) in the
  * channel the straight need leaves, or else in the one the staircase need leaves; it reserves the lesser of the two in which
  * the test holds, so the canvas does not keep a staircase depth that no staircase uses. Otherwise it keeps the staircase and
- * its depth. A fanned bundle (`fanned`) keeps the staircase: its channel tracks are the fan leaves, which only the paths of 7e
- * place. The answer is written on `Bundle.straight`, which the router reads (R1).
+ * its depth. The answer is written on `Bundle.straight`, which the paths read (R1). A fanned bundle (`fanned`) gets the
+ * staircase depth and no record here: its channel tracks are the fan leaves, which only the paths of 7e place, so
+ * `rebuildBundlePaths` decides its shape on that channel and records it.
  */
 function straightReservation(model: LayoutModel, bundle: Bundle, list: Member[], fanned: boolean, have: number, straight: number, staircase: number): number {
-  const holds = (need: number): boolean => !fanned && straightMembers(model, bundle, list, Math.max(0, need - have));
+  if (fanned) return staircase;
+  const holds = (need: number): boolean => straightMembers(model, bundle, list, Math.max(0, need - have));
   if (holds(straight)) { bundle.straight = true; return straight; }
   bundle.straight = holds(staircase);
   return staircase;
@@ -831,7 +833,11 @@ export function prepareBundleGeometry(model: LayoutModel): void {
   // bundle's own shared port or from an ordinary routed link on it.
   const trees = new Map(treeCohorts(model).map(cohort => [portId(cohort.port.ref), cohort]));
   const stacked = new Set(gridChains(model).flatMap(chain => chain.bundles));
-  for (const bundle of model.bundles) {
+  // The crossover room of a side-facing bundle moves nodes in x, and so can move an end of a bundle across a tier gap; the gap moves in y
+  // keep every x. The side-facing rooms go first, so each shape below is decided on the x its paths will read (DR-16). Stable: model order
+  // stays the last key.
+  const sideFirst = (bundle: Bundle): number => { const list = members(model, bundle); return axis(list[0]!.a.side!) === 'y' && inversionPairs(list).length ? 0 : 1; };
+  for (const bundle of [...model.bundles].sort((a, b) => sideFirst(a) - sideFirst(b))) {
     const list = members(model, bundle), inversions = inversionPairs(list).length;
     if (stacked.has(bundle.id)) checkChainPair(model, bundle);
     if (!facing(list)) continue;
@@ -865,7 +871,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
           && part.every(group => holdsNodeMove(model, group, rightOf(group), delta));
         const held = delta > 0 && !roomHolds();
         // Refused, the channel stays as it stands, and the shape is decided on that channel.
-        if (held && !laned) bundle.straight = !fanned && straightMembers(model, bundle, list);
+        if (held && !laned && !fanned) bundle.straight = straightMembers(model, bundle, list);
         if (held && !model.diagnostics.some(item => item.code === 'BUNDLE_ROOM_HELD' && item.owners?.some(owner => 'id' in owner && owner.id === bundle.id))) {
           model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'BUNDLE_ROOM_HELD', owners: [{ kind: 'bundle', id: bundle.id }],
             message: `The crossover room of ${bundle.id} (${delta.toFixed(1)} px right of ${rightNode!.id}) would break a reservation, so it is not taken.` });
@@ -885,7 +891,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     if (upperTier >= lowerTier && stacked.has(bundle.id)) checkStackedChannel(model, bundle, upper, lower);
     if (laned) continue;
     // No tier gap grows between the rows of one tier: the shape is decided on the channel as it stands.
-    if (upperTier >= lowerTier) { if (inversions) bundle.straight = !fanned && straightMembers(model, bundle, list); continue; }
+    if (upperTier >= lowerTier) { if (inversions && !fanned) bundle.straight = straightMembers(model, bundle, list); continue; }
     const mergeMembers = list.filter(m => m.link.technique === 'merge').length;
     // A merge trunk interleaves its join and leave rows only where the members meet on one port.
     const shared = (['a', 'b'] as const).some(end => new Set(list.map(m => portId(m[end].ref))).size < list.length);

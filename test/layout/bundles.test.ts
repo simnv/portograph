@@ -339,6 +339,32 @@ it('DR-16: placement decides straight members once and reserves only the straigh
   expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
 }, 60000);
 
+it('DR-16: a stored straight record whose channel does not hold the member pitch refuses by name', async () => {
+  const text = readFileSync('goldens/synthetic/a-bundle-with-two-inversions-draws-straight-when-the-gap-holds-the-pitch.yaml', 'utf8');
+  const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(model.bundles[0]!.straight).toBe(true);
+  // The target face 105 px nearer: both stems still fit (34 px gap), but the diagonals of 4 px depth come within the member gap.
+  const shallow = JSON.parse(JSON.stringify(model)) as LayoutModel, target = shallow.nodes['target']!;
+  target.bounds!.y -= 105;
+  for (const port of target.ports) port.anchor!.y -= 105;
+  expect(() => api.rebuildBundlePaths(shallow)).toThrow(/BUNDLE_CROSSOVER_CAPACITY/);
+}, 60000);
+
+it('DR-16: a forged straight record on a fanned bundle whose fan-leaf channel fails the pitch refuses by name', async () => {
+  // Two members share `a.p` and `b.p` across a tier gap; the fan leaves stand in the staircase depth. Squeezed to a gap where the stems still
+  // fit but the diagonals do not keep the member gap, a stored `true` is checked, not decided again.
+  const fanned = reversed.replace('links: [[a.p, b.p], ', 'links: [[a.p, b.p], [a.p, b.p], ');
+  const model = run(await throughBars(fanned));
+  const bundle = model.bundles[0]!;
+  expect(bundle.straight).toBeDefined();
+  const forged = JSON.parse(JSON.stringify(model)) as LayoutModel, lower = forged.nodes['b']!, upper = forged.nodes['a']!;
+  const shift = lower.bounds!.y - (upper.bounds!.y + upper.bounds!.height) - 2 * MIN_STEM - 70;
+  lower.bounds!.y -= shift;
+  for (const port of lower.ports) port.anchor!.y -= shift;
+  forged.bundles[0]!.straight = true;
+  expect(() => api.rebuildBundlePaths(forged)).toThrow(/BUNDLE_CROSSOVER_CAPACITY/);
+}, 60000);
+
 it('DR-16: a bundle without an inversion has no shape record', async () => {
   const model = run(await throughBars(reversed.replace('{name: p, side: top, order: 2}, {name: q, side: top, order: 1}, {name: r, side: top, order: 0}',
     '{name: p, side: top, order: 0}, {name: q, side: top, order: 1}, {name: r, side: top, order: 2}')));

@@ -367,7 +367,10 @@ export interface Bundle extends OwnedElement {
    * The shape placement chose for an inverted facing bundle without lanes (7e, `prepareBundleGeometry`; ADR-0017, ticket DR-16):
    * `true`, each member draws stem, one diagonal, stem, and placement reserved only that depth; `false`, the members draw the
    * orthogonal staircase in the staircase depth. Absent when the question does not arise: no strict inversion, the ends do not
-   * face, a member has a lane, or the bundles stage has not run. The router and restore read it and never decide again (R1).
+   * face, a member has a lane, or the bundles stage has not run. Between the reservation and the paths of one 7e pass it is also
+   * absent on a fanned bundle: placement reserved the staircase depth, and `rebuildBundlePaths` decides the shape on the fan-leaf
+   * channel and records it. Restore reads it and never decides again (R1); a stored `true` whose channel does not hold the
+   * member pitch refuses (`BUNDLE_CROSSOVER_CAPACITY`).
    */
   straight?: boolean;
   /**

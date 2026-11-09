@@ -1176,9 +1176,12 @@ plays no part, and an infeasible bundle keeps the staircase. The reservation of 
 decides the shape once (ticket DR-16, `straightReservation`) and records it on `Bundle.straight`:
 straight when the test holds in the channel of the same members without inversions, or else in the
 staircase channel; it reserves the lesser of the two in which the test holds, and the staircase depth
-otherwise. A fanned bundle (a shared port or a fan at either end) keeps the staircase, because its
-channel tracks are fan leaves that only the paths place. The paths and restore read the record and
-never test again (R1). Every strict crossed member pair is independently
+otherwise. A fanned bundle (a shared port or a fan at either end) gets the staircase depth and no
+record from the reservation, because its channel tracks are fan leaves that only the paths place:
+the paths run the test on the fan-leaf channel and record the answer. The side-facing rooms (which
+move nodes in x) are reserved before the tier-gap channels, so each shape is decided on the x its
+paths read. Restore reads the record and never tests again (R1); a stored `true` whose channel does
+not hold the member pitch refuses as `BUNDLE_CROSSOVER_CAPACITY` (R5). Every strict crossed member pair is independently
 checked against the endpoint inversions; undeclared bend contacts and overlaps fail. Complete
 member paths follow authored source-to-target direction even when bundle orientation differs.
 Lane runs and the latest rebuilt bar hints/slots remain constraints. Every actual `barCross`

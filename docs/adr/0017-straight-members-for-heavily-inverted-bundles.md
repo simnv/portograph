@@ -66,9 +66,11 @@ the same members without inversions needs (`facingBundleNeed` with no inversion 
 staircase channel. It records the answer on `Bundle.straight` and reserves the lesser channel in
 which the test holds, or the staircase channel when it holds in neither. The test cannot fail in a
 deeper channel once it holds in a shallower one: a deeper channel only makes the diagonals steeper.
-A fanned bundle (a shared port, or a fan at either end) keeps the staircase: its channel tracks are
-fan leaves, which only the bundle paths place. Where the crossover room of a side-facing bundle is
+A fanned bundle (a shared port, or a fan at either end) gets the staircase channel and no record from
+the reservation: its channel tracks are fan leaves, which only the bundle paths place, so the paths
+run the test on the fan-leaf channel and record the answer. Where the crossover room of a side-facing bundle is
 refused (`BUNDLE_ROOM_HELD`), and between the rows of one tier, where no gap grows, the shape is
-decided on the channel as it stands. The bundle paths and restore read `Bundle.straight` and never
-run the test again. On `a-bundle-with-two-inversions-draws-straight-when-the-gap-holds-the-pitch`
+decided on the channel as it stands. The side-facing rooms, which move nodes in x, are reserved
+before the tier-gap channels. Restore reads `Bundle.straight` and never runs the test again; a stored
+`true` whose channel does not hold the member pitch refuses as `BUNDLE_CROSSOVER_CAPACITY`. On `a-bundle-with-two-inversions-draws-straight-when-the-gap-holds-the-pitch`
 the channel goes from 366.5 px to 139 px, and the X opens from 11.9 to 35.6 degrees.

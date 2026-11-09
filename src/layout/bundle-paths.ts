@@ -258,7 +258,8 @@ function straightFeasible(list: Member[], start: number, end: number, n: Point, 
  * scope: `route: straight` is a per-link key and stage 1 excludes such links from bundles.)
  *
  * Placement asks this once per reservation (`straightReservation`, ticket DR-16) and records the answer
- * on `Bundle.straight`; the router reads that record and never asks again (R1). `grow` is the depth
+ * on `Bundle.straight`; the paths read that record (R1), ask only for a fanned bundle (whose fan leaves
+ * they place), and check a stored `true` against the channel that stands. `grow` is the depth
  * placement is about to add to the channel: the test reads the far ends `grow` px deeper along the
  * normal, which is the geometry the move leaves, because the move translates one face along the normal.
  */
@@ -439,9 +440,17 @@ export function rebuildBundlePaths(model: LayoutModel): void {
     bundle.memberGap = 16; bundle.memberPitch = q; bundle.inversions = inversions;
     delete bundle.mergeRuns;
     const fans = bundleFans(model, bundle, list, q), channel = fans?.members ?? list;
-    // Placement decided the shape once and reserved its depth (`Bundle.straight`, ticket DR-16); the router reads the record (R1).
+    const laned = model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id));
+    // Placement decided the shape once and reserved its depth (`Bundle.straight`, ticket DR-16); the paths read the record (R1). The one
+    // shape placement leaves open is a fanned bundle's: it reserved the staircase depth, and the test runs here on the channel the fan leaves
+    // stand on, once per placement pass (`prepareBundleGeometry` clears the record). Restore carries the record and does not decide again.
+    if (inversions && facing(list) && !laned && bundle.straight === undefined) bundle.straight = straightMembers(model, bundle, channel);
+    // A stored `true` is checked, not decided again: a channel that does not hold the member pitch refuses by name (R5).
+    if (bundle.straight === true && !straightMembers(model, bundle, channel)) {
+      throw new BundleFeasibilityError('BUNDLE_CROSSOVER_CAPACITY', bundle.id, 'The recorded straight members do not hold the member pitch in the channel that stands.');
+    }
     const straight = bundle.straight === true;
-    const crossing = inversions && facing(list) && !model.lanes.some(l => l.owner.kind === 'link' && bundle.members.includes(l.owner.id))
+    const crossing = inversions && facing(list) && !laned
       ? straight ? straightPaths(bundle, channel) : crossedPaths(bundle, channel, q) : undefined;
     const parallel = !inversions && facing(list) ? parallelPaths(model, bundle, channel, q) : undefined;
     for (const item of list) {
