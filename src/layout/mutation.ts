@@ -29,7 +29,7 @@ import { faceKey, laneFaceOrder } from './turn-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
-import { publishedCentreViolations, selectAnchorTier } from './centre.js';
+import { centreItemLink, publishedCentreViolations, selectAnchorTier } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentTargetsFault } from './alignment-targets.js';
 import { givenBackFault } from './given-back.js';
 import { checkBodyTrims } from './end-trim.js';
@@ -370,7 +370,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
       // A spent shared budget is producer state geometry cannot witness (ADR-0010). A model that
       // reports it keeps its last state and is judged by the final gates; the unverified alignments
       // are recorded on it. Every other model must hold the invariant exactly.
-      if (!diagnosed(model)) throw new PlacementRefusal('centring', `Centring invariant violated: ${centring.join('; ')}`, { stage: model.stage });
+      if (!diagnosed(model, centring)) throw new PlacementRefusal('centring', `Centring invariant violated: ${centring.join('; ')}`, { stage: model.stage });
       const message = `Centring invariant unverified after a spent budget: ${centring.join('; ')}`;
       if (!model.diagnostics.some(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED' && d.message === message)) {
         model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_INVARIANT_UNVERIFIED', message });
@@ -648,8 +648,15 @@ const permissions: Record<PlacementRule, { move: boolean; reorder: boolean }> = 
   route: { move: false, reorder: false }, 'link-labels': { move: false, reorder: false },
   validate: { move: false, reorder: false }, emit: { move: false, reorder: false },
 };
-function diagnosed(model: LayoutModel): boolean {
-  return model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE');
+/**
+ * Whether the stored placement diagnostics excuse every centring item (DR-15, R5). An item is excused only for a link that a placement-stage
+ * `PLACEMENT_NON_CONVERGENCE` names in its owners, as the centre emitter writes them; the message text is never read, and a code with no
+ * such owner (another emitter, or a forged one) excuses nothing.
+ */
+function diagnosed(model: LayoutModel, items: readonly string[]): boolean {
+  const named = new Set(model.diagnostics.filter(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')
+    .flatMap(d => (d.owners ?? []).flatMap(o => o.kind === 'link' ? [o.id] : [])));
+  return items.every(item => { const link = centreItemLink(model, item); return link !== undefined && named.has(link); });
 }
 function claims(model: LayoutModel) {
   return { links: model.links, lanes: model.lanes, bundles: model.bundles, junctions: model.junctions,

@@ -1,6 +1,6 @@
 import { liftedGroups } from './lift.js';
 import { portEndInsets } from './port-insets.js';
-import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
+import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup, LayoutModel, LayoutNode, LayoutPort, LayoutStage, Owner, ParentSpread } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, rightWallReach, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
@@ -1407,9 +1407,24 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
   // nothing, so it reports only what the check finds off its feed.
   if (ran || timed('centre-violations', () => centreViolations(model, true)).length > 0) reportStall(model, [...unresolved]);
 }
+/** The link a centring item names; undefined for an item that no link of the model owns. The item text starts with its feed's link id (`readCentreViolations`). */
+export function centreItemLink(model: LayoutModel, item: string): string | undefined {
+  let found: string | undefined;
+  for (const link of model.links) if (item.startsWith(`${link.id}: `) && (found === undefined || link.id.length > found.length)) found = link.id;
+  return found;
+}
+/**
+ * The centre emitter's report of a stall. It names the groups whose step stayed unresolved and the links of the centring items it found off their feeds;
+ * restore excuses an item only for a link named here (DR-15, R5: the exemption is limited to its owner and stage).
+ */
 function reportStall(model: LayoutModel, unresolved: string[], message = 'Centering exhausted the shared eight-pass budget; unresolved alignments remain for routing and final gates.'): void {
-  if (model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) return;
-  placementWarning(model, 'PLACEMENT_NON_CONVERGENCE', message, unresolved, 'group');
+  const links = new Set<string>();
+  for (const item of centreViolations(model, true)) { const link = centreItemLink(model, item); if (link !== undefined) links.add(link); }
+  const owners: Extract<Owner, { id: string }>[] = [...unresolved.map(id => ({ kind: 'group' as const, id })), ...[...links].map(id => ({ kind: 'link' as const, id }))];
+  const known = model.diagnostics.find(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE' && d.message === message);
+  if (known === undefined) { model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'PLACEMENT_NON_CONVERGENCE', message, owners }); return; }
+  known.owners ??= [];
+  for (const owner of owners) if (!known.owners.some(o => o.kind === owner.kind && 'id' in o && o.id === owner.id)) known.owners.push(owner);
 }
 /**
  * A replay that centred and then rebuilt what depends on the centring (bundle anchors, bars, regions) can leave an alignment
@@ -1417,7 +1432,9 @@ function reportStall(model: LayoutModel, unresolved: string[], message = 'Center
  * publication runs, run here, says so, so that a model never publishes an unexplained centring violation (ticket 75).
  */
 export function flagUnverifiedCentring(model: LayoutModel): void {
-  if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model, true).length > 0) {
+  const named = new Set(model.diagnostics.filter(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE').flatMap(d => (d.owners ?? []).filter(o => o.kind === 'link').map(o => (o as { id: string }).id)));
+  const open = centreViolations(model, true).filter(item => { const link = centreItemLink(model, item); return link === undefined || !named.has(link); });
+  if (open.length > 0) {
     reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.');
   }
 }
