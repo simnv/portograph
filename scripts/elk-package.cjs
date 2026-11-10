@@ -28,6 +28,6 @@ try {
   console.log(bootstrap.stdout.trim());
   writeFileSync(path.join(temp, 'types.mts'), `import { skeleton, type CreateElkAttempt } from 'portograph/internal';\nimport { createNodeElkFactory } from 'portograph/node';\nconst factory: CreateElkAttempt = createNodeElkFactory();\nvoid skeleton; void factory;\n`);
   writeFileSync(path.join(temp, 'types.cts'), `import adapter = require('portograph/node');\nconst attempt = adapter.createNodeElkFactory()();\nattempt.terminateWorker();\n`);
-  execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2022', 'types.mts', 'types.cts'], { cwd: temp, stdio: 'pipe' });
+  execFileSync(process.execPath, [require.resolve('typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2022', 'types.mts', 'types.cts'], { cwd: temp, stdio: 'pipe' });
   console.log('packed NodeNext ES and CommonJS adapter declarations passed');
 } finally { rmSync(temp, { recursive: true, force: true }); }

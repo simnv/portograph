@@ -17,16 +17,10 @@ try {
 }
 if (!existsSync(floor)) throw new Error(`Node 22.0 floor runtime is unavailable at ${floor}`);
 
-const yaml = [
-  'portograph: 2',
-  'groups: {top: {tier: 0}, mid: {tier: 1}, low: {tier: 2}}',
-  'nodes:',
-  '  a: {group: top, ports: [{name: p, side: bottom}]}',
-  '  m: {group: mid, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}',
-  '  b: {group: low, ports: [{name: p, side: top}]}',
-  '  c: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}',
-  'links: [[a.p, b.p], [m.p, c.p], [m.q, c.q]]',
-].join('\\n');
+// The router sample must send at least one link to libavoid: placement claims a straight or reserved route itself, and a
+// diagram with no ownership batch starts no worker, so the worker and WASM checks below would observe nothing. In this
+// fixture the right port of `a` must turn down to `c`, and only the router chooses that route (link-1).
+const sample = readFileSync(path.join(root, 'goldens/synthetic/a-pass-by-stem-turns-beyond-its-pill-text.yaml'), 'utf8');
 
 const golden = readFileSync(path.join(root, 'goldens/m1-sip-edge.yaml'), 'utf8');
 const body = `
@@ -40,10 +34,11 @@ const body = `
   const restored = api.restoreFinalLayout(api.serializeLayoutModel(final));
   if (api.render(restored) !== api.render(final)) throw new Error('Packed final JSON rendering differs');
   console.log('packed full pipeline ' + mode + ' Q=' + finalReport.Q);
-  const model = api.sizeNodes(api.sidesOne(api.resolve(api.parse('${yaml}'))));
+  const model = api.sizeNodes(api.sidesOne(api.resolve(api.parse(${JSON.stringify(sample)}))));
   await api.skeleton(model, { createAttempt: createNodeElkFactory() });
   const placed = api.bands(api.bundles(api.bars(api.centre(api.flanks(api.lanes(api.rows(api.sidesTwo(model))))))));
-  if (JSON.stringify(api.routeRemainders(placed)) !== '["link-1"]') throw new Error('Unexpected remainder');
+  const asked = JSON.stringify(api.planRoute(placed).batches.flatMap(batch => batch.links));
+  if (asked !== '["link-1"]') throw new Error('The router sample must send link-1, and only link-1, to libavoid; it sends ' + asked);
 
   let created = 0, terminated = 0;
   const factory = () => {
@@ -57,7 +52,8 @@ const body = `
   const [first, second] = await Promise.all([api.route(placed, { createAttempt: factory }), api.route(placed, { createAttempt: factory })]);
   const report = api.score(first, { golden: true }).snapshot;
   if (!report.passed || report.metrics.crossings.count !== 0) throw new Error('Packed route failed its gates');
-  if (JSON.stringify(first.links[0].path) !== JSON.stringify(second.links[0].path)) throw new Error('Concurrent routes differ');
+  const routed = result => result.links.find(link => link.id === 'link-1').path;
+  if (!routed(first) || JSON.stringify(routed(first)) !== JSON.stringify(routed(second))) throw new Error('Concurrent routes differ');
   if (created !== 2 || terminated !== 2) throw new Error('Router workers were not disposed: ' + created + '/' + terminated);
 
   const Worker = require('web-worker');
@@ -118,7 +114,7 @@ ${assets}
   }
   writeFileSync(path.join(temp, 'types.mts'), `import { route, type CreateRouteAttempt, type RouteOptions } from 'portograph/internal';\nimport { createNodeRouteFactory } from 'portograph/node';\nconst factory: CreateRouteAttempt = createNodeRouteFactory();\nconst options: RouteOptions = { createAttempt: factory, routeBudgetMs: 30000 };\nvoid route; void options;\n`);
   writeFileSync(path.join(temp, 'types.cts'), `import adapter = require('portograph/node');\nconst attempt = adapter.createNodeRouteFactory()();\nattempt.worker.terminate();\n`);
-  execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck',
+  execFileSync(process.execPath, [require.resolve('typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck',
     '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2022', 'types.mts', 'types.cts'], { cwd: temp, stdio: 'pipe' });
   console.log('packed NodeNext ES and CommonJS router declarations passed');
 } finally { rmSync(temp, { recursive: true, force: true }); }

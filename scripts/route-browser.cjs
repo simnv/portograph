@@ -13,16 +13,10 @@ const dist = path.resolve('dist');
 // The solver files come from the installed elkjs and libavoid-js; the page serves them under the factory defaults.
 const elk = path.dirname(require.resolve('elkjs/package.json'));
 const avoid = path.dirname(require.resolve('libavoid-js')); // the package exports only its root (dist/index-node.mjs)
-const yaml = [
-  'portograph: 2',
-  'groups: {top: {tier: 0}, mid: {tier: 1}, low: {tier: 2}}',
-  'nodes:',
-  '  a: {group: top, ports: [{name: p, side: bottom}]}',
-  '  m: {group: mid, ports: [{name: p, side: bottom}, {name: q, side: bottom}]}',
-  '  b: {group: low, ports: [{name: p, side: top}]}',
-  '  c: {group: low, ports: [{name: p, side: top}, {name: q, side: top}]}',
-  'links: [[a.p, b.p], [m.p, c.p], [m.q, c.q]]',
-].join('\n');
+// The router sample must send at least one link to libavoid: placement claims a straight or reserved route itself, and a
+// diagram with no ownership batch starts no worker, so the worker and WASM checks below would observe nothing. In this
+// fixture the right port of `a` must turn down to `c`, and only the router chooses that route (link-1).
+const sample = readFileSync(path.resolve('goldens/synthetic/a-pass-by-stem-turns-beyond-its-pill-text.yaml'), 'utf8');
 
 (async () => {
   const server = createServer((req, res) => {
@@ -85,15 +79,16 @@ const yaml = [
           && final.links.length === 26 && api.render(restored) === api.render(final);
         out[mode + 'Q'] = report.Q;
         const placed = await placedWith(api);
-        out[mode + 'Remainder'] = api.routeRemainders(placed);
+        out[mode + 'Asked'] = api.planRoute(placed).batches.flatMap(batch => batch.links);
         // Two diagrams at once share one worker each; each loads its own WASM exactly once.
         const [first, second] = await Promise.all([
           api.route(placed, { createAttempt: counted(api) }),
           api.route(placed, { createAttempt: counted(api) }),
         ]);
         out[mode + 'Passed'] = api.score(first, { golden: true }).snapshot.passed;
-        out[mode + 'Stable'] = JSON.stringify(first.links[0].path) === JSON.stringify(second.links[0].path);
-        out[mode + 'Segments'] = first.links[0].path.segments.length;
+        const routed = result => result.links.find(link => link.id === 'link-1').path;
+        out[mode + 'Stable'] = routed(first) !== undefined && JSON.stringify(routed(first)) === JSON.stringify(routed(second));
+        out[mode + 'Segments'] = routed(first).segments.length;
       }
       const api = globalThis.portograph;
       const placed = await placedWith(api);
@@ -108,10 +103,11 @@ const yaml = [
       out.elapsedMs = performance.now() - started;
       out.created = created; out.terminated = terminated;
       return out;
-    }, { source: yaml, golden: readFileSync(path.resolve('goldens/m1-sip-edge.yaml'), 'utf8') });
+    }, { source: sample, golden: readFileSync(path.resolve('goldens/m1-sip-edge.yaml'), 'utf8') });
     assert.equal(result.UMDFullPipeline, true); assert.equal(result.ESFullPipeline, true);
-    assert.deepEqual(result.UMDRemainder, ['link-1']);
-    assert.deepEqual(result.ESRemainder, ['link-1']);
+    // libavoid receives link-1 in both builds; without it no worker starts and the counts below prove nothing.
+    assert.deepEqual(result.UMDAsked, ['link-1']);
+    assert.deepEqual(result.ESAsked, ['link-1']);
     assert.equal(result.UMDPassed, true); assert.equal(result.ESPassed, true);
     assert.equal(result.UMDStable, true); assert.equal(result.ESStable, true);
     assert.equal(result.UMDSegments, result.ESSegments);
