@@ -58,11 +58,26 @@ jobs:
       - name: Update npm
         run: npm install -g npm@^11.5.1
 
+      # A version that is already on npm (for example 0.1.0, published by hand) is not published again;
+      # the GitHub release is still made. npm view exits 1 with E404 when the version does not exist.
+      - name: Check whether this version is on npm
+        id: registry
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if npm view "portograph@$version" version >/dev/null 2>&1; then
+            echo "::notice::portograph@$version is already on npm; publish is skipped"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install dependencies
+        if: steps.registry.outputs.published == 'false'
         run: npm ci
 
       # npm publish runs prepack, which builds dist/ first.
       - name: Publish
+        if: steps.registry.outputs.published == 'false'
         run: npm publish --provenance --access public
 
   github-release:
