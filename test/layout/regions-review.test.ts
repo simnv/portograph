@@ -167,4 +167,4 @@ it('publishes exact common translations after repeated degree-64 corridor pushes
   }
   validateLanes(result);
   expect(restoreLayoutModel(JSON.stringify(result))).toEqual(result);
-}, 30000);
+});

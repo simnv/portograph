@@ -24,4 +24,4 @@ it('keeps a wide tier finite in scale when its feeds cannot fit between siblings
   }
   expect(result.diagnostics.some(item => item.code === 'CENTRE_ALIGNMENT_INFEASIBLE')).toBe(true);
   expect(restoreLayoutModel(JSON.stringify(result))).toEqual(result);
-}, 30000);
+});

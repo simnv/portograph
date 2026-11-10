@@ -12,7 +12,7 @@ npm test -- test/pipeline/turn-order.test.ts
 
 Never call `vitest run` raw. `npm run lint` fails on a raw `vitest run` in `scripts/` or `package.json`, and `vite.config.ts` refuses a vitest load that does not hold the lock.
 
-`npm test` runs three vitest projects in turn: `default` (parallel), `heavy` and `slow` (one file at a time). `heavyFiles` and `slowFiles` in `vite.config.ts` list the files of the last two. A failing project does not skip the next ones. A test has 30 s in `default`, 180 s in `heavy` and 600 s in `slow`.
+`npm test` runs three vitest projects in turn: `default` (parallel), `heavy` and `slow` (one file at a time). `heavyFiles` and `slowFiles` in `vite.config.ts` list the files of the last two. A failing project does not skip the next ones. A test has 30 s in `default`, 180 s in `heavy` and 600 s in `slow`. A per-test timeout overrides this budget, so do not give a test in a `heavy` or `slow` file a timeout below its project's: the same commit ran 1.5x slower on one CI runner than on the next.
 
 The runner starts vitest in its own process group, with `--maxWorkers=$PORTOGRAPH_TEST_WORKERS` (default 1) and a wall-clock limit (`PORTOGRAPH_TEST_TIMEOUT_MS`, default 45 min). On exit, failure, Ctrl-C or timeout, it stops the whole group and checks that no member remains before it frees the lock.
 

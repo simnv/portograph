@@ -118,7 +118,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     // Default 5 s is too close to the slowest untimed tests (1-2.6 s quiet) when agents share the machine.
-    // `default` 30 s, `heavy` 180 s, `slow` 600 s per test. A per-test timeout overrides all three.
+    // `default` 30 s, `heavy` 180 s, `slow` 600 s per test. A per-test timeout overrides all three; in a `heavy` or
+    // `slow` file, do not set one below the project's: the same commit ran 1.5x slower on one CI runner than on the next (PUB-06).
     testTimeout: 30000,
     projects: [
       { extends: true, test: { name: 'default', include: ['test/**/*.test.ts'], exclude: [...configDefaults.exclude, ...slowFiles, ...heavyFiles] } },

@@ -89,7 +89,7 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
       }
     }
     expect(checked).toBeGreaterThan(50);
-  }, 120000);
+  });
 
   // Ticket 95: a frame chord never leaves its tier gap. `standaloneChord` refuses a link that spans a tier band it does not end in, so no chord meets
   // a lane run or a drop in a band: the runs the leg bound clips at the band edge cannot come near a chord. Measured over every synthetic input.
@@ -115,5 +115,5 @@ describe('a frame chord holds its clearance along a neighbour\'s whole leg', () 
       }
     }
     expect(checked).toBeGreaterThan(100);
-  }, 300000);
+  });
 });
