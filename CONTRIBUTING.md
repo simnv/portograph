@@ -114,6 +114,15 @@ or a document. Use the documentation ranges, for example `192.0.2.0/24`, `198.51
 `src/text/font-metrics.ts` holds the Verdana glyph widths as numbers only. It has no font files.
 To make the table again from the macOS fonts, run `uv run scripts/font-metrics.py`.
 
+## Release
+
+To release, bump `version` in `package.json` in a pull request or in a commit on `main`. The merge
+publishes: `.github/workflows/release.yml` runs the checks, publishes to npm with trusted
+publishing (no token), tags `v<version>` and creates a GitHub release. A push that does not change
+the version publishes nothing. The npm trusted publisher names this repository and `release.yml`;
+keep the file name. It must allow direct `npm publish`: a new publisher allows only staged publish
+by default. See [`docs/gates.md`](docs/gates.md).
+
 ## License
 
 When you contribute, you agree that your contribution is licensed under Apache-2.0, the license

@@ -1,45 +1,63 @@
 name: release
 
-# A tag v<version> publishes that version to npm through trusted publishing (OIDC, no token) and
-# creates a GitHub release. The trusted publisher on npmjs.com names this repository and release.yml.
-# npm makes provenance only for a public repository: push the tag after the repository is public.
+# A push to main publishes the package.json version to npm through trusted publishing (OIDC, no token),
+# tags it v<version> and creates a GitHub release. A push that does not change the version publishes nothing:
+# the version is already on npm and the run stops with a notice. The trusted publisher on npmjs.com names
+# this repository and release.yml; keep the file name. npm makes provenance only for a public repository.
+#
+# There is no tag trigger. The tag that this workflow pushes uses GITHUB_TOKEN, and GitHub does not start
+# a workflow run for an event that GITHUB_TOKEN creates (only workflow_dispatch and repository_dispatch).
+# A second path from a tag would only add a way to publish twice.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
   contents: read
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  version:
-    name: tag matches package.json
+  plan:
+    name: is this version on npm
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      published: ${{ steps.version.outputs.published }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Compare the tag with the package version
-        env:
-          TAG: ${{ github.ref_name }}
+      # npm view exits 1 with E404 when the version does not exist. Any other failure (the network, the
+      # registry) must stop the run, so it is not read as "not published".
+      - name: Read the version and ask npm
+        id: version
         run: |
           version="$(node -p 'require("./package.json").version')"
-          if [ "$TAG" != "v$version" ]; then
-            echo "::error::tag $TAG does not match package.json version $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if out="$(npm view "portograph@$version" version 2>&1)"; then
+            echo "::notice::portograph@$version is already on npm; nothing to publish"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$out" | grep -q 'E404'; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::npm view failed: $out"
             exit 1
           fi
 
   checks:
-    needs: version
+    needs: plan
+    if: needs.plan.outputs.published == 'false'
     uses: ./.github/workflows/ci.yml
 
   publish:
-    needs: checks
+    needs: [plan, checks]
+    if: needs.plan.outputs.published == 'false'
     runs-on: ubuntu-latest
+    # One publish per version at a time. A second run for the same version waits, then finds the version
+    # on npm in the check below and does not publish.
+    concurrency:
+      group: release-${{ needs.plan.outputs.version }}
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
@@ -58,17 +76,20 @@ jobs:
       - name: Update npm
         run: npm install -g npm@^11.5.1
 
-      # A version that is already on npm (for example 0.1.0, published by hand) is not published again;
-      # the GitHub release is still made. npm view exits 1 with E404 when the version does not exist.
-      - name: Check whether this version is on npm
+      # The check right before the publish: a run that waited on the concurrency group sees the other run's version.
+      - name: Check again whether this version is on npm
         id: registry
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          version="$(node -p 'require("./package.json").version')"
-          if npm view "portograph@$version" version >/dev/null 2>&1; then
-            echo "::notice::portograph@$version is already on npm; publish is skipped"
+          if out="$(npm view "portograph@$VERSION" version 2>&1)"; then
+            echo "::notice::portograph@$VERSION is already on npm; publish is skipped"
             echo "published=true" >> "$GITHUB_OUTPUT"
-          else
+          elif printf '%s' "$out" | grep -q 'E404'; then
             echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::npm view failed: $out"
+            exit 1
           fi
 
       - name: Install dependencies
@@ -80,14 +101,35 @@ jobs:
         if: steps.registry.outputs.published == 'false'
         run: npm publish --provenance --access public
 
-  github-release:
-    needs: publish
+  release:
+    name: tag and GitHub release
+    needs: [plan, publish]
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-tag-${{ needs.plan.outputs.version }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
-      - name: Create the GitHub release
+      # The token stays in the git config of this job only, which has contents: write and runs no project code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Tag the commit and create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$TAG"
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "::notice::tag $tag exists; it is not made again"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "portograph $VERSION" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::release $tag exists; it is not made again"
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$tag"
+          fi
