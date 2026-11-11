@@ -7,14 +7,20 @@ on:
   workflow_dispatch:
   # release.yml runs the same checks before it publishes.
   workflow_call:
+    inputs:
+      release:
+        description: A release run owns its group per commit and no push cancels it.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
   # github.workflow is the caller's name under workflow_call, so a release never shares a group with a push.
-  group: ${{ github.workflow }}-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # The checks of a release must not be cancelled by a later push: they have their own group per commit.
+  group: ${{ inputs.release && format('release-checks-{0}', github.sha) || format('{0}-ci-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: ${{ !inputs.release }}
 
 jobs:
   check:

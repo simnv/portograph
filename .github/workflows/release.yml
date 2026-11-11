@@ -49,6 +49,15 @@ jobs:
             echo "published=true" >> "$GITHUB_OUTPUT"
           elif printf '%s' "$out" | grep -q 'E404'; then
             echo "published=false" >> "$GITHUB_OUTPUT"
+            # One commit is published, tagged and released. A tag that already exists must point to this one.
+            tag="v$version"
+            refs="$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")"
+            tagged="$(printf '%s\n' "$refs" | awk '/\^\{\}$/ {print $1}')"
+            [ -n "$tagged" ] || tagged="$(printf '%s\n' "$refs" | awk 'NR==1 {print $1}')"
+            if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+              echo "::error::tag $tag points to $tagged, not to $GITHUB_SHA. Delete the tag, or push it again on the commit to publish."
+              exit 1
+            fi
           else
             echo "::error::npm view failed: $out"
             exit 1
@@ -58,6 +67,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.published == 'false'
     uses: ./.github/workflows/ci.yml
+    with:
+      release: true
 
   publish:
     needs: [plan, checks]
@@ -71,6 +82,9 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      # true only in the run that published; its github.sha is the canonical commit of the version.
+      published_now: ${{ steps.registry.outputs.published == 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,6 +128,9 @@ jobs:
   release:
     name: tag and GitHub release
     needs: [plan, publish]
+    # A run that did not publish (another run did, in the same version group) makes no tag and no release:
+    # the run that published owns them, so they always name the published commit.
+    if: needs.publish.outputs.published_now == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: release-tag-${{ needs.plan.outputs.version }}
@@ -130,13 +147,19 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           tag="v$VERSION"
-          if [ "$GITHUB_REF_TYPE" = tag ] || git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
-            echo "::notice::tag $tag exists; it is not made again"
-          else
+          refs="$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")"
+          tagged="$(printf '%s\n' "$refs" | awk '/\^\{\}$/ {print $1}')"
+          [ -n "$tagged" ] || tagged="$(printf '%s\n' "$refs" | awk 'NR==1 {print $1}')"
+          if [ -z "$tagged" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$tag" -m "portograph $VERSION" "$GITHUB_SHA"
             git push origin "refs/tags/$tag"
+          elif [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "::error::tag $tag points to $tagged, but npm has the commit $GITHUB_SHA. The tag and the release are not changed."
+            exit 1
+          else
+            echo "::notice::tag $tag exists on $GITHUB_SHA; it is not made again"
           fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::notice::release $tag exists; it is not made again"
