@@ -1,6 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { drawio, layout, parse } from '../../src/index.js';
+import type { LayoutModel } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -262,4 +263,100 @@ links: []
     expect(value).toBe('a%2525b%7ec');
     expect(allIds(xml)).toContain(`pg-legendRow~symbol:${value}`);
   }, 60000);
+});
+
+describe('draw.io pg-class', () => {
+  let bound: Bound[];
+  const classOf = (id: string): string | undefined => bound.find(item => item.attributes['pg-id'] === id)!.attributes['pg-class'];
+
+  it('renders the synthetic fixture', async () => {
+    bound = objects(await render(readFileSync(new URL('../../goldens/synthetic/drawio-binding-classes.yaml', import.meta.url), 'utf8')));
+    expect(bound.length).toBeGreaterThan(5);
+  }, 60000);
+
+  it('writes the class of a port and of a link as written', () => {
+    expect(classOf('router:eth0')).toBe('uplink');
+    expect(classOf('router:eth1')).toBe('downlink up');
+    expect(classOf('switch:p3')).toBe('lag');
+    expect(classOf('switch:p2->camera:eth0')).toBe('poe');
+  });
+
+  it('writes each token once, one space apart, and no pg- token', () => {
+    expect(classOf('switch')).toBe('switch extra');
+    expect(classOf('router:eth2->switch:p3')).toBe('dashed backup');
+  });
+
+  it('writes the class of a node beside its pg-symbol', () => {
+    const router = bound.find(item => item.attributes['pg-id'] === 'router')!;
+    expect(router.attributes).toMatchObject({ 'pg-class': 'router', 'pg-symbol': 'router' });
+  });
+
+  it('writes no pg-class on a thing with no class', () => {
+    for (const id of ['camera', 'router:eth2', 'switch:p1', 'router:eth1->switch:p1']) {
+      expect(bound.find(item => item.attributes['pg-id'] === id)).toBeDefined();
+      expect(classOf(id)).toBeUndefined();
+    }
+    for (const item of bound) if ('pg-class' in item.attributes) expect(['node', 'port', 'link']).toContain(item.attributes['pg-kind']);
+  });
+});
+
+/**
+ * A link split into runs (contract section 3.3). No sheet gives one: G7 refuses a routed path whose segments do not
+ * connect. So the example takes the layout of `drawio-binding-metadata.yaml` and cuts the first segment of `uplink`
+ * in two, with a gap. `docs/assets/split-link.drawio` is that export; `PORTOGRAPH_WRITE_EXAMPLE=1` writes it again.
+ */
+describe('draw.io split link', () => {
+  const example = new URL('../../docs/assets/split-link.drawio', import.meta.url);
+  let fresh: string;
+  let runs: Bound[];
+  const cell = (item: Bound): Record<string, string> => attributesOf(/<mxCell\b([^>]*)/.exec(item.body)![1]!);
+
+  it('exports a link with a cut path as one cell for each run', async () => {
+    const yaml = readFileSync(new URL('../../goldens/synthetic/drawio-binding-metadata.yaml', import.meta.url), 'utf8');
+    const built = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = JSON.parse(JSON.stringify(built)) as LayoutModel;
+    const link = model.links.find(item => item.sourceIndex === 0)!;
+    const [head, ...rest] = link.path!.segments;
+    const at = (share: number) => ({ x: head!.from.x + (head!.to.x - head!.from.x) * share, y: head!.from.y + (head!.to.y - head!.from.y) * share });
+    link.path!.segments = [{ ...head!, to: at(0.4) }, { ...head!, from: at(0.6) }, ...rest];
+    // The cut adds one segment before every later one, so the label keeps its supporting segment.
+    for (const label of model.labels) {
+      if (label.owner.kind !== 'link' || label.owner.id !== link.id || label.support?.kind !== 'link-segment') continue;
+      label.support.segment += 1;
+      if (label.support.through !== undefined) label.support.through += 1;
+    }
+    fresh = drawio(model);
+    if (process.env['PORTOGRAPH_WRITE_EXAMPLE'] === '1') writeFileSync(example, fresh);
+    runs = objects(fresh).filter(item => item.attributes['pg-id'] === 'uplink');
+    expect(runs.map(item => item.attributes.id)).toEqual(['pg-link~uplink~0', 'pg-link~uplink~1']);
+  }, 60000);
+
+  it('writes the link id, the ends, the class and the meta on every run', () => {
+    for (const [index, run] of runs.entries()) {
+      expect(run.attributes).toMatchObject({
+        'pg-kind': 'link', 'pg-id': 'uplink', 'pg-from': 'router:eth1', 'pg-to': 'switch:p1',
+        'pg-run': String(index), 'pg-runs': '2', capacity: '10000000000',
+      });
+    }
+  });
+
+  it('binds the source on the first run and the target on the last run only', () => {
+    expect(cell(runs[0]!)).toMatchObject({ source: 'pg-port~router~eth1~1' });
+    expect(cell(runs[0]!).target).toBeUndefined();
+    expect(cell(runs[1]!)).toMatchObject({ target: 'pg-port~switch~p1~1' });
+    expect(cell(runs[1]!).source).toBeUndefined();
+  });
+
+  it('carries the label on one run, here not the first', () => {
+    // This label has a cell of its own (section 3.1): a child of the run that draws its supporting segment.
+    expect(runs.map(item => item.attributes.label)).toEqual(['', '']);
+    const labels = objects(fresh).filter(item => item.attributes['pg-of'] === 'uplink');
+    expect(labels.map(item => item.attributes.label)).toEqual(['10G']);
+    expect(cell(labels[0]!).parent).toBe('pg-link~uplink~1');
+  });
+
+  it('keeps the example file equal to the export in every bound attribute', () => {
+    const bound = (xml: string): Record<string, string>[] => objects(xml).map(item => item.attributes);
+    expect(bound(readFileSync(example, 'utf8'))).toEqual(bound(fresh));
+  });
 });

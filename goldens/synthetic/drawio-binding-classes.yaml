@@ -1,0 +1,32 @@
+# Expected: the draw.io export writes `pg-class` on each node, port and link cell whose YAML has a `class:`
+# (docs/drawio-binding-contract.md, section 3.2). The value is the author's tokens in written order, one space
+# apart, each token once, with no `pg-` token: `switch extra` on the switch, `uplink`, `downlink up` and `lag` on the
+# ports, `poe` and `dashed backup` on the links. A thing with no class has no `pg-class`. The attribute changes no geometry.
+# Test-only input (`test/render/drawio-binding.test.ts`); the whole pipeline runs, so no stage precondition is needed.
+portograph: 2
+profile: network
+groups:
+  top: { tier: 0 }
+  bottom: { tier: 1 }
+nodes:
+  router:
+    group: top
+    class: router
+    ports:
+      - { name: eth0, class: uplink }
+      - { name: eth1, class: downlink up }
+      - eth2
+  switch:
+    group: bottom
+    class: "switch  pg-w-9 extra switch"
+    ports:
+      - p1
+      - p2
+      - { name: p3, class: lag }
+  camera:
+    group: bottom
+    ports: [eth0]
+links:
+  - [router.eth1, switch.p1]
+  - [switch.p2, camera.eth0, { class: poe }]
+  - [router.eth2, switch.p3, { class: "dashed backup  dashed" }]

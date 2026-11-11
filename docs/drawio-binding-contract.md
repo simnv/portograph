@@ -93,7 +93,8 @@ All attribute values are strings. A reader must parse numbers and booleans.
 | `pg-port` | port | the port name. For a network diagram this is the OS interface name, for example `eth2` |
 | `pg-from` | link | the `from` end, in the form of section 2.1, rule 2 |
 | `pg-to` | link | the `to` end, in the same form |
-| `pg-run` | link, split into runs only | the index of this run, from `0` |
+| `pg-class` | node, port, link, only when the YAML gives it a `class:` | the class tokens of the author, see section 3.2. Optional: it does not change the schema version |
+| `pg-run` | link, split into runs only | the index of this run, from `0`. See section 3.3 |
 | `pg-runs` | link, split into runs only | the number of runs |
 | `pg-of` | link label, node icon | the `pg-id` of the link that owns the label, or of the node that owns the icon |
 | `pg-symbol` | node, only when the node has a class | the text after `symbol:` in the id of the legend row of the node's class, with `%` and `~` escaped as `%25` and `%7e`. The legend cells of the class have the id `pg-legendRow~symbol:<value>`. A "symbol" is the class variant that the legend lists, not a drawn icon: a node of a class that has no icon cell has the attribute too. When one class is drawn with two icons, the value is `<class>:<icon>`. A node has the attribute also when the sheet draws no legend. A node with no class has none. Optional: it does not change the schema version |
@@ -135,6 +136,57 @@ an export against the layout model: every label then decodes to its measured cen
 
 A node's `label` is its name only. Plain text has one font per cell, so a node's description is a
 separate, unbound text cell (`pg-nodeDescription~<node>`), a child of the node cell.
+
+### 3.2 Classes
+
+`pg-class` holds the `class:` of a node, a port or a link, as the author wrote it in the YAML:
+
+- The value is a list of tokens with one space between them, in the written order. Each token is there once.
+- A token that starts with `pg-` is not written. The export keeps that prefix for its own classes.
+- A thing with no `class:`, or with no token left, has no `pg-class`. The attribute is never empty.
+- The export adds no token: a link family (`routed`, `overlay`) is not in the value.
+
+A reader selects cells by one token, not by the full value: `pg-class="downlink up"` is in the set
+"all `downlink` ports" and in the set "all `up` ports".
+
+```xml
+<object id="pg-port~sw1~eth2~1" label="eth2" pg-kind="port" pg-id="sw1:eth2"
+        pg-node="sw1" pg-port="eth2" pg-class="downlink up" ifname="eth2">…</object>
+<object id="pg-link~sw1:eth3-&gt;cam1:eth0" label="" pg-kind="link" pg-id="sw1:eth3-&gt;cam1:eth0"
+        pg-from="sw1:eth3" pg-to="cam1:eth0" pg-class="poe">…</object>
+```
+
+`pg-class` and `pg-symbol` are two attributes with two meanings. `pg-class` is what the author
+wrote, on all three kinds. `pg-symbol` is on a node only and names the legend row that the node
+shares, so two nodes with `pg-class="router"` and `pg-class="router extra"` can have one
+`pg-symbol`. Use `pg-class` to select cells and `pg-symbol` to find the legend cells.
+
+### 3.3 A link split into runs
+
+A link is one cell when its path is one connected line. A path with a break becomes one cell for
+each connected part, a run. The runs have the index 0 to `pg-runs` − 1, from the `pg-from` end to
+the `pg-to` end.
+
+- Every run carries the full binding of the link: `pg-kind="link"`, the same `pg-id`, `pg-from`,
+  `pg-to` and `pg-class`, and every meta attribute. Thus a `bind` in the link meta is on every run.
+- Only `pg-run` and the cell `id` (`pg-link~<link id>~<i>`) differ between the runs.
+- The first run has the mxCell `source`. The last run has the mxCell `target`. No other run end is
+  attached to a cell: it has a `sourcePoint` or a `targetPoint`.
+- One run carries the label, the run that draws the segment the label stands on. It is not always
+  run 0. The label is the `label` of that run or a `link-label` cell that is a child of that run
+  (section 3.1). All other runs have `label=""`.
+- A generated `tooltip` (section 4) for the link is on every run. The full text of a shortened label is
+  on the cell that carries the label.
+
+A reader that binds a link must collect the cells by `pg-id` and give all of them one state.
+
+No sheet makes a split link today: gate G7 refuses a routed path whose segments do not connect,
+and no sheet of the test corpus gives one. A reader can get one from a layout model that the
+library exports without the gates. The example
+[`docs/assets/split-link.drawio`](assets/split-link.drawio) is such a file. It is the export of
+[`goldens/synthetic/drawio-binding-metadata.yaml`](../goldens/synthetic/drawio-binding-metadata.yaml)
+with the path of the link `uplink` cut in two (`test/render/drawio-binding.test.ts`, "draw.io split
+link"). Its link `uplink` has two runs, and the label `10G` is a `link-label` child of run 1.
 
 ## 4. Author metadata
 
@@ -181,12 +233,62 @@ Rules:
 Common keys for a network diagram: `host`, `job`, `instance`, `ifname`, `device`, `capacity`
 (the link limit in bit/s), `kind`. portograph does not read them.
 
+### 4.1 Where to write the identity of a counter
+
+A counter belongs to an interface of a host. Write each part of its identity one time, on the
+thing that owns it:
+
+| Write on | What | Example keys |
+| --- | --- | --- |
+| root `meta:` | a value that is the same for the full sheet | `datasource`, `site` |
+| node `meta:` | the identity of the host | `job`, `instance`, `host` |
+| port `meta:` | the identity of the interface on that host | `device`, `ifname` |
+| link `meta:` | a property of the link itself, and the exceptions below | `capacity`, `bind` |
+
+A link needs no copy of the identity. Its `pg-from` and `pg-to` name the two ports, and each port
+names its node with `pg-node`. A reader gets the identity of a link from the port and the node at
+one end. A copy on the link is a second value that can become different from the first.
+
+Write the identity on the link only when the ends do not give it:
+
+- the counter is on an interface that is not a drawn port, for example a VLAN interface or a tunnel,
+- the link ends on an anonymous port, which has no cell and no meta (the node meta still applies),
+- one port has two or more links and each link has its own counter.
+
+When `pg-port` is the OS interface name, the port needs no `device` or `ifname`. Write one only
+where the name is different.
+
+No cell inherits a value in the file. A reader does the lookup, and this order is recommended:
+the cell itself, then for a port its node, then the root cell. A reader states its own rule for the
+end of a link that it reads.
+
+```yaml
+meta: { datasource: victoriametrics }
+nodes:
+  sw1:
+    group: core
+    meta: { job: node, instance: "sw1:9100" }
+    ports:
+      - eth2                                        # the device is the port name
+      - { name: uplink, meta: { device: bond0 } }   # the device has another name
+  srv1:
+    group: servers
+    ports: [eth0]                                   # no counters here
+links:
+  - [sw1.eth2, srv1.eth0]                           # the reader takes job, instance and eth2 from the sw1 end
+  - from: sw1.uplink
+    to: srv1
+    meta: { device: bond0.20 }                      # an exception: the counter is on a VLAN interface
+```
+
 ## 5. Not in version 1
 
 These cells have no binding attributes:
 
 - group and frame boxes,
-- mesh bus bars, stubs, joints and risers (a mesh bus member link has no link cell),
+- mesh bus bars, stubs, joints and risers. A mesh bus member link has no link cell, and its `meta:`
+  and `class:` are not in the file. One stub stands for all the member links of its node, so no
+  bus cell is one link. A named port of a member has its cell and its meta,
 - overlay end marks, icon tiles, node descriptions and the legend,
 - the canvas background (layer `Canvas`),
 - the count label of a merge bundle. Its cell id comes from the bundle number, which can change

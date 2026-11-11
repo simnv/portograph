@@ -427,6 +427,16 @@ const binding = (own: Binding, meta: Meta | undefined): Binding => ({
   ...Object.fromEntries(Object.keys(meta ?? {}).sort().map(key => [key, String(meta![key])])),
 });
 
+/**
+ * `pg-class`: the `class:` of a node, a port or a link, as the author's tokens (`authorClass`) in written order, one
+ * space apart, each token once. A thing with no class token has no attribute. One function writes it for the three
+ * kinds (R1). It is not `pg-symbol`, which names the legend row of a node.
+ */
+const classBinding = (value: string | undefined): Binding => {
+  const tokens = classes(authorClass(value));
+  return tokens ? { 'pg-class': tokens } : {};
+};
+
 /** draw.io shows `tooltip` as HTML (`Graph.sanitizeHtml`, then `innerHTML`), so generated text is escaped to stay text. */
 const htmlText = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -727,6 +737,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     return withTooltip(binding({
       'pg-kind': 'link', 'pg-id': stableId(link),
       'pg-from': endpointId(source?.from ?? link.from), 'pg-to': endpointId(source?.to ?? link.to),
+      ...classBinding(source?.class),
       ...(run ? { 'pg-run': String(run.index), 'pg-runs': String(run.count) } : {}),
     }, source?.meta), text);
   };
@@ -1046,6 +1057,7 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     }), relative(box, origin), named === undefined ? undefined : plainText(labelLines(named)), {},
     binding({
       'pg-kind': 'node', 'pg-id': id,
+      ...classBinding(document.nodes[id]?.class),
       // The legend's own id for this node's symbol, without its `symbol:` prefix, so the two cannot drift.
       ...(symbolIds.has(id) ? { 'pg-symbol': part(symbolIds.get(id)!.slice('symbol:'.length)) } : {}),
     }, document.nodes[id]?.meta));
@@ -1163,10 +1175,14 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
         } : {}),
       }), onFace(relative(shiftRect(port.pill.bounds), shift(node.bounds!)), size, port.side),
       shown ? plainText(labelLines(shown)) : undefined, {},
-      binding({
-        'pg-kind': 'port', 'pg-id': endpointId({ node: id, name: port.ref.name!, ordinal: port.ref.ordinal }),
-        'pg-node': id, 'pg-port': port.ref.name!,
-      }, document.nodes[id]?.ports.find(item => item.name === port.ref.name && item.ordinal === port.ref.ordinal)?.meta));
+      (() => {
+        const written = document.nodes[id]?.ports.find(item => item.name === port.ref.name && item.ordinal === port.ref.ordinal);
+        return binding({
+          'pg-kind': 'port', 'pg-id': endpointId({ node: id, name: port.ref.name!, ordinal: port.ref.ordinal }),
+          'pg-node': id, 'pg-port': port.ref.name!,
+          ...classBinding(written?.class),
+        }, written?.meta);
+      })());
     }
   }
 
