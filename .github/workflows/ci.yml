@@ -40,6 +40,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
+      - name: Changelog script
+        run: .github/scripts/changelog-section.test.sh
+
       - name: Typecheck
         run: npm run typecheck
 

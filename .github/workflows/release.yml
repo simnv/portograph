@@ -1,8 +1,10 @@
 name: release
 
 # A push to main publishes the package.json version to npm through trusted publishing (OIDC, no token),
-# tags it v<version> and creates a GitHub release. A push that does not change the version publishes nothing:
-# the version is already on npm and the run stops with a notice. The trusted publisher on npmjs.com names
+# tags it v<version> and creates a GitHub release. The release text is the section of CHANGELOG.md for the
+# version, followed by the generated list of changes; a version without that section is not published.
+# A push that does not change the version publishes nothing: the version is already on npm and the run
+# stops with a notice. The trusted publisher on npmjs.com names
 # this repository and release.yml; keep the file name. npm makes provenance only for a public repository.
 #
 # A push of a tag v<version> takes the same path: the tag must equal the package.json version, and the
@@ -49,6 +51,13 @@ jobs:
             echo "published=true" >> "$GITHUB_OUTPUT"
           elif printf '%s' "$out" | grep -q 'E404'; then
             echo "published=false" >> "$GITHUB_OUTPUT"
+            # A version that will publish needs its section in CHANGELOG.md: it is the text of the GitHub release.
+            # The check is here, before the checks and the publish, so a bump without notes publishes nothing.
+            # A push that does not change the version never reaches this branch, so it is not stopped.
+            if ! .github/scripts/changelog-section.sh "$version" >/dev/null; then
+              echo "::error::CHANGELOG.md has no section '## [$version] - <date>' with text. Add it in the commit that sets the version."
+              exit 1
+            fi
             # One commit is published, tagged and released. A tag that already exists must point to this one.
             tag="v$version"
             tagged="$(.github/scripts/tag-commit.sh "$tag")"
@@ -180,5 +189,8 @@ jobs:
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::notice::release $tag exists; it is not made again"
           else
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$tag"
+            # The body is the CHANGELOG.md section of this commit; --generate-notes appends the generated list of changes.
+            .github/scripts/changelog-section.sh "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$tag" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes
           fi

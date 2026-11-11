@@ -119,7 +119,11 @@ To make the table again from the macOS fonts, run `uv run scripts/font-metrics.p
 There are two ways to release:
 
 1. Bump `version` in `package.json` in a pull request or in a commit on `main`. The merge publishes.
+   The same commit must add the section `## [<version>] - <date>` to [`CHANGELOG.md`](CHANGELOG.md),
+   with the entries under Added, Changed, Fixed or Removed. Write them for a user of the package. The
+   section is the text of the GitHub release, and the workflow stops a version that has none.
 2. Push a tag `v<version>` on the commit with that version. The tag must equal the `package.json` version.
+   That commit needs the changelog section too.
 
 `.github/workflows/release.yml` runs the checks, publishes to npm with trusted publishing (no
 token), and creates a GitHub release. On the `main` path it also pushes the tag. A version that is
