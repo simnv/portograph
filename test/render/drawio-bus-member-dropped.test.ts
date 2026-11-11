@@ -15,8 +15,8 @@ const warnings = (model: LayoutModel): Diagnostic[] => {
   return found;
 };
 
-describe('the draw.io export reports the meta and class of a mesh bus member (contract section 5)', () => {
-  it('names the member links that carry a class or meta, and says to put meta on the ports', async () => {
+describe('the draw.io export reports the meta of a mesh bus member (contract section 5)', () => {
+  it('names the member links that carry meta, and says to put meta on the ports', async () => {
     const yaml = mesh.replace('{ from: n1, to: n2, class: sync }', '{ from: n1, to: n2, class: sync, meta: { circuit: c1 } }');
     const model = await run(yaml);
     expect(model.links.filter(link => link.meshBus !== undefined)).toHaveLength(10);
@@ -24,11 +24,17 @@ describe('the draw.io export reports the meta and class of a mesh bus member (co
     expect(found).toHaveLength(1);
     expect(found[0]!.severity).toBe('warning');
     expect(found[0]!.stage).toBe('render');
-    const ids = linkIds(model.document);
-    for (const link of model.links.filter(item => item.meshBus !== undefined)) expect(found[0]!.message).toContain(ids[link.sourceIndex]!);
+    const withMeta = model.links.find(link => link.meshBus !== undefined && model.document.links[link.sourceIndex]!.meta !== undefined)!;
+    expect(found[0]!.message).toContain(`Links: ${linkIds(model.document)[withMeta.sourceIndex]!}`);
     expect(found[0]!.message).toContain('has no link cell');
-    expect(found[0]!.message).toContain('meta and class are not in the draw.io file');
+    expect(found[0]!.message).toContain('meta is not in the draw.io file');
     expect(found[0]!.message).toContain('put binding meta on the member ports');
+  }, 60000);
+
+  it('is silent for a mesh whose members carry a class and no meta', async () => {
+    const model = await run(mesh);
+    expect(model.links.filter(link => link.meshBus !== undefined)).toHaveLength(10);
+    expect(warnings(model)).toEqual([]);
   }, 60000);
 
   it('is silent when no link is a bus member, also when a link carries meta and class', async () => {

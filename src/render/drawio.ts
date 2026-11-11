@@ -1899,14 +1899,13 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     options.onDiagnostic?.({ stage: 'render', severity: 'warning', code: 'DRAWIO_LINE_PITCH',
       message: `draw.io draws plain text at its own line pitch, so ${pitched.length} multi-line label(s) differ from the SVG in their further lines: ${pitched.map(label => label.id).join('; ')}` });
   }
-  // A bus member has no link cell (`drawn` skips it), so the `meta:` and `class:` it carries reach no cell. Say so, once per export.
+  // A bus member has no link cell (`drawn` skips it), so the `meta:` it carries reaches no cell. Its class forms the bus, so it is not reported. Say so, once per export.
   const dropped = layout.links.filter(link => link.meshBus !== undefined).filter(link => {
-    const source = document.links[link.sourceIndex];
-    return Object.keys(source?.meta ?? {}).length > 0 || classes(authorClass(source?.class)) !== '';
+    return Object.keys(document.links[link.sourceIndex]?.meta ?? {}).length > 0;
   });
   if (dropped.length) {
     options.onDiagnostic?.({ stage: 'render', severity: 'warning', code: 'DRAWIO_BUS_MEMBER_DROPPED',
-      message: `a mesh bus member has no link cell, so its meta and class are not in the draw.io file; put binding meta on the member ports. Links: ${dropped.map(stableId).join('; ')}` });
+      message: `a mesh bus member has no link cell, so its meta is not in the draw.io file; put binding meta on the member ports. Links: ${dropped.map(stableId).join('; ')}` });
   }
   return `<?xml version="1.0" encoding="UTF-8"?>\n`
     + element('mxfile', { host: 'portograph' },

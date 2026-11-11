@@ -291,9 +291,8 @@ links:
 These cells have no binding attributes:
 
 - group and frame boxes,
-- mesh bus bars, stubs, joints and risers. A mesh bus member link has no link cell, and its `meta:`
-  and `class:` are not in the file. The export reports this: when a member has a `meta:` or a `class:`, it raises the warning
-  `DRAWIO_BUS_MEMBER_DROPPED` once, with the ids of those links. Put binding meta on the member ports. One stub stands for all the member links of its node, so no
+- mesh bus bars, stubs, joints and risers. A mesh bus member link has no link cell. Its `class:` forms the bus and is not written. Its `meta:` is dropped from the file, and the export reports
+  this: when a member has a `meta:`, it raises the warning `DRAWIO_BUS_MEMBER_DROPPED` once, with the ids of those links. Put binding meta on the member ports. One stub stands for all the member links of its node, so no
   bus cell is one link. A named port of a member has its cell and its meta,
 - overlay end marks, icon tiles, node descriptions and the legend,
 - the canvas background (layer `Canvas`),
