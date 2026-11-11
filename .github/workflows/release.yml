@@ -111,7 +111,11 @@ jobs:
         run: |
           if out="$(npm view "portograph@$VERSION" version 2>&1)"; then
             echo "published=true" >> "$GITHUB_OUTPUT"
-            head="$(npm view "portograph@$VERSION" gitHead 2>/dev/null || true)"
+            # A missing field is an empty answer with exit 0; a failed query is an error, not "no gitHead".
+            if ! head="$(npm view "portograph@$VERSION" gitHead 2>/dev/null)"; then
+              echo "::error::npm view portograph@$VERSION gitHead failed"
+              exit 1
+            fi
             if [ -n "$head" ] && [ "$head" = "$GITHUB_SHA" ]; then
               echo "::notice::portograph@$VERSION is on npm from this commit; the release job continues"
               echo "recovered=true" >> "$GITHUB_OUTPUT"
