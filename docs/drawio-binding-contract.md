@@ -103,6 +103,10 @@ All attribute values are strings. A reader must parse numbers and booleans.
 A link from `pg-from` to `pg-to` has the YAML direction. Use it to select the counter for each
 direction, for example the transmit counter of the `pg-from` port.
 
+`pg-from` and `pg-to` are the ends at export time. They do not follow an edit in draw.io: a
+reconnect of a link changes the mxCell `source` or `target` only, and `pg-from` and `pg-to` keep
+the old ends. A reader that must follow such edits compares them with `source` and `target`.
+
 `pg-from` and `pg-to` name a port cell only when the end is a named port. An anonymous port has no
 cell, and the link ends on the node cell.
 
@@ -185,8 +189,9 @@ and no sheet of the test corpus gives one. A reader can get one from a layout mo
 library exports without the gates. The example
 [`docs/assets/split-link.drawio`](assets/split-link.drawio) is such a file. It is the export of
 [`goldens/synthetic/drawio-binding-metadata.yaml`](../goldens/synthetic/drawio-binding-metadata.yaml)
-with the path of the link `uplink` cut in two (`test/render/drawio-binding.test.ts`, "draw.io split
-link"). Its link `uplink` has two runs, and the label `10G` is a `link-label` child of run 1.
+with the path of the link `uplink` cut in two and the class `trunk` on that link
+(`test/render/drawio-binding.test.ts`, "draw.io split link"). Its link `uplink` has two runs, each
+with `pg-class="trunk"`, and the label `10G` is a `link-label` child of run 1.
 
 ## 4. Author metadata
 

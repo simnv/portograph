@@ -302,8 +302,8 @@ describe('draw.io pg-class', () => {
 
 /**
  * A link split into runs (contract section 3.3). No sheet gives one: G7 refuses a routed path whose segments do not
- * connect. So the example takes the layout of `drawio-binding-metadata.yaml` and cuts the first segment of `uplink`
- * in two, with a gap. `docs/assets/split-link.drawio` is that export; `PORTOGRAPH_WRITE_EXAMPLE=1` writes it again.
+ * connect. So the example takes the layout of `drawio-binding-metadata.yaml`, cuts the first segment of `uplink`
+ * in two, with a gap, and gives that link the class `trunk`. `docs/assets/split-link.drawio` is that export; `PORTOGRAPH_WRITE_EXAMPLE=1` writes it again.
  */
 describe('draw.io split link', () => {
   const example = new URL('../../docs/assets/split-link.drawio', import.meta.url);
@@ -325,6 +325,8 @@ describe('draw.io split link', () => {
       label.support.segment += 1;
       if (label.support.through !== undefined) label.support.through += 1;
     }
+    // The sheet gives `uplink` no class. The export reads the class from the document, so one is set here to show it on the runs.
+    model.document.links[0]!.class = 'trunk';
     fresh = drawio(model);
     if (process.env['PORTOGRAPH_WRITE_EXAMPLE'] === '1') writeFileSync(example, fresh);
     runs = objects(fresh).filter(item => item.attributes['pg-id'] === 'uplink');
@@ -335,7 +337,7 @@ describe('draw.io split link', () => {
     for (const [index, run] of runs.entries()) {
       expect(run.attributes).toMatchObject({
         'pg-kind': 'link', 'pg-id': 'uplink', 'pg-from': 'router:eth1', 'pg-to': 'switch:p1',
-        'pg-run': String(index), 'pg-runs': '2', capacity: '10000000000',
+        'pg-class': 'trunk', 'pg-run': String(index), 'pg-runs': '2', capacity: '10000000000',
       });
     }
   });
