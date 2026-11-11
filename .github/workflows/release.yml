@@ -51,9 +51,7 @@ jobs:
             echo "published=false" >> "$GITHUB_OUTPUT"
             # One commit is published, tagged and released. A tag that already exists must point to this one.
             tag="v$version"
-            refs="$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")"
-            tagged="$(printf '%s\n' "$refs" | awk '/\^\{\}$/ {print $1}')"
-            [ -n "$tagged" ] || tagged="$(printf '%s\n' "$refs" | awk 'NR==1 {print $1}')"
+            tagged="$(.github/scripts/tag-commit.sh "$tag")"
             if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
               echo "::error::tag $tag points to $tagged, not to $GITHUB_SHA. Delete the tag, or push it again on the commit to publish."
               exit 1
@@ -83,8 +81,8 @@ jobs:
       contents: read
       id-token: write
     outputs:
-      # true only in the run that published; its github.sha is the canonical commit of the version.
-      published_now: ${{ steps.registry.outputs.published == 'false' }}
+      # true in the run that published, or that finds its own commit as the gitHead on npm; github.sha is the canonical commit.
+      published_now: ${{ steps.registry.outputs.published == 'false' || steps.registry.outputs.recovered == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,17 +98,33 @@ jobs:
       - name: Update npm
         run: npm install -g npm@^11.5.1
 
-      # The check right before the publish: a run that waited on the concurrency group sees the other run's version.
+      # The checks right before the publish. A re-run of this job reuses the output of the plan job, so the
+      # npm state and the tag are read again here.
+      # - Not on npm: the tag v<version> must be absent or on this commit, or the job fails.
+      # - On npm with gitHead equal to this commit: an earlier try of this run published it and failed after
+      #   the upload. The release job runs again (it makes only what is missing).
+      # - On npm from another commit, or without gitHead: the job publishes nothing and the release job is skipped.
       - name: Check again whether this version is on npm
         id: registry
         env:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           if out="$(npm view "portograph@$VERSION" version 2>&1)"; then
-            echo "::notice::portograph@$VERSION is already on npm; publish is skipped"
             echo "published=true" >> "$GITHUB_OUTPUT"
+            head="$(npm view "portograph@$VERSION" gitHead 2>/dev/null || true)"
+            if [ -n "$head" ] && [ "$head" = "$GITHUB_SHA" ]; then
+              echo "::notice::portograph@$VERSION is on npm from this commit; the release job continues"
+              echo "recovered=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::notice::portograph@$VERSION is already on npm (gitHead: ${head:-none}); publish and release are skipped"
+            fi
           elif printf '%s' "$out" | grep -q 'E404'; then
             echo "published=false" >> "$GITHUB_OUTPUT"
+            tagged="$(.github/scripts/tag-commit.sh "v$VERSION")"
+            if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+              echo "::error::tag v$VERSION points to $tagged, not to $GITHUB_SHA. Delete the tag, or push it again on the commit to publish."
+              exit 1
+            fi
           else
             echo "::error::npm view failed: $out"
             exit 1
@@ -147,9 +161,7 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           tag="v$VERSION"
-          refs="$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")"
-          tagged="$(printf '%s\n' "$refs" | awk '/\^\{\}$/ {print $1}')"
-          [ -n "$tagged" ] || tagged="$(printf '%s\n' "$refs" | awk 'NR==1 {print $1}')"
+          tagged="$(.github/scripts/tag-commit.sh "$tag")"
           if [ -z "$tagged" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
