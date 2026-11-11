@@ -28,7 +28,7 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 ### Added
 
 - The draw.io export writes the attribute `pg-class` on the cell of a node, a port and a link, when the YAML gives the thing a `class:`. The value is the tokens of the author, in the written order, with one space between them. A reader selects the cells by one token. A token that starts with `pg-` is not written, and the export adds no token of its own. The attribute is optional, so the schema version stays 1. See section 3.2 of the contract.
-- Contract section 3.3 describes a link that is split into runs: every run carries the full binding, only `pg-run` and the cell id differ, and one run carries the label. The new example [`docs/assets/split-link.drawio`](docs/assets/split-link.drawio) shows it.
+- Contract section 3.3 describes a link that is split into runs: every run carries the full binding, only `pg-run` and the cell id differ, and one run carries the label. The new example [`docs/assets/split-link.drawio`](https://github.com/simnv/portograph/blob/v0.2.0/docs/assets/split-link.drawio) shows it.
 - Contract section 4.1 says where to write the identity of a counter: the value for the full sheet in the root `meta:`, the host on the node, the interface on the port. A link needs a copy only when its ends do not give the identity.
 
 ### Changed
