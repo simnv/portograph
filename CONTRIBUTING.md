@@ -116,12 +116,17 @@ To make the table again from the macOS fonts, run `uv run scripts/font-metrics.p
 
 ## Release
 
-To release, bump `version` in `package.json` in a pull request or in a commit on `main`. The merge
-publishes: `.github/workflows/release.yml` runs the checks, publishes to npm with trusted
-publishing (no token), tags `v<version>` and creates a GitHub release. A push that does not change
-the version publishes nothing. The npm trusted publisher names this repository and `release.yml`;
-keep the file name. It must allow direct `npm publish`: a new publisher allows only staged publish
-by default. See [`docs/gates.md`](docs/gates.md).
+There are two ways to release:
+
+1. Bump `version` in `package.json` in a pull request or in a commit on `main`. The merge publishes.
+2. Push a tag `v<version>` on the commit with that version. The tag must equal the `package.json` version.
+
+`.github/workflows/release.yml` runs the checks, publishes to npm with trusted publishing (no
+token), and creates a GitHub release. On the `main` path it also pushes the tag. A version that is
+already on npm is never published again, so a push that does not change the version publishes
+nothing. The npm trusted publisher names this repository and `release.yml`; keep the file name. It
+must allow direct `npm publish`: a new publisher allows only staged publish by default. See
+[`docs/gates.md`](docs/gates.md).
 
 ## License
 

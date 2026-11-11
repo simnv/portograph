@@ -5,12 +5,15 @@ name: release
 # the version is already on npm and the run stops with a notice. The trusted publisher on npmjs.com names
 # this repository and release.yml; keep the file name. npm makes provenance only for a public repository.
 #
-# There is no tag trigger. The tag that this workflow pushes uses GITHUB_TOKEN, and GitHub does not start
-# a workflow run for an event that GITHUB_TOKEN creates (only workflow_dispatch and repository_dispatch).
-# A second path from a tag would only add a way to publish twice.
+# A push of a tag v<version> takes the same path: the tag must equal the package.json version, and the
+# same npm check stops a version that is already published. The tag that this workflow pushes uses
+# GITHUB_TOKEN, and GitHub does not start a workflow run for an event that GITHUB_TOKEN creates (only
+# workflow_dispatch and repository_dispatch), so the workflow does not start itself with its own tag.
+# The publish and release jobs share one concurrency group per version, across both triggers.
 on:
   push:
     branches: [main]
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -31,8 +34,15 @@ jobs:
       # registry) must stop the run, so it is not read as "not published".
       - name: Read the version and ask npm
         id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           version="$(node -p 'require("./package.json").version')"
+          if [ "$REF_TYPE" = tag ] && [ "$REF_NAME" != "v$version" ]; then
+            echo "::error::tag $REF_NAME does not match package.json version $version"
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if out="$(npm view "portograph@$version" version 2>&1)"; then
             echo "::notice::portograph@$version is already on npm; nothing to publish"
@@ -120,7 +130,7 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           tag="v$VERSION"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+          if [ "$GITHUB_REF_TYPE" = tag ] || git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
             echo "::notice::tag $tag exists; it is not made again"
           else
             git config user.name "github-actions[bot]"
