@@ -69,11 +69,11 @@ export function linkByEnds(model: LayoutModel): ReadonlyMap<string, LayoutLink> 
  */
 export interface Peer { peer: PortRef; link: string }
 const peerCache = new WeakMap<LayoutModel['links'], Map<string, Peer[]>>();
-export function unreservedPeers(model: LayoutModel): Map<string, Peer[]> {
-  const cached = peerCache.get(model.links);
-  if (cached) return cached;
+const unreservedPeersCache = readCache('unreservedPeers');
+
+function computeUnreservedPeers(links: LayoutModel['links']): Map<string, Peer[]> {
   const index = new Map<string, Peer[]>();
-  for (const link of model.links) {
+  for (const link of links) {
     if (link.layer !== 'routed' || link.technique === 'stub' || link.bundle !== undefined || !link.attachments) continue;
     const { from, to } = link.attachments;
     for (const [near, far] of [[from, to], [to, from]] as const) {
@@ -82,40 +82,64 @@ export function unreservedPeers(model: LayoutModel): Map<string, Peer[]> {
       index.set(key(near), list);
     }
   }
+  return index;
+}
+
+export function unreservedPeers(model: LayoutModel): Map<string, Peer[]> {
+  const cached = peerCache.get(model.links);
+  if (cached !== undefined) return unreservedPeersCache.hit(model, cached, () => computeUnreservedPeers(model.links));
+  unreservedPeersCache.miss();
+  const index = computeUnreservedPeers(model.links);
   peerCache.set(model.links, index);
   return index;
 }
 
 const routedAtCache = new WeakMap<LayoutModel['links'], Map<string, LayoutLink[]>>();
+const routedLinksAtCache = readCache('routedLinksAt');
+
+function computeRoutedLinksAt(links: LayoutModel['links']): Map<string, LayoutLink[]> {
+  const index = new Map<string, LayoutLink[]>();
+  for (const link of links) {
+    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
+    const from = key(link.attachments.from), to = key(link.attachments.to);
+    for (const end of from === to ? [from] : [from, to]) { const list = index.get(end); if (list) list.push(link); else index.set(end, [link]); }
+  }
+  return index;
+}
+
 /**
  * The routed links of each port key in link order (a link from a port to itself counts once), cached against the link array like `unreservedPeers`: the layer, the
  * technique and the attachments of a link are fixed in stage 1. The lists are shared and read only.
  */
 export function routedLinksAt(model: LayoutModel): Map<string, LayoutLink[]> {
   const cached = routedAtCache.get(model.links);
-  if (cached) return cached;
-  const index = new Map<string, LayoutLink[]>();
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
-    const from = key(link.attachments.from), to = key(link.attachments.to);
-    for (const end of from === to ? [from] : [from, to]) { const list = index.get(end); if (list) list.push(link); else index.set(end, [link]); }
-  }
+  if (cached !== undefined) return routedLinksAtCache.hit(model, cached, () => computeRoutedLinksAt(model.links));
+  routedLinksAtCache.miss();
+  const index = computeRoutedLinksAt(model.links);
   routedAtCache.set(model.links, index);
   return index;
 }
 
 const allPeerCache = new WeakMap<LayoutModel['links'], Map<string, PortRef[]>>();
-/** Every peer of every port over all links, as stage 5 reads them (a link from a port to itself counts once). */
-export function allPeers(model: LayoutModel): Map<string, PortRef[]> {
-  const cached = allPeerCache.get(model.links);
-  if (cached) return cached;
+const allPeersCache = readCache('allPeers');
+
+function computeAllPeers(links: LayoutModel['links']): Map<string, PortRef[]> {
   const index = new Map<string, PortRef[]>();
-  for (const link of model.links) {
+  for (const link of links) {
     const { from, to } = link.attachments!;
     for (const [a, b] of key(from) === key(to) ? [[from, to]] : [[from, to], [to, from]]) {
       const list = index.get(key(a!)) ?? []; list.push(b!); index.set(key(a!), list);
     }
   }
+  return index;
+}
+
+/** Every peer of every port over all links, as stage 5 reads them (a link from a port to itself counts once). */
+export function allPeers(model: LayoutModel): Map<string, PortRef[]> {
+  const cached = allPeerCache.get(model.links);
+  if (cached !== undefined) return allPeersCache.hit(model, cached, () => computeAllPeers(model.links));
+  allPeersCache.miss();
+  const index = computeAllPeers(model.links);
   allPeerCache.set(model.links, index);
   return index;
 }

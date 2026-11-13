@@ -13,7 +13,8 @@ export { VERBS, EXIT, COMMAND_DEADLINE_MS, isVerb, helpText, parseCommand, sidec
 export type { Command, Verb } from './cli.js';
 export { layout, createBudget, CommandDeadlineError, UNBOUNDED_BUDGET } from './pipeline/index.js';
 export type { Budget, LayoutOptions, LayoutProgress } from './pipeline/index.js';
-export { readCacheCounts } from './model/read-cache.js';
+export { readCacheCounts, resetReadCacheCounts } from './model/read-cache.js';
+export type { ReadCacheTally } from './model/read-cache.js';
 export * from './model/index.js';
 export * from './text/index.js';
 export * from './geometry/index.js';

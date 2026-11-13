@@ -51,7 +51,15 @@ export async function openPipeline() {
     api,
     /** Lays one document out; rejects with a `TimeoutError` after the per-sheet deadline, then runs on with fresh ELK and route workers. */
     async layout(document) {
-      const running = api.layout(document, { createElkAttempt: () => elk.attempt(), createRouteAttempt: router.attempt });
+      const checkCachesEnv = process.env.PORTOGRAPH_CHECK_CACHES;
+      const checkCaches = checkCachesEnv === 'sampled' ? 'sampled'
+        : (checkCachesEnv === '1' || checkCachesEnv === 'true' || checkCachesEnv === 'all') ? true
+        : undefined;
+      const running = api.layout(document, {
+        createElkAttempt: () => elk.attempt(),
+        createRouteAttempt: router.attempt,
+        ...(checkCaches !== undefined ? { checkCaches } : {}),
+      });
       running.catch(() => {}); // a layout that outlives its deadline must not become an unhandled rejection
       let timer;
       const expired = new Promise((_, reject) => {

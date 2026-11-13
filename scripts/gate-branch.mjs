@@ -32,8 +32,8 @@ const USAGE = 'npm run gate:branch -- [--skip-tests] [--allow-canvas] [--strict]
 class Stop extends Error {}
 
 /** Run a command and capture its output; `cwd` defaults to this checkout. */
-function run(command, args, cwd = ROOT) {
-  const result = spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 1 << 28 });
+function run(command, args, cwd = ROOT, env = process.env) {
+  const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', maxBuffer: 1 << 28 });
   return { ok: result.status === 0, status: result.status, out: `${result.stdout ?? ''}${result.stderr ?? ''}`, stdout: result.stdout ?? '' };
 }
 
@@ -138,6 +138,42 @@ function newRemovals(baseText, headText) {
   return found;
 }
 
+const CANARY_SHEETS = [
+  'goldens/real/avd-dual-dc-l3ls.yaml',
+  'goldens/synthetic/drawio-bus-marks-stay-on-face.yaml',
+  'goldens/synthetic/a-seated-column-leaves-a-corridor-open.yaml',
+];
+
+function checkCachesCanary() {
+  const built = run('node', [join(ROOT, 'scripts', 'ensure-build.mjs')]);
+  if (!built.ok) throw new Stop(`ensure-build failed before cache canary\n${tail(built.out)}`);
+  const script = `
+    import { readFileSync } from 'node:fs';
+    import { openPipeline } from './scripts/gate-lib.mjs';
+    const sheets = ${JSON.stringify(CANARY_SHEETS)};
+    const pipeline = await openPipeline();
+    try {
+      pipeline.api.resetReadCacheCounts();
+      for (const file of sheets) {
+        await pipeline.layout(pipeline.api.parse(readFileSync(file, 'utf8')));
+      }
+      const counts = pipeline.api.readCacheCounts();
+      const missed = Object.entries(counts)
+        .filter(([, tally]) => tally.hits === 0 || tally.checked === 0)
+        .map(([name, tally]) => \`\${name}(hits=\${tally.hits},checked=\${tally.checked})\`);
+      if (missed.length > 0) {
+        throw new Error(\`cache canary missed caches: \${missed.join(', ')}\`);
+      }
+      process.stdout.write(\`cache canary ok (\${Object.keys(counts).length} caches across \${sheets.length} sheets)\\n\`);
+    } finally {
+      pipeline.close();
+    }
+  `;
+  const result = run('node', ['--input-type=module', '-e', script], ROOT, { ...process.env, PORTOGRAPH_CHECK_CACHES: '1' });
+  if (!result.ok) throw new Stop(`cache canary failed\n${tail(result.out)}`);
+  say(`gate:branch: ${result.stdout.trim()}`);
+}
+
 function main(argv) {
   const { skipTests, strict } = parseArguments(argv);
   const reasons = [];
@@ -166,6 +202,7 @@ function main(argv) {
     if (!result.ok) throw new Stop(`tests failed\n${failingTests(result.out)}`);
     say('gate:branch: tests ok');
   }
+  checkCachesCanary();
 
   const sha = git('rev-parse', '--short', 'main').stdout.trim();
   const baseTsv = `/tmp/pg-main-${sha}.tsv`;

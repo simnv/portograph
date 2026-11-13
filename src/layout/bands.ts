@@ -2,6 +2,7 @@ import type { Point, Rect, Side } from '../model/geometry.js';
 import { stemCache, stemDepth, stemDepthsFault } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
 import type { LabelBand, LabelPaddingEntry, LayoutGroup, LayoutLabel, LayoutLink, LayoutModel, LayoutNode, LayoutPort, Owner, PathSegment } from '../model/layout.js';
+import { readCache } from '../model/read-cache.js';
 import { equal } from '../model/json-equality.js';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 import { frameSubtreeCells, orderedGroupIds, orderedNodeIds } from '../model/model.js';
@@ -149,15 +150,21 @@ function titles(model: LayoutModel): Title[] {
  * identity has one answer.
  */
 const widestRoutedStroke = new WeakMap<readonly LayoutModel['links'][number][], number>();
-export function routedStroke(model: LayoutModel): number {
-  const memo = widestRoutedStroke.get(model.links);
-  if (memo !== undefined) return memo;
+const routedStrokeCache = readCache('bandsRoutedStroke');
+function computeRoutedStroke(links: readonly LayoutModel['links'][number][]): number {
   let widest: number = DEFAULT_STROKE_WIDTHS.path;
-  for (const link of model.links) {
+  for (const link of links) {
     if (link.layer !== 'routed') continue;
     const width = linkStrokeWidth(link);
     if (width > widest) widest = width;
   }
+  return widest;
+}
+export function routedStroke(model: LayoutModel): number {
+  const memo = widestRoutedStroke.get(model.links);
+  if (memo !== undefined) return routedStrokeCache.hit(model, memo, () => computeRoutedStroke(model.links));
+  routedStrokeCache.miss();
+  const widest = computeRoutedStroke(model.links);
   widestRoutedStroke.set(model.links, widest);
   return widest;
 }

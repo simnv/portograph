@@ -1,4 +1,5 @@
 import type { LayoutLink, LayoutModel, LayoutPath } from '../model/layout.js';
+import { readCache } from '../model/read-cache.js';
 
 /** Shared by scoring and rendering; layout may store per-element overrides. */
 export const DEFAULT_STROKE_WIDTHS = {
@@ -103,15 +104,21 @@ export const GROUP_EDGE_LINK_CLEARANCE = 10;
  * transaction does.
  */
 const widestRoutedStroke = new WeakMap<readonly LayoutLink[], number>();
-export function routedStrokeWidth(model: Pick<LayoutModel, 'links'>): number {
-  const memo = widestRoutedStroke.get(model.links);
-  if (memo !== undefined) return memo;
+const routedStrokeWidthCache = readCache('themeRoutedStroke');
+function computeRoutedStrokeWidth(links: readonly LayoutLink[]): number {
   let widest: number = DEFAULT_STROKE_WIDTHS.path;
-  for (const link of model.links) {
+  for (const link of links) {
     if ((link.layer ?? link.family) === 'overlay') continue;
     const width = linkStrokeWidth(link);
     if (width > widest) widest = width;
   }
+  return widest;
+}
+export function routedStrokeWidth(model: Pick<LayoutModel, 'links'>): number {
+  const memo = widestRoutedStroke.get(model.links);
+  if (memo !== undefined) return routedStrokeWidthCache.hit(model as LayoutModel, memo, () => computeRoutedStrokeWidth(model.links));
+  routedStrokeWidthCache.miss();
+  const widest = computeRoutedStrokeWidth(model.links);
   widestRoutedStroke.set(model.links, widest);
   return widest;
 }

@@ -1,6 +1,7 @@
 import type { PortRef } from '../model/document.js';
 import type { Point, Rect, Side } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
+import { readCache } from '../model/read-cache.js';
 import { bottom, EPS, retracingRuns, right, samePoint, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth, overlayPortClearance, overlayTrackPitch, pathStrokeWidth } from '../theme/geometry.js';
 import { drawn, drawnCrossings, overlayCrossingPairs, portKey } from './read/crossings.js';
@@ -59,12 +60,30 @@ export function overlayBlockers(model: LayoutModel, skip?: ReadonlySet<string>):
  * a caller cannot change a kept index, and the cache lives and dies with the model, never beyond one layout. A body is held as a copy.
  */
 const BLOCKER_CACHE_SIZE = 8;
-const cachedBlockers = new WeakMap<LayoutModel, { signature: number[]; view: ShapeQuery }[]>();
+const cachedBlockers = new WeakMap<LayoutModel, { signature: number[]; boxes: { bounds: Rect; value: OverlayShape }[]; view: ShapeQuery }[]>();
+const sharedBlockersCache = readCache('overlaySharedBlockers');
 const sameNumber = (a: number, b: number): boolean => a === b && (a !== 0 || 1 / a === 1 / b);
 function sameSignature(a: readonly number[], b: readonly number[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (!sameNumber(a[i]!, b[i]!)) return false;
   return true;
+}
+function blockerBoxes(model: LayoutModel, skip?: ReadonlySet<string>): { bounds: Rect; value: OverlayShape }[] {
+  const boxes: { bounds: Rect; value: OverlayShape }[] = [];
+  for (const [id, node] of Object.entries(model.nodes)) {
+    if (skip?.has(id)) continue;
+    if (node.bounds) {
+      const body = { ...node.bounds };
+      boxes.push({ bounds: body, value: body });
+    }
+    for (const port of node.ports) {
+      if (port.pill && port.ref.anonymous !== true) {
+        const pill = port.pill.bounds;
+        boxes.push({ bounds: { ...pill }, value: { ...pill, pill: true } });
+      }
+    }
+  }
+  return boxes;
 }
 export function sharedBlockers(model: LayoutModel, skip?: ReadonlySet<string>): ShapeQuery {
   const signature: number[] = [];
@@ -88,19 +107,14 @@ export function sharedBlockers(model: LayoutModel, skip?: ReadonlySet<string>): 
     const held = kept[i]!;
     if (!sameSignature(held.signature, signature)) continue;
     if (i > 0) { kept.splice(i, 1); kept.unshift(held); }
+    sharedBlockersCache.hit(model, held.boxes, () => blockerBoxes(model, skip));
     return held.view;
   }
-  const boxes: { bounds: Rect; value: OverlayShape }[] = [];
-  for (const [id, node] of Object.entries(model.nodes)) {
-    if (skip?.has(id)) continue;
-    if (node.bounds) boxes.push({ bounds: node.bounds, value: { ...node.bounds } });
-    for (const port of node.ports) {
-      if (port.pill && port.ref.anonymous !== true) boxes.push({ bounds: port.pill.bounds, value: { ...port.pill.bounds, pill: true } });
-    }
-  }
+  sharedBlockersCache.miss();
+  const boxes = blockerBoxes(model, skip);
   const index = new RectangleIndex(boxes);
   const view: ShapeQuery = { some: (bounds, predicate, work, padding) => index.some(bounds, predicate, work, padding) };
-  kept.unshift({ signature, view });
+  kept.unshift({ signature, boxes, view });
   if (kept.length > BLOCKER_CACHE_SIZE) kept.pop();
   return view;
 }
@@ -700,6 +714,8 @@ const drawnOverlay = (link: LayoutLink): boolean => linkLayer(link) === 'overlay
  */
 type TrackKey = (number | string | undefined)[];
 const trackCache = new WeakMap<LayoutModel, { key: TrackKey; shapes: ShapeQuery; tracks: ReadonlyMap<string, Separated> }[]>();
+const overlayTracksCache = readCache('overlayTracks');
+const overlaySharedTracksCache = readCache('overlaySharedTracks');
 const TRACK_CACHE_SIZE = 4;
 function overlayTracks(model: LayoutModel, shapes: ShapeQuery): ReadonlyMap<string, Separated> {
   const links = model.links.filter(drawnOverlay);
@@ -707,12 +723,19 @@ function overlayTracks(model: LayoutModel, shapes: ShapeQuery): ReadonlyMap<stri
   let kept = trackCache.get(model);
   if (kept === undefined) trackCache.set(model, kept = []);
   const held = kept.find(item => item.shapes === shapes && sameKey(item.key, key));
-  if (held !== undefined) return held.tracks;
+  if (held !== undefined) return overlayTracksCache.hit(model, held.tracks, () => separateTracks(model, links, shapes));
+  overlayTracksCache.miss();
   // A copy of the model (a trial, a replay on a clone) has the same geometry and a document equal by value: on the shared blocker index,
   // the separation of an earlier copy is the same function of the same numbers (`sharedKey`), so it is read, not run again.
   const shared = shapes === sharedBlockers(model) ? sharedKey(model, key) : undefined;
   const found = shared === undefined ? undefined : sharedTracks.find(item => sameKey(item.key, shared));
-  const tracks = found?.tracks ?? separateTracks(model, links, shapes);
+  let tracks: ReadonlyMap<string, Separated>;
+  if (found !== undefined) {
+    tracks = overlaySharedTracksCache.hit(model, found.tracks, () => separateTracks(model, links, shapes));
+  } else {
+    if (shared !== undefined) overlaySharedTracksCache.miss();
+    tracks = separateTracks(model, links, shapes);
+  }
   if (shared !== undefined && found === undefined) {
     sharedTracks.unshift({ key: shared, tracks });
     if (sharedTracks.length > SHARED_TRACK_CACHE_SIZE) sharedTracks.pop();
@@ -731,13 +754,20 @@ const SHARED_TRACK_CACHE_SIZE = 16;
 // The print of a document is taken once, on the first read: it assumes the document does not change after that. A caller that edits a
 // document in place after a track read keeps a stale print, and may get the separation of the document as it was. Edit a copy.
 const documentPrints = new WeakMap<object, string>();
+const documentPrintsCache = readCache('overlayDocumentPrints');
 /**
  * `trackKey` plus what a copy shares only by value: the document (labels, layout options, link order), each link's place in it, and
  * every pill of every node (the shared blocker index holds them all, `sharedBlockers`).
  */
 function sharedKey(model: LayoutModel, key: TrackKey): TrackKey {
   let print = documentPrints.get(model.document);
-  if (print === undefined) documentPrints.set(model.document, print = JSON.stringify(model.document));
+  if (print !== undefined) {
+    print = documentPrintsCache.hit(model, print, () => JSON.stringify(model.document));
+  } else {
+    documentPrintsCache.miss();
+    print = JSON.stringify(model.document);
+    documentPrints.set(model.document, print);
+  }
   const full: TrackKey = [print, ...key];
   for (const link of model.links) if (drawnOverlay(link)) full.push(link.sourceIndex);
   for (const node of Object.values(model.nodes)) {

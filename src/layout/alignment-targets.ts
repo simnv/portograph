@@ -1,4 +1,5 @@
 import type { AlignmentDeclineReason, AlignmentTarget, LayoutLink, LayoutModel } from '../model/layout.js';
+import { readCache } from '../model/read-cache.js';
 import type { Feed } from './read/feeds.js';
 import { faceKey } from './turn-order.js';
 import { portId } from './skeleton-graph.js';
@@ -81,10 +82,17 @@ const SIDES = ['top', 'bottom', 'left', 'right'] as const;
  * the steps run (a new list or a new family list is read again).
  */
 const indexes = new WeakMap<readonly LayoutLink[], { families: unknown; links: ReadonlyMap<string, LayoutLink>; direct: Set<string> }>();
+const linkIndexCache = readCache('alignmentLinkIndex');
+function computeLinkIndex(model: LayoutModel): { families: unknown; links: ReadonlyMap<string, LayoutLink>; direct: Set<string> } {
+  return { families: model.directFamilies, links: linkById(model), direct: directMembers(model) };
+}
 function linkIndex(model: LayoutModel): { links: ReadonlyMap<string, LayoutLink>; direct: Set<string> } {
   const known = indexes.get(model.links);
-  if (known !== undefined && known.families === model.directFamilies) return known;
-  const fresh = { families: model.directFamilies, links: linkById(model), direct: directMembers(model) };
+  if (known !== undefined && known.families === model.directFamilies) {
+    return linkIndexCache.hit(model, known, () => computeLinkIndex(model));
+  }
+  linkIndexCache.miss();
+  const fresh = computeLinkIndex(model);
   indexes.set(model.links, fresh);
   return fresh;
 }

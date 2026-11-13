@@ -36,7 +36,7 @@ export type { LayoutOptions, LayoutProgress } from './options.js';
  */
 export async function layout(document: NormalisedDocument, options: LayoutOptions = {}): Promise<LayoutModel> {
   const run = (): Promise<LayoutModel> => document.layout?.maxWidth !== undefined ? fitWidthBudget(document, options, layoutOnce) : layoutOnce(document, options);
-  return options.checkCaches === true ? checkReadCaches(run) : run();
+  return options.checkCaches ? checkReadCaches(run, options.checkCaches === 'sampled' ? 'sampled' : 'all') : run();
 }
 
 /** One complete pipeline run; the width-budget trials share the caller's command deadline. */
