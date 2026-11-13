@@ -2,7 +2,7 @@
  * The six rounds as descriptors (architecture 2, ticket 04): fan, span, course, side, turn and overlay. Each one is a table of what it measures, reserves, checks, judges, commits and
  * says when it is refused; `open` and `close` (round.ts) run a trial from it. A descriptor holds the round's own rules and nothing about the order of the rounds.
  */
-import type { Course, Diagnostic, LayoutModel, Side, Size } from '../model/index.js';
+import type { Course, Diagnostic, LayoutModel, Point, Side, Size } from '../model/index.js';
 import { portKey } from '../layout/sides-one.js';
 import { endMode } from '../layout/course-rows.js';
 import { contentInsets, measureNodeContent } from '../layout/size.js';
@@ -10,7 +10,7 @@ import { fanRoundDropped, fanRoundHolds, measureFans } from '../layout/fan-sprea
 import { SolidBlockRefusal, TrunkBlocked } from '../layout/placement-refusal.js';
 import { PlacementRefusal, producerRefusal, refusedAtBands } from '../layout/placement-refusal.js';
 import { staggerRefusal } from '../layout/stagger.js';
-import { documentTierDistance, freezeRefusal } from '../layout/frame-paths.js';
+import { documentTierDistance, freezeRefusal, isRoutedChord } from '../layout/frame-paths.js';
 import { transitTiers } from '../layout/lanes.js';
 import { measureSpans } from '../layout/span-measure.js';
 import { judgeSpanTrial } from '../layout/span-judge.js';
@@ -18,10 +18,17 @@ import { gainOf, judgeCourseTrial, judgeOverlayTrial, measureCourses, measureOve
 import { measureSides, refusedKey, type SideOffer } from '../layout/side-measure.js';
 import { judgeTrial, predictedWorse, predictPublished, routedBends, trialNotes } from '../layout/side-judge.js';
 import { bands } from '../layout/bands.js';
+import { attemptCounters } from '../layout/attempt-counters.js';
+import { tierGapPlans } from '../layout/gap-plan.js';
 import { judgeTurnTrial, measureTurnOrder } from '../layout/turn-measure.js';
 import { pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import type { ReservationFailure } from '../layout/reservations.js';
+import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute } from '../route/plan.js';
+import { completedRouteCovers, type RouteObstacle } from '../route/obstacles.js';
+import { stitchPaths, tryStitch, type Stitched } from '../route/paths.js';
+import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession } from '../route/worker.js';
+import { CommandDeadlineError } from './budget.js';
 import type { Refusal, Round } from './round.js';
 import type { Env } from './env.js';
 import { FAN_ROUNDS, SIDE_ROUNDS } from './limits.js';
@@ -207,6 +214,75 @@ type CourseOffer = ReturnType<typeof measureCourses>;
 /** The trials of the course round in one command: the offer, and the offer without its step courses after a refusal. */
 export const COURSE_VISITS = 2;
 /**
+ * Route a stage-7e placement trial without advancing its stage through `withLayoutMutation('route')`,
+ * so `course.preflight` can detect whether a demoted baseline-kept straight chord is removed by Avoid
+ * before spending stage 7f (`bands-trial`).
+ */
+async function routeAt7e(env: Env, trial7e: LayoutModel): Promise<LayoutModel> {
+  if (env.budget.remainingMs() <= 0) throw new CommandDeadlineError(0, 'route');
+  const started = env.now();
+  const frozenChords = trial7e.links.filter(link => isRoutedChord(trial7e, link)).map(link => link.id);
+  const model7e: LayoutModel = { ...trial7e, frozenChords };
+  const routed = await env.timed('route-trial', async () => {
+    const plans = tierGapPlans(model7e);
+    const plan = planRoute(model7e, plans);
+    const routes = new Map<string, Point[]>();
+    const stitched = env.options.strictCheckpoints ? undefined : new Map<string, Stitched>();
+    if (plan.batches.length > 0) {
+      const asked = plan.links.reduce((sum, item) => sum + item.connectors.length, 0);
+      if (!env.options.createRouteAttempt) throw new Error(`Routing ${asked} remaining gap(s) requires a libavoid worker factory`);
+      await withRouteSession(
+        env.options.createRouteAttempt,
+        Math.max(1, env.budget.share(env.options.routeBudgetMs ?? ROUTE_BUDGET_MS)),
+        env.clock ?? systemRouteClock,
+        async runRoute => {
+          const protectedRuns: { obstacle: RouteObstacle; segment: { from: Point; to: Point } }[] = [];
+          for (const [index, batch] of plan.batches.entries()) {
+            const later = new Set(plan.batches.slice(index + 1).flatMap(item => item.links));
+            const batchRoutes = await runRoute(batchRequest(plan, batch, [
+              ...completedCrossingObstacles(plan, batch, protectedRuns),
+              ...pendingStemObstacles(plan, batch, later),
+            ]));
+            for (const item of batchRoutes) {
+              if (routes.has(item.connector)) throw new Error(`Router returned ${item.connector} twice`);
+              routes.set(item.connector, item.points);
+            }
+            for (const id of batch.links) {
+              const link = model7e.links.find(item => item.id === id)!;
+              const linkPlan = plan.links.find(item => item.link === id)!;
+              if (stitched) {
+                const done = tryStitch(model7e, linkPlan, routes);
+                stitched.set(id, done);
+                if ('rejection' in done) {
+                  for (const piece of linkPlan.pieces) if (piece.kind === 'gap') routes.delete(piece.connector);
+                  continue;
+                }
+              }
+              for (const piece of linkPlan.pieces) {
+                if (piece.kind !== 'gap') continue;
+                protectedRuns.push(...completedRouteCovers(model7e, link, piece.connector, routes.get(piece.connector) ?? []));
+              }
+            }
+          }
+        },
+      );
+    }
+    const { paths, rejections } = stitchPaths(model7e, plan, routes, stitched, true);
+    const links = model7e.links.map(link => ({ ...link }));
+    for (const { link, path } of paths) links.find(item => item.id === link)!.path = path;
+    for (const item of rejections) {
+      const link = links.find(candidate => candidate.id === item.link)!;
+      link.removed = true;
+      link.rejectedRoute = item.answer;
+    }
+    const removedLinks = rejections.length > 0 ? links.filter(link => link.removed === true).map(link => link.id) : model7e.removedLinks;
+    return { ...model7e, links, ...(removedLinks === undefined ? {} : { removedLinks }) };
+  });
+  env.report('route', started, true);
+  return routed;
+}
+
+/**
  * The course round (ticket 15, phase 4). It reads the baseline's routed result, offers perimeter courses for the links whose route is a poor one, places again with the courses
  * reserved in stage 5, and keeps the trial only on its routed result. A refused course round leaves the layout as the baseline made it, with no note (the trace names the reason),
  * so a sheet it does not change is byte for byte as it was.
@@ -244,6 +320,27 @@ export const course: Round<CourseOffer> = {
   holdsAt7e(_env, _s, _o, ledger, trial7e) {
     const broken = holds(ledger, trial7e);
     return broken.length > 0 ? ledgerRefusal(broken, { why: `a reservation does not hold at stage 7e (${broken[0]!.why})` }) : undefined;
+  },
+  async preflight(env, s, o, trial7e) {
+    const baseRemoved = new Set(s.routedBase!.removedLinks ?? []);
+    const demotedIds = s.kept7e.links
+      .filter(l => l.layer === 'routed' && l.technique === 'straight' && !baseRemoved.has(l.id))
+      .filter(l => {
+        const trialLink = trial7e.links.find(item => item.id === l.id);
+        return trialLink === undefined || trialLink.technique !== 'straight'
+          || trial7e.diagnostics.some(d => d.code === 'ROUTED_CHORD_REFUSED' && d.owners?.some(owner => owner.kind === 'link' && owner.id === l.id));
+      })
+      .map(l => l.id);
+    if (demotedIds.length === 0) return undefined;
+    attemptCounters.coursePreflight.checked++;
+    const preflightRouted = await routeAt7e(env, trial7e);
+    const demotedRemoved = demotedIds.filter(id => preflightRouted.removedLinks?.includes(id) === true);
+    if (demotedRemoved.length === 0) return undefined;
+    const verdict = judgeCourseTrial(s.routedBase!, preflightRouted, promisedTurnsOf(o.promised), new Set(o.steps));
+    if (verdict.kept) return undefined;
+    attemptCounters.coursePreflight.refusedAt7e++;
+    env.options.testSideTrace?.({ ev: 'course-trial', verdict, trial: trial7e, routedTrial: preflightRouted, routedBase: s.routedBase });
+    return { at: 'verdict', why: `${verdict.reason}` };
   },
   judge(env, s, o, t) {
     const verdict = judgeCourseTrial(s.routedBase!, t.routedTrial, promisedTurnsOf(o.promised), new Set(o.steps));

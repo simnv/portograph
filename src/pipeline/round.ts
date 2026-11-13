@@ -76,6 +76,8 @@ export interface Round<O> {
   holdsAt7e(env: Env, s: State, o: O, ledger: Reservations, trial7e: LayoutModel): Refusal | undefined;
   /** The side predictor: refuse a trial from its 7e model before 7f is paid for. */
   predict?(env: Env, s: State, o: O, trial7e: LayoutModel): Refusal | undefined;
+  /** Async preflight check on the 7e model before stage 7f (`bands`) runs. */
+  preflight?(env: Env, s: State, o: O, trial7e: LayoutModel): Promise<Refusal | undefined>;
   /** Work before the trial's route that the judge needs (the routed baseline). */
   ready?(env: Env, s: State): Promise<void>;
   /** The verdict on the trial: `undefined` keeps it. A round with `routed: false` is judged at 7e. */
@@ -119,6 +121,8 @@ export async function close<O>(env: Env, s: State, round: Round<O>, o: O, { ledg
   if (!round.routed) t = { ledger, trial7e, trial: trial7e, routedTrial: trial7e, moved: false, unmoved: undefined };
   else {
     try {
+      const preflight = await round.preflight?.(env, s, o, trial7e);
+      if (preflight !== undefined) return refuse(env, s, round, o, preflight);
       const banded = await env.bands(trial7e, true);
       await round.ready?.(env, s);
       t = { ledger, trial7e, trial: banded.model, routedTrial: await env.route(banded.model, true), moved: banded.moved, unmoved: banded.unmoved };
