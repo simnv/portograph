@@ -7,11 +7,12 @@ import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-
 import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
 import type { Env } from '../../src/pipeline/env.js';
 import { close, type Refusal, type Round } from '../../src/pipeline/round.js';
+import { course } from '../../src/pipeline/rounds.js';
 import type { State } from '../../src/pipeline/state.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
-const ntpYaml = readFileSync(new URL('../../goldens/real/ntp.yaml', import.meta.url), 'utf8');
+const threeCantonYaml = readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8');
 const spineLeafYaml = readFileSync(new URL('../../goldens/real/private-datacenter-spine-leaf.yaml', import.meta.url), 'utf8');
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 
@@ -77,12 +78,23 @@ describe('course 7e preflight', () => {
     expect(layoutHash(model)).toBe('56f38cf75727');
   }, 60000);
 
-  it('refuses the doomed course trial at 7e on goldens/real/ntp.yaml with an identical layout hash', async () => {
+  it('refuses the doomed course trial at 7e on goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml identically to bypassing preflight', async () => {
     resetAttemptCounters();
-    const model = await layout(parse(ntpYaml), options);
+    const withPreflight = await layout(parse(threeCantonYaml), options);
     expect(attemptCounters.coursePreflight.checked).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.coursePreflight.refusedAt7e).toBe(1);
     expect(attemptCounters.attempts).toBe(1);
-    expect(layoutHash(model)).toBe('5b36a217c50b');
-  }, 120000);
+
+    const savedPreflight = course.preflight;
+    course.preflight = async () => undefined;
+    let withoutPreflight: LayoutModel;
+    try {
+      withoutPreflight = await layout(parse(threeCantonYaml), options);
+    } finally {
+      if (savedPreflight !== undefined) course.preflight = savedPreflight;
+      else delete course.preflight;
+    }
+    expect(serializeLayoutModel({ ...withPreflight, runtime: { stages: [] } }))
+      .toBe(serializeLayoutModel({ ...withoutPreflight, runtime: { stages: [] } }));
+  }, 60000);
 });

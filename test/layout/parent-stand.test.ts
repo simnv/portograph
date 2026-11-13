@@ -26,7 +26,7 @@ links:
 ${[1, 2, 3, 4, 5, 6].map(i => `- [t${i}.o, b${i}.i, {id: r${i}, route: orthogonal}]\n- [b${i}.o, c${i}.i, {id: s${i}, route: orthogonal}]`).join('\n')}
 `;
 
-const ntpYaml = readFileSync(new URL('../../goldens/real/ntp.yaml', import.meta.url), 'utf8');
+const spineLeafYaml = readFileSync(new URL('../../goldens/real/private-datacenter-spine-leaf.yaml', import.meta.url), 'utf8');
 
 const ref = (node: string, name: string, ordinal = 1) => ({ node, name, ordinal });
 const syntheticLink = (id: string, from: string, to: string, solidBlock = false) => ({
@@ -113,17 +113,17 @@ describe('parentFeedReads memo and R4 counters (ticket 02)', () => {
     expect(readCacheCounts().linkById!.checked).toBeGreaterThan(linkCheckedBefore);
   }, 60000);
 
-  it('hits parentFeedReads memo on goldens/real/ntp.yaml', async () => {
+  it('hits parentFeedReads memo on goldens/real/private-datacenter-spine-leaf.yaml', async () => {
     resetAttemptCounters();
 
-    const model = await layout(parse(ntpYaml), {
+    const model = await layout(parse(spineLeafYaml), {
       createElkAttempt: createAttempt,
       createRouteAttempt: createAvoidAttempt,
     });
     expect(model.stage).toBe('link-labels');
     expect(attemptCounters.parentFeedReads.calls).toBeGreaterThan(0);
     expect(attemptCounters.parentFeedReads.computes).toBeLessThan(attemptCounters.parentFeedReads.calls);
-  }, 120000);
+  }, 60000);
 
   it('detects stale parentFeedReads under checkReadCaches when reader.feeds changes between calls', async () => {
     const model = JSON.parse(JSON.stringify(await layout(parse(threeTierRow), {
