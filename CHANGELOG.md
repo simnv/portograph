@@ -13,6 +13,16 @@ workflow uses the section as the text of the GitHub release, and it stops a bump
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-13
+
+### Added
+
+- `LayoutOptions.checkCaches` now accepts `'all'` and `'sampled'` in addition to `true`, and `createWarmRouteFactory` reuses a warm libavoid worker across sequential routing sessions.
+
+### Changed
+
+- Faster layout on large and multi-round diagrams, with identical output across the golden corpus: indexed gap-plan graph traversal and value memoization, registered `linkById` and `linkByEnds` caches, per-reading parent-stand feed memoization, structural sharing of unchanged frozen documents in `protect()`, skipped redundant `centre-flag` reads during stage 7f, and a stage 7e course preflight that refuses course trials whose corridor demotes a kept straight chord into an unroutable stem gap before running stage 7f.
+
 ## [0.2.1] - 2026-11-12
 
 ### Added
@@ -47,7 +57,8 @@ First release.
 - The draw.io export (`--format drawio`) with the binding contract, schema version 1: the `pg-*` attributes on the cells, stable ids, and the `meta:` of the author as attributes. Themes (light, dark, print) and the Cisco glyphs of draw.io are options.
 - Diagnostics with the file, line and column of the YAML, as text or as JSON lines.
 
-[Unreleased]: https://github.com/simnv/portograph/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/simnv/portograph/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/simnv/portograph/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/simnv/portograph/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/simnv/portograph/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/simnv/portograph/releases/tag/v0.1.0
