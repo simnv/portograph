@@ -69,6 +69,7 @@ function measure(cwd, tsv, sweep, only) {
     const result = run('npm', ['run', script, '--silent', '--', partial], cwd);
     if (!result.ok) throw new Stop(`${script} failed in ${cwd}\n${tail(result.out)}`);
     renameSync(partial, target);
+    if (existsSync(`${partial}.timings.tsv`)) renameSync(`${partial}.timings.tsv`, `${target}.timings.tsv`);
   }
 }
 
@@ -86,7 +87,7 @@ function ensureBase(sha, baseTsv, baseSweep) {
     : run('git', ['worktree', 'add', '--detach', worktree, sha]);
   if (!prepared.ok) throw new Stop(`cannot prepare the base worktree ${worktree}\n${tail(prepared.out)}`);
   // The base is measured with this branch's gate scripts, so both sides write the same columns even when main's scripts are older.
-  for (const file of ['corpus.mjs', 'sweep.mjs', 'gate-lib.mjs', 'test-runner-lib.mjs', 'test-watchdog.mjs', 'with-lock.mjs']) cpSync(join(ROOT, 'scripts', file), join(worktree, 'scripts', file));
+  for (const file of ['corpus.mjs', 'sweep.mjs', 'gate-lib.mjs', 'ensure-build.mjs', 'test-runner-lib.mjs', 'test-watchdog.mjs', 'with-lock.mjs']) cpSync(join(ROOT, 'scripts', file), join(worktree, 'scripts', file));
   measure(worktree, baseTsv, baseSweep, needTsv && needSweep ? undefined : needTsv ? 'corpus' : 'sweep');
 }
 
