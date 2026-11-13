@@ -15,6 +15,8 @@ import { tierGapMin } from './skeleton-graph.js';
 import { gapBandDemand } from './gap-band.js';
 import { stemCache, stemPlan, type StemCache } from './sides-two.js';
 import { strictCrossing } from './read/crossings.js';
+import { readCache } from '../model/read-cache.js';
+import { attemptCounters } from './attempt-counters.js';
 
 /**
  * The tier-gap row plan (`docs/design/tier-gap-rows.md`, ranked-groups ticket 48): the rows, legs and
@@ -255,10 +257,30 @@ interface Unit {
   hi: number;
 }
 
+interface PlanGraph {
+  edges: PlanEdge[];
+  outgoing: Map<string, PlanEdge[]>;
+  pairs: Set<string>;
+}
+
+function pushEdge(graph: PlanGraph, edge: PlanEdge): void {
+  graph.edges.push(edge);
+  let list = graph.outgoing.get(edge.above);
+  if (list === undefined) { list = []; graph.outgoing.set(edge.above, list); }
+  list.push(edge);
+  graph.pairs.add(`${edge.above}\0${edge.below}`);
+}
+
+function cloneGraph(graph: PlanGraph): PlanGraph {
+  const outgoing = new Map<string, PlanEdge[]>();
+  for (const [key, list] of graph.outgoing) outgoing.set(key, [...list]);
+  return { edges: [...graph.edges], outgoing, pairs: new Set(graph.pairs) };
+}
+
 interface Solved {
   parts: Part[];
   units: Unit[];
-  edges: PlanEdge[];
+  graph: PlanGraph;
   split: Map<string, number>;
 }
 
@@ -300,21 +322,24 @@ function baseEdges(parts: readonly Part[], keep: number): BaseEdge[] {
  * order); a part the whole Z interleaves is left to the ZX edge. O2 is carried by end: the upper edge on the first half, the lower one
  * on the second.
  */
-function expand(base: readonly BaseEdge[], split: ReadonlyMap<string, number>, units: readonly Unit[]): PlanEdge[] {
+function expand(base: readonly BaseEdge[], split: ReadonlyMap<string, number>, units: readonly Unit[]): PlanGraph {
   const named = (part: Part, which: 'upper' | 'lower'): string => split.has(part.id) ? `${part.id}${which === 'upper' ? 'a' : 'b'}` : part.id;
-  const result: PlanEdge[] = [], seen = new Set<string>();
+  const graph: PlanGraph = { edges: [], outgoing: new Map(), pairs: new Set() };
   const add = (above: string, below: string, kind: PlanEdge['kind']): void => {
-    const key = `${above}>${below}`;
-    if (above === below || seen.has(key)) return;
-    seen.add(key);
-    result.push({ above, below, kind });
+    if (above === below || graph.pairs.has(`${above}\0${below}`)) return;
+    pushEdge(graph, { above, below, kind });
   };
   const whole = (part: Part): { xu: number; xl: number } => ({ xu: part.upper.x, xl: part.lower.x });
-  for (const [index, a] of units.entries()) {
-    for (const b of units.slice(index + 1)) {
-      if (a.part === b.part || a.part.u === true || b.part.u === true) continue;
-      if ((split.has(a.part.id) || split.has(b.part.id)) && interleave(whole(a.part), whole(b.part))) continue;
-      const way = Math.sign(a.xl - a.xu);
+  for (let index = 0; index < units.length; index++) {
+    const a = units[index]!;
+    if (a.part.u === true) continue;
+    const aSplit = split.has(a.part.id);
+    const aWhole = whole(a.part);
+    const way = Math.sign(a.xl - a.xu);
+    for (let j = index + 1; j < units.length; j++) {
+      const b = units[j]!;
+      if (a.part === b.part || b.part.u === true) continue;
+      if ((aSplit || split.has(b.part.id)) && interleave(aWhole, whole(b.part))) continue;
       if (way !== Math.sign(b.xl - b.xu) || interleave(a, b) || !overlaps(a, b)) continue;
       // O1. Of two rightward units the one further right at the upper end is above (ties: the lower end); leftward mirrors it.
       const upper = (a.xu - b.xu) * way, lower = (a.xl - b.xl) * way;
@@ -324,22 +349,25 @@ function expand(base: readonly BaseEdge[], split: ReadonlyMap<string, number>, u
   }
   for (const edge of base) add(named(edge.above, 'upper'), named(edge.below, 'lower'), 'O2');
   for (const id of split.keys()) add(`${id}a`, `${id}b`, 'Z');
-  return result;
+  return graph;
 }
 
 /** A cycle of the edges, as unit ids, or undefined when the graph is acyclic. */
-function findCycle(ids: readonly string[], edges: readonly PlanEdge[]): string[] | undefined {
-  const next = new Map<string, string[]>(ids.map(id => [id, []]));
-  for (const edge of edges) next.get(edge.above)?.push(edge.below);
+function findCycle(ids: readonly string[], outgoing: ReadonlyMap<string, readonly PlanEdge[]>): string[] | undefined {
   const state = new Map<string, 1 | 2>(), stack: string[] = [];
   const visit = (id: string): string[] | undefined => {
     state.set(id, 1);
     stack.push(id);
-    for (const other of next.get(id) ?? []) {
-      if (state.get(other) === 1) return stack.slice(stack.indexOf(other));
-      if (!state.has(other)) {
-        const found = visit(other);
-        if (found) return found;
+    const out = outgoing.get(id);
+    if (out !== undefined) {
+      for (const edge of out) {
+        attemptCounters.gapPlan.edgeVisits++;
+        const other = edge.below;
+        if (state.get(other) === 1) return stack.slice(stack.indexOf(other));
+        if (!state.has(other)) {
+          const found = visit(other);
+          if (found) return found;
+        }
       }
     }
     stack.pop();
@@ -355,12 +383,15 @@ function findCycle(ids: readonly string[], edges: readonly PlanEdge[]): string[]
 }
 
 /** Whether `to` follows from `from` along the edges. */
-function reaches(edges: readonly PlanEdge[], from: string, to: string): boolean {
+function reaches(outgoing: ReadonlyMap<string, readonly PlanEdge[]>, from: string, to: string): boolean {
   const seen = new Set<string>([from]), todo = [from];
   while (todo.length) {
     const id = todo.pop()!;
-    for (const edge of edges) {
-      if (edge.above !== id || seen.has(edge.below)) continue;
+    const out = outgoing.get(id);
+    if (out === undefined) continue;
+    for (const edge of out) {
+      attemptCounters.gapPlan.edgeVisits++;
+      if (seen.has(edge.below)) continue;
       if (edge.below === to) return true;
       seen.add(edge.below);
       todo.push(edge.below);
@@ -401,12 +432,14 @@ function middleDrops(part: Part, parts: readonly Part[], split: ReadonlyMap<stri
 }
 
 /** Whether the edges close a cycle through `id`. */
-function inCycle(edges: readonly PlanEdge[], id: string): boolean {
+function inCycle(outgoing: ReadonlyMap<string, readonly PlanEdge[]>, id: string): boolean {
   const seen = new Set<string>(), todo = [id];
   while (todo.length) {
     const at = todo.pop()!;
-    for (const edge of edges) {
-      if (edge.above !== at) continue;
+    const out = outgoing.get(at);
+    if (out === undefined) continue;
+    for (const edge of out) {
+      attemptCounters.gapPlan.edgeVisits++;
       if (edge.below === id) return true;
       if (!seen.has(edge.below)) { seen.add(edge.below); todo.push(edge.below); }
     }
@@ -418,8 +451,8 @@ function inCycle(edges: readonly PlanEdge[], id: string): boolean {
 function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Part } {
   const keep = frame.keep, base = baseEdges(parts, keep), split = new Map<string, number>();
   for (;;) {
-    const units = unitsOf(parts, split), edges = expand(base, split, units);
-    const cycle = findCycle(units.map(unit => unit.id), edges);
+    const units = unitsOf(parts, split), graph = expand(base, split, units);
+    const cycle = findCycle(units.map(unit => unit.id), graph.outgoing);
     if (!cycle) break;
     const onCycle = units.filter(unit => cycle.includes(unit.id)).map(unit => unit.part);
     const latest = (list: readonly Part[]): Part => list.reduce((a, b) => (b.order > a.order ? b : a));
@@ -431,30 +464,37 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
     // where none has one, and then the latest part is.
     const middleOf = (pick: Part): number | undefined => middleDrops(pick, parts, split, keep, frame.verticals, frame.chords).find(candidate => {
       const trial = new Map(split).set(pick.id, candidate), after = expand(base, trial, unitsOf(parts, trial));
-      return !inCycle(after, `${pick.id}a`) && !inCycle(after, `${pick.id}b`);
+      return !inCycle(after.outgoing, `${pick.id}a`) && !inCycle(after.outgoing, `${pick.id}b`);
     });
-    const opened = [...unsplit].sort((a, b) => b.order - a.order).map(pick => ({ pick, middle: middleOf(pick) })).find(item => item.middle !== undefined);
+    let opened: { pick: Part; middle: number } | undefined;
+    for (const pick of [...unsplit].sort((a, b) => b.order - a.order)) {
+      const middle = middleOf(pick);
+      if (middle !== undefined) { opened = { pick, middle }; break; }
+    }
     if (opened === undefined) return { reject: latest(unsplit) };
-    split.set(opened.pick.id, opened.middle!);
+    split.set(opened.pick.id, opened.middle);
   }
   // A part the whole Z interleaves is not left free: between the halves it can cross the Z three times. It goes above
   // the first half where that keeps the graph acyclic, else below the second half, else it is residual.
   const units = unitsOf(parts, split);
-  let edges = expand(base, split, units);
+  const graph = expand(base, split, units);
+  const partById = new Map(parts.map(part => [part.id, part]));
   for (const id of split.keys()) {
-    const whole = parts.find(part => part.id === id)!;
+    const whole = partById.get(id)!;
     const zed = { xu: whole.upper.x, xl: whole.lower.x };
     for (const other of parts) {
       if (other.drop || other.u === true || other === whole || split.has(other.id)) continue;
       if (!interleave(zed, { xu: other.upper.x, xl: other.lower.x })) continue;
       const first = `${id}a`, second = `${id}b`;
-      if (reaches(edges, first, other.id) && reaches(edges, other.id, second)) continue;
-      if (!reaches(edges, first, other.id)) edges = [...edges, { above: other.id, below: first, kind: 'ZX' }];
-      else if (!reaches(edges, other.id, second)) edges = [...edges, { above: second, below: other.id, kind: 'ZX' }];
+      const firstToOther = reaches(graph.outgoing, first, other.id);
+      const otherToSecond = firstToOther ? reaches(graph.outgoing, other.id, second) : false;
+      if (firstToOther && otherToSecond) continue;
+      if (!firstToOther) pushEdge(graph, { above: other.id, below: first, kind: 'ZX' });
+      else if (!otherToSecond) pushEdge(graph, { above: second, below: other.id, kind: 'ZX' });
       else return { reject: other };
     }
   }
-  return { parts: [...parts], units, edges, split };
+  return { parts: [...parts], units, graph, split };
 }
 
 /**
@@ -463,7 +503,7 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
  * the part that ends further out is above: its run crosses the stubs next to the hubs, not the drop of the part it spans. A hub below the gap keeps the plain order. Only
  * pairs of equal need get an edge, and none that would close a cycle.
  */
-function nestingEdges(parts: readonly Part[], units: readonly Unit[], edges: readonly PlanEdge[], need: ReadonlyMap<string, number>): PlanEdge[] {
+function nestingEdges(parts: readonly Part[], units: readonly Unit[], graph: PlanGraph, need: ReadonlyMap<string, number>): PlanEdge[] {
   const nodeOf = (end: PlanEnd): string => end.kind === 'tip' ? end.source.split('|')[0]! : '';
   const count = (end: 'upper' | 'lower'): Map<string, number> => {
     const found = new Map<string, number>();
@@ -472,19 +512,23 @@ function nestingEdges(parts: readonly Part[], units: readonly Unit[], edges: rea
   };
   const up = count('upper'), low = count('lower');
   const added: PlanEdge[] = [];
-  for (const [index, a] of units.entries()) {
-    for (const b of units.slice(index + 1)) {
-      if (a.part.u === true || b.part.u === true || a.half !== 0 || b.half !== 0 || Math.sign(a.xl - a.xu) !== Math.sign(b.xl - b.xu) || !interleave(a, b) || !overlaps(a, b)) continue;
+  for (let index = 0; index < units.length; index++) {
+    const a = units[index]!;
+    if (a.part.u === true || a.half !== 0) continue;
+    const way = Math.sign(a.xl - a.xu);
+    for (let j = index + 1; j < units.length; j++) {
+      const b = units[j]!;
+      if (b.part.u === true || b.half !== 0 || way !== Math.sign(b.xl - b.xu) || !interleave(a, b) || !overlaps(a, b)) continue;
       if (Math.abs(need.get(a.id)! - need.get(b.id)!) > EPS) continue;
-      const way = Math.sign(a.xl - a.xu);
       const farther = (a.xl - b.xl) * way > 0 ? a : b, nearer = farther === a ? b : a;
       // Both crossings fall on the nearer part: on its upper leg (the edge) or on its lower leg (the plain order). The edge is added only when
       // the nearer part's own upper node carries more ports in the gap than its own lower node; on a tie the plain order stays.
       if ((up.get(nodeOf(nearer.part.upper)) ?? 0) <= (low.get(nodeOf(nearer.part.lower)) ?? 0)) continue;
-      const [above, below] = [farther, nearer];
-      const all = [...edges, ...added];
-      if (all.some(edge => edge.above === above.id && edge.below === below.id) || reaches(all, below.id, above.id)) continue;
-      added.push({ above: above.id, below: below.id, kind: 'O1' });
+      const above = farther.id, below = nearer.id;
+      if (graph.pairs.has(`${above}\0${below}`) || reaches(graph.outgoing, below, above)) continue;
+      const edge: PlanEdge = { above, below, kind: 'O1' };
+      added.push(edge);
+      pushEdge(graph, edge);
     }
   }
   return added;
@@ -495,14 +539,18 @@ function nestingEdges(parts: readonly Part[], units: readonly Unit[], edges: rea
  * (its row would run through the legs of the outer one otherwise); a part whose upper or lower end stands between the legs of a U part stands below it,
  * where that costs no crossing. Each edge is added only where it closes no cycle.
  */
-function uEdges(units: readonly Unit[], edges: readonly PlanEdge[]): PlanEdge[] {
+function uEdges(units: readonly Unit[], baseGraph: PlanGraph): PlanEdge[] {
+  const uUnits = units.filter(unit => unit.part.u === true);
+  if (!uUnits.length) return [];
+  const graph = cloneGraph(baseGraph);
   const added: PlanEdge[] = [];
-  const all = (): PlanEdge[] => [...edges, ...added];
   const add = (above: Unit, below: Unit): void => {
-    if (above.part === below.part || all().some(edge => edge.above === above.id && edge.below === below.id) || reaches(all(), below.id, above.id)) return;
-    added.push({ above: above.id, below: below.id, kind: 'O2' });
+    if (above.part === below.part || graph.pairs.has(`${above.id}\0${below.id}`) || reaches(graph.outgoing, below.id, above.id)) return;
+    const edge: PlanEdge = { above: above.id, below: below.id, kind: 'O2' };
+    added.push(edge);
+    pushEdge(graph, edge);
   };
-  for (const u of units.filter(unit => unit.part.u === true)) for (const other of units) {
+  for (const u of uUnits) for (const other of units) {
     if (other.part === u.part) continue;
     if (other.part.u === true) {
       // Two U parts: the nested one is above.
@@ -514,6 +562,10 @@ function uEdges(units: readonly Unit[], edges: readonly PlanEdge[]): PlanEdge[] 
   return added;
 }
 
+const GAP_PLAN_MEMO_LIMIT = 64;
+const gapPlanMemo = new Map<string, string>();
+const gapPlanCache = readCache('gapPlan');
+
 /**
  * The plan of one tier gap.
  *
@@ -522,6 +574,29 @@ function uEdges(units: readonly Unit[], edges: readonly PlanEdge[]): PlanEdge[] 
  * computed afterwards from the crossings the packed order really has (Section 3).
  */
 export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
+  attemptCounters.gapPlan.calls++;
+  const key = JSON.stringify([inputs, frame]);
+  const cachedText = gapPlanMemo.get(key);
+  if (cachedText !== undefined) {
+    gapPlanMemo.delete(key);
+    gapPlanMemo.set(key, cachedText);
+    attemptCounters.gapPlan.memoHits++;
+    const cachedPlan = JSON.parse(cachedText) as GapPlan;
+    return gapPlanCache.hit({} as LayoutModel, cachedPlan, () => planGapCore(inputs, frame));
+  }
+  gapPlanCache.miss();
+  attemptCounters.gapPlan.computes++;
+  const computed = planGapCore(inputs, frame);
+  const serialized = JSON.stringify(computed);
+  if (gapPlanMemo.size >= GAP_PLAN_MEMO_LIMIT) {
+    const oldest = gapPlanMemo.keys().next().value;
+    if (oldest !== undefined) gapPlanMemo.delete(oldest);
+  }
+  gapPlanMemo.set(key, serialized);
+  return computed;
+}
+
+function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   const { keep, pitch, edge: margin, low, bandTop } = frame;
   const residual: ResidualPart[] = [...frame.residual];
   const asPart = (input: PlanInput): Part => {
@@ -588,8 +663,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     live = live.filter(other => other !== part);
     solved = solve(live, frame);
   }
-  const { units, split } = solved;
-  let edges = solved.edges;
+  const { units, split, graph } = solved;
 
   // Every tip a run must keep off: the upper ends of all parts (and of the residual ones that have tips), and the ports outside the plan.
   const upperTips = [...live.flatMap(part => part.u === true ? [part.upper, part.lower] : [part.upper]), ...residual.flatMap(item => item.upper ? [item.upper] : []), ...frame.tips];
@@ -661,8 +735,14 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   // Topological order (2.3).
   const byId = new Map(units.map(unit => [unit.id, unit]));
   const need = new Map(units.map(unit => [unit.id, staticNeed(unit)])), lbs = new Map(units.map(unit => [unit.id, lbOf(unit)]));
-  edges = [...edges, ...nestingEdges(live, units, edges, need), ...uEdges(units, edges)];
-  const waiting = new Map(units.map(unit => [unit.id, edges.filter(item => item.below === unit.id).length]));
+  const uAdded = uEdges(units, graph);
+  nestingEdges(live, units, graph, need);
+  for (const edge of uAdded) pushEdge(graph, edge);
+  const waiting = new Map<string, number>(units.map(unit => [unit.id, 0]));
+  for (const item of graph.edges) {
+    const count = waiting.get(item.below);
+    if (count !== undefined) waiting.set(item.below, count + 1);
+  }
   const ready = units.filter(unit => waiting.get(unit.id) === 0);
   const rows = new Map<string, number>(), order: Unit[] = [], slantLimited: { id: string; link: string }[] = [];
   const rank = (unit: Unit): number => unit.part.order * 4 + unit.half;
@@ -689,7 +769,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     const unit = ready.shift()!;
     let y = lbs.get(unit.id)!;
     for (const earlier of order) {
-      const ordered = edges.some(item => item.above === earlier.id && item.below === unit.id);
+      const ordered = graph.pairs.has(`${earlier.id}\0${unit.id}`);
       if (ordered || !shareRow(earlier, unit)) y = Math.max(y, rows.get(earlier.id)! + earlier.part.after);
     }
     if (frame.slants?.length) {
@@ -699,10 +779,14 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     }
     rows.set(unit.id, y);
     order.push(unit);
-    for (const item of edges) {
-      if (item.above !== unit.id) continue;
-      waiting.set(item.below, waiting.get(item.below)! - 1);
-      if (waiting.get(item.below) === 0) ready.push(byId.get(item.below)!);
+    const out = graph.outgoing.get(unit.id);
+    if (out !== undefined) {
+      for (const item of out) {
+        attemptCounters.gapPlan.edgeVisits++;
+        const left = waiting.get(item.below)! - 1;
+        waiting.set(item.below, left);
+        if (left === 0) ready.push(byId.get(item.below)!);
+      }
     }
   }
 
@@ -775,7 +859,7 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   const height = Math.max(frame.floor, demand);
   return { low, bandTop, parts: planned.sort((a, b) => a.order - b.order), residual, crowded, order: order.map(unit => unit.id), crossings, height,
     demand: Number.isFinite(demand) ? demand : 0, growth: Math.max(0, height - (bandTop - low)), setBy,
-    edges: edges.map(item => ({ ...item })), ...(slantLimited.length ? { slantLimited } : {}) };
+    edges: graph.edges.map(item => ({ ...item })), ...(slantLimited.length ? { slantLimited } : {}) };
 }
 
 /** The height of a label's room below its row: the label, `normalGap` either side of it, and the stroke. */
@@ -968,13 +1052,14 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   // Ports outside the plan still stand in the gap: a run keeps off their stems (O4).
   const ends = new Set(kept.flatMap(input => [`${input.upper.x}|${input.upper.y}`, `${input.lower.x}|${input.lower.y}`]));
   const tips = facingTips(model, gap, cache).filter(item => !ends.has(`${item.tip.x}|${item.tip.y}`));
+  const held = heldChordsAcross(model, gap);
   return planGap(kept, { low: gap.low, bandTop, floor, keep, pitch: keep, edge: margin, obstacles, blocks,
     tips: tips.filter(item => item.side === 'bottom').map(item => item.tip),
     lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual,
     verticals: (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined
       && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x),
-    chords: heldChordsAcross(model, gap).map(item => ({ low: item.low, high: item.high })),
-    ...(model.fanFamilies !== undefined ? { slants: heldChordsAcross(model, gap).filter(item => item.link.fanFamily !== undefined).map(item => item.segment) } : {}) });
+    chords: held.map(item => ({ low: item.low, high: item.high })),
+    ...(model.fanFamilies !== undefined ? { slants: held.filter(item => item.link.fanFamily !== undefined).map(item => item.segment) } : {}) });
 }
 
 /**
@@ -983,8 +1068,12 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
  */
 function heldChordsAcross(model: LayoutModel, gap: TierGap): { link: LayoutLink; segment: PathSegment; low: number; high: number }[] {
   const result: { link: LayoutLink; segment: PathSegment; low: number; high: number }[] = [];
-  for (const id of model.frozenChords ?? []) {
-    const link = model.links.find(item => item.id === id), segment = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
+  const frozen = model.frozenChords ?? [];
+  if (!frozen.length) return result;
+  const linksById = new Map<string, LayoutLink>();
+  for (const item of model.links) if (!linksById.has(item.id)) linksById.set(item.id, item);
+  for (const id of frozen) {
+    const link = linksById.get(id), segment = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
     if (link === undefined || segment === undefined || !isRoutedChord(model, link)) continue;
     const top = Math.min(segment.from.y, segment.to.y), floor = Math.max(segment.from.y, segment.to.y);
     if (top > gap.low + EPS || floor < gap.high - EPS || floor - top < EPS) continue;

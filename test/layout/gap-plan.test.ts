@@ -1,10 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
+import { bands, bars, bundles, centre, flanks, lanes, layout, parse, readCacheCounts, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
+import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
+import { checkReadCaches } from '../../src/model/read-cache.js';
 import { facingTips, plannedSegments, planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
-import { placed } from './phase-two-fixture.js';
+import { createAttempt, placed } from './phase-two-fixture.js';
+import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
 import { withoutJointOrderOn } from './joint-off.js';
 
@@ -602,4 +605,82 @@ describe('the rows keep off the chords of a fan family (architecture-2 ticket 40
     for (const segment of plannedSegments(planned!, { low: 248, high: 308 })) expect(strictOrClear(segment), JSON.stringify(segment)).toBe(true);
     expect(plan.height).toBeGreaterThanOrEqual(before.height);
   });
+});
+
+describe('planGap value memo, read cache, and deterministic counters (ticket 01)', () => {
+  const sample = (tag: number): PlanInput[] => [
+    part(`A-${tag}`, 0, 0, 100),
+    part(`B-${tag}`, 1, 100, 200),
+    part(`C-${tag}`, 2, 200, 0),
+    part(`D-${tag}`, 3, 188, 12),
+  ];
+
+  it('memoizes identical [inputs, frame] JSON values and returns deep-cloned plans', () => {
+    resetAttemptCounters();
+    expect(attemptCounters.gapPlan).toEqual({ calls: 0, computes: 0, memoHits: 0, edgeVisits: 0 });
+
+    const first = planGap(sample(901), frame());
+    expect(attemptCounters.gapPlan.calls).toBe(1);
+    expect(attemptCounters.gapPlan.computes).toBe(1);
+    expect(attemptCounters.gapPlan.memoHits).toBe(0);
+    expect(attemptCounters.gapPlan.edgeVisits).toBeGreaterThan(0);
+
+    // Mutate the returned plan aggressively; subsequent memo hits must remain unaffected.
+    const snapshot = JSON.stringify(first);
+    first.parts[0]!.rows[0] = 99999;
+    first.edges.push({ above: 'X', below: 'Y', kind: 'O1' });
+
+    const visitsAfterMiss = attemptCounters.gapPlan.edgeVisits;
+    const second = planGap(sample(901), frame());
+    expect(JSON.stringify(second)).toBe(snapshot);
+    expect(attemptCounters.gapPlan).toEqual({
+      calls: 2,
+      computes: 1,
+      memoHits: 1,
+      edgeVisits: visitsAfterMiss,
+    });
+  });
+
+  it('evicts the least-recently-used entry past 64 memo entries and verifies hits under checkReadCaches', async () => {
+    resetAttemptCounters();
+    const baseTag = 1000;
+    // Populate 64 entries (baseTag .. baseTag + 63).
+    for (let i = 0; i < 64; i++) planGap(sample(baseTag + i), frame());
+    expect(attemptCounters.gapPlan.computes).toBe(64);
+    expect(attemptCounters.gapPlan.memoHits).toBe(0);
+
+    // Refresh the oldest entry (baseTag) so baseTag + 1 becomes the LRU victim.
+    planGap(sample(baseTag), frame());
+    expect(attemptCounters.gapPlan.memoHits).toBe(1);
+
+    // Insert a 65th distinct entry; baseTag + 1 must be evicted while baseTag remains cached.
+    planGap(sample(baseTag + 64), frame());
+    expect(attemptCounters.gapPlan.computes).toBe(65);
+
+    planGap(sample(baseTag), frame());
+    expect(attemptCounters.gapPlan.memoHits).toBe(2);
+    expect(attemptCounters.gapPlan.computes).toBe(65);
+
+    planGap(sample(baseTag + 1), frame());
+    expect(attemptCounters.gapPlan.computes).toBe(66);
+
+    const checkedBefore = readCacheCounts().gapPlan?.checked ?? 0;
+    await checkReadCaches(async () => {
+      const checked = planGap(sample(baseTag), frame());
+      expect(checked.residual).toEqual([]);
+    });
+    expect(readCacheCounts().gapPlan!.checked).toBe(checkedBefore + 1);
+  });
+
+  it('hits the planGap memo across pipeline stages and bounds graph edge visits', async () => {
+    resetAttemptCounters();
+    const model = await layout(parse(orthogonalLinks(read(V540))), {
+      createElkAttempt: createAttempt,
+      createRouteAttempt: createAvoidAttempt,
+    });
+    expect(model.stage).toBe('link-labels');
+    expect(attemptCounters.gapPlan.calls).toBeGreaterThanOrEqual(6);
+    expect(attemptCounters.gapPlan.memoHits).toBeGreaterThanOrEqual(4);
+    expect(attemptCounters.gapPlan.edgeVisits).toBeLessThan(1000);
+  }, 60000);
 });
