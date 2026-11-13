@@ -19,6 +19,15 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (name: string) => layout(parse(fixture(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
+const cachedLayouts = new Map<string, Promise<LayoutModel>>();
+const baseRun = (name: string): Promise<LayoutModel> => {
+  let pending = cachedLayouts.get(name);
+  if (!pending) {
+    pending = run(name);
+    cachedLayouts.set(name, pending);
+  }
+  return pending;
+};
 const centreX = (box: Rect): number => box.x + box.width / 2;
 const right = (box: Rect): number => box.x + box.width;
 const bentTo = (model: LayoutModel, group: string): string[] => model.links
@@ -43,7 +52,7 @@ const CANTON = 'stacked-free-members-clear-each-others-chords', PLAIN = 'stacked
 describe('overlay window rule (ticket 143)', () => {
   // On the mean of the partners four chords to `lower-clients` cross the row of `upper-clients`.
   it('a free canton member stands where the chords to it are straight, not at the mean of its partners', async () => {
-    const model = await run(CANTON);
+    const model = await baseRun(CANTON);
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(bentTo(model, 'lower-clients').length).toBeLessThanOrEqual(1);
     const lower = groupOf(model, 'lower-clients');
@@ -56,7 +65,7 @@ describe('overlay window rule (ticket 143)', () => {
   }, 60000);
 
   it('the same rule holds for a free group with no canton', async () => {
-    const model = await run(PLAIN);
+    const model = await baseRun(PLAIN);
     expect(bentTo(model, 'lower-clients').length).toBeLessThanOrEqual(1);
     const lower = groupOf(model, 'lower-clients');
     expect(Math.abs(centreX(lower.bounds!) - 239.5)).toBeGreaterThan(20);
@@ -66,7 +75,7 @@ describe('overlay window rule (ticket 143)', () => {
 
   // Guards.
   it('the canvas is no wider, the member stays inside its canton, and every gate passes', async () => {
-    const model = await run(CANTON);
+    const model = await baseRun(CANTON);
     expect(model.canvas!.width).toBeCloseTo(580.5, 1);
     const west = deriveFrames(model)!.find(frame => frame.id === 'west')!.box;
     for (const id of ['upper-clients', 'lower-clients']) {
@@ -75,13 +84,13 @@ describe('overlay window rule (ticket 143)', () => {
       expect(right(box)).toBeLessThanOrEqual(right(west) - 20 + 1e-6);
     }
     expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
-    expect((await run(PLAIN)).canvas!.width).toBeCloseTo(480.5, 1);
+    expect((await baseRun(PLAIN)).canvas!.width).toBeCloseTo(480.5, 1);
   }, 60000);
 
   // The pass is repeatable: a second run reads the geometry the first one left and moves nothing.
   it('a second run of the pass moves nothing', async () => {
     for (const name of [CANTON, PLAIN]) {
-      const model = structuredClone(await run(name)) as LayoutModel;
+      const model = structuredClone(await baseRun(name)) as LayoutModel;
       // The rule is on: the lower group does not stand at the mean, so the test reads the settled reading and not a model that never moved.
       expect(model.diagnostics.some(item => item.code === OVERLAY_WINDOW_TAKEN), name).toBe(true);
       placeOverlayFree(model);
@@ -95,7 +104,7 @@ describe('overlay window rule (ticket 143)', () => {
   // On `three-continents` the first build moved `cl-a4` (one chord gained) and `loc-a1-sw` to `cl-a3-1` bent at 4 turns: 8 bent links and 34 turns
   // on main, 9 and 38 then.
   it('three-continents: the windows never add a bent overlay link or a turn (the whole-sheet guard)', async () => {
-    const model = await run('three-continents');
+    const model = await baseRun('three-continents');
     const overlays = model.links.filter(link => link.layer === 'overlay' && link.meshBus === undefined);
     const turns = overlays.map(link => overlayPath(model, link).segments.length - 1);
     expect(turns.filter(count => count > 0).length).toBeLessThanOrEqual(8);
@@ -164,7 +173,7 @@ describe('overlay window rule (ticket 143)', () => {
   // A window is placement's decision: a run without windows, which the early passes and the replays after 7f make, does not undo it.
   it('a run without windows leaves a window-placed group where the windows put it', async () => {
     for (const name of [CANTON, PLAIN]) {
-      const model = structuredClone(await run(name)) as LayoutModel;
+      const model = structuredClone(await baseRun(name)) as LayoutModel;
       const note = model.diagnostics.find(item => item.code === OVERLAY_WINDOW_TAKEN)!;
       const first = bounds(model);
       placeOverlayFree(model, undefined, false);
@@ -230,12 +239,12 @@ describe('overlay window rule (ticket 143)', () => {
       expect(pass!.crossings).toBeLessThanOrEqual(34);
     }, 60000);
     it('the whole layout has no more crossings than ticket 143 left, and every gate passes', async () => {
-      const model = await run(CROSS);
+      const model = await baseRun(CROSS);
       expect(crossingsOf(model)).toBeLessThanOrEqual(34);
       expect(Object.values(score(model).snapshot.gates).every(gate => gate.passed)).toBe(true);
     }, 60000);
     it('a second run of the pass moves nothing, and a run without windows holds the group', async () => {
-      const model = structuredClone(await run(CROSS)) as LayoutModel;
+      const model = structuredClone(await baseRun(CROSS)) as LayoutModel;
       expect(model.diagnostics.some(item => item.code === OVERLAY_WINDOW_TAKEN)).toBe(true);
       placeOverlayFree(model);
       const first = bounds(model);

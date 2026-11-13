@@ -81,7 +81,7 @@ export type { LinkPlan, PlacementRuns, PlannedRun, RoutePiece, RoutePlan, RouteO
 export { checkpointsHonoured, crossedTiers, simplify, stitchPath, stitchPaths, stubCandidate,
   lostPlannedRun, preRoute, reservationConflicts, reservedRuns, validateRoutedPaths } from './route/index.js';
 export type { ReservationConflict, RoutedLinkPath } from './route/index.js';
-export { createBrowserRouteFactory, createRouteFactory, RouteDeadlineError, RouteSession, withRouteSession,
+export { createBrowserRouteFactory, createRouteFactory, createWarmRouteFactory, RouteDeadlineError, RouteSession, withRouteSession,
   systemRouteClock, ROUTE_BUDGET_MS, ROUTE_REQUEST, ROUTE_RESPONSE, ALL_DIRECTIONS, DIRECTION_BITS } from './route/index.js';
 export type { CreateRouteAttempt, RouteAssets, RouteAttempt, RouteBatch, RouteCheckpoint, RouteClock,
-  RouteConnector, RouteEndpoint, RoutePin, RouteShape, RouteWorker, RoutedConnector } from './route/index.js';
+  RouteConnector, RouteEndpoint, RoutePin, RouteShape, RouteWorker, RoutedConnector, WarmRouteFactory } from './route/index.js';

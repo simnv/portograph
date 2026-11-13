@@ -15,6 +15,15 @@ const fixture = (name: string): string => readFileSync(new URL(`../../goldens/sy
 const run = (yaml: string): Promise<LayoutModel> =>
   // The group lift (ticket 08) is off: it lifts the mover of these sheets out of the chord band, which removes the subject of the step.
   layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
+const cachedLayouts = new Map<string, Promise<LayoutModel>>();
+const baseRun = (yaml: string): Promise<LayoutModel> => {
+  let pending = cachedLayouts.get(yaml);
+  if (!pending) {
+    pending = run(yaml);
+    cachedLayouts.set(yaml, pending);
+  }
+  return pending;
+};
 
 /**
  * Ticket 77. A straight overlay chord between two tiers is a reservation for the tiers between them: a node with an overlay link of
@@ -22,7 +31,7 @@ const run = (yaml: string): Promise<LayoutModel> =>
  */
 describe('a linked node on a middle tier stands off a straight overlay chord (ticket 77)', () => {
   it('the chord from the source to the far target is one straight segment, and the middle node does not cross it', async () => {
-    const model = await run(fixture('a-linked-node-steps-out-of-a-straight-chord'));
+    const model = await baseRun(fixture('a-linked-node-steps-out-of-a-straight-chord'));
     expect(model.diagnostics.filter(d => d.severity === 'error')).toEqual([]);
     const overlays = model.links.filter(link => link.layer === 'overlay');
     expect(overlays).toHaveLength(2);
@@ -42,7 +51,7 @@ describe('the step over a chord, where the mover holds routed links or shares a 
   const overlay = (model: LayoutModel) => model.links.find(link => link.layer === 'overlay')!;
 
   it('a group with routed links that run on no axis is moved off the chord, and stays where the order of its tier keeps it', async () => {
-    const model = copy(await run(fixture('a-group-with-routed-links-steps-off-a-straight-chord')));
+    const model = copy(await baseRun(fixture('a-group-with-routed-links-steps-off-a-straight-chord')));
     const link = overlay(model), group = model.groups['middle']!, node = model.nodes['mid']!;
     const chord = straightChord(model, link)!;
     // Stand `mid` on the chord, as an earlier centring could leave it.
@@ -62,7 +71,7 @@ describe('the step over a chord, where the mover holds routed links or shares a 
   }, 60000);
 
   it('a node with slack in its group moves alone, inside the box the group has', async () => {
-    const model = await run(fixture('a-node-steps-off-a-straight-chord-inside-its-group'));
+    const model = await baseRun(fixture('a-node-steps-off-a-straight-chord-inside-its-group'));
     const link = overlay(model);
     expect(link.path!.segments).toHaveLength(1);
     const copyOf = copy(model);
@@ -87,7 +96,7 @@ describe('the step over a chord, where the mover holds routed links or shares a 
     expect(copyOf.groups['middle']!.bounds).toEqual(before.box);
   }, 60000);
   it('a move whose settled copy cannot be judged is refused', async () => {
-    const model = copy(await run(fixture('a-group-with-routed-links-steps-off-a-straight-chord')));
+    const model = copy(await baseRun(fixture('a-group-with-routed-links-steps-off-a-straight-chord')));
     const link = overlay(model), group = model.groups['middle']!, node = model.nodes['mid']!;
     const chord = straightChord(model, link)!;
     const y = node.bounds!.y + node.bounds!.height / 2;
@@ -103,7 +112,7 @@ describe('the step over a chord, where the mover holds routed links or shares a 
   // order, and under it `row-11` stands 247.5 px from the measured 1748.7 (the bound is 30). Kept as a skip with this reason; no assertion
   // is changed.
   it.skip('a routed group moves in one round only, and the last round runs no step (a-corridor-moves-after-the-grid-settles)', async () => {
-    const model = await run(fixture('a-corridor-moves-after-the-grid-settles'));
+    const model = await baseRun(fixture('a-corridor-moves-after-the-grid-settles'));
     // Main 6757da1 moves `row-11` by 0 here. The first try moved it -25, +82, +0.5 and +0.7 px in four rounds and kept nothing after the first.
     // 1587.4 before ticket 78 ordered the tier-6 row by its partners; 1489.1 before architecture-2 ticket 23 inserted the track and label
     // room beside zone-7b and the room on row-14 and zone-1, which push the lanes and the row beyond them out (label room wins over a lane).
@@ -127,7 +136,7 @@ describe('a frame of two cells steps off a straight overlay chord inside its col
   const box = (model: LayoutModel) => deriveFrames(model)!.find(frame => frame.id === 'loc')!.box;
 
   it('the whole frame moves by one dx, inside the slack, and the chord is one segment again', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     const link = overlay(model);
     expect(link.path!.segments).toHaveLength(1);
     const chord = straightChord(model, link)!, at = cells.map(id => model.groups[id]!.bounds!.x), frame = box(model);
@@ -152,7 +161,7 @@ describe('a frame of two cells steps off a straight overlay chord inside its col
   }, 60000);
 
   it('a node of a cell moves alone inside the cell box, and the frame stays as it is', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     const link = overlay(model), zone = model.groups['loc-zone#1']!, node = model.nodes['sw2']!;
     // Architecture-2 ticket 54: the zone cell is its title floor wide (stage 5) and 7f no longer widens it for the title, so it keeps no slack
     // right of `sw2`. The mechanism is read on forged slack: the cell grows 40 px to the right (the frame is read after the forge).
@@ -177,7 +186,7 @@ describe('a frame of two cells steps off a straight overlay chord inside its col
   }, 60000);
 
   it('a frame with no slack to clear the chord stays where it is', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     const stood = JSON.stringify(cells.map(id => model.groups[id]!.bounds));
     expect(stepOverChords(model, undefined)).toBe(false);
     expect(JSON.stringify(cells.map(id => model.groups[id]!.bounds))).toBe(stood);
@@ -200,7 +209,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
   };
 
   it('the row of a cell of a canton member slides as one, and the cell box stays', async () => {
-    const model = copy(await run(fixture('a-canton-member-frame-slides-off-a-straight-chord')));
+    const model = copy(await baseRun(fixture('a-canton-member-frame-slides-off-a-straight-chord')));
     const link = overlay(model), chord = straightChord(model, link)!, zone = model.groups['loc-zone#1']!;
     const cell = { ...zone.bounds! };
     stand(model, ['sw', 'sw2'], 10);
@@ -213,7 +222,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
   }, 60000);
 
   it('a cell slides alone inside its frame where every frame box stays', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     const core = model.groups['loc#0']!, frames = deriveFrames(model)!.map(frame => frame.box);
     const link = overlay(model), chord = straightChord(model, link)!;
     moveGroup(model, core, 60, 0);
@@ -226,7 +235,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
   }, 60000);
 
   it('a cell of a frame that is not in a canton never moves its frame edge', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     for (const id of ['sw', 'sw2']) stand(model, [id], 40);
     const frame = { ...box(model) };
     stepOverChords(model, undefined, new Set(['frame:loc']));
@@ -235,7 +244,7 @@ describe('the slide paths of a frame, judged and capped (ticket 80)', () => {
 
   it('a slide of a canton member may pass the wall, and is refused when the growth is spent', async () => {
     const yaml = fixture('a-canton-member-frame-slides-off-a-straight-chord');
-    const model = copy(await run(yaml));
+    const model = copy(await baseRun(yaml));
     const link = overlay(model), chord = straightChord(model, link)!;
     const cellsOf = ['loc#0', 'loc-zone#1'], nodes = ['gw', 'sw', 'sw2'];
     const standOn = (m: LayoutModel): void => {
@@ -321,7 +330,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
   };
 
   it('both sync links are one segment, and the feeds stay one segment each', async () => {
-    const model = await run(fixture(NAME));
+    const model = await baseRun(fixture(NAME));
     expect(model.diagnostics.filter(d => d.severity === 'error')).toEqual([]);
     expect(overlays(model)).toHaveLength(2);
     for (const link of overlays(model)) expect(link.path!.segments, link.id).toHaveLength(1);
@@ -330,7 +339,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
   }, 60000);
 
   it('the row of the lower rank moves as one, inside 40 px, and the overlay crossings are not above main', async () => {
-    const model = await run(fixture(NAME));
+    const model = await baseRun(fixture(NAME));
     const a = x(model, 'low-a') - x(model, 'up-a'), b = x(model, 'low-b') - x(model, 'up-b');
     // On main the two ranks stand under one another (0.5 px apart and 0).
     expect(Math.abs(a)).toBeGreaterThan(20);
@@ -342,7 +351,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
   }, 60000);
 
   it('rank 0 and its parent keep their x (no rank 0 moves by this rule)', async () => {
-    const model = await run(fixture(NAME));
+    const model = await baseRun(fixture(NAME));
     // Verdana metrics (snack-theme ticket 157): 84.0, 72.5 and 149.0 with Arial.
     expect(x(model, 'gw')).toBeCloseTo(87.0, 0);
     expect(x(model, 'up-a')).toBeCloseTo(72.8, 0);
@@ -350,7 +359,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
   }, 60000);
 
   it('one node of a lower rank moves into the room the step gives it, and the step says so', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     restore(model);
     expect(overlays(model).filter(link => overlayPath(model, link).segments.length === 1)).toHaveLength(0);
     const at = { a: x(model, 'low-a'), b: x(model, 'low-b') };
@@ -369,7 +378,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
   }, 60000);
 
   it('a move that needs more growth than the budget holds is refused', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     restore(model);
     // Control: with the budget unspent the same state moves.
     const control = copy(model);
@@ -384,7 +393,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
   }, 60000);
 
   it('a candidate that adds a crossing on the settled copy is no longer refused for it (the crossings are the third key)', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     restore(model);
     const at = { a: x(model, 'low-a'), b: x(model, 'low-b') };
     const moved = (probe: LayoutModel): boolean => Math.abs(x(probe, 'low-a') - at.a) > 1 || Math.abs(x(probe, 'low-b') - at.b) > 1;
@@ -404,7 +413,7 @@ describe('a lower rank steps off the chords of the ranks above (ticket 146)', ()
   }, 60000);
 
   it('a move that straightens three links and bends one (+3 / -1, no crossing added) is taken', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     restore(model);
     // Two more sync links that end like link-7, and client 1 far to the left: link-5 is straight, the other three bend. (DR-04: link-5 is
     // up-a -> c-1, link-7 up-b -> c-2 in the canonical order; the geometry is the one the test was written for.)
@@ -456,7 +465,7 @@ links:
   - [gw, c-1, { class: sync }]
   - [gw, c-2, { class: sync }]
 `;
-    const model = copy(await run(yaml));
+    const model = copy(await baseRun(yaml));
     // site#1 (sw, sx) and zone#1 (up-a, up-b) stand beside each other on one tier; the chords of gw pass over both.
     expect(model.groups['site#1']!.tier).toBe(model.groups['zone#1']!.tier);
     // Stand sx on the chord of the first sync link, as an earlier pass could leave it; the row mover is spent, so a node moves alone.
@@ -473,7 +482,7 @@ links:
   }, 60000);
 
   it('the settled copies of a cell are counted over the calls of the step, not in each call', async () => {
-    const model = copy(await run(fixture(NAME)));
+    const model = copy(await baseRun(fixture(NAME)));
     restore(model);
     // Six copies are already spent for the cell: nothing is judged, nothing moves.
     const history = new Set(Array.from({ length: 6 }, (_, n) => `rank-spent:zone#2:${n}`));
@@ -515,7 +524,7 @@ links:
   - [up-b, c-1, { class: sync }]
   - [up-b, c-3, { class: sync }]
 `;
-    const model = await run(yaml);
+    const model = await baseRun(yaml);
     // Architecture ticket 13, phase 4: a crossing added is no veto any more. The move straightens two links and adds one crossing: fewer bent links decide.
     expect(model.diagnostics.filter(d => d.code === 'RANK_STEPPED_OFF_CHORD').map(d => d.message)).toEqual([
       // Verdana metrics (snack-theme ticket 157): -28.4 px and 2 more straight overlay links with Arial.
@@ -527,7 +536,7 @@ links:
   // (normalised Kendall distance 0.299) and which no group declaration tried brings near the written order, the lower rank no longer
   // stands where the subject reads it, and RANK_STEPPED_OFF_CHORD fires. Kept as a skip with this reason; no assertion is changed.
   it.skip('four-locations-each-with-a-zone: nothing moves (its lower rank stands outside a canton)', async () => {
-    const model = await run(fixture('four-locations-each-with-a-zone'));
+    const model = await baseRun(fixture('four-locations-each-with-a-zone'));
     expect(model.diagnostics.some(d => d.code === 'RANK_STEPPED_OFF_CHORD')).toBe(false);
   }, 60000);
 });

@@ -17,6 +17,10 @@ const L_FIXTURE = 'an-overlay-turns-once-into-a-lateral-side-west-last';
 const yaml = readFileSync(new URL(`../../goldens/synthetic/${L_FIXTURE}.yaml`, import.meta.url), 'utf8');
 const run = (extra: Partial<Parameters<typeof layout>[1]> = {}, text = yaml): Promise<LayoutModel> =>
   layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...extra });
+let plainPromise: Promise<LayoutModel> | undefined;
+let noRerunPromise: Promise<LayoutModel> | undefined;
+const baseRun = (): Promise<LayoutModel> => (plainPromise ??= run());
+const baseNoRerun = (): Promise<LayoutModel> => (noRerunPromise ??= run({ testMaxReruns: 0 }));
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 const codes = (model: LayoutModel): string[] => model.diagnostics.map(item => item.code);
 const overlay = (model: LayoutModel) => model.links.find(link => link.layer === 'overlay')!;
@@ -28,7 +32,7 @@ const moveNode = (model: LayoutModel, id: string, dx: number, dy: number): void 
 
 describe('the side round offers the L shape for an overlay link', () => {
   it('turns once into the left face of the outlet, above the flank port, with every gate passing', async () => {
-    const model = await run();
+    const model = await baseRun();
     const link = overlay(model), segments = link.path!.segments;
     expect(segments).toHaveLength(2);
     const [down, across] = segments;
@@ -59,19 +63,19 @@ describe('the side round offers the L shape for an overlay link', () => {
   }, 60000);
 
   it('on the natural sides the same link goes round the cache with two turns or more', async () => {
-    const model = await run({ testMaxReruns: 0 });
+    const model = await baseNoRerun();
     expect(overlay(model).path!.segments.length).toBeGreaterThan(2);
     expect(codes(model)).toContain('SIDE_ROUND_SKIPPED');
   }, 60000);
 
   it('two runs give byte-identical layout JSON', async () => {
     const strip = (model: LayoutModel): string => JSON.stringify(model, (key, value: unknown) => key === 'runtime' ? undefined : value);
-    expect(strip(await run())).toBe(strip(await run()));
+    expect(strip(await baseRun())).toBe(strip(await run()));
   }, 60000);
 
   it('with both corners clear, the lateral port is at the lower end (tie-break 4)', async () => {
     // Natural sides, then the cache moves to the middle of the square the two ends span and the pad chain leaves it: both L shapes are clear.
-    const model = copy(await run({ testMaxReruns: 0 }));
+    const model = copy(await baseNoRerun());
     expect(overlay(model).path!.segments.length).toBeGreaterThan(2);
     moveNode(model, 'pad', 0, 3000); moveNode(model, 'mid', 0, 3000);
     const outlet = model.nodes['outlet']!, lb = model.nodes['lb']!;
@@ -92,7 +96,7 @@ describe('the side round offers the L shape for an overlay link', () => {
 
 describe('an L is offered only when both runs are clear', () => {
   it('sanity: offers nothing when a body of the middle rank stands on the horizontal run', async () => {
-    const model = copy(await run({ testMaxReruns: 0 }));
+    const model = copy(await baseNoRerun());
     const outlet = model.nodes['outlet']!, cache = model.nodes['cache']!, lb = model.nodes['lb']!;
     // Put the cache on the only two-segment way: the horizontal run into the outlet's left face, a little above the flank port.
     const y = outlet.bounds!.y + outlet.bounds!.height / 2 - 12;
@@ -114,7 +118,7 @@ describe('the label room of an overlay L', () => {
   const LONG = 'a considerably longer description of this health probe, sent across the site and back through the outlet to the relay that reports it';
   // The published L, with its vertical run shortened so that the horizontal run is the longest, and a label longer than that run.
   async function shortDrop(): Promise<{ model: LayoutModel; split: number }> {
-    const model = copy(await run());
+    const model = copy(await baseRun());
     const link = overlay(model);
     model.document.links[link.sourceIndex]!.label = LONG;
     for (const id of ['lb', 'shim', 'pad', 'mid', 'cache']) moveNode(model, id, 0, 100);
@@ -225,7 +229,7 @@ describe('the label room of an overlay L', () => {
   }, 60000);
 
   it('reserves a vertical run of an L to the lateral anchor, no more (review L1)', async () => {
-    const model = copy(await run());
+    const model = copy(await baseRun());
     const link = overlay(model);
     model.document.links[link.sourceIndex]!.label = LONG;
     const required = measureText(LONG, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
