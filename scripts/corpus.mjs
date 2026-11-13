@@ -59,29 +59,68 @@ function row(file, model, snapshot, hash) {
   ].join('\t');
 }
 
+const TIMING_COLUMNS = ['file', 'totalMs', 'parseMs', 'layoutMs', 'scoreMs', 'status'];
+
 async function main(argv) {
   const out = outputArgument(argv, 'npm run corpus -- <out.tsv>');
+  const timingsOut = `${out}.timings.tsv`;
   // goldens/synthetic/stage-inputs.yaml is test data, not a sheet (goldens/README.md).
   const files = sheets(join(ROOT, 'goldens')).filter((file) => file !== 'goldens/synthetic/stage-inputs.yaml');
   const start = performance.now();
   const pipeline = await openPipeline();
   writeFileSync(out, `${COLUMNS.join('\t')}\n`);
+  writeFileSync(timingsOut, `${TIMING_COLUMNS.join('\t')}\n`);
+  const timings = [];
   try {
     for (const [index, file] of files.entries()) {
       process.stderr.write(`corpus: ${index + 1}/${files.length} ${file}\n`);
       let line;
+      let parseMs = 0;
+      let layoutMs = 0;
+      let scoreMs = 0;
+      let status = 'ok';
+      const sheetStart = performance.now();
       try {
-        const model = await pipeline.layout(pipeline.api.parse(readFileSync(join(ROOT, file), 'utf8')));
-        line = row(file, model, pipeline.api.score(model).snapshot, layoutHash(pipeline.api, model));
+        const text = readFileSync(join(ROOT, file), 'utf8');
+        const parseStart = performance.now();
+        let parsed;
+        try {
+          parsed = pipeline.api.parse(text);
+        } finally {
+          parseMs = performance.now() - parseStart;
+        }
+        const layoutStart = performance.now();
+        let model;
+        try {
+          model = await pipeline.layout(parsed);
+        } finally {
+          layoutMs = performance.now() - layoutStart;
+        }
+        const scoreStart = performance.now();
+        let snapshot;
+        try {
+          snapshot = pipeline.api.score(model).snapshot;
+        } finally {
+          scoreMs = performance.now() - scoreStart;
+        }
+        line = row(file, model, snapshot, layoutHash(pipeline.api, model));
       } catch (error) {
         line = `${file}\t${failure(error)}`;
+        status = error instanceof Error && error.name === 'TimeoutError' ? 'TIMEOUT' : 'ERROR';
       }
+      const totalMs = performance.now() - sheetStart;
       appendFileSync(out, `${line}\n`);
+      appendFileSync(timingsOut, `${[file, totalMs.toFixed(1), parseMs.toFixed(1), layoutMs.toFixed(1), scoreMs.toFixed(1), status].join('\t')}\n`);
+      timings.push({ file, totalMs });
     }
   } finally {
     pipeline.close();
   }
   process.stderr.write(`corpus: ${files.length} sheets in ${elapsed(start)} -> ${out}\n`);
+  const slowest = [...timings].sort((a, b) => b.totalMs - a.totalMs || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0)).slice(0, 5);
+  if (slowest.length > 0) {
+    process.stderr.write(`slowest 5: ${slowest.map((entry) => `${entry.file} (${entry.totalMs.toFixed(1)} ms)`).join(', ')}\n`);
+  }
 }
 
 withGateLock(() => main(process.argv.slice(2))).then(

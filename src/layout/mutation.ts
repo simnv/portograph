@@ -50,24 +50,64 @@ export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'b
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
 const stages: LayoutStage[] = ['normalised', 'resolve', 'sides-one', 'size', 'skeleton', 'sides-two',
   'rows', 'lanes', 'flanks', 'centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
+export const publicationCounters: { protects: number; documentShared: number; jsonWalks: number } = {
+  protects: 0,
+  documentShared: 0,
+  jsonWalks: 0,
+};
+export function resetPublicationCounters(): void {
+  publicationCounters.protects = 0;
+  publicationCounters.documentShared = 0;
+  publicationCounters.jsonWalks = 0;
+}
 const protectedModels = new WeakSet<LayoutModel>();
+const frozenDocuments = new WeakSet<object>();
+const frozenDocumentText = new WeakMap<object, string>();
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 /**
  * While one publication is validated its model does not change, and each validator clones it. The model is serialized once and every
  * clone parses that text. The one write validation makes to the model (a diagnostic) drops the text.
  */
-let publishing: { model: LayoutModel; text?: string | undefined } | undefined;
+let publishing: {
+  model: LayoutModel;
+  text?: string | undefined;
+  jsonVerified?: boolean;
+  sharedDocument?: LayoutModel['document'] | undefined;
+} | undefined;
+function documentText(doc: LayoutModel['document']): string {
+  let text = frozenDocumentText.get(doc);
+  if (text === undefined) {
+    text = JSON.stringify(doc);
+    frozenDocumentText.set(doc, text);
+  }
+  return text;
+}
 function cloneModel(model: LayoutModel): LayoutModel {
   if (publishing?.model !== model) return clone(model);
+  if (publishing.sharedDocument !== undefined) {
+    const text = publishing.text ??= JSON.stringify({ ...model, document: null });
+    const copy = JSON.parse(text) as LayoutModel;
+    copy.document = publishing.sharedDocument;
+    return copy;
+  }
   return JSON.parse(publishing.text ??= JSON.stringify(model)) as LayoutModel;
 }
-function jsonValue(value: unknown): void {
+function walkJsonValue(value: unknown): void {
   if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Layout requires finite numbers');
   if (value === undefined || typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') throw new Error('Layout must contain JSON values');
   if (value && typeof value === 'object') {
     if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) throw new Error('Layout must contain plain JSON objects');
-    for (const child of Object.values(value)) jsonValue(child);
+    for (const child of Object.values(value)) walkJsonValue(child);
   }
+}
+function jsonValue(value: unknown): void {
+  publicationCounters.jsonWalks++;
+  walkJsonValue(value);
+}
+function verifyJsonValue(model: LayoutModel): void {
+  if (publishing?.model === model && publishing.jsonVerified) return;
+  jsonValue(model);
+  if (publishing?.model === model) publishing.jsonVerified = true;
 }
 /** A box with its y left out: what a vertical translation keeps. */
 function verticalOnly(box: Rect): Omit<Rect, 'y'> { return { x: box.x, width: box.width, height: box.height }; }
@@ -79,17 +119,30 @@ function omit(value: object, keys: readonly string[]): object {
   return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 }
 function protect(model: LayoutModel, baseline: LayoutModel, intermediate = false): LayoutModel {
+  publicationCounters.protects++;
   const outer = publishing;
+  const baselineDoc = baseline.document;
+  const sharedDocument = frozenDocuments.has(baselineDoc)
+    && (model.document === baselineDoc || JSON.stringify(model.document) === documentText(baselineDoc))
+    ? baselineDoc
+    : undefined;
   let result: LayoutModel;
-  publishing = { model };
+  publishing = { model, sharedDocument };
   try {
     validatePublication(model, baseline, intermediate);
     result = cloneModel(model);
   } finally { publishing = outer; }
   const freeze = (value: unknown): void => {
-    if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
+    if (value && typeof value === 'object' && !frozenDocuments.has(value)) {
+      Object.values(value).forEach(freeze);
+      Object.freeze(value);
+    }
   };
-  freeze(result); protectedModels.add(result); return result;
+  freeze(result);
+  if (sharedDocument !== undefined) publicationCounters.documentShared++;
+  else frozenDocuments.add(result.document);
+  protectedModels.add(result);
+  return result;
 }
 function semantics(model: LayoutModel) {
   return {
@@ -322,7 +375,7 @@ function validateJoins(model: LayoutModel): void {
 }
 /** Every protected result passes this same boundary, including direct freeze and restore. */
 function validatePublication(model: LayoutModel, baseline: LayoutModel, intermediate = false): void {
-  jsonValue(model);
+  verifyJsonValue(model);
   validateStaggerRows(model);
   validateGroupLifts(model);
   if (hasUnsupportedClaims(model)) throw new Error('Claim validator is not implemented');
@@ -374,7 +427,10 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
       const message = `Centring invariant unverified after a spent budget: ${centring.join('; ')}`;
       if (!model.diagnostics.some(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED' && d.message === message)) {
         model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_INVARIANT_UNVERIFIED', message });
-        if (publishing?.model === model) publishing.text = undefined;
+        if (publishing?.model === model) {
+          publishing.text = undefined;
+          publishing.jsonVerified = false;
+        }
       }
     }
   }
@@ -453,7 +509,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
   if (stages.indexOf(model.stage) >= stages.indexOf('link-labels')) validateLinkLabels(model);
 }
 function validateGeometry(model: LayoutModel): void {
-  jsonValue(model);
+  verifyJsonValue(model);
   validatePlacementStructure(model);
   if (model.runtime.stages.some(entry => !stages.includes(entry.stage) || entry.durationMs < 0)
     || (model.runtime.totalMs !== undefined && model.runtime.totalMs < 0)) throw new Error('Invalid runtime measurement');

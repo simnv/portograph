@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { placed, simple } from './phase-two-fixture.js';
+import { createAttempt, placed, simple } from './phase-two-fixture.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { serializeLayoutModel, serializeLayoutSnapshot } from '../../src/model/model.js';
-import { withLayoutMutation, restoreLayoutModel, freezePortTopology, type PlacementRule } from '../../src/layout/mutation.js';
+import { withLayoutMutation, restoreLayoutModel, freezePortTopology, publicationCounters, resetPublicationCounters, type PlacementRule } from '../../src/layout/mutation.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { bars } from '../../src/layout/bars.js';
+import { parse } from '../../src/parse/index.js';
+import { layout } from '../../src/pipeline/index.js';
+import { createAvoidAttempt } from '../route/fixture.js';
 const advance = (model: LayoutModel, rules: PlacementRule[]) => rules.reduce((m, rule) => withLayoutMutation(m, rule, () => {}), model);
 const throughCentre: PlacementRule[] = ['rows', 'lanes', 'flanks', 'centre'];
 const bundleYaml = `portograph: 2
@@ -138,4 +141,30 @@ links: []`);
   const emptyJson: LayoutModel = JSON.parse(serializeLayoutModel(empty));
   emptyJson.canvas = { x: 0, y: 0, width: 0, height: 0 };
   expect(restoreLayoutModel(JSON.stringify(emptyJson)).canvas!.width).toBe(0);
+});
+
+it('shares proven-unchanged frozen document across protect() and skips redundant jsonValue walks while preserving guards', async () => {
+  resetPublicationCounters();
+  const full = await layout(parse(bundleYaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(Object.isFrozen(full)).toBe(true);
+  expect(Object.isFrozen(full.document)).toBe(true);
+  expect(Object.isFrozen(full.document.nodes)).toBe(true);
+  expect(Object.isFrozen(full.document.links)).toBe(true);
+  expect(publicationCounters.protects).toBeGreaterThan(1);
+  expect(publicationCounters.documentShared).toBeGreaterThan(0);
+  expect(publicationCounters.jsonWalks).toBe(publicationCounters.protects * 2);
+  expect(() => { (full.document as unknown as Record<string, unknown>).extra = 'x'; }).toThrow(TypeError);
+
+  const stage = await placed(simple);
+  resetPublicationCounters();
+  const next = withLayoutMutation(stage, 'rows', () => {});
+  expect(next.document).toBe(stage.document);
+  expect(Object.isFrozen(next.document)).toBe(true);
+  expect(publicationCounters).toEqual({ protects: 1, documentShared: 1, jsonWalks: 2 });
+
+  expect(() => withLayoutMutation(stage, 'rows', draft => { draft.nodes.a!.bounds!.x = Number.NaN; })).toThrow(/finite/);
+  expect(() => withLayoutMutation(stage, 'rows', draft => { draft.nodes.a!.bounds!.x = Number.POSITIVE_INFINITY; })).toThrow(/finite/);
+  expect(() => withLayoutMutation(stage, 'rows', draft => { (draft.document.nodes.a! as unknown as Record<string, unknown>).extra = Number.NaN; })).toThrow(/finite/);
+  expect(() => withLayoutMutation(stage, 'rows', draft => { draft.document.nodes.a!.label = 'tampered'; })).toThrow(/Undeclared model field changed/);
+  expect(() => withLayoutMutation(stage, 'rows', draft => { (draft as unknown as Record<string, unknown>).extra = undefined; })).toThrow(/JSON values/);
 });
