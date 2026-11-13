@@ -58,7 +58,7 @@ function rebuildBarGeometry(draft: LayoutModel, before: readonly TierBand[] = dr
  * transaction. The checked transaction invokes this finalizer after geometry callbacks. Callbacks
  * use individual geometry producers; the transaction owns derived row/flank path writes.
  */
-export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget, beforeBarBands?: readonly TierBand[], bundlesReady = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'].includes(draft.stage), centre = true): void {
+export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget, beforeBarBands?: readonly TierBand[], bundlesReady = ['bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'].includes(draft.stage), centre = true, deferOpenCentringNames = false): void {
   timed('rebuild-region-geometry', () => {
     if (bundlesReady) {
       timed('bundle-prep', () => {
@@ -91,7 +91,7 @@ export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget,
     timed('flank-paths', () => rebuildFlankPaths(draft));
     if (barsReady) timed('bar-drops', () => rebuildBarDrops(draft));
     if (bundlesReady) timed('bundle-paths', () => rebuildBundlePaths(draft));
-    if (budget) timed('centre-flag', () => flagUnverifiedCentring(draft));
+    if (budget) timed('centre-flag', () => flagUnverifiedCentring(draft, deferOpenCentringNames));
   });
 }
 

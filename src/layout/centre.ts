@@ -1447,16 +1447,34 @@ function reportStall(model: LayoutModel, unresolved: string[], message = 'Center
   if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE')) placementWarning(model, 'PLACEMENT_NON_CONVERGENCE', message, unresolved, 'group');
   recordOpen(model, false);
 }
+/** Counters for centring-flag and centre-check reads; for tests and measurement only, never read by the layout. */
+export const centreReadCounters = { flagChecked: 0, flagSkipped: 0, cacheHits: 0 };
+export function resetCentreReadCounters(): void {
+  centreReadCounters.flagChecked = 0;
+  centreReadCounters.flagSkipped = 0;
+  centreReadCounters.cacheHits = 0;
+}
 /**
  * A replay that centred and then rebuilt what depends on the centring (bundle anchors, bars, regions) can leave an alignment
  * the step would move: the passes ended at a fixed point, and the model published from them is not one. The check the
  * publication runs, run here, says so, so that a model never publishes an unexplained centring violation (ticket 75).
+ * When `deferNames` is true (inside 7f, before `nameOpenCentring` replaces the owners at the end), a model that already carries
+ * `CENTRE_ALIGNMENT_OPEN` skips the redundant `recordOpen` call.
  */
-export function flagUnverifiedCentring(model: LayoutModel): void {
+export function flagUnverifiedCentring(model: LayoutModel, deferNames = false): void {
   // Only the centre step's own record arms the naming; a placement non-convergence of another emitter does not (DR-15, R5).
-  if (model.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) recordOpen(model, false);
-  else if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model, true).length > 0) {
-    reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.');
+  if (model.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) {
+    if (deferNames) {
+      centreReadCounters.flagSkipped++;
+      return;
+    }
+    centreReadCounters.flagChecked++;
+    recordOpen(model, false);
+  } else {
+    centreReadCounters.flagChecked++;
+    if (!model.diagnostics.some(d => d.stage === 'placement' && d.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model, true).length > 0) {
+      reportStall(model, [], 'Centering left an alignment off its feed after the bundle, bar and region rebuilds that follow it; routing and the final gates decide the retained geometry.');
+    }
   }
 }
 /**
@@ -1582,14 +1600,13 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         const own: Record<string, unknown> = {}, still: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(replayed)) (TRIAL_SHARED.includes(key) ? still : own)[key] = value;
         nodeTexts = new Map(Object.entries(model.nodes).map(([key, node]) => [key, JSON.stringify(node)]));
-        sharedNodes = Object.fromEntries([...nodeTexts].map(([key, text]) => [key, JSON.parse(text) as LayoutNode]));
-        freezeDeep(sharedNodes);
         delete own.nodes;
         replayedText = JSON.stringify(own);
         const stillText = JSON.stringify(still);
         if (reuse) {
           const known = checkedAnswers.get(model);
           if (known !== undefined && known.ahead === ahead && known.targets === targets && (known.taps !== undefined || verdictTap.sink === undefined) && sameModelText(known, replayedText, stillText, nodeTexts)) {
+            centreReadCounters.cacheHits++;
             // Under `LayoutOptions.checkCaches` the check runs again in full, without reuse, and its answer and verdicts must be the ones kept.
             const answer = answerCache.hit(model, { result: known.result, taps: known.taps }, () => {
               const again: [string, string][] | undefined = known.taps === undefined ? undefined : [];
@@ -1602,6 +1619,8 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
           answerCache.miss();
           key = { ahead, targets, own: replayedText, still: stillText, nodes: nodeTexts };
         }
+        sharedNodes = Object.fromEntries([...nodeTexts].map(([key, text]) => [key, JSON.parse(text) as LayoutNode]));
+        freezeDeep(sharedNodes);
         sharedParts = JSON.parse(stillText) as Record<string, unknown>;
         freezeDeep(sharedParts);
       }

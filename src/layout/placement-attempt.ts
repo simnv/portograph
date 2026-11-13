@@ -81,10 +81,10 @@ export function replayGridAndBands(model: LayoutModel, hold?: ReadonlySet<string
  * The replay a move of groups is followed by: the regions, the grid and the label bands. This is the one place that names it; `settleRound`,
  * the rounds below and the chord trials all call it.
  */
-export function replayRegions(model: LayoutModel): void {
+export function replayRegions(model: LayoutModel, deferOpenCentringNames = false): void {
   attemptCounters.replays++;
   replaysOn.set(model, (replaysOn.get(model) ?? 0) + 1);
-  rebuildRegionGeometry(model, undefined, undefined, true);
+  rebuildRegionGeometry(model, undefined, undefined, true, true, deferOpenCentringNames);
   replayGridAndBands(model);
 }
 
@@ -122,13 +122,13 @@ export function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnost
 }
 
 /** The close-up of the cantons and the keep-out of a foreign drop's clearance, each followed by the replay when it moved. Returns the close-up's shift. */
-function closeUpAndKeepOut(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void): number {
+function closeUpAndKeepOut(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void, deferOpenCentringNames = false): number {
   const shift = timed('close-cantons', () => closeCantonsAndSettle(model));
-  if (shift > 0) replayRegions(model);
+  if (shift > 0) replayRegions(model, deferOpenCentringNames);
   tap?.('close-up', shift > 0);
   // A frame edge a foreign drop would run along is moved off it before anything is planned in the geometry (ticket 75).
   const kept = timed('keep-out', () => settleKeepOut(model));
-  if (kept) replayRegions(model);
+  if (kept) replayRegions(model, deferOpenCentringNames);
   tap?.('keep-out', kept);
   return shift;
 }
@@ -141,17 +141,17 @@ function closeUpAndKeepOut(model: LayoutModel, tap?: (step: SettleStep, changed:
  * copy to see what a move settles into. It returns the shift of the close-ups. It reserves no label room: the producer and the tier-gap solve
  * do (ADR-0014 r2, decision review ticket DR-02).
  */
-export function settleRound(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void): number {
+export function settleRound(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void, deferOpenCentringNames = false): number {
   attemptCounters.settleCalls++;
-  return closeUpAndKeepOut(model, tap);
+  return closeUpAndKeepOut(model, tap, deferOpenCentringNames);
 }
 
 /** What the step over a chord judges a move by: the replays and a round of `settleRound`, which is what the next round does. */
-export function trialSettle(probe: LayoutModel): SettleReading {
+export function trialSettle(probe: LayoutModel, deferOpenCentringNames = false): SettleReading {
   return timed('trial-settle', () => {
-    timed('replay-first', () => replayRegions(probe));
+    timed('replay-first', () => replayRegions(probe, deferOpenCentringNames));
     const steps: SettleReading['steps'] = [];
-    const shift = timed('settle-round', () => settleRound(probe, (step, changed) => { steps.push([step, changed]); }));
+    const shift = timed('settle-round', () => settleRound(probe, (step, changed) => { steps.push([step, changed]); }, deferOpenCentringNames));
     return { shift, steps };
   });
 }
@@ -255,7 +255,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
       for (const [step] of taken.steps) tapped(step);
       shift = taken.shift;
       taken = undefined;
-    } else shift = settleRound(draft, tapped);
+    } else shift = settleRound(draft, tapped, true);
     if (attemptTimings.on) attemptTimings.hooks.base?.(draft);
     closed = shift < CANTON_CREEP;
     attemptCounters.rounds++; entry.rounds++;
@@ -270,7 +270,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     // A chord between two tiers keeps the tiers between it free of nodes. A move is judged on a copy that the replays and a round of
     // `settle` have run, which is what the next round does.
     const kept: { adopted?: AdoptedCopy } = {};
-    const cleared = moves && round < CANTON_ROUNDS - 1 && stepOverChords(draft, trialSettle, movers, kept);
+    const cleared = moves && round < CANTON_ROUNDS - 1 && stepOverChords(draft, probe => trialSettle(probe, true), movers, kept);
     if (cleared) lastAttempt.moved = true;
     note(`round-${round}:chords`, cleared ? 'moved' : 'unchanged');
     if (cleared) { attemptCounters.chordRoundsMoved++; entry.chordRoundsMoved++; }
@@ -280,7 +280,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
       taken = kept.adopted.result as SettleReading;
       tookCopy = true;
     } else {
-      if (linkless || cleared) replayRegions(draft);
+      if (linkless || cleared) replayRegions(draft, true);
     }
     account(`round-${round}:replay`);
     again = cleared;
@@ -291,7 +291,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // give none up. One replay (R4). A replay of a trial copy (the chord step's judge) is not a replay of the draft.
   if (moves && !tookCopy && (replaysOn.get(draft) ?? 0) === draftReplays
     && (draft.diagnostics.some(d => d.code === 'PLACEMENT_NON_CONVERGENCE') || centreViolations(draft).length > 0)) {
-    replayRegions(draft);
+    replayRegions(draft, true);
     note('tail:centring', 'settled');
   }
   if (ledger) {
