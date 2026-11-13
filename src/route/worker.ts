@@ -154,3 +154,129 @@ export function createRouteFactory(assets: RouteAssets & { workerUrl: string }, 
   }
   return () => ({ worker: spawn(assets.workerUrl), assets: { moduleUrl: assets.moduleUrl, wasmUrl: assets.wasmUrl } });
 }
+
+export interface WarmRouteFactory {
+  /** Pass as `createRouteAttempt` to `layout()` or `route()`. Reuses one worker across sequential sessions; drops and respawns on error or incomplete/aborted session. */
+  attempt: CreateRouteAttempt;
+  /** Start the worker eagerly. */
+  warm(): void;
+  /** Terminate the shared worker if one is open. */
+  close(): void;
+}
+
+type RouteListener = (event: { data?: unknown; message?: string }) => void;
+
+interface SharedAttempt {
+  attempt: RouteAttempt;
+  terminated: boolean;
+}
+
+/**
+ * Reuse one route worker across sequential `RouteSession`s. Each request inside `avoid-worker.mjs`
+ * allocates and deletes its own `Avoid.Router` while caching the loaded WASM module, so sequential
+ * sessions are isolated. Any session that ends with an in-flight request (deadline timeout or abort),
+ * a worker error/messageerror, or an `ok !== true` response drops and terminates the underlying worker
+ * so the next session starts fresh. Concurrent callers while the shared worker is leased receive a
+ * cold one-off worker instead of sharing message IDs.
+ */
+export function createWarmRouteFactory(createColdAttempt: CreateRouteAttempt): WarmRouteFactory {
+  let shared: SharedAttempt | undefined;
+  let leased = false;
+
+  const open = (): SharedAttempt => (shared ??= { attempt: createColdAttempt(), terminated: false });
+
+  const terminateEntry = (entry: SharedAttempt): void => {
+    if (shared === entry) {
+      shared = undefined;
+      leased = false;
+    }
+    if (!entry.terminated) {
+      entry.terminated = true;
+      entry.attempt.worker.terminate();
+    }
+  };
+
+  return {
+    attempt: (): RouteAttempt => {
+      if (leased) return createColdAttempt();
+      const entry = open();
+      leased = true;
+      let inFlight = 0;
+      let poisoned = false;
+      let disposed = false;
+      const listeners = new Map<string, Map<RouteListener, RouteListener>>();
+
+      const wrapListener = (type: string, listener: RouteListener): RouteListener => {
+        let byType = listeners.get(type);
+        if (!byType) {
+          byType = new Map();
+          listeners.set(type, byType);
+        }
+        const existing = byType.get(listener);
+        if (existing) return existing;
+        const wrapped: RouteListener = event => {
+          if (type === 'message') {
+            const message = event.data as RouteResponse | undefined;
+            if (message && message.kind === ROUTE_RESPONSE && typeof message.id === 'number') {
+              inFlight = Math.max(0, inFlight - 1);
+              if (!message.ok || !Array.isArray(message.routes)) poisoned = true;
+            }
+          } else if (type === 'error' || type === 'messageerror') {
+            poisoned = true;
+          }
+          listener(event);
+        };
+        byType.set(listener, wrapped);
+        return wrapped;
+      };
+
+      const proxyWorker: RouteWorker = {
+        postMessage(message: unknown): void {
+          inFlight++;
+          try {
+            entry.attempt.worker.postMessage(message);
+          } catch (error) {
+            inFlight = Math.max(0, inFlight - 1);
+            poisoned = true;
+            throw error;
+          }
+        },
+        addEventListener(type: string, listener: RouteListener): void {
+          const wrapped = wrapListener(type, listener);
+          try {
+            entry.attempt.worker.addEventListener(type, wrapped);
+          } catch (error) {
+            poisoned = true;
+            throw error;
+          }
+        },
+        removeEventListener(type: string, listener: RouteListener): void {
+          const byType = listeners.get(type);
+          const wrapped = byType?.get(listener);
+          if (wrapped) {
+            byType!.delete(listener);
+            entry.attempt.worker.removeEventListener(type, wrapped);
+          } else {
+            entry.attempt.worker.removeEventListener(type, listener);
+          }
+        },
+        terminate(): void {
+          if (disposed) return;
+          disposed = true;
+          if (shared === entry) leased = false;
+          if (poisoned || inFlight > 0) terminateEntry(entry);
+        },
+      };
+
+      return { worker: proxyWorker, assets: entry.attempt.assets };
+    },
+    warm(): void {
+      if (shared === undefined) {
+        try { open(); } catch { /* the first attempt raises it */ }
+      }
+    },
+    close(): void {
+      if (shared !== undefined) terminateEntry(shared);
+    },
+  };
+}

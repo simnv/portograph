@@ -40,13 +40,18 @@ export async function openPipeline() {
     return warm;
   };
   let elk = newElk();
-  const router = require('../dist/node.cjs').createNodeRouteFactory();
+  const newRouter = () => {
+    const warm = api.createWarmRouteFactory(require('../dist/node.cjs').createNodeRouteFactory());
+    warm.warm();
+    return warm;
+  };
+  let router = newRouter();
   const deadline = deadlineMs();
   return {
     api,
-    /** Lays one document out; rejects with a `TimeoutError` after the per-sheet deadline, then runs on with a fresh ELK worker. */
+    /** Lays one document out; rejects with a `TimeoutError` after the per-sheet deadline, then runs on with fresh ELK and route workers. */
     async layout(document) {
-      const running = api.layout(document, { createElkAttempt: () => elk.attempt(), createRouteAttempt: router });
+      const running = api.layout(document, { createElkAttempt: () => elk.attempt(), createRouteAttempt: router.attempt });
       running.catch(() => {}); // a layout that outlives its deadline must not become an unhandled rejection
       let timer;
       const expired = new Promise((_, reject) => {
@@ -62,13 +67,15 @@ export async function openPipeline() {
         if (error instanceof Error && error.name === 'TimeoutError') {
           elk.close();
           elk = newElk();
+          router.close();
+          router = newRouter();
         }
         throw error;
       } finally {
         clearTimeout(timer);
       }
     },
-    close: () => elk.close(),
+    close: () => { elk.close(); router.close(); },
   };
 }
 

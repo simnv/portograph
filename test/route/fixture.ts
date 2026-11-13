@@ -1,7 +1,8 @@
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createRouteFactory, type RouteWorker } from '../../src/route/worker.js';
+import { afterAll, afterEach } from 'vitest';
+import { createRouteFactory, createWarmRouteFactory, type CreateRouteAttempt, type RouteWorker } from '../../src/route/worker.js';
 
 const require = createRequire(import.meta.url);
 const Worker = require('web-worker') as new (url: string, options?: { type: 'module' }) => RouteWorker;
@@ -13,5 +14,9 @@ export const avoidAssets = {
   moduleUrl: pathToFileURL(avoidEntry).href,
   wasmUrl: join(dirname(avoidEntry), 'libavoid.wasm'),
 };
-export const createAvoidAttempt = createRouteFactory(avoidAssets, url => new Worker(url, { type: 'module' }));
 export const spawnAvoidWorker = (url: string): RouteWorker => new Worker(url, { type: 'module' });
+const warmRoute = createWarmRouteFactory(createRouteFactory(avoidAssets, spawnAvoidWorker));
+afterAll(() => warmRoute.close());
+afterEach(context => { if (context.task.result?.state === 'fail') warmRoute.close(); });
+export const createAvoidAttempt: CreateRouteAttempt = warmRoute.attempt;
+export const closeWarmAvoid = (): void => warmRoute.close();

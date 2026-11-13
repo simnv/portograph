@@ -20,8 +20,8 @@ export { checkpointsHonoured, crossedTiers, firstSkippedCheckpoint, simplify, sk
 export type { RoutedLinkPath, RouteRejection, Stitched } from './paths.js';
 export { lostPlannedRun, preRoute, reservationConflicts, reservedRuns, validateRoutedPaths } from './validate.js';
 export type { ReservationConflict } from './validate.js';
-export { createBrowserRouteFactory, createRouteFactory, RouteDeadlineError, RouteSession, ROUTE_BUDGET_MS, ROUTE_REQUEST, ROUTE_RESPONSE, systemRouteClock, withRouteSession } from './worker.js';
-export type { CreateRouteAttempt, RouteAssets, RouteAttempt, RouteClock, RouteWorker } from './worker.js';
+export { createBrowserRouteFactory, createRouteFactory, createWarmRouteFactory, RouteDeadlineError, RouteSession, ROUTE_BUDGET_MS, ROUTE_REQUEST, ROUTE_RESPONSE, systemRouteClock, withRouteSession } from './worker.js';
+export type { CreateRouteAttempt, RouteAssets, RouteAttempt, RouteClock, RouteWorker, WarmRouteFactory } from './worker.js';
 export { ALL_DIRECTIONS, DIRECTION_BITS } from './types.js';
 export type { RouteBatch, RouteCheckpoint, RouteConnector, RouteEndpoint, RoutePin, RouteShape, RoutedConnector } from './types.js';
 

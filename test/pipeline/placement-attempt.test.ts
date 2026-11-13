@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
@@ -14,20 +14,27 @@ const run = (name: string, attemptTrace?: (event: AttemptTraceEvent) => void): P
 const withoutRuntime = (model: LayoutModel): Partial<LayoutModel> => { const copy: Partial<LayoutModel> = { ...model }; delete copy.runtime; return copy; };
 
 describe('the 7f placement attempt', () => {
+  let plain!: LayoutModel;
+  let counters!: typeof attemptCounters;
+
+  beforeAll(async () => {
+    resetAttemptCounters();
+    plain = await run('three-canton-groups-close-up-to-a-band-gap');
+    counters = { ...attemptCounters };
+  }, 60000);
+
   beforeEach(() => { resetAttemptCounters(); });
 
-  it('counts its settle calls, centring passes, candidate copies and validation replays', async () => {
-    await run('three-canton-groups-close-up-to-a-band-gap');
-    expect(attemptCounters.settleCalls).toBeGreaterThan(0);
-    expect(attemptCounters.centringPasses).toBeGreaterThan(0);
-    expect(attemptCounters.candidateCopies).toBeGreaterThan(0);
-    expect(attemptCounters.validationReplays).toBeGreaterThan(0);
-  }, 60000);
+  it('counts its settle calls, centring passes, candidate copies and validation replays', () => {
+    expect(counters.settleCalls).toBeGreaterThan(0);
+    expect(counters.centringPasses).toBeGreaterThan(0);
+    expect(counters.candidateCopies).toBeGreaterThan(0);
+    expect(counters.validationReplays).toBeGreaterThan(0);
+  });
 
   it('traces each pass only when asked, and the trace leaves the layout unchanged', async () => {
     const events: AttemptTraceEvent[] = [];
     const traced = await run('three-canton-groups-close-up-to-a-band-gap', event => events.push(event));
-    const plain = await run('three-canton-groups-close-up-to-a-band-gap');
     expect(events.map(event => event.pass)).toEqual(expect.arrayContaining(['freeze-chords', 'group-label-bands', 'round-0:settle', 'held-axes', 'reseat-lanes', 'diagnostics']));
     for (const event of events) expect(event.revision).toMatch(/^[0-9a-f]{8}$/);
     expect(withoutRuntime(traced)).toEqual(withoutRuntime(plain));
