@@ -23,6 +23,7 @@ import { tierGapPlans } from './gap-plan.js';
 import { straightChordIds } from './read/overlay-straight.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { stemDepthsFault } from './sides-two.js';
+import { linkById } from './peers.js';
 
 /** A move shorter than this is not made: it would narrow nothing a reader sees, and every move costs a full set of guards. */
 export const CLOSE_UP_MIN = 1;
@@ -121,10 +122,11 @@ function reading(model: LayoutModel): Reading {
  */
 export function followingLanes(model: LayoutModel, group: LayoutGroup): string[] {
   const own = new Set<LayoutPort>(group.nodes.flatMap(node => model.nodes[node]!.ports));
+  const links = linkById(model);
   return model.lanes.filter(lane => {
     const owner = lane.owner;
     if (owner.kind !== 'link' || lane.kind === 'span' || lane.kind === 'perimeter') return false;
-    const link = model.links.find(item => item.id === owner.id);
+    const link = links.get(owner.id);
     return link !== undefined && ends(model, link).some(port => port !== undefined && own.has(port) && Math.abs(port.anchor!.x - lane.x) <= PLACEMENT_EPS);
   }).map(lane => lane.id);
 }

@@ -1,6 +1,7 @@
 import { portEndInsets } from './port-insets.js';
 import type { LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
+import { readCache } from '../model/read-cache.js';
 import { EPS } from '../geometry/planar.js';
 import { portAnchor } from '../geometry/index.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
@@ -12,6 +13,10 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { placementWarning } from './regions.js';
 import { nodeTier } from './read/tier.js';
 import { portId } from './skeleton-graph.js';
+import { attemptCounters } from './attempt-counters.js';
+import { linkById } from './peers.js';
+
+const parentFeedReadsCache = readCache('parentFeedReads');
 
 /**
  * A port with one link stands over the port it feeds (architecture ticket 15). Centring aligns the child side only: the row repack and the window
@@ -36,7 +41,7 @@ function faces(model: LayoutModel) {
     for (const end of [link.attachments.from, link.attachments.to]) count.set(portId(end), (count.get(portId(end)) ?? 0) + 1);
   }
   const isBar = (node: string): boolean => model.document.groups[model.document.nodes[node]!.group]!.shape === 'bar';
-  const linkOf = new Map(model.links.map(link => [link.id, link]));
+  const linkOf = linkById(model);
   /** The x range a port can take on its face without moving a neighbour or the body. */
   const room = (port: LayoutPort): { low: number; high: number } => {
     const node = model.nodes[port.ref.node]!, side = port.side!, box = node.bounds!, pitch = node.sidePitch![side]!, inset = portEndInsets(node, side, pitch);
@@ -124,8 +129,30 @@ export interface StepReader {
 /** The feeds of the centring steps, and the offset each group step centres on, read through `reader`. */
 function stepReadings(model: LayoutModel, steps: readonly { tier: number; authority: number }[], reader: StepReader) {
   const lists = steps.map(({ tier, authority }) => centringFeeds(model, tier, authority));
+  const feedStep = new Map<Feed, number>();
+  for (let at = 0; at < lists.length; at++) {
+    for (const feed of lists[at]!) if (!feedStep.has(feed)) feedStep.set(feed, at);
+  }
   const groupOf = (feed: Feed): string => model.document.nodes[feed.child.ref.node]!.group;
-  const stepOf = (feed: Feed): number => lists.findIndex(list => list.includes(feed));
+  const stepOf = (feed: Feed): number => feedStep.get(feed) ?? -1;
+  const feedMemo = new Map<number, Map<string, Feed[]>>();
+  const readFeeds = (at: number, group: string): Feed[] => {
+    attemptCounters.parentFeedReads.calls++;
+    let byGroup = feedMemo.get(at);
+    if (byGroup === undefined) {
+      byGroup = new Map<string, Feed[]>();
+      feedMemo.set(at, byGroup);
+    }
+    const cached = byGroup.get(group);
+    if (cached !== undefined) {
+      return parentFeedReadsCache.hit(model, cached, () => reader.feeds(steps[at]!.tier, lists[at]!, group));
+    }
+    parentFeedReadsCache.miss();
+    attemptCounters.parentFeedReads.computes++;
+    const own = reader.feeds(steps[at]!.tier, lists[at]!, group);
+    byGroup.set(group, own);
+    return own;
+  };
   /** Whether the step of the feed's group leaves the group where it is when its offset goes from `from` to `to`. */
   const takes = (feed: Feed, from: number, to: number): boolean => reader.takes(steps[stepOf(feed)]!.tier, lists[stepOf(feed)]!, groupOf(feed), from, to);
   /**
@@ -134,7 +161,7 @@ function stepReadings(model: LayoutModel, steps: readonly { tier: number; author
    */
   const offset = (feed: Feed, moved: ReadonlyMap<string, number>): number => {
     const at = stepOf(feed);
-    const own = reader.feeds(steps[at]!.tier, lists[at]!, groupOf(feed));
+    const own = readFeeds(at, groupOf(feed));
     const parents = new Map(own.map(item => [item.key, moved.get(item.key) ?? item.x]));
     const children = new Map(own.map(item => [portId(item.child.ref), moved.get(portId(item.child.ref)) ?? item.child.anchor!.x]));
     const mean = (values: Iterable<number>): number => { const xs = [...values]; return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
@@ -214,10 +241,17 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
   // Only the parent port moves: the child side is `alignSide`'s, which may also widen the body and so answers to the widening allowance.
   // A port with a corridor of its own stands where 7a put the corridor, and the next pass packs the ports next to a moved one again (`alignSide` places a
   // port that has no target of its own between the kept ones): a face that holds such a port, other than a mover, keeps its ports where they stand.
-  const corridor = new Set(model.lanes.filter(lane => lane.owner.kind === 'link').map(lane => (lane.owner as { id: string }).id));
+  const corridorPorts = new Set<string>();
+  for (const lane of model.lanes) {
+    if (lane.owner.kind !== 'link') continue;
+    const link = read.linkOf.get(lane.owner.id);
+    if (!link?.attachments) continue;
+    corridorPorts.add(portId(link.attachments.from));
+    corridorPorts.add(portId(link.attachments.to));
+  }
   const movingPorts = new Set(movers.map(item => item.parent));
   const held = (parent: LayoutPort): boolean => model.nodes[parent.ref.node]!.ports.some(port => port.side === parent.side && !movingPorts.has(port)
-    && model.links.some(link => corridor.has(link.id) && link.attachments && [link.attachments.from, link.attachments.to].some(end => portId(end) === portId(port.ref))));
+    && corridorPorts.has(portId(port.ref)));
   for (const { feed, parent, target, wall } of inFaceOrder(movers, item => item.parent, item => item.target)) {
     if (held(parent)) name(model, read.linkOf.get(feed.link)!, 'face');
     else if (read.reaches(parent, target)) {
@@ -270,9 +304,10 @@ export function seatLaneSources(model: LayoutModel, steps: readonly { tier: numb
     settle(final) {
       // A link whose corridor does not stand at both ports is a jog the layout knew about; the lane x is the feed x of the source. A link that stands has no
       // such finding left.
+      const finalLinks = linkById(final);
       for (const item of pending) {
         const lane = final.lanes.find(candidate => candidate.owner.kind === 'link' && candidate.owner.id === item.link);
-        if (lane === undefined || Math.abs(at(final, item.source) - lane.x) > 0.5 || Math.abs(at(final, item.child) - lane.x) > 0.5) name(final, final.links.find(link => link.id === item.link)!);
+        if (lane === undefined || Math.abs(at(final, item.source) - lane.x) > 0.5 || Math.abs(at(final, item.child) - lane.x) > 0.5) name(final, finalLinks.get(item.link)!);
         else final.diagnostics = final.diagnostics.filter(d => !(d.code === 'CENTRE_ALIGNMENT_INFEASIBLE' && d.message.startsWith(`${item.link} keeps a jog`) && d.owners?.some(owner => 'id' in owner && owner.id === item.link)));
       }
     },

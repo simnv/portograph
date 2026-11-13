@@ -27,7 +27,7 @@ import { freezePortTopology } from './mutation.js';
 import { busOfPort, busSide, meshBuses } from './bus.js';
 import { planTrunks } from './trunk.js';
 import { plannedTurns, turnOrder, turnScope, type PlannedTurn, type TurnPort } from './turn-order.js';
-import { routedLinksAt, unreservedPeers } from './peers.js';
+import { linkByEnds, linkById, routedLinksAt, unreservedPeers } from './peers.js';
 import { arrangeGroups, seatStaggerRows } from './stagger.js';
 import { reserveColumns, seatColumn } from './column-arrangement.js';
 import { ofKind } from './reservations.js';
@@ -160,11 +160,12 @@ export function gapPlan(model: LayoutModel, a: string, b: string): GapPlan | und
   // A link with a lane already has a reserved run of its own, and stage 8 stitches its gaps around
   // it in traversal order. Adding a second reservation to the same link is a question about how the
   // two compose that no fixture asks, so a gap holding one keeps its flat stems.
-  if (links.some(id => model.links.find(link => link.id === id)?.fixedSegments?.length)) return undefined;
+  const byId = linkById(model);
+  if (links.some(id => byId.get(id)?.fixedSegments?.length)) return undefined;
   // A link can be a leg in the gap on either side of a node, and one link holds one reserved run.
   // Which of the two slots it should take is a question about both gaps at once, so a link seen in
   // two of them declines this one and, by the same test, the other.
-  if (links.some(id => legGapCount(model, model.links.find(link => link.id === id)!) > 1)) return undefined;
+  if (links.some(id => legGapCount(model, byId.get(id)!) > 1)) return undefined;
   // A leg is reserved only where placement knows its whole shape. That holds when it jogs into the
   // neighbour's facing side, and when it wraps the neighbour to reach a port on the neighbour
   // itself: either way the neighbour bounds it. A link heading past the neighbour to somewhere else
@@ -369,14 +370,14 @@ export function sidePlan(model: LayoutModel, node: string, side: 'top' | 'bottom
   // at every stage from `bands` on. That is the `link.path` trap below, one layer up.
   const owning = model.groups[model.document.nodes[node]!.group];
   if (owning && carriesTitle(model, owning, side)) return undefined;
-  const peers = unreservedPeers(model), tier = (id: string): number | undefined =>
+  const peers = unreservedPeers(model), byId = linkById(model), tier = (id: string): number | undefined =>
     model.groups[model.document.nodes[id]!.group]?.tier;
   // One entry per port: its anchor along the side, and how far its legs travel along it.
   const legs = new Map<string, { at: number; low: number; high: number }>();
   for (const port of owner.ports) {
     if (port.side !== side || port.anchor === undefined) continue;
     for (const item of peers.get(key(port.ref)) ?? []) {
-      const link = model.links.find(entry => entry.id === item.link)!;
+      const link = byId.get(item.link)!;
       // A link a rule has already given geometry to reserves no stem here and is already an
       // obstacle `legClear` reads; it is passed over, so it neither takes a slot nor stops the side
       // from nesting. Read from `path.fixed`, never from the presence of a `path`: after stage 8
@@ -811,14 +812,13 @@ export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, rea
   const reserved = (side === 'top' || side === 'bottom') && model.reservations !== undefined ? ofKind(model.reservations, 'corridorSide') : [];
   const myTier = reserved.length ? model.groups[model.document.nodes[ref.node]?.group ?? '']?.tier : undefined;
   const refKey = reserved.length ? key(ref) : '';
+  let byEnds: ReadonlyMap<string, LayoutLink> | undefined;
   const coordinate = (peer: PortRef): number => {
     if (myTier !== undefined) {
       const peerTier = model.groups[model.document.nodes[peer.node]?.group ?? '']?.tier, peerKey = key(peer);
       if (peerTier !== undefined && peerTier !== myTier) {
         const low = Math.min(myTier, peerTier), high = Math.max(myTier, peerTier);
-        const link = model.links.find(item => item.attachments !== undefined
-          && ((key(item.attachments.from) === refKey && key(item.attachments.to) === peerKey)
-            || (key(item.attachments.to) === refKey && key(item.attachments.from) === peerKey)));
+        const link = (byEnds ??= linkByEnds(model)).get(refKey < peerKey ? `${refKey}\0${peerKey}` : `${peerKey}\0${refKey}`);
         // The nearest sub-tier between the two ends where stage 4 reserved the link's corridor side (ticket 72): the link leaves this face
         // toward that corridor, so the port sorts by its x. Sub-tiers between the ends are distinct, so the nearest is one.
         const between = link === undefined ? undefined : reserved.filter(item => item.payload.link === link.id && item.payload.tier > low && item.payload.tier < high)

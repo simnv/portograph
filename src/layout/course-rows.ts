@@ -1,8 +1,9 @@
 import type { PortRef } from '../model/document.js';
 import type { Side } from '../model/geometry.js';
-import type { Course, LayoutGroup, LayoutModel } from '../model/layout.js';
+import type { Course, LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
 import { measurePortPill } from '../text/index.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
+import { linkById } from './peers.js';
 
 /**
  * The padding row of a course (architecture ticket 15, Section 2): a horizontal run inside an end group's padding, on the edge that faces out of the
@@ -53,14 +54,14 @@ export function rowDepth(ref: PortRef): number {
 export interface EdgeRows { count: number; depth: number }
 
 /** The group a course end stands in, or undefined when the link or its attachment is unknown. */
-function endGroup(model: LayoutModel, course: Course, which: EndName): { group: string; ref: PortRef } | undefined {
-  const ref = model.links.find(link => link.id === course.link)?.attachments?.[which];
+function endGroup(model: LayoutModel, course: Course, which: EndName, links: ReadonlyMap<string, LayoutLink> = linkById(model)): { group: string; ref: PortRef } | undefined {
+  const ref = links.get(course.link)?.attachments?.[which];
   const document = ref === undefined ? undefined : model.document.nodes[ref.node];
   return ref === undefined || document === undefined ? undefined : { group: document.group, ref };
 }
 
 /** The group a bypass course stands in: the group of both its ends (a bypass is offered only for a link within one row group). */
-const bypassGroup = (model: LayoutModel, course: Course): string | undefined => endGroup(model, course, 'from')?.group;
+const bypassGroup = (model: LayoutModel, course: Course, links?: ReadonlyMap<string, LayoutLink>): string | undefined => endGroup(model, course, 'from', links)?.group;
 
 /** How far the padding row of a bypass stands from the nodes of its group: the stem, or beyond the deepest pill of a named port on that edge. */
 export function bypassDepth(model: LayoutModel, group: string, edge: 'top' | 'bottom'): number {
@@ -74,13 +75,14 @@ export function bypassDepth(model: LayoutModel, group: string, edge: 'top' | 'bo
  * bypasses of the same group and edge, in course order. The nesting of two bypasses of one edge is the judge's to find out; the offer makes one per edge.
  */
 export function bypassRowIndex(model: LayoutModel, course: Course): number {
-  const group = bypassGroup(model, course);
+  const links = linkById(model);
+  const group = bypassGroup(model, course, links);
   if (group === undefined || course.edge === undefined) return 0;
   let index = 0;
   for (const other of model.courses ?? []) {
     if (other.link === course.link) break;
-    if (other.kind === 'bypass') { if (other.edge === course.edge && bypassGroup(model, other) === group) index++; continue; }
-    for (const which of ['from', 'to'] as const) if (endMode(other, which) === 'padding' && other[which].face === course.edge && endGroup(model, other, which)?.group === group) index++;
+    if (other.kind === 'bypass') { if (other.edge === course.edge && bypassGroup(model, other, links) === group) index++; continue; }
+    for (const which of ['from', 'to'] as const) if (endMode(other, which) === 'padding' && other[which].face === course.edge && endGroup(model, other, which, links)?.group === group) index++;
   }
   return index;
 }
@@ -88,15 +90,18 @@ export function bypassRowIndex(model: LayoutModel, course: Course): number {
 /** The rows that the courses of the model put on the top and bottom edge of `group`. */
 export function paddingRows(model: LayoutModel, group: Pick<LayoutGroup, 'id'>): Partial<Record<'top' | 'bottom', EdgeRows>> {
   const rows: Partial<Record<'top' | 'bottom', EdgeRows>> = {};
-  for (const course of model.courses ?? []) {
-    if (course.kind !== 'bypass' || course.edge === undefined || bypassGroup(model, course) !== group.id) continue;
+  const courses = model.courses ?? [];
+  if (!courses.length) return rows;
+  const links = linkById(model);
+  for (const course of courses) {
+    if (course.kind !== 'bypass' || course.edge === undefined || bypassGroup(model, course, links) !== group.id) continue;
     const entry = rows[course.edge] ?? { count: 0, depth: 0 };
     entry.count++; entry.depth = Math.max(entry.depth, bypassDepth(model, group.id, course.edge));
     rows[course.edge] = entry;
   }
-  for (const course of model.courses ?? []) for (const which of ['from', 'to'] as const) {
+  for (const course of courses) for (const which of ['from', 'to'] as const) {
     if (endMode(course, which) !== 'padding') continue;
-    const found = endGroup(model, course, which), face = course[which].face as 'top' | 'bottom';
+    const found = endGroup(model, course, which, links), face = course[which].face as 'top' | 'bottom';
     if (found === undefined || found.group !== group.id) continue;
     const entry = rows[face] ?? { count: 0, depth: 0 };
     entry.count++; entry.depth = Math.max(entry.depth, rowDepth(found.ref));

@@ -1,7 +1,63 @@
 import type { PortRef } from '../model/document.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
+import { readCache } from '../model/read-cache.js';
 import { portId } from './skeleton-graph.js';
 const key = portId;
+
+const linkByIdReads = new WeakMap<readonly LayoutLink[], { count: number; index: ReadonlyMap<string, LayoutLink> }>();
+const linkByIdCache = readCache('linkById');
+
+function computeLinkById(links: readonly LayoutLink[]): ReadonlyMap<string, LayoutLink> {
+  const index = new Map<string, LayoutLink>();
+  for (const link of links) {
+    if (!index.has(link.id)) index.set(link.id, link);
+  }
+  return index;
+}
+
+/**
+ * The links of the model indexed by id, preserving first-match semantics on duplicate ids.
+ * Cached against the `model.links` array identity and length, and checked under `LayoutOptions.checkCaches`.
+ */
+export function linkById(model: LayoutModel): ReadonlyMap<string, LayoutLink> {
+  const known = linkByIdReads.get(model.links);
+  if (known !== undefined && known.count === model.links.length) {
+    return linkByIdCache.hit(model, known.index, () => computeLinkById(model.links));
+  }
+  linkByIdCache.miss();
+  const index = computeLinkById(model.links);
+  linkByIdReads.set(model.links, { count: model.links.length, index });
+  return index;
+}
+
+const linkByEndsReads = new WeakMap<readonly LayoutLink[], { count: number; index: ReadonlyMap<string, LayoutLink> }>();
+const linkByEndsCache = readCache('linkByEnds');
+
+function computeLinkByEnds(links: readonly LayoutLink[]): ReadonlyMap<string, LayoutLink> {
+  const index = new Map<string, LayoutLink>();
+  for (const link of links) {
+    if (!link.attachments) continue;
+    const from = key(link.attachments.from), to = key(link.attachments.to);
+    const pair = from < to ? `${from}\0${to}` : `${to}\0${from}`;
+    if (!index.has(pair)) index.set(pair, link);
+  }
+  return index;
+}
+
+/**
+ * The first link connecting each unordered pair of port keys (`a\0b` with `a <= b`).
+ * Cached against the `model.links` array identity and length, and checked under `LayoutOptions.checkCaches`.
+ */
+export function linkByEnds(model: LayoutModel): ReadonlyMap<string, LayoutLink> {
+  const known = linkByEndsReads.get(model.links);
+  if (known !== undefined && known.count === model.links.length) {
+    return linkByEndsCache.hit(model, known.index, () => computeLinkByEnds(model.links));
+  }
+  linkByEndsCache.miss();
+  const index = computeLinkByEnds(model.links);
+  linkByEndsReads.set(model.links, { count: model.links.length, index });
+  return index;
+}
 
 /**
  * Peer ports of every routed attachment that no rule has already promised geometry to, keyed by

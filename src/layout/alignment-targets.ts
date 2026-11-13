@@ -3,6 +3,7 @@ import type { Feed } from './read/feeds.js';
 import { faceKey } from './turn-order.js';
 import { portId } from './skeleton-graph.js';
 import { chordKind, isRoutedChord } from './frame-paths.js';
+import { linkById } from './peers.js';
 
 /**
  * The alignment-target record of the centring steps (architecture-2 ticket 66, `LayoutModel.alignmentTargets`). One producer writes it, the end of
@@ -79,11 +80,11 @@ const SIDES = ['top', 'bottom', 'left', 'right'] as const;
  * The links by id and the direct members, per link list: the writer runs after every step, and the list and the families do not change while
  * the steps run (a new list or a new family list is read again).
  */
-const indexes = new WeakMap<readonly LayoutLink[], { families: unknown; links: Map<string, LayoutLink>; direct: Set<string> }>();
-function linkIndex(model: LayoutModel): { links: Map<string, LayoutLink>; direct: Set<string> } {
+const indexes = new WeakMap<readonly LayoutLink[], { families: unknown; links: ReadonlyMap<string, LayoutLink>; direct: Set<string> }>();
+function linkIndex(model: LayoutModel): { links: ReadonlyMap<string, LayoutLink>; direct: Set<string> } {
   const known = indexes.get(model.links);
   if (known !== undefined && known.families === model.directFamilies) return known;
-  const fresh = { families: model.directFamilies, links: new Map(model.links.map(link => [link.id, link])), direct: directMembers(model) };
+  const fresh = { families: model.directFamilies, links: linkById(model), direct: directMembers(model) };
   indexes.set(model.links, fresh);
   return fresh;
 }
@@ -164,7 +165,7 @@ export function alignmentTargetsFault(model: LayoutModel): string | undefined {
   if (record === undefined) return undefined;
   if (!RECORD_STAGES.includes(model.stage)) return `a record at stage ${model.stage}`;
   if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
-  const links = new Map(model.links.map(link => [link.id, link]));
+  const links = linkById(model);
   const finite = (value: unknown): boolean => typeof value === 'number' && Number.isFinite(value);
   for (const [face, list] of Object.entries(record)) {
     const cut = face.lastIndexOf('|'), node = model.nodes[face.slice(0, cut)], side = face.slice(cut + 1);

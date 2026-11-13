@@ -35,6 +35,7 @@ import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
 import { chordKind, chordNearPairs, isRoutedChord, withSharedLinkKinds, withStepLinkKinds } from './frame-paths.js';
 import { readCache } from '../model/read-cache.js';
+import { linkById } from './peers.js';
 import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, tapTarget, owesVertical, sameDeclines, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
 import { faceKey } from './turn-order.js';
 import { untrimmedModel } from './end-trim.js';
@@ -509,10 +510,11 @@ function groupFeeds(model: LayoutModel, context: CentreContext, tier: number, li
     seats.set(child, best);
     for (const feed of candidates) if (feed.x !== best.x) remainder(feed);
   }
+  const links = linkById(model);
   const wanted = new Map<string, number>();
   for (const [child, feed] of seats) {
     // A solid block owns its face capacity; its feeds centre the row but never stretch a body.
-    if (model.links.find(link => link.id === feed.link)?.solidBlock !== true) wanted.set(child, feed.x);
+    if (links.get(feed.link)?.solidBlock !== true) wanted.set(child, feed.x);
   }
   return { own, wanted, yielded, seats, conflicts };
 }
@@ -647,7 +649,7 @@ function reserveParentSpreads(model: LayoutModel, context: CentreContext, column
  * Ordered by the x of the parent, then its id (R3).
  */
 function spreadPlans(model: LayoutModel, tier: number, authority: number): { node: string; feeds: Feed[] }[] {
-  const list = centringFeeds(model, tier, authority), links = new Map(model.links.map(link => [link.id, link]));
+  const list = centringFeeds(model, tier, authority), links = linkById(model);
   const groupOf = (node: string): string => model.document.nodes[node]!.group;
   const fixed = (node: string): boolean => { const group = groupOf(node); return model.document.groups[group]!.shape === 'bar' || Boolean(model.groups[group]!.flank) || isGridGroup(model, group); };
   const portFeeds = new Map<string, number>(), parentsOf = new Map<string, Set<string>>(), byParent = new Map<string, Feed[]>();
@@ -885,7 +887,7 @@ const fewerVerticals = (a: VerticalTally, b: VerticalTally): boolean => a[0] < b
  * needed (R3).
  */
 function verticalTally(model: LayoutModel, group: LayoutGroup, wanted: ReadonlyMap<string, number>, seats: ReadonlyMap<string, Feed>): (misses: ReadonlyMap<string, number>) => VerticalTally {
-  const links = new Map(model.links.map(link => [link.id, link]));
+  const links = linkById(model);
   const direct = directMembers(model);
   const owes = (feed: Feed): boolean => owesVertical(model, links.get(feed.link), direct);
   // A target a step declined is final for the placement attempt (architecture-2 ticket 66): it is counted neither before nor after, so the kept
@@ -1424,7 +1426,8 @@ function openLinks(model: LayoutModel, excuseChords: boolean): string[] {
   const links = new Set<string>();
   // The publication (`ahead` off) excuses a held cross chord; the producer form read here does not, so at the end of 7f (`excuseChords`) the same excuse
   // is applied. Earlier drafts have no settled link kinds, so they name every link and the end of 7f narrows the names.
-  const crossChord = (id: string): boolean => withSharedLinkKinds(() => { const link = model.links.find(item => item.id === id); return link !== undefined && isRoutedChord(model, link) && chordKind(model, link) === 'cross'; });
+  const byId = linkById(model);
+  const crossChord = (id: string): boolean => withSharedLinkKinds(() => { const link = byId.get(id); return link !== undefined && isRoutedChord(model, link) && chordKind(model, link) === 'cross'; });
   for (const item of found) { const link = centreItemLink(model, item); if (link !== undefined && !(excuseChords && crossChord(link))) links.add(link); }
   return [...links];
 }
@@ -1551,7 +1554,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   const drops = new Set(model.barDrops.map(drop => drop.link));
   const isBar = (node: string): boolean => model.document.groups[model.document.nodes[node]!.group]!.shape === 'bar';
   const result: string[] = [];
-  const byId = new Map(model.links.map(link => [link.id, link]));
+  const byId = linkById(model);
   // The replay reads placement geometry alone; nothing it calls reads the freeze block, and on a
   // large model that block is more than a third of the JSON the per-group copy below would carry.
   const { freeze: _frozen, ...replayed } = model;
