@@ -14,7 +14,8 @@ import { withoutJointOrder } from './joint-off.js';
  * from its input with it. A node at one end of a transit link gives back only with the other end, so its corridor can follow it in 7f.
  */
 const source = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
-const run = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const runText = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (name: string): Promise<LayoutModel> => runText(source(name));
 const bends = (model: LayoutModel): number => { const counts = score(model).snapshot.counts; return (counts.routed?.turns ?? 0) + (counts.overlay?.turns ?? 0); };
 const failing = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed && gate.severity === 'error').map(([id]) => id).sort();
 const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string => {
@@ -104,8 +105,13 @@ describe('the three regression classes of a per-step decline', () => {
   }, 120000);
 
   it('pass order: widened-child-packs-tier and a-hub-tiers-fan keep the growth a later pass completes (bends 2 and 6)', async () => {
-    for (const [name, count] of [['widened-child-packs-tier', 2], ['a-hub-tiers-fan-draws-straight-and-crosses-itself', 6]] as const) {
-      const model = await run(name);
+    // Under the alignment cap (ADR-0027) `w1` of `widened-child-packs-tier` stays 52 px wide: its two parents stand more than five times its need
+    // apart, so no growth happens and the sheet has 3 bends (a side entry). The premise, a child that the passes widen, is rebuilt with a
+    // label that makes the body need more: `w1` then stands 272 px wide over both parents, with the 2 bends the test pinned.
+    const widenedChild = source('widened-child-packs-tier').replace('label: "w1"', 'label: "w1 route reflector wide"');
+    expect(widenedChild).not.toBe(source('widened-child-packs-tier'));
+    for (const [name, count, text] of [['widened-child-packs-tier', 2, widenedChild], ['a-hub-tiers-fan-draws-straight-and-crosses-itself', 6, source('a-hub-tiers-fan-draws-straight-and-crosses-itself')]] as const) {
+      const model = await runText(text);
       expect(model.givenBack, name).toBeUndefined();
       expect(bends(model), name).toBe(count);
     }
