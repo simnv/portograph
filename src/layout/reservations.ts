@@ -28,10 +28,10 @@ export interface ReservationPayload {
   /** The link is a spanning chord. */
   spanChord: { link: string };
   /**
-   * Stage 5 orders the ports of a face by the planned first turn of their links. `except` names the faces (`node|side`) that keep far-end order: a face that holds a
-   * held routed chord (`docs/design/turn-order.md`, Section 3), read from the baseline's `frozenChords` when the round reserved it.
+   * Stage 5 orders the ports of a face by the planned first turn of their links. `except` names the faces (`node|side`) that keep far-end order in a run with either scope:
+   * a face that holds a held routed chord on the baseline of the turn round (`docs/design/turn-order.md`, Section 3).
    */
-  turnOrder: { scope: { all: true; except?: readonly string[] } | { links: readonly string[] }; requireChanged: boolean };
+  turnOrder: { scope: { all: true } | { links: readonly string[] }; except?: readonly string[]; requireChanged: boolean };
   /** A trunk join (or every trunk join) that placement declines. */
   trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
   /** A move keeps every routed port of a member row's facing edge from standing deeper in a riser keep-out than it did (mesh-bus.md, section 11.5). */
@@ -132,16 +132,10 @@ export function reserve(ledger: Reservations, entries: Reservations): Reservatio
     } else if (old.kind === 'course' && entry.kind === 'course') {
       if (!same(old.payload.course, entry.payload.course)) throw new Error(`Reservation ${entry.id} conflicts with a course the ledger holds`);
     } else if (old.kind === 'turnOrder' && entry.kind === 'turnOrder') {
-      if ('links' in old.payload.scope && 'links' in entry.payload.scope) {
-        const links = [...new Set([...old.payload.scope.links, ...entry.payload.scope.links])];
-        result[at] = { ...old, payload: { scope: { links }, requireChanged: old.payload.requireChanged || entry.payload.requireChanged } };
-      } else {
-        const except = 'except' in old.payload.scope || 'except' in entry.payload.scope
-          ? [...new Set([...('except' in old.payload.scope ? old.payload.scope.except ?? [] : []), ...('except' in entry.payload.scope ? entry.payload.scope.except ?? [] : [])])].sort() : undefined;
-        const requireChanged = old.payload.requireChanged || entry.payload.requireChanged;
-        if (except !== undefined || requireChanged !== old.payload.requireChanged)
-          result[at] = { ...old, payload: { scope: except === undefined || !('all' in old.payload.scope) ? old.payload.scope : { all: true, except }, requireChanged } };
-      }
+      const except = [...new Set([...(old.payload.except ?? []), ...(entry.payload.except ?? [])])].sort();
+      const requireChanged = old.payload.requireChanged || entry.payload.requireChanged;
+      const scope = 'links' in old.payload.scope && 'links' in entry.payload.scope ? { links: [...new Set([...old.payload.scope.links, ...entry.payload.scope.links])] } : old.payload.scope;
+      result[at] = { ...old, payload: { scope, ...(except.length > 0 ? { except } : {}), requireChanged } };
     }
     // Every other kind is idempotent: the first entry stands.
   }
@@ -254,22 +248,23 @@ export function corridorSideOf(ledger: Reservations | undefined, link: string, t
   return ofKind(ledger ?? NO_RESERVATIONS, 'corridorSide').find(({ payload }) => payload.link === link && payload.tier === tier)?.payload;
 }
 
-/** Whether every face takes the turn order, and the links whose faces take it when not every face does. */
+/** Whether every face takes the turn order, the links whose faces take it when not every face does, and the faces that keep far-end order in either case. */
 export function turnOf(ledger: Reservations): { all: boolean; links: string[]; except: string[]; requireChanged: boolean } {
   let all = false, requireChanged = false;
   const links: string[] = [], except = new Set<string>();
   for (const { payload } of ofKind(ledger, 'turnOrder')) {
-    if ('all' in payload.scope) { all = true; for (const face of payload.scope.except ?? []) except.add(face); } else for (const id of payload.scope.links) if (!links.includes(id)) links.push(id);
+    if ('all' in payload.scope) all = true; else for (const id of payload.scope.links) if (!links.includes(id)) links.push(id);
+    for (const face of payload.except ?? []) except.add(face);
     requireChanged ||= payload.requireChanged;
   }
   return { all, links, except: [...except].sort(), requireChanged };
 }
-/** `except`: the faces (`node|side`) that keep far-end order although every other face takes the turn order; only read with `turn`. */
+/** `except`: the faces (`node|side`) that keep far-end order although the other faces of the scope take the turn order; kept on every entry that the call makes. */
 export function turnEntries(turn: boolean, links: readonly string[], requireChanged: boolean, producer: RoundId, revision: number, except: readonly string[] = []): Reservations {
-  const command = { kind: 'command' as const, id: 'turn-order' };
+  const command = { kind: 'command' as const, id: 'turn-order' }, faces = except.length > 0 ? { except: [...except].sort() } : {};
   return [
-    ...(turn ? [reservation('turnOrder', command, 'all', producer, revision, { scope: except.length > 0 ? { all: true, except: [...except].sort() } : { all: true }, requireChanged })] : []),
-    ...(links.length > 0 ? [reservation('turnOrder', command, 'links', producer, revision, { scope: { links: [...links] }, requireChanged: false })] : []),
+    ...(turn ? [reservation('turnOrder', command, 'all', producer, revision, { scope: { all: true }, ...faces, requireChanged })] : []),
+    ...(links.length > 0 ? [reservation('turnOrder', command, 'links', producer, revision, { scope: { links: [...links] }, ...faces, requireChanged: false })] : []),
   ];
 }
 
@@ -433,9 +428,9 @@ function shapeFailure(entry: unknown): string | undefined {
     case 'spanChord': return isString(payload['link']) ? undefined : bad;
     case 'turnOrder': {
       const scope = payload['scope'];
-      const scopeOk = isObject(scope) && ((scope['all'] === true && (scope['except'] === undefined || (Array.isArray(scope['except']) && scope['except'].every(isString))))
-        || (Array.isArray(scope['links']) && scope['links'].every(isString)));
-      return scopeOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
+      const scopeOk = isObject(scope) && (scope['all'] === true || (Array.isArray(scope['links']) && scope['links'].every(isString)));
+      const exceptOk = payload['except'] === undefined || (Array.isArray(payload['except']) && payload['except'].every(isString));
+      return scopeOk && exceptOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
     }
     case 'rowOrder': {
       const order = payload['order'], one = isString(payload['cell']) !== isString(payload['frame']);
@@ -514,8 +509,8 @@ export function validateReservations(model: LayoutModel): void {
     // The turn order of the ledger is the model's: every face, or the faces of the reserved links, or none.
     const turn = turnOf(ledger);
     if ((turn.all || turn.links.length > 0) !== (model.turnOrder === true)) throw new Error('The reserved turn order differs from the turn order of the model');
-    if (!turn.all && !same(turn.links, model.turnLinks ?? [])) throw new Error('The reserved turn links differ from the turn links of the model');
-    if (!same(turn.except, model.turnExcept ?? [])) throw new Error('The reserved far-end faces differ from the far-end faces of the model');
+    if (!same(turn.all ? [] : turn.links, model.turnLinks ?? [])) throw new Error('The reserved turn links differ from the turn links of the model');
+    if (!same(turn.except, model.turnExcept ?? []) || (model.turnExcept !== undefined && model.turnOrder !== true)) throw new Error('The reserved far-end faces differ from the far-end faces of the model');
   }
   // A floor is a promise about the placed geometry, which later stages may only grow, and a feed order a promise no later stage may turn;
   // the kinds below are checked on every restored stage.

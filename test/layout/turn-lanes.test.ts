@@ -38,6 +38,19 @@ describe('stage 7a and the turn order', () => {
     expect((after.freeze!.turnOrder ?? []).length).toBeGreaterThan((before.freeze!.turnOrder ?? []).length);
   }, 60000);
 
+  it('refuses a later rule that reorders a face the record holds, and records the ports of each face', async () => {
+    const after = withLayoutMutation(await atRows(true), 'lanes', allocateLanes);
+    const face = after.freeze!.turnOrder![0]!;
+    const now = (model: LayoutModel) => model.nodes[face.node]!.ports.filter(port => port.side === face.side).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.ref);
+    expect(face.ports).toEqual(now(after));
+    const swap = (model: LayoutModel): void => {
+      const [a, b] = model.nodes[face.node]!.ports.filter(port => port.side === face.side).sort((x, y) => x.engineOrder! - y.engineOrder!);
+      [a!.engineOrder, b!.engineOrder] = [b!.engineOrder!, a!.engineOrder!];
+      [a!.anchor, b!.anchor] = [b!.anchor!, a!.anchor!];
+    };
+    expect(() => withLayoutMutation(after, 'flanks', swap)).toThrow(/Frozen turn order|cannot reorder|reorder/);
+  }, 60000);
+
   it('refuses any other reorder in 7a', async () => {
     const before = await atRows(true);
     const swap = (model: LayoutModel): void => {
@@ -108,7 +121,9 @@ describe('stage 7a and the turn order', () => {
     const settled = build();
     orderPortsByLanes(settled, 6, orderOf);
     expect([reversed(settled, 'n1'), reversed(settled, 'n2')]).toEqual([true, true]);
-    expect(settled.freeze!.turnOrder).toEqual([{ node: 'n1', side: 'bottom' }, { node: 'n2', side: 'bottom' }]);
+    expect(settled.freeze!.turnOrder!.map(face => [face.node, face.side])).toEqual([['n1', 'bottom'], ['n2', 'bottom']]);
+    // The record keeps the ports of each face in the order the pass left them.
+    expect(settled.freeze!.turnOrder!.map(face => face.ports.map(ref => ref.ordinal))).toEqual([[2, 1], [2, 1]]);
     const bounded = build();
     orderPortsByLanes(bounded, 1, orderOf);
     expect([reversed(bounded, 'n1'), reversed(bounded, 'n2')]).toEqual([false, false]);

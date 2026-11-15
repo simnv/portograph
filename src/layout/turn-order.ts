@@ -37,7 +37,7 @@ export function turnGroup(port: TurnPort): 1 | 2 | 3 | 4 | 5 {
 }
 
 /**
- * The rank of a port on its face, the one function that the comparator and G5 share. Low-turn `return` (1), low-turn `onward` (2), no turn (3), high-turn `onward` (4),
+ * The rank of a port on its face, the one function that the comparator and the turn offer share. Low-turn `return` (1), low-turn `onward` (2), no turn (3), high-turn `onward` (4),
  * high-turn `return` (5). A port with no turn that stands next to low-turn returns (overlay brackets) keeps the place ticket 15 gives it: above them (rank 0) when its far
  * end lies before their least reach, else in group 3.
  */
@@ -203,7 +203,7 @@ export function plannedTurns(model: LayoutModel, reservations: boolean = model.t
 }
 
 /**
- * The first turn of a published path at one end (Section 7): the first run along the face, its direction, the direction of the run after it (back to the node's
+ * The first turn of a published path at one end (Section 8, `PORT_TURN_MISSED`): the first run along the face, its direction, the direction of the run after it (back to the node's
  * side of the face line, or on), and the coordinate where it ends. A path with no run along the face, or a diagonal, has no turn.
  */
 export function publishedTurn(link: LayoutLink, which: 'from' | 'to', side: Side): PlannedTurn | undefined {
@@ -250,21 +250,70 @@ export function turnMissed(model: LayoutModel): Diagnostic[] {
 }
 
 /**
- * The faces that hold a held routed chord, by `faceKey` (docs/design/turn-order.md, Section 3): a face with a straight link takes far-end order. One reader of the
- * recorded decision (`frozenChords`, R1) for the turn round that reserves the faces and for G5 that judges them; nothing here derives a chord again. Absent
- * `frozenChords` (a model that is not frozen yet) holds none.
+ * Whether a link is held straight: a held routed chord (`frozenChords`, decided at the start of 7f) or a level straight link that the rows rule pinned
+ * (`expectedLevelPath`: one fixed segment, no `straight` flag). Both stand as one segment from their port, so neither has a first turn.
  */
-export function chordFaces(model: LayoutModel): Set<string> {
-  const faces = new Set<string>(), held = new Set(model.frozenChords ?? []);
-  if (held.size === 0) return faces;
+export function heldStraight(model: LayoutModel, link: LayoutLink): boolean {
+  if ((model.frozenChords ?? []).includes(link.id)) return true;
+  return link.layer === 'routed' && link.technique === 'straight' && link.path?.fixed === true && link.path.segments.length === 1;
+}
+
+/**
+ * The faces that hold a held straight link, by `faceKey` (docs/design/turn-order.md, Section 3), less the faces that the model's turn record already holds: a face that the
+ * turn order took keeps its recorded order, whatever it holds. The turn round reads it on its baseline to leave those faces out of its offer and to reserve them for far-end
+ * order. Reads stored decisions only (`frozenChords`, the pinned paths); nothing here derives a chord again (R1).
+ */
+export function straightFaces(model: LayoutModel): Set<string> {
+  const faces = new Set<string>();
   for (const link of model.links) {
-    if (!held.has(link.id) || link.attachments === undefined) continue;
+    if (link.attachments === undefined || !heldStraight(model, link)) continue;
     for (const ref of [link.attachments.from, link.attachments.to]) {
       const side = findPort(model, ref)?.side;
       if (side !== undefined) faces.add(faceKey(ref.node, side));
     }
   }
+  for (const face of model.freeze?.turnOrder ?? []) faces.delete(faceKey(face.node, face.side));
   return faces;
+}
+
+/** The ports of a face in the order they stand: by anchor along the face (`anchor`, what G5 reads at publication) or by engine order, with a total order on ties. */
+export function faceSequence(model: LayoutModel, node: string, side: Side, by: 'anchor' | 'engine'): PortRef[] | undefined {
+  const ports = model.nodes[node]?.ports.filter(port => port.side === side);
+  if (ports === undefined) return undefined;
+  const along = (port: LayoutPort): number | undefined => (by === 'anchor' && port.anchor !== undefined ? (horizontalFace(side) ? port.anchor.x : port.anchor.y) : undefined);
+  return [...ports].sort((a, b) => (along(a) ?? 0) - (along(b) ?? 0) || (a.engineOrder ?? 0) - (b.engineOrder ?? 0)).map(port => ({ ...port.ref }));
+}
+
+/** The record of one face of the turn round: the ports of the face in the order the round left them. */
+export function turnRecord(model: LayoutModel, node: string, side: Side): { node: string; side: Side; ports: PortRef[] } {
+  return { node, side, ports: faceSequence(model, node, side, 'engine') ?? [] };
+}
+
+/**
+ * What the record of the turn round (`freeze.turnOrder`, `freeze.turnExcept`) cannot back, by face (R5: a validator trusts the stored record and the geometry, nothing
+ * a diagnostic says). A recorded face needs a model that carries the turn order, a node and a side that exist, a place in the scope of the run (not a face reserved for
+ * far-end order, `turnExcept`, and a face of a `turnLinks` run), the ports the model holds on it, and those ports in the recorded order: by anchor along the face when
+ * `by` is `anchor`, else by engine order. A scope the freeze did not record, or recorded differently, is a fault of the node-less face `*`.
+ */
+export function turnRecordFaults(model: LayoutModel, by: 'anchor' | 'engine'): { node: string; side: Side; why: string }[] {
+  const freeze = model.freeze, faults: { node: string; side: Side; why: string }[] = [];
+  if (freeze === undefined) return faults;
+  if (freeze.turnOrder === undefined && freeze.turnExcept === undefined) return faults;
+  const scope = JSON.stringify(freeze.turnExcept ?? []) === JSON.stringify(model.turnExcept ?? []);
+  const seen = new Set<string>();
+  for (const face of freeze.turnOrder ?? []) {
+    const fault = (why: string): void => { faults.push({ node: face.node, side: face.side, why }); };
+    const key = faceKey(face.node, face.side);
+    if (model.turnOrder !== true) { fault('the model does not carry the turn order'); continue; }
+    if (!scope) { fault('the recorded scope differs from the scope of the model'); continue; }
+    if (!['top', 'right', 'bottom', 'left'].includes(face.side) || model.nodes[face.node] === undefined) { fault('the face does not exist'); continue; }
+    if (seen.has(key)) { fault('the face is recorded twice'); continue; }
+    seen.add(key);
+    if (!turnScope(model, face.node, face.side)) { fault('the face is outside the scope of the turn order'); continue; }
+    const now = faceSequence(model, face.node, face.side, by)!.map(ref => portId(ref));
+    if (!Array.isArray(face.ports) || JSON.stringify(face.ports.map(ref => portId(ref))) !== JSON.stringify(now)) fault('the ports do not stand in the recorded order');
+  }
+  return faults;
 }
 
 /**
@@ -346,5 +395,5 @@ export function orderPortsByLanes(model: LayoutModel, rounds: number = LANE_PASS
   for (const node of orderedNodeIds(model.document)) for (const side of ['bottom', 'right', 'top', 'left'] as const) {
     if (model.nodes[node]!.ports.some(port => port.side === side && port.engineOrder !== before.get(port))) faces.push({ node, side });
   }
-  if (faces.length > 0) model.freeze!.turnOrder = [...(model.freeze!.turnOrder ?? []), ...faces];
+  if (faces.length > 0) model.freeze!.turnOrder = [...(model.freeze!.turnOrder ?? []), ...faces.map(face => turnRecord(model, face.node, face.side))];
 }

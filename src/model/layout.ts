@@ -968,8 +968,13 @@ export interface LayoutFreeze {
   courses?: Course[];
   /** Present only when a span round placed a spanning chord (architecture ticket 22): the ids of the links that carry `spanHint`, in link order. A restore checks it against the model. */
   spans?: string[];
-  /** Present only when a turn-ordered run changed the order of a face (architecture ticket 24): node and side of each such face, in node and side order. G5 judges these faces by the turn order. */
-  turnOrder?: { node: string; side: Side }[];
+  /**
+   * Present only when a turn-ordered run changed the order of a face (architecture ticket 24): node, side and the ports of each such face in the order the round left
+   * them, in node and side order. G5 accepts these faces only while their ports stand in that order; a restore and every later rule check the same.
+   */
+  turnOrder?: { node: string; side: Side; ports: PortRef[] }[];
+  /** Present only when the run carried faces reserved for far-end order (`LayoutModel.turnExcept`): the scope the record of `turnOrder` was taken under. */
+  turnExcept?: string[];
   placement?: PlacementSnapshot;
 }
 

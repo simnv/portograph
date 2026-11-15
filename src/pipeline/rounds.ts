@@ -21,7 +21,8 @@ import { bands } from '../layout/bands.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
 import { tierGapPlans } from '../layout/gap-plan.js';
 import { judgeTurnTrial, measureTurnOrder } from '../layout/turn-measure.js';
-import { pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
+import { straightFaces } from '../layout/turn-order.js';
+import { pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import type { ReservationFailure } from '../layout/reservations.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute } from '../route/plan.js';
@@ -311,6 +312,7 @@ export const course: Round<CourseOffer> = {
     // A node whose end leaves by a U part is not pinned: its face moves from a lateral side to the bottom, and its content grows with it (P9 asks for few moves, not for none).
     pinMovedEnds(env, s, nodeFloors, o.courses, true);
     // A row bypass (ticket 24, phase 5) puts the closing link in the slot on its turn side: the trial carries the turn order, or its stems would cross the straight link of the gap.
+    // Its scope is the faces of the bypass link, which hold that straight row link by construction, so it reserves no face for far-end order (the kept ledger's `except` still stands).
     const bypassLinks = o.courses.filter(item => item.kind === 'bypass').map(item => item.link);
     return addReservations(s.kept, [...floorEntries(nodeFloors, 'course', env.placements),
       ...courseEntries(o.courses, promisedTurnsOf(o.promised), 'course', env.placements),
@@ -582,8 +584,12 @@ export const overlay: Round<OverlayOffer> = {
     const nodeFloors = keptFloors(env, s);
     // A node whose overlay end changes face keeps its size (P9): the capacity estimate of the face it leaves must not re-size it.
     pinMovedEnds(env, s, nodeFloors, o.offer.courses, false);
+    // A kept turn order reaches this trial with the faces that hold a straight link on the baseline it reads now: the kept trial's own chords stand on faces that may
+    // not be in the record, and those keep far-end order here too (docs/design/turn-order.md, Section 3). A face the record holds keeps its recorded order.
+    const turn = turnOf(s.kept), straight = [...straightFaces(s.base)];
     return addReservations(s.kept, [...floorEntries(nodeFloors, 'overlay', env.placements),
-      ...courseEntries(o.offer.courses, promisedTurnsOf(o.offer.promised), 'overlay', env.placements)]);
+      ...courseEntries(o.offer.courses, promisedTurnsOf(o.offer.promised), 'overlay', env.placements),
+      ...(turn.all || turn.links.length > 0 ? turnEntries(turn.all, turn.all ? [] : turn.links, false, 'overlay', env.placements, straight) : [])]);
   },
   holdsAt7e(_env, _s, _o, ledger, trial7e) {
     const broken = holds(ledger, trial7e);

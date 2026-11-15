@@ -7,7 +7,7 @@ import { portId as portKey } from './skeleton-graph.js';
 import { farCoordinate } from './peers.js';
 import { pairedFaceKey } from './parallel-sets.js';
 import { findPort } from './row-paths.js';
-import { chordFaces, faceKey as faceName, plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
+import { faceKey as faceName, plannedTurns, straightFaces, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { added as namesAdded, constraintFindings, gateFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { compare, lazyCount, profiles, reading, routedBends, type Reading } from './objective.js';
 import type { ScoreCounts } from '../score/types.js';
@@ -20,7 +20,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 export interface TurnOffer {
   /** The faces whose turn order differs from the order they have, in node and side order. Empty: no offer. */
   faces: { node: string; side: Side }[];
-  /** The faces that hold a held routed chord on the baseline, by `faceKey`: they keep far-end order, so no offer names them and the trial reserves them (`turnExcept`). */
+  /** The faces that hold a held straight link on the baseline and were not turned by it, by `faceKey`: they keep far-end order, so no offer names them and the trial reserves them (`turnExcept`). */
   except: string[];
 }
 
@@ -32,7 +32,7 @@ export interface TurnOffer {
  * authored port is never part of the comparison.
  */
 export function measureTurnOrder(base: LayoutModel): TurnOffer {
-  const offer: TurnOffer = { faces: [], except: [...chordFaces(base)].sort() };
+  const offer: TurnOffer = { faces: [], except: [...straightFaces(base)].sort() };
   const straight = new Set(offer.except);
   const turns = plannedTurns(base, true), plain = plannedTurns(base, false);
   // Stage 5's face key: a facing pair's shared key, else the far coordinate (`pairedFaceKey`, R1).

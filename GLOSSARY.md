@@ -43,7 +43,8 @@ The face of a shared named port's pill that one link end meets when it differs f
 **Far-end order**:
 The order of the ports on one node face by the positions of the far ends of their links.
 Port names do not set it; an authored order does.
-A face with a straight link takes it; a face with only orthogonal links takes the order of their first turns.
+A face that holds a straight link (a held routed chord or a pinned level link) before the turn round takes it, and the round never reorders that face.
+A face that the turn round ordered keeps the first-turn order the layout recorded for it, and G5 accepts that order while the record holds.
 
 **Link**:
 A connection between two ports, with a class and an optional route override.

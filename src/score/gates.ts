@@ -23,7 +23,7 @@ import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../
 import { pathEnd } from '../layout/path-end.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { diagonalMayCross, linkFreeMargin } from '../layout/diagonal-text.js';
-import { faceKey } from '../layout/turn-order.js';
+import { faceKey, turnRecordFaults } from '../layout/turn-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -107,9 +107,10 @@ function separationGate(model: LayoutModel, fail: (id: GateId, code: string, ele
  * G5 `port-order` / `author-port-order`: on each side, ports order by their far ends unless authored. The gate reads it, and so does
  * placement, which asks whether a move of a group turns the far ends of a port over (ticket 77): one predicate.
  *
- * A face that the turn round placed (`freeze.turnOrder`, docs/design/turn-order.md, Section 7) is accepted as recorded: the layout decided its order from the planned first
- * turns of its links and kept it only because the published result was better, so the gate reads that record and derives the decision no more (R1). Every other face,
- * whatever links it holds, is judged by its far-end ranges.
+ * A face that the turn round recorded (`freeze.turnOrder`, docs/design/turn-order.md, Section 7) is judged by that record: the layout decided its order from the planned
+ * first turns of its links and kept it only because the published result was better, so the gate does not derive the decision again (R1). It accepts the face while the record
+ * holds (a model that carries the turn order, a face inside the scope, the ports on it, standing in the recorded order, by anchor) and fails it, whatever the far ends say,
+ * when it does not (R5: a forged or stale record buys nothing). Every other face, whatever links it holds, is judged by its far-end ranges.
  */
 export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], routedLinks: ReadonlySet<LayoutLink>,
   fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
@@ -119,6 +120,9 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
   // missing contributes nothing, as before.
   const farAnchors = new Map<string, Point[]>();
   const turned = new Set((model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)));
+  for (const fault of turnRecordFaults(model, 'anchor')) {
+    if (nodes.some(item => item.id === fault.node)) fail('G5', 'port-order', [fault.node], `The ${fault.side} face is recorded as taken by the turn round, but ${fault.why}`);
+  }
   for (const link of model.links) {
     if (!routedLinks.has(link)) continue;
     const ends = endpoints(link);
