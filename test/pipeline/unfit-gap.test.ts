@@ -53,8 +53,9 @@ describe('a gap the plan does not fit is left to the router with a diagnostic (t
     const published = await publish('a-claim-lies-on-a-cover-edge');
     expect(published.diagnostics.filter(item => item.code === 'TIER_GAP_PART_UNFIT').map(item => item.message)).toEqual([
       'the tier gap above tier 4 asks 14.50 px more than it has; its parts are left to the router.',
-      // Ticket 65: the kept verticals leave fewer parts in the lower gap (22.50 px asked before).
-      'the tier gap above tier 5 asks 11.00 px more than it has; its parts are left to the router.',
+      // Ticket 65: the kept verticals left fewer parts in the lower gap (22.50 px asked before, 11.00 after). Under the alignment cap (ADR-0027) the
+      // bodies stand where the seat puts them and the lower gap asks 22.50 px again. The pin proves that an unfit gap is named with its ask; the ask is the plan's.
+      'the tier gap above tier 5 asks 22.50 px more than it has; its parts are left to the router.',
     ]);
     expect(removalsAreNamed(published)).toBe(true);
     expect(published.links.filter(item => item.removed !== true).every(item => item.path !== undefined)).toBe(true);
@@ -70,14 +71,15 @@ describe('a gap the plan does not fit is left to the router with a diagnostic (t
     expect(removalsAreNamed(published)).toBe(true);
   }, 120000);
 
-  it('publishes a gap that asks 164 px more than it has, with the same guarantees', async () => {
+  it('publishes a gap that asks 170 px more than it has, with the same guarantees', async () => {
     // Ticket 25 (`a-band-holds-the-group-that-set-its-edge`). Planned, link-22 is claimed tip to tip and never routed; in a gap left to
     // the router it is routed among the completed covers of its neighbours. The gap above tier 3 grows the 23 px the old measure gave
     // it (the plan asks for 198.5 more).
     growth.tiers = new Map([[3, 23]]);
     const published = await layout(parse(orthogonalLinks(fixture('a-band-holds-the-group-that-set-its-edge'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(published.diagnostics.filter(item => item.code === 'TIER_GAP_PART_UNFIT').map(item => item.message))
-      .toEqual(['the tier gap above tier 3 asks 164.00 px more than it has; its parts are left to the router.']);
+      // 164 px before the alignment cap (ADR-0027), 170 px with the bodies as the seat stands them: the ask is the plan's, the gap is named with it.
+      .toEqual(['the tier gap above tier 3 asks 170.00 px more than it has; its parts are left to the router.']);
     expect(removalsAreNamed(published)).toBe(true);
     expect(published.links.filter(item => item.removed !== true).every(item => item.path !== undefined)).toBe(true);
   }, 120000);
