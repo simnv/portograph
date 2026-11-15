@@ -1,0 +1,30 @@
+# Expected (ADR-0025, dense-16x9 ticket 03, review F2): a plain row staggers at the default 16:9 aim, with no `layout.aspect`.
+# One switch feeds ten servers. One line is wider than 16:9 and two lines bring the stage-5 canvas nearer it and make it smaller, so `leaves`
+# stands on two lines (`groupArrangements`: `stagger`), every drop straight, crossings 0, bends 0, G1-G9 pass.
+portograph: 2
+groups:
+  feeds: { tier: 0 }
+  leaves: { tier: 1 }
+nodes:
+  p: { group: feeds, class: switch }
+  n1: { group: leaves, class: server }
+  n2: { group: leaves, class: server }
+  n3: { group: leaves, class: server }
+  n4: { group: leaves, class: server }
+  n5: { group: leaves, class: server }
+  n6: { group: leaves, class: server }
+  n7: { group: leaves, class: server }
+  n8: { group: leaves, class: server }
+  n9: { group: leaves, class: server }
+  n10: { group: leaves, class: server }
+links:
+  - [p, n1]
+  - [p, n2]
+  - [p, n3]
+  - [p, n4]
+  - [p, n5]
+  - [p, n6]
+  - [p, n7]
+  - [p, n8]
+  - [p, n9]
+  - [p, n10]

@@ -1,5 +1,5 @@
 import type { Endpoint, GroupContent, Meta, NormalisedDocument, NormalisedLink, NormalisedNode, NormalisedPort, Side } from '../model/index.js';
-import { orderedGroupIds, orderedNodeIds, unsupportedMessage } from '../model/index.js';
+import { DEFAULT_ASPECT, orderedGroupIds, orderedNodeIds, unsupportedMessage } from '../model/index.js';
 import { NODE_CONTENT_STYLES } from '../profiles/network/content.js';
 import { BOTTOM_CLASSES, TOP_CLASSES } from '../profiles/network/tiers.js';
 import { DEFAULT_THEME_ID, findTheme, unknownThemeMessage } from '../profiles/network/themes.js';
@@ -456,6 +456,12 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
         const width = v.number(value, '$.layout.maxWidth', false, Number.MIN_VALUE);
         if (width !== undefined) settings.maxWidth = width;
       }
+      else if (key === 'aspect') {
+        // A quoted "W:H" string (ADR-0025): a YAML 1.1 tool reads an unquoted `16:9` as the number 969, so a number is refused.
+        const ratio = parseAspect(value);
+        if (ratio === undefined) v.report('INVALID_TYPE', '$.layout.aspect', 'Expected a quoted ratio "W:H" of two positive decimals, for example "16:9"');
+        else if (ratio !== DEFAULT_ASPECT) settings.aspect = ratio;
+      }
       else if (key === 'nodeContent') {
         const style = v.choice(value, NODE_CONTENT_STYLES, '$.layout.nodeContent');
         if (style !== undefined) settings.nodeContent = style;
@@ -492,6 +498,15 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
   limits(doc, Array.isArray(linkInput) ? linkInput.length : 0, options, v);
   for (const diagnostic of v.diagnostics) options.onDiagnostic?.(diagnostic, v.locate(diagnostic));
   return withLocate(v.failed ? { ok: false, diagnostics: v.diagnostics } : { ok: true, document: doc, diagnostics: v.diagnostics }, v.locate);
+}
+
+/** The ratio W/H of a `"W:H"` string, two positive decimals; undefined for anything else (a number included). */
+function parseAspect(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(value);
+  if (match === null) return undefined;
+  const ratio = Number(match[1]) / Number(match[2]);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : undefined;
 }
 
 /** Parse to stage-0 JSON. Use the result variant or callback to retain diagnostics. */

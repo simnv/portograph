@@ -4,7 +4,8 @@ import { layout, parse, score, serializeLayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { resolve } from '../../src/resolve/index.js';
-import { aspectGap, floatComponents, LIFT_AREA_TOLERANCE, LIFT_SIZE_CAP, LIFT_TRIALS, liftSize, validateGroupLifts } from '../../src/layout/lift.js';
+import { aspectGap } from '../../src/layout/aspect.js';
+import { floatComponents, LIFT_AREA_TOLERANCE, LIFT_SIZE_CAP, LIFT_TRIALS, liftSize, validateGroupLifts } from '../../src/layout/lift.js';
 import { decideLifts } from '../../src/pipeline/lift-round.js';
 import { judgeLift } from '../../src/layout/lift-judge.js';
 import { pathBends } from '../../src/layout/objective.js';
@@ -260,7 +261,7 @@ describe('group lift: the units below a hanging component move down', () => {
     expect(drop).toHaveLength(1);
     expect(drop[0]!.from.x).toBeCloseTo(drop[0]!.to.x, 6);
     expect(model.canvas!.width).toBeLessThan(1400);
-    expect(aspectGap(model.canvas!.width, model.canvas!.height)).toBeLessThan(0.1);
+    expect(aspectGap(model.canvas!.width, model.canvas!.height, 1)).toBeLessThan(0.1);
     expect(score(model).snapshot.counts.routed.turns).toBe(0);
     expect(gates(model)).toEqual([]);
   }, 180000);

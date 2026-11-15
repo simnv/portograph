@@ -80,17 +80,23 @@ describe('layout.overlayOverBodies (ticket 152)', () => {
     expect(parse(`${read(MIDDLE)}\nlayout: {}\n`).layout).toBeUndefined();
   });
 
-  it.each([
-    'an-overlay-turns-once-into-a-lateral-side',
-    'overlay-links-reorder-an-indifferent-tier',
-    'an-overlay-reorder-is-refused-when-a-link-would-bend',
-    MIDDLE.slice('synthetic/'.length),
-  ])('places %s alike with the setting on and off (placement does not know it)', async name => {
+  const alike = async (name: string): Promise<void> => {
     const path = `synthetic/${name}`;
     const off = await run(read(path)), on = await run(read(path) + ON);
     expect(on.nodes).toEqual(off.nodes);
     expect(on.groups).toEqual(off.groups);
-  }, 120000);
+  };
+  it.each([
+    'an-overlay-turns-once-into-a-lateral-side',
+    'an-overlay-reorder-is-refused-when-a-link-would-bend',
+    MIDDLE.slice('synthetic/'.length),
+  ])('places %s alike with the setting on and off (placement does not know it)', alike, 120000);
+
+  // Dense-16x9 review of ticket 03, finding F5 (a follow-up ticket): at the default 16:9 aim a lift of this sheet was taken and `GroupLift.straight`
+  // (src/pipeline/lift-round.ts) recorded the links that only this setting draws straight, so the frozen placement swapped two ports of `q0` with the
+  // setting on. The bounded lift admission (review F3) tries no lift here, so the break is not reached; the cause stays in the code. If a lift is
+  // taken on this sheet again this test fails, and the follow-up ticket is the fix.
+  it('places overlay-links-reorder-an-indifferent-tier alike with the setting on and off (placement does not know it)', () => alike('overlay-links-reorder-an-indifferent-tier'), 120000);
 
   it('pins the draw.io export of an over-body link: one straight edge, drawn over the body (draw.io has no mask)', async () => {
     const model = await run(read(MIDDLE) + ON);
