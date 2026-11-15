@@ -301,9 +301,9 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
     'a-group-holds-both-ends-of-a-bundle': 'd2a05733bdf3d861',
     'a-bus-in-a-rank-gap-grows-the-gap': 'a67922699d7c41bf',
     // ADR-0027 (the alignment cap and the seat of dense-16x9 ticket 02) replaced the geometry that main drew, so the four hashes are re-pinned to
-    // the layouts of this branch (7fb68759..., 92a03918..., 876792b0... and fbe95e96... before). The rule is the comparison below: a run with empty
+    // the layouts of this branch (7fb68759..., 92a03918..., 876792b0... and fbe95e96... before; the third moved again with the face recentring of 81f108fd, 4aa201ff...). The rule is the comparison below: a run with empty
     // hint maps gives the bytes of a run with none. It does not depend on the literal.
-    'a-linked-node-steps-out-of-a-straight-chord': '4aa201ff53fe1e71',
+    'a-linked-node-steps-out-of-a-straight-chord': '2570b2e72f145008',
     'a-bar-end-keeps-its-corridor': 'cb2daf6b290d2bb6',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {
