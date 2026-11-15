@@ -426,12 +426,12 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
       // A spent shared budget is producer state geometry cannot witness (ADR-0010). A model that
       // reports it keeps its last state and is judged by the final gates; the unverified alignments
       // are recorded on it. Every other model must hold the invariant exactly.
+      if (!diagnosed(model, centring)) throw new PlacementRefusal('centring', `Centring invariant violated: ${centring.join('; ')}`, { stage: model.stage });
       // A port a recorded seat keeps is the seat's decision, not producer state: a spent budget excuses only the links outside every kept set
       // (ADR-0027, the seat owns the body).
       const kept = new Set(Object.values(model.alignmentSeats ?? {}).flatMap(seat => seat.ports));
       const seated = centring.filter(item => [...kept].some(port => item.includes(`: ${port} sits at x `)));
       if (seated.length) throw new PlacementRefusal('centring', `Centring invariant violated at a recorded seat: ${seated.join('; ')}`, { stage: model.stage });
-      if (!diagnosed(model, centring)) throw new PlacementRefusal('centring', `Centring invariant violated: ${centring.join('; ')}`, { stage: model.stage });
       const message = `Centring invariant unverified after a spent budget: ${centring.join('; ')}`;
       if (!model.diagnostics.some(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED' && d.message === message)) {
         model.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'CENTRE_INVARIANT_UNVERIFIED', message });
