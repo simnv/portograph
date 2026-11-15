@@ -94,7 +94,7 @@ The hand solve (page `solve`, read from the XML): 2 columns × 3 rows (S1 S2 / S
 calls unfinished. The content then reaches y 550, so the canvas would be about 473 × 562.
 
 The rule: S1 and S4 both exit upward, so Q75 puts them in two columns of the first row, and the chain S2/S3 takes a
-third column (closest to square: 3 columns × 2 rows, S1 S4 S2 / S5 S6 S3). Every link is straight: 0 bent,
+third column (closest to the aspect aim, which was a square then: 3 columns × 2 rows, S1 S4 S2 / S5 S6 S3). Every link is straight: 0 bent,
 0 turns, 0 crossings. This is better than the solve by the unified order (0 bent against 1), and it keeps P9 (move
 nodes little). The solve's detour of Core–S4 is not part of P10.
 

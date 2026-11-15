@@ -83,7 +83,7 @@ export async function decideLifts(document: LayoutModel['document'], options: La
     }
     if (reason === undefined) {
       entry.straight = verdict!.straight;
-      entry.reason = `rose ${candidate.offset} whole band${candidate.offset > 1 ? 's' : ''}${entry.push ? ` and pushed the units below band ${entry.push.at} down ${entry.push.by}` : ''}: canvas ${Math.round(verdict!.area[0])} to ${Math.round(verdict!.area[1])} px²${verdict!.tolerated ? ` (tolerated: narrower or nearer square, at most ${LIFT_AREA_TOLERANCE * 100} % above the smallest ${Math.round(areaOf(smallest))} px²)` : ''}`;
+      entry.reason = `rose ${candidate.offset} whole band${candidate.offset > 1 ? 's' : ''}${entry.push ? ` and pushed the units below band ${entry.push.at} down ${entry.push.by}` : ''}: canvas ${Math.round(verdict!.area[0])} to ${Math.round(verdict!.area[1])} px²${verdict!.tolerated ? ` (tolerated: narrower or nearer the aspect aim, at most ${LIFT_AREA_TOLERANCE * 100} % above the smallest ${Math.round(areaOf(smallest))} px²)` : ''}`;
       record.push(entry);
       note('GROUP_LIFT_TAKEN', `The float component ${name} rises ${candidate.offset} whole band${candidate.offset > 1 ? 's' : ''}: canvas area ${Math.round(verdict!.area[0])} to ${Math.round(verdict!.area[1])} px².`, entry);
       best = trial!;

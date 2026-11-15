@@ -103,6 +103,9 @@ export interface NormalisedLink {
   meta?: Meta;
 }
 
+/** The default aspect aim, W/H (ADR-0025): 16:9. */
+export const DEFAULT_ASPECT = 16 / 9;
+
 /** Stage 0 output. Explicit order metadata preserves integer-like ID declaration order. */
 export interface NormalisedDocument {
   portograph: 2;
@@ -133,6 +136,11 @@ export interface NormalisedDocument {
      * record is written (tickets 51 and 52, the R9 escape). Default true. A `maxWidth` budget still runs its own search.
      */
     autoArrange?: boolean;
+    /**
+     * The aspect aim, W/H (ADR-0025), present only when the author wrote `aspect: "W:H"` with a ratio other than 16:9 (the default is not
+     * stored, as `theme` drops its own). A soft aim of the free placement choices (stagger, lift, grid), never a gate.
+     */
+    aspect?: number;
     /** When true, an overlay link blocked only by node bodies is drawn as the straight chord over them. Default false. */
     overlayOverBodies?: boolean;
     /**

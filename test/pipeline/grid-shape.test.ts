@@ -4,11 +4,12 @@ import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { rebuildBarDrops } from '../../src/layout/bars.js';
-import { enclosedBundle, gridCells, gridChunks, gridColumnFloor, gridRows, groupShape, isGridGroup, likeSidePairs, packRowsOf } from '../../src/layout/grid.js';
+import { enclosedBundle, gridCells, gridChunks, gridColumnFloor, gridColumns, gridRows, groupShape, isGridGroup, likeSidePairs, packRowsOf } from '../../src/layout/grid.js';
 import { stackChains } from '../../src/layout/grid-chains.js';
 import { nodeGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withAspect } from '../aspect-fixture.js';
 
 const fixture = (name: string) => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -120,7 +121,9 @@ it('a downward exit takes the last grid row, so its reserved bar drop crosses no
 }, 60000);
 
 it('a ragged grid packs its last row against the side its right flank comes from', async () => {
-  const model = await run(fixture('a-grid-seats-a-right-flank-peer'));
+  // The rule needs a ragged last row of one node (3 x 3 x 1). At the default 16:9 aim the grid takes 4 + 3 (the aim removes a row), which has no
+  // such row, so the sheet states the square aim of ADR-0024: this test checks where a ragged row packs, not the aim.
+  const model = await run(withAspect(fixture('a-grid-seats-a-right-flank-peer'), '1:1'));
   const grid = rows(model, 'place');
   expect(grid.map(row => row.length)).toEqual([3, 3, 1]);
   expect(model.groups.side!.flank!.primaryPeer).toBe('g');
@@ -197,7 +200,9 @@ it('BAR_DROP_OBSTRUCTED fires on the reservation itself, not on a grid arrangeme
 }, 60000);
 
 it('a grid holds all three ranks at once, and a short row that is not the last', async () => {
-  const model = await run(fixture('a-grid-holds-three-ranks'));
+  // The rule needs a short row in the middle (3, 2, 3). At the default 16:9 aim the grid takes 4 + 3 (the aim removes a row), which has none, so the
+  // sheet states the square aim of ADR-0024: this test checks the three ranks and the short middle row, not the aim.
+  const model = await run(withAspect(fixture('a-grid-holds-three-ranks'), '1:1'));
   const grid = rows(model, 'place');
   // Two upward exits fill the first row with one middle node, three downward exits take the last,
   // and the two middle nodes left over make an interior row narrower than the grid is wide —
@@ -271,7 +276,7 @@ it('a like-facing top pair in different rows is no fault when it is in different
 it('a like-facing pair the count already seats in one row costs the grid nothing', async () => {
   const model = await run(fixture('a-grid-already-seats-a-like-side-pair'));
   expect(likeSidePairs(model, model.groups.place!)).toEqual([['n01', 'n02']]);
-  // Three columns by two rows, which is what closest-to-square picks with no pair to satisfy: the
+  // Three columns by two rows, which is what closest-to-the-aim picks with no pair to satisfy: the
   // rule filters candidate counts, it does not push the count up.
   const grid = rows(model, 'place');
   expect(grid.map(row => row.length)).toEqual([3, 3]);
@@ -307,3 +312,25 @@ it('a bundle with one end outside the group leaves the shape alone, and a free s
   expect(likeSidePairs(stub('g', 'g', 'bottom', 'bottom'), group)).toEqual([]);
   expect(likeSidePairs(stub('g', 'g', 'top', 'top', 'overlay'), group)).toEqual([]);
 });
+
+it('a grid takes the column count nearest the aspect aim: 16:9 by default, the document aspect when it states one (ADR-0025)', async () => {
+  const name = 'a-grid-takes-the-aspect-aim';
+  const wide = await run(fixture(name)), square = await run(withAspect(fixture(name), '1:1'));
+  expect(rows(square, 'place').map(row => row.length)).toEqual([3, 3, 3]);
+  expect(rows(wide, 'place').map(row => row.length)).toEqual([5, 4]);
+  expect(failed(wide)).toEqual([]);
+  expect(failed(square)).toEqual([]);
+  expect(restoreLayoutModel(JSON.stringify(wide))).toEqual(wide);
+}, 60000);
+
+it('a column count that keeps the rows of a smaller count is no candidate, whatever the aim (review F1)', async () => {
+  // Six nodes: 4 or 5 columns make the two rows that 3 columns make, only wider and ragged.
+  const model = await run(fixture('a-grid-column-that-removes-no-row-is-no-candidate'));
+  expect(rows(model, 'place').map(row => row.length)).toEqual([3, 3]);
+  expect(failed(model)).toEqual([]);
+  // The rule itself, on the stage-4 box: no count from 4 to 5 wins over 3 although the aim is wide.
+  const order = ['a', 'b0', 'b1', 'b2', 'b3', 'b4'], ranks = { rank: new Map<string, number>(), bothWays: new Set<string>() };
+  const grid = gridRows(order, ranks, 5);
+  expect(grid.length).toBe(gridRows(order, ranks, 3).length);
+  expect(gridColumns(model, model.groups.place!, order, ranks)).toBe(3);
+}, 60000);

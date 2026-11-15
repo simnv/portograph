@@ -1,0 +1,22 @@
+# Expected (ADR-0025, dense-16x9 ticket 03): `layout.aspect: "1:1"` replaces the 16:9 aim of this sheet.
+# The sheet of `a-row-on-a-sheet-narrower-than-the-aim-stays-one-line` (one switch, five servers): with no `aspect` the row stays one line.
+# With the 1:1 aim the sheet is wider than the aim and two lines bring it nearer, so `leaves` stands on two lines (`groupArrangements`:
+# `stagger`), every drop straight, crossings 0, G1-G9 pass.
+portograph: 2
+layout: { aspect: "1:1" }
+groups:
+  feeds: { tier: 0 }
+  leaves: { tier: 1 }
+nodes:
+  p: { group: feeds, class: switch }
+  n1: { group: leaves, class: server }
+  n2: { group: leaves, class: server }
+  n3: { group: leaves, class: server }
+  n4: { group: leaves, class: server }
+  n5: { group: leaves, class: server }
+links:
+  - [p, n1]
+  - [p, n2]
+  - [p, n3]
+  - [p, n4]
+  - [p, n5]
