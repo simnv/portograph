@@ -67,11 +67,16 @@ it('a corridor that follows its child derives the frames again', async () => {
   resetAttemptCounters();
   const model = await layout(parse(lines.join('\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(attemptCounters.reseat.adopted).toBeGreaterThan(0);
-  // LOST COVERAGE (dense-16x9 ticket 01, ADR-0026): the old sheet also drew `LANE_FOLLOWS_ITS_CHILD`, a corridor moved onto its child's port, and this
-  // test pinned it. Under two-pole ranks the sheet cannot reach that move: a scan of 250 variants of the sheet (label widths, the order of l0 to l2, the
-  // row order) and of its link targets found none, because a leaf of the gateway, which links up and down, now stands beside it and the corridor of the
-  // gateway link has no child row left to follow. What stays pinned here is the adopted reseat (counter), the frames derived again after it, and no
-  // removed link. A controlled stage test that moves a corridor by hand is the way back; no ticket owns it yet.
+  // OPEN COVERAGE GAP (dense-16x9 ticket 01, ADR-0026; not a dead path): the old sheet also drew `LANE_FOLLOWS_ITS_CHILD`, a frame-held corridor moved
+  // onto its child's port, and this test pinned it. Under two-pole ranks no input I built reaches that move for a frame-held corridor of a group with a
+  // pole distance, but that is evidence of a gap, not a proof: `reseatLanes` still accepts every transit lane and has no joined-pole exclusion.
+  //  - 250 variants of this sheet (label widths, the order of l0 to l2, the row order, the link targets): none draws the diagnostic.
+  //  - A controlled stage test (the stages through `lanes`, a held corridor shifted by hand, then `reseatLanes`) was tried on this sheet without its child
+  //    groups and on a small site (gateway, distribution switch, access server, two clients). `reseatLanes` reaches `corridorFree` and `feedOrderHolds`
+  //    and one of them refuses at every shift tried: the child's x lies under the bodies of the frame's own cells, or the move would swap the order of two corridors.
+  //  - The diagnostic and the corridor move stay pinned on an unjoined sheet by test/pipeline/own-lane.test.ts (own-lane-is-an-obstacle.yaml).
+  // What stays pinned here is the adopted reseat (counter), the frames derived again after it, and no removed link. Missing: a joined-pole sheet whose held
+  // corridor follows its child, with the movement asserted. No ticket owns it yet.
   expect(model.removedLinks ?? []).toEqual([]);
   expect(model.frames).toEqual(deriveFrames(model));
 }, 60000);

@@ -631,6 +631,46 @@ describe('deriveRanks: two poles', () => {
   });
 });
 
+describe('deriveRanks: two poles, child spans and the members that stand with a pole', () => {
+  const gate = (over: Partial<RankInput> & Pick<RankInput, 'members'>) => deriveRanks(input({
+    linksAbove: new Set(['u']), linksBelow: new Set(['u', 'd']), ...over,
+  }));
+
+  it('a child span never pushes the leaf of a both-way member off its rank (u-m-d and u-a, child {u})', () => {
+    const result = gate({ members: ['u', 'm', 'd', 'a'], routedLinks: [...chain('u', 'm', 'd'), { from: 'u', to: 'a' }], children: [{ group: 'zone', members: ['u'] }] });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, a: 0 });
+  });
+
+  it('a child span never separates a fixed peer pair from its pole (u-a fixed right/left, child {u})', () => {
+    const result = gate({
+      members: ['u', 'm', 'd', 'a'], routedLinks: [...chain('u', 'm', 'd'), { from: 'u', to: 'a', fromSide: 'right', toSide: 'left' }],
+      children: [{ group: 'zone', members: ['u'] }],
+    });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, a: 0 });
+  });
+
+  it('the same inputs with the members and the links reversed give the same ranks', () => {
+    const result = gate({ members: ['a', 'd', 'm', 'u'], routedLinks: [{ from: 'u', to: 'a' }, ...chain('u', 'm', 'd').reverse()], children: [{ group: 'zone', members: ['u'] }] });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, a: 0 });
+  });
+
+  it('the poles joined only through a fixed peer link are one pole: the upward pole wins, its leaf stands beside it (zero pole distance)', () => {
+    const result = deriveRanks(input({
+      members: ['u', 'd', 'leaf'], linksAbove: new Set(['u']), linksBelow: new Set(['d']),
+      routedLinks: [{ from: 'u', to: 'd', fromSide: 'right', toSide: 'left' }, { from: 'd', to: 'leaf' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ u: 0, d: 0, leaf: 0 });
+  });
+
+  it('the poles joined only through a fixed peer link, and a child span on the leaf: it stays on the pole rank', () => {
+    const result = deriveRanks(input({
+      members: ['u', 'd', 'leaf', 'x'], linksAbove: new Set(['u']), linksBelow: new Set(['d']),
+      routedLinks: [{ from: 'u', to: 'd', fromSide: 'right', toSide: 'left' }, { from: 'd', to: 'leaf' }, { from: 'leaf', to: 'x' }], children: [{ group: 'zone', members: ['u'] }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ u: 0, d: 0, leaf: 0, x: 0 });
+  });
+});
+
 describe('deriveRanks: two poles and child groups', () => {
   const both = (over: Partial<RankInput> & Pick<RankInput, 'members'>) =>
     deriveRanks(input({ linksAbove: new Set(['u']), linksBelow: new Set(['d']), ...over }));

@@ -45,10 +45,12 @@ function* corpus(): Generator<string> {
 
 describe('the two-pole rule stops where the pole distance stops', () => {
   it('every corpus group with no routed path from an upward anchor to a downward-only anchor ranks exactly as ADR-0019 did on main', () => {
-    let compared = 0, anchoredBothSides = 0, joined = 0;
-    for (const path of corpus()) {
+    let compared = 0, anchoredBothSides = 0, joined = 0, sheets = 0;
+    const files = [...corpus()], failures: string[] = [];
+    for (const path of files) {
       let model;
-      try { model = resolveBeforeExpansion(parse(readFileSync(path, 'utf8'))); } catch { continue; }
+      try { model = resolveBeforeExpansion(parse(readFileSync(path, 'utf8'))); } catch (error) { failures.push(`${path}: ${(error as Error).message.slice(0, 120)}`); continue; }
+      sheets += 1;
       const groups = Object.entries(model.document.groups).filter(([, group]) => group.shape === 'ranked' && group.parent === undefined && group.align === undefined && group.tier !== undefined);
       for (const [id] of groups) {
         const children = Object.keys(model.document.groups).filter(child => model.document.groups[child]!.parent === id);
@@ -59,10 +61,26 @@ describe('the two-pole rule stops where the pole distance stops', () => {
         expect(plain(deriveRanks(input)), `${path} group ${id}`).toEqual(plain(deriveRanksAdr0019(input)));
       }
     }
+    // A sheet that fails to parse or resolve is named, never skipped: the compared set is the whole corpus.
+    expect(failures).toEqual([]);
+    expect(sheets).toBe(files.length);
     expect(compared).toBeGreaterThan(100);
     expect(anchoredBothSides).toBeGreaterThan(joined);
     expect(joined).toBeGreaterThan(0);
   }, 180000);
+
+  it('the boundary: poles joined only through a fixed peer link are joined, the classifier and the code agree', () => {
+    const peer: RankInput = {
+      group: 'g', members: ['u', 'd', 'leaf'], linksAbove: new Set(['u']), linksBelow: new Set(['d']), overlayPartners: new Map(), children: [],
+      routedLinks: [{ from: 'u', to: 'd', fromSide: 'right', toSide: 'left' }, { from: 'd', to: 'leaf' }],
+    };
+    expect(joinsPoles(peer)).toBe(true);
+    expect(Object.fromEntries(deriveRanksAdr0019(peer).ranks)).toEqual({ u: 0, d: 0, leaf: 1 });
+    expect(Object.fromEntries(deriveRanks(peer).ranks)).toEqual({ u: 0, d: 0, leaf: 0 });
+    const apart: RankInput = { ...peer, routedLinks: [{ from: 'd', to: 'leaf' }] };
+    expect(joinsPoles(apart)).toBe(false);
+    expect(plain(deriveRanks(apart))).toEqual(plain(deriveRanksAdr0019(apart)));
+  });
 
   it('the reviewer inputs of ticket 01 give the result of main', () => {
     const base: RankInput = { group: 'g', members: ['u', 'm', 'd'], routedLinks: [{ from: 'u', to: 'm' }], linksAbove: new Set(['u']), linksBelow: new Set(['d']), overlayPartners: new Map([['d', ['u']]]), children: [] };

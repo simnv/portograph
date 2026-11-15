@@ -51,7 +51,9 @@ differ.
    **Two poles (ADR-0026, dense-16x9 ticket 01).** A group has two poles when a routed path inside the
    group joins an upward anchor with a downward-only anchor (a member that links to the tier below and
    not to the tier above): the group then has a pole distance, and no member stands between an anchor
-   and the tier it links to. A group with no such path keeps the ranks of ADR-0019 exactly (the depth
+   and the tier it links to. The path may run through any routed link, a left/right-fixed peer link
+   included: poles joined only through such a link are one pole at zero distance (the upward pole wins; the
+   downward anchor stands on rank 0 with it and its leaf chain beside it). A group with no such path keeps the ranks of ADR-0019 exactly (the depth
    from the upward anchors, step 6 for the members no anchor reaches): ranking the components that no
    path joins from their own pole cost the approved golden 20 bends and a link, so the rule stops where
    the pole distance stops. In a group with two poles the upward anchors take rank 0. The downward anchors, which link only to the tier
@@ -99,7 +101,8 @@ differ.
    members out of its span. An overlay-only leaf child still goes after the last rank of the rest
    (step 6). A group anchored from below has no leaf rule. (Ticket 19 put every leaf child after
    the last rank of the rest of the group; ticket 28 replaced that rule with the depth ranks.)
-   *Two poles and children (ADR-0026).* A child span never moves a pole and never pushes a member past
+   *Two poles and children (ADR-0026).* A child span never moves a pole, the members of its fixed peer
+   component, or the leaf chain of a member that links both ways, and never pushes a member past
    the last rank: a member the push would take below `L` stays on `L`, beside the downward anchors. A
    child that holds a downward anchor is no leaf child, and an overlay-only child takes no row after
    the rest (it stands by step 6 on a rank no later than `L`).
