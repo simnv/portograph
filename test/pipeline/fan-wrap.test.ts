@@ -18,7 +18,7 @@ import { withAspect } from '../aspect-fixture.js';
 const NAME = 'a-leaf-cell-wider-than-its-block-wraps';
 const CHAIN = 'a-feeding-chain-moves-over-its-wrapped-block';
 const KEY = 'a-chain-of-tiers-packs-over-its-feeds-final-x';
-const DECLINED = 'a-wrap-that-loses-a-straight-link-is-declined';
+const DECLINED = 'a-wrap-that-bends-a-straight-overlay-is-declined';
 const CELL = 'west-zone#2';
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
