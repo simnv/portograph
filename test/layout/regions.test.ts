@@ -17,7 +17,7 @@ import { right } from '../../src/layout/regions.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { stemPlan } from '../../src/layout/sides-two.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
-import { ALIGNMENT_MAX_GROWTH, ownSideWidth, sizeNodes } from '../../src/layout/size.js';
+import { ALIGNMENT_CAP_TIMES, ownSideWidth, sizeNodes } from '../../src/layout/size.js';
 import { rebuildBands, moveGroup, union } from '../../src/layout/skeleton-geometry.js';
 import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { findPort } from '../../src/layout/row-paths.js';
@@ -437,7 +437,7 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     // needs a body twenty times what the node is. The allowance declines both, and the body keeps
     // the width its own content and its two ports need.
     const own = ownSideWidth(node, side);
-    expect(node.bounds!.width).toBeLessThanOrEqual(ALIGNMENT_MAX_GROWTH * own);
+    expect(node.bounds!.width).toBeLessThanOrEqual(ALIGNMENT_CAP_TIMES * own);
     expect(node.bounds!.width).toBe(input.nodes.target!.bounds!.width);
     const feeds = ['feed-left', 'feed-right'].map(id => model.nodes[id]!.ports[0]!.anchor!.x);
     expect(Math.max(...feeds) - Math.min(...feeds)).toBeGreaterThan(20 * own);

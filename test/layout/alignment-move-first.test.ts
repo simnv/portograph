@@ -96,6 +96,15 @@ describe('the seat of a node (ADR-0027)', () => {
     expect(seatCandidates(node, [target(0, 100), target(1, 300)], bounds, true, () => false).some(item => item.growth > 0)).toBe(false);
   });
 
+  // At cap 4 both sheets failed the publication replay: a lane moved after the 7c producer (a transit lane that follows its child, a perimeter
+  // course lane measured again), and the replay read another feed. At cap 5 both publish; the tests keep them publishing.
+  it.each(['a-corridor-moves-after-the-grid-settles', 'a-lifted-group-takes-its-feed-on-its-side'])('publishes %s: the replay reads the seat the producer made', async name => {
+    const yaml = readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(model.removedLinks ?? []).toEqual([]);
+  }, 300000);
+
   it('keeps all seven vertical links of the ticket-73 nested-stem sheet', async () => {
     const yaml = readFileSync(new URL('../../goldens/synthetic/a-nested-stem-is-decided-before-its-gap-opens.yaml', import.meta.url), 'utf8');
     const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });

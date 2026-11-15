@@ -683,7 +683,7 @@ export interface LayoutModel {
    * The aligned extent of each canton member that stands just above the anchor tier (architecture-2 ticket 31), by cell id: the low and the high
    * edge its box takes once its ports stand over their feeds, with the end-port insets and the side-face pills. Each edge is stored as an
    * anchor-tier feed port and the distance from that port's x, so the record moves with the canton. Decided once, in the centre rule,
-   * by the keep rule of the alignment (`keptTargets`: the row siblings, `ALIGNMENT_MAX_GROWTH` and the overlay stops), and only for a member
+   * by the keep rule of the alignment (`keptTargets`: the row siblings, the alignment cap and the overlay stops), and only for a member
    * whose feeds all stand in its own canton. One reader, `memberRoom`, serves the 7c member window, the inner column pass and the chord step;
    * the member may stand past the canton wall up to it. In a model with a canton: absent = not decided (a later replay reserves nothing and
    * warns `ALIGNED_EXTENTS_UNDECIDED`), `{}` = decided, no member reserves room. A model with no canton never has it.
@@ -692,7 +692,7 @@ export interface LayoutModel {
   /**
    * The parents below the anchor tier that spread their fed bottom ports over their children (architecture-2 ticket 32, Q120), by node id: the
    * width the body grew to, the x of each bottom port from the left edge of the body, and how far the row neighbours moved away. Decided once,
-   * in the centre rule, before its first step, by `ALIGNMENT_MAX_GROWTH`, the overlay stops and the window of the parent's tier step (the
+   * in the centre rule, before its first step, by the alignment cap (`withinAlignmentCap`), the overlay stops and the window of the parent's tier step (the
    * reserved lanes, the flanks, the frame columns and the groups after it). One reader, `parentSpread` (`read/parent-spread.ts`). While the
    * centre rule runs, `{}` = decided, no parent spreads (its later runs do not decide again); the rule drops an empty record when it ends, so
    * after it absent = no parent spread. No later rule decides a spread: a replay reads the geometry the spread left.
@@ -873,8 +873,11 @@ export interface FanAdmission {
 
 /** One edge's room across a run (`labelPadding`, tickets 21 and 23): the padding from the node bodies to the box edge, and the links (a label's or a track's) it holds. */
 export interface LabelPaddingEntry { room: number; links: string[] }
-/** Why a centring step declined to keep a target (`AlignmentTarget.reason`, architecture-2 ticket 66): the guard or the ticket-65 post-condition that refused the kept geometry. */
-export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossing' | 'span' | 'chord-clearance';
+/**
+ * Why a centring step declined to keep a target (`AlignmentTarget.reason`, architecture-2 ticket 66): the guard or the ticket-65 post-condition that refused the kept geometry,
+ * or `cap`: the seat that would stand it grows the body past the alignment cap (ADR-0027; `by` = the node).
+ */
+export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossing' | 'span' | 'chord-clearance' | 'cap';
 /**
  * One alignment target of a face (`LayoutModel.alignmentTargets`): the wanted `port`, the feed's `link`, and where the target x is read (`far`:
  * the far port id, or `lane:<id>` for a transit feed; no x is stored, so the entry moves with the geometry). `owes`: `vertical` for an

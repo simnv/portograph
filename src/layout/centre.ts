@@ -25,7 +25,7 @@ import { isGridGroup, packRowsOf } from './grid.js';
 import { nodeTier } from './read/tier.js';
 import { rowGap } from './sides-two.js';
 import { linkLabelGap } from './bands.js';
-import { alignmentAllowance, ownSideWidth } from './size.js';
+import { ownSideWidth, withinAlignmentCap } from './size.js';
 import { withStageMutation } from './mutation.js';
 import { barReach } from './bars.js';
 import { placeOverlayFree } from './overlay-place.js';
@@ -117,19 +117,20 @@ function alignedEdges(node: LayoutNode, side: Side, index: number, x: number, co
   return { low: x - index * pitch - inset.low, high: x + (count - 1 - index) * pitch + inset.high };
 }
 /** The keep decision of `alignSide` without its mutation: the targets a side keeps, none when the side is declined as a whole (architecture ticket 12). */
-function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void = () => {}): { index: number; x: number; key: string }[] {
+function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void = () => {}, judgeCap = true): { index: number; x: number; key: string }[] {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
   const box = node.bounds!, oldRight = right(box);
   if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return [];
-  const allowance = alignmentAllowance(model, node, side);
-  /** The width the body ends with when the port at `index` is aligned to `x`. */
-  const reach = (index: number, x: number): number => { const edges = alignedEdges(node, side, index, x, ports.length, pitch); return Math.max(oldRight, edges.high) - Math.min(box.x, edges.low); };
+  /** Whether the body, grown in place to stand `list` (in engine order), keeps the alignment cap (ADR-0027). */
+  const capHolds = (list: readonly { index: number; x: number }[]): boolean => {
+    const low = alignedEdges(node, side, list[0]!.index, list[0]!.x, ports.length, pitch).low, high = alignedEdges(node, side, list.at(-1)!.index, list.at(-1)!.x, ports.length, pitch).high;
+    return withinAlignmentCap(model, node, [side], { from: box.width, width: Math.max(oldRight, high) - Math.min(box.x, low) });
+  };
   for (const [index, port] of ports.entries()) {
     const key = portId(port.ref), x = targets.get(key), last = kept[kept.length - 1];
     const edges = x === undefined ? undefined : alignedEdges(node, side, index, x, ports.length, pitch);
     if (x !== undefined && (edges!.low < limit.low - EPS || edges!.high > limit.high + EPS)) continue;
-    if (x !== undefined && reach(index, x) > allowance + EPS) continue;
     // The overlay cap comes last, so it is named only where it alone declines the target.
     if (x !== undefined) {
       const beyondLow = edges!.low < stops.low - EPS;
@@ -141,17 +142,15 @@ function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: 
     if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) kept.push({ index, x, key });
   }
   if (!kept.length) return [];
-  const first = kept[0]!, last = kept[kept.length - 1]!;
-  if (Math.max(oldRight, alignedEdges(node, side, last.index, last.x, ports.length, pitch).high)
-    - Math.min(box.x, alignedEdges(node, side, first.index, first.x, ports.length, pitch).low) > allowance + EPS) return [];
-  return kept;
+  // A seat has judged the cap on all its faces (`seatNode`); the parent spread asks it here, on the face it grows.
+  return !judgeCap || capHolds(kept) ? kept : [];
 }
 
 /**
- * Keep compatible targets that fit between siblings and inside the node's own alignment allowance;
+ * Keep compatible targets that fit between siblings and inside the alignment cap (`withinAlignmentCap`);
  * other ports retain their legal slots.
  *
- * A target is kept only when reaching it leaves the body no wider than `alignmentAllowance` — the
+ * A side is kept only when growing the body in place to its targets keeps the alignment cap — the
  * third bound on a widening, beside the siblings of the row and the reserved lane and flank window
  * of `reservedWindow`, and the one that says the node has to stay something a reader still reads as
  * this node (ticket 29). What gives way is the alignment: the port keeps its legal slot, the feed is
@@ -161,11 +160,11 @@ function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: 
  * outer one is the same growth by another name.
  */
 function alignSide(model: LayoutModel, node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void,
-  avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }, held: ReadonlyMap<string, (x: number) => boolean> = new Map()): Set<string> {
+  avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }, held: ReadonlyMap<string, (x: number) => boolean> = new Map(), judgeCap = true): Set<string> {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
   const pitch = node.sidePitch![side]!;
   const box = node.bounds!, oldRight = right(box);
-  const kept = keptTargets(model, node, side, targets, limit, stops, stopped);
+  const kept = keptTargets(model, node, side, targets, limit, stops, stopped, judgeCap);
   if (!kept.length) return new Set();
   const first = kept[0]!, last = kept[kept.length - 1]!;
   // The width the alignment needs is what each edge moved outward, added to the width the node
@@ -218,7 +217,7 @@ function alignSide(model: LayoutModel, node: LayoutNode, side: Side, targets: Ma
 /**
  * The seat of a node (ADR-0027, dense-16x9 ticket 02): the one decision of a centring step that stands the ports of a node over their feeds. It
  * chooses a set of targets, a body position inside the slack of the row and a body width. The body moves first; it grows only by what no move
- * gives, never past its alignment allowance. A target outside the chosen set keeps its pitch slot, and routing completes its link.
+ * gives, never past the alignment cap (`withinAlignmentCap`). A target outside the chosen set keeps its pitch slot, and routing completes its link.
  */
 /** The most seats one node tries against its guards in one step (R4, scope: one node in one step). A refused seat is undone whole. */
 export const SEAT_TRIES = 4;
@@ -232,10 +231,9 @@ export interface SeatTarget { key: string; side: 'top' | 'bottom'; index: number
 export interface SeatCandidate { keys: string[]; x: number; width: number; dx: number; growth: number; owed: number; inPlace: boolean }
 /** What bounds the seats of one node: the row siblings (`siblingLimit`), the window of the group's step and the overlay walls. */
 /**
- * The alignment cap of a seat (ADR-0027): whether a body `width` wide that stands the targets of `window` keeps it, with `span` the room
- * the targets need on both faces (`alignedEdges`).
+ * The alignment cap of a seat (ADR-0027): whether a body `width` wide that stands the targets of `window` keeps it.
  */
-export type SeatCap = (window: readonly SeatTarget[], width: number, span: number) => boolean;
+export type SeatCap = (window: readonly SeatTarget[], width: number) => boolean;
 interface SeatBounds { siblings: WideningLimit; window: WideningLimit; stops: OverlayStops }
 
 /** The wanted ports of the top and bottom faces of `node`, by x, then by port key (R3: the last key). */
@@ -256,46 +254,50 @@ function seatTargets(node: LayoutNode, wanted: ReadonlyMap<string, number>, owes
  * The seats of one node, best first (ADR-0027). Each window of targets consecutive in x whose targets keep the pitch of their face (`keptTargets`
  * reads the pitch the same way) needs an interval (`alignedEdges`). The body slides to the x nearest to where it stands that holds the interval
  * when it is wide enough; otherwise it becomes the interval: it moves to the low edge and grows the rest. The slide stays inside the siblings,
- * the step window and the overlay walls. A body that may not move (`movable` false) takes only a seat that needs no slide. Each window also
- * gives a growth in place, the seat before ADR-0027: a body a guard keeps from moving still grows over its targets. Every seat stays within
- * `allowance` of each face it stands. Order: the most owed verticals, the most targets, the least growth, the least slide, a seat that moves
+ * the step window and the overlay walls. A body that may not move (`movable` false) takes only a seat that needs no slide, and a body moves
+ * only for a window that stands an owed vertical: a held chord runs at any angle (`owesVertical`), so a move for it alone decides nothing
+ * the chord freeze has not decided, and two such seats on one body take turns pass after pass while the main move follows them. Each window also
+ * gives a growth in place, the seat before ADR-0027: a body a guard keeps from moving still grows over its targets. A seat past the alignment
+ * cap (`cap`) is no candidate: it goes to `capped`, so the seat can name the targets the cap alone declines. Order: the most owed verticals, the most targets, the least growth, the least slide, a seat that moves
  * before one in place, then the port keys (R3: the last key).
  */
-export function seatCandidates(node: LayoutNode, targets: readonly SeatTarget[], bounds: SeatBounds, movable: boolean, cap: SeatCap): SeatCandidate[] {
+export function seatCandidates(node: LayoutNode, targets: readonly SeatTarget[], bounds: SeatBounds, movable: boolean, cap: SeatCap, capped: SeatCandidate[] = []): SeatCandidate[] {
   const box = node.bounds!, x0 = box.x, w0 = box.width, result: SeatCandidate[] = [];
   const counts = { top: node.ports.filter(port => port.side === 'top').length, bottom: node.ports.filter(port => port.side === 'bottom').length };
   const low = Math.max(bounds.siblings.low, bounds.window.low, bounds.stops.low), high = Math.min(bounds.siblings.high, bounds.window.high, bounds.stops.high);
+  // A body that becomes its interval grows: the siblings and the overlay walls bound it, as they bound a growth in place, and the group box grows with it.
+  const growLow = Math.max(bounds.siblings.low, bounds.stops.low), growHigh = Math.min(bounds.siblings.high, bounds.stops.high);
   const inLimit = x0 >= bounds.siblings.low - EPS && x0 + w0 <= bounds.siblings.high + EPS;
   for (let i = 0; i < targets.length; i++) {
     let edgeLow = Infinity, edgeHigh = -Infinity, owed = 0, stoppedInPlace = false;
     const last: Partial<Record<'top' | 'bottom', SeatTarget>> = {};
     for (let j = i; j < targets.length; j++) {
-      const target = targets[j]!, pitch = node.sidePitch![target.side]!, before = last[target.side];
+      const target = targets[j]!, facePitch = node.sidePitch![target.side]!, before = last[target.side];
       // A face keeps its engine order at its pitch; a window that breaks it breaks every wider window too.
-      if (before !== undefined && !(target.index > before.index && target.x - before.x >= (target.index - before.index) * pitch)) break;
+      if (before !== undefined && !(target.index > before.index && target.x - before.x >= (target.index - before.index) * facePitch)) break;
       last[target.side] = target;
-      const edges = alignedEdges(node, target.side, target.index, target.x, counts[target.side], pitch);
+      const edges = alignedEdges(node, target.side, target.index, target.x, counts[target.side], facePitch);
       edgeLow = Math.min(edgeLow, edges.low); edgeHigh = Math.max(edgeHigh, edges.high);
       if (target.owes) owed++;
       // The overlay walls and the siblings bound each target's own edges in place, as `keptTargets` reads them.
       if (edges.low < bounds.stops.low - EPS || edges.high > bounds.stops.high + EPS || edges.low < bounds.siblings.low - EPS || edges.high > bounds.siblings.high + EPS) stoppedInPlace = true;
       const window = targets.slice(i, j + 1), keys = window.map(item => item.key).sort();
-      const holds = (width: number): boolean => cap(window, width, need);
-      const need = edgeHigh - edgeLow;
+      const need = edgeHigh - edgeLow, holds = (width: number): boolean => cap(window, width);
       if (need <= w0 + EPS) {
         // A body that holds the interval where it stands stays: the bounds of the row bound a move, not a body that does not move.
         const from = Math.max(edgeHigh - w0, low), to = Math.min(edgeLow, high - w0), stays = x0 >= edgeHigh - w0 - EPS && x0 <= edgeLow + EPS;
         if (stays) result.push({ keys, x: x0, width: w0, dx: 0, growth: 0, owed, inPlace: false });
-        else if (movable && from <= to + EPS) {
+        else if (movable && owed > 0 && from <= to + EPS) {
           const x = Math.max(from, Math.min(x0, to));
           result.push({ keys, x, width: w0, dx: x - x0, growth: 0, owed, inPlace: false });
         }
-      } else if (movable && holds(need) && edgeLow >= low - EPS && edgeHigh <= high + EPS) {
-        result.push({ keys, x: edgeLow, width: need, dx: edgeLow - x0, growth: need - w0, owed, inPlace: false });
+      } else if (movable && owed > 0 && edgeLow >= growLow - EPS && edgeHigh <= growHigh + EPS) {
+        // A seat the cap alone refuses is kept apart: its targets are the ones the cap declines (`seatNode`).
+        (holds(need) ? result : capped).push({ keys, x: edgeLow, width: need, dx: edgeLow - x0, growth: need - w0, owed, inPlace: false });
       }
       // The growth in place: the body keeps its edges and reaches over the targets.
       const reachLow = Math.min(x0, edgeLow), width = Math.max(x0 + w0, edgeHigh) - reachLow;
-      if (inLimit && !stoppedInPlace && width > w0 + EPS && holds(width)) result.push({ keys, x: reachLow, width, dx: 0, growth: width - w0, owed, inPlace: true });
+      if (inLimit && !stoppedInPlace && width > w0 + EPS) (holds(width) ? result : capped).push({ keys, x: reachLow, width, dx: 0, growth: width - w0, owed, inPlace: true });
     }
   }
   const near = (a: number, b: number): boolean => Math.abs(a - b) <= NO_MOVE_EPS;
@@ -314,12 +316,16 @@ function seatOwes(model: LayoutModel, seats: ReadonlyMap<string, Feed>, links: R
   if (model.frozenChords === undefined) return () => true;
   return key => owesVertical(model, links.get(seats.get(key)!.link), direct);
 }
-/** The cap a seat of `node` keeps: the body grows no wider than its alignment allowance on each face it stands (`alignmentAllowance`). */
+/** The cap a seat of `node` keeps (`withinAlignmentCap`), from the width the body has when the seat begins. */
 function seatCap(model: LayoutModel, node: LayoutNode): SeatCap {
-  return (window, width) => window.every(target => width <= alignmentAllowance(model, node, target.side) + EPS);
+  const from = node.bounds!.width;
+  return (window, width) => withinAlignmentCap(model, node, (['top', 'bottom'] as const).filter(side => window.some(target => target.side === side)), { from, width });
 }
-/** What a seat did: the targets it stands, its slide, and the width the body had before it. Empty when the body keeps its place and width. */
-interface SeatOutcome { kept: Set<string>; dx: number; from: number }
+/**
+ * What a seat did: the targets it stands, its slide, the width the body had before it, and the targets the
+ * cap declines (a seat that stands more owed verticals, or as many and more targets, than the one that stands was refused by the cap alone).
+ */
+interface SeatOutcome { kept: Set<string>; dx: number; from: number; capped: Set<string> }
 
 /**
  * Seats one node of a centring step (ADR-0027): the seats of `seatCandidates`, best first, are made on the model one at a time, at most
@@ -332,13 +338,16 @@ interface SeatOutcome { kept: Set<string>; dx: number; from: number }
  */
 function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, wanted: ReadonlyMap<string, number>, owes: (key: string) => boolean,
   window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean): SeatOutcome {
-  const box = node.bounds!, from = box.width, none: SeatOutcome = { kept: new Set(), dx: 0, from };
+  const box = node.bounds!, from = box.width, none: SeatOutcome = { kept: new Set(), dx: 0, from, capped: new Set() };
+  // A seat reads the geometry alone, never an earlier `cap` decline: the publication check replays it after the route rule has dropped the
+  // record, and both must decide alike (R1). The decline records the last decision; the vertical tally reads it.
   const targets = seatTargets(node, wanted, owes);
   if (!targets.length) return none;
   // A body stage 5 seated (a stagger member, a feeding chain) or a grid cell keeps its place in the row; it aligns inside the width it may grow to.
   const movable = !isGridGroup(model, group.id) && !model.staggerRows?.some(row => row.group === group.id) && chainBlockOf(model, node.id) === undefined;
   const siblings = siblingLimit(model, group, node);
-  const candidates = seatCandidates(node, targets, { siblings, window, stops }, movable, seatCap(model, node));
+  const refusedByCap: SeatCandidate[] = [];
+  const candidates = seatCandidates(node, targets, { siblings, window, stops }, movable, seatCap(model, node), refusedByCap);
   const saved = JSON.stringify(node);
   const restore = (): void => {
     const copy = JSON.parse(saved) as LayoutNode;
@@ -359,7 +368,7 @@ function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, want
         const keys = candidate.keys.filter(key => targets.some(target => target.key === key && target.side === side));
         if (!keys.length) continue;
         const kept = alignSide(model, node, side, new Map(keys.map(key => [key, wanted.get(key)!])), siblings, stops, () => {},
-          riserAvoidance(model, group.tier!, side), heldChordPorts(model, node));
+          riserAvoidance(model, group.tier!, side), heldChordPorts(model, node), false);
         if (kept.size !== keys.length) return 'alignment';
       }
       if (!moves) return undefined;
@@ -377,14 +386,18 @@ function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, want
     if (edges.low < stops.low - EPS && stops.lowLink !== undefined) stopped(stops.lowLink);
     else if (edges.high > stops.high + EPS && stops.highLink !== undefined) stopped(stops.highLink);
   }
+  // The cap declines the targets of the seats it alone refused that would stand more than the seat that stands (the most owed verticals, then the most targets).
+  const owedNow = chosen?.owed ?? 0, countNow = chosen?.keys.length ?? 0;
+  const capped = new Set(refusedByCap.filter(item => item.owed > owedNow || (item.owed === owedNow && item.keys.length > countNow))
+    .flatMap(item => item.keys).filter(key => !chosen?.keys.includes(key)));
   if (chosen === undefined) {
     if (refusal !== undefined && warn) {
       const named = [...new Set(targets.map(target => links.get(target.key)?.link).filter((link): link is string => link !== undefined))].sort();
       placementWarning(model, SEAT_REFUSED, `${node.id} keeps its place and width: the ${refusal} refuses each seat it tried over its feeds; ${named.join(', ')} keep a jog and routing completes them.`, named);
     }
-    return none;
+    return { ...none, capped };
   }
-  return { kept: new Set(chosen.keys), dx: chosen.dx, from };
+  return { kept: new Set(chosen.keys), dx: chosen.dx, from, capped };
 }
 /**
  * The pairs (frozen chord with an end in the group, foreign lane) whose box the chord touches, read on the anchors as they stand. The whole step is
@@ -624,7 +637,7 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
   moveGroup(model, group, dx, 0);
 }
 
-/** How many targets of a face stand in engine order at the face's pitch: the in-order keep of `keptTargets` without its limits, allowance or stops. */
+/** How many targets of a face stand in engine order at the face's pitch: the in-order keep of `keptTargets` without its limits, cap or stops. */
 function inOrderTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>): number {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!), pitch = node.sidePitch![side]!;
   let last: { index: number; x: number } | undefined, count = 0;
@@ -735,7 +748,7 @@ function reserveAlignedExtents(model: LayoutModel, context: CentreContext): void
 }
 /**
  * The box a step would give a canton member: the group moved under the mean of its feeds, as the main move of the step does, then each body
- * grown to the targets the alignment keeps (`keptTargets`, the alignment's own bounds: the row siblings, `ALIGNMENT_MAX_GROWTH` and the
+ * grown to the targets the alignment keeps (`keptTargets`, the alignment's own bounds: the row siblings, the alignment cap and the
  * overlay stops), with the margins and side-face pills the box has beyond its bodies. Each edge is stored against the outer feed port on its
  * side. `undefined` for a group that is not a canton member, has a feed from outside its canton or a transit feed (those feeds do not move
  * with the canton), or keeps no target.
@@ -852,7 +865,7 @@ function spreadPlans(model: LayoutModel, tier: number, authority: number): { nod
 }
 /**
  * One parent spread: the fed bottom ports go to the spacing of their children about their own mean, the body grows to hold them (`alignSide`,
- * bounded by `ALIGNMENT_MAX_GROWTH` and the overlay stops, with no sibling bound: the siblings move instead), the nodes of its row before it
+ * bounded by the alignment cap (`withinAlignmentCap`) and the overlay stops, with no sibling bound: the siblings move instead), the nodes of its row before it
  * move left by the growth on the left and the ones after it right by the growth on the right, and the group is clamped into the window the
  * step of the parent's tier gives it (`stepWindow`: the reserved lanes and flanks, the frame columns, the group before it and the room the
  * groups after it reserve). The spread is made on the model and judged where it stands: the move reservations, read again on the resized
@@ -872,7 +885,7 @@ function spreadParent(model: LayoutModel, context: CentreContext, tier: number, 
   const parents = mean(feeds.map(feed => feed.parent.anchor!.x)), children = mean(feeds.map(feed => feed.child.anchor!.x));
   const targets = new Map(feeds.map(feed => [feed.key, parents + feed.child.anchor!.x - children]));
   const unbounded = { low: -Infinity, high: Infinity }, stops = overlayStops(model, node);
-  if (keptTargets(model, node, 'bottom', targets, unbounded, stops).length !== feeds.length) return decline('the body would grow past its alignment allowance or onto an overlay link');
+  if (keptTargets(model, node, 'bottom', targets, unbounded, stops).length !== feeds.length) return decline('the body would grow past the alignment cap or onto an overlay link');
   const saved = JSON.stringify({ group, nodes: group.nodes.map(id => model.nodes[id]!) }), evidence = resizeEvidence(model, group);
   const restore = (): void => {
     const copy = JSON.parse(saved) as { group: LayoutGroup; nodes: LayoutNode[] };
@@ -1070,8 +1083,9 @@ function verticalTally(model: LayoutModel, group: LayoutGroup, wanted: ReadonlyM
   const direct = directMembers(model);
   const owes = (feed: Feed): boolean => owesVertical(model, links.get(feed.link), direct);
   // A target a step declined is final for the placement attempt (architecture-2 ticket 66): it is counted neither before nor after, so the kept
-  // branch is not tried for it again.
-  const declined = declinedTargets(model, group.nodes);
+  // branch is not tried for it again. A `cap` decline is no decision (the writer does not keep it): it names where the body stood, so the tally
+  // counts its target as any other miss, the same in the producer and in a replay.
+  const capped = declinedTargets(model, group.nodes, 'cap'), declined = new Set([...declinedTargets(model, group.nodes)].filter(port => !capped.has(port)));
   const inverted = new Set<string>();
   for (const id of group.rowOrder!) {
     const node = model.nodes[id]!;
@@ -1178,10 +1192,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   moveGroup(model, group, mainMove(model, group, farthestLeft, farthestRight, toMean), 0);
   const aligned = new Set<string>();
   // The window a seat slides a body in (ADR-0027): the slack of its row inside its group box, less the insets the box keeps beyond its bodies.
-  // The group itself moves by the main move, toward the mean of its feeds; a slide past the box would grow the group, and the next main move
-  // would take the group back to the mean. The window of the step bounds it too.
-  const stepRoom = stepWindow(model, context, tier, list, id, previous, tail), inset = groupInsets(model, group), box = group.bounds!;
-  const rowWindow = { low: Math.max(box.x, stepRoom.low) + inset.left, high: Math.min(right(box), stepRoom.high) - inset.right };
+  // The group itself moves by the main move, toward the mean of its feeds, and the clamp into the window of the step moves it as a whole; a
+  // slide inside the box changes neither, and a slide past the box would grow the group, and the next main move would take it back.
+  const inset = groupInsets(model, group), box = group.bounds!;
+  const rowWindow = { low: box.x + inset.left, high: right(box) - inset.right };
   const links = linkById(model), direct = directMembers(model);
   const owes = seatOwes(model, seats, links, direct);
   for (const nodeId of group.rowOrder!) {
@@ -1193,7 +1207,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
     const box = node.bounds!;
     if (box.width > seat.from + EPS) for (const key of seat.kept) notes.grown.set(key, { low: box.x - wanted.get(key)!, high: right(box) - wanted.get(key)! });
-    if (seat.kept.size && (Math.abs(seat.dx) > NO_MOVE_EPS || box.width > seat.from + EPS)) notes.seated.set(nodeId, { dx: seat.dx, from: seat.from, width: box.width, ports: [...seat.kept].sort() });
+    if (seat.kept.size && (Math.abs(seat.dx) > NO_MOVE_EPS || box.width > seat.from + EPS)) {
+      notes.seated.set(nodeId, { dx: seat.dx, from: seat.from, width: box.width, ports: [...seat.kept].sort() });
+    }
+    for (const key of seat.capped) notes.declined.set(key, { reason: 'cap', by: nodeId });
     // Once per node, not once per pass and side.
     if (stoppedBy && warn && !model.diagnostics.some(d => d.code === 'ALIGNMENT_STOPPED_AT_OVERLAY' && d.message.startsWith(`${node.id} `))) {
       placementWarning(model, 'ALIGNMENT_STOPPED_AT_OVERLAY',
@@ -1342,7 +1359,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   }
   // A step that aligns nothing and brings no feed closer to its x moves nothing. The passes are an
   // iterative solver: the move puts the group under the mean of its feeds, the widenings below it
-  // reach what the row and the allowance let them reach, and the next pass starts from where this
+  // reach what the row and the alignment cap let them reach, and the next pass starts from where this
   // one left the group. A step that keeps no target, ends with every port off its feed and no
   // nearer it than it found them, has solved nothing and has only given the next pass a new place
   // to chase the mean from. That is the loop this ticket was filed for: `bar-fan` walked a 50 px

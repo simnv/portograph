@@ -1,5 +1,5 @@
 import type { AlignmentDeclineReason, AlignmentSeat, AlignmentTarget, LayoutLink, LayoutModel } from '../model/layout.js';
-import { alignmentAllowance } from './size.js';
+import { withinAlignmentCap } from './size.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { readCache } from '../model/read-cache.js';
 import type { Feed } from './read/feeds.js';
@@ -15,7 +15,7 @@ import { linkById } from './peers.js';
  */
 
 /** The reasons a step declines a target, in the order the kept branch reads them: ticket 65's post-conditions, then the overlay guard. */
-export const ALIGNMENT_DECLINE_REASONS: readonly AlignmentDeclineReason[] = ['riser', 'lane-crossing', 'span', 'chord-clearance', 'overlay-straight'];
+export const ALIGNMENT_DECLINE_REASONS: readonly AlignmentDeclineReason[] = ['riser', 'lane-crossing', 'span', 'chord-clearance', 'overlay-straight', 'cap'];
 /** The model stages at which the record may be there: from the centre rule's output to the output of 7f (the bands rule); the route rule drops it. */
 const RECORD_STAGES: readonly string[] = ['centre', 'bars', 'bundles', 'bands'];
 /** The finding of the publication check: a face where the replay declines a target the record does not. */
@@ -70,12 +70,12 @@ export function tapTarget(name: string, value: () => string): void {
  * The wanted ports of `nodes` whose target is declined. Absent says no target is declined: a model before 7c, a routed model, or one whose
  * centre rule ran no producer (a hand-made transaction; `centreDraft` names that case, `ALIGNMENT_TARGETS_UNDECIDED`).
  */
-export function declinedTargets(model: LayoutModel, nodes: readonly string[]): Set<string> {
+export function declinedTargets(model: LayoutModel, nodes: readonly string[], reason?: AlignmentDeclineReason): Set<string> {
   const record = model.alignmentTargets;
   if (record === undefined) return new Set();
   const result = new Set<string>();
   for (const node of nodes) for (const side of ['top', 'bottom', 'left', 'right'] as const) {
-    for (const entry of record[faceKey(node, side)] ?? []) if (entry.state === 'declined') result.add(entry.port);
+    for (const entry of record[faceKey(node, side)] ?? []) if (entry.state === 'declined' && (reason === undefined || entry.reason === reason)) result.add(entry.port);
   }
   return result;
 }
@@ -135,7 +135,8 @@ export function writeAlignmentTargets(model: LayoutModel, nodes: readonly string
     const list = faces.get(face) ?? [];
     faces.set(face, list);
     const was = record[face]?.find(entry => entry.port === key);
-    if (was?.state === 'declined') { list.push(was); continue; }
+    // A decline of a guard is final; a `cap` decline is the last seat's (ADR-0027): the next step decides the seat again.
+    if (was?.state === 'declined' && was.reason !== 'cap') { list.push(was); continue; }
     const base = { port: key, link: feed.link, far: feedFar(model, feed), owes: owesVertical(model, links.get(feed.link), direct) ? 'vertical' as const : 'any' as const, pass };
     const refused = notes.declined.get(key);
     let entry: AlignmentTarget | undefined;
@@ -150,7 +151,7 @@ export function writeAlignmentTargets(model: LayoutModel, nodes: readonly string
   }
   // A declined target whose feed this step does not want stays declined: the decline is final for the placement attempt.
   for (const [face, list] of faces) {
-    for (const entry of record[face] ?? []) if (entry.state === 'declined' && !list.some(item => item.port === entry.port)) list.push(entry);
+    for (const entry of record[face] ?? []) if (entry.state === 'declined' && entry.reason !== 'cap' && !list.some(item => item.port === entry.port)) list.push(entry);
     // Port-key order (R3): the last key, as a port id is unique on its face.
     record[face] = list.sort(byPort);
   }
@@ -160,11 +161,13 @@ export function writeAlignmentTargets(model: LayoutModel, nodes: readonly string
  * Whether a replay of a step writes no decline the stored face lacks (the publication check, R1/R5). A decline is the one decision of the record:
  * final, and read by the tally. `kept` and `grown` are where the targets stood when the producer's last step on the group ended, and a move
  * after it (the parent stand, a region rebuild, a 7f move) can leave them behind without a decision changing, so they are not compared.
- * A stored decline the replay drops cannot happen (the writer keeps a decline); one it writes again equal is the same decision.
+ * A stored decline the replay drops cannot happen (the writer keeps a decline); one it writes again equal is the same decision. A `cap`
+ * decline is not compared: the seat reads no stored decline, and the writer does not keep a `cap` decline, so it is a note of where the body
+ * stood, not a decision, and a replay from a later body width names another target.
  */
 export function sameDeclines(stored: readonly AlignmentTarget[] | undefined, replayed: readonly AlignmentTarget[] | undefined): boolean {
   const kept = new Set((stored ?? []).filter(entry => entry.state === 'declined').map(decided));
-  return (replayed ?? []).every(entry => entry.state !== 'declined' || kept.has(decided(entry)));
+  return (replayed ?? []).every(entry => entry.state !== 'declined' || entry.reason === 'cap' || kept.has(decided(entry)));
 }
 
 /**
@@ -201,8 +204,9 @@ export function alignmentTargetsFault(model: LayoutModel): string | undefined {
       if (entry.owes !== 'vertical' && entry.owes !== 'any') return `${at}: owes ${String(entry.owes)}`;
       if (!Number.isInteger(entry.pass) || entry.pass < 0) return `${at}: pass ${String(entry.pass)}`;
       if (entry.state === 'declined') {
-        // Only 7f declines (its draft is the first at a chord stage): a decline in a model before its output was written by no producer.
-        if (model.stage !== 'bands') return `${at}: a decline at stage ${model.stage}, before 7f`;
+        // Only 7f declines for a guard (its draft is the first at a chord stage): such a decline in a model before its output was written by no
+        // producer. The cap declines from the centre rule on (ADR-0027).
+        if (model.stage !== 'bands' && entry.reason !== 'cap') return `${at}: a decline at stage ${model.stage}, before 7f`;
         if (!ALIGNMENT_DECLINE_REASONS.includes(entry.reason!) || typeof entry.by !== 'string' || !entry.by) return `${at}: a declined entry without its reason`;
         if (entry.extent !== undefined) return `${at}: a declined entry with an extent`;
       } else if (entry.state === 'grown') {
@@ -241,9 +245,9 @@ export function standsBySeatMove(model: LayoutModel, link: LayoutLink): boolean 
 
 /**
  * The first fault of a stored seat record, or undefined (R5): a record outside the stages it lives at, a key that is no node, a field that is
- * not a finite number, a width below the width before, a seat that grew a body past its alignment allowance (`alignmentAllowance` of each face
- * whose ports it stood, read with the width before the seat as the floor), a port list that is empty, out of port-key order, repeated or names
- * a port the node does not have on its top or bottom face.
+ * not a finite number, a width below the width before, a seat that grew a body past the alignment cap (`withinAlignmentCap` on the faces
+ * whose ports it stood), a port list that is empty, out of port-key order, repeated or names a port the node does not have on its top or
+ * bottom face.
  */
 export function alignmentSeatsFault(model: LayoutModel): string | undefined {
   const record = model.alignmentSeats;
@@ -266,11 +270,8 @@ export function alignmentSeatsFault(model: LayoutModel): string | undefined {
       if (item === undefined) return `${id}: ${String(port)} is no port on its top or bottom face`;
       sides.add(item.side!);
     }
-    // The allowance of a face is read with the width before the seat as its floor: a body another rule made wide may align inside its width.
-    const floor = { ...node, bounds: { ...node.bounds!, width: seat.from } };
-    for (const side of sides) {
-      if (seat.width > alignmentAllowance(model, floor, side as 'top' | 'bottom') + PLACEMENT_EPS) return `${id}: the seat grew the body to ${seat.width} px, past its allowance on ${side}`;
-    }
+    // The cap reads the record's own numbers (R5: the record, not a diagnostic): a body another rule made wide may align inside its width.
+    if (!withinAlignmentCap(model, node, [...sides] as ('top' | 'bottom')[], seat)) return `${id}: the seat grew the body to ${seat.width} px, past the alignment cap`;
   }
   return undefined;
 }
