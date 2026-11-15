@@ -53,6 +53,11 @@ describe('reservation ledger', () => {
     expect(() => validateReservations(model(true))).not.toThrow();
     expect(() => validateReservations(model(false))).toThrow(/turn order/);
   });
+  it('refuses reserved far-end faces that are not the far-end faces of the model', () => {
+    const model = (turnExcept: string[]): never => ({ links: [], reservations: turnEntries(true, [], false, 'turn', 0, ['n|top']), turnOrder: true, turnExcept, nodes: {} }) as never;
+    expect(() => validateReservations(model(['n|top']))).not.toThrow();
+    expect(() => validateReservations(model([]))).toThrow(/far-end faces/);
+  });
   it('refuses reserved turn links that are not the turn links of the model', () => {
     const model = (turnLinks: string[]): never => ({ links: [], reservations: turnEntries(false, ['a', 'b'], false, 'course', 0), turnOrder: true, turnLinks, nodes: {} }) as never;
     expect(() => validateReservations(model(['a', 'b']))).not.toThrow();
@@ -109,6 +114,10 @@ describe('reservation ledger', () => {
     expect(holds(turnEntries(true, [], false, 'turn', 0), model({ turnOrder: true }))).toEqual([]);
     expect(holds(turnEntries(true, [], false, 'turn', 0), model())).toHaveLength(1);
     expect(holds(turnEntries(true, [], true, 'turn', 0), model({ turnOrder: true, freeze: { turnOrder: [{ node: 'n', side: 'top' }] } }))).toEqual([]);
+    // A face reserved for far-end order is not turned.
+    const turned = { turnOrder: true, turnExcept: ['n|top'], freeze: { turnOrder: [{ node: 'n', side: 'top' }] } };
+    expect(holds(turnEntries(true, [], false, 'turn', 0, ['n|top']), model(turned))).toHaveLength(1);
+    expect(holds(turnEntries(true, [], false, 'turn', 0, ['n|bottom']), model(turned))).toEqual([]);
     expect(holds(turnEntries(false, ['l'], false, 'course', 0), model({ turnOrder: true, turnLinks: ['x'] }))).toHaveLength(1);
     expect(holds(turnEntries(false, ['l'], false, 'course', 0), model({ turnOrder: true, turnLinks: ['l'] }))).toEqual([]);
     // Every trunk declined: a model that still has a trunk join fails.
@@ -165,8 +174,11 @@ describe('reservation ledger', () => {
   it('unions spans, turn links and declines', () => {
     expect([...spansOf(reserve(spanEntries(['a'], 'span', 0), spanEntries(['b', 'a'], 'span', 1)))]).toEqual(['a', 'b']);
     const turn = reserve(turnEntries(false, ['a'], false, 'course', 0), turnEntries(false, ['b', 'a'], false, 'course', 1));
-    expect(turnOf(turn)).toEqual({ all: false, links: ['a', 'b'], requireChanged: false });
+    expect(turnOf(turn)).toEqual({ all: false, links: ['a', 'b'], except: [], requireChanged: false });
     expect(turnOf(reserve(turn, turnEntries(true, [], true, 'turn', 2))).all).toBe(true);
+    // The faces that keep far-end order (a held routed chord) join by union, sorted, and survive the second reservation of the same entry.
+    const kept = reserve(turnEntries(true, [], false, 'turn', 1, ['n|top', 'm|bottom']), turnEntries(true, [], true, 'turn', 2, ['n|top', 'k|left']));
+    expect(turnOf(kept)).toEqual({ all: true, links: [], except: ['k|left', 'm|bottom', 'n|top'], requireChanged: true });
     const declined = new DeclinedTrunks();
     declined.set('k', 'blocked');
     declined.all = true;

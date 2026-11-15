@@ -199,3 +199,60 @@ describe('the carried turn order and the budget', () => {
     expect(chooseStart(1 - 0, [{ gain: [0, 0, 0], tie: 0 }])).toBe(0);
   });
 });
+
+/**
+ * Dense-16x9 ticket 05: a face that holds a held routed chord takes far-end order, a face with only orthogonal links keeps the first-turn order, and G5 reads the layout's
+ * records of both (`freeze.turnOrder`, `frozenChords`). The sheet is `two-skirts-from-one-face-nest`: the bottom face of `fl-1` is an orthogonal-only face.
+ */
+describe('far-end order on a face that holds a straight link', () => {
+  const name = 'two-skirts-from-one-face-nest';
+  const bottomOrder = (model: LayoutModel): string[] => model.nodes['fl-1']!.ports.filter(port => port.side === 'bottom').sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => `${port.ref.name}#${port.ref.ordinal}`);
+  const g5 = (model: LayoutModel): number => score(model).snapshot.gates.G5.violations.length;
+  const forced = async (extra: object = {}): Promise<LayoutModel> => {
+    const courses = (await layout(parse(fixture(name)), { ...options, testTurnOrder: false })).courses!;
+    return layout(parse(fixture(name)), { ...options, testCourses: courses, testTurnOrder: true, ...extra });
+  };
+
+  it('an orthogonal-only face keeps the first-turn order, which differs from the far-end order, and G5 accepts it', async () => {
+    const plain = await layout(parse(fixture(name)), { ...options, testTurnOrder: false });
+    const on = await layout(parse(fixture(name)), options);
+    expect(on.freeze?.turnOrder).toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(bottomOrder(on)).not.toEqual(bottomOrder(plain));
+    expect(on.frozenChords?.some(id => on.links.find(link => link.id === id)?.attachments?.from.node === 'fl-1')).toBeFalsy();
+    expect(g5(on)).toBe(0);
+  });
+
+  it('a face reserved for far-end order keeps the far-end order, is not recorded as turned, and G5 passes', async () => {
+    const plain = await layout(parse(fixture(name)), { ...options, testTurnOrder: false });
+    const model = await forced({ testTurnExcept: ['fl-1|bottom'] });
+    expect(model.turnExcept).toEqual(['fl-1|bottom']);
+    expect(model.freeze?.turnOrder ?? []).not.toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(model.freeze?.turnOrder).toContainEqual({ node: 'core-1', side: 'left' });
+    expect(bottomOrder(model)).toEqual(bottomOrder(plain));
+    expect(g5(model)).toBe(0);
+    // The reservation restores with the model, and a model that lost the record is refused.
+    expect(restoreLayoutModel(JSON.stringify(model)).turnExcept).toEqual(['fl-1|bottom']);
+    expect(() => restoreLayoutModel(JSON.stringify({ ...model, turnExcept: undefined }))).toThrow(/far-end faces/);
+  });
+
+  it('G5 reads the recorded chords: the turned face that holds a held chord is judged by the far-end ranges', async () => {
+    const turned = await forced();
+    expect(turned.freeze?.turnOrder).toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(g5(turned)).toBe(0);
+    const link = turned.links.find(item => item.attachments?.from.node === 'fl-1' || item.attachments?.to.node === 'fl-1')!;
+    const held = { ...turned, frozenChords: [link.id] } as LayoutModel;
+    expect(score(held).snapshot.gates.G5.violations.map(item => item.elements[0])).toContain('fl-1');
+  });
+
+  it('the offer leaves out a face that holds a held chord and names it for the trial', async () => {
+    const base = await layout(parse(fixture(name)), { ...options, testTurnOrder: false });
+    expect(measureTurnOrder(base).faces).toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(measureTurnOrder(base).except).not.toContain('fl-1|bottom');
+    const link = base.links.find(item => item.attachments?.from.node === 'fl-1')!;
+    const held = { ...base, frozenChords: [link.id] } as LayoutModel;
+    const offer = measureTurnOrder(held);
+    expect(offer.faces).not.toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(offer.faces).toEqual(measureTurnOrder(base).faces.filter(face => !(face.node === 'fl-1' && face.side === 'bottom')));
+    expect(offer.except).toContain('fl-1|bottom');
+  });
+});

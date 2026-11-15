@@ -7,7 +7,7 @@ import { portId as portKey } from './skeleton-graph.js';
 import { farCoordinate } from './peers.js';
 import { pairedFaceKey } from './parallel-sets.js';
 import { findPort } from './row-paths.js';
-import { plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
+import { chordFaces, faceKey as faceName, plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { added as namesAdded, constraintFindings, gateFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { compare, lazyCount, profiles, reading, routedBends, type Reading } from './objective.js';
 import type { ScoreCounts } from '../score/types.js';
@@ -20,6 +20,8 @@ import { PLACEMENT_EPS } from './tolerance.js';
 export interface TurnOffer {
   /** The faces whose turn order differs from the order they have, in node and side order. Empty: no offer. */
   faces: { node: string; side: Side }[];
+  /** The faces that hold a held routed chord on the baseline, by `faceKey`: they keep far-end order, so no offer names them and the trial reserves them (`turnExcept`). */
+  except: string[];
 }
 
 /**
@@ -30,7 +32,8 @@ export interface TurnOffer {
  * authored port is never part of the comparison.
  */
 export function measureTurnOrder(base: LayoutModel): TurnOffer {
-  const offer: TurnOffer = { faces: [] };
+  const offer: TurnOffer = { faces: [], except: [...chordFaces(base)].sort() };
+  const straight = new Set(offer.except);
   const turns = plannedTurns(base, true), plain = plannedTurns(base, false);
   // Stage 5's face key: a facing pair's shared key, else the far coordinate (`pairedFaceKey`, R1).
   const faceKey = pairedFaceKey(base, (ref, at) => farCoordinate(base, ref, at), ref => findPort(base, ref)?.side);
@@ -38,6 +41,8 @@ export function measureTurnOrder(base: LayoutModel): TurnOffer {
     const node = base.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
       const along = side === 'top' || side === 'bottom' ? 'x' : 'y';
+      // A face that holds a held routed chord takes far-end order (docs/design/turn-order.md, Section 3): the turn order never offers it.
+      if (straight.has(faceName(id, side))) continue;
       const ports = node.ports.filter(port => port.side === side && port.anchor !== undefined && port.authorOrder === undefined && busOfPort(base, port.ref) === undefined)
         .sort((a, b) => a.anchor![along] - b.anchor![along]);
       if (ports.length < 2) continue;
@@ -83,6 +88,9 @@ export function judgeTurnTrial(routedBase: LayoutModel, routedTrial: LayoutModel
   if (removed.length > 0) return no(`the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
   const blocked = spanBlockedNew(routedBase, routedTrial);
   if (blocked.length > 0) return no(`a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})`);
+  // A face that holds a held routed chord takes far-end order (Section 3): a trial that moved one by its turns is refused by name.
+  const straight = chordFaces(routedTrial), moved = (routedTrial.freeze?.turnOrder ?? []).filter(face => straight.has(faceName(face.node, face.side)));
+  if (moved.length > 0) return no(`the trial turned a face that holds a routed chord (${moved.map(face => `${face.node}.${face.side}`).join(', ')})`);
   const lost = [...keptPromises].filter(([id, turns]) => (now.get(id) ?? Infinity) > turns).map(([id]) => id);
   if (lost.length > 0) return no(`a kept course publishes more turns than it promised (${lost.join(', ')})`);
   const gatesNow = gateFindings(routedTrial), gatesThen = gateFindings(routedBase);

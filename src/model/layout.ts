@@ -602,6 +602,11 @@ export interface LayoutModel {
    * for its own link only). Absent reads as every face.
    */
   turnLinks?: string[];
+  /**
+   * With `turnOrder`: the faces (`node|side`, `faceKey`) that keep far-end order in this run although every other face takes the turn order. A face that holds a held
+   * routed chord stands here (`docs/design/turn-order.md`, Section 3): the turn round reads the baseline's `frozenChords` and reserves them. Absent reads as none.
+   */
+  turnExcept?: string[];
   /** The planned course of each link that has one (ticket 15); absent until stage 5 plans them, and still absent when no link has a detour. */
   courses?: Course[];
   document: NormalisedDocument;

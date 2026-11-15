@@ -271,8 +271,30 @@ export function turnMissed(model: LayoutModel): Diagnostic[] {
   return found;
 }
 
-/** Whether a face takes the turn order in this run: every face, or with `turnLinks` only the faces that carry one of those links. */
+/**
+ * The faces that hold a held routed chord, by `faceKey` (docs/design/turn-order.md, Section 3): a face with a straight link takes far-end order. One reader of the
+ * recorded decision (`frozenChords`, R1) for the turn round that reserves the faces and for G5 that judges them; nothing here derives a chord again. Absent
+ * `frozenChords` (a model that is not frozen yet) holds none.
+ */
+export function chordFaces(model: LayoutModel): Set<string> {
+  const faces = new Set<string>(), held = new Set(model.frozenChords ?? []);
+  if (held.size === 0) return faces;
+  for (const link of model.links) {
+    if (!held.has(link.id) || link.attachments === undefined) continue;
+    for (const ref of [link.attachments.from, link.attachments.to]) {
+      const side = findPort(model, ref)?.side;
+      if (side !== undefined) faces.add(faceKey(ref.node, side));
+    }
+  }
+  return faces;
+}
+
+/**
+ * Whether a face takes the turn order in this run: every face but the ones reserved for far-end order (`turnExcept`: a face that holds a held routed chord), or with
+ * `turnLinks` only the faces that carry one of those links.
+ */
 export function turnScope(model: LayoutModel, node: string, side: Side): boolean {
+  if (model.turnExcept?.includes(faceKey(node, side))) return false;
   if (model.turnLinks === undefined) return true;
   const wanted = new Set(model.turnLinks);
   return model.links.some(link => wanted.has(link.id) && [link.attachments?.from, link.attachments?.to].some(ref => ref !== undefined && ref.node === node && findPort(model, ref)?.side === side));

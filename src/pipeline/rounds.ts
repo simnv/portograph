@@ -529,8 +529,9 @@ export const turn: Round<TurnOffer> = {
   },
   reserve(env, s, o) {
     // The ledger a kept trial keeps asks for no change of a face; the trial's own asks for one (the turn order must move a face, or the trial is refused).
-    o.keptTurn = addReservations(s.kept, [...floorEntries(keptFloors(env, s), 'turn', env.placements), ...turnEntries(true, [], false, 'turn', env.placements)]);
-    return addReservations(o.keptTurn, turnEntries(true, [], true, 'turn', env.placements));
+    // The faces that hold a held routed chord keep far-end order, in the trial and in every run after it (docs/design/turn-order.md, Section 3).
+    o.keptTurn = addReservations(s.kept, [...floorEntries(keptFloors(env, s), 'turn', env.placements), ...turnEntries(true, [], false, 'turn', env.placements, o.offer.except)]);
+    return addReservations(o.keptTurn, turnEntries(true, [], true, 'turn', env.placements, o.offer.except));
   },
   // The offer was decided before any placement; this is left only when the measure and stage 5 disagree about a face. The placement is spent (no re-run is given back).
   holdsAt7e(_env, _s, _o, ledger, trial7e) {

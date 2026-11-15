@@ -58,6 +58,15 @@ those depth orders read back as slot orders. The slot order is fixed first, and 
 This was measured on case 09: with the slots swapped, the tier-gap plan gave the inner link the upper row with no
 other change.
 
+**A face that holds a straight link keeps far-end order** (owner ruling, 2026-11-15; `GLOSSARY.md`, Far-end order). A held routed chord
+(`model.frozenChords`, decided at the start of 7f) runs as one straight segment from its port, so it has no first turn, and a first-turn
+slot for the other ports of its face would place them against the far ends that the chord shows. Such a face takes no turn order: its
+ports stand in the order of the far ends of their links, and G5 judges it by the far-end ranges (Section 7). A face with only orthogonal
+links keeps the rule above, because it removes crossings between the runs there. Port names never set a position; an authored order wins
+in both cases. The faces are read from the baseline that the turn round measures (Section 10), because a chord is held only after 7a:
+placement cannot know them earlier, so the round reserves them (`turnExcept`) and the trial refuses by name if it holds a chord on a face
+it turned.
+
 What stays as today:
 - A face with no planned turn keeps the far-end order byte for byte (group 3 only).
 - Onward links in the far-end direction (a stepped part toward its far end, an L into a lateral face) have reach
@@ -124,7 +133,9 @@ has no plan today. Stage 8 finds a way round. This is a discovery. The bypass be
 ## 7. G5
 
 G5 `port-order` reads the same comparator on the published paths, on the faces that the turn order placed. The
-layout records those faces (`freeze.turnOrder`: node and side). On such a face, a pair of ports in group 3, or a pair
+layout records those faces (`freeze.turnOrder`: node and side) and the chords it held (`frozenChords`); G5 reads both records and derives
+neither again (R1). A recorded face that holds a held routed chord is not a turn-order face for G5: it is judged by the far-end ranges, as
+every other face is (Section 3). On a recorded face that holds no chord, a pair of ports in group 3, or a pair
 of onward ports of one class, is judged by the far-end ranges as today, and any other pair by the turn order. Every
 other face is judged by the far-end ranges alone, so a baseline that no trial changed is judged as today. One
 predicate serves the gate and placement (`decide.ts`, `chord-clear.ts` and the far-end question of `flanks.ts`);
@@ -152,8 +163,9 @@ The turn order is an offer. The round measures it on the kept result, places onc
 only when the published result is better by `unified`.
 
 **The offer.** On the kept 7f model and its routed result, the comparator of Section 3 reads the planned turns of
-every face. The offer is the set of faces whose turn order differs from the order they have. An empty set is no
-offer.
+every face. The offer is the set of faces whose turn order differs from the order they have, less the faces that hold a held
+routed chord on that baseline (`TurnOffer.except`; Section 3). An empty set is no offer. The trial reserves the faces of `except`
+for far-end order (`turnOrder` reservation, `scope.except`; `LayoutModel.turnExcept`), and every run after a kept trial keeps them.
 
 **Where the round sits.** The rounds run in this order: fan rounds, span round (ticket 22), course round (ticket 15;
 before or after the side rounds, as today), side rounds, the deferred course round, **the turn round**, the overlay
@@ -181,6 +193,8 @@ baseline, so no earlier round reserves for it. It takes a re-run that the earlie
 - No removed link. No new gate finding (findings compared as sets). No minimum separation broken or deepened.
 - Every kept course publishes at most the turns it promised.
 - The canvas does not grow (the turn order adds no size; a growth is a sign of a planner fault, and refuses).
+- No face that the trial turned holds a held routed chord in the trial (the chords of a trial can differ from the baseline's; the
+  trial is refused by name, and G5 would fail the face).
 - The whole reading is better by `unified`: fewer bent links over both layers; on a tie, fewer turns; on a tie,
   fewer crossings.
 

@@ -27,8 +27,11 @@ export interface ReservationPayload {
   course: { course: Course; maxTurns?: number };
   /** The link is a spanning chord. */
   spanChord: { link: string };
-  /** Stage 5 orders the ports of a face by the planned first turn of their links. */
-  turnOrder: { scope: { all: true } | { links: readonly string[] }; requireChanged: boolean };
+  /**
+   * Stage 5 orders the ports of a face by the planned first turn of their links. `except` names the faces (`node|side`) that keep far-end order: a face that holds a
+   * held routed chord (`docs/design/turn-order.md`, Section 3), read from the baseline's `frozenChords` when the round reserved it.
+   */
+  turnOrder: { scope: { all: true; except?: readonly string[] } | { links: readonly string[] }; requireChanged: boolean };
   /** A trunk join (or every trunk join) that placement declines. */
   trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
   /** A move keeps every routed port of a member row's facing edge from standing deeper in a riser keep-out than it did (mesh-bus.md, section 11.5). */
@@ -132,7 +135,13 @@ export function reserve(ledger: Reservations, entries: Reservations): Reservatio
       if ('links' in old.payload.scope && 'links' in entry.payload.scope) {
         const links = [...new Set([...old.payload.scope.links, ...entry.payload.scope.links])];
         result[at] = { ...old, payload: { scope: { links }, requireChanged: old.payload.requireChanged || entry.payload.requireChanged } };
-      } else if (entry.payload.requireChanged && !old.payload.requireChanged) result[at] = { ...old, payload: { ...old.payload, requireChanged: true } };
+      } else {
+        const except = 'except' in old.payload.scope || 'except' in entry.payload.scope
+          ? [...new Set([...('except' in old.payload.scope ? old.payload.scope.except ?? [] : []), ...('except' in entry.payload.scope ? entry.payload.scope.except ?? [] : [])])].sort() : undefined;
+        const requireChanged = old.payload.requireChanged || entry.payload.requireChanged;
+        if (except !== undefined || requireChanged !== old.payload.requireChanged)
+          result[at] = { ...old, payload: { scope: except === undefined || !('all' in old.payload.scope) ? old.payload.scope : { all: true, except }, requireChanged } };
+      }
     }
     // Every other kind is idempotent: the first entry stands.
   }
@@ -246,19 +255,20 @@ export function corridorSideOf(ledger: Reservations | undefined, link: string, t
 }
 
 /** Whether every face takes the turn order, and the links whose faces take it when not every face does. */
-export function turnOf(ledger: Reservations): { all: boolean; links: string[]; requireChanged: boolean } {
+export function turnOf(ledger: Reservations): { all: boolean; links: string[]; except: string[]; requireChanged: boolean } {
   let all = false, requireChanged = false;
-  const links: string[] = [];
+  const links: string[] = [], except = new Set<string>();
   for (const { payload } of ofKind(ledger, 'turnOrder')) {
-    if ('all' in payload.scope) all = true; else for (const id of payload.scope.links) if (!links.includes(id)) links.push(id);
+    if ('all' in payload.scope) { all = true; for (const face of payload.scope.except ?? []) except.add(face); } else for (const id of payload.scope.links) if (!links.includes(id)) links.push(id);
     requireChanged ||= payload.requireChanged;
   }
-  return { all, links, requireChanged };
+  return { all, links, except: [...except].sort(), requireChanged };
 }
-export function turnEntries(turn: boolean, links: readonly string[], requireChanged: boolean, producer: RoundId, revision: number): Reservations {
+/** `except`: the faces (`node|side`) that keep far-end order although every other face takes the turn order; only read with `turn`. */
+export function turnEntries(turn: boolean, links: readonly string[], requireChanged: boolean, producer: RoundId, revision: number, except: readonly string[] = []): Reservations {
   const command = { kind: 'command' as const, id: 'turn-order' };
   return [
-    ...(turn ? [reservation('turnOrder', command, 'all', producer, revision, { scope: { all: true }, requireChanged })] : []),
+    ...(turn ? [reservation('turnOrder', command, 'all', producer, revision, { scope: except.length > 0 ? { all: true, except: [...except].sort() } : { all: true }, requireChanged })] : []),
     ...(links.length > 0 ? [reservation('turnOrder', command, 'links', producer, revision, { scope: { links: [...links] }, requireChanged: false })] : []),
   ];
 }
@@ -423,7 +433,8 @@ function shapeFailure(entry: unknown): string | undefined {
     case 'spanChord': return isString(payload['link']) ? undefined : bad;
     case 'turnOrder': {
       const scope = payload['scope'];
-      const scopeOk = isObject(scope) && (scope['all'] === true || (Array.isArray(scope['links']) && scope['links'].every(isString)));
+      const scopeOk = isObject(scope) && ((scope['all'] === true && (scope['except'] === undefined || (Array.isArray(scope['except']) && scope['except'].every(isString))))
+        || (Array.isArray(scope['links']) && scope['links'].every(isString)));
       return scopeOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
     }
     case 'rowOrder': {
@@ -504,6 +515,7 @@ export function validateReservations(model: LayoutModel): void {
     const turn = turnOf(ledger);
     if ((turn.all || turn.links.length > 0) !== (model.turnOrder === true)) throw new Error('The reserved turn order differs from the turn order of the model');
     if (!turn.all && !same(turn.links, model.turnLinks ?? [])) throw new Error('The reserved turn links differ from the turn links of the model');
+    if (!same(turn.except, model.turnExcept ?? [])) throw new Error('The reserved far-end faces differ from the far-end faces of the model');
   }
   // A floor is a promise about the placed geometry, which later stages may only grow, and a feed order a promise no later stage may turn;
   // the kinds below are checked on every restored stage.

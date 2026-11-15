@@ -24,7 +24,7 @@ let kept: Reservations = [...floorEntries(options.testNodeFloors ?? new Map(), '
   // The links every placement run reserves as spanning chords (ticket 22): the test's, or the ones the span round keeps.
   ...spanEntries(options.testSpanHints ?? [], 'initial', 0),
   // Whether every placement run orders the ports of a face by the planned first turn (ticket 24): forced by the test option, or set by a kept turn round.
-  ...turnEntries(options.testTurnOrder === true, options.testTurnLinks ?? [], false, 'initial', 0)];
+  ...turnEntries(options.testTurnOrder === true, options.testTurnLinks ?? [], false, 'initial', 0, options.testTurnExcept ?? [])];
 // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
 const placeFirst = async (): Promise<void> => {
 for (;;) {

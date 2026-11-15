@@ -52,7 +52,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   }
   for (const link of resolved.links) if (spans.has(link.id)) link.spanHint = true;
   const turn = turnOf(reservations);
-  if (turn.all) resolved.turnOrder = true;
+  if (turn.all) { resolved.turnOrder = true; if (turn.except.length > 0) resolved.turnExcept = [...turn.except]; }
   else if (turn.links.length > 0) { resolved.turnOrder = true; resolved.turnLinks = [...turn.links]; }
   const hints = sideHintsOf(reservations), laneKeys = laneKeysOf(reservations);
   stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));

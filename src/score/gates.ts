@@ -24,7 +24,7 @@ import { pathEnd } from '../layout/path-end.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { diagonalMayCross, linkFreeMargin } from '../layout/diagonal-text.js';
 import { portId } from '../layout/skeleton-graph.js';
-import { faceKey, plannedTurns, portTurn, turnOrderViolated, turnRanker, type TurnPort } from '../layout/turn-order.js';
+import { chordFaces, faceKey, plannedTurns, portTurn, turnOrderViolated, turnRanker, type TurnPort } from '../layout/turn-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -116,7 +116,10 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
   // missing contributes nothing, as before.
   const farAnchors = new Map<string, Point[]>();
   // On a face that the turn order placed (ticket 24, Section 7) the links at each port are kept too, to read their first turns.
-  const turned = new Set((model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)));
+  // A face that holds a held routed chord takes far-end order (docs/design/turn-order.md, Section 3, Section 7): the layout records the chords (`frozenChords`), and the
+  // gate reads that record; such a face is judged by the far-end ranges even if the turn order recorded it.
+  const straight = chordFaces(model);
+  const turned = new Set((model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)).filter(face => !straight.has(face)));
   const linksAt = new Map<string, { link: LayoutLink; which: 'from' | 'to' }[]>();
   for (const link of model.links) {
     if (!routedLinks.has(link)) continue;
