@@ -58,18 +58,18 @@ it('a span corridor does not push the group of a transit source', async () => {
 }, 60000);
 
 it('a corridor that follows its child derives the frames again', async () => {
-  // The held-lane sheet with `l2` declared before `l1`: 7f's last step moves a corridor that a frame holds,
-  // the frame `east` kept its old edge, and the route stage refused the model ("Frames contradict the cell geometry they derive from").
-  // The premise needs the reseat to be adopted. It was under the Arial widths of the sheet as it stands; Verdana is wider, and the sheet as it
-  // stands gets no reseat at all, so the access labels are cut to the widths the corridor needs (" of the main building" becomes " of the main").
+  // A corridor that follows its child must leave the frames the cells derive. The premise needs the reseat to be adopted, and a frame to stand in the
+  // sheet. It was the held-lane sheet with `l2` declared before `l1` (7f's last step moved a corridor that a frame holds, the frame `east` kept its old edge,
+  // and the route stage refused the model: "Frames contradict the cell geometry they derive from"). Since ADR-0027 the seat moves a child under its
+  // corridor, or declines it at the cap, and no order or label width of that sheet leaves a corridor free at its child's port (72 orders and
+  // two label widths tried): its reseat is none or refused. a-three-port-side-shares-the-room-beyond-its-stems adopts two reseats and keeps three frames.
   // The refused reseat has its own pin: a-refused-reseat-restores-its-frames (refused-reseat-frames.test.ts).
-  const lines = read('a-held-lane-is-reserved-before-a-foreign-lane').replaceAll(' access server of the main building', ' access server of the main').split('\n');
-  const at = lines.findIndex(line => line.startsWith('  l1:'));
-  [lines[at], lines[at + 1]] = [lines[at + 1]!, lines[at]!];
+  const yaml = read('a-three-port-side-shares-the-room-beyond-its-stems');
   resetAttemptCounters();
-  const model = await layout(parse(lines.join('\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(attemptCounters.reseat.adopted).toBeGreaterThan(0);
   expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(true);
   expect(model.removedLinks ?? []).toEqual([]);
+  expect(model.frames?.length).toBeGreaterThan(0);
   expect(model.frames).toEqual(deriveFrames(model));
 }, 60000);

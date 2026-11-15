@@ -200,7 +200,10 @@ links:
     // Before the fix the tier-gap solve of the span round's last run threw: its rebuild in y widened edge-near to the extent of access.
     const model = await run(sheet('a-tier-gap-growth-widens-no-grid-pair-in-x'));
     expect(model.feedSplits!.map(split => split.pair)).toEqual([['edge-near', 'edge-far']]);
-    expect(bends(model)).toBe(4);
+    // ADR-0027: `snk1` keeps 284 px instead of 343 (link-14 is declined at the cap), the tier gap above tier 1 grows 9.25 px to hold the parts, and the
+    // chords of link-5 and link-6 are refused (`body`, `leg`): two jogs of two bends each, 8 turns where there were 4. The publication, the feed split and the
+    // grid pair are the rule here.
+    expect(bends(model)).toBe(8);
   }, 240000);
 
   it('a grid pair the tier-gap solve holds stays as it stands and is recorded as refused (R1)', async () => {

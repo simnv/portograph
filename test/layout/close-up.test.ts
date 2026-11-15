@@ -53,7 +53,7 @@ describe('a sibling group closes up after the trim', () => {
 
   it('moves `far` left toward `near` and records the shift', () => {
     const dx = model.bodyTrims?.shifts?.['far'];
-    expect(dx).toBeLessThan(-500);
+    expect(dx).toBeLessThan(-50);
     expect(model.diagnostics.some(item => item.code === 'CLOSE_UP' && item.message.includes('far by'))).toBe(true);
     expect(model.diagnostics.filter(item => item.code === 'CLOSE_UP_DECLINED')).toEqual([]);
   });
@@ -78,9 +78,10 @@ describe('a sibling group closes up after the trim', () => {
 
   // A shift that is itself a fixed point (the close-up of the geometry it names gives it again) passes: the record is the trusted decision,
   // as a trimmed body recorded wider into free space is (ticket 68, R5 limit). `far` stands a band gap from `near`, so a shorter forged shift is
-  // one, and so is a record with no shift: the closed-up geometry closes up no further.
+  // one, and so is a record with no shift: the closed-up geometry closes up no further. A longer shift is refused when it passes the width the trim
+  // freed (`far` freed 234 px under the alignment cap, ADR-0027; 622 px before it), so the forged `far` shift is 300 px longer.
   it('refuses a forged shift: another dx, a group that may not move, a shift under the least move, a lane shift alone', () => {
-    expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.shifts!['far']! -= 30; }))).toThrow(/end trim record is forged/);
+    expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.shifts!['far']! -= 300; }))).toThrow(/end trim record is forged/);
     expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.shifts!['src'] = -20; }))).toThrow(/end trim record is forged/);
     expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.shifts!['far'] = -0.5; }))).toThrow(/end trim record is forged: shift of group far/);
     expect(() => restoreLayoutModel(forge(model, copy => { delete copy.bodyTrims!.shifts; copy.bodyTrims!.laneShifts = { [copy.lanes[0]?.id ?? 'none']: -10 }; })))
@@ -90,7 +91,7 @@ describe('a sibling group closes up after the trim', () => {
 
 describe('a corridor follows the group that closes up', () => {
   let model: LayoutModel, drafts: LayoutModel[];
-  beforeAll(async () => { ({ model, drafts } = await run('a-stretched-body-is-trimmed-to-its-ports')); }, 120000);
+  beforeAll(async () => { ({ model, drafts } = await run('a-corridor-follows-the-group-that-closes-up')); }, 120000);
 
   it('moves `far` and the lane of its link by one shift, and the lane still stands on the port', () => {
     const dx = model.bodyTrims?.shifts?.['far'];
