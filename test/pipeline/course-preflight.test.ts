@@ -75,7 +75,19 @@ describe('course 7e preflight', () => {
     expect(attemptCounters.coursePreflight.checked).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.coursePreflight.refusedAt7e).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.attempts).toBe(1);
-    expect(layoutHash(model)).toBe('56f38cf75727');
+    // ADR-0027 replaces stretched geometry; this hash still pins the layout retained after the doomed trial.
+    expect(layoutHash(model)).toBe('79bb6df44f93');
+
+    const savedPreflight = course.preflight;
+    course.preflight = async () => undefined;
+    let withoutPreflight: LayoutModel;
+    try {
+      withoutPreflight = await layout(parse(spineLeafYaml), options);
+    } finally {
+      if (savedPreflight !== undefined) course.preflight = savedPreflight;
+      else delete course.preflight;
+    }
+    expect(layoutHash(model)).toBe(layoutHash(withoutPreflight));
   }, 60000);
 
   it('refuses the doomed course trial at 7e on goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml identically to bypassing preflight', async () => {

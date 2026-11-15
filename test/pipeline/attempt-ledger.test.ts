@@ -25,7 +25,7 @@ const golden = (name: string): string =>
   withoutJointOrder(readFileSync(new URL(`../../goldens/${name === 'm1-sip-edge' ? '' : 'synthetic/'}${name}.yaml`, import.meta.url), 'utf8'));
 
 interface Row {
-  name: string; counters: string | undefined; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: 'none' | 'refused';
+  name: string; counters: string | undefined; runs: number; attempts: number; rounds: number; open: number; chord: number; baseChord: number; reseat: 'none' | 'refused' | 'adopted';
   probe: number; preChords: number; preCentre: number; base7f: string;
 }
 const row = (name: string, counters: string | undefined, runs: number, attempts: number, rounds: number, open: number, chord: number,
@@ -54,17 +54,21 @@ const ROWS: Row[] = [
   // Ticket 65: the settle after the rounds puts src back at the spec's x, a direct member then crowds a planned part, and the attempt body runs
   // once more with it refused (two bodies of one round each, one settle and its eight passes each): 2/48/14/3 and 2 rounds (1/24/10/3 and 1 before).
   // DR-04: the copy that declares `access` before `src`, so the canonical link order lays the shape of the spec out again.
-  row('a-tier-gap-plan-orders-every-part-middle-tier-first', '2/48/14/3', 1, 1, 2, 0, 0, { reseat: 'refused', preChords: 1 }),
+  // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
+  row('a-tier-gap-plan-orders-every-part-middle-tier-first', '1/32/10/3', 1, 1, 1, 0, 0, { reseat: 'adopted', preChords: 1 }),
   row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/6/7/3', 1, 1, 1, 0, 0),
   row('a-tier-gap-grows-to-its-rows', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 54: one centring pass fewer (1/5/7/3 before).
-  row('a-re-seated-band-carries-its-bar-and-flank', '1/4/7/3', 1, 1, 1, 0, 0),
-  row('sync-links-do-not-stack-a-tier', '1/4/7/3', 1, 1, 1, 0, 0),
+  // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
+  row('a-re-seated-band-carries-its-bar-and-flank', '1/12/7/3', 2, 1, 1, 0, 0),
+  // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
+  row('sync-links-do-not-stack-a-tier', '1/48/7/3', 2, 1, 1, 0, 0),
   row('an-overlay-leaves-a-lateral-side-past-a-sibling-body', '2/7/12/5', 2, 2, 2, 0, 0),
   // Ticket 22: a long, flat chord never joins perpendicular faces, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
   // The far-end pull (ticket 22) stands lb next to fe4, so its link is a chord (1/14/7/3 before).
   // Ticket 75: the pull is idempotent, so the 7f held-axes probe moves nothing (probe 1 before).
-  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/13/7/3', 4, 1, 1, 0, 0),
+  // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
+  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/26/7/3', 4, 1, 1, 0, 0),
   row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/7/7/3', 2, 1, 1, 0, 0),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 162 (a diagonal may cross a title): the two feeds the canton titles refused are chords before centring, which takes them off (pre-7f chords
@@ -79,13 +83,15 @@ const ROWS: Row[] = [
   // Ticket 54: the title no longer refuses link-2 (it takes the halo), so the first placement run holds one more chord, a side hint re-runs the
   // placement (2 runs, 2 attempts, 2 rounds, pre-7f chords lost 1) and the base 7f loses no aligned link (0/1/0, 1/6/7/3 and one of each before).
   // The sheet gains: 6/6 routed straight (5/6), 861 px wide (926), Q 0.9028 (0.8739).
-  row('a-member-title-widens-a-beside-row', '2/8/12/5', 2, 2, 2, 0, 0, { preChords: 1 }),
+  // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
+  row('a-member-title-widens-a-beside-row', '2/67/12/5', 3, 2, 2, 0, 0),
   // The cost counters (settle, centring passes, copies, replays) of this sheet move with every change to the sweep that seats a flank beside a frame (architecture ticket 19: the
   // centring passes 15 to 13); what the sheet pins is its behaviour: the runs, the attempts, the rounds, no open round, no chord move, and the findings below.
   // Architecture 2, ticket 03: the side trial on this sheet (link-1, a lane hint on up-1.100G#3) is refused at its 7e now, because the far port of the lane is 65 px off the lane x
   // (the reservation `laneOwner` reads the anchor, not the flag), where it was refused after 7f for no fewer bends. The second 7f attempt never starts: attempts and rounds 2 to 1. The published layout and score are the same.
   // The 9 px pills need three placement runs instead of four; the other decisions are unchanged.
   row('a-canton-column-is-not-pulled-into-a-flank', undefined, 3, 1, 1, 0, 0),
+  // ADR-0027: the fixture's authored upper-body floor restores its three straight feeds and keeps the original ledger counts.
   row('a-flank-link-around-a-neighbour-runs-along-the-core-edge', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 156: protected x separation restores five centring passes; every other count is unchanged.
   row('m1-sip-edge', '1/5/7/3', 1, 1, 1, 0, 0),
@@ -152,15 +158,16 @@ describe('the ledger of the 7f placement attempt reads the counts of the ticket 
   // and no settle round replays for a growth: three-continents 41/19 (43/21 and 25 gap rounds before), the others 0/0 (5, 2, 2, 1 gap
   // rounds), the chord-step fixture 10/10 (13 gap rounds).
   // DR-04: three-continents 26/16 (41/19 in the written order; see its row above).
+  // ADR-0027: a-tier-gap-plan 2/0/2 becomes 1/0/1; the equality below still proves one solve per attempt body.
   it.each([
-    ['three-continents', 26, 16, 2], ['a-tier-gap-plan-orders-every-part-middle-tier-first', 2, 0, 2], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 1],
+    ['three-continents', 26, 16, 2], ['a-tier-gap-plan-orders-every-part-middle-tier-first', 1, 0, 1], ['two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', 0, 0, 1],
     ['a-tier-gap-grows-to-its-rows', 0, 0, 1], ['a-canton-member-frame-slides-off-a-straight-chord', 0, 0, 1], ['a-chord-step-moves-a-group-off-a-straight-chord', 10, 10, 3],
   ] as const)('derives once: %s replays %i, settled copies %i, gap solves %i', async (name, replays, trials, solves) => {
     resetAttemptCounters(); attemptCounters.ledger = true;
     await layout(parse(golden(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [], testLiftOff: true });
     expect([attemptCounters.replays, attemptCounters.settledTrials, attemptCounters.gapSolves]).toEqual([replays, trials, solves]);
     // Exactly one solve per 7f attempt body: an attempt and its retries (a crowded direct member runs the body again, ticket 22), each body one
-    // entry of the attempt log. Since ticket 65 a-tier-gap-plan retries once (its replays are the settle after the rounds, once per body).
+    // entry of the attempt log. ADR-0027 needs no crowded-member retry on a-tier-gap-plan; each body still settles once after the rounds.
     expect(attemptCounters.gapSolves).toBe(attemptCounters.attemptLog.length);
   }, 60000);
 
