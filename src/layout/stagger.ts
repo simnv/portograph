@@ -27,7 +27,9 @@ import { straightOverlaysAsDrawn } from './read/overlay-straight.js';
 import { isRoutedChord } from './frame-paths.js';
 import { columnUnitId } from './read/chain.js';
 import { standsBySeatMove } from './alignment-targets.js';
+import { lineOf } from './read/stagger.js';
 
+export { lineOf };
 export const staggerOf = (model: LayoutModel, group: string): StaggerRow | undefined => model.staggerRows?.find(row => row.group === group);
 
 /** The horizontal extent of the router's node obstacle: body clearance and stroke-expanded routed pills. */
@@ -83,7 +85,7 @@ export function staggerCandidates(model: LayoutModel): StaggerRow[] {
     const side = exitSide(model, group);
     if (side === undefined || staggerOf(model, group.id) !== undefined) return [];
     const order = [...group.rowOrder!];
-    return [{ group: group.id, order, side, pitches: [], step: 0 }];
+    return [{ group: group.id, order, far: [], side, pitches: [], step: 0 }];
   }).sort((a, b) => model.groups[b.group]!.bounds!.width - model.groups[a.group]!.bounds!.width || compareId(a.group, b.group));
 }
 
@@ -94,15 +96,18 @@ export function staggerCandidates(model: LayoutModel): StaggerRow[] {
 function measure(model: LayoutModel, plan: StaggerRow): void {
   const nodes = plan.order.map(id => model.nodes[id]!);
   let pitch = 0;
+  const last: Record<'near' | 'far', number | undefined> = { near: undefined, far: undefined };
   for (const [i, node] of nodes.entries()) {
+    const line = lineOf(plan, node.id), prev = last[line];
     const box = node.bounds!, cx = box.x + box.width / 2;
-    // Same-line neighbours are two pitches apart. Adjacent bodies live on separate lines.
-    if (i >= 2) pitch = Math.max(pitch, (nodes[i - 2]!.bounds!.width / 2 + box.width / 2 + rowGap(model, nodes[i - 2]!.id, node.id)) / 2);
+    // Same-line neighbours are `i - prev` pitches apart. Bodies on different lines clear in y.
+    if (prev !== undefined) pitch = Math.max(pitch, (nodes[prev]!.bounds!.width / 2 + box.width / 2 + rowGap(model, nodes[prev]!.id, node.id)) / (i - prev));
+    last[line] = i;
     const obstacle = obstacleX(model, node.id);
-    // The ports of an odd member must pass the adjacent even members on the way to their feeds.
-    if (i % 2 === 0) {
+    // The ports of a far-line member must pass the adjacent near-line members on the way to their feeds.
+    if (line === 'near') {
       for (const [index, next] of [[i - 1, nodes[i - 1]], [i + 1, nodes[i + 1]]] as const) {
-        if (next === undefined) continue;
+        if (next === undefined || lineOf(plan, next.id) !== 'far') continue;
         const nextCx = next.bounds!.x + next.bounds!.width / 2;
         const offsets = next.ports.filter(port => port.side === plan.side && !port.unused).map(port => port.anchor!.x - nextCx);
         const need = index < i ? cx - obstacle.low + Math.max(0, ...offsets) : obstacle.high - cx - Math.min(0, ...offsets);
@@ -295,6 +300,8 @@ export function seatStaggerRows(model: LayoutModel): void {
     if (group === undefined || exitSide(model, group) !== plan.side || JSON.stringify(group.rowOrder) !== JSON.stringify(plan.order)) {
       throw new PlacementRefusal('stagger', `Stagger row ${plan.group} no longer has its reserved feed order and exit face`, { stage: 'sides-two', owners: [{ kind: 'group', id: plan.group }] });
     }
+    // First seat decides the far-line members once (R1); later runs read `plan.far` through `lineOf`.
+    if (!plan.far.length) plan.far = plan.order.filter((_, i) => i % 2 === 1);
     measure(model, plan);
     const nodes = plan.order.map(id => model.nodes[id]!);
     const min = Math.min(...nodes.map(node => node.bounds!.x));
@@ -303,7 +310,8 @@ export function seatStaggerRows(model: LayoutModel): void {
     nodes.forEach((node, i) => {
       if (i > 0) centre += plan.pitches[i - 1]!;
       const x = centre - node.bounds!.width / 2;
-      const top = y + ((plan.side === 'top' ? i % 2 : 1 - i % 2) * plan.step);
+      const offset = lineOf(plan, node.id) === (plan.side === 'top' ? 'far' : 'near') ? 1 : 0;
+      const top = y + offset * plan.step;
       const dx = x - node.bounds!.x, dy = top - node.bounds!.y;
       node.bounds!.x = x; node.bounds!.y = top;
       for (const port of node.ports) if (port.anchor) { port.anchor.x += dx; port.anchor.y += dy; }
@@ -400,27 +408,33 @@ export function validateStaggerRows(model: LayoutModel): void {
   const seen = new Set<string>(), claimed = new Set<string>();
   for (const plan of model.staggerRows ?? []) {
     const group = model.groups[plan.group];
+    const members = new Set(plan.order);
     if (seen.has(plan.group) || group === undefined || exitSide(model, group) !== plan.side
       || JSON.stringify(group.rowOrder) !== JSON.stringify(plan.order) || !Array.isArray(plan.pitches) || plan.pitches.length !== plan.order.length - 1
       || !plan.pitches.every(pitch => pitch > 0 && Number.isFinite(pitch)) || !(plan.step > 0)
+      || !Array.isArray(plan.far) || plan.far.length === 0 || plan.far.length >= plan.order.length
+      || new Set(plan.far).size !== plan.far.length || plan.far.some(id => !members.has(id))
       // A rank cell carries its decided feeding chain (fan wrap, D-Q4), a plain row none (`StaggerRow.chain`).
       || (group.frame !== undefined) !== Array.isArray(plan.chain)) throw new PlacementRefusal('stagger', 'Invalid stagger reservation');
     seen.add(plan.group);
     if (plan.chain?.length) validateChain(model, plan, claimed);
     for (const id of plan.chain ?? []) claimed.add(id);
     const first = model.nodes[plan.order[0]!]!.bounds!;
+    const nearY = model.nodes[plan.order.find(id => lineOf(plan, id) === 'near')!]!.bounds!.y;
+    const nearMembers = plan.order.filter(id => lineOf(plan, id) === 'near');
     let offset = 0;
     for (const [i, id] of plan.order.entries()) {
       const box = model.nodes[id]!.bounds!;
-      const dy = (i % 2) * plan.step * (plan.side === 'top' ? 1 : -1);
+      const line = lineOf(plan, id);
+      const dy = (line === 'far' ? 1 : 0) * plan.step * (plan.side === 'top' ? 1 : -1);
       if (i > 0) offset += plan.pitches[i - 1]!;
-      if (Math.abs(box.y - first.y - dy) > PLACEMENT_EPS
+      if (Math.abs(box.y - nearY - dy) > PLACEMENT_EPS
         || Math.abs(box.x + box.width / 2 - first.x - first.width / 2 - offset) > PLACEMENT_EPS) throw new PlacementRefusal('stagger', 'Stagger placement lost its reserved pitch or lines', { owners: [{ kind: 'group', id: plan.group }] });
-      if (i % 2 === 0) continue;
+      if (line === 'near') continue;
       for (const port of model.nodes[id]!.ports.filter(port => port.side === plan.side && !port.unused)) {
         const x = port.anchor!.x;
-        for (const even of plan.order.filter((_, index) => index % 2 === 0)) {
-          const obstacle = obstacleX(model, even);
+        for (const near of nearMembers) {
+          const obstacle = obstacleX(model, near);
           if (x > obstacle.low + PLACEMENT_EPS && x < obstacle.high - PLACEMENT_EPS) throw new PlacementRefusal('stagger', 'Stagger vertical corridor enters a neighbouring obstacle', { owners: [{ kind: 'group', id: plan.group }] });
         }
       }
@@ -558,7 +572,8 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
       reasons.set(row.group, objective);
       continue;
     }
-    accepted.push(row); base = draft;
+    const proved = draft.staggerRows!.find(item => item.group === row.group)!;
+    accepted.push({ ...row, far: [...proved.far] }); base = draft;
   }
   const arrangements: Record<string, GroupArrangement> = {};
   for (const id of ids) arrangements[id] = column.has(id) ? { chosen: 'column' } : accepted.some(row => row.group === id) ? { chosen: 'stagger' } : { chosen: 'row', reason: reasons.get(id)! };

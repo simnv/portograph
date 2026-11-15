@@ -942,10 +942,12 @@ export interface PlacementSnapshot {
   labelBands: LabelBand[];
   labels: LayoutLabel[];
 }
-/** A row keeps feed order in x; odd members stand one line away from their feeds. */
+/** A row keeps feed order in x; members in `far` stand one line away from their feeds. */
 export interface StaggerRow {
   group: string;
   order: string[];
+  /** Members standing on the far line (away from the feeds), in `order` order (required, never empty). */
+  far: string[];
   side: 'top' | 'bottom';
   /** The centre distance of each consecutive pair of members, `order.length - 1` entries (ticket 51: a gap between two parents is wider). */
   pitches: number[];
