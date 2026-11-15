@@ -29,7 +29,7 @@ import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, besideRunLabelBox, describedLink, labelBorders, linkLabelSize, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, tierGapSplit } from './link-labels.js';
 import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from './overlay-paths.js';
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
-import { chordKind, crossingRect, isRoutedChord, levelChordPartners } from './frame-paths.js';
+import { chordKind, crossingRect, frozenLevelChordsFault, isRoutedChord, levelChordPartners } from './frame-paths.js';
 import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 import { directFamiliesFault } from './direct-families.js';
 import { fanAdmissionsFault } from './fan-admission.js';
@@ -1867,6 +1867,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   // The fan admissions are read from their record and the geometry, never admitted again (architecture-2 ticket 40, R1/R5).
   const fan = fanAdmissionsFault(model);
   if (fan !== undefined) throw new Error(`The fan admission record is forged: ${fan}`);
+  // The level chords the freeze recorded are read from their record and the geometry (dense-16x9 ticket 06, R1/R5); `levelChordPartners` reads them as soon as 7f runs.
+  const level = frozenLevelChordsFault(model);
+  if (level !== undefined) throw new Error(`The level chord record is forged: ${level}`);
   const padding = labelPaddingFault(model);
   if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
   // The stem depths are read from their record (architecture-2 ticket 57, R1); a record the geometry does not call for is refused (R5).

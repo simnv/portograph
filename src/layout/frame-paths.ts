@@ -687,6 +687,28 @@ function standsLevel(model: LayoutModel, link: LayoutLink): boolean {
 }
 
 /**
+ * What a validator checks on `model.frozenLevelChords` (R5): it reads the record and the geometry, and never takes the freeze decision again (R1). Absent = no held chord
+ * was level at the freeze. A record before the freeze is a fault; every entry names a frozen chord once, that chord is a sibling-frame chord (`levelCrossChord`: two
+ * frames of one document tier, one sub-tier, facing lateral faces), and it stands level now. One check for every publication from stage 7f on, at restore too
+ * (`validateGroupLabelBands`) and on the routed model (`validateRoutedPaths`), so no consumer (`levelChordPartners`, `blockedChords`) reads an entry the check refuses.
+ */
+export function frozenLevelChordsFault(model: LayoutModel): string | undefined {
+  const record = model.frozenLevelChords;
+  if (record === undefined) return undefined;
+  if (model.frozenChords === undefined) return 'a level chord is recorded before the freeze';
+  const frozen = new Set(model.frozenChords), seen = new Set<string>();
+  for (const id of record) {
+    if (seen.has(id)) return `${id} is named twice`;
+    seen.add(id);
+    const link = model.links.find(item => item.id === id);
+    if (!frozen.has(id) || link === undefined) return `${id} is no frozen chord`;
+    if (!levelCrossChord(model, link)) return `${id} is no sibling-frame chord of one sub-tier`;
+    if (!standsLevel(model, link)) return `${id} does not stand level`;
+  }
+  return undefined;
+}
+
+/**
  * The groups, beyond `group`, whose content stands in a level relation with it (`frozenLevelChords`), all the way along: the other ends of the level chords
  * of the group's nodes, and theirs in turn. A mover that shifts the content of one of them in y shifts all of them by the same amount, or the chord tilts.
  * Empty before the freeze and when no level chord is recorded.

@@ -7,8 +7,7 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EPS, horizontal, length, near, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { outward } from '../score/model.js';
 import { effectiveLayer, placementRuns, plannedRunsOf, planRoute, reversedRuns, type LinkPlan, type PlannedRun } from './plan.js';
-import { isRoutedChord, levelCrossChord } from '../layout/frame-paths.js';
-import { PLACEMENT_EPS } from '../layout/tolerance.js';
+import { frozenLevelChordsFault, isRoutedChord } from '../layout/frame-paths.js';
 import { pathEnd } from '../layout/path-end.js';
 import { sharedBlockers, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
 import { ownedLanes, simplify, skippedCheckpoint, stubCandidate, tryStitch } from './paths.js';
@@ -153,14 +152,9 @@ function frozenChordsHeld(model: LayoutModel): void {
     const link = model.links.find(item => item.id === id);
     if (link === undefined || !isRoutedChord(model, link)) throw new Error(`frozenChords names ${id}, which holds no routed chord`);
   }
-  // A level relation recorded at the freeze is held: the chord is named, and stands level (slice B review 1; R5: read against the geometry).
-  const held = new Set(model.frozenChords ?? []);
-  for (const id of model.frozenLevelChords ?? []) {
-    const link = model.links.find(item => item.id === id);
-    if (!held.has(id) || link === undefined || !levelCrossChord(model, link)) throw new Error(`frozenLevelChords names ${id}, which holds no level chord`);
-    const segment = link.path?.segments[0];
-    if (segment === undefined || Math.abs(segment.to.y - segment.from.y) > PLACEMENT_EPS) throw new Error(`frozenLevelChords names ${id}, which is not level`);
-  }
+  // The record of the level chords is read by the one check of the placement stages (`frozenLevelChordsFault`): a route model keeps its claims (R5).
+  const level = frozenLevelChordsFault(model);
+  if (level !== undefined) throw new Error(`The level chord record is forged: ${level}`);
 }
 
 /**

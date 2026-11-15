@@ -3,10 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutLink, LayoutModel } from '../../src/index.js';
-import { blockedChords, chordKind, chordsHold, chordVerdict, levelChordPartners, levelCrossChord } from '../../src/layout/frame-paths.js';
+import { blockedChords, chordKind, chordsHold, chordVerdict, frozenLevelChordsFault, levelChordPartners, levelCrossChord } from '../../src/layout/frame-paths.js';
 import { findPort, straightLengthLimit } from '../../src/layout/row-paths.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
+import { bands, bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
@@ -135,7 +136,40 @@ describe('a sibling-frame link is a level cross-frame chord', () => {
     // A record that names a link that holds no level chord is refused (R5): the geometry is read, never the record.
     const forged = JSON.parse(JSON.stringify(model)) as typeof model;
     forged.frozenLevelChords = [model.links.find(item => item.id !== link.id)!.id];
-    expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/frozenLevelChords/);
+    expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/level chord record is forged/);
     expect(restoreLayoutModel(JSON.stringify(model)).frozenLevelChords).toEqual([link.id]);
+  }, 60000);
+
+  it('refuses a forged level record from its first publication on, at stage bands too (slice B review 2)', async () => {
+    const text = readFileSync(new URL('../../goldens/synthetic/a-top-padding-growth-keeps-a-level-sibling-chord-level.yaml', import.meta.url), 'utf8');
+    let model = await placed(text);
+    for (const step of [rows, lanes, flanks, centre, bars, bundles, bands]) model = step(model);
+    expect(model.stage).toBe('bands');
+    const level = model.frozenLevelChords!;
+    expect(level).toHaveLength(1);
+    expect(frozenLevelChordsFault(model)).toBeUndefined();
+    expect(restoreLayoutModel(JSON.stringify(model)).frozenLevelChords).toEqual(level);
+    const vertical = model.links.find(item => item.attachments!.from.node === 'core' && item.attachments!.to.node === 'n1')!;
+    expect(model.frozenChords).toContain(vertical.id);
+    const forge = (record: string[]): ReturnType<typeof JSON.parse> => ({ ...JSON.parse(JSON.stringify(model)), frozenLevelChords: record });
+    // 1. an entry that names no frozen chord; 2. a frozen chord that is no sibling-frame chord (a vertical feed, which would make the top group a partner of the row);
+    // 3. a sibling-frame chord that does not stand level (the model is read, so the record is the only thing forged in 1 and 2).
+    for (const record of [['missing-chord'], [vertical.id]]) {
+      expect(() => restoreLayoutModel(JSON.stringify(forge(record)))).toThrow(/level chord record is forged/);
+    }
+    const tilted = JSON.parse(JSON.stringify(model)) as typeof model;
+    const aside = tilted.nodes['s']!;
+    aside.bounds!.y += 8; for (const port of aside.ports) if (port.anchor) port.anchor.y += 8;
+    expect(frozenLevelChordsFault(tilted)).toMatch(/does not stand level/);
+    expect(frozenLevelChordsFault(forge(['missing-chord']))).toMatch(/no frozen chord/);
+    expect(frozenLevelChordsFault(forge([vertical.id]))).toMatch(/no sibling-frame chord/);
+    expect(frozenLevelChordsFault(forge([...level, ...level]))).toMatch(/twice/);
+    // A record before the freeze is a fault, and an absent one is none.
+    const early = JSON.parse(JSON.stringify(model)) as typeof model;
+    delete early.frozenChords;
+    expect(frozenLevelChordsFault(early)).toMatch(/before the freeze/);
+    const absent = JSON.parse(JSON.stringify(model)) as typeof model;
+    delete absent.frozenLevelChords;
+    expect(frozenLevelChordsFault(absent)).toBeUndefined();
   }, 60000);
 });
