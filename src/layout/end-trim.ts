@@ -273,8 +273,12 @@ export function checkBodyTrims(model: LayoutModel, beforeBands: boolean): { faul
   }
   const again = JSON.parse(JSON.stringify(back)) as LayoutModel;
   if (model.freeze !== undefined) again.freeze = model.freeze;
-  // The producer ran on a draft with no routed path (stage 8): its guards read the same input here.
-  for (const link of again.links) if (link.path !== undefined && link.path.fixed !== true) delete link.path;
+  // The producer ran on a draft with no routed path and no removed link (stage 8): its guards read the same input here. A link the router
+  // removed is still a link the tier-gap plan of the close-up guard plans (`removed` is a route outcome, not a placement input).
+  for (const link of again.links) {
+    if (link.path !== undefined && link.path.fixed !== true) delete link.path;
+    delete link.removed; delete link.rejectedRoute;
+  }
   trimBodies(again);
   const names = (record: Record<string, unknown> | undefined): string => JSON.stringify(Object.keys(record ?? {}).sort());
   if (names(again.bodyTrims?.nodes) !== names(trims.nodes)) return fault('the trim of the untrimmed geometry names other nodes');
