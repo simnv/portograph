@@ -586,6 +586,11 @@ receive anchors only. `rebuildNodeGeometry(draft, ids, 'current')` lets later ru
 explicit anchors while replacing content geometry by stable owner/ID. The renderer consumes
 these bounds without measuring or reflowing text. Group and link labels have later producers.
 
+Facing lateral ports of adjacent members in one row or grid also reserve their described link's straight label floor in `rowGap`.
+It reads named pill half-widths from metadata before pills exist; anonymous ports contribute zero.
+The body gap is label width plus both 8 px shortening margins, plus twice the larger pill half-width for a routed link,
+or both half-widths for an unsuppressed overlay. Centring reads this same `rowGap` floor. Node positions carry the reservation.
+
 `freezePortTopology` publishes an immutable clone with a serializable topology/floor baseline.
 Every subsequent stage uses `withLayoutMutation(previous, rule, draft => { ... })` and retains
 its returned snapshot. Existing mutating helpers receive the draft. The closed rule validators
@@ -642,6 +647,12 @@ the parts and the room of the link labels, once. For each same-tier pair with fa
 ports: level the facing ports (move the ports on the node with fewer on that side) and, if
 nothing lies between, **pin** a non-bundle link as a straight horizontal. Bundle endpoints are
 levelled here but remain unpinned for stage 7e.
+
+After levelling, `rowGap` also reserves both detour stems for a described routed pair that still jogs and whose `expectedRowPath`
+is declined. A non-adjacent facing pair reserves the label, both stems and the anchor-side pill allowance across its whole span.
+The row sweep pushes only the right end and later members; adjacent clearance is then preserved by the same sweep.
+A held chord keeps the straight floor even with unequal end heights. Same-row room is tight, label width plus 2 × 8 px between
+pill faces; short steep chords are accepted by owner ruling 17. The positions carry the room before chord freezing.
 
 `rows(model)` runs inside the `rows` transaction. The baseline is the highest row-node top in the
 tier band; nodes move up only, and row group boxes fit the flattened nodes with the standard
@@ -1344,6 +1355,11 @@ ticket 68) and closes a group up toward its sibling by the width the trim freed 
 as that feed's authoritative x and chases a corridor that has moved. It reserves no room itself: the solve after it grows the gap for the
 new row (§ 7a states the whole condition).
 
+Same-row link-label room was reserved in stages 5–6. `reserveLinkLabelRoom` leaves it untouched unless a later border cuts its window.
+Cross-group same-tier runs, hinted overlay L runs, room across a run and tier-gap label deficits remain 7f responsibilities.
+The yield ranking and the window producer read one growth split: x between pill faces for a same-tier held chord, y at the tier-gap
+split otherwise. The validator still replays the one 7f room producer.
+
 `topUpBandClearance` rebuilds every moved node's pills and text, including lower-tier cascades, before
 `holdColumnsAfterPush` and `reserveLinkLabelRoom` read them.
 
@@ -1558,7 +1574,8 @@ every authored link label (bars and unsuppressed overlay links included; bundle 
 measured and its link's run — symmetric about the midpoint the label will take, out to the nearer
 pill face or node edge — is made at least the label width plus both 8 px shortening margins: a link between tiers
 moves nothing in the reservation: its deficit is a term of the height of the tier gap, which the one solve at the end of 7f reads
-(`solveTierGaps`, `reserveLinkLabelRoom` with `gapRoom`, architecture-2 ticket 57); a link between two ends of one tier inserts the room at
+(`solveTierGaps`, `reserveLinkLabelRoom` with `gapRoom`, architecture-2 ticket 57); same-row facing runs already hold their
+stages 5–6 floor. A remaining link between two ends of one tier inserts the room at
 the gap: every group in every tier at or beyond the split between the two pill faces moves right,
 and a group straddling the split shifts only the nodes beyond it — in the link's own tier those that
 start beyond it, elsewhere those with any part beyond it — so alignments, flank sides and

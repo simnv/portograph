@@ -19,6 +19,8 @@ export { LABEL_BORDER_REACH, labelRunWindows, type LinkRun, LINK_CUT_HAIR, longe
 import { LABEL_BORDER_REACH, OVERLAY_LABEL_DENSITY, candidateBox, cutWindows, describedLink, isDiagonalRun, labelRunWindows, longestRun, overlayDensity, overlayLabelsSuppressed, runCentre, segmentLength, windowHolds } from './run-label-box.js';
 import type { LinkRun } from './run-label-box.js';
 import { LINK_LABEL_GEOMETRY } from './link-label-geometry.js';
+import { rowLabelSplit } from './row-label-room.js';
+import { isRoutedChord } from './frame-paths.js';
 import { type CrossedText, diagonalMayCross, LINK_LABEL } from './diagonal-text.js';
 
 /**
@@ -103,7 +105,7 @@ export function labelBands(model: LayoutModel, own: string, unapplied: string[] 
  * each take the window placement reserved for the other (the label placed first takes it). So one label of each such pair keeps clear
  * of the other's band, in placement (its windows) and in stage 9 (every candidate on its line), and the other lies in its own band:
  * the two never meet, whichever stage 9 places first. The ranking (ticket 21): first, a label that some growth 7f can make gives a
- * window clear of the other's band (`labelWindowDeficit` defined at `tierGapSplit`) yields, rather than one no growth can help, so the
+ * window clear of the other's band (`labelWindowDeficit` defined at `labelGrowth`) yields, rather than one no growth can help, so the
  * label growth cannot help keeps its line. Then the label with the more **slack** yields: the longest window of its line clear of the
  * borders (`boxes`), the fixed link runs and the other's band, less its text. Last key: the later link in link order yields.
  *
@@ -132,10 +134,12 @@ export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): b
     const windows = labelRunWindows(boxes, line.line, line.across, runs(line, other)) ?? [];
     return Math.max(-Infinity, ...windows.map(window => window.to - window.from)) - line.extent;
   };
-  // Ticket 21: whether growth at the tier-gap y split gives the line a window clear of the other's band (`labelWindowDeficit` defined).
-  // This ranking does not yet model the x growth of a same-tier held chord, which the room producer reads at its row split.
-  const helped = (line: LabelledLine, other: LabelledLine): boolean =>
-    labelWindowDeficit(boxes, line.line, line.extent, tierGapSplit(model, line.link), true, { across: line.across, axis: 'y', links: runs(line, other) }) !== undefined;
+  // Ranking and 7f ask about the same growth: x at a held row chord's split, y at the tier-gap split otherwise (R1).
+  const helped = (line: LabelledLine, other: LabelledLine): boolean => {
+    const growth = labelGrowth(model, line.link);
+    return labelWindowDeficit(boxes, line.line, line.extent, growth.split, growth.farEndMoves,
+      { across: line.across, axis: growth.axis, links: runs(line, other) }) !== undefined;
+  };
   for (const [i, mine] of lines.entries()) for (const other of lines.slice(i + 1)) {
     const a = mine.link.id, b = other.link.id;
     if (record[a]!.includes(b) || record[b]!.includes(a)) continue;
@@ -158,9 +162,8 @@ export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): b
 
 /**
  * Where 7f grows the tier gap a link between two tiers crosses (ticket 19): the top of the highest group below the tier of the link's
- * upper end, whose boxes all move down. `Infinity` within one tier: there is no tier-gap y growth for that row. Tier-gap label room
- * and the current yield ranking (`recordLabelYields`) read this y split. Same-tier held-chord room grows on x at the row split in
- * `reserveLinkLabelRoom`; the yield ranking does not yet account for that growth.
+ * upper end, whose boxes all move down. `Infinity` within one tier: there is no tier-gap y growth for that row.
+ * `labelGrowth` adds the x split of a same-tier held chord for the room producer and the yield ranking.
  */
 export function tierGapSplit(model: LayoutModel, link: LayoutLink): number {
   const ends = link.attachments === undefined ? [] : [link.attachments.from.node, link.attachments.to.node].map(id => model.nodes[id]!);
@@ -169,6 +172,15 @@ export function tierGapSplit(model: LayoutModel, link: LayoutLink): number {
   if (tier(ends[0]!) === tier(ends[1]!)) return Infinity;
   const upper = ends[0]!.bounds!.y <= ends[1]!.bounds!.y ? ends[0]! : ends[1]!;
   return Math.min(...Object.values(model.groups).filter(group => group.tier! > tier(upper)).map(group => group.bounds!.y));
+}
+
+/** The growth 7f can make for a diagonal label, shared with the yield ranking (R1). */
+export function labelGrowth(model: LayoutModel, link: LayoutLink): { axis: 'x' | 'y'; split: number; farEndMoves: boolean } {
+  const split = tierGapSplit(model, link);
+  if (split === Infinity && effectiveLayer(link) === 'routed' && isRoutedChord(model, link)) {
+    return { axis: 'x', split: rowLabelSplit(model, link) ?? Infinity, farEndMoves: false };
+  }
+  return { axis: 'y', split, farEndMoves: true };
 }
 
 /**

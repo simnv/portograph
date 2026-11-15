@@ -11,15 +11,18 @@ Three rules for link descriptions (stage 9 labels):
    a vertical run: it takes −90° and reads bottom-to-top, whichever way the member runs.
    The stored label box is the rotated one, with its long side along the segment; the renderer
    already draws rotated text about the box centre exactly as it does for port pills.
-2. **Description width influences link length.** Stage 7f reserves, before anything is routed, a
-   run long enough for each authored label plus both shortening margins. Stage 9 centres the label on
+2. **Description width influences link length.** Stages 5–6 reserve same-row facing label room before chord freezing; stage 7f reserves
+   the remaining runs before routing. Each run is long enough for each authored label plus both shortening margins. Stage 9 centres the label on
    the run's midpoint, so the room is measured symmetrically about the anchor midpoint out to the
    nearer pill face (or node edge). A link between tiers moves every lower tier down by the deficit;
-   a link between two ends of one tier inserts the room at the gap itself: every group in every tier at
+   a remaining link between two ends of one tier inserts the room at the gap itself: every group in every tier at
    or beyond the split between the two pill faces moves right, and a group straddling the split shifts
    only its nodes beyond it, so alignments, flank sides and bar-to-source slots all move alike and
-   nothing moves left into a preceding group; a reserved lane at or beyond the split makes the link
-   unreservable. An unheld routed link whose
+   nothing moves left into a preceding group; a reserved lane at or beyond the split moves with the room. Adjacent row or grid members reserve the straight floor in stage 5 `rowGap`, from pill metadata;
+   stage 6 adds the stems of jogging pairs after levelling and widens non-adjacent detour spans. Node positions carry this room.
+   Same-row room is tight, label width plus 2 × 8 px between pill faces, also with unequal end heights; short steep chords are accepted
+   (owner ruling 17, 2026-11-15). The yield ranking and 7f read the same x split for a same-tier held chord.
+   An unheld routed link whose
    ends are not level, or whose straight run the corridor check finds blocked — by a node, a pill, a
    foreign group box with its margin, a lane, a fixed run, a bundle row or a bundle envelope — will detour: its run is reserved with both
    stroke-aware router stems and the anchor-side pill protrusion on top of the label, and the group's

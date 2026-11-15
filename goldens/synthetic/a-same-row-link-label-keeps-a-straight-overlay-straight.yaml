@@ -1,0 +1,22 @@
+# Expected: stage 5 reserves the long same-row label before centring and chord freezing.
+# The diagonal overlay stays straight, the row chord stays straight, and 7f adds no row room.
+portograph: 2
+profile: network
+groups:
+  upper: {tier: 0}
+  lower: {tier: 1}
+nodes:
+  gateway:
+    group: upper
+    class: router
+    ports: [{name: wan, class: uplink}, {name: down, class: downlink}]
+  feeder: {group: upper, ports: [lan]}
+  hub: {group: lower, class: switch, ports: [feed, peer, other]}
+  target: {group: lower, ports: [nic]}
+links:
+  - {id: feed, from: gateway.down, to: hub.feed, label: "10G"}
+  - {id: peer, from: hub.peer, to: target.nic, label: "1G access trunk"}
+  - [feeder.lan, hub.other]
+  - [feeder, target]
+  - [feeder, target]
+  - {id: diagonal, from: feeder, to: hub, route: overlay}

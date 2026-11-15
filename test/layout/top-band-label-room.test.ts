@@ -89,9 +89,11 @@ nodes:
   right: {group: row, ports: [{name: p, side: left}]}
 links: [[left.p, right.p, {label: Feed}]]`));
   const link = model.links[0]!, left = model.nodes.left!, right = model.nodes.right!;
-  // Pin a slanted frame chord, then make its stored coordinates stale by one pixel.
+  // Stage 5 already reserved the floor. Shorten it deliberately to exercise 7f's deficit replay,
+  // then pin a slanted frame chord and make its stored coordinates stale by one pixel.
+  right.bounds!.x -= 10;
   right.bounds!.y += 1;
-  for (const port of right.ports) port.anchor!.y += 1;
+  for (const port of right.ports) { port.anchor!.x -= 10; port.anchor!.y += 1; }
   rebuildNodeGeometry(model, ['right'], 'current');
   fitRegionGroup(model, model.groups.row!);
   const chord = expectedFramePath(model, link);
