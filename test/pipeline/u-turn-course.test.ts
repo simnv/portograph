@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import type { Course, LayoutLink, LayoutModel, PathSegment } from '../../src/index.js';
+import { uTurnFacesGap, validateCourses } from '../../src/layout/courses.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { endMode, movesPort } from '../../src/layout/course-rows.js';
 import { courseOf, tierGapUTurn } from '../../src/layout/course-lanes.js';
@@ -201,5 +202,92 @@ ${links}
     expect(Math.abs(rowOf(one) - rowOf(two))).toBeGreaterThan(11);
     expect(gates(model)).toEqual([]);
     expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
+});
+
+describe('the face of a u-turn end keeps the order of the turn (dense-16x9 ticket 06, review 1)', () => {
+  // `a` carries a feed from above and the U end of its link to `b` on one top face. In a turn-ordered run the U end turns toward `b`, so it stands on the side of `b`
+  // and no leg of the U stands across the feed. The links are named by their ends, so the test does not depend on the order of the declaration.
+  const text = `portograph: 2
+groups:
+  src: { tier: 0 }
+  row: { tier: 1 }
+nodes:
+  s0: { group: src, class: router, ports: [] }
+  s1: { group: src, class: router, ports: [] }
+  a: { group: row, class: switch, ports: [{ name: p, side: top }] }
+  b: { group: row, class: switch, ports: [{ name: p, side: top }] }
+  c: { group: row, class: switch, ports: [] }
+links:
+  - [s0, a]
+  - [s0, b]
+  - [s1, c]
+  - [a.p, b.p]
+`;
+  it('stands the U end on the side of its far end, whichever way the row seats `b`, with no crossing and every gate holding', async () => {
+    const probe = await layout(parse(text), options);
+    const id = between(probe, 'a', 'b').id;
+    const model = await layout(parse(text), { ...options, testCourses: [uTurn(id, 'top')], testTurnOrder: true });
+    const link = between(model, 'a', 'b');
+    const own = anchorOf(model, link, link.attachments!.from.node === 'a' ? 'from' : 'to'), other = anchorOf(model, link, link.attachments!.from.node === 'a' ? 'to' : 'from');
+    const feed = model.nodes['a']!.ports.find(port => port.ref.name !== 'p')!.anchor!;
+    expect(model.turnOrder).toBe(true);
+    // The U end of `a` stands on the side of `b`: right of the feed when `b` is on the right, else left.
+    expect(Math.sign(own.x - feed.x)).toBe(Math.sign(other.x - own.x));
+    expect(gates(model)).toEqual([]);
+    expect(score(model).snapshot.counts.routed.crossings).toBe(0);
+    expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
+});
+
+describe('a u-turn course on the outer edge of the sheet (review 1)', () => {
+  const one = (side: 'top' | 'bottom'): string => `portograph: 2
+groups:
+  row: { tier: 0 }
+nodes:
+  a: { group: row, class: switch, ports: [{ name: p, side: ${side} }] }
+  b: { group: row, class: switch, ports: [{ name: p, side: ${side} }] }
+links:
+  - [a.p, b.p]
+`;
+  it.each(['top', 'bottom'] as const)('is refused at 7a on the %s face of the only sub-tier, where no tier gap stands: the router never discovers the row', async side => {
+    await expect(lay(one(side), [uTurn('link-1', side)])).rejects.toThrow(/no tier gap/);
+  }, 60000);
+
+  it('is refused on the outermost face of a sheet that has a gap on its other side', async () => {
+    // The high-U sheet: its `row` has a gap above (a U part there is planned) and none below.
+    await expect(lay(golden(HIGH), [uTurn('link-3', 'bottom')])).rejects.toThrow();
+  }, 60000);
+
+  it('is refused at the restore when a forged model stands on the outer edge, and a padding row is refused too', async () => {
+    const model = await lay(golden(LOW), [uTurn('link-1', 'bottom')]);
+    const forge = (change: (copy: LayoutModel) => void): string => { const copy = JSON.parse(JSON.stringify(model)) as LayoutModel; change(copy); return JSON.stringify(copy); };
+    // No band below the ends: the face looks at no gap (the model is read by `validateCourses` itself, since a restore also checks the bands).
+    const bare = JSON.parse(forge(copy => { copy.tierBands = copy.tierBands.filter(band => band.tier <= model.groups['row']!.tier!); })) as LayoutModel;
+    expect(uTurnFacesGap(model, 'link-1', 'bottom')).toBe(true);
+    expect(uTurnFacesGap(bare, 'link-1', 'bottom')).toBe(false);
+    expect(() => validateCourses(bare)).toThrow(/no tier gap/);
+    expect(() => restoreLayoutModel(forge(copy => { for (const list of [copy.courses!, copy.freeze!.courses!]) list[0]!.runs = ['padding']; }))).toThrow(/one run/);
+  }, 60000);
+});
+
+describe('a forged u-turn course is refused (review 1)', () => {
+  const forged = async (change: (copy: LayoutModel) => void): Promise<string> => {
+    const model = await lay(golden(HIGH), [uTurn('link-3', 'top')]);
+    const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    change(copy);
+    return JSON.stringify(copy);
+  };
+  it('on two sub-tiers', async () => {
+    const text = await forged(copy => { const tiers = copy.groups['src']!.tier!; copy.groups['row']!.tier = tiers; });
+    expect(() => restoreLayoutModel(text)).toThrow();
+  }, 60000);
+  it('on a port that another link shares', async () => {
+    const text = await forged(copy => { const own = copy.links.find(link => link.id === 'link-3')!; copy.links.push({ ...JSON.parse(JSON.stringify(own)), id: 'link-9' }); });
+    expect(() => restoreLayoutModel(text)).toThrow();
+  }, 60000);
+  it('with an approach', async () => {
+    const text = await forged(copy => { for (const list of [copy.courses!, copy.freeze!.courses!]) list[0]!.from = { face: 'top', approach: 'left' }; });
+    expect(() => restoreLayoutModel(text)).toThrow();
   }, 60000);
 });

@@ -894,7 +894,12 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
       if (graph.pairs.has(`${unit.id}\0${later.id}`) || !shareRow(unit, later)) limit = Math.min(limit, rows.get(later.id)! - unit.part.after);
     }
     let y = Math.max(rows.get(unit.id)!, limit);
-    if (frame.slants?.length && Math.abs(clearOfSlants(unit, y, frame.slants, keep).y - y) > EPS) y = rows.get(unit.id)!;
+    // The new seat must clear the fan chords as it stands: a result that moved, or that is `limited` (no candidate clears and the seat is returned as asked), keeps the old seat,
+    // which the packing cleared or named in `slantLimited`.
+    if (frame.slants?.length) {
+      const seat = clearOfSlants(unit, y, frame.slants, keep);
+      if (seat.limited || Math.abs(seat.y - y) > EPS) y = rows.get(unit.id)!;
+    }
     if (Math.abs(y - rows.get(unit.id)!) <= EPS) continue;
     rows.set(unit.id, y);
     moved.add(unit.id);

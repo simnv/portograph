@@ -60,10 +60,23 @@ function validateEnd(model: LayoutModel, link: LayoutLink, which: 'from' | 'to',
  * face looks at (`u`). It owns no lane and no margin, and each end owns its port: no approach, no other link on it. A padding row of the outer sheet edge (`padding`) is
  * not built yet: nothing reserves its three runs, so the course is refused rather than left to the router.
  */
+/**
+ * Whether the tier gap that a face looks at exists: a band stands above a `top` face and below a `bottom` face. The one reader of that question: 7a refuses the course by it
+ * and the restore validates it by it. A face on the outer edge of the sheet has no gap, and the padding row that would serve it is not built (`validateUTurn`), so the course is refused
+ * and the router never discovers the row.
+ */
+export function uTurnFacesGap(model: LayoutModel, link: string, face: Side): boolean {
+  const ref = model.links.find(item => item.id === link)?.attachments?.from;
+  if (ref === undefined || (face !== 'top' && face !== 'bottom')) return false;
+  const tier = nodeTier(model, ref.node);
+  return model.tierBands.some(band => (face === 'top' ? band.tier < tier : band.tier > tier));
+}
+
 function validateUTurn(model: LayoutModel, link: LayoutLink, course: Course): void {
   const id = course.link;
   if ((course.from.face !== 'top' && course.from.face !== 'bottom') || course.to.face !== course.from.face) throw new Error(`U-turn on ${id} must leave one top or bottom face at both ends`);
   if (course.runs.length !== 1 || course.runs[0] !== 'u') throw new Error(`U-turn on ${id} must have one run, a U part of the tier gap`);
+  if (!uTurnFacesGap(model, course.link, course.from.face)) throw new Error(`U-turn on ${id} has no tier gap on the ${course.from.face} of its sub-tier`);
   if (course.from.approach !== undefined || course.to.approach !== undefined) throw new Error(`U-turn on ${id} has an approach`);
   const ends = [link.attachments!.from, link.attachments!.to];
   if (nodeTier(model, ends[0]!.node) !== nodeTier(model, ends[1]!.node)) throw new Error(`U-turn on ${id} joins two sub-tiers`);

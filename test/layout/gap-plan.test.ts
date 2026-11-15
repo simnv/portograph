@@ -625,6 +625,21 @@ describe('the high U part (dense-16x9 ticket 06)', () => {
     expect(plan.residual.map(item => item.reason)).toEqual(['leg-blocked']);
   });
 
+  it('keeps the seat the packing gave when no lower seat clears a fan chord (review 1)', () => {
+    // One held fan chord crosses the whole gap (-388,248)..(452,308). The seat at 258.75 clears it, and the seat at the foot of the gap (283.5) stands 3.5 px from its left leg
+    // without a strict crossing, so `clearOfSlants` has no candidate and returns the asked seat as `limited`: the row keeps its first seat.
+    const chord = { from: { x: -388, y: 248 }, to: { x: 452, y: 308 }, owner: { kind: 'link' as const, id: 'F' } };
+    const plan = planGap([high('H', 0, 60, 200)], { ...frame(), slants: [chord] });
+    const only = plan.parts[0]!;
+    expect(only.rows[0]!).toBeCloseTo(248 + 10.75, 6);
+    for (const segment of plannedSegments(only, { low: 248, high: 308 })) {
+      const side = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }): number => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+      const crosses = side(segment.from, segment.to, chord.from) * side(segment.from, segment.to, chord.to) < 0 && side(chord.from, chord.to, segment.from) * side(chord.from, chord.to, segment.to) < 0;
+      const along = (p: { x: number; y: number }): number => Math.abs(side(chord.from, chord.to, p)) / Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y);
+      expect(crosses || Math.min(along(segment.from), along(segment.to)) >= 11.5 - 1e-6 || segment.from.y === segment.to.y).toBe(true);
+    }
+  });
+
   it('is the same plan whatever the order of the inputs (R3)', () => {
     const inputs = [high('A', 0, 20, 220), high('B', 1, 100, 160), part('P', 2, 10, 300)];
     const forward = planGap(inputs, frame()), backward = planGap([...inputs].reverse(), frame());
