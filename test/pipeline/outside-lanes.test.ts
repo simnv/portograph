@@ -8,13 +8,15 @@ import { validateCourseLane, validateCourses } from '../../src/layout/courses.js
 import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withAspect } from '../aspect-fixture.js';
 
 /**
  * Architecture ticket 15 (outside lanes and route-led port sides), phase 1: the data shapes, and the acceptance sheets with
  * pending tests. A test under `it.fails` states the hand-solve outcome of the design (Section 7) and fails today on purpose;
  * the phase that reaches the case turns it into `it`. A test under `it.todo` names a case that no phase of ticket 15 reaches yet.
  */
-const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+// Pinned to the square aim of ADR-0024 this test was written under (ADR-0025 aims at 16:9 by default): it checks a mechanism, not the aim.
+const source = (name: string): string => withAspect(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'), '1:1');
 const run = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
 /** The same with no course round: the baseline that the phase-1 shape tests hand-build their courses on. */

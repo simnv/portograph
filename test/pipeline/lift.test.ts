@@ -4,7 +4,9 @@ import { layout, parse, score, serializeLayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
 import { resolve } from '../../src/resolve/index.js';
-import { aspectGap, floatComponents, LIFT_AREA_TOLERANCE, LIFT_SIZE_CAP, LIFT_TRIALS, liftSize, validateGroupLifts } from '../../src/layout/lift.js';
+import { withAspect } from '../aspect-fixture.js';
+import { aspectGap } from '../../src/layout/aspect.js';
+import { floatComponents, LIFT_AREA_TOLERANCE, LIFT_SIZE_CAP, LIFT_TRIALS, liftSize, validateGroupLifts } from '../../src/layout/lift.js';
 import { decideLifts } from '../../src/pipeline/lift-round.js';
 import { judgeLift } from '../../src/layout/lift-judge.js';
 import { pathBends } from '../../src/layout/objective.js';
@@ -25,7 +27,8 @@ const area = (model: LayoutModel): number => model.canvas!.width * model.canvas!
 // The key sheet is laid out once for the tests that read it (each layout is up to 1 + LIFT_TRIALS command runs).
 const traces: { entry: unknown; reason: string | undefined }[] = [];
 let keyModel: Promise<LayoutModel> | undefined;
-const keyRun = (): Promise<LayoutModel> => keyModel ??= layout(parse(fixture(KEY)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+// The key sheet states the square aim of ADR-0024 the pushes below were measured under (ADR-0025 aims at 16:9 by default).
+const keyRun = (): Promise<LayoutModel> => keyModel ??= layout(parse(withAspect(fixture(KEY), '1:1')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
   testLiftTrace: event => traces.push({ entry: event.entry, reason: event.reason }) });
 
 // Three tiers: `top` feeds `mid`; `float` (tier 1) feeds `low` (tier 2) and has an overlay link down to `mid2` (tier 2).
@@ -260,7 +263,7 @@ describe('group lift: the units below a hanging component move down', () => {
     expect(drop).toHaveLength(1);
     expect(drop[0]!.from.x).toBeCloseTo(drop[0]!.to.x, 6);
     expect(model.canvas!.width).toBeLessThan(1400);
-    expect(aspectGap(model.canvas!.width, model.canvas!.height)).toBeLessThan(0.1);
+    expect(aspectGap(model.canvas!.width, model.canvas!.height, 1)).toBeLessThan(0.1);
     expect(score(model).snapshot.counts.routed.turns).toBe(0);
     expect(gates(model)).toEqual([]);
   }, 180000);

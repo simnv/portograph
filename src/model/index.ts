@@ -10,5 +10,6 @@ export type {
   LayoutPort, LayoutRuntime, LayoutStage, Legend, LegendEntry, Obstacle, OwnedElement, Owner,
   PathSegment, PillGeometry, PlacementSnapshot, Region, RowOrderDecision, StaggerRow, GroupArrangement, GroupLift, TierBand,
 } from './layout.js';
+export { DEFAULT_ASPECT } from './document.js';
 export { endpointId, linkIds } from './link-ids.js';
 export { createLayoutModel, frameSubtreeCells, groupNodeIds, orderedGroupIds, orderedNodeIds, serializeLayoutModel, serializeLayoutSnapshot, unsupportedMessage } from './model.js';

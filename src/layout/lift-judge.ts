@@ -7,7 +7,8 @@ import { routedBends } from './objective.js';
 import { betterByUnified } from './turn-measure.js';
 import { gateFindings, constraintFindings, separationWorse, added as namesAdded } from './trial-findings.js';
 import { overlayCrossingPairs } from './read/crossings.js';
-import { aspectGap, LIFT_NARROWER_PX } from './lift.js';
+import { aspectAim, aspectGap } from './aspect.js';
+import { LIFT_NARROWER_PX } from './lift.js';
 
 /**
  * The pairs of one routed and one overlay path that cross: the unified order of the judge counts them with the routed and the overlay
@@ -24,7 +25,7 @@ export function mixedCrossings(model: LayoutModel): number {
 /**
  * The tolerant area judge (D-Q5 after lift-v3). `noLift` is the published run with no lift, `smallest` the kept run with the least area; `T`
  * the tolerance (`LIFT_AREA_TOLERANCE`). A trial is kept on area when it is smaller than both; or when it is smaller than `noLift`, at most `T`
- * larger than `smallest`, and narrower (`LIFT_NARROWER_PX`) or nearer square (`aspectGap`) than `smallest`.
+ * larger than `smallest`, and narrower (`LIFT_NARROWER_PX`) or nearer the aspect aim (`aspectGap`, ADR-0025) than `smallest`.
  */
 export interface AreaTolerance { noLift: LayoutModel; smallest: LayoutModel; T: number }
 
@@ -73,9 +74,9 @@ export function judgeLift(routedBase: LayoutModel, routedTrial: LayoutModel, sid
   const noLift = area(tolerance.noLift), least = area(tolerance.smallest), small = tolerance.smallest.canvas;
   if (!(areas[1] < noLift - SIGN_EPS)) return no(`the canvas area is ${Math.round(areas[1])} px² with the lift, not less than ${Math.round(noLift)} px² with no lift`);
   if (!(areas[1] < least - SIGN_EPS)) {
-    const width = routedTrial.canvas?.width ?? 0, height = routedTrial.canvas?.height ?? 0;
-    const better = width < (small?.width ?? 0) - LIFT_NARROWER_PX || aspectGap(width, height) < aspectGap(small?.width ?? 0, small?.height ?? 0) - ASPECT_EPS;
-    if (!(areas[1] <= least * (1 + tolerance.T) && better)) return no(`the canvas area is ${Math.round(areas[1])} px² with the lift, not less than the smallest ${Math.round(least)} px²${better ? `, and more than ${tolerance.T * 100} % above it` : ', and not narrower or nearer square'}`);
+    const aim = aspectAim(routedTrial.document), width = routedTrial.canvas?.width ?? 0, height = routedTrial.canvas?.height ?? 0;
+    const better = width < (small?.width ?? 0) - LIFT_NARROWER_PX || aspectGap(width, height, aim) < aspectGap(small?.width ?? 0, small?.height ?? 0, aim) - ASPECT_EPS;
+    if (!(areas[1] <= least * (1 + tolerance.T) && better)) return no(`the canvas area is ${Math.round(areas[1])} px² with the lift, not less than the smallest ${Math.round(least)} px²${better ? `, and more than ${tolerance.T * 100} % above it` : ', and not narrower or nearer the aspect aim'}`);
     tolerated = true;
   }
   const count = (c: NonNullable<ReturnType<typeof gateFindings>>['counts'], m: LayoutModel) => ({ bent: c.routed.bent + c.overlay.bent, turns: c.routed.turns + c.overlay.turns, crossings: c.routed.crossings + c.overlay.crossings.pairs + mixedCrossings(m) });

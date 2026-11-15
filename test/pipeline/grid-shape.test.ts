@@ -9,8 +9,12 @@ import { stackChains } from '../../src/layout/grid-chains.js';
 import { nodeGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withAspect } from '../aspect-fixture.js';
 
-const fixture = (name: string) => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const source = (name: string) => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+// These tests were written under the square aim of ADR-0024 and check the packing, not the aim: each sheet states `aspect: "1:1"`.
+// The aim itself (16:9 and an override) is the last test of this file.
+const fixture = (name: string) => withAspect(source(name), '1:1');
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const rows = (model: LayoutModel, id: string) => packRowsOf(model, model.groups[id]!);
 const box = (model: LayoutModel, id: string) => model.nodes[id]!.bounds!;
@@ -307,3 +311,13 @@ it('a bundle with one end outside the group leaves the shape alone, and a free s
   expect(likeSidePairs(stub('g', 'g', 'bottom', 'bottom'), group)).toEqual([]);
   expect(likeSidePairs(stub('g', 'g', 'top', 'top', 'overlay'), group)).toEqual([]);
 });
+
+it('a grid takes the column count nearest the aspect aim: 16:9 by default, the document aspect when it states one (ADR-0025)', async () => {
+  const name = 'a-grid-takes-the-aspect-aim';
+  const wide = await run(source(name)), square = await run(withAspect(source(name), '1:1'));
+  expect(rows(square, 'place').map(row => row.length)).toEqual([2, 2]);
+  expect(rows(wide, 'place').map(row => row.length)).toEqual([3, 1]);
+  expect(failed(wide)).toEqual([]);
+  expect(failed(square)).toEqual([]);
+  expect(restoreLayoutModel(JSON.stringify(wide))).toEqual(wide);
+}, 60000);

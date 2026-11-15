@@ -7,6 +7,7 @@ import { LIFT_TRIALS } from '../../src/layout/lift.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { readSheet } from '../hand-solves.js';
+import { withAspect } from '../aspect-fixture.js';
 
 /**
  * The placement budget (architecture ticket 22, Q111): a command places at most `MAX_RERUNS` + 1 times, whatever rounds fire. The cap is asserted in one place, at the entry of
@@ -49,7 +50,8 @@ describe('a started placement is never given back (architecture 2, ticket 03)', 
       return createAttempt();
     };
     // A fan re-run does not catch a refusal (it ends the command), so the command may end in an error; either way the starts are bounded.
-    await layout(parse(readSheet(sheet)), { createElkAttempt: refusing, createRouteAttempt: createAvoidAttempt }).catch(() => undefined);
+    // The square aim of ADR-0024 this test was written under (ADR-0025 aims at 16:9 by default): it counts placement starts, not the aim.
+    await layout(parse(withAspect(readSheet(sheet), '1:1')), { createElkAttempt: refusing, createRouteAttempt: createAvoidAttempt }).catch(() => undefined);
     expect(attempts).toBeGreaterThan(1);
     expect(attemptCounters.placeStarts).toBeLessThanOrEqual(MAX_RERUNS + 1);
     expect(attemptCounters.placeStarts).toBeGreaterThanOrEqual(1);

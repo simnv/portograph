@@ -9,6 +9,7 @@ import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
+import { withAspect, withLayoutEntry } from '../aspect-fixture.js';
 
 // Architecture-2 ticket 51: with no width budget, stage 5 of the first placement run stands a wide leaf row on two lines when the
 // stagger proves straight drops and a narrower sheet, and records each group's arrangement (`groupArrangements`).
@@ -21,7 +22,7 @@ const picture = (model: LayoutModel) => Object.fromEntries(Object.entries(model.
 const lines = (model: LayoutModel, group: string): number => new Set(model.groups[group]!.nodes.map(id => model.nodes[id]!.bounds!.y)).size;
 const failedGates = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id);
 const refusals = (model: LayoutModel): string[] => model.diagnostics.filter(note => note.code === 'ROW_STAGGER_REFUSED').map(note => note.message);
-const withLayout = (yaml: string, layoutLine: string): string => yaml.replace('\ngroups:', `\nlayout: ${layoutLine}\ngroups:`);
+const withLayout = (yaml: string, layoutLine: string): string => withLayoutEntry(yaml, layoutLine.replace(/^\{ | \}$/g, ''));
 
 describe('a wide leaf row staggers without a width budget (architecture-2 ticket 51)', () => {
   it('stands the nine servers on two lines with 11 straight vertical links and records the choice', async () => {
@@ -85,7 +86,8 @@ ${[1, 2, 3, 4, 5, 6].map(i => `  n${i}: { group: leaves, class: server }`).join(
 links:
 ${[1, 2, 3, 4, 5, 6].map(i => `  - [p, n${i}]`).join('\n')}
 `;
-    const model = await run(yaml);
+    // One line of six is narrower than 16:9 (ADR-0025): the sheet states the square aim of ADR-0024 this test was written under.
+    const model = await run(withAspect(yaml, '1:1'));
     expect(model.staggerRows?.map(row => row.group)).toEqual(['leaves']);
     expect(model.canvas!.width).toBe(298);
     expect(failedGates(model)).toEqual([]);
@@ -172,7 +174,7 @@ const skeletonOf = async (yaml: string): Promise<LayoutModel> => {
   return model;
 };
 
-describe('stage 5 admits a stagger only toward a square sheet (ticket 51, aspect rule)', () => {
+describe('stage 5 admits a stagger only toward the aspect aim (ticket 51; ADR-0025)', () => {
   it.each(['a-linked-node-steps-out-of-a-straight-chord', 'a-group-with-routed-links-steps-off-a-straight-chord'])(
     '%s: two hubs that feed two hosts each are no fan (D-Q4): the row stays and no group is tried', async sheet => {
       const model = await run(fixture(sheet));
@@ -186,15 +188,15 @@ describe('stage 5 admits a stagger only toward a square sheet (ticket 51, aspect
     expect(model.staggerRows).toBeUndefined();
     expect(lines(model, 'leaves')).toBe(1);
     const entry = model.groupArrangements!.leaves!;
-    expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: the sheet is [\d.]+ x [\d.]+ px, not wider than tall$/);
+    expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: the sheet is [\d.]+ x [\d.]+ px, not wider than the aim [\d.]+$/);
   }, 60000);
 
-  it('refuses two lines that leave a wide sheet further from square than one line', async () => {
-    const model = await run(oneParent(5));
+  it('refuses two lines that leave a sheet wider than the aim further from it than one line', async () => {
+    const model = await run(oneParent(9));
     expect(model.staggerRows).toBeUndefined();
     expect(lines(model, 'leaves')).toBe(1);
     const entry = model.groupArrangements!.leaves!;
-    expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: two lines give [\d.]+ x [\d.]+ px, not nearer square than [\d.]+ x [\d.]+ px$/);
+    expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: two lines give [\d.]+ x [\d.]+ px, not nearer the aim [\d.]+ than [\d.]+ x [\d.]+ px$/);
   }, 60000);
 });
 

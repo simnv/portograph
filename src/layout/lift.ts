@@ -18,6 +18,7 @@
 import type { LayoutModel, GroupLift, LayoutGroup, Frame } from '../model/layout.js';
 import type { Rect } from '../model/geometry.js';
 import type { PortRef } from '../model/document.js';
+import { aspectAim, aspectGap } from './aspect.js';
 import { portKey } from './sides-one.js';
 import { linkLayer } from './link-layer.js';
 import { compareId, bandGap } from './skeleton-graph.js';
@@ -36,7 +37,7 @@ export const LIFT_TRIALS = 2;
 export const LIFT_MIN_GAIN = 0.01;
 /**
  * The area tolerance T of the judge (D-Q5 after lift-v3). A lift set may publish up to this fraction more canvas area than the smallest-area
- * set kept when its canvas is narrower (`LIFT_NARROWER_PX`) or nearer square (`aspectGap`); the area stays below the no-lift run. 5 % is the
+ * set kept when its canvas is narrower (`LIFT_NARROWER_PX`) or nearer the aspect aim (`aspectGap`); the area stays below the no-lift run. 5 % is the
  * smallest tested value that keeps the user's key-sheet ruling (`a-chain-of-tiers-packs-over-its-feeds-final-x` costs +4.07 %); on the corpus
  * no sheet separates 5 % from 10 % (lift-v3 PoC, T table), so T rests on that one sheet.
  */
@@ -58,8 +59,6 @@ export const LIFT_NARROWER_PX = 1;
  * run gives -38 %), so the published run judges it.
  */
 export const LIFT_SHAPE_STEP = 0.05;
-/** The ADR-0024 aspect gap of a canvas: |ln(W/H)|, 0 for a square (the amendment's "nearer square"). */
-export const aspectGap = (width: number, height: number): number => width > 0 && height > 0 ? Math.abs(Math.log(width / height)) : Infinity;
 
 export interface LiftUnit { id: string; groups: string[]; tier: number; scope?: string }
 
@@ -310,7 +309,7 @@ export interface LiftCandidate {
  * area estimate (the highest on a tie), or the reason it does not rise. `decided` names the units already decided.
  */
 export function measureLifts(model: LayoutModel, decided: ReadonlySet<string> = new Set()): LiftCandidate[] {
-  const shape = estimateShape(model), before = shape.area;
+  const shape = estimateShape(model), before = shape.area, aim = aspectAim(model.document);
   const out: LiftCandidate[] = [];
   for (const component of floatComponents(model)) {
     if (component.units.some(id => decided.has(id))) continue;
@@ -320,7 +319,7 @@ export function measureLifts(model: LayoutModel, decided: ReadonlySet<string> = 
     // A rise that makes a level side entry over units below takes the push when the component does not fit in the empty space beside
     // them: the rise as it is makes the canvas wider than it is with no component at all ("push what is below down"). The estimate does not
     // judge a push or a tolerated rise; the published runs do (`judgeLift` with the tolerance). A rise that gains no estimated area is still
-    // tried when its estimate is narrower or nearer square by a clear step (`LIFT_SHAPE_STEP`), whatever the tolerance (the estimate is too
+    // tried when its estimate is narrower or nearer the aspect aim by a clear step (`LIFT_SHAPE_STEP`), whatever the tolerance (the estimate is too
     // coarse for a push: on the fixture it gives +9 % where the published run gives -38 %); a rise that gains
     // area wins over one that is only tolerated.
     const bare = estimateShape(model, members, 0, undefined, true);
@@ -331,7 +330,7 @@ export function measureLifts(model: LayoutModel, decided: ReadonlySet<string> = 
       const variant = pushed !== undefined && plain.width > bare.width + 1 ? pushed : undefined;
       const est = variant !== undefined ? estimateShape(model, members, k, variant.index) : plain;
       if (est.area < after - SIGN_EPS && est.area <= before * (1 - LIFT_MIN_GAIN)) { after = est.area; best = k; push = variant?.value; continue; }
-      const shaped = est.width < shape.width * (1 - LIFT_SHAPE_STEP) || aspectGap(est.width, est.height) < aspectGap(shape.width, shape.height) - LIFT_SHAPE_STEP;
+      const shaped = est.width < shape.width * (1 - LIFT_SHAPE_STEP) || aspectGap(est.width, est.height, aim) < aspectGap(shape.width, shape.height, aim) - LIFT_SHAPE_STEP;
       if (shaped && (tolerated === undefined || est.area < tolerated.area - SIGN_EPS)) tolerated = { k, area: est.area, ...(variant ? { push: variant.value } : {}) };
     }
     if (best === 0 && tolerated !== undefined) { best = tolerated.k; after = tolerated.area; push = tolerated.push; }

@@ -9,6 +9,7 @@ import { RouteDeadlineError } from '../../src/index.js';
 import { portKey } from '../../src/layout/sides-one.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withAspect } from '../aspect-fixture.js';
 
 /**
  * Ticket 133 (docs/design/side-faces.md, Section 19, Q109a): the side round reads the baseline (7f of the kept model) and judges a trial on its
@@ -34,7 +35,8 @@ vi.mock('../../src/route/index.js', async importOriginal => {
   } };
 });
 
-const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+// Pinned to the square aim of ADR-0024 this test was written under (ADR-0025 aims at 16:9 by default): it checks a mechanism, not the aim.
+const fixture = (name: string): string => withAspect(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'), '1:1');
 const PAST_SIBLING = 'an-overlay-leaves-a-lateral-side-past-a-sibling-body';
 const SLACK = 'an-overlay-that-7f-straightens-needs-more-than-four-pixels-of-slack';
 interface Counted { model: LayoutModel; places: number; labels: string[] }

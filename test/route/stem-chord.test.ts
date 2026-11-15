@@ -6,6 +6,7 @@ import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import type { CreateRouteAttempt } from '../../src/route/worker.js';
 import { avoidAssets, spawnAvoidWorker } from './fixture.js';
+import { withAspect } from '../aspect-fixture.js';
 
 /**
  * Ticket 30. Two core routers link to the same four edge routers, and the stems nest. The pin-to-pin chord of
@@ -19,7 +20,8 @@ import { avoidAssets, spawnAvoidWorker } from './fixture.js';
  * Dropping the chord from the key too merged the parts and put every horizontal on one row (crossings 8 to 24).
  * The fixture runs through the real router and records each request's connectors.
  */
-const fixture = readFileSync(new URL('../../goldens/synthetic/a-chord-under-a-stem-is-no-crossing.yaml', import.meta.url), 'utf8');
+// Pinned to the square aim of ADR-0024 this test was written under (ADR-0025 aims at 16:9 by default): it checks a mechanism, not the aim.
+const fixture = withAspect(readFileSync(new URL('../../goldens/synthetic/a-chord-under-a-stem-is-no-crossing.yaml', import.meta.url), 'utf8'), '1:1');
 
 /** The real router, with the connector ids of every request recorded in order. */
 function recording(requests: string[][]): CreateRouteAttempt {

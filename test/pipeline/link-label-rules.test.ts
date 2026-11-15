@@ -16,6 +16,7 @@ import { bench } from '../layout/link-label-fixture.js';
 import { measureText } from '../../src/text/index.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withAspect } from '../aspect-fixture.js';
 
 const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const fixture = (name: string) => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
@@ -737,13 +738,13 @@ for (const [name, room] of [['a-row-mesh-with-another-label-draws-plain-links', 
 // given (`runOf`): a vertical run 4 px beside the bodies of a grid, as a detour round the column would stand. The left edge inserts
 // the room at the bodies' face (the bodies move right, the box's left edge stays); the right edge grows the box to the right.
 it('a label beside a run in a side padding grows that edge by exactly the deficit (ticket 21)', async () => {
-  const model = await run(`portograph: 2
+  const model = await run(withAspect(`portograph: 2
 groups:
   stack: { tier: 0, label: Stack, shape: grid }
 nodes:
 ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => `  n${i}: { group: stack, class: router, label: N${i} }`).join('\n')}
 links:
-  - { from: n1, to: n7, class: sync, label: standby }`);
+  - { from: n1, to: n7, class: sync, label: standby }`, '1:1')); // the square aim of ADR-0024; the test checks the side padding, not the aim
   const group = model.groups.stack!, owner = { kind: 'link' as const, id: 'link-1' };
   const bodies = union(group.nodes.map(id => model.nodes[id]!.bounds!));
   const text = measureText('standby', { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).height;
