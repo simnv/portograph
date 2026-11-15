@@ -1,3 +1,4 @@
+# ADR-0027: the M2 width floor leaves its capped seat room to stand the far port on the side lane, as this fixture requires.
 # Expected: the mesh of a-mesh-over-two-rows-joins-its-bars-with-one-riser, plus a routed link from the port `feed-from-the-upstream-balancer` of `outlet` to `m1`, which the
 # author puts on the left side. `outlet` stands alone in `wing`, on tier 1 between the second and the third frame of the upper member row. Its lateral port gets a side lane in the band
 # of the member row (side-faces.md, Section 10), and the riser keeps the run clearance from that lane (Section 13, ticket 122): 7a reserves the side
@@ -19,7 +20,7 @@ nodes:
   a3: { group: g3, class: router, label: A3 }
   outlet: { group: wing, class: server, label: Outlet, ports: [{ name: feed-from-the-upstream-balancer, side: right }] }
   m1: { group: mid, class: router, label: M1 }
-  m2: { group: mid, class: router, label: M2 }
+  m2: { size: { width: 200, height: 0 }, group: mid, class: router, label: M2 }
   b1: { group: low, class: router, label: B1 }
   b2: { group: low, class: router, label: B2 }
   b3: { group: low, class: router, label: B3 }
