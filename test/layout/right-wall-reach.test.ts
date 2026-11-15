@@ -8,8 +8,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 // Ticket DR-04 review: the centre rule's tail (7c) reserves the right edge `rightWallReach` gives, and the move guard `laneSidesHold` refuses a box
 // past it. Both read one wall set (`laneWallsBeside`, an aligned perimeter lane of another tier included) and the occupied reach toward each lane.
-// The sheet has an aligned perimeter lane whose span walls groups of another tier than the lane's own.
-const sheet = 'a-link-past-a-canton-runs-in-the-margin';
+// The sheet has an aligned perimeter lane whose span walls groups of another tier than the lane's own. Under the alignment cap and the seat
+// (ADR-0027, dense-16x9 ticket 02) the lane of `a-link-past-a-canton-runs-in-the-margin` is not aligned (`aligned` is unset) and runs
+// at the left margin, so it is no wall; the sheet below keeps two groups of another tier left of an aligned perimeter lane.
+const sheet = 'a-mesh-over-three-rows-joins-its-bars-with-one-trunk';
 
 it('the tail reach at a wall of another tier is the edge the move guard allows, and 1 px more is refused', async () => {
   const model: LayoutModel = await layout(parse(readFileSync(new URL(`../../goldens/synthetic/${sheet}.yaml`, import.meta.url), 'utf8')),

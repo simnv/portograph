@@ -54,13 +54,14 @@ describe('deferring redundant centre-flag reads in 7f and lazy sharedNodes copy'
     expect(withoutRecord.diagnostics.find(d => d.code === CENTRE_ALIGNMENT_OPEN)?.owners).toEqual([{ kind: 'link', id: 'link-1' }]);
   }, 60000);
 
+  // ADR-0027 (the seat, dense-16x9 ticket 02): a-chord-and-a-lane-share-a-middle-tier settles now, so the stalled layout is the sheet whose seat is withdrawn.
   it('skips redundant centre-flag reads inside 7f on a stalled layout and keeps final CENTRE_ALIGNMENT_OPEN owners identical', async () => {
-    const model = await runSynthetic('a-chord-and-a-lane-share-a-middle-tier');
+    const model = await runSynthetic('a-withdrawn-seat-names-the-alignment-it-opens');
     expect(centreReadCounters.flagSkipped).toBeGreaterThan(0);
 
     const open = model.diagnostics.find(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN);
     expect(open).toBeDefined();
-    expect(open?.owners).toEqual([{ kind: 'link', id: 'link-5' }]);
+    expect(open?.owners).toEqual([{ kind: 'link', id: 'link-1' }, { kind: 'link', id: 'link-2' }]);
 
     // Re-running nameOpenCentring on a clone produces the exact same owners, and restore validates cleanly.
     const rechecked = JSON.parse(JSON.stringify(model)) as LayoutModel;

@@ -17,8 +17,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const ONE_GAP = 'a-link-across-one-document-tier-gap-is-straight-when-nothing-stands-on-it';
 const STILL = 'a-span-corridor-passes-a-lane-beside-a-unit-it-does-not-move';
-// Since architecture-2 ticket 65 the shared-end sheet offers no span link; this sheet offers link-1, and one re-run is kept.
-const KEPT = 'own-lane-is-an-obstacle';
+// Since architecture-2 ticket 65 the shared-end sheet offers no span link; this sheet offers link-3, and one re-run is kept. Under the alignment cap and the
+// seat (ADR-0027, dense-16x9 ticket 02) own-lane-is-an-obstacle (link-1) places once more before the span round, so its one re-run is spent there.
+const KEPT = 'a-link-past-a-canton-runs-in-the-margin';
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true };
 interface Run { model: LayoutModel; offer: SpanOffer | undefined; base: LayoutModel | undefined; routedBase: LayoutModel | undefined }
 const run = async (name: string, extra: Record<string, unknown> = {}): Promise<Run> => {
@@ -103,14 +104,14 @@ describe('part 1: a link across one document tier gap with a rank band between i
   }, 60000);
 
   it('when re-runs are left but kept for the later rounds: the skip says so and names the offered link', async () => {
-    // The sheet offers link-1; with one re-run, its course, side and turn rounds hold the re-run that is left.
+    // The sheet offers link-3; with one re-run, its course, side and turn rounds hold the re-run that is left.
     const { model } = await run(KEPT, { testMaxReruns: 1 });
     expect(model.links.some(item => item.spanHint !== undefined)).toBe(false);
     const skipped = model.diagnostics.filter(item => item.code === 'SPAN_ROUND_SKIPPED');
     expect(skipped).toHaveLength(1);
     expect(skipped[0]!.severity).toBe('info');
-    expect(skipped[0]!.owners).toEqual([{ kind: 'link', id: 'link-1' }]);
-    expect(skipped[0]!.message).toMatch(/the [12] placement re-runs? left (is|are) kept for the course, side and turn rounds\. The link link-1 keeps its lane\./);
+    expect(skipped[0]!.owners).toEqual([{ kind: 'link', id: 'link-3' }]);
+    expect(skipped[0]!.message).toMatch(/the [12] placement re-runs? left (is|are) kept for the course, side and turn rounds\. The link link-3 keeps its lane\./);
   }, 60000);
 
   it('opens a corridor beside a unit it does not move, though an earlier lane reaches into that unit\'s wall: both chords taken, every gate passes', async () => {

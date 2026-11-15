@@ -151,8 +151,10 @@ links: [${pairs.map(([x, y]) => `[a.a${x}, b.b${y}]`).join(', ')}]
  * the two turns cannot stand at one depth: at one depth the batch routed first covers the other
  * port's stem and the later link has a reserved turn no route can reach.
  */
+// ADR-0027: widened-child-packs-tier no longer widens `w1` (its parents stand more than 5 times its need apart), so the leg that travels over a port is drawn
+// by a sheet with fewer parents.
 it('stress ticket 08: a leg that travels over another port of its own side turns one pitch beyond it', async () => {
-  const yaml = readFileSync(new URL('../../goldens/synthetic/widened-child-packs-tier.yaml', import.meta.url), 'utf8');
+  const yaml = readFileSync(new URL('../../goldens/synthetic/a-leg-over-a-port-of-its-own-side-nests-its-stems.yaml', import.meta.url), 'utf8');
   const model = bands(bundles(bars(centre(flanks(lanes(rows(await placed(yaml))))))));
   const node = model.nodes['m1']!;
   const plan = sidePlan(model, 'm1', 'top')!;
