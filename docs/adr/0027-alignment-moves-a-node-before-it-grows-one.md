@@ -133,5 +133,15 @@ expected-fail, each with its old value, its value now and its ticket):
 - a-kept-vertical-leaves-a-straight-overlay-straight has 12 bends, not 6: `f2` stands both owed
   verticals and the seat trades the overlay to `b-s2` for them (ticket 15).
 
+- a-row-stretches-a-body-past-its-sibling, a-course-lane-stands-beside-the-box-before-the-grid-widens-it
+  and facing-rows-link-direct-as-families have 6 bends, not 0. The seated body pulls only through its
+  kept feeds; the feeds that a sibling bounds stop pulling, so the body is not stretched pass by pass
+  toward them as on main. The narrowed clause 1 gives 0 bends back on these sheets, but on
+  a-stranded-growth-is-given-back the same pull runs in a cycle (12 bends, not 6). A plan that
+  prices the push of the sibling is ticket 15.
+- sync-links-do-not-stack-a-tier and a-foreign-node-stays-out-of-a-bus-row have 2 bends, not 0. The
+  cap stops the parent short of its third child: the seat stands two verticals, and the third link
+  keeps a jog where a body with no growth gives three straight chords (ticket 16).
+
 Measured: private-datacenter-spine-leaf has 0 bends and settles (main: 10 bends, spent), and
 a-stranded-growth-is-given-back has main's 6 bends and settles.
