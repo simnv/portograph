@@ -25,6 +25,7 @@ import { separationShortfalls, worseSeparations } from './constraints/separation
 import { straightOverlaysAsDrawn } from './read/overlay-straight.js';
 import { isRoutedChord } from './frame-paths.js';
 import { columnUnitId } from './read/chain.js';
+import { standsBySeatMove } from './alignment-targets.js';
 
 export const staggerOf = (model: LayoutModel, group: string): StaggerRow | undefined => model.staggerRows?.find(row => row.group === group);
 
@@ -759,7 +760,10 @@ export function wrapGateVerdict(wrapped: LayoutModel, plain: LayoutModel): strin
   if (!(w.width * w.height < p.width * p.height - PLACEMENT_EPS)) {
     return `the complete placement is ${size(w)} with two lines, not less area than ${size(p)} without`;
   }
-  const kept = placedStraight(wrapped), lost = [...placedStraight(plain)].filter(id => !kept.has(id)).sort(compareId);
+  // A link the plain run stands straight only by a seat that slid its body (ADR-0027) is not lost: the move is a choice of the plain run, which
+  // the two lines may decline (ruling of 2026-11-15).
+  const links = new Map(plain.links.map(link => [link.id, link]));
+  const kept = placedStraight(wrapped), lost = [...placedStraight(plain)].filter(id => !kept.has(id) && !standsBySeatMove(plain, links.get(id)!)).sort(compareId);
   if (lost.length) return `the link${lost.length > 1 ? 's' : ''} ${lost.join(', ')} ${lost.length > 1 ? 'are' : 'is'} straight without the two lines and not with them`;
   const short = worseSeparations(separationShortfalls(wrapped), separationShortfalls(plain)).sort(compareId);
   if (short.length) return `the two lines leave the separation ${short[0]} short`;

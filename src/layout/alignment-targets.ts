@@ -1,4 +1,6 @@
-import type { AlignmentDeclineReason, AlignmentTarget, LayoutLink, LayoutModel } from '../model/layout.js';
+import type { AlignmentDeclineReason, AlignmentSeat, AlignmentTarget, LayoutLink, LayoutModel } from '../model/layout.js';
+import { alignmentAllowance } from './size.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 import { readCache } from '../model/read-cache.js';
 import type { Feed } from './read/feeds.js';
 import { faceKey } from './turn-order.js';
@@ -30,6 +32,8 @@ export interface TargetNotes {
   start: Map<string, { low: number; high: number }>;
   /** The targets the kept branch refused to keep, with the guard or post-condition and its key. */
   declined: Map<string, { reason: AlignmentDeclineReason; by: string }>;
+  /** The seats of the step that changed a body (ADR-0027), by node id: the slide, the width before and after, and the ports they stood. */
+  seated: Map<string, Omit<AlignmentSeat, 'pass'>>;
 }
 
 /** The direct members of the direct families: a direct member owes a vertical even as a held cross chord. */
@@ -207,6 +211,65 @@ export function alignmentTargetsFault(model: LayoutModel): string | undefined {
       } else if (entry.state === 'kept') {
         if (entry.extent !== undefined || entry.reason !== undefined || entry.by !== undefined) return `${at}: a kept entry with a reason or an extent`;
       } else return `${at}: state ${String((entry as { state: unknown }).state)}`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Writes the seats of one step that stood (ADR-0027, `LayoutModel.alignmentSeats`): each node whose seat slid or grew its body gets the seat, with
+ * the pass. A node whose seat changed nothing keeps its entry and the pass that wrote it. No record (before 7c, after 7f): nothing is written.
+ */
+export function writeAlignmentSeats(model: LayoutModel, seated: ReadonlyMap<string, Omit<AlignmentSeat, 'pass'>>, pass: number): void {
+  const record = model.alignmentSeats;
+  if (record === undefined) return;
+  for (const [node, seat] of seated) record[node] = { dx: seat.dx, from: seat.from, width: seat.width, ports: [...seat.ports], pass };
+}
+
+/**
+ * Whether one end of `link` stands where it stands only by a seat that slid its body (ADR-0027): the port is one its node's recorded seat stood,
+ * and that seat moved the body. Read by the acceptance gate of the fan wrap (ruling of 2026-11-15): a link the plain run stands straight only
+ * by such a move is not counted as lost by the two lines.
+ */
+export function standsBySeatMove(model: LayoutModel, link: LayoutLink): boolean {
+  if (!link.attachments || model.alignmentSeats === undefined) return false;
+  return [link.attachments.from, link.attachments.to].some(end => {
+    const seat = Object.hasOwn(model.alignmentSeats!, end.node) ? model.alignmentSeats![end.node] : undefined;
+    return seat !== undefined && Math.abs(seat.dx) > PLACEMENT_EPS && seat.ports.includes(portId(end));
+  });
+}
+
+/**
+ * The first fault of a stored seat record, or undefined (R5): a record outside the stages it lives at, a key that is no node, a field that is
+ * not a finite number, a width below the width before, a seat that grew a body past its alignment allowance (`alignmentAllowance` of each face
+ * whose ports it stood, read with the width before the seat as the floor), a port list that is empty, out of port-key order, repeated or names
+ * a port the node does not have on its top or bottom face.
+ */
+export function alignmentSeatsFault(model: LayoutModel): string | undefined {
+  const record = model.alignmentSeats;
+  if (record === undefined) return undefined;
+  if (!RECORD_STAGES.includes(model.stage)) return `a record at stage ${model.stage}`;
+  if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
+  const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+  for (const [id, seat] of Object.entries(record)) {
+    const node = Object.hasOwn(model.nodes, id) ? model.nodes[id] : undefined;
+    if (node === undefined) return `${id} is no node`;
+    if (seat === null || typeof seat !== 'object') return `${id} holds no seat`;
+    if (!finite(seat.dx) || !finite(seat.from) || !finite(seat.width) || seat.from <= 0) return `${id}: a seat without its numbers`;
+    if (!Number.isInteger(seat.pass) || seat.pass < 0) return `${id}: pass ${String(seat.pass)}`;
+    if (seat.width < seat.from - PLACEMENT_EPS) return `${id}: the seat narrowed the body`;
+    if (!Array.isArray(seat.ports) || !seat.ports.length) return `${id}: a seat that stood no port`;
+    const sides = new Set<string>();
+    for (const [index, port] of seat.ports.entries()) {
+      if (index > 0 && !(seat.ports[index - 1]! < port)) return `${id}: ${String(port)} is out of port-key order or repeated`;
+      const item = node.ports.find(candidate => portId(candidate.ref) === port && (candidate.side === 'top' || candidate.side === 'bottom'));
+      if (item === undefined) return `${id}: ${String(port)} is no port on its top or bottom face`;
+      sides.add(item.side!);
+    }
+    // The allowance of a face is read with the width before the seat as its floor: a body another rule made wide may align inside its width.
+    const floor = { ...node, bounds: { ...node.bounds!, width: seat.from } };
+    for (const side of sides) {
+      if (seat.width > alignmentAllowance(model, floor, side as 'top' | 'bottom') + PLACEMENT_EPS) return `${id}: the seat grew the body to ${seat.width} px, past its allowance on ${side}`;
     }
   }
   return undefined;

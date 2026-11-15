@@ -160,17 +160,40 @@ export function resizeEvidence(model: LayoutModel, group: LayoutGroup): ResizeEv
  */
 export function resizeHolds(model: LayoutModel, group: LayoutGroup, evidence: ResizeEvidence): boolean {
   if (model.groupExits?.length) return false;
-  if (!lanesHoldGrowth(model, [{ group: { ...group, bounds: evidence.box }, bounds: group.bounds! }])) return false;
-  if (!laneSidesHold(model, [{ group, bounds: group.bounds! }], false)) return false;
-  if (!riserNoDeeper(evidence.riser, riserPenetrations(model, group))) return false;
-  if ([...spanBreaches(model)].some(key => !evidence.breaches.has(key))) return false;
+  return resizeRefusal(model, group, evidence) === undefined;
+}
+/** The first reservation a resize of `group` breaks, by name, or undefined (`resizeHolds` without the exits of 7e). */
+function resizeRefusal(model: LayoutModel, group: LayoutGroup, evidence: ResizeEvidence): string | undefined {
+  if (!lanesHoldGrowth(model, [{ group: { ...group, bounds: evidence.box }, bounds: group.bounds! }])) return 'lane window';
+  if (!laneSidesHold(model, [{ group, bounds: group.bounds! }], false)) return 'lane side';
+  if (!riserNoDeeper(evidence.riser, riserPenetrations(model, group))) return 'riser keep-out';
+  if ([...spanBreaches(model)].some(key => !evidence.breaches.has(key))) return 'span corridor';
   // The label room of a same-tier link (DR-02): the resize moves row nodes apart or together, and nothing reserves the room again.
-  if (evidence.rowShort !== undefined && (rowRoomShortOf(model) ?? []).some(id => !evidence.rowShort!.includes(id))) return false;
-  for (const [head, pairs] of overExtensions(model)) for (const pair of pairs) if (!evidence.trunks.get(head)?.has(pair)) return false;
-  return evidence.farOnLane.every(id => {
+  if (evidence.rowShort !== undefined && (rowRoomShortOf(model) ?? []).some(id => !evidence.rowShort!.includes(id))) return 'label room';
+  for (const [head, pairs] of overExtensions(model)) for (const pair of pairs) if (!evidence.trunks.get(head)?.has(pair)) return 'trunk extension';
+  const off = evidence.farOnLane.some(id => {
     const lane = model.lanes.find(item => item.id === id), link = lane === undefined ? undefined : laneLink(model, lane);
     const port = link?.attachments ? findPort(model, sideLaneSource(link, lane!)) : undefined;
-    return port?.anchor !== undefined && Math.abs(port.anchor.x - lane!.x) <= PLACEMENT_EPS;
+    return port?.anchor === undefined || Math.abs(port.anchor.x - lane!.x) > PLACEMENT_EPS;
   });
+  return off ? 'side lane' : undefined;
 }
 
+/**
+ * The first reservation a seat of 7c breaks (ADR-0027, dense-16x9 ticket 02), by name, or undefined. A seat slides one body of `group` in its row, and
+ * may grow it; it is made on the model, and `fitted` is the box the group takes around its bodies after it (the step fits the group at its end).
+ * `evidence` was read before the seat, with `box` the fitted box then. The seat keeps what a resize keeps (`resizeHolds`: the lane windows and
+ * sides, the riser keep-out, the span corridors, the label room of the same-tier links, the trunk extensions, the far ports of the side lanes),
+ * and the exits 7e reserved where the model has them (`groupExitsHold` on the fitted box). The model is left as it was found.
+ */
+export function seatRefusal(model: LayoutModel, group: LayoutGroup, evidence: ResizeEvidence, fitted: Rect): string | undefined {
+  const was = group.bounds!;
+  try {
+    group.bounds = evidence.box;
+    if (model.groupExits?.length && !groupExitsHold(model, model.groupExits, [{ group, bounds: fitted }])) return 'group exit';
+    group.bounds = fitted;
+    return resizeRefusal(model, group, evidence);
+  } finally {
+    group.bounds = was;
+  }
+}

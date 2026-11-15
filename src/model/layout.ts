@@ -713,6 +713,17 @@ export interface LayoutModel {
    */
   alignmentTargets?: Record<string, AlignmentTarget[]>;
   /**
+   * The seats of the centring steps (ADR-0027, dense-16x9 ticket 02), by node id: the last seat that changed the body, a slide in its row (`dx`),
+   * a growth (`from` to `width`), or both, with the wanted ports it stood (`ports`, port-key order). A step writes it at its end when its
+   * geometry stands; a seat that changes nothing writes nothing, so an entry keeps the pass that wrote it. One decision per node and step: the
+   * seat (`seatNode`) moves the body inside the slack of its row first and grows it only by what no move gives, up to the alignment cap. Read by
+   * the acceptance gate of the fan wrap (`wrapGateVerdict`: a link that only a seat move stands straight in the plain run is not counted as
+   * lost) and by the publication check (`alignmentSeatsFault`: no seat grows a body past its cap). It lives with `alignmentTargets`: created `{}`
+   * by the centre rule at its input stage, written through 7f, dropped by the route rule. Absent = not decided; `{}` = decided, no seat changed a
+   * body.
+   */
+  alignmentSeats?: Record<string, AlignmentSeat>;
+  /**
    * The growths the centre rule gave back (architecture-2 ticket 71), by node id: the wanted ports whose alignment widened the body and that no
    * kept target used at the end of 7c (a growth the clamp stranded). Decided once, at the end of the centre rule, and stored; every later
    * centring run and the publication replay read it (R1): a step that widens a given-back body and leaves every aligned port of its group off
@@ -883,6 +894,11 @@ export interface AlignmentTarget {
   extent?: { low: number; high: number };
   pass: number;
 }
+/**
+ * One seat of a node (`LayoutModel.alignmentSeats`): how far the seat slid the body in its row (`dx`, 0 for a growth in place), the body width
+ * before the seat (`from`) and after it (`width`), the wanted ports it stood (`ports`), and the pass that wrote it (0 for a replay).
+ */
+export interface AlignmentSeat { dx: number; from: number; width: number; ports: string[]; pass: number }
 /** One edge of an aligned extent (`LayoutModel.alignedExtents`): the edge stands at the x of the anchor-tier `port` plus `offset`. */
 export interface AlignedExtentEdge { port: PortRef; offset: number }
 /**

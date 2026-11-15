@@ -1,15 +1,15 @@
-# Expected: stage 7c moves the two narrow children under their wide parents within the available row span.
-# Both children keep their stage-5 width; neither body grows to carry its port toward a feed (ADR-0027).
-# Test-only input; test/layout/alignment-move-first.test.ts reads the placement and its target record.
+# Expected: stage 7c seats each narrow child under its wide parent by a move inside the slack of its row: the title of the
+# children group holds the row wider than its two bodies, and each child slides into that room. Both children keep their
+# stage-5 width, both links stand vertical, and the alignment-target record keeps both targets (ADR-0027).
+# Test: test/layout/alignment-move-first.test.ts reads the placement, the seat record and the target record.
 portograph: 2
 layout: { autoArrange: false }
 groups:
   parents: { tier: 0 }
-  children: { tier: 1 }
+  children: { tier: 1, label: "Two narrow children under two wide parents, with a long title" }
 nodes:
   parent-a: { group: parents, size: { width: 280, height: 40 }, ports: [{ name: down, side: bottom }] }
   parent-b: { group: parents, size: { width: 280, height: 40 }, ports: [{ name: down, side: bottom }] }
-  spare: { group: parents }
   child-a: { group: children, ports: [{ name: up, side: top }] }
   child-b: { group: children, ports: [{ name: up, side: top }] }
 links:

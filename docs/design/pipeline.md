@@ -964,23 +964,34 @@ not transit feeds; 7e owns their geometry. **Parents are authoritative during th
 port x is fixed by stage 5/7a, and below the anchor tier by the parent spread made once before the first step (below; Q120 reverses
 the old rule "parents are authoritative" there, architecture-2 ticket 32). G is centred
 horizontally under the barycentre of the feed set within the space between the lanes (7a) and
-neighbouring groups. Before growing a body, 7c tries to move that node within its row slack
-(ADR-0027, `moveUnderTargets`): all wanted ports must fit inside the existing width, between
-the row siblings and inside the group's reserved window, clear of overlay stops. The nearest
-feasible body position wins. A grid, stagger or feeding chain keeps its stored arrangement.
-The node-move guard keeps the riser, side-lane and block reservations; the whole step still
-checks its chord and span post-conditions. Then each child port x := its parent port x. Only
-when no such move seats the face may the body grow to hold it. An unreachable port remains
-unpinned and is reported; an admitted routed chord may stay diagonal. The accepted targets
-are recorded in `alignmentTargets`; routing consumes the placement and makes no new size decision. A widening is bounded a third way as well: the body may not
-end wider than `ALIGNMENT_MAX_GROWTH = 3` × the width the node itself needs — its content and author
+neighbouring groups; then each node takes its **seat** (ADR-0027, `seatNode`): one decision that
+chooses the targets it stands, where its body stands in the slack of its row and how wide the body
+is, so each child port x := its parent port x where the seat holds it. Each window of targets
+consecutive in x whose targets keep the pitch of their face needs an interval (`alignedEdges`). The
+body slides to the nearest x that holds the interval inside its width; when the interval is wider,
+the body moves to its low edge and grows the rest. The slide stays between the row siblings, inside
+the group box less its insets and inside the window of the step, and clear of the overlay walls: the
+group moves by the main move, toward the mean of its feeds, and a slide past its box would grow the
+group. A grid cell, a stagger member and a node of a feeding chain do not slide. Each window also
+gives a growth in place, as before ADR-0027, for a body a guard keeps from moving. The seats rank by
+the most owed verticals (before 7f freezes the chords every target owes one), then the most
+targets, the least growth, the least slide, a move before a growth in place, then the port keys
+(R3). At most `SEAT_TRIES = 4` seats are made on the model and judged: every face keeps its targets
+(`alignSide`: the riser keep-out, the held chords of the ports it packs), and a seat that slides the
+body keeps the node move (`holdsNodeMove`), each held chord that follows a moved port, and what a
+resize keeps (`seatRefusal`: lane windows and sides, riser keep-out, span corridors, the label room
+of same-tier links, trunk extensions, side-lane far ports, and the exits of 7e). A refused seat is
+undone whole; when every try is refused the body stays and `ALIGNMENT_SEAT_REFUSED` names the guard.
+A seat that slides or grows a body is recorded (`alignmentSeats`, R1). A port outside the seat keeps
+its pitch slot and its link is reported. A growth is bounded a third way as well: the body may not
+end wider than `ALIGNMENT_MAX_GROWTH` × the width the node itself needs — its content and author
 floor, or its own ports on that side at their reserved pitch — and a body already wider than that,
 from a bar span or an earlier rule, aligns inside the width it has (ticket 29). A fourth bound is an
 overlay chord. An overlay link with no end on the node, whose chord reaches the rows of the body and
 is not already under the body, stops the growth on its side at the chord less the node clearance
 (20 px) and half the node stroke. A port the stop declines stays at pitch from the last kept one, and
 the feed is reported `CENTRE_ALIGNMENT_INFEASIBLE`; the stop is reported `ALIGNMENT_STOPPED_AT_OVERLAY`. A node of a stored feeding chain (stage 5, fan wrap) has no growth allowance at all (`alignmentAllowance` returns its width), and `centringFeeds` gives it only its feeds from its own chain or its block: stage 5 stood the chain over the block, and a feed from elsewhere would pull it off. A group lift can leave bands that hold only lifted groups (a push leaves them between a feeder and the units it fed before; `GroupLift.push`, stage 4): a tier whose authority band holds only lifted groups (and their flanks) is centred a second time on the nearest band toward the anchor that holds a group that did not lift (`centreContext`), so a vertical feed across those bands stays vertical; with no such band the step list is unchanged.
-The cap is the smallest of the full-corpus trials at 1, 1.5, 2 and 3 that preserves all seven vertical links of the ticket-73 nested-stem sheet. A body that has grown wider than its own width
+The bound of `ALIGNMENT_MAX_GROWTH` is unchanged. A body that has grown wider than its own width
 does not move past the same chord when centring moves its group. A body that has not grown moves as
 before. Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
 both: the first (by child x) is vertical, the rest fan through a shared stem — the junction tree 7e
@@ -1095,7 +1106,7 @@ child side alone aligns, and a child row cannot put two ports closer than its ro
 closer together than the top ports of its children, the drops slanted, and the child row stood under a neighbour of the parent. The
 centre rule therefore spreads such a parent once, at its first run, before its first step and before the aligned extents
 (`reserveParentSpreads`): each fed port goes to the spacing of its child, about the mean of the fed ports, so a block centred on its
-face stays centred (ticket 10). A translation cannot seat ports whose required span is wider than the body. The body grows by that deficit and no further (`alignSide`, bounded by `ALIGNMENT_MAX_GROWTH = 3` and the
+face stays centred (ticket 10). The body grows by the deficit and no further (`alignSide`, bounded by `ALIGNMENT_MAX_GROWTH` and the
 overlay stops, with no sibling bound), the nodes of its row before it move left by the growth on the left, the ones after it right
 by the growth on the right, and the group is clamped into the window the step of the parent's tier gives it (`stepWindow`: the lanes
 and flanks of 7a, the frame columns, the group before it and the room the groups after it reserve). A resize is no translation: the

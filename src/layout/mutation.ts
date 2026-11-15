@@ -30,7 +30,7 @@ import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { CENTRE_ALIGNMENT_OPEN, centreItemLink, publishedCentreViolations, selectAnchorTier } from './centre.js';
-import { ALIGNMENT_TARGETS_DIFFER, alignmentTargetsFault } from './alignment-targets.js';
+import { ALIGNMENT_TARGETS_DIFFER, alignmentSeatsFault, alignmentTargetsFault } from './alignment-targets.js';
 import { givenBackFault } from './given-back.js';
 import { checkBodyTrims } from './end-trim.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
@@ -410,6 +410,9 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     // The record of the alignment targets is read, never decided again (architecture-2 ticket 66, R1); a malformed one is refused (R5).
     const targets = alignmentTargetsFault(model);
     if (targets !== undefined) throw new Error(`The alignment target record is forged: ${targets}`);
+    // The seats are read by the acceptance gate of the fan wrap (ADR-0027, R1); a malformed one, or a seat past its cap, is refused (R5).
+    const seats = alignmentSeatsFault(model);
+    if (seats !== undefined) throw new Error(`The alignment seat record is forged: ${seats}`);
     // The record of the growths the centre rule gave back is read by the replay below (architecture-2 ticket 71, R1); a malformed one is refused (R5).
     const back = givenBackFault(model);
     if (back !== undefined) throw new Error(`The given-back growth record is forged: ${back}`);
@@ -805,7 +808,8 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads', 'givenBack'] : []),
     // The centring steps of 7c to 7f write the record of their alignment targets; the route rule drops it, after the publication of 7f has
     // compared it with its replay (architecture-2 ticket 66).
-    ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets'] : []),
+    // The seats of the same steps live with it (ADR-0027).
+    ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets', 'alignmentSeats'] : []),
     // The end trim of 7f records the bodies and boxes it narrowed (architecture-2 ticket 68); every later rule keeps the record.
     ...(rule === 'bands' ? ['bodyTrims'] : []),
     // D-Q5: the publication writes the command's lift record (`decideLifts`); the entries it adds after the kept run are declined and move no band.
@@ -1045,7 +1049,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   }
   if (rule === 'bars') rebuildBarDrops(draft);
   // The last centring reading that reads the record is the publication of 7f: the routed layout publishes without it (architecture-2 ticket 66).
-  if (rule === 'route') delete draft.alignmentTargets;
+  if (rule === 'route') { delete draft.alignmentTargets; delete draft.alignmentSeats; }
   // The producers of 7e and 7f write after the rule checks above: their output is judged here, on the net draft after every dependent rebuild
   // and before commit (DR-11). Publication (`protect`) stays the second boundary.
   if (rule === 'bundles' || rule === 'bands') judgePostconditions(model, draft, rule);

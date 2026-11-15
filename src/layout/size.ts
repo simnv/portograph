@@ -114,12 +114,34 @@ export function placeNodeContent(content: NodeContentMeasurement, box: Rect, ins
 }
 
 /**
- * The alignment growth cap after a node or its group has used the row's slack (ADR-0027).
- * Full-corpus trials at 1, 1.5 and 2 lose six verticals of the ticket-73 nested-stem sheet;
- * 3 is the smallest tested cap that keeps all seven. The reference is the width the face needs,
- * never the width a previous alignment left behind.
+ * How much wider than itself a body may be made to seat a port under a coordinate another node
+ * owns. Stage 7c centres a child under its parents by widening it — nodes never move inside their
+ * row, so the widening is how a port travels — and nothing bounded that but a sibling, a reserved
+ * lane and a flank. On a wide sheet a node with a 99.5 px content floor was drawn 5 219 px wide to
+ * reach a feed at the other edge, and a four-node fixture walked a 50 px body to 3 014 px in eight
+ * passes (ticket 29).
+ *
+ * The same shape of decision as ADR-0012's linked-group grid, which grows one group box onto
+ * another's extent and refuses when the smaller box would be inflated to a much larger partner. Its
+ * constant stays its own: the grid measures two group boxes against their union, this measures one
+ * node body against what the node itself is.
+ *
+ * **12, measured.** The widths a working diagram needs: the approved golden's two providers, 50 px
+ * nodes drawn 166.75 px wide to sit under their feeds (3.34); and two inputs of the geometry corpus
+ * whose route loses a checkpoint when the widening is declined — `hub-t5-p3-f2-s3`, whose `n3_0` is
+ * 273 px against 50 (5.46), and `wide-t4-p2-f2-s3`, whose own `n3_0` is 450 px against 50 (9.0).
+ * Against them, the widths this rule was filed for: 52.4 and 74.4 times their own on the Enterprise
+ * NTP sheet, 60.3 in `bar-fan`. The NTP sheet answers the same at every bound from 1 to 16, so
+ * nothing on it chose this number; the corpus did, and the margin is thin. Of its 649 publishing
+ * inputs, 17 sit in [9.01, 12), **none** in [12, 16), and 3 above it — the highest the bound leaves
+ * untouched is `author-ordered-bundle` at **11.36**, a committed fixture, so there is 5.6 % of room
+ * under this number and none over it. It binds on exactly three inputs corpus-wide: `bar-fan`
+ * 60.28 → 10.75, the defect, and the fixtures `a-claimed-run-owns-only-its-pins` 18.00 → 11.57 and
+ * `a-claimed-run-clears-a-shared-run` 16.32 → 11.81, both of which still publish with their tests
+ * green — evidence that 16–18 was slack rather than need. At 8 the sheet's widest body falls further,
+ * to 637 px from 924, and `wide-t4-p2-f2-s3` stops publishing.
  */
-export const ALIGNMENT_MAX_GROWTH = 3;
+export const ALIGNMENT_MAX_GROWTH = 12;
 
 /**
  * The width a node needs for itself on **one** side: the larger of its measured content and author
