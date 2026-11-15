@@ -13429,6 +13429,50 @@
       ]
     }
   },
+  "alignmentTargets": {
+    "provider-1|bottom": [
+      {
+        "port": "port:[\"provider-1\",false,\"100G\",1]",
+        "link": "link-1",
+        "far": "port:[\"EAC-01\",false,\"100G\",1]",
+        "owes": "any",
+        "pass": 1,
+        "state": "kept"
+      }
+    ],
+    "provider-2|bottom": [
+      {
+        "port": "port:[\"provider-2\",false,\"100G\",1]",
+        "link": "link-2",
+        "far": "port:[\"EAC-02\",false,\"100G\",1]",
+        "owes": "any",
+        "pass": 1,
+        "state": "kept"
+      }
+    ]
+  },
+  "alignmentSeats": {
+    "provider-1": {
+      "dx": 0,
+      "from": 50,
+      "at": 133.38232421875,
+      "width": 183.38232421875,
+      "ports": [
+        "port:[\"provider-1\",false,\"100G\",1]"
+      ],
+      "pass": 2
+    },
+    "provider-2": {
+      "dx": 0,
+      "from": 50,
+      "at": 0,
+      "width": 183.38232421875,
+      "ports": [
+        "port:[\"provider-2\",false,\"100G\",1]"
+      ],
+      "pass": 2
+    }
+  },
   "anchorTier": 1,
   "frozenChords": [
     "link-1",
