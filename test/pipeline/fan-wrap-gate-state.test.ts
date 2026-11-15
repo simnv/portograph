@@ -14,7 +14,7 @@ const { wrapGateVerdict } = await import('../../src/layout/stagger.js');
 // placement of the comparison stands outside the placement cap (`gateRuns`), so the rounds after it keep their placements.
 describe('fan wrap: the comparison run leaves no state behind a kept wrap', () => {
   it('restores the ledger and the re-run count, and lifts every comparison placement from the cap', async () => {
-    const wrapped = { groupArrangements: { w: { chosen: 'stagger' } }, staggerRows: [{ group: 'w', order: ['a', 'b', 'c'], side: 'top', pitches: [1, 1], step: 1 }] } as unknown as LayoutModel;
+    const wrapped = { groupArrangements: { w: { chosen: 'stagger' } }, staggerRows: [{ group: 'w', order: ['a', 'b', 'c'], far: ['b'], side: 'top', pitches: [1, 1], step: 1 }] } as unknown as LayoutModel;
     const plain = { groupArrangements: { w: { chosen: 'row', reason: 'gate' } } } as unknown as LayoutModel;
     const calls: { arranged: boolean | undefined; trunks: boolean }[] = [];
     const env = {
@@ -49,7 +49,7 @@ describe('fan wrap: the comparison run leaves no state behind a kept wrap', () =
 // refuses, and keeps the wrapped run with no comparison when the plain run refuses; it never ends the command.
 describe('fan wrap: a producer refusal at 7f of a gate run', () => {
   const run = async (refuses: 'wrapped' | 'plain'): Promise<{ state: Awaited<ReturnType<typeof firstState>>; wrapped: LayoutModel; plain: LayoutModel }> => {
-    const wrapped = { groupArrangements: { w: { chosen: 'stagger' } }, staggerRows: [{ group: 'w', order: ['a', 'b', 'c'], side: 'top', pitches: [1, 1], step: 1 }] } as unknown as LayoutModel;
+    const wrapped = { groupArrangements: { w: { chosen: 'stagger' } }, staggerRows: [{ group: 'w', order: ['a', 'b', 'c'], far: ['b'], side: 'top', pitches: [1, 1], step: 1 }] } as unknown as LayoutModel;
     const plain = { groupArrangements: { w: { chosen: 'row', reason: 'gate' } } } as unknown as LayoutModel;
     const refused = refuses === 'wrapped' ? wrapped : plain;
     let placed = 0;
