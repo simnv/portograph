@@ -48,11 +48,10 @@ export async function decideLifts(document: LayoutModel['document'], options: La
       note('GROUP_LIFT_SIZE_CAPPED', `The float component ${name} is not tried: the sheet has ${liftSize(document)} nodes and links, above the lift size cap of ${LIFT_SIZE_CAP}.`, entry);
       continue;
     }
-    const cap = options.testLiftTrials ?? LIFT_TRIALS;
-    if (trials >= cap) {
-      const entry = liftEntry(best, candidate, 0, `capped: the sheet has made its ${cap} lift trials`);
+    if (trials >= LIFT_TRIALS) {
+      const entry = liftEntry(best, candidate, 0, `capped: the sheet has made its ${LIFT_TRIALS} lift trials`);
       record.push(entry);
-      note('GROUP_LIFT_CAPPED', `The float component ${name} is not tried: the sheet has made its ${cap} lift trials.`, entry);
+      note('GROUP_LIFT_CAPPED', `The float component ${name} is not tried: the sheet has made its ${LIFT_TRIALS} lift trials.`, entry);
       continue;
     }
     trials++;
@@ -75,7 +74,7 @@ export async function decideLifts(document: LayoutModel['document'], options: La
     };
     let { trial, reason, verdict } = await attempt(entry);
     // Choice S8: a declined side-entry rise falls back once to the best rise that keeps every feeder above its fed unit, inside the trial cap.
-    if (reason !== undefined && candidate.fallback !== undefined && trials < (options.testLiftTrials ?? LIFT_TRIALS)) {
+    if (reason !== undefined && candidate.fallback !== undefined && trials < LIFT_TRIALS) {
       trials++;
       const second = liftEntry(best, candidate, candidate.fallback, 'trial');
       const result = await attempt(second);

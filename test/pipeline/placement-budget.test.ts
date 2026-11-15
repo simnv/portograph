@@ -49,13 +49,9 @@ describe('a started placement is never given back (architecture 2, ticket 03)', 
       return createAttempt();
     };
     // A fan re-run does not catch a refusal (it ends the command), so the command may end in an error; either way the starts are bounded.
-    // The lift is on, so a lift trial (a whole command run under its own cap, ADR-0025 can admit one the square aim did not) may start: the bound of the
-    // describe above, `(MAX_RERUNS + 1) x (1 + trials)`, with the trials counted.
-    let trials = 0;
-    await layout(parse(readSheet(sheet)), { createElkAttempt: refusing, createRouteAttempt: createAvoidAttempt, testLiftTrace: () => { trials++; } }).catch(() => undefined);
+    await layout(parse(readSheet(sheet)), { createElkAttempt: refusing, createRouteAttempt: createAvoidAttempt }).catch(() => undefined);
     expect(attempts).toBeGreaterThan(1);
-    expect(trials).toBeLessThanOrEqual(LIFT_TRIALS);
-    expect(attemptCounters.placeStarts).toBeLessThanOrEqual((MAX_RERUNS + 1) * (1 + trials));
+    expect(attemptCounters.placeStarts).toBeLessThanOrEqual(MAX_RERUNS + 1);
     expect(attemptCounters.placeStarts).toBeGreaterThanOrEqual(1);
   }, 120000);
 });

@@ -231,21 +231,6 @@ describe('group lift: up and in, a level side entry', () => {
   }, 120000);
 });
 
-describe('group lift: the trial cap names the component it leaves out (R4)', () => {
-  it('on the key sheet with a cap of one trial, the component the first trial does not take is capped by name', async () => {
-    // At the default aim the key sheet admits two components (Side/Middle and East); the test cap of one leaves one of them out.
-    const capTraces: unknown[] = [];
-    const model = await layout(parse(fixture(KEY)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftTrials: 1,
-      testLiftTrace: event => capTraces.push(event.entry) });
-    expect(capTraces).toHaveLength(1);
-    const capped = model.groupLifts!.filter(item => item.reason?.startsWith('capped:'));
-    expect(capped).toHaveLength(1);
-    expect(capped[0]).toMatchObject({ offset: 0, reason: 'capped: the sheet has made its 1 lift trials' });
-    expect(model.diagnostics.filter(note => note.code === 'GROUP_LIFT_CAPPED').map(note => note.owners)).toEqual([[{ kind: 'group', id: 'east' }]]);
-    expect(capped[0]!.units).toEqual(['east']);
-  }, 180000);
-});
-
 describe('group lift: the units below a hanging component move down', () => {
   it('on the key sheet, East gateway stands level with Dist two, the feed is one horizontal segment, West moves down two bands, and the narrower form is kept', async () => {
     expect(LIFT_AREA_TOLERANCE).toBe(0.05);
@@ -254,9 +239,10 @@ describe('group lift: the units below a hanging component move down', () => {
     // Side and Middle rise as one component; East rises one band beside Dist and pushes West down two bands; at most LIFT_TRIALS trials.
     expect(model.groupLifts!.find(item => item.units.includes('mid'))).toMatchObject({ units: ['mid', 'side'], offset: 3, side: 'left' });
     expect(traces.length).toBeLessThanOrEqual(LIFT_TRIALS);
-    // West is no trial at the default 16:9 aim: its estimate gives no area drop and no narrower sheet, and a rise that only nears the aim at a
-    // larger area is not tried (review F3). The cap by name is tested below on the square aim, where the estimate admits it.
-    expect(model.groupLifts!.find(item => item.units.includes('west'))).toMatchObject({ offset: 0, reason: 'the band estimate gives no area drop of 1 % or more at any rise' });
+    // The two trials are spent on Side/Middle and East, so West (a side-entry component the estimate also admits) is capped, by name (R4).
+    expect(traces).toHaveLength(LIFT_TRIALS);
+    expect(model.groupLifts!.find(item => item.units.includes('west'))).toMatchObject({ offset: 0, reason: `capped: the sheet has made its ${LIFT_TRIALS} lift trials` });
+    expect(model.diagnostics.filter(note => note.code === 'GROUP_LIFT_CAPPED').map(note => note.owners)).toEqual([[{ kind: 'group', id: 'west' }]]);
     const east = model.groupLifts!.find(item => item.units.includes('east'))!;
     expect(east).toMatchObject({ units: ['east'], offset: 1, from: [4, 5, 6], to: [3, 4, 5], side: 'right', sideEntry: ['link-11'], push: { at: 3, by: 2 } });
     expect(east.reason).toMatch(/tolerated/);
