@@ -571,7 +571,8 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
       reasons.set(row.group, objective);
       continue;
     }
-    accepted.push(row); base = draft;
+    const proved = draft.staggerRows!.find(item => item.group === row.group)!;
+    accepted.push({ ...row, far: [...proved.far] }); base = draft;
   }
   const arrangements: Record<string, GroupArrangement> = {};
   for (const id of ids) arrangements[id] = column.has(id) ? { chosen: 'column' } : accepted.some(row => row.group === id) ? { chosen: 'stagger' } : { chosen: 'row', reason: reasons.get(id)! };
