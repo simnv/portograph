@@ -11,7 +11,7 @@ import { moveGroup } from './skeleton-geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { tierGapPlans } from './gap-plan.js';
 import { separationShortfalls } from './constraints/separation.js';
-import { centreViolations } from './centre.js';
+import { centreViolations, recordDeclineFindings } from './centre.js';
 import { reserveLinkLabelRoom, tierGapShortfall, type LinkLabelShortfall } from './bands.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
 import { attemptTimings, timed, timedTrial } from './attempt-timings.js';
@@ -380,7 +380,9 @@ export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes']
   settle(settled);
   /** The picture of a model in the order of the user: the overlay and the placed routed links, and the findings of G6 and G5 (one candidate, so one position). */
   const picture = (model: LayoutModel): Reading => ({ ...read(model, { overlays: drawnOverlays(model), routed: { straight: 'aligned' }, crossings: 'pairs' }), tie: [0] });
-  const after: Reading = { ...picture(settled), sets: { centring: new Set(centreViolations(settled)), room: roomFindings(settled),
+  // The centring findings include the faces where the publication's replay would decline a target the record does not: no centring follows the
+  // reseat, so a corridor that changes what a step reads must not leave the record behind (`recordDeclineFindings`).
+  const after: Reading = { ...picture(settled), sets: { centring: new Set([...centreViolations(settled), ...recordDeclineFindings(settled)]), room: roomFindings(settled),
     crowded: crowded(settled), disordered: disordered(settled) },
     separation: lazySeparation(() => separationShortfalls(settled)),
     facts: { lanesHold: lanesHoldTheirChild(settled, followed), chordsClear: blockedChords(settled).length === 0 } };
@@ -390,7 +392,7 @@ export function chooseReseat(draft: LayoutModel, heldLanes: LayoutModel['lanes']
   // A reseat may not put a wall in a span corridor that was clear (architecture ticket 22).
   const heldBreaches = spanBreaches(draft);
   if ([...spanBreaches(settled)].some(key => !heldBreaches.has(key))) return false;
-  const held: Reading = { ...picture(draft), sets: { centring: new Set(centreViolations(draft)), room: roomFindings(draft),
+  const held: Reading = { ...picture(draft), sets: { centring: new Set([...centreViolations(draft), ...recordDeclineFindings(draft)]), room: roomFindings(draft),
     crowded: crowded(draft), disordered: disordered(draft) },
     separation: lazySeparation(() => separationShortfalls(draft)) };
   if (!readingHolds(after, held, judges.laneReseat)) return false;

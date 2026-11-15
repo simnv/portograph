@@ -735,21 +735,36 @@ function centringOffset(chosen: readonly Feed[]): number {
 }
 /**
  * The feeds the main move of a step centres on while seats stand (ADR-0027: the seat owns the body). A node the record seats on at least one
- * port of a node feed pulls the group only through the feeds of its kept ports: a feed its seat left out (the cap, the order of the face, the
- * row) would carry the body off the feeds it stands, pass after pass. A seat on transit-lane ports alone holds nothing: a lane follows its
- * child. Before the centre rule writes the record, a node that stands a feed where the step begins pulls only through the feeds it stands.
- * When no feed is left, the step centres on all of them.
+ * port of a node feed pulls the group through the feeds of its kept ports, and through each feed its seat left out that could still join the
+ * kept window. A left-out feed stops pulling only when it never can: the cap declined its target, or the order and pitch of its face against a
+ * kept port exclude its x. Such a feed would carry the body off the feeds it stands, pass after pass. A feed that a bound left out (a sibling,
+ * the row window, an overlay wall) still pulls: the bound moves when the group moves. A seat on transit-lane ports alone holds nothing: a lane
+ * follows its child. Before the centre rule writes the record, a node that stands a feed where the step begins pulls only through the feeds it
+ * stands. When no feed is left, the step centres on all of them.
  */
 function seatedFeeds(model: LayoutModel, chosen: readonly Feed[]): Feed[] {
   const record = model.alignmentSeats;
   const stands = (feed: Feed): boolean => feed.child.anchor !== undefined && Math.abs(feed.child.anchor.x - feed.x) <= 0.5;
   const standing = new Set(chosen.filter(stands).map(feed => feed.child.ref.node));
+  const capped = record === undefined ? new Set<string>() : declinedTargets(model, [...new Set(chosen.map(feed => feed.child.ref.node))], 'cap');
+  // Whether the order and pitch of the face put `feed`'s x out of reach of a port its seat keeps on that face.
+  const excluded = (feed: Feed, kept: readonly string[]): boolean => {
+    const node = model.nodes[feed.child.ref.node]!, side = feed.child.side!, pitch = node.sidePitch?.[side] ?? 0;
+    const order = node.ports.filter(port => port.side === side).sort((one, two) => one.engineOrder! - two.engineOrder!).map(port => portId(port.ref));
+    const at = order.indexOf(portId(feed.child.ref));
+    return chosen.some(other => {
+      if (other.child.ref.node !== node.id || other.child.side !== side || !kept.includes(portId(other.child.ref))) return false;
+      const steps = at - order.indexOf(portId(other.child.ref)), gap = feed.x - other.x;
+      return steps > 0 ? gap < steps * pitch - EPS : gap > steps * pitch + EPS;
+    });
+  };
   const pulling = chosen.filter(feed => {
     const node = feed.child.ref.node;
     if (record === undefined) return !standing.has(node) || stands(feed);
     const seat = Object.hasOwn(record, node) ? record[node] : undefined;
     const holds = seat !== undefined && chosen.some(other => other.child.ref.node === node && !other.transit && seat.ports.includes(portId(other.child.ref)));
-    return !holds || seat.ports.includes(portId(feed.child.ref));
+    if (!holds || seat.ports.includes(portId(feed.child.ref))) return true;
+    return !capped.has(portId(feed.child.ref)) && !excluded(feed, seat.ports);
   });
   return pulling.length ? pulling : [...chosen];
 }
@@ -1363,12 +1378,12 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     if (Math.abs(port.anchor!.x - want) > 0.5) unresolved.add(key);
   }
   const endMisses = misses();
-  // A body whose growth the centre rule gave back (ticket 71, `givenBack`) keeps a growth only for a target it stands. A step that widens it and leaves
-  // every kept port off its x after the clamp is declined as a window that cannot hold the group is: the group stands near its feed with the widths it
-  // began the step with, and the kept targets are named as alignments the row cannot hold (R6). The publication check replays this step, so it reads
-  // the same record (R1, R5).
-  if (aligned.size && [...aligned].every(key => (endMisses.get(key) ?? 0) > 0.5) && group.nodes.some(nodeId => model.givenBack !== undefined && Object.hasOwn(model.givenBack, nodeId)
-    && model.nodes[nodeId]!.bounds!.width > saved.nodes.find(node => node.id === nodeId)!.bounds!.width + EPS)) {
+  // A seat is judged where its step ends (ADR-0027, clause 5; ticket 71's rule for a given-back body, now for every body). A step that widens a body
+  // and leaves every aligned port of the group off its x after the pack and the clamp is declined whole, as a window that cannot hold the group is:
+  // the group stands near its feed with the widths it began the step with, and the aligned targets are named as alignments the row cannot hold (R6).
+  // The publication check replays this step, so it reads the same record (R1, R5).
+  if (aligned.size && [...aligned].every(key => (endMisses.get(key) ?? 0) > 0.5)
+    && group.nodes.some(nodeId => model.nodes[nodeId]!.bounds!.width > saved.nodes.find(node => node.id === nodeId)!.bounds!.width + EPS)) {
     if (warn) for (const feed of own) {
       if (!aligned.has(portId(feed.child.ref))) continue;
       placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
@@ -1377,8 +1392,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);
     standNearFeed(model, context, tier, id, saved.group, began + Math.max(farthestLeft, Math.min(toMean, farthestRight)), low, high);
-    // The step's growth is given back: the record holds no growth of it, and no decline judged against its geometry stands (ticket 66).
-    return { unresolved: new Set(wanted.keys()), group: saved.group, notes: { ...notes, grown: new Map(), declined: new Map() } };
+    // The step is declined whole: the record holds no growth or seat of it, and no decline judged against its geometry stands (ticket 66).
+    return { unresolved: new Set(wanted.keys()), group: saved.group, notes: { ...notes, grown: new Map(), declined: new Map(), seated: new Map(), unseated: new Set() } };
   }
   // A step that leaves fewer verticals standing than it found (ticket 65) keeps the geometry it found, clamped into its window, when that keeps more
   // and passes the same post-conditions and the overlay guard (ticket 66: no overlay link the step draws straight loses its straight chord). A keep
@@ -1811,6 +1826,14 @@ export function publishedCentreViolations(model: LayoutModel, ahead = false, unt
   return withSharedLinkKinds(() => readCentreViolations(untrimmed ?? model, ahead, undefined, true, true));
 }
 /**
+ * The faces where the publication's replay of a 7f draft would decline a target its record does not (`alignment-targets-differ`), read as the
+ * producer reads ahead. A move after the last centring of 7f (the lane reseat) changes what a step reads; such a move is judged by the comparison
+ * the publication makes, since no centring follows it to write the decline into the record (R1, R5).
+ */
+export function recordDeclineFindings(model: LayoutModel): string[] {
+  return publishedCentreViolations(model, true).filter(item => item.startsWith(`${ALIGNMENT_TARGETS_DIFFER}: `));
+}
+/**
  * The text of the model one check read, and its answer (architecture-2 ticket 63). With no context handed in, the answer reads the model and `ahead` alone:
  * the context is built from the model, every trial is parsed from these texts, and the freeze block is read by nothing the check calls. So a later
  * check on the same model object whose texts are all equal has the same answer, and its replays are not run again. `taps` are the verdicts the
@@ -1947,8 +1970,9 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
       previous = group;
       // The record is read, never decided again (R1): a face where the replay declines a target the record does not decline is a finding (R5).
       // Only 7f's producer ran the tally that declines (its draft stands at `bundles`); 7c to 7e decline nothing, and a chord-stage replay of the
-      // 7e output would read rules its producer did not run. So the publication compares the record of 7f alone.
-      if (targets && model.stage === 'bands' && model.alignmentTargets !== undefined) {
+      // 7e output would read rules its producer did not run. So the publication compares the record of 7f alone: at `bands`, and on 7f's own draft
+      // when its producer reads ahead (the draft publishes at `bands`), so a move after the last centring is judged by the comparison too.
+      if (targets && (model.stage === 'bands' || (ahead && model.stage === 'bundles')) && model.alignmentTargets !== undefined) {
         for (const nodeId of group.nodes) for (const side of ['top', 'bottom', 'left', 'right'] as const) {
           const face = faceKey(nodeId, side);
           if (!sameDeclines(model.alignmentTargets[face], trial.alignmentTargets?.[face])) result.push(`${ALIGNMENT_TARGETS_DIFFER}: ${face}`);
