@@ -1,0 +1,18 @@
+# Expected: the link between the bottom ports of a and b is a planned U part on the low boundary of the tier gap below `row`: two legs that
+# fall from the ports and one row a clearance below the stems, with 0 crossings; every gate passes.
+# Test-only input owned by dense-16x9 ticket 06 (slice A): test/pipeline/u-turn-course.test.ts gives link-4 the course `u-turn`
+# (`from` and `to` `bottom`, `runs` `u`) through `testCourses`. Without the course the link is a residual same-boundary U-turn.
+portograph: 2
+groups:
+  row: { tier: 0 }
+  dst: { tier: 1 }
+nodes:
+  a: { group: row, class: switch, ports: [{ name: p, side: bottom }] }
+  b: { group: row, class: switch, ports: [{ name: p, side: bottom }] }
+  c: { group: row, class: switch, ports: [] }
+  d0: { group: dst, class: router, ports: [] }
+  d1: { group: dst, class: router, ports: [] }
+links:
+  - [c, d0]
+  - [c, d1]
+  - [a.p, b.p]

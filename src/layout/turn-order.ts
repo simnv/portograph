@@ -132,6 +132,19 @@ function skirtTurn(model: LayoutModel, link: LayoutLink, course: Course, which: 
 }
 
 /**
+ * The first turn of a `u-turn` end (dense-16x9 ticket 06): the stem leaves its horizontal face and turns toward the other end, along the row of the U part (or the padding row), and
+ * the second turn there goes back toward the node, so the shape is `return` and the reach is the centre of the other node. The end that stands left of the other turns `high`, the
+ * other `low`. Two ends in one column have no turn. Two U parts that leave one face and nest take the order of their reaches (the wider one stands farther out), so no leg stands inside another.
+ */
+function uTurnTurn(model: LayoutModel, link: LayoutLink, which: 'from' | 'to'): PlannedTurn | undefined {
+  const box = model.nodes[link.attachments![which].node]?.bounds, other = model.nodes[link.attachments![which === 'from' ? 'to' : 'from'].node]?.bounds;
+  if (box === undefined || other === undefined) return undefined;
+  const here = box.x + box.width / 2, there = other.x + other.width / 2;
+  if (Math.abs(there - here) <= PLACEMENT_EPS) return undefined;
+  return { turn: there > here ? 'high' : 'low', shape: 'return', reach: there };
+}
+
+/**
  * The first turn of a side lane port (Q109): the lane runs from the band edge that faces the far end to the lateral port, so the end turns up when the far end stands
  * in a higher sub-tier and down when in a lower one. Read from the tiers, which no centring moves (7c moves x only), and not from the y of the far port.
  */
@@ -156,7 +169,7 @@ function reservedTurn(model: LayoutModel, link: LayoutLink, which: 'from' | 'to'
     const row = bypassRowY(model, link, course);
     return row === undefined ? undefined : { turn: course.edge === 'top' ? 'low' : 'high', shape: 'onward', reach: row };
   }
-  if (course !== undefined) return course.kind === 'skirt' ? skirtTurn(model, link, course, which) : undefined;
+  if (course !== undefined) return course.kind === 'skirt' ? skirtTurn(model, link, course, which) : course.kind === 'u-turn' ? uTurnTurn(model, link, which) : undefined;
   if (own.laneHint === true) return sideLaneTurn(model, mine, other);
   return transit ? transitTurn(model, link, mine, own) : undefined;
 }

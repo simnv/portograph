@@ -9,7 +9,7 @@ import { segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
 import { isGapRun, laneRunKind } from './lane-kind.js';
-import { courseGeometry, courseOf, isApproachCourse, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
+import { courseGeometry, courseOf, isApproachCourse, isUTurnCourse, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
 import { gapEnds, gapGeometry, gapLaneId, gapReservation, isGapCourse } from './course-gap.js';
 import { admitBypassLanes, bypassGeometry, bypassLaneExtent, bypassLaneId, isBypassCourse } from './course-bypass.js';
 import { RING_PITCH, endMode } from './course-rows.js';
@@ -1551,7 +1551,7 @@ function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: Layo
 function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
   const placed: Lane[] = [];
   for (const course of model.courses ?? []) {
-    if (isGapCourse(course) || isApproachCourse(course) || isBypassCourse(course)) continue;
+    if (isGapCourse(course) || isApproachCourse(course) || isBypassCourse(course) || isUTurnCourse(course)) continue;
     const link = model.links.find(item => item.id === course.link);
     if (link?.attachments === undefined || course.side === undefined) throw new Error(`Course on ${course.link} cannot reserve a perimeter lane`);
     const draft: LaneDraft = { id: perimeterLaneId(link.id), side: course.side, ring: 0, ...(endHasNaturalFace(course) ? { aligned: true as const } : {}) };

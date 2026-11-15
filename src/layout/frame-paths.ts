@@ -188,6 +188,8 @@ function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): 
   if (route !== undefined && route !== 'straight') return undefined;
   const { from, to } = link.attachments;
   if (from.node === to.node) return undefined;
+  // A `u-turn` course plans the route of its link (a U part of the tier gap): the link is no chord (dense-16x9 ticket 06).
+  if ((model.courses ?? []).some(course => course.link === link.id && course.kind === 'u-turn')) return undefined;
   // A port hinted for the routed L (ticket 119) owns a side lane, not a chord.
   if ([from, to].some(end => findPort(model, end)?.laneHint === true)) return undefined;
   const a = model.document.nodes[from.node]?.group, b = model.document.nodes[to.node]?.group;

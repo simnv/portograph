@@ -851,6 +851,8 @@ Two parts on one port share the leg from the tip to the higher row; the plan rec
 stage 8 exempts the overlap through it. Two legs of two nodes within `k` are both planned and named
 `crowded`; G6 reports them, which `quality.md` item 11 prefers to a removed link.
 
+A **U part** has both ends on one boundary: a low one hangs from the low boundary (its row below the stems, packed with the other rows), a high one rises from the high boundary (dense-16x9 ticket 06). The plan seats a high U part after every unit that overlaps its span (`uEdges`; a nested high U part stands below the outer one), then hangs its row as far down as its need, its neighbours and the fan chords allow, so its legs stay short. The plan reads a U part only for a link with a `u-turn` course (stage 5 sets both faces).
+
 A part the plan declines is **residual**, with a reason: `spans-two-gaps`, `lateral-port`, `u-turn`,
 `faces-away`, `off-boundary`, `crosses-lane`, `crosses-shared-run`, `leg-blocked` (a leg would pass
 through a label, a lane box or an obstacle) and `row-cycle` (a cycle that no Z split breaks). 7f
