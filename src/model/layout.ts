@@ -909,7 +909,7 @@ export interface AlignmentTarget {
  * One seat of a node (`LayoutModel.alignmentSeats`): how far the seat slid the body in its row (`dx`, 0 for a growth in place), the body width
  * before the seat (`from`) and after it (`width`), the wanted ports it stood (`ports`), and the pass that wrote it (0 for a replay).
  */
-export interface AlignmentSeat { dx: number; from: number; width: number; ports: string[]; pass: number }
+export interface AlignmentSeat { dx: number; from: number; at: number; width: number; ports: string[]; pass: number }
 /** One edge of an aligned extent (`LayoutModel.alignedExtents`): the edge stands at the x of the anchor-tier `port` plus `offset`. */
 export interface AlignedExtentEdge { port: PortRef; offset: number }
 /**

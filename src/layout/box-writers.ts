@@ -102,7 +102,6 @@ export const BOX_WRITERS: readonly BoxWriter[] = [
   { id: 'W30', file: 'src/layout/centre.ts', fn: 'spreadParent', guard: { kind: 'guarded', by: 'resizeEvidence before, resizeHolds after, undo on refusal' } },
   { id: 'W31', file: 'src/layout/centre.ts', fn: 'centreGroupStepRaw', guard: { kind: 'guarded', by: 'the step window and a post-condition (riser, span, lane crossings, chord clearance); on failure the saved group is restored' } },
   { id: 'W32', file: 'src/layout/centre.ts', fn: 'centreGroupStepRaw', guard: { kind: 'guarded', by: 'the clamp into the window, inside the post-condition of W31' } },
-  { id: 'W40', file: 'src/layout/centre.ts', fn: 'centreGroupStepRaw', guard: { kind: 'guarded', by: 'the clamp into the window before the seats (ADR-0027), the same clamp as W32, inside the post-condition of W31' } },
   { id: 'W33', file: 'src/layout/centre.ts', fn: 'centreGroupStepRaw', guard: { kind: 'guarded', by: 'keptRefusal and the fewer-verticals test' } },
   { id: 'W34', file: 'src/layout/overlay-place.ts', fn: 'standLinklessBeside', guard: { kind: 'guarded', by: 'fits, with holdsMove, the chord bans and the walls' } },
   { id: 'W35', file: 'src/layout/overlay-place.ts', fn: 'sweep', guard: { kind: 'guarded', by: 'a window clamp between the walls of the tier (groups, frame columns, lanes); a free overlay group has no routed port' } },

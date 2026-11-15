@@ -981,7 +981,7 @@ body keeps the node move (`holdsNodeMove`), each held chord that follows a moved
 resize keeps (`seatRefusal`: lane windows and sides, riser keep-out, span corridors, the label room
 of same-tier links, trunk extensions, side-lane far ports, and the exits of 7e). A refused seat is
 undone whole; when every try is refused the body stays and `ALIGNMENT_SEAT_REFUSED` names the guard.
-A body moves only for a seat that stands an owed vertical: a held chord runs at any angle, and a move for it alone would only take turns with the main move pass after pass. A seat that slides or grows a body is recorded (`alignmentSeats`, R1). A port outside the seat keeps
+A body moves only for a seat that stands an owed vertical: a held chord runs at any angle, and a move for it alone would only take turns with the main move pass after pass. A seat that slides or grows a body is recorded (`alignmentSeats`, R1), and the record owns the body (ADR-0027, amendment of 2026-11-15): while the seat stands, the main move reads only the feeds of its kept ports; the recorded window is tried first and may move the body as far as a move+grow; the seat is decided again only for more owed verticals or targets; its cap reads the recorded width before the first seat (`from`); and a seat that falls in its step gives the body back to that box (`from` at the recorded offset `at`). The record lives through publication: a seat that no longer stands is withdrawn when the passes end and at the end of each rule from `centre` to `bands`, and a kept port off its feed at publication is a layout error. A port outside the seat keeps
 its pitch slot and its link is reported. A growth is bounded a third way as well, by the alignment cap
 (`withinAlignmentCap`, ADR-0027): the body may not end wider than `ALIGNMENT_CAP_TIMES` (5) × the width
 the node itself needs — its content and author floor, or its own ports on that side at their reserved
@@ -1511,7 +1511,8 @@ node floor). A face with lateral ports keeps its x; a node with ports on both la
 their x and no node moves, so no plan, chord, lane or course changes. Each group box shrinks to its content (title floor
 included) inside the box it had; the linked-group grid runs again (honouring `gridRefusals`) and may grow a box onto a linked partner's
 extent, as its rule says; the regions, frames, tier bands and label bands are derived again. A trim whose grid would move a node, change a
-box's height or widen the drawing, or that would change a label band's clearance, end a grid refusal or contradict a lane, is declined
+box's height or widen the drawing, or that would change a label band's clearance, end a grid refusal, contradict a lane, or leave a link
+label or an overlay track short of the room 7f reserved for it where that room held before the trim (`labelRoomHolds`), is declined
 whole (`END_TRIM_DECLINED`, with the reason) and the draft is the one 7f left. A held chord that now leaves a narrower frame by a
 side edge is named by `STRAIGHT_LINK_EDGE`, as every 7f move after the freeze is. The record `bodyTrims` holds the body and box each
 trimmed node and changed group had before the trim; the centring replay of the publication check reads that geometry (`untrimmedModel`),
@@ -1528,8 +1529,9 @@ with no centring (`rebuildRegionGeometry(..., false)`), then the label bands and
 declines the move, undone whole (`CLOSE_UP_DECLINED`, with the group and the reason), when a port does not move by the shift with its
 node (a bundle seats it again), a label band changes, the grid moves a box or a grid refusal would no longer hold, two boxes overlap that
 did not, `validateLanes` fails, a frozen chord becomes blocked or leaves its frame by an edge, a reservation fails that held, a tier-gap
-plan needs more height or gets a new residual part or crowded leg, a link whose two ends stood on one x does not, an overlay link loses
-its straight chord, or a link label loses its room. The shifts are recorded in `bodyTrims.shifts` and `bodyTrims.laneShifts`; the
+plan needs more height or gets a new residual part or crowded leg, a link whose two ends stood on one x does not, a port that stood
+under the lane of its link (a perimeter or span lane, which does not follow the group) does not (ADR-0027, amendment of 2026-11-15),
+an overlay link loses its straight chord, or a link label loses its room. The shifts are recorded in `bodyTrims.shifts` and `bodyTrims.laneShifts`; the
 replay (`untrimmedModel`) moves the groups and lanes back, drops the routed paths and derives the rule geometry again, and the validator
 requires the close-up of that geometry to give the same shifts (`checkBodyTrims`). The close-up runs after the last move in x: before
 the chord freeze every centring replay of the 7f rounds reads a lane's x as its feed's x and moves the group back.

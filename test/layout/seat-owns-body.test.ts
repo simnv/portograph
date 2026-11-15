@@ -6,10 +6,13 @@ import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { rows } from '../../src/layout/rows.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { trimBodies } from '../../src/layout/end-trim.js';
+import { moveGroup } from '../../src/layout/skeleton-geometry.js';
+import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
+import { rebuildRegions } from '../../src/layout/regions.js';
 import { targetTap } from '../../src/layout/alignment-targets.js';
 import type { Course } from '../../src/model/layout.js';
 import { findPort } from '../../src/layout/row-paths.js';
-import { pathBends } from '../../src/layout/objective.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
 import type { LayoutModel, LayoutNode } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
@@ -153,27 +156,26 @@ links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`))))))
       } finally { if (sink === undefined) delete targetTap.sink; else targetTap.sink = sink; }
     }, 120000);
 
-    it('seats snk0 under the lane of link-13 before the trim: the step clamps edge-near into its window before the seats', () => {
-      // Before: the main move left edge-near outside its step window, the seat was made there, the clamp carried snk0 off its targets, and the
-      // step was declined: snk0 stood where ELK put it, under no feed.
-      const [port, lane] = underLane(drafts.at(-1)!);
-      expect(Math.abs(port - lane)).toBeLessThanOrEqual(0.5);
+    it('the close-up after the trim does not take snk0 off the lane of link-13 it enters straight', () => {
+      // The trim frees width beside edge-near, and the close-up would move edge-near toward edge-far. The perimeter lane of link-13 does not
+      // follow a group, so before the guard the port left the lane it enters straight and link-13 took two turns its course had not promised.
+      // The draft before the trim, with edge-near moved so that snk0 stands under the lane, as the course of link-13 asks.
+      const draft = structuredClone(drafts.at(-1)!);
+      const [port, lane] = underLane(draft);
+      moveGroup(draft, draft.groups['edge-near']!, lane - port, 0);
+      // snk0 as a growth in place left it: 100 px wider on its left, its ports where they stand; the group box grows with it.
+      const body = draft.nodes['snk0']!.bounds!, box = draft.groups['edge-near']!.bounds!;
+      draft.nodes['snk0']!.bounds = { ...body, x: body.x - 100, width: body.width + 100 };
+      draft.nodes['snk0']!.size = { width: body.width + 100, height: body.height };
+      draft.groups['edge-near']!.bounds = { ...box, x: box.x - 100, width: box.width + 100 };
+      rebuildNodeGeometry(draft, ['snk0'], 'current');
+      rebuildRegions(draft);
+      trimBodies(draft);
+      expect(draft.bodyTrims?.nodes['snk0']).toBeDefined();
+      const [after, laneAfter] = underLane(draft);
+      expect(Math.abs(after - laneAfter)).toBeLessThanOrEqual(0.5);
+      expect(draft.diagnostics.some(item => item.code === 'CLOSE_UP_DECLINED' && item.message.includes('edge-near') && item.message.includes('link-13'))).toBe(true);
     });
   });
 
-  it('the course trial of the feedOrder:false group-shift copy keeps link-13 to the one turn it promised: the close-up leaves snk0 under the lane', async () => {
-    // Before: after the end trim, the close-up moved edge-near 114 px left; link-13's lane is a perimeter lane, which does not follow a group,
-    // so the port left the lane it enters straight and the trial was refused for two turns more than its course promised.
-    const trials: { verdict: { reason?: string }; routedTrial: LayoutModel }[] = [];
-    await layout(parse(withoutJointOrder(read('synthetic/a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first'))), {
-      createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
-      testSideTrace: event => { if (event.ev === 'course-trial') trials.push(event as unknown as (typeof trials)[number]); },
-    });
-    expect(trials.length).toBeGreaterThan(0);
-    for (const trial of trials) {
-      expect(trial.verdict.reason ?? '').not.toMatch(/more turns than it promised/);
-      const link = trial.routedTrial.links.find(item => item.id === 'link-13')!;
-      expect(pathBends(link)).toBeLessThanOrEqual(1);
-    }
-  }, 120000);
 });

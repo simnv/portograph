@@ -53,3 +53,47 @@ verticals and `a-tier-gap-plan-orders-every-part` falls from 9 to 5.
 gate G4, and 5 gives 206 bends (main: 202). At both caps the widest grown body on that sheet is
 427 px (main: 1 129 px). These numbers are from the trial runs. The report of the branch has the
 final corpus table at 5.
+
+## Amendment: the seat owns the body (2026-11-15)
+
+Dense-16x9 ticket 02. The seat is one decision. `alignmentSeats` records it, and every later
+pass, the replay and the publication check read that record:
+
+1. While a seat stands, the main move of its group reads only the feeds of the kept ports. A feed
+   that the seat left out does not pull the body.
+2. A seat on transit-lane ports only holds nothing, because a lane follows its child.
+3. A kept port stays owed after the chord freeze. The recorded window is tried first, and it may
+   move the body as far as a move+grow may. A seat is decided again only for more owed verticals,
+   then more targets.
+4. The cap of a seat reads the width the record holds from before the first seat (`from`), never
+   a width that an earlier pass grew. A seat that falls in its step (a recorded body that now keeps
+   no port) gives the body back to that box: width `from`, at the offset `at` inside the seated box.
+   A seat that stands keeps its body as it stands.
+
+The records live until publication (`RECORD_STAGES`). A seat that no longer stands is withdrawn
+at the end of the passes and at the end of each rule from `centre` to `bands`. A kept port off its
+feed at publication is a layout error ("at a recorded seat").
+
+Two guards outside 7c keep what a seat stands:
+
+- The end trim is declined when the room that 7f reserved for a link label or an overlay track held
+  before the trim and not after it.
+- The close-up does not take a port off the lane of its link that it stands under (a perimeter or
+  span lane does not follow the group).
+
+Clause 4 was also tried as written in the design note: every step gives each recorded body back
+its pre-seat box and seats it again. On the corpus that gave 5 errors ("Centring invariant
+violated" on three-continents, three-continents-top-3-first, a-claim-lies-on-a-cover-edge and
+a-title-no-position-clears-leaves-the-leg-to-the-router) and a spent budget on
+private-datacenter-spine-leaf. Two tiers that stand on each other's ports moved each other again
+on every pass, because the ports that a seat does not keep are laid at pitch again.
+
+Open (ticket 09): neither the seat nor the group before its seats is bounded by the window of the
+step. On the feedOrder:false
+copy of a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first, snk0 moves and grows past
+that window, the clamp carries it off its targets, and it keeps 247 px with no seat. To bound the
+seat by the window, the producer and the publication replay must read one recorded window. The
+window is read from the centring context and from the group as it stands. Read before the seats
+(to bound move+grow, or to clamp the group into it before it is seated), it makes the replay
+disagree with the producer: "Centring invariant violated" on three-continents and
+three-continents-top-3-first.

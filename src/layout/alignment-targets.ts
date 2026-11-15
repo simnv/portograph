@@ -233,7 +233,7 @@ export function alignmentTargetsFault(model: LayoutModel): string | undefined {
 export function writeAlignmentSeats(model: LayoutModel, seated: ReadonlyMap<string, Omit<AlignmentSeat, 'pass'>>, pass: number, unseated: ReadonlySet<string> = new Set()): void {
   const record = model.alignmentSeats;
   if (record === undefined) return;
-  for (const [node, seat] of seated) record[node] = { dx: seat.dx, from: seat.from, width: seat.width, ports: [...seat.ports], pass };
+  for (const [node, seat] of seated) record[node] = { dx: seat.dx, from: seat.from, at: seat.at, width: seat.width, ports: [...seat.ports], pass };
   for (const node of unseated) delete record[node];
 }
 
@@ -267,6 +267,7 @@ export function alignmentSeatsFault(model: LayoutModel): string | undefined {
     if (node === undefined) return `${id} is no node`;
     if (seat === null || typeof seat !== 'object') return `${id} holds no seat`;
     if (!finite(seat.dx) || !finite(seat.from) || !finite(seat.width) || seat.from <= 0) return `${id}: a seat without its numbers`;
+    if (!finite(seat.at) || seat.at < -PLACEMENT_EPS || seat.at > seat.width - seat.from + PLACEMENT_EPS) return `${id}: the box before the seat stands outside the seated box`;
     if (!Number.isInteger(seat.pass) || seat.pass < 0) return `${id}: pass ${String(seat.pass)}`;
     if (seat.width < seat.from - PLACEMENT_EPS) return `${id}: the seat narrowed the body`;
     if (!Array.isArray(seat.ports) || !seat.ports.length) return `${id}: a seat that stood no port`;
