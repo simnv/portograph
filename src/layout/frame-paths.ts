@@ -215,10 +215,12 @@ function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): 
 
 /**
  * The kind of a link between two frames of one document tier (dense-16x9 ticket 06, slice B): `cross` when both ends stand in un-flanked `row` cells of one sub-tier and
- * the ports face each other on lateral faces (`right` on one node, `left` on the other); otherwise no candidate. A sibling-frame link is a chord of the sub-tier, not of a gap.
+ * the ports face each other on lateral faces (`right` on one node, `left` on the other) and the link is no group-link member; otherwise no candidate. A sibling-frame link is a chord of the sub-tier, not of a gap.
  */
 function siblingFrameKind(model: LayoutModel, link: LayoutLink, a: string, b: string): ChordKind | undefined {
   const { from, to } = link.attachments!;
+  // A group-link member is one of a bipartite set between two groups, not one pair of facing ends: it keeps the orthogonal route here (it never took a level path).
+  if (link.groupLink !== undefined) return undefined;
   const one = model.groups[a]?.tier, two = model.groups[b]?.tier;
   if (one === undefined || one !== two || groupShape(model, a) !== 'row' || groupShape(model, b) !== 'row') return undefined;
   const sides = [findPort(model, from)?.side, findPort(model, to)?.side];
