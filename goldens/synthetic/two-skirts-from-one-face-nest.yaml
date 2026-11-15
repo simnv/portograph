@@ -5,6 +5,8 @@
 # order, and G5 passes there because it accepts the order that the turn round recorded (`freeze.turnOrder`). The same sheet, with fl-1's bottom face reserved for far-end order
 # (`testTurnExcept`, the reservation that the turn round makes for a face that holds a held routed chord on its baseline), keeps the far-end order, is not recorded, and G5 passes
 # there by the far-end ranges.
+# ADR-0027 (dense-16x9 ticket 02): `up-1` has an authored 485 px width floor, the width the old alignment growth gave it, so its three feeds stand
+# without growth and the premise of the sheet (two column-gap courses from fl-1, nested by the turn round) holds.
 # Test-only input owned by ticket 24; test/pipeline/turn-order.test.ts reads it.
 portograph: 2
 profile: network
@@ -17,7 +19,7 @@ groups:
   neighbour: { tier: 1, label: Neighbour }
   flank: { align: left, of: core, label: Flank }
 nodes:
-  up-1: { group: upper, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  up-1: { size: { width: 485, height: 0 }, group: upper, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
   core-1: { group: core, class: router, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
   east-1: { group: east, class: router, ports: [100G, 100G, 100G, 100G] }
   south-1: { group: south, class: router, ports: [100G, 100G] }
