@@ -193,17 +193,22 @@ links:
     expect(five.diagnostics.filter(item => item.code === 'FEED_SPLIT_DECLINED').map(item => item.message))
       .toEqual([expect.stringMatching(/^The feed split G1\|G2 at .* is declined: L\|R would lack [\d.]+ px of its room\.$/)]);
     const published = await run(yaml);
-    expect(published.feedSplits).toEqual(five.feedSplits);
+    // The published record is stage 5's, with one difference: the full run seats stage 5 on the node floors of the first run (`place.ts`), and under the
+    // alignment cap (ADR-0027) L's n1 stands 52 px wide for its two parents where it stood 246.5 px (stretched) before, so the room the line must hold
+    // is 1 px less (215.5 to 214.5). The old pin proved the record is stable between stage 5 and publication; this one proves it for every field but
+    // that width, which it states.
+    expect(published.feedSplits).toEqual(five.feedSplits!.map(split => ({ ...split, width: split.width - 1 })));
   }, 120000);
 
   it('publishes the sheet whose span round grows a tier gap beside a linked pair the grid holds apart in x (sweep v6-2-1)', async () => {
     // Before the fix the tier-gap solve of the span round's last run threw: its rebuild in y widened edge-near to the extent of access.
     const model = await run(sheet('a-tier-gap-growth-widens-no-grid-pair-in-x'));
     expect(model.feedSplits!.map(split => split.pair)).toEqual([['edge-near', 'edge-far']]);
-    // ADR-0027: `snk1` keeps 284 px instead of 343 (link-14 is declined at the cap), the tier gap above tier 1 grows 9.25 px to hold the parts, and the
-    // chords of link-5 and link-6 are refused (`body`, `leg`): two jogs of two bends each, 8 turns where there were 4. The publication, the feed split and the
-    // grid pair are the rule here.
-    expect(bends(model)).toBe(8);
+    // ADR-0027: `snk1` keeps 178 px instead of 343 (the cap of five times its need), the two chords of src1 to access stand as diagonals, and
+    // the links of src0 (two) and of src1 (one) to a body they cannot stand over keep a jog of two bends each: 6 turns where main had 4 (8 under the first seat). The seat that
+    // owns the body (ADR-0027, 04e3ce86) keeps the verticals it reached and stretches nothing, so the count is lower than the 8 of the earlier pin.
+    // The publication, the feed split and the grid pair are the rule here.
+    expect(bends(model)).toBe(6);
   }, 240000);
 
   it('a grid pair the tier-gap solve holds stays as it stands and is recorded as refused (R1)', async () => {
