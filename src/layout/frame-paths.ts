@@ -60,7 +60,7 @@ export function fanSiblings(a: LayoutLink, b: LayoutLink): boolean {
   return a.fanFamily !== undefined && a.fanFamily === b.fanFamily;
 }
 
-/** What a routed chord joins: two ends in one frame (`frame`), or in two frames on consecutive document tiers (`cross`, Q108). */
+/** What a routed chord joins: two ends in one frame (`frame`), or in two frames on consecutive document tiers, or on one sub-tier of one document tier (`cross`, Q108; dense-16x9 ticket 06). */
 export type ChordKind = 'frame' | 'cross';
 
 /** The authored tier of a layout group: a cell reads its frame's, a child group its parent's. */
@@ -200,6 +200,8 @@ function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): 
   const tiers = [documentTier(model, a), documentTier(model, b)];
   if (tiers[0] === undefined || tiers[1] === undefined) return undefined;
   const gap = Math.abs(tiers[0] - tiers[1]);
+  // Two frames of one document tier: a sibling-frame link on facing lateral faces is a level cross-frame chord (dense-16x9 ticket 06, slice B).
+  if (gap === 0) return siblingFrameKind(model, link, a, b);
   // A spanning chord (ticket 22): the hint makes a link on tiers that are not consecutive a cross-frame candidate. An unhinted one is not.
   if (gap !== 1 && !(gap >= 2 && (assumeSpan || link.spanHint === true))) return undefined;
   const [upper, lower] = tiers[0] < tiers[1] ? [from, to] : [to, from];
@@ -209,6 +211,28 @@ function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): 
     if ((lateral(upper) || facesAllowed(findPort(model, upper), 'bottom')) && (lateral(lower) || facesAllowed(findPort(model, lower), 'top'))) return 'cross';
   }
   return facesAllowed(findPort(model, upper), 'bottom') && facesAllowed(findPort(model, lower), 'top') ? 'cross' : undefined;
+}
+
+/**
+ * The kind of a link between two frames of one document tier (dense-16x9 ticket 06, slice B): `cross` when both ends stand in un-flanked `row` cells of one sub-tier and
+ * the ports face each other on lateral faces (`right` on one node, `left` on the other); otherwise no candidate. A sibling-frame link is a chord of the sub-tier, not of a gap.
+ */
+function siblingFrameKind(model: LayoutModel, link: LayoutLink, a: string, b: string): ChordKind | undefined {
+  const { from, to } = link.attachments!;
+  const one = model.groups[a]?.tier, two = model.groups[b]?.tier;
+  if (one === undefined || one !== two || groupShape(model, a) !== 'row' || groupShape(model, b) !== 'row') return undefined;
+  const sides = [findPort(model, from)?.side, findPort(model, to)?.side];
+  return (sides[0] === 'right' && sides[1] === 'left') || (sides[0] === 'left' && sides[1] === 'right') ? 'cross' : undefined;
+}
+/**
+ * Whether the link is a level cross-frame candidate: a sibling-frame link, whose chord leaves one lateral face and enters the facing one on one sub-tier. One predicate
+ * for the verdict and the rows rule, so the two cannot read the sub-tier twice (R1).
+ */
+export function levelCrossChord(model: LayoutModel, link: LayoutLink): boolean {
+  if (chordKind(model, link) !== 'cross') return false;
+  const { from, to } = link.attachments!;
+  const one = model.groups[model.document.nodes[from.node]?.group ?? '']?.tier, two = model.groups[model.document.nodes[to.node]?.group ?? '']?.tier;
+  return one !== undefined && one === two;
 }
 
 /** A cross-frame chord leaves the natural face of its end, or the lateral side a hint gave the port (docs/design/side-faces.md, Section 9). */
@@ -351,8 +375,11 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
   if (link.spanHint !== true && transitTiers(model, link).length > 0) return { reason: 'transit' };
   const line: PathSegment = { from: geometry.from, to: geometry.to, owner: { ...link.owner } };
   if (kind === 'cross') {
-    // The port sides say which end is upper; the faces must agree, or the chord leaves a port inward.
-    if (!(geometry.to.y > geometry.from.y === (tiers[0]! < tiers[1]!))) return { reason: 'faces' };
+    // The port sides say which end is upper; the faces must agree, or the chord leaves a port inward. A sibling-frame chord stands on one sub-tier: its
+    // lateral faces must look at each other, so the chord leaves the `right` face toward larger x and the `left` face toward smaller x.
+    if (levelCrossChord(model, link)) {
+      if (!(geometry.to.x > geometry.from.x === (findPort(model, link.attachments!.from)?.side === 'right'))) return { reason: 'faces' };
+    } else if (!(geometry.to.y > geometry.from.y === (tiers[0]! < tiers[1]!))) return { reason: 'faces' };
     const reason = crossRefusal(model, link, line, sideSlack);
     if (reason) return { reason };
   }
