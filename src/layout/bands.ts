@@ -1703,6 +1703,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     const straight: PathSegment = { from: { ...leftPort.anchor! }, to: { ...rightPort.anchor! }, owner: { ...link.owner } };
     const heldChord = !overlay && isRoutedChord(model, link);
     const anchored = heldChord ? straightChord(model, link, undefined, true) : undefined;
+    if (heldChord && anchored === undefined) { unreserved('cannot read the ends of its held chord'); continue; }
     const detour = !overlay && !heldChord
       && (Math.abs(leftPort.anchor!.y - rightPort.anchor!.y) > PLACEMENT_EPS || !straightCorridorClear(model, link, straight));
     const room = 2 * Math.min(mid - Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))), Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x) - mid);

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
+import { layout, parse, score } from '../../src/index.js';
 import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { reserveLinkLabelRoom, topUpBandClearance, type LinkLabelShortfall } from '../../src/layout/bands.js';
@@ -8,10 +9,46 @@ import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
 import { fitRegionGroup } from '../../src/layout/regions.js';
 import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
 import { measureText } from '../../src/text/index.js';
-import { placed } from './phase-two-fixture.js';
+import { createAttempt, placed } from './phase-two-fixture.js';
+import { createAvoidAttempt } from '../route/fixture.js';
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-top-band-push-syncs-pills-before-label-room.yaml', import.meta.url), 'utf8');
+const heldChordFixture = readFileSync(new URL('../../goldens/synthetic/a-held-row-chord-reserves-label-room-without-detour-stems.yaml', import.meta.url), 'utf8');
 const throughBundles = async (yaml: string): Promise<LayoutModel> => bundles(bars(centre(flanks(lanes(rows(await placed(yaml)))))));
+const run = (yaml: string) => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+
+it('the pipeline holds a slanted row chord and reserves only its label room', async () => {
+  const model = await run(heldChordFixture);
+  const link = model.links[0]!, left = model.nodes.left!, right = model.nodes.right!;
+  expect(isRoutedChord(model, link)).toBe(true);
+  expect(model.frozenChords).toContain(link.id);
+  expect(link.path!.segments).toHaveLength(1);
+  expect(left.ports[0]!.anchor!.y).not.toBe(right.ports[0]!.anchor!.y);
+  const label = model.labels.find(item => item.role === 'link' && item.owner.kind === 'link' && item.owner.id === link.id)!;
+  expect(label.text).toBe('1G');
+  expect(label.omitted).toBeUndefined();
+  expect(label.onLine).toBe(true);
+  const required = measureText('1G', { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width
+    + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
+  const leftPill = left.ports[0]!.pill!.bounds, rightPill = right.ports[0]!.pill!.bounds;
+  const midpoint = (left.ports[0]!.anchor!.x + right.ports[0]!.anchor!.x) / 2;
+  const room = 2 * Math.min(midpoint - leftPill.x - leftPill.width, rightPill.x - midpoint);
+  expect(room).toBeCloseTo(required, 6);
+  expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+  expect(score(model).snapshot.passed).toBe(true);
+  expect(model.removedLinks ?? []).toEqual([]);
+});
+
+it('unreadable held-chord ends are diagnosed without a row-room fallback', async () => {
+  const model = structuredClone(await run(heldChordFixture));
+  const link = model.links[0]!;
+  expect(isRoutedChord(model, link)).toBe(true);
+  // A missing body makes the face-to-face chord unreadable, while its ports and held record still exist.
+  delete model.nodes.left!.bounds;
+  expect(reserveLinkLabelRoom(model)).toBe(false);
+  expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED').map(item => item.owners))
+    .toEqual([[{ kind: 'link', id: link.id }]]);
+});
 
 it('a top-band push synchronises pills and text before the first label-room consumer', async () => {
   const model = structuredClone(await throughBundles(fixture));

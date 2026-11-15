@@ -1344,6 +1344,9 @@ ticket 68) and closes a group up toward its sibling by the width the trim freed 
 as that feed's authoritative x and chases a corridor that has moved. It reserves no room itself: the solve after it grows the gap for the
 new row (§ 7a states the whole condition).
 
+`topUpBandClearance` rebuilds every moved node's pills and text, including lower-tier cascades, before
+`holdColumnsAfterPush` and `reserveLinkLabelRoom` read them.
+
 **Direct families come first** (architecture-2 ticket 22; `docs/design/routed-chords.md`, Section 15). Before `freezeChords`,
 `planDirectFamilies` counts the orthogonal crossings of each facing pair on a copy, and decides each triggered family's chords
 together, at any angle, before the freeze; it records them (`directFamilies`, triggered families only) and moves nothing. The
@@ -1560,11 +1563,15 @@ the gap: every group in every tier at or beyond the split between the two pill f
 and a group straddling the split shifts only the nodes beyond it — in the link's own tier those that
 start beyond it, elsewhere those with any part beyond it — so alignments, flank sides and
 bar-to-source slots all survive and nothing moves left into a preceding group; a reserved lane at or
-beyond the split makes the link unreservable. A routed link will detour when its ends are not level
+beyond the split moves out with the room. An unheld routed link will detour when its ends are not level
 or when the straight run between them is not clear by the corridor check — a node, pill, foreign group
 box with its margin, lane, fixed run, bundle row or bundle envelope in the way — and its run is then reserved with both stroke-aware
-router stems and twice the anchor-side pill protrusion on top of the label. That midpoint is the
-anchor midpoint for a routed link. For an **overlay** link it is the midpoint of the longest run of
+router stems and twice the anchor-side pill protrusion on top of the label. A held routed chord keeps
+its straight segment between the current port faces, even when its ends are not level; it adds no detour
+stems or their pill allowance. A diagonal chord reserves a window for its turned label, on x at the row
+split for a same-tier chord and on y at the tier-gap split for a chord between tiers. Within one tier,
+unreadable held-chord ends are diagnosed `LINK_LABEL_ROOM_UNRESERVED` rather than read as a level run.
+For a routed link, the room stays symmetric about its anchor midpoint. For an **overlay** link, it is symmetric about the midpoint of the longest run of
 the path the overlay rule derives: the rule reads both of its branches off boxes placement has
 already frozen, so placement runs the very producer stage 8 will run instead of assuming the shape
 (synthetics review ticket 04 B). 7f grows room on one axis, so it can reserve wherever the longest
@@ -1579,8 +1586,8 @@ with it, as 8 px of over-reservation.
 **A label stays in one region, and placement reserves the region (ticket 19).** The run must also hold
 the label in one of its **windows** (`labelRunWindows`, the windows stage 9 places the label in): on
 every run a label rides — a straight drop between two level anchors, a side lane's vertical run (at
-the lane's x, down to the lateral port's y), an overlay link's longest run, and a straight run
-between two facing pill faces in one row — `labelWindowDeficit` computes the growth at the split
+the lane's x, down to the lateral port's y), an overlay link's longest run, a held routed chord,
+and a straight run between two facing pill faces in one row — `labelWindowDeficit` computes the growth at the split
 (the top of the lower tiers, or the split between the two faces) after which a window between the
 borders the run crosses holds the label, with the same `windowHolds` stage 9 asks. The growth is the
 larger of that and the symmetric deficit. A routed link that bends or detours has no run for
