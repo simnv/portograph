@@ -88,9 +88,6 @@ export function judgeTurnTrial(routedBase: LayoutModel, routedTrial: LayoutModel
   if (removed.length > 0) return no(`the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
   const blocked = spanBlockedNew(routedBase, routedTrial);
   if (blocked.length > 0) return no(`a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})`);
-  // A face that holds a held routed chord takes far-end order (Section 3): a trial that moved one by its turns is refused by name.
-  const straight = chordFaces(routedTrial), moved = (routedTrial.freeze?.turnOrder ?? []).filter(face => straight.has(faceName(face.node, face.side)));
-  if (moved.length > 0) return no(`the trial turned a face that holds a routed chord (${moved.map(face => `${face.node}.${face.side}`).join(', ')})`);
   const lost = [...keptPromises].filter(([id, turns]) => (now.get(id) ?? Infinity) > turns).map(([id]) => id);
   if (lost.length > 0) return no(`a kept course publishes more turns than it promised (${lost.join(', ')})`);
   const gatesNow = gateFindings(routedTrial), gatesThen = gateFindings(routedBase);

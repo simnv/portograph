@@ -5,7 +5,7 @@ of the hand-solve analysis. This document states the rule and the round that off
 measurements and the phases.
 
 The user's decisions: stage 5 and a 7a pass (Section 4); **an offer, not a fixed rule**, judged by `unified` and paid
-with one re-run of `MAX_RERUNS` (Section 10); G5 judges by the same rule (Section 7); the row bypass is in
+with one re-run of `MAX_RERUNS` (Section 10); G5 accepts the recorded order (Section 7); the row bypass is in
 (Section 6).
 
 ## 1. Problem
@@ -60,12 +60,13 @@ other change.
 
 **A face that holds a straight link keeps far-end order** (owner ruling, 2026-11-15; `GLOSSARY.md`, Far-end order). A held routed chord
 (`model.frozenChords`, decided at the start of 7f) runs as one straight segment from its port, so it has no first turn, and a first-turn
-slot for the other ports of its face would place them against the far ends that the chord shows. Such a face takes no turn order: its
-ports stand in the order of the far ends of their links, and G5 judges it by the far-end ranges (Section 7). A face with only orthogonal
-links keeps the rule above, because it removes crossings between the runs there. Port names never set a position; an authored order wins
-in both cases. The faces are read from the baseline that the turn round measures (Section 10), because a chord is held only after 7a:
-placement cannot know them earlier, so the round reserves them (`turnExcept`) and the trial refuses by name if it holds a chord on a face
-it turned.
+slot for the other ports of its face would place them against the far ends that the chord shows. The turn round therefore offers no
+face that holds a held routed chord on its baseline, and reserves those faces for far-end order (`turnExcept`) in the trial and in every
+run after it. A face with only orthogonal links keeps the rule above, because it removes crossings between the runs there. Port names
+never set a position; an authored order wins in both cases. Only the baseline's chords are known when the round decides, because a chord
+is held after 7a: the trial may later hold a chord on a face that it turned. The trial is not refused for that (coordinator reading,
+2026-11-15, after the corpus showed a kept gain lost on two synthetic sheets and on the outside sheet): it is judged on its counts
+(Section 10), and G5 accepts the order that the layout recorded (Section 7).
 
 What stays as today:
 - A face with no planned turn keeps the far-end order byte for byte (group 3 only).
@@ -132,15 +133,13 @@ has no plan today. Stage 8 finds a way round. This is a discovery. The bypass be
 
 ## 7. G5
 
-G5 `port-order` reads the same comparator on the published paths, on the faces that the turn order placed. The
-layout records those faces (`freeze.turnOrder`: node and side) and the chords it held (`frozenChords`); G5 reads both records and derives
-neither again (R1). A recorded face that holds a held routed chord is not a turn-order face for G5: it is judged by the far-end ranges, as
-every other face is (Section 3). On a recorded face that holds no chord, a pair of ports in group 3, or a pair
-of onward ports of one class, is judged by the far-end ranges as today, and any other pair by the turn order. Every
-other face is judged by the far-end ranges alone, so a baseline that no trial changed is judged as today. One
-predicate serves the gate and placement (`decide.ts`, `chord-clear.ts` and the far-end question of `flanks.ts`);
-placement reads the planned turns, and the gate reads the published turns. `docs/design/quality.md`, G5: "port order
-on a side matches the turn order (far-end order where no link turns)".
+G5 `port-order` reads the record of the turn round, and derives no turn again (R1; coordinator reading of 2026-11-15, which replaces the
+earlier reading of this section: a pair of ports judged by the turn order, read from the published paths). The layout records the faces
+whose order the kept turn round took (`freeze.turnOrder`: node and side). G5 accepts the order of every recorded face, whatever links the
+face holds at publication (a chord that the trial held on it later included). Every other face is judged by the far-end ranges alone, so a
+baseline that no trial changed is judged as today. `docs/design/quality.md`, G5: "port order on a side matches far-end order, except on a
+face the turn round recorded". The gate checks the record, not the first turns: the planners keep their turn promises through
+`PORT_TURN_MISSED` (Section 8) and the judge of Section 10.
 
 ## 8. Diagnostics
 
@@ -166,6 +165,7 @@ only when the published result is better by `unified`.
 every face. The offer is the set of faces whose turn order differs from the order they have, less the faces that hold a held
 routed chord on that baseline (`TurnOffer.except`; Section 3). An empty set is no offer. The trial reserves the faces of `except`
 for far-end order (`turnOrder` reservation, `scope.except`; `LayoutModel.turnExcept`), and every run after a kept trial keeps them.
+The trial is not refused for a chord that its own geometry later holds on a face it turned.
 
 **Where the round sits.** The rounds run in this order: fan rounds, span round (ticket 22), course round (ticket 15;
 before or after the side rounds, as today), side rounds, the deferred course round, **the turn round**, the overlay
@@ -193,8 +193,6 @@ baseline, so no earlier round reserves for it. It takes a re-run that the earlie
 - No removed link. No new gate finding (findings compared as sets). No minimum separation broken or deepened.
 - Every kept course publishes at most the turns it promised.
 - The canvas does not grow (the turn order adds no size; a growth is a sign of a planner fault, and refuses).
-- No face that the trial turned holds a held routed chord in the trial (the chords of a trial can differ from the baseline's; the
-  trial is refused by name, and G5 would fail the face).
 - The whole reading is better by `unified`: fewer bent links over both layers; on a tie, fewer turns; on a tie,
   fewer crossings.
 

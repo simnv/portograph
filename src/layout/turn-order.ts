@@ -228,28 +228,6 @@ export function publishedTurn(link: LayoutLink, which: 'from' | 'to', side: Side
 export const faceKey = (node: string, side: Side): string => `${node}|${side}`;
 
 /**
- * The turn of one port as G5 and placement read it (Section 7): the published first turn of each link on it when the link has a path, else the planned turn of
- * the port. A shared port has a turn only when its links agree; a link that goes straight is no turn.
- */
-export function portTurn(side: Side, ends: readonly { link: LayoutLink; which: 'from' | 'to' }[], planned: PlannedTurn | undefined): PlannedTurn | undefined {
-  if (ends.length === 0 || ends.some(end => end.link.path === undefined)) return planned;
-  const turns = ends.map(end => publishedTurn(end.link, end.which, side)), first = turns[0];
-  if (first === undefined || turns.some(item => item?.turn !== first.turn || item.shape !== first.shape)) return undefined;
-  return { turn: first.turn, shape: first.shape, reach: turns.reduce((sum, item) => sum + item!.reach, 0) / turns.length };
-}
-
-/**
- * Whether the port at `own` (the lower slot) may stand before the port at `other` on a face the turn order placed. Two ports of one rank with no turn, or two onward ports of
- * one class, answer by their far-end ranges as before (`ranges`); any other pair by the rank (the comparator's own, `turnRanker`), and two returns of one class by their reach.
- */
-export function turnOrderViolated(a: TurnPort, b: TurnPort, rank: (port: TurnPort) => number, ranges: boolean): boolean {
-  const ra = rank(a), rb = rank(b), ga = turnGroup(a);
-  if (ra !== rb) return ra > rb;
-  if (ga === 3 || ga === 2 || ga === 4) return ranges;
-  return a.reach! < b.reach! - PLACEMENT_EPS;
-}
-
-/**
  * `PORT_TURN_MISSED` (warning): a published path whose first turn differs from the planned one at a port of a face the turn order placed. A defect of a
  * planner, not of the rule (Section 8).
  */

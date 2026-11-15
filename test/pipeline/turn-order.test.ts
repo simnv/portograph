@@ -235,13 +235,15 @@ describe('far-end order on a face that holds a straight link', () => {
     expect(() => restoreLayoutModel(JSON.stringify({ ...model, turnExcept: undefined }))).toThrow(/far-end faces/);
   });
 
-  it('G5 reads the recorded chords: the turned face that holds a held chord is judged by the far-end ranges', async () => {
+  it('G5 reads the record of the turn round: a recorded face is accepted, the same order on a face with no record fails', async () => {
     const turned = await forced();
     expect(turned.freeze?.turnOrder).toContainEqual({ node: 'fl-1', side: 'bottom' });
     expect(g5(turned)).toBe(0);
+    // A chord that the trial later holds on the face changes nothing: the gate reads the record, and derives no turn from the published paths.
     const link = turned.links.find(item => item.attachments?.from.node === 'fl-1' || item.attachments?.to.node === 'fl-1')!;
-    const held = { ...turned, frozenChords: [link.id] } as LayoutModel;
-    expect(score(held).snapshot.gates.G5.violations.map(item => item.elements[0])).toContain('fl-1');
+    expect(g5({ ...turned, frozenChords: [...(turned.frozenChords ?? []), link.id] } as LayoutModel)).toBe(0);
+    const unrecorded = { ...turned, freeze: { ...turned.freeze!, turnOrder: turned.freeze!.turnOrder!.filter(face => face.node !== 'fl-1') } } as LayoutModel;
+    expect(score(unrecorded).snapshot.gates.G5.violations.map(item => item.elements[0])).toContain('fl-1');
   });
 
   it('the offer leaves out a face that holds a held chord and names it for the trial', async () => {
