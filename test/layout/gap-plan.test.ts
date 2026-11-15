@@ -6,6 +6,8 @@ import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-
 import { checkReadCaches } from '../../src/model/read-cache.js';
 import { facingTips, plannedSegments, planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
+import { EPS, segmentDistance } from '../../src/geometry/planar.js';
+import { strictCrossing } from '../../src/layout/read/crossings.js';
 import { createAttempt, placed } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
@@ -632,12 +634,8 @@ describe('the high U part (dense-16x9 ticket 06)', () => {
     const plan = planGap([high('H', 0, 60, 200)], { ...frame(), slants: [chord] });
     const only = plan.parts[0]!;
     expect(only.rows[0]!).toBeCloseTo(248 + 10.75, 6);
-    for (const segment of plannedSegments(only, { low: 248, high: 308 })) {
-      const side = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }): number => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-      const crosses = side(segment.from, segment.to, chord.from) * side(segment.from, segment.to, chord.to) < 0 && side(chord.from, chord.to, segment.from) * side(chord.from, chord.to, segment.to) < 0;
-      const along = (p: { x: number; y: number }): number => Math.abs(side(chord.from, chord.to, p)) / Math.hypot(chord.to.x - chord.from.x, chord.to.y - chord.from.y);
-      expect(crosses || Math.min(along(segment.from), along(segment.to)) >= 11.5 - 1e-6 || segment.from.y === segment.to.y).toBe(true);
-    }
+    // Every piece of the part crosses the chord strictly or keeps the run clearance from it (the plan's own test, `clearOfSlants`).
+    for (const segment of plannedSegments(only, { low: 248, high: 308 })) expect(strictCrossing(segment, chord) || segmentDistance(segment, chord) >= 11.5 - EPS).toBe(true);
   });
 
   it('is the same plan whatever the order of the inputs (R3)', () => {

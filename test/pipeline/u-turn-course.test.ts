@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import type { Course, LayoutLink, LayoutModel, PathSegment } from '../../src/index.js';
-import { uTurnFacesGap, validateCourses } from '../../src/layout/courses.js';
+import { CourseRefusal, uTurnFacesGap, validateCourses } from '../../src/layout/courses.js';
+import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
+import { open } from '../../src/pipeline/round.js';
+import { course as courseRound } from '../../src/pipeline/rounds.js';
+import type { Env } from '../../src/pipeline/env.js';
+import type { State } from '../../src/pipeline/state.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { endMode, movesPort } from '../../src/layout/course-rows.js';
 import { courseOf, tierGapUTurn } from '../../src/layout/course-lanes.js';
@@ -250,8 +255,26 @@ nodes:
 links:
   - [a.p, b.p]
 `;
-  it.each(['top', 'bottom'] as const)('is refused at 7a on the %s face of the only sub-tier, where no tier gap stands: the router never discovers the row', async side => {
+  it.each(['top', 'bottom'] as const)('is refused on the %s face of the only sub-tier, where no tier gap stands: the router never discovers the row', async side => {
     await expect(lay(one(side), [uTurn('link-1', side)])).rejects.toThrow(/no tier gap/);
+  }, 60000);
+
+  it.each(['top', 'bottom'] as const)('is the typed course refusal on the %s face, raised before the first publication, and the course round drops the offer', async side => {
+    const error = await lay(one(side), [uTurn('link-1', side)]).then(() => undefined, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CourseRefusal);
+    expect(error).toBeInstanceOf(PlacementRefusal);
+    expect((error as CourseRefusal).code).toBe('course');
+    expect((error as CourseRefusal).owners).toEqual([{ kind: 'link', id: 'link-1' }]);
+    // The round answers it: `tolerates` withdraws the trial, and `open` returns a refusal at `place` instead of throwing, so the offer is dropped and the run goes on.
+    expect(courseRound.tolerates(error, 'place')).toBe(true);
+    let trials = 0;
+    const env = { reruns: 0, options: {}, timed: <T,>(_label: string, run: () => T): T => run(), place: async (): Promise<never> => { trials++; throw error; } } as unknown as Env;
+    const s = { kept: [] } as unknown as State;
+    const offer = { courses: [uTurn('link-1', side)], steps: [], promised: new Map() } as unknown as Parameters<typeof courseRound.skip>[2];
+    const opened = await open(env, s, { ...courseRound, reserve: () => [] }, offer);
+    expect(trials).toBe(1);
+    expect(opened).toMatchObject({ at: 'place' });
+    expect(s.courseRetry).toBe('none');
   }, 60000);
 
   it('is refused on the outermost face of a sheet that has a gap on its other side', async () => {
@@ -266,7 +289,7 @@ links:
     const bare = JSON.parse(forge(copy => { copy.tierBands = copy.tierBands.filter(band => band.tier <= model.groups['row']!.tier!); })) as LayoutModel;
     expect(uTurnFacesGap(model, 'link-1', 'bottom')).toBe(true);
     expect(uTurnFacesGap(bare, 'link-1', 'bottom')).toBe(false);
-    expect(() => validateCourses(bare)).toThrow(/no tier gap/);
+    expect(() => validateCourses(bare)).toThrow(CourseRefusal);
     expect(() => restoreLayoutModel(forge(copy => { for (const list of [copy.courses!, copy.freeze!.courses!]) list[0]!.runs = ['padding']; }))).toThrow(/one run/);
   }, 60000);
 });
