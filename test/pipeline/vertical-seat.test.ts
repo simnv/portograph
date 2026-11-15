@@ -31,8 +31,10 @@ describe('a step keeps the vertical it reached', () => {
   it('keeps link-12 vertical once reached: 6 bends, one gap growth, no gap short', async () => {
     const model = await run(text);
     expect(lean(model, 'link-12')).toBeLessThanOrEqual(0.5);
-    // 8 bends before ticket DR-04; in the canonical link order the sheet has 6.
-    expect(bends(model)).toBe(6);
+    // 8 bends before ticket DR-04; in the canonical link order the sheet has 6 on main. Under the alignment cap (ADR-0027) it has 8 again: the
+    // 401 px core-cloud and 548 px edge-cloud of main stand at 160 and 317 px, and the verticals go from 14 to 13 (the count the seat note of
+    // 2026-11-15 gives). Link-12 stands vertical, the rule of this test; crossings fall from 13 to 10, no gate fails.
+    expect(bends(model)).toBe(8);
     expect(count(model, 'TIER_GAP_GROWN')).toBe(1);
     expect(count(model, 'TIER_GAP_PART_UNFIT')).toBe(0);
     expect(count(model, 'TIER_GAP_SOLVE_SHORT')).toBe(0);
