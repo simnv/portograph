@@ -625,7 +625,7 @@ function validateFreeze(model: LayoutModel): void {
   validateSpans(model, freeze.spans);
   // The record of the turn round, in the order the ports stand (engine order here; G5 reads the anchors at publication).
   const faulty = turnRecordFaults(model, 'engine')[0];
-  if (faulty !== undefined) throw new Error(`Frozen turn order of ${faulty.node} ${faulty.side}: ${faulty.why}`);
+  if (faulty !== undefined) throw new Error(`Frozen turn order${faulty.node === undefined ? '' : ` of ${faulty.node} ${faulty.side}`}: ${faulty.why}`);
   validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
   for (const floor of freeze.floors) if (floor.size.width <= 0 || floor.size.height <= 0) throw new Error('Invalid frozen floor');

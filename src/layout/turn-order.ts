@@ -289,23 +289,28 @@ export function turnRecord(model: LayoutModel, node: string, side: Side): { node
   return { node, side, ports: faceSequence(model, node, side, 'engine') ?? [] };
 }
 
+/** One thing that the record of the turn round cannot back: a face, or the record as a whole (`node` and `side` absent). */
+export interface TurnRecordFault { node?: string; side?: Side; why: string }
+
 /**
- * What the record of the turn round (`freeze.turnOrder`, `freeze.turnExcept`) cannot back, by face (R5: a validator trusts the stored record and the geometry, nothing
- * a diagnostic says). A recorded face needs a model that carries the turn order, a node and a side that exist, a place in the scope of the run (not a face reserved for
- * far-end order, `turnExcept`, and a face of a `turnLinks` run), the ports the model holds on it, and those ports in the recorded order: by anchor along the face when
- * `by` is `anchor`, else by engine order. A scope the freeze did not record, or recorded differently, is a fault of the node-less face `*`.
+ * What the record of the turn round (`freeze.turnOrder`, `freeze.turnExcept`) cannot back (R5: a validator trusts the stored record and the geometry, nothing a
+ * diagnostic says). The record as a whole needs a model that carries the turn order whenever it holds a face, a scope or an empty list (the pipeline writes the list
+ * only with a face in it), and a scope equal to the scope of the model (`turnExcept`), a face list or none. A recorded face needs a node and a side that exist, a place
+ * in the scope of the run (not a face reserved for far-end order, and a face of a `turnLinks` run), the ports the model holds on it, and those ports in the recorded
+ * order: by anchor along the face when `by` is `anchor`, else by engine order. A fault of the whole record carries no node.
  */
-export function turnRecordFaults(model: LayoutModel, by: 'anchor' | 'engine'): { node: string; side: Side; why: string }[] {
-  const freeze = model.freeze, faults: { node: string; side: Side; why: string }[] = [];
+export function turnRecordFaults(model: LayoutModel, by: 'anchor' | 'engine'): TurnRecordFault[] {
+  const freeze = model.freeze, faults: TurnRecordFault[] = [];
   if (freeze === undefined) return faults;
-  if (freeze.turnOrder === undefined && freeze.turnExcept === undefined) return faults;
-  const scope = JSON.stringify(freeze.turnExcept ?? []) === JSON.stringify(model.turnExcept ?? []);
+  const record = freeze.turnOrder;
+  // The scope is the scope of the model whatever the record holds, also when no face was recorded.
+  if (JSON.stringify(freeze.turnExcept ?? []) !== JSON.stringify(model.turnExcept ?? [])) faults.push({ why: 'the recorded scope differs from the scope of the model' });
+  if ((record !== undefined || freeze.turnExcept !== undefined || model.turnExcept !== undefined) && model.turnOrder !== true) faults.push({ why: 'the model does not carry the turn order' });
+  if (record !== undefined && record.length === 0) faults.push({ why: 'the record holds no face' });
   const seen = new Set<string>();
-  for (const face of freeze.turnOrder ?? []) {
+  for (const face of record ?? []) {
     const fault = (why: string): void => { faults.push({ node: face.node, side: face.side, why }); };
     const key = faceKey(face.node, face.side);
-    if (model.turnOrder !== true) { fault('the model does not carry the turn order'); continue; }
-    if (!scope) { fault('the recorded scope differs from the scope of the model'); continue; }
     if (!['top', 'right', 'bottom', 'left'].includes(face.side) || model.nodes[face.node] === undefined) { fault('the face does not exist'); continue; }
     if (seen.has(key)) { fault('the face is recorded twice'); continue; }
     seen.add(key);

@@ -505,6 +505,8 @@ export function validateReservations(model: LayoutModel): void {
     const held = spansOf(ledger);
     if (!same(model.links.filter(link => held.has(link.id)).map(link => link.id), model.freeze?.spans ?? []) || held.size !== (model.freeze?.spans ?? []).length) throw new Error('Reserved spanning chords differ from the frozen span hints');
   }
+  // A model that carries the turn order must carry the ledger that reserved it: without one the checks below would pass on whatever the model says.
+  if (model.turnOrder === true && model.reservations === undefined) throw new Error('The turn order of the model has no reservation ledger');
   if (model.reservations !== undefined) {
     // The turn order of the ledger is the model's: every face, or the faces of the reserved links, or none.
     const turn = turnOf(ledger);

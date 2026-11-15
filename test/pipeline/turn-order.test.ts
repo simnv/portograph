@@ -324,6 +324,37 @@ describe('G5 and the record of the turn round', () => {
     expect(() => restoreLayoutModel(JSON.stringify(edited(reserved, copy => { copy.freeze!.turnExcept = []; })))).toThrow(/Frozen turn order/);
   });
 
+  it('fails a scope that the freeze did not record when the record of the faces is absent', async () => {
+    const turned = await forced();
+    expect(g5(edited(turned, copy => { delete copy.freeze!.turnOrder; copy.turnExcept = ['fl-1|bottom']; }))).toContain('*');
+  });
+
+  it('fails an empty record of faces beside a scope that the model does not carry, and an empty record on its own', async () => {
+    const reserved = await forced({ testTurnOrder: true, testTurnExcept: ['fl-1|bottom'] });
+    expect(g5(reserved)).toEqual([]);
+    expect(g5(edited(reserved, copy => { copy.freeze!.turnOrder = []; copy.freeze!.turnExcept = ['bogus|top']; }))).toContain('*');
+    expect(g5(edited(reserved, copy => { copy.freeze!.turnOrder = []; }))).toContain('*');
+  });
+
+  it('fails a record on a model that carries no turn order: a scope and an empty list in the freeze of a plain run', async () => {
+    const plain = await layout(parse(fixture(name)), { ...options, testTurnOrder: false });
+    expect(g5(plain)).toEqual([]);
+    const forge = (copy: LayoutModel): void => { copy.freeze!.turnExcept = ['fl-1|bottom']; copy.freeze!.turnOrder = []; };
+    expect(g5(edited(plain, forge))).toContain('*');
+    expect(() => restoreLayoutModel(JSON.stringify(edited(plain, forge)))).toThrow(/Frozen turn order/);
+  });
+
+  it('fails a recorded face of a node that the model does not have when the model reaches score() alone', async () => {
+    const turned = await forced();
+    expect(g5(edited(turned, copy => { copy.freeze!.turnOrder = [...copy.freeze!.turnOrder!, { node: 'no-such-node', side: 'bottom', ports: [] }]; }))).toContain('no-such-node');
+  });
+
+  it('refuses to restore a model that carries the turn order and no reservation ledger', async () => {
+    const turned = await forced();
+    expect(() => restoreLayoutModel(JSON.stringify(turned))).not.toThrow();
+    expect(() => restoreLayoutModel(JSON.stringify(edited(turned, copy => { delete copy.reservations; })))).toThrow(/reservation ledger/);
+  });
+
   it('fails a recorded face when a move reorders it after the record: on the published anchors, and on a restore by engine order', async () => {
     const turned = await forced();
     expect(g5(edited(turned, copy => swapSeats(copy, 'fl-1', 'bottom')))).toContain('fl-1');

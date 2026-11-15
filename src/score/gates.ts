@@ -120,8 +120,12 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
   // missing contributes nothing, as before.
   const farAnchors = new Map<string, Point[]>();
   const turned = new Set((model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)));
+  // A fault of the whole record, or of a face of a node that the model does not have, belongs to no node of `nodes`: it fails whatever subset the caller asks about.
   for (const fault of turnRecordFaults(model, 'anchor')) {
-    if (nodes.some(item => item.id === fault.node)) fail('G5', 'port-order', [fault.node], `The ${fault.side} face is recorded as taken by the turn round, but ${fault.why}`);
+    const known = fault.node !== undefined && model.nodes[fault.node] !== undefined;
+    if (known && !nodes.some(item => item.id === fault.node)) continue;
+    fail('G5', 'port-order', [fault.node ?? '*'], fault.side === undefined ? `The record of the turn round does not hold: ${fault.why}`
+      : `The ${fault.side} face is recorded as taken by the turn round, but ${fault.why}`);
   }
   for (const link of model.links) {
     if (!routedLinks.has(link)) continue;

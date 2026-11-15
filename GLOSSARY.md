@@ -44,6 +44,7 @@ The face of a shared named port's pill that one link end meets when it differs f
 The order of the ports on one node face by the positions of the far ends of their links.
 Port names do not set it; an authored order does.
 A face that holds a straight link (a held routed chord or a pinned level link) before the turn round takes it, and the round never reorders that face.
+One exception: a row bypass places its closing link in the slot on its turn side of the faces of that link, which hold the straight row neighbour (`docs/design/turn-order.md`, Section 6).
 A face that the turn round ordered keeps the first-turn order the layout recorded for it, and G5 accepts that order while the record holds.
 
 **Link**:

@@ -11,6 +11,7 @@ import { rows } from '../../src/layout/rows.js';
 import { allocateLanes } from '../../src/layout/lanes.js';
 import { laneFaceOrder, orderPortsByLanes } from '../../src/layout/turn-order.js';
 import { withLayoutMutation } from '../../src/layout/mutation.js';
+import { turnEntries } from '../../src/layout/reservations.js';
 import { createAttempt } from './phase-two-fixture.js';
 
 /**
@@ -22,7 +23,7 @@ const yaml = (): string => readFileSync(new URL(`../../goldens/synthetic/${SHEET
 
 async function atRows(turnOrder: boolean): Promise<LayoutModel> {
   const resolved = resolve(parse(yaml()));
-  if (turnOrder) resolved.turnOrder = true;
+  if (turnOrder) { resolved.turnOrder = true; resolved.reservations = turnEntries(true, [], false, 'initial', 0); }
   const model = sizeNodes(sidesOne(resolved));
   await skeleton(model, { createAttempt });
   return rows(sidesTwo(model));
