@@ -1,0 +1,12 @@
+# Expected: a title-band push moves the source down and carries the target's tier
+# down by the same amount. Before label-room reservation, every moved node's pills
+# and text follow its current anchors. A replay neither moves nor duplicates them.
+portograph: 2
+groups:
+  upper: {tier: 0}
+  lower: {tier: 1}
+nodes:
+  source: {group: upper, ports: [{name: out, side: bottom}]}
+  target: {group: lower, ports: [{name: in, side: top}]}
+links:
+  - [source.out, target.in, {label: Feed, route: orthogonal}]

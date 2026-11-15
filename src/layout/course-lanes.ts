@@ -19,8 +19,16 @@ import { PLACEMENT_EPS } from './tolerance.js';
 
 /** A course of kind `shared-port` owns no lane: it only names the approach of a link end at a shared pill (phase 6). */
 export const isApproachCourse = (course: Course): boolean => course.kind === 'shared-port';
-/** The lane course of a link: a perimeter or column-gap course. An approach course has no lane, so it is not read here. */
-export const courseOf = (model: LayoutModel, link: string): Course | undefined => model.courses?.find(course => course.link === link && !isApproachCourse(course));
+/**
+ * A course of kind `u-turn`: its two ends leave one face (`top` or `bottom`) of one sub-tier and meet in a U part of the tier gap that face looks at (`runs: ['u']`).
+ * It owns no lane (dense-16x9 ticket 06).
+ */
+export const isUTurnCourse = (course: Course): boolean => course.kind === 'u-turn';
+/** The `u-turn` course of a link that is planned as a U part of its tier gap (`runs: ['u']`), if it has one. */
+export const tierGapUTurn = (model: LayoutModel, link: string): Course | undefined =>
+  model.courses?.find(course => course.link === link && isUTurnCourse(course) && course.runs.length === 1 && course.runs[0] === 'u');
+/** The lane course of a link: a perimeter or column-gap course. An approach course and a u-turn course have no lane, so they are not read here. */
+export const courseOf = (model: LayoutModel, link: string): Course | undefined => model.courses?.find(course => course.link === link && !isApproachCourse(course) && !isUTurnCourse(course));
 export const perimeterLaneId = (link: string): string => `perimeter:${link}`;
 /** The perimeter lane of a link, if its course owns one. */
 export const courseLaneOf = (model: LayoutModel, link: string): Lane | undefined => model.lanes.find(lane => lane.kind === 'perimeter' && lane.owner.kind === 'link' && lane.owner.id === link);

@@ -6,6 +6,8 @@ import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-
 import { checkReadCaches } from '../../src/model/read-cache.js';
 import { facingTips, plannedSegments, planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
+import { EPS, segmentDistance } from '../../src/geometry/planar.js';
+import { strictCrossing } from '../../src/layout/read/crossings.js';
 import { createAttempt, placed } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
@@ -502,7 +504,7 @@ describe('the U part (ticket 15, phase 5)', () => {
   // ends and two legs that run down to it; it has no lower leg, so it asks for `keep` above the band below and nothing more.
   const tip = (x: number): PlanInput['upper'] => ({ x, y: 250, kind: 'tip', source: `t${x}` });
   const mouth = (x: number): PlanInput['upper'] => ({ x, y: 248 + 15, kind: 'mouth', source: `lane|${x}|low` });
-  const u = (id: string, order: number, from: PlanInput['upper'], to: PlanInput['upper']): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true, upper: from, lower: to, u: true });
+  const u = (id: string, order: number, from: PlanInput['upper'], to: PlanInput['upper']): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true, upper: from, lower: to, u: 'low' });
 
   it('plans one row below both ends and no lower leg', () => {
     const plan = planGap([u('U', 0, tip(60), mouth(200))], frame());
@@ -546,6 +548,94 @@ describe('the U part (ticket 15, phase 5)', () => {
     const plan = planGap([u('A', 0, tip(20), mouth(80)), u('B', 1, tip(200), mouth(260))], frame());
     const rows = plan.parts.map(item => item.rows[0]!);
     expect(rows[0]).toBeCloseTo(rows[1]!, 6);
+  });
+});
+
+describe('the high U part (dense-16x9 ticket 06)', () => {
+  // Both ends of a high U part stand on the gap's high boundary (the stems of two top ports, 13 px above the band below at y 308). The plan gives it one row
+  // above both tips, hung just above them and not at the top of the gap, and two legs that rise to it.
+  const tip = (x: number, y = 295): PlanInput['upper'] => ({ x, y, kind: 'tip', source: `n${x}|top|${x}` });
+  const high = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true, upper: tip(from), lower: tip(to), u: 'high' });
+  const low = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true,
+    upper: { x: from, y: 262, kind: 'tip', source: `m${from}|bottom|${from}` }, lower: { x: to, y: 262, kind: 'tip', source: `m${to}|bottom|${to}` }, u: 'low' });
+  const row = (plan: GapPlan, id: string): number => plan.parts.find(item => item.id === id)!.rows[0]!;
+
+  it('hangs one row a clearance above the tips, with two legs and no crossing', () => {
+    const plan = planGap([high('H', 0, 60, 200)], frame());
+    const only = plan.parts[0]!;
+    expect([only.shape, only.boundary, only.rows]).toEqual(['u', 'high', [308 - 13 - 11.5]]);
+    expect(plan.crossings).toEqual([]);
+    expect(plan.residual).toEqual([]);
+    expect(plan.height).toBe(frame().floor);
+    expect(plannedSegments(only, { low: 248, high: 308 }).map(item => [item.from.x, item.from.y, item.to.x, item.to.y])).toEqual([
+      [60, 295, 60, 283.5], [60, 283.5, 200, 283.5], [200, 283.5, 200, 295]]);
+  });
+
+  it('reads the ends in the order the link visits them, and a mouth stands on the high boundary', () => {
+    const mouth: PlanInput['upper'] = { x: 200, y: 308 - 15, kind: 'mouth', source: 'lane|200|high' };
+    const plan = planGap([{ ...high('H', 0, 60, 200), upper: mouth, lower: tip(60) }], frame());
+    const segments = plannedSegments(plan.parts[0]!, { low: 248, high: 308 });
+    expect(segments[0]!.from).toEqual({ x: 200, y: 308 });
+    expect(segments.at(-1)!.to).toEqual({ x: 60, y: 295 });
+  });
+
+  it('puts a high U part nested inside another below it, so no row runs through a leg', () => {
+    const plan = planGap([high('outer', 0, 20, 220), high('inner', 1, 100, 160)], frame());
+    expect(row(plan, 'inner')).toBeGreaterThan(row(plan, 'outer'));
+    expect(plan.crossings).toEqual([]);
+    // The inner row stands a clearance above its tips; the outer one a row pitch above the inner.
+    expect(row(plan, 'inner')).toBeCloseTo(283.5, 6);
+    expect(row(plan, 'outer')).toBeCloseTo(283.5 - 11.5, 6);
+  });
+
+  it('keeps two disjoint high U parts on one row', () => {
+    const plan = planGap([high('A', 0, 20, 80), high('B', 1, 200, 260)], frame());
+    expect(row(plan, 'A')).toBeCloseTo(row(plan, 'B'), 6);
+  });
+
+  it('puts every run over the span of a high U part above it, so its legs cross nothing', () => {
+    const plan = planGap([part('P', 0, 20, 300), high('H', 1, 60, 200)], frame());
+    expect(row(plan, 'H')).toBeGreaterThan(row(plan, 'P'));
+    expect(plan.crossings.filter(item => item.vertical === 'H')).toEqual([]);
+  });
+
+  it('puts a low U part above a high one where their spans overlap', () => {
+    const plan = planGap([high('H', 0, 60, 200), low('L', 1, 100, 160)], frame());
+    expect(row(plan, 'L')).toBeLessThan(row(plan, 'H'));
+    expect(plan.crossings).toEqual([]);
+  });
+
+  it('asks the band below for its tips and a clearance, and the gap grows when the packed rows leave no room', () => {
+    // The band below stands at 260 and the tips 13 px above it: the row stands `margin` under `low`, and the band needs `margin + 13 + keep`.
+    const near = (id: string, from: number, to: number): PlanInput => ({ ...high(id, 0, from, to), upper: tip(from, 247), lower: tip(to, 247) });
+    const plan = planGap([near('H', 60, 200)], { ...frame(), floor: 0, bandTop: 260 });
+    expect(plan.height).toBeCloseTo(10.75 + 13 + 11.5, 6);
+    expect(plan.growth).toBeCloseTo(plan.height - 12, 6);
+    // The row hangs a clearance above the tips of the grown gap: 248 + height - 13 - 11.5.
+    expect(row(plan, 'H')).toBeCloseTo(248 + plan.height - 24.5, 6);
+  });
+
+  it('is residual where an obstacle that hangs from the band below stands on a leg', () => {
+    const plan = planGap([high('H', 0, 60, 200)], { ...frame(), blocks: [{ x0: 50, x1: 70, anchor: 'below', bound: 30 }] });
+    expect(plan.parts).toEqual([]);
+    expect(plan.residual.map(item => item.reason)).toEqual(['leg-blocked']);
+  });
+
+  it('keeps the seat the packing gave when no lower seat clears a fan chord (review 1)', () => {
+    // One held fan chord crosses the whole gap (-388,248)..(452,308). The seat at 258.75 clears it, and the seat at the foot of the gap (283.5) stands 3.5 px from its left leg
+    // without a strict crossing, so `clearOfSlants` has no candidate and returns the asked seat as `limited`: the row keeps its first seat.
+    const chord = { from: { x: -388, y: 248 }, to: { x: 452, y: 308 }, owner: { kind: 'link' as const, id: 'F' } };
+    const plan = planGap([high('H', 0, 60, 200)], { ...frame(), slants: [chord] });
+    const only = plan.parts[0]!;
+    expect(only.rows[0]!).toBeCloseTo(248 + 10.75, 6);
+    // Every piece of the part crosses the chord strictly or keeps the run clearance from it (the plan's own test, `clearOfSlants`).
+    for (const segment of plannedSegments(only, { low: 248, high: 308 })) expect(strictCrossing(segment, chord) || segmentDistance(segment, chord) >= 11.5 - EPS).toBe(true);
+  });
+
+  it('is the same plan whatever the order of the inputs (R3)', () => {
+    const inputs = [high('A', 0, 20, 220), high('B', 1, 100, 160), part('P', 2, 10, 300)];
+    const forward = planGap(inputs, frame()), backward = planGap([...inputs].reverse(), frame());
+    expect(Object.fromEntries(backward.parts.map(item => [item.id, item.rows]))).toEqual(Object.fromEntries(forward.parts.map(item => [item.id, item.rows])));
   });
 });
 

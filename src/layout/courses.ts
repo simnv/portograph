@@ -1,6 +1,7 @@
 import type { Side } from '../model/geometry.js';
 import type { Course, CourseEnd, CourseKind, CourseRun, Lane, LayoutLink, LayoutModel } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
+import { nodeTier } from './read/tier.js';
 import { findPort } from './row-paths.js';
 import { SideHintRefusal } from './placement-refusal.js';
 import type { RefusalDetail } from './placement-refusal.js';
@@ -55,6 +56,37 @@ function validateEnd(model: LayoutModel, link: LayoutLink, which: 'from' | 'to',
 }
 
 /**
+ * A `u-turn` course (dense-16x9 ticket 06, slice A): both ends leave one horizontal face (`top` or `bottom`) of one sub-tier, and the one run is a U part of the tier gap that
+ * face looks at (`u`). It owns no lane and no margin, and each end owns its port: no approach, no other link on it. A padding row of the outer sheet edge (`padding`) is
+ * not built yet: nothing reserves its three runs, so the course is refused rather than left to the router.
+ */
+/**
+ * Whether the tier gap that a face looks at exists: a band stands above a `top` face and below a `bottom` face. The one reader of that question: 7a refuses the course by it
+ * and the restore validates it by it. A face on the outer edge of the sheet has no gap, and the padding row that would serve it is not built (`validateUTurn`), so the course is refused
+ * and the router never discovers the row.
+ */
+/** The message of the refusal of a `u` course whose face looks at no tier gap: the one text of 7a and of the validator. */
+export const uTurnNoGap = (course: Pick<Course, 'link' | 'from'>): string => `The u-turn of ${course.link} has no tier gap on the ${course.from.face} of its sub-tier`;
+
+export function uTurnFacesGap(model: LayoutModel, link: string, face: Side): boolean {
+  const ref = model.links.find(item => item.id === link)?.attachments?.from;
+  if (ref === undefined || (face !== 'top' && face !== 'bottom')) return false;
+  const tier = nodeTier(model, ref.node);
+  return model.tierBands.some(band => (face === 'top' ? band.tier < tier : band.tier > tier));
+}
+
+function validateUTurn(model: LayoutModel, link: LayoutLink, course: Course): void {
+  const id = course.link;
+  if ((course.from.face !== 'top' && course.from.face !== 'bottom') || course.to.face !== course.from.face) throw new Error(`U-turn on ${id} must leave one top or bottom face at both ends`);
+  if (course.runs.length !== 1 || course.runs[0] !== 'u') throw new Error(`U-turn on ${id} must have one run, a U part of the tier gap`);
+  if (!uTurnFacesGap(model, course.link, course.from.face)) throw new CourseRefusal(uTurnNoGap(course), { owners: [{ kind: 'link', id }] });
+  if (course.from.approach !== undefined || course.to.approach !== undefined) throw new Error(`U-turn on ${id} has an approach`);
+  const ends = [link.attachments!.from, link.attachments!.to];
+  if (nodeTier(model, ends[0]!.node) !== nodeTier(model, ends[1]!.node)) throw new Error(`U-turn on ${id} joins two sub-tiers`);
+  if (ends.some(ref => linksAt(model, ref) !== 1)) throw new Error(`U-turn on ${id} stands on a port that another link shares`);
+}
+
+/**
  * The invariants of `model.courses` and `LayoutLink.approach`, not their history (ticket 15, Section 1): each course names an existing link once,
  * each face is the side of the port it ends on, each approach is a tangential face of a shared named port, and the link repeats it.
  * Absent courses and absent approaches read as today.
@@ -75,6 +107,7 @@ export function validateCourses(model: LayoutModel): void {
     if (course.kind === 'bypass' && (course.from.face === 'top' || course.from.face === 'bottom' || course.to.face === 'top' || course.to.face === 'bottom')) throw new Error(`Bypass on ${course.link} must leave lateral faces`);
     validateEnd(model, link, 'from', course.from);
     validateEnd(model, link, 'to', course.to);
+    if (course.kind === 'u-turn') validateUTurn(model, link, course);
   }
   for (const link of model.links) if (link.approach !== undefined && !seen.has(link.id)) throw new Error(`Link ${link.id} has an approach and no course`);
 }
