@@ -67,8 +67,11 @@ it('a corridor that follows its child derives the frames again', async () => {
   resetAttemptCounters();
   const model = await layout(parse(lines.join('\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(attemptCounters.reseat.adopted).toBeGreaterThan(0);
-  // Open (dense-16x9 ticket 01): the old sheet also drew `LANE_FOLLOWS_ITS_CHILD`, a corridor moved onto its child's port. A scan of 250 variants
-  // of the sheet (label widths, the order of l0 to l2, the row order) under two-pole ranks reaches no such move, so only the adopted reseat is pinned.
+  // LOST COVERAGE (dense-16x9 ticket 01, ADR-0026): the old sheet also drew `LANE_FOLLOWS_ITS_CHILD`, a corridor moved onto its child's port, and this
+  // test pinned it. Under two-pole ranks the sheet cannot reach that move: a scan of 250 variants of the sheet (label widths, the order of l0 to l2, the
+  // row order) and of its link targets found none, because a leaf of the gateway, which links up and down, now stands beside it and the corridor of the
+  // gateway link has no child row left to follow. What stays pinned here is the adopted reseat (counter), the frames derived again after it, and no
+  // removed link. A controlled stage test that moves a corridor by hand is the way back; no ticket owns it yet.
   expect(model.removedLinks ?? []).toEqual([]);
   expect(model.frames).toEqual(deriveFrames(model));
 }, 60000);
