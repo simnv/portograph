@@ -981,7 +981,7 @@ body keeps the node move (`holdsNodeMove`), each held chord that follows a moved
 resize keeps (`seatRefusal`: lane windows and sides, riser keep-out, span corridors, the label room
 of same-tier links, trunk extensions, side-lane far ports, and the exits of 7e). A refused seat is
 undone whole; when every try is refused the body stays and `ALIGNMENT_SEAT_REFUSED` names the guard.
-A body moves only for a seat that stands an owed vertical: a held chord runs at any angle, and a move for it alone would only take turns with the main move pass after pass. A seat that slides or grows a body is recorded (`alignmentSeats`, R1), and the record owns the body (ADR-0027, amendment of 2026-11-15): while the seat stands, the main move reads only the feeds of its kept ports; the recorded window is tried first and may move the body as far as a move+grow; the seat is decided again only for more owed verticals or targets; its cap reads the recorded width before the first seat (`from`); and a seat that falls in its step gives the body back to that box (`from` at the recorded offset `at`). The record lives through publication: a seat that no longer stands is withdrawn when the passes end and at the end of each rule from `centre` to `bands`, and a kept port off its feed at publication is a layout error. A port outside the seat keeps
+A body moves only for a seat that stands an owed vertical: a held chord runs at any angle, and a move for it alone would only take turns with the main move pass after pass. A seat that slides or grows a body is recorded (`alignmentSeats`, R1), and the record owns the body (ADR-0027, amendment of 2026-11-15): while the seat stands, the main move reads the feeds of its kept ports and each feed the seat left out that could still join them (one the cap declined, or that the order and pitch of its face exclude against a kept port, stops pulling; one a bound left out still pulls; addendum of 2026-11-15); the recorded window is tried first and may move the body as far as a move+grow; the seat is decided again only for more owed verticals or targets; its cap reads the recorded width before the first seat (`from`); and a seat that falls in its step gives the body back to that box (`from` at the recorded offset `at`). The record lives through publication: a seat that no longer stands is withdrawn when the passes end and at the end of each rule from `centre` to `bands`, and a kept port off its feed at publication is a layout error. A port outside the seat keeps
 its pitch slot and its link is reported. A growth is bounded a third way as well, by the alignment cap
 (`withinAlignmentCap`, ADR-0027): the body may not end wider than `ALIGNMENT_CAP_TIMES` (5) × the width
 the node itself needs — its content and author floor, or its own ports on that side at their reserved
@@ -1056,19 +1056,14 @@ producer (a hand-made transaction) has none: a later run records and declines no
 port order (G5) was measured and dropped: on the three sheets it changed it gave back the two bends ticket 65 won, because the only kept
 geometry that stands them turns another node's ports out of order (ticket 77 owns the face order).
 
-**A stranded growth is given back** (architecture-2 ticket 71, `LayoutModel.givenBack`, `src/layout/given-back.ts`). A step can widen a
-body toward its targets (`alignSide`) and then clamp the group into its window, so that no target stands; the width stays, and no later
-rule removes it (the end trim keeps the port x). The centre rule judges this once, at its end, on the record above: a node gives its
-growth back when its body is wider than at the rule's input, its faces hold a `grown` target and no `kept` one, none of its links stands
-vertical (a kept chord), and no parent spread grew it. A node at one end of a transit link gives back only when the port at the other end
-is given back too: 7f moves a corridor to a child it could not seat (`reseatLanes`) and refuses the move when the parent could then align
-to it, so a narrow child whose parent still chases the corridor would lose the follow. When anything is given back, the passes run once
-more from the rule's input with the record, and a step that widens a given-back body and leaves every aligned port of its group off its x after the clamp is
-declined as a window decline is: the group stands near its feed with the widths it began with. The judgement reads the end of all the
-passes, not one pass: a growth one pass strands is the one a later pass may complete. At most two runs, each with its own budget; a growth
-the second run strands is kept and named (`CENTRE_GROWTH_KEPT`, info), as is a given-back body a sibling's standing target lets keep its width. The record names each node and its `grown` ports in code-unit
-order; it is kept by every later rule and published, so the 7d to 7f replays and the publication check read the same decline (R1). A
-malformed record, or one before the centre rule, is refused.
+**A step is judged where it ends** (ADR-0027, clause 5; it replaces architecture-2 ticket 71). A step can widen a body toward its targets
+(`alignSide`) and then clamp the group into its window, so that no target stands; the width would stay, and no later rule removes it (the
+end trim keeps the port x). A step that widens a body and leaves every aligned port of its group off its x after the pack and the clamp is
+declined whole, as a window decline is: the group stands near its feed with the widths it began the step with, the record holds no growth
+and no seat of it, and the aligned targets are named as alignments the row cannot hold (R6). Ticket 71 gave such a growth back once, at the
+end of the centre rule, through a record (`givenBack`) and a second run of the passes; with the decline in every step the record named no
+node on any corpus sheet, and dense-16x9 ticket 02 removed it. The acceptance set of the seat (`test/layout/seat-acceptance.test.ts`) keeps
+its geometry tests.
 
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
 Those groups move right. This includes a group the step does not centre. It also includes a group

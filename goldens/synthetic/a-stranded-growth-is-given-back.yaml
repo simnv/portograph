@@ -1,14 +1,10 @@
-# Expected: a stranded growth is given back (architecture-2 ticket 71). The user's tier-gap sheet without its two transit links. The
-# centring passes widen `srv0` toward `sw1`, `sw2` and `sw4` (247 px), and the window of its step clamps `edge-near` right of
-# `edge-far`, so no target of `srv0` stands. At the end of the centre rule that width is given back (`givenBack` names `srv0` with its
-# three top ports, and `isp1`; isp1's sibling isp0 stands a target, so its step keeps the width and `CENTRE_GROWTH_KEPT` names it;
-# the end trim removes that width as on main), and the passes run once more from the rule's input:
-# `srv0` is 56 px, its three links are routed as before. `srv1`
-# keeps its width: its links to `sw0` and `sw3` stand vertical. Bends 6, crossings 5, canvas 477 px wide (668 before). Test
-# `test/layout/given-back.test.ts` reads the layout.
-# Since architecture-2 ticket 72 (the joint stage-4 order): `access` turns to sw2 sw4 sw0 sw1 sw3 and `edge-near` stands left of
-# `edge-far` (`groupOrder`); crossings 1, bends 4, canvas 471 x 484, and nothing is given back. Test `test/layout/given-back.test.ts`
-# pins `layout.feedOrder: false` to read ticket 71's rule.
+# Expected: a growth no target uses does not stay (architecture-2 ticket 71; since dense-16x9 ticket 02, ADR-0027 clause 5). The user's
+# tier-gap sheet without its two transit links. The centring passes widen `srv0` toward `sw1`, `sw2` and `sw4` (247 px), and the window
+# of its step clamps `edge-near` right of `edge-far`, so no target of `srv0` stands. Ticket 71 gave that width back at the end of the
+# centre rule through a record (`givenBack`); now the step that grows it is declined where it ends, and the record is gone: `srv0` is
+# 56 px. `srv1` keeps its width: its links to `sw0` and `sw3` stand vertical. Main: bends 6, crossings 5, canvas 477 px wide (668 before
+# ticket 71). Since architecture-2 ticket 72 (the joint stage-4 order) the sheet as written turns `access` to sw2 sw4 sw0 sw1 sw3 and
+# `edge-near` stands left of `edge-far`; `test/layout/seat-acceptance.test.ts` pins `layout.feedOrder: false` to read the rule.
 portograph: 2
 groups:
   src: { tier: 0 }

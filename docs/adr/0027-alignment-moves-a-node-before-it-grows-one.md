@@ -97,3 +97,37 @@ window is read from the centring context and from the group as it stands. Read b
 (to bound move+grow, or to clamp the group into it before it is seated), it makes the replay
 disagree with the producer: "Centring invariant violated" on three-continents and
 three-continents-top-3-first.
+
+## Addendum: a feed left out for good, or for now (2026-11-15)
+
+Two clauses change the amendment above (design note `design-02-seat-2`):
+
+1. Clause 1, narrowed: a feed that its seat left out stops pulling only when it can never join the
+   kept window: the cap declined its target, or the order and pitch of its face against a kept port
+   exclude its x. A feed that a bound left out (a sibling, the row window, an overlay wall) still
+   pulls.
+5. A seat is judged where its step ends. A step that grows a body and leaves every aligned port of
+   its group off its feed is declined whole, and records no seat. This was ticket 71's rule for a
+   given-back body. With it in every step, the given-back record (`givenBack`) named no node on any
+   corpus sheet, and nothing read it. The record, its second run of the passes and its check are
+   removed.
+
+Two rules hold the lane reseat of 7f, the one move after the last centring:
+
+- A corridor does not follow its child across a group that it stands beside (the `laneSide`
+  post-condition of 7f).
+- The reseat is judged by the publication's record comparison (`alignment-targets-differ`), because
+  no centring follows it to write a decline into the record.
+
+Measured and open:
+
+- The owner's tier-gap sheet gets main's geometry (516 x 484, 8 bends, 5 crossings), but the
+  centring spends its budget there; main settles.
+- private-datacenter-spine-leaf returns to main's 10 bends and a spent budget (the branch had 0).
+- a-kept-vertical-leaves-a-straight-overlay-straight fails G6. The chord step of 7f moves group `c`
+  9.9 px, ticket 75's guard keeps `f2` from following, and the router draws link-2 12 px from the
+  diagonal of link-5. The chord judge reads G6 only on links that have a path in 7f; link-2 is routed
+  in stage 8 (dense-16x9 ticket 14). A guard on kept ports in the chord step removed the G6 but cost a
+  straight link on 5 sheets, and was dropped.
+- The acceptance set (`test/layout/seat-acceptance.test.ts`) holds the tests of ticket 71 with their
+  old pins. Five of them fail with both clauses, and each is marked expected-fail with its clause.
