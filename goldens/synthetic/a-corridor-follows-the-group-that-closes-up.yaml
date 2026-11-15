@@ -1,0 +1,26 @@
+# Expected: A corridor follows the group that closes up (architecture-2 ticket 69). Reduced from a-stretched-body-is-trimmed-to-its-ports
+# (its first version, three feeds in `sink-near`): `sink-far` has the feeds `src-b` and `sw-1`, and the end trim narrows its body,
+# stretched under the alignment cap of ADR-0027. `far` then closes up toward `near` by 32.5 px, and the corridor of the link
+# `sw-1 -> sink-far` follows its port (`bodyTrims.laneShifts`): one lane moves by the shift of its group and still stands on the port.
+# Test `test/layout/close-up.test.ts` reads the layout.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group), so `access` is declared
+# before `src`; the canonical order is then the written order.
+portograph: 2
+groups:
+  access: { tier: 1 }
+  src: { tier: 0 }
+  far: { tier: 2 }
+  near: { tier: 2 }
+nodes:
+  src-a: { group: src, class: router, ports: [] }
+  src-b: { group: src, class: router, ports: [] }
+  sw-1: { group: access, class: switch, ports: [] }
+  sw-2: { group: access, class: switch, ports: [] }
+  sink-near: { group: near, class: server, ports: [] }
+  sink-far: { group: far, class: server, ports: [] }
+links:
+  - [sw-1, sink-near]
+  - [sw-1, sink-far]
+  - [sw-2, sink-near]
+  - [src-a, sink-near]
+  - [src-b, sink-far]

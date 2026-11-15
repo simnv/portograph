@@ -1,8 +1,10 @@
 # Expected: A sibling group closes up after the end trim (architecture-2 ticket 69). Reduced from a-face: the centring stretches
-# `sink-far` (681 px) toward feeds it does not keep; the end trim narrows it to its top ports, and the box of `far` shrinks with it.
-# The gap between `near` and `far` grows by that width, and `far` then moves left toward `near` by the width the trim freed (592 px),
-# its order and the band gap kept. `bodyTrims.shifts` records the move; the replay moves it back. Canvas 1002 to 410 px; bends,
-# crossings and routed links as before. Test `test/layout/close-up.test.ts` reads the layout.
+# `sink-far` (293 px, under the alignment cap of ADR-0027) toward feeds it does not keep; the end trim narrows it to its top ports
+# (59.5 px), and the box of `far` shrinks with it. The gap between `near` and `far` grows by the width the trim freed, and `far` then
+# moves left toward `near` by 102.5 px, its order and the band gap kept. `bodyTrims.shifts` records the move; the replay moves it
+# back. Under the cap the stretch is far smaller than before ADR-0027 (681 px, a shift of 592 px); `sw-2 -> sink-far` is the third
+# feed of `sink-far`: with only two, the stretch of `sink-far` no longer opens a gap beside `near`, and nothing closes up. Bends,
+# crossings and routed links as before the close-up. Test `test/layout/close-up.test.ts` reads the layout.
 # DR-04: links take the canonical order (group declaration order, then node order inside the group), so `access` is declared
 # before `src`; the canonical order is then the written order.
 portograph: 2
@@ -23,6 +25,7 @@ nodes:
 links:
   - [sw-1, sink-near]
   - [sw-2, sink-near]
+  - [sw-2, sink-far]
   - [src-a, sink-near]
   - [src-b, sink-far]
   - [sw-3, sink-far]

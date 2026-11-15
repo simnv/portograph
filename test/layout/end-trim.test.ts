@@ -32,7 +32,9 @@ describe('a stretched body is trimmed to its ports', () => {
     const was = model.bodyTrims?.nodes['sink-near'];
     expect(was).toBeDefined();
     const node = model.nodes['sink-near']!, body = node.bounds!;
-    expect(body.width).toBeLessThan(was!.width / 4);
+    // The alignment cap (ADR-0027) bounds the stretch, so the trim no longer frees three quarters of a body (it did before: 811 px to 104 px):
+    // a body trimmed to under half of the stretched one is still a stretched body that the trim narrows to its ports.
+    expect(body.width).toBeLessThan(was!.width / 2);
     const xs = node.ports.filter(port => port.side === 'top').map(port => port.anchor!.x), inset = portEndInsets(node, 'top');
     expect(body.x).toBeCloseTo(Math.min(...xs) - inset.low, 6);
     expect(right(body)).toBeCloseTo(Math.max(...xs) + inset.high, 6);
@@ -134,7 +136,10 @@ describe('the centring replay reads the bodies the producer decided on (R1)', ()
 
 describe('a trimmed group box keeps its title floor', () => {
   it('holds the title of a group whose label is wider than its trimmed bodies (review round 1)', async () => {
-    const text = source('a-stretched-body-is-trimmed-to-its-ports').replace('near: { tier: 2 }', 'near: { tier: 2, label: A title far wider than the one sink it holds }');
+    // Without the fourth feed `src-b -> sink-near`: with it a title this wide leaves the body no stretch to trim (the cap of ADR-0027), and the
+    // rule under test, a title floor on a trimmed box, needs a trimmed body.
+    const text = source('a-stretched-body-is-trimmed-to-its-ports').replace('  - [src-b, sink-near]\n', '')
+      .replace('near: { tier: 2 }', 'near: { tier: 2, label: A title far wider than the one sink it holds }');
     const model = await run(text);
     expect(model.bodyTrims?.nodes['sink-near']).toBeDefined();
     expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([]);
