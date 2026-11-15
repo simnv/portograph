@@ -22,6 +22,8 @@ export const ALIGNMENT_DECLINE_REASONS: readonly AlignmentDeclineReason[] = ['ri
  * published layout carries both records.
  */
 const RECORD_STAGES: readonly string[] = ['centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
+/** The record stages before the output of 7f: no guard has declined there yet. */
+const BEFORE_7F_OUTPUT: readonly string[] = ['centre', 'bars', 'bundles'];
 /** The finding of the publication check: a face where the replay declines a target the record does not. */
 export const ALIGNMENT_TARGETS_DIFFER = 'alignment-targets-differ';
 
@@ -182,7 +184,7 @@ export function sameDeclines(stored: readonly AlignmentTarget[] | undefined, rep
  */
 export function alignmentTargetsFault(model: LayoutModel): string | undefined {
   const record = model.alignmentTargets;
-  // The record lives from the centre rule's output to the output of 7f; before and after it is no record of anything. Absent is undecided.
+  // The record lives from the centre rule's output to publication (ADR-0027); before it is no record of anything. Absent is undecided.
   if (record === undefined) return undefined;
   if (!RECORD_STAGES.includes(model.stage)) return `a record at stage ${model.stage}`;
   if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
@@ -211,9 +213,11 @@ export function alignmentTargetsFault(model: LayoutModel): string | undefined {
       if (!Number.isInteger(entry.pass) || entry.pass < 0) return `${at}: pass ${String(entry.pass)}`;
       if (entry.state === 'declined') {
         // Only 7f declines for a guard (its draft is the first at a chord stage): such a decline in a model before its output was written by no
-        // producer. The cap declines from the centre rule on (ADR-0027).
-        if (model.stage !== 'bands' && entry.reason !== 'cap') return `${at}: a decline at stage ${model.stage}, before 7f`;
+        // producer; from the output of 7f to publication the record carries it (ADR-0027). The cap declines from the centre rule on.
+        if (BEFORE_7F_OUTPUT.includes(model.stage) && entry.reason !== 'cap') return `${at}: a decline at stage ${model.stage}, before 7f`;
         if (!ALIGNMENT_DECLINE_REASONS.includes(entry.reason!) || typeof entry.by !== 'string' || !entry.by) return `${at}: a declined entry without its reason`;
+        // A cap decline is the seat's own (ADR-0027): the node of the face is the node whose seat the cap refused.
+        if (entry.reason === 'cap' && entry.by !== node.id) return `${at}: a cap decline by ${entry.by}, not by ${node.id}`;
         if (entry.extent !== undefined) return `${at}: a declined entry with an extent`;
       } else if (entry.state === 'grown') {
         if (entry.extent === undefined || !finite(entry.extent.low) || !finite(entry.extent.high) || entry.extent.low > entry.extent.high) return `${at}: a grown entry without its extent`;
