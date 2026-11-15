@@ -29,7 +29,7 @@ import { ownSideWidth, withinAlignmentCap } from './size.js';
 import { withStageMutation } from './mutation.js';
 import { barReach } from './bars.js';
 import { placeOverlayFree } from './overlay-place.js';
-import { fitRegionGroup, GROUP_PADDING, groupInsets, placementWarning, rebuildRegions, right } from './regions.js';
+import { bandHeldBy, fitRegionGroup, GROUP_PADDING, groupInsets, placementWarning, rebuildRegions, right } from './regions.js';
 import { EPS, segmentRectDistance } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { standPortsOverChildren, withdrawWallMoves, type StepReader } from './parent-stand.js';
@@ -234,7 +234,7 @@ export interface SeatCandidate { keys: string[]; x: number; width: number; dx: n
  * The alignment cap of a seat (ADR-0027): whether a body `width` wide that stands the targets of `window` keeps it.
  */
 export type SeatCap = (window: readonly SeatTarget[], width: number) => boolean;
-interface SeatBounds { siblings: WideningLimit; window: WideningLimit; stops: OverlayStops }
+interface SeatBounds { siblings: WideningLimit; window: WideningLimit; stops: OverlayStops; home?: number | undefined }
 
 /** The wanted ports of the top and bottom faces of `node`, by x, then by port key (R3: the last key). */
 function seatTargets(node: LayoutNode, wanted: ReadonlyMap<string, number>, owes: (key: string) => boolean, sides: readonly ('top' | 'bottom')[] = ['top', 'bottom']): SeatTarget[] {
@@ -301,8 +301,11 @@ export function seatCandidates(node: LayoutNode, targets: readonly SeatTarget[],
     }
   }
   const near = (a: number, b: number): boolean => Math.abs(a - b) <= NO_MOVE_EPS;
+  // The least travel is read from where the body stood when the step began (`home`): the main move of the step has carried it toward the mean
+  // of its feeds, and a seat read from there would stand it at another feed on every other pass.
+  const home = bounds.home ?? x0, travel = (item: SeatCandidate): number => Math.abs(item.x - home);
   return result.sort((a, b) => b.owed - a.owed || b.keys.length - a.keys.length
-    || (near(a.growth, b.growth) ? 0 : a.growth - b.growth) || (near(Math.abs(a.dx), Math.abs(b.dx)) ? 0 : Math.abs(a.dx) - Math.abs(b.dx))
+    || (near(a.growth, b.growth) ? 0 : a.growth - b.growth) || (near(travel(a), travel(b)) ? 0 : travel(a) - travel(b))
     || Number(a.inPlace) - Number(b.inPlace) || (a.keys.join() < b.keys.join() ? -1 : a.keys.join() > b.keys.join() ? 1 : 0));
 }
 
@@ -337,7 +340,7 @@ interface SeatOutcome { kept: Set<string>; dx: number; from: number; capped: Set
  * overlay wall is named to `stopped`.
  */
 function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, wanted: ReadonlyMap<string, number>, owes: (key: string) => boolean,
-  window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean): SeatOutcome {
+  window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean, home?: number): SeatOutcome {
   const box = node.bounds!, from = box.width, none: SeatOutcome = { kept: new Set(), dx: 0, from, capped: new Set() };
   // A seat reads the geometry alone, never an earlier `cap` decline: the publication check replays it after the route rule has dropped the
   // record, and both must decide alike (R1). The decline records the last decision; the vertical tally reads it.
@@ -347,7 +350,7 @@ function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, want
   const movable = !isGridGroup(model, group.id) && !model.staggerRows?.some(row => row.group === group.id) && chainBlockOf(model, node.id) === undefined;
   const siblings = siblingLimit(model, group, node);
   const refusedByCap: SeatCandidate[] = [];
-  const candidates = seatCandidates(node, targets, { siblings, window, stops }, movable, seatCap(model, node), refusedByCap);
+  const candidates = seatCandidates(node, targets, { siblings, window, stops, home }, movable, seatCap(model, node), refusedByCap);
   const saved = JSON.stringify(node);
   const restore = (): void => {
     const copy = JSON.parse(saved) as LayoutNode;
@@ -1188,21 +1191,31 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // has not grown moves as it always did; the wall then bounds only the growth that follows.
   const walls = new Map(group.rowOrder!.map(id => [id, overlayStops(model, model.nodes[id]!)]));
   const { farthestLeft, farthestRight } = farthest(model, walls);
+  const homes = new Map(group.nodes.map(node => [node, model.nodes[node]!.bounds!.x]));
   const began = group.bounds!.x, toMean = centringOffset(chosen);
   moveGroup(model, group, mainMove(model, group, farthestLeft, farthestRight, toMean), 0);
   const aligned = new Set<string>();
-  // The window a seat slides a body in (ADR-0027): the slack of its row inside its group box, less the insets the box keeps beyond its bodies.
-  // The group itself moves by the main move, toward the mean of its feeds, and the clamp into the window of the step moves it as a whole; a
-  // slide inside the box changes neither, and a slide past the box would grow the group, and the next main move would take it back.
+  // The window a seat slides a body in (ADR-0027): the slack of its row inside its group box, less the insets the box keeps beyond its bodies,
+  // and the place the body stood when the step began (`homeWindow`). The main move carries a seated body off the feeds its seat stands, toward
+  // the mean of all its feeds; in a packed group box (one body, or bodies a row gap apart) the body could then reach its feeds again only by
+  // growing, and it would grow again on every pass until the cap traps it short of all of them. The way back to where it stood is no new
+  // decision, so the seat may take it; a slide past the box moves the box with the body, inside the window of the step. A box a label band
+  // holds keeps the extent placement gave it and never shrinks (`fitRegionGroup`): its slack is the box alone.
   const inset = groupInsets(model, group), box = group.bounds!;
   const rowWindow = { low: box.x + inset.left, high: right(box) - inset.right };
+  const step = bandHeldBy(model, id) === undefined ? stepWindow(model, context, tier, list, id, previous, tail) : undefined;
+  const homeWindow = (nodeId: string): WideningLimit => {
+    const home = homes.get(nodeId)!, width = model.nodes[nodeId]!.bounds!.width;
+    if (step === undefined) return rowWindow;
+    return { low: Math.min(rowWindow.low, Math.max(home, step.low + inset.left)), high: Math.max(rowWindow.high, Math.min(home + width, step.high - inset.right)) };
+  };
   const links = linkById(model), direct = directMembers(model);
   const owes = seatOwes(model, seats, links, direct);
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
     const stops = walls.get(nodeId)!;
     let stoppedBy: string | undefined;
-    const seat = seatNode(model, group, node, wanted, owes, rowWindow, stops, link => { stoppedBy ??= link; }, seats, warn);
+    const seat = seatNode(model, group, node, wanted, owes, homeWindow(nodeId), stops, link => { stoppedBy ??= link; }, seats, warn, homes.get(nodeId));
     for (const key of seat.kept) aligned.add(key);
     // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
     const box = node.bounds!;
