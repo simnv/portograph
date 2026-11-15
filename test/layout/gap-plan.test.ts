@@ -114,21 +114,23 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
     expect(lower!.plan.residual).toEqual([]);
 
     // ADR-0027 moves bodies before growth, changing which links drop and share rows. The old and new pins both prove
-    // both gaps reserve every part and forced crossing, clear the label, and need no growth after 7f.
-    expect(upper!.plan.order.map(short)).toEqual(['11', '3', '7', '9']);
-    expectRows(upper!.plan, { 11: [132.75], 3: [144.25], 7: [155.75], 9: [167.25] });
-    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['11>3:O2', '3>7:O1']);
+    // both gaps reserve every part and forced crossing, clear the label, and need no growth after 7f. Dense-16x9 ticket 02 (a seated body
+    // pulls only through its kept feeds) changes the seats of `src` once more: the upper gap plans 11, 9, 5, 1 (11, 3, 7, 9 before, 71 px
+    // high, set by link-7), the lower gap stands 1.75 px higher and plans no row for 12.1. The forced crossing pairs are the same.
+    expect(upper!.plan.order.map(short)).toEqual(['11', '9', '5', '1']);
+    expectRows(upper!.plan, { 11: [146], 9: [157.5], 5: [169], 1: [180.5] });
+    expect(upper!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort()).toEqual(['11>1:O1', '5>1:O1', '9>1:O1', '9>5:O1']);
     expect(pairs(upper!.plan)).toEqual(['11x3', '11x5', '11x7', '11x9', '3x5', '3x9', '7x9']);
-    expect(upper!.plan.height).toBeCloseTo(71, 6);
+    expect(upper!.plan.height).toBeCloseTo(69.25, 6);
     expect(upper!.plan.growth).toBe(0);
-    expect(upper!.plan.setBy).toBe('link-7#0');
+    expect(upper!.plan.setBy).toBe('link-1#0');
 
-    expect(lower!.plan.order.map(short)).toEqual(['10', '6', '11.1', '12.1', '4']);
-    expectRows(lower!.plan, { '12.1': [316.75], 10: [328.25], 6: [339.75], '11.1': [351.25], 4: [362.75] });
+    expect(lower!.plan.order.map(short)).toEqual(['10', '6', '11.1', '4']);
+    expectRows(lower!.plan, { 10: [326.5], 6: [338], '11.1': [349.5], 4: [361] });
     expect(lower!.plan.edges.map(edge => `${short(edge.above)}>${short(edge.below)}:${edge.kind}`).sort())
       .toEqual(['10>4:O1', '10>6:O1', '6>4:O1']);
     expect(pairs(lower!.plan)).toEqual(['10x11.1', '11.1x4', '11.1x6', '11.1x8', '4x8', '6x8']);
-    expect(lower!.gap.low).toBeCloseTo(301.75, 6);
+    expect(lower!.gap.low).toBeCloseTo(300, 6);
     expect(lower!.plan.height).toBeCloseTo(71.75, 6);
     expect(lower!.plan.bandTop - lower!.gap.low).toBeCloseTo(71.75, 6);
     expect(lower!.plan.growth).toBe(0);
@@ -342,7 +344,8 @@ describe('the tier-gap plan on hand-built parts', () => {
 // Each entry is `run|vertical|kind` (2.1): a run crosses the upper leg of a part whose upper x lies inside its span and whose row is below it, the
 // lower leg of one whose lower x lies inside and whose row is above it, and every drop inside its span.
 // ADR-0027 changes the parts, while these pins still name every forced crossing kind. The row and pair pins above cover the same gaps.
-const KINDS_UPPER: string[] = ['11|5|drop', '11|9|upper-leg', '3|11|lower-leg', '3|5|drop', '3|9|upper-leg', '7|11|lower-leg', '9|7|lower-leg'];
+// Dense-16x9 ticket 02 re-pins the upper gap (before: '11|5|drop', '11|9|upper-leg', '3|11|lower-leg', '3|5|drop', '3|9|upper-leg', '7|11|lower-leg', '9|7|lower-leg').
+const KINDS_UPPER: string[] = ['11|3|drop', '11|5|upper-leg', '11|7|drop', '11|9|upper-leg', '5|3|drop', '9|3|drop', '9|7|drop'];
 const KINDS_LOWER: string[] = ['10|11.1|upper-leg', '11.1|8|drop', '4|11.1|lower-leg', '4|8|drop', '6|11.1|upper-leg', '6|8|drop'];
 
 /** Three tiers, a transit lane for link-4 through tier 1, and planned parts in both gaps (the pipeline test `residual-parts.test.ts` reads the same text). */
