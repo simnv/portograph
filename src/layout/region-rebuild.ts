@@ -1,7 +1,7 @@
 import { reserveBlockGaps } from './solid-blocks.js';
 import { moveBands } from './gap-room.js';
 import type { LayoutModel, TierBand } from '../model/layout.js';
-import { centreDraft, createCentreBudget, flagUnverifiedCentring, type CentreBudget } from './centre.js';
+import { CENTRE_ALIGNMENT_OPEN, centreDraft, createCentreBudget, flagUnverifiedCentring, type CentreBudget } from './centre.js';
 import { rebuildLaneExtents } from './lanes.js';
 import { rebuildFlankPaths, flankPathCandidate } from './flanks.js';
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
@@ -92,6 +92,10 @@ export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget,
     if (barsReady) timed('bar-drops', () => rebuildBarDrops(draft));
     if (bundlesReady) timed('bundle-paths', () => rebuildBundlePaths(draft));
     if (budget) timed('centre-flag', () => flagUnverifiedCentring(draft, deferOpenCentringNames));
+    // A rebuild that centres nothing (the centre rule's own transaction) still moves what depends on the centring: the regions, the lanes and the
+    // node geometry. Where the centre step recorded a stall, the alignments it left open are named again on the geometry the rebuild leaves, so the
+    // publication reads a record of the model it judges (ticket 75: no unexplained centring violation). A model with no stall is not read.
+    else if (centre && draft.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) timed('centre-flag', () => flagUnverifiedCentring(draft, deferOpenCentringNames));
   });
 }
 

@@ -12,6 +12,7 @@ import type { LayoutModel, LayoutNode } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createAttempt, placed } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withoutJointOrder } from './joint-off.js';
 
 // ADR-0027, dense-16x9 ticket 02: the seat moves a body inside the slack of its row before it grows the body.
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-child-moves-in-row-slack-before-it-grows.yaml', import.meta.url), 'utf8');
@@ -100,6 +101,15 @@ describe('the seat of a node (ADR-0027)', () => {
   // course lane measured again), and the replay read another feed. At cap 5 both publish; the tests keep them publishing.
   it.each(['a-corridor-moves-after-the-grid-settles', 'a-lifted-group-takes-its-feed-on-its-side'])('publishes %s: the replay reads the seat the producer made', async name => {
     const yaml = readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+    const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
+    expect(model.removedLinks ?? []).toEqual([]);
+  }, 300000);
+
+  it('publishes the feedOrder:false copy of a-tier-gap-plan-orders-every-part-middle-tier-first: the centre rule\'s rebuild names its open alignments again (ticket 75)', async () => {
+    // The centre stage recorded a stall; its own transaction then rebuilt the region, which moved isp1 off the alignment the record named.
+    // The publication judged the rebuilt geometry against the stale record and failed the centring invariant.
+    const yaml = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part-middle-tier-first.yaml', import.meta.url), 'utf8'));
     const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     expect(model.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
     expect(model.removedLinks ?? []).toEqual([]);
