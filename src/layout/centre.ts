@@ -4,7 +4,7 @@ import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup
 import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, rightWallReach, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
-import { holdsMove, resizeEvidence, resizeHolds } from './move-reservations.js';
+import { holdsMove, holdsNodeMove, resizeEvidence, resizeHolds } from './move-reservations.js';
 import { cellReach } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
@@ -41,6 +41,7 @@ import { faceKey } from './turn-order.js';
 import { untrimmedModel } from './end-trim.js';
 import { standsVertical, strandedGrowth } from './given-back.js';
 import { RISER_DEPTH_EPS } from './tolerance.js';
+import { chainBlockOf } from './read/chain.js';
 
 export interface CentreBudget { remaining: number; passes: number }
 export function createCentreBudget(): CentreBudget { return { remaining: 8, passes: 0 }; }
@@ -114,6 +115,44 @@ function overlayStops(model: LayoutModel, node: LayoutNode): OverlayStops {
 function alignedEdges(node: LayoutNode, side: Side, index: number, x: number, count: number, pitch: number): { low: number; high: number } {
   const inset = portEndInsets(node, side, pitch);
   return { low: x - index * pitch - inset.low, high: x + (count - 1 - index) * pitch + inset.high };
+}
+
+/**
+ * Seat every wanted port inside the body's existing width before an alignment grows it (ADR-0027).
+ * The nearest feasible left edge wins. Row siblings, the group's window and overlay stops bound
+ * the slide; the node-move guard keeps the riser, side-lane and block reservations. The step's
+ * post-conditions judge frozen chords after the face seats, and writeAlignmentTargets records
+ * the kept targets on the accepted geometry, also when a guard gives this step back (R1, R2).
+ */
+function moveUnderTargets(model: LayoutModel, group: LayoutGroup, node: LayoutNode, wanted: ReadonlyMap<string, number>, window: WideningLimit, stops: OverlayStops): void {
+  if (isGridGroup(model, group.id) || model.staggerRows?.some(row => row.group === group.id) || chainBlockOf(model, node.id) !== undefined) return;
+  let low = -Infinity, high = Infinity, found = false;
+  for (const side of ['top', 'bottom'] as const) {
+    const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
+    const pitch = node.sidePitch?.[side];
+    if (pitch === undefined) continue;
+    let previous: { index: number; x: number } | undefined;
+    for (const [index, port] of ports.entries()) {
+      const x = wanted.get(portId(port.ref));
+      if (x === undefined) continue;
+      if (previous !== undefined && x - previous.x < (index - previous.index) * pitch - EPS) return;
+      previous = { index, x };
+      const edges = alignedEdges(node, side, index, x, ports.length, pitch);
+      low = Math.max(low, edges.high - node.bounds!.width);
+      high = Math.min(high, edges.low);
+      found = true;
+    }
+  }
+  if (!found) return;
+  const box = node.bounds!, siblings = siblingLimit(model, group, node);
+  low = Math.max(low, siblings.low, window.low, stops.low);
+  high = Math.min(high, siblings.high - box.width, window.high - box.width, stops.high - box.width);
+  if (low > high + EPS) return;
+  const dx = Math.max(low, Math.min(box.x, high)) - box.x;
+  if (Math.abs(dx) <= EPS || !holdsNodeMove(model, group, [node.id], dx)) return;
+  const held = heldChordPorts(model, node);
+  if (node.ports.some(port => port.anchor && held.get(portId(port.ref))?.(port.anchor.x + dx) === false)) return;
+  shiftNode(node, dx);
 }
 /** The keep decision of `alignSide` without its mutation: the targets a side keeps, none when the side is declined as a whole (architecture ticket 12). */
 function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void = () => {}): { index: number; x: number; key: string }[] {
@@ -998,9 +1037,14 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const began = group.bounds!.x, toMean = centringOffset(chosen);
   moveGroup(model, group, mainMove(model, group, farthestLeft, farthestRight, toMean), 0);
   const aligned = new Set<string>();
+  const window = stepWindow(model, context, tier, list, id, previous, tail);
+  const bodies = group.nodes.map(node => model.nodes[node]!.bounds!);
+  const rowWindow = { low: window.low + Math.min(...bodies.map(box => box.x)) - group.bounds!.x,
+    high: window.high - (right(group.bounds!) - Math.max(...bodies.map(right))) };
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
     const stops = walls.get(nodeId)!;
+    moveUnderTargets(model, group, node, wanted, rowWindow, stops);
     let stoppedBy: string | undefined;
     for (const side of ['top', 'bottom'] as const) {
       const box = node.bounds!, fromX = box.x, fromWidth = box.width;

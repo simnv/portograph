@@ -1,0 +1,17 @@
+# Expected: stage 7c moves the two narrow children under their wide parents within the available row span.
+# Both children keep their stage-5 width; neither body grows to carry its port toward a feed (ADR-0027).
+# Test-only input; test/layout/alignment-move-first.test.ts reads the placement and its target record.
+portograph: 2
+layout: { autoArrange: false }
+groups:
+  parents: { tier: 0 }
+  children: { tier: 1 }
+nodes:
+  parent-a: { group: parents, size: { width: 280, height: 40 }, ports: [{ name: down, side: bottom }] }
+  parent-b: { group: parents, size: { width: 280, height: 40 }, ports: [{ name: down, side: bottom }] }
+  spare: { group: parents }
+  child-a: { group: children, ports: [{ name: up, side: top }] }
+  child-b: { group: children, ports: [{ name: up, side: top }] }
+links:
+  - { from: parent-a.down, to: child-a.up, route: straight }
+  - { from: parent-b.down, to: child-b.up, route: straight }
