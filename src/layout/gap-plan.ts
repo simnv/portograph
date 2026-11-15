@@ -9,7 +9,7 @@ import { LINK_LABEL_GEOMETRY } from './link-labels.js';
 import { isRoutedChord } from './frame-paths.js';
 import { endPort } from './approach.js';
 import { findPort } from './row-paths.js';
-import { courseOf } from './course-lanes.js';
+import { courseOf, tierGapUTurn } from './course-lanes.js';
 import { gapEnds, isGapCourse } from './course-gap.js';
 import { tierGapMin } from './skeleton-graph.js';
 import { gapBandDemand } from './gap-band.js';
@@ -55,10 +55,12 @@ export interface PlanInput {
   /** Room a described part keeps below its row before the next row: `label height + 2 × 4 + stroke`. */
   labelRoom?: number;
   /**
-   * A U part (ticket 15, phase 5): both ends stand on the one boundary of the gap, so the part is two legs and one row. `upper` is the end the link visits first
-   * and `lower` the other; neither is the end nearer the far boundary, and the part has no lower leg.
+   * A U part (ticket 15, phase 5; dense-16x9 ticket 06): both ends stand on the one boundary of the gap, so the part is two legs and one row. `upper` is the end the link
+   * visits first and `lower` the other; neither is the end nearer the far boundary. `'low'`: both ends hang from the low boundary (a `bottom` port's tip or the mouth of
+   * a lane), the row lies below them, and the part asks `keep` above the band below. `'high'`: both ends rise from the high boundary (a `top` port's tip), the row lies
+   * above them, and the part asks `keep` above its higher tip.
    */
-  u?: true;
+  u?: 'low' | 'high';
 }
 
 /** An obstacle, as a y band over an x range (O5). It is anchored to one band, never to a bounding box. */
@@ -138,7 +140,7 @@ function unitPieces(unit: { part: PlanInput; half: 0 | 1 | 2; xu: number; xl: nu
   const at = (x: number, level: number): Point => ({ x, y: level });
   const pieces: PathSegment[] = [{ from: at(Math.min(unit.xu, unit.xl), y), to: at(Math.max(unit.xu, unit.xl), y), owner }];
   if (unit.half !== 2) pieces.push({ from: at(unit.xu, unit.part.upper.y), to: at(unit.xu, y), owner });
-  if (unit.part.u === true) pieces.push({ from: at(unit.xl, unit.part.lower.y), to: at(unit.xl, y), owner });
+  if (unit.part.u !== undefined) pieces.push({ from: at(unit.xl, unit.part.lower.y), to: at(unit.xl, y), owner });
   else if (unit.half !== 1) pieces.push({ from: at(unit.xl, y), to: at(unit.xl, unit.part.lower.y), owner });
   return pieces.filter(piece => !samePoint(piece.from, piece.to));
 }
@@ -194,6 +196,8 @@ export interface PlannedPart {
   /** The y of a drop's jog, where its ends differ, and the end whose x its long vertical stands on. */
   jog?: number;
   stand?: 'upper' | 'lower';
+  /** A U part: the boundary of the gap both its ends stand on. */
+  boundary?: 'low' | 'high';
 }
 
 export interface PlanEdge {
@@ -309,7 +313,7 @@ function unitsOf(parts: readonly Part[], split: ReadonlyMap<string, number>): Un
 interface BaseEdge { above: Part; below: Part; kind: 'O2' }
 
 function baseEdges(parts: readonly Part[], keep: number): BaseEdge[] {
-  const stepped = parts.filter(part => !part.drop && part.u !== true);
+  const stepped = parts.filter(part => !part.drop && part.u === undefined);
   const result: BaseEdge[] = [];
   // O2. The upper end of `above` stands within `keep` of the lower end of `below`: the leg from the low boundary turns first.
   for (const p of stepped) for (const q of stepped) if (q !== p && Math.abs(p.upper.x - q.lower.x) < keep - EPS) result.push({ above: p, below: q, kind: 'O2' });
@@ -332,13 +336,13 @@ function expand(base: readonly BaseEdge[], split: ReadonlyMap<string, number>, u
   const whole = (part: Part): { xu: number; xl: number } => ({ xu: part.upper.x, xl: part.lower.x });
   for (let index = 0; index < units.length; index++) {
     const a = units[index]!;
-    if (a.part.u === true) continue;
+    if (a.part.u !== undefined) continue;
     const aSplit = split.has(a.part.id);
     const aWhole = whole(a.part);
     const way = Math.sign(a.xl - a.xu);
     for (let j = index + 1; j < units.length; j++) {
       const b = units[j]!;
-      if (a.part === b.part || b.part.u === true) continue;
+      if (a.part === b.part || b.part.u !== undefined) continue;
       if ((aSplit || split.has(b.part.id)) && interleave(aWhole, whole(b.part))) continue;
       if (way !== Math.sign(b.xl - b.xu) || interleave(a, b) || !overlaps(a, b)) continue;
       // O1. Of two rightward units the one further right at the upper end is above (ties: the lower end); leftward mirrors it.
@@ -483,7 +487,7 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
     const whole = partById.get(id)!;
     const zed = { xu: whole.upper.x, xl: whole.lower.x };
     for (const other of parts) {
-      if (other.drop || other.u === true || other === whole || split.has(other.id)) continue;
+      if (other.drop || other.u !== undefined || other === whole || split.has(other.id)) continue;
       if (!interleave(zed, { xu: other.upper.x, xl: other.lower.x })) continue;
       const first = `${id}a`, second = `${id}b`;
       const firstToOther = reaches(graph.outgoing, first, other.id);
@@ -507,18 +511,18 @@ function nestingEdges(parts: readonly Part[], units: readonly Unit[], graph: Pla
   const nodeOf = (end: PlanEnd): string => end.kind === 'tip' ? end.source.split('|')[0]! : '';
   const count = (end: 'upper' | 'lower'): Map<string, number> => {
     const found = new Map<string, number>();
-    for (const part of parts) if (!part.drop && part.u !== true && part[end].kind === 'tip') found.set(nodeOf(part[end]), (found.get(nodeOf(part[end])) ?? 0) + 1);
+    for (const part of parts) if (!part.drop && part.u === undefined && part[end].kind === 'tip') found.set(nodeOf(part[end]), (found.get(nodeOf(part[end])) ?? 0) + 1);
     return found;
   };
   const up = count('upper'), low = count('lower');
   const added: PlanEdge[] = [];
   for (let index = 0; index < units.length; index++) {
     const a = units[index]!;
-    if (a.part.u === true || a.half !== 0) continue;
+    if (a.part.u !== undefined || a.half !== 0) continue;
     const way = Math.sign(a.xl - a.xu);
     for (let j = index + 1; j < units.length; j++) {
       const b = units[j]!;
-      if (b.part.u === true || b.half !== 0 || way !== Math.sign(b.xl - b.xu) || !interleave(a, b) || !overlaps(a, b)) continue;
+      if (b.part.u !== undefined || b.half !== 0 || way !== Math.sign(b.xl - b.xu) || !interleave(a, b) || !overlaps(a, b)) continue;
       if (Math.abs(need.get(a.id)! - need.get(b.id)!) > EPS) continue;
       const farther = (a.xl - b.xl) * way > 0 ? a : b, nearer = farther === a ? b : a;
       // Both crossings fall on the nearer part: on its upper leg (the edge) or on its lower leg (the plain order). The edge is added only when
@@ -535,12 +539,15 @@ function nestingEdges(parts: readonly Part[], units: readonly Unit[], graph: Pla
 }
 
 /**
- * The edges of the U parts (ticket 15, phase 5). A U part has two legs and one row on one boundary of the gap. A U part nested inside another stands above it
- * (its row would run through the legs of the outer one otherwise); a part whose upper or lower end stands between the legs of a U part stands below it,
- * where that costs no crossing. Each edge is added only where it closes no cycle.
+ * The edges of the U parts (ticket 15, phase 5; dense-16x9 ticket 06). A U part has two legs and one row on one boundary of the gap.
+ * - A low U part hangs from the low boundary: a U part nested inside another stands above it (its row would run through the legs of the outer one otherwise); a part
+ *   whose upper or lower end stands between its legs stands below it.
+ * - A high U part is the mirror: it rises from the high boundary, so a U part nested inside another stands below it, and every unit whose x-span overlaps its own stands
+ *   above it, so its legs stay short and no run crosses them. A low U part overlapping a high one stands above it.
+ * Each edge is added only where it closes no cycle.
  */
 function uEdges(units: readonly Unit[], baseGraph: PlanGraph): PlanEdge[] {
-  const uUnits = units.filter(unit => unit.part.u === true);
+  const uUnits = units.filter(unit => unit.part.u !== undefined);
   if (!uUnits.length) return [];
   const graph = cloneGraph(baseGraph);
   const added: PlanEdge[] = [];
@@ -552,11 +559,17 @@ function uEdges(units: readonly Unit[], baseGraph: PlanGraph): PlanEdge[] {
   };
   for (const u of uUnits) for (const other of units) {
     if (other.part === u.part) continue;
-    if (other.part.u === true) {
-      // Two U parts: the nested one is above.
-      if (other.lo > u.lo + EPS && other.hi < u.hi - EPS) add(other, u);
+    if (other.part.u !== undefined) {
+      if (other.part.u !== u.part.u) {
+        // A low U part and a high one: the low one stands above where their spans overlap.
+        if (u.part.u === 'low' && overlaps(u, other)) add(u, other);
+        continue;
+      }
+      // Two U parts of one boundary: the nested one is above a low outer part and below a high outer part.
+      if (other.lo > u.lo + EPS && other.hi < u.hi - EPS) { if (u.part.u === 'low') add(other, u); else add(u, other); }
       continue;
     }
+    if (u.part.u === 'high') { if (overlaps(u, other)) add(other, u); continue; }
     if (other.half === 2 ? inside(other.xl, u) : inside(other.xu, u) || inside(other.xl, u)) add(u, other);
   }
   return added;
@@ -600,7 +613,9 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   const { keep, pitch, edge: margin, low, bandTop } = frame;
   const residual: ResidualPart[] = [...frame.residual];
   const asPart = (input: PlanInput): Part => {
-    if (input.u === true) return { ...input, drop: false, jogged: false, stand: 'upper', depth: keep, after: Math.max(pitch, input.labelRoom ?? 0) };
+    // A low U asks `keep` above the band below; a high U's depth is the distance of its higher tip from the band below, and its need adds `keep` (`fixedNeed`).
+    if (input.u !== undefined) return { ...input, drop: false, jogged: false, stand: 'upper', after: Math.max(pitch, input.labelRoom ?? 0),
+      depth: input.u === 'high' ? frame.bandTop - Math.min(input.upper.y, input.lower.y) : keep };
     const drop = Math.abs(input.lower.x - input.upper.x) < keep - EPS;
     const jogged = drop && !same(input.lower.x, input.upper.x);
     return { ...input, drop, jogged, stand: jogged && upperStandBlocked(input) ? 'lower' : 'upper', depth: frame.bandTop - input.lower.y,
@@ -614,8 +629,10 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   // obstacle anchored to the band above, a lower leg up from its tip past the top of one anchored to the band below.
   const blocked = (input: PlanInput): boolean => (frame.blocks ?? []).some(block => {
     if (block.owner === input.link) return false;
-    // Both legs of a U part reach down from its ends past the bottom of an obstacle anchored to the band above.
-    if (input.u === true) return block.anchor === 'above' && [input.upper, input.lower].some(end => end.x > block.x0 + EPS && end.x < block.x1 - EPS && end.y < block.bound - EPS);
+    // Both legs of a low U part reach down from its ends past the bottom of an obstacle anchored to the band above; both legs of a high U part reach up from its
+    // ends past the top of one anchored to the band below.
+    if (input.u === 'low') return block.anchor === 'above' && [input.upper, input.lower].some(end => end.x > block.x0 + EPS && end.x < block.x1 - EPS && end.y < block.bound - EPS);
+    if (input.u === 'high') return block.anchor === 'below' && [input.upper, input.lower].some(end => end.x > block.x0 + EPS && end.x < block.x1 - EPS && bandTop - end.y < block.bound - EPS);
     if (block.anchor === 'above') return input.upper.x > block.x0 + EPS && input.upper.x < block.x1 - EPS && input.upper.y < block.bound - EPS;
     return input.lower.x > block.x0 + EPS && input.lower.x < block.x1 - EPS && bandTop - input.lower.y < block.bound - EPS;
   });
@@ -629,7 +646,8 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   let live: Part[] = [];
   const crowded: { id: string; link: string; with: string }[] = [];
   // A jogged drop has a long vertical on its `stand` end and a short stub on the other, so each end's x is a leg of both kinds.
-  const legsOf = (item: Part, end: 'upper' | 'lower'): PlanEnd[] => item.u === true ? (end === 'upper' ? [item.upper, item.lower] : [])
+  // A low U's legs are upper legs (they hang from the low boundary), a high U's are lower legs.
+  const legsOf = (item: Part, end: 'upper' | 'lower'): PlanEnd[] => item.u !== undefined ? (end === (item.u === 'low' ? 'upper' : 'lower') ? [item.upper, item.lower] : [])
     : item.drop && item.jogged
     ? [item[end], item.stand === 'upper' ? item.upper : item.lower] : item.drop ? [item.upper, item.lower] : [item[end]];
   const near = (a: PlanEnd, b: PlanEnd): boolean => a.source !== b.source && Math.abs(a.x - b.x) < keep - EPS;
@@ -666,8 +684,8 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   const { units, split, graph } = solved;
 
   // Every tip a run must keep off: the upper ends of all parts (and of the residual ones that have tips), and the ports outside the plan.
-  const upperTips = [...live.flatMap(part => part.u === true ? [part.upper, part.lower] : [part.upper]), ...residual.flatMap(item => item.upper ? [item.upper] : []), ...frame.tips];
-  const lowerTips = [...frame.lowerTips, ...residual.flatMap(item => item.lower ? [item.lower] : [])];
+  const upperTips = [...live.flatMap(part => part.u === 'low' ? [part.upper, part.lower] : part.u === 'high' ? [] : [part.upper]), ...residual.flatMap(item => item.upper ? [item.upper] : []), ...frame.tips];
+  const lowerTips = [...frame.lowerTips, ...live.flatMap(part => part.u === 'high' ? [part.upper, part.lower] : []), ...residual.flatMap(item => item.lower ? [item.lower] : [])];
   const drops = live.filter(part => part.drop);
   const applies = (obstacle: PlanObstacle, unit: Unit): boolean =>
     obstacle.owner !== unit.part.link && obstacle.x1 > unit.lo + EPS && obstacle.x0 < unit.hi - EPS;
@@ -693,7 +711,10 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   const ownLb = (unit: Unit): number => {
     if (unit.half === 2) return -Infinity;
     const lbOfEnd = (end: PlanEnd): number => end.kind === 'mouth' ? end.y : end.y < low - EPS ? low + margin : end.y;
-    return unit.part.u === true ? Math.max(lbOfEnd(unit.part.upper), lbOfEnd(unit.part.lower)) : lbOfEnd(unit.part.upper);
+    // A high U's row stands above its tips, so nothing but the group-edge margin below `low` bounds it from above (the tips of the band above and the
+    // obstacles anchored to it are read in `lbOf`).
+    if (unit.part.u === 'high') return low + margin;
+    return unit.part.u === 'low' ? Math.max(lbOfEnd(unit.part.upper), lbOfEnd(unit.part.lower)) : lbOfEnd(unit.part.upper);
   };
   const lbOf = (unit: Unit): number => {
     let lb = ownLb(unit);
@@ -710,7 +731,7 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   };
   /** The terms of the need that do not read the order. */
   const fixedNeed = (unit: Unit): number => {
-    let need = unit.half === 1 ? -Infinity : unit.part.depth;
+    let need = unit.half === 1 ? -Infinity : unit.part.u === 'high' ? keep + unit.part.depth : unit.part.depth;
     for (const obstacle of frame.obstacles) if (obstacle.anchor === 'below' && applies(obstacle, unit)) need = Math.max(need, obstacle.bound);
     for (const drop of drops) {
       if (inside(drop.upper.x, unit) || inside(drop.lower.x, unit)) need = Math.max(need, drop.jogged && drop.stand === 'upper' ? keep + jogDepth(drop) : keep + drop.depth);
@@ -726,7 +747,7 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   const staticNeed = (unit: Unit): number => {
     let need = fixedNeed(unit);
     for (const other of units) {
-      if (other.part === unit.part || other.half === 1 || other.part.u === true || unit.part.u === true) continue;
+      if (other.part === unit.part || other.half === 1 || other.part.u !== undefined || unit.part.u !== undefined) continue;
       if (interleave(unit, other) && inside(other.xl, unit)) need = Math.max(need, keep + other.part.depth);
     }
     return need;
@@ -748,7 +769,7 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   const rank = (unit: Unit): number => unit.part.order * 4 + unit.half;
   const spread = (a: Unit, b: Unit): number => Math.max(a.lo, b.lo) - Math.min(a.hi, b.hi);
   /** The leg a unit's run turns into at `x`, one of its two ends: up to the band above, down to the band below, or a Z part's middle drop. */
-  const turnAt = (unit: Unit, x: number): 'up' | 'down' | 'middle' => unit.part.u === true ? 'up'
+  const turnAt = (unit: Unit, x: number): 'up' | 'down' | 'middle' => unit.part.u !== undefined ? (unit.part.u === 'low' ? 'up' : 'down')
     : unit.half === 1 ? (same(x, unit.xu) ? 'up' : 'middle') : unit.half === 2 ? (same(x, unit.xl) ? 'down' : 'middle') : same(x, unit.xl) ? 'down' : 'up';
   /**
    * O3: two parts share a row only where their spans, each grown by `keep`, are disjoint. Two runs that come from opposite sides and turn the
@@ -799,11 +820,11 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   for (const part of live) {
     const base = { id: part.id, link: part.link, order: part.order, upper: part.upper, lower: part.lower, depth: part.depth,
       ...(part.index !== undefined ? { index: part.index } : {}), ...(part.upperFirst !== undefined ? { upperFirst: part.upperFirst } : {}) };
-    if (part.u === true) {
-      const y = rows.get(part.id)!;
-      verticals.push({ part, kind: 'upper-leg', x: part.upper.x, y0: part.upper.y, y1: y }, { part, kind: 'upper-leg', x: part.lower.x, y0: part.lower.y, y1: y });
+    if (part.u !== undefined) {
+      const y = rows.get(part.id)!, kind = part.u === 'low' ? 'upper-leg' : 'lower-leg';
+      verticals.push({ part, kind, x: part.upper.x, y0: part.upper.y, y1: y }, { part, kind, x: part.lower.x, y0: part.lower.y, y1: y });
       horizontals.push({ unit: part.id, part, y, x0: part.upper.x, x1: part.lower.x });
-      planned.push({ ...base, shape: 'u', rows: [y] });
+      planned.push({ ...base, shape: 'u', rows: [y], boundary: part.u });
       continue;
     }
     if (part.drop) {
@@ -846,17 +867,47 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
     if (value > demand + EPS) { demand = value; if (value > frame.floor + EPS) setBy = by; }
   };
   const partOf = new Map(live.map(part => [part.id, part]));
+  const needs = new Map<string, number>();
   for (const unit of units) {
     let actual = fixedNeed(unit);
     for (const crossing of crossings) {
       if (crossing.run === unit.id && crossing.kind === 'lower-leg') actual = Math.max(actual, keep + partOf.get(crossing.vertical)!.depth);
     }
+    needs.set(unit.id, actual);
     raise(rows.get(unit.id)! - low + actual, unit.id);
   }
   for (const drop of drops) raise(drop.upper.y - low + (drop.jogged && drop.stand === 'upper' ? jogDepth(drop) : drop.depth + (drop.jogged ? keep : 0)), drop.id);
   for (const item of residual) if (item.upper && item.lower) raise(item.upper.y - low + 2 * keep + (bandTop - item.lower.y), item.id);
 
   const height = Math.max(frame.floor, demand);
+  // A high U part rises from the high boundary, so its row hangs just above its tips, as far down as its need, its neighbours and the fan chords allow, and not at the top
+  // of the gap where the packing seated it: the legs stay short, and the row stands where the band below will stand once the gap has grown. The row of a low U part
+  // stands next to its tips already. The units that follow in the packed order and share no row with it keep their distance below it; the units before it stand above it
+  // (`uEdges`). The crossings do not change: no run stands between the old row and the new one on the span of the part.
+  const bandRoom = low + Math.max(height, bandTop - low);
+  const moved = new Set<string>();
+  for (let index = order.length - 1; index >= 0; index--) {
+    const unit = order[index]!;
+    if (unit.part.u !== 'high') continue;
+    let limit = bandRoom - needs.get(unit.id)!;
+    for (const later of order.slice(index + 1)) {
+      if (graph.pairs.has(`${unit.id}\0${later.id}`) || !shareRow(unit, later)) limit = Math.min(limit, rows.get(later.id)! - unit.part.after);
+    }
+    let y = Math.max(rows.get(unit.id)!, limit);
+    // The new seat must clear the fan chords as it stands: a result that moved, or that is `limited` (no candidate clears and the seat is returned as asked), keeps the old seat,
+    // which the packing cleared or named in `slantLimited`.
+    if (frame.slants?.length) {
+      const seat = clearOfSlants(unit, y, frame.slants, keep);
+      if (seat.limited || Math.abs(seat.y - y) > EPS) y = rows.get(unit.id)!;
+    }
+    if (Math.abs(y - rows.get(unit.id)!) <= EPS) continue;
+    rows.set(unit.id, y);
+    moved.add(unit.id);
+  }
+  if (moved.size) {
+    for (const part of planned) if (moved.has(part.id)) part.rows = [rows.get(part.id)!];
+    for (const crossing of crossings) if (moved.has(crossing.run)) crossing.at = { x: crossing.at.x, y: rows.get(crossing.run)! };
+  }
   return { low, bandTop, parts: planned.sort((a, b) => a.order - b.order), residual, crowded, order: order.map(unit => unit.id), crossings, height,
     demand: Number.isFinite(demand) ? demand : 0, growth: Math.max(0, height - (bandTop - low)), setBy,
     edges: graph.edges.map(item => ({ ...item })), ...(slantLimited.length ? { slantLimited } : {}) };
@@ -905,7 +956,18 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
         const faces = (port: typeof from): boolean => port?.anchor !== undefined
           && (port.side === 'bottom' ? port.anchor.y <= gap.low + EPS && port.anchor.y >= above.y - EPS
             : port.side === 'top' && port.anchor.y >= bandTop - EPS && port.anchor.y <= bottom(bandOf(gap.below)) + EPS);
-        if (from?.side === to?.side && faces(from) && faces(to)) fail('u-turn');
+        if (from?.side === to?.side && faces(from) && faces(to)) {
+          // Only a link with a `u-turn` course of the tier gap is planned (ADR-0021: `u-turn` stays residual for a link with no course): stage 5 set both faces for it.
+          const tips = [from!, to!].map(port => {
+            const sign = port.side === 'bottom' ? 1 : -1;
+            return { x: port.anchor!.x, y: port.anchor!.y + sign * stemPlan(model, port, cache).depth, kind: 'tip' as const, source: `${port.ref.node}|${port.side}|${port.anchor!.x}` };
+          });
+          if (!tierGapUTurn(model, link.id) || Math.abs(tips[0]!.x - tips[1]!.x) < keep - EPS) fail('u-turn');
+          else {
+            const room = labelRoom(model, link);
+            inputs.push({ id, link: link.id, order, index, upperFirst: true, upper: tips[0]!, lower: tips[1]!, u: from!.side === 'bottom' ? 'low' : 'high', ...(room ? { labelRoom: room } : {}) });
+          }
+        }
         continue;
       }
       // A U part (ticket 15, phase 5): a gap course leaves a bottom port by this gap and comes back up the mouth of its column-gap lane, both on the gap's
@@ -922,7 +984,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
           if (Math.abs(tip.x - mouth.x) < keep - EPS) { fail('u-turn'); continue; }
           const [first, second] = a.kind === 'port' ? [tip, mouth] : [mouth, tip];
           const room = labelRoom(model, link);
-          inputs.push({ id, link: link.id, order, index, upperFirst: true, upper: first, lower: second, u: true, ...(room ? { labelRoom: room } : {}) });
+          inputs.push({ id, link: link.id, order, index, upperFirst: true, upper: first, lower: second, u: 'low', ...(room ? { labelRoom: room } : {}) });
           continue;
         }
       }
@@ -1150,8 +1212,10 @@ export function plannedSegments(part: PlannedPart, gap: { low: number; high: num
   const { x: xu } = part.upper, { x: xl } = part.lower;
   const points: Point[] = [at(xu, part.upper.kind === 'mouth' ? gap.low : part.upper.y)];
   if (part.shape === 'u') {
-    // Both ends stand on the low boundary of the gap (the edge the part hangs from); the row lies below them. The link visits `upper` first.
-    points.push(at(xu, part.rows[0]!), at(xl, part.rows[0]!), at(xl, part.lower.kind === 'mouth' ? gap.low : part.lower.y));
+    // Both ends stand on one boundary of the gap (`low`: the part hangs from it, the row lies below the ends; `high`: it rises from it, the row lies above them). The link visits `upper` first.
+    const edge = part.boundary === 'high' ? gap.high : gap.low;
+    points[0] = at(xu, part.upper.kind === 'mouth' ? edge : part.upper.y);
+    points.push(at(xu, part.rows[0]!), at(xl, part.rows[0]!), at(xl, part.lower.kind === 'mouth' ? edge : part.lower.y));
     const chainU = points.filter((point, index) => index === 0 || !same(point.x, points[index - 1]!.x) || !same(point.y, points[index - 1]!.y));
     return chainU.slice(1).map((to, index) => ({ from: { ...chainU[index]! }, to: { ...to }, owner: { kind: 'link' as const, id: part.link } }));
   }
