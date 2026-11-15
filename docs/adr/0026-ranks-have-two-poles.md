@@ -9,9 +9,16 @@ No member stands between an anchor and the tier that the anchor links to.
 
 A group can have anchors on both sides. The members with a routed link to the tier above (the
 upward anchors) take the first rank. The members that link only to the tier below (the downward
-anchors) take the last rank. Every other member stands between them, on the rank nearer its
-pole; a tie goes to the upper pole. A leaf of a member that links both upward and downward
+anchors) take the last rank, `L`. Every other member counts its rank from the nearer pole. With
+`du` its routed distance from the nearest upward anchor and `dd` its distance from the nearest
+downward anchor, `du < dd` gives rank `du` (below the upper pole) and `dd < du` gives rank
+`L - dd` (above the lower pole). On a tie it takes the upper of the two results, `min(du, L - dd)`:
+a tie goes to the upper pole. No rank lies outside `0..L`, so a chain longer than the distance
+between the poles stands on one rank, joined by peer links. A member that is not an anchor may
+stand on a pole's rank, beside the anchors. A leaf of a member that links both upward and downward
 stands beside that member, on its rank.
+
+Reading of the tie clause: given by the coordinator on 2026-11-15, for the owner to check.
 
 ADR-0019 took the breadth-first depth from the upward anchors alone. A leaf of a downward
 anchor then got a rank below it. Every link from that anchor to the tier below crossed the

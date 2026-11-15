@@ -128,7 +128,11 @@ A rank inside a child span becomes cell `child#r` (`frame: child`), not `G#r`. T
 cell at that rank, unless the child is a leaf child.
 
 Rank is the breadth-first depth from the anchors over the routed links inside the group. Two
-members of equal depth are joined by a peer link. The node class decides nothing. A **leaf child**
+members of equal depth are joined by a peer link. The node class decides nothing. A group with
+anchors on both sides has two poles (ADR-0026): the upward anchors take rank 0, the members that
+link only to the tier below take the last rank, and every other member counts from the nearer pole
+(a tie takes the upper of the two results), so no member stands between an anchor and the tier it links to
+(`docs/design/ranked-groups.md`, section 1). A **leaf child**
 feeds no deeper member and holds no anchor. It keeps its depth ranks and pushes no parent member.
 The parent members of its ranks stand in the parent's own cells `G#r`, so one sub-tier holds both
 `G#r` and `child#r`. A child that feeds a deeper member, a child that holds an anchor and a

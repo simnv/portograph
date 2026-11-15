@@ -66,6 +66,77 @@ function depthsOf(members: string[], links: Link[], anchors: string[]): Map<stri
   return new Map(members.filter(id => level.has(fixed.get(id)!)).map(id => [id, level.get(fixed.get(id)!)!]));
 }
 
+/**
+ * The members that hang from one member by a chain of single links (ADR-0026, leaf): repeatedly
+ * strip a member that has one routed neighbour left and is no pole. The map gives each stripped
+ * member the member it hung from when it went; follow it to reach the root the chain hangs from.
+ * The roots do not depend on the order of the strip: a tree of leaves has one root.
+ */
+function leafParents(members: string[], links: Link[], poles: Set<string>): Map<string, string> {
+  const neighbours = new Map<string, Set<string>>(members.map(id => [id, new Set<string>()]));
+  for (const link of links) { neighbours.get(link.a)!.add(link.b); neighbours.get(link.b)!.add(link.a); }
+  const parent = new Map<string, string>();
+  const queue = members.filter(id => !poles.has(id) && neighbours.get(id)!.size === 1);
+  for (let next = 0; next < queue.length; next += 1) {
+    const id = queue[next]!;
+    if (parent.has(id) || neighbours.get(id)!.size !== 1) continue;
+    const [up] = [...neighbours.get(id)!];
+    parent.set(id, up!);
+    neighbours.get(id)!.clear();
+    neighbours.get(up!)!.delete(id);
+    if (!poles.has(up!) && neighbours.get(up!)!.size === 1) queue.push(up!);
+  }
+  return parent;
+}
+
+/**
+ * Two-pole ranks (ADR-0026, ranked-groups section 1, step 1). The upward anchors take rank 0 and the
+ * downward anchors (those that link only to the tier below) take the last rank `L`, the routed
+ * distance between the two poles. Any other member counts from its nearer pole: with `du` its depth
+ * from the upward anchors and `dd` from the downward anchors, `du < dd` gives rank `du` (below the
+ * upper pole), `dd < du` gives rank `L - dd` (above the lower pole), and a tie takes the upper of
+ * the two results, `min(du, L - dd)`. No rank lies outside `0..L`, so a chain longer than the
+ * distance between the poles stands on one rank, joined by peer links; a member that is no anchor
+ * may stand on a pole's rank, beside the anchors. A leaf chain of a member that links both ways
+ * takes that member's rank. With no downward anchor (every member that links down also links up)
+ * there is no lower pole: the depth stands, except for those leaf chains. Returns nothing when one
+ * peer component holds both poles; the caller keeps the depth ranks then. Members no pole reaches
+ * get no rank (step 6).
+ * (The coordinator gave this reading of the tie clause on 2026-11-15, for the owner to check.)
+ */
+function twoPoleRanks(members: string[], links: Link[], upward: string[], downward: string[], bothWays: Set<string>): Map<string, number> | undefined {
+  const up = depthsOf(members, links, upward);
+  const down = downward.length ? depthsOf(members, links, downward) : new Map<string, number>();
+  if (downward.some(id => up.get(id) === 0)) return undefined;
+  const reached = (id: string): boolean => up.has(id) || down.has(id);
+  // `last`: the routed distance between the poles; poles no link joins stand as far apart as the longest chain from either, and at least two ranks.
+  let last: number | undefined;
+  if (downward.length) {
+    const joined = downward.map(id => up.get(id)).filter((depth): depth is number => depth !== undefined);
+    last = joined.length ? Math.min(...joined) : Math.max(2, ...members.filter(id => !down.has(id)).map(id => up.get(id) ?? 0), ...members.filter(id => !up.has(id)).map(id => down.get(id) ?? 0));
+  }
+  const fixed = components(members, links);
+  const size = new Map<string, number>();
+  for (const root of fixed.values()) size.set(root, (size.get(root) ?? 0) + 1);
+  const parent = leafParents(members, links, new Set([...upward, ...downward]));
+  const rootOf = (id: string): string => { let at = id; while (parent.has(at)) at = parent.get(at)!; return at; };
+  const ranks = new Map<string, number>();
+  for (const id of members) {
+    if (!reached(id)) continue;
+    const depthUp = up.get(id), depthDown = down.get(id);
+    if (parent.has(id) && size.get(fixed.get(id)!) === 1 && bothWays.has(rootOf(id))) ranks.set(id, 0);
+    else if (depthUp === 0) ranks.set(id, 0);
+    else if (depthDown === 0) ranks.set(id, last!);
+    else if (last === undefined) ranks.set(id, depthUp!);
+    else {
+      const fromUp = depthUp ?? Infinity, fromDown = depthDown ?? Infinity;
+      const raw = fromUp < fromDown ? fromUp : fromDown < fromUp ? last - fromDown : Math.min(fromUp, last - fromDown);
+      ranks.set(id, Math.min(Math.max(raw, 0), last));
+    }
+  }
+  return ranks;
+}
+
 /** Union-find over peer links: the members of one component always share a rank. */
 function components(members: string[], links: Link[]): Map<string, string> {
   const parent = new Map(members.map(id => [id, id]));
@@ -200,8 +271,8 @@ export function deriveRanks(input: RankInput): RankResult {
   const inGroup = new Set(members);
   const links = groupLinks(input, inGroup);
   const above = members.filter(id => input.linksAbove.has(id)), below = members.filter(id => input.linksBelow.has(id));
-  // Step 1: an anchor above wins; else the members that link below anchor the last rank and the
-  // layering runs upward; else the group has one rank (returned above).
+  // Step 1: an anchor above wins (with an anchor below too, the group has two poles, ADR-0026); else the members that
+  // link below anchor the last rank and the layering runs upward; else the group has one rank (returned above).
   const anchoredFrom = above.length ? 'above' : below.length ? 'below' : 'none';
   // Spec section 1, step 1: a group with no anchor has one rank. Its internal links are peer links.
   if (anchoredFrom === 'none') {
@@ -209,7 +280,10 @@ export function deriveRanks(input: RankInput): RankResult {
     for (const child of input.children) if (spanOf(new Map(members.map(id => [id, 0])), child)) spans.set(child.group, [0, 0]);
     return { ranks: new Map(members.map(id => [id, 0])), rankCount: 1, anchoredFrom, spans };
   }
-  const depth = depthsOf(members, links, anchoredFrom === 'above' ? above : below);
+  // ADR-0026: a group with anchors on both sides has two poles. The depth is then the rank itself, counted from the top.
+  const lower = below.filter(id => !input.linksAbove.has(id));
+  const poles = anchoredFrom === 'above' && below.length ? twoPoleRanks(members, links, above, lower, new Set(below.filter(id => input.linksAbove.has(id)))) : undefined;
+  const depth = poles ?? depthsOf(members, links, anchoredFrom === 'above' ? above : below);
   // Step 2: equal depth is a peer link; the components are read once the peer links are known.
   for (const link of links) if (depth.get(link.a) === depth.get(link.b)) link.peer = true;
   const comp = components(members, links);
