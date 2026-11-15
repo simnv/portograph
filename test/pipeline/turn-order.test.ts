@@ -252,7 +252,9 @@ describe('far-end order on a face that holds a straight link', () => {
     const held = { ...base, frozenChords: [link.id] } as LayoutModel;
     const offer = measureTurnOrder(held);
     expect(offer.faces).not.toContainEqual({ node: 'fl-1', side: 'bottom' });
-    expect(offer.faces).toEqual(measureTurnOrder(base).faces.filter(face => !(face.node === 'fl-1' && face.side === 'bottom')));
+    // Both ends of a held chord stand on faces that keep far-end order.
+    const ends = [link.attachments!.from, link.attachments!.to].map(ref => `${ref.node}|${base.nodes[ref.node]!.ports.find(port => port.ref.name === ref.name && port.ref.ordinal === ref.ordinal)!.side}`);
+    expect(offer.except).toEqual(ends.sort());
     expect(offer.except).toContain('fl-1|bottom');
   });
 });
