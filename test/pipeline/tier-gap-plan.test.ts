@@ -28,8 +28,8 @@ const growth = (model: LayoutModel): number[] => model.diagnostics.filter(item =
 const failing = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates)
   .flatMap(([id, gate]) => gate.violations.map(item => `${id}:${item.code}`));
 
-async function whole(name: string): Promise<{ placed: LayoutModel; routed: LayoutModel }> {
-  return { placed: await place(name), routed: await layout(parse(read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] }) };
+async function whole(name: string, orthogonal = false): Promise<{ placed: LayoutModel; routed: LayoutModel }> {
+  return { placed: await place(name, orthogonal), routed: await layout(parse(orthogonal ? orthogonalLinks(read(name)) : read(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: [] }) };
 }
 
 describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ranked-groups ticket 50)', () => {
@@ -51,7 +51,11 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
 
   it('grows the ticket 36 shape 45 px, the spec\'s H = 105 against the 60 px band gap, and routes it whole', async () => {
     const { placed: model, routed } = await whole('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row');
-    expect(growth(model)).toEqual([45]);
+    // Under the alignment cap (ADR-0027) the bodies of the sheet are narrower: r1 to s1 now keeps a jog of two bends (10 turns before, 12 now, the
+    // same 5 crossings, no gate) and the growth is set by link-7's second piece (`link-7#0b`; `link-4#0` before). The plan's H is 116.5 (the 60 px
+    // gap and 56.5) where it was 105. The old 45 proved that the gap grows by what the plan asks and the router is asked for nothing; the next three
+    // lines still prove it, and 56.5 is the plan's own value (`TIER_GAP_GROWN` says so).
+    expect(growth(model)).toEqual([56.5]);
     expect(planRoute(model).batches).toEqual([]);
     expect(routed.removedLinks ?? []).toEqual([]);
     expect(failing(routed)).toEqual([]);
@@ -64,13 +68,17 @@ describe('7f grows the gaps by the plan and stage 8 reserves what it planned (ra
     // once, after the last move in x; since ticket 65 the settle after the rounds puts src at the spec's x again, so the upper gap grows that
     // row's 9.25 as the spec says (ticket 57 grew nothing there). Ticket DR-04: in the copy the canonical
     // link order gives each node its links in the original's written order.
-    const { placed: model, routed } = await whole(V540);
+    // Under the alignment cap (ADR-0027) isp0 no longer stands over sw2: the link between them is a diagonal chord and plans no row, so the plain
+    // run grows only the lower gap (22.5). The spec's shape is the one where every link of the copy is `orthogonal` (`orthogonalLinks`, as the
+    // tests of the other tier-gap shapes read it): the premise is rebuilt there, and the numbers are the spec's again.
+    const { placed: model, routed } = await whole(V540, true);
     expect(growth(model)).toEqual([9.25, 22.5]);
     expect(tierGapPlans(model).flatMap(({ plan }) => plan.residual.map(item => `${item.link}:${item.reason}`))).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_PART_RESIDUAL').map(item => item.message)).toEqual([]);
     expect(routed.removedLinks ?? []).toEqual([]);
-    // Placement's own finding, also on main: the port order of `isp0`. The two G6 findings of the residual row are gone with it.
-    expect(failing(routed)).toEqual(['G5:port-order', 'G5:port-order']);
+    // Placement's own finding on main was the port order of `isp0` (two G5 findings, the G6 findings of the residual row gone before). Under the cap
+    // the sheet has no gate finding at all (render checked): a gate that failed on main now passes.
+    expect(failing(routed)).toEqual([]);
   }, 120000);
 
   // The same shape with the course round on (the published path): the round may take a course here, and the result must not be worse than the shape without it.

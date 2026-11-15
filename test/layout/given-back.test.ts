@@ -4,6 +4,7 @@ import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { givenBackFault, strandedGrowth } from '../../src/layout/given-back.js';
+import { laneRunKind } from '../../src/layout/lane-kind.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from './joint-off.js';
@@ -14,7 +15,8 @@ import { withoutJointOrder } from './joint-off.js';
  * from its input with it. A node at one end of a transit link gives back only with the other end, so its corridor can follow it in 7f.
  */
 const source = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
-const run = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const runText = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (name: string): Promise<LayoutModel> => runText(source(name));
 const bends = (model: LayoutModel): number => { const counts = score(model).snapshot.counts; return (counts.routed?.turns ?? 0) + (counts.overlay?.turns ?? 0); };
 const failing = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed && gate.severity === 'error').map(([id]) => id).sort();
 const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string => {
@@ -83,7 +85,14 @@ describe('the user\'s tier-gap sheet', () => {
 // The three regression classes of the per-step prototype (verdict sideface-fable, section 2): each sheet as main or better.
 describe('the three regression classes of a per-step decline', () => {
   it('transit corridor: a-face gives nothing back, as the parent src1 would chase a corridor that follows a narrow snk1 (bends 8, crossings 7)', async () => {
-    const model = await run('a-face-aligns-one-port-and-leaves-a-chord-port-in-place-middle-tier-first'); // DR-04: the copy with `access` first
+    // DR-04: the copy with `access` first. Under the alignment cap (ADR-0027) a 56 px `snk1` cannot hold its three feeds, and its link from src1 takes a
+    // perimeter lane (7 bends, snk1 given back alone), so the transit corridor of the premise is gone. A longer label makes `snk1` need 258 px: the
+    // corridor stands again and the sheet is as the test pinned it (8 bends, 7 crossings, nothing given back).
+    const plain = source('a-face-aligns-one-port-and-leaves-a-chord-port-in-place-middle-tier-first');
+    const text = plain.replace('snk1: { group: edge-far, class: server, ports: [] }', 'snk1: { group: edge-far, class: server, label: "snk1 server of the far edge group", ports: [] }');
+    expect(text).not.toBe(plain);
+    const model = await runText(text);
+    expect(model.lanes.filter(lane => lane.owner.kind === 'link' && laneRunKind(lane) === 'transit')).toHaveLength(2); // both links keep a transit lane, none a perimeter one
     expect(model.givenBack).toBeUndefined();
     expect(bends(model)).toBe(8);
     expect(score(model).snapshot.metrics.crossings.count).toBe(7);
@@ -104,8 +113,13 @@ describe('the three regression classes of a per-step decline', () => {
   }, 120000);
 
   it('pass order: widened-child-packs-tier and a-hub-tiers-fan keep the growth a later pass completes (bends 2 and 6)', async () => {
-    for (const [name, count] of [['widened-child-packs-tier', 2], ['a-hub-tiers-fan-draws-straight-and-crosses-itself', 6]] as const) {
-      const model = await run(name);
+    // Under the alignment cap (ADR-0027) `w1` of `widened-child-packs-tier` stays 52 px wide: its two parents stand more than five times its need
+    // apart, so no growth happens and the sheet has 3 bends (a side entry). The premise, a child that the passes widen, is rebuilt with a
+    // label that makes the body need more: `w1` then stands 272 px wide over both parents, with the 2 bends the test pinned.
+    const widenedChild = source('widened-child-packs-tier').replace('label: "w1"', 'label: "w1 route reflector wide"');
+    expect(widenedChild).not.toBe(source('widened-child-packs-tier'));
+    for (const [name, count, text] of [['widened-child-packs-tier', 2, widenedChild], ['a-hub-tiers-fan-draws-straight-and-crosses-itself', 6, source('a-hub-tiers-fan-draws-straight-and-crosses-itself')]] as const) {
+      const model = await runText(text);
       expect(model.givenBack, name).toBeUndefined();
       expect(bends(model), name).toBe(count);
     }
