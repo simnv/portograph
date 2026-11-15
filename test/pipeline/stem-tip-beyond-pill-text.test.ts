@@ -12,6 +12,7 @@ it('a stem tip stands beyond the pill text of its side, and the text meets no ru
   const yaml = readFileSync(new URL('../../goldens/synthetic/a-stem-tip-stands-beyond-its-pill-text.yaml', import.meta.url), 'utf8');
   const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(gateFailures(score(model).snapshot)).toEqual([]);
+  expect(model.diagnostics.filter(item => item.code === 'STRAIGHT_LINK_HELD')).toEqual([]);
   const reach = measurePortPill('trunk0').text.width / 2;
   expect(reach, 'the premise: the text reaches within 1 px of the 15 px stem').toBeGreaterThan(14);
   const link = model.links.find(item => item.attachments?.to.node === 'host-1')!;

@@ -1,0 +1,13 @@
+# Expected: the icon node and the plain node keep their unequal port heights.
+# The pipeline holds one slanted routed chord and reserves its label plus both
+# shortening margins between the pills, with no detour stems or their pill allowance.
+# The full label lies on that chord, all gates pass, and no link is removed.
+portograph: 2
+profile: network
+groups:
+  peers: {tier: 0, shape: row}
+nodes:
+  left: {group: peers, class: router, description: core, ports: [{name: p, side: right}]}
+  right: {group: peers, ports: [{name: q, side: left}]}
+links:
+  - [left.p, right.q, {label: 1G}]
