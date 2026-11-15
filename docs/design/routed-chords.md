@@ -644,3 +644,8 @@ are equal, the sub-tiers are equal, and the lateral sides are opposite. Items 1 
   pair inside one frame. The frame rule (`expectedFramePath`) reads the chord and freezes it at the start of 7f with the other chords.
 - **Not built here.** Nothing yet seats the two ends at the facing ends of their rows, or plans a U for a second pair (slices C): a link whose body stands on
   the line keeps the orthogonal route and names `ROUTED_CHORD_REFUSED` (`body`).
+- **The level relation is held after the freeze (slice B review 1).** `freezeChords` records the held level chords that stand level (`frozenLevelChords`, a subset of
+  `frozenChords`; R1). `blockedChords`, the one predicate behind `chordsHold`, names a recorded level chord that is not level any more, so a guarded move that would tilt
+  it is refused like a move that puts a body on it. The one forced writer that shifts a single frame's row, the top padding growth of `reserveAcrossRunRoom` (a label
+  needs the room, so it is not refused), shifts the rows of the groups in a level relation with it by the same amount (`levelChordPartners`). The publication check
+  reads the record against the geometry: a recorded chord that is not held or not level refuses the model (R5).

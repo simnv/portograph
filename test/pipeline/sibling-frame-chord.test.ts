@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
+import { restoreLayoutModel } from '../../src/internal.js';
 import type { LayoutLink, LayoutModel } from '../../src/index.js';
-import { chordKind, chordVerdict, levelCrossChord } from '../../src/layout/frame-paths.js';
+import { blockedChords, chordKind, chordsHold, chordVerdict, levelChordPartners, levelCrossChord } from '../../src/layout/frame-paths.js';
 import { findPort, straightLengthLimit } from '../../src/layout/row-paths.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -105,5 +106,36 @@ describe('a sibling-frame link is a level cross-frame chord', () => {
     const one = await lay(text), two = await lay(reversed(text, 'links'));
     expect(pair(two).technique).toBe('straight');
     expect(xy(pair(two))).toEqual(xy(pair(one)));
+  }, 60000);
+
+  it('stays level when 7f grows the top padding of one frame: the other frame moves with it (slice B review 1)', async () => {
+    const model = await lay(readFileSync(new URL('../../goldens/synthetic/a-top-padding-growth-keeps-a-level-sibling-chord-level.yaml', import.meta.url), 'utf8'));
+    const link = model.links.find(item => item.attachments !== undefined && [item.attachments.from.node, item.attachments.to.node].sort().join() === 'n5,s')!;
+    // The growth this test is about happened: `row` took top padding for the label of n2--n4.
+    expect(model.labelPadding?.['row']?.top?.room).toBeGreaterThan(0);
+    expect(model.frozenChords).toContain(link.id);
+    const segments = link.path!.segments;
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.to.y).toBe(segments[0]!.from.y);
+    expect(gates(model)).toEqual([]);
+  }, 60000);
+
+  it('holds the level relation after the freeze: a move that tilts the chord is refused, a move of both rows is not, and a forged record is refused at restore', async () => {
+    const model = await lay(readFileSync(new URL('../../goldens/synthetic/a-top-padding-growth-keeps-a-level-sibling-chord-level.yaml', import.meta.url), 'utf8'));
+    const link = model.links.find(item => item.attachments !== undefined && [item.attachments.from.node, item.attachments.to.node].sort().join() === 'n5,s')!;
+    expect(model.frozenLevelChords).toEqual([link.id]);
+    expect(blockedChords(model)).toEqual([]);
+    expect(levelChordPartners(model, model.groups['row']!)).toEqual(['aside']);
+    expect(levelChordPartners(model, model.groups['top']!)).toEqual([]);
+    const row = model.groups['row']!, aside = model.groups['aside']!;
+    const down = (group: typeof row) => ({ group, bounds: { ...group.bounds!, y: group.bounds!.y + 8 } });
+    expect(chordsHold(model, [down(aside)], false)).toBe(false);
+    expect(chordsHold(model, [down(row)], false)).toBe(false);
+    expect(chordsHold(model, [down(row), down(aside)], false)).toBe(true);
+    // A record that names a link that holds no level chord is refused (R5): the geometry is read, never the record.
+    const forged = JSON.parse(JSON.stringify(model)) as typeof model;
+    forged.frozenLevelChords = [model.links.find(item => item.id !== link.id)!.id];
+    expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/frozenLevelChords/);
+    expect(restoreLayoutModel(JSON.stringify(model)).frozenLevelChords).toEqual([link.id]);
   }, 60000);
 });

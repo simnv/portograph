@@ -29,7 +29,7 @@ import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, besideRunLabelBox, describedLink, labelBorders, linkLabelSize, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, tierGapSplit } from './link-labels.js';
 import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from './overlay-paths.js';
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
-import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
+import { chordKind, crossingRect, isRoutedChord, levelChordPartners } from './frame-paths.js';
 import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 import { directFamiliesFault } from './direct-families.js';
 import { fanAdmissionsFault } from './fan-admission.js';
@@ -1506,9 +1506,12 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
     const tier = group.tier!;
     if (room.side === 'top' || room.side === 'bottom') {
       // The tiers below move down; for the top edge the group's own content moves too, its box top stays, and a sibling of its tier stays (R2).
-      const moved = Object.values(model.groups).filter(item => (item.tier !== undefined && item.tier > tier) || (room.side === 'top' && item === group));
+      // A group in a level relation with it (a held level cross-frame chord, `frozenLevelChords`) moves its content down too, so the chord stays level.
+      const partners = room.side === 'top' ? levelChordPartners(model, group).map(id => model.groups[id]!) : [];
+      const moved = Object.values(model.groups).filter(item => (item.tier !== undefined && item.tier > tier) || (room.side === 'top' && item === group) || partners.includes(item));
       for (const item of moved) moveGroup(model, item, 0, deficit);
       settle(moved.flatMap(item => item.nodes));
+      for (const item of partners) fitRegionGroup(model, item);
     } else {
       const split = room.side === 'left' ? bodies.x : right(bodies);
       settle(insertRoomAt(model, split, deficit, tier));

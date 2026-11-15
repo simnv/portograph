@@ -657,6 +657,8 @@ export function freezeChords(model: LayoutModel, refusals: ReadonlyMap<string, F
   // The freeze is a decision even when nothing is held: a link that was not straight here stays orthogonal. An absent field would let the replays of 7f
   // take a chord the freeze refused, on boxes that the grid then widens (a row path that the region rule derives differently once the geometry settles).
   model.frozenChords = held;
+  // The level relation of a sibling-frame chord is a decision too (slice B review 1): the chord is one segment at any angle, so only this record says it was level.
+  model.frozenLevelChords = held.filter(id => standsLevel(model, model.links.find(link => link.id === id)!));
   if (model.fanFamilies !== undefined) model.fanAdmissions = fanAdmissionsOf(model, held, reasons);
 }
 
@@ -675,17 +677,53 @@ function fanAdmissionsOf(model: LayoutModel, held: readonly string[], reasons: R
   return admissions;
 }
 
+/** Whether a level cross-frame chord stands level now: its two faces at one y. The one reading of the level relation (the freeze records it, the guard reads it). */
+function standsLevel(model: LayoutModel, link: LayoutLink): boolean {
+  if (!levelCrossChord(model, link)) return false;
+  const chord = straightChord(model, link, undefined, true);
+  return chord !== undefined && Math.abs(chord.to.y - chord.from.y) <= PLACEMENT_EPS;
+}
+
 /**
- * The frozen chords a body or a foreign pill stands on, and a cross-frame chord a foreign frame stands on. Empty when none is held.
+ * The groups, beyond `group`, whose content stands in a level relation with it (`frozenLevelChords`), all the way along: the other ends of the level chords
+ * of the group's nodes, and theirs in turn. A mover that shifts the content of one of them in y shifts all of them by the same amount, or the chord tilts.
+ * Empty before the freeze and when no level chord is recorded.
+ */
+export function levelChordPartners(model: LayoutModel, group: { id: string; nodes: readonly string[] }): string[] {
+  const level = new Set(model.frozenLevelChords ?? []);
+  if (!level.size) return [];
+  const groupOf = (node: string): string => model.document.nodes[node]!.group;
+  const found = new Set<string>([group.id]);
+  for (const reached = [group.id]; reached.length;) {
+    const id = reached.pop()!;
+    const nodes = new Set(model.groups[id]!.nodes);
+    for (const link of model.links) {
+      if (!level.has(link.id) || link.attachments === undefined) continue;
+      const { from, to } = link.attachments;
+      const [one, two] = nodes.has(from.node) ? [from.node, to.node] : [to.node, from.node];
+      if (!nodes.has(one) || nodes.has(two)) continue;
+      const other = groupOf(two);
+      if (!found.has(other)) { found.add(other); reached.push(other); }
+    }
+  }
+  found.delete(group.id);
+  return [...found].sort();
+}
+
+/**
+ * The frozen chords a body or a foreign pill stands on, a cross-frame chord a foreign frame stands on, and a level chord that is not level any more
+ * (slice B review 1: a stored level relation is held like the wall of a body). Empty when none is held.
  */
 export function blockedChords(model: LayoutModel): string[] {
   if (!model.frozenChords?.length) return [];
   const blockers = sharedBlockers(model);
+  const level = new Set(model.frozenLevelChords ?? []);
   return model.frozenChords.filter(id => {
     const link = model.links.find(item => item.id === id);
     if (link === undefined) return false;
     const chord = straightChord(model, link, blockers);
     if (chord === undefined) return true;
+    if (level.has(id) && Math.abs(chord.to.y - chord.from.y) > PLACEMENT_EPS) return true;
     // Only a foreign frame is a wall after the freeze. The facing edge is a decision rule: a 7f move in x (a title widening pushes a
     // column) turns the chord shallower, and refusing that move leaves the title unfit (measured: `a-member-title-widens-a-beside-row`
     // gains G6 when the edge is held, none when it is not). The chord then keeps its two faces and may leave its frame by a side edge. Solid blocks instead hold entry in `blockReservationsFault`.
