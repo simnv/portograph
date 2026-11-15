@@ -229,7 +229,8 @@ export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string
  * How many columns a grid of `order` takes.
  *
  * The count is the one whose packed box comes closest to the aspect aim (16:9, or `layout.aspect`; ADR-0025), ties to the fewer columns, **of the
- * counts a column-as-corridor allows** (`gridColumnFloor`). Nothing else is fixed: the answer
+ * counts a column-as-corridor allows** (`gridColumnFloor`), and of those only a count that is the first to reach its row count: a count that packs the grid into
+ * the rows a smaller count already packs it into only widens the box and leaves a ragged row, so it is no candidate (ADR-0025, review F1). Nothing else is fixed: the answer
  * follows the measured node sizes and the two gaps, so a group of wide nodes takes fewer columns
  * than a group of narrow ones of the same count.
  *
@@ -262,11 +263,15 @@ export function gridColumns(model: LayoutModel, group: LayoutGroup, order: reado
   const gap = gridNodeGap(model, group), rowGap = gridRowGap(model);
   const floor = gridColumnFloor(order, ranks), pairs = likeSidePairs(model, group), aim = aspectAim(model.document);
   let best = floor, bestScore = Infinity;
+  const packed = new Set<number>();
   for (let columns = floor; columns <= order.length; columns++) {
     const rows = gridRows(order, ranks, columns);
     if (pairs.length && !partsPairs(seatFlankPeers(model, group, gridRows(order, ranks, columns), columns), pairs)) continue;
     const metrics = gridMetrics(model, rows, () => gap, rowGap);
     if (metrics.width <= 0 || metrics.height <= 0) continue;
+    // A count that packs into the rows a smaller count already packs into only widens the box (ADR-0025, review F1): never a candidate.
+    if (packed.has(rows.length)) continue;
+    packed.add(rows.length);
     const score = aspectGap(metrics.width, metrics.height, aim);
     if (score < bestScore - ASPECT_EPS) { bestScore = score; best = columns; }
   }
@@ -568,11 +573,15 @@ function packChains(model: LayoutModel, group: LayoutGroup, order: readonly stri
   }
   const aim = aspectAim(model.document);
   let best: GridCells | undefined, bestScore = Infinity;
+  const packed = new Set<number>();
   for (let columns = 1; columns <= count; columns++) {
     const cells = seatUnits(units, columns, ends);
     if (!cells) continue;
     const metrics = gridMetrics(model, cells, () => gap, gridRowGaps(model, group, cells));
     if (metrics.width <= 0 || metrics.height <= 0) continue;
+    // The rule of `gridColumns`: a count that keeps the row count of a smaller one is no candidate.
+    if (packed.has(cells.length)) continue;
+    packed.add(cells.length);
     const score = aspectGap(metrics.width, metrics.height, aim);
     if (score < bestScore - ASPECT_EPS) { bestScore = score; best = cells; }
   }

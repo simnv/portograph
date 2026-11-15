@@ -1,6 +1,6 @@
 # Expected (ADR-0025, dense-16x9 ticket 03): the grid takes the column count whose stage-4 box is nearest the aspect aim, 16:9 or `layout.aspect`.
-# The four nodes of `place` stand wider than tall. Under the default aim the box nearest 16:9 is three columns over one; with
-# `layout: { aspect: "1:1" }` it is two columns over two (the count of ADR-0024). Both counts hold every drop straight.
+# Nine nodes in `place`. Under the default aim the nearest box is five columns over two rows (the aim removes a row); with
+# `layout: { aspect: "1:1" }` it is three columns over three rows (the count of ADR-0024). Both hold every drop straight, G1-G9 pass.
 portograph: 2
 profile: network
 groups:
@@ -9,8 +9,13 @@ groups:
 nodes:
   head: { group: upper, ports: [{ name: p, side: bottom }] }
   a: { group: place, ports: [{ name: p, side: top }] }
-  b: { group: place }
-  c: { group: place }
-  d: { group: place }
+  b0: { group: place }
+  b1: { group: place }
+  b2: { group: place }
+  b3: { group: place }
+  b4: { group: place }
+  b5: { group: place }
+  b6: { group: place }
+  b7: { group: place }
 links:
   - [head.p, a.p]

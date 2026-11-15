@@ -738,13 +738,15 @@ for (const [name, room] of [['a-row-mesh-with-another-label-draws-plain-links', 
 // given (`runOf`): a vertical run 4 px beside the bodies of a grid, as a detour round the column would stand. The left edge inserts
 // the room at the bodies' face (the bodies move right, the box's left edge stays); the right edge grows the box to the right.
 it('a label beside a run in a side padding grows that edge by exactly the deficit (ticket 21)', async () => {
+  // The rule needs a 3 x 3 grid with a body column at each edge for the run to stand beside. At the default 16:9 aim the nine nodes take 5 + 4, so
+  // the sheet states the square aim of ADR-0024: the test checks the side padding, not the aim.
   const model = await run(withAspect(`portograph: 2
 groups:
   stack: { tier: 0, label: Stack, shape: grid }
 nodes:
 ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => `  n${i}: { group: stack, class: router, label: N${i} }`).join('\n')}
 links:
-  - { from: n1, to: n7, class: sync, label: standby }`, '1:1')); // the square aim of ADR-0024; the test checks the side padding, not the aim
+  - { from: n1, to: n7, class: sync, label: standby }`, '1:1'));
   const group = model.groups.stack!, owner = { kind: 'link' as const, id: 'link-1' };
   const bodies = union(group.nodes.map(id => model.nodes[id]!.bounds!));
   const text = measureText('standby', { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).height;

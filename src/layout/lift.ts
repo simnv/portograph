@@ -330,7 +330,11 @@ export function measureLifts(model: LayoutModel, decided: ReadonlySet<string> = 
       const variant = pushed !== undefined && plain.width > bare.width + 1 ? pushed : undefined;
       const est = variant !== undefined ? estimateShape(model, members, k, variant.index) : plain;
       if (est.area < after - SIGN_EPS && est.area <= before * (1 - LIFT_MIN_GAIN)) { after = est.area; best = k; push = variant?.value; continue; }
-      const shaped = est.width < shape.width * (1 - LIFT_SHAPE_STEP) || aspectGap(est.width, est.height, aim) < aspectGap(shape.width, shape.height, aim) - LIFT_SHAPE_STEP;
+      // Nearer the aim only counts when the estimate holds the area within the judge's tolerance: a trial is one more command run, and the judge
+      // keeps a lift only when its published area is less (`judgeLift`), so a rise that only moves the shape toward the aim at a larger area is not tried
+      // (ADR-0025, review F3). The narrower test is the older one and is unchanged.
+      const nearer = aspectGap(est.width, est.height, aim) < aspectGap(shape.width, shape.height, aim) - LIFT_SHAPE_STEP && est.area <= before * (1 + LIFT_AREA_TOLERANCE);
+      const shaped = est.width < shape.width * (1 - LIFT_SHAPE_STEP) || nearer;
       if (shaped && (tolerated === undefined || est.area < tolerated.area - SIGN_EPS)) tolerated = { k, area: est.area, ...(variant ? { push: variant.value } : {}) };
     }
     if (best === 0 && tolerated !== undefined) { best = tolerated.k; after = tolerated.area; push = tolerated.push; }

@@ -6,7 +6,6 @@ import type { SideOffer } from '../../src/layout/side-measure.js';
 import { portKey } from '../../src/layout/sides-one.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { withAspect } from '../aspect-fixture.js';
 
 /** Ticket 115: the rules of the round loop, driven by a scripted measure (the real measure never offers these hints). */
 type Script = ((call: number, real: () => SideOffer) => SideOffer) | undefined;
@@ -19,8 +18,7 @@ vi.mock('../../src/layout/side-measure.js', async importOriginal => {
   } };
 });
 
-// Pinned to the square aim of ADR-0024 this test was written under (ADR-0025 aims at 16:9 by default): it checks a mechanism, not the aim.
-const fixture = (name: string): string => withAspect(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'), '1:1');
+const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const PAST_SIBLING = 'an-overlay-leaves-a-lateral-side-past-a-sibling-body';
 const BLOCKED = 'an-overlay-keeps-its-natural-side-when-the-lateral-segment-is-blocked';
 const TWO_TIERS = 'members-of-two-tiers-stand-as-two-rows';

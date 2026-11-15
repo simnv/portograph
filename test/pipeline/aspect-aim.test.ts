@@ -7,7 +7,6 @@ import { pathBends } from '../../src/layout/objective.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { aspectGap } from '../../src/layout/aspect.js';
 import { DEFAULT_ASPECT } from '../../src/model/index.js';
 import { withAspect, withLayoutEntry } from '../aspect-fixture.js';
 
@@ -54,28 +53,17 @@ describe('a plain row staggers only on a sheet wider than the aspect aim', () =>
   }, 120000);
 
   it('staggers a plain row on a sheet wider than the aim when two lines come nearer it, with no override', async () => {
-    const leaves = 20;
-    const yaml = `portograph: 2
-groups:
-  top: { tier: 0 }
-  feeds: { tier: 1 }
-  leaves: { tier: 2 }
-nodes:
-  t: { group: top, class: router }
-  p: { group: feeds, class: switch }
-${Array.from({ length: leaves }, (_, i) => `  n${i + 1}: { group: leaves, class: server }`).join('\n')}
-links:
-  - [t, p]
-${Array.from({ length: leaves }, (_, i) => `  - [p, n${i + 1}]`).join('\n')}
-`;
+    const yaml = source('a-wide-row-staggers-at-the-default-aim');
+    expect(parse(yaml).layout).toBeUndefined();
     const model = await run(yaml);
     expect(model.groupArrangements!.leaves).toEqual({ chosen: 'stagger' });
     expect(lines(model, 'leaves')).toBe(2);
-    const gap = (m: LayoutModel): number => aspectGap(m.canvas!.width, m.canvas!.height, DEFAULT_ASPECT);
     const one = await run(withLayoutEntry(yaml, 'autoArrange: false'));
     expect(one.canvas!.width / one.canvas!.height).toBeGreaterThan(DEFAULT_ASPECT);
-    expect(gap(model)).toBeLessThan(gap(one));
+    expect(model.canvas!.width).toBeLessThan(one.canvas!.width);
+    for (const link of model.links.filter(item => item.layer === 'routed')) expect(pathBends(link), link.id).toBe(0);
     expect(failedGates(model)).toEqual([]);
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
   }, 120000);
 
   it('a stated 16:9 is the default: the layout does not change', async () => {

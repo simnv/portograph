@@ -11,11 +11,9 @@ import { course } from '../../src/pipeline/rounds.js';
 import type { State } from '../../src/pipeline/state.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { withAspect } from '../aspect-fixture.js';
 
 const threeCantonYaml = readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8');
-// Pinned to the square aim of ADR-0024 this test was written under (ADR-0025 aims at 16:9 by default): it checks a mechanism, not the aim.
-const spineLeafYaml = withAspect(readFileSync(new URL('../../goldens/real/private-datacenter-spine-leaf.yaml', import.meta.url), 'utf8'), '1:1');
+const spineLeafYaml = readFileSync(new URL('../../goldens/real/private-datacenter-spine-leaf.yaml', import.meta.url), 'utf8');
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 
 const layoutHash = (model: LayoutModel): string => {
@@ -77,7 +75,7 @@ describe('course 7e preflight', () => {
     expect(attemptCounters.coursePreflight.checked).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.coursePreflight.refusedAt7e).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.attempts).toBe(1);
-    expect(layoutHash(model)).toBe('12b8fee6f1a2');
+    expect(layoutHash(model)).toBe('56f38cf75727');
   }, 60000);
 
   it('refuses the doomed course trial at 7e on goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml identically to bypassing preflight', async () => {

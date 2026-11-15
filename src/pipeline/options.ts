@@ -74,6 +74,8 @@ export interface LayoutOptions {
   fixedLifts?: GroupLift[];
   /** Test only (D-Q5): no lift decision; the record stays absent (the no-lift drawing of a sheet). */
   testLiftOff?: boolean;
+  /** Test only (R4): the lift trial cap in place of `LIFT_TRIALS`, so a sheet with fewer admitted components reaches the cap by name. */
+  testLiftTrials?: number;
   /** Test only (D-Q5): each lift trial, with the published baseline and the published trial (undefined when the run refused it). */
   testLiftTrace?: (event: { entry: GroupLift; routedBase: LayoutModel; routedTrial: LayoutModel | undefined; reason: string | undefined }) => void;
 }

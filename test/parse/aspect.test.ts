@@ -47,6 +47,14 @@ describe('layout.aspect (ADR-0025)', () => {
   });
 });
 
+describe('aspectAim of a document built in code (R6)', () => {
+  it.each([0, -1, Number.NaN, Infinity])('throws for layout.aspect %s', aspect => {
+    const document = parse(sheet(''));
+    document.layout = { aspect };
+    expect(() => aspectAim(document)).toThrow(/layout\.aspect must be positive and finite/);
+  });
+});
+
 describe('aspectGap', () => {
   it('is |ln((W/H) / aim)|: 0 on the aim, symmetric in ratio, Infinity with no area', () => {
     expect(aspectGap(1600, 900, DEFAULT_ASPECT)).toBeCloseTo(0, 12);

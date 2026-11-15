@@ -13,15 +13,13 @@ import type { State } from '../../src/pipeline/state.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { FLANK_LINK_AROUND_A_NEIGHBOUR } from '../hand-solves.js';
-import { withAspect } from '../aspect-fixture.js';
 
 /**
  * Architecture ticket 24, phase 2: the stage-5 key of a turn-ordered run (`testTurnOrder`) and G5 on the faces it placed. The hand solve 09 has one self
  * crossing today: the two column-gap skirts of Mgmt 1 leave one bottom face in far-end order, and the nearer lane crosses the stem of the farther one.
  */
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
-// The square aim of ADR-0024 the run counts were measured under (ADR-0025 aims at 16:9 by default).
-const solve09 = (): string => withAspect(FLANK_LINK_AROUND_A_NEIGHBOUR, '1:1');
+const solve09 = (): string => FLANK_LINK_AROUND_A_NEIGHBOUR;
 const counts = (model: LayoutModel) => score(model).snapshot.counts.routed;
 
 describe('the turn order of a forced run (hand solve 09)', () => {
@@ -50,8 +48,7 @@ describe('the turn order of a forced run (hand solve 09)', () => {
   });
 });
 
-// Pinned to the square aim of ADR-0024 this test was written under (ADR-0025 aims at 16:9 by default): it checks a mechanism, not the aim.
-const fixture = (name: string): string => withAspect(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'), '1:1');
+const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const geometry = (model: LayoutModel): string => JSON.stringify(model.links.map(link => [link.id, link.path?.segments.map(segment => [segment.from, segment.to])]));
 const codes = (model: LayoutModel): string[] => model.diagnostics.map(item => item.code);
 

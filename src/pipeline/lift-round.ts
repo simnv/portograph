@@ -48,10 +48,11 @@ export async function decideLifts(document: LayoutModel['document'], options: La
       note('GROUP_LIFT_SIZE_CAPPED', `The float component ${name} is not tried: the sheet has ${liftSize(document)} nodes and links, above the lift size cap of ${LIFT_SIZE_CAP}.`, entry);
       continue;
     }
-    if (trials >= LIFT_TRIALS) {
-      const entry = liftEntry(best, candidate, 0, `capped: the sheet has made its ${LIFT_TRIALS} lift trials`);
+    const cap = options.testLiftTrials ?? LIFT_TRIALS;
+    if (trials >= cap) {
+      const entry = liftEntry(best, candidate, 0, `capped: the sheet has made its ${cap} lift trials`);
       record.push(entry);
-      note('GROUP_LIFT_CAPPED', `The float component ${name} is not tried: the sheet has made its ${LIFT_TRIALS} lift trials.`, entry);
+      note('GROUP_LIFT_CAPPED', `The float component ${name} is not tried: the sheet has made its ${cap} lift trials.`, entry);
       continue;
     }
     trials++;
@@ -74,7 +75,7 @@ export async function decideLifts(document: LayoutModel['document'], options: La
     };
     let { trial, reason, verdict } = await attempt(entry);
     // Choice S8: a declined side-entry rise falls back once to the best rise that keeps every feeder above its fed unit, inside the trial cap.
-    if (reason !== undefined && candidate.fallback !== undefined && trials < LIFT_TRIALS) {
+    if (reason !== undefined && candidate.fallback !== undefined && trials < (options.testLiftTrials ?? LIFT_TRIALS)) {
       trials++;
       const second = liftEntry(best, candidate, candidate.fallback, 'trial');
       const result = await attempt(second);
@@ -83,7 +84,7 @@ export async function decideLifts(document: LayoutModel['document'], options: La
     }
     if (reason === undefined) {
       entry.straight = verdict!.straight;
-      entry.reason = `rose ${candidate.offset} whole band${candidate.offset > 1 ? 's' : ''}${entry.push ? ` and pushed the units below band ${entry.push.at} down ${entry.push.by}` : ''}: canvas ${Math.round(verdict!.area[0])} to ${Math.round(verdict!.area[1])} px²${verdict!.tolerated ? ` (tolerated: narrower or nearer square, at most ${LIFT_AREA_TOLERANCE * 100} % above the smallest ${Math.round(areaOf(smallest))} px²)` : ''}`;
+      entry.reason = `rose ${candidate.offset} whole band${candidate.offset > 1 ? 's' : ''}${entry.push ? ` and pushed the units below band ${entry.push.at} down ${entry.push.by}` : ''}: canvas ${Math.round(verdict!.area[0])} to ${Math.round(verdict!.area[1])} px²${verdict!.tolerated ? ` (tolerated: narrower or nearer the aspect aim, at most ${LIFT_AREA_TOLERANCE * 100} % above the smallest ${Math.round(areaOf(smallest))} px²)` : ''}`;
       record.push(entry);
       note('GROUP_LIFT_TAKEN', `The float component ${name} rises ${candidate.offset} whole band${candidate.offset > 1 ? 's' : ''}: canvas area ${Math.round(verdict!.area[0])} to ${Math.round(verdict!.area[1])} px².`, entry);
       best = trial!;

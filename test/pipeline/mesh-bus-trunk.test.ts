@@ -10,7 +10,6 @@ import { EDGE_MARGIN, RING_PITCH } from '../../src/layout/course-rows.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { SYNC_MESH_ON_THREE_ROWS } from '../hand-solves.js';
-import { withAspect } from '../aspect-fixture.js';
 
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const gates = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed).map(([id]) => id);
@@ -170,8 +169,7 @@ describe('a mesh over three rows: paths, score and SVG (architecture ticket 21, 
 });
 
 describe('a mesh over three rows: fixtures and draw.io (architecture ticket 21, phase 4)', () => {
-// Pinned to the square aim of ADR-0024 this test was written under (ADR-0025 aims at 16:9 by default): it checks a mechanism, not the aim.
-  const fixture = (name: string): string => withAspect(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'), '1:1');
+  const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 
   it('joins three rows of 3, 4 and 3 nodes by one trunk with one label, 45 mesh-bus links and every gate passing', async () => {
     const model = await run(fixture('a-mesh-over-three-rows-joins-its-bars-with-one-trunk'));
@@ -236,8 +234,7 @@ describe('a mesh over three rows: fixtures and draw.io (architecture ticket 21, 
 });
 
 describe('a mesh over three rows: the guards (architecture ticket 21, review fixes)', () => {
-// Pinned to the square aim of ADR-0024 this test was written under (ADR-0025 aims at 16:9 by default): it checks a mechanism, not the aim.
-  const fixture = (name: string): string => withAspect(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'), '1:1');
+  const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
   const box = (model: LayoutModel, id: string) => model.groups[id]!.bounds!;
 
   it('refuses a move that puts a foreign unit across a bar extension, and lets a member row carry the trunk outward', async () => {
@@ -284,8 +281,7 @@ describe('a mesh over three rows: the guards (architecture ticket 21, review fix
 
   it('declines a blocked join by one re-run: two placement runs', async () => {
     const rows = [['a1', 'a2', 'a3'], ['b1', 'b2', 'b3'], ['c1', 'c2', 'c3']];
-    // The square aim of ADR-0024 these run counts were measured under (ADR-0025 aims at 16:9 by default).
-    const yaml = withAspect(mesh(rows, '  f: { tier: 1 }\n  g: { tier: 1 }\n', '  f1: { group: f }\n  g1: { group: g }\n', '  - [a1, f1]\n  - [a3, g1]\n'), '1:1');
+    const yaml = mesh(rows, '  f: { tier: 1 }\n  g: { tier: 1 }\n', '  f1: { group: f }\n  g1: { group: g }\n', '  - [a1, f1]\n  - [a3, g1]\n');
     const labels: string[] = [];
     const events: Record<string, unknown>[] = [];
     const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 3,
@@ -298,8 +294,7 @@ describe('a mesh over three rows: the guards (architecture ticket 21, review fix
 
   it('declines every trunk on the last run the budget allows, and publishes with no run past the cap', async () => {
     const rows = [['a1', 'a2', 'a3'], ['b1', 'b2', 'b3'], ['c1', 'c2', 'c3']];
-    // The square aim of ADR-0024 these run counts were measured under (ADR-0025 aims at 16:9 by default).
-    const yaml = withAspect(mesh(rows, '  f: { tier: 1 }\n  g: { tier: 1 }\n', '  f1: { group: f }\n  g1: { group: g }\n', '  - [a1, f1]\n  - [a3, g1]\n'), '1:1');
+    const yaml = mesh(rows, '  f: { tier: 1 }\n  g: { tier: 1 }\n', '  f1: { group: f }\n  g1: { group: g }\n', '  - [a1, f1]\n  - [a3, g1]\n');
     for (const budget of [0, 1, 4]) {
       const labels: string[] = [];
       const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: budget, onProgress: progress => { labels.push(progress.stage); } });

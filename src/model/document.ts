@@ -103,10 +103,10 @@ export interface NormalisedLink {
   meta?: Meta;
 }
 
-/** Stage 0 output. Explicit order metadata preserves integer-like ID declaration order. */
 /** The default aspect aim, W/H (ADR-0025): 16:9. */
 export const DEFAULT_ASPECT = 16 / 9;
 
+/** Stage 0 output. Explicit order metadata preserves integer-like ID declaration order. */
 export interface NormalisedDocument {
   portograph: 2;
   profile: string;

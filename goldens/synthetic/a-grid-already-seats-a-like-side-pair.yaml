@@ -1,5 +1,5 @@
 # Expected: Change nothing. `n01` and `n02` carry the same like-facing `top` pair the fixture beside
-# this one constrains, but closest-to-square already packs the six nodes three columns by two rows
+# this one constrains, but closest-to-the-aim already packs the six nodes three columns by two rows
 # and seats the pair in the first of them, so the count does not move. The rule is a filter on the
 # candidate counts, not a floor under them: an authored side the grid already satisfies costs the
 # grid nothing, and the published box is the one the aspect rule chose on its own.
