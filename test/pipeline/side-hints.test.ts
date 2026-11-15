@@ -298,11 +298,13 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   // With both (DR-04 ids, ticket 07 without `groupArrangements`): the DR-04 layout of that sheet less the key hashes to f9b8916c527c5f88
   // (f0a31e77eb97590d with main's ids).
   const main: Record<string, string> = {
-    'a-group-holds-both-ends-of-a-bundle': '7fb6875900425312',
-    'a-bus-in-a-rank-gap-grows-the-gap': '92a03918704346a8',
-    // ADR-0027 replaces stretched geometry; the new pin and empty-map comparison still prove the no-hint path.
-    'a-linked-node-steps-out-of-a-straight-chord': '876792b06b2c7fa1',
-    'a-bar-end-keeps-its-corridor': 'fbe95e96d87d86e8',
+    'a-group-holds-both-ends-of-a-bundle': 'd2a05733bdf3d861',
+    'a-bus-in-a-rank-gap-grows-the-gap': 'a67922699d7c41bf',
+    // ADR-0027 (the alignment cap and the seat of dense-16x9 ticket 02) replaced the geometry that main drew, so the four hashes are re-pinned to
+    // the layouts of this branch (7fb68759..., 92a03918..., 876792b0... and fbe95e96... before). The rule is the comparison below: a run with empty
+    // hint maps gives the bytes of a run with none. It does not depend on the literal.
+    'a-linked-node-steps-out-of-a-straight-chord': '4aa201ff53fe1e71',
+    'a-bar-end-keeps-its-corridor': 'cb2daf6b290d2bb6',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {
     const { model } = await run(fixture(name));
