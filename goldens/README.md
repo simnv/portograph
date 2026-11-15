@@ -422,3 +422,4 @@ Ticket 83 rule fixtures, retaining the prototype filenames:
 | `synthetic/a-u-turn-course-hangs-a-high-u-part-above-two-top-ports.yaml` | Two top ports of one row linked: with the `u-turn` course (test only) the link is a high U part, its row hung above the group box of the row (dense-16x9 ticket 06, slice A). |
 | `synthetic/a-u-turn-course-hangs-a-low-u-part-below-two-bottom-ports.yaml` | The mirror: two bottom ports of one row, a low U part below them (dense-16x9 ticket 06, slice A). |
 | `synthetic/a-same-row-link-label-keeps-a-straight-overlay-straight.yaml` | A long same-row label reserves room in stage 5 before centring and chord freezing; its diagonal overlay stays straight and 7f adds no row room. |
+| `synthetic/a-centre-replay-keeps-a-cross-group-label-window.yaml` | A centring step keeps the cross-group label window 7f reserved after a labelled lower row changes its feeds; publication and room replay hold. |

@@ -71,3 +71,15 @@ links:
   reserveLinkLabelRoom(copy, shortfalls);
   expect(shortfalls.filter(item => item.axis === 'row')).toEqual([]);
 });
+
+it.each([
+  'synthetic/a-centre-replay-keeps-a-cross-group-label-window.yaml',
+  'bgplab/policy-a-locpref-route-map.yaml',
+])('a centring replay keeps a cross-group label window: %s', async name => {
+  const yaml = readFileSync(new URL(`../../goldens/${name}`, import.meta.url), 'utf8');
+  const model = await layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  expect(model.stage).toBe('link-labels');
+  expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
+  expect(score(model).snapshot.passed).toBe(true);
+  expect(model.removedLinks ?? []).toEqual([]);
+});

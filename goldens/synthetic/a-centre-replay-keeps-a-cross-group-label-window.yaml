@@ -1,0 +1,76 @@
+# Expected: 7f reserves a full label window between two groups on the middle tier.
+# The labelled lower row already has room from stage 5. Its feeds make a middle body widen;
+# a centring replay must keep the cross-group window, rather than close it and spend the room again.
+# Publication succeeds, the complete labels fit and a room replay grows nothing.
+portograph: 2
+profile: network
+title: Label room beside sibling regions
+groups:
+  zone-2:
+    tier: 0
+    label: zone-2
+  zone-3:
+    tier: 0
+    label: zone-3
+  zone-4:
+    tier: 1
+    label: zone-4
+  zone-5:
+    tier: 1
+    label: zone-5
+  zone-6:
+    tier: 2
+    label: zone-6
+nodes:
+  unit-2:
+    group: zone-2
+    label: unit-2
+    class: router
+    icon: router
+  unit-3:
+    group: zone-3
+    label: unit-3
+    class: router
+    icon: router
+  unit-4:
+    group: zone-4
+    label: unit-4
+    class: router
+    icon: router
+  unit-5:
+    group: zone-5
+    label: unit-5
+    class: router
+    icon: router
+  unit-6:
+    group: zone-6
+    label: unit-6
+    class: router
+    icon: router
+  unit-7:
+    group: zone-6
+    label: unit-7
+    class: router
+    icon: router
+links:
+  - - unit-6
+    - unit-4
+    - {}
+  - - unit-4
+    - unit-5
+    - label: Inter-ISP link
+  - - unit-7
+    - unit-5
+    - {}
+  - - unit-6
+    - unit-7
+    - label: Customer internal link
+  - - unit-4
+    - unit-2
+    - {}
+  - - unit-5
+    - unit-2
+    - {}
+  - - unit-5
+    - unit-3
+    - {}

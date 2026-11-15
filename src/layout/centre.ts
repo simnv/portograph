@@ -5,6 +5,7 @@ import type { Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, rightWallReach, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { holdsMove, resizeEvidence, resizeHolds } from './move-reservations.js';
+import { rowRoomHolds, rowRoomShortOf } from './label-room-guard.js';
 import { cellReach } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
@@ -859,13 +860,17 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
     held = standing && base.held ? base.held : straightChordIds(model); breached = standing && base.breached ? base.breached : breachedIds(model);
     if (standing) { base.held = held; base.breached = breached; }
   }
+  // A complete step can move and widen a body inside its group. Keep the same-tier windows 7f reserved,
+  // including cross-group runs outside siblingLimit: the move and resize guards share this producer replay (R1, R2).
+  const rowShort = rowRoomShortOf(model);
   const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
   const after = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) ? breachedIds(model) : undefined;
-  const stands = after !== undefined && [...after].every(item => breached.has(item));
+  const stands = after !== undefined && [...after].every(item => breached.has(item))
+    && (rowShort === undefined || rowRoomHolds(model, [], rowShort));
   tapVerdict('centreGroupStep', () => `${stands} ${now.size}/${held.size}`);
   if (stands) return { ...result, carry: { held: now, breached: after } };
   model.groups[id] = snapshot.group;
