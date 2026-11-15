@@ -464,8 +464,8 @@ component is recorded with `GROUP_LIFT_SIZE_CAPPED` (`docs/design/quality.md`, s
 declined with a `GROUP_LIFT_OUT_OF_SLICE` info note and no trial; each trial run has its own placement cap and shares the caller's one
 budget. A deadline error ends the command (`isDeadlineError`, shared with the width budget); a trial whose run fails on another error is
 declined, with a warning unless placement refused it by name. With `layout.maxWidth` the first run decides the lift and every stagger trial
-applies the record (`fixedLifts`). A rise is a candidate when its estimate drops the area by `LIFT_MIN_GAIN` or more, or when it is narrower or nearer the aspect aim (ADR-0025) by
-`LIFT_SHAPE_STEP` (shape admission: the estimate is too coarse for a push). The judge (`judgeLift`) reads the published results: no
+applies the record (`fixedLifts`). A rise is a candidate when its estimate drops the area by `LIFT_MIN_GAIN` or more, or when it is narrower by `LIFT_SHAPE_STEP`, or nearer the aspect aim (ADR-0025) by `LIFT_SHAPE_STEP` with an estimated area at most `LIFT_AREA_TOLERANCE` above
+the no-lift estimate (shape admission: the estimate is too coarse for a push; the area bound keeps a trial, one more whole command run, from running for a rise the judge cannot keep by area; measured on the corpus, the estimate cannot tell the kept rises from the declined ones, so the bound drops some rises the judge would keep). The judge (`judgeLift`) reads the published results: no
 link removed, every straight link still straight, a vertical link still vertical and every routed link on its faces (except the
 trial's side entries), no link with more bends, no new gate, hard-constraint or separation finding, the unified order (bent links,
 turns, crossings including routed-with-overlay pairs) not worse, and the area below the no-lift run and below the smallest kept run,
