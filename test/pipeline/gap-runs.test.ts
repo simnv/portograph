@@ -274,15 +274,16 @@ it('plans a tier gap whose nested stems stand close without the 2k pocket a rout
 it('grows the gap of the band that sets the group edge to the rows of its 25 parts (ranked-groups tickets 25 and 50)', async () => {
   // Ticket 25 grew this gap for two far stems. ADR-0027 changes their x positions and row sharing: the 25-part plan now
   // needs 218.75 px and the solve grows the gap 181 px, instead of 236.25 and 187. Both pins prove room is reserved before routing.
+  // The seat addendum (dense-16x9 ticket 02) moves the x of the parts again: the plan needs 242.25 px and the solve grows the gap 193 px, set by link-37 as on main.
   const before = await beforeBands(orthogonalLinks(read('a-band-holds-the-group-that-set-its-edge.yaml')));
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-  // The solve still reads the plan once; after ADR-0027 link-17 sets the required height instead of link-37.
-  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 181\.00 px to hold the rows of its parts \(set by link-17#0\)/)]);
+  // The solve still reads the plan once; link-37 sets the required height.
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 193\.00 px to hold the rows of its parts \(set by link-37#0\)/)]);
   const busy = tierGapPlans(after).filter(item => item.plan.parts.length > 20);
   expect(busy).toHaveLength(1);
-  // ADR-0027 changes the rows: 236.25 becomes 218.75 px; the plan still reserves every part with no residual or further growth.
-  expect(busy[0]!.plan.height).toBeCloseTo(218.75, 9);
+  // ADR-0027 changes the rows: 236.25 becomes 218.75 px, and 242.25 px with the seat addendum; the plan still reserves every part with no residual or further growth.
+  expect(busy[0]!.plan.height).toBeCloseTo(242.25, 9);
   expect(busy[0]!.plan.growth).toBe(0);
   expect(busy[0]!.plan.residual).toEqual([]);
   // The second measure is identical: no gap asks for more. (A replay of the published model is not the test here: it replays the

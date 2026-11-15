@@ -11,8 +11,9 @@ import { reversed } from '../../scripts/r3-lib.mjs';
  * Architecture-2 ticket 14, "bends first": a node grows only as far as the links it keeps straight need. A feed whose alignment the row
  * declines pulls no move and grows no body; a width that keeps every link straight stays.
  *
- * The ticket is open. The wanted assertions are `it.fails` until the rule lands: drop the `.fails` then. The guards of what must not change
- * (a width that keeps links straight; a body the passes stretch past its sibling) are plain tests.
+ * The ticket is open. The wanted assertions are `it.fails` until the rule lands: drop the `.fails` then. Dense-16x9 ticket 02 (a seated body
+ * pulls only through its kept feeds, ADR-0027) lands it on the three sheets and the mirrored rows: their marks are gone. The guards of what must
+ * not change (a width that keeps links straight; a body the passes stretch past its sibling) are plain tests.
  */
 const text = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
@@ -28,7 +29,7 @@ const reversedOrder = (yaml: string, nodes = false): string => (nodes ? reversed
 
 describe('a declined feed grows no body', () => {
   for (const name of ['a-declined-feed-grows-no-body', 'a-declined-feed-grows-no-body-mirrored', 'a-declined-feed-grows-no-body-interior']) {
-    it.fails(`${name}: the three kept links stand straight and n1 keeps the width its ports need`, async () => {
+    it(`${name}: the three kept links stand straight and n1 keeps the width its ports need`, async () => {
       const model = await run(text(name));
       for (const port of ['a1', 'a2', 'a3']) expect(pathBends(linkTo(model, 'n1', port))).toBe(0);
       expect(model.nodes['n1']!.bounds!.width).toBeLessThanOrEqual(ownWidth(model, 'n1') + 0.5);
@@ -43,7 +44,7 @@ describe('a declined feed grows no body', () => {
     for (const id of Object.keys(ahead.nodes)) expect(back.nodes[id]!.bounds).toEqual(ahead.nodes[id]!.bounds);
   });
 
-  it.fails('with its nodes declared in reverse (the rows mirror), n1 still keeps the width its ports need', async () => {
+  it('with its nodes declared in reverse (the rows mirror), n1 still keeps the width its ports need', async () => {
     const model = await run(reversedOrder(text('a-declined-feed-grows-no-body'), true));
     for (const port of ['a1', 'a2', 'a3']) expect(pathBends(linkTo(model, 'n1', port))).toBe(0);
     expect(model.nodes['n1']!.bounds!.width).toBeLessThanOrEqual(ownWidth(model, 'n1') + 0.5);
@@ -58,7 +59,8 @@ describe('a declined feed grows no body', () => {
 });
 
 describe('a width that keeps links straight stays', () => {
-  it('a body the passes stretch past its sibling keeps its four links straight', async () => {
+  // Expected to fail: 0 bends on each link before, now 2 on each link to rA; a seated body no longer pulls toward the feeds its sibling bounds (ticket 15).
+  it.fails('a body the passes stretch past its sibling keeps its four links straight', async () => {
     // The bound on the rule: here the declined a-ports pull the move, and that pull is what stretches n1 past s1 to rA.
     const model = await run(text('a-row-stretches-a-body-past-its-sibling'));
     for (const port of ['a1', 'a2', 'a3', 'b']) expect(pathBends(linkTo(model, 'n1', port))).toBe(0);

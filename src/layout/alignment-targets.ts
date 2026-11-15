@@ -237,7 +237,13 @@ export function alignmentTargetsFault(model: LayoutModel): string | undefined {
 export function writeAlignmentSeats(model: LayoutModel, seated: ReadonlyMap<string, Omit<AlignmentSeat, 'pass'>>, pass: number, unseated: ReadonlySet<string> = new Set()): void {
   const record = model.alignmentSeats;
   if (record === undefined) return;
-  for (const [node, seat] of seated) record[node] = { dx: seat.dx, from: seat.from, at: seat.at, width: seat.width, ports: [...seat.ports], pass };
+  for (const [node, seat] of seated) {
+    // A seat decided again equal is the same decision: it keeps the pass that wrote it, as a target does, so a replay rewrites nothing (R1, R2).
+    const was = Object.hasOwn(record, node) ? record[node] : undefined;
+    if (was !== undefined && was.dx === seat.dx && was.from === seat.from && was.at === seat.at && was.width === seat.width
+      && was.ports.length === seat.ports.length && was.ports.every((port, index) => port === seat.ports[index])) continue;
+    record[node] = { dx: seat.dx, from: seat.from, at: seat.at, width: seat.width, ports: [...seat.ports], pass };
+  }
   for (const node of unseated) delete record[node];
 }
 
