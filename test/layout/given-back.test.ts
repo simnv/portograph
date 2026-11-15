@@ -4,6 +4,7 @@ import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { givenBackFault, strandedGrowth } from '../../src/layout/given-back.js';
+import { laneRunKind } from '../../src/layout/lane-kind.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from './joint-off.js';
@@ -84,7 +85,14 @@ describe('the user\'s tier-gap sheet', () => {
 // The three regression classes of the per-step prototype (verdict sideface-fable, section 2): each sheet as main or better.
 describe('the three regression classes of a per-step decline', () => {
   it('transit corridor: a-face gives nothing back, as the parent src1 would chase a corridor that follows a narrow snk1 (bends 8, crossings 7)', async () => {
-    const model = await run('a-face-aligns-one-port-and-leaves-a-chord-port-in-place-middle-tier-first'); // DR-04: the copy with `access` first
+    // DR-04: the copy with `access` first. Under the alignment cap (ADR-0027) a 56 px `snk1` cannot hold its three feeds, and its link from src1 takes a
+    // perimeter lane (7 bends, snk1 given back alone), so the transit corridor of the premise is gone. A longer label makes `snk1` need 258 px: the
+    // corridor stands again and the sheet is as the test pinned it (8 bends, 7 crossings, nothing given back).
+    const plain = source('a-face-aligns-one-port-and-leaves-a-chord-port-in-place-middle-tier-first');
+    const text = plain.replace('snk1: { group: edge-far, class: server, ports: [] }', 'snk1: { group: edge-far, class: server, label: "snk1 server of the far edge group", ports: [] }');
+    expect(text).not.toBe(plain);
+    const model = await runText(text);
+    expect(model.lanes.filter(lane => lane.owner.kind === 'link' && laneRunKind(lane) === 'transit')).toHaveLength(2); // both links keep a transit lane, none a perimeter one
     expect(model.givenBack).toBeUndefined();
     expect(bends(model)).toBe(8);
     expect(score(model).snapshot.metrics.crossings.count).toBe(7);
