@@ -300,7 +300,8 @@ describe('with no hint the layout is byte-identical to main (ticket 114)', () =>
   const main: Record<string, string> = {
     'a-group-holds-both-ends-of-a-bundle': '7fb6875900425312',
     'a-bus-in-a-rank-gap-grows-the-gap': '92a03918704346a8',
-    'a-linked-node-steps-out-of-a-straight-chord': 'f9b8916c527c5f88',
+    // ADR-0027 replaces stretched geometry; the new pin and empty-map comparison still prove the no-hint path.
+    'a-linked-node-steps-out-of-a-straight-chord': '876792b06b2c7fa1',
     'a-bar-end-keeps-its-corridor': 'fbe95e96d87d86e8',
   };
   it.each(Object.entries(main))('%s', async (name, hash) => {

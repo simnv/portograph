@@ -252,7 +252,7 @@ it('plans a tier gap whose nested stems stand close without the 2k pocket a rout
   // Ticket 25 grew this gap 5.5 px so the two tip rows of a link that nests a stem stood 23 px apart, the room a ROUTED link
   // needs at its far checkpoint. Every link of the fixture is a planned part now (tier-gap-rows.md Section 5: the drop and residual
   // terms replace `stemShortfall`): its stems are claimed and its rows and legs reserved, so no pocket is needed and the plan asks
-  // for 58.25 px, under the 60 px band gap. Nothing grows.
+  // for 56 px after ADR-0027 moves bodies before growth, under the 60 px band gap. Nothing grows.
   const before = await beforeBands(read('a-stem-tip-clears-the-tip-that-faces-it.yaml'));
   const after = bands(before);
   expect(after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN')).toEqual([]);
@@ -260,7 +260,8 @@ it('plans a tier gap whose nested stems stand close without the 2k pocket a rout
   expect(busy).toHaveLength(1);
   const plan = busy[0]!.plan;
   expect(plan.residual).toEqual([]);
-  expect(plan.demand).toBeCloseTo(58.25, 9);
+  // The old 58.25 px and new 56 px both prove the planned stems fit without growing the 60 px gap.
+  expect(plan.demand).toBeCloseTo(56, 9);
   expect(plan.height).toBe(60);
   // A second call asks for nothing more, and the router is asked for nothing at all: every gap of every link is reserved.
   expect(tierGapPlans(after).every(({ plan }) => plan.growth <= 1e-6)).toBe(true);
@@ -271,22 +272,17 @@ it('plans a tier gap whose nested stems stand close without the 2k pocket a rout
 }, 120000);
 
 it('grows the gap of the band that sets the group edge to the rows of its 25 parts (ranked-groups tickets 25 and 50)', async () => {
-  // Ticket 25 grew this gap 23 px for the two far stems of link-36 and link-38. The plan seats every part of the gap on a row of
-  // its own at the pitch k = 11.5 (spans of 21 stepped parts overlap, so 18 distinct rows from 10.75 to 206.25 px below the low
-  // boundary, three of them shared by parts whose spans do not touch), and the last row keeps k + 30 px (a lower leg of depth 30)
-  // above the band below: H = 206.25 + 41.5 - 11.5 = 236.25 px against a room of 49.25. The router discovered those rows before
-  // (G4 18, G6 47 on main); they are reserved now, and the gap grows 187 px, the height the published plan asks: 7f replaces the growth of
-  // each round by `H - room` and does not accumulate it (ticket 51; the rounds added 198.5 px while they accumulated). Since ticket 57 the one solve
-  // reads it once, after the last move in x, and asks the same 187 px.
+  // Ticket 25 grew this gap for two far stems. ADR-0027 changes their x positions and row sharing: the 25-part plan now
+  // needs 218.75 px and the solve grows the gap 181 px, instead of 236.25 and 187. Both pins prove room is reserved before routing.
   const before = await beforeBands(orthogonalLinks(read('a-band-holds-the-group-that-set-its-edge.yaml')));
   const after = bands(before);
   const grown = after.diagnostics.filter(item => item.code === 'TIER_GAP_GROWN');
-  // The plan is read once (ticket 57): link-17 and link-37 ask the same height, and the first part in the plan's order names it (link-37 since
-  // ticket 65, where the kept verticals change the x of the parts; link-17 before).
-  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 187\.00 px to hold the rows of its parts \(set by link-37#0\)/)]);
+  // The solve still reads the plan once; after ADR-0027 link-17 sets the required height instead of link-37.
+  expect(grown.map(item => item.message)).toEqual([expect.stringMatching(/grew 181\.00 px to hold the rows of its parts \(set by link-17#0\)/)]);
   const busy = tierGapPlans(after).filter(item => item.plan.parts.length > 20);
   expect(busy).toHaveLength(1);
-  expect(busy[0]!.plan.height).toBeCloseTo(236.25, 9);
+  // ADR-0027 changes the rows: 236.25 becomes 218.75 px; the plan still reserves every part with no residual or further growth.
+  expect(busy[0]!.plan.height).toBeCloseTo(218.75, 9);
   expect(busy[0]!.plan.growth).toBe(0);
   expect(busy[0]!.plan.residual).toEqual([]);
   // The second measure is identical: no gap asks for more. (A replay of the published model is not the test here: it replays the

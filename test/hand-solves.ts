@@ -65,7 +65,8 @@ export const FLANK_LINK_AROUND_A_NEIGHBOUR = `# Hand-solve case 09. A left flank
 # A branch group stands between the flank and the canton. The flank link to the member must pass
 # the branch; the tier-gap plan covers gaps between tiers only, so the route runs along the core
 # edge and fails G6 (architecture ticket 12, cause C). The port lists follow the ticket 12 matrix
-# sheet, so the sizes are the ones that show the fault.
+# sheet. ADR-0027 gives WAN 1 an authored 550 px width floor, so its three feeds fit without
+# alignment growth. Both management skirts still take column-gap courses; the turn order removes their crossing.
 portograph: 2
 profile: network
 groups:
@@ -77,7 +78,7 @@ groups:
   access: { tier: 2, canton: campus, label: Access }
   mgmt: { align: left, of: core, label: Management }
 nodes:
-  wan-1: { group: wan, class: router, label: WAN 1, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
+  wan-1: { size: { width: 550, height: 0 }, group: wan, class: router, label: WAN 1, ports: [100G, 100G, 100G, 100G, 100G, 100G] }
   core-1: { group: core, class: router, label: Core 1, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
   br-1: { group: branch, class: router, label: Branch 1, ports: [100G, 100G, 100G, 100G, 100G, 100G, 100G, 100G] }
   dist-1: { group: dist, class: router, label: Dist 1, ports: [100G, 100G, 100G, 100G] }
