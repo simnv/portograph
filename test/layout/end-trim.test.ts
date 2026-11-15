@@ -112,9 +112,12 @@ describe('a stretched body is trimmed to its ports', () => {
 });
 
 describe('the centring replay reads the bodies the producer decided on (R1)', () => {
-  // One of the four synthetics the prototype's trim was refused on: with the trimmed siblings the replay kept a target the producer could not keep.
+  // A sheet whose replay over the trimmed bodies keeps a target the producer could not keep: the seats grow `p1` and `p2` in place over one
+  // feed each (56 px to 262.5 px) and the trim narrows them back to 56 px. It was a-stem-of-a-link-that-turns-straight-does-not-block-a-chord, one of the four synthetics the
+  // prototype's trim was refused on; under the seat addendum (ADR-0027) its trim gives `n4` back the width its seat began from, and the
+  // replay without the record reads what the producer read.
   let model: LayoutModel;
-  beforeAll(async () => { model = await run(source('a-stem-of-a-link-that-turns-straight-does-not-block-a-chord')); }, 120000);
+  beforeAll(async () => { model = await run(source('a-batch-splits-by-the-covers-its-links-cross')); }, 120000);
 
   it('publishes trimmed, and its restore reads the record', () => {
     expect(Object.keys(model.bodyTrims?.nodes ?? {}).length).toBeGreaterThan(0);
@@ -136,10 +139,10 @@ describe('the centring replay reads the bodies the producer decided on (R1)', ()
 
 describe('a trimmed group box keeps its title floor', () => {
   it('holds the title of a group whose label is wider than its trimmed bodies (review round 1)', async () => {
-    // Without the fourth feed `src-b -> sink-near`: with it a title this wide leaves the body no stretch to trim (the cap of ADR-0027), and the
-    // rule under test, a title floor on a trimmed box, needs a trimmed body.
-    const text = source('a-stretched-body-is-trimmed-to-its-ports').replace('  - [src-b, sink-near]\n', '')
-      .replace('near: { tier: 2 }', 'near: { tier: 2, label: A title far wider than the one sink it holds }');
+    // The fixture as it is, with a title wider than the trimmed body: the rule under test, a title floor on a trimmed box, needs a trimmed body.
+    const plain = source('a-stretched-body-is-trimmed-to-its-ports');
+    const text = plain.replace('near: { tier: 2, shape: grid }', 'near: { tier: 2, shape: grid, label: A title far wider than the one sink it holds }');
+    expect(text).not.toBe(plain);
     const model = await run(text);
     expect(model.bodyTrims?.nodes['sink-near']).toBeDefined();
     expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([]);

@@ -1,8 +1,9 @@
 # Expected: A close-up a guard declines (architecture-2 ticket 69). `sw-3` has two links to `sink-far`, a bundle whose ends agree:
 # when `side` closes up toward `access` by the width the trim freed, the bundle rule seats the ports of `sw-3` again on the ports of
 # `sink-far`, so the move is no translation and the replay could not move it back by the record. The close-up is declined
-# (`CLOSE_UP_DECLINED`, "the port ... of sw-3 would not move with its node"), and `side` stays where the trim left it, with its two
-# straight drops. Layout as main. Test `test/layout/close-up.test.ts` reads the layout.
+# (`CLOSE_UP_DECLINED`, "the port ... of sw-3 would not move with its node"), and `side` stays where the trim left it (`sw-3` 134 px
+# to 55 px), with its two straight drops. Since dense-16x9 ticket 02 the first version has nothing to trim; the feed from `src-c`
+# gives the premise back. Test `test/layout/close-up.test.ts` reads the layout.
 # DR-04: links take the canonical order (group declaration order, then node order inside the group), so `access` is declared
 # before `src`; the canonical order is then the written order.
 portograph: 2
@@ -15,6 +16,7 @@ groups:
 nodes:
   src-a: { group: src, class: router, ports: [] }
   src-b: { group: src, class: router, ports: [] }
+  src-c: { group: src, class: router, ports: [] }
   sw-1: { group: access, class: switch, ports: [] }
   sw-2: { group: access, class: switch, ports: [] }
   sw-3: { group: side, class: switch, ports: [] }
@@ -27,3 +29,4 @@ links:
   - [src-b, sink-near]
   - [sw-3, sink-far]
   - [sw-3, sink-far]
+  - [src-c, sink-near]

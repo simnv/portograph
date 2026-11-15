@@ -79,7 +79,7 @@ describe('a sibling group closes up after the trim', () => {
   // A shift that is itself a fixed point (the close-up of the geometry it names gives it again) passes: the record is the trusted decision,
   // as a trimmed body recorded wider into free space is (ticket 68, R5 limit). `far` stands a band gap from `near`, so a shorter forged shift is
   // one, and so is a record with no shift: the closed-up geometry closes up no further. A longer shift is refused when it passes the width the trim
-  // freed (`far` freed 234 px under the alignment cap, ADR-0027; 622 px before it), so the forged `far` shift is 300 px longer.
+  // freed (the trim frees 197 px of `sink-near` beside `far`; 622 px before the alignment cap of ADR-0027), so the forged `far` shift is 300 px longer.
   it('refuses a forged shift: another dx, a group that may not move, a shift under the least move, a lane shift alone', () => {
     expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.shifts!['far']! -= 300; }))).toThrow(/end trim record is forged/);
     expect(() => restoreLayoutModel(forge(model, copy => { copy.bodyTrims!.shifts!['src'] = -20; }))).toThrow(/end trim record is forged/);
