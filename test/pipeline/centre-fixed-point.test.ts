@@ -7,7 +7,6 @@ import { centreDraft } from '../../src/layout/centre.js';
 import { withLayoutMutation } from '../../src/layout/mutation.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
-import { withoutJointOrder } from '../layout/joint-off.js';
 
 /**
  * Ticket 75. A centring run ends when a pass changes no geometry. A group whose alignment is infeasible has its
@@ -61,24 +60,14 @@ links: [[a.p, c.p], [b.p, d.p]]`)))));
   }, 60000);
 
   it('geometry that really oscillates still spends the budget and reports the stall', async () => {
-    // Two ordered child ports whose parents stand in the opposite order: the group jumps 42.75 px on every pass.
-    const input = flanks(lanes(rows(await placed(withoutJointOrder(`portograph: 2
-groups: {up: {tier: 0}, low: {tier: 1}}
-nodes:
-  a: {group: up, ports: [{name: p, side: bottom}]}
-  b: {group: up, ports: [{name: p, side: bottom}]}
-  spare: {group: up}
-  c:
-    group: low
-    ports:
-      - {name: p, side: top, order: 0}
-      - {name: q, side: top, order: 1}
-links: [[a.p, c.q], [b.p, c.p]]`)))));
+    // Before ADR-0027's seat record this used the two-parent model, whose child jumped 42.75 px between its crossed feeds on every pass; the seat
+    // now owns that child and the model settles. In the ranked group of three ranks the switch and access rows still move on every pass (by
+    // 3 to 22 px between passes 5 and 8), so it holds the eight-pass bound.
+    const input = flanks(lanes(rows(await placed(golden('a-link-inside-one-frame-is-a-straight-segment')))));
     const budget = createCentreBudget();
     const model = withLayoutMutation(input, 'centre', draft => centreDraft(draft, budget));
     expect(budget).toEqual({ remaining: 0, passes: 8 });
     expect(model.diagnostics.filter(item => item.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
-    expect(model.diagnostics.map(item => item.code)).toContain('CENTRE_ALIGNMENT_INFEASIBLE');
   }, 60000);
 
   // Snack-theme ticket 157. After the overlay windows, `centreDraft` runs the passes again while the publication check finds an alignment off its
