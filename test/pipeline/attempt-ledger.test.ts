@@ -55,20 +55,24 @@ const ROWS: Row[] = [
   // once more with it refused (two bodies of one round each, one settle and its eight passes each): 2/48/14/3 and 2 rounds (1/24/10/3 and 1 before).
   // DR-04: the copy that declares `access` before `src`, so the canonical link order lays the shape of the spec out again.
   // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
-  row('a-tier-gap-plan-orders-every-part-middle-tier-first', '1/32/10/3', 1, 1, 1, 0, 0, { reseat: 'adopted', preChords: 1 }),
+  // ADR-0027 seat addendum (dense-16x9 ticket 02): the seat keeps its kept feeds, so three chords are lost before centring (1 before), three place runs (1 before) and 50 centring passes (32 before); one attempt, one round.
+  row('a-tier-gap-plan-orders-every-part-middle-tier-first', '1/50/10/3', 3, 1, 1, 0, 0, { reseat: 'adopted', preChords: 3 }),
   row('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row', '1/6/7/3', 1, 1, 1, 0, 0),
   row('a-tier-gap-grows-to-its-rows', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 54: one centring pass fewer (1/5/7/3 before).
   // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
-  row('a-re-seated-band-carries-its-bar-and-flank', '1/12/7/3', 2, 1, 1, 0, 0),
+  // ADR-0027 seat addendum: a second attempt and round (side trial), 2/8/12/5 (1/12/7/3 before).
+  row('a-re-seated-band-carries-its-bar-and-flank', '2/8/12/5', 2, 2, 2, 0, 0),
   // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
-  row('sync-links-do-not-stack-a-tier', '1/48/7/3', 2, 1, 1, 0, 0),
+  // ADR-0027 seat addendum: the cap stops the growth early, 7 centring passes (48 before).
+  row('sync-links-do-not-stack-a-tier', '1/7/7/3', 2, 1, 1, 0, 0),
   row('an-overlay-leaves-a-lateral-side-past-a-sibling-body', '2/7/12/5', 2, 2, 2, 0, 0),
   // Ticket 22: a long, flat chord never joins perpendicular faces, so this sheet has no chord hint at 90 degrees and no second side trial (2/16/12/5, 2 attempts, probe 2 before).
   // The far-end pull (ticket 22) stands lb next to fe4, so its link is a chord (1/14/7/3 before).
   // Ticket 75: the pull is idempotent, so the 7f held-axes probe moves nothing (probe 1 before).
   // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
-  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/26/7/3', 4, 1, 1, 0, 0),
+  // ADR-0027 seat addendum: 13 centring passes (26 before).
+  row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/13/7/3', 4, 1, 1, 0, 0),
   row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/7/7/3', 2, 1, 1, 0, 0),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 162 (a diagonal may cross a title): the two feeds the canton titles refused are chords before centring, which takes them off (pre-7f chords
@@ -84,7 +88,8 @@ const ROWS: Row[] = [
   // placement (2 runs, 2 attempts, 2 rounds, pre-7f chords lost 1) and the base 7f loses no aligned link (0/1/0, 1/6/7/3 and one of each before).
   // The sheet gains: 6/6 routed straight (5/6), 861 px wide (926), Q 0.9028 (0.8739).
   // ADR-0027 replaces stretched seats; this row still pins the attempt work and its invalidations.
-  row('a-member-title-widens-a-beside-row', '2/67/12/5', 3, 2, 2, 0, 0),
+  // ADR-0027 seat addendum: 8 centring passes (67 before), two place runs (3 before) and one chord lost before centring (0 before).
+  row('a-member-title-widens-a-beside-row', '2/8/12/5', 2, 2, 2, 0, 0, { preChords: 1 }),
   // The cost counters (settle, centring passes, copies, replays) of this sheet move with every change to the sweep that seats a flank beside a frame (architecture ticket 19: the
   // centring passes 15 to 13); what the sheet pins is its behaviour: the runs, the attempts, the rounds, no open round, no chord move, and the findings below.
   // Architecture 2, ticket 03: the side trial on this sheet (link-1, a lane hint on up-1.100G#3) is refused at its 7e now, because the far port of the lane is 65 px off the lane x

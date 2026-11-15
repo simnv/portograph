@@ -184,7 +184,9 @@ describe('pending: the hand-solve outcomes (ticket 15, Section 7)', () => {
     // 5 with the side hint on b2 before architecture-2 ticket 23. The overlay ports of a face now nest at the end of 7f (with their
     // direct links), and the baseline has the 4 bent overlays without the hint, so the side round takes none.
     expect(counts(model).overlay.bent).toBe(4);
-    expect(model.diagnostics.some(item => item.code === 'SIDE_HINT_TAKEN')).toBe(false);
+    // ADR-0027 seat addendum (dense-16x9 ticket 02): Core stands 242 px (256 before), and the published layout names a side hint (SIDE_HINT_TAKEN),
+    // where the earlier ADR-0027 state needed none. The count the test names is the same: 4 bent overlays (6 on main).
+    expect(model.diagnostics.some(item => item.code === 'SIDE_HINT_TAKEN')).toBe(true);
   }, 60000);
 });
 

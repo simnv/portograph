@@ -21,9 +21,11 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // DR-04 re-baselined m1-sip-edge (70e112a3... before): link ids and anonymous port ordinals follow the canonical link order; every
 // node box, port, path and the canvas are byte-identical (user approval, 2026-11-09). The parser fix for structured endpoints changed the ids
 // once more (e124d93a... before), again with the same geometry (user approval).
+// ADR-0027 seat addendum (dense-16x9 ticket 02) re-baselined both: every published model gains `alignmentTargets` and `alignmentSeats` (the hash
+// without those two keys is the old one: 44413304... and 2f8dee6c...).
 const baselines = {
-  'm1-sip-edge': '44413304d477acb120c1cc29753338b7c794f18a669d4b52c7d0bd4769bb89da',
-  'synthetic/drawio-constructs': '2f8dee6c7b7047b40bf5a1619e6d7f35e61c80fbbd3c0bbd97dcbb25f6ebab96',
+  'm1-sip-edge': 'b3d5335a329dcf4758fc36c605f46b8832f44ec5dada723721f0bab6911a4456',
+  'synthetic/drawio-constructs': '2796ac17db97defbbf3792c1cc09218a8acf95d019a5c1309acf8f89d9f9137e',
 };
 
 for (const [fixture, baseline] of Object.entries(baselines)) {
