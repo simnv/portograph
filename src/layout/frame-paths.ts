@@ -658,7 +658,9 @@ export function freezeChords(model: LayoutModel, refusals: ReadonlyMap<string, F
   // take a chord the freeze refused, on boxes that the grid then widens (a row path that the region rule derives differently once the geometry settles).
   model.frozenChords = held;
   // The level relation of a sibling-frame chord is a decision too (slice B review 1): the chord is one segment at any angle, so only this record says it was level.
-  model.frozenLevelChords = held.filter(id => standsLevel(model, model.links.find(link => link.id === id)!));
+  // Written only when one stands level, so a sheet with none keeps its bytes: absent = no held chord was level at the freeze (`frozenChords` says whether the freeze was taken).
+  const level = held.filter(id => standsLevel(model, model.links.find(link => link.id === id)!));
+  if (level.length) model.frozenLevelChords = level;
   if (model.fanFamilies !== undefined) model.fanAdmissions = fanAdmissionsOf(model, held, reasons);
 }
 

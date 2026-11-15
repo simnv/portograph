@@ -648,7 +648,7 @@ export interface LayoutModel {
   /**
    * The frozen level cross-frame chords (dense-16x9 ticket 06, slice B) that stand level (equal y at both ends) when the freeze is taken, a subset of
    * `frozenChords`. The relation is held after the freeze: a move that tilts one is refused (`blockedChords`, so `chordsHold`), and a mover that must shift
-   * one frame's row shifts its partners' rows with it (`levelChordPartners`). Written with `frozenChords`: absent before the freeze, empty = none level.
+   * one frame's row shifts its partners' rows with it (`levelChordPartners`). Written by the freeze only when one stands level: absent = none was (read `frozenChords` for whether the freeze was taken).
    */
   frozenLevelChords?: string[];
   /**
