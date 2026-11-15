@@ -93,39 +93,44 @@ export interface PoleRanks {
   ranks: Map<string, number>;
   /** The members that stand on a pole's rank for good: nothing moves them (child spans push the others). */
   pinned: Set<string>;
-  /** The last rank, `L`; absent when no member links only to the tier below. */
-  last?: number;
+  /** The last rank, `L`. */
+  last: number;
 }
 
 /**
- * Two-pole ranks (ADR-0026, ranked-groups section 1, step 1). The upward anchors take rank 0 and the
- * downward anchors (those that link only to the tier below) take the last rank `L`, always: both
- * are pinned after every other member is placed. Any other member counts from its nearer pole: with
- * `du` its depth from the upward anchors and `dd` from the downward anchors, `du < dd` gives rank
- * `du` (below the upper pole), `dd < du` gives rank `L - dd` (above the lower pole), and a tie takes
- * the upper of the two results, `min(du, L - dd)`. No rank lies outside `0..L`, so a chain longer
- * than the distance between the poles stands on one rank, joined by peer links; a member that is no
- * anchor may stand on a pole's rank, beside the anchors.
+ * Two-pole ranks (ADR-0026, ranked-groups section 1, step 1). The rule applies when a routed path
+ * inside the group joins an upward anchor with a downward-only anchor; such a group has a pole
+ * distance. For any other group the function returns nothing and the caller keeps the ranks of
+ * ADR-0019 exactly (the depth from the upward anchors, the old rank of an unreached member): ranking
+ * the components that no path joins from their own pole cost the approved golden 20 bends and a
+ * link (931x960 to 810x1112), so the rule stops where the pole distance stops.
  *
- * Each routed component that holds an anchor is ranked from its own pole. `L` is the smallest span
- * that holds every component: the pole distance of a component that holds both kinds of anchor
- * (the least depth of a downward anchor from the upward anchors), the largest `du` of a component
- * with an upward anchor only, the largest `dd` of one with a downward anchor only, and at least 1.
- * A leaf chain of a member that links both ways (a chain of single links, read on the peer
- * components contracted to one node) takes that member's rank. A fixed peer component that holds
- * both kinds of anchor is a both-way member: the upward pole wins and its members stand on rank 0.
- * With no downward anchor left there is no lower pole: the depth stands, except for those leaf
- * chains. Members no pole reaches get no rank (step 6).
+ * The upward anchors take rank 0 and the downward anchors (those that link only to the tier below)
+ * take the last rank `L`, always: both are pinned after every other member is placed. Any other
+ * member counts from its nearer pole: with `du` its depth from the upward anchors and `dd` from the
+ * downward anchors, `du < dd` gives rank `du` (below the upper pole), `dd < du` gives rank `L - dd`
+ * (above the lower pole), and a tie takes the upper of the two results, `min(du, L - dd)`. No rank
+ * lies outside `0..L`, so a chain longer than the distance between the poles stands on one rank,
+ * joined by peer links; a member that is no anchor may stand on a pole's rank, beside the anchors.
+ *
+ * `L` is the smallest span that holds every routed component: the pole distance of a component that
+ * holds both kinds of anchor (the least depth of a downward anchor from the upward anchors), the
+ * largest `du` of a component with an upward anchor only, the largest `dd` of one with a downward
+ * anchor only, and at least 1. A leaf chain of a member that links both ways (a chain of single
+ * links, read on the peer components contracted to one node) takes that member's rank. A fixed peer
+ * component that holds both kinds of anchor is a both-way member: the upward pole wins and its
+ * members stand on rank 0. Members no pole reaches get no rank (step 6).
  * (The coordinator gave this reading of the tie clause on 2026-11-15, for the owner to check.)
  */
-function twoPoleRanks(members: string[], links: Link[], upward: string[], lowerOnly: string[], bothWays: Set<string>): PoleRanks {
+function twoPoleRanks(members: string[], links: Link[], upward: string[], lowerOnly: string[], bothWays: Set<string>): PoleRanks | undefined {
   const fixed = components(members, links);
   const upRoots = new Set(upward.map(id => fixed.get(id)!));
   // A downward anchor that shares a fixed peer component with an upward anchor stands on rank 0 with it: a both-way member.
   const downward = lowerOnly.filter(id => !upRoots.has(fixed.get(id)!));
   const both = new Set([...bothWays, ...lowerOnly.filter(id => upRoots.has(fixed.get(id)!))]);
   const up = depthsOf(members, links, upward);
-  const down = downward.length ? depthsOf(members, links, downward) : new Map<string, number>();
+  if (!downward.some(id => up.has(id))) return undefined;
+  const down = depthsOf(members, links, downward);
   const pinned = new Set([...upward, ...downward]);
   // Leaves, read on the contracted peer components: a chain of components hangs from the component that holds a both-way member.
   const roots = [...new Set(members.map(id => fixed.get(id)!))];
@@ -136,25 +141,21 @@ function twoPoleRanks(members: string[], links: Link[], upward: string[], lowerO
   const bothRoots = new Set([...both].map(id => fixed.get(id)!));
   const beside = (id: string): boolean => parent.has(fixed.get(id)!) && bothRoots.has(rootOf(id));
   // `last`: the span every routed component fits in, found per component (the raw routed graph).
-  let last: number | undefined;
-  if (downward.length) {
-    const whole = components(members, links.map(link => ({ ...link, peer: true })));
-    const hasUp = new Set(upward.map(id => whole.get(id))), hasDown = new Set(downward.map(id => whole.get(id)));
-    last = 1;
-    for (const id of members) {
-      const group = whole.get(id), depthUp = up.get(id), depthDown = down.get(id);
-      if (hasUp.has(group) && hasDown.has(group)) { if (pinned.has(id) && depthUp !== undefined && depthUp > 0) last = Math.max(last, Math.min(...downward.filter(other => whole.get(other) === group).map(other => up.get(other)!))); }
-      else if (hasUp.has(group) && depthUp !== undefined && !beside(id)) last = Math.max(last, depthUp);
-      else if (hasDown.has(group) && depthDown !== undefined && !beside(id)) last = Math.max(last, depthDown);
-    }
+  const whole = components(members, links.map(link => ({ ...link, peer: true })));
+  const hasUp = new Set(upward.map(id => whole.get(id))), hasDown = new Set(downward.map(id => whole.get(id)));
+  let last = 1;
+  for (const id of members) {
+    const group = whole.get(id), depthUp = up.get(id), depthDown = down.get(id);
+    if (hasUp.has(group) && hasDown.has(group)) { if (pinned.has(id) && depthUp !== undefined && depthUp > 0) last = Math.max(last, Math.min(...downward.filter(other => whole.get(other) === group).map(other => up.get(other)!))); }
+    else if (hasUp.has(group) && depthUp !== undefined && !beside(id)) last = Math.max(last, depthUp);
+    else if (hasDown.has(group) && depthDown !== undefined && !beside(id)) last = Math.max(last, depthDown);
   }
   const ranks = new Map<string, number>();
   for (const id of members) {
     const depthUp = up.get(id), depthDown = down.get(id);
     if (depthUp === undefined && depthDown === undefined) continue;
     if (beside(id) || depthUp === 0) ranks.set(id, 0);
-    else if (depthDown === 0) ranks.set(id, last!);
-    else if (last === undefined) ranks.set(id, depthUp!);
+    else if (depthDown === 0) ranks.set(id, last);
     else {
       const fromUp = depthUp ?? Infinity, fromDown = depthDown ?? Infinity;
       const raw = fromUp < fromDown ? fromUp : fromDown < fromUp ? last - fromDown : Math.min(fromUp, last - fromDown);
@@ -163,8 +164,8 @@ function twoPoleRanks(members: string[], links: Link[], upward: string[], lowerO
   }
   // Pin the poles after the others are placed.
   for (const id of upward) ranks.set(id, 0);
-  for (const id of downward) ranks.set(id, last!);
-  return { ranks, pinned, ...(last !== undefined ? { last } : {}) };
+  for (const id of downward) ranks.set(id, last);
+  return { ranks, pinned, last };
 }
 
 /** Union-find over peer links: the members of one component always share a rank. */
@@ -340,14 +341,15 @@ export function deriveRanks(input: RankInput): RankResult {
   // it takes the ranks after the last rank of the rest of the group, keeping its own internal order.
   // Only a group hung from above has the rule: below-anchored, the last rank belongs to the members
   // that link below, and a child moved past it would take that place.
-  const leaves = anchoredFrom === 'above' ? leafChildren(input, ranks, new Set([...above, ...below])) : new Set<RankInput['children'][number]>();
-  // With a lower pole no row goes after the rest: an overlay-only child stands by step 6 on a rank no later than the last (ADR-0026), and is held.
-  const last = poles?.last !== undefined ? new Set<RankInput['children'][number]>() : lastChildren(leaves, routed, ranks, comp);
+  // With two poles (ADR-0026) both kinds of anchor keep a child from being a leaf, and no row goes after the rest: an overlay-only child
+  // stands by step 6 on a rank no later than the last, and is held. A group without a pole distance reads as ADR-0019 did.
+  const leaves = anchoredFrom === 'above' ? leafChildren(input, ranks, new Set(poles ? [...above, ...below] : above)) : new Set<RankInput['children'][number]>();
+  const last = poles ? new Set<RankInput['children'][number]>() : lastChildren(leaves, routed, ranks, comp);
   // An overlay-only child pinned by a peer partner outside the last children is no leaf: it is held and pushes.
   for (const child of leaves) if (!child.members.some(id => routed.has(id)) && !last.has(child)) leaves.delete(child);
   const held = input.children.filter(child => !leaves.has(child)).map(child => spanOf(ranks, child)).filter((span): span is [number, number] => span !== undefined);
   const origins = leafOrigins(last, ranks, comp);
-  clearSpans(input, members, edges, ranks, held, poles?.last !== undefined ? { pinned: poles.pinned, last: poles.last } : undefined);
+  clearSpans(input, members, edges, ranks, held, poles ? { pinned: poles.pinned, last: poles.last } : undefined);
   const leafMembers = new Set([...last].flatMap(child => child.members));
   const rest = [...ranks].filter(([id]) => !leafMembers.has(id)).map(([, rank]) => rank);
   if (rest.length) for (const [child, origin] of origins) for (const id of child.members) if (ranks.has(id)) ranks.set(id, ranks.get(id)! - origin + Math.max(...rest) + 1);

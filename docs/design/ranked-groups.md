@@ -48,9 +48,13 @@ differ.
    **one rank**: ranks exist to make the links toward the anchors short and vertical, and a group with
    no anchor has nothing to be above, so its internal routed links are peer links (decided 2026-09-29
    on ticket 02: without this rule any two members joined by a link became a column).
-   **Two poles (ADR-0026, dense-16x9 ticket 01).** A group with a member that links to the tier above
-   and a member that links to the tier below has two poles; no member stands between an anchor and the
-   tier it links to. The upward anchors take rank 0. The downward anchors, which link only to the tier
+   **Two poles (ADR-0026, dense-16x9 ticket 01).** A group has two poles when a routed path inside the
+   group joins an upward anchor with a downward-only anchor (a member that links to the tier below and
+   not to the tier above): the group then has a pole distance, and no member stands between an anchor
+   and the tier it links to. A group with no such path keeps the ranks of ADR-0019 exactly (the depth
+   from the upward anchors, step 6 for the members no anchor reaches): ranking the components that no
+   path joins from their own pole cost the approved golden 20 bends and a link, so the rule stops where
+   the pole distance stops. In a group with two poles the upward anchors take rank 0. The downward anchors, which link only to the tier
    below, take the last rank `L`. Both are pinned after every other member is placed: no later step
    (a child span, an overlay partner) moves them, and no member is pushed past `L`. Each routed
    component that holds an anchor is ranked from its own pole. `L` is the smallest span that holds
@@ -66,11 +70,8 @@ differ.
    of a member that links both upward and downward (a chain of single links that hangs from it, read
    on the fixed peer components contracted to one node) takes that member's rank. A fixed peer
    component that holds both kinds of anchor counts as a both-way member: the upward pole wins and its
-   members stand on rank 0. Where no member links only downward, there is no lower pole: the depth
-   stands, but for those leaf chains. A group with anchors on one side only keeps its ranks. A group
-   whose upward and downward anchors no routed link joins is ranked the same way, component by
-   component (the approved golden's Datacenter is such a group: its two border routers drop to a
-   second rank below the two access routers).
+   members stand on rank 0. A group with anchors on one side only keeps its ranks, and so does a group whose
+   anchors no routed path joins (the approved golden's Datacenter is such a group).
 2. **Depth and peer links.** The **depth** of a member is its breadth-first distance from the anchor
    set over the routed links inside the group, read as undirected. A routed link between two members
    of equal depth is a **peer link**: it never lengthens a path, and its two ends share a rank. A
