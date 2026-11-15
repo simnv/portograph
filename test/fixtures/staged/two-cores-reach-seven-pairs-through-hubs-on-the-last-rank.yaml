@@ -6,6 +6,8 @@
 # a hub and the tier below, so the 28 links from the hubs to the seven groups of two nodes on tier 2 take a routed chord: no lane for them.
 # Before ADR-0026 the depth counted from `up-x1` and `up-x2` alone, and `mid-x3`, `mid-x4`, `leaf-x1` and `leaf-x2` took a rank below the hubs, and `up-x3` and `up-x4` stood beside them (four ranks).
 # Seven groups of two nodes stand on tier 2 and one stub group under each pair on tier 3. Every link asks for `route: straight`.
+# STAGED outside goldens/synthetic/ (the corpus gate would fail it): the sheet still fails G5 (port order, dense-16x9 ticket 05) and G6
+# (parallel clearance of the same-tier links between the hubs, ticket 06). It moves to goldens/synthetic/ when tickets 04, 05 and 06 make it clean.
 # Test-only input owned by dense-16x9 ticket 01; test/pipeline/two-pole-ranks.test.ts reads the ranks. Other dense-16x9 tickets measure on it.
 portograph: 2
 profile: network

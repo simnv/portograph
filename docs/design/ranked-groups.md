@@ -51,18 +51,26 @@ differ.
    **Two poles (ADR-0026, dense-16x9 ticket 01).** A group with a member that links to the tier above
    and a member that links to the tier below has two poles; no member stands between an anchor and the
    tier it links to. The upward anchors take rank 0. The downward anchors, which link only to the tier
-   below, take the last rank `L`, the routed distance between the poles (the least depth of a downward
-   anchor from the upward anchors). Any other member counts from its nearer pole. With `du` its depth from the upward
-   anchors and `dd` its depth from the downward anchors (both read as in step 2), `du < dd` gives
-   rank `du`, `dd < du` gives rank `L - dd`, and a tie takes the upper of the two results,
-   `min(du, L - dd)` (a tie goes to the upper pole; the coordinator gave this reading on 2026-11-15
-   for the owner to check). No rank lies outside `0..L`: a chain longer than the distance between the
-   poles stands on one rank, joined by peer links, and a member that is no anchor may stand on a
-   pole's rank, beside the anchors. A leaf of a member that links both upward
-   and downward (a member that hangs from it by a chain of single links) takes that member's rank.
-   Where no member links only downward, there is no lower pole: the depth stands, but for those leaf
-   chains. One peer component that holds both poles keeps the depth ranks, and so does a group whose poles no routed link joins (nothing stands between them inside the group; the approved golden's Datacenter is such a group). A group with anchors on
-   one side only keeps its ranks.
+   below, take the last rank `L`. Both are pinned after every other member is placed: no later step
+   (a child span, an overlay partner) moves them, and no member is pushed past `L`. Each routed
+   component that holds an anchor is ranked from its own pole. `L` is the smallest span that holds
+   every component: the pole distance of a component that holds both kinds of anchor (the least depth
+   of a downward anchor from the upward anchors), the largest depth of a component with an upward
+   anchor only, the largest depth of one with a downward anchor only, and at least 1. Any other
+   member counts from its nearer pole. With `du` its depth from the upward anchors and `dd` its depth
+   from the downward anchors (both read as in step 2), `du < dd` gives rank `du`, `dd < du` gives
+   rank `L - dd`, and a tie takes the upper of the two results, `min(du, L - dd)` (a tie goes to the
+   upper pole; the coordinator gave this reading on 2026-11-15 for the owner to check). No rank lies
+   outside `0..L`: a chain longer than the distance between the poles stands on one rank, joined by
+   peer links, and a member that is no anchor may stand on a pole's rank, beside the anchors. A leaf
+   of a member that links both upward and downward (a chain of single links that hangs from it, read
+   on the fixed peer components contracted to one node) takes that member's rank. A fixed peer
+   component that holds both kinds of anchor counts as a both-way member: the upward pole wins and its
+   members stand on rank 0. Where no member links only downward, there is no lower pole: the depth
+   stands, but for those leaf chains. A group with anchors on one side only keeps its ranks. A group
+   whose upward and downward anchors no routed link joins is ranked the same way, component by
+   component (the approved golden's Datacenter is such a group: its two border routers drop to a
+   second rank below the two access routers).
 2. **Depth and peer links.** The **depth** of a member is its breadth-first distance from the anchor
    set over the routed links inside the group, read as undirected. A routed link between two members
    of equal depth is a **peer link**: it never lengthens a path, and its two ends share a rank. A
@@ -90,6 +98,10 @@ differ.
    members out of its span. An overlay-only leaf child still goes after the last rank of the rest
    (step 6). A group anchored from below has no leaf rule. (Ticket 19 put every leaf child after
    the last rank of the rest of the group; ticket 28 replaced that rule with the depth ranks.)
+   *Two poles and children (ADR-0026).* A child span never moves a pole and never pushes a member past
+   the last rank: a member the push would take below `L` stays on `L`, beside the downward anchors. A
+   child that holds a downward anchor is no leaf child, and an overlay-only child takes no row after
+   the rest (it stands by step 6 on a rank no later than `L`).
 6. **Overlay-only and unreached members.** A member no anchor reaches over the routed links (it has
    no routed link inside the group, or only routed links to members no anchor reaches) takes the
    rank of its nearest overlay partner in the group that has one, else the last rank. In a group anchored

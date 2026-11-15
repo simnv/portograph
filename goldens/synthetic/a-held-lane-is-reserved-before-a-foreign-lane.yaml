@@ -2,14 +2,15 @@
 # child group, so it stands below the distribution rank) with the feed changed:
 # u1 feeds the gateways of east and west, and the west gateway also links to l0 and the east gateway to l1.
 # Each of those two links ends in one frame, so it holds a lane beside that frame's distribution cell and
-# the frame grows to hold it; it is foreign to the other frames, so it must stand outside them. The four
+# the frame grows to hold it; it is foreign to the other frames, so it must stand outside them. The
 # feed-to-client links are foreign to every frame. A lane a frame holds grows the frame's reach, and lane x
 # is immutable, so it is reserved before the lanes foreign to it: reserved in source order, a foreign lane
 # stood where a frame grew and the lanes stage threw `Lane ... crosses occupied group` (ranked-groups
 # ticket 23). No foreign lane stands inside a frame's cells and the lanes it holds.
-# Two poles (dense-16x9 ticket 01, ADR-0026): the gateway links up and down, so a leaf of it would stand beside it and no lane would cross a
-# row. Each access server therefore links to the tier below (`[easta, l2]`) and hangs from the distribution switch, so the ranks stay
-# gateway, distribution switch, access server (last rank) and the gateway's link to the client crosses the two rows below it.
+# Two poles (dense-16x9 ticket 01, ADR-0026): a leaf of the gateway, which links up and down, would stand beside it and no lane would cross a
+# row, so each access server hangs from its distribution switch and links to the tier below (the last rank). The gateway link to the tier
+# below then crosses the two rows under it, and the lane stands beside the frame's cells as before. Two foreign feed-to-client links
+# remain (u1 to l0, u0 to l2), and the sheet passes every gate.
 # Test-only input owned by ranked-groups ticket 23; test/pipeline/frame-held-lanes.test.ts reads the stages.
 portograph: 2
 groups:
@@ -47,10 +48,8 @@ links:
   - [u1, eastg]
   - [u1, westg]
   - [u1, l0]
-  - [u1, l1]
   - [u0, l2]
-  - [u2, l2]
   - [westg, l0]
   - [eastg, l1]
-  - [easta, l2]
+  - [easta, l0]
   - [westa, l2]
