@@ -18,3 +18,4 @@ links:
   - [isp, core]
   - [core, edge]
   - [core, deep]
+  - [edge, deep]

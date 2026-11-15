@@ -7,6 +7,9 @@
 # is immutable, so it is reserved before the lanes foreign to it: reserved in source order, a foreign lane
 # stood where a frame grew and the lanes stage threw `Lane ... crosses occupied group` (ranked-groups
 # ticket 23). No foreign lane stands inside a frame's cells and the lanes it holds.
+# Two poles (dense-16x9 ticket 01, ADR-0026): the gateway links up and down, so a leaf of it would stand beside it and no lane would cross a
+# row. Each access server therefore links to the tier below (`[easta, l2]`) and hangs from the distribution switch, so the ranks stay
+# gateway, distribution switch, access server (last rank) and the gateway's link to the client crosses the two rows below it.
 # Test-only input owned by ranked-groups ticket 23; test/pipeline/frame-held-lanes.test.ts reads the stages.
 portograph: 2
 groups:
@@ -36,11 +39,11 @@ nodes:
   l2: { group: low, class: server, label: L2 }
 links:
   - [eastg, eastd]
-  - [eastg, easta]
+  - [eastd, easta]
   - [midg, midd]
   - [midg, mida]
   - [westg, westd]
-  - [westg, westa]
+  - [westd, westa]
   - [u1, eastg]
   - [u1, westg]
   - [u1, l0]
@@ -49,3 +52,5 @@ links:
   - [u2, l2]
   - [westg, l0]
   - [eastg, l1]
+  - [easta, l2]
+  - [westa, l2]
