@@ -228,13 +228,13 @@ export interface SeatTarget { key: string; side: 'top' | 'bottom'; index: number
  * One candidate seat: the targets it stands (port-key order), where the body stands (`x`) and how wide it is, the slide (`dx`) and the growth it
  * takes, the owed verticals it stands, and whether it is a growth in place (the body keeps its edges and grows over the targets, as before ADR-0027).
  */
-export interface SeatCandidate { keys: string[]; x: number; width: number; dx: number; growth: number; owed: number; inPlace: boolean }
+export interface SeatCandidate { keys: string[]; x: number; width: number; dx: number; growth: number; owed: number; inPlace: boolean; recorded?: boolean }
 /** What bounds the seats of one node: the row siblings (`siblingLimit`), the window of the group's step and the overlay walls. */
 /**
  * The alignment cap of a seat (ADR-0027): whether a body `width` wide that stands the targets of `window` keeps it.
  */
 export type SeatCap = (window: readonly SeatTarget[], width: number) => boolean;
-interface SeatBounds { siblings: WideningLimit; window: WideningLimit; stops: OverlayStops }
+interface SeatBounds { siblings: WideningLimit; window: WideningLimit; stops: OverlayStops; kept?: ReadonlySet<string> | undefined }
 
 /** The wanted ports of the top and bottom faces of `node`, by x, then by port key (R3: the last key). */
 function seatTargets(node: LayoutNode, wanted: ReadonlyMap<string, number>, owes: (key: string) => boolean, sides: readonly ('top' | 'bottom')[] = ['top', 'bottom']): SeatTarget[] {
@@ -283,25 +283,30 @@ export function seatCandidates(node: LayoutNode, targets: readonly SeatTarget[],
       if (edges.low < bounds.stops.low - EPS || edges.high > bounds.stops.high + EPS || edges.low < bounds.siblings.low - EPS || edges.high > bounds.siblings.high + EPS) stoppedInPlace = true;
       const window = targets.slice(i, j + 1), keys = window.map(item => item.key).sort();
       const need = edgeHigh - edgeLow, holds = (width: number): boolean => cap(window, width);
+      // The window the recorded seat keeps (`kept`) is that seat again, not a new decision: the main move or a neighbour carried the body off it,
+      // and it goes back by a move bounded as a move+grow is, by the siblings and the walls, and the group box follows it.
+      const recorded = bounds.kept !== undefined && bounds.kept.size > 0 && keys.length === bounds.kept.size && keys.every(key => bounds.kept!.has(key));
+      const seat = (item: SeatCandidate): SeatCandidate => recorded ? { ...item, recorded } : item;
       if (need <= w0 + EPS) {
         // A body that holds the interval where it stands stays: the bounds of the row bound a move, not a body that does not move.
-        const from = Math.max(edgeHigh - w0, low), to = Math.min(edgeLow, high - w0), stays = x0 >= edgeHigh - w0 - EPS && x0 <= edgeLow + EPS;
-        if (stays) result.push({ keys, x: x0, width: w0, dx: 0, growth: 0, owed, inPlace: false });
-        else if (movable && owed > 0 && from <= to + EPS) {
+        const from = Math.max(edgeHigh - w0, recorded ? growLow : low), to = Math.min(edgeLow, (recorded ? growHigh : high) - w0), stays = x0 >= edgeHigh - w0 - EPS && x0 <= edgeLow + EPS;
+        if (stays) result.push(seat({ keys, x: x0, width: w0, dx: 0, growth: 0, owed, inPlace: false }));
+        else if (movable && (owed > 0 || recorded) && from <= to + EPS) {
           const x = Math.max(from, Math.min(x0, to));
-          result.push({ keys, x, width: w0, dx: x - x0, growth: 0, owed, inPlace: false });
+          result.push(seat({ keys, x, width: w0, dx: x - x0, growth: 0, owed, inPlace: false }));
         }
-      } else if (movable && owed > 0 && edgeLow >= growLow - EPS && edgeHigh <= growHigh + EPS) {
+      } else if (movable && (owed > 0 || recorded) && edgeLow >= growLow - EPS && edgeHigh <= growHigh + EPS) {
         // A seat the cap alone refuses is kept apart: its targets are the ones the cap declines (`seatNode`).
-        (holds(need) ? result : capped).push({ keys, x: edgeLow, width: need, dx: edgeLow - x0, growth: need - w0, owed, inPlace: false });
+        (holds(need) ? result : capped).push(seat({ keys, x: edgeLow, width: need, dx: edgeLow - x0, growth: need - w0, owed, inPlace: false }));
       }
       // The growth in place: the body keeps its edges and reaches over the targets.
       const reachLow = Math.min(x0, edgeLow), width = Math.max(x0 + w0, edgeHigh) - reachLow;
-      if (inLimit && !stoppedInPlace && width > w0 + EPS) (holds(width) ? result : capped).push({ keys, x: reachLow, width, dx: 0, growth: width - w0, owed, inPlace: true });
+      if (inLimit && !stoppedInPlace && width > w0 + EPS) (holds(width) ? result : capped).push(seat({ keys, x: reachLow, width, dx: 0, growth: width - w0, owed, inPlace: true }));
     }
   }
   const near = (a: number, b: number): boolean => Math.abs(a - b) <= NO_MOVE_EPS;
-  return result.sort((a, b) => b.owed - a.owed || b.keys.length - a.keys.length
+  // The recorded seat is tried first among the seats that stand as many owed verticals and targets: a seat is decided again only for more.
+  return result.sort((a, b) => b.owed - a.owed || b.keys.length - a.keys.length || Number(b.recorded === true) - Number(a.recorded === true)
     || (near(a.growth, b.growth) ? 0 : a.growth - b.growth) || (near(Math.abs(a.dx), Math.abs(b.dx)) ? 0 : Math.abs(a.dx) - Math.abs(b.dx))
     || Number(a.inPlace) - Number(b.inPlace) || (a.keys.join() < b.keys.join() ? -1 : a.keys.join() > b.keys.join() ? 1 : 0));
 }
@@ -337,7 +342,7 @@ interface SeatOutcome { kept: Set<string>; dx: number; from: number; capped: Set
  * overlay wall is named to `stopped`.
  */
 function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, wanted: ReadonlyMap<string, number>, owes: (key: string) => boolean,
-  window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean): SeatOutcome {
+  window: WideningLimit, stops: OverlayStops, stopped: (link: string) => void, links: ReadonlyMap<string, Feed>, warn: boolean, kept?: ReadonlySet<string>): SeatOutcome {
   const box = node.bounds!, from = box.width, none: SeatOutcome = { kept: new Set(), dx: 0, from, capped: new Set() };
   // A seat reads the geometry alone, never an earlier `cap` decline: the publication check replays it after the route rule has dropped the
   // record, and both must decide alike (R1). The decline records the last decision; the vertical tally reads it.
@@ -347,7 +352,7 @@ function seatNode(model: LayoutModel, group: LayoutGroup, node: LayoutNode, want
   const movable = !isGridGroup(model, group.id) && !model.staggerRows?.some(row => row.group === group.id) && chainBlockOf(model, node.id) === undefined;
   const siblings = siblingLimit(model, group, node);
   const refusedByCap: SeatCandidate[] = [];
-  const candidates = seatCandidates(node, targets, { siblings, window, stops }, movable, seatCap(model, node), refusedByCap);
+  const candidates = seatCandidates(node, targets, { siblings, window, stops, kept }, movable, seatCap(model, node), refusedByCap);
   const saved = JSON.stringify(node);
   const restore = (): void => {
     const copy = JSON.parse(saved) as LayoutNode;
@@ -712,6 +717,26 @@ function centringOffset(chosen: readonly Feed[]): number {
   const mean = (values: Iterable<number>): number => { const xs = [...values].sort((a, b) => a - b); return xs.reduce((sum, x) => sum + x, 0) / xs.length; };
   return mean(new Map(chosen.map(feed => [feed.key, feed.x])).values()) - mean(new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x])).values());
 }
+/**
+ * The feeds the main move of a step centres on while seats stand (ADR-0027: the seat owns the body). A node the record seats on at least one
+ * port of a node feed pulls the group only through the feeds of its kept ports: a feed its seat left out (the cap, the order of the face, the
+ * row) would carry the body off the feeds it stands, pass after pass. A seat on transit-lane ports alone holds nothing: a lane follows its
+ * child. Before the centre rule writes the record, a node that stands a feed where the step begins pulls only through the feeds it stands.
+ * When no feed is left, the step centres on all of them.
+ */
+function seatedFeeds(model: LayoutModel, chosen: readonly Feed[]): Feed[] {
+  const record = model.alignmentSeats;
+  const stands = (feed: Feed): boolean => feed.child.anchor !== undefined && Math.abs(feed.child.anchor.x - feed.x) <= 0.5;
+  const standing = new Set(chosen.filter(stands).map(feed => feed.child.ref.node));
+  const pulling = chosen.filter(feed => {
+    const node = feed.child.ref.node;
+    if (record === undefined) return !standing.has(node) || stands(feed);
+    const seat = Object.hasOwn(record, node) ? record[node] : undefined;
+    const holds = seat !== undefined && chosen.some(other => other.child.ref.node === node && !other.transit && seat.ports.includes(portId(other.child.ref)));
+    return !holds || seat.ports.includes(portId(feed.child.ref));
+  });
+  return pulling.length ? pulling : [...chosen];
+}
 /** The feeds a group step centres on: the ones that may own an alignment. A fan remainder and a yielded transit would only pull the group away from the x its child is aligned to. */
 function chosenFeeds(context: CentreContext, tier: number, own: Feed[], yielded: ReadonlySet<Feed>): Feed[] {
   const vertical = own.filter(feed => context.winners.get(`${tier}:${feed.key}`) === portId(feed.child.ref) && !yielded.has(feed));
@@ -1022,9 +1047,42 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
     // The targets the step kept, grew toward or declined, read on the geometry it leaves on every exit (architecture-2 ticket 66).
     writeAlignmentTargets(model, model.groups[id]!.nodes, step.notes, warn ? stepPass : 0);
     // The seats, only when the step's own geometry stands: a step given back or kept at its start leaves no seat of its own (ADR-0027).
-    if (step.group === began) writeAlignmentSeats(model, step.notes.seated, warn ? stepPass : 0);
+    if (step.group === began) writeAlignmentSeats(model, step.notes.seated, warn ? stepPass : 0, step.notes.unseated);
     return step;
   });
+}
+/**
+ * Withdraws the recorded seat of each node of `nodes` that a port it keeps no longer stands over its feed where the step leaves it (a step given
+ * back, kept at its start, or clamped off the seat): the record names only seats the geometry holds, and the next step decides that body again.
+ */
+function withdrawFallenSeats(model: LayoutModel, nodes: readonly string[], wanted: ReadonlyMap<string, number>): void {
+  const record = model.alignmentSeats;
+  if (record === undefined) return;
+  for (const id of nodes) {
+    const seat = Object.hasOwn(record, id) ? record[id] : undefined;
+    if (seat === undefined) continue;
+    const ports = new Map(model.nodes[id]!.ports.map(port => [portId(port.ref), port]));
+    if (seat.ports.some(key => { const want = wanted.get(key), port = ports.get(key); return want === undefined || port?.anchor === undefined || Math.abs(port.anchor.x - want) > 0.5; })) delete record[id];
+  }
+}
+/**
+ * `withdrawFallenSeats` over every centred tier: when the passes end (a step of another group, the parent stand or an overlay window may have
+ * moved the feed of a seat after it stood), and at the end of each rule from the centre rule on (a rebuild may move a seated body), so the
+ * record a rule publishes names only seats its geometry holds.
+ */
+export function withdrawFallenSeatsOf(model: LayoutModel): void {
+  if (model.alignmentSeats === undefined || !Object.keys(model.alignmentSeats).length || model.anchorTier === undefined) return;
+  if (!model.tierBands.some(band => band.tier === model.anchorTier)) return;
+  withdrawFallenSeatsEverywhere(model, centreContext(model, model.anchorTier));
+}
+function withdrawFallenSeatsEverywhere(model: LayoutModel, context: CentreContext): void {
+  if (model.alignmentSeats === undefined) return;
+  const wanted = new Map<string, number>();
+  for (const { tier, authority } of context.steps) for (const feed of centringFeeds(model, tier, authority)) {
+    const key = portId(feed.child.ref);
+    if (!wanted.has(key)) wanted.set(key, feed.x);
+  }
+  withdrawFallenSeats(model, Object.keys(model.alignmentSeats), wanted);
 }
 function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
@@ -1152,8 +1210,9 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
-  // away from the x its child is then aligned to.
-  const chosen = chosenFeeds(context, tier, own, yielded);
+  // away from the x its child is then aligned to. While a seat stands (`seatedFeeds`), a seated body pulls only through the feeds it keeps.
+  const record = model.alignmentSeats;
+  const chosen = seatedFeeds(model, chosenFeeds(context, tier, own, yielded));
   /** How far each wanted port is from the x its feed asks for, in the model as it now stands. */
   const misses = (): Map<string, number> => {
     // One index of the group's ports per reading, the first port of a key first, as `find` gave it.
@@ -1197,19 +1256,28 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const inset = groupInsets(model, group), box = group.bounds!;
   const rowWindow = { low: box.x + inset.left, high: right(box) - inset.right };
   const links = linkById(model), direct = directMembers(model);
-  const owes = seatOwes(model, seats, links, direct);
+  // The ports each seat keeps (ADR-0027, the seat owns the body): the record once the centre rule has written one; before it, the wanted ports
+  // that stood when the step began, which at a fixed point are the same. A kept port stays owed after the chord freeze.
+  const kept = new Set<string>(record === undefined ? [...startMisses].filter(([, miss]) => miss <= 0.5).map(([key]) => key)
+    : group.nodes.flatMap(node => Object.hasOwn(record, node) ? record[node]!.ports : []));
+  const owedBefore = seatOwes(model, seats, links, direct), owes = (key: string): boolean => owedBefore(key) || kept.has(key);
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
     const stops = walls.get(nodeId)!;
     let stoppedBy: string | undefined;
-    const seat = seatNode(model, group, node, wanted, owes, rowWindow, stops, link => { stoppedBy ??= link; }, seats, warn);
+    const nodePorts = new Set(node.ports.map(port => portId(port.ref)));
+    const keptHere = record === undefined ? new Set([...kept].filter(key => nodePorts.has(key))) : Object.hasOwn(record, nodeId) ? new Set(record[nodeId]!.ports) : undefined;
+    const seat = seatNode(model, group, node, wanted, owes, rowWindow, stops, link => { stoppedBy ??= link; }, seats, warn, keptHere);
     for (const key of seat.kept) aligned.add(key);
     // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
     const box = node.bounds!;
     if (box.width > seat.from + EPS) for (const key of seat.kept) notes.grown.set(key, { low: box.x - wanted.get(key)!, high: right(box) - wanted.get(key)! });
-    if (seat.kept.size && (Math.abs(seat.dx) > NO_MOVE_EPS || box.width > seat.from + EPS)) {
-      notes.seated.set(nodeId, { dx: seat.dx, from: seat.from, width: box.width, ports: [...seat.kept].sort() });
-    }
+    // A seat that moves or grows the body is recorded, and so is a recorded seat that now keeps other ports; one that keeps none is withdrawn.
+    // The width the body needs is the one before its first seat: a later seat does not measure from a box an earlier pass grew.
+    const earlier = record !== undefined && Object.hasOwn(record, nodeId) ? record[nodeId]! : undefined, ports = [...seat.kept].sort();
+    if (seat.kept.size && (Math.abs(seat.dx) > NO_MOVE_EPS || box.width > seat.from + EPS || (earlier !== undefined && earlier.ports.join() !== ports.join()))) {
+      notes.seated.set(nodeId, { dx: seat.dx, from: Math.min(seat.from, earlier?.from ?? Infinity), width: box.width, ports });
+    } else if (!seat.kept.size && earlier !== undefined) (notes.unseated ??= new Set()).add(nodeId);
     for (const key of seat.capped) notes.declined.set(key, { reason: 'cap', by: nodeId });
     // Once per node, not once per pass and side.
     if (stoppedBy && warn && !model.diagnostics.some(d => d.code === 'ALIGNMENT_STOPPED_AT_OVERLAY' && d.message.startsWith(`${node.id} `))) {
@@ -1430,6 +1498,8 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     }
     recentreSeatedFaces(model, seated, feedPorts(model));
     if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+    // The parent stand, the seated faces and the overlay windows move feeds after the last step: a seat whose kept port they leave off its feed is withdrawn.
+    withdrawFallenSeatsOf(model);
   };
   passes();
   // The seated faces and the overlay barycentre above can widen a column after the moves were taken. A window that moves a partner also moves

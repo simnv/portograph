@@ -1544,6 +1544,14 @@ export { labelBorders };
  * and the lane moves out with it (`insertRoomAt`). A label also stays in one region (ticket 19): on every run a label rides, one window
  * between the borders the run crosses must hold it (`labelWindowRoom`), and the growth is the larger of the two.
  */
+/**
+ * Whether every room reserved for a link label or an overlay track still holds on `model`: the reading of the 7f publication
+ * (`validateGroupLabelBands`), on a copy. A move after the reservation that leaves one short is refused by the step that would make it.
+ */
+export function labelRoomHolds(model: LayoutModel): boolean {
+  const shortfalls: LinkLabelShortfall[] = [];
+  return !reserveLinkLabelRoom(clone(model), shortfalls) && !shortfalls.some(tierGapShortfall);
+}
 export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = [], gapRoom?: TierGapLabelRoom): boolean {
   let changed = false;
   // What each reservation was for. The replay that refuses a published model throws on the return

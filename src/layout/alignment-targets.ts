@@ -16,8 +16,12 @@ import { linkById } from './peers.js';
 
 /** The reasons a step declines a target, in the order the kept branch reads them: ticket 65's post-conditions, then the overlay guard. */
 export const ALIGNMENT_DECLINE_REASONS: readonly AlignmentDeclineReason[] = ['riser', 'lane-crossing', 'span', 'chord-clearance', 'overlay-straight', 'cap'];
-/** The model stages at which the record may be there: from the centre rule's output to the output of 7f (the bands rule); the route rule drops it. */
-const RECORD_STAGES: readonly string[] = ['centre', 'bars', 'bundles', 'bands'];
+/**
+ * The model stages at which the record may be there: from the centre rule's output on. The seat owns its body (ADR-0027), and every later reading
+ * of a centring step, the publication check of the routed layout included, reads the seats and the targets the producer decided, so the
+ * published layout carries both records.
+ */
+const RECORD_STAGES: readonly string[] = ['centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
 /** The finding of the publication check: a face where the replay declines a target the record does not. */
 export const ALIGNMENT_TARGETS_DIFFER = 'alignment-targets-differ';
 
@@ -34,6 +38,8 @@ export interface TargetNotes {
   declined: Map<string, { reason: AlignmentDeclineReason; by: string }>;
   /** The seats of the step that changed a body (ADR-0027), by node id: the slide, the width before and after, and the ports they stood. */
   seated: Map<string, Omit<AlignmentSeat, 'pass'>>;
+  /** The nodes whose recorded seat stands no port at the step's end: their seat is withdrawn. */
+  unseated?: Set<string>;
 }
 
 /** The direct members of the direct families: a direct member owes a vertical even as a held cross chord. */
@@ -224,10 +230,11 @@ export function alignmentTargetsFault(model: LayoutModel): string | undefined {
  * Writes the seats of one step that stood (ADR-0027, `LayoutModel.alignmentSeats`): each node whose seat slid or grew its body gets the seat, with
  * the pass. A node whose seat changed nothing keeps its entry and the pass that wrote it. No record (before 7c, after 7f): nothing is written.
  */
-export function writeAlignmentSeats(model: LayoutModel, seated: ReadonlyMap<string, Omit<AlignmentSeat, 'pass'>>, pass: number): void {
+export function writeAlignmentSeats(model: LayoutModel, seated: ReadonlyMap<string, Omit<AlignmentSeat, 'pass'>>, pass: number, unseated: ReadonlySet<string> = new Set()): void {
   const record = model.alignmentSeats;
   if (record === undefined) return;
   for (const [node, seat] of seated) record[node] = { dx: seat.dx, from: seat.from, width: seat.width, ports: [...seat.ports], pass };
+  for (const node of unseated) delete record[node];
 }
 
 /**

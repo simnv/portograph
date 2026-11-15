@@ -708,9 +708,9 @@ export interface LayoutModel {
    * face, in port-key order. A step writes it at its end, on every exit: `kept` (the target stands), `grown` (the body grew toward it, or it stood
    * and a later step moved it off; `extent` is the room the body needs), `declined` (a guard refused to keep it, with `reason` and `by`). A declined
    * target is final for the placement attempt: the vertical tally of ticket 65 no longer counts it, so no later pass tries to keep it again (R1).
-   * Created `{}` by the centre rule at its input stage, read and written through 7f, compared at the publication of 7f, and dropped by the route
-   * rule, so a routed layout does not carry it. Absent = not decided (a model before 7c, a routed model, or a hand-made centre transaction: a
-   * later run of the passes records and declines nothing and warns `ALIGNMENT_TARGETS_UNDECIDED`); a routed model with it is refused. An absent face key = the face had no wanted port in any step; `[]` = the face was stepped and has
+   * Created `{}` by the centre rule at its input stage, read and written through 7f, compared at the publication of 7f, and kept by the routed
+   * layout with the seats (ADR-0027). Absent = not decided (a model before 7c, or a hand-made centre transaction: a later run of the passes
+   * records and declines nothing and warns `ALIGNMENT_TARGETS_UNDECIDED`); a model before 7c with it is refused. An absent face key = the face had no wanted port in any step; `[]` = the face was stepped and has
    * no target in any state now (its feeds yielded). `kept` and `grown` are where the targets stood when the last step on the group ended, read
    * on the geometry that step left (a `grown` extent is read where the body grew, before the row pack and the clamp). The publication check
    * refuses a malformed record and, at the output of 7f, names a face where its replay declines a target the record does not
@@ -723,9 +723,12 @@ export interface LayoutModel {
    * geometry stands; a seat that changes nothing writes nothing, so an entry keeps the pass that wrote it. One decision per node and step: the
    * seat (`seatNode`) moves the body inside the slack of its row first and grows it only by what no move gives, up to the alignment cap. Read by
    * the acceptance gate of the fan wrap (`wrapGateVerdict`: a link that only a seat move stands straight in the plain run is not counted as
-   * lost) and by the publication check (`alignmentSeatsFault`: no seat grows a body past its cap). It lives with `alignmentTargets`: created `{}`
-   * by the centre rule at its input stage, written through 7f, dropped by the route rule. Absent = not decided; `{}` = decided, no seat changed a
-   * body.
+   * lost) and by the publication check (`alignmentSeatsFault`: no seat grows a body past its cap). The seat owns its body: while an entry stands,
+   * the main move of the node's group reads only the feeds of its kept ports, the next pass tries the recorded window first, and a seat is
+   * decided again only for more owed verticals or more targets; an entry whose kept port no longer stands is withdrawn when the passes and each
+   * rule end. A spent budget excuses no kept port at publication. It lives with `alignmentTargets`: created `{}` by the centre rule at its input
+   * stage, written through 7f, and kept in the routed layout, whose publication check replays the steps that read it. Absent = not decided;
+   * `{}` = decided, no seat stands.
    */
   alignmentSeats?: Record<string, AlignmentSeat>;
   /**

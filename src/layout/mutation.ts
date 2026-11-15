@@ -29,7 +29,7 @@ import { faceKey, laneFaceOrder, turnRecord, turnRecordFaults } from './turn-ord
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
-import { CENTRE_ALIGNMENT_OPEN, centreItemLink, publishedCentreViolations, selectAnchorTier } from './centre.js';
+import { CENTRE_ALIGNMENT_OPEN, centreItemLink, publishedCentreViolations, selectAnchorTier, withdrawFallenSeatsOf } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentSeatsFault, alignmentTargetsFault } from './alignment-targets.js';
 import { givenBackFault } from './given-back.js';
 import { checkBodyTrims } from './end-trim.js';
@@ -426,6 +426,11 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
       // A spent shared budget is producer state geometry cannot witness (ADR-0010). A model that
       // reports it keeps its last state and is judged by the final gates; the unverified alignments
       // are recorded on it. Every other model must hold the invariant exactly.
+      // A port a recorded seat keeps is the seat's decision, not producer state: a spent budget excuses only the links outside every kept set
+      // (ADR-0027, the seat owns the body).
+      const kept = new Set(Object.values(model.alignmentSeats ?? {}).flatMap(seat => seat.ports));
+      const seated = centring.filter(item => [...kept].some(port => item.includes(`: ${port} sits at x `)));
+      if (seated.length) throw new PlacementRefusal('centring', `Centring invariant violated at a recorded seat: ${seated.join('; ')}`, { stage: model.stage });
       if (!diagnosed(model, centring)) throw new PlacementRefusal('centring', `Centring invariant violated: ${centring.join('; ')}`, { stage: model.stage });
       const message = `Centring invariant unverified after a spent budget: ${centring.join('; ')}`;
       if (!model.diagnostics.some(d => d.code === 'CENTRE_INVARIANT_UNVERIFIED' && d.message === message)) {
@@ -809,10 +814,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // It also records and withdraws the parent port moves it took at a frame-column wall (`parentWallMoves`, `standPortsOverChildren`),
     // and decides once which parents below the anchor tier spread their ports over their children (`parentSpreads`, architecture-2 ticket 32).
     ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads', 'givenBack'] : []),
-    // The centring steps of 7c to 7f write the record of their alignment targets; the route rule drops it, after the publication of 7f has
-    // compared it with its replay (architecture-2 ticket 66).
-    // The seats of the same steps live with it (ADR-0027).
-    ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets', 'alignmentSeats'] : []),
+    // The centring steps of 7c to 7f write the record of their alignment targets (architecture-2 ticket 66) and of their seats (ADR-0027); a rule
+    // withdraws a seat its rebuild left off its feed. The routed layout keeps both.
+    ...(['centre', 'bars', 'bundles', 'bands'].includes(rule) ? ['alignmentTargets', 'alignmentSeats'] : []),
     // The end trim of 7f records the bodies and boxes it narrowed (architecture-2 ticket 68); every later rule keeps the record.
     ...(rule === 'bands' ? ['bodyTrims'] : []),
     // D-Q5: the publication writes the command's lift record (`decideLifts`); the entries it adds after the kept run are declined and move no band.
@@ -1051,8 +1055,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     else rebuildRowPaths(draft);
   }
   if (rule === 'bars') rebuildBarDrops(draft);
-  // The last centring reading that reads the record is the publication of 7f: the routed layout publishes without it (architecture-2 ticket 66).
-  if (rule === 'route') { delete draft.alignmentTargets; delete draft.alignmentSeats; }
+  // A rebuild can move a seated body or its feed: the record the rule publishes names only the seats its geometry holds (ADR-0027).
+  if (stages.indexOf(rule) >= stages.indexOf('centre') && stages.indexOf(rule) <= stages.indexOf('bands')) withdrawFallenSeatsOf(draft);
+  // The routed layout keeps the records: its publication check replays the centring steps, and they read the seats the producer decided (ADR-0027).
   // The producers of 7e and 7f write after the rule checks above: their output is judged here, on the net draft after every dependent rebuild
   // and before commit (DR-11). Publication (`protect`) stays the second boundary.
   if (rule === 'bundles' || rule === 'bands') judgePostconditions(model, draft, rule);
