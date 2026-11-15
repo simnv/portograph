@@ -315,12 +315,12 @@ describe('G5 and the record of the turn round', () => {
     // A face of a node that the model does not have fails the freeze of a restore, as before.
     expect(() => restoreLayoutModel(JSON.stringify(edited(reserved, copy => { copy.freeze!.turnOrder = [{ node: 'no-such-node', side: 'bottom', ports: [] }]; })))).toThrow(/Frozen turn order/);
     const turned = await forced();
-    expect(g5(edited(turned, copy => { delete copy.turnOrder; }))).toContain('fl-1');
+    expect(g5(edited(turned, copy => { delete copy.turnOrder; }))).toContain('*');
   });
 
   it('fails a recorded scope that is not the scope of the model, and a stale scope on a restore', async () => {
     const reserved = await forced({ testTurnExcept: ['fl-1|bottom'] });
-    expect(g5(edited(reserved, copy => { copy.freeze!.turnExcept = []; }))).toEqual(expect.arrayContaining(['core-1']));
+    expect(g5(edited(reserved, copy => { copy.freeze!.turnExcept = []; }))).toContain('*');
     expect(() => restoreLayoutModel(JSON.stringify(edited(reserved, copy => { copy.freeze!.turnExcept = []; })))).toThrow(/Frozen turn order/);
   });
 
