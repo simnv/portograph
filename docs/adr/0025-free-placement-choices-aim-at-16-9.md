@@ -24,3 +24,11 @@ The aim is a soft default and never a gate. A document can override it.
 Most goldens and many corpus sheets move. Each rule that takes the aim merges alone, with
 `gate:compare` showing no sheet worse on bends, crossings or gates unless it is listed with a
 reason, and with a contact sheet of the 12 most changed sheets for the owner.
+
+## Amendment (2026-11-16): the lift takes the aim in its judge
+
+The lift reads the aim in `judgeLift`, where it chooses (the tolerated rise must be narrower or nearer the aim). Its **trial filter**, the shape
+test that admits a rise with no estimated area gain to a trial, keeps the square test of ADR-0024, unchanged. Reason, by measure on the corpus:
+the estimate is too coarse to tell the rises the judge keeps from the ones it declines. A filter by the aim admitted a trial on 219 sheets and
+kept five more lifts for +6.8 % corpus time (+42 % on the 101 sheets whose drawing did not change); a filter that bound the estimate's area to
+the judge tolerance kept none of them and lost a lift that main keeps, which was visibly worse. A later ticket may revisit the filter.

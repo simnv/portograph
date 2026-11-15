@@ -10,6 +10,7 @@ import { fitRegionGroup } from './regions.js';
 import { nodeObstacleReach, routedStroke } from './bands.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
+import { aspectAim, aspectGap } from './aspect.js';
 import { ASPECT_EPS, PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -464,8 +465,9 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
  * trigger refuses, or undefined when the row may be tried on a draft.
  * - A rank cell (a fan wrap): the block trigger. Its one line must be wider than the widest other group of its tier block (the unit
  *   `columnTiers` reads: a top-level frame with its child frames), read on `model`, the one-line stage-5 model, so no seated hub is read.
- * - A plain row (no other block content): the aspect trigger (user decision 2026-11-02). Its band is the one widest band, and the sheet is
- *   wider than tall, read on `base`, the stage-5 canvas that `stackBands` sets with the rows accepted so far.
+ * - A plain row (no other block content): the aspect trigger (user decision 2026-11-02; ADR-0025). The sheet is wider than the aspect aim,
+ *   read on `base`, the stage-5 canvas that `stackBands` sets with the rows accepted so far. No "one widest band" test: the area
+ *   objective of `objectiveReason` answers it (a row outside the widest band cannot drop the canvas area).
  */
 function triggerReason(model: LayoutModel, base: LayoutModel, id: string): string | undefined {
   const group = model.groups[id]!;
@@ -475,15 +477,14 @@ function triggerReason(model: LayoutModel, base: LayoutModel, id: string): strin
     const width = group.bounds!.width, widest = Math.max(...others.map(item => item.bounds!.width));
     return width > widest + PLACEMENT_EPS ? undefined : `block: one line (${width.toFixed(2)} px) is no wider than the rest of its block (${widest.toFixed(2)} px)`;
   }
-  const band = base.tierBands.find(item => item.tier === base.groups[id]!.tier)!;
-  if (base.tierBands.some(other => other !== band && other.bounds!.width >= band.bounds!.width - PLACEMENT_EPS)) return 'its band is not the one widest band of the sheet';
-  const before = aspectOf(base);
-  return before !== undefined && before.width > before.height + PLACEMENT_EPS ? undefined : `aspect: the sheet is ${size(before)}, not wider than tall`;
+  const before = aspectOf(base), aim = aspectAim(base.document);
+  return before !== undefined && before.width > before.height * aim + PLACEMENT_EPS ? undefined
+    : `aspect: the sheet is ${size(before)}, not wider than the aim ${aim.toFixed(3)}`;
 }
 
 /**
  * The objective of a stage-5 stagger (D-Q4), read on the seated draft against `base`: the stage-5 canvas area strictly less; and for a plain
- * row (the aspect trigger) the sheet also nearer square (`|ln(W/H)|` strictly smaller). Returns the reason it refuses, or undefined.
+ * row (the aspect trigger) the sheet also nearer the aspect aim (`aspectGap` strictly smaller). Returns the reason it refuses, or undefined.
  */
 function objectiveReason(base: LayoutModel, draft: LayoutModel, id: string): string | undefined {
   const before = aspectOf(base), after = aspectOf(draft);
@@ -491,8 +492,9 @@ function objectiveReason(base: LayoutModel, draft: LayoutModel, id: string): str
     return `two lines give ${size(after)}, not less area than ${size(before)}`;
   }
   if (draft.groups[id]!.frame !== undefined) return undefined;
-  return Math.abs(Math.log(after.width / after.height)) < Math.abs(Math.log(before.width / before.height)) - ASPECT_EPS ? undefined
-    : `aspect: two lines give ${size(after)}, not nearer square than ${size(before)}`;
+  const aim = aspectAim(base.document);
+  return aspectGap(after.width, after.height, aim) < aspectGap(before.width, before.height, aim) - ASPECT_EPS ? undefined
+    : `aspect: two lines give ${size(after)}, not nearer the aim ${aim.toFixed(3)} than ${size(before)}`;
 }
 
 /**
@@ -500,7 +502,7 @@ function objectiveReason(base: LayoutModel, draft: LayoutModel, id: string): str
  * row (`rowReason`: a row of three or more members, each with one plain routed link out through one horizontal face, every hub feeding three
  * or more of them) is tried widest first on a draft. It staggers only when its trigger holds (`triggerReason`: the block trigger for a rank
  * cell, the aspect trigger for a plain row), the seated draft passes `prove` (the stage-5 refusals and the topology-freeze validation), and the
- * objective holds (`objectiveReason`: less stage-5 canvas area, and nearer square for a plain row). A draft that a stage-5 stagger refusal
+ * objective holds (`objectiveReason`: less stage-5 canvas area, and nearer the aspect aim for a plain row). A draft that a stage-5 stagger refusal
  * refuses is dropped, the row stays, and the record names the reason; any other error of the draft ends the run (a freeze validation that the
  * stage-5 proof did not foresee is a defect, not a reason). Each candidate is tried once (a finite traversal). A `declined` group stays a row:
  * a later stage of an earlier attempt of the first run, or the acceptance gate (`wrapGateVerdict`), could not keep its stagger. When every group

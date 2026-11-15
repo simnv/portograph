@@ -58,6 +58,8 @@ export interface LayoutOptions {
   testTurnOrder?: boolean;
   /** Test only (ticket 24): the links whose faces every placement run orders by their turns, and no other face (see `LayoutModel.turnLinks`). */
   testTurnLinks?: readonly string[];
+  /** Test only (ticket 05 of dense-16x9): the faces (`node|side`) that keep far-end order in a run that carries the turn order (see `LayoutModel.turnExcept`). */
+  testTurnExcept?: readonly string[];
   /** Test only. `false` skips the overlay round (ticket 15, phase 7): the overlay links keep the chord or the derived path they had before the rule of Q1. */
   testOverlayCourses?: boolean;
   /** Test only (architecture ticket 22, phase 2): the ids of the links that every placement run reserves as spanning chords, before the span round has any say. */

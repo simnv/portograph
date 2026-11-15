@@ -1,0 +1,35 @@
+# Expected (dense-16x9 ticket 05, docs/design/turn-order.md Section 3): the face of `west-gw` that faces down holds two held straight links (to `west-sw` and `west-app`) and one
+# orthogonal link (a lane to `low-a`), and the planned first turns would put its ports in another order than their far ends do. The face of `up-b` that faces down
+# has two lanes whose first-turn order differs from the far-end order, and no straight link. The turn round offers `up-b` and not `west-gw`: it reserves `west-gw` (and
+# every other face that holds a straight link on the baseline) for far-end order, so its trial turns `up-b` alone, is kept, and the layout records `up-b` and not `west-gw`.
+# Without that reservation the trial also turns `west-gw` and is refused. G5 passes on `up-b`, which it accepts as recorded; the far-end faces `up-a` and `west-gw` fail G5
+# on their lane links, before and after the round alike (stage 5 sorts them before 7c moves the far ends: a defect outside ticket 05), so this sheet lives here and not in
+# `goldens/synthetic/`, where the corpus gate would read that failure as a NEW-FAIL.
+# Test-only input owned by dense-16x9 ticket 05; test/pipeline/turn-order.test.ts reads it (`readTurnFixture`).
+portograph: 2
+groups:
+  up: { tier: 0, label: Up }
+  east: { tier: 1, label: East }
+  west: { tier: 1, label: West }
+  westc: { parent: west, label: West access }
+  low: { tier: 2, label: Low }
+nodes:
+  up-a: { group: up, class: provider, label: Up A }
+  east-gw: { group: east, class: router, label: East gateway }
+  west-gw: { group: west, class: router, label: West gateway }
+  west-sw: { group: west, class: switch, label: West distribution switch of the main building }
+  west-app: { group: westc, class: server, label: West access server }
+  up-b: { group: up, class: provider, label: Up B }
+  low-a: { group: low, class: server, label: Low A }
+  low-b: { group: low, class: server, label: Low B }
+links:
+  - [west-gw, west-sw]
+  - [west-gw, west-app]
+  - [up-a, east-gw]
+  - [up-a, west-gw]
+  - [up-a, low-a]
+  - [up-a, low-b]
+  - [west-gw, low-a]
+  - [east-gw, low-b]
+  - [up-b, low-a]
+  - [up-b, low-b]

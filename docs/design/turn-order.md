@@ -5,7 +5,7 @@ of the hand-solve analysis. This document states the rule and the round that off
 measurements and the phases.
 
 The user's decisions: stage 5 and a 7a pass (Section 4); **an offer, not a fixed rule**, judged by `unified` and paid
-with one re-run of `MAX_RERUNS` (Section 10); G5 judges by the same rule (Section 7); the row bypass is in
+with one re-run of `MAX_RERUNS` (Section 10); G5 accepts the recorded order (Section 7); the row bypass is in
 (Section 6).
 
 ## 1. Problem
@@ -57,6 +57,19 @@ is shallower than an `onward` link of the same turn; otherwise one crossing is c
 those depth orders read back as slot orders. The slot order is fixed first, and the depth planners follow it.
 This was measured on case 09: with the slots swapped, the tier-gap plan gave the inner link the upper row with no
 other change.
+
+**A face that holds a straight link keeps far-end order** (owner ruling, 2026-11-15; `GLOSSARY.md`, Far-end order). A held straight link is a held
+routed chord (`model.frozenChords`, decided at the start of 7f) or a level straight link that the rows rule pinned (`expectedLevelPath`: one fixed
+segment). It stands as one segment from its port, so it has no first turn, and a first-turn slot for the other ports of its face would place
+them against the far ends that the straight link shows. The turn round therefore offers no face that holds a held straight link on its baseline
+(unless the baseline's record already holds the face; `straightFaces`), and reserves those faces for far-end order (`turnExcept`, the `except` of the
+`turnOrder` reservation payload) in the trial, in every run after it, and in the overlay trial, which reads the baseline it runs from. The row-bypass trial
+(Section 6) reserves no face: its scope is the faces of the bypass link, which hold the straight row neighbour by construction, and it keeps the faces that the
+kept ledger already reserves. A face with only orthogonal links keeps the rule above,
+because it removes crossings between the runs there. Port names never set a position; an authored order wins in both cases. Only the baseline's
+straight links are known when the round decides, because a chord is held after 7a: the trial may later hold a chord on a face that it turned. The
+trial is not refused for that (coordinator reading, 2026-11-15, after the corpus showed a kept gain lost on two synthetic sheets and on the
+outside sheet): it is judged on its counts (Section 10), and G5 accepts the order that the layout recorded (Section 7).
 
 What stays as today:
 - A face with no planned turn keeps the far-end order byte for byte (group 3 only).
@@ -123,13 +136,18 @@ has no plan today. Stage 8 finds a way round. This is a discovery. The bypass be
 
 ## 7. G5
 
-G5 `port-order` reads the same comparator on the published paths, on the faces that the turn order placed. The
-layout records those faces (`freeze.turnOrder`: node and side). On such a face, a pair of ports in group 3, or a pair
-of onward ports of one class, is judged by the far-end ranges as today, and any other pair by the turn order. Every
-other face is judged by the far-end ranges alone, so a baseline that no trial changed is judged as today. One
-predicate serves the gate and placement (`decide.ts`, `chord-clear.ts` and the far-end question of `flanks.ts`);
-placement reads the planned turns, and the gate reads the published turns. `docs/design/quality.md`, G5: "port order
-on a side matches the turn order (far-end order where no link turns)".
+G5 `port-order` reads the record of the turn round, and derives no turn again (R1; coordinator reading of 2026-11-15). The record is
+`freeze.turnOrder`: for each face whose order the kept turn round took, the node, the side and the ports of the face in the order the round left them (`ports`);
+`freeze.turnExcept` is the scope the record was taken under (the faces reserved for far-end order, `LayoutModel.turnExcept`). G5 accepts a recorded face
+while the record holds, whatever links the face holds at publication (a chord that the trial held on it later included), and fails it when it does not:
+the model carries no turn order, the face does not exist or stands outside the scope (`turnExcept`, `turnLinks`), the recorded scope differs from the model's, the ports
+on the face differ from the recorded ones, or they no longer stand in the recorded order, read by anchor (R5: a forged or stale record buys nothing). The record as a whole
+fails too when the freeze holds a scope, a face or an empty list on a model without the turn order, when its scope is not the model's (also with no face recorded), or
+when the list is empty; a face of a node that the model does not have fails whatever nodes the caller asks about; and a model with the turn order must carry the reservation ledger. The
+freeze (stage 5 and 7a write it), a restore and every later rule check the same record by engine order (`turnRecordFaults`), so a move that reorders a
+recorded face is refused where it happens. Every other face is judged by the far-end ranges alone, so a baseline that no trial changed is judged as
+today. `docs/design/quality.md`, G5: "port order on a side matches far-end order, except on a face the turn round recorded (and while the record holds)".
+The gate checks the record, not the first turns: the planners keep their turn promises through `PORT_TURN_MISSED` (Section 8) and the judge of Section 10.
 
 ## 8. Diagnostics
 
@@ -152,8 +170,10 @@ The turn order is an offer. The round measures it on the kept result, places onc
 only when the published result is better by `unified`.
 
 **The offer.** On the kept 7f model and its routed result, the comparator of Section 3 reads the planned turns of
-every face. The offer is the set of faces whose turn order differs from the order they have. An empty set is no
-offer.
+every face. The offer is the set of faces whose turn order differs from the order they have, less the faces that hold a held
+straight link on that baseline and that the baseline's record does not hold (`straightFaces`; `TurnOffer.except`; Section 3). An empty set is no offer. The trial
+reserves the faces of `except` for far-end order (`turnOrder` reservation, `payload.except`; `LayoutModel.turnExcept`), and every run after a kept trial keeps them.
+The trial is not refused for a chord that its own geometry later holds on a face it turned.
 
 **Where the round sits.** The rounds run in this order: fan rounds, span round (ticket 22), course round (ticket 15;
 before or after the side rounds, as today), side rounds, the deferred course round, **the turn round**, the overlay

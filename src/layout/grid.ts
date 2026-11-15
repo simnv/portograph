@@ -6,6 +6,7 @@ import { bandGap, compareId, portId, SKELETON_SPACING as spacing } from './skele
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { stackedChannelNeed } from './bundle-geometry.js';
 import { authoredSide, gridUnits, groupExits, seatUnits, stackChains, type Chain, type GridUnit } from './grid-chains.js';
+import { aspectAim, aspectGap } from './aspect.js';
 import { ASPECT_EPS } from './tolerance.js';
 
 /**
@@ -227,8 +228,9 @@ export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string
 /**
  * How many columns a grid of `order` takes.
  *
- * The count is the one whose packed box comes closest to square, ties to the fewer columns, **of the
- * counts a column-as-corridor allows** (`gridColumnFloor`). Nothing else is fixed: the answer
+ * The count is the one whose packed box comes closest to the aspect aim (16:9, or `layout.aspect`; ADR-0025), ties to the fewer columns, **of the
+ * counts a column-as-corridor allows** (`gridColumnFloor`), and of those only a count that is the first to reach its row count: a count that packs the grid into
+ * the rows a smaller count already packs it into only widens the box and leaves a ragged row, so it is no candidate (ADR-0025, review F1). Nothing else is fixed: the answer
  * follows the measured node sizes and the two gaps, so a group of wide nodes takes fewer columns
  * than a group of narrow ones of the same count.
  *
@@ -241,13 +243,11 @@ export function gridMetrics(model: LayoutModel, rows: GridCells, gap: (a: string
  *
  * Two things the caller has to know. The box measured here is the **stage-4** box: the count is
  * chosen from the sizes the nodes have before stage 5 grows them to their final port capacity, and
- * stage 5 then re-lays the same count out at the larger sizes, so the published box is near square
- * and not square. Measured on the shipped fixtures: four nodes take two columns and publish at
+ * stage 5 then re-lays the same count out at the larger sizes, so the published box is near the aim
+ * and not on it. Measured on the shipped fixtures: four nodes take two columns and publish at
  * 161.5 × 206.5, twelve take four and publish at 313 × 308.5
- * (`goldens/synthetic/a-grid-of-twelve-keeps-its-columns.yaml`). And the target is a **square**, not
- * the proportions of the original Enterprise NTP diagram, which draws its locations portrait. A
- * portrait target is one constant away if the maintainer wants it; stress ticket 26 measures what
- * the difference costs on that sheet, and names the input each of its figures came from.
+ * (`goldens/synthetic/a-grid-of-twelve-keeps-its-columns.yaml`). And the target is the **aspect aim** (ADR-0025:
+ * 16:9, a document may state its own), no longer a square (stress ticket 26 measured the portrait case).
  *
  * A count that would put a **like-facing `top` pair in one column** is not a candidate at all
  * (stress ticket 32, `likeSidePairs`). That is a filter and not a floor: a larger count is not
@@ -261,14 +261,18 @@ export function gridColumns(model: LayoutModel, group: LayoutGroup, order: reado
   ranks: ExitRanks): number {
   if (order.length <= 1) return 1;
   const gap = gridNodeGap(model, group), rowGap = gridRowGap(model);
-  const floor = gridColumnFloor(order, ranks), pairs = likeSidePairs(model, group);
+  const floor = gridColumnFloor(order, ranks), pairs = likeSidePairs(model, group), aim = aspectAim(model.document);
   let best = floor, bestScore = Infinity;
+  const packed = new Set<number>();
   for (let columns = floor; columns <= order.length; columns++) {
     const rows = gridRows(order, ranks, columns);
     if (pairs.length && !partsPairs(seatFlankPeers(model, group, gridRows(order, ranks, columns), columns), pairs)) continue;
     const metrics = gridMetrics(model, rows, () => gap, rowGap);
     if (metrics.width <= 0 || metrics.height <= 0) continue;
-    const score = Math.abs(Math.log(metrics.width / metrics.height));
+    // A count that packs into the rows a smaller count already packs into only widens the box (ADR-0025, review F1): never a candidate.
+    if (packed.has(rows.length)) continue;
+    packed.add(rows.length);
+    const score = aspectGap(metrics.width, metrics.height, aim);
     if (score < bestScore - ASPECT_EPS) { bestScore = score; best = columns; }
   }
   return best;
@@ -369,7 +373,7 @@ export function exitRanks(model: LayoutModel, group: LayoutGroup): ExitRanks {
  * of fewer than *k* columns puts two of them in one column with one above the other. The upper
  * node's link then runs down its own column, through the lower node's body. That is the maintainer's
  * gridded golden: `route-reflector` holds `RR-01` and `RR-02`, both dropping to the backbone, and
- * closest-to-square makes one column of two (stress ticket 31).
+ * closest-to-the-aim makes one column of two (stress ticket 31).
  *
  * **The bound is hard, and what it costs is measured.** A group whose nodes all exit one way is
  * forced to one row — the `row` shape, which is what a corridor per exit means. That is not a loss:
@@ -557,7 +561,7 @@ function rankedUnits(model: LayoutModel, group: LayoutGroup, order: readonly str
 
 /**
  * Pack a grid that holds chains (architecture ticket 23). Each chain is one unit k rows tall in one
- * column (`seatUnits`); the column count is the one whose box is closest to square among the counts that
+ * column (`seatUnits`); the column count is the one whose box is closest to the aspect aim among the counts that
  * seat every unit, ties to the fewer. Like every other decision here it needs no route.
  */
 function packChains(model: LayoutModel, group: LayoutGroup, order: readonly string[], chains: readonly Chain[], gap: number): void {
@@ -567,13 +571,18 @@ function packChains(model: LayoutModel, group: LayoutGroup, order: readonly stri
     const peer = flank.flank?.of === group.id ? flank.flank.primaryPeer ?? flank.flank.proxyPeer : undefined;
     if (peer !== undefined) ends.set(peer, flank.flank!.align);
   }
+  const aim = aspectAim(model.document);
   let best: GridCells | undefined, bestScore = Infinity;
+  const packed = new Set<number>();
   for (let columns = 1; columns <= count; columns++) {
     const cells = seatUnits(units, columns, ends);
     if (!cells) continue;
     const metrics = gridMetrics(model, cells, () => gap, gridRowGaps(model, group, cells));
     if (metrics.width <= 0 || metrics.height <= 0) continue;
-    const score = Math.abs(Math.log(metrics.width / metrics.height));
+    // The rule of `gridColumns`: a count that keeps the row count of a smaller one is no candidate.
+    if (packed.has(cells.length)) continue;
+    packed.add(cells.length);
+    const score = aspectGap(metrics.width, metrics.height, aim);
     if (score < bestScore - ASPECT_EPS) { bestScore = score; best = cells; }
   }
   if (!best) throw new Error(`Group ${group.id} stands as a grid but no column count seats its chains`);

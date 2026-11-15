@@ -14,6 +14,7 @@ import { reversed } from '../../scripts/r3-lib.mjs';
 // Fan wrap (decision review 2026-11, D-Q4, ticket 07; ADR-0024, second amendment): a rank cell whose one line is wider than the rest of its
 // tier block stands on two lines, the column packer packs its tier again, the feeding chain of the block stands over it again, and the
 // acceptance gate keeps the two lines only when the complete placement takes less area and keeps every straight link.
+import { withAspect } from '../aspect-fixture.js';
 const NAME = 'a-leaf-cell-wider-than-its-block-wraps';
 const CHAIN = 'a-feeding-chain-moves-over-its-wrapped-block';
 const KEY = 'a-chain-of-tiers-packs-over-its-feeds-final-x';
@@ -229,7 +230,8 @@ ${nodes('a')}${nodes('b')}links:
   - [r1, sw1]
   - [r1, sw2]
 ${links('a', 'sw1')}${links('b', 'sw2')}`;
-    const model = await run(yaml);
+    // The sheet states the square aim of ADR-0024 it was written under: the test is about the comparison run, not the aim.
+    const model = await run(withAspect(yaml, '1:1'));
     expect(model.staggerRows?.map(row => row.group)).toEqual(['a']);
     const entry = model.groupArrangements!.b!;
     expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: /);

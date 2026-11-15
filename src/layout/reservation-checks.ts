@@ -14,6 +14,7 @@ import { spanLaneId } from './lane-kind.js';
 import { trunkKey } from './bus-room.js';
 import { trunkBuses, trunkHeads } from './trunk.js';
 import { portKey } from './sides-one.js';
+import { faceKey } from './turn-order.js';
 import { corridorSideFailure, floorFailure, groupOrderFailure, ofKind, rowOrderFailure, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
 
 type Found = { why: string; key?: string; link?: string };
@@ -82,6 +83,9 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
       const scope = item.payload.scope;
       if (model.turnOrder !== true) return { why: 'the model does not carry the turn order' };
       if ('links' in scope && !scope.links.every(id => (model.turnLinks ?? []).includes(id))) return { why: 'the model does not order the faces of every reserved link' };
+      // A face reserved for far-end order is not turned (`turnExcept`, docs/design/turn-order.md, Section 3).
+      const turned = (model.freeze?.turnOrder ?? []).find(face => (item.payload.except ?? []).includes(faceKey(face.node, face.side)));
+      if (turned !== undefined) return { why: `the ${turned.side} face of ${turned.node} holds a routed chord and keeps far-end order, but the turn order moved it` };
       return item.payload.requireChanged && (model.freeze?.turnOrder ?? []).length === 0 ? { why: 'the turn order moved no face' } : undefined;
     }
     case 'trunkDeclined': {

@@ -23,8 +23,7 @@ import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../
 import { pathEnd } from '../layout/path-end.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { diagonalMayCross, linkFreeMargin } from '../layout/diagonal-text.js';
-import { portId } from '../layout/skeleton-graph.js';
-import { faceKey, plannedTurns, portTurn, turnOrderViolated, turnRanker, type TurnPort } from '../layout/turn-order.js';
+import { faceKey, turnRecordFaults } from '../layout/turn-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -107,6 +106,11 @@ function separationGate(model: LayoutModel, fail: (id: GateId, code: string, ele
 /**
  * G5 `port-order` / `author-port-order`: on each side, ports order by their far ends unless authored. The gate reads it, and so does
  * placement, which asks whether a move of a group turns the far ends of a port over (ticket 77): one predicate.
+ *
+ * A face that the turn round recorded (`freeze.turnOrder`, docs/design/turn-order.md, Section 7) is judged by that record: the layout decided its order from the planned
+ * first turns of its links and kept it only because the published result was better, so the gate does not derive the decision again (R1). It accepts the face while the record
+ * holds (a model that carries the turn order, a face inside the scope, the ports on it, standing in the recorded order, by anchor) and fails it, whatever the far ends say,
+ * when it does not (R5: a forged or stale record buys nothing). Every other face, whatever links it holds, is judged by its far-end ranges.
  */
 export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], routedLinks: ReadonlySet<LayoutLink>,
   fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
@@ -115,17 +119,17 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
   // A link is seen from both of its ends, exactly as the gate saw it, and a link whose far port is
   // missing contributes nothing, as before.
   const farAnchors = new Map<string, Point[]>();
-  // On a face that the turn order placed (ticket 24, Section 7) the links at each port are kept too, to read their first turns.
   const turned = new Set((model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)));
-  const linksAt = new Map<string, { link: LayoutLink; which: 'from' | 'to' }[]>();
+  // A fault of the whole record, or of a face of a node that the model does not have, belongs to no node of `nodes`: it fails whatever subset the caller asks about.
+  for (const fault of turnRecordFaults(model, 'anchor')) {
+    const known = fault.node !== undefined && model.nodes[fault.node] !== undefined;
+    if (known && !nodes.some(item => item.id === fault.node)) continue;
+    fail('G5', 'port-order', [fault.node ?? '*'], fault.side === undefined ? `The record of the turn round does not hold: ${fault.why}`
+      : `The ${fault.side} face is recorded as taken by the turn round, but ${fault.why}`);
+  }
   for (const link of model.links) {
     if (!routedLinks.has(link)) continue;
     const ends = endpoints(link);
-    if (turned.size) for (const which of ['from', 'to'] as const) {
-      const list = linksAt.get(refKey(ends[which])) ?? [];
-      list.push({ link, which });
-      linksAt.set(refKey(ends[which]), list);
-    }
     for (const [near, far] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
       const target = port(model, far);
       if (!target) continue;
@@ -133,11 +137,9 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
       if (list) list.push(target.anchor!); else farAnchors.set(at, [target.anchor!]);
     }
   }
-  const planned = turned.size ? plannedTurns(model) : undefined;
   for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
     const alongX = side === 'top' || side === 'bottom';
-    const byTurns = turned.has(faceKey(node.id, side));
-    const positions = node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
+    const positions = turned.has(faceKey(node.id, side)) ? [] : node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
       const peers = farAnchors.get(refKey(p.ref));
       if (!peers?.length) return [];
       let min = Infinity, max = -Infinity;
@@ -146,19 +148,13 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
         if (at < min) min = at;
         if (at > max) max = at;
       }
-      const turn = byTurns ? portTurn(side, linksAt.get(refKey(p.ref)) ?? [], planned?.get(portId(p.ref))) : undefined;
-      const at: TurnPort = { far: (min + max) / 2, ...(turn === undefined ? {} : turn) };
-      return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max, at }];
+      return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max }];
     });
-    const rank = turnRanker(positions.map(item => item.at));
     for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
       const a = positions[i]!, b = positions[j]!;
-      const ranges = (x: typeof a, y: typeof a): boolean => x.own < y.own - EPS && x.min > y.max + EPS;
-      // Lower slot first: on a placed face the pair is judged by its turns, else by its far-end ranges.
-      const wrong = byTurns
-        ? (a.own < b.own - EPS && turnOrderViolated(a.at, b.at, rank, ranges(a, b))) || (b.own < a.own - EPS && turnOrderViolated(b.at, a.at, rank, ranges(b, a)))
-        : ranges(a, b) || ranges(b, a);
-      if (wrong)
+      // Strictly separated far-end ranges whose ports stand the other way round.
+      const wrong = (x: typeof a, y: typeof a): boolean => x.own < y.own - EPS && x.min > y.max + EPS;
+      if (wrong(a, b) || wrong(b, a))
         fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
     }
     const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined)

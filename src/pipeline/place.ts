@@ -54,6 +54,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   const turn = turnOf(reservations);
   if (turn.all) resolved.turnOrder = true;
   else if (turn.links.length > 0) { resolved.turnOrder = true; resolved.turnLinks = [...turn.links]; }
+  if (resolved.turnOrder === true && turn.except.length > 0) resolved.turnExcept = [...turn.except];
   const hints = sideHintsOf(reservations), laneKeys = laneKeysOf(reservations);
   stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
   if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];

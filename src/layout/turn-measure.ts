@@ -7,7 +7,7 @@ import { portId as portKey } from './skeleton-graph.js';
 import { farCoordinate } from './peers.js';
 import { pairedFaceKey } from './parallel-sets.js';
 import { findPort } from './row-paths.js';
-import { plannedTurns, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
+import { faceKey as faceName, plannedTurns, straightFaces, turnOrder, type PlannedTurn, type TurnPort } from './turn-order.js';
 import { added as namesAdded, constraintFindings, gateFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { compare, lazyCount, profiles, reading, routedBends, type Reading } from './objective.js';
 import type { ScoreCounts } from '../score/types.js';
@@ -20,6 +20,8 @@ import { PLACEMENT_EPS } from './tolerance.js';
 export interface TurnOffer {
   /** The faces whose turn order differs from the order they have, in node and side order. Empty: no offer. */
   faces: { node: string; side: Side }[];
+  /** The faces that hold a held straight link on the baseline and were not turned by it, by `faceKey`: they keep far-end order, so no offer names them and the trial reserves them (`turnExcept`). */
+  except: string[];
 }
 
 /**
@@ -30,7 +32,8 @@ export interface TurnOffer {
  * authored port is never part of the comparison.
  */
 export function measureTurnOrder(base: LayoutModel): TurnOffer {
-  const offer: TurnOffer = { faces: [] };
+  const offer: TurnOffer = { faces: [], except: [...straightFaces(base)].sort() };
+  const straight = new Set(offer.except);
   const turns = plannedTurns(base, true), plain = plannedTurns(base, false);
   // Stage 5's face key: a facing pair's shared key, else the far coordinate (`pairedFaceKey`, R1).
   const faceKey = pairedFaceKey(base, (ref, at) => farCoordinate(base, ref, at), ref => findPort(base, ref)?.side);
@@ -38,6 +41,8 @@ export function measureTurnOrder(base: LayoutModel): TurnOffer {
     const node = base.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
       const along = side === 'top' || side === 'bottom' ? 'x' : 'y';
+      // A face that holds a held routed chord takes far-end order (docs/design/turn-order.md, Section 3): the turn order never offers it.
+      if (straight.has(faceName(id, side))) continue;
       const ports = node.ports.filter(port => port.side === side && port.anchor !== undefined && port.authorOrder === undefined && busOfPort(base, port.ref) === undefined)
         .sort((a, b) => a.anchor![along] - b.anchor![along]);
       if (ports.length < 2) continue;

@@ -1,0 +1,19 @@
+# Expected (ADR-0025, review F1): a column count is a candidate only when no smaller count packs the grid into the same number of rows.
+# Six nodes in `place` stand as three columns over two rows. Four or five columns would also make two rows (4 + 2, 5 + 1): a wider, ragged
+# box that no row pays for, so neither is a candidate. Six columns would make one row and is a candidate, and the 3 x 2 box is nearer 16:9.
+# Every drop is straight, crossings 0, G1-G9 pass.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  place: { tier: 1, shape: grid }
+nodes:
+  head: { group: upper, ports: [{ name: p, side: bottom }] }
+  a: { group: place, ports: [{ name: p, side: top }] }
+  b0: { group: place }
+  b1: { group: place }
+  b2: { group: place }
+  b3: { group: place }
+  b4: { group: place }
+links:
+  - [head.p, a.p]
