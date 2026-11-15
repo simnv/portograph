@@ -40,6 +40,11 @@ A side hint for an L-shaped routed path through a side lane.
 **Approach**:
 The face of a shared named port's pill that one link end meets when it differs from the port's side.
 
+**Far-end order**:
+The order of the ports on one node face by the positions of the far ends of their links.
+Port names do not set it; an authored order does.
+A face with a straight link takes it; a face with only orthogonal links takes the order of their first turns.
+
 **Link**:
 A connection between two ports, with a class and an optional route override.
 _Avoid_: Edge, connection as the name of the domain object.
@@ -65,11 +70,13 @@ A document tier can contain several sub-tiers.
 _Avoid_: Layer as a substitute for tier.
 
 **Anchor**:
-A group member with a routed link to the tier above, or to the tier below when no member links upward.
-Anchors occupy the first rank for upward feeds or the last rank for downward feeds.
+A group member with a routed link to the tier above (an upward anchor) or to the tier below (a downward anchor).
+Upward anchors occupy the first rank; members that link only downward occupy the last rank.
+No member stands between an anchor and the tier it links to.
 
 **Rank**:
-A member's depth from the group's anchors along routed links, before adjustments for child groups.
+A member's row in its group, from the upward anchors on the first rank to the downward anchors on the last, before adjustments for child groups.
+A member that is not an anchor takes the rank nearer its anchor along routed links.
 A group with no anchor has one rank.
 
 **Rank cell**:
@@ -146,6 +153,10 @@ Stacked content uses one centred column; card content places an icon tile left o
 **Width budget**:
 A requested upper bound for the published canvas width, measured in pixels.
 It is a placement constraint, not a scale factor.
+
+**Aspect aim**:
+The 16:9 box that placement chooses toward where it has a free choice.
+It is a soft default for every sheet, not a gate; a document can override it.
 
 **Stagger**:
 A reserved two-line arrangement of at least three nodes whose routed links all leave through one horizontal face.
