@@ -52,8 +52,7 @@ differ.
    and a member that links to the tier below has two poles; no member stands between an anchor and the
    tier it links to. The upward anchors take rank 0. The downward anchors, which link only to the tier
    below, take the last rank `L`, the routed distance between the poles (the least depth of a downward
-   anchor from the upward anchors; poles that no link joins take the longest chain from either, and at
-   least two ranks). Any other member counts from its nearer pole. With `du` its depth from the upward
+   anchor from the upward anchors). Any other member counts from its nearer pole. With `du` its depth from the upward
    anchors and `dd` its depth from the downward anchors (both read as in step 2), `du < dd` gives
    rank `du`, `dd < du` gives rank `L - dd`, and a tie takes the upper of the two results,
    `min(du, L - dd)` (a tie goes to the upper pole; the coordinator gave this reading on 2026-11-15
@@ -62,7 +61,7 @@ differ.
    pole's rank, beside the anchors. A leaf of a member that links both upward
    and downward (a member that hangs from it by a chain of single links) takes that member's rank.
    Where no member links only downward, there is no lower pole: the depth stands, but for those leaf
-   chains. One peer component that holds both poles keeps the depth ranks. A group with anchors on
+   chains. One peer component that holds both poles keeps the depth ranks, and so does a group whose poles no routed link joins (nothing stands between them inside the group; the approved golden's Datacenter is such a group). A group with anchors on
    one side only keeps its ranks.
 2. **Depth and peer links.** The **depth** of a member is its breadth-first distance from the anchor
    set over the routed links inside the group, read as undirected. A routed link between two members

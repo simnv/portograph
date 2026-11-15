@@ -586,9 +586,9 @@ describe('deriveRanks: two poles', () => {
     expect(result.anchoredFrom).toBe('below');
   });
 
-  it('poles that no link joins: each side counts from its own pole, and an unlinked member goes by step 6', () => {
+  it('poles that no routed link joins keep the depth ranks: the downward anchors and the unreached members take the last rank, step 6', () => {
     const result = both({ members: ['u', 'a', 'd', 'b', 'o'], routedLinks: [...chain('u', 'a'), ...chain('d', 'b')] });
-    expect(asObject(result.ranks)).toEqual({ u: 0, a: 1, d: 2, b: 1, o: 2 });
+    expect(asObject(result.ranks)).toEqual({ u: 0, a: 1, d: 1, b: 1, o: 1 });
   });
 
   it('a peer component that holds both poles keeps the depth ranks', () => {

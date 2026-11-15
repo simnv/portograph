@@ -100,7 +100,7 @@ function leafParents(members: string[], links: Link[], poles: Set<string>): Map<
  * may stand on a pole's rank, beside the anchors. A leaf chain of a member that links both ways
  * takes that member's rank. With no downward anchor (every member that links down also links up)
  * there is no lower pole: the depth stands, except for those leaf chains. Returns nothing when one
- * peer component holds both poles; the caller keeps the depth ranks then. Members no pole reaches
+ * peer component holds both poles, or when no routed link joins an upward anchor to a downward one; the caller keeps the depth ranks then. Members no pole reaches
  * get no rank (step 6).
  * (The coordinator gave this reading of the tie clause on 2026-11-15, for the owner to check.)
  */
@@ -109,12 +109,11 @@ function twoPoleRanks(members: string[], links: Link[], upward: string[], downwa
   const down = downward.length ? depthsOf(members, links, downward) : new Map<string, number>();
   if (downward.some(id => up.get(id) === 0)) return undefined;
   const reached = (id: string): boolean => up.has(id) || down.has(id);
-  // `last`: the routed distance between the poles; poles no link joins stand as far apart as the longest chain from either, and at least two ranks.
-  let last: number | undefined;
-  if (downward.length) {
-    const joined = downward.map(id => up.get(id)).filter((depth): depth is number => depth !== undefined);
-    last = joined.length ? Math.min(...joined) : Math.max(2, ...members.filter(id => !down.has(id)).map(id => up.get(id) ?? 0), ...members.filter(id => !up.has(id)).map(id => down.get(id) ?? 0));
-  }
+  // `last`: the routed distance between the poles. Poles no routed link joins have no distance and nothing stands between them
+  // inside the group: such a group keeps the depth ranks (the approved golden's Datacenter holds routers and border routers joined only through flanks).
+  const joined = downward.map(id => up.get(id)).filter((depth): depth is number => depth !== undefined);
+  if (downward.length && !joined.length) return undefined;
+  const last = downward.length ? Math.min(...joined) : undefined;
   const fixed = components(members, links);
   const size = new Map<string, number>();
   for (const root of fixed.values()) size.set(root, (size.get(root) ?? 0) + 1);
