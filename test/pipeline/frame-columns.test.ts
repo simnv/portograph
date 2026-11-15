@@ -4,6 +4,7 @@ import type { LayoutModel, Rect } from '../../src/index.js';
 import { layout, parse, render, score } from '../../src/index.js';
 import { alignLinkedGroupGrid } from '../../src/layout/bands.js';
 import { deriveFrames } from '../../src/layout/frames.js';
+import { findPort } from '../../src/layout/row-paths.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -137,6 +138,11 @@ describe('frame columns', () => {
     /** `extra` px beyond the zone cells; a negative `extra` is the room the cells of `east` leave, less that many px. */
     const widened = async (extra: number) => {
       const model = structuredClone(await run('sibling-frames-pack-as-columns'));
+      // The grid pairs two groups only through a link whose ports face each other across the tiers. Under the alignment cap (ADR-0027) the ISP is
+      // too narrow to stand over the west gateway, so link-1 leaves its left face and the pair is gone. The test sets the pairing it needs, as it
+      // sets the boxes: the ISP end of link-1 stands on its bottom face again, the end it had while the body stood stretched over both frames.
+      const link = model.links.find(item => item.id === 'link-1')!;
+      findPort(model, link.attachments!.from)!.side = 'bottom';
       const zone = ['west-zone#1', 'west-zone#2'].map(id => model.groups[id]!.bounds!);
       const low = Math.min(...zone.map(box => box.x)), high = Math.max(...zone.map(right));
       const east = Math.min(...['east#0', 'east-zone#1', 'east-zone#2'].map(id => model.groups[id]!.bounds!.x));
