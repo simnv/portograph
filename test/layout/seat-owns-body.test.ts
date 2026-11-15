@@ -1,12 +1,15 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { centre, seatCandidates } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
 import { rows } from '../../src/layout/rows.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { targetTap } from '../../src/layout/alignment-targets.js';
+import type { Course } from '../../src/model/layout.js';
 import { findPort } from '../../src/layout/row-paths.js';
+import { pathBends } from '../../src/layout/objective.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
 import type { LayoutModel, LayoutNode } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
@@ -126,4 +129,51 @@ links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`))))))
     const both = [target(0, 330), target(1, 346)];
     expect(seatCandidates(node, both, { siblings: open, window: open, stops: open, kept: new Set(['t1']) }, true, slides)[0]!.keys).toEqual(['t0', 't1']);
   });
+
+  describe('the feedOrder:false group-shift copy with the courses of link-12 and link-13 forced (the course trial of its course round)', () => {
+    // link-12 (src0 -> snk1) runs round the left of the sheet, link-13 (src1 -> snk0) down a perimeter lane right of `access` into the top of snk0,
+    // with one turn. The courses are the ones the course round offers on this sheet.
+    const courses = [
+      { link: 'link-12', kind: 'transit', side: 'left', from: { face: 'left' }, to: { face: 'left' }, runs: ['perimeter'] },
+      { link: 'link-13', kind: 'transit', side: 'right', from: { face: 'right' }, to: { face: 'top' }, runs: ['perimeter', 'tier-gap'] },
+    ] as unknown as Course[];
+    /** The x of the top port of snk0 on link-13, and the x of link-13's perimeter lane. */
+    const underLane = (model: LayoutModel): [number, number] => {
+      const link = model.links.find(item => item.id === 'link-13')!, end = [link.attachments!.from, link.attachments!.to].find(ref => ref.node === 'snk0')!;
+      const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-13' && item.kind === 'perimeter')!;
+      return [findPort(model, end)!.anchor!.x, lane.x];
+    };
+    const drafts: LayoutModel[] = [];
+    beforeAll(async () => {
+      const sink = targetTap.sink;
+      targetTap.sink = (tap, value) => { if (tap === 'beforeEndTrim') drafts.push(JSON.parse(value) as LayoutModel); };
+      try {
+        await layout(parse(withoutJointOrder(read('synthetic/a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first'))),
+          { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testCourses: courses });
+      } finally { if (sink === undefined) delete targetTap.sink; else targetTap.sink = sink; }
+    }, 120000);
+
+    it('seats snk0 under the lane of link-13 before the trim: the step clamps edge-near into its window before the seats', () => {
+      // Before: the main move left edge-near outside its step window, the seat was made there, the clamp carried snk0 off its targets, and the
+      // step was declined: snk0 stood where ELK put it, under no feed.
+      const [port, lane] = underLane(drafts.at(-1)!);
+      expect(Math.abs(port - lane)).toBeLessThanOrEqual(0.5);
+    });
+  });
+
+  it('the course trial of the feedOrder:false group-shift copy keeps link-13 to the one turn it promised: the close-up leaves snk0 under the lane', async () => {
+    // Before: after the end trim, the close-up moved edge-near 114 px left; link-13's lane is a perimeter lane, which does not follow a group,
+    // so the port left the lane it enters straight and the trial was refused for two turns more than its course promised.
+    const trials: { verdict: { reason?: string }; routedTrial: LayoutModel }[] = [];
+    await layout(parse(withoutJointOrder(read('synthetic/a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first'))), {
+      createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt,
+      testSideTrace: event => { if (event.ev === 'course-trial') trials.push(event as unknown as (typeof trials)[number]); },
+    });
+    expect(trials.length).toBeGreaterThan(0);
+    for (const trial of trials) {
+      expect(trial.verdict.reason ?? '').not.toMatch(/more turns than it promised/);
+      const link = trial.routedTrial.links.find(item => item.id === 'link-13')!;
+      expect(pathBends(link)).toBeLessThanOrEqual(1);
+    }
+  }, 120000);
 });

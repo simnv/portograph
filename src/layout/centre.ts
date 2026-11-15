@@ -1254,6 +1254,11 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // The group itself moves by the main move, toward the mean of its feeds, and the clamp into the window of the step moves it as a whole; a
   // slide inside the box changes neither, and a slide past the box would grow the group, and the next main move would take it back.
   const inset = groupInsets(model, group), box = group.bounds!;
+  // The window of the step holds the group when the step ends, and the clamp into it moves the group as a whole: a seat made where the main move
+  // left the group, outside that window, would be carried off its targets by the clamp. So the group stands in the window before it is seated.
+  // A window that cannot hold the group is declined below, as before.
+  const { low, high } = stepWindow(model, context, tier, list, id, previous, tail);
+  if (box.width <= high - low) moveGroup(model, group, Math.max(low, Math.min(box.x, high - box.width)) - box.x, 0);
   const rowWindow = { low: box.x + inset.left, high: right(box) - inset.right };
   const links = linkById(model), direct = directMembers(model);
   // The ports each seat keeps (ADR-0027, the seat owns the body): the record once the centre rule has written one; before it, the wanted ports
@@ -1304,7 +1309,6 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   fitRegionGroup(model, group);
   // The window is the same one the push respects. A left flank bounds this group as a right flank
   // does, and the final clamp reads `low`. A bound that only moves the group first is undone.
-  const { low, high } = stepWindow(model, context, tier, list, id, previous, tail);
   if (group.bounds!.width > high - low) {
     // A declined step leaves every feed of the group off its x: it names them (R6, architecture-2 ticket 31).
     if (warn && seats.size) {
