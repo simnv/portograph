@@ -209,6 +209,7 @@ describe('the bus publishes member paths, scores, renders and exports (ticket 84
     expect(render(model, { layers: ['routed'] })).not.toContain('<g class="mesh-bus');
   }, 60000);
 
+  // ADR-0027 replaces stretched bodies and their feed paths. Reviewed renders still prove the same buses, stubs, labels and exports.
   for (const name of NAMES) {
     it(`snapshots the SVG and the draw.io export of ${name}`, async () => {
       const model = await run(fixture(name));
