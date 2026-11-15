@@ -37,7 +37,8 @@ describe('the row order counts the corridors through the row (architecture-2 tic
     expect(one.metrics.crossings.count).toBe(1);
     // Ticket 65: the declared order crosses 5 (2 before): a centring step there keeps a vertical it reached and costs the crossings; the turned
     // order is unchanged, so the rule gains more.
-    expect(two.metrics.crossings.count).toBe(5);
+    // ADR-0027 (seat, dense-16x9 ticket 02): the declared order crosses 3 now; the turned order (1) still gains.
+    expect(two.metrics.crossings.count).toBe(3);
     expect(bends(turned)).toBeLessThan(bends(kept));
     expect(one.canvas!.width * one.canvas!.height).toBeLessThan(two.canvas!.width * two.canvas!.height);
     expect(Object.values(one.gates).filter(gate => gate.severity === 'error' && gate.violations.length)).toEqual([]);

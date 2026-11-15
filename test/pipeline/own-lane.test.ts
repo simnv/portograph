@@ -88,7 +88,8 @@ it('moves a corridor to the child 7c could not seat under it', async () => {
   // Nothing moved for the corridor: the rule runs after the last centring replay, so the child's
   // node keeps the width and the canvas keeps the extent 7f published.
   // Verdana metrics (snack-theme ticket 157): 145.775146484375 with Arial.
-  expect(model.nodes['node-ba002']!.bounds!.width).toBeCloseTo(161.87890625, 6);
+  // ADR-0027 (the alignment moves the node before it grows it): the node keeps the 80.68 px its ports and label need (161.88 before).
+  expect(model.nodes['node-ba002']!.bounds!.width).toBeCloseTo(80.6796875, 6);
   // The move turns the run in the gap above the corridor from a column into a row, and 7f measured
   // that gap before the move. No gap may end up owing more room than it has.
   for (const { gap, plan } of tierGapPlans(model)) expect([gap.below, plan.growth]).toEqual([gap.below, 0]);
