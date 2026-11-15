@@ -13,8 +13,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
  * The lane reseat of 7f (a corridor follows its child, ticket 02 of architecture-1) is the one move after the last centring of 7f. Two rules hold it
- * (dense-16x9 ticket 02, with the seat addendum: a left-out feed that could still join its seat pulls, and a step that grows a body and leaves every
- * aligned port off its feed is declined whole). On a-corridor-moves-after-the-grid-settles both broke the run before them:
+ * (dense-16x9 ticket 02, with the seat addendum: a step that grows a body and leaves every aligned port off its feed is declined whole). On
+ * a-corridor-moves-after-the-grid-settles both broke the run before them:
  * - the corridor of link-82 followed its child from 2717.7 to 3237.3 px, across `sc-upper` (3083.4 to 3197.1 px) that stands beside it, and the
  *   post-condition of 7f refused the run (`laneSide`). A corridor does not follow its child across a group it stands beside.
  * - in the second placement run the corridor of link-37 followed its child to 2407.6 px; the publication's replay of `zone-4` then read a standing

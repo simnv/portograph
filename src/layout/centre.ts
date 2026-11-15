@@ -734,36 +734,21 @@ function centringOffset(chosen: readonly Feed[]): number {
 }
 /**
  * The feeds the main move of a step centres on while seats stand (ADR-0027: the seat owns the body). A node the record seats on at least one
- * port of a node feed pulls the group through the feeds of its kept ports, and through each feed its seat left out that could still join the
- * kept window. A left-out feed stops pulling only when it never can: the cap declined its target, or the order and pitch of its face against a
- * kept port exclude its x. Such a feed would carry the body off the feeds it stands, pass after pass. A feed that a bound left out (a sibling,
- * the row window, an overlay wall) still pulls: the bound moves when the group moves. A seat on transit-lane ports alone holds nothing: a lane
- * follows its child. Before the centre rule writes the record, a node that stands a feed where the step begins pulls only through the feeds it
- * stands. When no feed is left, the step centres on all of them.
+ * port of a node feed pulls the group only through the feeds of its kept ports: a feed its seat left out (the cap, the order of the face, the
+ * row) would carry the body off the feeds it stands, pass after pass. A seat on transit-lane ports alone holds nothing: a lane follows its
+ * child. Before the centre rule writes the record, a node that stands a feed where the step begins pulls only through the feeds it stands.
+ * When no feed is left, the step centres on all of them.
  */
 function seatedFeeds(model: LayoutModel, chosen: readonly Feed[]): Feed[] {
   const record = model.alignmentSeats;
   const stands = (feed: Feed): boolean => feed.child.anchor !== undefined && Math.abs(feed.child.anchor.x - feed.x) <= 0.5;
   const standing = new Set(chosen.filter(stands).map(feed => feed.child.ref.node));
-  const capped = record === undefined ? new Set<string>() : declinedTargets(model, [...new Set(chosen.map(feed => feed.child.ref.node))], 'cap');
-  // Whether the order and pitch of the face put `feed`'s x out of reach of a port its seat keeps on that face.
-  const excluded = (feed: Feed, kept: readonly string[]): boolean => {
-    const node = model.nodes[feed.child.ref.node]!, side = feed.child.side!, pitch = node.sidePitch?.[side] ?? 0;
-    const order = node.ports.filter(port => port.side === side).sort((one, two) => one.engineOrder! - two.engineOrder!).map(port => portId(port.ref));
-    const at = order.indexOf(portId(feed.child.ref));
-    return chosen.some(other => {
-      if (other.child.ref.node !== node.id || other.child.side !== side || !kept.includes(portId(other.child.ref))) return false;
-      const steps = at - order.indexOf(portId(other.child.ref)), gap = feed.x - other.x;
-      return steps > 0 ? gap < steps * pitch - EPS : gap > steps * pitch + EPS;
-    });
-  };
   const pulling = chosen.filter(feed => {
     const node = feed.child.ref.node;
     if (record === undefined) return !standing.has(node) || stands(feed);
     const seat = Object.hasOwn(record, node) ? record[node] : undefined;
     const holds = seat !== undefined && chosen.some(other => other.child.ref.node === node && !other.transit && seat.ports.includes(portId(other.child.ref)));
-    if (!holds || seat.ports.includes(portId(feed.child.ref))) return true;
-    return !capped.has(portId(feed.child.ref)) && !excluded(feed, seat.ports);
+    return !holds || seat.ports.includes(portId(feed.child.ref));
   });
   return pulling.length ? pulling : [...chosen];
 }

@@ -58,11 +58,10 @@ describe('the seat owns the body (ADR-0027)', () => {
     expect(spent(model)).toBe(false);
   }, 120000);
 
-  it('private-datacenter-spine-leaf keeps main\'s 10 bends', async () => {
+  it('private-datacenter-spine-leaf settles with at most 10 bends', async () => {
     const model = await run(read('real/private-datacenter-spine-leaf'));
     expect(bends(model)).toBeLessThanOrEqual(10);
-    // Before the seat addendum (clause 1 narrowed) the branch settled here with 0 bends, and this test held `spent` false. A feed a bound left
-    // out pulls again, two tiers seat on each other's ports, and the budget is spent as on main: a gain not kept (ruling of 2026-11-15).
+    expect(spent(model)).toBe(false);
   }, 120000);
 
   it('a-corridor-moves-after-the-grid-settles publishes, and its seat record equals its replay', async () => {
@@ -96,10 +95,9 @@ links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`))))))
     }
   }, 60000);
 
-  it('the feedOrder:false copy of a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first: each seated body keeps one width', async () => {
+  it('the feedOrder:false copy of a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first settles, and each seated body keeps one width', async () => {
     const model = await run(withoutJointOrder(read('synthetic/a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first')));
-    // Before the seat addendum this test also held that the copy settles (`spent` false). With clause 1 narrowed it spends the budget, as main does:
-    // the step window of this copy is ticket 09.
+    expect(spent(model)).toBe(false);
     for (const [id, seat] of Object.entries(model.alignmentSeats!)) expect(model.nodes[id]!.bounds!.width, id).toBeLessThanOrEqual(seat.width + 1e-6);
   }, 120000);
 

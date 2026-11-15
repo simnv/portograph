@@ -98,19 +98,19 @@ window is read from the centring context and from the group as it stands. Read b
 disagree with the producer: "Centring invariant violated" on three-continents and
 three-continents-top-3-first.
 
-## Addendum: a feed left out for good, or for now (2026-11-15)
+## Addendum: a seat is judged where its step ends (2026-11-15)
 
-Two clauses change the amendment above (design note `design-02-seat-2`):
+The design note `design-02-seat-2` proposed two clauses. The owner chose clause 5 alone:
 
-1. Clause 1, narrowed: a feed that its seat left out stops pulling only when it can never join the
-   kept window: the cap declined its target, or the order and pitch of its face against a kept port
-   exclude its x. A feed that a bound left out (a sibling, the row window, an overlay wall) still
-   pulls.
-5. A seat is judged where its step ends. A step that grows a body and leaves every aligned port of
-   its group off its feed is declined whole, and records no seat. This was ticket 71's rule for a
-   given-back body. With it in every step, the given-back record (`givenBack`) named no node on any
-   corpus sheet, and nothing read it. The record, its second run of the passes and its check are
-   removed.
+- Clause 5: a seat is judged where its step ends. A step that grows a body and leaves every aligned
+  port of its group off its feed is declined whole, and records no seat. This was ticket 71's rule
+  for a given-back body. With it in every step, the given-back record (`givenBack`) named no node on
+  any corpus sheet, and nothing read it. The record, its second run of the passes and its check are
+  removed.
+- Clause 1 is not changed: a seated body pulls only through the feeds of its kept ports. The
+  narrowed clause 1 (a left-out feed stops pulling only when the cap declined its target, or the
+  order and pitch of its face exclude it) was built and measured, and it is not kept. A joint
+  alignment plan that decides the seats of a group together is a later ticket (dense-16x9 ticket 15).
 
 Two rules hold the lane reseat of 7f, the one move after the last centring:
 
@@ -119,15 +119,19 @@ Two rules hold the lane reseat of 7f, the one move after the last centring:
 - The reseat is judged by the publication's record comparison (`alignment-targets-differ`), because
   no centring follows it to write a decline into the record.
 
-Measured and open:
+Trades, listed and not fixed (the rows of `test/layout/seat-acceptance.test.ts` that stand as
+expected-fail, each with its old value, its value now and its ticket):
 
-- The owner's tier-gap sheet gets main's geometry (516 x 484, 8 bends, 5 crossings), but the
-  centring spends its budget there; main settles.
-- private-datacenter-spine-leaf returns to main's 10 bends and a spent budget (the branch had 0).
-- a-kept-vertical-leaves-a-straight-overlay-straight fails G6. The chord step of 7f moves group `c`
-  9.9 px, ticket 75's guard keeps `f2` from following, and the router draws link-2 12 px from the
-  diagonal of link-5. The chord judge reads G6 only on links that have a path in 7f; link-2 is routed
-  in stage 8 (dense-16x9 ticket 14). A guard on kept ports in the chord step removed the G6 but cost a
-  straight link on 5 sheets, and was dropped.
-- The acceptance set (`test/layout/seat-acceptance.test.ts`) holds the tests of ticket 71 with their
-  old pins. Five of them fail with both clauses, and each is marked expected-fail with its clause.
+- The owner's tier-gap sheet with `feedOrder: false` has 16 bends and G5 and spends the budget
+  (main: 8 bends and settles). Body `isp1` grows to 397 px across the feeds of `isp0`: no rule
+  decides the seats of one group together (ticket 15).
+- widened-child-packs-tier with a wide label keeps `w1` at 139 px, not 272 px, and has 5 bends, not
+  2; a-hub-tiers-fan-draws-straight-and-crosses-itself has 7 bends, not 6; a-shared-end-reads-its-port-order
+  has 11 bends, not 8 (ticket 15).
+- The `feedOrder: false` copy of a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first has
+  12 bends, not 5 (ticket 09, the step window).
+- a-kept-vertical-leaves-a-straight-overlay-straight has 12 bends, not 6: `f2` stands both owed
+  verticals and the seat trades the overlay to `b-s2` for them (ticket 15).
+
+Measured: private-datacenter-spine-leaf has 0 bends and settles (main: 10 bends, spent), and
+a-stranded-growth-is-given-back has main's 6 bends and settles.
