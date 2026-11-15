@@ -13460,7 +13460,7 @@
       "ports": [
         "port:[\"provider-1\",false,\"100G\",1]"
       ],
-      "pass": 2
+      "pass": 1
     },
     "provider-2": {
       "dx": 0,
@@ -13470,7 +13470,7 @@
       "ports": [
         "port:[\"provider-2\",false,\"100G\",1]"
       ],
-      "pass": 2
+      "pass": 1
     }
   },
   "anchorTier": 1,

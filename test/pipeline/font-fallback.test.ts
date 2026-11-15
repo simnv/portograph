@@ -23,8 +23,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // once more (e124d93a... before), again with the same geometry (user approval).
 // ADR-0027 seat addendum (dense-16x9 ticket 02) re-baselined both: every published model gains `alignmentTargets` and `alignmentSeats` (the hash
 // without those two keys is the old one: 44413304... and 2f8dee6c...).
+// A seat decided again equal keeps the pass that wrote it (the two seats of m1-sip-edge: pass 1, not 2): b3d5335a... before, the hash without the
+// two records is still 44413304...
 const baselines = {
-  'm1-sip-edge': 'b3d5335a329dcf4758fc36c605f46b8832f44ec5dada723721f0bab6911a4456',
+  'm1-sip-edge': '07a7f1bff329e5b9c5089509861f1ee583532b880ca4d7ece0fb248e45cdee6a',
   'synthetic/drawio-constructs': '2796ac17db97defbbf3792c1cc09218a8acf95d019a5c1309acf8f89d9f9137e',
 };
 
