@@ -16,7 +16,7 @@ import { reversed } from '../../scripts/r3-lib.mjs';
  */
 const source = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const pinned = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
-const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testFarEndOrder: false as const });
+const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const bends = (model: LayoutModel): number => { const { routed, overlay } = score(model).snapshot.counts; return routed.turns + overlay.turns; };
 const violations = (model: LayoutModel, gate: 'G6'): number => score(model).snapshot.gates[gate].violations.length;
 const count = (model: LayoutModel, code: string): number => model.diagnostics.filter(item => item.code === code).length;
@@ -97,7 +97,8 @@ describe('the settle after the 7f rounds and the kept verticals', () => {
     const link = model.links.find(item => item.id === 'link-12')!;
     const lane = model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === 'link-12')!;
     expect(findPort(model, link.attachments!.from)!.anchor!.x).toBeCloseTo(lane.x, 6);
-    expect(lane.x).toBeCloseTo(93, 6);
+    // x 93 before the far-end round (dense-16x9 ticket 07) re-ordered the stale face of this sheet: the port still stands on the lane (above); the lane stands at 59 now.
+    expect(lane.x).toBeCloseTo(59, 6);
   }, 120000);
   it('keeps a-face-aligns-one-port-and-leaves-a-chord-port-in-place at no more than one G6 and 12 bends (the chord clearance)', async () => {
     const model = await run(pinned('a-face-aligns-one-port-and-leaves-a-chord-port-in-place-lower-groups-first'));

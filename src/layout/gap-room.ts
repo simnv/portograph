@@ -10,6 +10,7 @@ import { placementWarning, rebuildRegions } from './regions.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { recordStemDepths, stemDepthsFault } from './sides-two.js';
+import { PostconditionRefusal } from './placement-refusal.js';
 import { attemptCounters } from './attempt-counters.js';
 import { timed } from './attempt-timings.js';
 
@@ -218,7 +219,8 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel, 
     }
     const after = xCoordinates(model);
     const moved = [...before].filter(([id, x]) => after.get(id) === undefined || Math.abs(after.get(id)! - x) > EPS).map(([id]) => id);
-    if (moved.length) throw new Error(`The tier-gap solve moved ${moved.slice(0, 5).join(', ')} in x; a move in y may move no x`);
+    // A named producer refusal, not a bare error (the message is as it was): a round's trial that reaches it is withdrawn by the runner, and the main line fails with the same text.
+    if (moved.length) throw new PostconditionRefusal('bands', [{ kind: 'tier-gap solve', subject: moved.slice(0, 5).join(', '), detail: 'moved in x; a move in y may move no x' }]);
   }
   // The label rooms across a tier gap are read once more on the gaps as they stand (R6): the growth turns a diagonal that spans a grown gap,
   // and a deficit of a gap no plan reads (`tierGaps` skips it) grew nothing. A room across a gap still short is given up to the label

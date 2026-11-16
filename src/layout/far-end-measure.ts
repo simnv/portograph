@@ -2,6 +2,7 @@ import type { Side } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
 import { faceKey } from './turn-order.js';
 import { guardRoutedTrial, unifiedOrder } from './turn-measure.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 import { proposeFarEndOrder, staleFaces, type FarEndFace, type FarEndProposal } from './far-end-order.js';
 
 /**
@@ -20,7 +21,19 @@ export interface FarEndVerdict {
   /** The faces that fail G5 on the baseline and on the trial. */
   before?: number;
   after?: number;
+  /** The published canvas of the baseline and of the kept trial, when the trial grows it (named in the note of a kept trial). */
+  canvas?: { from: { width: number; height: number }; to: { width: number; height: number } };
 }
+
+/**
+ * The most the published canvas may grow, as a ratio of its area, for a trial that settles a face (dense-16x9 ticket 07 review): a port order is a gate, and the gates outrank the canvas
+ * in `gate:compare`, but a new order that doubles the sheet is no repair. 1.25 admits the 1.15 and 1.08 of the two corpus sheets that widen by a body or a gap, and nothing larger is measured.
+ * The growth that is kept is named in the note of the kept trial.
+ */
+export const FAR_END_CANVAS_GROWTH = 1.25;
+
+/** What a canvas reader answers: the published canvas of a routed model (stage 9 refits it with the labels and the legend), or `undefined` when it has none. */
+export type PublishedCanvas = (model: LayoutModel) => { width: number; height: number } | undefined;
 
 const names = (faces: readonly { node: string; side: Side }[]): Set<string> => new Set(faces.map(face => faceKey(face.node, face.side)));
 
@@ -30,7 +43,7 @@ const names = (faces: readonly { node: string; side: Side }[]): Set<string> => n
  * turns, crossings): the repair buys a port order, and may not pay for it with a bend; and the final ranges agree on every proposed face, or on some of them and on no fewer faces
  * than the baseline. A refused trial that left a face stale carries the next proposal, which reads the trial's own final positions.
  */
-export function judgeFarEndTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>, proposed: readonly FarEndFace[]): FarEndVerdict {
+export function judgeFarEndTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>, proposed: readonly FarEndFace[], published: PublishedCanvas): FarEndVerdict {
   const was = names(staleFaces(routedBase)), now = names(staleFaces(routedTrial)), asked = names(proposed);
   const before = was.size, after = now.size;
   const open = [...asked].filter(face => now.has(face));
@@ -41,12 +54,21 @@ export function judgeFarEndTrial(routedBase: LayoutModel, routedTrial: LayoutMod
     return { kept: false, reason, ...(next.length > 0 ? { next } : {}), before, after };
   };
   if (fresh.length > 0) return refuse(`the trial leaves faces out of far-end order that the baseline had in order (${fresh.join(', ')})`);
-  const guarded = guardRoutedTrial(routedBase, routedTrial, keptPromises);
+  // The published canvas of both candidates, labels and legend included (R1: the extent that publishes, not the one the route leaves).
+  let grown: FarEndVerdict['canvas'];
+  const canvasRefusal = (base: LayoutModel, trial: LayoutModel): string | undefined => {
+    const was = published(base), now = published(trial);
+    if (was === undefined || now === undefined || !(was.width * was.height > 0)) return 'the published canvas of a candidate cannot be read';
+    const ratio = (now.width * now.height) / (was.width * was.height);
+    if (ratio > 1 + PLACEMENT_EPS) grown = { from: { width: was.width, height: was.height }, to: { width: now.width, height: now.height } };
+    return ratio > FAR_END_CANVAS_GROWTH + PLACEMENT_EPS ? `the published canvas grows from ${Math.round(was.width)}x${Math.round(was.height)} to ${Math.round(now.width)}x${Math.round(now.height)} px` : undefined;
+  };
+  const guarded = guardRoutedTrial(routedBase, routedTrial, keptPromises, canvasRefusal);
   if (typeof guarded === 'string') return refuse(guarded);
   const { before: was3, after: now3, order } = unifiedOrder(guarded);
   if (order > 0) return refuse(`the routed trial is worse by the unified order (${now3.bent} bent links, ${now3.turns} turns, ${now3.crossings} crossings, against ${was3.bent}, ${was3.turns} and ${was3.crossings})`);
   // A face the new order did not settle stays out of order as it was on the baseline: the trial is kept when it settles more faces than it leaves (no face is worse), and the round
   // goes on with the faces left. A trial that settles none is refused.
   if (open.length > 0 && after >= before) return refuse(`the final far ends of ${open.join(', ')} disagree with the proposed order`);
-  return { kept: true, reason: '', before, after };
+  return { kept: true, reason: '', before, after, ...(grown === undefined ? {} : { canvas: grown }) };
 }

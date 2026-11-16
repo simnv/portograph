@@ -16,7 +16,10 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * replay of the publication check reads them (R1).
  */
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testFarEndOrder: false as const });
+// The golden that these tests trim fails G5 on its stage-5 order, and the far-end round (dense-16x9 ticket 07) repairs it and removes the stretch. The same input with the order of the stale
+// face authored (an authored order is no far-end order, and G5 judges the free ports only) keeps the stretch on the production path.
+const stretched = (name: string): string => readFileSync(new URL(`../fixtures/authored-order/${name}.yaml`, import.meta.url), 'utf8');
+const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
 const right = (box: { x: number; width: number }): number => box.x + box.width;
 const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string => {
   const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
@@ -26,7 +29,7 @@ const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string =>
 
 describe('a stretched body is trimmed to its ports', () => {
   let model: LayoutModel;
-  beforeAll(async () => { model = await run(source('a-stretched-body-is-trimmed-to-its-ports')); }, 120000);
+  beforeAll(async () => { model = await run(stretched('a-stretched-body-is-trimmed-to-its-ports')); }, 120000);
 
   it('records the stretched body of sink-near and trims it to its outer top ports with their insets', () => {
     const was = model.bodyTrims?.nodes['sink-near'];
@@ -134,7 +137,7 @@ describe('the centring replay reads the bodies the producer decided on (R1)', ()
 
 describe('a trimmed group box keeps its title floor', () => {
   it('holds the title of a group whose label is wider than its trimmed bodies (review round 1)', async () => {
-    const text = source('a-stretched-body-is-trimmed-to-its-ports').replace('near: { tier: 2 }', 'near: { tier: 2, label: A title far wider than the one sink it holds }');
+    const text = stretched('a-stretched-body-is-trimmed-to-its-ports').replace('near: { tier: 2 }', 'near: { tier: 2, label: A title far wider than the one sink it holds }');
     const model = await run(text);
     expect(model.bodyTrims?.nodes['sink-near']).toBeDefined();
     expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([]);

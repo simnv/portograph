@@ -26,7 +26,7 @@ import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, fla
 import { heldSourceGroups, rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
 import { freezeChords, spanCandidate } from './frame-paths.js';
 import { faceKey, laneFaceOrder, turnRecord, turnRecordFaults } from './turn-order.js';
-import { farEndFaceFailure } from './far-end-order.js';
+import { farEndFaceFailure, farEndOwner } from './far-end-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
@@ -647,9 +647,15 @@ function validateFreeze(model: LayoutModel): void {
   if (faulty !== undefined) throw new Error(`Frozen turn order${faulty.node === undefined ? '' : ` of ${faulty.node} ${faulty.side}`}: ${faulty.why}`);
   // The far-end order stage 5 seated (ticket 07): the faces the model was told to seat, in the order they stand. G5 judges the geometry; the record grants it no exemption.
   same(freeze.farEndOrder, model.farEndOrder, 'Frozen far-end order changed');
+  const seatedFaces = new Set<string>();
   for (const face of freeze.farEndOrder ?? []) {
     const why = farEndFaceFailure(model, face);
     if (why !== undefined) throw new Error(`Frozen far-end order of ${face.node} ${face.side}: ${why}`);
+    // One owner per face (R1, R5): a face is seated once, and not a face that a block, a bar, a bundle, a mesh bus or the turn order owns (the same predicate the proposal reads).
+    const name = faceKey(face.node, face.side), owner = farEndOwner(model, face.node, face.side);
+    if (seatedFaces.has(name)) throw new Error(`Frozen far-end order names the ${face.side} face of ${face.node} twice`);
+    seatedFaces.add(name);
+    if (owner !== undefined) throw new Error(`Frozen far-end order of ${face.node} ${face.side}: the face belongs to ${owner === 'turn' ? 'the turn order' : `a ${owner}`}`);
   }
   validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');

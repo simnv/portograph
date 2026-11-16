@@ -526,6 +526,8 @@ export function validateReservations(model: LayoutModel): void {
     const held = spansOf(ledger);
     if (!same(model.links.filter(link => held.has(link.id)).map(link => link.id), model.freeze?.spans ?? []) || held.size !== (model.freeze?.spans ?? []).length) throw new Error('Reserved spanning chords differ from the frozen span hints');
   }
+  // A far-end order the model carries must have the ledger that reserved it: without one the check below would pass on whatever the model says (R5).
+  if (((model.farEndOrder?.length ?? 0) > 0 || (model.freeze?.farEndOrder?.length ?? 0) > 0) && model.reservations === undefined) throw new Error('The far-end order of the model has no reservation ledger');
   if (model.reservations !== undefined) {
     // The far-end orders of the ledger are the far-end orders of the model, face for face.
     if (!same(farEndOrderOf(ledger), model.farEndOrder ?? [])) throw new Error('The reserved far-end orders differ from the far-end orders of the model');

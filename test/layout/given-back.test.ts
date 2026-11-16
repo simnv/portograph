@@ -14,7 +14,9 @@ import { withoutJointOrder } from './joint-off.js';
  * from its input with it. A node at one end of a transit link gives back only with the other end, so its corridor can follow it in 7f.
  */
 const source = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
-const run = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testFarEndOrder: false as const });
+// `farEnd: false` turns the far-end round (dense-16x9 ticket 07) off. It is used by the sibling-cascade test only: its state (a stale stage-5 order whose G5 failure the test pins, with `snk0` and
+// `src1` both given back) is the one the round repairs, so no production-path input reaches it; reported on ticket 07.
+const run = (name: string, farEnd?: false): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(farEnd === false ? { testFarEndOrder: false as const } : {}) });
 const bends = (model: LayoutModel): number => { const counts = score(model).snapshot.counts; return (counts.routed?.turns ?? 0) + (counts.overlay?.turns ?? 0); };
 const failing = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed && gate.severity === 'error').map(([id]) => id).sort();
 const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string => {
@@ -90,7 +92,7 @@ describe('the three regression classes of a per-step decline', () => {
   }, 120000);
 
   it('sibling cascade: a-group-shift gives snk0 back with its partner src1 and keeps bends 5 and G5 alone', async () => {
-    const model = await run('a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first'); // DR-04: the copy with `access` first
+    const model = await run('a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first', false); // DR-04: the copy with `access` first
     expect(Object.keys(model.givenBack ?? {})).toEqual(['snk0', 'src1']);
     expect(bends(model)).toBe(5);
     expect(failing(model)).toEqual(['G5']);
@@ -100,7 +102,8 @@ describe('the three regression classes of a per-step decline', () => {
     const model = await run('a-shared-end-reads-its-port-order');
     expect(model.givenBack).toBeUndefined();
     expect(bends(model)).toBe(8);
-    expect(score(model).snapshot.metrics.crossings.count).toBe(14);
+    // 14 before the far-end round (dense-16x9 ticket 07) put the ports of its stale face in the order of the final far ends: 12 crossings, bends as before.
+    expect(score(model).snapshot.metrics.crossings.count).toBe(12);
   }, 120000);
 
   it('pass order: widened-child-packs-tier and a-hub-tiers-fan keep the growth a later pass completes (bends 2 and 6)', async () => {

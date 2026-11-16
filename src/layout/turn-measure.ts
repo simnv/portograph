@@ -75,6 +75,13 @@ export function betterByUnified(before: Count, after: Count): boolean {
 
 const countOf = (counts: ScoreCounts): Count => ({ bent: counts.routed.bent + counts.overlay.bent, turns: counts.routed.turns + counts.overlay.turns, crossings: counts.routed.crossings + counts.overlay.crossings.pairs });
 
+/**
+ * The canvas guard of the turn round: the canvas of the routed models as they stand. Stage 9 refits the canvas after the route (labels, legend, outer half of every stroke), so this reads
+ * an extent that does not publish; a round that judges the published canvas passes its own reader (the far-end round).
+ */
+const ownCanvasGrowth = (base: LayoutModel, trial: LayoutModel): string | undefined =>
+  (trial.canvas?.width ?? 0) > (base.canvas?.width ?? 0) + PLACEMENT_EPS || (trial.canvas?.height ?? 0) > (base.canvas?.height ?? 0) + PLACEMENT_EPS ? 'the routed trial grows the canvas' : undefined;
+
 /** What the guards of a routed trial read, when they hold: the gate findings and counts of the baseline and of the trial. */
 export interface TrialReading { gatesThen: NonNullable<ReturnType<typeof gateFindings>>; gatesNow: NonNullable<ReturnType<typeof gateFindings>> }
 
@@ -83,7 +90,8 @@ export interface TrialReading { gatesThen: NonNullable<ReturnType<typeof gateFin
  * spanning chord; every kept course publishes at most the turns it promised; no new gate finding and no new hard constraint finding (as sets); no minimum separation broken
  * or deepened; and the canvas does not grow. The refusal reason, or the two readings the judge compares.
  */
-export function guardRoutedTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>): string | TrialReading {
+export function guardRoutedTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>,
+  canvasRefusal: (base: LayoutModel, trial: LayoutModel) => string | undefined = ownCanvasGrowth): string | TrialReading {
   const was = routedBends(routedBase), now = routedBends(routedTrial);
   const removed = [...was.keys()].filter(id => !now.has(id));
   if (removed.length > 0) return `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`;
@@ -99,7 +107,8 @@ export function guardRoutedTrial(routedBase: LayoutModel, routedTrial: LayoutMod
   if (constraintNew.length > 0) return `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`;
   const separationNew = separationWorse(routedTrial, routedBase);
   if (separationNew.length > 0) return `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`;
-  if ((routedTrial.canvas?.width ?? 0) > (routedBase.canvas?.width ?? 0) + PLACEMENT_EPS || (routedTrial.canvas?.height ?? 0) > (routedBase.canvas?.height ?? 0) + PLACEMENT_EPS) return 'the routed trial grows the canvas';
+  const canvas = canvasRefusal(routedBase, routedTrial);
+  if (canvas !== undefined) return canvas;
   return { gatesThen, gatesNow };
 }
 

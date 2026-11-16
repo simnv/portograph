@@ -22,6 +22,7 @@ import { attemptCounters } from '../layout/attempt-counters.js';
 import { tierGapPlans } from '../layout/gap-plan.js';
 import { judgeTurnTrial, measureTurnOrder } from '../layout/turn-measure.js';
 import { straightFaces } from '../layout/turn-order.js';
+import { linkLabels } from '../layout/link-labels.js';
 import { judgeFarEndTrial, measureFarEndOrder } from '../layout/far-end-measure.js';
 import { proposalGroups, proposalKey, staleFaces, type FarEndFace } from '../layout/far-end-order.js';
 import { farEndEntries, pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
@@ -32,6 +33,7 @@ import { completedRouteCovers, type RouteObstacle } from '../route/obstacles.js'
 import { stitchPaths, tryStitch, type Stitched } from '../route/paths.js';
 import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession } from '../route/worker.js';
 import { CommandDeadlineError } from './budget.js';
+import { isDeadlineError } from './deadline.js';
 import type { Refusal, Round } from './round.js';
 import type { Env } from './env.js';
 import { FAN_ROUNDS, FAR_END_ORDER_RUNS, SIDE_ROUNDS } from './limits.js';
@@ -638,9 +640,10 @@ export const farEnd: Round<FarEndTrialOffer> = {
     s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'FAR_END_ORDER_UNSETTLED', owners: o.faces.map(face => ({ kind: 'node' as const, id: face.node })),
       message: `The far-end order of ${faceNames(o.faces)} was not tried: the command has made its ${FAR_END_ORDER_RUNS} far-end trials.` });
   },
-  // A trial of this round re-orders ports and nothing else, so the baseline already stands. Any invariant that 7f raises on the new geometry (a plain error, never the command's deadline) withdraws
-  // the trial by name (`FAR_END_ORDER_DECLINED` carries the message): a defect that only this order reaches is a finding, not a reason to lose a layout the command already has.
-  tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal : error instanceof PlacementRefusal ? refusedAtBands(error) : !(error instanceof CommandDeadlineError),
+  // A trial of this round withdraws on a named refusal only (R4, R6): a `PlacementRefusal` that a trial may give (the producer refusals are withdrawn by the runner before this is asked).
+  // A deadline (the command's, ELK's or the router's), the placement budget, the centring invariant and any plain error propagate: the clock never picks which drawing is published, and a
+  // defect that only this order reaches is a finding, not a trial to lose quietly.
+  tolerates: error => !isDeadlineError(error) && error instanceof PlacementRefusal && refusedAtBands(error),
   async measure(env, s) {
     const memory = s.farEnd ??= { seen: new Set(), noted: new Set() };
     const current = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
@@ -678,7 +681,7 @@ export const farEnd: Round<FarEndTrialOffer> = {
     return broken.length > 0 ? ledgerRefusal(broken, { why: `a reservation does not hold at stage 7e (${broken[0]!.why})` }) : undefined;
   },
   judge(env, s, o, t) {
-    const verdict = judgeFarEndTrial(o.current, t.routedTrial, promisedTurns(s.kept), o.faces);
+    const verdict = judgeFarEndTrial(o.current, t.routedTrial, promisedTurns(s.kept), o.faces, model => linkLabels(model, [], env.groupLifts).canvas);
     o.verdict = verdict;
     env.options.testSideTrace?.({ ev: 'far-end-trial', faces: o.faces, verdict, trial: t.trial, routedTrial: t.routedTrial, routedBase: o.current });
     if (verdict.kept) return undefined;
@@ -702,7 +705,7 @@ export const farEnd: Round<FarEndTrialOffer> = {
       message: `The far-end order of ${faceNames(open)} did not settle in the trial that was kept; the final far ends still disagree with it.` });
     for (const face of o.faces.filter(item => !left.has(`${item.node}|${item.side}`))) {
       s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'FAR_END_ORDER_TAKEN', owners: [{ kind: 'node', id: face.node }],
-        message: `The ports of the ${face.side} face of ${face.node} take the order of the final positions of their far ends: ${verdict.before} faces out of order on the baseline, ${verdict.after} after.` });
+        message: `The ports of the ${face.side} face of ${face.node} take the order of the final positions of their far ends: ${verdict.before} faces out of order on the baseline, ${verdict.after} after${verdict.canvas === undefined ? '' : `; the published canvas grows from ${Math.round(verdict.canvas.from.width)}x${Math.round(verdict.canvas.from.height)} to ${Math.round(verdict.canvas.to.width)}x${Math.round(verdict.canvas.to.height)} px`}.` });
     }
   },
   refuse(env, s, o, r) {

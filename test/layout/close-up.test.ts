@@ -16,6 +16,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * centring replay reads the geometry before the trim and the close-up (`untrimmedModel`, R1).
  */
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+
 const right = (box: { x: number; width: number }): number => box.x + box.width;
 const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string => {
   const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
@@ -23,12 +24,17 @@ const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string =>
   return JSON.stringify(copy);
 };
 
+/**
+ * `farEnd: false` turns the far-end round (dense-16x9 ticket 07) off. The two sheets that close a group up fail G5 on their stage-5 order, and the round repairs that order and removes the stretch
+ * that the trim and the close-up are tested on; with the order authored the geometry is another one (named ports size the nodes), so no production-path input reaches this state: the switch is the
+ * state under test, reported on ticket 07. `end-trim.test.ts` reads the trim of the same input on the production path through `test/fixtures/authored-order`.
+ */
 /** Lays the sheet out with a tap on the drafts the producer had before the trim (one per placement attempt). */
-async function run(name: string): Promise<{ model: LayoutModel; drafts: LayoutModel[] }> {
+async function run(name: string, farEnd?: false): Promise<{ model: LayoutModel; drafts: LayoutModel[] }> {
   const drafts: LayoutModel[] = [], sink = targetTap.sink;
   targetTap.sink = (tap, value) => { if (tap === 'beforeEndTrim') drafts.push(JSON.parse(value) as LayoutModel); };
   try {
-    const model = await layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testFarEndOrder: false as const });
+    const model = await layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(farEnd === false ? { testFarEndOrder: false as const } : {}) });
     return { model, drafts };
   } finally { if (sink === undefined) delete targetTap.sink; else targetTap.sink = sink; }
 }
@@ -49,7 +55,7 @@ function geometry(model: LayoutModel): string {
 
 describe('a sibling group closes up after the trim', () => {
   let model: LayoutModel, drafts: LayoutModel[];
-  beforeAll(async () => { ({ model, drafts } = await run('a-sibling-group-closes-up-after-the-trim')); }, 120000);
+  beforeAll(async () => { ({ model, drafts } = await run('a-sibling-group-closes-up-after-the-trim', false)); }, 120000);
 
   it('moves `far` left toward `near` and records the shift', () => {
     const dx = model.bodyTrims?.shifts?.['far'];
@@ -90,7 +96,7 @@ describe('a sibling group closes up after the trim', () => {
 
 describe('a corridor follows the group that closes up', () => {
   let model: LayoutModel, drafts: LayoutModel[];
-  beforeAll(async () => { ({ model, drafts } = await run('a-stretched-body-is-trimmed-to-its-ports')); }, 120000);
+  beforeAll(async () => { ({ model, drafts } = await run('a-stretched-body-is-trimmed-to-its-ports', false)); }, 120000);
 
   it('moves `far` and the lane of its link by one shift, and the lane still stands on the port', () => {
     const dx = model.bodyTrims?.shifts?.['far'];
@@ -159,7 +165,7 @@ describe('a close-up keeps the stem depth record', () => {
     const lines = tierGap.split('\n'), at = lines.indexOf('links:');
     const reversed = [...lines.slice(0, at + 1), ...lines.slice(at + 1).filter(line => line.startsWith('  - ')).reverse()].join('\n') + '\n';
     for (const text of [sweep, reversed]) {
-      const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testFarEndOrder: false as const });
+      const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
       expect(stemDepthsFault(model)).toBeUndefined();
     }
   }, 120000);

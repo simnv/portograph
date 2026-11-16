@@ -38,7 +38,7 @@ const mirror = (yaml: string): string => {
   }
   return [...head, 'groups:', ...groups.reverse(), 'nodes:', ...nodes.reverse(), ...rest].join('\n');
 };
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt, testFarEndOrder: false as const });
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
 const skeletonOf = async (yaml: string): Promise<LayoutModel> => {
   const model = sizeNodes(sidesOne(resolve(parse(yaml))));
   await skeleton(model, { createAttempt: createColdAttempt });
@@ -82,7 +82,8 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
     for (const entry of ofKind(joint.reservations ?? [], 'corridorSide')) expect(corridorSideFailure(entry, joint)).toBeUndefined();
     // Bends 2 before architecture-2 ticket 73: the feed split stands both sink groups under their feeds.
     expect([crossings(joint), bends(joint)]).toEqual([1, 0]);
-    expect([crossings(alone), bends(alone)]).toEqual([6, 5]);
+    // 6 crossings before the far-end round (dense-16x9 ticket 07) re-ordered the stale face of the order that stands alone; bends as before.
+    expect([crossings(alone), bends(alone)]).toEqual([4, 5]);
   }, 120000);
 
   it('lays the mirrored input out: it publishes, refuses nothing and removes no link (R3)', async () => {

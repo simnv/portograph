@@ -16,6 +16,7 @@ import { besideGap, separateFrameColumns } from './columns.js';
 import { deriveFrames } from './frames.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { PlacementRefusal, SideHintRefusal } from './placement-refusal.js';
+import { farEndOwner } from './far-end-order.js';
 import { carriesTitle, nodeObstacleReach, nudgingDistance, portStemReach, routedStroke, sideStemReach, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, reservedCorridorX, transitTiers } from './lanes.js';
@@ -1079,7 +1080,12 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       ports.splice(0, ports.length, ...sorted(usePlanned));
       // A face the ledger gives a far-end order (ticket 07) is seated in it, and is no turn-ordered face: the order came from final positions, not from the planned turns.
       const reserved = (model.farEndOrder ?? []).find(face => face.node === id && face.side === side);
-      if (reserved !== undefined) ports.splice(0, ports.length, ...farEndSeating(ports, reserved));
+      if (reserved !== undefined) {
+        // A face that another owner holds is never seated by this order (the proposal leaves it out; a ledger that names it is refused by name, R5).
+        const owner = farEndOwner(model, id, side);
+        if (owner !== undefined) farEndDeclined(reserved, `the face belongs to ${owner === 'turn' ? 'the turn order' : `a ${owner}`}`);
+        ports.splice(0, ports.length, ...farEndSeating(ports, reserved));
+      }
       else if (plain !== undefined && plain.some((port, index) => port !== ports[index])) turned.push({ node: id, side });
       const ordered = seatAuthored(ports);
       // The seats of the authored ports may move the sequence: the face then stands in an order the ledger did not reserve, and the record could not back it.
