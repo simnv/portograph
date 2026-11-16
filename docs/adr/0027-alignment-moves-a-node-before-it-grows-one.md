@@ -6,18 +6,36 @@ gives back a stranded growth, architecture-2 ticket 71). It becomes the default 
 acceptance set. Accepted for implementation 2026-11-15. Tickets: `.scratch/dense-16x9/`.
 
 With the option off, every corpus sheet lays out as on main dc568f88 (0 layout-hash changes on the full corpus, 510 sheets). With
-the option on, every sheet lays out as the branch before the opt-in (e95b4aea merged with dc568f88). Six fixes of the branch change
-no corpus sheet with the option off, each alone and the six together, so they stand in both modes:
+the option on, every sheet lays out as the branch before the opt-in (e95b4aea merged with dc568f88). Every part of the branch reads
+the option. Five fixes of the branch change no corpus sheet with the option off, but each was shown only with seats, and no input
+shows that main needs it (review 1 of ticket 02), so they read the option too. Each has an opt-in test that fails without it:
 
-- the lane reseat of 7f keeps a group beside its lane on its side (`crossesBeside`);
-- `chooseReseat` and the 7f draft compare the alignment target record when they judge a reseat;
-- the close-up keeps a port under its lane (`lanePorts`);
-- the end trim keeps the label room of a same-tier link (`labelRoomHolds`);
-- the end-trim replay reads the placement input, not the removed links;
-- the region rebuild of the centre rule names its open alignments.
+- the lane reseat of 7f keeps a group beside its lane on its side (`crossesBeside`; `reseat-lane-sides.test.ts`);
+- `chooseReseat` and the 7f draft compare the alignment target record when they judge a reseat (`reseat-lane-sides.test.ts`);
+- the close-up keeps a port under its lane (`lanePorts`; `seat-owns-body.test.ts`);
+- the end trim keeps the label room of a same-tier link (`labelRoomHolds`; `opt-in-fixes.test.ts`);
+- the region rebuild of the centre rule names its open alignments (the NTP sheet; `opt-in-fixes.test.ts`).
 
-Every other part of the branch reads the option, the face recentring of 7c among them (81f108fd; it changes 7 corpus sheets with the
-option off).
+A sixth, the end-trim replay that dropped the removed links, changed nothing on the corpus or on 103 hand variants, with the option on or off, and is deleted.
+The face recentring of 7c (81f108fd) also reads the option; it changes 7 corpus sheets with the option off.
+
+## Known failures: why the rule is an opt-in (ruling 18, 2026-11-16)
+
+On inputs off the defaults, with a bundle beside a seated body, the rule removes a link or throws where main draws the
+sheet. These are not trades: a removed link or a refused layout is never the price of a width cap. They keep the rule off by
+default:
+
+- A removed link. With the 5 times cap a body cannot reach the common start of a bundle block (main grows it to 280.75 px; the
+  cap stops near 250 px), so the block is bent. Its envelope covers the column of a foreign feed, and the drop of that feed to the
+  same node has no way down: the router removes the link (`ROUTE_CHECKPOINT_SKIPPED` on a stem checkpoint). On the
+  `feedOrder: false` case main draws 6 links and the rule draws 5. The outside dense sheet loses two links at the left-face ports
+  of two sibling nodes 51 px apart in the same way (no seat, no bundle; with ticket 01 merged it loses none).
+- A throw. On a hand variant with a bundle split beside a seated body, the publication refuses the layout ("Centring invariant
+  violated": a port of the bundle's node stands off its feed), where main draws it.
+
+Owners: dense-16x9 ticket 19 (placement reserves the drop, or refuses the bent block, before routing) and ticket 15 (one joint
+alignment plan that decides the seats of a group together). The rule becomes the default only when ticket 15 passes the
+acceptance set with neither failure.
 
 ## Decision
 
