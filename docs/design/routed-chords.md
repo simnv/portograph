@@ -293,7 +293,7 @@ router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
 **reserved segment** a final path holds, with its link, its stroke and its producer, on the links the scorer counts (`routed`: a stored overlay
 path is no G6 or crossing reading, so it is never a baseline the dodge may trade a real finding or crossing against). It crops nothing: a planned
 piece ends on its port's tip, and a tip can stand beyond its gap, inside the band (review 6: a lower tip at y 400 under a gap that ends at
-y 300). It reads each link through `reservedRunsOf` (`route/plan.ts`): a stored path (a held chord, a pinned or bundle path), the shared
+y 300). It reads each link through `reservedChain` (`route/plan.ts`, in the order the final path visits it, the tier-gap runs woven in as `stitchOrder` weaves them for `planRoute`): a stored path (a held chord, a pinned or bundle path), the shared
 junction runs at both ends (a stem kept after a branch release included), the lane runs, the row-gap leg (`legReservation`), and the stems and
 lane mouths the link's pieces pass head-on. Those come from `pieceAsks`, the one selection `planRoute` asks the router by (the terminals, the
 empty pieces, which checkpoints, the `reservedPasses` filter; R1). Given plans, it adds their planned parts where a plan fits. It replaces the
@@ -310,7 +310,7 @@ Completeness is a test, not a list: `test/layout/reserved-segments.test.ts` lays
 leg, U and Z parts, held chords, and ten others) and requires, over the whole sheet, on the links the scorer counts, that every segment stage 8
 keeps of placement (`planRoute`'s reserved and allocated pieces, the stems and lane approaches its routed gaps and straight claims pass, the
 stored paths) lies on its final path and on `reservedSegments` entries of its link, and that every entry lies on the final path of its link.
-With any one producer left out of `reservedRunsOf` the test fails. Stage order: every stitched plan is read from the model `planRoute` reads
+With any one producer left out of `reservedChain` the test fails. Stage order: every stitched plan is read from the model `planRoute` reads
 (stage 8 `route`, and the 7e route trial), so no model-held kind is missing when the dodge decides a seat that is stitched. The earlier reads
 of the plans (7e rounds, 7f gap room, close-up, decide, the growth guard) see the model as it is then; the dodge keeps their height, growth
 and rows. The one corpus sheet with a row-gap leg holds none within `k` of a tier gap; a plan-level test reads its real `legReservation`.
