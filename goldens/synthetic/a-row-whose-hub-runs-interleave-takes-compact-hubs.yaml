@@ -1,0 +1,53 @@
+# Expected (dense-16x9 ticket 03, slice C; ruling B of 2026-11-16): compact hubs need no contiguous runs.
+# The leaf row of `a-member-with-several-links-stands-on-the-near-line`, but `leaf-4` and `leaf-5` link to both hubs inside the run of `hub-1`
+# (leaves 1 to 7), so the run of `hub-2` (4, 5, 8 to 13) interleaves with it. `layout.feedOrder: false` keeps the declared order (the joint
+# order would make the runs contiguous). A row that spans its drops refuses interleaved runs; a row with compact hubs does not. `leaves`
+# staggers, `leaf-4` and `leaf-5` stand side by side on the near line, every leaf link is a held routed chord, bends 0, crossings 5,
+# G1-G9 pass, with `layout.moveBeforeGrow` off and on.
+portograph: 2
+layout: { feedOrder: false }
+groups:
+  leaves: { tier: 0 }
+  core: { tier: 1 }
+  rack-1: { tier: 2 }
+  rack-2: { tier: 2 }
+nodes:
+  leaf-1: { group: leaves, class: server }
+  leaf-2: { group: leaves, class: server }
+  leaf-3: { group: leaves, class: server }
+  leaf-4: { group: leaves, class: server }
+  leaf-5: { group: leaves, class: server }
+  leaf-6: { group: leaves, class: server }
+  leaf-7: { group: leaves, class: server }
+  leaf-8: { group: leaves, class: server }
+  leaf-9: { group: leaves, class: server }
+  leaf-10: { group: leaves, class: server }
+  leaf-11: { group: leaves, class: server }
+  leaf-12: { group: leaves, class: server }
+  leaf-13: { group: leaves, class: server }
+  hub-1: { group: core, class: switch }
+  hub-2: { group: core, class: switch }
+  store-1: { group: rack-1, class: server }
+  store-2: { group: rack-1, class: server }
+  store-3: { group: rack-2, class: server }
+  store-4: { group: rack-2, class: server }
+links:
+  - [leaf-1, hub-1]
+  - [leaf-2, hub-1]
+  - [leaf-3, hub-1]
+  - [leaf-4, hub-1]
+  - [leaf-4, hub-2]
+  - [leaf-5, hub-1]
+  - [leaf-5, hub-2]
+  - [leaf-6, hub-1]
+  - [leaf-7, hub-1]
+  - [leaf-8, hub-2]
+  - [leaf-9, hub-2]
+  - [leaf-10, hub-2]
+  - [leaf-11, hub-2]
+  - [leaf-12, hub-2]
+  - [leaf-13, hub-2]
+  - [hub-1, store-1]
+  - [hub-1, store-2]
+  - [hub-2, store-3]
+  - [hub-2, store-4]

@@ -1,0 +1,53 @@
+# Expected (dense-16x9 ticket 03, slice C; owner ruling 15): a leaf row whose members have several links stands on two lines.
+# Thirteen leaves link down to two hubs; `leaf-6` and `leaf-7` link to both, so the runs of the two hubs touch and do not interleave. The
+# members with several links stand on the near line, next to the hubs, and a one-link leaf after a near-line leaf stands on the far line.
+# Each hub takes the width its ports need at the pitch its chords need and stands at the midpoint of its leaves (`chordHubs`: hub-1, hub-2).
+# A far-line leaf stands over its chord corridor. `leaves` staggers (`groupArrangements`: `stagger`), every leaf link is a held routed chord,
+# bends 0, crossings 1 (leaf-6 and leaf-7 cross), G1-G9 pass, with `layout.moveBeforeGrow` off and on. Two racks under the hubs make the sheet
+# tall enough that the two lines take less area.
+portograph: 2
+groups:
+  leaves: { tier: 0 }
+  core: { tier: 1 }
+  rack-1: { tier: 2 }
+  rack-2: { tier: 2 }
+nodes:
+  leaf-1: { group: leaves, class: server }
+  leaf-2: { group: leaves, class: server }
+  leaf-3: { group: leaves, class: server }
+  leaf-4: { group: leaves, class: server }
+  leaf-5: { group: leaves, class: server }
+  leaf-6: { group: leaves, class: server }
+  leaf-7: { group: leaves, class: server }
+  leaf-8: { group: leaves, class: server }
+  leaf-9: { group: leaves, class: server }
+  leaf-10: { group: leaves, class: server }
+  leaf-11: { group: leaves, class: server }
+  leaf-12: { group: leaves, class: server }
+  leaf-13: { group: leaves, class: server }
+  hub-1: { group: core, class: switch }
+  hub-2: { group: core, class: switch }
+  store-1: { group: rack-1, class: server }
+  store-2: { group: rack-1, class: server }
+  store-3: { group: rack-2, class: server }
+  store-4: { group: rack-2, class: server }
+links:
+  - [leaf-1, hub-1]
+  - [leaf-2, hub-1]
+  - [leaf-3, hub-1]
+  - [leaf-4, hub-1]
+  - [leaf-5, hub-1]
+  - [leaf-6, hub-1]
+  - [leaf-7, hub-1]
+  - [leaf-6, hub-2]
+  - [leaf-7, hub-2]
+  - [leaf-8, hub-2]
+  - [leaf-9, hub-2]
+  - [leaf-10, hub-2]
+  - [leaf-11, hub-2]
+  - [leaf-12, hub-2]
+  - [leaf-13, hub-2]
+  - [hub-1, store-1]
+  - [hub-1, store-2]
+  - [hub-2, store-3]
+  - [hub-2, store-4]

@@ -849,8 +849,8 @@ function objectiveReason(base: LayoutModel, draft: LayoutModel, id: string): str
 
 /**
  * Stage 5 of the first placement run, before the seat (ticket 51): pick each group's arrangement when no budget gave the rows. A candidate
- * row (`rowReason`: a row of three or more members, each with one plain routed link out through one horizontal face, every hub feeding three
- * or more of them) is tried widest first on a draft. It staggers only when its trigger holds (`triggerReason`: the block trigger for a rank
+ * row (`rowReason`: a row of three or more members, each with only plain routed links out through one horizontal face, one member at least
+ * for the far line, every hub feeding three or more of them) is tried widest first on a draft. It staggers only when its trigger holds (`triggerReason`: the block trigger for a rank
  * cell, the aspect trigger for a plain row), the seated draft passes `prove` (the stage-5 refusals and the topology-freeze validation), and the
  * objective holds (`objectiveReason`: less stage-5 canvas area, and nearer the aspect aim for a plain row). A draft that a stage-5 stagger refusal
  * refuses is dropped, the row stays, and the record names the reason; any other error of the draft ends the run (a freeze validation that the
