@@ -254,13 +254,15 @@ so it owns no lane.
   and excuses only a strict crossing (`parallelClearance`), so a strict crossing is legal. The
   crossing metric counts it: one crossing more in the score;
 - a **Z middle drop** keeps `k` from the chord. `solve` picks the middle drop's x before the rows
-  are seated, so the rows' y is not known then: `middleDrops` takes the chord's x-range over its
-  extent in the gap (its x at `low` and at the lower band's top, or at its own end where it ends
-  inside the gap, on a pill face; dense-16x9 ticket 14), grown by `k`, out of the free intervals,
+  are seated, so the rows' y is not known then: `middleDrops` takes the chord's x-range over the
+  whole gap (its x at `low` and at the lower band's top), grown by `k`, out of the free intervals,
   as it takes out the other legs and drops. A Z part left with no interval is rejected, as
   today;
-- a **jog** of a drop stands on a leg x, so Section 4 covers it; the long vertical of a jogged drop
-  takes the end x that stands outside the same wall where only one does (dense-16x9 ticket 14);
+- a chord that ends inside the gap (on a pill face) is a wall over its extent there, as a
+  preference (dense-16x9 ticket 14, `dodge`): a middle drop, or the long vertical of a jogged drop,
+  that stands in any chord's wall moves to an x clear of every wall only where the plan keeps every
+  shape and row, its height and growth, and adds no crowded part; else it keeps its seat;
+- a **jog** of a drop stands on a leg x, so Section 4 covers it;
 - the chord adds no term to `H`.
 
 A 7f move in x (the canton close-up, column moves), or a gap that grows in y and so turns the
@@ -269,7 +271,8 @@ strictly (`TIER_GAP_CHORD_CROWDED`, info), and G6 judges, as for two verticals w
 (`crowded`).
 
 *As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y (since dense-16x9 ticket 14, at its own end
-where it ends inside the gap; `heldChordsIn` is the one reader, and `across` marks a chord over the whole gap, the only kind the notes and the fan rows read); `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
+where it ends inside the gap, marked `partial`; `heldChordsIn` is the one reader, and `across` marks a chord over the whole gap, the only kind the
+notes, the fan rows and the hard wall of `middleDrops` read); `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
 once each. "Within `k`" is the centre-to-centre distance, 11.5 px (`k` holds the stroke). An unfit gap (`growth > 0` after the rounds) leaves all its parts to the
 router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
 

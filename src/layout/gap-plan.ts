@@ -122,11 +122,13 @@ export interface PlanFrame {
   verticals?: readonly number[];
   /**
    * The held routed chords in the gap, as slanted walls (docs/design/routed-chords.md, Section 8): the x of each where its extent in the gap begins
-   * and ends, at the gap's low y and at its high y, or at its own end where it ends inside the gap (on a pill face, dense-16x9 ticket 14). A free
-   * vertical keeps `keep` from the whole x-span of that extent (`chordWall`): a Z part's middle drop, and the long vertical of a jogged drop, which
-   * takes the end x that is clear. A chord asks for no height and a planned row may cross it.
+   * and ends, at the gap's low y and at its high y, or at its own end where it ends inside the gap (on a pill face; `partial`, dense-16x9 ticket 14).
+   * A chord across the whole gap (no `partial`) is a hard wall to a Z part's middle drop: the drop keeps `keep` from the whole x-span (`chordWall`).
+   * Every chord is also a preference wall (`dodge`): a middle drop or the long vertical of a jogged drop that stands in a wall moves to an x clear of
+   * every wall only where that keeps every part's shape and rows, the gap's height and growth, and adds no finding; else the seat stays. A chord asks
+   * for no height and a planned row may cross it.
    */
-  chords?: readonly { low: number; high: number }[];
+  chords?: readonly { low: number; high: number; partial?: true }[];
   /**
    * The held chords of fan members that cross the gap (architecture-2 ticket 40). A fan member crosses the fallback legs of its own family
    * (`fixedPointRefusal`), so where such a leg ends on its row is not known when the chord is admitted: the plan seats every row so that its
@@ -247,8 +249,8 @@ interface Part extends PlanInput {
   drop: boolean;
   jogged: boolean;
   /**
-   * Which end's x the vertical of a jogged drop stands on: the upper by default, the lower where an obstacle stops the upper vertical, where only the
-   * lower x is clear of every chord wall (`chordWall`), or where that is the one that keeps `keep` from every foreign leg (never into a chord wall from a clear x).
+   * Which end's x the vertical of a jogged drop stands on: the upper by default, the lower where an obstacle stops the upper vertical or where that is
+   * the one that keeps `keep` from every foreign leg; `dodge` may then move it off a chord wall (dense-16x9 ticket 14).
    */
   stand: 'upper' | 'lower';
   depth: number;
@@ -422,7 +424,8 @@ function chordWall(chord: { low: number; high: number }, keep: number): readonly
  * The x a Z part's middle drop may take (2.2 O6): the centre of every interval between the part's ends that stands `keep` clear of
  * every other leg and drop, widest first (the first of equally wide ones first). `solve` takes the first that breaks the cycle.
  */
-function middleDrops(part: Part, parts: readonly Part[], split: ReadonlyMap<string, number>, keep: number, verticals: readonly number[] = [],
+type Ends = Pick<PlanInput, 'id' | 'upper' | 'lower'>;
+function middleDrops(part: Ends, parts: readonly Ends[], split: ReadonlyMap<string, number>, keep: number, verticals: readonly number[] = [],
   chords: readonly { low: number; high: number }[] = []): number[] {
   const centres = [part.upper.x, part.lower.x, ...verticals];
   for (const other of parts) {
@@ -465,7 +468,9 @@ function inCycle(outgoing: ReadonlyMap<string, readonly PlanEdge[]>, id: string)
 }
 
 /** Splits cycles into Z parts (O6) and orders the parts a whole Z interleaves; returns the part to make residual otherwise. */
-function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Part } {
+function solve(parts: readonly Part[], frame: PlanFrame, forced: ReadonlyMap<string, number> = new Map()): Solved | { reject: Part } {
+  // The hard walls: the chords across the whole gap. A chord that ends in the gap is only a preference (`dodge`).
+  const across = (frame.chords ?? []).filter(chord => chord.partial !== true);
   const keep = frame.keep, base = baseEdges(parts, keep), split = new Map<string, number>();
   for (;;) {
     const units = unitsOf(parts, split), graph = expand(base, split, units);
@@ -479,7 +484,9 @@ function solve(parts: readonly Part[], frame: PlanFrame): Solved | { reject: Par
     // The widest clear interval that leaves the halves on no cycle. The latest part of the cycle that has one is split (ticket DR-04:
     // which part is latest is link order, so a cycle that one of its parts can open is opened whatever the order); residual only
     // where none has one, and then the latest part is.
-    const middleOf = (pick: Part): number | undefined => middleDrops(pick, parts, split, keep, frame.verticals, frame.chords).find(candidate => {
+    // A middle that `dodge` tries is the one candidate of its part.
+    const candidates = (pick: Part): number[] => forced.has(pick.id) ? [forced.get(pick.id)!] : middleDrops(pick, parts, split, keep, frame.verticals, across);
+    const middleOf = (pick: Part): number | undefined => candidates(pick).find(candidate => {
       const trial = new Map(split).set(pick.id, candidate), after = expand(base, trial, unitsOf(parts, trial));
       return !inCycle(after.outgoing, `${pick.id}a`) && !inCycle(after.outgoing, `${pick.id}b`);
     });
@@ -608,11 +615,11 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     gapPlanMemo.set(key, cachedText);
     attemptCounters.gapPlan.memoHits++;
     const cachedPlan = JSON.parse(cachedText) as GapPlan;
-    return gapPlanCache.hit({} as LayoutModel, cachedPlan, () => planGapCore(inputs, frame));
+    return gapPlanCache.hit({} as LayoutModel, cachedPlan, () => dodge(inputs, frame));
   }
   gapPlanCache.miss();
   attemptCounters.gapPlan.computes++;
-  const computed = planGapCore(inputs, frame);
+  const computed = dodge(inputs, frame);
   const serialized = JSON.stringify(computed);
   if (gapPlanMemo.size >= GAP_PLAN_MEMO_LIMIT) {
     const oldest = gapPlanMemo.keys().next().value;
@@ -622,7 +629,67 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
   return computed;
 }
 
-function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
+/** The seats `dodge` tries: a middle x per Z part, a stand per jogged drop. */
+interface Forced {
+  middles: ReadonlyMap<string, number>;
+  stands: ReadonlyMap<string, 'upper' | 'lower'>;
+}
+
+/** Whether `trial` keeps what `base` reserved: the same parts, each of the same shape on the same rows, the same residual parts, the gap's height and growth, and no crowded or slant-limited entry `base` lacks. */
+function keepsPlan(base: GapPlan, trial: GapPlan): boolean {
+  const ids = (items: readonly { id: string }[]): string => items.map(item => item.id).sort().join('\0');
+  if (ids(base.parts) !== ids(trial.parts) || ids(base.residual) !== ids(trial.residual)) return false;
+  if (Math.abs(base.height - trial.height) > EPS || Math.abs(base.growth - trial.growth) > EPS) return false;
+  const byId = new Map(trial.parts.map(part => [part.id, part]));
+  for (const part of base.parts) {
+    const other = byId.get(part.id)!;
+    if (other.shape !== part.shape || other.rows.length !== part.rows.length || part.rows.some((y, index) => !same(y, other.rows[index]!))) return false;
+  }
+  const keys = (items: readonly { id: string; with?: string }[] | undefined): Set<string> => new Set((items ?? []).map(item => `${item.id}\0${item.with ?? ''}`));
+  const crowded = keys(base.crowded), limited = keys(base.slantLimited);
+  return [...keys(trial.crowded)].every(key => crowded.has(key)) && [...keys(trial.slantLimited)].every(key => limited.has(key));
+}
+
+/**
+ * The plan dodge (dense-16x9 ticket 14, slice 1). The plan is first made as before the ticket: a chord across the gap is a hard wall to a middle drop,
+ * and a jogged drop reads no chord. Then every chord is a wall over its extent in the gap (`chordWall`), as a preference: in model order (the part
+ * id last), a Z part whose middle drop stands in a wall tries each x clear of every wall (`middleDrops`, widest first), and a jogged drop whose long
+ * vertical stands in a wall tries its other end's x where that is clear. A try is kept only where the plan keeps what it reserved (`keepsPlan`): no
+ * shape, row, height or growth changes, so no bend is added, and no finding is added. With no such seat the part keeps its seat (a chord left
+ * beside it is the 7f retry's to refuse, slice 3), so the wall never drops a reservation. The tries are finite: one per candidate x or stand.
+ */
+function dodge(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
+  const base = planGapCore(inputs, frame, { middles: new Map(), stands: new Map() });
+  const walls = (frame.chords ?? []).map(chord => chordWall(chord, frame.keep));
+  if (!walls.length) return base;
+  const walled = (x: number): boolean => walls.some(([x0, x1]) => x > x0 + EPS && x < x1 - EPS);
+  const middles = new Map<string, number>(), stands = new Map<string, 'upper' | 'lower'>();
+  let plan = base;
+  for (const part of [...base.parts].sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    const tries: Forced[] = [];
+    if (part.shape === 'z' && walled(part.middle!)) {
+      const split = new Map(plan.parts.filter(other => other.id !== part.id && other.middle !== undefined).map(other => [other.id, other.middle!]));
+      for (const x of middleDrops(part, plan.parts, split, frame.keep, frame.verticals, frame.chords ?? [])) {
+        if (!walled(x)) tries.push({ middles: new Map(middles).set(part.id, x), stands });
+      }
+    } else if (part.shape === 'drop' && part.jog !== undefined) {
+      const other = part.stand === 'lower' ? 'upper' : 'lower';
+      if (walled(part[part.stand ?? 'upper'].x) && !walled(part[other].x)) tries.push({ middles, stands: new Map(stands).set(part.id, other) });
+    }
+    for (const forced of tries) {
+      const trial = planGapCore(inputs, frame, forced), moved = trial.parts.find(item => item.id === part.id);
+      if (!keepsPlan(base, trial) || moved === undefined) continue;
+      if (part.shape === 'z' ? !same(moved.middle!, forced.middles.get(part.id)!) : moved.stand !== forced.stands.get(part.id)) continue;
+      plan = trial;
+      for (const [id, x] of forced.middles) middles.set(id, x);
+      for (const [id, stand] of forced.stands) stands.set(id, stand);
+      break;
+    }
+  }
+  return plan;
+}
+
+function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame, forced: Forced): GapPlan {
   const { keep, pitch, edge: margin, low, bandTop } = frame;
   const residual: ResidualPart[] = [...frame.residual];
   const asPart = (input: PlanInput): Part => {
@@ -631,17 +698,9 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
       depth: input.u === 'high' ? frame.bandTop - Math.min(input.upper.y, input.lower.y) : keep };
     const drop = Math.abs(input.lower.x - input.upper.x) < keep - EPS;
     const jogged = drop && !same(input.lower.x, input.upper.x);
-    return { ...input, drop, jogged, stand: jogged && (upperStandBlocked(input) || walled(input.upper.x) && !walled(input.lower.x)) ? 'lower' : 'upper',
-      depth: frame.bandTop - input.lower.y,
+    return { ...input, drop, jogged, stand: jogged && upperStandBlocked(input) ? 'lower' : 'upper', depth: frame.bandTop - input.lower.y,
       after: Math.max(pitch, input.labelRoom ?? 0) };
   };
-  // A held chord is a wall over its extent in the gap (dense-16x9 ticket 14): the long vertical of a jogged drop takes the end x that stands clear of
-  // every wall. Where both ends or neither stand clear, the other rules choose.
-  const walled = (x: number): boolean => (frame.chords ?? []).some(chord => {
-    const [x0, x1] = chordWall(chord, keep);
-    return x > x0 + EPS && x < x1 - EPS;
-  });
-  const standWalled = (part: Part): boolean => part.jogged && walled(part.stand === 'upper' ? part.upper.x : part.lower.x);
   // The long vertical of a jogged drop that stands on its upper x runs down to one clearance above the lower tip, so an obstacle anchored to the
   // band below (a lane box, a bundle envelope) that stands over that x stops it: the drop then stands on its lower x (whose leg `blocked` reads).
   const upperStandBlocked = (input: PlanInput): boolean => (frame.blocks ?? []).some(block => block.owner !== input.link && block.anchor === 'below'
@@ -680,8 +739,7 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
     let clash = clashing(part);
     if (clash && part.jogged) {
       const other: Part = { ...part, stand: 'lower' };
-      // A clash with a leg does not move the vertical from a clear x into a chord wall.
-      if (!clashing(other) && (!standWalled(other) || standWalled(part))) { part = other; clash = undefined; }
+      if (!clashing(other)) { part = other; clash = undefined; }
     }
     if (clash) crowded.push({ id: part.id, link: part.link, with: clash.link });
     live.push(part);
@@ -691,18 +749,26 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
     if (!drop.jogged || !crowded.some(item => item.id === drop.id || item.with === drop.link)) continue;
     if (drop.stand === 'lower' && upperStandBlocked(drop)) continue;
     const flipped: Part = { ...drop, stand: drop.stand === 'upper' ? 'lower' : 'upper' };
-    if (standWalled(flipped) && !standWalled(drop)) continue;
     const others = live.filter(other => other !== drop);
     if (others.some(other => anyNear(legsOf(other, 'upper'), legsOf(flipped, 'upper')) || anyNear(legsOf(other, 'lower'), legsOf(flipped, 'lower')))) continue;
     live[index] = flipped;
     for (let at = crowded.length - 1; at >= 0; at--) if (crowded[at]!.id === drop.id || crowded[at]!.with === drop.link) crowded.splice(at, 1);
   }
-  let solved = solve(live, frame);
+  // A stand that `dodge` tries replaces the one the rules above chose (never an upper stand an obstacle stops); a clash it makes is named.
+  for (const [index, drop] of live.entries()) {
+    const stand = forced.stands.get(drop.id);
+    if (stand === undefined || !drop.jogged || stand === drop.stand || stand === 'upper' && upperStandBlocked(drop)) continue;
+    const moved: Part = { ...drop, stand };
+    live[index] = moved;
+    const clash = live.find(other => other !== moved && (anyNear(legsOf(other, 'upper'), legsOf(moved, 'upper')) || anyNear(legsOf(other, 'lower'), legsOf(moved, 'lower'))));
+    if (clash !== undefined) crowded.push({ id: moved.id, link: moved.link, with: clash.link });
+  }
+  let solved = solve(live, frame, forced.middles);
   while ('reject' in solved) {
     const part = solved.reject;
     residual.push({ id: part.id, link: part.link, order: part.order, reason: 'row-cycle', upper: part.upper, lower: part.lower });
     live = live.filter(other => other !== part);
-    solved = solve(live, frame);
+    solved = solve(live, frame, forced.middles);
   }
   const { units, split, graph } = solved;
 
@@ -1143,7 +1209,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
     lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual,
     verticals: (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined
       && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x),
-    chords: held.map(item => ({ low: item.low, high: item.high })),
+    chords: held.map(item => ({ low: item.low, high: item.high, ...(item.across ? {} : { partial: true as const }) })),
     // The fan rows read the chords that cross the whole gap, as before ticket 14.
     ...(model.fanFamilies !== undefined ? { slants: held.filter(item => item.across && item.link.fanFamily !== undefined).map(item => item.segment) } : {}) });
 }

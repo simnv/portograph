@@ -58,8 +58,8 @@ router stem `m = 15 px` (`bands.ts:35`).
    (`gap-runs.ts:308`) goes.
 4. **Drops.** A part with `|x_lower − x_upper| < k` is a drop (ticket 42 rule 2, `gap-runs.ts:303`,
    kept). Its vertical stands on the end x that keeps `k` from every foreign leg: the upper end's x by
-   default, the lower end's x where that is the one that clears (ticket 50, review), or where only the lower x
-   keeps `k` from the x-span of a held chord in the gap (dense-16x9 ticket 14; a clash does not move it into that wall). Where the ends
+   default, the lower end's x where that is the one that clears (ticket 50, review). Then `dodge` (dense-16x9 ticket 14) may move it to the other end's x where only that x keeps `k` from the
+   x-span of every held chord in the gap, if every shape, row, the height and the growth stay and no crowded part is added. Where the ends
    differ, the jog stands one clearance above the lower tip row, or `e` off an O5 band anchored below over its x if that is higher (upper stand: `bandTop - max(depth + k, band)`), or one clearance below
    the upper tip row (lower stand); either way the tip is entered along its normal. Both are reserved.
    The vertical below the jog of an upper stand, and the stub beside the jog of a lower stand, is a
@@ -69,9 +69,9 @@ router stem `m = 15 px` (`bands.ts:35`).
    invisible to the plan, and a jog may land under one. (S6, decided in ticket 51: the G6 finding is accepted. A chord as an O5 band for
    drops and jogs needs the jog to move, and the jog stands in three terms of the plan (`jogOf`, `lbOf` and the need of every run over the
    drop), so it is not a local change. Measured on the 53 chord-bearing inputs of the goldens and the sweep, and on the NTP sheet (102 chords): one
-   chord and one planned drop within `k` of each other, NTP links 235 and 232.) Since routed-chords Section 8 a held chord is a
-   wall to a Z middle drop, and since dense-16x9 ticket 14 to the long vertical of a jogged drop, over the chord's extent in the gap; the jog's y is
-   unchanged, and the NTP pair stays (measured: no corpus sheet changes). A bundle member, a bar
+   chord and one planned drop within `k` of each other, NTP links 235 and 232.) Since routed-chords Section 8 a held chord across the
+   gap is a wall to a Z middle drop; since dense-16x9 ticket 14 every held chord is a preference wall over its extent in the gap to a middle drop and
+   to the long vertical of a jogged drop, taken only where no shape, row, height or growth changes; the NTP pair stays (measured: no corpus sheet changes). A bundle member, a bar
    drop and an end that consumes a shared run keep their own rules; their geometry is an obstacle
    to the plan, and they have no part.
 6. **Residual by shape.** These stay routed, as today, and are named `TIER_GAP_PART_RESIDUAL` with a reason (a cycle among
