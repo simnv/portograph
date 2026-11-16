@@ -323,7 +323,17 @@ room before the one solve of 7f gives none, as stage 8 would stitch none there. 
 - `crowdedChords` (`crowdedDirectMembers`, `crowdedFanMembers`). It drops its own subset: the planned parts of one gap, a second copy of the
   stem selection, and the other chords.
 - `chordGapNotes`.
-Neither changes a corpus layout.
+
+The first is a change of behaviour, not a pure move of code. The crowding retry now refuses a held member that stands within the G6
+clearance of a reserved segment the old reader did not read: a lane run or its mouth, a row-gap leg, a shared run, a stored path that is no
+chord, a planned part or a stem of another gap, or a stem the old match by x missed. `placementAttempt` puts the member in `refused`,
+restores its draft and runs 7f again, and `planDirectFamilies` records it `orthogonal`, reason `crowds` (a fan member likewise). The
+change is accepted (2026-11-16): a held chord that crowds a reserved segment is refused, as G6 would fail it. No corpus sheet changes, and a
+search of the corpus under three option variants (`corridorRowOrder: false`, `feedOrder: false`, `moveBeforeGrow: true`) changes
+no layout either (1596 runs, 140 with a direct family or a fan admission; equal hashes without the diagnostics), so no input drawn by
+the producers is known where it fires. The test is a plan-level state: a lane run given to a remainder beside a direct member's chord
+(`test/layout/judges-read-reserved.test.ts`). The notes change only their text and their selection (a chord that ends in
+the gap, and every reserved segment of the planned link).
 
 The rest of slice 2 waits for slice 3. That rest is `crowded` (`decide.ts`), the G6 set of `chordSettled`, `rankSettled`, the linkless step
 and the lane reseat, and the G6 check of `wrapGateVerdict`. Read on the reserved geometry before the tier-gap solve, `crowded` refuses moves
