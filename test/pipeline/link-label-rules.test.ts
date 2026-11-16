@@ -9,6 +9,7 @@ import { EPS } from '../../src/geometry/planar.js';
 import { groupBoxes, labelArea, labelCrossesBorder } from '../../src/score/model.js';
 import { DEFAULT_STROKE_WIDTHS, overlayTrackPitch } from '../../src/theme/geometry.js';
 import { OVERLAY_PILL_CLEARANCE } from '../../src/layout/overlay-paths.js';
+import { rebuildRowPaths } from '../../src/layout/row-paths.js';
 import { reserveAcrossRunRoom, reserveLinkLabelRoom, tierGapShortfall, validateGroupLabelBands, type LinkLabelShortfall } from '../../src/layout/bands.js';
 import { fitRegionGroup } from '../../src/layout/regions.js';
 import { union } from '../../src/layout/skeleton-geometry.js';
@@ -392,6 +393,10 @@ links: [[a.p, b.p, {label: ${text}}]]`)))))));
   blocked.document.nodes['f'] = { group: 'foreign', label: 'f', ports: [] };
   blocked.nodes['f'] = { id: 'f', owner: { kind: 'node', id: 'f' }, layer: 'routed', ports: [], bounds: { x: box.x + 10, y: box.y + 10, width: 20, height: 20 }, size: { width: 20, height: 20 } };
   blocked.groups['foreign'] = { id: 'foreign', owner: { kind: 'group', id: 'foreign' }, layer: 'routed', nodes: ['f'], tier: 0, bounds: box };
+  // The pair is a sibling-frame link (dense-16x9 ticket 06, slice B): the rows step held it as a chord, and a held chord reserves no stems. The foreign box was added
+  // after that step, so the row paths are decided again on the blocked copy, as every later move does; its chord is then refused and the link detours.
+  rebuildRowPaths(blocked);
+  expect(blocked.links[0]!.technique).toBe('orthogonal');
   const distance = (model: LayoutModel) => model.nodes.b!.ports[0]!.anchor!.x - model.nodes.a!.ports[0]!.anchor!.x;
   const before = distance(plain);
   const pillA = plain.nodes.a!.ports[0]!.pill!.bounds, pillB = plain.nodes.b!.ports[0]!.pill!.bounds;

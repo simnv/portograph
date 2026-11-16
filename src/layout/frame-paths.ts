@@ -60,7 +60,7 @@ export function fanSiblings(a: LayoutLink, b: LayoutLink): boolean {
   return a.fanFamily !== undefined && a.fanFamily === b.fanFamily;
 }
 
-/** What a routed chord joins: two ends in one frame (`frame`), or in two frames on consecutive document tiers (`cross`, Q108). */
+/** What a routed chord joins: two ends in one frame (`frame`), or in two frames on consecutive document tiers, or on one sub-tier of one document tier (`cross`, Q108; dense-16x9 ticket 06). */
 export type ChordKind = 'frame' | 'cross';
 
 /** The authored tier of a layout group: a cell reads its frame's, a child group its parent's. */
@@ -200,6 +200,8 @@ function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): 
   const tiers = [documentTier(model, a), documentTier(model, b)];
   if (tiers[0] === undefined || tiers[1] === undefined) return undefined;
   const gap = Math.abs(tiers[0] - tiers[1]);
+  // Two frames of one document tier: a sibling-frame link on facing lateral faces is a level cross-frame chord (dense-16x9 ticket 06, slice B).
+  if (gap === 0) return siblingFrameKind(model, link, a, b);
   // A spanning chord (ticket 22): the hint makes a link on tiers that are not consecutive a cross-frame candidate. An unhinted one is not.
   if (gap !== 1 && !(gap >= 2 && (assumeSpan || link.spanHint === true))) return undefined;
   const [upper, lower] = tiers[0] < tiers[1] ? [from, to] : [to, from];
@@ -209,6 +211,30 @@ function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): 
     if ((lateral(upper) || facesAllowed(findPort(model, upper), 'bottom')) && (lateral(lower) || facesAllowed(findPort(model, lower), 'top'))) return 'cross';
   }
   return facesAllowed(findPort(model, upper), 'bottom') && facesAllowed(findPort(model, lower), 'top') ? 'cross' : undefined;
+}
+
+/**
+ * The kind of a link between two frames of one document tier (dense-16x9 ticket 06, slice B): `cross` when both ends stand in un-flanked `row` cells of one sub-tier and
+ * the ports face each other on lateral faces (`right` on one node, `left` on the other) and the link is no group-link member; otherwise no candidate. A sibling-frame link is a chord of the sub-tier, not of a gap.
+ */
+function siblingFrameKind(model: LayoutModel, link: LayoutLink, a: string, b: string): ChordKind | undefined {
+  const { from, to } = link.attachments!;
+  // A group-link member is one of a bipartite set between two groups, not one pair of facing ends: it keeps the orthogonal route here (it never took a level path).
+  if (link.groupLink !== undefined) return undefined;
+  const one = model.groups[a]?.tier, two = model.groups[b]?.tier;
+  if (one === undefined || one !== two || groupShape(model, a) !== 'row' || groupShape(model, b) !== 'row') return undefined;
+  const sides = [findPort(model, from)?.side, findPort(model, to)?.side];
+  return (sides[0] === 'right' && sides[1] === 'left') || (sides[0] === 'left' && sides[1] === 'right') ? 'cross' : undefined;
+}
+/**
+ * Whether the link is a level cross-frame candidate: a sibling-frame link, whose chord leaves one lateral face and enters the facing one on one sub-tier. One predicate
+ * for the verdict and the rows rule, so the two cannot read the sub-tier twice (R1).
+ */
+export function levelCrossChord(model: LayoutModel, link: LayoutLink): boolean {
+  if (chordKind(model, link) !== 'cross') return false;
+  const { from, to } = link.attachments!;
+  const one = model.groups[model.document.nodes[from.node]?.group ?? '']?.tier, two = model.groups[model.document.nodes[to.node]?.group ?? '']?.tier;
+  return one !== undefined && one === two;
 }
 
 /** A cross-frame chord leaves the natural face of its end, or the lateral side a hint gave the port (docs/design/side-faces.md, Section 9). */
@@ -351,8 +377,11 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
   if (link.spanHint !== true && transitTiers(model, link).length > 0) return { reason: 'transit' };
   const line: PathSegment = { from: geometry.from, to: geometry.to, owner: { ...link.owner } };
   if (kind === 'cross') {
-    // The port sides say which end is upper; the faces must agree, or the chord leaves a port inward.
-    if (!(geometry.to.y > geometry.from.y === (tiers[0]! < tiers[1]!))) return { reason: 'faces' };
+    // The port sides say which end is upper; the faces must agree, or the chord leaves a port inward. A sibling-frame chord stands on one sub-tier: its
+    // lateral faces must look at each other, so the chord leaves the `right` face toward larger x and the `left` face toward smaller x.
+    if (levelCrossChord(model, link)) {
+      if (!(geometry.to.x > geometry.from.x === (findPort(model, link.attachments!.from)?.side === 'right'))) return { reason: 'faces' };
+    } else if (!(geometry.to.y > geometry.from.y === (tiers[0]! < tiers[1]!))) return { reason: 'faces' };
     const reason = crossRefusal(model, link, line, sideSlack);
     if (reason) return { reason };
   }
@@ -628,6 +657,10 @@ export function freezeChords(model: LayoutModel, refusals: ReadonlyMap<string, F
   // The freeze is a decision even when nothing is held: a link that was not straight here stays orthogonal. An absent field would let the replays of 7f
   // take a chord the freeze refused, on boxes that the grid then widens (a row path that the region rule derives differently once the geometry settles).
   model.frozenChords = held;
+  // The level relation of a sibling-frame chord is a decision too (slice B review 1): the chord is one segment at any angle, so only this record says it was level.
+  // Written only when one stands level, so a sheet with none keeps its bytes: absent = no held chord was level at the freeze (`frozenChords` says whether the freeze was taken).
+  const level = held.filter(id => standsLevel(model, model.links.find(link => link.id === id)!));
+  if (level.length) model.frozenLevelChords = level;
   if (model.fanFamilies !== undefined) model.fanAdmissions = fanAdmissionsOf(model, held, reasons);
 }
 
@@ -646,17 +679,75 @@ function fanAdmissionsOf(model: LayoutModel, held: readonly string[], reasons: R
   return admissions;
 }
 
+/** Whether a level cross-frame chord stands level now: its two faces at one y. The one reading of the level relation (the freeze records it, the guard reads it). */
+function standsLevel(model: LayoutModel, link: LayoutLink): boolean {
+  if (!levelCrossChord(model, link)) return false;
+  const chord = straightChord(model, link, undefined, true);
+  return chord !== undefined && Math.abs(chord.to.y - chord.from.y) <= PLACEMENT_EPS;
+}
+
 /**
- * The frozen chords a body or a foreign pill stands on, and a cross-frame chord a foreign frame stands on. Empty when none is held.
+ * What a validator checks on `model.frozenLevelChords` (R5): it reads the record and the geometry, and never takes the freeze decision again (R1). Absent = no held chord
+ * was level at the freeze. A record before the freeze is a fault; every entry names a frozen chord once, that chord is a sibling-frame chord (`levelCrossChord`: two
+ * frames of one document tier, one sub-tier, facing lateral faces), and it stands level now. One check for every publication from stage 7f on, at restore too
+ * (`validateGroupLabelBands`) and on the routed model (`validateRoutedPaths`), so no consumer (`levelChordPartners`, `blockedChords`) reads an entry the check refuses.
+ */
+export function frozenLevelChordsFault(model: LayoutModel): string | undefined {
+  const record = model.frozenLevelChords;
+  if (record === undefined) return undefined;
+  if (model.frozenChords === undefined) return 'a level chord is recorded before the freeze';
+  const frozen = new Set(model.frozenChords), seen = new Set<string>();
+  for (const id of record) {
+    if (seen.has(id)) return `${id} is named twice`;
+    seen.add(id);
+    const link = model.links.find(item => item.id === id);
+    if (!frozen.has(id) || link === undefined) return `${id} is no frozen chord`;
+    if (!levelCrossChord(model, link)) return `${id} is no sibling-frame chord of one sub-tier`;
+    if (!standsLevel(model, link)) return `${id} does not stand level`;
+  }
+  return undefined;
+}
+
+/**
+ * The groups, beyond `group`, whose content stands in a level relation with it (`frozenLevelChords`), all the way along: the other ends of the level chords
+ * of the group's nodes, and theirs in turn. A mover that shifts the content of one of them in y shifts all of them by the same amount, or the chord tilts.
+ * Empty before the freeze and when no level chord is recorded.
+ */
+export function levelChordPartners(model: LayoutModel, group: { id: string; nodes: readonly string[] }): string[] {
+  const level = new Set(model.frozenLevelChords ?? []);
+  if (!level.size) return [];
+  const groupOf = (node: string): string => model.document.nodes[node]!.group;
+  const found = new Set<string>([group.id]);
+  for (const reached = [group.id]; reached.length;) {
+    const id = reached.pop()!;
+    const nodes = new Set(model.groups[id]!.nodes);
+    for (const link of model.links) {
+      if (!level.has(link.id) || link.attachments === undefined) continue;
+      const { from, to } = link.attachments;
+      const [one, two] = nodes.has(from.node) ? [from.node, to.node] : [to.node, from.node];
+      if (!nodes.has(one) || nodes.has(two)) continue;
+      const other = groupOf(two);
+      if (!found.has(other)) { found.add(other); reached.push(other); }
+    }
+  }
+  found.delete(group.id);
+  return [...found].sort();
+}
+
+/**
+ * The frozen chords a body or a foreign pill stands on, a cross-frame chord a foreign frame stands on, and a level chord that is not level any more
+ * (slice B review 1: a stored level relation is held like the wall of a body). Empty when none is held.
  */
 export function blockedChords(model: LayoutModel): string[] {
   if (!model.frozenChords?.length) return [];
   const blockers = sharedBlockers(model);
+  const level = new Set(model.frozenLevelChords ?? []);
   return model.frozenChords.filter(id => {
     const link = model.links.find(item => item.id === id);
     if (link === undefined) return false;
     const chord = straightChord(model, link, blockers);
     if (chord === undefined) return true;
+    if (level.has(id) && Math.abs(chord.to.y - chord.from.y) > PLACEMENT_EPS) return true;
     // Only a foreign frame is a wall after the freeze. The facing edge is a decision rule: a 7f move in x (a title widening pushes a
     // column) turns the chord shallower, and refusing that move leaves the title unfit (measured: `a-member-title-widens-a-beside-row`
     // gains G6 when the edge is held, none when it is not). The chord then keeps its two faces and may leave its frame by a side edge. Solid blocks instead hold entry in `blockReservationsFault`.
