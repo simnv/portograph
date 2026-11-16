@@ -5,6 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { blockMoveRefusal, blockReservationFaults } from '../../src/layout/block-checks.js';
 import { POST_FREEZE_MOVE_REFUSED, judgedMove } from '../../src/layout/post-freeze-judge.js';
 import { chordsHold } from '../../src/layout/frame-paths.js';
+import { edge, saveChordState } from '../../src/layout/decide.js';
 import { createAttempt, createColdAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -51,12 +52,12 @@ describe('a move after the chord freeze keeps every solid-block reservation (den
     expect(model.diagnostics.some(item => item.code === POST_FREEZE_MOVE_REFUSED)).toBe(false);
   }, 180000);
 
-  it('reads only what the move touched: a fault the model had already is no refusal, and a model before the freeze is not judged', async () => {
+  it('a fault the model had already, which the move leaves as it is, is no refusal, and a model before the freeze is not judged', async () => {
     const model = structuredClone(await run(yaml, true));
     const member = model.links.find(link => link.id === 'link-11')!, mover = member.attachments!.to.node;
     shift(model, mover, 2000);
     const faults = blockReservationFaults(model);
-    expect(faults.get('link-11')).toContain('lost its reserved angle');
+    expect(faults.get('link-11')!.map(fault => fault.fault)).toContain('link-11 lost its reserved angle');
     // The move the judge reads starts from the broken model: it adds no fault, so it is kept.
     expect(blockMoveRefusal(faults, model)).toBeUndefined();
     expect(judgedMove(model, 'later move', () => 'moved', 'refused')).toBe('moved');
@@ -81,5 +82,51 @@ describe('a move after the chord freeze keeps every solid-block reservation (den
     shift(model, mover, 2000);
     expect(blockReservationFaults(model).has('link-11')).toBe(true);
     expect(chordsHold(model, siteMove, false)).toBe(true);
+  }, 180000);
+
+  it('refuses a move that takes a broken member further from its reservation or breaks it another way, and keeps one that heals it', async () => {
+    // Review 1 of ticket 31: the judge read only whether a member had a fault, so a member off its angle could lose more angle, or its faces.
+    const model = structuredClone(await run(yaml, true));
+    const member = model.links.find(link => link.id === 'link-11')!, mover = member.attachments!.to.node;
+    const angle = (state: LayoutModel): number => blockReservationFaults(state).get('link-11')?.find(fault => fault.constraint === 'angle')?.short ?? 0;
+    // The first step of the member's end that takes it off its angle, and the only fault it has.
+    let dx = 1;
+    for (const state = structuredClone(model); dx < 300; dx++) { shift(state, mover, 1); if (angle(state) > 0) break; }
+    const broken = structuredClone(model);
+    shift(broken, mover, dx);
+    expect([...blockReservationFaults(broken)].map(([key, faults]) => [key, faults.map(fault => fault.constraint)])).toEqual([['link-11', ['angle']]]);
+    // One more pixel aside: the same fault, further off the angle; refused.
+    const worse = structuredClone(broken);
+    shift(worse, mover, 1);
+    expect(angle(worse)).toBeGreaterThan(angle(broken));
+    expect(blockMoveRefusal(broken, worse)?.fault).toBe('link-11 lost its reserved angle, further than before the move');
+    // The member's lower port turned to a side: a fault of another kind on the same member; refused.
+    const turned = structuredClone(broken), end = member.attachments!.to;
+    turned.nodes[end.node]!.ports.find(port => port.ref.name === end.name)!.side = 'left';
+    expect(blockMoveRefusal(broken, turned)?.fault).toContain('lost its horizontal block faces');
+    // A move back toward the angle heals, and a move of nothing stands: both kept.
+    const healed = structuredClone(worse);
+    shift(healed, mover, -1);
+    expect(blockMoveRefusal(worse, healed)).toBeUndefined();
+    expect(blockMoveRefusal(broken, structuredClone(broken))).toBeUndefined();
+    // The mover that makes it worse is refused whole.
+    expect(judgedMove(broken, 'worse move', () => { shift(broken, mover, 1); return 'moved'; }, 'refused')).toBe('refused');
+  }, 180000);
+
+  it('gives back the movers and the growth of a refused chord-step round, and keeps the settled trials it read spent', async () => {
+    // Review 1 of ticket 31: a refused round gave the model back, but its movers stayed moved and its growth stayed spent.
+    const model = structuredClone(await run(yaml, true));
+    const member = model.links.find(link => link.id === 'link-11')!, mover = member.attachments!.to.node;
+    const history = new Set(['node:earlier']), before = JSON.stringify(model);
+    edge(model).grown = 0;
+    const value = judgedMove(model, 'step out of chords', () => {
+      // What a kept chord step writes outside the model before its replay (decide.ts, chord-clear.ts); the replay then breaks link-11.
+      history.add(`node:${mover}`); history.add('rank-spent:hub#1:0'); edge(model).grown += 40; shift(model, mover, 2000);
+      return true;
+    }, false, saveChordState(model, history));
+    expect(value).toBe(false);
+    expect(JSON.stringify({ ...model, diagnostics: model.diagnostics.filter(item => item.code !== POST_FREEZE_MOVE_REFUSED) })).toBe(before);
+    expect(edge(model).grown).toBe(0);
+    expect([...history]).toEqual(['node:earlier', 'rank-spent:hub#1:0']);
   }, 180000);
 });

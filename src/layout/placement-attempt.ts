@@ -21,7 +21,7 @@ import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
 import { solveTierGaps } from './gap-room.js';
 import { trimBodies } from './end-trim.js';
 import { holds } from './reservation-checks.js';
-import { candidateCopy, chooseReseat, shortGaps } from './decide.js';
+import { candidateCopy, chooseReseat, saveChordState, shortGaps } from './decide.js';
 import { attemptCounters, lastAttempt } from './attempt-counters.js';
 import { attemptTimings, timed } from './attempt-timings.js';
 import { countStep, ledgerOn, ledgerSnapshot, startAttemptEntry, type LedgerSnapshot } from './attempt-ledger.js';
@@ -147,10 +147,16 @@ function closeUpAndKeepOut(model: LayoutModel, tap?: (step: SettleStep, changed:
   return shift;
 }
 
-/** `judgedMove` on a model of this attempt: a refused mover also gives back the replays it counted on the model. */
-function judged<T>(model: LayoutModel, pass: string, run: () => T, refused: T): T {
+/**
+ * `judgedMove` on a model of this attempt: a refused mover also gives back the replays it counted on the model, and what `restored` gives back
+ * (the state of the chord step outside the model).
+ */
+function judged<T>(model: LayoutModel, pass: string, run: () => T, refused: T, restored?: () => void): T {
   const replays = replaysOn.get(model);
-  return judgedMove(model, pass, run, refused, () => { if (replays === undefined) replaysOn.delete(model); else replaysOn.set(model, replays); });
+  return judgedMove(model, pass, run, refused, () => {
+    if (replays === undefined) replaysOn.delete(model); else replaysOn.set(model, replays);
+    restored?.();
+  });
 }
 
 /**
@@ -292,7 +298,8 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     // The close-up changes the slope of a chord that spans a gap and the x of a column: a group with no links
     // steps out of a chord again, after the replays (ticket 76 review). Cheap and idempotent.
     // The linkless step, the step over a chord and the replay they call are one mover under the judge of a move after the freeze (dense-16x9
-    // ticket 31): a round whose steps would take a block member off its reservation is refused whole and reads as a round that moved nothing.
+    // ticket 31): a round whose steps would take a block member off its reservation is refused whole and reads as a round that moved nothing:
+    // its movers may move again and its growth is not spent (`saveChordState`).
     let linkless = false, cleared = false, adopted = false;
     const kept: { adopted?: AdoptedCopy } = {};
     const stepped = judged(draft, 'step out of chords', () => {
@@ -308,7 +315,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
       adopted = cleared && kept.adopted !== undefined && adoptSettled(draft, kept.adopted.copy, kept.adopted.baseDiagnostics, kept.adopted.original);
       if (!adopted && (linkless || cleared)) replayRegions(draft, true);
       return true;
-    }, false);
+    }, false, saveChordState(draft, movers));
     if (!stepped) { linkless = false; cleared = false; adopted = false; }
     if (linkless || cleared) lastAttempt.moved = true;
     if (cleared) { attemptCounters.chordRoundsMoved++; entry.chordRoundsMoved++; }

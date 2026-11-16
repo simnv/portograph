@@ -1,4 +1,4 @@
-import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
+import { blockMoveRefusal, blockReservationFaults, type BlockReading } from './block-checks.js';
 /**
  * The end trim (architecture-2 ticket 68, user 2026-11-04): after the last x move of 7f, a node body is trimmed to the span of its ports with
  * their end insets, plus its label, icon and padding, never below its stage-3 size. Ports keep their x, no node moves; the group boxes, the
@@ -100,7 +100,7 @@ function deriveRegions(model: LayoutModel): boolean {
 }
 
 /** Why the trimmed draft would not publish as the transaction leaves it, or undefined: the checks of what the trim moves no further (R2). */
-function trimRefusal(draft: LayoutModel, blockBefore: ReadonlyMap<string, string>, boxes: ReadonlyMap<string, Rect>, bodies: ReadonlyMap<string, Rect>, bandsChanged: boolean): string | undefined {
+function trimRefusal(draft: LayoutModel, blockBefore: BlockReading, boxes: ReadonlyMap<string, Rect>, bodies: ReadonlyMap<string, Rect>, bandsChanged: boolean): string | undefined {
   // The judge of a move after the freeze (dense-16x9 ticket 31): a trim that takes a block member off a reservation it found holding is declined.
   const block = blockMoveRefusal(blockBefore, draft);
   if (block !== undefined) return block.fault;

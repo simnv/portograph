@@ -1,4 +1,4 @@
-import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
+import { blockMoveRefusal, blockReservationFaults, type BlockReading } from './block-checks.js';
 /**
  * The close-up (architecture-2 ticket 69): after the end trim, a leaf top-level group moves toward its sibling on its left by at most the
  * width the trim freed, its order kept, when no guard declines. The move is a decision of the `bands` producer, recorded with the trim
@@ -86,7 +86,7 @@ interface Reading {
   /** Frozen chords a body blocks (`STRAIGHT_LINK_BLOCKED`) and frozen chords that leave a frame by a side edge (`STRAIGHT_LINK_EDGE`). */
   blocked: Set<string>; edge: Set<string>;
   /** The faults of the solid-block reservations (`blockReservationFaults`), read by the judge of a move after the freeze (dense-16x9 ticket 31). */
-  blockFaults: Map<string, string>;
+  blockFaults: BlockReading;
   /** The reservations that fail, by id. */
   failing: Set<string>;
   /** Per tier gap: the plan's height, its residual parts, crowded legs and slant-limited units by id, and the count of its planned crossings. */

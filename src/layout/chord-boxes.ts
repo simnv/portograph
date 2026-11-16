@@ -23,33 +23,62 @@ export function chordHolders(model: LayoutModel, node: string): Set<string> {
  * faces, at least the margin from each corner. Reads `model.frames`, which equals the cells after every transaction.
  */
 export function chordBoxRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): 'edge' | 'frame' | undefined {
+  let found: 'edge' | 'frame' | undefined;
+  scanChordBoxes(model, link, segment, sideSlack, fault => { found = fault.entry; return true; });
+  return found;
+}
+
+/**
+ * One box a chord does not clear (`chordBoxRefusal`): the entry it breaks, what it breaks (`constraint`: the box, the entry, and for an edge
+ * whether the chord misses the edge's span, misses the edge, or leaves by a face that has no edge) and how far it is short, in px; 0 for a
+ * face with no edge.
+ */
+export interface ChordBoxFault { readonly entry: 'edge' | 'frame'; readonly constraint: string; readonly short: number }
+
+/** Every box the chord does not clear, in the order of `groupBoxes`. */
+export function chordBoxFaults(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): ChordBoxFault[] {
+  const faults: ChordBoxFault[] = [];
+  scanChordBoxes(model, link, segment, sideSlack, fault => { faults.push(fault); return false; });
+  return faults;
+}
+
+/** The one reading of `chordBoxRefusal` and `chordBoxFaults`: `visit` gets each box the chord does not clear, and stops the scan by returning true. */
+function scanChordBoxes(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack: number, visit: (fault: ChordBoxFault) => boolean): void {
   const ends = link.attachments!, stroke = linkStrokeWidth(link);
   const from = chordHolders(model, ends.from.node), to = chordHolders(model, ends.to.node);
   const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
   const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
   const margin = GROUP_EDGE_LINK_CLEARANCE - EPS;
+  /** The fault of an edge the chord must cross at `along` within [low, high] of the edge's span, where `t` is where on the chord it meets the edge line. */
+  const crossing = (id: string, t: number, along: number, low: number, high: number, miss: number): ChordBoxFault | undefined => {
+    if (!(t >= -EPS && t <= 1 + EPS)) return { entry: 'edge', constraint: `${id}:edge:reach`, short: miss };
+    if (along < low || along > high) return { entry: 'edge', constraint: `${id}:edge:span`, short: Math.max(low - along, along - high) };
+    return undefined;
+  };
   for (const { id, bounds } of groupBoxes(model)) {
     const one = from.has(id), two = to.has(id);
     if (one && two) continue;
     if (!one && !two) {
-      if (segmentRectDistance(segment, bounds) < GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - EPS && !groupConsumers(model, id).includes(link.id)) return 'frame';
+      const short = GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - segmentRectDistance(segment, bounds);
+      if (short > EPS && !groupConsumers(model, id).includes(link.id) && visit({ entry: 'frame', constraint: `${id}:frame`, short })) return;
       continue;
     }
     const side = one ? sides.from : sides.to;
+    let fault: ChordBoxFault | undefined;
     if (side === 'left' || side === 'right') {
       // A lateral port leaves through the side edge it faces, at least the margin (and the slack) from each corner.
       const edge = side === 'right' ? bounds.x + bounds.width : bounds.x;
       const t = Math.abs(dx) < EPS ? Infinity : (edge - segment.from.x) / dx;
-      const y = segment.from.y + t * dy, room = margin + sideSlack;
-      if (!(t >= -EPS && t <= 1 + EPS) || y < bounds.y + room || y > bounds.y + bounds.height - room) return 'edge';
-      continue;
+      const room = margin + sideSlack, miss = Math.min(Math.abs(edge - segment.from.x), Math.abs(edge - segment.to.x));
+      fault = crossing(id, t, segment.from.y + t * dy, bounds.y + room, bounds.y + bounds.height - room, miss);
+    } else if (side !== 'top' && side !== 'bottom') fault = { entry: 'edge', constraint: `${id}:edge:face`, short: 0 };
+    else {
+      const edge = side === 'bottom' ? bounds.y + bounds.height : bounds.y;
+      const t = Math.abs(dy) < EPS ? Infinity : (edge - segment.from.y) / dy;
+      const miss = Math.min(Math.abs(edge - segment.from.y), Math.abs(edge - segment.to.y));
+      fault = crossing(id, t, segment.from.x + t * dx, bounds.x + margin, bounds.x + bounds.width - margin, miss);
     }
-    if (side !== 'top' && side !== 'bottom') return 'edge';
-    const edge = side === 'bottom' ? bounds.y + bounds.height : bounds.y;
-    const t = Math.abs(dy) < EPS ? Infinity : (edge - segment.from.y) / dy;
-    const x = segment.from.x + t * dx;
-    if (!(t >= -EPS && t <= 1 + EPS) || x < bounds.x + margin || x > bounds.x + bounds.width - margin) return 'edge';
+    if (fault !== undefined && visit(fault)) return;
   }
-  return undefined;
 }
 

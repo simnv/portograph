@@ -52,6 +52,23 @@ export const rankShare = (budget: { base: number }): number => Math.max(SLIDE_GR
 /** The growth the slides of a model have spent, against the canvas width when the first slide was asked. */
 export const spent = new WeakMap<LayoutModel, { base: number; grown: number }>();
 
+/** The prefix of a settled trial a lower rank cell spent (`chordDecision`), held in the history of the chord step. */
+const RANK_SPENT = 'rank-spent:';
+
+/**
+ * The state of the step over a chord that lives outside the model: the movers that moved (`history`) and the growth the moves spent
+ * (`spent`). Returns what gives it back as it is now, for a round of the step that is refused whole (dense-16x9 ticket 31): the moves of that
+ * round did not happen, so their movers may move again and their growth is not spent. The settled trials the round read stay spent (R4).
+ */
+export function saveChordState(model: LayoutModel, history: Set<string>): () => void {
+  const moved = new Set(history), growth = spent.get(model), grown = growth?.grown;
+  return () => {
+    for (const key of [...history]) if (!moved.has(key) && !key.startsWith(RANK_SPENT)) history.delete(key);
+    if (growth === undefined) spent.delete(model);
+    else { growth.grown = grown!; spent.set(model, growth); }
+  };
+}
+
 export { overlayCrossingPairs as overlayCrossings } from './read/crossings.js';
 
 /** A move of a lower rank, as the choice reads it (ticket 146): the reading of the move on its settled copy, with its `tie`, and the counts the diagnostic names. */
@@ -212,9 +229,9 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
   const spend = (cell: string): boolean => {
     // Held in `history`, so the budget lasts over the rounds and the runs of 7f that share it (Q114).
     let used = 0;
-    while (history.has(`rank-spent:${cell}:${used}`)) used++;
+    while (history.has(`${RANK_SPENT}${cell}:${used}`)) used++;
     if (used >= SETTLED_TRIALS) return false;
-    history.add(`rank-spent:${cell}:${used}`);
+    history.add(`${RANK_SPENT}${cell}:${used}`);
     return true;
   };
   let tried = false;

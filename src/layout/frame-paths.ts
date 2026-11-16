@@ -857,7 +857,8 @@ export function chordsHold(model: LayoutModel, proposed: { group: { id?: string;
     trial.frames = frames;
   }
   // The judge of a move after the freeze (dense-16x9 ticket 31): a move that takes a block member off a reservation it found holding is refused.
-  if (blockMoveRefusal(model, trial) !== undefined) return false;
+  // A translation is one step of a mover, which is judged whole (`judgedMove`, the validator after the label-band producer): a fault that stood may grow here.
+  if (blockMoveRefusal(model, trial, true) !== undefined) return false;
   const held = blockedChordsAt(trial);
   // A caller that tries many candidates asks with `report` off and reports the final verdict itself (ticket 77).
   if (report) for (const id of held) {
