@@ -1,5 +1,6 @@
+import { runClearance, type ClearanceRun } from '../score/sheaf.js';
 import { chordBoxRefusal, chordHolders as holders } from './chord-boxes.js';
-import { blockReservationsFault } from './block-checks.js';
+import { blockReservationsFault, flatMemberRefusal } from './block-checks.js';
 import type { FanAdmission, FanFallbackReason, FanFamily, LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
@@ -329,7 +330,7 @@ export function chordSegment(model: LayoutModel, link: LayoutLink): PathSegment 
 export const SIDE_EDGE_SLACK = 4;
 
 /** The first check that refused a chord (`ROUTED_CHORD_REFUSED`, docs/design/routed-chords.md, Section 10). */
-export type ChordRefusal = 'transit' | 'faces' | 'edge' | 'frame' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg';
+export type ChordRefusal = 'transit' | 'faces' | 'edge' | 'frame' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg' | 'floor';
 
 /** Faint fans keep their recorded exception; solid chords use the shared box predicate. */
 function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): 'edge' | 'frame' | undefined {
@@ -416,6 +417,9 @@ export function chordVerdict(model: LayoutModel, link: LayoutLink, sideSlack = 0
     const reason = crossRefusal(model, link, line, sideSlack);
     if (reason) return { reason };
   }
+  // A member of a flat solid block falls back alone below the floor angle or through a side edge of its box (dense-16x9 ticket 04).
+  const flat = flatMemberRefusal(model, link);
+  if (flat) return { reason: flat };
   const segment = chordSegment(model, link);
   if (!segment) return { reason: 'body' };
   // The chord must also hold every clearance the gates measure a routed segment against (G2, G6),
@@ -554,7 +558,7 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
   for (const other of model.links) {
     if (other.id === link.id || !isRoutedChord(model, other)) continue;
     const run = other.path!.segments[0]!;
-    if (!chordsApart(segment, run, stroke, linkStrokeWidth(other))) return 'chord';
+    if (!chordsApart(model, { segment, link, stroke }, { segment: run, link: other, stroke: linkStrokeWidth(other) })) return 'chord';
   }
   // The router leaves every other port by a stem of at least 15 px, and G6 keeps that stem 10 px from the
   // chord. Stage 8 cannot make room the chord took, so the chord stays clear of every stem placement has
@@ -811,9 +815,12 @@ export function edgeLeavers(model: LayoutModel): string[] {
     return link !== undefined && chord !== undefined && crossRefusal(model, link, { ...chord, owner: { ...link.owner } }) === 'edge';
   });
 }
-/** Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing, `strictCrossing`). */
-export function chordsApart(a: PathSegment, b: PathSegment, strokeA: number, strokeB: number): boolean {
-  return strictCrossing(a, b) || segmentDistance(a, b) - (strokeA + strokeB) / 2 >= STRAIGHT_PATH_CLEARANCE.path - EPS;
+/**
+ * Whether two chords keep the chord clearance to each other, or cross strictly (G6 excuses only a strict crossing, `strictCrossing`). The clearance is
+ * the gate's own (`runClearance`): two chords of one solid block that share a node are measured past the sheaf zone (dense-16x9 ticket 04).
+ */
+export function chordsApart(model: LayoutModel, a: ClearanceRun, b: ClearanceRun): boolean {
+  return strictCrossing(a.segment, b.segment) || runClearance(model, a, b) >= STRAIGHT_PATH_CLEARANCE.path - EPS;
 }
 
 /**

@@ -57,13 +57,13 @@ describe('ticket 83 under-cap solid blocks', () => {
     for (const key of ['links', 'nodes'] as const) {
       const input = reversed(source, key), model = await lay(input);
       expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
-      if (name.includes('proves-the-cap') || name.includes('lateral-faces')) {
-        expect(model.declinedSolidBlocks?.some(item => item.reason.startsWith(name.includes('proves-the-cap') ? 'gap-cap:' : 'non-facing-ports'))).toBe(true);
+      if (name.includes('lateral-faces')) {
+        expect(model.declinedSolidBlocks?.some(item => item.reason.startsWith('non-facing-ports'))).toBe(true);
         baseline.enabled = true;
         try { expect(geometry(model)).toEqual(geometry(await lay(input))); } finally { baseline.enabled = false; }
       } else {
         expect(model.fanFamilies?.filter(item => item.kind === 'solid')).toHaveLength(1);
-        expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(name.includes('two-far') ? 8 : 4);
+        expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(name.includes('two-far') ? 8 : name.includes('proves-the-cap') ? 12 : 4);
         expect(blockReservationsFault(model)).toBeUndefined();
         const snapshot = score(model).snapshot;
         expect(snapshot.metrics.crossings.count).toBe(original.metrics.crossings.count);
@@ -94,8 +94,18 @@ describe('ticket 83 under-cap solid blocks', () => {
     const model = await layout(parse(canton), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
     expect(model.fanFamilies?.filter(family => family.kind === 'solid')).toHaveLength(1);
   });
-  it('rejects a provably capped block at stage 5 before region placement', async () => {
-    await expect(placed(fixture('a-solid-block-proves-the-cap-before-region-placement'))).rejects.toThrow(/gap-cap: stage-5 lower bound/);
+  it('keeps a block past the cap straight and flatter, its gap set by the aspect aim (dense-16x9 ticket 04, slice 3)', async () => {
+    // Stage 5 no longer proves the cap: past it the block stays, and 7e reserves the floor and the aspect choice.
+    const model = await lay(fixture('a-solid-block-proves-the-cap-before-region-placement'));
+    const record = model.blockReservations?.[0];
+    expect(model.declinedSolidBlocks).toBeUndefined();
+    expect(record?.mode).toBe('flat');
+    expect(record!.target).toBeGreaterThan(record!.cap);
+    expect(record!.floor!).toBeLessThan(record!.target);
+    // The sheet stays wider than the aim at the 34 degree gap, so the aim takes the whole 34 degree demand.
+    expect(record!.chosen).toBeCloseTo(record!.target, 6);
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(12);
+    expect(score(model).snapshot.counts.routed.bent).toBe(0);
   });
   it('keeps widening distinct from moving a frozen follower and rejects forged entry', async () => {
     const model = await lay(fixture('a-crossing-pair-across-two-tiers-keeps-its-course'));
@@ -115,14 +125,43 @@ describe('ticket 83 under-cap solid blocks', () => {
     expect(blockReservationsFault(forged)).toContain('box clearance (frame)');
     expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow();
   });
-  it('declines an over-cap block before freeze and restores the main drawing and restore contract', async () => {
+  it('keeps a 2x7 block past the cap straight, and two blocks that share the gap on one chosen gap (dense-16x9 ticket 04, slice 3)', async () => {
+    const one = await lay(fixture('a-two-by-seven-block-past-the-cap-stays-straight'));
+    expect(one.blockReservations?.map(item => item.mode)).toEqual(['flat']);
+    expect(one.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(14);
+    expect(score(one).snapshot.counts.routed.bent).toBe(0);
+    const two = await lay(fixture('two-blocks-share-one-gap-past-the-cap'));
+    const records = two.blockReservations ?? [];
+    expect(records.map(item => item.mode ?? 'steep').sort()).toEqual(['flat', 'steep']);
+    // One tier gap, one chosen height: the steep block holds the flat block's gap too (by max).
+    expect(new Set(records.map(item => item.chosen)).size).toBe(1);
+    expect(blockReservationsFault(two)).toBeUndefined();
+    expect(Object.values(score(two).snapshot.gates).filter(gate => gate.severity === 'error' && gate.violations.length)).toEqual([]);
+  });
+  it('lets a flat member fall back alone when the aspect gap is below its box entry (dense-16x9 ticket 04, slice 3)', async () => {
+    const model = await lay(fixture('a-flat-block-member-that-leaves-its-box-by-a-side-falls-back'));
+    const record = model.blockReservations![0]!;
+    expect(record.mode).toBe('flat');
+    expect(record.chosen).toBeGreaterThan(record.floor! + 1);
+    expect(record.chosen).toBeLessThan(record.target - 1);
+    const reasons = (model.fanAdmissions ?? []).filter(item => item.mode !== 'straight').map(item => item.reason);
+    expect(reasons).toContain('edge');
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight').length).toBeGreaterThan(0);
+    expect(blockReservationsFault(model)).toBeUndefined();
+    // Every straight member keeps the 15 degree floor.
+    for (const link of model.links.filter(item => item.solidBlock && model.frozenChords?.includes(item.id))) {
+      const segment = link.path!.segments[0]!;
+      expect(Math.abs(segment.to.y - segment.from.y)).toBeGreaterThanOrEqual(Math.abs(segment.to.x - segment.from.x) * Math.tan(15 * Math.PI / 180) - 1e-6);
+    }
+  });
+  it('keeps an over-cap block flat and straight beside foreign boxes, and the restore contract (dense-16x9 ticket 04, slice 3)', async () => {
     const source = fixture('a-capped-solid-block-prototype-keeps-foreign-boxes');
     const model = await lay(source);
-    expect(model.fanFamilies?.some(family => family.kind === 'solid') ?? false).toBe(false);
-    expect(model.declinedSolidBlocks?.some(item => item.reason.startsWith('gap-cap:'))).toBe(true);
+    expect(model.declinedSolidBlocks).toBeUndefined();
+    expect(model.blockReservations?.map(item => item.mode)).toEqual(['flat']);
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(36);
+    expect(blockReservationsFault(model)).toBeUndefined();
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
-    baseline.enabled = true;
-    try { expect(geometry(model)).toEqual(geometry(await lay(source))); } finally { baseline.enabled = false; }
   });
   it('declines authored lateral faces without granting solid side entry', async () => {
     const source = fixture('a-solid-block-keeps-authored-lateral-faces');

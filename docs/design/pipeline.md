@@ -567,7 +567,7 @@ raise it later and never lower it.
 
 ## Stage 5 — sides, phase two; resize; repack
 
-Ticket 83 reserves the block pitch before sizing (since dense-16x9 ticket 04 a neighbour-pair pitch of each member port, `LayoutNode.pairPitch`; sizing, the alignment allowance and the trim read the sum of the pair pitches of a face, `pairExcess`) and rejects a provably over-cap span at the end of stage 5, before region placement. It records declaration ties in the stage-4 row draft, preserving foreign-group slots and carrying the parents' geometric order through the terminal follower tier. Terminal follower rows are then fitted jointly on a draft: seats that add or deepen a sibling/frame spacing violation all decline by name before any node moves. Each refusal restores that row and rechecks the remaining proposals; the loop is bounded by the number of candidate rows.
+Ticket 83 reserves the block pitch before sizing (since dense-16x9 ticket 04 a neighbour-pair pitch of each member port, `LayoutNode.pairPitch`; sizing, the alignment allowance and the trim read the sum of the pair pitches of a face, `pairExcess`) and, until dense-16x9 ticket 04 slice 3, rejected a provably over-cap span at the end of stage 5; a block past the cap now stays (a flat block, 7e). It records declaration ties in the stage-4 row draft, preserving foreign-group slots and carrying the parents' geometric order through the terminal follower tier. Terminal follower rows are then fitted jointly on a draft: seats that add or deepen a sibling/frame spacing violation all decline by name before any node moves. Each refusal restores that row and rechecks the remaining proposals; the loop is bounded by the number of candidate rows.
 
 Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
 `left`/`right` from the in-row order — except inside a **grid**, where a peer may stand above or
@@ -1072,8 +1072,8 @@ links on the peer.
 
 Ticket 83 block feeds centre the row without stretching its faces toward individual peers.
 The gap decision waits for settled 7e geometry and its disposable mandatory label/grid packing forecast; an earlier 7c replay reserves no speculative height. The forecast transfers only gap demand, before the real chord freeze.
-The pre-freeze draft seats the stored 34-degree/top-entry deficit, at most a 600 px tier-band gap.
-An over-cap block restarts from resolution with a named refusal and its original owners; shared-node blocks decline for ticket 84.
+The pre-freeze draft seats the stored 34-degree/top-entry deficit up to a 600 px tier-band gap.
+Past the cap the block is flat (dense-16x9 ticket 04, slice 3): the draft seats the 15 degree floor of its flattest member (box entry excluded), and the aspect aim (ADR-0025) adds height up to the 34 degree demand, shared equally by the flat gaps; a gap that a steep block and a flat block share holds both demands by max. A flat member whose box entry or angle the chosen gap does not hold falls back alone at admission (`flatMemberRefusal`).
 
 Anchor tier = the tier with the most main-tier nodes, including bars and excluding flanks (ties: lowest effective tier index). Empty layouts omit it. Below the anchor, each
 group is centred under its feeds; above it, each group is centred over its children (mirror).

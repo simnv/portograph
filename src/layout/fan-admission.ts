@@ -63,7 +63,7 @@ function familyVerdict(model: LayoutModel, family: FanFamily, members: readonly 
   const apart = new Map<string, boolean>();
   for (let i = 0; i < open.length; i++) for (let j = i + 1; j < open.length; j++) {
     const a = open[i]!, b = open[j]!;
-    apart.set(pair(a.id, b.id), chordsApart(segments.get(a.id)!, segments.get(b.id)!, linkStrokeWidth(a), linkStrokeWidth(b)));
+    apart.set(pair(a.id, b.id), chordsApart(model, { segment: segments.get(a.id)!, link: a, stroke: linkStrokeWidth(a) }, { segment: segments.get(b.id)!, link: b, stroke: linkStrokeWidth(b) }));
   }
   let tested = 0, truncated = false;
   /**

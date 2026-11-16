@@ -1,5 +1,5 @@
-# Ticket 83: the over-cap block keeps its previous placement owners.
-# Expected: named gap-cap decline, unchanged drawing versus main; no sheaf or side-entry permission.
+# Ticket 83: an over-cap block beside foreign boxes.
+# Expected (dense-16x9 ticket 04, slice 3): past the cap the block stays straight and flatter; every member straight beside the foreign boxes.
 portograph: 2
 profile: network
 layout: { autoArrange: false }

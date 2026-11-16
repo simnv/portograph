@@ -1,6 +1,6 @@
 import type { Frame, LayoutLink, LayoutModel, LayoutNode, PathSegment, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
-import { EPS, bottom, contains, horizontal, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
+import { EPS, bottom, contains, horizontal, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 
 /** A rejection box kept by its far edges; see `gates`. `measurable` is false beyond `REJECT_LIMIT`. */
 interface Span { x: number; y: number; right: number; bottom: number; measurable: boolean }
@@ -27,6 +27,7 @@ import { faceKey, turnRecordFaults } from '../layout/turn-order.js';
 import { facePositions, farAnchorIndex, standsWrong } from '../layout/far-end-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
+import { runClearance } from './sheaf.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
 import { strictCrossing } from '../layout/read/crossings.js';
 
@@ -175,7 +176,8 @@ export function parallelClearance(model: LayoutModel, routed: Segment[], fail: (
     // Merged members intentionally share one rendered run. Other bundle runs retain memberGap.
     if (overlap && mergedRun(model, a, b, overlap)) continue;
     const min = bundle ? model.bundles.find(item => item.id === a.link.bundle)!.memberGap ?? 16 : 10;
-    const distance = segmentDistance(a.segment, b.segment) - (a.stroke + b.stroke) / 2;
+    // Two chords of one solid block that share a node are measured past the sheaf zone (`runClearance`).
+    const distance = runClearance(model, a, b);
     if (distance < min - EPS) fail('G6', bundle ? 'bundle-member-gap' : 'parallel-clearance', [a.link.id, b.link.id], `Parallel clearance is below ${min} px`);
   }
 }

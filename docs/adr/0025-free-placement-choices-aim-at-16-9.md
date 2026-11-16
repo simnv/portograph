@@ -32,3 +32,11 @@ test that admits a rise with no estimated area gain to a trial, keeps the square
 the estimate is too coarse to tell the rises the judge keeps from the ones it declines. A filter by the aim admitted a trial on 219 sheets and
 kept five more lifts for +6.8 % corpus time (+42 % on the 101 sheets whose drawing did not change); a filter that bound the estimate's area to
 the judge tolerance kept none of them and lost a lift that main keeps, which was visibly worse. A later ticket may revisit the filter.
+
+## Amendment (2026-11-16): the gap of a flat block
+
+The tier gap of a complete solid block past the cap (dense-16x9 ticket 04, slice 3) is chosen in stage 7e, before the freeze, from the band
+extent of the settled draft: the sheet grows toward the height `width / aim`, from the floor (the gap that holds the flattest member at 15
+degrees, plus every under-cap demand of the gap) up to the 34 degree demand. Several flat gaps share the extra height equally; a gap that
+reaches its 34 degree demand passes its share on. A box entry is no part of the floor: a member whose box entry the chosen gap does not
+hold falls back alone, and the block stays. The canvas after routing can differ from the band extent of 7e; the choice is not judged again.
