@@ -1,4 +1,5 @@
-import { blockReservationsFault } from './block-checks.js';
+import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
+import { judgedMove } from './post-freeze-judge.js';
 import { refusedChordsOf } from './reservations.js';
 import { tapTarget } from './alignment-targets.js';
 import type { Diagnostic, DirectMemberReason, FanFallbackReason, LayoutModel } from '../model/layout.js';
@@ -105,7 +106,8 @@ const REPLAY_CODES = /^(MESH_BUS|GROUP_GRID|GROUP_LABEL|COLUMN_AXIS|PLACEMENT_|L
  */
 export function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnostics: number, original: ReadonlySet<Diagnostic>): boolean {
   // The replay inside a settled copy may move a group by a required move, which keeps its exception. A copy that loses a requested promise (a lane owner's far anchor on the lane, a course) is not adopted.
-  if (blockReservationsFault(copy) !== undefined) return false;
+  // The judge of a move after the freeze (dense-16x9 ticket 31): a copy that takes a block member off a reservation the model holds is not adopted.
+  if (blockMoveRefusal(blockReservationFaults(model), copy) !== undefined) return false;
   if (holds(model.reservations ?? [], copy, entry => entry.kind === 'laneOwner' || entry.kind === 'course').length > 0) return false;
   const added = model.diagnostics.slice(baseDiagnostics);
   const survivors = copy.diagnostics.filter(item => original.has(item)), fresh = copy.diagnostics.filter(item => !original.has(item));
@@ -123,16 +125,32 @@ export function adoptSettled(model: LayoutModel, copy: LayoutModel, baseDiagnost
   return true;
 }
 
-/** The close-up of the cantons and the keep-out of a foreign drop's clearance, each followed by the replay when it moved. Returns the close-up's shift. */
+/**
+ * The close-up of the cantons and the keep-out of a foreign drop's clearance, each followed by the replay when it moved. Returns the close-up's shift.
+ * Each runs with its replay under the judge of a move after the freeze (`judgedMove`, dense-16x9 ticket 31): one that would take a block member off
+ * its reservation is refused whole, and reads as a step that moved nothing.
+ */
 function closeUpAndKeepOut(model: LayoutModel, tap?: (step: SettleStep, changed: boolean) => void, deferOpenCentringNames = false): number {
-  const shift = timed('close-cantons', () => closeCantonsAndSettle(model));
-  if (shift > 0) replayRegions(model, deferOpenCentringNames);
+  const shift = judged(model, 'close-up', () => {
+    const moved = timed('close-cantons', () => closeCantonsAndSettle(model));
+    if (moved > 0) replayRegions(model, deferOpenCentringNames);
+    return moved;
+  }, 0);
   tap?.('close-up', shift > 0);
   // A frame edge a foreign drop would run along is moved off it before anything is planned in the geometry (ticket 75).
-  const kept = timed('keep-out', () => settleKeepOut(model));
-  if (kept) replayRegions(model, deferOpenCentringNames);
+  const kept = judged(model, 'keep-out', () => {
+    const moved = timed('keep-out', () => settleKeepOut(model));
+    if (moved) replayRegions(model, deferOpenCentringNames);
+    return moved;
+  }, false);
   tap?.('keep-out', kept);
   return shift;
+}
+
+/** `judgedMove` on a model of this attempt: a refused mover also gives back the replays it counted on the model. */
+function judged<T>(model: LayoutModel, pass: string, run: () => T, refused: T): T {
+  const replays = replaysOn.get(model);
+  return judgedMove(model, pass, run, refused, () => { if (replays === undefined) replaysOn.delete(model); else replaysOn.set(model, replays); });
 }
 
 /**
@@ -267,25 +285,28 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
     note(`round-${round}:settle`, closed ? 'closed' : 'open');
     // The close-up changes the slope of a chord that spans a gap and the x of a column: a group with no links
     // steps out of a chord again, after the replays (ticket 76 review). Cheap and idempotent.
-    const linkless = moves && stepLinklessOutOfChords(draft);
-    if (linkless) lastAttempt.moved = true;
-    note(`round-${round}:linkless`, linkless ? 'moved' : 'unchanged');
-    account(`round-${round}:linkless`);
-    // A chord between two tiers keeps the tiers between it free of nodes. A move is judged on a copy that the replays and a round of
-    // `settle` have run, which is what the next round does.
+    // The linkless step, the step over a chord and the replay they call are one mover under the judge of a move after the freeze (dense-16x9
+    // ticket 31): a round whose steps would take a block member off its reservation is refused whole and reads as a round that moved nothing.
+    let linkless = false, cleared = false, adopted = false;
     const kept: { adopted?: AdoptedCopy } = {};
-    const cleared = moves && round < CANTON_ROUNDS - 1 && stepOverChords(draft, probe => trialSettle(probe, true), movers, kept);
-    if (cleared) lastAttempt.moved = true;
-    note(`round-${round}:chords`, cleared ? 'moved' : 'unchanged');
+    const stepped = judged(draft, 'step out of chords', () => {
+      linkless = moves && stepLinklessOutOfChords(draft);
+      note(`round-${round}:linkless`, linkless ? 'moved' : 'unchanged');
+      account(`round-${round}:linkless`);
+      // A chord between two tiers keeps the tiers between it free of nodes. A move is judged on a copy that the replays and a round of
+      // `settle` have run, which is what the next round does.
+      cleared = moves && round < CANTON_ROUNDS - 1 && stepOverChords(draft, probe => trialSettle(probe, true), movers, kept);
+      note(`round-${round}:chords`, cleared ? 'moved' : 'unchanged');
+      account(`round-${round}:chords`);
+      // The copy that judged the last kept move has the replay and the next round's settling done: the draft takes it (ticket 13, phase 2).
+      adopted = cleared && kept.adopted !== undefined && adoptSettled(draft, kept.adopted.copy, kept.adopted.baseDiagnostics, kept.adopted.original);
+      if (!adopted && (linkless || cleared)) replayRegions(draft, true);
+      return true;
+    }, false);
+    if (!stepped) { linkless = false; cleared = false; adopted = false; }
+    if (linkless || cleared) lastAttempt.moved = true;
     if (cleared) { attemptCounters.chordRoundsMoved++; entry.chordRoundsMoved++; }
-    account(`round-${round}:chords`);
-    // The copy that judged the last kept move has the replay and the next round's settling done: the draft takes it (ticket 13, phase 2).
-    if (cleared && kept.adopted !== undefined && adoptSettled(draft, kept.adopted.copy, kept.adopted.baseDiagnostics, kept.adopted.original)) {
-      taken = kept.adopted.result as SettleReading;
-      tookCopy = true;
-    } else {
-      if (linkless || cleared) replayRegions(draft, true);
-    }
+    if (adopted) { taken = kept.adopted!.result as SettleReading; tookCopy = true; }
     account(`round-${round}:replay`);
     again = cleared;
   }
@@ -295,7 +316,7 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // give none up. One replay (R4). A replay of a trial copy (the chord step's judge) is not a replay of the draft.
   if (moves && !tookCopy && (replaysOn.get(draft) ?? 0) === draftReplays
     && (draft.diagnostics.some(d => d.code === 'PLACEMENT_NON_CONVERGENCE') || centreViolations(draft).length > 0)) {
-    replayRegions(draft, true);
+    judged(draft, 'tail centring', () => replayRegions(draft, true), undefined);
     note('tail:centring', 'settled');
   }
   if (ledger) {
@@ -332,60 +353,63 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // are settled again below, and one of the two can move a node when it settles.
   abortAt?.();
   // A corridor side stage 4 reserved that the move withdraws (ticket 72) comes back with the lanes when the move is refused.
-  const heldLanes = clone(draft.lanes), heldLedger = draft.reservations, heldNotes = new Set(draft.diagnostics), followedLanes: LaneFollow[] = [];
-  const seated = draft.anchorTier === undefined ? undefined : seatLaneSources(draft, centreContext(draft, draft.anchorTier).steps);
-  if (reseatLanes(draft, followedLanes)) {
-    seated?.reconcile();
-    rebuildLaneExtents(draft);
-    // Three things the move can spoil, and it is refused rather than allowed to. It may open an
-    // alignment 7c could not reach, and the centring invariant would then read the published
-    // placement as unfinished work. (It may also turn the run in the gap beside the corridor from a
-    // column into a row: that is no refusal since architecture-2 ticket 57, as the one tier-gap solve
-    // runs after the move and seats the new row.) And a corridor is an obstacle the link
-    // label reservation measures against — it decides whether a labelled row link detours and
-    // where the room it needs is inserted — so a corridor that moves across one
-    // of those runs leaves a label a run 7e and 7f already reserved and did not get (stress ticket
-    // 18). That one has to be refused rather than settled again: re-reserving moves nodes,
-    // and by here the corridors are fixed. They are compared as sets, not as counts: a
-    // move that trades one unverified alignment or one short run for another is not
-    // "no worse", it is a different diagram with the same tally.
-    //
-    // The settling below can move whole frames: where the grid widens a box beside rows that stood open, it packs them once (ticket 136), and a
-    // corridor stands where the replay reads it, not where it stood before. So "the corridors are fixed" above holds for the move this transaction makes, not
-    // for the trial that follows it, and the fourth criterion reads the settled model.
-    //
-    // The fourth reads what the move is *for*. A corridor moves to stand at its child's port and
-    // buys that one alignment; the settling below can move a node under it — `resyncLabelBands`
-    // falls back to the full producer, which reserves room and pushes the groups after it — and a
-    // corridor whose child has moved out from under it is a move that bought nothing and left a
-    // jog nothing reserved. The first three cannot see that: after the fallback,
-    // `produceGroupLabelBands` has already driven `reserveLinkLabelRoom` to its fixed point, so
-    // the room criterion is empty by construction on exactly the path that moves the node.
-    //
-    // All four are measured on the **settled** model, not on the one the move leaves behind. A
-    // corridor is geometry two of 7f's own plans are derived from — `laneSidesHold` decides which
-    // linked pair may share an x-extent, so a corridor that leaves a group's window releases a
-    // merge the grid declined — and the grid is therefore settled again against the corridors this
-    // move publishes, because `validateGroupLabelBands` re-derives it and the published model has to
-    // be its fixed point (ADR-0015: a derived plan a later stage re-derives may read only what is
-    // frozen when both readings happen). That settling is done on a trial *before* the decision,
-    // because all four criteria read what it changes: `straightCorridorClear` iterates the group boxes
-    // the grid widens, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
-    // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice. No title
-    // stands yet: the titles are placed after this, and yield to the corridors (ticket 54).
-    // The candidate is derived once, on a copy that has the grid and the bands replayed, and judged there by `judges.laneReseat` (decide.ts, kind `lane-reseat`).
-    if (chooseReseat(draft, heldLanes, followedLanes, replayGridAndBands, seated?.undo)) {
-      attemptCounters.reseat.adopted++;
-      note('reseat-lanes', 'adopted');
-    } else {
-      seated?.undo();
-      draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD' && (item.code !== 'CORRIDOR_SIDE_WITHDRAWN' || heldNotes.has(item)));
-      if (heldLedger === undefined) delete draft.reservations; else draft.reservations = heldLedger;
-      attemptCounters.reseat.refused++;
-      note('reseat-lanes', 'refused');
-    }
-  } else { seated?.undo(); attemptCounters.reseat.none++; note('reseat-lanes', 'none'); }
-  seated?.settle(draft);
+  // The lane reseat, its settling and the source seats are one mover under the judge of a move after the freeze (dense-16x9 ticket 31).
+  judged(draft, 'lane reseat', () => {
+    const heldLanes = clone(draft.lanes), heldLedger = draft.reservations, heldNotes = new Set(draft.diagnostics), followedLanes: LaneFollow[] = [];
+    const seated = draft.anchorTier === undefined ? undefined : seatLaneSources(draft, centreContext(draft, draft.anchorTier).steps);
+    if (reseatLanes(draft, followedLanes)) {
+      seated?.reconcile();
+      rebuildLaneExtents(draft);
+      // Three things the move can spoil, and it is refused rather than allowed to. It may open an
+      // alignment 7c could not reach, and the centring invariant would then read the published
+      // placement as unfinished work. (It may also turn the run in the gap beside the corridor from a
+      // column into a row: that is no refusal since architecture-2 ticket 57, as the one tier-gap solve
+      // runs after the move and seats the new row.) And a corridor is an obstacle the link
+      // label reservation measures against — it decides whether a labelled row link detours and
+      // where the room it needs is inserted — so a corridor that moves across one
+      // of those runs leaves a label a run 7e and 7f already reserved and did not get (stress ticket
+      // 18). That one has to be refused rather than settled again: re-reserving moves nodes,
+      // and by here the corridors are fixed. They are compared as sets, not as counts: a
+      // move that trades one unverified alignment or one short run for another is not
+      // "no worse", it is a different diagram with the same tally.
+      //
+      // The settling below can move whole frames: where the grid widens a box beside rows that stood open, it packs them once (ticket 136), and a
+      // corridor stands where the replay reads it, not where it stood before. So "the corridors are fixed" above holds for the move this transaction makes, not
+      // for the trial that follows it, and the fourth criterion reads the settled model.
+      //
+      // The fourth reads what the move is *for*. A corridor moves to stand at its child's port and
+      // buys that one alignment; the settling below can move a node under it — `resyncLabelBands`
+      // falls back to the full producer, which reserves room and pushes the groups after it — and a
+      // corridor whose child has moved out from under it is a move that bought nothing and left a
+      // jog nothing reserved. The first three cannot see that: after the fallback,
+      // `produceGroupLabelBands` has already driven `reserveLinkLabelRoom` to its fixed point, so
+      // the room criterion is empty by construction on exactly the path that moves the node.
+      //
+      // All four are measured on the **settled** model, not on the one the move leaves behind. A
+      // corridor is geometry two of 7f's own plans are derived from — `laneSidesHold` decides which
+      // linked pair may share an x-extent, so a corridor that leaves a group's window releases a
+      // merge the grid declined — and the grid is therefore settled again against the corridors this
+      // move publishes, because `validateGroupLabelBands` re-derives it and the published model has to
+      // be its fixed point (ADR-0015: a derived plan a later stage re-derives may read only what is
+      // frozen when both readings happen). That settling is done on a trial *before* the decision,
+      // because all four criteria read what it changes: `straightCorridorClear` iterates the group boxes
+      // the grid widens, and on `a-corridor-moves-after-the-grid-settles` the grid really does widen a box by
+      // 29.03 px here. The accepted model is the trial itself, so nothing is re-derived twice. No title
+      // stands yet: the titles are placed after this, and yield to the corridors (ticket 54).
+      // The candidate is derived once, on a copy that has the grid and the bands replayed, and judged there by `judges.laneReseat` (decide.ts, kind `lane-reseat`).
+      if (chooseReseat(draft, heldLanes, followedLanes, replayGridAndBands, seated?.undo)) {
+        attemptCounters.reseat.adopted++;
+        note('reseat-lanes', 'adopted');
+      } else {
+        seated?.undo();
+        draft.diagnostics = draft.diagnostics.filter(item => item.code !== 'LANE_FOLLOWS_ITS_CHILD' && (item.code !== 'CORRIDOR_SIDE_WITHDRAWN' || heldNotes.has(item)));
+        if (heldLedger === undefined) delete draft.reservations; else draft.reservations = heldLedger;
+        attemptCounters.reseat.refused++;
+        note('reseat-lanes', 'refused');
+      }
+    } else { seated?.undo(); attemptCounters.reseat.none++; note('reseat-lanes', 'none'); }
+    seated?.settle(draft);
+  }, undefined);
   // A perimeter lane's x is derived from the boxes over its span (ADR-0010, amendment of ticket 15, phase 4): the settling above can move a box after the last
   // replay, so the lane is read once more on the geometry that publishes.
   if (draft.lanes.some(lane => lane.kind === 'perimeter')) rebuildLaneExtents(draft);
@@ -396,8 +420,10 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // no box and no other port, and one that would need room 7f did not reserve is not made (`roomHolds`). A trade can also undo the excuse of a
   // centring the attempt declined (a replay that bent a chord no longer bends it), so the result keeps the centring findings it had or fewer, the
   // set test `chooseReseat` makes too (R2; snack-theme ticket 159).
-  const centring = new Set(centreViolations(draft)), gapLabels = gapLabelDeficits(draft);
-  const portsHold = (model: LayoutModel): boolean => roomHolds(model, gapLabels) && centreViolations(model).every(item => centring.has(item));
+  // A trade or a seat that would take a block member off its reservation is refused by the judge of a move after the freeze (dense-16x9 ticket 31).
+  const centring = new Set(centreViolations(draft)), gapLabels = gapLabelDeficits(draft), blockFaults = blockReservationFaults(draft);
+  const portsHold = (model: LayoutModel): boolean => roomHolds(model, gapLabels) && centreViolations(model).every(item => centring.has(item))
+    && blockMoveRefusal(blockFaults, model) === undefined;
   nestOverlayPorts(draft, portsHold, roomLikelyHolds);
   // Two overlay end runs of different nodes that would stand on one track (ticket 26): a free port of the two takes a seat on its face one
   // track pitch from the other run, under the same guard as the nest, so the track is reserved where the ports are seated.

@@ -1788,6 +1788,24 @@ published straight still does (a pushed port may carry one); otherwise nothing m
 node id, then the place on the face (R3); at most `SEAT_TRIALS` (16) seats are tried per attempt (R4), and the pairs left untried then are named by
 `OVERLAY_SEAT_CUT` (a warning, R6). The
 anchors are its record, as for the nest.
+**A move after the freeze keeps the solid blocks (dense-16x9 ticket 31).** From the chord freeze on, the members of a solid block
+and its followers are walls: one judge reads every move after the freeze, `blockMoveRefusal` (`block-checks.ts`). It reads
+`blockReservationFaults` where the move begins and where it ends (the faces, the block pitch, the box clearance, the reserved gap
+and the reserved angle of each member, and each follower's alignment), and refuses a move that adds a fault: one for a member the
+move touched. A fault the model had already is no reason to refuse. Its callers:
+- the centring group step of 7c, at every replay after the freeze: a step that would add a fault is declined, as one that crosses
+  a lane is, and its kept geometry names the reason `block-reservation` (`ALIGNMENT_DECLINE_REASONS`); the publication check
+  replays the same step and reads the same decision (R1, R5);
+- `chordsHold` (every translation that `holdsMove`, `holdsNodeMove` and the chord step judge), `adoptSettled`, the end trim
+  (`trimRefusal`), the sibling close-up (`closeUpRefusal`) and the guard of the nest and the seat of the overlay ports;
+- `judgedMove` (`post-freeze-judge.ts`), around each mover of 7f that calls a replay: the close-up, the keep-out, the steps of a
+  round (the linkless step, the step over a chord and their replay), the tail centring, the lane reseat, and the linkless step
+  and centring replay after the tier-gap growth. A refused mover gives the model back whole, as it was before the mover, and is
+  named (`POST_FREEZE_MOVE_REFUSED`, a warning, R6). It runs only after the freeze on a sheet with a solid block, so a sheet
+  without one copies nothing.
+
+The label-band producer right after the freeze is a required move and is not refused whole. The centring replays inside it are judged
+by the step.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line, or on a held routed chord
 (ticket 22), lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows

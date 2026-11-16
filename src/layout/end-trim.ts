@@ -1,4 +1,4 @@
-import { blockReservationsFault } from './block-checks.js';
+import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
 /**
  * The end trim (architecture-2 ticket 68, user 2026-11-04): after the last x move of 7f, a node body is trimmed to the span of its ports with
  * their end insets, plus its label, icon and padding, never below its stage-3 size. Ports keep their x, no node moves; the group boxes, the
@@ -100,9 +100,10 @@ function deriveRegions(model: LayoutModel): boolean {
 }
 
 /** Why the trimmed draft would not publish as the transaction leaves it, or undefined: the checks of what the trim moves no further (R2). */
-function trimRefusal(draft: LayoutModel, boxes: ReadonlyMap<string, Rect>, bodies: ReadonlyMap<string, Rect>, bandsChanged: boolean): string | undefined {
-  const block = blockReservationsFault(draft);
-  if (block !== undefined) return block;
+function trimRefusal(draft: LayoutModel, blockBefore: ReadonlyMap<string, string>, boxes: ReadonlyMap<string, Rect>, bodies: ReadonlyMap<string, Rect>, bandsChanged: boolean): string | undefined {
+  // The judge of a move after the freeze (dense-16x9 ticket 31): a trim that takes a block member off a reservation it found holding is declined.
+  const block = blockMoveRefusal(blockBefore, draft);
+  if (block !== undefined) return block.fault;
   // The grid may grow a box onto the extent of a linked partner (ADR-0012, its own guards hold), but it may move no node and widen no drawing.
   const moved = [...bodies].find(([id, old]) => !within(draft.nodes[id]!.bounds!, old));
   if (moved !== undefined) return `the linked-group grid would move the node ${moved[0]}`;
@@ -137,7 +138,7 @@ export function trimBodies(draft: LayoutModel): void {
   }
   if (!trims.length) return;
   // The draft as 7f left it, put back whole when the trim is declined: the grid may move a flank, its nodes and its lanes.
-  const saved = JSON.stringify(draft);
+  const saved = JSON.stringify(draft), blockBefore = blockReservationFaults(draft);
   // The rooms 7f reserved for link labels and overlay tracks, read before the trim: a trim that leaves one short where it held is declined.
   // Shown only with seats, so read with `layout.moveBeforeGrow` (ADR-0027).
   const roomBefore = moveBeforeGrow(draft) && labelRoomHolds(draft);
@@ -164,7 +165,7 @@ export function trimBodies(draft: LayoutModel): void {
     if (sameRect(draft.groups[id]!.bounds!, old)) draft.groups[id]!.bounds = old;
     else groups[id] = old;
   }
-  const refusal = trimRefusal(draft, boxes, bodies, deriveRegions(draft)) ?? (roomBefore && !labelRoomHolds(draft) ? 'a link label or an overlay track would lose the room 7f reserved for it' : undefined);
+  const refusal = trimRefusal(draft, blockBefore, boxes, bodies, deriveRegions(draft)) ?? (roomBefore && !labelRoomHolds(draft) ? 'a link label or an overlay track would lose the room 7f reserved for it' : undefined);
   if (refusal !== undefined) {
     const back = JSON.parse(saved) as Record<string, unknown>, target = draft as unknown as Record<string, unknown>;
     for (const key of Object.keys(target)) if (!(key in back)) delete target[key];

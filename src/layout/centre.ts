@@ -1,3 +1,4 @@
+import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
 import { liftedGroups } from './lift.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceExcess, facePairPitches } from './pair-pitch.js';
@@ -1295,6 +1296,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     notes.start.set(key, { low: box.x - want, high: right(box) - want });
   }
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
+  // After the freeze a solid block's members are walls (dense-16x9 ticket 31, R1): the step is judged by the one judge of a move after the freeze,
+  // and a step that takes a member off a reservation that held when it began is declined like a lane crossing. Read on a sheet with a block only.
+  const startBlock = model.frozenChords !== undefined && model.blockReservations?.length ? blockReservationFaults(model) : undefined;
+  const blockBroken = (): string | undefined => (startBlock === undefined ? undefined : blockMoveRefusal(startBlock, model)?.key);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
   // away from the x its child is then aligned to. While a seat stands (`seatedFeeds`), a seated body pulls only through the feeds it keeps.
@@ -1434,7 +1439,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // The same for a frozen chord: a step that leaves one across a foreign lane box that it did not cross when the step began is declined, and so is a
   // step that leaves a held chord under the chord clearance where it stood clear (ticket 65).
   if (!riserNoDeeper(startPenetration, riserPenetrations(model, group)) || [...chordLaneCrossings(model, group)].some(pair => !startCrossings.has(pair))
-    || [...spanBreaches(model)].some(key => !startBreaches.has(key)) || newlyNear(group.nodes) !== undefined) {
+    || [...spanBreaches(model)].some(key => !startBreaches.has(key)) || newlyNear(group.nodes) !== undefined || blockBroken() !== undefined) {
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);
@@ -1486,6 +1491,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     if (span !== undefined) return { reason: 'span', by: span };
     const near = newlyNear(keptGroup.nodes);
     if (near !== undefined) return { reason: 'chord-clearance', by: near };
+    const block = blockBroken();
+    if (block !== undefined) return { reason: 'block-reservation', by: block };
     const keptNodes = keptGroup.nodes.map(node => model.nodes[node]!);
     model.groups[id] = stepGroup;
     for (const node of stepNodes) model.nodes[node.id] = node;
