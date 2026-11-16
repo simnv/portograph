@@ -154,8 +154,8 @@ export interface NormalisedDocument {
      */
     farEndPull?: boolean;
     /**
-     * When false, no rank cell or child frame takes the order its feeds give (architecture-2 ticket 25, `orderByFeeds`): the ledger
-     * holds no `rowOrder` entry, and ELK's order and the overlay partners stand. Default true.
+     * When false, no rank cell, child frame or top row takes the order its feeds give (architecture-2 ticket 25, dense-16x9 ticket 20,
+     * `orderByFeeds`): the ledger holds no `rowOrder` entry, and ELK's order, the overlay partners and the declared order of a top row stand. Default true.
      */
     feedOrder?: boolean;
     /**

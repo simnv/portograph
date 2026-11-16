@@ -1,0 +1,44 @@
+# Expected (dense-16x9 ticket 20): a row that no row above feeds takes the order of its feeds in the row below.
+# `leaves` stands on the top tier and feeds the two hubs of the rank cell `core#0`. `both-1` and `both-2` link to both hubs and are declared
+# inside the run of `hub-1` (leaves 1 to 4). The corridor step does not turn `leaves` (a turn changes a region that holds a frame cell), so the
+# feed order reads its feeds into the row below: each leaf stands at the mean position of its hubs, a tie keeps declaration order. `leaves`
+# stands as leaf-1 to leaf-4, both-1, both-2, leaf-5 to leaf-8: the left hub's leaves, the shared members, the right hub's leaves. The
+# `rowOrder` entry of `leaves` names `core#0` and its order as the premise. Crossings fall from 5 (declared order) to 2; G1-G9 pass.
+portograph: 2
+groups:
+  leaves: { tier: 0 }
+  core: { tier: 1 }
+  rack: { tier: 2 }
+nodes:
+  leaf-1: { group: leaves, class: server }
+  leaf-2: { group: leaves, class: server }
+  both-1: { group: leaves, class: server }
+  leaf-3: { group: leaves, class: server }
+  both-2: { group: leaves, class: server }
+  leaf-4: { group: leaves, class: server }
+  leaf-5: { group: leaves, class: server }
+  leaf-6: { group: leaves, class: server }
+  leaf-7: { group: leaves, class: server }
+  leaf-8: { group: leaves, class: server }
+  hub-1: { group: core, class: switch }
+  hub-2: { group: core, class: switch }
+  spine: { group: core, class: router }
+  store-1: { group: rack, class: server }
+  store-2: { group: rack, class: server }
+links:
+  - [leaf-1, hub-1]
+  - [leaf-2, hub-1]
+  - [both-1, hub-1]
+  - [both-1, hub-2]
+  - [leaf-3, hub-1]
+  - [both-2, hub-1]
+  - [both-2, hub-2]
+  - [leaf-4, hub-1]
+  - [leaf-5, hub-2]
+  - [leaf-6, hub-2]
+  - [leaf-7, hub-2]
+  - [leaf-8, hub-2]
+  - [hub-1, spine]
+  - [hub-2, spine]
+  - [spine, store-1]
+  - [spine, store-2]

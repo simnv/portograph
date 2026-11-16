@@ -243,7 +243,9 @@ describe('the records of the joint order (R1, R2, R6)', () => {
     expect(groupOrderFailure(entry!, swapped)).toMatch(/leaf-near does not stand left of leaf-far/);
     expect(refreshFeedOrders(turned)).toBe(true);
     expect(ofKind(turned.reservations ?? [], 'groupOrder')).toEqual([]);
+    // `spine` stands on the top tier and reads its order from `aggr` (dense-16x9 ticket 20): its entry is withdrawn by name too.
     expect(turned.diagnostics.filter(item => item.code === 'FEED_ORDER_WITHDRAWN').map(item => item.message)).toEqual([
+      'The feeds of row spine no longer give the order it stands in: the row below it turned after the frames were packed. The order stands, with no reservation.',
       `The group order leaf-near, leaf-far of sub-tier ${entry!.payload.tier} is withdrawn: the free row aggr no longer stands in the order the group order read. The groups stand as they stand, with no reservation.`,
     ]);
   }, 120000);
