@@ -122,3 +122,24 @@ in `docs/design/pipeline.md` (stage 5, *chord row*); this amendment states the d
 - Legs: two member links of one chord row may cross each other's fallback legs, read from the stage-5 record (`legSiblings`), as fan
   members do (Q126). Without it the freeze of the first placement refused every member chord (`leg`) and the acceptance gate declined every
   chord row. Ticket 04 replaces this membership with its general stem rule.
+
+## Fourth amendment (2026-11-16, dense-16x9 ticket 22): the gate judges each row on the complete placement, aspect aim first
+
+The stage-5 objective of the second amendment judged the gain on the stage-5 canvas. That canvas does not show it.
+- 7c stands a tier under its feeds, so the tier that sets the stage-5 width moves later.
+- A second line can stand in a gap the band already has.
+
+On the sheet behind ticket 22, a lower tier set the stage-5 width (5699 px; the published canvas was 4078 px wide).
+- A 13-member top row gave the same stage-5 area on two lines.
+- A 9-member row gave +4 % stage-5 area. Its complete placement came nearer the aim (aspect 2.09 against 2.81) with 16 fewer crossings and 2 fewer bent links.
+
+The second amendment changes as follows.
+- Stage 5 keeps the triggers and the seat's proof, but the stage-5 canvas is no reason to refuse a row.
+- The acceptance gate judges each chosen row on its own, greedy in the stage-5 order (widest first), against the complete placement with the rows kept so far.
+- The size test of that placement (after 7f, before routing) follows the row's trigger, as stage 5 does.
+  - A fan wrap (block trigger: the block is too wide for its hub) keeps the area rule of this amendment, strictly less area. It is an owner ruling (D-Q4, decision review 2026-11-07); aspect first would decline a wrap on any sheet near or under the aim.
+  - A plain row (aspect trigger: the sheet is wider than the aim) keeps its two lines when the placement stands nearer the aspect aim (ADR-0025), or takes less area at an equal gap.
+- As before, no link the baseline makes straight is lost, and no hard separation is shorter.
+- A refusal in a trial's placement or 7f declines that row by name. Each trial runs the same publication checks as every placement.
+- The trials stand outside `MAX_RERUNS` and the placement cap: one placement per chosen row.
+

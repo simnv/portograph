@@ -196,7 +196,10 @@ describe('stage 5 admits a stagger only toward the aspect aim (ticket 51; ADR-00
     expect(model.staggerRows).toBeUndefined();
     expect(lines(model, 'leaves')).toBe(1);
     const entry = model.groupArrangements!.leaves!;
-    expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: two lines give [\d.]+ x [\d.]+ px, not nearer the aim [\d.]+ than [\d.]+ x [\d.]+ px$/);
+    // The acceptance gate judges the complete placement (dense-16x9 ticket 22); the stage-5 canvas refuses nothing.
+    expect(entry).toEqual({ chosen: 'row', reason: 'the acceptance gate declined the two lines (FAN_WRAP_DECLINED names why)' });
+    expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED').map(note => note.message))
+      .toEqual([expect.stringMatching(/^The two lines of leaves are declined: the complete placement is [\d.]+ x [\d.]+ px with two lines, farther from the aim [\d.]+ than [\d.]+ x [\d.]+ px without\.$/)]);
   }, 60000);
 });
 
@@ -261,7 +264,8 @@ ${[1, 2, 3, 4, 5, 6].map(i => `  - [p, n${i}]`).join('\n')}
 
   it('admits a parent whose other link fits beside the drops', async () => {
     const fits = crowded.replace('  q: { group: feeds, class: switch }\n', '').replace('  z: { group: side, class: server }\n', '').replace('  - [q, z]\n', '');
-    const model = await run(fits);
+    // The test is about the seat, not the aim: the sheet states the square aim of ADR-0024 it was written under (dense-16x9 ticket 22).
+    const model = await run(withAspect(fits, '1:1'));
     expect(model.groupArrangements!.leaves).toEqual({ chosen: 'stagger' });
     expect(failedGates(model)).toEqual([]);
   }, 60000);
