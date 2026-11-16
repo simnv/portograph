@@ -145,7 +145,8 @@ export interface NormalisedDocument {
     overlayOverBodies?: boolean;
     /**
      * When false, every free row keeps the order the skeleton gave it, and the corridor row order (architecture-2 ticket 17) records
-     * `author` for it. Default true: a free row takes the order that the corridors through it cross least.
+     * `author` for it, and every top row (a rank cell or a free row that no row above feeds) keeps its declared order instead of reading
+     * its feeds from the row below (dense-16x9 ticket 20). Default true: a free row takes the order that the corridors through it cross least.
      */
     corridorRowOrder?: boolean;
     /**

@@ -469,7 +469,9 @@ A turned free row records `feed-order`, and its entry names the row (`row`). The
 top row in its turn (a rank cell under it), so the rows are judged again while an entry's premise does not hold, at most one round per
 judged row and one more (R4), and an entry still broken then is withdrawn by name (`FEED_ORDER_WITHDRAWN`). The refresh does not turn
 a free top row again: it keeps the entry where the feeds still give the order the row stands in, and drops it by name otherwise.
-`layout.corridorRowOrder: false` keeps the authored order of a free top row. Each
+One predicate (`readsBelow`) decides whether a row reads from below, for every kind of row: `layout.feedOrder: false` and
+`layout.corridorRowOrder: false` each keep the authored order of a top row, a rank cell as well as a free row. A cell fed from above
+answers to `feedOrder` only, as before. Each
 decided row is one **`rowOrder`** entry of the ledger, the one decision (R1; `rowOrderOf` is the one reader), with its premise: the
 feeding rows and the order they were read in. A cell is re-seated in its order here, the replay of ELK's output (ELK gets no hint,
 because the feeding row's order is known only after ELK and the free-row orders, and the column pack, not ELK, places a child frame);

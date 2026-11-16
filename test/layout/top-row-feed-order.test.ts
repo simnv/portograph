@@ -56,10 +56,23 @@ describe('a top leaf row takes the order of its hubs (dense-16x9 ticket 20)', ()
     expect(validateFeedOrders(forged)).toEqual(['Reservation rowOrder:group:leaves:row does not hold: leaves does not stand in the order its feeds give']);
   }, 60000);
 
-  it.each([['feedOrder: false'], ['corridorRowOrder: false']])('keeps the authored order under %s and writes no entry', async entry => {
-    const model = await skeletonOf(withLayoutEntry(yaml, entry));
-    expect(orderOf(model, 'leaves')).toEqual(DECLARED);
-    expect(rowEntries(model)).toEqual([]);
+  // The same top row as a rank cell: `leaves` in a canton is the cell `leaves#0` (review 1 of ticket 20). Both kinds pass the one opt-out test.
+  const inCanton = (text: string): string => text.replace('  leaves: { tier: 0 }', '  outer: {}\n  leaves: { tier: 0, canton: outer }');
+  it.each([['free row', 'leaves', (text: string) => text], ['rank cell', 'leaves#0', inCanton]] as const)('orders a top %s from below by default', async (_, id, shape) => {
+    const model = await skeletonOf(shape(yaml));
+    expect(orderOf(model, id)).toEqual(RUNS);
+    expect(validateFeedOrders(model)).toEqual([]);
+  }, 60000);
+
+  it.each([
+    ['feedOrder: false', 'free row', 'leaves', (text: string) => text],
+    ['corridorRowOrder: false', 'free row', 'leaves', (text: string) => text],
+    ['feedOrder: false', 'rank cell', 'leaves#0', inCanton],
+    ['corridorRowOrder: false', 'rank cell', 'leaves#0', inCanton],
+  ] as const)('keeps the authored order under %s for a top %s and writes no entry for it', async (entry, _, id, shape) => {
+    const model = await skeletonOf(withLayoutEntry(shape(yaml), entry));
+    expect(orderOf(model, id)).toEqual(DECLARED);
+    expect(ofKind(model.reservations ?? [], 'rowOrder').filter(({ payload }) => ('row' in payload ? payload.row : 'cell' in payload ? payload.cell : payload.frame) === id)).toEqual([]);
   }, 60000);
 
   it('leaves a row fed from both sides as it stands: a feed from above means the row below is not read', async () => {

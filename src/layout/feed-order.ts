@@ -39,7 +39,8 @@ const SAME_KEY = 1e-9;
  *   cell or a free row that the corridor step could not judge (`frame-columns`, or no record; no far-end pull, no group order of the joint
  *   order reading it), reads its feeds into the sub-tier directly below by the same rule, a tie keeping declaration order: a member
  *   linked to two hubs stands between their runs. A row fed from above, also from both sides, is not read from below. A turned free row
- *   records `feed-order`; its entry names the row (`row`). `layout.corridorRowOrder: false` keeps a free top row's authored order.
+ *   records `feed-order`; its entry names the row (`row`). `layout.feedOrder: false` and `layout.corridorRowOrder: false` keep the
+ *   authored order of every top row, a rank cell or a free row (`readsBelow`, the one test).
  * - **The reservation.** Each decided row is one `rowOrder` entry (`rowOrderOf` is the one reader), with its premise: the feeding rows and
  *   the order they were read in (`feeds`). A cell is re-seated in its order here (the replay of ELK's output); the column pack (`standOf`)
  *   stands a child frame on the side its entry names; the overlay order of the frames chains neither a reserved cell nor a feeding row
@@ -250,6 +251,14 @@ function reader(model: LayoutModel) {
   /** Whether a routed link of the row ends in a row above it: a row fed from above (from both sides too) never reads the row below. */
   const fedFromAbove = (group: LayoutGroup): boolean => group.nodes.some(node => (ends.get(node) ?? []).some(other => (groupOf(other).tier ?? Infinity) < group.tier!));
   /**
+   * The one test of whether a row reads its feeds from the row below (dense-16x9 ticket 20), for every kind of row: a rank cell and a free
+   * row alike. Only a top row does, and an authored order stands: `layout.feedOrder: false` (no feed order at all) and
+   * `layout.corridorRowOrder: false` (the order the skeleton gave a row that no row above orders) each keep it. A cell fed from above is
+   * not asked: its downward feed order answers to `feedOrder` only, as before.
+   */
+  const authored = model.document.layout?.feedOrder === false || model.document.layout?.corridorRowOrder === false;
+  const readsBelow = (group: LayoutGroup): boolean => !authored && !fedFromAbove(group);
+  /**
    * The order of a row by the keys `toward` reads: the blocks of peer neighbours take the order of their keys, the members of a block the
    * order of their own keys; a member with no key keeps its slot; `tie` breaks an equal key.
    */
@@ -278,20 +287,21 @@ function reader(model: LayoutModel) {
      * The free rows the feeds below may order (dense-16x9 ticket 20): a free row of two or more nodes that no row above feeds and that the
      * corridor step could not judge (`frame-columns`: its turn changes a region with a frame cell; or no record: no anchor tier), with no
      * far-end pull and no group order of the joint order reading it. A row the corridor step judged keeps its measured order: the feed order
-     * was among its candidates and crossed no less. An authored order (`layout.corridorRowOrder: false`) stands.
+     * was among its candidates and crossed no less. An authored order stands (`readsBelow`).
      */
-    tops: (): LayoutGroup[] => model.document.layout?.corridorRowOrder === false ? [] : placed.filter(group => group.nodes.length > 1 && freeRow(group)
-      && !joint.has(group.id) && !fedFromAbove(group) && group.rowOrderDecision?.pulledFrom === undefined
+    tops: (): LayoutGroup[] => placed.filter(group => group.nodes.length > 1 && freeRow(group)
+      && !joint.has(group.id) && readsBelow(group) && group.rowOrderDecision?.pulledFrom === undefined
       && (group.rowOrderDecision === undefined || group.rowOrderDecision.rule === 'frame-columns')),
     /** The cells a feed may order and the given free top rows, in their judging order: top-down, by id within a sub-tier, so a row reads the order this step gave the row above it. */
     rows: (tops: readonly LayoutGroup[]): LayoutGroup[] => [...placed.filter(group => group.frame !== undefined && group.nodes.length > 1 && isRow(group) && !flanked.has(group.id)), ...tops]
       .sort((a, b) => a.tier! - b.tier! || compareId(a.id, b.id)),
     /**
      * The order the feeds give a row: a row that a row above feeds (a rank cell) reads the feeds from above, a tie keeping the order it stands
-     * in (ELK's); a row that no row above feeds reads its feeds into the row below (dense-16x9 ticket 20), a tie keeping declaration order.
+     * in (ELK's); a row that no row above feeds reads its feeds into the row below when `readsBelow` lets it (dense-16x9 ticket 20), a tie
+     * keeping declaration order.
      */
-    row: (row: LayoutGroup): Decision | undefined => fedFromAbove(row) ? (row.frame === undefined ? undefined : ordered(row, above, items => items))
-      : ordered(row, below, () => row.nodes),
+    row: (row: LayoutGroup): Decision | undefined => readsBelow(row) ? ordered(row, below, () => row.nodes)
+      : fedFromAbove(row) && row.frame !== undefined ? ordered(row, above, items => items) : undefined,
     frame: (id: string): Decision | undefined => {
       const tierOf = (cell: string): number => cellTier(model, cell);
       const blocks = Object.keys(frames).filter(child => frames[child]!.parent === id).map(child => { const [low, high] = tierRange(model, child); return { child, low, high }; });
