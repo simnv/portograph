@@ -767,42 +767,57 @@ function ownCentring(model: LayoutModel, context: CentreContext, tier: number, l
   return { chosen, offset: centringOffset(chosen) };
 }
 /**
- * The seat of the centred groups of one row (dense-16x9 ticket 27): the least-squares solution of "each group at the x its own feeds want" under
- * the order of the row and the band gap between neighbours. Each group alone wants its box at `x + centringOffset`, which does not depend on where
- * the group stands. Pool adjacent violators: a run of groups whose wanted boxes would overlap is centred as one unit on the weighted mean of what
- * its members want, so the packing no longer stacks such a row to one side of its feeds (the first group at its mean, the others to its right).
- * The weight of a group is the number of its wanted child ports: the objective is the sum of the squared slants of the drops, and each drop of a
- * group slants by the group's miss, so a group with more drops pulls the unit more; the width of a box is no part of a slant.
+ * The seat of the centred groups of one row (dense-16x9 ticket 27): the least-absolute-deviations solution of "each group at the x its own feeds
+ * want" under the order of the row and the band gap between neighbours. Each group alone wants its box at `x + centringOffset`, which does not
+ * depend on where the group stands. Pool adjacent violators: a run of groups whose wanted boxes would overlap is seated as one unit on the
+ * weighted median of what its members want, so the packing no longer stacks such a row to one side of its feeds (the first group at its mean,
+ * the others to its right). The median, not the mean: a drop is straight or bent, and its slant does not count, so the unit keeps one member at
+ * its own feeds (the heaviest side holds), and a run of equal members stands centred, its middle member at the common mean. When the weight
+ * splits evenly, the unit takes the middle of the median interval, so equal halves stand symmetric. The weight of a group is the number of its
+ * wanted child ports: each drop of the group slants by the group's miss; the width of a box is no part of a drop.
  * A run is broken by a group the step does not centre, by a rank cell (its frame column holds it), and between groups that a lane of 7a parts
- * (different lane windows). Returns the pooled box x of each group in a run of two or more; a group alone takes its own offset, as before.
- * The row's slack and every bound are the step's: the main move stops at the overlay walls, the clamp takes the window (lanes, flanks, frame
- * columns, the group before it, the tail the groups after it reserve), and every guard of the step holds as it does for the group's own mean.
- * Read in group order, a geometric order (R3); the sums are taken in that order.
+ * (different lane windows). Returns the pooled box x of each group the unit moves off its own wanted x; a member at its own x, and a group alone,
+ * take their own offset, as before. The row's slack and every bound are the step's: the main move stops at the overlay walls, the clamp takes the
+ * window (lanes, flanks, frame columns, the group before it, the tail the groups after it reserve), and every guard of the step holds as it does for
+ * a group's own mean. Read in group order, a geometric order (R3); a tie of values in the median is broken by that order.
  */
 function rowSeats(model: LayoutModel, context: CentreContext, tier: number, list: Feed[]): Map<string, number> {
   const order = context.groupOrder.get(tier)!, gap = bandGap(model), seats = new Map<string, number>();
   type Item = { id: string; want: number; width: number; weight: number };
   let run: Item[] = [], window = '';
+  /** The weighted median of `values`, the middle of the median interval when the weight splits evenly. */
+  const median = (values: readonly { value: number; weight: number; at: number }[]): number => {
+    const sorted = [...values].sort((p, q) => p.value - q.value || p.at - q.at), half = sorted.reduce((sum, item) => sum + item.weight, 0) / 2;
+    let below = 0;
+    for (const [i, item] of sorted.entries()) {
+      below += item.weight;
+      if (below > half + PLACEMENT_EPS) return item.value;
+      if (below >= half - PLACEMENT_EPS) return (item.value + sorted[i + 1]!.value) / 2;
+    }
+    return sorted[sorted.length - 1]!.value;
+  };
   const flush = (): void => {
     if (run.length > 1) {
       // In the coordinates `want - before`, where `before` is the room the groups ahead of a group take with their gaps, the order constraint is
-      // monotonicity, and the pooled blocks are its least-squares fit.
-      const blocks: { sum: number; weight: number; from: number; to: number }[] = [];
+      // monotonicity, and the pooled blocks are its least-absolute-deviations fit.
+      const blocks: { members: { value: number; weight: number; at: number }[]; value: number }[] = [];
       let before = 0;
       for (const [at, item] of run.entries()) {
-        let block = { sum: item.weight * (item.want - before), weight: item.weight, from: at, to: at };
+        let block = { members: [{ value: item.want - before, weight: item.weight, at }], value: item.want - before };
         before += item.width + gap;
-        while (blocks.length && blocks[blocks.length - 1]!.sum / blocks[blocks.length - 1]!.weight > block.sum / block.weight + PLACEMENT_EPS) {
-          const last = blocks.pop()!;
-          block = { sum: last.sum + block.sum, weight: last.weight + block.weight, from: last.from, to: block.to };
+        while (blocks.length && blocks[blocks.length - 1]!.value > block.value + PLACEMENT_EPS) {
+          const members = [...blocks.pop()!.members, ...block.members];
+          block = { members, value: median(members) };
         }
         blocks.push(block);
       }
       for (const block of blocks) {
-        if (block.to === block.from) continue;
-        let at = block.sum / block.weight;
-        for (let i = 0; i < block.from; i++) at += run[i]!.width + gap;
-        for (let i = block.from; i <= block.to; i++) { seats.set(run[i]!.id, at); at += run[i]!.width + gap; }
+        if (block.members.length < 2) continue;
+        for (const { at } of block.members) {
+          let x = block.value;
+          for (let i = 0; i < at; i++) x += run[i]!.width + gap;
+          if (Math.abs(x - run[at]!.want) > PLACEMENT_EPS) seats.set(run[at]!.id, x);
+        }
       }
     }
     run = [];
