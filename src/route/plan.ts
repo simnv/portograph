@@ -240,7 +240,7 @@ export interface AskedCheckpoint { checkpoint: RouteCheckpoint; terminal: Point;
  * the start terminal to the first run, between two runs, and from the last run to the end terminal: whether the piece is empty (`skip`: its two
  * ends are one point, or it lies on a side run, the lateral port's own stem), and the checkpoints it passes head-on (a port's stem to
  * `stemCheckpoint`, a lane's approach to `approachCheckpoint`), less those the adjacent shared run already passes (`reservedPasses`). The one
- * selection `planRoute` asks the router by and `reservedRunsOf` reads the stems and mouths from (R1).
+ * selection `planRoute` asks the router by and `reservedChain` reads the stems and mouths from (R1).
  */
 export function pieceAsks(model: LayoutModel, link: LayoutLink, fixed: readonly PathSegment[], cache: StemCache): { skip: boolean; asked: AskedCheckpoint[] }[] {
   const from = terminalOf(model, link, 'from'), to = terminalOf(model, link, 'to');
@@ -277,31 +277,44 @@ export function pieceAsks(model: LayoutModel, link: LayoutLink, fixed: readonly 
   return result;
 }
 
-/** Which producer reserved a run `reservedRunsOf` reads. */
-export type ReservedRunKind = 'path' | 'shared' | 'lane' | 'leg' | 'stem' | 'mouth';
+/**
+ * The reserved runs of `link` between its two terminals, in the order stage 8 stitches them (ADR-0015 rule 1): its lane runs, then its row-gap
+ * leg, or, with no leg, its lane runs with its tier-gap runs woven in by their planned gap (`allocated` holds their positions). `planRoute` and
+ * `reservedChain` read the order here (R1).
+ */
+export function stitchOrder(link: LayoutLink, leg: PathSegment | undefined, runs: Map<number, PathSegment[]> | undefined): { segments: PathSegment[]; allocated: Set<number> } {
+  return leg ? { segments: [...(link.fixedSegments ?? []), leg], allocated: new Set<number>() } : interleave(link.fixedSegments ?? [], runs);
+}
+
+/** Which producer reserved a run of `reservedChain`: a stored path, a shared junction run, a lane, a row-gap leg, a tier-gap run, a port stem, a lane mouth. */
+export type ReservedRunKind = 'path' | 'shared' | 'lane' | 'leg' | 'planned' | 'stem' | 'mouth';
 
 /**
- * Every run of `link` that its final routed path holds and that is known before stage 8 routes, the planned tier-gap parts aside (they are
- * the gap plan's own, `plannedSegments`): a stored path (a held chord, a pinned or bundle path), the shared junction runs at both ends, the
- * lane runs and the row-gap leg, which `planRoute` stitches unchanged; and the stems and lane mouths its pieces pass head-on (`pieceAsks`,
- * the selection `planRoute` asks the router by), terminal to checkpoint. The tier-gap runs are not woven in: placement plans them per gap,
- * after this read. A link stage 8 does not route (a stub, a removed or an overlay link without a stored path) holds none.
+ * Every run of `link` that its final routed path holds and that is known before stage 8 routes, in the order the path visits it: a stored path
+ * (a held chord, a pinned or bundle path) whole; else the shared junction run at its source, then for each piece between two reserved runs the
+ * stems and lane mouths it passes head-on (`pieceAsks`, the selection `planRoute` asks the router by; terminal to checkpoint) and the reserved
+ * run after it (`stitchOrder`: a lane, the row-gap leg, or a tier-gap run of `runs`, the link's allocated runs by planned gap), and last the
+ * shared run at its target, reversed as the stitcher reverses it. `runs` absent: no tier-gap run is woven in. A link stage 8 does not route
+ * (a stub, a removed or an overlay link without a stored path) holds none.
  */
-export function reservedRunsOf(model: LayoutModel, link: LayoutLink, cache: StemCache = stemCache()): { kind: ReservedRunKind; segments: PathSegment[] }[] {
+export function reservedChain(model: LayoutModel, link: LayoutLink, runs?: Map<number, PathSegment[]>, cache: StemCache = stemCache()): { kind: ReservedRunKind; segments: PathSegment[] }[] {
   if (link.path) return [{ kind: 'path', segments: link.path.segments }];
   if (!drawn(link) || effectiveLayer(link) !== 'routed') return [];
   const result: { kind: ReservedRunKind; segments: PathSegment[] }[] = [];
   if (link.sharedRuns?.from?.length) result.push({ kind: 'shared', segments: link.sharedRuns.from });
   const leg = legReservation(model, link, cache);
-  const fixed = leg ? [...(link.fixedSegments ?? []), leg] : (link.fixedSegments ?? []);
-  for (const segment of link.fixedSegments ?? []) result.push({ kind: 'lane', segments: [segment] });
-  if (leg) result.push({ kind: 'leg', segments: [leg] });
-  if (link.sharedRuns?.to?.length) result.push({ kind: 'shared', segments: link.sharedRuns.to });
+  const woven = stitchOrder(link, leg, leg ? undefined : runs);
   const owner = { kind: 'link' as const, id: link.id };
-  for (const piece of pieceAsks(model, link, fixed, cache)) for (const item of piece.asked) {
-    const tip = { x: item.checkpoint.x, y: item.checkpoint.y };
-    if (!samePoint(item.terminal, tip)) result.push({ kind: item.producer.startsWith('lane:') ? 'mouth' : 'stem', segments: [{ from: { ...item.terminal }, to: tip, owner }] });
+  for (const [index, piece] of pieceAsks(model, link, woven.segments, cache).entries()) {
+    for (const item of piece.asked) {
+      const tip = { x: item.checkpoint.x, y: item.checkpoint.y };
+      if (!samePoint(item.terminal, tip)) result.push({ kind: item.producer.startsWith('lane:') ? 'mouth' : 'stem', segments: [{ from: { ...item.terminal }, to: tip, owner }] });
+    }
+    if (index === woven.segments.length) continue;
+    const kind = woven.allocated.has(index) ? 'planned' : leg !== undefined && index === woven.segments.length - 1 ? 'leg' : 'lane';
+    result.push({ kind, segments: [woven.segments[index]!] });
   }
+  if (link.sharedRuns?.to?.length) result.push({ kind: 'shared', segments: reversedRuns(link.sharedRuns.to) });
   return result;
 }
 
@@ -377,8 +390,7 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
     // gaps around it (ADR-0015 rule 1). `gapPlan` declines a gap whose legs already own a lane, so
     // the two reservations never meet and the traversal order stays the one the lanes rule wrote.
     const leg = legs.get(link.id);
-    const woven = leg ? { segments: [...(link.fixedSegments ?? []), leg], allocated: new Set<number>() }
-      : interleave(link.fixedSegments ?? [], gapRuns.get(link.id));
+    const woven = stitchOrder(link, leg, gapRuns.get(link.id));
     const fixed = woven.segments;
     const stops: { endpoint: RouteEndpoint; point: Point }[] = [
       { endpoint: from.endpoint, point: from.point },
