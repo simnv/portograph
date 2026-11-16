@@ -15,7 +15,7 @@ import { gridChains } from './grid.js';
 import { BUNDLE_EDGE_EPS, PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 import { sidePillBodyReach } from './pill-reach.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
-import { faceExcess, neighbourPitch, portPitch } from './pair-pitch.js';
+import { faceExcess, neighbourPitch, runPitches } from './pair-pitch.js';
 
 export const MEMBER_GAP = 16;
 export const MIN_STEM = 15;
@@ -583,9 +583,23 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         && new Set(list.map(m => portId(m[far].ref))).size === list.length;
     }) && !model.lanes.some(lane => lane.owner.kind === 'link' && bundle.members.includes(lane.owner.id))
       && !model.barDrops.some(drop => bundle.members.includes(drop.link) && drop.barCross.length);
-    // The member pitch holds every pair pitch a member port stands in (`portPitch`, dense-16x9 ticket 04), at both ends.
-    const spacing = Math.max(q * (inverted || freeBarStar ? 2 : 1), ...list.flatMap(m => [portPitch(model.nodes[m.a.ref.node]!, m.a.side!, m.a.ref), portPitch(model.nodes[m.b.ref.node]!, m.b.side!, m.b.ref)]));
+    const spacing = Math.max(q * (inverted || freeBarStar ? 2 : 1), ...list.flatMap(m => [model.nodes[m.a.ref.node]!.sidePitch![m.a.side!]!, model.nodes[m.b.ref.node]!.sidePitch![m.b.side!]!]));
     for (const item of list) for (const p of [item.a, item.b]) model.nodes[p.ref.node]!.sidePitch![p.side!] = spacing;
+    // The members stand in the order of each end, and the step between members k - 1 and k is the larger pair pitch of the two ends at that step
+    // (dense-16x9 ticket 04, review 2): both ends keep one offset per member, so the tracks stay parallel. Only the pairs of the bundle are read
+    // (`runPitches`); a pair pitch of a member with a port outside the bundle, or with a port that has left the face, does not raise the face
+    // pitch, which stays the scalar `spacing`. `extra[k]` is the running excess over `k * spacing`: all zero where no pair pitch binds a step,
+    // so the arithmetic of the scalar pitch stays exact there.
+    const orderAt = (end: 'a' | 'b'): Member[] => {
+      const far = end === 'a' ? 'b' : 'a';
+      return [...list].sort((a, b) => a[end].engineOrder! - b[end].engineOrder! || a[far].engineOrder! - b[far].engineOrder! || a.link.sourceIndex - b.link.sourceIndex);
+    };
+    const steps = (end: 'a' | 'b'): number[] => { const ordered = orderAt(end), at = ordered[0]![end]; return runPitches(model.nodes[at.ref.node]!, at.side!, ordered.map(m => m[end].ref), spacing); };
+    const own = { a: steps('a'), b: steps('b') };
+    const extra = [0];
+    own.a.forEach((step, index) => extra.push(extra[index]! + Math.max(step, own.b[index]!) - spacing));
+    // What the steps of the bundle add at one end beyond the neighbour pitches of that face, which `faceExcess` counts already.
+    const beyond = (end: 'a' | 'b'): number => own[end].reduce((sum, step, index) => sum + Math.max(step, own[end === 'a' ? 'b' : 'a'][index]!) - step, 0);
     // Ports outside every bundle that stage 7b seated before this block keep their place before it
     // (ticket 09), so the block starts after them rather than at the node's edge.
     const inAnyBundle = new Set(model.links.filter(l => l.bundle).flatMap(l => [portId(l.attachments!.from), portId(l.attachments!.to)]));
@@ -606,8 +620,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     // The ends that did not reach the common start: a limit left the block bent at their own floor.
     const bent = new Set<string>();
     for (const end of ['a', 'b'] as const) {
-      const far = end === 'a' ? 'b' : 'a';
-      const ordered = [...list].sort((a, b) => a[end].engineOrder! - b[end].engineOrder! || a[far].engineOrder! - b[far].engineOrder! || a.link.sourceIndex - b.link.sourceIndex);
+      const ordered = orderAt(end);
       const ports = [...new Set(ordered.map(m => m[end]))];
       const node = model.nodes[ports[0]!.ref.node]!, dim = tangent === 'x' ? 'width' : 'height';
       const inset = portEndInsets(node, ports[0]!.side!, spacing);
@@ -636,7 +649,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         // Alignment is optional; capacity and immutable lanes are not. Leave a bundle bent when
         // projecting a distant peer's x would grow this node across a sibling or reserved lane.
         const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length - (lead.get(node.id) ?? 0);
-        const excess = excessOf(node.id), rest = (excess.at(-1) ?? 0) - (excess[lead.get(node.id) ?? 0] ?? 0);
+        const excess = excessOf(node.id), rest = (excess.at(-1) ?? 0) - (excess[lead.get(node.id) ?? 0] ?? 0) + beyond(end);
         if (start + (sideCount - 1) * spacing + rest + inset.high > limit) {
           start = floorOf(node.id);
           // The seat owns the body (ADR-0027): a block that cannot reach its peers aligns nothing by moving, so on a face where a seat keeps a
@@ -649,8 +662,8 @@ export function prepareBundleGeometry(model: LayoutModel): void {
           if (start < commonStart - PLACEMENT_EPS) bent.add(node.id);
         }
       }
-      ports.forEach(port => set(port, start + ordered.findIndex(m => m[end] === port) * spacing));
-      node.bounds![dim] = Math.max(node.bounds![dim], start + (list.length - 1) * spacing + inset.high - node.bounds![tangent]);
+      ports.forEach(port => { const at = ordered.findIndex(m => m[end] === port); set(port, start + at * spacing + extra[at]!); });
+      node.bounds![dim] = Math.max(node.bounds![dim], start + (list.length - 1) * spacing + extra.at(-1)! + inset.high - node.bounds![tangent]);
       node.size![dim] = node.bounds![dim];
     }
     if (tangent === 'x') for (const item of list) for (const port of [item.a, item.b]) {
@@ -709,7 +722,7 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     const dy = Math.max(0, outside ? there.anchor!.y - here.anchor!.y : primary.bounds!.y - flank.bounds!.y);
     if (dy) moveGroup(model, group, 0, dy);
     block(primaryBundle);
-    const q = Math.max(pitch(model, primaryBundle), ...list.flatMap(m => [portPitch(model.nodes[m.a.ref.node]!, m.a.side!, m.a.ref), portPitch(model.nodes[m.b.ref.node]!, m.b.side!, m.b.ref)]));
+    const q = Math.max(pitch(model, primaryBundle), ...list.flatMap(m => [model.nodes[m.a.ref.node]!.sidePitch![m.a.side!]!, model.nodes[m.b.ref.node]!.sidePitch![m.b.side!]!]));
     primary.bounds!.height = Math.max(primary.bounds!.height, 20 + new Set(list.map(m => m.a.ref.node === primary.id ? m.a : m.b)).size * q);
     primary.size!.height = primary.bounds!.height;
     // Each block has to clear whatever stroke its own members really carry.

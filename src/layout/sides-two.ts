@@ -1,6 +1,6 @@
+import { memberPitch } from './pair-pitch.js';
 import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { declineOversizedBlocks, reserveBlockPitch, seatBlockFollowers } from './solid-blocks.js';
-import { portPitch } from './pair-pitch.js';
 import type { PortRef } from '../model/document.js';
 import { reserveFeedSplits } from './feed-split.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
@@ -978,8 +978,12 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       const links = model.links.filter(link => link.bundle === bundle.id);
       const ports = links.flatMap(link => [link.attachments!.from, link.attachments!.to])
         .map(ref => model.nodes[ref.node]!.ports.find(port => key(port.ref) === key(ref))!);
+      // The pitch of each member face, and the pair pitch of two members of the bundle on one face (`memberPitch`, dense-16x9 ticket 04): the
+      // far end keeps the step of the near end, so the tracks stay parallel. A pair pitch of a member with a port outside the bundle adds nothing.
+      const faces = new Map<string, LayoutPort[]>();
+      for (const port of ports) { const at = `${port.ref.node}\u0000${port.side}`; faces.set(at, [...faces.get(at) ?? [], port]); }
       const pitch = Math.max(16 + Math.max(DEFAULT_STROKE_WIDTHS.path, ...links.map(linkStrokeWidth)),
-        ...ports.map(port => portPitch(model.nodes[port.ref.node]!, port.side!, port.ref)));
+        ...[...faces.values()].map(face => memberPitch(model.nodes[face[0]!.ref.node]!, face[0]!.side!, face.map(port => port.ref))));
       for (const port of ports) {
         const node = model.nodes[port.ref.node]!;
         if (node.sidePitch![port.side!]! < pitch) { node.sidePitch![port.side!] = pitch; pitchChanged = true; }

@@ -7,6 +7,8 @@ import { endPitch, faceExcess, faceOffsets, neighbourPitch, pairExcess, pairPitc
 import { portSideCapacity } from '../../src/layout/port-insets.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { readDraft } from '../../src/layout/overlay-order.js';
+import { prepareBundleGeometry } from '../../src/layout/bundle-geometry.js';
+import { addPairPitch } from '../../src/layout/pair-pitch.js';
 import { sizeNodes } from '../../src/layout/size.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { resolve } from '../../src/resolve/index.js';
@@ -207,4 +209,50 @@ describe('the readers of slice 1 read the pair pitch (review 1)', () => {
     expect(() => restoreLayoutModel(forge(keys, 100_000, 12))).toThrow(/Port capacity exceeds/);
     expect(() => restoreLayoutModel(forge(keys, 12, 60))).toThrow(/does not hold/);
   });
+});
+
+/**
+ * Review 2 of slice 1: bundle planning reads the pairs of the bundle that stand side by side on the face as it stands now. A pair pitch of a
+ * member with a port outside the bundle, or with a port that has left the face, does not widen the bundle or raise the face pitch.
+ */
+describe('a bundle reads only its own neighbour pairs (review 2)', () => {
+  const bundleText = readFileSync(new URL('../../goldens/synthetic/a-bundle-of-three-ports-agrees-at-both-ends.yaml', import.meta.url), 'utf8');
+  const gaps = (ports: LayoutPort[]): number[] => ports.slice(1).map((port, index) => port.anchor!.x - ports[index]!.anchor!.x);
+  /** The bundle model with the three bottom ports of `edge`, and a fourth port of `edge` on `extra` when it is given. */
+  async function planned(entries: (node: LayoutNode, members: LayoutPort[], fourth?: LayoutPort) => void, extra?: 'top' | 'bottom') {
+    const model = structuredClone(await lay(bundleText)), node = model.nodes['edge']!;
+    const members = bottom(node), base = node.sidePitch!.bottom!;
+    let fourth: LayoutPort | undefined;
+    if (extra) {
+      fourth = { ...structuredClone(members[0]!), ref: { node: 'edge', anonymous: true, ordinal: 999 } as LayoutPort['ref'], side: extra, engineOrder: 3 };
+      node.ports.push(fourth);
+    }
+    entries(node, members, fourth);
+    prepareBundleGeometry(model);
+    return { node, base, members: bottom(node) };
+  }
+  const fan = (a: LayoutPort, b: LayoutPort, min: number) => ({ rule: 'fan' as const, ports: [portId(a.ref), portId(b.ref)].sort(), min });
+
+  it('keeps a wide pair and a narrow pair of its members apart, without raising the face pitch', async () => {
+    // A 60 px round over two members, then a 30 px round over all three: the ledger keeps the one pair at 60 and the others at 30.
+    const { node, base, members } = await planned((item, ports) => {
+      item.pairPitch = { bottom: [fan(ports[0]!, ports[1]!, 60)] };
+      for (const [a, b] of [[0, 1], [0, 2], [1, 2]] as const) addPairPitch(item, 'bottom', fan(ports[a]!, ports[b]!, 30));
+    });
+    expect(gaps(members)).toEqual([60, 30]);
+    expect(node.sidePitch!.bottom).toBe(base);
+  }, 180_000);
+
+  it('reads no pair pitch of a member with a port that has left the face', async () => {
+    const { node, base, members } = await planned((item, ports, fourth) => { item.pairPitch = { bottom: [fan(ports[1]!, fourth!, 60)] }; }, 'top');
+    expect(gaps(members)).toEqual([base, base]);
+    expect(node.sidePitch!.bottom).toBe(base);
+  }, 180_000);
+
+  it('reads no pair pitch of a member with a port outside the bundle', async () => {
+    const { node, base, members } = await planned((item, ports, fourth) => { item.pairPitch = { bottom: [fan(ports[1]!, fourth!, 60)] }; }, 'bottom');
+    const own = members.filter(port => port.ref.ordinal !== 999);
+    expect(gaps(own)).toEqual([base, base]);
+    expect(node.sidePitch!.bottom).toBe(base);
+  }, 180_000);
 });

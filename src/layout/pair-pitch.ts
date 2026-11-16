@@ -28,12 +28,23 @@ export function neighbourPitch(node: LayoutNode, side: Side, a: PortRef, b: Port
 }
 
 /**
- * The largest pitch a port keeps from a neighbour on `side`: the face pitch, or an entry that names the port (a fan pair it is one of, its own
- * block pitch). A bundle reads it for each member port, so its member pitch holds every pair its ports stand in, at both ends.
+ * The pitch of each step of a run of ports of one face, in the order given (a bundle's member ports at one end): the neighbour pitch of two
+ * consecutive ports, or `pitch` where a port repeats (members that share a port). Only the pairs of the run are read, so a pair pitch of a member
+ * with a port outside the run, or with a port that has left the face, reserves nothing here (dense-16x9 ticket 04, review 2).
  */
-export function portPitch(node: LayoutNode, side: Side, ref: PortRef, pitch = node.sidePitch![side]!): number {
-  const key = portId(ref);
-  return facePairPitches(node, side).reduce((most, entry) => entry.ports.includes(key) ? Math.max(most, entry.min) : most, pitch);
+export function runPitches(node: LayoutNode, side: Side, refs: readonly PortRef[], pitch = node.sidePitch![side]!): number[] {
+  return refs.slice(1).map((ref, index) => portId(ref) === portId(refs[index]!) ? pitch : neighbourPitch(node, side, refs[index]!, ref, pitch));
+}
+
+/**
+ * The largest pitch two of the ports `refs` of one face keep when they stand side by side, in any order: the face pitch, or a pair pitch of two
+ * of them. Stage 5 reads it for the member ports of a bundle at each end, whose order is not fixed yet (dense-16x9 ticket 04, review 2). Only
+ * the pairs of the bundle are read: a pair pitch of a member with a port outside the bundle, or with a port that has left the face, adds nothing.
+ */
+export function memberPitch(node: LayoutNode, side: Side, refs: readonly PortRef[], pitch = node.sidePitch![side]!): number {
+  const keys = new Set(refs.map(portId));
+  return facePairPitches(node, side).reduce((most, entry) => (entry.rule === 'fan' ? entry.ports.every(key => keys.has(key)) : keys.has(entry.ports[0]!) && keys.size > 1)
+    ? Math.max(most, entry.min) : most, pitch);
 }
 
 /**

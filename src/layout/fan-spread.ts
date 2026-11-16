@@ -101,6 +101,12 @@ export function measureFans(model: LayoutModel): FanMeasure {
       // `a-fan-spreads-its-ports-so-its-chords-hold-clearance`, 10 of 10 straight on main, 4 of 10 with exact floors; five corpus sheets worse).
       // Every two ports of the face, not only the neighbours of this order: a later rule may stand any two of them side by side (a course
       // that takes a port to a lateral face, a bundle that reorders its block), and each such pair keeps the face's pitch, as main's did.
+      // The cost (R4, measured in review 2): n(n - 1) / 2 entries for a face of n ports, so at most 2 * C(n, 2) for the ports of a node over its
+      // top and bottom faces; a later round merges by pair and keeps the larger pitch, so the count does not grow with the rounds. Measured on
+      // one face: 28 ports, 378 entries, 147 kB of record and ledger, 20 ms to install; 56 ports, 1540 entries, 600 kB, 261 ms; 100 ports,
+      // 4950 entries, 1.9 MB, 2.1 s. The install is about quartic because `addPairPitch` copies and sorts the face per entry (a bulk merge with
+      // one sort removes that); the geometry reads only the n - 1 neighbour pairs of an order (`faceOffsets`), and `pairExcess` at most
+      // (n - 1) times the largest excess. An entry whose port has left the face reserves nothing: every reader reads the ports on the face.
       if (most === 0) continue;
       for (let k = 0; k < face.length; k++) for (let l = k + 1; l < face.length; l++) {
         const ports = [portId(face[k]!.ref), portId(face[l]!.ref)].sort() as [string, string];
