@@ -13,6 +13,8 @@ import { facingPair, type FacingPair } from './row-paths.js';
 import { staggerOf } from './stagger.js';
 import { columnOf } from './read/arrangement.js';
 import { portEndInsets } from './port-insets.js';
+import { rowLabelGap } from './row-label-room.js';
+import { rebuildNodeGeometry } from './node-geometry.js';
 
 const right = (rect: Rect): number => rect.x + rect.width;
 const overlaps = (a: Rect, b: Rect): boolean => a.x < right(b) && b.x < right(a) && a.y < b.y + b.height && b.y < a.y + a.height;
@@ -74,7 +76,7 @@ function reseatBands(draft: LayoutModel): void {
 }
 
 /** Push overlapping row neighbours rightwards in row order, then push displaced row groups; flanks never move. */
-export function repackOverlaps(draft: LayoutModel): void {
+export function repackOverlaps(draft: LayoutModel, labelDetours = true): void {
   const gap = bandGap(draft);
   // First every row group takes the width its nodes need; then the columns of the frames move apart as
   // wholes (ranked-groups ticket 12); only then does a sweep push what is left, a group with no frame.
@@ -82,10 +84,26 @@ export function repackOverlaps(draft: LayoutModel): void {
     for (const group of rowGroups(draft, band)) {
       if (staggerOf(draft, group.id) !== undefined || columnOf(draft, group.id)) continue;
       const order = group.rowOrder ?? group.nodes;
+      const places = new Map(order.map((id, index) => [id, index]));
+      const spans = labelDetours ? draft.links.flatMap(link => {
+        if (!link.attachments || !draft.document.links[link.sourceIndex]?.label) return [];
+        const a = places.get(link.attachments.from.node), b = places.get(link.attachments.to.node);
+        if (a === undefined || b === undefined || Math.abs(a - b) < 2) return [];
+        return [{ left: Math.min(a, b), right: Math.max(a, b) }];
+      }) : [];
       for (let i = 1; i < order.length; i++) {
         const prior = draft.nodes[order[i - 1]!]!.bounds!, node = draft.nodes[order[i]!]!;
-        const minimum = right(prior) + rowGap(draft, order[i - 1]!, order[i]!);
-        if (node.bounds!.x < minimum - PLACEMENT_EPS) moveNode(draft, order[i]!, minimum - node.bounds!.x, 0);
+        let minimum = right(prior) + rowGap(draft, order[i - 1]!, order[i]!, labelDetours);
+        // Earlier ends constrain this span, not every gap it crosses. The left-to-right sweep then keeps all adjacent floors.
+        for (const span of spans) if (span.right === i) {
+          const left = order[span.left]!;
+          const needed = rowLabelGap(draft, left, order[i]!, true);
+          if (needed > 0) minimum = Math.max(minimum, right(draft.nodes[left]!.bounds!) + needed);
+        }
+        if (node.bounds!.x < minimum - PLACEMENT_EPS) {
+          moveNode(draft, order[i]!, minimum - node.bounds!.x, 0);
+          rebuildNodeGeometry(draft, [order[i]!], 'current');
+        }
       }
       fitGroupBox(draft, group);
     }
@@ -185,8 +203,10 @@ export function rows(model: LayoutModel): LayoutModel {
   return withStageMutation(model, 'rows', draft => {
     flattenRows(draft);
     reseatBands(draft);
-    repackOverlaps(draft);
+    repackOverlaps(draft, false);
     levelFacingPorts(draft);
+    // The detour decision below reads pills as well as anchors. Levelling and band moves must be visible to it.
+    rebuildNodeGeometry(draft, Object.keys(draft.nodes), 'current');
     // Levelling moves anchors, which can turn a straight crossing into a jog and so add a turning
     // leg (ADR-0015 rule 1). The gap is asked again on the levelled anchors, so no leg's room is
     // left for stage 8 to discover. Nodes move in x only, which cannot undo the levelling.
