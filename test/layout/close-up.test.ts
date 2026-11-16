@@ -25,16 +25,26 @@ const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string =>
 };
 
 /**
- * `farEnd: false` turns the far-end round (dense-16x9 ticket 07) off. The two sheets that close a group up fail G5 on their stage-5 order, and the round repairs that order and removes the stretch
- * that the trim and the close-up are tested on; with the order authored the geometry is another one (named ports size the nodes), so no production-path input reaches this state: the switch is the
- * state under test, reported on ticket 07. `end-trim.test.ts` reads the trim of the same input on the production path through `test/fixtures/authored-order`.
+ * Both sheets that close a group up fail G5 on their stage-5 order, and on the production path the far-end round (dense-16x9 ticket 07) repairs that order and removes the stretch the trim and
+ * the close-up are tested on. The test keeps the state through the public input: the document authors the order of the ports of the one face (`NormalisedPort.order` on an anonymous port,
+ * indexed by port ordinal), so stage 5 seats it, G5 holds, no face is stale and the round has nothing to propose. The layout runs the production path with no option.
+ * `end-trim.test.ts` reads the trim of the same input through `test/fixtures/authored-order` (named ports).
  */
+const AUTHORED_ORDER: Record<string, { node: string; order: number[] }> = {
+  'a-sibling-group-closes-up-after-the-trim': { node: 'sink-far', order: [1, 0] },
+  'a-stretched-body-is-trimmed-to-its-ports': { node: 'sink-near', order: [0, 2, 1] },
+};
+const authored = (name: string) => {
+  const document = parse(source(name)), authoredFace = AUTHORED_ORDER[name];
+  if (authoredFace !== undefined) document.nodes[authoredFace.node]!.ports.forEach((port, index) => { port.order = authoredFace.order[index]!; });
+  return document;
+};
 /** Lays the sheet out with a tap on the drafts the producer had before the trim (one per placement attempt). */
-async function run(name: string, farEnd?: false): Promise<{ model: LayoutModel; drafts: LayoutModel[] }> {
+async function run(name: string): Promise<{ model: LayoutModel; drafts: LayoutModel[] }> {
   const drafts: LayoutModel[] = [], sink = targetTap.sink;
   targetTap.sink = (tap, value) => { if (tap === 'beforeEndTrim') drafts.push(JSON.parse(value) as LayoutModel); };
   try {
-    const model = await layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(farEnd === false ? { testFarEndOrder: false as const } : {}) });
+    const model = await layout(authored(name), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     return { model, drafts };
   } finally { if (sink === undefined) delete targetTap.sink; else targetTap.sink = sink; }
 }
@@ -55,7 +65,7 @@ function geometry(model: LayoutModel): string {
 
 describe('a sibling group closes up after the trim', () => {
   let model: LayoutModel, drafts: LayoutModel[];
-  beforeAll(async () => { ({ model, drafts } = await run('a-sibling-group-closes-up-after-the-trim', false)); }, 120000);
+  beforeAll(async () => { ({ model, drafts } = await run('a-sibling-group-closes-up-after-the-trim')); }, 120000);
 
   it('moves `far` left toward `near` and records the shift', () => {
     const dx = model.bodyTrims?.shifts?.['far'];
@@ -96,7 +106,7 @@ describe('a sibling group closes up after the trim', () => {
 
 describe('a corridor follows the group that closes up', () => {
   let model: LayoutModel, drafts: LayoutModel[];
-  beforeAll(async () => { ({ model, drafts } = await run('a-stretched-body-is-trimmed-to-its-ports', false)); }, 120000);
+  beforeAll(async () => { ({ model, drafts } = await run('a-stretched-body-is-trimmed-to-its-ports')); }, 120000);
 
   it('moves `far` and the lane of its link by one shift, and the lane still stands on the port', () => {
     const dx = model.bodyTrims?.shifts?.['far'];

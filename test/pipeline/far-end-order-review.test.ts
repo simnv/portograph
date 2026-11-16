@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { restoreFinalLayout } from '../../src/internal.js';
+import * as gap from '../../src/layout/gap-room.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
 import { PlacementRefusal, PostconditionRefusal } from '../../src/layout/placement-refusal.js';
 import { farEndOwner, engineSequence } from '../../src/layout/far-end-order.js';
@@ -53,11 +54,28 @@ describe('finding 1: a trial is withdrawn on a named refusal only (R4, R6)', () 
     expect(refused).toMatchObject({ at: 'bands' });
     expect(refused!.why).toMatch(/moved in x/);
   });
-  it('names the x move of the tier-gap solve as a producer refusal (PostconditionRefusal), with its old text', () => {
-    const refusal = new PostconditionRefusal('bands', [{ kind: 'tier-gap solve', subject: 'core-sw', detail: 'moved in x; a move in y may move no x' }]);
-    expect(refusal.code).toBe('postcondition');
-    expect(refusal.message).toMatch(/tier-gap solve core-sw: moved in x; a move in y may move no x/);
-  });
+  it('drives the real x move of the tier-gap solve into a typed refusal, and the round declines the trial (review 2)', async () => {
+    // The unchanged sheet: the far-end trial of `core-sw.bottom` makes the tier-gap solve move two nodes in x. On 697f438a that was a plain `Error`; it is a named producer refusal now.
+    // The spy calls the real solve and rethrows what it threw.
+    const original = gap.solveTierGaps, thrown: unknown[] = [], events: Record<string, unknown>[] = [];
+    const spy = vi.spyOn(gap, 'solveTierGaps').mockImplementation((...args) => {
+      try { return original(...args); } catch (error) { thrown.push(error); throw error; }
+    });
+    let model: LayoutModel;
+    try {
+      model = await layout(parse(golden('a-single-feed-port-follows-its-child-over-a-pushed-row')), { ...options, testSideTrace: event => { if (event.ev === 'far-end-refused') events.push(event); } });
+    } finally { spy.mockRestore(); }
+    expect(thrown).toHaveLength(1);
+    expect(thrown[0]).toBeInstanceOf(PostconditionRefusal);
+    expect(thrown[0]).toMatchObject({ code: 'postcondition', rule: 'bands' });
+    expect((thrown[0] as Error).message).toMatch(/tier-gap solve .*moved in x; a move in y may move no x/);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.why).toMatch(/tier-gap solve/);
+    expect(model.diagnostics.some(item => item.code === 'FAR_END_ORDER_DECLINED')).toBe(true);
+    // The baseline publishes, with its own G5 failure, and restores.
+    expect(model.farEndOrder ?? []).toEqual([]);
+    expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
+  }, 180000);
 });
 
 describe('findings 2 and 3: restore backs the far-end record by a ledger and one owner', () => {
