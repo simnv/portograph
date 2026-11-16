@@ -775,7 +775,8 @@ function ownCentring(model: LayoutModel, context: CentreContext, tier: number, l
  * weighted median of what its members want, so the packing no longer stacks such a row to one side of its feeds (the first group at its mean,
  * the others to its right). The median, not the mean: a drop is straight or bent, and its slant does not count, so the unit keeps one member at
  * its own feeds (the heaviest side holds), and a run of equal members stands centred, its middle member at the common mean. When the weight
- * splits evenly, the lower end of the median interval is the tie rule (one member stands on its feeds). The weight of a group is the number of
+ * splits evenly, every value of the median interval is a median; the tie rule takes the end at which the member that comes first in the row
+ * stands on its own feeds. The weight of a group is the number of
  * its wanted child ports whose feed may own a vertical (a fan remainder may not): each such drop is straight only at the group's own x; the
  * width of a box is no part of a drop, and a group with no such port pulls the unit nowhere.
  * A run holds only groups fed by the same parent nodes (the parents of all the group's own feeds): those are the groups that pile up on one
@@ -792,15 +793,20 @@ function rowSeats(model: LayoutModel, context: CentreContext, tier: number, list
   type Item = { id: string; want: number; width: number; weight: number; parents: string };
   let run: Item[] = [], window = '', feeding = '';
   /**
-   * The lower weighted median of `values`: the first value, in ascending order and then group order, at which half the weight is reached. When
-   * the weight splits evenly, the lower end of the median interval is the tie rule: one member of the unit stands on its own feeds.
+   * The weighted median of `values`: the first value, in ascending order and then group order, at which half the weight is reached. When the
+   * weight splits evenly there, that value and the next bound the median interval, and the tie rule takes the end that belongs to the member that
+   * comes first in the row (`at`): that member stands on its own feeds. The lower end alone measured worse: on `own-lane-is-an-obstacle` it put
+   * the second group on its feeds, and the first group's two drops bent and crossed (2 to 4 bends, 0 to 1 crossing).
    */
   const median = (values: readonly { value: number; weight: number; at: number }[]): number => {
     const sorted = [...values].sort((p, q) => p.value - q.value || p.at - q.at), half = sorted.reduce((sum, item) => sum + item.weight, 0) / 2;
     let below = 0;
-    for (const item of sorted) {
+    for (const [index, item] of sorted.entries()) {
       below += item.weight;
-      if (below >= half - PLACEMENT_EPS) return item.value;
+      if (below < half - PLACEMENT_EPS) continue;
+      // An even split: every value between this one and the next is a median. The member that comes first in the row keeps its own feeds.
+      const next = sorted[index + 1];
+      return below <= half + PLACEMENT_EPS && next !== undefined && next.at < item.at ? next.value : item.value;
     }
     return sorted[sorted.length - 1]!.value;
   };

@@ -2,8 +2,8 @@
 # `leaves` (12 one-link members, five on `hub-1` and seven on `hub-2` of `core`) stands on the top tier; eight sites on tier 2 set the stage-5 width. The odd
 # sites link to both hubs, the even sites to one hub (`hub-1`, `hub-2` in turn): two neighbours never have the same parents, so the sites are no row unit
 # (ticket 27) and 7c stands each under its own feeds. The published width is the union of the leaf row and the sites, and the narrower
-# leaf row pulls the hubs and the sites left. The gate judges the complete placement: two lines stand nearer the 16:9 aim (1310 x 609 px,
-# aspect 2.15, to 1166 x 611 px, aspect 1.91), with no bend and no crossing more (bends 22 to 18, crossings 6); G1-G9 pass. `stagger-gate.test.ts`.
+# leaf row pulls the hubs and the sites left. The gate judges the complete placement: two lines stand nearer the 16:9 aim (1444 x 609 px,
+# aspect 2.37, to 1205 x 617 px, aspect 1.95), with no bend and no crossing more (bends 22 to 18, crossings 6); G1-G9 pass. `stagger-gate.test.ts`.
 # Until ticket 27 every site linked to both hubs; that arrangement is now
 # `a-site-row-centred-under-its-hubs-keeps-the-top-row-on-one-line.yaml`.
 portograph: 2

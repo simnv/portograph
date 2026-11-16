@@ -1134,11 +1134,12 @@ and packed it after the one before, so it had no rule for that tie: the first gr
 (the row's centre far to one side of its feeds). The tie rule: such a run stands as one unit. Each group alone wants its box at the x its own
 chosen feeds give (`x + centringOffset`, which does not depend on where the group stands). The steps of a tier read the seats once, where the
 tier stands when they begin (as the tail reservation is read): pool adjacent violators under the order of the row and the band gap between
-neighbours, over runs of adjacent groups fed by the same parent nodes (the parents of all the group's own feeds). A unit stands on the lower
+neighbours, over runs of adjacent groups fed by the same parent nodes (the parents of all the group's own feeds). A unit stands on the
 weighted median of what its members want. The weight of a member is the number of its wanted child ports whose feed may own a vertical (the
 first child by x of its parent port, not yielded); a fan remainder pulls nothing. The median, not the mean: a drop is straight or bent and its
 slant does not count, so one member stands on its own feeds and keeps the growth that aligns it, and a run of equal members stands centred
-with its middle member at the common mean; an even split takes the lower end of the median interval, so again one member stands on its feeds.
+with its middle member at the common mean. An even split leaves an interval of medians; the tie rule takes the end at which the member that
+comes first in the row stands on its own feeds.
 A run is also broken by a group the step does not centre (a bar, a group with no feed of its own), by a rank cell (its frame column holds it),
 and between groups that a lane of 7a parts. The main move of a member the unit moves off its own x goes toward its seat; every other group moves
 toward its own mean, as before. The main move's overlay walls, the clamp into the step window and every guard of the step hold as they do for a
@@ -1149,7 +1150,9 @@ leaves its wanted ports unresolved by design, so the publication check excuses t
 where they stand (R5). The 7f replays and the publication check run the same steps and read the seats the same way (R1).
 Refused, measured on the 534 corpus sheets: pooling every packed run by least squares (58 sheets changed, bent links worse on 21, better on 14,
 one gate worse) or by the weighted median (55 changed, worse on 17, better on 5). Both moved groups with different feeds off feeds they stood
-straight on (a group of three straight drops for one diagonal chord on `a-node-spans-both-peers-to-keep-its-links-straight`).
+straight on (a group of three straight drops for one diagonal chord on `a-node-spans-both-peers-to-keep-its-links-straight`). Refused as the
+tie rule: the lower end of the median interval (measured against main 8a4bac51: 14 sheets changed, `own-lane-is-an-obstacle` worse, 2 to 4
+bends and 0 to 1 crossing, because the lower end put the second group on its feeds; with the first-member rule 13 changed and none worse).
 
 **A step keeps the verticals it reached** (architecture-2 ticket 65). From 7e on, a step counts its verticals before it moves and after
 the clamp: first the feeds that owe one (an orthogonal link, a frame chord, a direct member) and stand on it, then every feed that stands
