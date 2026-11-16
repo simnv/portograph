@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
-import { validateEarlyReservations } from '../../src/layout/reservations.js';
+import { refuseChordEntries, validateEarlyReservations } from '../../src/layout/reservations.js';
 import { resolve } from '../../src/resolve/index.js';
 import { fixedPointRefusal, seatsRowsAgainst } from '../../src/layout/frame-paths.js';
 import { plannedSegments, tierGapPlan } from '../../src/layout/gap-plan.js';
@@ -83,22 +83,24 @@ describe('restore reads the refused chords against the freeze (review 1, finding
     const model = await run('a-solid-block-between-two-ranks-of-one-group');
     const held = model.frozenChords![0]!;
     expect(model.links.find(link => link.id === held)?.path?.segments.length).toBe(1);
-    // The record says 7f refused the chord; the freeze and the geometry say it held.
-    expect(() => restoreLayoutModel(JSON.stringify({ ...model, refusedChords: [held] }))).toThrow(/refused chords/);
-    // The record before the freeze (the 7e replay input) stays valid: the publication step restores it (two-pole-ranks.test.ts).
+    // The entry says 7f refused the chord; the freeze and the geometry say it held.
+    expect(() => restoreLayoutModel(JSON.stringify({ ...model, reservations: [...(model.reservations ?? []), ...refuseChordEntries([held], 0)] }))).toThrow(/refused, but the freeze held it/);
+    // The entry before the freeze (the 7e replay input) stays valid: the publication step restores it (two-pole-ranks.test.ts).
   });
 });
 
 describe('the early restore refuses a refused-chord record (review 2)', () => {
   const source = 'portograph: 2\ngroups: {a: {tier: 0}, b: {tier: 1}}\nnodes: {p: {group: a}, q: {group: b}}\nlinks: [[p,q]]\n';
-  // The publication step writes the record on the kept 7e model only, so a model before `sides-two` has none: a malformed record names the fault
-  // of the one check (`refusedChordsFault`), a well-formed one is refused for its stage.
+  // The publication step writes the entries on the kept 7e model only, so a model before `sides-two` has none: the early reader of the table
+  // (`RESERVATION_CHECKS`) refuses a malformed entry by its shape and a well-formed one by the kind's one predicate (`refusedChordFailure`).
+  const entry = (link: unknown): unknown => ({ ...refuseChordEntries(['x'], 0)[0]!, payload: { link } });
   it.each([
-    ['no list', 'not-a-list', /the record is no list/],
-    ['an unknown id', ['no-such-link'], /no-such-link is no link/],
-    ['a link id', ['link-1'], /a resolve model has no record/],
+    ['a malformed entry', entry(5), /payload of the wrong shape/],
+    ['an unknown id', entry('no-such-link'), /a resolve model carries no refused chord \(no-such-link\)/],
+    ['a link id', entry('link-1'), /a resolve model carries no refused chord \(link-1\)/],
   ])('refuses %s', (_name, record, fault) => {
-    const model = { ...resolve(parse(source)), refusedChords: record } as unknown as LayoutModel;
+    const resolved = resolve(parse(source));
+    const model = { ...resolved, reservations: [...(resolved.reservations ?? []), record] } as unknown as LayoutModel;
     expect(() => validateEarlyReservations(model)).toThrow(fault);
     expect(() => restoreLayoutModel(JSON.stringify(model))).toThrow(fault);
   });

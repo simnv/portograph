@@ -281,17 +281,18 @@ so it owns no lane.
 - the chord adds no term to `H`.
 
 A 7f move in x (the canton close-up, column moves), or a gap that grows in y and so turns the
-chord, can bring a leg nearer the chord after the decision. The plan names each planned vertical within `k` of a held chord that does not cross it
-strictly (`TIER_GAP_CHORD_CROWDED`, info), and G6 judges, as for two verticals within `k`
-(`crowded`).
+chord, can bring a leg nearer the chord after the decision. The plan names each planned link with a reserved segment (a planned part, a stem, a
+lane) that makes a G6 finding with a held chord of its gap (`TIER_GAP_CHORD_CROWDED`, info; since dense-16x9 ticket 14 slice 2, `reservedRouted`
+through `parallelClearance`, any held chord with an extent in the gap), and G6 judges, as for two verticals within `k` (`crowded`).
 
 *Publication step (dense-16x9 ticket 14, slice 3, built in ticket 04 slice 2; coordinator ruling: a chord is refused before a gate finding is
 published).* After the last round has settled, `refuseCrowdedChords` (pipeline/driver.ts) reads the state to publish once. A held chord that is
 no direct or fan member, that a `TIER_GAP_CHORD_CROWDED` note names, and that stands under the G6 clearance of the planned part
-(`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. The kept 7e model records them
-(`refusedChords`, sorted ids of links; once the freeze is taken no entry is a frozen chord. One check, `refusedChordsFault`, holds at restore and in
-the round's checks of 7f and of the routed model, so a record the freeze contradicts is refused; a model before `sides-two` has no record, and the early
-restore refuses a present one), and placement replays once from it: 7f refuses each before the freeze as
+(`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. Each is a reservation on the
+ledger of the kept 7e model (`refusedChord`, one entry per link, producer `publish`). Its one predicate (`refusedChordFailure`, entered in
+`RESERVATION_CHECKS` for the round check, the restore of a frozen model and the early restore) holds that the model stands at `sides-two` or later,
+that the entry names a link, and that once the freeze is taken the link is no frozen chord. So an entry the freeze contradicts is refused, and so is
+any entry on a model before `sides-two`. Placement replays once from that ledger: 7f refuses each before the freeze as
 `crowds` (R1, nothing decides it again). The replay is kept only when its routed result has no error-gate finding that the state before it
 lacks; else that state stays and `HELD_CHORD_CROWDED` (warning) names the chords. One pass at most. The rounds read their own unrefused
 baselines, so a crowded baseline that a round repairs stays available to that round (traced on
@@ -302,7 +303,7 @@ the 7f judges on the shared reader `reservedSegments` (ticket 14 slice 1), the j
 
 *As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y (since dense-16x9 ticket 14, at its own end
 where it ends inside the gap, marked `partial`; `heldChordsIn` is the one reader, and `across` marks a chord over the whole gap, the only kind the
-notes, the fan rows and the hard wall of `middleDrops` read); `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
+fan rows and the hard wall of `middleDrops` read; the notes read every held chord since slice 2, `TIER_GAP_CHORD_EXPOSED` over its extent in the gap); `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
 once each. "Within `k`" is the centre-to-centre distance, 11.5 px (`k` holds the stroke). An unfit gap (`growth > 0` after the rounds) leaves all its parts to the
 router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
 
@@ -310,7 +311,7 @@ router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
 **reserved segment** a final path holds, with its link, its stroke and its producer, on the links the scorer counts (`routed`: a stored overlay
 path is no G6 or crossing reading, so it is never a baseline the dodge may trade a real finding or crossing against). It crops nothing: a planned
 piece ends on its port's tip, and a tip can stand beyond its gap, inside the band (review 6: a lower tip at y 400 under a gap that ends at
-y 300). It reads each link through `reservedRunsOf` (`route/plan.ts`): a stored path (a held chord, a pinned or bundle path), the shared
+y 300). It reads each link through `reservedChain` (`route/plan.ts`, in the order the final path visits it, the tier-gap runs woven in as `stitchOrder` weaves them for `planRoute`): a stored path (a held chord, a pinned or bundle path), the shared
 junction runs at both ends (a stem kept after a branch release included), the lane runs, the row-gap leg (`legReservation`), and the stems and
 lane mouths the link's pieces pass head-on. Those come from `pieceAsks`, the one selection `planRoute` asks the router by (the terminals, the
 empty pieces, which checkpoints, the `reservedPasses` filter; R1). Given plans, it adds their planned parts where a plan fits. It replaces the
@@ -327,14 +328,37 @@ Completeness is a test, not a list: `test/layout/reserved-segments.test.ts` lays
 leg, U and Z parts, held chords, and ten others) and requires, over the whole sheet, on the links the scorer counts, that every segment stage 8
 keeps of placement (`planRoute`'s reserved and allocated pieces, the stems and lane approaches its routed gaps and straight claims pass, the
 stored paths) lies on its final path and on `reservedSegments` entries of its link, and that every entry lies on the final path of its link.
-With any one producer left out of `reservedRunsOf` the test fails. Stage order: every stitched plan is read from the model `planRoute` reads
+With any one producer left out of `reservedChain` the test fails. Stage order: every stitched plan is read from the model `planRoute` reads
 (stage 8 `route`, and the 7e route trial), so no model-held kind is missing when the dodge decides a seat that is stitched. The earlier reads
 of the plans (7e rounds, 7f gap room, close-up, decide, the growth guard) see the model as it is then; the dodge keeps their height, growth
 and rows. The one corpus sheet with a row-gap leg holds none within `k` of a tier gap; a plan-level test reads its real `legReservation`.
 
-Slice 2 (`.scratch/dense-16x9/design/14-reserved-remainder.md`) has still to make the 7f judges read the same source: `crowded`,
-`crowdedChords` and `chordGapNotes`, `chordSettled` and `rankSettled`, the linkless and lane-reseat checks, and the wrap gate verdict each
-measure a planned part against their own subset of reserved geometry today; each one must read `reservedSegments` and drop its own list.
+*As built (dense-16x9 ticket 14, slice 2, first part).* Two readers read the same source, as the G6 predicate reads a routed segment
+(`reservedRouted`: the link, the index and the stroke). A link with a stored path is read on its path. A remainder is read on a provisional
+path: its reserved runs in the order its final path visits them (`reservedChain`), with two indices left between two runs that do not touch,
+where the router lays a piece. The tier-gap runs come from the plans of the model as it stands (`allocateGapRuns`): a gap that still asks for
+room before the one solve of 7f gives none, as stage 8 would stitch none there. The two readers:
+- `crowdedChords` (`crowdedDirectMembers`, `crowdedFanMembers`). It drops its own subset: the planned parts of one gap, a second copy of the
+  stem selection, and the other chords.
+- `chordGapNotes`.
+
+The first is a change of behaviour, not a pure move of code. The crowding retry now refuses a held member that stands within the G6
+clearance of a reserved segment the old reader did not read: a lane run or its mouth, a row-gap leg, a shared run, a stored path that is no
+chord, a planned part or a stem of another gap, or a stem the old match by x missed. `placementAttempt` puts the member in `refused`,
+restores its draft and runs 7f again, and `planDirectFamilies` records it `orthogonal`, reason `crowds` (a fan member likewise). The
+change is accepted (2026-11-16): a held chord that crowds a reserved segment is refused, as G6 would fail it. No corpus sheet changes, and a
+search of the corpus under three option variants (`corridorRowOrder: false`, `feedOrder: false`, `moveBeforeGrow: true`) changes
+no layout either (1596 runs, 140 with a direct family or a fan admission; equal hashes without the diagnostics), so no input drawn by
+the producers is known where it fires. The test is a plan-level state: a lane run given to a remainder beside a direct member's chord
+(`test/layout/judges-read-reserved.test.ts`). The notes change only their text and their selection (a chord that ends in
+the gap, and every reserved segment of the planned link).
+
+The rest of slice 2 waits for slice 3. That rest is `crowded` (`decide.ts`), the G6 set of `chordSettled`, `rankSettled`, the linkless step
+and the lane reseat, and the G6 check of `wrapGateVerdict`. Read on the reserved geometry before the tier-gap solve, `crowded` refuses moves
+whose chord crowded a reserved segment on main. Without the refusal of that chord on the published state it leaves the chord in place, and the
+result is worse. Two cases: the card-nodes sheet (42 to 50 bends), and two `feedOrder: false` variants (crossings 7 to 16, the same G6 pair
+kept).
+
 
 **Mesh bus and riser (tickets 82 to 84, 92; 94, 96, 97).** A bus bar, a stub, a riser and a
 riser lane are overlay geometry: `straightCorridorClear` and the router leave out overlay lanes,
@@ -370,8 +394,8 @@ to reach this; ticket 103 measures it.
 |---|---|---|
 | `ROUTED_CHORD_REFUSED` | info | At the freeze, once per cross-frame candidate that is not held, with the first failed check (`crowds`: refused by the publication step): `transit`, `faces` (a port does not leave outward), `edge` (leaves through a side edge), `frame` (a foreign frame or canton box), `title`, `body`, `pill`, `lane`, `corridor` (another gate clearance), `chord` (a held chord), `leg` (an orthogonal leg). |
 | `ROUTED_CHORD_TITLE` | warning | 7f (label bands): a title could not stand clear of a held chord's crossing. |
-| `TIER_GAP_CHORD_CROWDED` | info | 7f: a planned vertical within `k` of a held chord, not crossing it. |
-| `TIER_GAP_CHORD_EXPOSED` | info | 7f: a residual or unfit part whose span overlaps a held chord. |
+| `TIER_GAP_CHORD_CROWDED` | info | 7f: a reserved segment of a planned link that makes a G6 finding with a held chord of its gap. |
+| `TIER_GAP_CHORD_EXPOSED` | info | 7f: a residual or unfit part whose span overlaps the extent of a held chord in its gap. |
 | `HELD_CHORD_CROWDED` | warning | Publication step: the held chords named crowded stay straight, because the replay without them adds an error-gate finding. |
 
 `STRAIGHT_LINK_HELD` and `STRAIGHT_LINK_BLOCKED` keep their meaning and cover both chord kinds.
@@ -589,8 +613,10 @@ two lateral faces there is no angle floor (a slight tilt is fine). Overlay chord
   Ties: the shorter chords, then the port keys. A family decided first read the later families' members as
   legs; once all stand, a member refused for a leg or a chord takes its chord where it now holds and every
   held chord still holds beside it, in family and peer order until nothing changes.
-- **Crowding.** The centring of 7f can still move x after the freeze and bring a direct member within the chord
-  clearance of a planned leg or another held chord (`crowdedDirectMembers`). The attempt then runs again from
+- **Crowding.** The centring of 7f can still move x after the freeze and bring a direct member within the G6
+  clearance of a segment reserved for a final path: a planned part, a stem, a lane, a leg, a shared run or another
+  held chord, at each link's own stroke and through the gate's predicate (`crowdedDirectMembers`, `reservedRouted`;
+  dense-16x9 ticket 14 slice 2). The attempt then runs again from
   its start with those members refused (`crowds`), at most `DIRECT_RETRIES` (2) times; a member still crowded
   after that is a `DIRECT_FAMILY_CROWDED` warning, and G6 judges it.
 - **Record.** `model.directFamilies`, triggered families only: absent before 7f means not planned, absent after
@@ -649,8 +675,8 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   so the plan keeps the promise of the stem rule for one chord); where no candidate within that clears, it keeps its
   seat and `TIER_GAP_SLANT_LIMIT` names it. The rows read the chords where they stand when the plan runs; the growth
   the plan asks for then moves the band below and the chords' lower ends, which the rows do not read again (slice 2).
-  The crowding retry of 7f refuses a member that a moved part comes within the clearance of (`crowds`,
-  `crowdedFanMembers`), that passes a sibling's stem (`stem`), or that a group title placed in 7f still meets
+  The crowding retry of 7f refuses a member that a G6 reading of every reserved segment names (`crowds`,
+  `crowdedFanMembers`, `reservedRouted`), that passes a sibling's stem (`stem`), or that a group title placed in 7f still meets
   (`title`, `titleCrowdedFanMembers`: the title planner found no room beside it). After `DIRECT_RETRIES` the rest
   stay straight and `FAN_MEMBER_CROWDED` names each with its reason. `refuseChords` re-reads the held chords near
   the new legs, all of one round before any falls back (R3), and each chord that falls back there names its own

@@ -12,6 +12,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceOffsets, neighbourPitch } from './pair-pitch.js';
 import { aspectAim, aspectGap } from './aspect.js';
+import { plannedBends } from './side-measure.js';
 import { ASPECT_EPS, CHORD_CORRIDOR_SLACK, PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -820,8 +821,8 @@ function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): 
  * - A rank cell (a fan wrap): the block trigger. Its one line must be wider than the widest other group of its tier block (the unit
  *   `columnTiers` reads: a top-level frame with its child frames), read on `model`, the one-line stage-5 model, so no seated hub is read.
  * - A plain row (no other block content): the aspect trigger (user decision 2026-11-02; ADR-0025). The sheet is wider than the aspect aim,
- *   read on `base`, the stage-5 canvas that `stackBands` sets with the rows accepted so far. No "one widest band" test: the area
- *   objective of `objectiveReason` answers it (a row outside the widest band cannot drop the canvas area).
+ *   read on `base`, the stage-5 canvas that `stackBands` sets with the rows accepted so far. No "one widest band" test and no stage-5
+ *   area test: the acceptance gate (`wrapGateVerdict`) judges each row on the complete placement (dense-16x9 ticket 22).
  */
 function triggerReason(model: LayoutModel, base: LayoutModel, id: string): string | undefined {
   const group = model.groups[id]!;
@@ -837,26 +838,13 @@ function triggerReason(model: LayoutModel, base: LayoutModel, id: string): strin
 }
 
 /**
- * The objective of a stage-5 stagger (D-Q4), read on the seated draft against `base`: the stage-5 canvas area strictly less; and for a plain
- * row (the aspect trigger) the sheet also nearer the aspect aim (`aspectGap` strictly smaller). Returns the reason it refuses, or undefined.
- */
-function objectiveReason(base: LayoutModel, draft: LayoutModel, id: string): string | undefined {
-  const before = aspectOf(base), after = aspectOf(draft);
-  if (before === undefined || after === undefined || !(after.width * after.height < before.width * before.height - PLACEMENT_EPS)) {
-    return `two lines give ${size(after)}, not less area than ${size(before)}`;
-  }
-  if (draft.groups[id]!.frame !== undefined) return undefined;
-  const aim = aspectAim(base.document);
-  return aspectGap(after.width, after.height, aim) < aspectGap(before.width, before.height, aim) - ASPECT_EPS ? undefined
-    : `aspect: two lines give ${size(after)}, not nearer the aim ${aim.toFixed(3)} than ${size(before)}`;
-}
-
-/**
  * Stage 5 of the first placement run, before the seat (ticket 51): pick each group's arrangement when no budget gave the rows. A candidate
  * row (`rowReason`: a row of three or more members, each with only plain routed links out through one horizontal face, one member at least
  * for the far line, every hub feeding three or more of them) is tried widest first on a draft. It staggers only when its trigger holds (`triggerReason`: the block trigger for a rank
- * cell, the aspect trigger for a plain row), the seated draft passes `prove` (the stage-5 refusals and the topology-freeze validation), and the
- * objective holds (`objectiveReason`: less stage-5 canvas area, and nearer the aspect aim for a plain row). A draft that a stage-5 stagger refusal
+ * cell, the aspect trigger for a plain row) and the seated draft passes `prove` (the stage-5 refusals and the topology-freeze validation). The
+ * stage-5 canvas does not judge the gain (dense-16x9 ticket 22): later stages move the tier that sets its width (7c stands a tier under its
+ * feeds), and a second line can stand in a gap the band already has, so the acceptance gate judges each row on the complete placement
+ * (`wrapGateVerdict`, in `initial.ts`). A draft that a stage-5 stagger refusal
  * refuses is dropped, the row stays, and the record names the reason; any other error of the draft ends the run (a freeze validation that the
  * stage-5 proof did not foresee is a defect, not a reason). Each candidate is tried once (a finite traversal). A `declined` group stays a row:
  * a later stage of an earlier attempt of the first run, or the acceptance gate (`wrapGateVerdict`), could not keep its stagger. When every group
@@ -905,11 +893,6 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
       // validation included, is a defect that the stage-5 proof missed or a bug, and ends the run: it is never recorded as a reason.
       if (!staggerRefusal(error)) throw error;
       reasons.set(row.group, `stage 5 refused the two lines: ${error.message}`);
-      continue;
-    }
-    const objective = objectiveReason(base, draft, row.group);
-    if (objective !== undefined) {
-      reasons.set(row.group, objective);
       continue;
     }
     const proved = draft.staggerRows!.find(item => item.group === row.group)!;
@@ -1109,14 +1092,29 @@ function placedStraight(model: LayoutModel): Set<string> {
 export const FAN_WRAP_DECLINED = 'FAN_WRAP_DECLINED';
 
 /**
- * The acceptance gate of the stagger stage 5 chose (fan wrap, D-Q4): the complete placement with the two lines (`wrapped`, after 7f, before
- * routing) against the same run with every chosen stagger declined (`plain`). The two lines stand only when they take less area, every link
- * `plain` places straight stays straight, and no hard separation is shorter than in `plain`. Returns the reason to decline, or undefined to keep.
+ * Which trigger admitted a stagger row (`triggerReason`), read from its record (R1): a rank cell (a fan wrap, the block trigger) carries its
+ * decided feeding chain, a plain row (the aspect trigger) none (`StaggerRow.chain`, checked by `validateStaggerRows`).
  */
-export function wrapGateVerdict(wrapped: LayoutModel, plain: LayoutModel): string | undefined {
-  const w = placedExtent(wrapped), p = placedExtent(plain);
-  if (!(w.width * w.height < p.width * p.height - PLACEMENT_EPS)) {
-    return `the complete placement is ${size(w)} with two lines, not less area than ${size(p)} without`;
+export const staggerTrigger = (row: StaggerRow): 'block' | 'aspect' => Array.isArray(row.chain) ? 'block' : 'aspect';
+
+/**
+ * The acceptance gate of a stagger stage 5 chose (fan wrap, D-Q4; dense-16x9 ticket 22): the complete placement with the row's two lines
+ * (`wrapped`, after 7f, before routing) against the placement without it (`plain`, the rows kept so far), both read by `placedExtent`. The
+ * size test follows the row's trigger (`staggerTrigger`), as stage 5 does:
+ * - `block` (a rank cell, the fan wrap of D-Q4: its block is too wide for its hub): less area, strictly;
+ * - `aspect` (a plain row: the sheet is wider than the aim): nearer the aspect aim (ADR-0025, `aspectGap` smaller by more than
+ *   `ASPECT_EPS`), or, at an equal gap, less area.
+ * Then, for both, every link `plain` places straight stays straight, no hard separation is shorter than in `plain`, and the planned bends of
+ * all links (`plannedBends`, the placement's lower bound, CONTEXT.md) add up to no more than in `plain` (the gate trades no turn it can see;
+ * dense-16x9 ticket 22 review). Returns the reason to decline, or undefined to keep.
+ */
+export function wrapGateVerdict(wrapped: LayoutModel, plain: LayoutModel, trigger: 'block' | 'aspect'): string | undefined {
+  const w = placedExtent(wrapped), p = placedExtent(plain), aim = aspectAim(plain.document), less = w.width * w.height < p.width * p.height - PLACEMENT_EPS;
+  if (trigger === 'block' && !less) return `the complete placement is ${size(w)} with two lines, not less area than ${size(p)} without`;
+  if (trigger === 'aspect') {
+    const gap = aspectGap(w.width, w.height, aim) - aspectGap(p.width, p.height, aim);
+    if (gap > ASPECT_EPS) return `the complete placement is ${size(w)} with two lines, farther from the aim ${aim.toFixed(3)} than ${size(p)} without`;
+    if (gap >= -ASPECT_EPS && !less) return `the complete placement is ${size(w)} with two lines, as near the aim ${aim.toFixed(3)} as ${size(p)} without and not less area`;
   }
   // A link the plain run stands straight only by a seat that slid its body (ADR-0027) is not lost: the move is a choice of the plain run, which
   // the two lines may decline (ruling of 2026-11-15).
@@ -1125,5 +1123,9 @@ export function wrapGateVerdict(wrapped: LayoutModel, plain: LayoutModel): strin
   if (lost.length) return `the link${lost.length > 1 ? 's' : ''} ${lost.join(', ')} ${lost.length > 1 ? 'are' : 'is'} straight without the two lines and not with them`;
   const short = worseSeparations(separationShortfalls(wrapped), separationShortfalls(plain)).sort(compareId);
   if (short.length) return `the two lines leave the separation ${short[0]} short`;
+  // Last, so a lost straight link (which also adds planned bends) is named as such.
+  const bends = (model: LayoutModel): number => model.links.reduce((sum, link) => sum + (link.removed === true ? 0 : plannedBends(model, link)), 0);
+  const [after, before] = [bends(wrapped), bends(plain)];
+  if (after > before) return `the planned bends rise from ${before} to ${after} with two lines`;
   return undefined;
 }

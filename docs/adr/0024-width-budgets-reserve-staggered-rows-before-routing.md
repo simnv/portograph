@@ -122,3 +122,27 @@ in `docs/design/pipeline.md` (stage 5, *chord row*); this amendment states the d
 - Legs: two member links of one chord row may cross each other's fallback legs, read from the stage-5 record, as fan
   members do (Q126). Without it the freeze of the first placement refused every member chord (`leg`) and the acceptance gate declined every
   chord row. Amended by ticket 04, slice 2: the stem rule replaces the membership; a chord of a chord row crosses a fallback leg strictly beyond its stem.
+
+## Fourth amendment (2026-11-16, dense-16x9 ticket 22): the gate judges each row on the complete placement, aspect aim first
+
+The stage-5 objective of the second amendment judged the gain on the stage-5 canvas. That canvas does not show it.
+- 7c stands a tier under its feeds, so the tier that sets the stage-5 width moves later.
+- A second line can stand in a gap the band already has.
+
+On the sheet behind ticket 22, a lower tier set the stage-5 width (5699 px; the published canvas was 4078 px wide).
+- A 13-member top row gave the same stage-5 area on two lines.
+- A 9-member row gave +4 % stage-5 area. Its complete placement came nearer the aim (aspect 2.09 against 2.81) with 16 fewer crossings and 2 fewer bent links.
+
+The second amendment changes as follows.
+- Stage 5 keeps the triggers and the seat's proof, but the stage-5 canvas is no reason to refuse a row.
+- The acceptance gate judges each chosen row on its own, greedy in the stage-5 order (widest first), against the complete placement with the rows kept so far.
+- The size test of that placement (after 7f, before routing) follows the row's trigger, as stage 5 does.
+  - A fan wrap (block trigger: the block is too wide for its hub) keeps the area rule of this amendment, strictly less area. It is an owner ruling (D-Q4, decision review 2026-11-07); aspect first would decline a wrap on any sheet near or under the aim.
+  - A plain row (aspect trigger: the sheet is wider than the aim) keeps its two lines when the placement stands nearer the aspect aim (ADR-0025), or takes less area at an equal gap.
+- The planned bends of all links (the placement's lower bound, CONTEXT.md) add up to no more than in the baseline: the gate trades no turn it can see (review 1 of ticket 22).
+- As before, no link the baseline makes straight is lost, and no hard separation is shorter.
+- A refusal in a trial's placement or 7f declines that row by name. Each trial runs the same publication checks as every placement.
+- The trials stand outside `MAX_RERUNS` and the placement cap. With N chosen rows the gate costs one plain placement plus at most N row trials.
+- A later unrouted round (the fan round) whose trial holds a stagger runs 7f as a trial before it commits. No round commits a placement that the next baseline refuses (review 1 of ticket 22).
+- A stagger row is kept only when the placement that follows from it can be kept (review 2 of ticket 22). When that 7f trial refuses a row of the trial by name, the row is declined in the ledger (`staggerDeclined`, read by every later run), and the baseline is placed once more without it; the fan round then measures on that placement with its full budget. Each row is declined once at most in a command: N kept rows cost at most N more placements, credited outside the placement cap before each starts. Restore checks the decline with the round's predicate. Any other refusal there drops the trial by name, and the baseline stands.
+

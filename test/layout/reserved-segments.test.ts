@@ -58,7 +58,7 @@ function stitched(view: LayoutModel): { link: string; segment: Run }[] {
 
 /**
  * The sheets the test reads: the synthetics whose plans hold junction (shared) runs, lanes and their mouths, a row-gap leg, U and Z parts and held chords,
- * and ten others. With any one producer left out of `reservedRunsOf` (a stored path, a shared run, a lane, a mouth, a leg, a stem), at least one of them fails;
+ * and ten others. With any one producer left out of `reservedChain` (a stored path, a shared run, a lane, a mouth, a leg, a stem), at least one of them fails;
  * the last test checks that they still hold every kind.
  */
 const SHEETS = [

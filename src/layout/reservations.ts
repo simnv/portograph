@@ -11,7 +11,6 @@ import type { PairPitch } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { refusedChordsFault } from './refused-chords.js';
 import { frameSubtreeCells } from '../model/model.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
@@ -46,6 +45,17 @@ export interface ReservationPayload {
   farEndOrder: { node: string; side: Side; ports: readonly PortRef[] };
   /** A trunk join (or every trunk join) that placement declines. */
   trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
+  /**
+   * A stagger stage 5 of the first run chose, declined by a later placement that it refused (dense-16x9 ticket 22, review 2): every later run
+   * keeps `group` one line, with `reason`; none decides it again.
+   */
+  staggerDeclined: { group: string; reason: string };
+  /**
+   * A held chord that the publication step refused (dense-16x9 ticket 14, slice 3, built for ticket 04 slice 2): on the state to publish the plan
+   * named it crowded (`TIER_GAP_CHORD_CROWDED`) and it stood under the G6 clearance, so placement replays once from the kept 7e model with this
+   * entry. 7f refuses `link` before the freeze as `crowds` and decides nothing again (R1); the freeze then holds no refused chord.
+   */
+  refusedChord: { link: string };
   /** A move keeps every routed port of a member row's facing edge from standing deeper in a riser keep-out than it did (mesh-bus.md, section 11.5). */
   riserKeepOut: { bus: string; maxDepth: readonly (readonly [string, number])[] };
   /** A move puts no foreign unit across a bar extension of a trunk join that is not across one now (section 12.5). `allowedPairs` are the `group|bus` pairs that are across now. */
@@ -98,7 +108,7 @@ export type Reservation = { [K in ReservationKind]: Readonly<{
   id: string;
   kind: K;
   owner: ReservationOwner;
-  producer: RoundId | 'skeleton' | 'sides-two' | 'lanes' | 'bands';
+  producer: RoundId | 'skeleton' | 'sides-two' | 'lanes' | 'bands' | 'publish';
   /** The measured baseline the reservation was made on: the number of placements the command had started. */
   revision: number;
   activeFrom: LayoutStage;
@@ -116,7 +126,7 @@ const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', pairFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
+  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', refusedChord: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton', bundleNeighbours: 'skeleton',
 };
 
@@ -377,6 +387,12 @@ export function declineTrunk(key: string | undefined, reason: string, revision: 
     ? [reservation('trunkDeclined', { kind: 'command', id: 'trunk-declines' }, 'all', 'initial', revision, { scope: { all: true }, reason })]
     : [reservation('trunkDeclined', { kind: 'mesh-bus', id: key }, key, 'initial', revision, { scope: { key }, reason })];
 }
+/** The staggers the ledger declines: group to reason, in ledger order. */
+export const declinedStaggersOf = (ledger: Reservations): Map<string, string> =>
+  new Map(ofKind(ledger, 'staggerDeclined').map(({ payload }) => [payload.group, payload.reason] as const));
+/** One declined stagger: the row `group` stands one line in every later run, for `reason`. */
+export const declineStagger = (group: string, reason: string, producer: Reservation['producer'], revision: number): Reservations =>
+  [reservation('staggerDeclined', { kind: 'group', id: group }, '', producer, revision, { group, reason })];
 export function declinedEntries(declined: DeclinedTrunks, revision: number): Reservations {
   const owner = { kind: 'command' as const, id: 'trunk-declines' };
   return [
@@ -430,6 +446,38 @@ export function floorFailure(item: Reservation, model: LayoutModel): string | un
  * of a frame entry the one named first stands left of the other on every sub-tier they share. The premise holds too: each feeding row
  * stands in the order the entry read (a row that turned would make the reserved order cross). Order only, so it holds at every stage after 4.
  */
+/**
+ * Why a declined stagger (`staggerDeclined`, dense-16x9 ticket 22 review 2) does not hold on `model`, or `undefined`: the row stands one line, with no
+ * stagger record and an arrangement that is not a stagger. The one predicate of the kind: the round check (`holds`) and restore (`validateReservations`) call it.
+ */
+export function staggerDeclineFailure(item: Reservation, model: LayoutModel): string | undefined {
+  if (item.kind !== 'staggerDeclined') return undefined;
+  const group = item.payload.group;
+  return (model.staggerRows ?? []).some(row => row.group === group) || model.groupArrangements?.[group]?.chosen === 'stagger'
+    ? `the row ${group} stands on two lines although its stagger is declined` : undefined;
+}
+
+/** The stages before `sides-two`, in the order of `stages` (mutation.ts). */
+const BEFORE_SIDES_TWO: ReadonlySet<LayoutStage> = new Set<LayoutStage>(['normalised', 'resolve', 'sides-one', 'size', 'skeleton']);
+/**
+ * Why a refused chord (`refusedChord`, dense-16x9 ticket 14 slice 3) does not hold on `model`, or `undefined`. The one predicate of the kind, for the
+ * round check (`holds`) and both restores: the model stands at `sides-two` or later (the publication step writes the entry on the kept 7e model, so
+ * an earlier model carries none, review 2 of ticket 04 slice 2), the entry names a link, and once the freeze is taken that link is no frozen chord
+ * (7f refuses it before the freeze, so a record the freeze contradicts is forged, review 1 finding 3). One entry per link: the ledger ids are unique.
+ */
+export function refusedChordFailure(item: Reservation, model: LayoutModel): string | undefined {
+  if (item.kind !== 'refusedChord') return undefined;
+  const link = item.payload.link;
+  if (BEFORE_SIDES_TWO.has(model.stage)) return `a ${model.stage} model carries no refused chord (${link})`;
+  if (!model.links.some(other => other.id === link)) return `${link} is no link`;
+  return model.frozenChords?.includes(link) === true ? `${link} is refused, but the freeze held it` : undefined;
+}
+/** The chords the ledger refuses (`refusedChord`), in ledger order. */
+export const refusedChordsOf = (ledger: Reservations): string[] => ofKind(ledger, 'refusedChord').map(({ payload }) => payload.link);
+/** One entry per refused chord, written by the publication step. */
+export const refuseChordEntries = (links: readonly string[], revision: number): Reservations =>
+  links.map(link => reservation('refusedChord', { kind: 'link', id: link }, '', 'publish', revision, { link }));
+
 export function rowOrderFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'rowOrder') return undefined;
   const payload = item.payload;
@@ -519,8 +567,8 @@ const isPort = (value: unknown): boolean => isObject(value) && isString(value['n
 const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.length > 0
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
-const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'sides-two', 'lanes', 'bands']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'staggerDeclined', 'refusedChord', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
+const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'sides-two', 'lanes', 'bands', 'publish']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
 function shapeFailure(entry: unknown): string | undefined {
@@ -557,6 +605,8 @@ function shapeFailure(entry: unknown): string | undefined {
       const exceptOk = payload['except'] === undefined || (Array.isArray(payload['except']) && payload['except'].every(isString));
       return scopeOk && exceptOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
     }
+    case 'staggerDeclined': return isString(payload['group']) && isString(payload['reason']) ? undefined : bad;
+    case 'refusedChord': return isString(payload['link']) ? undefined : bad;
     case 'farEndOrder': {
       const ports = payload['ports'];
       return isString(payload['node']) && sides.includes(payload['side'] as string) && Array.isArray(ports) && ports.length > 1 && ports.every(isPort) && new Set(ports.map(item => JSON.stringify(item))).size === ports.length ? undefined : bad;
@@ -605,16 +655,58 @@ function validateLedgerShape(ledger: Reservations): void {
  * The restore of a model before the port topology freezes (stages up to `size`, and `skeleton`): the ledger is well formed, the floors hold
  * from stage 3 on, and the order reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
  */
+/**
+ * Where each reservation kind is checked (dense-16x9 ticket 22, review 4): one entry per kind, which typecheck enforces (a mapped type over
+ * `ReservationKind`: a new kind without an entry does not compile). `predicate` is the kind's one per-entry check, when it has one. `at` names the
+ * three readers: the round check (`holds` in `reservation-checks.ts`), restore of a frozen model (`validateReservations`) and restore of a model
+ * before the freeze (`validateEarlyReservations`). For each, `true` means the reader calls `predicate` on every entry of the kind, a function means
+ * it calls it on the models the function admits, and a string says how that reader reads the kind instead, or why the kind does not apply there.
+ */
+type ReaderCheck = true | ((model: LayoutModel) => boolean) | string;
+export interface KindCheck { readonly predicate?: (item: Reservation, model: LayoutModel) => string | undefined; readonly at: { readonly round: ReaderCheck; readonly final: ReaderCheck; readonly early: ReaderCheck } }
+const TRANSIENT = 'transient: it lives for one move check and is never stored (`validateLedgerShape` refuses it)';
+const ROUND_OWN = 'its own check in `holdsOne` (`reservation-checks.ts`), which reads the 7e geometry';
+const NOT_EARLY_YET = 'not compared before the freeze (open since before ticket 22; review 4 report)';
+const AFTER_FREEZE = 'active from stage 5 (`sides-two`): a model before the freeze carries none of what it reserves';
+const sized = (model: LayoutModel): boolean => model.stage === 'size' || model.stage === 'skeleton';
+const transientKind: KindCheck = { at: { round: TRANSIENT, final: TRANSIENT, early: TRANSIENT } };
+const everywhere = (predicate: NonNullable<KindCheck['predicate']>): KindCheck => ({ predicate, at: { round: true, final: true, early: true } });
+// A floor is active from stage 3 (`size`): a stage-3 or stage-4 model keeps its pitch, pair and node floors (dense-16x9 ticket 04 review).
+const floor: KindCheck = { predicate: (item, model) => floorFailure(item, model), at: { round: true, final: true, early: sized } };
+export const RESERVATION_CHECKS: { readonly [K in ReservationKind]: KindCheck } = {
+  pitchFloor: floor,
+  pairFloor: floor,
+  nodeFloor: floor,
+  sideFace: { at: { round: ROUND_OWN, final: 'compared as a whole with the side hints of the ports (`validateReservations`)', early: NOT_EARLY_YET } },
+  laneOwner: { at: { round: ROUND_OWN, final: 'compared as a whole with the lane hints of the ports (`validateReservations`)', early: NOT_EARLY_YET } },
+  course: { at: { round: ROUND_OWN, final: 'compared as a whole with the courses of the model (`validateReservations`)', early: NOT_EARLY_YET } },
+  spanChord: { at: { round: ROUND_OWN, final: 'compared as a whole with the frozen span hints (`validateReservations`)', early: NOT_EARLY_YET } },
+  turnOrder: { at: { round: ROUND_OWN, final: 'compared as a whole with the turn order of the model (`validateReservations`)', early: AFTER_FREEZE } },
+  farEndOrder: { at: { round: ROUND_OWN, final: 'compared as a whole with the far-end orders of the model (`validateReservations`)', early: AFTER_FREEZE } },
+  trunkDeclined: { at: { round: ROUND_OWN, final: 'compared with the declined trunk joins of the model (`validateReservations`)', early: NOT_EARLY_YET } },
+  // The keep-mode run copies the stagger rows into the resolved model (`place.ts`), so every stage of a run carries them (review 4).
+  staggerDeclined: everywhere((item, model) => staggerDeclineFailure(item, model)),
+  // Written on the kept 7e model only; the predicate refuses it on a model before `sides-two` (review 2 of dense-16x9 ticket 04 slice 2).
+  refusedChord: everywhere((item, model) => refusedChordFailure(item, model)),
+  riserKeepOut: transientKind, trunkExtension: transientKind, laneSide: transientKind, sideAlignment: transientKind, spanCorridor: transientKind, groupExit: transientKind, labelRoom: transientKind,
+  rowOrder: everywhere((item, model) => rowOrderFailure(item, model)),
+  groupOrder: everywhere((item, model) => groupOrderFailure(item, model)),
+  corridorSide: everywhere((item, model) => corridorSideFailure(item, model)),
+  bundleNeighbours: everywhere((item, model) => bundleNeighboursFailure(item, model)),
+};
+/** Why `item` fails the per-entry check `reader` makes on `model` (`RESERVATION_CHECKS`), or `undefined`. */
+export function entryFailure(item: Reservation, model: LayoutModel, reader: keyof KindCheck['at']): string | undefined {
+  const check = RESERVATION_CHECKS[item.kind], at = check.at[reader];
+  if (typeof at === 'string' || (typeof at === 'function' && !at(model))) return undefined;
+  return check.predicate!(item, model);
+}
+
 export function validateEarlyReservations(model: LayoutModel): void {
-  // The chords the publication step refused are written on the kept 7e model only (stage `sides-two` on), so no model before it has the record
-  // (review 2 of dense-16x9 ticket 04 slice 2): a present one is refused, with the fault of the one check (`refusedChordsFault`) when it is malformed.
-  if (model.refusedChords !== undefined) throw new Error(`Invalid refused chords: ${refusedChordsFault(model) ?? `a ${model.stage} model has no record`}`);
   if (model.reservations === undefined) return;
   validateLedgerShape(model.reservations);
-  // A floor is active from stage 3 (`size`): a stage-3 or stage-4 model keeps its pitch, pair and node floors (dense-16x9 ticket 04 review).
-  const sized = model.stage === 'size' || model.stage === 'skeleton';
+  // Every kind the table checks per entry before the freeze (`RESERVATION_CHECKS`, `early`).
   for (const item of model.reservations) {
-    const why = (sized ? floorFailure(item, model) : undefined) ?? rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
+    const why = entryFailure(item, model, 'early');
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }
@@ -678,10 +770,9 @@ export function validateReservations(model: LayoutModel): void {
     if (!same(turn.all ? [] : turn.links, model.turnLinks ?? [])) throw new Error('The reserved turn links differ from the turn links of the model');
     if (!same(turn.except, model.turnExcept ?? []) || (model.turnExcept !== undefined && model.turnOrder !== true)) throw new Error('The reserved far-end faces differ from the far-end faces of the model');
   }
-  // A floor is a promise about the placed geometry, which later stages may only grow, and a feed order a promise no later stage may turn;
-  // the kinds below are checked on every restored stage.
+  // Every kind the table checks per entry on a frozen model (`RESERVATION_CHECKS`, `final`): the floors, the feed orders, the declined staggers.
   for (const item of ledger) {
-    const why = floorFailure(item, model) ?? rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
+    const why = entryFailure(item, model, 'final');
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }

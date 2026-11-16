@@ -18,7 +18,8 @@ import { strictCrossing } from './read/crossings.js';
 import { readCache } from '../model/read-cache.js';
 import { parallelClearance } from '../score/gates.js';
 import { routed, type Segment } from '../score/model.js';
-import { reservedRunsOf, type ReservedRunKind } from '../route/plan.js';
+import { reservedChain, type ReservedRunKind } from '../route/plan.js';
+import { allocateGapRuns } from './gap-runs.js';
 import { attemptCounters } from './attempt-counters.js';
 
 /**
@@ -1132,13 +1133,17 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
 }
 
 /**
- * Where the planned parts of the other tier gaps can stand, in y: each gap's range, grown to the ends of the parts its plan holds before the
- * dodge. The dodge never moves an end, and every planned piece runs between its two ends and the rows inside its gap, so no piece of that gap's
- * final plan leaves the range.
+ * Where the planned parts of the other tier gaps can stand, in y: each gap's range, grown to every y the pieces of its plan before the dodge
+ * hold (`plannedSegments`), and, for a jogged drop, to the jog of its other stand, which stands one clearance off the other tip. The dodge keeps
+ * every end and row; it moves a middle drop in x only, and a jogged drop to its other stand: so no piece of that gap's final plan leaves the range,
+ * except a jog an O5 bound pushes, which stands inside the gap (`jogOf`, `jogDepth`).
  */
 function otherGapReach(model: LayoutModel, gap: TierGap): { low: number; high: number }[] {
+  const keep = nudgingDistance(model);
   return tierGaps(model).filter(other => other.above !== gap.above || other.below !== gap.below).map(other => {
-    const ys = gapPlanOf(model, other, false).parts.flatMap(part => [part.upper.y, part.lower.y]);
+    const ys = gapPlanOf(model, other, false).parts.flatMap(part => [part.upper.y, part.lower.y,
+      ...plannedSegments(part, other).flatMap(segment => [segment.from.y, segment.to.y]),
+      ...(part.jog !== undefined ? [part.upper.y + keep, part.lower.y - keep] : [])]);
     return { low: Math.min(other.low, ...ys), high: Math.max(other.high, ...ys) };
   });
 }
@@ -1357,38 +1362,60 @@ export interface ReservedSegment {
   segment: PathSegment;
   /** The link's own stroke (`linkStrokeWidth`), as the scorer reads it. */
   stroke: number;
-  /** Which producer reserved it (`reservedRunsOf`), or `planned`: a planned part of the gap's own plan. */
-  kind: ReservedRunKind | 'planned';
+  /** Which producer reserved it (`reservedChain`). */
+  kind: ReservedRunKind;
 }
 
 /**
  * Every segment reserved before routing that a final routed path holds, on the links the scorer counts (`routed`: an overlay, stub or removed
- * link is no G6 or crossing reading, so it is never a baseline the dodge may trade against). The one reader of what stage 8 keeps of placement:
- * each link's `reservedRunsOf` (a stored path, the shared junction runs at both ends, the lane runs and their mouths, the row-gap leg, the port
- * stems), and the planned parts of each given plan that fits (as `allocateGapRuns` stitches them). It crops nothing: a planned piece ends on
- * its port's tip, which can stand beyond its gap, so no y-range bounds what can stand beside it. A straight piece stage 8 claims and a routed
- * gap are stage 8's own and are not here. The dodge passes no plan (it supplies the gap's own parts). A new producer of reserved geometry joins
- * `reservedRunsOf`, or the completeness test fails (test/layout/reserved-segments.test.ts).
+ * link is no G6 or crossing reading, so it is never a baseline a judge may trade against), as the G6 predicate reads a routed segment: the
+ * link, the index and the stroke. The one reader of what stage 8 keeps of placement: each link's `reservedChain` (a stored path, the shared
+ * junction runs at both ends, the lane runs and their mouths, the row-gap leg, the port stems), with the tier-gap runs `allocateGapRuns`
+ * reserves from `plans` (the plans of every gap of the model, in `tierGaps` order; absent: none). It crops nothing: a planned piece ends on its
+ * port's tip, which can stand beyond its gap, so no y-range bounds what can stand beside it. A straight piece stage 8 claims and a routed gap
+ * are stage 8's own and are not here. A new producer of reserved geometry joins `reservedChain`, or the completeness test fails
+ * (test/layout/reserved-segments.test.ts).
+ *
+ * A link with a stored path is read with its path, as the scorer reads it. A remainder (no path yet) is read on a provisional path: its
+ * reserved runs in the order its final path visits them, with two indices left between two runs that do not touch, where the router lays a
+ * piece. So the gate's own reading of a link's path (`parallelClearance`: adjacent segments, a staircase tread, a junction member's position
+ * from either end) holds where the reserved runs decide it, and a run beside an unknown piece is never taken for its neighbour.
  */
-export function reservedSegments(model: LayoutModel, plans: readonly { gap: { low: number; high: number }; plan: GapPlan }[] = [], cache: StemCache = stemCache()): ReservedSegment[] {
-  const result: ReservedSegment[] = [];
-  const add = (link: LayoutLink, kind: ReservedSegment['kind'], segment: PathSegment): void => {
-    result.push({ link: link.id, segment, stroke: linkStrokeWidth(link), kind });
-  };
-  const links = new Map<string, LayoutLink>();
+export function reservedRouted(model: LayoutModel, plans: readonly { gap: TierGap; plan: GapPlan }[] = [], cache: StemCache = stemCache()): (Segment & { kind: ReservedRunKind })[] {
+  const allocated = new Map<string, Map<number, PathSegment[]>>();
+  for (const run of plans.length ? allocateGapRuns(model, plans) : []) {
+    const byIndex = allocated.get(run.link) ?? new Map<number, PathSegment[]>();
+    byIndex.set(run.index, run.segments);
+    allocated.set(run.link, byIndex);
+  }
+  const result: (Segment & { kind: ReservedRunKind })[] = [];
   for (const link of model.links) {
     if (!routed(link)) continue;
-    links.set(link.id, link);
-    for (const run of reservedRunsOf(model, link, cache)) for (const segment of run.segments) add(link, run.kind, segment);
-  }
-  for (const { gap, plan } of plans) {
-    if (plan.growth > EPS) continue;
-    for (const part of plan.parts) {
-      const link = links.get(part.link);
-      if (link !== undefined) for (const segment of plannedSegments(part, gap)) add(link, 'planned', segment);
+    const stroke = linkStrokeWidth(link), chain = reservedChain(model, link, allocated.get(link.id), cache);
+    if (link.path !== undefined) {
+      for (const [index, segment] of link.path.segments.entries()) result.push({ segment, link, index, stroke, kind: 'path' });
+      continue;
     }
+    const path: PathSegment[] = [], entries: { segment: PathSegment; index: number; kind: ReservedRunKind }[] = [];
+    for (const run of chain) for (const segment of run.segments) {
+      const last = path.at(-1);
+      // A run that does not touch the one before it has a routed piece between them: two indices stand for it (never read as segments).
+      if (last !== undefined && !samePoint(last.to, segment.from) && !samePoint(last.to, segment.to) && !samePoint(last.from, segment.from) && !samePoint(last.from, segment.to)) {
+        const owner = { kind: 'link' as const, id: link.id };
+        path.push({ from: { ...last.to }, to: { ...segment.from }, owner }, { from: { ...segment.from }, to: { ...segment.from }, owner });
+      }
+      entries.push({ segment, index: path.length, kind: run.kind });
+      path.push(segment);
+    }
+    const provisional = { ...link, path: { segments: path } } as LayoutLink;
+    for (const entry of entries) result.push({ segment: entry.segment, link: provisional, index: entry.index, stroke, kind: entry.kind });
   }
   return result;
+}
+
+/** `reservedRouted` as the dodge reads it: the link, the segment, the stroke and the producer. */
+export function reservedSegments(model: LayoutModel, plans: readonly { gap: TierGap; plan: GapPlan }[] = [], cache: StemCache = stemCache()): ReservedSegment[] {
+  return reservedRouted(model, plans, cache).map(entry => ({ link: entry.link.id, segment: entry.segment, stroke: entry.stroke, kind: entry.kind }));
 }
 
 /** A held routed chord with an extent in one tier gap. */
@@ -1435,18 +1462,24 @@ export function heldChordsIn(model: LayoutModel, gap: TierGap): HeldChord[] {
  * may lay it across or beside the chord. Neither changes anything; the gates judge.
  */
 export function chordGapNotes(model: LayoutModel, plans: readonly { gap: TierGap; plan: GapPlan }[]): Diagnostic[] {
-  const notes: Diagnostic[] = [], keep = nudgingDistance(model);
+  const notes: Diagnostic[] = [];
+  // Every segment reserved for a final path (`reservedRouted`, dense-16x9 ticket 14 slice 2), read once: a planned link is named where any of its
+  // reserved segments (its planned parts, its stems, its lanes) and a held chord make a G6 finding (`parallelClearance`, at each link's own stroke).
+  let reserved: ReturnType<typeof reservedRouted> | undefined;
   for (const { gap, plan } of plans) {
-    // The notes read the chords that cross the whole gap, as before ticket 14; the judges' reading of a chord that ends in the gap is slice 2.
-    for (const held of heldChordsIn(model, gap).filter(item => item.across)) {
+    // Every held chord with an extent in the gap, one that ends in it (on a pill face) as well as one across it (dense-16x9 ticket 14 slice 2).
+    for (const held of heldChordsIn(model, gap)) {
       const span = { x0: Math.min(held.low, held.high), x1: Math.max(held.low, held.high) };
+      reserved ??= reservedRouted(model, plans);
+      const chord = reserved.filter(entry => entry.link.id === held.link.id);
       for (const part of plan.parts) {
-        const near = plannedSegments(part, gap).filter(seg => Math.abs(seg.from.x - seg.to.x) < EPS && Math.abs(seg.from.y - seg.to.y) >= EPS)
-          .some(seg => {
-            return !strictCrossing(seg, held.segment) && segmentDistance(seg, held.segment) < keep - EPS;
-          });
+        let near = false;
+        for (const entry of reserved) {
+          if (near) break;
+          if (entry.link.id === part.link) for (const own of chord) parallelClearance(model, [entry, own], () => { near = true; });
+        }
         if (near) notes.push({ stage: 'placement', severity: 'info', code: 'TIER_GAP_CHORD_CROWDED',
-          message: `A vertical of ${part.link} in the tier gap above tier ${gap.below} stands within ${keep} px of the straight link ${held.link.id}.`,
+          message: `A reserved segment of ${part.link}, planned in the tier gap above tier ${gap.below}, stands within the G6 clearance of the straight link ${held.link.id}.`,
           owners: [{ kind: 'link', id: part.link }, { kind: 'link', id: held.link.id }] });
       }
       const left = new Set<string>();
@@ -1462,7 +1495,7 @@ export function chordGapNotes(model: LayoutModel, plans: readonly { gap: TierGap
     }
     // A row the plan could not lower clear of a fan chord within its bound (architecture-2 ticket 40): named once per unit; the 7f retry judges.
     for (const item of plan.slantLimited ?? []) notes.push({ stage: 'placement', severity: 'info', code: 'TIER_GAP_SLANT_LIMIT',
-      message: `The row of ${item.link} in the tier gap above tier ${gap.below} clears no fan chord within ${SLANT_LOWERING_KEEPS} x ${keep} px below its seat; it keeps its seat.`,
+      message: `The row of ${item.link} in the tier gap above tier ${gap.below} clears no fan chord within ${SLANT_LOWERING_KEEPS} x ${nudgingDistance(model)} px below its seat; it keeps its seat.`,
       owners: [{ kind: 'link', id: item.link }] });
   }
   return notes;
