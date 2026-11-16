@@ -673,12 +673,6 @@ export interface LayoutModel {
    */
   frozenChords?: string[];
   /**
-   * The held chords that the publication step refused (dense-16x9 ticket 14, slice 3, built for ticket 04 slice 2): on the state to publish the
-   * plan named each crowded (`TIER_GAP_CHORD_CROWDED`) and it stood under the G6 clearance, so placement replays once with it refused. Written on
-   * the 7e model the replay starts from, sorted ids; 7f refuses each before the freeze as `crowds` and decides nothing again (R1). Absent = none.
-   */
-  refusedChords?: string[];
-  /**
    * The frozen level cross-frame chords (dense-16x9 ticket 06, slice B) that stand level (equal y at both ends) when the freeze is taken, a subset of
    * `frozenChords`. The relation is held after the freeze: a move that tilts one is refused (`blockedChords`, so `chordsHold`), and a mover that must shift
    * one frame's row shifts its partners' rows with it (`levelChordPartners`). Written by the freeze only when one stands level: absent = none was (read `frozenChords` for whether the freeze was taken).

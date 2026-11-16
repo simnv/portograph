@@ -14,6 +14,7 @@ import { close, open, type AnyRound, type Opened, type Refusal } from './round.j
 import { course, fan, farEnd, overlay, side, span, turn } from './rounds.js';
 import type { State } from './state.js';
 import { crowdedHeldChords } from '../layout/direct-families.js';
+import { refuseChordEntries, reserve as addReservations } from '../layout/reservations.js';
 import { score } from '../score/index.js';
 import { restoreLayoutModel } from '../layout/mutation.js';
 import type { LayoutModel } from '../model/index.js';
@@ -132,8 +133,8 @@ function errorFindings(model: LayoutModel): Set<string> {
 /**
  * A chord is refused before a gate finding is published (dense-16x9 ticket 14, slice 3; coordinator ruling for ticket 04 slice 2). After the last
  * round has settled, the state to publish is read once: every held chord that is no direct or fan member, that the plan names crowded and that
- * stands under the G6 clearance (`crowdedHeldChords`) is refused, all of them in this one read. The refusal is recorded on the kept 7e model
- * (`refusedChords`) and placement replays once from it; 7f consumes the record (R1). The replay is kept only when its routed result has no
+ * stands under the G6 clearance (`crowdedHeldChords`) is refused, all of them in this one read. The refusal is a reservation (`refusedChord`, one
+ * entry per chord) on the ledger of the kept 7e model, and placement replays once from it; 7f consumes the entries (R1). The replay is kept only when its routed result has no
  * error-gate finding that the state before it lacks; otherwise that state stays and `HELD_CHORD_CROWDED` names the chords. One pass at most
  * (R4): the replay is not read again. The rounds read the unrefused baselines, so a crowded baseline that a round repairs stays theirs.
  */
@@ -141,7 +142,8 @@ export async function refuseCrowdedChords(env: Env, s: State): Promise<void> {
   const crowded = crowdedHeldChords(s.base);
   if (!crowded.length) return;
   const before = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
-  const kept7e = restoreLayoutModel(JSON.stringify({ ...s.kept7e, refusedChords: [...new Set([...(s.kept7e.refusedChords ?? []), ...crowded])].sort() }));
+  const entries = refuseChordEntries(crowded, env.placements);
+  const kept7e = restoreLayoutModel(JSON.stringify({ ...s.kept7e, reservations: addReservations(s.kept7e.reservations ?? [], entries) }));
   const banded = await env.bands(kept7e);
   const routed = await env.route(banded.model);
   const was = errorFindings(before);
@@ -151,6 +153,6 @@ export async function refuseCrowdedChords(env: Env, s: State): Promise<void> {
       message: `The held ${crowded.length === 1 ? 'chord' : 'chords'} ${crowded.join(', ')} ${crowded.length === 1 ? 'stands' : 'stand'} under the clearance of a planned part; the replay without ${crowded.length === 1 ? 'it' : 'them'} adds a gate finding, so ${crowded.length === 1 ? 'it stays' : 'they stay'} straight and the gates judge.` });
     return;
   }
-  s.kept7e = kept7e; s.base = banded.model; s.baseMoved = banded.moved; s.baseUnmoved = banded.unmoved;
+  s.kept7e = kept7e; s.kept = addReservations(s.kept, entries); s.base = banded.model; s.baseMoved = banded.moved; s.baseUnmoved = banded.unmoved;
   s.routedFinal = routed;
 }

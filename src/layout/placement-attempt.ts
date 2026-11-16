@@ -1,4 +1,5 @@
 import { blockReservationsFault } from './block-checks.js';
+import { refusedChordsOf } from './reservations.js';
 import { tapTarget } from './alignment-targets.js';
 import type { Diagnostic, DirectMemberReason, FanFallbackReason, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
@@ -173,8 +174,8 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
     // from its start with that member refused (`crowds`, architecture-2 ticket 22). The refusals only grow, so the retries end (R2, R4).
     // `chordRefused` holds the fan members and the other held chords a retry refuses; a direct member is refused through its family (`refused`).
     const start = clone(draft), refused = new Map<string, DirectMemberReason>(), chordRefused = new Map<string, FanFallbackReason>();
-    // The chords the publication step refused (`refusedChords`, dense-16x9 ticket 14 slice 3) fall back before the freeze, as `crowds`.
-    for (const id of draft.refusedChords ?? []) chordRefused.set(id, 'crowds');
+    // The chords the publication step refused (`refusedChord` entries of the ledger, dense-16x9 ticket 14 slice 3) fall back before the freeze, as `crowds`.
+    for (const id of refusedChordsOf(draft.reservations ?? [])) chordRefused.set(id, 'crowds');
     for (let retry = 0; ; retry++) {
       attemptBody(draft, options, refused, chordRefused);
       const crowded = crowdedDirectMembers(draft).filter(id => !refused.has(id));

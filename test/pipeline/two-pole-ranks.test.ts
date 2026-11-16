@@ -4,6 +4,7 @@ import { layout, parse, score } from '../../src/index.js';
 import { resolveBeforeExpansion } from '../../src/internal.js';
 import { deriveRanks } from '../../src/layout/ranks.js';
 import { rankInputOf } from '../../src/layout/rank-input.js';
+import { refuseChordEntries, refusedChordsOf } from '../../src/layout/reservations.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -59,20 +60,20 @@ describe('two-pole ranks in the layout', () => {
     expect(failing).toEqual([]);
   });
 
-  // Dense-16x9 ticket 04 (slice 2), the publication step of ticket 14 slice 3: after the rounds, the column pull after the freeze carries up-b1
-  // 16 px, and the plan names the held chord feed-b13 to up-b1 crowded by the planned leg of feed-b11 to up-b1, under the G6 clearance. The
-  // chord is refused before the gate finding is published: the 7e model records it (`refusedChords`), and 7f refuses it as `crowds`.
-  it('the twin: the held chord a planned leg crowds after the freeze falls back once, recorded on the model', async () => {
-    const model = await run(TWIN);
-    const chord = model.links.find(link => link.attachments!.from.node === 'feed-b13' && link.attachments!.to.node === 'up-b1')!;
-    expect(model.refusedChords).toEqual([chord.id]);
-    expect(model.frozenChords).not.toContain(chord.id);
-    expect(model.diagnostics.some(item => item.code === 'ROUTED_CHORD_REFUSED' && item.message.includes(`${chord.id} `) && item.message.endsWith('crowds.'))).toBe(true);
-    expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_CHORD_CROWDED')).toEqual([]);
+  // Dense-16x9 ticket 04 (slice 2), the publication step of ticket 14 slice 3. On the twin it fired until ticket 22 (main 0f6aa9ec) changed the
+  // stagger rows; there the chord feed-b13 to up-b1 is now refused at the freeze (`leg`). On sweep variant v6-3-2 the plan names the held chord
+  // link-10 crowded on the state to publish, under the G6 clearance: it is refused before the gate finding is published, the ledger of the 7e model
+  // reserves it (`refusedChord`), 7f refuses it as `crowds`, and the replay adds no error-gate finding, so it is kept.
+  it('a held chord the plan names crowded on the state to publish falls back once, reserved in the ledger (sweep v6-3-2)', async () => {
+    const model = await layout(parse(readFileSync(new URL('../fixtures/sweep/v6-3-2.yaml', import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(refusedChordsOf(model.reservations ?? [])).toEqual(['link-10']);
+    expect(model.frozenChords).not.toContain('link-10');
+    expect(model.diagnostics.some(item => item.code === 'ROUTED_CHORD_REFUSED' && item.message.includes('link-10 ') && item.message.endsWith('crowds.'))).toBe(true);
+    expect(model.diagnostics.some(item => item.code === 'HELD_CHORD_CROWDED')).toBe(false);
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
-    // A forged record stops at the restore (R5): an unknown link, or ids out of order.
-    expect(() => restoreLayoutModel(JSON.stringify({ ...model, refusedChords: ['no-such-link'] }))).toThrow(/Invalid refused chords/);
-    expect(() => restoreLayoutModel(JSON.stringify({ ...model, refusedChords: ['link-9', 'link-10'] }))).toThrow(/Invalid refused chords/);
+    // A forged entry stops at the restore (R5): an unknown link, or the same chord twice.
+    expect(() => restoreLayoutModel(JSON.stringify({ ...model, reservations: [...model.reservations!, ...refuseChordEntries(['no-such-link'], 0)] }))).toThrow(/no-such-link is no link/);
+    expect(() => restoreLayoutModel(JSON.stringify({ ...model, reservations: [...model.reservations!, ...refuseChordEntries(['link-10'], 0)] }))).toThrow(/held twice/);
   });
 
   // The other outcome of the step: on sweep variant v7-3-2 the replay without the crowded chords adds an error-gate finding, so the state before it
@@ -81,7 +82,7 @@ describe('two-pole ranks in the layout', () => {
     const model = await layout(parse(readFileSync(new URL('../fixtures/sweep/v7-3-2.yaml', import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     const note = model.diagnostics.find(item => item.code === 'HELD_CHORD_CROWDED');
     expect(note?.owners?.length).toBeGreaterThan(0);
-    expect(model.refusedChords).toBeUndefined();
+    expect(refusedChordsOf(model.reservations ?? [])).toEqual([]);
     for (const owner of note!.owners!) expect(model.frozenChords).toContain((owner as { id: string }).id);
   });
 });

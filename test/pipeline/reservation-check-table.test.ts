@@ -15,7 +15,7 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
  * the list below fails too, so a new kind is named in this test with its readers.
  */
 const KINDS = ['bundleNeighbours', 'corridorSide', 'course', 'farEndOrder', 'groupExit', 'groupOrder', 'labelRoom', 'laneOwner', 'laneSide', 'nodeFloor',
-  'pairFloor', 'pitchFloor', 'riserKeepOut', 'rowOrder', 'sideAlignment', 'sideFace', 'spanChord', 'spanCorridor', 'staggerDeclined', 'trunkDeclined',
+  'pairFloor', 'pitchFloor', 'refusedChord', 'riserKeepOut', 'rowOrder', 'sideAlignment', 'sideFace', 'spanChord', 'spanCorridor', 'staggerDeclined', 'trunkDeclined',
   'trunkExtension', 'turnOrder'];
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-top-row-staggers-when-a-lower-tier-sets-the-stage-5-width.yaml', import.meta.url), 'utf8');
 
@@ -30,6 +30,8 @@ describe('one check table for every reservation kind (dense-16x9 ticket 22, revi
     }
     // A declined stagger is checked by all three readers.
     expect(RESERVATION_CHECKS.staggerDeclined.at).toEqual({ round: true, final: true, early: true });
+    // So is a chord the publication step refused (dense-16x9 ticket 04 slice 2, review 2).
+    expect(RESERVATION_CHECKS.refusedChord.at).toEqual({ round: true, final: true, early: true });
   });
 
   it('refuses at an early restore a declined stagger that the carried stagger contradicts', async () => {

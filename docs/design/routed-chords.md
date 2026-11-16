@@ -288,10 +288,11 @@ through `parallelClearance`, any held chord with an extent in the gap), and G6 j
 *Publication step (dense-16x9 ticket 14, slice 3, built in ticket 04 slice 2; coordinator ruling: a chord is refused before a gate finding is
 published).* After the last round has settled, `refuseCrowdedChords` (pipeline/driver.ts) reads the state to publish once. A held chord that is
 no direct or fan member, that a `TIER_GAP_CHORD_CROWDED` note names, and that stands under the G6 clearance of the planned part
-(`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. The kept 7e model records them
-(`refusedChords`, sorted ids of links; once the freeze is taken no entry is a frozen chord. One check, `refusedChordsFault`, holds at restore and in
-the round's checks of 7f and of the routed model, so a record the freeze contradicts is refused; a model before `sides-two` has no record, and the early
-restore refuses a present one), and placement replays once from it: 7f refuses each before the freeze as
+(`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. Each is a reservation on the
+ledger of the kept 7e model (`refusedChord`, one entry per link, producer `publish`). Its one predicate (`refusedChordFailure`, entered in
+`RESERVATION_CHECKS` for the round check, the restore of a frozen model and the early restore) holds that the model stands at `sides-two` or later,
+that the entry names a link, and that once the freeze is taken the link is no frozen chord. So an entry the freeze contradicts is refused, and so is
+any entry on a model before `sides-two`. Placement replays once from that ledger: 7f refuses each before the freeze as
 `crowds` (R1, nothing decides it again). The replay is kept only when its routed result has no error-gate finding that the state before it
 lacks; else that state stays and `HELD_CHORD_CROWDED` (warning) names the chords. One pass at most. The rounds read their own unrefused
 baselines, so a crowded baseline that a round repairs stays available to that round (traced on
