@@ -155,7 +155,8 @@ export function seatSiblingFrameEnds(model: LayoutModel): boolean {
     const leftBlock = [...block.left.keys()].sort(near).flatMap(other => block.left.get(other)!);
     const rightBlock = [...block.right.keys()].sort(near).reverse().flatMap(other => block.right.get(other)!);
     const seated = new Set([...leftBlock, ...rightBlock]);
-    orders.set(cell, [...leftBlock, ...(group.rowOrder ?? group.nodes).filter(node => !seated.has(node)), ...rightBlock]);
+    // A member of a row of one stands at both ends: the set keeps it once.
+    orders.set(cell, [...new Set([...leftBlock, ...(group.rowOrder ?? group.nodes).filter(node => !seated.has(node)), ...rightBlock])]);
   }
   // Every cell takes its seat, or none does: a row that cannot stand in its room (it would grow into the next group) declines the whole decision by name.
   const cells = [...orders.keys()].map(cell => model.groups[cell]!);
@@ -198,7 +199,7 @@ export function siblingSeatOrder(model: LayoutModel, cell: string, order: readon
   const { left, right: rightEnd } = seatedMembers(model, cell);
   if (!left.size && !rightEnd.size) return [...order];
   const now = model.groups[cell]?.rowOrder ?? model.groups[cell]?.nodes ?? [];
-  return [...now.filter(node => left.has(node)), ...order.filter(node => !left.has(node) && !rightEnd.has(node)), ...now.filter(node => rightEnd.has(node))];
+  return [...new Set([...now.filter(node => left.has(node)), ...order.filter(node => !left.has(node) && !rightEnd.has(node)), ...now.filter(node => rightEnd.has(node))])];
 }
 
 /**

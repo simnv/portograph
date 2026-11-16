@@ -161,7 +161,9 @@ it('holdsMove refuses a move that shortens a same-tier row room and allows one t
   expect(move('loc-b-ac1', -60)).toBe(false);
   expect(move('loc-b-ac1', 60)).toBe(false);
   expect(move('loc-c-ac1', 60)).toBe(true);
-  expect(move('loc-c-ac1', -5)).toBe(true);
+  // Stage 4 seats loc-b-ac2 and loc-c-ac1 at the facing ends of their rows (sibling rows, dense-16x9 ticket 06 slice C): the link is one level chord, so any move
+  // of loc-c to the left shortens its run, and the guard refuses it too. Before the seat the link ran a U over loc-b-sw and a 5 px move did not shorten it.
+  expect(move('loc-c-ac1', -5)).toBe(false);
 }, 120000);
 
 // The resize path (centring, the parent spread) moves bodies on the model, and `resizeHolds` reads the room again where they stand.
