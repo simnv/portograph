@@ -121,8 +121,9 @@ describe('the side round offers a routed L through a side lane', () => {
     bent(base, described(base), 2); bent(base, others[0]!, 1); bent(base, others[1]!, 1);
     bent(trial, described(trial), 1); bent(trial, others[1]!, 3);
     const input = (lanes?: Set<string>) => ({ routedBase: base, routedTrial: trial, kept7e: base, trial7e: trial, hinted: new Map([[id, 1]]), ...(lanes === undefined ? {} : { lanes }) });
-    // Without the lane rule (the old judge) the bent links fall or the total falls, and the trial is kept.
-    expect(judgeTrial(input()).kept).toBe(true);
+    // Without the lane rule (the old judge) the bent links fall or the total falls, and every bend clause keeps the trial: only the last clause refuses it,
+    // for the gate findings of the forged (diagonal) paths (review 06c-1).
+    expect(judgeTrial(input()).reason).toMatch(/^the routed trial has error-gate findings the baseline does not have/);
     expect(judgeTrial(input(new Set([id])))).toMatchObject({ kept: false, reason: expect.stringMatching(/raises the total|worse/) });
   }, 120000);
 

@@ -97,6 +97,13 @@ export interface LayoutPort extends OwnedElement {
   pill?: PillGeometry;
 }
 
+/**
+ * One neighbour-pair pitch of a face (`LayoutNode.pairPitch`). `fan`: the two ports (`portId`, sorted) keep `min` when they stand side by
+ * side; the fan round measured it on the placed chords (ticket 89). `block`: the one member port of a complete solid block keeps `min` from
+ * either neighbour (ticket 83's face pitch).
+ */
+export interface PairPitch { rule: 'fan' | 'block'; ports: string[]; min: number }
+
 export interface LayoutNode extends OwnedElement {
   id: string;
   /** Overrides the shared theme default; zero explicitly means no visible stroke. */
@@ -110,6 +117,12 @@ export interface LayoutNode extends OwnedElement {
   size?: Size;
   bounds?: Rect;
   sidePitch?: Partial<Record<Side, number>>;
+  /**
+   * The neighbour-pair pitches of the top and bottom faces above `sidePitch` (dense-16x9 ticket 04, slice 1; `pair-pitch.ts`). Two ports that
+   * stand side by side on a face keep the larger of the face's `sidePitch` and every entry that names them; the capacity of the face is the sum
+   * of its pair pitches, never the largest one times the gaps. Absent, or no entry for a face: every pair of that face keeps `sidePitch`.
+   */
+  pairPitch?: Partial<Record<'top' | 'bottom', PairPitch[]>>;
   /** Occupied corners only. Absent before sizing, or when no perpendicular named faces meet.
    * Sizing records the separating axis; later geometry must preserve it (R1/R2). */
   portCorners?: { lateral: 'left' | 'right'; horizontal: 'top' | 'bottom'; axis: 'x' | 'y'; clearance: number }[];
@@ -585,6 +598,13 @@ export interface LayoutModel {
    * The freeze keeps a copy; the stage-5 publication and its restore check each pair's room.
    */
   feedSplits?: FeedSplit[];
+  /**
+   * Dense-16x9 ticket 06, slice C: the rows stage 4 seated for their sibling-frame links (`sibling-frames.ts`), one entry per pair of cells, by sub-tier and
+   * then left cell. Absent = the model holds no sibling-frame link that the rule may seat (nothing to decide, so a sheet without one keeps its bytes); `[]` = it holds
+   * one or more, and stage 4 declined every pair set by name. Each placement run decides on its own stage-4 geometry; stage 5 reads it for the u-turn courses.
+   * The freeze keeps a copy; every publication from stage 5 on and its restore check the row orders against it (`validateSiblingRows`).
+   */
+  siblingRows?: SiblingRow[];
   freeze?: LayoutFreeze;
   /**
    * What this placement run was told to keep (architecture 2, ticket 03): pitch and size floors, side faces, lane owners, courses, spanning chords, the turn
@@ -607,6 +627,12 @@ export interface LayoutModel {
    * routed chord stands here (`docs/design/turn-order.md`, Section 3): the turn round reads the baseline's `frozenChords` and reserves them. Absent reads as none.
    */
   turnExcept?: string[];
+  /**
+   * An input of the placement run (dense-16x9 ticket 07): the faces whose ports stage 5 seats in the order the ledger reserved (`farEndOrder`), the whole face in engine order,
+   * in node and side order. The far-end round takes each sequence from the final positions of a completed placement. Absent reads as no face: stage 5 sorts by the far ends as
+   * they stand then. `freeze.farEndOrder` is the record of the faces stage 5 seated.
+   */
+  farEndOrder?: { node: string; side: Side; ports: PortRef[] }[];
   /** The planned course of each link that has one (ticket 15); absent until stage 5 plans them, and still absent when no link has a detour. */
   courses?: Course[];
   document: NormalisedDocument;
@@ -950,7 +976,7 @@ export interface FrozenPort {
 export interface PlacementSnapshot {
   sharedRuns: { link: string; runs: NonNullable<LayoutLink['sharedRuns']> }[];
   fixedSegments: { link: string; segments: PathSegment[] }[];
-  nodes: Record<string, Pick<LayoutNode, 'bounds' | 'size' | 'sizeFloor' | 'contentSize' | 'contentInsets' | 'sidePitch' | 'portCorners' | 'ports' | 'icon'>>;
+  nodes: Record<string, Pick<LayoutNode, 'bounds' | 'size' | 'sizeFloor' | 'contentSize' | 'contentInsets' | 'sidePitch' | 'pairPitch' | 'portCorners' | 'ports' | 'icon'>>;
   groups: Record<string, Pick<LayoutGroup, 'bounds' | 'rowOrder' | 'nodes' | 'tier' | 'flank'>>;
   tierBands: TierBand[];
   regions: Region[];
@@ -990,6 +1016,25 @@ export interface StaggerRow {
  * moved `width` px right, so the two sibling groups `pair` (left, right) of `tier` can both stand under their feeds.
  */
 export interface FeedSplit { tier: number; authority: number; pair: [string, string]; at: number; width: number }
+/**
+ * One pair of cells whose members a sibling-frame link joins (dense-16x9 ticket 06, slice C): two rows of one sub-tier in two frames of one document tier,
+ * `leftCell` left of `rightCell`. The linked members of each cell stand at the end of its row that faces the other cell, and the pairs nest: the inner
+ * pair stands on the two facing row ends and the other pairs stand next to it in mirrored order, outermost first in `outerLinks`.
+ */
+export interface SiblingRow {
+  subTier: number;
+  leftCell: string;
+  rightCell: string;
+  /**
+   * The cell whose linked block stage 4 turned so the pairs nest; `none` when they already nested, or when one pair joins the cells. History, not proof: the order
+   * before the seat is gone, so no check can read it; the validator checks the nested order of the pairs, not this flag.
+   */
+  mirrored: 'left' | 'right' | 'none';
+  /** The link of the inner pair: a level chord candidate on the facing lateral faces. Absent when a unit or a frame stands between the two cells on their sub-tier: every pair is then a U. */
+  levelLink?: string;
+  /** The links of the other pairs, outermost first: stage 5 gives each a u-turn course on one face of the sub-tier. */
+  outerLinks: string[];
+}
 /** Ticket 51: a group stands on two lines (`stagger`) or stays one row; a `row` names the first rule that kept it. */
 export type GroupArrangement = { chosen: 'stagger' } | { chosen: 'column' } | { chosen: 'row'; reason: string };
 export interface LayoutFreeze {
@@ -997,6 +1042,8 @@ export interface LayoutFreeze {
   staggerRows?: StaggerRow[];
   /** Stage-5 feed splits (ticket 73), absent when the model has no record. */
   feedSplits?: FeedSplit[];
+  /** The stage-4 sibling rows (dense-16x9 ticket 06, slice C), absent when the model has no record. */
+  siblingRows?: SiblingRow[];
   version: 1;
   topology: { node: string; ports: FrozenPort[]; portCorners?: LayoutNode['portCorners'] }[];
   floors: { node: string; size: Size }[];
@@ -1013,6 +1060,8 @@ export interface LayoutFreeze {
   turnOrder?: { node: string; side: Side; ports: PortRef[] }[];
   /** Present only when the run carried faces reserved for far-end order (`LayoutModel.turnExcept`): the scope the record of `turnOrder` was taken under. */
   turnExcept?: string[];
+  /** Present only when the run carried a far-end order (`LayoutModel.farEndOrder`): each face and the ports in the order stage 5 seated them. A restore checks the engine order against it; G5 still judges the geometry. */
+  farEndOrder?: { node: string; side: Side; ports: PortRef[] }[];
   placement?: PlacementSnapshot;
 }
 

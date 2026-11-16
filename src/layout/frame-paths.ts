@@ -191,27 +191,39 @@ export function rankBandBetween(model: LayoutModel, link: LayoutLink): boolean {
   return documentTierDistance(model, link) === 1 && transitTiers(model, link).length > 0;
 }
 
-function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): ChordKind | undefined {
+/**
+ * The groups of the two ends of a routed link that may take a chord of either kind, or undefined: a routed, non-stub, non-bundle link that asks for no other
+ * route, between two nodes of groups that are no flank and no bar (a flank and a bar own their links' paths, and a bar is not a frame member). No course,
+ * hint or side is read here: the topology part that `chordKindOf` and `siblingFrameLink` share.
+ */
+function chordGroups(model: LayoutModel, link: LayoutLink): [string, string] | undefined {
   if (link.layer !== 'routed' || !link.attachments || link.bundle !== undefined) return undefined;
   if (link.technique === 'stub' || effectiveLayer(link) !== 'routed') return undefined;
   const route = model.document.links[link.sourceIndex]?.route;
   if (route !== undefined && route !== 'straight') return undefined;
   const { from, to } = link.attachments;
   if (from.node === to.node) return undefined;
+  const a = model.document.nodes[from.node]?.group, b = model.document.nodes[to.node]?.group;
+  if (a === undefined || b === undefined) return undefined;
+  if ([a, b].some(id => model.groups[id]?.flank !== undefined || groupShape(model, id) === 'bar')) return undefined;
+  return [a, b];
+}
+
+function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): ChordKind | undefined {
+  const groups = chordGroups(model, link);
+  if (groups === undefined) return undefined;
+  const { from, to } = link.attachments!;
   // A `u-turn` course plans the route of its link (a U part of the tier gap): the link is no chord (dense-16x9 ticket 06).
   if ((model.courses ?? []).some(course => course.link === link.id && course.kind === 'u-turn')) return undefined;
   // A port hinted for the routed L (ticket 119) owns a side lane, not a chord.
   if ([from, to].some(end => findPort(model, end)?.laneHint === true)) return undefined;
-  const a = model.document.nodes[from.node]?.group, b = model.document.nodes[to.node]?.group;
-  if (a === undefined || b === undefined) return undefined;
-  // A flank and a bar own their links' paths (flank and bar rules), and a bar is not a frame member.
-  if ([a, b].some(id => model.groups[id]?.flank !== undefined || groupShape(model, id) === 'bar')) return undefined;
+  const [a, b] = groups;
   if (sameFrame(model, frameOfGroup(model, a), frameOfGroup(model, b))) return 'frame';
   const tiers = [documentTier(model, a), documentTier(model, b)];
   if (tiers[0] === undefined || tiers[1] === undefined) return undefined;
   const gap = Math.abs(tiers[0] - tiers[1]);
   // Two frames of one document tier: a sibling-frame link on facing lateral faces is a level cross-frame chord (dense-16x9 ticket 06, slice B).
-  if (gap === 0) return siblingFrameKind(model, link, a, b);
+  if (gap === 0) return siblingFrameLink(model, link) && facingLateral(model, link) ? 'cross' : undefined;
   // A spanning chord (ticket 22): the hint makes a link on tiers that are not consecutive a cross-frame candidate. An unhinted one is not.
   if (gap !== 1 && !(gap >= 2 && (assumeSpan || link.spanHint === true))) return undefined;
   const [upper, lower] = tiers[0] < tiers[1] ? [from, to] : [to, from];
@@ -224,17 +236,26 @@ function chordKindOf(model: LayoutModel, link: LayoutLink, assumeSpan = false): 
 }
 
 /**
- * The kind of a link between two frames of one document tier (dense-16x9 ticket 06, slice B): `cross` when both ends stand in un-flanked `row` cells of one sub-tier and
- * the ports face each other on lateral faces (`right` on one node, `left` on the other) and the link is no group-link member; otherwise no candidate. A sibling-frame link is a chord of the sub-tier, not of a gap.
+ * Whether the link is a sibling-frame link (CONTEXT; dense-16x9 ticket 06): a routed link that may take a chord, between members of two distinct frames of one
+ * document tier, both in `row` groups of one sub-tier, and no group-link member (a group-link member is one of a bipartite set between two groups, not one pair
+ * of facing ends). Topology only: no side, course or hint is read, so stage 4 can seat its ends before any side exists and a restore can read a record of it.
+ * The one predicate of the rule: the chord kind (slice B) adds the facing lateral faces, the seat (slice C, `sibling-frames.ts`) the un-flanked rows.
  */
-function siblingFrameKind(model: LayoutModel, link: LayoutLink, a: string, b: string): ChordKind | undefined {
-  const { from, to } = link.attachments!;
-  // A group-link member is one of a bipartite set between two groups, not one pair of facing ends: it keeps the orthogonal route here (it never took a level path).
-  if (link.groupLink !== undefined) return undefined;
+export function siblingFrameLink(model: LayoutModel, link: LayoutLink): boolean {
+  const groups = chordGroups(model, link);
+  if (groups === undefined || link.groupLink !== undefined) return false;
+  const [a, b] = groups;
+  if (sameFrame(model, frameOfGroup(model, a), frameOfGroup(model, b))) return false;
+  const tiers = [documentTier(model, a), documentTier(model, b)];
+  if (tiers[0] === undefined || tiers[0] !== tiers[1]) return false;
   const one = model.groups[a]?.tier, two = model.groups[b]?.tier;
-  if (one === undefined || one !== two || groupShape(model, a) !== 'row' || groupShape(model, b) !== 'row') return undefined;
+  return one !== undefined && one === two && groupShape(model, a) === 'row' && groupShape(model, b) === 'row';
+}
+/** Whether the ports of the link face each other on lateral faces: `right` on one node and `left` on the other (slice B; the level chord's faces). */
+function facingLateral(model: LayoutModel, link: LayoutLink): boolean {
+  const { from, to } = link.attachments!;
   const sides = [findPort(model, from)?.side, findPort(model, to)?.side];
-  return (sides[0] === 'right' && sides[1] === 'left') || (sides[0] === 'left' && sides[1] === 'right') ? 'cross' : undefined;
+  return (sides[0] === 'right' && sides[1] === 'left') || (sides[0] === 'left' && sides[1] === 'right');
 }
 /**
  * Whether the link is a level cross-frame candidate: a sibling-frame link, whose chord leaves one lateral face and enters the facing one on one sub-tier. One predicate

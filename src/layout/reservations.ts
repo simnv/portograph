@@ -7,18 +7,21 @@
  * plain JSON), and every predicate that judges one is code in this file, outside the model.
  */
 import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Rect, Side, Size } from '../model/index.js';
+import type { PairPitch } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
 
-export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay';
+export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
 /** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
 export type ReservationOwner = Owner | { kind: 'command'; id: string };
 
 export interface ReservationPayload {
   /** A fan of chords needs this port pitch on a face (ticket 89). */
   pitchFloor: { node: string; side: Side; min: number };
+  /** A fan of chords needs this pitch between two ports (`portId`, sorted) of a face when they stand side by side (dense-16x9 ticket 04). */
+  pairFloor: { node: string; side: 'top' | 'bottom'; ports: readonly [string, string]; min: number };
   /** A hinted or course node keeps the size a measured run gave it (side-faces.md, Section 8). */
   nodeFloor: { node: string; min: Size };
   /** A lateral port takes `side`; `promise` is the routed shape the face was offered for. */
@@ -34,6 +37,12 @@ export interface ReservationPayload {
    * a face that holds a held routed chord on the baseline of the turn round (`docs/design/turn-order.md`, Section 3).
    */
   turnOrder: { scope: { all: true } | { links: readonly string[] }; except?: readonly string[]; requireChanged: boolean };
+  /**
+   * Stage 5 gives the ports of the face `node`/`side` this order, the whole face in engine order, in place of the order of the far ends as they stood then (dense-16x9 ticket 07). The
+   * far-end round takes it from the final positions of a completed placement; later stages validate it and never choose another. Absent: the face keeps the order stage 5 finds.
+   * An entry for a face replaces an earlier entry for it (the latest proposal stands).
+   */
+  farEndOrder: { node: string; side: Side; ports: readonly PortRef[] };
   /** A trunk join (or every trunk join) that placement declines. */
   trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
   /** A move keeps every routed port of a member row's facing edge from standing deeper in a riser keep-out than it did (mesh-bus.md, section 11.5). */
@@ -86,7 +95,7 @@ export type Reservation = { [K in ReservationKind]: Readonly<{
   id: string;
   kind: K;
   owner: ReservationOwner;
-  producer: RoundId | 'skeleton' | 'lanes' | 'bands';
+  producer: RoundId | 'skeleton' | 'sides-two' | 'lanes' | 'bands';
   /** The measured baseline the reservation was made on: the number of placements the command had started. */
   revision: number;
   activeFrom: LayoutStage;
@@ -103,8 +112,8 @@ export const NO_RESERVATIONS: Reservations = [];
 const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner.kind}:${owner.node}:${owner.link}` : `${owner.kind}:${owner.id}`;
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
-  pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
+  pitchFloor: 'size', pairFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
+  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton', bundleNeighbours: 'skeleton',
 };
 
@@ -131,8 +140,8 @@ export function reserve(ledger: Reservations, entries: Reservations): Reservatio
     const at = result.findIndex(item => item.id === entry.id);
     if (at < 0) { result.push(entry); continue; }
     const old = result[at]!;
-    if (old.kind === 'pitchFloor' && entry.kind === 'pitchFloor') {
-      if (entry.payload.min > old.payload.min) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min: entry.payload.min } };
+    if ((old.kind === 'pitchFloor' && entry.kind === 'pitchFloor') || (old.kind === 'pairFloor' && entry.kind === 'pairFloor')) {
+      if (entry.payload.min > old.payload.min) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min: entry.payload.min } } as Reservation;
     } else if (old.kind === 'nodeFloor' && entry.kind === 'nodeFloor') {
       const min = { width: Math.max(old.payload.min.width, entry.payload.min.width), height: Math.max(old.payload.min.height, entry.payload.min.height) };
       if (!same(min, old.payload.min)) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min } };
@@ -141,6 +150,8 @@ export function reserve(ledger: Reservations, entries: Reservations): Reservatio
       if (old.payload.promise === undefined && entry.payload.promise !== undefined) result[at] = { ...old, payload: { ...old.payload, promise: entry.payload.promise } };
     } else if (old.kind === 'course' && entry.kind === 'course') {
       if (!same(old.payload.course, entry.payload.course)) throw new Error(`Reservation ${entry.id} conflicts with a course the ledger holds`);
+    } else if (old.kind === 'farEndOrder' && entry.kind === 'farEndOrder') {
+      result[at] = entry;
     } else if (old.kind === 'turnOrder' && entry.kind === 'turnOrder') {
       const except = [...new Set([...(old.payload.except ?? []), ...(entry.payload.except ?? [])])].sort();
       const requireChanged = old.payload.requireChanged || entry.payload.requireChanged;
@@ -179,6 +190,25 @@ export function pitchGrowth(ledger: Reservations, wanted: ReadonlyMap<string, Pa
   }
   return pitchFloors(grown, producer, revision);
 }
+
+/** The neighbour-pair pitches the fans need, per node and face, as the node stores them (`LayoutNode.pairPitch`, rule `fan`). */
+export function pairFloorsOf(ledger: Reservations): Map<string, Partial<Record<'top' | 'bottom', PairPitch[]>>> {
+  const floors = new Map<string, Partial<Record<'top' | 'bottom', PairPitch[]>>>();
+  for (const { payload } of ofKind(ledger, 'pairFloor')) {
+    const faces = floors.get(payload.node) ?? {};
+    (faces[payload.side] ??= []).push({ rule: 'fan', ports: [...payload.ports], min: payload.min });
+    floors.set(payload.node, faces);
+  }
+  return floors;
+}
+/** The pair entries of `wanted` that raise a floor the ledger holds: a value over the held one, or any when none is held. Empty when no pair needs more. */
+export function pairGrowth(ledger: Reservations, wanted: readonly { node: string; side: 'top' | 'bottom'; ports: readonly [string, string]; min: number }[], producer: RoundId, revision: number): Reservations {
+  const held = new Map(ofKind(ledger, 'pairFloor').map(({ payload }) => [pairDetail(payload), payload.min] as const));
+  return wanted.filter(item => item.min > (held.get(pairDetail(item)) ?? 0))
+    .map(item => reservation('pairFloor', { kind: 'node', id: item.node }, pairDetail(item), producer, revision, { node: item.node, side: item.side, ports: item.ports, min: item.min }));
+}
+/** The detail that tells two pair floors of one node apart: the face and the two port keys. */
+const pairDetail = (item: { side: string; ports: readonly string[] }): string => `${item.side}:${item.ports.join('|')}`;
 
 /** The node size floors, per node. */
 export function nodeFloorsOf(ledger: Reservations): Map<string, Size> {
@@ -222,11 +252,11 @@ export function laneOwners(keys: Iterable<string>, hints: ReadonlyMap<string, 'l
   return entries;
 }
 
-/** The courses every placement run reserves, in declaration order. */
+/** The courses every placement run reserves, in declaration order, then the u-turn courses stage 5 of the run planned for its sibling rows (producer `sides-two`). */
 export function coursesOf(ledger: Reservations): Course[] {
   return ofKind(ledger, 'course').map(({ payload }) => clone(payload.course));
 }
-export function courseEntries(courses: readonly Course[], promised: ReadonlyMap<string, number> | undefined, producer: RoundId, revision: number): Reservations {
+export function courseEntries(courses: readonly Course[], promised: ReadonlyMap<string, number> | undefined, producer: Reservation['producer'], revision: number): Reservations {
   return courses.map(course => reservation('course', { kind: 'link', id: course.link }, '', producer, revision,
     { course, ...(promised?.has(course.link) ? { maxTurns: promised.get(course.link)! } : {}) }));
 }
@@ -316,6 +346,15 @@ export function turnEntries(turn: boolean, links: readonly string[], requireChan
   ];
 }
 
+/** The faces (`node|side`) the ledger gives a far-end order, with the sequence each takes, in node and side order. */
+export function farEndOrderOf(ledger: Reservations): { node: string; side: Side; ports: PortRef[] }[] {
+  return ofKind(ledger, 'farEndOrder').map(({ payload }) => ({ node: payload.node, side: payload.side, ports: payload.ports.map(ref => ({ ...ref })) }))
+    .sort((a, b) => (a.node < b.node ? -1 : a.node > b.node ? 1 : 0) || (a.side < b.side ? -1 : a.side > b.side ? 1 : 0));
+}
+export function farEndEntries(faces: readonly { node: string; side: Side; ports: readonly PortRef[] }[], producer: RoundId, revision: number): Reservations {
+  return faces.map(face => reservation('farEndOrder', { kind: 'node', id: face.node }, face.side, producer, revision, { node: face.node, side: face.side, ports: face.ports }));
+}
+
 /** The trunk joins that the next run resolves with declined. With `all` set (the budget is spent) every trunk reads as declined. */
 export class DeclinedTrunks extends Map<string, string> {
   all = false;
@@ -345,11 +384,36 @@ export function declinedEntries(declined: DeclinedTrunks, revision: number): Res
 
 // ---- Predicates and validators ---------------------------------------------------------------------------------------------------
 
+/**
+ * Where each fan pair stood in a face record the last time the record was read (dense-16x9 ticket 04). A hint only, like `portPlaces`: it is
+ * checked against the entry at that place on every use, and a pair is unique in a face record (`addPairPitches` merges by pair, and `pairPitchFault` refuses a record with two entries for one pair), so the answer
+ * is the one a search of the face gives. A ledger holds C(n, 2) pair floors of a face of n ports, and a search per floor made the check
+ * quadratic in them (0.7 s at 100 ports, 2 ms with the hint).
+ */
+const fanPlaces = new WeakMap<readonly PairPitch[], Map<string, number>>();
+function fanEntry(list: readonly PairPitch[] | undefined, ports: readonly string[]): PairPitch | undefined {
+  if (list === undefined) return undefined;
+  const key = ports.join('|');
+  const holds = (at: number | undefined): at is number => at !== undefined && list[at]?.rule === 'fan' && list[at]!.ports.join('|') === key;
+  const hinted = fanPlaces.get(list)?.get(key);
+  if (holds(hinted)) return list[hinted];
+  const places = new Map<string, number>();
+  list.forEach((entry, at) => { const pair = entry.ports.join('|'); if (entry.rule === 'fan' && !places.has(pair)) places.set(pair, at); });
+  fanPlaces.set(list, places);
+  const at = places.get(key);
+  return at === undefined ? undefined : list[at];
+}
+
 /** The predicate of a floor against a placed model: sizes and pitches only grow, so it holds at every stage. */
 export function floorFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind === 'pitchFloor') {
     const have = model.nodes[item.payload.node]?.sidePitch?.[item.payload.side];
     return have !== undefined && have >= item.payload.min ? undefined : `the ${item.payload.side} pitch of ${item.payload.node} is under ${item.payload.min}`;
+  }
+  if (item.kind === 'pairFloor') {
+    const node = model.nodes[item.payload.node];
+    const have = fanEntry(node?.pairPitch?.[item.payload.side], item.payload.ports);
+    return have !== undefined && have.min >= item.payload.min ? undefined : `the ${item.payload.side} pair ${item.payload.ports.join(', ')} of ${item.payload.node} is under ${item.payload.min}`;
   }
   if (item.kind === 'nodeFloor') {
     const size = model.nodes[item.payload.node]?.size;
@@ -447,8 +511,8 @@ const isPort = (value: unknown): boolean => isObject(value) && isString(value['n
 const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.length > 0
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
-const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'skeleton', 'lanes', 'bands']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
+const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'sides-two', 'lanes', 'bands']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
 function shapeFailure(entry: unknown): string | undefined {
@@ -462,6 +526,11 @@ function shapeFailure(entry: unknown): string | undefined {
   const sides = ['top', 'bottom', 'left', 'right'];
   switch (kind) {
     case 'pitchFloor': return isString(payload['node']) && sides.includes(payload['side'] as string) && isNumber(payload['min']) && (payload['min'] as number) > 0 ? undefined : bad;
+    case 'pairFloor': {
+      const ports = payload['ports'];
+      return isString(payload['node']) && (payload['side'] === 'top' || payload['side'] === 'bottom') && Array.isArray(ports) && ports.length === 2 && ports.every(isString)
+        && (ports[0] as string) < (ports[1] as string) && isNumber(payload['min']) && (payload['min'] as number) > 0 ? undefined : bad;
+    }
     case 'nodeFloor': {
       const min = payload['min'];
       return isString(payload['node']) && isObject(min) && isNumber(min['width']) && isNumber(min['height']) && (min['width'] as number) > 0 && (min['height'] as number) > 0 ? undefined : bad;
@@ -479,6 +548,10 @@ function shapeFailure(entry: unknown): string | undefined {
       const scopeOk = isObject(scope) && (scope['all'] === true || (Array.isArray(scope['links']) && scope['links'].every(isString)));
       const exceptOk = payload['except'] === undefined || (Array.isArray(payload['except']) && payload['except'].every(isString));
       return scopeOk && exceptOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
+    }
+    case 'farEndOrder': {
+      const ports = payload['ports'];
+      return isString(payload['node']) && sides.includes(payload['side'] as string) && Array.isArray(ports) && ports.length > 1 && ports.every(isPort) && new Set(ports.map(item => JSON.stringify(item))).size === ports.length ? undefined : bad;
     }
     case 'rowOrder': {
       const order = payload['order'], one = isString(payload['cell']) !== isString(payload['frame']);
@@ -521,14 +594,16 @@ function validateLedgerShape(ledger: Reservations): void {
 }
 
 /**
- * The restore of a model before the port topology freezes (stages up to `size`, and `skeleton`): the ledger is well formed, and the order
- * reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
+ * The restore of a model before the port topology freezes (stages up to `size`, and `skeleton`): the ledger is well formed, the floors hold
+ * from stage 3 on, and the order reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
  */
 export function validateEarlyReservations(model: LayoutModel): void {
   if (model.reservations === undefined) return;
   validateLedgerShape(model.reservations);
+  // A floor is active from stage 3 (`size`): a stage-3 or stage-4 model keeps its pitch, pair and node floors (dense-16x9 ticket 04 review).
+  const sized = model.stage === 'size' || model.stage === 'skeleton';
   for (const item of model.reservations) {
-    const why = rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
+    const why = (sized ? floorFailure(item, model) : undefined) ?? rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }
@@ -576,6 +651,12 @@ export function validateReservations(model: LayoutModel): void {
     // The spanning chords the ledger reserves are the frozen span hints, link for link in link order.
     const held = spansOf(ledger);
     if (!same(model.links.filter(link => held.has(link.id)).map(link => link.id), model.freeze?.spans ?? []) || held.size !== (model.freeze?.spans ?? []).length) throw new Error('Reserved spanning chords differ from the frozen span hints');
+  }
+  // A far-end order the model carries must have the ledger that reserved it: without one the check below would pass on whatever the model says (R5).
+  if (((model.farEndOrder?.length ?? 0) > 0 || (model.freeze?.farEndOrder?.length ?? 0) > 0) && model.reservations === undefined) throw new Error('The far-end order of the model has no reservation ledger');
+  if (model.reservations !== undefined) {
+    // The far-end orders of the ledger are the far-end orders of the model, face for face.
+    if (!same(farEndOrderOf(ledger), model.farEndOrder ?? [])) throw new Error('The reserved far-end orders differ from the far-end orders of the model');
   }
   // A model that carries the turn order must carry the ledger that reserved it: without one the checks below would pass on whatever the model says.
   if (model.turnOrder === true && model.reservations === undefined) throw new Error('The turn order of the model has no reservation ledger');

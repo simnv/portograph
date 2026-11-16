@@ -24,7 +24,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 /**
  * Dense-16x9 ticket 06, slice A: the `u-turn` course. A link whose two ports leave one horizontal face is planned as a U part of the tier gap that face looks at
  * (`runs: ['u']`): stage 5 sets both faces, the plan seats the row once into `H` (a low U part hangs from the low boundary, a high one rises from the high boundary),
- * and stage 8 stitches the part tip to tip. Nothing yet offers the course; the tests give it through `testCourses`.
+ * and stage 8 stitches the part tip to tip. Stage 5 offers the course to the outer pairs of a sibling row (slice C, `sibling-rows.test.ts`); these tests give it through `testCourses`.
  */
 const golden = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const HIGH = 'a-u-turn-course-hangs-a-high-u-part-above-two-top-ports';

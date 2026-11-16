@@ -6,6 +6,8 @@ import { groupBoxes } from '../score/model.js';
 import { findPort } from './row-paths.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { addPairPitch } from './pair-pitch.js';
+import { portId } from './skeleton-graph.js';
 
 import { gatherPairs } from './bundle-ends.js';
 import { bundleNeighboursOf } from './reservations.js';
@@ -13,17 +15,28 @@ import { SolidBlockRefusal } from './placement-refusal.js';
 import { BLOCK_ANGLE, BLOCK_CAP } from './block-checks.js';
 const radians = BLOCK_ANGLE * Math.PI / 180;
 
-/** Ticket 83: capacity is owned before resizing, never by the chord consumer. */
+/**
+ * Ticket 83: capacity is owned before resizing, never by the chord consumer. Dense-16x9 ticket 04 (slice 1): the pitch is a neighbour-pair
+ * pitch of each member port (`block` in `LayoutNode.pairPitch`), kept from both its neighbours, not the pitch of the whole face, so the face
+ * holds the sum of its pairs. A member port that does not stand on a top or bottom face raises the face pitch as before; the block declines it
+ * (`non-facing-ports`).
+ */
 export function reserveBlockPitch(model: LayoutModel): void {
   for (const family of model.fanFamilies ?? []) {
     if (family.kind !== 'solid') continue;
     const links = model.links.filter(link => link.fanFamily === family.id);
-    const pitch = Math.ceil((10 + Math.max(...links.map(linkStrokeWidth))) / Math.sin(radians));
+    const pitch = blockPitch(links);
     for (const link of links) for (const ref of Object.values(link.attachments!)) {
-      const port = findPort(model, ref)!, node = model.nodes[ref.node]!;
-      node.sidePitch![port.side!] = Math.max(node.sidePitch![port.side!]!, pitch);
+      const port = findPort(model, ref)!, node = model.nodes[ref.node]!, side = port.side!;
+      if (side === 'top' || side === 'bottom') addPairPitch(node, side, { rule: 'block', ports: [portId(ref)], min: pitch });
+      else node.sidePitch![side] = Math.max(node.sidePitch![side]!, pitch);
     }
   }
+}
+
+/** The face pitch of a block (ticket 83): two neighbouring chords at the block angle keep the 10 px chord clearance and the widest stroke. */
+export function blockPitch(links: readonly LayoutModel['links'][number][]): number {
+  return Math.ceil((10 + Math.max(...links.map(linkStrokeWidth))) / Math.sin(radians));
 }
 
 /** A row of terminal one-link followers needs the newly widened block's spacing.
@@ -210,8 +223,7 @@ export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutMo
     const originalBottom = model.tierBands.find(band => band.tier === below)!.bounds!;
     gap = originalBottom.y - originalTop.y - originalTop.height;
     const chosen = Math.max(gap, required);
-    model.blockReservations.push({ family: family.id, above, below, target: required, cap: BLOCK_CAP, chosen,
-      pitch: Math.ceil((10 + Math.max(...links.map(linkStrokeWidth))) / Math.sin(radians)) });
+    model.blockReservations.push({ family: family.id, above, below, target: required, cap: BLOCK_CAP, chosen, pitch: blockPitch(links) });
     grown.set(below, Math.max(grown.get(below) ?? 0, chosen - gap));
   }
   if (declined.size) throw new SolidBlockRefusal(declined);

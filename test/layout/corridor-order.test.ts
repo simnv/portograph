@@ -36,8 +36,9 @@ describe('the row order counts the corridors through the row (architecture-2 tic
     const [one, two] = [score(turned).snapshot, score(kept).snapshot];
     expect(one.metrics.crossings.count).toBe(1);
     // Ticket 65: the declared order crosses 5 (2 before): a centring step there keeps a vertical it reached and costs the crossings; the turned
-    // order is unchanged, so the rule gains more.
-    expect(two.metrics.crossings.count).toBe(5);
+    // order is unchanged, so the rule gains more. The far-end round (dense-16x9 ticket 07) seats one face of the declared sheet in the order of its final far ends and takes it
+    // to 4; the turned sheet has no stale face and stays at 1.
+    expect(two.metrics.crossings.count).toBe(4);
     expect(bends(turned)).toBeLessThan(bends(kept));
     expect(one.canvas!.width * one.canvas!.height).toBeLessThan(two.canvas!.width * two.canvas!.height);
     expect(Object.values(one.gates).filter(gate => gate.severity === 'error' && gate.violations.length)).toEqual([]);

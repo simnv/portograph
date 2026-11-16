@@ -471,6 +471,35 @@ premise at the end of stage 4, and `validateReservations` on every later snapsho
 `layout.feedOrder: false` writes no entry: ELK's order and the overlay side stand (a test input whose subject needs the declared order
 pins it so). On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone of Location 4 stands under its feeds.
 
+**Sibling rows (dense-16x9 ticket 06, slice C; owner ruling "mirror one pair", 2026-11-15).** Once the frame order has settled
+(after `settlePullsAndFeeds`), `seatSiblingFrameEnds` (`src/layout/sibling-frames.ts`) seats the ends of every **sibling-frame link**
+(`siblingFrameLink`, the one predicate; a cell that a flank stands beside is left alone) at the end of its row that faces the other
+cell. The links between one pair of cells are a pair set; with two or more pairs one cell turns its linked block so the pairs nest:
+the cell whose order its feeds decided (a `rowOrder` entry) keeps it, and when both or neither did the left cell keeps its order and
+the right one mirrors (R3: x order, never declaration order). The inner pair stands on the two facing row ends; the others stand next
+to it, outermost first. A cell's left-facing blocks stand first (the nearest cell's members on the end), its right-facing blocks last,
+and its other members keep the order they stand in. The unit a seat moves is a peer block of the feed reader (`peerBlocks`: neighbours a
+routed link inside the row joins): the seated members of a block stand at the facing end, its other members next to them on the inner side. A
+lateral bundle of the row (`lateralPairs`, the reader of ticket 18, read for the whole row) is harder than a facing end. The invariant
+(review 06c-2): a seat is admissible only if, for every lateral bundle the row encloses, the end that leaves to the right still stands left of
+the end it enters, adjacent or not, with any number of members between them (`turnedBundle`, the one predicate of the seat and the
+feed refresh; a pair the row already stands turned is not the seat's to keep). A seat that would turn one, or a block that would face both
+ends of a row of more blocks, declines the pair sets of that row by name
+(`SIBLING_SEAT_REFUSED`), and the other sets are seated again without them (each round drops a set, so at most one round per set). The decision is **`LayoutModel.siblingRows`**, one record per pair of cells
+`{subTier, leftCell, rightCell, mirrored, levelLink?, outerLinks}`: absent when the model holds no sibling-frame link the seat may move,
+`[]` when every pair set was declined. `levelLink` is absent when a group or a foreign frame stands between the two cells on their
+sub-tier (a level chord would cross it), and every pair is then outer. Declined by name, at severity `info`: a pair set that is not one
+pair per member, or a member linked to two cells on one side (it faces the nearer one; `SIBLING_PAIR_NON_MATCHING`); a member of a row of
+two or more linked toward both sides (the side with more pairs keeps it, a tie the left end; `SIBLING_FRAME_END_CONFLICT`); and a row
+that does not fit its room in the seated order (`SIBLING_SEAT_REFUSED`: no row is seated, `siblingRows: []`). Three cuts of this first slice
+against the design note (review 06c-1 judged them sound): the links on the losing side of a relay take no U, they keep the stage-8 route; a pair
+set that is not one pair per member is declined whole, with no partial admission; and when the feeds decided both cells, the left cell keeps its
+order, with no comparison of the two feed spreads. `mirrored` is history, not proof: the validator reads the nested order of the pairs, not the flag. A seated cell may feed a
+cell below it, so the feed orders are read again (`refreshFeedOrders`); the feed reader keeps every seat (`siblingSeatOrder`: the feeds
+order only the members between the two seated blocks, and a feed order that would turn a lateral bundle of the row, by the same predicate, leaves the row as it
+stands). `siblingRowsFault` checks the record and the row orders at the end of stage 4 and at the restore of a stage-4 model, before stage 5
+reads it; the freeze keeps a copy, and every publication from stage 5 on and its restore check both (R1, R5).
+
 **Group lift (decision review 2026-11, D-Q5, ticket 08; ADR-0008 amendment).** A **float component** (`CONTEXT.md`) may stand in
 bands above its document tier's bands. The decision is band input, made before any placement run of a command: `decideLifts`
 (`src/pipeline/lift-round.ts`) runs the command once with no lift, measures the components on its published model (`measureLifts`, a
@@ -522,7 +551,7 @@ raise it later and never lower it.
 
 ## Stage 5 — sides, phase two; resize; repack
 
-Ticket 83 reserves block-face pitch before sizing and rejects a provably over-cap span at the end of stage 5, before region placement. It records declaration ties in the stage-4 row draft, preserving foreign-group slots and carrying the parents' geometric order through the terminal follower tier. Terminal follower rows are then fitted jointly on a draft: seats that add or deepen a sibling/frame spacing violation all decline by name before any node moves. Each refusal restores that row and rechecks the remaining proposals; the loop is bounded by the number of candidate rows.
+Ticket 83 reserves the block pitch before sizing (since dense-16x9 ticket 04 a neighbour-pair pitch of each member port, `LayoutNode.pairPitch`; sizing, the alignment allowance and the trim read the sum of the pair pitches of a face, `pairExcess`) and rejects a provably over-cap span at the end of stage 5, before region placement. It records declaration ties in the stage-4 row draft, preserving foreign-group slots and carrying the parents' geometric order through the terminal follower tier. Terminal follower rows are then fitted jointly on a draft: seats that add or deepen a sibling/frame spacing violation all decline by name before any node moves. Each refusal restores that row and rechecks the remaining proposals; the loop is bounded by the number of candidate rows.
 
 Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
 `left`/`right` from the in-row order — except inside a **grid**, where a peer may stand above or
@@ -540,6 +569,41 @@ shared-port peers use their mean coordinate. Capture those coordinates before th
 rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy the remaining
 positions. Preserve signed keys and the relative physical order of unequal author keys, not an
 absolute slot number.
+
+**That order is provisional, and a ledger entry can replace it** (dense-16x9 ticket 07). The far ends move after this sort: 7c centres and grows, the close-up and 7f move boxes, and
+a face sorted here can stand the wrong way round at publication (G5 fails it). Stage 5 stays the one place that seats a face. The **far-end round** (`farEnd`, `rounds.ts`; the last
+round of the command) reads the final positions of a completed placement, and for every face that fails G5 and that no other owner holds (a recorded first-turn face, a bar, a bundle
+member, a mesh-bus port, a solid-block face) proposes a sequence (`proposeFarEndOrder`, `far-end-order.ts`). Top and bottom faces read x, lateral faces read y. G5 fails a pair
+whose far-end ranges are strictly separated and whose ports stand the other way round, so those pairs are a partial order (an interval order); ranges that overlap impose nothing, and a
+port with no routed far end imposes nothing. Among the ports ready to go next, the one with the lowest key goes first: the mean of its routed far ends, the shared key of a facing pair
+(`pairedFaceKey`), or the ordinary key above for a port with no routed far end; a tie keeps the order the ports stand in, then the port identity (R3). An authored port keeps its slot.
+Both faces of a pair read one key per link, so no end sorts against the slots the other end changes. The sequence is reserved as a `farEndOrder` ledger entry (one per face, the whole
+face in engine order; a later entry for a face replaces the earlier one) and one more placement run seats it here, after the sort and before `seatAuthored`; every stage after it
+re-reserves its pitch, lanes, stems and rows around the new order, and the 7e check of the ledger refuses a run in which a stage moved the face. The face is no turn-ordered face and is
+outside the scope of the turn order (`turnScope`). `freeze.farEndOrder` records what was seated; it grants G5 no exemption: G5 judges the geometry. The trial is kept when no
+other face fails that did not before, at least one proposed face settles, no proposed face is worse, and the guards of every judged re-run hold (no removed link, no new gate or
+constraint finding, no broken separation, no kept course over its turns) and the unified order is not worse. The canvas guard reads the **published canvas**: the canvas that stage 9
+(`linkLabels`, `refitCanvas`) publishes after the route, not the routed canvas, which stage 9 refits afterwards. A trial whose published canvas has more than `FAR_END_CANVAS_GROWTH`
+(1.25) times the area of the baseline's is refused; a smaller growth is kept, and the note names it ("the published canvas grows from A to B px"). A proposed face that stays stale after a
+kept trial hands the round the next proposal, read from its own final positions. The round has **its own count**: at most `FAR_END_ORDER_RUNS` (2) placement runs in one run of the stages
+(one `Env`; a group lift or a width trial makes a further `Env`, so a command can make that many more), outside the shared re-run budget (`MAX_RERUNS`) and the placement cap, so the
+rounds before it cannot starve the one round that reads their settled result. A sheet with no stale face makes no run. A proposal that repeats a state the round has already tried
+ends the round (`proposalKey`), so a face that flips back is refused once and not tried again. A trial is withdrawn on a **named refusal** only: a placement refusal of the bands, or a
+postcondition refusal of a producer (`PostconditionRefusal`). A deadline, a budget refusal and a plain `Error` end the command; the round never swallows them. The record is backed
+by the ledger: restore and the freeze check refuse a `freeze.farEndOrder` with no ledger, with a face held twice, with a face of another owner (a recorded first-turn face, a bar, a
+bundle member, a bus port, a solid-block face), or with a face that no entry reserves. Production writes a record only when it holds a face; an absent record and an empty record
+are the same. The notes `FAR_END_ORDER_TAKEN`, `FAR_END_ORDER_OWNED`, `FAR_END_ORDER_DECLINED` and `FAR_END_ORDER_UNSETTLED` say what happened. No 7c rule may re-order a port: the
+permission stays as it is.
+
+**The U of a sibling row (dense-16x9 ticket 06, slice C).** Once the sides are voted, and before the nodes are sized, each outer
+link of each `siblingRows` record takes a `u-turn` course (`planSiblingUTurns`): both ports move to one horizontal face of the
+sub-tier (`courseHint`, the voted lateral side as `naturalSide`), the course joins `courses` and the ledger (producer `sides-two`),
+and 7a plans its U part in the tier gap that face looks at, so stage 8 discovers no row. One face per record: of the faces whose
+tier gap exists (`uTurnFacesGap`), the one with fewer ports on the nodes of the sub-tier between the two ends of the outermost link
+(their links cross the rows); a tie takes fewer ports on the U ends, then `top`. Nested pairs nest their U parts (`uEdges`). An outer
+link keeps its side and the route stage 8 gives, named `SIBLING_UTURN_DECLINED`, when it has a course already, when an end is
+authored, hinted or shared by another link, or when neither face looks at a tier gap (the padding row of the outer sheet edge is not
+built, slice A).
 
 **A group box holds its own title from here on** (snack-theme ticket 157). The box a group's content asks for (`contentBox`, which
 `fitRegionGroup` fits) is at least as wide as the group's measured title plus the 8 px title inset on each side and one clearance step
@@ -603,6 +667,11 @@ receive anchors only. `rebuildNodeGeometry(draft, ids, 'current')` lets later ru
 explicit anchors while replacing content geometry by stable owner/ID. The renderer consumes
 these bounds without measuring or reflowing text. Group and link labels have later producers.
 
+Facing lateral ports of adjacent members in one row or grid also reserve their described link's straight label floor in `rowGap`.
+It reads named pill half-widths from metadata before pills exist; anonymous ports contribute zero.
+The body gap is label width plus both 8 px shortening margins, plus twice the larger pill half-width for a routed link,
+or both half-widths for an unsuppressed overlay. Centring reads this same `rowGap` floor. Node positions carry the reservation.
+
 `freezePortTopology` publishes an immutable clone with a serializable topology/floor baseline.
 Every subsequent stage uses `withLayoutMutation(previous, rule, draft => { ... })` and retains
 its returned snapshot. Existing mutating helpers receive the draft. The closed rule validators
@@ -663,6 +732,12 @@ the parts and the room of the link labels, once. For each same-tier pair with fa
 ports: level the facing ports (move the ports on the node with fewer on that side) and, if
 nothing lies between, **pin** a non-bundle link as a straight horizontal. Bundle endpoints are
 levelled here but remain unpinned for stage 7e.
+
+After levelling, `rowGap` also reserves both detour stems for a described routed pair that still jogs and whose `expectedRowPath`
+is declined. A non-adjacent facing pair reserves the label, both stems and the anchor-side pill allowance across its whole span.
+The row sweep pushes only the right end and later members; adjacent clearance is then preserved by the same sweep.
+A held chord keeps the straight floor even with unequal end heights. Same-row room is tight, label width plus 2 × 8 px between
+pill faces; short steep chords are accepted by owner ruling 17. The positions carry the room before chord freezing.
 
 `rows(model)` runs inside the `rows` transaction. The baseline is the highest row-node top in the
 tier band; nodes move up only, and row group boxes fit the flattened nodes with the standard
@@ -1377,6 +1452,11 @@ ticket 68) and closes a group up toward its sibling by the width the trim freed 
 as that feed's authoritative x and chases a corridor that has moved. It reserves no room itself: the solve after it grows the gap for the
 new row (§ 7a states the whole condition).
 
+Same-row link-label room was reserved in stages 5–6. `reserveLinkLabelRoom` leaves it untouched unless a later border cuts its window.
+Cross-group same-tier runs, hinted overlay L runs, room across a run and tier-gap label deficits remain 7f responsibilities.
+The yield ranking and the window producer read one growth split: x between pill faces for a same-tier held chord, y at the tier-gap
+split otherwise. The validator still replays the one 7f room producer.
+
 `topUpBandClearance` rebuilds every moved node's pills and text, including lower-tier cascades, before
 `holdColumnsAfterPush` and `reserveLinkLabelRoom` read them.
 
@@ -1591,7 +1671,8 @@ every authored link label (bars and unsuppressed overlay links included; bundle 
 measured and its link's run — symmetric about the midpoint the label will take, out to the nearer
 pill face or node edge — is made at least the label width plus both 8 px shortening margins: a link between tiers
 moves nothing in the reservation: its deficit is a term of the height of the tier gap, which the one solve at the end of 7f reads
-(`solveTierGaps`, `reserveLinkLabelRoom` with `gapRoom`, architecture-2 ticket 57); a link between two ends of one tier inserts the room at
+(`solveTierGaps`, `reserveLinkLabelRoom` with `gapRoom`, architecture-2 ticket 57); same-row facing runs already hold their
+stages 5–6 floor. A remaining link between two ends of one tier inserts the room at
 the gap: every group in every tier at or beyond the split between the two pill faces moves right,
 and a group straddling the split shifts only the nodes beyond it — in the link's own tier those that
 start beyond it, elsewhere those with any part beyond it — so alignments, flank sides and
@@ -1708,7 +1789,15 @@ label placement decides: with no window the label may lie across a border, with 
 a place on a link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that
 names no described link. The settled chord and rank judges, as the lane reseat, refuse a move that names a new link in the room set
 (`noNewFindings('room')`, `roomFindings`): a room given up, and a room a reservation would still grow.
-A move that runs after the reservation keeps a same-tier row room: `holdsMove` has the kind `labelRoom` (`label-room-guard.ts`), which refuses a move that shifts the ends of a described same-tier link apart and leaves a row shortfall the model did not have (decision review ticket DR-02, R2). Nothing reserves the room again.
+A move that runs after the reservation keeps a row room: `holdsMove` has the kind `labelRoom` (`label-room-guard.ts`), which refuses a move that leaves a row shortfall the model did not have (decision review ticket DR-02, R2). Nothing reserves the room again.
+A complete centring step can also widen a body inside its group. After chords settle, its postcondition (`rowRoomKeptByStep`) reads the
+same producer replay as `rowRoomHolds`; it refuses any new same-tier shortfall, including a cross-group window that `siblingLimit`
+cannot bound. The move, growth and clamp are accepted or restored together (dense ticket 10). Both guards read the producer's row reading (`reserveLinkLabelRoom` with `only: 'rows'`: the row branch and the hinted overlay L, on a
+copy) for every move or step that changes a box or a body, and for nothing else. The window of a run is bounded by every drawn border it
+crosses (`labelBorders`: group boxes and frames, whose edges can come from cells of other tiers), by reserved runs and by yield bands, and
+the run itself is chosen inside the producer, so no list of what can close a window is kept (review 10b, F1 and its follow-up). The step
+reads the model as it found it only when the model now has a shortfall. A refused step returns no growth and no decline of its own, so the
+alignment record keeps what accepted steps wrote (review 10b F2). Most centring steps leave their group as it was and read nothing.
 Publication and restore re-run the reservation on a copy and reject a model it would still change.
 
 **Linked groups share a grid (ADR-0012).** Before labels are planned, groups joined by vertical

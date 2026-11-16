@@ -10,8 +10,8 @@
 # and `feed-b7` in Feeds B, inside the run of `up-b1`. Each leaf row then holds members with several links. Two lines are PENDING: both rows
 # seat and pass the stage-5 proof, and stage 5 then keeps each on one line by its area objective ("two lines give 3201.48 x 1456.17 px, not
 # less area than 3201.48 x 1390.67 px"): the pair tier sets the stage-5 width, so the second line adds height and takes no width.
-# STAGED outside goldens/synthetic/ (the corpus gate would fail it): the sheet still fails G5 (port order, dense-16x9 ticket 05) and G6
-# (parallel clearance of the same-tier links between the hubs, ticket 06). It moves to goldens/synthetic/ when tickets 04, 05 and 06 make it clean.
+# STAGED outside goldens/synthetic/: since ticket 06 (slice C) core-b mirrors its hubs, hub-a2 to hub-b2 is one level chord and hub-a1 to hub-b1 a planned U
+# above the hub rows, and every gate passes. It moves to goldens/synthetic/ when ticket 04 is done too.
 # Test-only input owned by dense-16x9 ticket 01; test/pipeline/two-pole-ranks.test.ts reads the ranks. Other dense-16x9 tickets measure on it.
 portograph: 2
 profile: network

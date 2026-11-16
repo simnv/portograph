@@ -1,4 +1,4 @@
-import type { Frame, LayoutLink, LayoutModel, LayoutNode, PathSegment, Point, Rect } from '../model/index.js';
+import type { Frame, LayoutLink, LayoutModel, LayoutNode, PathSegment, Rect } from '../model/index.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { EPS, bottom, contains, horizontal, length, near, overlapSegment, rectDistance, rectOverlap, right, samePoint, segmentDistance, segmentRect, segmentRectDistance, vertical } from './geometry.js';
 
@@ -18,12 +18,13 @@ interface Span { x: number; y: number; right: number; bottom: number; measurable
 const REJECT_LIMIT = 2 ** 26;
 const measurable = (x: number, y: number, right: number, bottom: number): boolean =>
   x > -REJECT_LIMIT && y > -REJECT_LIMIT && right < REJECT_LIMIT && bottom < REJECT_LIMIT;
-import { anchorOnBoundary, barContact, bundlePair, endpoints, fanCrossings, groupBoxes, groupConsumers, incident, junctionFan, labelArea, linkPort, mergedRun, outward, port, refEqual, refKey, sharedStem, stemCopy } from './model.js';
+import { anchorOnBoundary, barContact, bundlePair, endpoints, fanCrossings, groupBoxes, groupConsumers, incident, junctionFan, labelArea, linkPort, mergedRun, outward, port, refEqual, sharedStem, stemCopy } from './model.js';
 import { areaDistance, areaOverlap, areaSegment, areaSegmentDistance } from '../geometry/oriented.js';
 import { pathEnd } from '../layout/path-end.js';
 import { isRoutedChord } from '../layout/frame-paths.js';
 import { diagonalMayCross, linkFreeMargin } from '../layout/diagonal-text.js';
 import { faceKey, turnRecordFaults } from '../layout/turn-order.js';
+import { facePositions, farAnchorIndex, standsWrong } from '../layout/far-end-order.js';
 import { separationShortfalls } from '../layout/constraints/separation.js';
 import type { Segment } from './model.js';
 import type { GateId, GateResult, ScoreCounters } from './types.js';
@@ -114,11 +115,9 @@ function separationGate(model: LayoutModel, fail: (id: GateId, code: string, ele
  */
 export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], routedLinks: ReadonlySet<LayoutLink>,
   fail: (id: GateId, code: string, elements: string[], message: string) => void): void {
-  // Every port's far anchors, recorded in one pass over the routed links. The port-order gate below
+  // Every port's far anchors, recorded in one pass over the routed links (`farAnchorIndex`, the reader that the far-end round shares: ticket 07). The port-order gate below
   // reads this index; scanning every link for every port made the gate quadratic in the diagram.
-  // A link is seen from both of its ends, exactly as the gate saw it, and a link whose far port is
-  // missing contributes nothing, as before.
-  const farAnchors = new Map<string, Point[]>();
+  const farAnchors = farAnchorIndex(model, routedLinks);
   const turned = new Set((model.freeze?.turnOrder ?? []).map(face => faceKey(face.node, face.side)));
   // A fault of the whole record, or of a face of a node that the model does not have, belongs to no node of `nodes`: it fails whatever subset the caller asks about.
   for (const fault of turnRecordFaults(model, 'anchor')) {
@@ -127,34 +126,11 @@ export function portOrder(model: LayoutModel, nodes: readonly LayoutNode[], rout
     fail('G5', 'port-order', [fault.node ?? '*'], fault.side === undefined ? `The record of the turn round does not hold: ${fault.why}`
       : `The ${fault.side} face is recorded as taken by the turn round, but ${fault.why}`);
   }
-  for (const link of model.links) {
-    if (!routedLinks.has(link)) continue;
-    const ends = endpoints(link);
-    for (const [near, far] of [[ends.from, ends.to], [ends.to, ends.from]] as const) {
-      const target = port(model, far);
-      if (!target) continue;
-      const at = refKey(near), list = farAnchors.get(at);
-      if (list) list.push(target.anchor!); else farAnchors.set(at, [target.anchor!]);
-    }
-  }
   for (const node of nodes) for (const side of ['top', 'right', 'bottom', 'left'] as const) {
-    const alongX = side === 'top' || side === 'bottom';
-    const positions = turned.has(faceKey(node.id, side)) ? [] : node.ports.filter(p => p.side === side && p.authorOrder === undefined).flatMap(p => {
-      const peers = farAnchors.get(refKey(p.ref));
-      if (!peers?.length) return [];
-      let min = Infinity, max = -Infinity;
-      for (const anchor of peers) {
-        const at = alongX ? anchor.x : anchor.y;
-        if (at < min) min = at;
-        if (at > max) max = at;
-      }
-      return [{ own: alongX ? p.anchor!.x : p.anchor!.y, min, max }];
-    });
+    const positions = turned.has(faceKey(node.id, side)) ? [] : facePositions(node, side, farAnchors);
     for (let i = 0; i < positions.length; i++) for (let j = i + 1; j < positions.length; j++) {
-      const a = positions[i]!, b = positions[j]!;
       // Strictly separated far-end ranges whose ports stand the other way round.
-      const wrong = (x: typeof a, y: typeof a): boolean => x.own < y.own - EPS && x.min > y.max + EPS;
-      if (wrong(a, b) || wrong(b, a))
+      if (standsWrong(positions[i]!, positions[j]!) || standsWrong(positions[j]!, positions[i]!))
         fail('G5', 'port-order', [node.id], 'Port order must match strictly separated far-end ranges unless authored');
     }
     const authored = node.ports.filter(p => p.side === side && p.authorOrder !== undefined)

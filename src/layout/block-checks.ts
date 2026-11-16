@@ -2,6 +2,8 @@ import { chordBoxRefusal } from './chord-boxes.js';
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
+import { facePairPitches } from './pair-pitch.js';
+import { portId } from './skeleton-graph.js';
 
 export const BLOCK_ANGLE = 34;
 export const BLOCK_CAP = 600;
@@ -31,6 +33,13 @@ export function blockReservationsFault(model: LayoutModel): string | undefined {
       if (ports.some(port => !port?.anchor)) return `${member.link} has no anchors`;
       const ordered = [...ports].sort((a, b) => a!.anchor!.y - b!.anchor!.y);
       if (ordered[0]!.side !== 'bottom' || ordered[1]!.side !== 'top') return `${member.link} lost its horizontal block faces`;
+      // Each member port keeps the block pitch from both neighbours (dense-16x9 ticket 04): the stored pair pitch, never a pitch read again.
+      for (const port of ordered) {
+        const key = portId(port!.ref), node = model.nodes[port!.ref.node]!;
+        if (!facePairPitches(node, port!.side!).some(entry => entry.rule === 'block' && entry.ports[0] === key && entry.min >= record.pitch)) {
+          return `${member.link} lost its block pitch`;
+        }
+      }
       const [a, b] = ports.map(port => port!.anchor!);
       const entry = chordBoxRefusal(model, link, { from: a!, to: b!, owner: link.owner });
       if (entry) return `${member.link} lost its reserved box clearance (${entry})`;

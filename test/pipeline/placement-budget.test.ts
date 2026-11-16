@@ -3,6 +3,7 @@ import { layout, parse } from '../../src/index.js';
 import { SkeletonError } from '../../src/layout/skeleton.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
 import { MAX_RERUNS } from '../../src/pipeline/index.js';
+import { FAR_END_ORDER_RUNS } from '../../src/pipeline/limits.js';
 import { LIFT_TRIALS } from '../../src/layout/lift.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -51,7 +52,9 @@ describe('a started placement is never given back (architecture 2, ticket 03)', 
     // A fan re-run does not catch a refusal (it ends the command), so the command may end in an error; either way the starts are bounded.
     await layout(parse(readSheet(sheet)), { createElkAttempt: refusing, createRouteAttempt: createAvoidAttempt }).catch(() => undefined);
     expect(attempts).toBeGreaterThan(1);
-    expect(attemptCounters.placeStarts).toBeLessThanOrEqual(MAX_RERUNS + 1);
+    // The far-end round's starts (dense-16x9 ticket 07) are its own count, at most `FAR_END_ORDER_RUNS`; every other start is within the command's re-runs.
+    expect(attemptCounters.placeStarts - attemptCounters.farEndStarts).toBeLessThanOrEqual(MAX_RERUNS + 1);
+    expect(attemptCounters.farEndStarts).toBeLessThanOrEqual(FAR_END_ORDER_RUNS);
     expect(attemptCounters.placeStarts).toBeGreaterThanOrEqual(1);
   }, 120000);
 });

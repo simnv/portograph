@@ -12,6 +12,7 @@ import { SIDE_TIE_ORDER } from './sides-one.js';
 import { gridChains } from './grid.js';
 import { barLabelFloor, barPortsFloor } from './bar-width.js';
 import { portSideCapacity, reservePortCorners } from './port-insets.js';
+import { endPitch, pairExcess } from './pair-pitch.js';
 import { chainBlockOf } from './read/chain.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 
@@ -174,8 +175,11 @@ export const ALIGNMENT_CAP_TIMES = 5;
  * the widening is: `alignSide` moves the ports of one side and grows the body around them.
  */
 export function ownSideWidth(node: LayoutNode, side: Side): number {
-  return Math.max(node.sizeFloor?.width ?? 0, node.contentSize?.width ?? 0,
-    2 * theme.padding + node.ports.filter(port => port.side === side).length * (node.sidePitch?.[side] ?? 0));
+  const count = node.ports.filter(port => port.side === side).length, pitch = node.sidePitch?.[side] ?? 0;
+  // The neighbour-pair pitches and the block pitch at the ends count as sizing counts them (`pairExcess`, `endPitch`): the allowance reads the
+  // capacity the body was given.
+  const pairs = node.sidePitch?.[side] === undefined ? 0 : pairExcess(node, side, count, pitch) + (endPitch(node, side, pitch) - pitch);
+  return Math.max(node.sizeFloor?.width ?? 0, node.contentSize?.width ?? 0, 2 * theme.padding + count * pitch + pairs);
 }
 
 /**
@@ -263,7 +267,7 @@ export function sizeNodes(model: LayoutModel): LayoutModel {
     // carry it, so ELK's input stays as it was; centring reserves the span 7d will give the bar, where it first knows it.
     const bar = model.stage !== 'sides-one' && model.document.groups[authored.group]?.shape === 'bar'
       ? Math.max(barLabelFloor(node.ports.length ? authored.label : model.document.groups[authored.group]!.label),
-        ...(['top', 'bottom'] as const).map(side => barPortsFloor(sides[side].count, pitch[side]))) : 0;
+        ...(['top', 'bottom'] as const).map(side => barPortsFloor(sides[side].count, pitch[side]) + pairExcess(node, side, sides[side].count, pitch[side]))) : 0;
     node.size = {
       width: Math.max(node.sizeFloor.width, node.size?.width ?? 0, capacity('top'), capacity('bottom'), bar),
       height: Math.max(node.sizeFloor.height, node.size?.height ?? 0, capacity('left'), capacity('right')),

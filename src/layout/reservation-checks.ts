@@ -15,6 +15,7 @@ import { trunkKey } from './bus-room.js';
 import { trunkBuses, trunkHeads } from './trunk.js';
 import { portKey } from './sides-one.js';
 import { faceKey } from './turn-order.js';
+import { farEndFaceFailure } from './far-end-order.js';
 import { bundleNeighboursFailure, corridorSideFailure, floorFailure, groupOrderFailure, ofKind, rowOrderFailure, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
 
 type Found = { why: string; key?: string; link?: string };
@@ -40,6 +41,7 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
       return why === undefined ? undefined : { why, link: item.payload.link };
     }
     case 'pitchFloor':
+    case 'pairFloor':
     case 'nodeFloor': {
       const why = floorFailure(item, model);
       return why === undefined ? undefined : { why };
@@ -91,6 +93,11 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
       const turned = (model.freeze?.turnOrder ?? []).find(face => (item.payload.except ?? []).includes(faceKey(face.node, face.side)));
       if (turned !== undefined) return { why: `the ${turned.side} face of ${turned.node} holds a routed chord and keeps far-end order, but the turn order moved it` };
       return item.payload.requireChanged && (model.freeze?.turnOrder ?? []).length === 0 ? { why: 'the turn order moved no face' } : undefined;
+    }
+    case 'farEndOrder': {
+      // Stage 5 seated the face in the reserved order; no later stage re-orders it (dense-16x9 ticket 07). G5 judges the final geometry on its own.
+      const why = farEndFaceFailure(model, { node: item.payload.node, side: item.payload.side, ports: [...item.payload.ports] });
+      return why === undefined ? undefined : { why: `the ${item.payload.side} face of ${item.payload.node}: ${why}` };
     }
     case 'trunkDeclined': {
       const keys = trunkHeads(model).map(head => trunkKey(trunkBuses(model, head)));

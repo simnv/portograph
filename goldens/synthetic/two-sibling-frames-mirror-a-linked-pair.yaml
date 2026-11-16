@@ -1,0 +1,33 @@
+# Expected: two frames of one tier, each a head node over a row of two members (west: w1, w2; east: e1, e2), joined by two pairs of members (w1 with e1,
+# w2 with e2). Each linked member stands at the end of its row that faces the other frame, and the east row mirrors the order of its pair (e2 left of e1), so
+# the pairs nest: w2 to e2 is one level straight segment between the facing lateral faces, and w1 to e1 is a planned U whose row the tier gap below the two
+# rows reserves (three segments: two legs and the row). The bottom face is taken because no link leaves w2 or e2 downward (the top face holds two feeds).
+# Every gate passes, 0 crossings. Without the rule the rows keep e1 left of e2: both pairs take long orthogonal routes, 3 crossings, G6 fails.
+# Test-only input owned by dense-16x9 ticket 06 (slice C): test/pipeline/sibling-rows.test.ts.
+portograph: 2
+groups:
+  src: { tier: 0, label: Source }
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  sink: { tier: 2, label: Sink }
+nodes:
+  s0: { group: src, class: router }
+  wt: { group: west, class: router, label: WT }
+  w1: { group: west, class: switch, label: W1 }
+  w2: { group: west, class: switch, label: W2 }
+  et: { group: east, class: router, label: ET }
+  e1: { group: east, class: switch, label: E1 }
+  e2: { group: east, class: switch, label: E2 }
+  k1: { group: sink, class: router }
+  k2: { group: sink, class: router }
+links:
+  - [s0, wt]
+  - [s0, et]
+  - [wt, w1]
+  - [wt, w2]
+  - [et, e1]
+  - [et, e2]
+  - [w1, e1]
+  - [w2, e2]
+  - [w1, k1]
+  - [e1, k2]

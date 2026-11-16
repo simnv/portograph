@@ -16,6 +16,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * centring replay reads the geometry before the trim and the close-up (`untrimmedModel`, R1).
  */
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+
 const right = (box: { x: number; width: number }): number => box.x + box.width;
 const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string => {
   const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
@@ -23,12 +24,27 @@ const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string =>
   return JSON.stringify(copy);
 };
 
+/**
+ * Both sheets that close a group up fail G5 on their stage-5 order, and on the production path the far-end round (dense-16x9 ticket 07) repairs that order and removes the stretch the trim and
+ * the close-up are tested on. The test keeps the state through the public input: the document authors the order of the ports of the one face (`NormalisedPort.order` on an anonymous port,
+ * indexed by port ordinal), so stage 5 seats it, G5 holds, no face is stale and the round has nothing to propose. The layout runs the production path with no option.
+ * `end-trim.test.ts` reads the trim of the same input through `test/fixtures/authored-order` (named ports).
+ */
+const AUTHORED_ORDER: Record<string, { node: string; order: number[] }> = {
+  'a-sibling-group-closes-up-after-the-trim': { node: 'sink-far', order: [1, 0] },
+  'a-stretched-body-is-trimmed-to-its-ports': { node: 'sink-near', order: [0, 2, 1] },
+};
+const authored = (name: string) => {
+  const document = parse(source(name)), authoredFace = AUTHORED_ORDER[name];
+  if (authoredFace !== undefined) document.nodes[authoredFace.node]!.ports.forEach((port, index) => { port.order = authoredFace.order[index]!; });
+  return document;
+};
 /** Lays the sheet out with a tap on the drafts the producer had before the trim (one per placement attempt). */
 async function run(name: string): Promise<{ model: LayoutModel; drafts: LayoutModel[] }> {
   const drafts: LayoutModel[] = [], sink = targetTap.sink;
   targetTap.sink = (tap, value) => { if (tap === 'beforeEndTrim') drafts.push(JSON.parse(value) as LayoutModel); };
   try {
-    const model = await layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(authored(name), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     return { model, drafts };
   } finally { if (sink === undefined) delete targetTap.sink; else targetTap.sink = sink; }
 }

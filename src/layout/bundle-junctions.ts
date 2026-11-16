@@ -12,6 +12,7 @@ import { groupBoxes, groupConsumers } from '../score/model.js';
 import { segmentDistance, segmentRectDistance } from '../geometry/planar.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
+import { runPitches } from './pair-pitch.js';
 
 export interface BundleFans {
   members: Member[];
@@ -28,7 +29,10 @@ export function bundleFans(model: LayoutModel, bundle: Bundle, list: Member[], q
     const ordered = [...list].sort((a, b) => coordinate(a[end]) - coordinate(b[end]) || coordinate(a[far]) - coordinate(b[far]) || a.link.sourceIndex - b.link.sourceIndex);
     const groups = new Map<LayoutPort, Member[]>();
     for (const item of ordered) { const own = groups.get(item[end]) ?? []; own.push(item); groups.set(item[end], own); }
-    const spacing = Math.max(q, ...ordered.map(m => model.nodes[m[end].ref.node]!.sidePitch![m[end].side!]!));
+    // The face pitch of each member face, and the pair pitch of each two members that stand side by side at this end (`runPitches`, dense-16x9
+    // ticket 04): a pair pitch of a member with a port outside the bundle widens no row.
+    const spacing = Math.max(q, ...ordered.map(m => model.nodes[m[end].ref.node]!.sidePitch![m[end].side!]!),
+      ...runPitches(model.nodes[ordered[0]![end].ref.node]!, ordered[0]![end].side!, ordered.map(m => m[end].ref), q));
     const base = Math.min(...ordered.map(m => coordinate(m[end])));
     for (const [port, own] of groups) {
       // Fan rows sit 15 px out and then one pitch apart, but never within the edge margin of a group

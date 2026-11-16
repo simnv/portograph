@@ -1,3 +1,4 @@
+import { addPairPitch, neighbourPitch } from './pair-pitch.js';
 import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { declineOversizedBlocks, reserveBlockPitch, seatBlockFollowers } from './solid-blocks.js';
 import type { PortRef } from '../model/document.js';
@@ -13,9 +14,11 @@ import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { besideGap, separateFrameColumns } from './columns.js';
+import { planSiblingUTurns } from './sibling-frames.js';
 import { deriveFrames } from './frames.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { SideHintRefusal } from './placement-refusal.js';
+import { PlacementRefusal, SideHintRefusal } from './placement-refusal.js';
+import { farEndOwner } from './far-end-order.js';
 import { carriesTitle, nodeObstacleReach, nudgingDistance, portStemReach, routedStroke, sideStemReach, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, reservedCorridorX, transitTiers } from './lanes.js';
@@ -33,6 +36,7 @@ import { reserveColumns, seatColumn } from './column-arrangement.js';
 import { ofKind } from './reservations.js';
 import { pairedFaceKey, parallelSets, visitOrder, type ParallelSet } from './parallel-sets.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { rowLabelGap } from './row-label-room.js';
 const key = portId;
 
 /**
@@ -641,11 +645,42 @@ export function stemDepth(model: LayoutModel, port: LayoutPort, cache?: StemCach
 }
 
 /**
- * Row gap between horizontal neighbours: the largest of the stroke-aware node clearance, the two
- * facing named pills with their visible wire, and the stem a port that passes its neighbour by
- * needs in order to leave its node at all.
+ * The pair pitches of a bundle at its two ends (dense-16x9 ticket 04, reviews 3 and 4): where both ends stand on a top or bottom face, each two
+ * members keep, at both ends, the larger of their pair pitches at the two ends (`neighbourPitch`), so the tracks stay parallel and each end
+ * reserves the gap the other end needs. The carried pair is stored only as a pair entry of that face (`addPairPitch`, which merges by pair;
+ * rule `fan`). This function never writes `sidePitch`: a pair floor must not become a face-wide minimum (the invariant of the bundle pitch,
+ * below). A lateral end takes no carried pair: a lateral face has no pair record, and its gaps stand across those of a horizontal end (the
+ * block of 7d is planned only for facing ends, `facing`), so a lateral end keeps its own scalar pitch. Returns whether a record changed.
+ * Nothing changes where no pair pitch binds two members.
  */
-export function rowGap(model: LayoutModel, a: string, b: string): number {
+function carryBundlePairs(model: LayoutModel, links: readonly LayoutLink[]): boolean {
+  const ends = links.map(link => link.attachments!).filter(({ from, to }) => from.node !== to.node);
+  const nodes = [...new Set(ends.flatMap(({ from, to }) => [from.node, to.node]))].sort();
+  if (nodes.length !== 2) return false;
+  const at = (end: { from: PortRef; to: PortRef }, node: string): LayoutPort => findPort(model, end.from.node === node ? end.from : end.to)!;
+  let changed = false;
+  for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++) {
+    const pairs = nodes.map(node => [at(ends[i]!, node), at(ends[j]!, node)] as const)
+      .filter(([one, two]) => portKey(one.ref) !== portKey(two.ref) && one.side === two.side);
+    if (!pairs.every(([one]) => one.side === 'top' || one.side === 'bottom')) continue;
+    const need = Math.max(0, ...pairs.map(([one, two]) => neighbourPitch(model.nodes[one.ref.node]!, one.side!, one.ref, two.ref)));
+    for (const [one, two] of pairs) {
+      const node = model.nodes[one.ref.node]!, side = one.side!;
+      if (neighbourPitch(node, side, one.ref, two.ref) >= need) continue;
+      addPairPitch(node, side as 'top' | 'bottom', { rule: 'fan', ports: [portId(one.ref), portId(two.ref)].sort(), min: need });
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Row gap between horizontal neighbours: the largest of the stroke-aware node clearance, the two
+ * facing named pills with their visible wire, the stems and fans that turn here, and the described
+ * facing link's label floor. Before the topology freeze only that straight label floor is known;
+ * rows asks for detour stems after levelling, and later readers keep the same floor.
+ */
+export function rowGap(model: LayoutModel, a: string, b: string, labelDetours = model.freeze !== undefined): number {
   const protrusion = (id: string, side: Side): number => Math.max(0, ...model.nodes[id]!.ports
     .filter(port => port.side === side && port.ref.anonymous !== true)
     .map(port => measurePortPill(port.ref.name!).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2));
@@ -731,7 +766,7 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
   const fans = Math.max(reachA ? reachA + stemReach(model, model.nodes[b]!) : 0,
     reachB ? reachB + stemReach(model, model.nodes[a]!) : 0, shared);
   return Math.max(nodeGap(model, a, b), left + right + (left > 0 && right > 0 ? PILL_WIRE_GAP : 0),
-    passByStem(b, 'left', a), passByStem(a, 'right', b), turning, fans);
+    passByStem(b, 'left', a), passByStem(a, 'right', b), turning, fans, rowLabelGap(model, a, b, labelDetours));
 }
 
 /**
@@ -854,6 +889,19 @@ export function sortFace(model: LayoutModel, ports: readonly LayoutPort[], slots
   const byslot = turnOrder([...slots.values()]);
   return [...ports].sort((a, b) => bus.get(a)! - bus.get(b)! || byslot(slots.get(a)!, slots.get(b)!));
 }
+/**
+ * The ports of a face in the order the ledger reserved (`farEndOrder`, ticket 07). The reserved sequence must name exactly the ports of the face: a face whose ports changed since the
+ * sequence was taken is refused by name (`FAR_END_ORDER_DECLINED`), never seated by guesswork (R6). The authored ports keep the seats `seatAuthored` gives them after this.
+ */
+function farEndSeating(ports: readonly LayoutPort[], reserved: { node: string; side: Side; ports: readonly PortRef[] }): LayoutPort[] {
+  const byKey = new Map(ports.map(port => [key(port.ref), port] as const)), seated = reserved.ports.map(ref => byKey.get(key(ref)));
+  if (seated.length !== ports.length || seated.some(port => port === undefined) || new Set(seated).size !== ports.length) farEndDeclined(reserved, 'the face does not hold the ports of the reserved order');
+  return seated as LayoutPort[];
+}
+function farEndDeclined(reserved: { node: string; side: Side }, why: string): never {
+  throw new PlacementRefusal('ledger', `FAR_END_ORDER_DECLINED: the ${reserved.side} face of ${reserved.node}: ${why}`,
+    { stage: 'sides-two', reservationIds: [`farEndOrder:node:${reserved.node}:${reserved.side}`], owners: [{ kind: 'node', id: reserved.node }] });
+}
 /** The ports with an authored `order:` take the slots of the authored ports, in author order; the free ports keep theirs. */
 export function seatAuthored(ports: readonly LayoutPort[]): LayoutPort[] {
   const authored = ports.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
@@ -948,6 +996,9 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
     if (natural !== 'top' && natural !== 'bottom') throw new SideHintRefusal(`Side hint on ${id}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
     port.naturalSide = natural;
   }
+  // The outer pairs of each sibling row (dense-16x9 ticket 06, slice C) leave one horizontal face for a U part of its tier gap: their ports move to that face
+  // here, on voted sides and before the nodes are sized, so `sizeNodes` sizes the face and 7a plans the row.
+  planSiblingUTurns(model);
   // The bus edge is read after the routed sides are settled (a shared port recomputes its majority), within the span
   // the skeleton order gives, and before stage 5 resizes the nodes and repacks the rows.
   // A trunk join reads the side of its trunk first: its bars take the edge that fewer legs cross over their extended spans (mesh-bus.md, section 12.4).
@@ -968,11 +1019,15 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   }
   // Bundle membership and link widths are already known. Reserve their minimum side capacity
   // before lanes freeze, rather than discovering a larger row width in stage 7e.
+  // The invariant of the bundle pitch (dense-16x9 ticket 04, review 4): the common scalar pitch of a bundle is computed from intrinsic member
+  // pitches only, the stroke pitch and the scalar `sidePitch` of each member face, and it is computed to its fixed point before any pair is
+  // carried. A pair requirement never enters a scalar: the carry below writes pair entries only (`carryBundlePairs`), and this loop reads no
+  // pair entry. So a pair floor cannot become a face-wide minimum through a bundle, at either end.
+  const bundleLinks = model.bundles.map(bundle => model.links.filter(link => link.bundle === bundle.id));
   let pitchChanged = true;
   while (pitchChanged) {
     pitchChanged = false;
-    for (const bundle of model.bundles) {
-      const links = model.links.filter(link => link.bundle === bundle.id);
+    for (const links of bundleLinks) {
       const ports = links.flatMap(link => [link.attachments!.from, link.attachments!.to])
         .map(ref => model.nodes[ref.node]!.ports.find(port => key(port.ref) === key(ref))!);
       const pitch = Math.max(16 + Math.max(DEFAULT_STROKE_WIDTHS.path, ...links.map(linkStrokeWidth)),
@@ -982,6 +1037,11 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
         if (node.sidePitch![port.side!]! < pitch) { node.sidePitch![port.side!] = pitch; pitchChanged = true; }
       }
     }
+  }
+  // Then the pairs, to their own fixed point (two bundles may share a face): pair entries only, read by no scalar.
+  for (let carried = true; carried;) {
+    carried = false;
+    for (const links of bundleLinks) if (carryBundlePairs(model, links)) carried = true;
   }
   reserveBlockPitch(model);
   // Final sides and bundle pitches replace stage 3's provisional topology before corners freeze.
@@ -1064,8 +1124,18 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       const usePlanned = turnScope(model, id, side) ? planned : plainTurns;
       const plain = usePlanned === plainTurns ? undefined : sorted(plainTurns);
       ports.splice(0, ports.length, ...sorted(usePlanned));
-      if (plain !== undefined && plain.some((port, index) => port !== ports[index])) turned.push({ node: id, side });
+      // A face the ledger gives a far-end order (ticket 07) is seated in it, and is no turn-ordered face: the order came from final positions, not from the planned turns.
+      const reserved = (model.farEndOrder ?? []).find(face => face.node === id && face.side === side);
+      if (reserved !== undefined) {
+        // A face that another owner holds is never seated by this order (the proposal leaves it out; a ledger that names it is refused by name, R5).
+        const owner = farEndOwner(model, id, side);
+        if (owner !== undefined) farEndDeclined(reserved, `the face belongs to ${owner === 'turn' ? 'the turn order' : `a ${owner}`}`);
+        ports.splice(0, ports.length, ...farEndSeating(ports, reserved));
+      }
+      else if (plain !== undefined && plain.some((port, index) => port !== ports[index])) turned.push({ node: id, side });
       const ordered = seatAuthored(ports);
+      // The seats of the authored ports may move the sequence: the face then stands in an order the ledger did not reserve, and the record could not back it.
+      if (reserved !== undefined && ordered.some((port, index) => key(port.ref) !== key(reserved.ports[index]!))) farEndDeclined(reserved, 'the authored ports take other seats than the reserved order gives');
       ordered.forEach((port, index) => { port.engineOrder = index; });
       const seated = ordered.filter(port => port.anchor !== undefined);
       if (seated.length > 1 && seated.some(port => bundled.has(key(port.ref)))) {

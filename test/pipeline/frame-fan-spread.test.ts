@@ -68,7 +68,8 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     const short = await at(3000), long = await at(600_000);
     const shape = (model: LayoutModel): unknown => model.links.map(link => [link.id, link.technique, link.path!.segments]);
     expect(shape(short)).toEqual(shape(long));
-    expect(short.nodes['core-1']!.sidePitch!.bottom).toBeGreaterThan(12);
+    // The fan floor is stored per neighbour pair (dense-16x9 ticket 04); the face pitch stays the base pitch.
+    expect(Math.max(...(short.nodes['core-1']!.pairPitch?.bottom ?? []).map(entry => entry.min))).toBeGreaterThan(12);
     expect(short.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
     expect(fan(short).filter(link => link.technique === 'straight')).toHaveLength(8);
   });
@@ -83,6 +84,7 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     const shape = (model: LayoutModel): unknown => model.links.map(link => [link.id, link.technique, link.path!.segments]);
     expect(shape(slow)).toEqual(shape(fast));
     expect(slow.nodes['core-1']!.sidePitch).toEqual(fast.nodes['core-1']!.sidePitch);
+    expect(slow.nodes['core-1']!.pairPitch).toEqual(fast.nodes['core-1']!.pairPitch);
     expect(slow.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
   });
 
@@ -119,12 +121,14 @@ describe('a fan spreads its ports so its diagonals hold clearance', () => {
     const ports = core.ports.filter(port => port.side === 'bottom').sort((a, b) => a.anchor!.x - b.anchor!.x);
     ports.forEach((port, i) => { port.anchor!.x = ports[0]!.anchor!.x + 12 * i; });
     core.sidePitch!.bottom = 12;
-    const all = measureFans(model).floors.get('core-1')!.bottom!;
+    const most = (floors: ReturnType<typeof measureFans>['floors']): number => Math.max(0, ...floors.filter(item => item.node === 'core-1' && item.side === 'bottom').map(item => item.min));
+    const all = most(measureFans(model).floors);
+    expect(all).toBeGreaterThan(0);
     const middle = fan(model).find(link => link.attachments!.from.node === 'core-1' && link.attachments!.from.ordinal === ports[1]!.ref.ordinal)!;
     model.document.links[middle.sourceIndex]!.route = 'orthogonal';
     const measured = measureFans(model);
     expect(measured.declined).toEqual([]);
-    expect(measured.floors.get('core-1')?.bottom ?? 0).toBeLessThanOrEqual(all);
+    expect(most(measured.floors)).toBeLessThanOrEqual(all);
     expect(all).toBeLessThan(60);
   });
 

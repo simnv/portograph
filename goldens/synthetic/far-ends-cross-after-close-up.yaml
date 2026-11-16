@@ -1,0 +1,25 @@
+# Expected: far-end order is read from final positions (dense-16x9 ticket 07), after the close-up. The end trim narrows `leaf-far` and the close-up moves its group toward `leaf-near`, so
+# the far ends of its top face move after stage 5 sorted them: G5 fails on `leaf-far` before the far-end round (one crossing, four bends, 405 x 484 px). The round reads the final
+# positions and places once more with the order reserved: G5 passes, no crossing, two bends, canvas 441 x 484 px. `far-end-order.test.ts` reads the layout.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group); `mids` is declared before `feeds`.
+portograph: 2
+groups:
+  mids: { tier: 1 }
+  feeds: { tier: 0 }
+  beside: { tier: 1 }
+  right: { tier: 2 }
+  left: { tier: 2 }
+nodes:
+  feed-a: { group: feeds, class: router, ports: [] }
+  feed-b: { group: feeds, class: router, ports: [] }
+  mid-1: { group: mids, class: switch, ports: [] }
+  mid-2: { group: mids, class: switch, ports: [] }
+  mid-3: { group: beside, class: switch, ports: [] }
+  leaf-near: { group: left, class: server, ports: [] }
+  leaf-far: { group: right, class: server, ports: [] }
+links:
+  - [mid-1, leaf-near]
+  - [mid-2, leaf-near]
+  - [feed-a, leaf-near]
+  - [feed-b, leaf-far]
+  - [mid-3, leaf-far]

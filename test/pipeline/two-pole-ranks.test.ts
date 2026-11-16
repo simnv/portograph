@@ -50,11 +50,11 @@ describe('two-pole ranks in the layout', () => {
     expect(model.tierBands.filter(band => band.groups.some(id => id.startsWith('core-'))).length).toBe(3);
   });
 
-  it('the twin: the known gate state of the staged sheet (G5 and G6 only), to be removed when tickets 04, 05 and 06 make it clean', async () => {
+  it('the twin: every gate passes once tickets 05 and 06 seat its hubs (one level chord and one U between the cores)', async () => {
     const model = await run(TWIN);
     const gates = score(model).snapshot.gates;
     const failing = Object.entries(gates).filter(([, gate]) => gate.violations.length > 0).map(([id, gate]) => [id, gate.violations.map(item => item.code)]);
-    // Measured: one port-order violation (ticket 05, far-end order) and four parallel-clearance pairs between same-tier links (ticket 06).
-    expect(failing).toEqual([['G5', ['port-order']], ['G6', ['parallel-clearance', 'parallel-clearance', 'parallel-clearance', 'parallel-clearance']]]);
+    // Measured before slice C of ticket 06: four parallel-clearance pairs between same-tier links (G6) and one port-order violation (G5).
+    expect(failing).toEqual([]);
   });
 });

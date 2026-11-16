@@ -33,7 +33,8 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
     expect(crossChords(model).every(link => chordKind(model, link) === 'cross')).toBe(true);
     const measured = measureFans(model);
     expect(measured.declined).toEqual([]);
-    expect([...measured.floors]).toEqual([['provider', { top: 16 }]]);
+    // Dense-16x9 ticket 04: a floor per pair of ports of the face, not one pitch for the face; slice 1 writes the face's need on every pair.
+    expect(measured.floors.map(item => [item.node, item.side, item.min])).toEqual([['provider', 'top', 16], ['provider', 'top', 16], ['provider', 'top', 16]]);
     expect(topPorts(model, 'provider').map(port => port.anchor!.x).map((x, i, xs) => i ? x - xs[i - 1]! : 12).every(step => Math.abs(step - 12) < 1e-6)).toBe(true);
   }, 60000);
 
@@ -49,7 +50,9 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
     const xs = topPorts(model, 'provider').map(port => port.anchor!.x);
     expect(xs).toHaveLength(3);
     for (let i = 1; i < xs.length; i++) expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(16 - 1e-6);
-    expect(model.nodes['provider']!.sidePitch!.top).toBe(16);
+    // The face keeps its base pitch; each pair of the fan keeps its pair pitch (dense-16x9 ticket 04).
+    expect(model.nodes['provider']!.sidePitch!.top).toBe(12);
+    expect(model.nodes['provider']!.pairPitch?.top?.map(entry => [entry.rule, entry.min])).toEqual([['fan', 16], ['fan', 16], ['fan', 16]]);
     for (const [i, one] of chords.entries()) for (const other of chords.slice(i + 1)) {
       const a = one.path!.segments[0]!, b = other.path!.segments[0]!, point = intersection(a, b);
       const strict = point !== undefined && ![a.from, a.to, b.from, b.to].some(end => samePoint(end, point));
@@ -83,7 +86,7 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
     model.frames = deriveFrames(model) ?? [];
     expect(crossChords(model)).toHaveLength(2);
     const measured = measureFans(model);
-    expect(measured.floors.get('provider')?.top).toBeUndefined();
+    expect(measured.floors.filter(item => item.node === 'provider' && item.side === 'top')).toEqual([]);
     expect(measured.declined.map(item => [item.node, item.side])).toEqual([['provider', 'top']]);
     const [note] = declinedFanDiagnostics(measured.declined);
     expect(note!.code).toBe('FAN_SPREAD_DECLINED');

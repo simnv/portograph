@@ -14,7 +14,17 @@ import { withoutJointOrder } from './joint-off.js';
  * from its input with it. A node at one end of a transit link gives back only with the other end, so its corridor can follow it in 7f.
  */
 const source = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
-const run = (name: string): Promise<LayoutModel> => layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+// The sibling-cascade test keeps its state through the public input: on the production path the far-end round (dense-16x9 ticket 07) repairs the stale stage-5 order that the state came with, so the
+// document authors the order of `src0` and `snk0` (`NormalisedPort.order` on an anonymous port, by port ordinal), stage 5 seats it and the round has nothing to propose. No option is set.
+const AUTHORED_ORDER: Record<string, Record<string, number[]>> = {
+  'a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first': { src0: [0, 2, 3, 1], snk0: [0, 2, 1] },
+};
+const authored = (name: string) => {
+  const document = parse(source(name));
+  for (const [node, order] of Object.entries(AUTHORED_ORDER[name] ?? {})) document.nodes[node]!.ports.forEach((port, index) => { port.order = order[index]!; });
+  return document;
+};
+const run = (name: string): Promise<LayoutModel> => layout(authored(name), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const bends = (model: LayoutModel): number => { const counts = score(model).snapshot.counts; return (counts.routed?.turns ?? 0) + (counts.overlay?.turns ?? 0); };
 const failing = (model: LayoutModel): string[] => Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed && gate.severity === 'error').map(([id]) => id).sort();
 const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string => {
@@ -89,18 +99,19 @@ describe('the three regression classes of a per-step decline', () => {
     expect(score(model).snapshot.metrics.crossings.count).toBe(7);
   }, 120000);
 
-  it('sibling cascade: a-group-shift gives snk0 back with its partner src1 and keeps bends 5 and G5 alone', async () => {
+  it('sibling cascade: a-group-shift gives snk0 back with its partner src1 and keeps bends 5, with the order authored and no gate failing', async () => {
     const model = await run('a-group-shift-leaves-a-chord-clear-of-a-lane-middle-tier-first'); // DR-04: the copy with `access` first
     expect(Object.keys(model.givenBack ?? {})).toEqual(['snk0', 'src1']);
     expect(bends(model)).toBe(5);
-    expect(failing(model)).toEqual(['G5']);
+    expect(failing(model)).toEqual([]);
   }, 120000);
 
   it('transit corridor: a-shared-end gives nothing back (bends 8, crossings 14)', async () => {
     const model = await run('a-shared-end-reads-its-port-order');
     expect(model.givenBack).toBeUndefined();
     expect(bends(model)).toBe(8);
-    expect(score(model).snapshot.metrics.crossings.count).toBe(14);
+    // 14 before the far-end round (dense-16x9 ticket 07) put the ports of its stale face in the order of the final far ends: 12 crossings, bends as before.
+    expect(score(model).snapshot.metrics.crossings.count).toBe(12);
   }, 120000);
 
   it('pass order: widened-child-packs-tier and a-hub-tiers-fan keep the growth a later pass completes (bends 2 and 6)', async () => {

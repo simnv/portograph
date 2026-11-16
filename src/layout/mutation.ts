@@ -2,6 +2,7 @@ import { validateEarlyReservations, validateReservations } from './reservations.
 import { validateStaggerRows } from './stagger.js';
 import { validateGroupLifts } from './lift.js';
 import { validateFeedSplits } from './feed-split.js';
+import { siblingRowsFault } from './sibling-frames.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
@@ -12,6 +13,7 @@ import { Validation } from '../parse/validation.js';
 import { portKey, sidesOne, SIDE_TIE_ORDER } from './sides-one.js';
 import { sizeNodes } from './size.js';
 import { lateralPillInset, portSideCapacity, validatePortCorners } from './port-insets.js';
+import { neighbourPitch, pairPitchFault } from './pair-pitch.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
@@ -26,6 +28,7 @@ import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, fla
 import { heldSourceGroups, rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
 import { freezeChords, spanCandidate } from './frame-paths.js';
 import { faceKey, laneFaceOrder, turnRecord, turnRecordFaults } from './turn-order.js';
+import { farEndFaceFailure, farEndOwner } from './far-end-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
@@ -188,7 +191,7 @@ function nodeLabels(model: LayoutModel) {
 function placement(model: LayoutModel): PlacementSnapshot {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id,
-      pick(node, ['bounds', 'size', 'sizeFloor', 'contentSize', 'contentInsets', 'sidePitch', 'portCorners', 'ports', 'icon'])])),
+      pick(node, ['bounds', 'size', 'sizeFloor', 'contentSize', 'contentInsets', 'sidePitch', 'pairPitch', 'portCorners', 'ports', 'icon'])])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ['bounds', 'rowOrder', 'nodes', 'tier', 'flank'])])),
     tierBands: model.tierBands, regions: model.regions, lanes: model.lanes, labelBands: model.labelBands,
     sharedRuns: model.links.filter(link => link.sharedRuns !== undefined).map(link => ({ link: link.id, runs: link.sharedRuns! })),
@@ -540,6 +543,8 @@ function validateGeometry(model: LayoutModel): void {
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!, measured = expected.nodes[id]!, box = node.bounds;
     validatePortCorners(node);
+    const pairs = pairPitchFault(node);
+    if (pairs !== undefined) throw new Error(pairs);
     if (!box || !node.size || !node.sizeFloor || box.width <= 0 || box.height <= 0) throw new Error(`Missing positive geometry on ${id}`);
     if (stages.indexOf(model.stage) >= stages.indexOf('bars') && model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar') {
       const group = model.document.groups[model.document.nodes[id]!.group]!;
@@ -576,7 +581,9 @@ function validateGeometry(model: LayoutModel): void {
         if (!horizontal && (coordinate < box.y + corner - PLACEMENT_EPS || coordinate > box.y + box.height - corner + PLACEMENT_EPS)) {
           throw new Error(`Port corner clearance violated on ${id}.${side}`);
         }
-        if (coordinate - prior < pitch - PLACEMENT_EPS) throw new Error(`Port spacing/order violates pitch on ${id}.${side}`);
+        // Two neighbours keep their pair's pitch (`neighbourPitch`): the face pitch, or the stored pair pitch above it.
+        const need = index === 0 ? pitch : neighbourPitch(node, side, ports[index - 1]!.ref, port.ref, pitch);
+        if (coordinate - prior < need - PLACEMENT_EPS) throw new Error(`Port spacing/order violates pitch on ${id}.${side}`);
         prior = coordinate;
         if (port.authorOrder !== undefined) {
           if (!Number.isSafeInteger(port.authorOrder) || port.authorOrder < authored) throw new Error(`Author order reversed on ${id}.${side}`);
@@ -638,12 +645,27 @@ function validateFreeze(model: LayoutModel): void {
   same(model.staggerRows, freeze.staggerRows, 'Frozen stagger reservation changed');
   same(model.feedSplits, freeze.feedSplits, 'Frozen feed splits changed');
   validateFeedSplits(model);
+  same(model.siblingRows, freeze.siblingRows, 'Frozen sibling rows changed');
+  const sibling = siblingRowsFault(model);
+  if (sibling !== undefined) throw new Error(`The sibling rows do not hold: ${sibling}`);
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
   validateSpans(model, freeze.spans);
   // The record of the turn round, in the order the ports stand (engine order here; G5 reads the anchors at publication).
   const faulty = turnRecordFaults(model, 'engine')[0];
   if (faulty !== undefined) throw new Error(`Frozen turn order${faulty.node === undefined ? '' : ` of ${faulty.node} ${faulty.side}`}: ${faulty.why}`);
+  // The far-end order stage 5 seated (ticket 07): the faces the model was told to seat, in the order they stand. G5 judges the geometry; the record grants it no exemption.
+  same(freeze.farEndOrder, model.farEndOrder, 'Frozen far-end order changed');
+  const seatedFaces = new Set<string>();
+  for (const face of freeze.farEndOrder ?? []) {
+    const why = farEndFaceFailure(model, face);
+    if (why !== undefined) throw new Error(`Frozen far-end order of ${face.node} ${face.side}: ${why}`);
+    // One owner per face (R1, R5): a face is seated once, and not a face that a block, a bar, a bundle, a mesh bus or the turn order owns (the same predicate the proposal reads).
+    const name = faceKey(face.node, face.side), owner = farEndOwner(model, face.node, face.side);
+    if (seatedFaces.has(name)) throw new Error(`Frozen far-end order names the ${face.side} face of ${face.node} twice`);
+    seatedFaces.add(name);
+    if (owner !== undefined) throw new Error(`Frozen far-end order of ${face.node} ${face.side}: the face belongs to ${owner === 'turn' ? 'the turn order' : `a ${owner}`}`);
+  }
   validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
   for (const floor of freeze.floors) if (floor.size.width <= 0 || floor.size.height <= 0) throw new Error('Invalid frozen floor');
@@ -674,12 +696,34 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
   if (model.courses !== undefined) result.freeze.courses = clone(model.courses);
   if (model.staggerRows !== undefined) result.freeze.staggerRows = clone(model.staggerRows);
   if (model.feedSplits !== undefined) result.freeze.feedSplits = clone(model.feedSplits);
+  if (model.siblingRows !== undefined) result.freeze.siblingRows = clone(model.siblingRows);
   const spans = model.links.filter(link => link.spanHint === true).map(link => link.id);
   if (spans.length) result.freeze.spans = spans;
   if (turnFaces.length) result.freeze.turnOrder = turnFaces.map(face => turnRecord(model, face.node, face.side));
   if (model.turnExcept !== undefined) result.freeze.turnExcept = [...model.turnExcept];
+  if (model.farEndOrder !== undefined) result.freeze.farEndOrder = clone(model.farEndOrder);
   if (floored.length) result.freeze.nodeFloors = floored.map(id => ({ node: id, size: { ...nodeFloors!.get(id)! } }));
   return protect(result, baseline);
+}
+
+/**
+ * The pitch records of a model restored before stage 5 (dense-16x9 ticket 04, R5, R6): the pair pitches name ports of their node and read,
+ * and from stage 3 on each top and bottom face fits the sum of its pitches. `validateEarlyReservations` checks the floors of the ledger.
+ */
+function validateEarlyPitches(model: LayoutModel): void {
+  const at = stages.indexOf(model.stage);
+  for (const node of Object.values(model.nodes ?? {})) {
+    const fault = pairPitchFault(node);
+    if (fault !== undefined) throw new Error(fault);
+  }
+  if (at < stages.indexOf('size')) return;
+  for (const node of Object.values(model.nodes)) {
+    if (node.size === undefined || node.sidePitch === undefined) throw new Error(`Missing size on ${node.id}`);
+    for (const side of ['top', 'bottom'] as const) {
+      const count = node.ports.filter(port => (port.side ?? port.sizingSide) === side).length;
+      if (count && node.size.width + PLACEMENT_EPS < portSideCapacity(node, side, count)) throw new Error(`Port capacity exceeds ${node.id}.${side}`);
+    }
+  }
 }
 
 /** Resume serialized output through this API; JSON.parse alone returns unprotected data. */
@@ -691,8 +735,14 @@ export function restoreLayoutModel(json: string): LayoutModel {
     if (model.freeze) throw new Error('Premature topology freeze');
     validateDocumentCss(model);
     resolve(model.document);
+    validateEarlyPitches(model);
     // The order reservations stage 4 wrote hold on the stage-4 model (ticket 18 review): the stages before the freeze check them here.
     validateEarlyReservations(model);
+    // The sibling rows stage 4 decided (dense-16x9 ticket 06, slice C) hold on the stage-4 model, before stage 5 reads them for the u-turn courses; no
+    // stage before 4 has one (R5, R6: a forged record is refused here, it never reaches a reader).
+    if (model.siblingRows !== undefined && stages.indexOf(model.stage) < stages.indexOf('skeleton')) throw new Error(`The sibling rows do not hold: a ${model.stage} model has no record`);
+    const sibling = siblingRowsFault(model);
+    if (sibling !== undefined) throw new Error(`The sibling rows do not hold: ${sibling}`);
     return model;
   }
   const baseline = validateDocument(model);

@@ -198,6 +198,10 @@ provider node that takes chords from three locations on one top face needs this.
 *As built (ticket 102).* Nothing beyond ticket 99: `measureFans` reads `routedChordCandidate`, `fanRoundHolds` drops a fan re-run when the number of held chords of both kinds falls (`FAN_ROUND_DROPPED`, info, names the lost and gained chords), unless the kept placement has a chord pair under the 10 px clearance that the re-run clears and no frame chord is lost. A face is measured with `FAN_SLACK` (4 px) of drift room, so three
 cross-frame chords that hold at the 12 px base pitch can still put a 16 px floor on their face; the fixture `a-provider-face-spreads-for-three-routed-chords` shows that. A face whose neighbouring chords
 need more than 60 px is declined (`FAN_SPREAD_DECLINED`); the unit test forges the shallow geometry, and no layout input reaches it.
+Since dense-16x9 ticket 04 (slice 1) the cap is per chord pair (a pair over it is declined alone) and the floors are stored as
+neighbour-pair pitches (`LayoutNode.pairPitch`); the face holds their sum. Slice 1 still writes the largest need of a face on every
+pair of its ports, so a port order that a later round changes keeps it too: exact floors per pair leave no room for the drift of 7f, one crowded direct member then refuses its family through
+the leg cascade, and five corpus sheets lost straight links. Slice 2 changes that with the isolated fallback.
 
 After the freeze, `chordsHold` and `blockedChords` also read foreign frame and canton boxes and
 the facing-edge rule for a cross-frame chord. `chordsHold` moves nodes only today, so it derives
@@ -632,7 +636,7 @@ Ticket 85 owns cap-limited geometry, side entry and the sheaf rule, plus broader
 
 A **sibling-frame link** joins two members of two frames of one document tier, in un-flanked `row` cells on one sub-tier (`CONTEXT.md`). On facing
 lateral faces, `right` on the node that stands left and `left` on the node that stands right, it is a cross-frame chord candidate of kind `cross`
-(`chordKindOf`, `siblingFrameKind`). The two faces face one another on one sub-tier, so Section 3 items 3 and 4 read as follows for it: the document tiers
+(`chordKindOf`; `siblingFrameLink` is the topology predicate it shares with the seat of slice C). The two faces face one another on one sub-tier, so Section 3 items 3 and 4 read as follows for it: the document tiers
 are equal, the sub-tiers are equal, and the lateral sides are opposite. Items 1 and 2 hold as before. `levelCrossChord` is the one predicate for "this
 `cross` chord stands on one sub-tier": the verdict and the rows rule both ask it (R1).
 
@@ -642,8 +646,9 @@ are equal, the sub-tiers are equal, and the lateral sides are opposite. Items 1 
   2026-11-03).
 - **Rows rule.** `expectedRowPath` does not pin the level path (`expectedLevelPath`) for such a link: that path has the `2x` length limit, which binds a level
   pair inside one frame. The frame rule (`expectedFramePath`) reads the chord and freezes it at the start of 7f with the other chords.
-- **Not built here.** Nothing yet seats the two ends at the facing ends of their rows, or plans a U for a second pair (slices C): a link whose body stands on
-  the line keeps the orthogonal route and names `ROUTED_CHORD_REFUSED` (`body`).
+- **Seated in stage 4 (slice C).** Stage 4 seats the two ends at the facing ends of their rows and nests a second pair, which takes a planned U
+  (`siblingRows`, `docs/design/pipeline.md`, stage 4 and stage 5). A link whose body still stands on the line (a pair set the seat declined) keeps the
+  orthogonal route and names `ROUTED_CHORD_REFUSED` (`body`).
 - **The level relation is held after the freeze (slice B review 1).** `freezeChords` records the held level chords that stand level (`frozenLevelChords`, a subset of
   `frozenChords`; R1). `blockedChords`, the one predicate behind `chordsHold`, names a recorded level chord that is not level any more, so a guarded move that would tilt
   it is refused like a move that puts a body on it. The one forced writer that shifts a single frame's row, the top padding growth of `reserveAcrossRunRoom` (a label

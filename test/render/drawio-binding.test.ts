@@ -350,11 +350,18 @@ describe('draw.io split link', () => {
   });
 
   it('carries the label on one run, here not the first', () => {
-    // This label has a cell of its own (section 3.1): a child of the run that draws its supporting segment.
-    expect(runs.map(item => item.attributes.label)).toEqual(['', '']);
+    // Contract section 3.1: a link label is a `link-label` cell with `pg-of`, a child of the run it stands on, or else the
+    // `label` of one link run. A reader looks for the cell first. Either form must name the second run only.
     const labels = objects(fresh).filter(item => item.attributes['pg-of'] === 'uplink');
-    expect(labels.map(item => item.attributes.label)).toEqual(['10G']);
-    expect(cell(labels[0]!).parent).toBe('pg-link~uplink~1');
+    expect(labels.length).toBeLessThanOrEqual(1);
+    const carried = runs.filter(item => (item.attributes.label ?? '') !== '');
+    if (labels.length === 1) {
+      expect(carried).toEqual([]);
+      expect(labels[0]!.attributes.label).toBe('10G');
+      expect(cell(labels[0]!).parent).toBe('pg-link~uplink~1');
+    } else {
+      expect(carried.map(item => [item.attributes.id, item.attributes.label])).toEqual([['pg-link~uplink~1', '10G']]);
+    }
   });
 
   it('keeps the example file equal to the export in every bound attribute', () => {

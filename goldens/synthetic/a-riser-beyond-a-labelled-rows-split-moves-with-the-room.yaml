@@ -1,8 +1,8 @@
-# Expected (architecture-2 ticket 23): label room wins over a lane, a mesh-bus riser too. The sync mesh over tiers 1 and 3 joins its
-# two buses with one riser that crosses tier 2 between `west` and `mid`. In `west`, `p1.r0` -> `p2.l0` is a labelled row link whose
-# run is too short for its label; 7f inserts the room at the split between p1 and p2, and everything beyond it moves out by the same
-# sum: p2, `mid`, the riser lane and the riser itself (x, and both ends). The riser lane stays at the riser's x, the bars still reach
-# it, and the label is drawn on its run. No LINK_LABEL_ROOM_UNRESERVED, no "Invalid riser lane".
+# Expected (architecture-2 ticket 23; dense ticket 10): stage 5 reserves the labelled row run before lanes.
+# The joined mesh-bus riser may stand on either outer side of the wide row, with its lane and both ends at one x.
+# The full peering label lies on its run. The test also gives the unlabelled control a late label deficit:
+# its riser beyond the split, its lane and both ends move by the deficit, together with the far row end.
+# No LINK_LABEL_ROOM_UNRESERVED and no "Invalid riser lane".
 # Test-only input; test/pipeline/link-label-rules.test.ts reads it.
 portograph: 2
 groups:
