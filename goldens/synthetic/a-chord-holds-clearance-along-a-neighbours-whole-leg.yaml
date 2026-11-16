@@ -3,6 +3,8 @@
 # runs a vertical leg from its port toward its gap row; the chord slants a little toward it. The chord check reads the whole leg
 # as placement will draw it (port face to the row, a stem short of the far boundary), not the 15 px stem only: the chord holds
 # the 10 px chord clearance along the leg or the link keeps the orthogonal route (ranked-groups ticket 91).
+# Two poles (dense-16x9 ticket 01, ADR-0026): `core` links up and down, so a leaf of it would stand beside it and the link to `deep` would cross no row.
+# `edge` therefore links to `deep` too: it is a downward anchor, stands on the last rank under `core`, and the `core`-`deep` link crosses its row.
 # Test-only input owned by ranked-groups ticket 91; test/pipeline/frame-chord-leg.test.ts reads it.
 portograph: 2
 groups:
@@ -18,3 +20,4 @@ links:
   - [isp, core]
   - [core, edge]
   - [core, deep]
+  - [edge, deep]
