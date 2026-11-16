@@ -1,0 +1,24 @@
+# Expected: Seat `a` and `d` side by side, `a` immediately left of `d`, although the sheet writes `b` between them (the order
+# `a`, `b`, `d`, and its reverse, give one drawing). A bundle whose members leave `a` to the right and enter `d` from the left turns in the
+# channel between the two bodies; `place` is a free row, so it owes that channel: a body that stands between the two ends stands in the
+# channel and the bundle is refused (`BUNDLE_CHANNEL_BLOCKED`). Stage 4 records the pair (`bundleNeighbours`), the row order seats it, and
+# every later reseat of the row asks the record. `b` and `d` only link downward to ports whose order the row leaves free, so nothing else
+# ranks `b` before or after `d`; the tie must not be left to the order of the input.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0 }
+  place: { tier: 1 }
+  lower: { tier: 2 }
+nodes:
+  head: { group: upper, ports: [{ name: p, side: bottom }] }
+  a: { group: place, ports: [{ name: p, side: top }, { name: q, side: right }, { name: r, side: right }] }
+  b: { group: place, ports: [{ name: p, side: bottom }] }
+  d: { group: place, ports: [{ name: p, side: bottom }, { name: q, side: left }, { name: r, side: left }] }
+  rail: { group: lower, ports: { side: top, list: [p, p] } }
+links:
+  - [head.p, a.p]
+  - [a.q, d.q]
+  - [a.r, d.r]
+  - [d.p, rail.p#1]
+  - [b.p, rail.p#2]

@@ -277,9 +277,19 @@ and not left for a later stage to discover.
    link runs along; a ragged row that holds a right-aligned peer is packed against the right columns
    rather than the left.
 3. **A group that holds both ends of a link owes that link its space, and a stacked shape has to
-   earn it** (stress ticket 32). A row gives it for nothing — every node of a row stands on one
-   line, so the two bodies are beside each other in an order the row fixes, with only the row gap
-   between them. Two faults, and **two different answers**, because the measurements give two
+   earn it** (stress ticket 32). A row gives it once the row keeps the two ends side by side: every
+   node of a row stands on one line, but another node can stand between the two ends, and a body
+   there stands in the channel (`BUNDLE_CHANNEL_BLOCKED`). For a bundle whose end faces look at each
+   other along the row (one `right`, the other `left`) a free row therefore **keeps the two ends
+   side by side**, `right`-facing end first (ticket 18, `bundle-neighbours.ts`): stage 4 decides
+   which pairs the row keeps right after ELK's result is read, seats the order, and writes the
+   ledger entry `bundleNeighbours`; `reseatRow` refuses an order that splits a pair, and the stage-4
+   check and every restore read the entry. A node ends at most one pair on each side and a chain
+   never closes a ring, so a node with enclosed bundles to three peers keeps what it can (the
+   heaviest bundle first, then the node names; never the input order) and the bundle left out keeps
+   the typed refusal. A canton, a rank cell, a flanked row, a grid and a bar are not free rows: a
+   cell keeps neighbours a peer link joins already (*feed order*), and the author places a canton.
+   Fixture: `a-row-seats-the-two-ends-of-a-bundle-side-by-side`. Two faults, and **two different answers**, because the measurements give two
    different answers.
 
    **A bundle: decide its direction before the rows are stacked** (architecture ticket 23, Q117). Its
