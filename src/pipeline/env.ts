@@ -29,8 +29,13 @@ export interface Env {
    */
   gateRuns: number;
   /**
-   * While above 0, a placement that starts is an exempt trial's (the flat-gap choice, `initial.ts`): `place` credits it to `gateRuns` before its
-   * cap check, every retry inside the trial included (dense-16x9 ticket 04 slice 3, review 1, finding 2). Absent or 0 otherwise.
+   * While above 0, a placement that starts is an exempt trial's (the stagger gate's trials and the flat-gap choice, `initial.ts`): `place` credits
+   * it to `gateRuns` before its cap check, every retry inside the trial included (dense-16x9 ticket 04 slice 3, review 1, finding 2). Absent or 0
+   * otherwise.
+   *
+   * **The one owner rule (R4; review 2).** A placement is lifted from the cap once. A placement started inside an exempt trial is the trial's
+   * credit (`gateRuns`); no other counter credits it again. So a solid-block refusal inside the trial declines its block as everywhere, but
+   * counts no `blockProbes` (`placeFirst`).
    */
   exemptPlacing?: number;
   /** The stagger rows a round declined and placed again without (`keptStaggers` in `round.ts`, dense-16x9 ticket 22 review 3): each once at most in a command. */

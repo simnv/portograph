@@ -11,7 +11,7 @@ import type { Env } from '../../src/pipeline/env.js';
 import { firstState } from '../../src/pipeline/initial.js';
 import { place } from '../../src/pipeline/place.js';
 import { FAN_ROUNDS, MAX_RERUNS } from '../../src/pipeline/limits.js';
-import { TrunkBlocked } from '../../src/layout/placement-refusal.js';
+import { PlacementRefusal, SolidBlockRefusal, TrunkBlocked } from '../../src/layout/placement-refusal.js';
 
 // Dense-16x9 ticket 04 slice 3, review 1: the floor reads the drawn chord (finding 1), and the flat-gap trial stands outside the cap (finding 2).
 const named = readFileSync(new URL('../../goldens/synthetic/a-flat-block-of-named-ports-keeps-the-floor-on-the-drawn-chord.yaml', import.meta.url), 'utf8');
@@ -67,5 +67,52 @@ describe('the flat-gap trial and the placement cap (review 1, finding 2)', () =>
     expect(String(error ?? '')).not.toMatch(/most it may/);
     expect(env.gateRuns).toBeGreaterThanOrEqual(1);
     expect(env.exemptPlacing ?? 0).toBe(0);
+  });
+});
+
+describe('a placement started inside an exempt trial is credited once (review 2)', () => {
+  // The production `place` and retry loop; the step throws the injected refusal, and a geometry the probe returns stands for the placed model.
+  const reached = Symbol('reached geometry');
+  const charge = (env: Env): number => env.placements - env.blockProbes - env.gateRuns - env.farEndRuns;
+  const stub = (first: object, later: object, refuseAt: number, extra: object = {}): Env => {
+    let calls = 0;
+    const env = { document: { layout: { aspect: 2 } }, options: {}, maxReruns: 3, placeCap: 4, placements: 0, reruns: 0, blockProbes: 0, gateRuns: 0,
+      farEndRuns: 0, timed: async (_: string, run: () => unknown) => run(), ...extra,
+      step: () => { if (calls === refuseAt) throw new SolidBlockRefusal(new Map([['b', 'refused in the trial']])); throw reached; },
+      place: async (kept: unknown) => {
+        calls++;
+        if (calls === 1) { env.placements++; return first; }
+        try { return await place(env, kept as never); } catch (error) { if (error === reached) return later; throw error; }
+      } } as unknown as Env & { bands: unknown };
+    return env;
+  };
+
+  it('keeps the flat-gap trial whose block retry stood, and the floor placement stays the one ordinary charge', async () => {
+    // The reviewer's state: two flat records share a gap; the trial refuses block b, its retry stands without b at 2000 x 1000, nearer aim 2.
+    const records = [{ family: 'a', mode: 'flat', below: 1, chosen: 100, target: 800 }, { family: 'b', mode: 'flat', below: 1, chosen: 100, target: 700 }];
+    const floor = { document: { layout: { aspect: 2 } }, nodes: { x: { bounds: { x: 0, y: 0, width: 2000, height: 500 } } }, groups: {}, blockReservations: records };
+    const chosen = { ...floor, nodes: { x: { bounds: { x: 0, y: 0, width: 2000, height: 1000 } } }, blockReservations: [records[0]] };
+    const env = stub(floor, chosen, 2, { bands: async (model: unknown) => ({ model, moved: false }) });
+    await firstState(env);
+    expect(env.declinedSolidBlocks?.has('b')).toBe(true);
+    expect(env.placements).toBe(3);
+    expect(env.gateRuns).toBe(2);
+    expect(env.exemptPlacing ?? 0).toBe(0);
+    expect(charge(env)).toBe(1);
+  });
+
+  it('keeps the stagger gate\'s plain trial whose block retry stood, and the first placement stays the one ordinary charge', async () => {
+    // The first run chose a stagger for g; its lines are refused at 7f, so the gate keeps the plain trial, whose first placement refused block b.
+    const first = { document: { layout: { aspect: 2 } }, nodes: {}, groups: {}, staggerRows: [{ group: 'g' }], groupArrangements: { g: { chosen: 'stagger' } } };
+    const plain = { document: { layout: { aspect: 2 } }, nodes: {}, groups: {} };
+    const env = stub(first, plain, 2, { arrangedRows: ['g'],
+      bands: async (model: unknown) => { if (model === first) throw new PlacementRefusal('stagger', 'the lines of g are refused at 7f'); return { model, moved: false }; } });
+    const state = await firstState(env);
+    expect(state.base).toBe(plain);
+    expect(env.declinedSolidBlocks?.has('b')).toBe(true);
+    expect(env.placements).toBe(3);
+    expect(env.gateRuns).toBe(2);
+    expect(env.exemptPlacing ?? 0).toBe(0);
+    expect(charge(env)).toBe(1);
   });
 });

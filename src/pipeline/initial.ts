@@ -43,7 +43,8 @@ for (;;) {
       // bounds retries; unrelated accepted blocks never lose ownership to a wildcard.
       if ([...error.blocks.keys()].every(id => env.declinedSolidBlocks?.has(id))) throw error;
       env.declinedSolidBlocks = new Map([...(env.declinedSolidBlocks ?? []), ...error.blocks]);
-      env.blockProbes++;
+      // A probe inside an exempt trial is that trial's credit already (`Env.exemptPlacing`, the one owner rule): it is not credited again.
+      if (!env.exemptPlacing) env.blockProbes++;
       continue;
     }
     // A stagger stage 5 chose that a later stage of the same run cannot keep (ticket 51): the next attempt keeps those rows one line and
@@ -71,7 +72,7 @@ await placeFirst();
 // with the rows kept so far (`wrapGateVerdict`: nearer the aspect aim, or less area at an equal gap; no more planned bends; no straight link
 // lost; no separation shorter; a fan wrap, the block trigger, keeps the area rule of D-Q4: less area). Each trial is a placement of the first run's choice in keep mode with only those rows staggered (every other chosen row a `row`),
 // and its 7f run as a trial: the same publication checks as every placement. A stagger refusal or a producer refusal (DR-11) of a trial
-// declines that row by name, never thrown. The trials spend no `MAX_RERUNS` (`env.gateRuns` lifts the placement cap by their placements), so the
+// declines that row by name, never thrown. The trials spend no `MAX_RERUNS` (`env.exemptPlacing`: `env.gateRuns` lifts the cap by their placements), so the
 // gate is always available; the state (the ledger, the declined blocks, the re-run count) of the run it keeps is the state the command goes on
 // with. With N chosen rows the gate costs one plain placement plus at most N row trials: the trial of every chosen row together is the first
 // run itself.
@@ -109,15 +110,13 @@ if (chosen.length) {
     env.arranged = true; env.groupArrangements = own;
     if (rows.length) env.staggerRows = JSON.parse(JSON.stringify(rows.map(id => rowsOf.get(id)!))) as NonNullable<Env['staggerRows']>; else delete env.staggerRows;
     if (env.declinedSolidBlocks !== undefined) env.declinedSolidBlocks = new Map(env.declinedSolidBlocks);
-    // Every placement of a trial (one, or more when a trunk join is declined) stays counted in `placements` and is lifted from the cap by
-    // `gateRuns`, so the rounds after the gate have the placements they would have had without it (R4: one count).
-    const placedBefore = env.placements;
+    // Every placement of a trial (one, or more when a trunk join or a block is declined) stays counted in `placements` and is lifted from the
+    // cap as it starts (`env.exemptPlacing`), so the rounds after the gate have the placements they would have had without it (R4: one count).
+    env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
     try { await placeFirst(); } catch (error) {
-      env.gateRuns += env.placements - placedBefore;
       if (rows.length && (staggerRefusal(error) || producerRefusal(error))) return error as Error;
       throw error;
-    }
-    env.gateRuns += env.placements - placedBefore;
+    } finally { env.exemptPlacing--; }
     return { rows, model: first, banded: await banded(first), state: snapshot() };
   };
   // The placement without any of the chosen rows: the first baseline. A refusal in its 7f leaves the lines the only placement that stands.
