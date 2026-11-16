@@ -698,6 +698,11 @@ export function restoreLayoutModel(json: string): LayoutModel {
     resolve(model.document);
     // The order reservations stage 4 wrote hold on the stage-4 model (ticket 18 review): the stages before the freeze check them here.
     validateEarlyReservations(model);
+    // The sibling rows stage 4 decided (dense-16x9 ticket 06, slice C) hold on the stage-4 model, before stage 5 reads them for the u-turn courses; no
+    // stage before 4 has one (R5, R6: a forged record is refused here, it never reaches a reader).
+    if (model.siblingRows !== undefined && stages.indexOf(model.stage) < stages.indexOf('skeleton')) throw new Error(`The sibling rows do not hold: a ${model.stage} model has no record`);
+    const sibling = siblingRowsFault(model);
+    if (sibling !== undefined) throw new Error(`The sibling rows do not hold: ${sibling}`);
     return model;
   }
   const baseline = validateDocument(model);

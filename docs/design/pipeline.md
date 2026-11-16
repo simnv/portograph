@@ -478,16 +478,24 @@ cell. The links between one pair of cells are a pair set; with two or more pairs
 the cell whose order its feeds decided (a `rowOrder` entry) keeps it, and when both or neither did the left cell keeps its order and
 the right one mirrors (R3: x order, never declaration order). The inner pair stands on the two facing row ends; the others stand next
 to it, outermost first. A cell's left-facing blocks stand first (the nearest cell's members on the end), its right-facing blocks last,
-and its other members keep the order they stand in. The decision is **`LayoutModel.siblingRows`**, one record per pair of cells
+and its other members keep the order they stand in. The unit a seat moves is a peer block of the feed reader (`peerBlocks`: neighbours a
+routed link inside the row joins): the seated members of a block stand at the facing end, its other members next to them on the inner side. A
+lateral bundle of the row (`lateralPairs`, the reader of ticket 18) whose ends stood side by side, left end first, is harder than a facing end:
+a seat that would turn or part it, or a block that would face both ends of a row of more blocks, declines the pair sets of that row by name
+(`SIBLING_SEAT_REFUSED`), and the other sets are seated again without them (each round drops a set, so at most one round per set). The decision is **`LayoutModel.siblingRows`**, one record per pair of cells
 `{subTier, leftCell, rightCell, mirrored, levelLink?, outerLinks}`: absent when the model holds no sibling-frame link the seat may move,
 `[]` when every pair set was declined. `levelLink` is absent when a group or a foreign frame stands between the two cells on their
 sub-tier (a level chord would cross it), and every pair is then outer. Declined by name, at severity `info`: a pair set that is not one
 pair per member, or a member linked to two cells on one side (it faces the nearer one; `SIBLING_PAIR_NON_MATCHING`); a member of a row of
 two or more linked toward both sides (the side with more pairs keeps it, a tie the left end; `SIBLING_FRAME_END_CONFLICT`); and a row
-that does not fit its room in the seated order (`SIBLING_SEAT_REFUSED`: no row is seated, `siblingRows: []`). A seated cell may feed a
+that does not fit its room in the seated order (`SIBLING_SEAT_REFUSED`: no row is seated, `siblingRows: []`). Three cuts of this first slice
+against the design note (review 06c-1 judged them sound): the links on the losing side of a relay take no U, they keep the stage-8 route; a pair
+set that is not one pair per member is declined whole, with no partial admission; and when the feeds decided both cells, the left cell keeps its
+order, with no comparison of the two feed spreads. `mirrored` is history, not proof: the validator reads the nested order of the pairs, not the flag. A seated cell may feed a
 cell below it, so the feed orders are read again (`refreshFeedOrders`); the feed reader keeps every seat (`siblingSeatOrder`: the feeds
-order only the members between the two seated blocks). `siblingRowsFault` checks the record and the row orders at the end of stage 4;
-the freeze keeps a copy, and every publication from stage 5 on and its restore check both (R1, R5).
+order only the members between the two seated blocks, and a feed order that would part a lateral bundle the seat kept leaves the row as it
+stands). `siblingRowsFault` checks the record and the row orders at the end of stage 4 and at the restore of a stage-4 model, before stage 5
+reads it; the freeze keeps a copy, and every publication from stage 5 on and its restore check both (R1, R5).
 
 **Group lift (decision review 2026-11, D-Q5, ticket 08; ADR-0008 amendment).** A **float component** (`CONTEXT.md`) may stand in
 bands above its document tier's bands. The decision is band input, made before any placement run of a command: `decideLifts`

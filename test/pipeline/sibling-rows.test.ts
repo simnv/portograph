@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
-import { restoreLayoutModel } from '../../src/internal.js';
+import { resolve, restoreLayoutModel, sidesOne, sidesTwo, sizeNodes, skeleton } from '../../src/internal.js';
 import type { LayoutLink, LayoutModel } from '../../src/index.js';
 import { findPort } from '../../src/layout/row-paths.js';
-import { siblingRowsFault, SIBLING_UTURN_DECLINED } from '../../src/layout/sibling-frames.js';
+import { siblingRowsFault, SIBLING_SEAT_REFUSED, SIBLING_UTURN_DECLINED } from '../../src/layout/sibling-frames.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -17,6 +17,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  */
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 const MIRROR = read('../../goldens/synthetic/two-sibling-frames-mirror-a-linked-pair.yaml');
+const BUNDLE = read('../../goldens/synthetic/a-sibling-seat-keeps-an-authored-bundle-of-its-row.yaml');
 const TWIN = read('../fixtures/staged/two-cores-reach-seven-pairs-through-hubs-on-the-last-rank.yaml');
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 const lay = (source: string): Promise<LayoutModel> => layout(parse(source), options);
@@ -129,5 +130,31 @@ describe('a sibling row: the facing ends of two frames of one tier (dense-16x9 t
     expect(model.diagnostics.filter(item => item.code === SIBLING_UTURN_DECLINED).map(item => item.owners)).toEqual([[{ kind: 'link', id: outer.id }]]);
     expect((model.courses ?? []).some(course => course.link === outer.id)).toBe(false);
     expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
+  it('keeps an authored lateral bundle of a row: the sibling seat of that row is declined by name, and every gate passes (review 1, finding 2)', async () => {
+    const model = await lay(BUNDLE);
+    // w1 leaves the bundle to w2 on its right face: the seat would stand w2 left of w1 and turn the bundle; the row keeps w1, w2.
+    expect(model.groups['west#1']!.rowOrder).toEqual(['w1', 'w2']);
+    const declined = model.diagnostics.filter(item => item.code === SIBLING_SEAT_REFUSED);
+    expect(declined).toHaveLength(1);
+    expect(declined[0]!.message).toMatch(/lateral bundle/);
+    expect(declined[0]!.owners).toEqual([{ kind: 'link', id: between(model, 'w1', 'e1').id }]);
+    expect(model.siblingRows).toEqual([]);
+    expect(gates(model)).toEqual([]);
+    expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
+
+  it('refuses a forged record at the stage-4 restore, before stage 5 reads it (review 1, finding 3)', async () => {
+    const model = sizeNodes(sidesOne(resolve(parse(MIRROR))));
+    await skeleton(model, { createAttempt });
+    expect(model.stage).toBe('skeleton');
+    expect(siblingRowsFault(model)).toBeUndefined();
+    expect(restoreLayoutModel(JSON.stringify(model)).siblingRows).toEqual(model.siblingRows);
+    const forged = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    forged.siblingRows![0]!.outerLinks = ['missing-link'];
+    // The typed fault of the record, never a TypeError of a reader.
+    expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/The sibling rows do not hold: missing-link is no sibling-frame link/);
+    // The record of an unforged stage-4 model reaches stage 5 and plans the U.
+    expect(sidesTwo(restoreLayoutModel(JSON.stringify(model))).courses?.map(course => course.kind)).toEqual(['u-turn']);
   }, 60000);
 });

@@ -998,7 +998,10 @@ export interface SiblingRow {
   subTier: number;
   leftCell: string;
   rightCell: string;
-  /** The cell whose linked block stage 4 turned so the pairs nest; `none` when they already nested, or when one pair joins the cells. */
+  /**
+   * The cell whose linked block stage 4 turned so the pairs nest; `none` when they already nested, or when one pair joins the cells. History, not proof: the order
+   * before the seat is gone, so no check can read it; the validator checks the nested order of the pairs, not this flag.
+   */
   mirrored: 'left' | 'right' | 'none';
   /** The link of the inner pair: a level chord candidate on the facing lateral faces. Absent when a unit or a frame stands between the two cells on their sub-tier: every pair is then a U. */
   levelLink?: string;

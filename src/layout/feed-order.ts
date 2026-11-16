@@ -165,15 +165,7 @@ function reader(model: LayoutModel) {
   const placed = Object.values(model.groups).filter(group => !group.flank && group.nodes.length > 0 && group.tier !== undefined);
   const tiers = [...new Set(placed.map(group => group.tier!))].sort((a, b) => a - b);
   const above = (tier: number): number | undefined => tiers[tiers.indexOf(tier) - 1];
-  // The routed far ends of each node; a link to itself, a mesh bus member and an overlay link feed nothing.
-  const ends = new Map<string, string[]>();
-  for (const link of model.links) {
-    if (link.layer !== 'routed' || link.meshBus !== undefined || !link.attachments) continue;
-    const { from, to } = link.attachments;
-    if (from.node === to.node) continue;
-    ends.set(from.node, [...(ends.get(from.node) ?? []), to.node]);
-    ends.set(to.node, [...(ends.get(to.node) ?? []), from.node]);
-  }
+  const ends = routedEnds(model);
   const isRow = (group: LayoutGroup): boolean => groupShape(model, group.id) === 'row' && model.document.groups[group.id]?.shape !== 'bar';
   // A row a flank stands beside is re-packed after this step (its primary peer goes to the outer end): it is no feeding row, and no cell to order.
   const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
@@ -252,12 +244,25 @@ function reader(model: LayoutModel) {
   };
 }
 
+/** The routed far ends of each node, the one input of the feed keys and of the peer blocks: a link to itself, a mesh bus member and an overlay link feed nothing. */
+export function routedEnds(model: LayoutModel): Map<string, string[]> {
+  const ends = new Map<string, string[]>();
+  for (const link of model.links) {
+    if (link.layer !== 'routed' || link.meshBus !== undefined || !link.attachments) continue;
+    const { from, to } = link.attachments;
+    if (from.node === to.node) continue;
+    ends.set(from.node, [...(ends.get(from.node) ?? []), to.node]);
+    ends.set(to.node, [...(ends.get(to.node) ?? []), from.node]);
+  }
+  return ends;
+}
+
 /**
  * The runs of a cell whose neighbours a routed link inside the cell joins (peer links), as blocks in the order they stand: a peer pair that
  * stands side by side keeps standing side by side. A pair with a member between it is no block (the member stands on its link, which the
  * order then keeps as it is). A member with no such neighbour is a block of one.
  */
-function peerBlocks(order: readonly string[], ends: ReadonlyMap<string, readonly string[]>): string[][] {
+export function peerBlocks(order: readonly string[], ends: ReadonlyMap<string, readonly string[]>): string[][] {
   const blocks: string[][] = [];
   for (const [i, node] of order.entries()) {
     if (i > 0 && (ends.get(order[i - 1]!) ?? []).includes(node)) blocks[blocks.length - 1]!.push(node); else blocks.push([node]);

@@ -12,7 +12,9 @@
  *
  * What the rule declines, by name and at severity `info` (stage 8 then routes the link as before): a pair set that is not one-to-one, or a member linked to
  * two cells on one side (`SIBLING_PAIR_NON_MATCHING`); a member of a row of two or more linked toward both sides (`SIBLING_FRAME_END_CONFLICT`: the end with more
- * links keeps it, a tie the left end); a row that cannot stand in its seat (`SIBLING_SEAT_REFUSED`); an outer link whose U is not allowed (`SIBLING_UTURN_DECLINED`).
+ * links keeps it, a tie the left end); a row that cannot stand in its seat, or whose seat would turn or part a lateral bundle of the row (`SIBLING_SEAT_REFUSED`);
+ * an outer link whose U is not allowed (`SIBLING_UTURN_DECLINED`). Cuts of this first slice (review 06c-1): the losing side of a relay takes no U, a pair set that
+ * is not one-to-one is declined whole, and two feed-decided cells keep the left cell's order with no comparison of their spreads.
  */
 import type { Course, LayoutGroup, LayoutLink, LayoutModel, LayoutPort, SiblingRow } from '../model/layout.js';
 import type { Side } from '../model/geometry.js';
@@ -23,6 +25,8 @@ import { courseEntries, rowOrderOf } from './reservations.js';
 import { linksAt, uTurnFacesGap } from './courses.js';
 import { findPort } from './row-paths.js';
 import { authoredSide } from './grid.js';
+import { lateralPairs, type NeighbourPair } from './bundle-ends.js';
+import { peerBlocks, routedEnds } from './feed-order.js';
 
 export const SIBLING_PAIR_NON_MATCHING = 'SIBLING_PAIR_NON_MATCHING';
 export const SIBLING_FRAME_END_CONFLICT = 'SIBLING_FRAME_END_CONFLICT';
@@ -120,16 +124,59 @@ export function seatSiblingFrameEnds(model: LayoutModel): boolean {
   // The pair sets: one per pair of cells. A set whose pairs are not one-to-one (a fan, or two links between one pair of nodes) is declined whole.
   const sets = new Map<string, Pair[]>();
   for (const pair of pairs) { const id = `${pair.leftCell}\0${pair.rightCell}`; sets.set(id, [...(sets.get(id) ?? []), pair]); }
+  let live: Pair[][] = [];
+  for (const id of [...sets.keys()].sort(compareId)) {
+    const set = sets.get(id)!;
+    if (new Set(set.map(pair => pair.left)).size === set.length && new Set(set.map(pair => pair.right)).size === set.length) { live.push(set); continue; }
+    note(model, SIBLING_PAIR_NON_MATCHING, `The links between ${set[0]!.leftCell} and ${set[0]!.rightCell} are not one pair per member; their ends keep their seats and the route stage 8 gives.`, set.map(pair => pair.link));
+  }
+  // A seat that would break a harder order of its row declines the pair sets of that row by name (`SIBLING_SEAT_REFUSED`), and the others are seated
+  // again without them. Each round drops at least one set, so the rounds are at most the sets (R4: a finite traversal).
+  let plan = planSeats(model, live);
+  while (plan.refused.size) {
+    const dropped = live.filter(set => plan.refused.has(set[0]!.leftCell) || plan.refused.has(set[0]!.rightCell));
+    for (const [cell, why] of [...plan.refused].sort((x, y) => compareId(x[0], y[0]))) {
+      const links = dropped.filter(set => set[0]!.leftCell === cell || set[0]!.rightCell === cell).flatMap(set => set.map(pair => pair.link));
+      note(model, SIBLING_SEAT_REFUSED, `Cell ${cell} keeps its order: ${why}. Its sibling-frame links (${links.join(', ')}) keep their seats and the route stage 8 gives.`, links);
+    }
+    live = live.filter(set => !dropped.includes(set));
+    plan = planSeats(model, live);
+  }
+  const { records, orders } = plan;
+  if (!records.length) { model.siblingRows = []; return false; }
+  // Every cell takes its seat, or none does: a row that cannot stand in its room (it would grow into the next group) declines the whole decision by name.
+  const cells = [...orders.keys()].sort(compareId).map(cell => model.groups[cell]!);
+  const undo = saveGroups(model, cells);
+  let moved = false;
+  for (const group of cells) {
+    const next = orders.get(group.id)!, now = group.rowOrder ?? group.nodes;
+    if (next.every((node, i) => node === now[i])) continue;
+    if (!reseatRow(model, group, next, true)) {
+      undo();
+      note(model, SIBLING_SEAT_REFUSED, `Cell ${group.id} cannot stand in the order its sibling-frame links give (${next.join(', ')}): it does not fit its room. No row is seated for its sibling frames.`, records.flatMap(item => item.pairs.map(pair => pair.link)));
+      model.siblingRows = [];
+      return false;
+    }
+    moved = true;
+  }
+  model.siblingRows = records.map(item => item.row).sort((x, y) => x.subTier - y.subTier || compareId(x.leftCell, y.leftCell) || compareId(x.rightCell, y.rightCell));
+  return moved;
+}
+
+/**
+ * The records and the new order of each cell for the live pair sets, and the cells whose new order would break a harder order (`refused`, with why).
+ * The unit a seat moves is a peer block of the feed reader (`peerBlocks`: neighbours that a routed link inside the row joins stay together): the seated
+ * members of a block stand at the facing end in the record's order, and its other members stand next to them on the inner side. A block that would face
+ * both ends of a row of more than one block, and a lateral bundle of the row (`lateralPairs`, the reader of ticket 18) whose two ends stood side by side,
+ * left end first, and would not any more, refuse the row: an authored bundle channel is harder than a facing end.
+ */
+function planSeats(model: LayoutModel, live: readonly Pair[][]): { records: { row: SiblingRow; pairs: Pair[] }[]; orders: Map<string, string[]>; refused: Map<string, string> } {
   const records: { row: SiblingRow; pairs: Pair[] }[] = [];
   const blocks = new Map<string, { left: Map<string, string[]>; right: Map<string, string[]> }>();
   const blockOf = (cell: string) => { let block = blocks.get(cell); if (block === undefined) { block = { left: new Map(), right: new Map() }; blocks.set(cell, block); } return block; };
   const decided = (cell: string): boolean => rowOrderOf(model.reservations, 'cell', cell) !== undefined;
-  for (const id of [...sets.keys()].sort(compareId)) {
-    const set = sets.get(id)!, L = model.groups[set[0]!.leftCell]!, R = model.groups[set[0]!.rightCell]!;
-    if (new Set(set.map(pair => pair.left)).size !== set.length || new Set(set.map(pair => pair.right)).size !== set.length) {
-      note(model, SIBLING_PAIR_NON_MATCHING, `The links between ${L.id} and ${R.id} are not one pair per member; their ends keep their seats and the route stage 8 gives.`, set.map(pair => pair.link));
-      continue;
-    }
+  for (const set of live) {
+    const L = model.groups[set[0]!.leftCell]!, R = model.groups[set[0]!.rightCell]!;
     const leftOrder = L.rowOrder ?? L.nodes, rightOrder = R.rowOrder ?? R.nodes;
     const byLeft = new Map(set.map(pair => [pair.left, pair])), byRight = new Map(set.map(pair => [pair.right, pair]));
     let ls = leftOrder.filter(node => byLeft.has(node)), rs = rightOrder.filter(node => byRight.has(node));
@@ -145,37 +192,33 @@ export function seatSiblingFrameEnds(model: LayoutModel): boolean {
     const outer = ls.slice(0, level ? -1 : undefined).map(node => byLeft.get(node)!.link);
     records.push({ row: { subTier: L.tier!, leftCell: L.id, rightCell: R.id, mirrored, ...(level ? { levelLink: inner.link } : {}), outerLinks: outer }, pairs: set });
   }
-  if (!records.length) { model.siblingRows = []; return false; }
-  // The new order of each cell: the blocks that face left (the nearest cell's first), the members that link to no sibling frame in the order they stand, then the
-  // blocks that face right (the nearest cell's last).
-  const orders = new Map<string, string[]>();
+  const orders = new Map<string, string[]>(), refused = new Map<string, string>();
+  const ends = routedEnds(model);
   for (const cell of [...blocks.keys()].sort(compareId)) {
-    const group = model.groups[cell]!, block = blocks.get(cell)!;
+    const group = model.groups[cell]!, block = blocks.get(cell)!, now = group.rowOrder ?? group.nodes;
     const near = (a: string, b: string): number => Math.abs(centreX(model.groups[a]!) - centreX(group)) - Math.abs(centreX(model.groups[b]!) - centreX(group)) || compareId(a, b);
-    const leftBlock = [...block.left.keys()].sort(near).flatMap(other => block.left.get(other)!);
-    const rightBlock = [...block.right.keys()].sort(near).reverse().flatMap(other => block.right.get(other)!);
-    const seated = new Set([...leftBlock, ...rightBlock]);
+    // The left end: the nearest cell's members first. The right end: the nearest cell's members last.
+    const leftSeat = [...block.left.keys()].sort(near).flatMap(other => block.left.get(other)!);
+    const rightSeat = [...block.right.keys()].sort(near).reverse().flatMap(other => block.right.get(other)!);
+    const units = peerBlocks(now, ends);
+    const faces = (unit: readonly string[], seat: readonly string[]): boolean => unit.some(node => seat.includes(node));
+    const both = units.filter(unit => faces(unit, leftSeat) && faces(unit, rightSeat));
+    if (both.length && units.length > 1) { refused.set(cell, `the block ${both[0]!.join(', ')} would face both ends of the row`); continue; }
+    const seated = new Set([...leftSeat, ...rightSeat]);
+    const rest = (unit: readonly string[]): string[] => unit.filter(node => !seated.has(node));
+    const leftUnits = units.filter(unit => faces(unit, leftSeat)), rightUnits = units.filter(unit => !faces(unit, leftSeat) && faces(unit, rightSeat));
+    const middle = units.filter(unit => !faces(unit, leftSeat) && !faces(unit, rightSeat)).flat();
     // A member of a row of one stands at both ends: the set keeps it once.
-    orders.set(cell, [...new Set([...leftBlock, ...(group.rowOrder ?? group.nodes).filter(node => !seated.has(node)), ...rightBlock])]);
+    const next = [...new Set([...leftSeat, ...leftUnits.flatMap(rest), ...middle, ...rightUnits.flatMap(rest), ...rightSeat])];
+    const broken = lateralPairs(model, cell).find(pair => sideBySide(now, pair) && !sideBySide(next, pair));
+    if (broken !== undefined) { refused.set(cell, `the seat would turn or part the lateral bundle ${broken.bundle} from ${broken.left} to ${broken.right}`); continue; }
+    orders.set(cell, next);
   }
-  // Every cell takes its seat, or none does: a row that cannot stand in its room (it would grow into the next group) declines the whole decision by name.
-  const cells = [...orders.keys()].map(cell => model.groups[cell]!);
-  const undo = saveGroups(model, cells);
-  let moved = false;
-  for (const group of cells) {
-    const next = orders.get(group.id)!, now = group.rowOrder ?? group.nodes;
-    if (next.every((node, i) => node === now[i])) continue;
-    if (!reseatRow(model, group, next, true)) {
-      undo();
-      note(model, SIBLING_SEAT_REFUSED, `Cell ${group.id} cannot stand in the order its sibling-frame links give (${next.join(', ')}): it does not fit its room. No row is seated for its sibling frames.`, records.flatMap(item => item.pairs.map(pair => pair.link)));
-      model.siblingRows = [];
-      return false;
-    }
-    moved = true;
-  }
-  model.siblingRows = records.map(item => item.row).sort((a, b) => a.subTier - b.subTier || compareId(a.leftCell, b.leftCell) || compareId(a.rightCell, b.rightCell));
-  return moved;
+  return { records, orders, refused };
 }
+
+/** Whether the two ends of a lateral bundle stand side by side in `order`, its left end first: the channel the row owes it (ticket 18). */
+const sideBySide = (order: readonly string[], pair: NeighbourPair): boolean => { const at = order.indexOf(pair.left); return at >= 0 && order[at + 1] === pair.right; };
 
 /** The members of `cell` that a record seats at its left end and at its right end. */
 function seatedMembers(model: LayoutModel, cell: string): { left: Set<string>; right: Set<string> } {
@@ -199,7 +242,9 @@ export function siblingSeatOrder(model: LayoutModel, cell: string, order: readon
   const { left, right: rightEnd } = seatedMembers(model, cell);
   if (!left.size && !rightEnd.size) return [...order];
   const now = model.groups[cell]?.rowOrder ?? model.groups[cell]?.nodes ?? [];
-  return [...new Set([...now.filter(node => left.has(node)), ...order.filter(node => !left.has(node) && !rightEnd.has(node)), ...now.filter(node => rightEnd.has(node))])];
+  const next = [...new Set([...now.filter(node => left.has(node)), ...order.filter(node => !left.has(node) && !rightEnd.has(node)), ...now.filter(node => rightEnd.has(node))])];
+  // A feed order that would part a lateral bundle the seat kept side by side leaves the seated row as it stands.
+  return lateralPairs(model, cell).some(pair => sideBySide(now, pair) && !sideBySide(next, pair)) ? [...now] : next;
 }
 
 /**
