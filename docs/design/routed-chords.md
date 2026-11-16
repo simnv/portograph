@@ -174,7 +174,7 @@ stub does the same, Q106):
   was a diagonal at the end of 7e, which no strip refused, and that 7f turned within 10 degrees of
   an axis (ticket 162 re-check, `a-chord-that-turns-onto-an-axis-meets-a-title`). A spanning chord
   is not refused (7a reserved no transit lanes for it). It stays straight, as does a chord a title
-  still meets after `DIRECT_RETRIES` retries; `STRAIGHT_LINK_TITLE` names each, and G3 judges.
+  still meets after the retry bound (`crowdRetryBound`, the member count); `STRAIGHT_LINK_TITLE` names each, and G3 judges.
 
 *As built (ticket 100).* The crossing rectangle is wider in x on a slanted chord: the half stroke and the 8 px margin are taken along the normal of the
 chord, so the x growth is (half stroke + 8) / cos of the angle to the vertical (a vertical chord gives 8 px). Measured: a title 8 px from the bounding box stood
@@ -286,10 +286,25 @@ lane) that makes a G6 finding with a held chord of its gap (`TIER_GAP_CHORD_CROW
 through `parallelClearance`, any held chord with an extent in the gap), and G6 judges, as for two verticals within `k` (`crowded`).
 
 *Publication step (dense-16x9 ticket 14, slice 3, built in ticket 04 slice 2; coordinator ruling: a chord is refused before a gate finding is
-published).* After the last round has settled, `refuseCrowdedChords` (pipeline/driver.ts) reads the state to publish once. A held chord that is
-no direct or fan member, that a `TIER_GAP_CHORD_CROWDED` note names, and that stands under the G6 clearance of the planned part
-(`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. Each is a reservation on the
-ledger of the kept 7e model (`refusedChord`, one entry per link, producer `publish`). Its one predicate (`refusedChordFailure`, entered in
+published).* After the last round has settled, `refuseCrowdedChords` (pipeline/driver.ts) reads the state to publish once. It refuses every held
+chord that would be published under the G6 clearance of a reserved segment (`crowdedHeldChords`, direct-families.ts); every such chord of that
+one read is refused together. Each source is read by the reader that already names it (R1):
+- a direct member that `crowdedDirectMembers` names, and a straight fan or solid-block member that `crowdedFanMembers` names `crowds`. Such a
+  member stands on the state to publish only when the 7f crowding retry reached its bound (`crowdRetryBound`; `DIRECT_FAMILY_CROWDED`,
+  `FAN_MEMBER_CROWDED`), so this step is the last resort after that retry (dense-16x9 ticket 28). A member that only passes a sibling's stem
+  (`stem`) is no G6 reading and is not refused here.
+- any other held chord that a `TIER_GAP_CHORD_CROWDED` note names and that stands under the G6 clearance of the planned part.
+
+Before ticket 28 the step skipped every direct and fan member, because the 7f retry owns their crowding. But that retry was bounded at 2: on
+the outside sheet with ticket 27, a solid-block member was crowded only in the third attempt, `FAN_MEMBER_CROWDED` named it, and it was
+published with a G6 finding. The step alone did not remove it: its one replay ran the same bounded retry, which gave up on the next member of
+the cascade (each refused member's fallback crowds the next one) and added a new G6. Ticket 28 therefore also runs the retry until no new
+member is crowded (Section 15.2), and keeps this step as the last resort behind it. A refused direct member falls back through its family (7f puts the ledger's ids in the retry's `refused` too, since the
+family is decided only in that attempt); a refused fan or solid-block member falls back alone, as a retry makes it fall back (`refuseChords`):
+the block is not admitted again. No loop with the fan round: the step runs after the last round, no round reads its result, and nothing runs
+the step again.
+
+Each refused chord is a reservation on the ledger of the kept 7e model (`refusedChord`, one entry per link, producer `publish`). Its one predicate (`refusedChordFailure`, entered in
 `RESERVATION_CHECKS` for the round check, the restore of a frozen model and the early restore) holds that the model stands at `sides-two` or later,
 that the entry names a link, and that once the freeze is taken the link is no frozen chord. So an entry the freeze contradicts is refused, and so is
 any entry on a model before `sides-two`. Placement replays once from that ledger: 7f refuses each before the freeze as
@@ -617,8 +632,11 @@ two lateral faces there is no angle floor (a slight tilt is fine). Overlay chord
   clearance of a segment reserved for a final path: a planned part, a stem, a lane, a leg, a shared run or another
   held chord, at each link's own stroke and through the gate's predicate (`crowdedDirectMembers`, `reservedRouted`;
   dense-16x9 ticket 14 slice 2). The attempt then runs again from
-  its start with those members refused (`crowds`), at most `DIRECT_RETRIES` (2) times; a member still crowded
-  after that is a `DIRECT_FAMILY_CROWDED` warning, and G6 judges it.
+  its start with those members refused (`crowds`), until no new member is crowded (dense-16x9 ticket 28; before it, at most 2
+  times). Each retry refuses at least one new member and the refusals only grow, so the retries end after at most the member count
+  (`crowdRetryBound`, the direct, fan and solid-block members of the attempt; R4). The bound is a safety bound: it is hit only if the
+  member set changes between attempts. A member still crowded then is a `DIRECT_FAMILY_CROWDED` warning, and the publication step (Section 8) refuses it through its family
+  (dense-16x9 ticket 28).
 - **Record.** `model.directFamilies`, triggered families only: absent before 7f means not planned, absent after
   the freeze means no family triggered (so a sheet with none keeps its bytes). Each family keeps its units,
   gap, peer order, the count, its witnesses, the inversions, the port plan
@@ -659,7 +677,7 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   far frame on the edge it leaves through. A diagonal member may cross every title (ticket 162, ADR-0023): no title
   refuses or crowds it, and the rest of this item reads an axis member only. Slice 1 builds no growth for that title: the title planner of 7f reads the
   held chord's crossing as an obstacle, and where it finds no room beside it the retry of 7f refuses the member
-  (`title`, `titleCrowdedFanMembers`). After `DIRECT_RETRIES` retries a member a title still meets stays straight over
+  (`title`, `titleCrowdedFanMembers`). After the retry bound (`crowdRetryBound`, the member count) a member a title still meets stays straight over
   the title, `FAN_MEMBER_CROWDED` names it, and G3 fails; on the corpus and the sweep this does not happen (the two fan
   sheets publish no `FAN_MEMBER_CROWDED`). The title of the hub's own frame keeps the fit-beside test of a cross-frame
   chord, and the title of a third frame refuses the member, as it refuses any cross-frame chord. Slice 2: the far
@@ -675,8 +693,9 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   the plan asks for then moves the band below and the chords' lower ends, which the rows do not read again (slice 2).
   The crowding retry of 7f refuses a member that a G6 reading of every reserved segment names (`crowds`,
   `crowdedFanMembers`, `reservedRouted`), that passes a sibling's stem (`stem`), or that a group title placed in 7f still meets
-  (`title`, `titleCrowdedFanMembers`: the title planner found no room beside it). After `DIRECT_RETRIES` the rest
-  stay straight and `FAN_MEMBER_CROWDED` names each with its reason. `refuseChords` re-reads the held chords near
+  (`title`, `titleCrowdedFanMembers`: the title planner found no room beside it). At the retry bound (`crowdRetryBound`, the member count) the rest
+  stay straight and `FAN_MEMBER_CROWDED` names each with its reason; the publication step (Section 8) refuses each one
+  that is still `crowds` on the state to publish, and it falls back alone (dense-16x9 ticket 28). `refuseChords` re-reads the held chords near
   the new legs, all of one round before any falls back (R3), and each chord that falls back there names its own
   fixed-point refusal (`leg`, `chord` or `title`), never `family`.
 - **Record.** `model.fanAdmissions`, set at the freeze, one entry per member in family order: `straight` with
