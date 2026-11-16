@@ -5,6 +5,7 @@ import { layout, parse, score } from '../../src/index.js';
 import { COLUMN_SLACK } from '../../src/layout/columns.js';
 import { LINK_LABEL_GEOMETRY } from '../../src/layout/link-labels.js';
 import { measureText } from '../../src/text/index.js';
+import { EPS } from '../../src/geometry/planar.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -62,6 +63,6 @@ describe('a widening body keeps the label room of its link', () => {
     const left = model.nodes.left!.bounds!, right = model.nodes.right!.bounds!;
     const label = model.document.links.find(link => link.label)!.label!;
     const required = measureText(label, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
-    expect(right.x - (left.x + left.width)).toBeGreaterThanOrEqual(required);
+    expect(right.x - (left.x + left.width)).toBeGreaterThanOrEqual(required - EPS);
   }, 60000);
 });

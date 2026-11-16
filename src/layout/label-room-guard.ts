@@ -5,7 +5,7 @@
  * reserves it again, so the move is held here (R2): a move that would take a row room below what its link reserved is not made. The check reads
  * the model as the move would leave it and asks the producer's own reading (`reserveLinkLabelRoom`, R1) for a row shortfall the model has not now.
  */
-import type { LayoutModel } from '../model/layout.js';
+import type { LayoutGroup, LayoutModel, LayoutNode } from '../model/layout.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
 import { describedLink, overlayLabelsSuppressed } from './run-label-box.js';
 import type { ProposedBox } from './frames.js';
@@ -31,8 +31,11 @@ function movedModel(model: LayoutModel, proposed: readonly ProposedBox[]): { mov
   return { moved: { ...model, groups, nodes }, shift };
 }
 
-/** The described links of one tier whose two ends the move shifts by different amounts: the only runs it can shorten. */
-function stretched(model: LayoutModel, shift: ReadonlyMap<string, number>): boolean {
+/**
+ * The described links of one tier whose two ends the change moves differently: the only runs it can shorten. `shift` keys each moved node by its
+ * move (a translation by its dx; a resize by both edge moves); a node it does not hold stands still.
+ */
+function stretched(model: LayoutModel, shift: ReadonlyMap<string, number | string>): boolean {
   const suppressed = overlayLabelsSuppressed(model);
   return model.links.some(link => {
     if (!link.attachments || !describedLink(model, link, suppressed)) return false;
@@ -67,4 +70,26 @@ export function rowRoomHolds(model: LayoutModel, proposed: readonly ProposedBox[
   const known = new Set(allowed);
   for (const id of rowShort(moved)) if (!known.has(id)) return false;
   return true;
+}
+
+/**
+ * Whether a centring step kept every row room that held: the step rewrote one group and its nodes, and `before` holds them as the step found them.
+ * A step that left them as they were changed nothing the producer reads, and a step that moves the two ends of no described same-tier link apart
+ * shortens no row run (`stretched`, the scope of the move guard). Otherwise the producer is replayed on the model now, and only when that finds a
+ * shortfall on the model as the step found it too; the step may not add one (R1: the same replay as `rowRoomHolds`).
+ */
+export function rowRoomKeptByStep(model: LayoutModel, before: { group: LayoutGroup; nodes: readonly LayoutNode[] }, unchanged: boolean): boolean {
+  if (unchanged || !model.document.links.some(link => link.label !== undefined)) return true;
+  const shift = new Map<string, number | string>();
+  for (const node of before.nodes) {
+    const was = node.bounds!, now = model.nodes[node.id]!.bounds!;
+    const left = now.x - was.x, right = now.x + now.width - was.x - was.width;
+    if (left !== 0 || right !== 0) shift.set(node.id, left === right ? left : `${left}|${right}`);
+  }
+  if (!stretched(model, shift)) return true;
+  const now = rowShort(model);
+  if (now.size === 0) return true;
+  const found = rowShort({ ...model, groups: { ...model.groups, [before.group.id]: before.group },
+    nodes: { ...model.nodes, ...Object.fromEntries(before.nodes.map(node => [node.id, node])) } });
+  return [...now].every(id => found.has(id));
 }

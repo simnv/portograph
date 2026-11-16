@@ -1693,9 +1693,12 @@ a place on a link. No gate judges it (G3 leaves out overlay labels; `labelBorder
 names no described link. The settled chord and rank judges, as the lane reseat, refuse a move that names a new link in the room set
 (`noNewFindings('room')`, `roomFindings`): a room given up, and a room a reservation would still grow.
 A move that runs after the reservation keeps a same-tier row room: `holdsMove` has the kind `labelRoom` (`label-room-guard.ts`), which refuses a move that shifts the ends of a described same-tier link apart and leaves a row shortfall the model did not have (decision review ticket DR-02, R2). Nothing reserves the room again.
-A complete centring step can also widen a body inside its group. After chords settle, its postcondition reads the same
-`rowRoomHolds` producer replay against the shortfalls read before the step; it refuses any new same-tier shortfall, including a
-cross-group window that `siblingLimit` cannot bound. The move, growth and clamp are accepted or restored together (dense ticket 10).
+A complete centring step can also widen a body inside its group. After chords settle, its postcondition (`rowRoomKeptByStep`) reads the
+same producer replay as `rowRoomHolds`; it refuses any new same-tier shortfall, including a cross-group window that `siblingLimit`
+cannot bound. The move, growth and clamp are accepted or restored together (dense ticket 10). The replay has the scope of the move
+guard: it runs only for a step that moves the two ends of a described same-tier link differently (a resize counts both edges), and it
+reads the model as the step found it only when the model now has a shortfall. A centring pass runs thousands of steps on a large sheet,
+and most leave their group as it was.
 Publication and restore re-run the reservation on a copy and reject a model it would still change.
 
 **Linked groups share a grid (ADR-0012).** Before labels are planned, groups joined by vertical
