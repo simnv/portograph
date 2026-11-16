@@ -29,7 +29,7 @@ import { faceKey, laneFaceOrder, turnRecord, turnRecordFaults } from './turn-ord
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
-import { CENTRE_ALIGNMENT_OPEN, centreItemLink, flagUnverifiedCentring, publishedCentreViolations, selectAnchorTier, withdrawFallenSeatsOf } from './centre.js';
+import { CENTRE_ALIGNMENT_OPEN, centreItemLink, publishedCentreViolations, selectAnchorTier, withdrawFallenSeatsOf } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentSeatsFault, alignmentTargetsFault } from './alignment-targets.js';
 import { givenBackFault } from './given-back.js';
 import { moveBeforeGrow } from './read/move-before-grow.js';
@@ -1058,14 +1058,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   }
   if (rule === 'bars') rebuildBarDrops(draft);
   // A rebuild can move a seated body or its feed: the record the rule publishes names only the seats its geometry holds (ADR-0027).
-  if (stages.indexOf(rule) >= stages.indexOf('centre') && stages.indexOf(rule) <= stages.indexOf('bands')) {
-    const seats = Object.keys(draft.alignmentSeats ?? {}).length;
-    withdrawFallenSeatsOf(draft);
-    // A withdrawn seat no longer limits the feeds its body pulls through, so the replay can find an alignment open that the stall, named before the
-    // withdrawal, did not name. Where the centre step recorded a stall, the open alignments are named again on the record the rule publishes
-    // (ticket 75; R1: the record and its replay read one seat record). With no stall recorded nothing is named, and the publication judges it.
-    if (Object.keys(draft.alignmentSeats ?? {}).length < seats && draft.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) flagUnverifiedCentring(draft);
-  }
+  if (stages.indexOf(rule) >= stages.indexOf('centre') && stages.indexOf(rule) <= stages.indexOf('bands')) withdrawFallenSeatsOf(draft);
   // The last centring reading that reads the record is the publication of 7f: by default the routed layout publishes without it (architecture-2
   // ticket 66). With `layout.moveBeforeGrow` the routed layout keeps the records: its publication check replays the centring steps, and they read
   // the seats the producer decided (ADR-0027).
