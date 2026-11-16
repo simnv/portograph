@@ -1,12 +1,12 @@
 # Expected (dense-16x9 ticket 22): the acceptance gate judges a stagger on the complete placement, not on the stage-5 canvas.
-# `leaves` (12 one-link members, six on each hub of `core`) stands on the top tier; eight sites on tier 2 link to both hubs, `pe-8` to `hub-1`
-# only, so the hubs and the sites form no complete solid block (one would stand flat and straight, dense-16x9 ticket 04 slice 3): the sheet
-# keeps its premise, a plain row of one-link members that staggers on two lines. At stage 5
-# the sites set the canvas width (about 1169 px; the leaf row ends near 906 px), so two lines of `leaves` give the same stage-5 width and more
-# height, and the stage-5 area objective refused them ("two lines give 1168.65 x 437.50 px, not less area than 1168.65 x 381.00 px"). 7c
-# then stands the sites under their feeds: the published width is the union of the leaf row's left edge and the sites' right edge, and
-# the narrower leaf row pulls the hubs and the sites left. The gate judges the complete placement: two lines stand nearer the 16:9 aim
-# (1426 x 655 px, aspect 2.18, to 1210 x 712 px, aspect 1.70), with no bend and no crossing more; G1-G9 pass. `stagger-gate.test.ts`.
+# `leaves` (12 one-link members, five on `hub-1` and seven on `hub-2` of `core`) stands on the top tier; eight sites on tier 2 set the stage-5 width. The odd
+# sites link to both hubs, the even sites to one hub (`hub-1`, `hub-2` in turn): two neighbours never have the same parents, so the sites are no row unit
+# (ticket 27) and 7c stands each under its own feeds. No two hubs reach every site, so the hubs and the sites form no complete
+# solid block (one would stand flat and straight, dense-16x9 ticket 04 slice 3): the sheet keeps its premise, a staggered plain row. The published width is the union of the leaf row and the sites, and the narrower
+# leaf row pulls the hubs and the sites left. The gate judges the complete placement: two lines stand nearer the 16:9 aim (1444 x 609 px,
+# aspect 2.37, to 1205 x 617 px, aspect 1.95), with no bend and no crossing more (bends 22 to 18, crossings 6); G1-G9 pass. `stagger-gate.test.ts`.
+# Until ticket 27 every site linked to both hubs; that arrangement is now
+# `a-site-row-centred-under-its-hubs-keeps-the-top-row-on-one-line.yaml`.
 portograph: 2
 groups:
   leaves: { tier: 0 }
@@ -48,7 +48,7 @@ links:
   - [leaf-3, hub-1]
   - [leaf-4, hub-1]
   - [leaf-5, hub-1]
-  - [leaf-6, hub-1]
+  - [leaf-6, hub-2]
   - [leaf-7, hub-2]
   - [leaf-8, hub-2]
   - [leaf-9, hub-2]
@@ -58,15 +58,12 @@ links:
   - [hub-1, pe-1]
   - [hub-2, pe-1]
   - [hub-1, pe-2]
-  - [hub-2, pe-2]
   - [hub-1, pe-3]
   - [hub-2, pe-3]
-  - [hub-1, pe-4]
   - [hub-2, pe-4]
   - [hub-1, pe-5]
   - [hub-2, pe-5]
   - [hub-1, pe-6]
-  - [hub-2, pe-6]
   - [hub-1, pe-7]
   - [hub-2, pe-7]
-  - [hub-1, pe-8]
+  - [hub-2, pe-8]

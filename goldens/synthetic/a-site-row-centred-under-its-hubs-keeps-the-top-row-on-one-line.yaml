@@ -1,0 +1,69 @@
+# Expected (dense-16x9 ticket 27): eight sites on tier 2 each link to both hubs of `core`, so they have the same parents and stand as one
+# row unit, centred under the hubs. Before ticket 27, 7c centred each site alone in group order: the sites stood to the right of the hubs, the
+# canvas was 1450 x 741 px with `leaves` on two lines (ticket 22), and 14 of the 28 routed links bent (28 bends). Now the centred unit makes the
+# canvas 1262 x 828 px, the acceptance gate declines the two lines of `leaves` (one line stands nearer the aim), and no link bends.
+# The arrangement was ticket 22's fixture before ticket 27; that fixture now alternates the sites' parents.
+portograph: 2
+groups:
+  leaves: { tier: 0 }
+  core: { tier: 1 }
+  site-1: { tier: 2 }
+  site-2: { tier: 2 }
+  site-3: { tier: 2 }
+  site-4: { tier: 2 }
+  site-5: { tier: 2 }
+  site-6: { tier: 2 }
+  site-7: { tier: 2 }
+  site-8: { tier: 2 }
+nodes:
+  leaf-1: { group: leaves, class: server }
+  leaf-2: { group: leaves, class: server }
+  leaf-3: { group: leaves, class: server }
+  leaf-4: { group: leaves, class: server }
+  leaf-5: { group: leaves, class: server }
+  leaf-6: { group: leaves, class: server }
+  leaf-7: { group: leaves, class: server }
+  leaf-8: { group: leaves, class: server }
+  leaf-9: { group: leaves, class: server }
+  leaf-10: { group: leaves, class: server }
+  leaf-11: { group: leaves, class: server }
+  leaf-12: { group: leaves, class: server }
+  hub-1: { group: core, class: switch }
+  hub-2: { group: core, class: switch }
+  pe-1: { group: site-1, class: router }
+  pe-2: { group: site-2, class: router }
+  pe-3: { group: site-3, class: router }
+  pe-4: { group: site-4, class: router }
+  pe-5: { group: site-5, class: router }
+  pe-6: { group: site-6, class: router }
+  pe-7: { group: site-7, class: router }
+  pe-8: { group: site-8, class: router }
+links:
+  - [leaf-1, hub-1]
+  - [leaf-2, hub-1]
+  - [leaf-3, hub-1]
+  - [leaf-4, hub-1]
+  - [leaf-5, hub-1]
+  - [leaf-6, hub-1]
+  - [leaf-7, hub-2]
+  - [leaf-8, hub-2]
+  - [leaf-9, hub-2]
+  - [leaf-10, hub-2]
+  - [leaf-11, hub-2]
+  - [leaf-12, hub-2]
+  - [hub-1, pe-1]
+  - [hub-2, pe-1]
+  - [hub-1, pe-2]
+  - [hub-2, pe-2]
+  - [hub-1, pe-3]
+  - [hub-2, pe-3]
+  - [hub-1, pe-4]
+  - [hub-2, pe-4]
+  - [hub-1, pe-5]
+  - [hub-2, pe-5]
+  - [hub-1, pe-6]
+  - [hub-2, pe-6]
+  - [hub-1, pe-7]
+  - [hub-2, pe-7]
+  - [hub-1, pe-8]
+  - [hub-2, pe-8]

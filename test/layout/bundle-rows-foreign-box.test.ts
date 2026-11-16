@@ -27,9 +27,10 @@ function inSlot(source: string, slot: number): string {
 const bundled = (model: LayoutModel) => model.links.filter(link => link.bundle !== undefined);
 
 describe('a bent bundle turns clear of a foreign box', () => {
-  // On main the slots 1, 2 and 3 threw BUNDLE_CHANNEL_BLOCKED. The bundle's first end is n5, the upper one: g2 stands under the legs
-  // from the near end, so it forbids every deeper row.
-  for (const slot of [1, 2, 3]) {
+  // Before ticket 76 the slots where n5 stands over g2 threw BUNDLE_CHANNEL_BLOCKED. The bundle's first end is n5, the upper one: g2 stands
+  // under the legs from the near end, so it forbids every deeper row. Since dense-16x9 ticket 27 n7 also links to n0, so g1 and g2 are no row
+  // unit; with that arrangement n5 stands over g2 in slots 1, 3 and 4.
+  for (const slot of [1, 3, 4]) {
     it(`slot ${slot}: publishes, every gate passes, and every turn row stands one edge margin above g2`, async () => {
       const model = await layout(parse(inSlot(SOURCE, slot)), options);
       expect(model.bundles.map(bundle => bundle.nodes[0])).toEqual(['n5']);
@@ -48,7 +49,7 @@ describe('a bent bundle turns clear of a foreign box', () => {
     }, 120000);
   }
 
-  for (const slot of [0, 4, 5]) {
+  for (const slot of [0, 2, 5]) {
     it(`slot ${slot}: publishes, every gate passes, and the bundle links stand vertical`, async () => {
       const model = await layout(parse(inSlot(SOURCE, slot)), options);
       for (const [id, gate] of Object.entries(score(model).snapshot.gates)) if (gate.severity === 'error') expect(gate.violations, id).toEqual([]);

@@ -87,8 +87,10 @@ it('moves a corridor to the child 7c could not seat under it', async () => {
   expect(other.x).toBeLessThan(lane.x);
   // Nothing moved for the corridor: the rule runs after the last centring replay, so the child's
   // node keeps the width and the canvas keeps the extent 7f published.
-  // Verdana metrics (snack-theme ticket 157): 145.775146484375 with Arial.
-  expect(model.nodes['node-ba002']!.bounds!.width).toBeCloseTo(161.87890625, 6);
+  // Verdana metrics (snack-theme ticket 157): 145.775146484375 with Arial. Since dense-16x9 ticket 27 the two lower groups have the same
+  // parents and stand as one row unit; on the even split the first group in the row (Row 15) stands on its feeds, and Zone 16, moved off its
+  // own x, aligns inside its body and does not grow (161.87890625 before, when 7c grew it toward its second feed).
+  expect(model.nodes['node-ba002']!.bounds!.width).toBeCloseTo(80.6796875, 6);
   // The move turns the run in the gap above the corridor from a column into a row, and 7f measured
   // that gap before the move. No gap may end up owing more room than it has.
   for (const { gap, plan } of tierGapPlans(model)) expect([gap.below, plan.growth]).toEqual([gap.below, 0]);

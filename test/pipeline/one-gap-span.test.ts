@@ -103,8 +103,10 @@ describe('part 1: a link across one document tier gap with a rank band between i
   }, 60000);
 
   it('when re-runs are left but kept for the later rounds: the skip says so and names the offered link', async () => {
-    // The sheet offers link-1; with one re-run, its course, side and turn rounds hold the re-run that is left.
-    const { model } = await run(KEPT, { testMaxReruns: 1 });
+    // The sheet offers link-1; its course, side and turn rounds hold the re-run that is left. Since dense-16x9 ticket 27 the fan round takes
+    // one re-run first on this sheet (the row unit stands Zone 16 off its feeds at 7e without growth, so its ports need a fan floor), so the
+    // command has two: one for the fan round, one that the later rounds hold.
+    const { model } = await run(KEPT, { testMaxReruns: 2 });
     expect(model.links.some(item => item.spanHint !== undefined)).toBe(false);
     const skipped = model.diagnostics.filter(item => item.code === 'SPAN_ROUND_SKIPPED');
     expect(skipped).toHaveLength(1);
