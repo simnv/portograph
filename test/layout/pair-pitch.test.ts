@@ -286,4 +286,19 @@ describe('the install merges a face in one pass (ticket 04, last step)', () => {
     expect(faceOffsets(bulk, 'bottom', bulk.ports)).toEqual(faceOffsets(old, 'bottom', old.ports));
     expect(pairExcess(bulk, 'bottom', 28)).toBe(pairExcess(old, 'bottom', 28));
   });
+
+  it('checks every pair floor of a 28-port face as the search over the face did', () => {
+    const node = face(28, undefined), keys = node.ports.map(port => portId(port.ref)), model = { nodes: { n: node } } as unknown as LayoutModel;
+    const wanted = keys.flatMap((one, k) => keys.slice(k + 1).map(two => ({ node: 'n', side: 'bottom' as const, ports: [one, two].sort() as [string, string], min: 30 })));
+    const ledger = pairGrowth([], wanted, 'fan', 1);
+    addPairPitches(node, 'bottom', pairFloorsOf(ledger).get('n')!.bottom!);
+    expect(ledger.every(item => floorFailure(item, model) === undefined)).toBe(true);
+    // A floor above the stored pair, and a pair the face does not store, fail; a pair the record gains later is found.
+    const over = pairGrowth([], [{ ...wanted[5]!, min: 31 }], 'fan', 2)[0]!;
+    expect(floorFailure(over, model)).toMatch(/is under 31/);
+    node.pairPitch!.bottom = node.pairPitch!.bottom!.filter(entry => entry.ports.join('|') !== wanted[7]!.ports.join('|'));
+    expect(floorFailure(ledger[7]!, model)).toMatch(/is under 30/);
+    addPairPitches(node, 'bottom', [{ rule: 'fan', ports: [...wanted[7]!.ports], min: 30 }]);
+    expect(floorFailure(ledger[7]!, model)).toBeUndefined();
+  });
 });

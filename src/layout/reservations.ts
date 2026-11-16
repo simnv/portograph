@@ -188,7 +188,7 @@ export function pairFloorsOf(ledger: Reservations): Map<string, Partial<Record<'
   const floors = new Map<string, Partial<Record<'top' | 'bottom', PairPitch[]>>>();
   for (const { payload } of ofKind(ledger, 'pairFloor')) {
     const faces = floors.get(payload.node) ?? {};
-    faces[payload.side] = [...(faces[payload.side] ?? []), { rule: 'fan', ports: [...payload.ports], min: payload.min }];
+    (faces[payload.side] ??= []).push({ rule: 'fan', ports: [...payload.ports], min: payload.min });
     floors.set(payload.node, faces);
   }
   return floors;
@@ -367,6 +367,27 @@ export function declinedEntries(declined: DeclinedTrunks, revision: number): Res
 
 // ---- Predicates and validators ---------------------------------------------------------------------------------------------------
 
+/** An index of the fan entries of each face record, by their sorted port keys, with the length it was read at. */
+const fanIndex = new WeakMap<readonly PairPitch[], { length: number; entries: Map<string, PairPitch> }>();
+/**
+ * The first fan entry of `list` for `ports`, as `list.find` gives it, in constant time after one pass over the face (dense-16x9 ticket 04): a
+ * ledger holds C(n, 2) pair floors of a face of n ports, and a search per floor made the check quadratic in them (0.7 s at 100 ports). The
+ * index is rebuilt when the face record changes its length, and a hit is read again against its ports, so it gives what the search gives.
+ */
+function fanEntry(list: readonly PairPitch[] | undefined, ports: readonly string[]): PairPitch | undefined {
+  if (list === undefined) return undefined;
+  let index = fanIndex.get(list);
+  if (index === undefined || index.length !== list.length) {
+    const entries = new Map<string, PairPitch>();
+    for (const entry of list) if (entry.rule === 'fan' && !entries.has(entry.ports.join('|'))) entries.set(entry.ports.join('|'), entry);
+    index = { length: list.length, entries };
+    fanIndex.set(list, index);
+  }
+  const key = ports.join('|'), hit = index.entries.get(key);
+  if (hit !== undefined && hit.rule === 'fan' && hit.ports.join('|') === key) return hit;
+  return list.find(entry => entry.rule === 'fan' && entry.ports.join('|') === key);
+}
+
 /** The predicate of a floor against a placed model: sizes and pitches only grow, so it holds at every stage. */
 export function floorFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind === 'pitchFloor') {
@@ -375,7 +396,7 @@ export function floorFailure(item: Reservation, model: LayoutModel): string | un
   }
   if (item.kind === 'pairFloor') {
     const node = model.nodes[item.payload.node];
-    const have = node?.pairPitch?.[item.payload.side]?.find(entry => entry.rule === 'fan' && entry.ports.join('|') === item.payload.ports.join('|'));
+    const have = fanEntry(node?.pairPitch?.[item.payload.side], item.payload.ports);
     return have !== undefined && have.min >= item.payload.min ? undefined : `the ${item.payload.side} pair ${item.payload.ports.join(', ')} of ${item.payload.node} is under ${item.payload.min}`;
   }
   if (item.kind === 'nodeFloor') {
