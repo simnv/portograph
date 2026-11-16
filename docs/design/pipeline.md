@@ -480,8 +480,11 @@ the right one mirrors (R3: x order, never declaration order). The inner pair sta
 to it, outermost first. A cell's left-facing blocks stand first (the nearest cell's members on the end), its right-facing blocks last,
 and its other members keep the order they stand in. The unit a seat moves is a peer block of the feed reader (`peerBlocks`: neighbours a
 routed link inside the row joins): the seated members of a block stand at the facing end, its other members next to them on the inner side. A
-lateral bundle of the row (`lateralPairs`, the reader of ticket 18) whose ends stood side by side, left end first, is harder than a facing end:
-a seat that would turn or part it, or a block that would face both ends of a row of more blocks, declines the pair sets of that row by name
+lateral bundle of the row (`lateralPairs`, the reader of ticket 18, read for the whole row) is harder than a facing end. The invariant
+(review 06c-2): a seat is admissible only if, for every lateral bundle the row encloses, the end that leaves to the right still stands left of
+the end it enters, adjacent or not, with any number of members between them (`turnedBundle`, the one predicate of the seat and the
+feed refresh; a pair the row already stands turned is not the seat's to keep). A seat that would turn one, or a block that would face both
+ends of a row of more blocks, declines the pair sets of that row by name
 (`SIBLING_SEAT_REFUSED`), and the other sets are seated again without them (each round drops a set, so at most one round per set). The decision is **`LayoutModel.siblingRows`**, one record per pair of cells
 `{subTier, leftCell, rightCell, mirrored, levelLink?, outerLinks}`: absent when the model holds no sibling-frame link the seat may move,
 `[]` when every pair set was declined. `levelLink` is absent when a group or a foreign frame stands between the two cells on their
@@ -493,7 +496,7 @@ against the design note (review 06c-1 judged them sound): the links on the losin
 set that is not one pair per member is declined whole, with no partial admission; and when the feeds decided both cells, the left cell keeps its
 order, with no comparison of the two feed spreads. `mirrored` is history, not proof: the validator reads the nested order of the pairs, not the flag. A seated cell may feed a
 cell below it, so the feed orders are read again (`refreshFeedOrders`); the feed reader keeps every seat (`siblingSeatOrder`: the feeds
-order only the members between the two seated blocks, and a feed order that would part a lateral bundle the seat kept leaves the row as it
+order only the members between the two seated blocks, and a feed order that would turn a lateral bundle of the row, by the same predicate, leaves the row as it
 stands). `siblingRowsFault` checks the record and the row orders at the end of stage 4 and at the restore of a stage-4 model, before stage 5
 reads it; the freeze keeps a copy, and every publication from stage 5 on and its restore check both (R1, R5).
 

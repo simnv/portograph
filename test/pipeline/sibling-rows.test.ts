@@ -4,7 +4,7 @@ import { layout, parse, score } from '../../src/index.js';
 import { resolve, restoreLayoutModel, sidesOne, sidesTwo, sizeNodes, skeleton } from '../../src/internal.js';
 import type { LayoutLink, LayoutModel } from '../../src/index.js';
 import { findPort } from '../../src/layout/row-paths.js';
-import { siblingRowsFault, SIBLING_SEAT_REFUSED, SIBLING_UTURN_DECLINED } from '../../src/layout/sibling-frames.js';
+import { siblingRowsFault, siblingSeatOrder, SIBLING_SEAT_REFUSED, SIBLING_UTURN_DECLINED } from '../../src/layout/sibling-frames.js';
 import { tierGapPlans } from '../../src/layout/gap-plan.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -18,6 +18,9 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 const MIRROR = read('../../goldens/synthetic/two-sibling-frames-mirror-a-linked-pair.yaml');
 const BUNDLE = read('../../goldens/synthetic/a-sibling-seat-keeps-an-authored-bundle-of-its-row.yaml');
+const APART = read('../../goldens/synthetic/a-sibling-seat-keeps-a-bundle-whose-ends-stand-apart.yaml');
+const TWO_BUNDLES = read('../../goldens/synthetic/a-sibling-seat-keeps-two-bundles-of-its-row.yaml');
+const WHOLE = read('../../goldens/synthetic/a-sibling-seat-moves-a-bundle-whole.yaml');
 const TWIN = read('../fixtures/staged/two-cores-reach-seven-pairs-through-hubs-on-the-last-rank.yaml');
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 const lay = (source: string): Promise<LayoutModel> => layout(parse(source), options);
@@ -142,6 +145,43 @@ describe('a sibling row: the facing ends of two frames of one tier (dense-16x9 t
     expect(model.siblingRows).toEqual([]);
     expect(gates(model)).toEqual([]);
     expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
+
+  it('keeps a lateral bundle whose ends stand apart: the order of the two ends is what the row owes it (review 2)', async () => {
+    const model = await lay(APART);
+    // wx stands between w1 and w2; the seat would stand the row wx, w2, w1 and turn the bundle. The row keeps w1 left of w2.
+    expect(model.groups['west#1']!.rowOrder).toEqual(['w1', 'wx', 'w2']);
+    const declined = model.diagnostics.filter(item => item.code === SIBLING_SEAT_REFUSED);
+    expect(declined).toHaveLength(1);
+    expect(declined[0]!.message).toMatch(/turn the lateral bundle \S+: w1 would no longer stand left of w2/);
+    expect(declined[0]!.owners).toEqual([{ kind: 'link', id: between(model, 'w1', 'e1').id }]);
+    expect(model.siblingRows).toEqual([]);
+    expect(gates(model)).toEqual([]);
+    expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
+
+  it('reads every bundle of the row: two bundles that the seat would turn decline the seat of both links by name (review 2)', async () => {
+    const model = await lay(TWO_BUNDLES);
+    expect(model.groups['west#1']!.rowOrder).toEqual(['w1', 'w2', 'w3', 'w4']);
+    const declined = model.diagnostics.filter(item => item.code === SIBLING_SEAT_REFUSED);
+    expect(declined).toHaveLength(1);
+    expect(declined[0]!.owners).toEqual(expect.arrayContaining([{ kind: 'link', id: between(model, 'w1', 'e1').id }, { kind: 'link', id: between(model, 'w3', 'e2').id }]));
+    expect(declined[0]!.owners).toHaveLength(2);
+    expect(model.siblingRows).toEqual([]);
+    expect(gates(model)).toEqual([]);
+    expect(model.removedLinks ?? []).toEqual([]);
+  }, 60000);
+
+  it('takes a seat that moves a bundle whole and keeps both orders; the feed refresh reads the same predicate (review 2)', async () => {
+    const model = await lay(WHOLE);
+    // The sheet writes w3, w4, w1, w2; the seat moves the block w3, w4 to the east end, w4 on the end and w3 next to it.
+    expect(model.groups['west#1']!.rowOrder).toEqual(['w1', 'w2', 'w3', 'w4']);
+    expect(model.diagnostics.filter(item => item.code.startsWith('SIBLING'))).toEqual([]);
+    expect(model.siblingRows).toEqual([expect.objectContaining({ leftCell: 'west#1', rightCell: 'east#1', levelLink: between(model, 'w4', 'e1').id, outerLinks: [] })]);
+    expect(gates(model)).toEqual([]);
+    // A feed order that turns a bundle leaves the row as it stands; one that keeps both orders with a member between the ends of a bundle is taken.
+    expect(siblingSeatOrder(model, 'west#1', ['w2', 'w1', 'w3', 'w4'])).toEqual(['w1', 'w2', 'w3', 'w4']);
+    expect(siblingSeatOrder(model, 'west#1', ['w1', 'w3', 'w2', 'w4'])).toEqual(['w1', 'w3', 'w2', 'w4']);
   }, 60000);
 
   it('refuses a forged record at the stage-4 restore, before stage 5 reads it (review 1, finding 3)', async () => {

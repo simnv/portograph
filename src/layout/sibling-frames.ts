@@ -12,7 +12,7 @@
  *
  * What the rule declines, by name and at severity `info` (stage 8 then routes the link as before): a pair set that is not one-to-one, or a member linked to
  * two cells on one side (`SIBLING_PAIR_NON_MATCHING`); a member of a row of two or more linked toward both sides (`SIBLING_FRAME_END_CONFLICT`: the end with more
- * links keeps it, a tie the left end); a row that cannot stand in its seat, or whose seat would turn or part a lateral bundle of the row (`SIBLING_SEAT_REFUSED`);
+ * links keeps it, a tie the left end); a row that cannot stand in its seat, or whose seat would turn a lateral bundle of the row (`turnedBundle`) (`SIBLING_SEAT_REFUSED`);
  * an outer link whose U is not allowed (`SIBLING_UTURN_DECLINED`). Cuts of this first slice (review 06c-1): the losing side of a relay takes no U, a pair set that
  * is not one-to-one is declined whole, and two feed-decided cells keep the left cell's order with no comparison of their spreads.
  */
@@ -167,8 +167,8 @@ export function seatSiblingFrameEnds(model: LayoutModel): boolean {
  * The records and the new order of each cell for the live pair sets, and the cells whose new order would break a harder order (`refused`, with why).
  * The unit a seat moves is a peer block of the feed reader (`peerBlocks`: neighbours that a routed link inside the row joins stay together): the seated
  * members of a block stand at the facing end in the record's order, and its other members stand next to them on the inner side. A block that would face
- * both ends of a row of more than one block, and a lateral bundle of the row (`lateralPairs`, the reader of ticket 18) whose two ends stood side by side,
- * left end first, and would not any more, refuse the row: an authored bundle channel is harder than a facing end.
+ * both ends of a row of more than one block, and a lateral bundle of the row that the new order would turn (`turnedBundle`: its left end no longer left of
+ * its right end, adjacent or not), refuse the row: an authored bundle channel is harder than a facing end.
  */
 function planSeats(model: LayoutModel, live: readonly Pair[][]): { records: { row: SiblingRow; pairs: Pair[] }[]; orders: Map<string, string[]>; refused: Map<string, string> } {
   const records: { row: SiblingRow; pairs: Pair[] }[] = [];
@@ -210,15 +210,23 @@ function planSeats(model: LayoutModel, live: readonly Pair[][]): { records: { ro
     const middle = units.filter(unit => !faces(unit, leftSeat) && !faces(unit, rightSeat)).flat();
     // A member of a row of one stands at both ends: the set keeps it once.
     const next = [...new Set([...leftSeat, ...leftUnits.flatMap(rest), ...middle, ...rightUnits.flatMap(rest), ...rightSeat])];
-    const broken = lateralPairs(model, cell).find(pair => sideBySide(now, pair) && !sideBySide(next, pair));
-    if (broken !== undefined) { refused.set(cell, `the seat would turn or part the lateral bundle ${broken.bundle} from ${broken.left} to ${broken.right}`); continue; }
+    const broken = turnedBundle(model, cell, now, next);
+    if (broken !== undefined) { refused.set(cell, `the seat would turn the lateral bundle ${broken.bundle}: ${broken.left} would no longer stand left of ${broken.right}`); continue; }
     orders.set(cell, next);
   }
   return { records, orders, refused };
 }
 
-/** Whether the two ends of a lateral bundle stand side by side in `order`, its left end first: the channel the row owes it (ticket 18). */
-const sideBySide = (order: readonly string[], pair: NeighbourPair): boolean => { const at = order.indexOf(pair.left); return at >= 0 && order[at + 1] === pair.right; };
+/**
+ * The one admissibility predicate of a seat and of the feed refresh (review 06c-2): the first lateral bundle that `cell` encloses (`lateralPairs`, the reader of
+ * ticket 18, read for the whole row) whose end that leaves to the right stands left of the end it enters in `now` and not in `next`, or undefined. The relative
+ * order of the two ends is what the row owes the bundle, adjacent or not, with any number of members between them; a pair that `now` already stands turned is
+ * not the seat's to keep.
+ */
+export function turnedBundle(model: LayoutModel, cell: string, now: readonly string[], next: readonly string[]): NeighbourPair | undefined {
+  const leftOf = (order: readonly string[], pair: NeighbourPair): boolean => { const a = order.indexOf(pair.left), b = order.indexOf(pair.right); return a >= 0 && b >= 0 && a < b; };
+  return lateralPairs(model, cell).find(pair => leftOf(now, pair) && !leftOf(next, pair));
+}
 
 /** The members of `cell` that a record seats at its left end and at its right end. */
 function seatedMembers(model: LayoutModel, cell: string): { left: Set<string>; right: Set<string> } {
@@ -243,8 +251,8 @@ export function siblingSeatOrder(model: LayoutModel, cell: string, order: readon
   if (!left.size && !rightEnd.size) return [...order];
   const now = model.groups[cell]?.rowOrder ?? model.groups[cell]?.nodes ?? [];
   const next = [...new Set([...now.filter(node => left.has(node)), ...order.filter(node => !left.has(node) && !rightEnd.has(node)), ...now.filter(node => rightEnd.has(node))])];
-  // A feed order that would part a lateral bundle the seat kept side by side leaves the seated row as it stands.
-  return lateralPairs(model, cell).some(pair => sideBySide(now, pair) && !sideBySide(next, pair)) ? [...now] : next;
+  // A feed order that would turn a lateral bundle of the seated row leaves the row as it stands (the seat's own predicate).
+  return turnedBundle(model, cell, now, next) === undefined ? next : [...now];
 }
 
 /**

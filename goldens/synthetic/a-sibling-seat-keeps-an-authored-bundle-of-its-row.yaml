@@ -1,5 +1,5 @@
 # Expected: w1 links to the east frame, so its facing end is the east end of the west row; but w1 leaves an authored lateral bundle (two links, right
-# ports of w1 to left ports of w2), and that channel needs w1 left of w2, side by side. The bundle is the harder order: the west row keeps it, the sibling seat
+# ports of w1 to left ports of w2), and that channel needs w1 left of w2. The bundle is the harder order: the west row keeps it, the sibling seat
 # of west is declined by name (SIBLING_SEAT_REFUSED, info), and the link from w1 to e1 keeps the route stage 8 gives. Every gate passes and no link is removed.
 # Before the rule kept the bundle, the seat put w2 left of w1 and the bundle ran backward through both bodies (G2, G3, G5 and G6 findings).
 # Test-only input owned by dense-16x9 ticket 06 (slice C, review 1): test/pipeline/sibling-rows.test.ts.
