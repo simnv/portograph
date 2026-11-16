@@ -56,4 +56,5 @@ the block's floor.
   behind the ticket the canvas did not change at 16:9 (3543 x 1998 px) and grew 6 px in height at 21:10: the far row had room under the width
   the provider rows set.
 - The gap choice above then runs on the placement with the room.
-- Bound: at most `BLOCK_PAD_ROUNDS` (3) placements more per command, outside the placement cap; a refused placement keeps the one before it.
+- The room is placed again until a reading asks for no more (the fixed point). Bound: one placement per flat member, outside the placement
+  cap; a room still short at the bound is named (`BLOCK_ROOM_UNSETTLED`), and a refused placement keeps the one before it.

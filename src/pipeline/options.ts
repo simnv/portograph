@@ -68,6 +68,8 @@ export interface LayoutOptions {
   testOverlayCourses?: boolean;
   /** Test only (architecture ticket 22, phase 2): the ids of the links that every placement run reserves as spanning chords, before the span round has any say. */
   testSpanHints?: readonly string[];
+  /** Test only (dense-16x9 ticket 04, slice 3, step 2, review 1). Replaces the bound of the room rounds (`blockRoomBound`, one placement per flat member). */
+  testBlockRoomBound?: number;
   /** Test only. Replaces `MAX_RERUNS` for one command. */
   testMaxReruns?: number;
   /** Test only. Called with the wall time of each placement run, measure, 7f, route and score-ready stage, and the budget left (ticket 115 timing). */

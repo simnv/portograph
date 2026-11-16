@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LayoutLink, LayoutModel } from '../../src/model/layout.js';
-import { blockBoxPadsAsked, blockBoxPadsFault, blockRowGapsAsked, blockRowGapsFault } from '../../src/layout/block-pads.js';
+import { blockBoxPadsAsked, blockRowGapsAsked } from '../../src/layout/block-pads.js';
+import { blockBoxPadsFault, blockRowGapsFault } from '../../src/layout/room-records.js';
 import { GROUP_EDGE_LINK_CLEARANCE, DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../../src/theme/geometry.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../../src/layout/row-paths.js';
 import { SIDE_EDGE_SLACK } from '../../src/layout/frame-paths.js';

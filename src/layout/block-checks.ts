@@ -1,4 +1,3 @@
-import { blockBoxPadsFault, blockRowGapsFault } from './block-pads.js';
 import { chordBoxRefusal } from './chord-boxes.js';
 import { chordEnds } from './overlay-paths.js';
 import type { Point } from '../model/geometry.js';
@@ -46,9 +45,6 @@ export function memberChord(model: LayoutModel, link: LayoutLink): { from: Point
 
 /** Read the stored floor; do not choose a new cap or boundary mode at publication. */
 export function blockReservationsFault(model: LayoutModel): string | undefined {
-  // The side room of the members' boxes is a placement input (`blockBoxPads`): its record must read (R5).
-  const pads = blockBoxPadsFault(model) ?? blockRowGapsFault(model);
-  if (pads !== undefined) return pads;
   const families = model.fanFamilies?.filter(family => family.kind === 'solid') ?? [];
   if (!families.length || model.frozenChords === undefined) return undefined;
   if (model.blockReservations?.length !== families.length) return 'solid block reservation is missing';

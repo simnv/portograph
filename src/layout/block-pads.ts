@@ -1,4 +1,4 @@
-import type { BlockBoxPad, BlockRowGap, LayoutModel } from '../model/layout.js';
+import type { BlockBoxPad, BlockRowGap, LayoutModel, Owner } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { groupBoxes } from '../score/model.js';
@@ -90,18 +90,6 @@ export function blockBoxPadsAsked(model: LayoutModel): BlockBoxPad[] {
   return [...asked.values()].sort((x, y) => x.box < y.box ? -1 : x.box > y.box ? 1 : x.side < y.side ? -1 : x.side > y.side ? 1 : 0);
 }
 
-/** What a validator checks on `model.blockBoxPads` (R5): sorted by box then side, one entry per pair, a finite positive pad. */
-export function blockBoxPadsFault(model: LayoutModel): string | undefined {
-  const record = model.blockBoxPads;
-  if (record === undefined) return undefined;
-  if (!record.length) return 'the block box paddings are recorded empty';
-  for (const [index, item] of record.entries()) {
-    if (typeof item.box !== 'string' || (item.side !== 'left' && item.side !== 'right') || !Number.isFinite(item.pad) || item.pad <= 0) return `the block box padding of ${item.box} is unreadable`;
-    const previous = record[index - 1];
-    if (previous !== undefined && (previous.box > item.box || (previous.box === item.box && previous.side >= item.side))) return 'the block box paddings are out of order';
-  }
-  return undefined;
-}
 
 /**
  * The row gap a flat block member asks between its end node and the next node of that row toward its other end (dense-16x9 ticket 04, slice
@@ -162,20 +150,31 @@ export function blockRowGapsAsked(model: LayoutModel): BlockRowGap[] {
   return [...asked.values()].sort((x, y) => x.left < y.left ? -1 : x.left > y.left ? 1 : x.right < y.right ? -1 : x.right > y.right ? 1 : 0);
 }
 
-/** What a validator checks on `model.blockRowGaps` (R5): sorted by the left node then the right one, one entry per pair, a finite positive gap. */
-export function blockRowGapsFault(model: LayoutModel): string | undefined {
-  const record = model.blockRowGaps;
-  if (record === undefined) return undefined;
-  if (!record.length) return 'the block row gaps are recorded empty';
-  for (const [index, item] of record.entries()) {
-    if (typeof item.left !== 'string' || typeof item.right !== 'string' || !Number.isFinite(item.gap) || item.gap <= 0) return `the block row gap of ${item.left} and ${item.right} is unreadable`;
-    const previous = record[index - 1];
-    if (previous !== undefined && (previous.left > item.left || (previous.left === item.left && previous.right >= item.right))) return 'the block row gaps are out of order';
-  }
-  return undefined;
-}
 
 /** The row gap the record asks between two neighbours, `a` left of `b` (0 where none). */
 export function blockRowGap(model: Pick<LayoutModel, 'blockRowGaps'>, a: string, b: string): number {
   return model.blockRowGaps?.find(item => item.left === a && item.right === b)?.gap ?? 0;
+}
+
+/**
+ * The bound of the room rounds (`initial.ts`, R4): one placement per member of a flat block. It is a safety bound: the rounds end at the fixed
+ * point, and the trial after the last placement is read too (`roomShort`), so a room still short at the bound is named, never left silent.
+ */
+export function blockRoomBound(model: LayoutModel): number {
+  const flat = new Set((model.blockReservations ?? []).filter(record => record.mode === 'flat').map(record => record.family));
+  return model.links.filter(link => link.fanFamily !== undefined && flat.has(link.fanFamily)).length;
+}
+
+/** What a reading asks beyond the records that stand: each box side and row gap still short, with its owners and the px it lacks (R6). */
+export function roomShort(pads: readonly BlockBoxPad[], gaps: readonly BlockRowGap[], heldPads: readonly BlockBoxPad[], heldGaps: readonly BlockRowGap[]): { owners: Owner[]; text: string }[] {
+  const short: { owners: Owner[]; text: string }[] = [];
+  for (const item of pads) {
+    const held = heldPads.find(entry => entry.box === item.box && entry.side === item.side)?.pad ?? 0;
+    if (item.pad > held + EPS) short.push({ owners: [{ kind: 'group', id: item.box }], text: `${item.box} ${item.side} side ${(item.pad - held).toFixed(2)} px` });
+  }
+  for (const item of gaps) {
+    const held = heldGaps.find(entry => entry.left === item.left && entry.right === item.right)?.gap ?? 0;
+    if (item.gap > held + EPS) short.push({ owners: [{ kind: 'node', id: item.left }, { kind: 'node', id: item.right }], text: `${item.left} to ${item.right} gap ${(item.gap - held).toFixed(2)} px` });
+  }
+  return short;
 }
