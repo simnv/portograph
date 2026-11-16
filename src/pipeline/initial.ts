@@ -4,7 +4,10 @@
  */
 import type { LayoutModel } from '../model/index.js';
 import { SolidBlockRefusal, TrunkBlocked, producerRefusal } from '../layout/placement-refusal.js';
-import { FAN_WRAP_DECLINED, staggerRefusal, wrapGateVerdict } from '../layout/stagger.js';
+import { FAN_WRAP_DECLINED, placedExtent, staggerRefusal, wrapGateVerdict } from '../layout/stagger.js';
+import { aspectAim, aspectGap } from '../layout/aspect.js';
+import { ASPECT_EPS } from '../layout/tolerance.js';
+import { EPS } from '../geometry/planar.js';
 import type { Diagnostic } from '../model/index.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
@@ -112,6 +115,54 @@ env.arranged = true;
 if (first.groupArrangements !== undefined) {
   env.groupArrangements = JSON.parse(JSON.stringify(first.groupArrangements)) as typeof first.groupArrangements;
   if (first.staggerRows !== undefined) env.staggerRows = JSON.parse(JSON.stringify(first.staggerRows)) as typeof first.staggerRows;
+}
+// The gap of every flat solid block (dense-16x9 ticket 04, slice 3; ADR-0025, amendment of 2026-11-16) is chosen on the complete placement.
+// The first run placed every flat gap at its floor (the densest sheet). Its 7f trial gives the placed extent W x H (`placedExtent`, the
+// extent the stagger gate reads; no routing pass); the sheet wants the height W / aim. The flat gaps share max(0, W / aim - H) equally,
+// each clamped to [its floor, its 34 degree demand], and one more placement stands at those gaps. It is kept only when its 7f trial stands
+// nearer the aim than the floor placement (the width can move); else the floor stands. Bound (R4): one placement more per command for all
+// flat blocks together, outside the placement cap as the gate trials are (`env.gateRuns`), and two 7f trials.
+const flat = (first.blockReservations ?? []).filter(record => record.mode === 'flat');
+if (flat.length) {
+  const trial = async (model: LayoutModel): Promise<LayoutModel | undefined> => {
+    try { return (await env.bands(model, true)).model; } catch (error) { if (staggerRefusal(error) || producerRefusal(error)) return undefined; throw error; }
+  };
+  const floorBanded = await trial(first), floorBox = floorBanded === undefined ? undefined : placedExtent(floorBanded);
+  const aim = aspectAim(env.document);
+  let extra = floorBox === undefined ? 0 : Math.max(0, floorBox.width / aim - floorBox.height);
+  // Each flat tier gap: its floor (the gap the floor placement holds) and its room up to the largest 34 degree demand of its flat blocks.
+  const room = new Map<number, number>();
+  for (const record of flat) room.set(record.below, Math.max(room.get(record.below) ?? 0, record.target - record.chosen));
+  const open = [...room].filter(([, value]) => value > EPS).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  const share = new Map<number, number>();
+  for (const [index, [below, value]] of open.entries()) {
+    const part = Math.min(value, extra / (open.length - index));
+    share.set(below, part); extra -= part;
+  }
+  if ([...share.values()].some(value => value > EPS)) {
+    const saved = { kept, declinedSolidBlocks: env.declinedSolidBlocks, blockProbes: env.blockProbes, reruns: env.reruns, floor: first };
+    env.flatBlockGaps = flat.map(record => ({ family: record.family, gap: record.chosen + (share.get(record.below) ?? 0) }));
+    if (env.declinedSolidBlocks !== undefined) env.declinedSolidBlocks = new Map(env.declinedSolidBlocks);
+    const placedBefore = env.placements;
+    let refused: string | undefined;
+    try { await placeFirst(); } catch (error) {
+      if (!(staggerRefusal(error) || producerRefusal(error))) { env.gateRuns += env.placements - placedBefore; throw error; }
+      refused = (error as Error).message;
+    }
+    env.gateRuns += env.placements - placedBefore;
+    const chosenBanded = refused === undefined ? await trial(first) : undefined, chosenBox = chosenBanded === undefined ? undefined : placedExtent(chosenBanded);
+    const nearer = floorBox !== undefined && chosenBox !== undefined
+      && aspectGap(chosenBox.width, chosenBox.height, aim) < aspectGap(floorBox.width, floorBox.height, aim) - ASPECT_EPS;
+    if (!nearer) {
+      kept = saved.kept; env.blockProbes = saved.blockProbes; env.reruns = saved.reruns; first = saved.floor; delete env.flatBlockGaps;
+      if (saved.declinedSolidBlocks === undefined) delete env.declinedSolidBlocks; else env.declinedSolidBlocks = saved.declinedSolidBlocks;
+      gateNotes.push({ stage: 'placement', severity: 'info', code: 'FLAT_BLOCK_GAP_FLOOR', owners: [],
+        message: `The flat solid blocks keep their floor gaps: the placement at the aspect gaps ${refused !== undefined ? `was refused (${refused})` : 'stands no nearer the aspect aim'}.` });
+    } else {
+      gateNotes.push({ stage: 'placement', severity: 'info', code: 'FLAT_BLOCK_GAP_CHOSEN', owners: [],
+        message: `The flat solid blocks take the aspect gaps: ${env.flatBlockGaps.map(item => `${item.family} ${item.gap.toFixed(2)} px`).join(', ')}.` });
+    }
+  }
 }
 return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: gateNotes, promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
 }

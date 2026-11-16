@@ -13,16 +13,21 @@ const radians = BLOCK_ANGLE * Math.PI / 180, floorRadians = BLOCK_FLOOR_ANGLE * 
 
 /**
  * The per-member checks of a flat block (dense-16x9 ticket 04, slice 3): past the cap a member stands only when its chord leaves each endpoint box
- * through the facing edge (`chordBoxRefusal`: the reserved gap holds the floor angle, not every box entry) and is no flatter than
+ * through the facing edge or the side edge it runs toward (`chordBoxRefusal` with `sideExit`: the reserved gap holds the floor angle, not every
+ * box entry) and is no flatter than
  * `BLOCK_FLOOR_ANGLE`. A member that fails falls back alone; the block stays. Undefined for a member of an under-cap block, whose reservation holds both.
  */
+/** Whether `link` is a member of a flat solid block: it may leave its own box by a side edge (`chordBoxRefusal` with `sideExit`). */
+export const flatMember = (model: LayoutModel, link: LayoutLink): boolean =>
+  link.solidBlock === true && model.blockReservations?.find(item => item.family === link.fanFamily)?.mode === 'flat';
+
 export function flatMemberRefusal(model: LayoutModel, link: LayoutLink): 'edge' | 'frame' | 'floor' | undefined {
-  if (link.solidBlock !== true || model.blockReservations?.find(item => item.family === link.fanFamily)?.mode !== 'flat') return undefined;
+  if (!flatMember(model, link)) return undefined;
   // The chord between the two port anchors, as the reservation measured it (`reserveBlockGaps`).
   const [a, b] = Object.values(link.attachments!).map(ref => findPort(model, ref)?.anchor);
   if (a === undefined || b === undefined) return 'edge';
   if (Math.abs(b.y - a.y) + EPS < Math.abs(b.x - a.x) * Math.tan(floorRadians)) return 'floor';
-  return chordBoxRefusal(model, link, { from: a, to: b, owner: link.owner });
+  return chordBoxRefusal(model, link, { from: a, to: b, owner: link.owner }, 0, true);
 }
 
 /** Read the stored floor; do not choose a new cap or boundary mode at publication. */

@@ -35,8 +35,14 @@ the judge tolerance kept none of them and lost a lift that main keeps, which was
 
 ## Amendment (2026-11-16): the gap of a flat block
 
-The tier gap of a complete solid block past the cap (dense-16x9 ticket 04, slice 3) is chosen in stage 7e, before the freeze, from the band
-extent of the settled draft: the sheet grows toward the height `width / aim`, from the floor (the gap that holds the flattest member at 15
-degrees, plus every under-cap demand of the gap) up to the 34 degree demand. Several flat gaps share the extra height equally; a gap that
-reaches its 34 degree demand passes its share on. A box entry is no part of the floor: a member whose box entry the chosen gap does not
-hold falls back alone, and the block stays. The canvas after routing can differ from the band extent of 7e; the choice is not judged again.
+The tier gap of a complete solid block past the cap (dense-16x9 ticket 04, slice 3) is chosen on the complete placement, not on the extent of
+an earlier stage (the defect class of ticket 22: a choice made on a stale extent overshot to 1.6:1 on the sheet behind the ticket).
+- The first run places every flat gap at its floor: the gap that holds the flattest member at 15 degrees, with every under-cap demand of the gap.
+- Its 7f trial gives the placed extent W x H (`placedExtent`, the extent the stagger gate reads; no routing pass). The sheet wants H* = W / aim.
+- The flat gaps share max(0, H* - H) equally, each clamped to [its floor, its 34 degree demand]; a gap that reaches its demand passes its share on.
+- One more placement stands at the chosen gaps. It is kept only when its 7f trial stands nearer the aim than the floor placement (the width can
+  move); else the floor stands. A sheet already taller than the aim keeps the floor, the densest result; no sheet overshoots the aim.
+- Bound: one placement more per command for all flat blocks together, and two 7f trials. Its placements stand outside the placement cap, as the
+  stagger gate trials do (`env.gateRuns`).
+
+A box entry is no part of the floor: a member whose box entry the chosen gap does not hold falls back alone, and the block stays.

@@ -698,6 +698,11 @@ export interface LayoutModel {
   fanFamilies?: FanFamily[];
   /** Ticket 83. Absent before the settled gap draft or with no solid block; [] cannot validate a block. */
   blockReservations?: BlockReservation[];
+  /**
+   * The gap the aspect choice of the complete placement gave each flat solid block (dense-16x9 ticket 04, slice 3; `chooseFlatGaps` in
+   * pipeline/initial.ts): a placement input, read by `reserveBlockGaps` in 7e. Absent: every flat gap at its floor.
+   */
+  flatBlockGaps?: FlatBlockGap[];
   /** Placement refusals restored by stage 1; absent when no geometry probe declined a block. */
   declinedSolidBlocks?: { family: string; reason: string }[];
   /** Terminal one-link followers seated below the block in stage 5. */
@@ -892,6 +897,8 @@ export interface FanFamily {
   members: { link: string; hub: string; unit: string }[];
 }
 /** Placement-owned floor between tier-band edges, capped before acceptance. Mandatory room may exceed it. */
+/** The gap of one flat solid block that the aspect choice took (`LayoutModel.flatBlockGaps`). */
+export interface FlatBlockGap { family: string; gap: number }
 export interface BlockReservation {
   family: string;
   above: number;

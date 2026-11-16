@@ -1,0 +1,73 @@
+# Expected: a complete 2x7 block past the cap reorders its far groups (declaration ties, dense-16x9 ticket 04); the child of each far group,
+# joined by dashed links, follows it in the same step and stands under its parent (slice 3, `orderFedGroups`). The children are declared shuffled.
+portograph: 2
+profile: network
+groups:
+  core: {tier: 0}
+  pair1: {tier: 1}
+  pair2: {tier: 1}
+  pair3: {tier: 1}
+  pair4: {tier: 1}
+  pair5: {tier: 1}
+  pair6: {tier: 1}
+  pair7: {tier: 1}
+  unit3: {tier: 2}
+  unit6: {tier: 2}
+  unit1: {tier: 2}
+  unit5: {tier: 2}
+  unit2: {tier: 2}
+  unit7: {tier: 2}
+  unit4: {tier: 2}
+nodes:
+  core-a: {group: core, class: router}
+  core-b: {group: core, class: router}
+  node1a: {group: pair1, class: router, size: {width: 300, height: 0}}
+  node1b: {group: pair1, class: router, size: {width: 300, height: 0}}
+  node2a: {group: pair2, class: router, size: {width: 300, height: 0}}
+  node2b: {group: pair2, class: router, size: {width: 300, height: 0}}
+  node3a: {group: pair3, class: router, size: {width: 300, height: 0}}
+  node3b: {group: pair3, class: router, size: {width: 300, height: 0}}
+  node4a: {group: pair4, class: router, size: {width: 300, height: 0}}
+  node4b: {group: pair4, class: router, size: {width: 300, height: 0}}
+  node5a: {group: pair5, class: router, size: {width: 300, height: 0}}
+  node5b: {group: pair5, class: router, size: {width: 300, height: 0}}
+  node6a: {group: pair6, class: router, size: {width: 300, height: 0}}
+  node6b: {group: pair6, class: router, size: {width: 300, height: 0}}
+  node7a: {group: pair7, class: router, size: {width: 300, height: 0}}
+  node7b: {group: pair7, class: router, size: {width: 300, height: 0}}
+  child3: {group: unit3, class: router}
+  child6: {group: unit6, class: router}
+  child1: {group: unit1, class: router}
+  child5: {group: unit5, class: router}
+  child2: {group: unit2, class: router}
+  child7: {group: unit7, class: router}
+  child4: {group: unit4, class: router}
+links:
+  - [node3a, child3, {class: dashed}]
+  - [node3b, child3, {class: dashed}]
+  - [node6a, child6, {class: dashed}]
+  - [node6b, child6, {class: dashed}]
+  - [node1a, child1, {class: dashed}]
+  - [node1b, child1, {class: dashed}]
+  - [node5a, child5, {class: dashed}]
+  - [node5b, child5, {class: dashed}]
+  - [node2a, child2, {class: dashed}]
+  - [node2b, child2, {class: dashed}]
+  - [node7a, child7, {class: dashed}]
+  - [node7b, child7, {class: dashed}]
+  - [node4a, child4, {class: dashed}]
+  - [node4b, child4, {class: dashed}]
+  - [core-a, node1a]
+  - [core-a, node2a]
+  - [core-a, node3a]
+  - [core-a, node4a]
+  - [core-a, node5a]
+  - [core-a, node6a]
+  - [core-a, node7a]
+  - [core-b, node1b]
+  - [core-b, node2b]
+  - [core-b, node3b]
+  - [core-b, node4b]
+  - [core-b, node5b]
+  - [core-b, node6b]
+  - [core-b, node7b]

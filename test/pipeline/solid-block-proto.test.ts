@@ -138,6 +138,12 @@ describe('ticket 83 under-cap solid blocks', () => {
     expect(blockReservationsFault(two)).toBeUndefined();
     expect(Object.values(score(two).snapshot.gates).filter(gate => gate.severity === 'error' && gate.violations.length)).toEqual([]);
   });
+  it('makes the rows fed from the reordered far groups follow them in the same step (dense-16x9 ticket 04, slice 3)', async () => {
+    const model = await lay(fixture('a-child-row-follows-its-reordered-far-groups'));
+    const centre = (id: string): number => model.groups[id]!.bounds!.x + model.groups[id]!.bounds!.width / 2;
+    for (let i = 1; i <= 7; i++) expect(centre(`unit${i}`)).toBeCloseTo(centre(`pair${i}`), 6);
+    expect(score(model).snapshot.counts.routed.bent).toBe(0);
+  });
   it('lets a flat member fall back alone when the aspect gap is below its box entry (dense-16x9 ticket 04, slice 3)', async () => {
     const model = await lay(fixture('a-flat-block-member-that-leaves-its-box-by-a-side-falls-back'));
     const record = model.blockReservations![0]!;

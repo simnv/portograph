@@ -1,6 +1,6 @@
-# Expected: past the cap the aspect aim 4:1 sets the gap between the 15 degree floor and the 34 degree demand (dense-16x9 ticket 04, slice 3).
-# The outer members then leave the hub group by a side edge: each falls back alone ('edge'), the block stays flat and the others straight
-# but for the members beside a fallback's stem ('leg').
+# Expected: past the cap the aspect aim 4:1, read on the complete placement, sets the gap between the 15 degree floor and the 34 degree demand
+# (dense-16x9 ticket 04, slice 3). The outer members then pass a corner of their box within its margin: each falls back alone ('edge'), the
+# block stays flat and the others straight but for the members beside a fallback's stem ('leg').
 portograph: 2
 profile: network
 layout: {aspect: "4:1"}

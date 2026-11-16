@@ -12,7 +12,7 @@ import type { Reservations } from '../layout/reservations.js';
 import { route, ROUTE_BUDGET_MS } from '../route/index.js';
 import { CommandDeadlineError, UNBOUNDED_BUDGET, type Budget } from './budget.js';
 import type { LayoutOptions } from './options.js';
-import type { GroupArrangement, GroupLift, StaggerRow } from '../model/layout.js';
+import type { FlatBlockGap, GroupArrangement, GroupLift, StaggerRow } from '../model/layout.js';
 import { FAN_ROUNDS, MAX_RERUNS } from './limits.js';
 
 /** What stage 7f did to a model, with the copy of its first settled state (`lastAttempt`): phase 3b's trigger. */
@@ -28,6 +28,8 @@ export interface Env {
   /** The placements of the far-end round (dense-16x9 ticket 07, at most `FAR_END_ORDER_RUNS`): its own count, outside the re-run budget and the placement cap, so the shared budget the other rounds spend does not starve the one round that reads their settled result. */
   farEndRuns: number;
   staggerRows?: StaggerRow[];
+  /** Dense-16x9 ticket 04 slice 3: the gap the aspect choice gave each flat solid block (`chooseFlatGaps`); absent: every flat gap at its floor. */
+  flatBlockGaps?: FlatBlockGap[];
   /** Ticket 51: the arrangement stage 5 of the first placement run chose; every later run of the command keeps it (R1). */
   groupArrangements?: Record<string, GroupArrangement>;
   /** Ticket 51: true once the first placement run has completed; every later run keeps its arrangement and decides none. */

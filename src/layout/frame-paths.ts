@@ -1,6 +1,6 @@
 import { runClearance, type ClearanceRun } from '../score/sheaf.js';
 import { chordBoxRefusal, chordHolders as holders } from './chord-boxes.js';
-import { blockReservationsFault, flatMemberRefusal } from './block-checks.js';
+import { blockReservationsFault, flatMember, flatMemberRefusal } from './block-checks.js';
 import type { FanAdmission, FanFallbackReason, FanFamily, LayoutLink, LayoutModel, LayoutNode, LayoutPath, LayoutPort, PathSegment } from '../model/layout.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
@@ -335,7 +335,7 @@ export type ChordRefusal = 'transit' | 'faces' | 'edge' | 'frame' | 'body' | 'pi
 /** Faint fans keep their recorded exception; solid chords use the shared box predicate. */
 function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): 'edge' | 'frame' | undefined {
   if (link.fanFamily !== undefined && link.solidBlock !== true && fanFamilyOf(model, link) !== undefined) return fanBoxRefusal(model, link, segment);
-  return chordBoxRefusal(model, link, segment, sideSlack);
+  return chordBoxRefusal(model, link, segment, sideSlack, flatMember(model, link));
 }
 
 /**
