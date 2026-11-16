@@ -13,6 +13,7 @@ import { gridChains } from './grid.js';
 import { barLabelFloor, barPortsFloor } from './bar-width.js';
 import { portSideCapacity, reservePortCorners } from './port-insets.js';
 import { chainBlockOf } from './read/chain.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 
 export type NodeContentBlock =
   | (Size & { kind: 'icon'; icon: string; inset?: number; radius?: number })
@@ -144,6 +145,22 @@ export function placeNodeContent(content: NodeContentMeasurement, box: Rect, ins
 export const ALIGNMENT_MAX_GROWTH = 12;
 
 /**
+ * The alignment cap (ADR-0027, dense-16x9 ticket 02): how wide a seat of 7c may grow a body to stand its ports over their feeds,
+ * as a multiple of the width the node needs for itself (`ownSideWidth`). A body grows only by what no move inside its row gives.
+ *
+ * **5, measured** (owner ruling, 2026-11-15). The ruling first tried a pitch cap: a body grows only while every two neighbouring ports it
+ * stands are at most 144 px apart (two slots of a 72 px parent pitch). It failed the test of the ruling: two ticket-73 sheets lose
+ * verticals (`a-band-holds-the-group-that-set-its-edge` 23 to 22, `a-tier-gap-plan-orders-every-part` 9 to 5). The multiples on the
+ * same ten sheets (main: 102 verticals, 24 bends): 2.5 keeps 78 and 3 keeps 91, each with sheets below main; 3.5 keeps 100; 4 keeps
+ * 104 with 32 bends; 5 keeps 104 with 26 bends; at 12 one of the ten does not publish. 4 cost more than 5 on the corpus (34 sheets
+ * worse on bends against 18) and on the dense 16:9 sheet (246 bends and a new G4 against 206 bends), so the owner took 5. The
+ * sheet's widest grown body falls from 1 129 px on main to 427 px.
+ *
+ * Read only with `layout.moveBeforeGrow` (`moveBeforeGrow`); the default reads `ALIGNMENT_MAX_GROWTH` (`alignmentAllowance`).
+ */
+export const ALIGNMENT_CAP_TIMES = 5;
+
+/**
  * The width a node needs for itself on **one** side: the larger of its measured content and author
  * floor, and the room the ports of that side take at their reserved pitch — the same
  * `2 × padding + count × pitch` the horizontal port installers hold. It is the reference every alignment
@@ -182,6 +199,22 @@ export function alignmentAllowance(model: LayoutModel, node: LayoutNode, side: S
   // A node of a feeding chain (fan wrap, D-Q4) stands over its wrapped block by a stage-5 move; no alignment grows it toward a feed.
   if (chainBlockOf(model, node.id) !== undefined) return node.bounds?.width ?? 0;
   return Math.max(node.bounds?.width ?? 0, ALIGNMENT_MAX_GROWTH * ownSideWidth(node, side));
+}
+
+/** What the cap reads of a seat: the body width before (`from`) and after it (`width`). */
+export interface SeatSpread { from: number; width: number }
+
+/**
+ * Whether a seat keeps the alignment cap (`ALIGNMENT_CAP_TIMES`) on the faces `sides` it stands. A seat that grows nothing keeps it:
+ * a body that a bar span, a group grid or an earlier seat made wide aligns inside its width, so repeated passes never ratchet. A
+ * node of a stored feeding chain (`chainBlockOf`, fan wrap) never grows: it stands over its wrapped block by a stage-5 move. The
+ * one predicate of the cap: the seat (`seatNode`), the keep rule of the alignment (`keptTargets`) and the publication check of the
+ * seat record (`alignmentSeatsFault`) read it.
+ */
+export function withinAlignmentCap(model: LayoutModel, node: LayoutNode, sides: readonly Side[], seat: SeatSpread): boolean {
+  if (seat.width <= seat.from + PLACEMENT_EPS) return true;
+  if (chainBlockOf(model, node.id) !== undefined) return false;
+  return seat.width <= ALIGNMENT_CAP_TIMES * Math.max(...sides.map(side => ownSideWidth(node, side))) + PLACEMENT_EPS;
 }
 
 /**

@@ -4,6 +4,7 @@ import { findPort } from './row-paths.js';
 import { isSpreadFace } from './read/parent-spread.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 const HORIZONTAL: readonly Side[] = ['top', 'bottom'];
 /** A port is aligned with its peer when the two stand on one vertical within this distance. */
@@ -61,7 +62,8 @@ function pinned(model: LayoutModel, node: LayoutNode, side: Side, feeds: Readonl
 
 /**
  * Centre again, once, the faces `seatedFaces` recorded that centring left alone but whose body it widened. A face is left alone when its first port
- * stands where it stood (in the drawing, or from the left edge of its body). The block keeps its pitch and its order and moves by half the difference
+ * stands where it stood (in the drawing, or from the left edge of its body), or when its block keeps the width it had (the group moved it and
+ * a seat grew the body in place, dense-16x9 ticket 02). The block keeps its pitch and its order and moves by half the difference
  * of its two margins; it writes no width and reads no feed, so it cannot feed back into the growth. A face with a port aligned to a peer, a bus
  * stub, a node on a bar, or a face a parent spread over its children (`parentSpreads`, architecture-2 ticket 32) keeps its positions: they were
  * set on purpose.
@@ -75,7 +77,10 @@ export function recentreSeatedFaces(model: LayoutModel, faces: readonly SeatedFa
     if (isSpreadFace(model, face.node, face.side)) continue;
     const m = margins(node, face.side);
     if (m === undefined) continue;
-    if (Math.abs(m.first - face.first) > PLACEMENT_EPS && Math.abs(m.low - face.low) > PLACEMENT_EPS) continue;
+    // A seat that grows a body in place after its group moved (ADR-0027) moves the face with the group and the body's left edge by the growth:
+    // the first port and the left margin both change, but the block keeps its width. A block of another width was set by another rule.
+    const block = box.width - m.low - m.high, was = face.width - 2 * face.low;
+    if (Math.abs(m.first - face.first) > PLACEMENT_EPS && Math.abs(m.low - face.low) > PLACEMENT_EPS && (!moveBeforeGrow(model) || Math.abs(block - was) > PLACEMENT_EPS)) continue;
     const shift = (m.high - m.low) / 2;
     if (Math.abs(shift) <= PLACEMENT_EPS || pinned(model, node, face.side, feeds)) continue;
     for (const port of node.ports) if (port.side === face.side && port.anchor !== undefined) port.anchor.x += shift;

@@ -30,6 +30,7 @@ import { orderPortsByLanes } from './turn-order.js';
 import { facingPairs } from './parallel-sets.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkRing } from './trunk.js';
 import { PlacementRefusal } from './placement-refusal.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -666,6 +667,9 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
     const group = Object.values(model.groups).filter(item => item.tier === lane.tier)
       .sort((a, b) => Math.abs(anchor.x - (a.bounds!.x + a.bounds!.width / 2)) - Math.abs(anchor.x - (b.bounds!.x + b.bounds!.width / 2)))[0];
     if (!group) continue;
+    // With `layout.moveBeforeGrow` (ADR-0027) the corridor does not follow its child across a group it stands beside: the group would change
+    // side of the lane, which the producer postconditions of 7f refuse (`laneSide`). The child keeps its jog. Shown only with seats, so opt-in.
+    if (moveBeforeGrow(model) && crossesBeside(model, lane, anchor.x, group.id)) continue;
     lane.x = anchor.x;
     lane.bounds.x = anchor.x - lane.bounds.width / 2;
     lane.group = group.id;
@@ -682,6 +686,19 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
   // A frame holds the lanes of its own links (`heldLaneReach`), so a moved corridor can move a frame edge: the frames are derived again.
   if (moved) { rebuildLaneExtents(model); rebuildFrames(model); }
   return moved;
+}
+/**
+ * Whether moving `lane` to `x` puts a group it stands beside on its other side, as the `laneSide` postcondition reads it: a group other than
+ * the lane's new group (`host`) whose box overlaps the lane in y, does not straddle the old or the new x, and has its centre on the other side.
+ */
+function crossesBeside(model: LayoutModel, lane: Lane, x: number, host: string): boolean {
+  const beside = (box: Rect): boolean => box.y < lane.bounds.y + lane.bounds.height && lane.bounds.y < box.y + box.height;
+  const straddles = (box: Rect, at: number): boolean => box.x < at && at < box.x + box.width;
+  return Object.values(model.groups).some(group => {
+    const box = group.bounds;
+    if (box === undefined || group.id === host || !beside(box) || straddles(box, lane.x) || straddles(box, x)) return false;
+    return (box.x + box.width / 2 >= lane.x) !== (box.x + box.width / 2 >= x);
+  });
 }
 /**
  * A corridor side stage 4 reserved (ticket 72) that a 7f move put the lane across: the entry is withdrawn by name (R2, R6), since 7f lets

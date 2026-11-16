@@ -159,6 +159,13 @@ export interface NormalisedDocument {
      */
     feedOrder?: boolean;
     /**
+     * When true, the alignment of stage 7c moves a node inside the slack of its row before it grows one, and the seat it takes owns the body
+     * (ADR-0027, dense-16x9 ticket 02): the cap is 5 times the width the node needs for itself, and a growth no seat keeps is given back by the
+     * seat. Default false: a body grows in place up to 12 times that width, and the centre rule gives back a stranded growth (ticket 71). An
+     * opt-in until ticket 15 (the joint seat plan) passes the acceptance set.
+     */
+    moveBeforeGrow?: boolean;
+    /**
      * How a node's icon, title and description sit in its body (ticket 159): `stacked` (default), one centred column; `card`, the icon tile
      * left and the text block right of it. A layout input: it changes node sizes, so it reaches stage 3 (unlike `theme:`). A node of a bar
      * group stays `stacked`, and a profile class may override it.

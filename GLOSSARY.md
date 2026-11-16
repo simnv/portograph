@@ -77,8 +77,8 @@ Upward anchors occupy the first rank; members that link only downward occupy the
 No member stands between an anchor and the tier it links to.
 
 **Rank**:
-A member's row in its group, from the upward anchors on the first rank to the downward anchors on the last, before adjustments for child groups.
-A member that is not an anchor takes the rank nearer its anchor along routed links.
+A member's row in its group, before adjustments for child groups. When a routed path inside the group joins an upward anchor with a downward-only anchor (through any routed link, a fixed peer link included), the group has two poles: the upward anchors stand on the first rank and the downward anchors on the last. A group with no such path keeps the depth from its upward anchors (ADR-0019).
+A member that is not an anchor counts from the nearer pole: `du` below the upper anchors, or `L - dd` above the lower ones (`L` the last rank); on a tie it takes the upper of the two results, and no rank lies outside the first to the last.
 A group with no anchor has one rank.
 
 **Rank cell**:

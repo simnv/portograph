@@ -60,16 +60,23 @@ it('a span corridor does not push the group of a transit source', async () => {
 it('a corridor that follows its child derives the frames again', async () => {
   // The held-lane sheet with `l2` declared before `l1`: 7f's last step moves a corridor that a frame holds,
   // the frame `east` kept its old edge, and the route stage refused the model ("Frames contradict the cell geometry they derive from").
-  // The premise needs the reseat to be adopted. It was under the Arial widths of the sheet as it stands; Verdana is wider, and the sheet as it
-  // stands gets no reseat at all, so the access labels are cut to the widths the corridor needs (" of the main building" becomes " of the main").
-  // The refused reseat has its own pin: a-refused-reseat-restores-its-frames (refused-reseat-frames.test.ts).
-  const lines = read('a-held-lane-is-reserved-before-a-foreign-lane').replaceAll(' access server of the main building', ' access server of the main').split('\n');
-  const at = lines.findIndex(line => line.startsWith('  l1:'));
-  [lines[at], lines[at + 1]] = [lines[at + 1]!, lines[at]!];
+  // The premise needs the reseat to be adopted. Under two-pole ranks (ADR-0026, dense-16x9 ticket 01) the sheet as it stands gets no reseat at all, and
+  // a measured scan of the label width and the order of l0 to l2 adopts one when the access labels are cut to " access server" (" of the main building"
+  // dropped) and the nodes keep the order of the sheet. The refused reseat has its own pin: a-refused-reseat-restores-its-frames (refused-reseat-frames.test.ts).
+  const lines = read('a-held-lane-is-reserved-before-a-foreign-lane').replaceAll(' of the main building', '').split('\n');
   resetAttemptCounters();
   const model = await layout(parse(lines.join('\n')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
   expect(attemptCounters.reseat.adopted).toBeGreaterThan(0);
-  expect(model.diagnostics.some(item => item.code === 'LANE_FOLLOWS_ITS_CHILD')).toBe(true);
+  // OPEN COVERAGE GAP (dense-16x9 ticket 01, ADR-0026; not a dead path): the old sheet also drew `LANE_FOLLOWS_ITS_CHILD`, a frame-held corridor moved
+  // onto its child's port, and this test pinned it. Under two-pole ranks no input I built reaches that move for a frame-held corridor of a group with a
+  // pole distance, but that is evidence of a gap, not a proof: `reseatLanes` still accepts every transit lane and has no joined-pole exclusion.
+  //  - 250 variants of this sheet (label widths, the order of l0 to l2, the row order, the link targets): none draws the diagnostic.
+  //  - A controlled stage test (the stages through `lanes`, a held corridor shifted by hand, then `reseatLanes`) was tried on this sheet without its child
+  //    groups and on a small site (gateway, distribution switch, access server, two clients). `reseatLanes` reaches `corridorFree` and `feedOrderHolds`
+  //    and one of them refuses at every shift tried: the child's x lies under the bodies of the frame's own cells, or the move would swap the order of two corridors.
+  //  - The diagnostic and the corridor move stay pinned on an unjoined sheet by test/pipeline/own-lane.test.ts (own-lane-is-an-obstacle.yaml).
+  // What stays pinned here is the adopted reseat (counter), the frames derived again after it, and no removed link. Missing: a joined-pole sheet whose held
+  // corridor follows its child, with the movement asserted. No ticket owns it yet.
   expect(model.removedLinks ?? []).toEqual([]);
   expect(model.frames).toEqual(deriveFrames(model));
 }, 60000);

@@ -630,6 +630,13 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length - (lead.get(node.id) ?? 0);
         if (start + (sideCount - 1) * spacing + inset.high > limit) {
           start = floorOf(node.id);
+          // The seat owns the body (ADR-0027): a block that cannot reach its peers aligns nothing by moving, so on a face where a seat keeps a
+          // port it stays where it stands, and the free ports before it keep the feeds the seat stood them on. Only a start with the room
+          // `floorOf` reserves and inside the limit is kept.
+          const seat = model.alignmentSeats?.[node.id];
+          const held = Math.min(...ports.map(coordinate));
+          if (seat !== undefined && node.ports.some(port => port.side === ports[0]!.side && seat.ports.includes(portId(port.ref)))
+            && held >= start - PLACEMENT_EPS && held + (sideCount - 1) * spacing + inset.high <= limit + PLACEMENT_EPS) start = held;
           if (start < commonStart - PLACEMENT_EPS) bent.add(node.id);
         }
       }

@@ -694,7 +694,7 @@ export interface LayoutModel {
    * The aligned extent of each canton member that stands just above the anchor tier (architecture-2 ticket 31), by cell id: the low and the high
    * edge its box takes once its ports stand over their feeds, with the end-port insets and the side-face pills. Each edge is stored as an
    * anchor-tier feed port and the distance from that port's x, so the record moves with the canton. Decided once, in the centre rule,
-   * by the keep rule of the alignment (`keptTargets`: the row siblings, `ALIGNMENT_MAX_GROWTH` and the overlay stops), and only for a member
+   * by the keep rule of the alignment (`keptTargets`: the row siblings, the alignment cap and the overlay stops), and only for a member
    * whose feeds all stand in its own canton. One reader, `memberRoom`, serves the 7c member window, the inner column pass and the chord step;
    * the member may stand past the canton wall up to it. In a model with a canton: absent = not decided (a later replay reserves nothing and
    * warns `ALIGNED_EXTENTS_UNDECIDED`), `{}` = decided, no member reserves room. A model with no canton never has it.
@@ -703,7 +703,7 @@ export interface LayoutModel {
   /**
    * The parents below the anchor tier that spread their fed bottom ports over their children (architecture-2 ticket 32, Q120), by node id: the
    * width the body grew to, the x of each bottom port from the left edge of the body, and how far the row neighbours moved away. Decided once,
-   * in the centre rule, before its first step, by `ALIGNMENT_MAX_GROWTH`, the overlay stops and the window of the parent's tier step (the
+   * in the centre rule, before its first step, by the alignment cap (`withinAlignmentCap`), the overlay stops and the window of the parent's tier step (the
    * reserved lanes, the flanks, the frame columns and the groups after it). One reader, `parentSpread` (`read/parent-spread.ts`). While the
    * centre rule runs, `{}` = decided, no parent spreads (its later runs do not decide again); the rule drops an empty record when it ends, so
    * after it absent = no parent spread. No later rule decides a spread: a replay reads the geometry the spread left.
@@ -714,9 +714,9 @@ export interface LayoutModel {
    * face, in port-key order. A step writes it at its end, on every exit: `kept` (the target stands), `grown` (the body grew toward it, or it stood
    * and a later step moved it off; `extent` is the room the body needs), `declined` (a guard refused to keep it, with `reason` and `by`). A declined
    * target is final for the placement attempt: the vertical tally of ticket 65 no longer counts it, so no later pass tries to keep it again (R1).
-   * Created `{}` by the centre rule at its input stage, read and written through 7f, compared at the publication of 7f, and dropped by the route
-   * rule, so a routed layout does not carry it. Absent = not decided (a model before 7c, a routed model, or a hand-made centre transaction: a
-   * later run of the passes records and declines nothing and warns `ALIGNMENT_TARGETS_UNDECIDED`); a routed model with it is refused. An absent face key = the face had no wanted port in any step; `[]` = the face was stepped and has
+   * Created `{}` by the centre rule at its input stage, read and written through 7f, compared at the publication of 7f, and kept by the routed
+   * layout with the seats (ADR-0027). Absent = not decided (a model before 7c, or a hand-made centre transaction: a later run of the passes
+   * records and declines nothing and warns `ALIGNMENT_TARGETS_UNDECIDED`); a model before 7c with it is refused. An absent face key = the face had no wanted port in any step; `[]` = the face was stepped and has
    * no target in any state now (its feeds yielded). `kept` and `grown` are where the targets stood when the last step on the group ended, read
    * on the geometry that step left (a `grown` extent is read where the body grew, before the row pack and the clamp). The publication check
    * refuses a malformed record and, at the output of 7f, names a face where its replay declines a target the record does not
@@ -728,11 +728,25 @@ export interface LayoutModel {
    * kept target used at the end of 7c (a growth the clamp stranded). Decided once, at the end of the centre rule, and stored; every later
    * centring run and the publication replay read it (R1): a step that widens a given-back body and leaves every aligned port of its group off
    * its x is declined, so the body keeps the width it began the step with. A sibling that stands a target lets the step keep the width; the
-   * centre rule then names the body (`CENTRE_GROWTH_KEPT`). Absent = no growth was
+   * centre rule then names the body (`CENTRE_GROWTH_KEPT`). Written only without `layout.moveBeforeGrow` (with it, a seat gives its own growth back). Absent = no growth was
    * given back (a model before 7c, or one whose growths all serve a kept target). A present record names at least one node, each with at
    * least one port, in port-key order.
    */
   givenBack?: Record<string, string[]>;
+  /**
+   * The seats of the centring steps (ADR-0027, dense-16x9 ticket 02; only with `layout.moveBeforeGrow`, absent otherwise), by node id: the last seat that changed the body, a slide in its row (`dx`),
+   * a growth (`from` to `width`), or both, with the wanted ports it stood (`ports`, port-key order). A step writes it at its end when its
+   * geometry stands; a seat that changes nothing writes nothing, so an entry keeps the pass that wrote it. One decision per node and step: the
+   * seat (`seatNode`) moves the body inside the slack of its row first and grows it only by what no move gives, up to the alignment cap. Read by
+   * the acceptance gate of the fan wrap (`wrapGateVerdict`: a link that only a seat move stands straight in the plain run is not counted as
+   * lost) and by the publication check (`alignmentSeatsFault`: no seat grows a body past its cap). The seat owns its body: while an entry stands,
+   * the main move of the node's group reads only the feeds of its kept ports, the next pass tries the recorded window first, and a seat is
+   * decided again only for more owed verticals or more targets; an entry whose kept port no longer stands is withdrawn when the passes and each
+   * rule end. A spent budget excuses no kept port at publication. It lives with `alignmentTargets`: created `{}` by the centre rule at its input
+   * stage, written through 7f, and kept in the routed layout, whose publication check replays the steps that read it. Absent = not decided;
+   * `{}` = decided, no seat stands.
+   */
+  alignmentSeats?: Record<string, AlignmentSeat>;
   /**
    * Who yields among the labels on diagonal lines (architecture-2 ticket 20, `recordLabelYields`): a key for every described overlay
    * link whose label lies on a diagonal line, with the links whose label bands it keeps clear of ([] = none). Each pair is decided once,
@@ -873,8 +887,11 @@ export interface FanAdmission {
 
 /** One edge's room across a run (`labelPadding`, tickets 21 and 23): the padding from the node bodies to the box edge, and the links (a label's or a track's) it holds. */
 export interface LabelPaddingEntry { room: number; links: string[] }
-/** Why a centring step declined to keep a target (`AlignmentTarget.reason`, architecture-2 ticket 66): the guard or the ticket-65 post-condition that refused the kept geometry. */
-export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossing' | 'span' | 'chord-clearance';
+/**
+ * Why a centring step declined to keep a target (`AlignmentTarget.reason`, architecture-2 ticket 66): the guard or the ticket-65 post-condition that refused the kept geometry,
+ * or `cap`: the seat that would stand it grows the body past the alignment cap (ADR-0027; `by` = the node).
+ */
+export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossing' | 'span' | 'chord-clearance' | 'cap';
 /**
  * One alignment target of a face (`LayoutModel.alignmentTargets`): the wanted `port`, the feed's `link`, and where the target x is read (`far`:
  * the far port id, or `lane:<id>` for a transit feed; no x is stored, so the entry moves with the geometry). `owes`: `vertical` for an
@@ -894,6 +911,11 @@ export interface AlignmentTarget {
   extent?: { low: number; high: number };
   pass: number;
 }
+/**
+ * One seat of a node (`LayoutModel.alignmentSeats`): how far the seat slid the body in its row (`dx`, 0 for a growth in place), the body width
+ * before the seat (`from`) and after it (`width`), the wanted ports it stood (`ports`), and the pass that wrote it (0 for a replay).
+ */
+export interface AlignmentSeat { dx: number; from: number; at: number; width: number; ports: string[]; pass: number }
 /** One edge of an aligned extent (`LayoutModel.alignedExtents`): the edge stands at the x of the anchor-tier `port` plus `offset`. */
 export interface AlignedExtentEdge { port: PortRef; offset: number }
 /**

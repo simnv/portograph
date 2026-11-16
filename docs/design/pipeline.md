@@ -128,7 +128,10 @@ A rank inside a child span becomes cell `child#r` (`frame: child`), not `G#r`. T
 cell at that rank, unless the child is a leaf child.
 
 Rank is the breadth-first depth from the anchors over the routed links inside the group. Two
-members of equal depth are joined by a peer link. The node class decides nothing. A **leaf child**
+members of equal depth are joined by a peer link. The node class decides nothing. A group in which a routed path joins an upward anchor with a downward-only anchor has two poles (ADR-0026): the upward anchors take rank 0, the members that
+link only to the tier below take the last rank, and every other member counts from the nearer pole
+(a tie takes the upper of the two results), so no member stands between an anchor and the tier it links to
+(`docs/design/ranked-groups.md`, section 1). A **leaf child**
 feeds no deeper member and holds no anchor. It keeps its depth ranks and pushes no parent member.
 The parent members of its ranks stand in the parent's own cells `G#r`, so one sub-tier holds both
 `G#r` and `child#r`. A child that feeds a deeper member, a child that holds an anchor and a
@@ -1060,6 +1063,18 @@ passes, not one pass: a growth one pass strands is the one a later pass may comp
 the second run strands is kept and named (`CENTRE_GROWTH_KEPT`, info), as is a given-back body a sibling's standing target lets keep its width. The record names each node and its `grown` ports in code-unit
 order; it is kept by every later rule and published, so the 7d to 7f replays and the publication check read the same decline (R1). A
 malformed record, or one before the centre rule, is refused.
+
+**With `layout.moveBeforeGrow: true`** (ADR-0027, an opt-in until ticket 15; dense-16x9 ticket 02). The rules above are the default. With
+the option, each node of a step takes one **seat** (`seatNode`): it slides the body inside the slack of its row (between its siblings,
+inside the group box less its insets, clear of the overlay walls) before it grows it, and grows only by what no slide gives, up to the
+alignment cap `ALIGNMENT_CAP_TIMES` = 5 times the width the node needs for itself (`withinAlignmentCap`), in place of
+`ALIGNMENT_MAX_GROWTH` = 12 (`alignmentAllowance`). A seat that slides or grows a body is recorded (`alignmentSeats`, kept through
+publication with `alignmentTargets`) and owns the body: the main move reads only its kept feeds, and a seat whose kept port no longer
+stands is withdrawn and gives the body back to the box it had before its first seat. The centre rule runs its passes once (no
+`givenBack` record), and a step that widens any body and leaves every aligned port of its group off its feed is declined whole (clause 5).
+At 7e a bent bundle block keeps the start of a face whose seat keeps a port. The publication check refuses a seat record in a model
+without the option, and a seat whose kept port stands off its feed, whatever the centring replay excuses (R5). ADR-0027 states the rule,
+its trades, its known failures and its acceptance set.
 
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
 Those groups move right. This includes a group the step does not centre. It also includes a group

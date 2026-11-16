@@ -24,6 +24,7 @@ import { straightChordIds } from './read/overlay-straight.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { stemDepthsFault } from './sides-two.js';
 import { linkById } from './peers.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 /** A move shorter than this is not made: it would narrow nothing a reader sees, and every move costs a full set of guards. */
 export const CLOSE_UP_MIN = 1;
@@ -89,6 +90,8 @@ interface Reading {
   gaps: Map<number, GapReading>;
   /** Links whose two port anchors stand on one x. */
   axis: Set<string>;
+  /** Lanes (`lane|link`) that a port of their owner link stands under: the link enters that port straight from the lane. */
+  lanePorts: Set<string>;
   /** Overlay links with a straight chord. */
   overlay: Set<string>;
   /** Pairs of boxes that overlap. */
@@ -108,8 +111,13 @@ function reading(model: LayoutModel): Reading {
     gaps.set(gap.above, { height: plan.height, residual: new Set(plan.residual.map(part => part.id)), crowded: new Set(plan.crowded.map(item => item.id)),
       slant: new Set((plan.slantLimited ?? []).map(item => item.id)), crossings: plan.crossings.length });
   }
+  const links = linkById(model), lanePorts = new Set<string>();
+  for (const lane of model.lanes) {
+    const link = lane.owner.kind === 'link' ? links.get(lane.owner.id) : undefined;
+    if (link !== undefined && ends(model, link).some(port => port !== undefined && Math.abs(port.anchor!.x - lane.x) <= PLACEMENT_EPS)) lanePorts.add(`${lane.id}|${link.id}`);
+  }
   return {
-    blocked: new Set(blockedChords(model)), edge: new Set(edgeLeavers(model)),
+    blocked: new Set(blockedChords(model)), edge: new Set(edgeLeavers(model)), lanePorts,
     failing: new Set(holds(model.reservations ?? [], model).map(failure => failure.id)),
     gaps, axis, overlay: straightChordIds(model), overlapping: overlappingPairs(model),
     anchors: new Map(Object.values(model.nodes).flatMap(node => node.ports.flatMap((port, index) => port.anchor === undefined ? [] : [[`${node.id}#${index}`, port.anchor.x] as [string, number]]))),
@@ -172,6 +180,9 @@ function closeUpRefusal(model: LayoutModel, before: Reading, room: { deficits: R
   const stems = stemDepthsFault(model);
   if (stems !== undefined) return 'a node side would nest its stems otherwise than the stem depth record says';
   if ((id = lost(before.axis, after.axis)) !== undefined) return `the link ${id} would leave the axis its two ends share`;
+  // A port that stands under its link's lane (a course or a corridor that does not follow the group) enters it straight; a move that takes it off
+  // the lane gives the link two turns placement did not plan. Shown only with seats, so read with `layout.moveBeforeGrow` (ADR-0027).
+  if (moveBeforeGrow(model) && (id = lost(before.lanePorts, after.lanePorts)) !== undefined) return `the link ${id.split('|')[1]} would leave the lane ${id.split('|')[0]} it enters straight`;
   if ((id = lost(before.overlay, after.overlay)) !== undefined) return `the overlay link ${id} would lose its straight chord`;
   // The room held before the move (the caller refuses otherwise, R6); a move after which the validator's reading no longer holds, or a tier gap
   // asks more of a label than it did, is refused.

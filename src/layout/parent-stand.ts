@@ -238,7 +238,7 @@ export function standPortsOverChildren(model: LayoutModel, steps: readonly { tie
     placed.set(portId(parent.ref), child.anchor!.x);
     movers.push({ feed, parent, target: child.anchor!.x, wall });
   }
-  // Only the parent port moves: the child side is `alignSide`'s, which may also widen the body and so answers to the widening allowance.
+  // Only the parent port moves: the child side is `alignSide`'s, which may also widen the body and so answers to the alignment cap.
   // A port with a corridor of its own stands where 7a put the corridor, and the next pass packs the ports next to a moved one again (`alignSide` places a
   // port that has no target of its own between the kept ones): a face that holds such a port, other than a mover, keeps its ports where they stand.
   const corridorPorts = new Set<string>();

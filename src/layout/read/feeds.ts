@@ -106,6 +106,7 @@ export function columnPullFeeds(model: LayoutModel, sources: ReadonlySet<string>
     const parents = new Map<string, number>(), children = new Map<string, { x: number; cell: string }>();
     const follow = new Set<string>(), fixed = new Set<string>();
     const mine = new Set(unit.groups.map(group => group.id));
+    const found: { node: string; child: string; x: number; cell: string; parent: string; at: number; transit: boolean; follows: boolean }[] = [];
     for (const link of model.links) {
       if (link.layer !== 'routed' || link.technique === 'stub' || !link.attachments) continue;
       for (const [own, other] of [[link.attachments.from, link.attachments.to], [link.attachments.to, link.attachments.from]]) {
@@ -126,11 +127,24 @@ export function columnPullFeeds(model: LayoutModel, sources: ReadonlySet<string>
         const lane = otherTier === near || link.bundle ? undefined
           : model.lanes.find(item => item.owner.kind === 'link' && item.owner.id === link.id && item.tier === near && item.kind !== 'span');
         if (beyond && lane === undefined) continue;
-        children.set(portId(child.ref), { x: child.anchor.x, cell: ownGroup });
-        parents.set(portId(parent.ref), lane?.x ?? parent.anchor.x);
         const bundle = link.bundle === undefined ? undefined : model.bundles.find(item => item.id === link.bundle);
-        (bundle?.lead === own!.node && bundle.nodes.includes(other!.node) ? follow : fixed).add(portId(parent.ref));
+        found.push({ node: own!.node, child: portId(child.ref), x: child.anchor.x, cell: ownGroup, parent: portId(parent.ref), at: lane?.x ?? parent.anchor.x,
+          transit: lane !== undefined, follows: bundle?.lead === own!.node && bundle.nodes.includes(other!.node) });
       }
+    }
+    // A seated body pulls only through the feeds of its kept ports, as the main move of 7c reads them (ADR-0027, the seat owns the body): a feed
+    // its seat left out would carry it off the feeds it stands. A seat on transit-lane ports alone holds nothing.
+    const seats = model.alignmentSeats;
+    const holds = (node: string): readonly string[] | undefined => {
+      const seat = seats !== undefined && Object.hasOwn(seats, node) ? seats[node] : undefined;
+      return seat !== undefined && found.some(item => item.node === node && !item.transit && seat.ports.includes(item.child)) ? seat.ports : undefined;
+    };
+    for (const item of found) {
+      const kept = holds(item.node);
+      if (kept !== undefined && !kept.includes(item.child)) continue;
+      children.set(item.child, { x: item.x, cell: item.cell });
+      parents.set(item.parent, item.at);
+      (item.follows ? follow : fixed).add(item.parent);
     }
     for (const key of fixed) follow.delete(key);
     return { parents, children, follow };
