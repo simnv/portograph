@@ -62,3 +62,9 @@ crossings.
 
 A group with anchors on both sides and leaves under its lower anchors loses one rank. The
 `transit` refusal stays; this rule removes its cause.
+
+A group with both poles can make a sheet wider under the default alignment. The upward anchors and the
+downward anchors now stand on the first and the last rank, so the feeds of the two poles stand farther
+apart, and the bodies between them grow toward those feeds. The width is the price of the rule. The
+remedy is `layout.moveBeforeGrow` (ADR-0027): opt-in, it arrives with ticket 02 of the dense-16x9 work,
+and it moves a node before the alignment grows one. The default stays as this ADR states it.
