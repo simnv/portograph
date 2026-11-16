@@ -96,7 +96,8 @@ links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`))))))
       slid.nodes.c!.bounds!.x += dx;
       for (const port of slid.nodes.c!.ports) { port.anchor!.x += dx; if (port.pill) port.pill.bounds.x += dx; }
       for (const label of slid.labels) if (label.owner.kind === 'node' && label.owner.id === 'c' && label.bounds) label.bounds.x += dx;
-      expect(() => restoreLayoutModel(JSON.stringify(slid)), `slide ${dx}`).toThrow(/Centring invariant violated/);
+      // The kept port of the seat of c stands off its feed: the seat record check refuses it before the centring replay does (review 1 of ticket 02).
+      expect(() => restoreLayoutModel(JSON.stringify(slid)), `slide ${dx}`).toThrow(/alignment seat record is forged: c: the kept port .* stands at x .*, not at its feed x/);
     }
   }, 60000);
 

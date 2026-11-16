@@ -29,7 +29,7 @@ import { faceKey, laneFaceOrder, turnRecord, turnRecordFaults } from './turn-ord
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
-import { CENTRE_ALIGNMENT_OPEN, centreItemLink, publishedCentreViolations, selectAnchorTier, withdrawFallenSeatsOf } from './centre.js';
+import { CENTRE_ALIGNMENT_OPEN, centreItemLink, fallenSeatFault, publishedCentreViolations, selectAnchorTier, withdrawFallenSeatsOf } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentSeatsFault, alignmentTargetsFault } from './alignment-targets.js';
 import { givenBackFault } from './given-back.js';
 import { moveBeforeGrow } from './read/move-before-grow.js';
@@ -414,6 +414,10 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     // The seats are read by the acceptance gate of the fan wrap (ADR-0027, R1); a malformed one, or a seat past its cap, is refused (R5).
     const seats = alignmentSeatsFault(model);
     if (seats !== undefined) throw new Error(`The alignment seat record is forged: ${seats}`);
+    // Each kept port stands over its feed: every rule withdraws a seat that falls before it publishes (ADR-0027, R5). Read apart from the centring
+    // replay below, which excuses some ports (a held cross chord) that a seat may still keep.
+    const fallen = fallenSeatFault(model);
+    if (fallen !== undefined) throw new Error(`The alignment seat record is forged: ${fallen}`);
     // The record of the growths the centre rule gave back is read by the replay below (architecture-2 ticket 71, R1); a malformed one is refused (R5).
     const back = givenBackFault(model);
     if (back !== undefined) throw new Error(`The given-back growth record is forged: ${back}`);

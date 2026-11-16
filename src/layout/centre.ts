@@ -1091,18 +1091,43 @@ function centreGroupStep(model: LayoutModel, context: CentreContext, tier: numbe
   });
 }
 /**
- * Withdraws the recorded seat of each node of `nodes` that a port it keeps no longer stands over its feed where the step leaves it (a step given
- * back, kept at its start, or clamped off the seat): the record names only seats the geometry holds, and the next step decides that body again.
+ * The seats of `nodes` that fall, each with its first kept port that no longer stands over its feed (`wanted`, the feed x of each child port)
+ * within half a pixel, or that has no feed. The one reading of a fallen seat: the producer withdraws these seats, and the publication check
+ * refuses a record that names one (R1, R5). No exemption of the centring replay applies: a kept port is the seat's own decision.
  */
-function withdrawFallenSeats(model: LayoutModel, nodes: readonly string[], wanted: ReadonlyMap<string, number>): void {
-  const record = model.alignmentSeats;
-  if (record === undefined) return;
+function fallenSeats(model: LayoutModel, nodes: readonly string[], wanted: ReadonlyMap<string, number>): Map<string, string> {
+  const fallen = new Map<string, string>(), record = model.alignmentSeats;
+  if (record === undefined) return fallen;
   for (const id of nodes) {
     const seat = Object.hasOwn(record, id) ? record[id] : undefined;
     if (seat === undefined) continue;
     const ports = new Map(model.nodes[id]!.ports.map(port => [portId(port.ref), port]));
-    if (seat.ports.some(key => { const want = wanted.get(key), port = ports.get(key); return want === undefined || port?.anchor === undefined || Math.abs(port.anchor.x - want) > 0.5; })) delete record[id];
+    for (const key of seat.ports) {
+      const want = wanted.get(key), port = ports.get(key);
+      if (want === undefined) { fallen.set(id, `${id}: the kept port ${key} has no feed`); break; }
+      if (port?.anchor === undefined || Math.abs(port.anchor.x - want) > 0.5) {
+        fallen.set(id, `${id}: the kept port ${key} stands at x ${String(port?.anchor?.x)}, not at its feed x ${want}`);
+        break;
+      }
+    }
   }
+  return fallen;
+}
+/**
+ * Withdraws the recorded seat of each node of `nodes` that a port it keeps no longer stands over its feed where the step leaves it (a step given
+ * back, kept at its start, or clamped off the seat): the record names only seats the geometry holds, and the next step decides that body again.
+ */
+function withdrawFallenSeats(model: LayoutModel, nodes: readonly string[], wanted: ReadonlyMap<string, number>): void {
+  for (const id of fallenSeats(model, nodes, wanted).keys()) delete model.alignmentSeats![id];
+}
+/** The feed x of each child port over the centred tiers of `context`: the first feed of a port, in step order. */
+function seatFeeds(model: LayoutModel, context: CentreContext): Map<string, number> {
+  const wanted = new Map<string, number>();
+  for (const { tier, authority } of context.steps) for (const feed of centringFeeds(model, tier, authority)) {
+    const key = portId(feed.child.ref);
+    if (!wanted.has(key)) wanted.set(key, feed.x);
+  }
+  return wanted;
 }
 /**
  * `withdrawFallenSeats` over every centred tier: when the passes end (a step of another group, the parent stand or an overlay window may have
@@ -1116,12 +1141,18 @@ export function withdrawFallenSeatsOf(model: LayoutModel): void {
 }
 function withdrawFallenSeatsEverywhere(model: LayoutModel, context: CentreContext): void {
   if (model.alignmentSeats === undefined) return;
-  const wanted = new Map<string, number>();
-  for (const { tier, authority } of context.steps) for (const feed of centringFeeds(model, tier, authority)) {
-    const key = portId(feed.child.ref);
-    if (!wanted.has(key)) wanted.set(key, feed.x);
-  }
-  withdrawFallenSeats(model, Object.keys(model.alignmentSeats), wanted);
+  withdrawFallenSeats(model, Object.keys(model.alignmentSeats), seatFeeds(model, context));
+}
+/**
+ * The first seat of a stored record that a kept port no longer stands over its feed, or undefined (R5). Every rule from the centre rule on
+ * withdraws such a seat before it publishes (`withdrawFallenSeatsOf`), so a record that names one is forged. It reads every kept port against
+ * its feed, whatever the centring replay excuses (a held cross chord, a bundle, a bar).
+ */
+export function fallenSeatFault(model: LayoutModel): string | undefined {
+  if (model.alignmentSeats === undefined || !Object.keys(model.alignmentSeats).length || model.anchorTier === undefined) return undefined;
+  if (!model.tierBands.some(band => band.tier === model.anchorTier)) return undefined;
+  const fallen = fallenSeats(model, Object.keys(model.alignmentSeats).sort(), seatFeeds(model, centreContext(model, model.anchorTier)));
+  return fallen.values().next().value;
 }
 function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer

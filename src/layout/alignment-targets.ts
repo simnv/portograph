@@ -257,7 +257,7 @@ export function writeAlignmentSeats(model: LayoutModel, seated: ReadonlyMap<stri
  * by such a move is not counted as lost by the two lines.
  */
 export function standsBySeatMove(model: LayoutModel, link: LayoutLink): boolean {
-  if (!link.attachments || model.alignmentSeats === undefined) return false;
+  if (!link.attachments || model.alignmentSeats === undefined || !moveBeforeGrow(model)) return false;
   return [link.attachments.from, link.attachments.to].some(end => {
     const seat = Object.hasOwn(model.alignmentSeats!, end.node) ? model.alignmentSeats![end.node] : undefined;
     return seat !== undefined && Math.abs(seat.dx) > PLACEMENT_EPS && seat.ports.includes(portId(end));
@@ -265,7 +265,7 @@ export function standsBySeatMove(model: LayoutModel, link: LayoutLink): boolean 
 }
 
 /**
- * The first fault of a stored seat record, or undefined (R5): a record outside the stages it lives at, a key that is no node, a field that is
+ * The first fault of a stored seat record, or undefined (R5): a record in a model without `layout.moveBeforeGrow`, a record outside the stages it lives at, a key that is no node, a field that is
  * not a finite number, a width below the width before, a seat that grew a body past the alignment cap (`withinAlignmentCap` on the faces
  * whose ports it stood), a port list that is empty, out of port-key order, repeated or names a port the node does not have on its top or
  * bottom face.
@@ -273,6 +273,8 @@ export function standsBySeatMove(model: LayoutModel, link: LayoutLink): boolean 
 export function alignmentSeatsFault(model: LayoutModel): string | undefined {
   const record = model.alignmentSeats;
   if (record === undefined) return undefined;
+  // Only the option writes seats (ADR-0027, an opt-in): with it off no rule reads a seat, so a record is no decision of the producer.
+  if (!moveBeforeGrow(model)) return 'a record without layout.moveBeforeGrow';
   if (!RECORD_STAGES.includes(model.stage)) return `a record at stage ${model.stage}`;
   if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
   const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
