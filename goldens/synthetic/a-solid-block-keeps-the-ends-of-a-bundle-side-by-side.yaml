@@ -1,0 +1,23 @@
+# Expected: Keep `a` and `d` side by side, `a` immediately left of `d`, in the upper row of a complete block (every upper node links both
+# lower nodes), although the sheet writes `b` between them. The block order takes the declaration order as a tie, and a tie is no reason
+# to split the two ends of the bundle that leaves `a` to the right and enters `d` from the left: stage 4 records the pair
+# (`bundleNeighbours`) and the block order gathers it, so `b` stands beside the pair and the bundle keeps its channel.
+portograph: 2
+profile: network
+layout: { autoArrange: false }
+groups: { upper: { tier: 0 }, lower: { tier: 1 } }
+nodes:
+  a: { group: upper, ports: [{ name: q, side: right }, { name: r, side: right }] }
+  b: { group: upper }
+  d: { group: upper, ports: [{ name: q, side: left }, { name: r, side: left }] }
+  x: { group: lower }
+  y: { group: lower }
+links:
+  - [a.q, d.q]
+  - [a.r, d.r]
+  - [a, x]
+  - [a, y]
+  - [b, x]
+  - [b, y]
+  - [d, x]
+  - [d, y]

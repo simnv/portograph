@@ -16,7 +16,7 @@ import { trunkBuses, trunkHeads } from './trunk.js';
 import { portKey } from './sides-one.js';
 import { faceKey } from './turn-order.js';
 import { farEndFaceFailure } from './far-end-order.js';
-import { corridorSideFailure, floorFailure, groupOrderFailure, ofKind, rowOrderFailure, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
+import { bundleNeighboursFailure, corridorSideFailure, floorFailure, groupOrderFailure, ofKind, rowOrderFailure, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
 
 type Found = { why: string; key?: string; link?: string };
 
@@ -30,6 +30,10 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
     }
     case 'groupOrder': {
       const why = groupOrderFailure(item, model);
+      return why === undefined ? undefined : { why };
+    }
+    case 'bundleNeighbours': {
+      const why = bundleNeighboursFailure(item, model);
       return why === undefined ? undefined : { why };
     }
     case 'corridorSide': {
