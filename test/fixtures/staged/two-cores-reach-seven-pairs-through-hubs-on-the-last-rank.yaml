@@ -1,0 +1,210 @@
+# Expected: the twin of a two-core transport sheet, under generic names (dense-16x9 ticket 01, ADR-0026).
+# Each core has twelve members and three ranks. `up-x1` and `up-x2` link to the tier above; `up-x3` and `up-x4` link only to `mid` members,
+# two links from each pole, a tie that takes the upper of the two results (rank 0). The four `up` members stand on rank 0. The two `hub`
+# members link only to the tier below, so they are the downward anchors and take the last rank, rank 2. The four `mid` members and the two
+# `leaf` members, which link only to the hubs, are one link from each pole (or from the hubs) and stand on rank 1. No member stands between
+# a hub and the tier below, so the 28 links from the hubs to the seven groups of two nodes on tier 2 take a routed chord: no lane for them.
+# Before ADR-0026 the depth counted from `up-x1` and `up-x2` alone, and `mid-x3`, `mid-x4`, `leaf-x1` and `leaf-x2` took a rank below the hubs, and `up-x3` and `up-x4` stood beside them (four ranks).
+# Seven groups of two nodes stand on tier 2 and one stub group under each pair on tier 3. Every link asks for `route: straight`.
+# STAGED outside goldens/synthetic/ (the corpus gate would fail it): the sheet still fails G5 (port order, dense-16x9 ticket 05) and G6
+# (parallel clearance of the same-tier links between the hubs, ticket 06). It moves to goldens/synthetic/ when tickets 04, 05 and 06 make it clean.
+# Test-only input owned by dense-16x9 ticket 01; test/pipeline/two-pole-ranks.test.ts reads the ranks. Other dense-16x9 tickets measure on it.
+portograph: 2
+profile: network
+title: Two cores, seven groups of two nodes
+layout:
+  nodeContent: card
+groups:
+  feeds-a: { tier: 0, label: Feeds A }
+  feeds-b: { tier: 0, label: Feeds B }
+  core-a: { tier: 1, label: Core A }
+  core-b: { tier: 1, label: Core B }
+  pair-1: { tier: 2, label: Pair 1 }
+  pair-2: { tier: 2, label: Pair 2 }
+  pair-3: { tier: 2, label: Pair 3 }
+  pair-4: { tier: 2, label: Pair 4 }
+  pair-5: { tier: 2, label: Pair 5 }
+  pair-6: { tier: 2, label: Pair 6 }
+  pair-7: { tier: 2, label: Pair 7 }
+  unit-1: { tier: 3, label: Unit 1 }
+  unit-2: { tier: 3, label: Unit 2 }
+  unit-3: { tier: 3, label: Unit 3 }
+  unit-4: { tier: 3, label: Unit 4 }
+  unit-5: { tier: 3, label: Unit 5 }
+  unit-6: { tier: 3, label: Unit 6 }
+  unit-7: { tier: 3, label: Unit 7 }
+nodes:
+  feed-a1: { group: feeds-a, class: provider, label: Feed A1 }
+  feed-a2: { group: feeds-a, class: provider, label: Feed A2 }
+  feed-a3: { group: feeds-a, class: provider, label: Feed A3 }
+  feed-a4: { group: feeds-a, class: provider, label: Feed A4 }
+  feed-a5: { group: feeds-a, class: provider, label: Feed A5 }
+  feed-a6: { group: feeds-a, class: provider, label: Feed A6 }
+  feed-a7: { group: feeds-a, class: provider, label: Feed A7 }
+  feed-a8: { group: feeds-a, class: provider, label: Feed A8 }
+  feed-a9: { group: feeds-a, class: provider, label: Feed A9 }
+  feed-b1: { group: feeds-b, class: provider, label: Feed B1 }
+  feed-b2: { group: feeds-b, class: provider, label: Feed B2 }
+  feed-b3: { group: feeds-b, class: provider, label: Feed B3 }
+  feed-b4: { group: feeds-b, class: provider, label: Feed B4 }
+  feed-b5: { group: feeds-b, class: provider, label: Feed B5 }
+  feed-b6: { group: feeds-b, class: provider, label: Feed B6 }
+  feed-b7: { group: feeds-b, class: provider, label: Feed B7 }
+  feed-b8: { group: feeds-b, class: provider, label: Feed B8 }
+  feed-b9: { group: feeds-b, class: provider, label: Feed B9 }
+  feed-b10: { group: feeds-b, class: provider, label: Feed B10 }
+  feed-b11: { group: feeds-b, class: provider, label: Feed B11 }
+  feed-b12: { group: feeds-b, class: provider, label: Feed B12 }
+  feed-b13: { group: feeds-b, class: provider, label: Feed B13 }
+  up-a1: { group: core-a, class: router, label: Upper A1 }
+  up-a2: { group: core-a, class: router, label: Upper A2 }
+  up-a3: { group: core-a, class: router, label: Upper A3 }
+  up-a4: { group: core-a, class: router, label: Upper A4 }
+  mid-a1: { group: core-a, class: router, label: Middle A1 }
+  mid-a2: { group: core-a, class: router, label: Middle A2 }
+  mid-a3: { group: core-a, class: router, label: Middle A3 }
+  mid-a4: { group: core-a, class: router, label: Middle A4 }
+  leaf-a1: { group: core-a, class: router, label: Leaf A1 }
+  leaf-a2: { group: core-a, class: router, label: Leaf A2 }
+  hub-a1: { group: core-a, class: backbone, label: Hub A1 }
+  hub-a2: { group: core-a, class: backbone, label: Hub A2 }
+  up-b1: { group: core-b, class: router, label: Upper B1 }
+  up-b2: { group: core-b, class: router, label: Upper B2 }
+  up-b3: { group: core-b, class: router, label: Upper B3 }
+  up-b4: { group: core-b, class: router, label: Upper B4 }
+  mid-b1: { group: core-b, class: router, label: Middle B1 }
+  mid-b2: { group: core-b, class: router, label: Middle B2 }
+  mid-b3: { group: core-b, class: router, label: Middle B3 }
+  mid-b4: { group: core-b, class: router, label: Middle B4 }
+  leaf-b1: { group: core-b, class: router, label: Leaf B1 }
+  leaf-b2: { group: core-b, class: router, label: Leaf B2 }
+  hub-b1: { group: core-b, class: backbone, label: Hub B1 }
+  hub-b2: { group: core-b, class: backbone, label: Hub B2 }
+  node-1a: { group: pair-1, class: router, label: Node 1a }
+  node-1b: { group: pair-1, class: router, label: Node 1b }
+  stub-1: { group: unit-1, class: stub, label: Stub 1 }
+  node-2a: { group: pair-2, class: router, label: Node 2a }
+  node-2b: { group: pair-2, class: router, label: Node 2b }
+  stub-2: { group: unit-2, class: stub, label: Stub 2 }
+  node-3a: { group: pair-3, class: router, label: Node 3a }
+  node-3b: { group: pair-3, class: router, label: Node 3b }
+  stub-3: { group: unit-3, class: stub, label: Stub 3 }
+  node-4a: { group: pair-4, class: router, label: Node 4a }
+  node-4b: { group: pair-4, class: router, label: Node 4b }
+  stub-4: { group: unit-4, class: stub, label: Stub 4 }
+  node-5a: { group: pair-5, class: router, label: Node 5a }
+  node-5b: { group: pair-5, class: router, label: Node 5b }
+  stub-5: { group: unit-5, class: stub, label: Stub 5 }
+  node-6a: { group: pair-6, class: router, label: Node 6a }
+  node-6b: { group: pair-6, class: router, label: Node 6b }
+  stub-6: { group: unit-6, class: stub, label: Stub 6 }
+  node-7a: { group: pair-7, class: router, label: Node 7a }
+  node-7b: { group: pair-7, class: router, label: Node 7b }
+  stub-7: { group: unit-7, class: stub, label: Stub 7 }
+links:
+  - [feed-a1, up-a1, { route: straight }]
+  - [feed-a2, up-a2, { route: straight }]
+  - [feed-a3, up-a1, { route: straight }]
+  - [feed-a4, up-a2, { route: straight }]
+  - [feed-a5, up-a1, { route: straight }]
+  - [feed-a6, up-a2, { route: straight }]
+  - [feed-a7, up-a1, { route: straight }]
+  - [feed-a8, up-a2, { route: straight }]
+  - [feed-a9, up-a1, { route: straight }]
+  - [up-a1, mid-a1, { route: straight }]
+  - [up-a2, mid-a2, { route: straight }]
+  - [up-a3, mid-a3, { route: straight }]
+  - [up-a3, mid-a1, { route: straight }]
+  - [up-a4, mid-a4, { route: straight }]
+  - [up-a4, mid-a2, { route: straight }]
+  - [hub-a1, mid-a1, { route: straight }]
+  - [hub-a1, mid-a2, { route: straight }]
+  - [hub-a1, mid-a3, { route: straight }]
+  - [hub-a1, mid-a4, { route: straight }]
+  - [hub-a1, leaf-a1, { route: straight }]
+  - [hub-a1, leaf-a2, { route: straight }]
+  - [hub-a2, mid-a1, { route: straight }]
+  - [hub-a2, mid-a2, { route: straight }]
+  - [hub-a2, mid-a3, { route: straight }]
+  - [hub-a2, mid-a4, { route: straight }]
+  - [hub-a2, leaf-a1, { route: straight }]
+  - [hub-a2, leaf-a2, { route: straight }]
+  - [hub-a1, hub-a2, { route: straight }]
+  - [hub-a1, hub-a2, { route: straight }]
+  - [feed-b1, up-b1, { route: straight }]
+  - [feed-b2, up-b2, { route: straight }]
+  - [feed-b3, up-b1, { route: straight }]
+  - [feed-b4, up-b2, { route: straight }]
+  - [feed-b5, up-b1, { route: straight }]
+  - [feed-b6, up-b2, { route: straight }]
+  - [feed-b7, up-b1, { route: straight }]
+  - [feed-b8, up-b2, { route: straight }]
+  - [feed-b9, up-b1, { route: straight }]
+  - [feed-b10, up-b2, { route: straight }]
+  - [feed-b11, up-b1, { route: straight }]
+  - [feed-b12, up-b2, { route: straight }]
+  - [feed-b13, up-b1, { route: straight }]
+  - [up-b1, mid-b1, { route: straight }]
+  - [up-b2, mid-b2, { route: straight }]
+  - [up-b3, mid-b3, { route: straight }]
+  - [up-b3, mid-b1, { route: straight }]
+  - [up-b4, mid-b4, { route: straight }]
+  - [up-b4, mid-b2, { route: straight }]
+  - [hub-b1, mid-b1, { route: straight }]
+  - [hub-b1, mid-b2, { route: straight }]
+  - [hub-b1, mid-b3, { route: straight }]
+  - [hub-b1, mid-b4, { route: straight }]
+  - [hub-b1, leaf-b1, { route: straight }]
+  - [hub-b1, leaf-b2, { route: straight }]
+  - [hub-b2, mid-b1, { route: straight }]
+  - [hub-b2, mid-b2, { route: straight }]
+  - [hub-b2, mid-b3, { route: straight }]
+  - [hub-b2, mid-b4, { route: straight }]
+  - [hub-b2, leaf-b1, { route: straight }]
+  - [hub-b2, leaf-b2, { route: straight }]
+  - [hub-b1, hub-b2, { route: straight }]
+  - [hub-b1, hub-b2, { route: straight }]
+  - [hub-a1, hub-b1, { route: straight }]
+  - [hub-a2, hub-b2, { route: straight }]
+  - [hub-a1, node-1a, { route: straight }]
+  - [hub-a2, node-1b, { route: straight }]
+  - [hub-b1, node-1a, { route: straight }]
+  - [hub-b2, node-1b, { route: straight }]
+  - [node-1a, stub-1, { route: straight }]
+  - [node-1b, stub-1, { route: straight }]
+  - [hub-a1, node-2a, { route: straight }]
+  - [hub-a2, node-2b, { route: straight }]
+  - [hub-b1, node-2a, { route: straight }]
+  - [hub-b2, node-2b, { route: straight }]
+  - [node-2a, stub-2, { route: straight }]
+  - [node-2b, stub-2, { route: straight }]
+  - [hub-a1, node-3a, { route: straight }]
+  - [hub-a2, node-3b, { route: straight }]
+  - [hub-b1, node-3a, { route: straight }]
+  - [hub-b2, node-3b, { route: straight }]
+  - [node-3a, stub-3, { route: straight }]
+  - [node-3b, stub-3, { route: straight }]
+  - [hub-a1, node-4a, { route: straight }]
+  - [hub-a2, node-4b, { route: straight }]
+  - [hub-b1, node-4a, { route: straight }]
+  - [hub-b2, node-4b, { route: straight }]
+  - [node-4a, stub-4, { route: straight }]
+  - [node-4b, stub-4, { route: straight }]
+  - [hub-a1, node-5a, { route: straight }]
+  - [hub-a2, node-5b, { route: straight }]
+  - [hub-b1, node-5a, { route: straight }]
+  - [hub-b2, node-5b, { route: straight }]
+  - [node-5a, stub-5, { route: straight }]
+  - [node-5b, stub-5, { route: straight }]
+  - [hub-a1, node-6a, { route: straight }]
+  - [hub-a2, node-6b, { route: straight }]
+  - [hub-b1, node-6a, { route: straight }]
+  - [hub-b2, node-6b, { route: straight }]
+  - [node-6a, stub-6, { route: straight }]
+  - [node-6b, stub-6, { route: straight }]
+  - [hub-a1, node-7a, { route: straight }]
+  - [hub-a2, node-7b, { route: straight }]
+  - [hub-b1, node-7a, { route: straight }]
+  - [hub-b2, node-7b, { route: straight }]
+  - [node-7a, stub-7, { route: straight }]
+  - [node-7b, stub-7, { route: straight }]

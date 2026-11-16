@@ -42,12 +42,38 @@ from members to other tiers. The node class decides nothing here (ticket 27): a 
 members are all one class, as a converter emits them, has the same ranks as one whose classes
 differ.
 
-1. **Anchors.** A member with a routed link to the tier above is an anchor at rank 0. If none
-   exists, the members with a routed link to the tier below are anchors at the last rank and the
-   layering runs upward. If neither exists, the group has **one rank**: ranks exist to make the
-   links toward the anchors short and vertical, and a group with no anchor has nothing to be above,
-   so its internal routed links are peer links (decided 2026-09-29 on ticket 02: without this rule
-   any two members joined by a link became a column).
+1. **Anchors.** A member with a routed link to the tier above is an upward anchor at rank 0. A member
+   that links only to the tier below is a downward anchor. If no member has an upward anchor, the
+   downward anchors take the last rank and the layering runs upward. If neither exists, the group has
+   **one rank**: ranks exist to make the links toward the anchors short and vertical, and a group with
+   no anchor has nothing to be above, so its internal routed links are peer links (decided 2026-09-29
+   on ticket 02: without this rule any two members joined by a link became a column).
+   **Two poles (ADR-0026, dense-16x9 ticket 01).** A group has two poles when a routed path inside the
+   group joins an upward anchor with a downward-only anchor (a member that links to the tier below and
+   not to the tier above): the group then has a pole distance, and no member stands between an anchor
+   and the tier it links to. The path may run through any routed link, a left/right-fixed peer link
+   included: poles joined only through such a link are one pole at zero distance (the upward pole wins; the
+   downward anchor stands on rank 0 with it and its leaf chain beside it). A group with no such path keeps the ranks of ADR-0019 exactly (the depth
+   from the upward anchors, step 6 for the members no anchor reaches): ranking the components that no
+   path joins from their own pole cost the approved golden 20 bends and a link, so the rule stops where
+   the pole distance stops. In a group with two poles the upward anchors take rank 0. The downward anchors, which link only to the tier
+   below, take the last rank `L`. Both are pinned after every other member is placed: no later step
+   (a child span, an overlay partner) moves them, and no member is pushed past `L`. Each routed
+   component that holds an anchor is ranked from its own pole. `L` is the smallest span that holds
+   every component: the pole distance of a component that holds both kinds of anchor (the least depth
+   of a downward anchor from the upward anchors), the largest depth of a component with an upward
+   anchor only, the largest depth of one with a downward anchor only, and at least 1. Any other
+   member counts from its nearer pole. With `du` its depth from the upward anchors and `dd` its depth
+   from the downward anchors (both read as in step 2), `du < dd` gives rank `du`, `dd < du` gives
+   rank `L - dd`, and a tie takes the upper of the two results, `min(du, L - dd)` (a tie goes to the
+   upper pole; the coordinator gave this reading on 2026-11-15 for the owner to check). No rank lies
+   outside `0..L`: a chain longer than the distance between the poles stands on one rank, joined by
+   peer links, and a member that is no anchor may stand on a pole's rank, beside the anchors. A leaf
+   of a member that links both upward and downward (a chain of single links that hangs from it, read
+   on the fixed peer components contracted to one node) takes that member's rank. A fixed peer
+   component that holds both kinds of anchor counts as a both-way member: the upward pole wins and its
+   members stand on rank 0. A group with anchors on one side only keeps its ranks, and so does a group whose
+   anchors no routed path joins (the approved golden's Datacenter is such a group).
 2. **Depth and peer links.** The **depth** of a member is its breadth-first distance from the anchor
    set over the routed links inside the group, read as undirected. A routed link between two members
    of equal depth is a **peer link**: it never lengthens a path, and its two ends share a rank. A
@@ -56,7 +82,7 @@ differ.
    joined to them by such links, count as one node for the depth. The class rank table no longer
    decides peer-ness, and nothing reads it (ticket 27).
 3. **Layering.** Longest-path layering over the down links. Every down link rises by exactly one
-   depth and peer components sit at one depth, so a member's rank is its depth. A link can skip a
+   depth and peer components sit at one depth, so a member's rank is its depth (with two poles, the rank step 1 gives, and a link may then skip a rank). A link can skip a
    rank only through step 5 (a child span push) or step 6.
 4. **Cycles.** A ring needs no rule: depth is defined by hops, so a link closing a ring joins two
    members of equal depth (a peer link) or of depths one apart (a down link).
@@ -75,13 +101,18 @@ differ.
    members out of its span. An overlay-only leaf child still goes after the last rank of the rest
    (step 6). A group anchored from below has no leaf rule. (Ticket 19 put every leaf child after
    the last rank of the rest of the group; ticket 28 replaced that rule with the depth ranks.)
+   *Two poles and children (ADR-0026).* A child span never moves a pole, the members of its fixed peer
+   component, or the leaf chain of a member that links both ways, and never pushes a member past
+   the last rank: a member the push would take below `L` stays on `L`, beside the downward anchors. A
+   child that holds a downward anchor is no leaf child, and an overlay-only child takes no row after
+   the rest (it stands by step 6 on a rank no later than `L`).
 6. **Overlay-only and unreached members.** A member no anchor reaches over the routed links (it has
    no routed link inside the group, or only routed links to members no anchor reaches) takes the
    rank of its nearest overlay partner in the group that has one, else the last rank. In a group anchored
    only from below the last rank is the anchors' own rank, so an unreached member stands beside them.
 7. **Output.** `rank` per member, `rankCount` per group, `span` per child group. No geometry.
 
-Alignment across a tier: a group anchored from above puts rank 0 at the tier's first sub-tier; a
+Alignment across a tier: a group anchored from above (a group with two poles too) puts rank 0 at the tier's first sub-tier; a
 group anchored only from below puts its last rank at the tier's last sub-tier. Sibling locations
 therefore align their ranks by index, as the reference draws them.
 

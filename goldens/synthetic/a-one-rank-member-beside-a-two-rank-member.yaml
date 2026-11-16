@@ -1,7 +1,9 @@
 # Expected: A one-rank member below a two-rank member inside one canton (ranked-groups ticket 64, the subset shape).
-# The canton `west` holds `site` (tier 1: a gateway and two servers hung from it, two ranks: `site#0`, `site#1`) and `lab`
+# The canton `west` holds `site` (tier 1: a gateway and two servers that link to it and to each other, two ranks: `site#0`, `site#1`) and `lab`
 # (tier 2, one node, `lab#0`, fed from the gateway of `site`). `lab` is alone on its sub-tier, so the inner pass pulls it
 # toward its feed inside the canton. A second `holdMemberWalls` on the finished layout moves nothing.
+# The servers link to each other, so neither is a leaf of the gateway, which links up and down: under two-pole ranks (ADR-0026) a leaf of a
+# both-way member would stand beside it and the site would have one rank.
 # Test-only input owned by ranked-groups ticket 64; test/pipeline/canton-walls.test.ts reads the layout.
 portograph: 2
 groups:
@@ -19,4 +21,5 @@ links:
   - [feed, gw]
   - [gw, srv]
   - [gw, srv2]
+  - [srv, srv2]
   - [gw, l1]

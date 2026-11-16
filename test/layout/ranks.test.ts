@@ -482,3 +482,228 @@ describe('deriveRanks: overlay-only members', () => {
     expect(result.spans.get('zone')).toEqual([1, 2]);
   });
 });
+
+// ADR-0026: a group with anchors on both sides has two poles.
+describe('deriveRanks: two poles', () => {
+  const both = (over: Partial<RankInput> & Pick<RankInput, 'members'>) =>
+    deriveRanks(input({ linksAbove: new Set(['u']), linksBelow: new Set(['d']), ...over }));
+
+  it('a leaf of the downward anchor stands above it, so nothing stands between the anchor and the tier below', () => {
+    const result = both({ members: ['u', 'm', 'd', 'leaf'], routedLinks: [...chain('u', 'm', 'd'), { from: 'd', to: 'leaf' }] });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, leaf: 1 });
+    expect(result.rankCount).toBe(3);
+    expect(result.anchoredFrom).toBe('above');
+  });
+
+  it('the downward anchors take the last rank, the routed distance between the poles', () => {
+    const result = both({ members: ['u', 'a', 'b', 'd'], routedLinks: chain('u', 'a', 'b', 'd') });
+    expect(asObject(result.ranks)).toEqual({ u: 0, a: 1, b: 2, d: 3 });
+  });
+
+  it('a member between the poles takes the rank its nearer pole gives it', () => {
+    // u - a - b - c - d, L = 4. x hangs from a (du 2, dd 4); y hangs from c (du 4, dd 2).
+    const result = both({
+      members: ['u', 'a', 'b', 'c', 'd', 'x', 'y'],
+      routedLinks: [...chain('u', 'a', 'b', 'c', 'd'), { from: 'a', to: 'x' }, { from: 'c', to: 'y' }],
+    });
+    expect(asObject(result.ranks)).toEqual({ u: 0, a: 1, b: 2, c: 3, d: 4, x: 2, y: 2 });
+  });
+
+  it('a tie takes the upper of the two results, min(du, L - dd)', () => {
+    // t hangs from b: three links from each pole, L = 4. From the upper pole it is rank 3, from the lower pole rank 1: it takes 1.
+    const result = both({
+      members: ['u', 'a', 'b', 'c', 'd', 't'],
+      routedLinks: [...chain('u', 'a', 'b', 'c', 'd'), { from: 'b', to: 't' }],
+    });
+    expect(result.ranks.get('t')).toBe(1);
+  });
+
+  it('a member two links from each pole, with one rank between them, stands beside the upward anchors; one link from each stays between', () => {
+    // u - p - d (L = 2). e links only to p and q: du = dd = 2, so min(2, 0) = 0. p is one link from each pole: rank 1.
+    const result = both({
+      members: ['u', 'p', 'q', 'e', 'd'],
+      routedLinks: [...chain('u', 'p', 'd'), { from: 'd', to: 'q' }, { from: 'p', to: 'e' }, { from: 'q', to: 'e' }],
+    });
+    expect(asObject(result.ranks)).toEqual({ u: 0, p: 1, q: 1, e: 0, d: 2 });
+    expect(result.rankCount).toBe(3);
+  });
+
+  it('no rank lies outside 0..L: with the poles side by side (L = 1) a member counts from its nearer pole and is held to the two ranks', () => {
+    const result = both({
+      members: ['u', 'd', 'near-u', 'near-d', 'tie'],
+      routedLinks: [...chain('u', 'd'), { from: 'u', to: 'near-u' }, { from: 'd', to: 'near-d' }, { from: 'near-u', to: 'tie' }, { from: 'near-d', to: 'tie' }],
+    });
+    expect(asObject(result.ranks)).toEqual({ u: 0, d: 1, 'near-u': 1, 'near-d': 0, tie: 0 });
+    expect(result.rankCount).toBe(2);
+  });
+
+  it('a member that links both ways takes the first rank, and its leaf stands beside it', () => {
+    const result = deriveRanks(input({
+      members: ['gate', 'leaf', 'mid', 'd'], linksAbove: new Set(['gate']), linksBelow: new Set(['gate', 'd']),
+      routedLinks: [...chain('gate', 'mid', 'd'), { from: 'gate', to: 'leaf' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ gate: 0, leaf: 0, mid: 1, d: 2 });
+  });
+
+  it('with no downward-only anchor there is no pole distance: a member that links both ways keeps ADR-0019 ranks, its leaf below it', () => {
+    const result = deriveRanks(input({
+      members: ['gate', 'leaf', 'm1', 'm2'], linksAbove: new Set(['gate']), linksBelow: new Set(['gate']),
+      routedLinks: [...chain('gate', 'm1', 'm2', 'gate'), { from: 'gate', to: 'leaf' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ gate: 0, leaf: 1, m1: 1, m2: 1 });
+  });
+
+  it('a leaf chain of a both-way member stands beside it however long the chain', () => {
+    const result = deriveRanks(input({
+      members: ['gate', 'l1', 'l2', 'l3', 'mid', 'd'], linksAbove: new Set(['gate']), linksBelow: new Set(['gate', 'd']),
+      routedLinks: [...chain('gate', 'mid', 'd'), ...chain('gate', 'l1', 'l2', 'l3')],
+    }));
+    expect(asObject(result.ranks)).toEqual({ gate: 0, l1: 0, l2: 0, l3: 0, mid: 1, d: 2 });
+  });
+
+  it('a leaf chain longer than the distance between the poles stands on one rank, joined by peer links', () => {
+    // L = 2. The chain from the downward anchor counts L - dd and stops at rank 0; the chain from the upward anchor counts du and stops at rank 2.
+    const result = both({
+      members: ['u', 'm', 'd', 'c1', 'c2', 'c3', 'c4', 'e1', 'e2', 'e3'],
+      routedLinks: [...chain('u', 'm', 'd'), ...chain('d', 'c1', 'c2', 'c3', 'c4'), ...chain('u', 'e1', 'e2', 'e3')],
+    });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, c1: 1, c2: 0, c3: 0, c4: 0, e1: 1, e2: 2, e3: 2 });
+    expect(result.rankCount).toBe(3);
+  });
+
+  it('a group with an upward anchor only keeps the depth ranks, a leaf below its member', () => {
+    const result = deriveRanks(input({
+      members: ['u', 'm', 'leaf'], linksAbove: new Set(['u']), routedLinks: [...chain('u', 'm'), { from: 'm', to: 'leaf' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, leaf: 2 });
+  });
+
+  it('a group with a downward anchor only keeps the ranks counted up from it', () => {
+    const result = deriveRanks(input({
+      members: ['d', 'm', 'leaf'], linksBelow: new Set(['d']), routedLinks: [...chain('d', 'm'), { from: 'm', to: 'leaf' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ d: 2, m: 1, leaf: 0 });
+    expect(result.anchoredFrom).toBe('below');
+  });
+
+  // Scope (ADR-0026): the two-pole rule needs a routed path that joins an upward anchor with a downward-only anchor. Without one the ranks are
+  // those of ADR-0019 exactly (the review of ticket 01 named the first two inputs; ranking each component from its own pole cost the approved golden
+  // 20 bends and a link, 931x960 to 810x1112). test/layout/ranks-scope.test.ts compares every corpus group of this kind with the code of main.
+  it('poles that no routed link joins keep the ADR-0019 ranks: the downward anchor and the unreached member take the last rank', () => {
+    const result = both({ members: ['u', 'a', 'd', 'b', 'o'], routedLinks: [...chain('u', 'a'), ...chain('d', 'b')] });
+    expect(asObject(result.ranks)).toEqual({ u: 0, a: 1, d: 1, b: 1, o: 1 });
+  });
+
+  it('a downward anchor no routed link reaches keeps the rank of its overlay partner (the first reviewer input)', () => {
+    const result = both({ members: ['u', 'm', 'd'], routedLinks: chain('u', 'm'), overlayPartners: new Map([['d', ['u']]]) });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 0 });
+  });
+
+  it('a member that links both ways keeps its leaf below it when no downward-only anchor is joined to it (the second reviewer input)', () => {
+    const result = deriveRanks(input({ members: ['u', 'leaf', 'd'], linksAbove: new Set(['u']), linksBelow: new Set(['u', 'd']), routedLinks: chain('u', 'leaf') }));
+    expect(asObject(result.ranks)).toEqual({ u: 0, leaf: 1, d: 1 });
+  });
+
+  it('a fixed peer component that holds both poles stands on rank 0 and its leaf beside it (the upward pole wins)', () => {
+    // u and d are one fixed component, so d is a both-way member; z is the downward-only anchor the path u-m-z joins.
+    const result = deriveRanks(input({
+      members: ['u', 'd', 'x', 'm', 'z'], linksAbove: new Set(['u']), linksBelow: new Set(['d', 'z']),
+      routedLinks: [{ from: 'u', to: 'd', fromSide: 'right', toSide: 'left' }, { from: 'd', to: 'x' }, ...chain('u', 'm', 'z')],
+    }));
+    expect(asObject(result.ranks)).toEqual({ u: 0, d: 0, x: 0, m: 1, z: 2 });
+  });
+
+  it('a leaf chain behind a fixed peer pair stands beside the member that links both ways', () => {
+    const result = deriveRanks(input({
+      members: ['u', 'a', 'b', 'm', 'z'], linksAbove: new Set(['u']), linksBelow: new Set(['u', 'z']),
+      routedLinks: [{ from: 'u', to: 'a' }, { from: 'a', to: 'b', fromSide: 'right', toSide: 'left' }, ...chain('u', 'm', 'z')],
+    }));
+    expect(asObject(result.ranks)).toEqual({ u: 0, a: 0, b: 0, m: 1, z: 2 });
+  });
+
+  it('components that no path joins to an upward anchor are ranked from their own pole once the group has a pole distance', () => {
+    // u-m-d joins the poles (L = 2); the chain e-f hangs from a second downward anchor that no routed link joins to u.
+    const result = deriveRanks(input({
+      members: ['u', 'm', 'd', 'e', 'f'], linksAbove: new Set(['u']), linksBelow: new Set(['d', 'e']),
+      routedLinks: [...chain('u', 'm', 'd'), ...chain('e', 'f')],
+    }));
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, e: 2, f: 1 });
+  });
+});
+
+describe('deriveRanks: two poles, child spans and the members that stand with a pole', () => {
+  const gate = (over: Partial<RankInput> & Pick<RankInput, 'members'>) => deriveRanks(input({
+    linksAbove: new Set(['u']), linksBelow: new Set(['u', 'd']), ...over,
+  }));
+
+  it('a child span never pushes the leaf of a both-way member off its rank (u-m-d and u-a, child {u})', () => {
+    const result = gate({ members: ['u', 'm', 'd', 'a'], routedLinks: [...chain('u', 'm', 'd'), { from: 'u', to: 'a' }], children: [{ group: 'zone', members: ['u'] }] });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, a: 0 });
+  });
+
+  it('a child span never separates a fixed peer pair from its pole (u-a fixed right/left, child {u})', () => {
+    const result = gate({
+      members: ['u', 'm', 'd', 'a'], routedLinks: [...chain('u', 'm', 'd'), { from: 'u', to: 'a', fromSide: 'right', toSide: 'left' }],
+      children: [{ group: 'zone', members: ['u'] }],
+    });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, a: 0 });
+  });
+
+  it('the same inputs with the members and the links reversed give the same ranks', () => {
+    const result = gate({ members: ['a', 'd', 'm', 'u'], routedLinks: [{ from: 'u', to: 'a' }, ...chain('u', 'm', 'd').reverse()], children: [{ group: 'zone', members: ['u'] }] });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, a: 0 });
+  });
+
+  it('the poles joined only through a fixed peer link are one pole: the upward pole wins, its leaf stands beside it (zero pole distance)', () => {
+    const result = deriveRanks(input({
+      members: ['u', 'd', 'leaf'], linksAbove: new Set(['u']), linksBelow: new Set(['d']),
+      routedLinks: [{ from: 'u', to: 'd', fromSide: 'right', toSide: 'left' }, { from: 'd', to: 'leaf' }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ u: 0, d: 0, leaf: 0 });
+  });
+
+  it('the poles joined only through a fixed peer link, and a child span on the leaf: it stays on the pole rank', () => {
+    const result = deriveRanks(input({
+      members: ['u', 'd', 'leaf', 'x'], linksAbove: new Set(['u']), linksBelow: new Set(['d']),
+      routedLinks: [{ from: 'u', to: 'd', fromSide: 'right', toSide: 'left' }, { from: 'd', to: 'leaf' }, { from: 'leaf', to: 'x' }], children: [{ group: 'zone', members: ['u'] }],
+    }));
+    expect(asObject(result.ranks)).toEqual({ u: 0, d: 0, leaf: 0, x: 0 });
+  });
+});
+
+describe('deriveRanks: two poles and child groups', () => {
+  const both = (over: Partial<RankInput> & Pick<RankInput, 'members'>) =>
+    deriveRanks(input({ linksAbove: new Set(['u']), linksBelow: new Set(['d']), ...over }));
+
+  it('an overlay-only child member stands no later than the last rank, not below the downward anchors', () => {
+    const result = both({ members: ['u', 'm', 'd'], routedLinks: chain('u', 'm', 'd'), children: [{ group: 'zone', members: ['o'] }] });
+    expect(asObject(result.ranks)).toEqual({ u: 0, m: 1, d: 2, o: 2 });
+    expect(result.rankCount).toBe(3);
+  });
+
+  it('a child span never pushes an upward anchor off the first rank', () => {
+    const result = deriveRanks(input({
+      members: ['u', 'v', 'm', 'd'], linksAbove: new Set(['u', 'v']), linksBelow: new Set(['d']),
+      routedLinks: [...chain('u', 'm', 'd'), ...chain('v', 'm')], children: [{ group: 'zone', members: ['u'] }],
+    }));
+    expect(result.ranks.get('u')).toBe(0);
+    expect(result.ranks.get('v')).toBe(0);
+    expect(result.ranks.get('d')).toBe(Math.max(...result.ranks.values()));
+  });
+
+  it('a child span never pushes a member below the downward anchors', () => {
+    const result = both({
+      members: ['u', 'm', 'd'], routedLinks: chain('u', 'm', 'd'), children: [{ group: 'zone', members: ['c1', 'c2'] }],
+    });
+    for (const id of ['u', 'm', 'd', 'c1', 'c2']) expect(result.ranks.get(id)!).toBeLessThanOrEqual(result.ranks.get('d')!);
+    expect(result.ranks.get('d')).toBe(Math.max(...result.ranks.values()));
+  });
+
+  it('a child that holds a downward anchor is no leaf child', () => {
+    const result = both({
+      members: ['u', 'm'], routedLinks: chain('u', 'm', 'd'), children: [{ group: 'zone', members: ['d'] }],
+    });
+    expect(result.ranks.get('d')).toBe(Math.max(...result.ranks.values()));
+    expect(result.spans.get('zone')![1]).toBe(result.rankCount - 1);
+  });
+});

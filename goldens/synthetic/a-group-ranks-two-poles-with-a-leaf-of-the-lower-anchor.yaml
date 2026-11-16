@@ -1,0 +1,25 @@
+# Expected: two poles (dense-16x9 ticket 01, ADR-0026). `gate` links to the tier above and is rank 0, the upward anchor. `core` links
+# only to the tier below and is the last rank, the downward anchor. `mid` stands between them. `spare` is a leaf of `core`: it takes
+# the rank nearer its pole, rank 1, above `core`, and not rank 3 below it. No member stands between `core` and `edge`, so both links
+# from `core` to the tier below take a routed chord.
+# Test-only input owned by dense-16x9 ticket 01; test/pipeline/two-pole-ranks.test.ts reads the ranks and the paths.
+portograph: 2
+groups:
+  upstream: { tier: 0, label: Upstream }
+  site: { tier: 1, label: Site }
+  downstream: { tier: 2, label: Downstream }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gate: { group: site, class: router, label: Gate }
+  mid: { group: site, class: switch, label: Middle }
+  core: { group: site, class: router, label: Core }
+  spare: { group: site, class: switch, label: Spare }
+  edge-1: { group: downstream, class: access, label: Edge 1 }
+  edge-2: { group: downstream, class: access, label: Edge 2 }
+links:
+  - [isp, gate]
+  - [gate, mid]
+  - [mid, core]
+  - [core, spare]
+  - [core, edge-1]
+  - [core, edge-2]
