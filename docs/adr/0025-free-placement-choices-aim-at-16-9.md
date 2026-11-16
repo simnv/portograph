@@ -46,3 +46,14 @@ an earlier stage (the defect class of ticket 22: a choice made on a stale extent
   stagger gate trials do (`env.gateRuns`).
 
 A box entry is no part of the floor: a member whose box entry the chosen gap does not hold falls back alone, and the block stays.
+
+## Amendment (2026-11-17): the room of a flat block is not judged by the aim
+
+Before the gap choice, placement gives the flat members their room (dense-16x9 ticket 04, slice 3, step 2): the side padding of a box that a
+member would leave through a corner, and the row gap beside an end node whose neighbour reaches past the face, both at the member's angle at
+the block's floor.
+- The placement with that room stands whatever its aspect. The room buys straight members, and the aim does not trade them away. On the sheet
+  behind the ticket the canvas did not change at 16:9 (3543 x 1998 px) and grew 6 px in height at 21:10: the far row had room under the width
+  the provider rows set.
+- The gap choice above then runs on the placement with the room.
+- Bound: at most `BLOCK_PAD_ROUNDS` (3) placements more per command, outside the placement cap; a refused placement keeps the one before it.

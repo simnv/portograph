@@ -47,6 +47,8 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   const staggerRows = env.staggerRows?.filter(row => !declinedStaggers.has(row.group));
   if (staggerRows?.length) resolved.staggerRows = JSON.parse(JSON.stringify(staggerRows)) as typeof staggerRows;
   if (env.flatBlockGaps?.length) resolved.flatBlockGaps = JSON.parse(JSON.stringify(env.flatBlockGaps)) as typeof env.flatBlockGaps;
+  if (env.blockBoxPads?.length) resolved.blockBoxPads = JSON.parse(JSON.stringify(env.blockBoxPads)) as typeof env.blockBoxPads;
+  if (env.blockRowGaps?.length) resolved.blockRowGaps = JSON.parse(JSON.stringify(env.blockRowGaps)) as typeof env.blockRowGaps;
   if (env.groupArrangements !== undefined) {
     resolved.groupArrangements = JSON.parse(JSON.stringify(env.groupArrangements)) as typeof env.groupArrangements;
     for (const [group, reason] of declinedStaggers) resolved.groupArrangements![group] = { chosen: 'row', reason: `a later placement refused the two lines: ${reason}` };

@@ -1,3 +1,4 @@
+import { blockRowGap } from './block-pads.js';
 import { addPairPitch, neighbourPitch } from './pair-pitch.js';
 import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { reserveBlockPitch, seatBlockFollowers } from './solid-blocks.js';
@@ -765,8 +766,9 @@ export function rowGap(model: LayoutModel, a: string, b: string, labelDetours = 
   }
   const fans = Math.max(reachA ? reachA + stemReach(model, model.nodes[b]!) : 0,
     reachB ? reachB + stemReach(model, model.nodes[a]!) : 0, shared);
+  // A flat block member's chord keeps the node clearance from the corner of the next node of its row (`blockRowGaps`, dense-16x9 ticket 04).
   return Math.max(nodeGap(model, a, b), left + right + (left > 0 && right > 0 ? PILL_WIRE_GAP : 0),
-    passByStem(b, 'left', a), passByStem(a, 'right', b), turning, fans, rowLabelGap(model, a, b, labelDetours));
+    passByStem(b, 'left', a), passByStem(a, 'right', b), turning, fans, rowLabelGap(model, a, b, labelDetours), blockRowGap(model, a, b));
 }
 
 /**

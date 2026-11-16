@@ -697,6 +697,14 @@ export interface LayoutModel {
    * pipeline/initial.ts): a placement input, read by `reserveBlockGaps` in 7e. Absent: every flat gap at its floor.
    */
   flatBlockGaps?: FlatBlockGap[];
+  /**
+   * The side paddings of the boxes that hold an end of a flat block member (dense-16x9 ticket 04, slice 3, step 2; `blockBoxPadsAsked` in
+   * layout/block-pads.ts): a placement input read on a complete placement, held by a free group's insets and a frame's box from stage 5 on.
+   * Absent: no box asks for one. Sorted by box, then side.
+   */
+  blockBoxPads?: BlockBoxPad[];
+  /** The least gaps between row neighbours that flat block members ask (`blockRowGapsAsked`): a placement input read by `rowGap`. Absent: none. */
+  blockRowGaps?: BlockRowGap[];
   /** Placement refusals restored by stage 1; absent when no geometry probe declined a block. */
   declinedSolidBlocks?: { family: string; reason: string }[];
   /** Terminal one-link followers seated below the block in stage 5. */
@@ -893,6 +901,10 @@ export interface FanFamily {
 /** Placement-owned floor between tier-band edges, capped before acceptance. Mandatory room may exceed it. */
 /** The gap of one flat solid block that the aspect choice took (`LayoutModel.flatBlockGaps`). */
 export interface FlatBlockGap { family: string; gap: number }
+/** The side padding of one box for the own-box exit of flat block members (`LayoutModel.blockBoxPads`, `blockBoxPadsAsked`). */
+export interface BlockBoxPad { box: string; side: 'left' | 'right'; pad: number }
+/** The least gap between two neighbours of a row that a flat block member asks (`LayoutModel.blockRowGaps`, `blockRowGapsAsked`). */
+export interface BlockRowGap { left: string; right: string; gap: number }
 export interface BlockReservation {
   family: string;
   above: number;
