@@ -29,8 +29,16 @@ import { clone } from './bundle-geometry.js';
  * it the chord again. Slice 1 takes anonymous or distinct-port, unlabelled, non-bundle members between two `row` units (no grid, bar or flank).
  */
 
-/** Retries of a 7f attempt whose direct members a later move crowded (R4: per attempt); each retry refuses the crowded members. */
-export const DIRECT_RETRIES = 2;
+/**
+ * The safety bound of the 7f crowding retry (R4: per attempt): the member count, the direct members and the fan and solid-block members of the
+ * attempt (dense-16x9 ticket 28). The retry runs until no new member is crowded. Each retry refuses at least one member that no earlier retry
+ * refused, and the refusals only grow, so it ends after at most this count; the bound is hit only if the member set changes between attempts, and
+ * `DIRECT_FAMILY_CROWDED` or `FAN_MEMBER_CROWDED` then names the members that stay straight. Until ticket 28 the bound was 2: a cascade where each
+ * refused member's fallback crowds the next member (two flat solid blocks of the outside sheet with ticket 27) needed 3 or more.
+ */
+export function crowdRetryBound(model: LayoutModel): number {
+  return new Set([...(model.directFamilies ?? []).flatMap(family => family.members.map(member => member.link)), ...(model.fanAdmissions ?? []).map(item => item.link)]).size;
+}
 /** The member sets one family's search tries at most (R4: per family). A truncated search keeps the best set found and says so. */
 export const DIRECT_SEARCH_BUDGET = 4096;
 
@@ -501,17 +509,24 @@ export function crowdedFanMembers(model: LayoutModel): Map<string, 'crowds' | 's
 }
 
 /**
- * The other held chords that the plan names crowded (dense-16x9 ticket 14, slice 3, built for ticket 04 slice 2): a held chord that is neither a
- * direct member nor a fan member, that a `TIER_GAP_CHORD_CROWDED` note of the plan names (`chordGapNotes`), and that a G6 reading of the final
- * paths would name (`crowdedChords`: against every reserved segment, `reservedRouted`). A later move of 7f put it there. The publication step
- * reads this on the state to publish (`refuseCrowdedChords` in pipeline/driver.ts) and refuses the chord (`crowds`) before a gate finding is
- * published. Sorted ids.
+ * Every held chord that the state to publish would publish under the G6 clearance of a reserved segment (dense-16x9 ticket 14, slice 3, built for
+ * ticket 04 slice 2; ticket 28 adds the members). The publication step reads this on the state to publish (`refuseCrowdedChords` in
+ * pipeline/driver.ts) and refuses each chord (`crowds`) before a gate finding is published. Three sources, each read by the reader that already
+ * names it, so no rule is decided twice (R1):
+ * - a direct member that `crowdedDirectMembers` names, and a straight fan member (a solid-block member too) that `crowdedFanMembers` names
+ *   `crowds`: the readers of the 7f retry. On the state to publish such a member stands only when that retry reached its bound (`crowdRetryBound`;
+ *   `DIRECT_FAMILY_CROWDED`, `FAN_MEMBER_CROWDED`), so the publication step is the last resort after it. A fan member that only passes a
+ *   sibling's stem (`stem`) is not refused here: that is no G6 reading.
+ * - any other held chord that a `TIER_GAP_CHORD_CROWDED` note of the plan names (`chordGapNotes`) and that a G6 reading of the final paths
+ *   names (`crowdedChords`: against every reserved segment, `reservedRouted`). A later move of 7f put it there.
+ * Sorted ids.
  */
 export function crowdedHeldChords(model: LayoutModel): string[] {
   const members = new Set([...(model.directFamilies ?? []).flatMap(family => family.members.map(member => member.link)), ...(model.fanAdmissions ?? []).map(item => item.link)]);
   const named = chordGapNotes(model, tierGapPlans(model)).filter(note => note.code === 'TIER_GAP_CHORD_CROWDED').map(note => (note.owners![1] as { id: string }).id);
   const held = [...new Set(named)].filter(id => !members.has(id) && isRoutedChord(model, model.links.find(link => link.id === id)!));
-  return crowdedChords(model, held).sort();
+  const fans = [...crowdedFanMembers(model)].filter(([, reason]) => reason === 'crowds').map(([id]) => id);
+  return [...new Set([...crowdedChords(model, held), ...crowdedDirectMembers(model), ...fans])].sort();
 }
 
 /**
