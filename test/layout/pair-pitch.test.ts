@@ -344,3 +344,87 @@ describe('stage 5 and the record keep each pair (review 3)', () => {
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
   });
 });
+
+/**
+ * Review 4 of slice 1: the common scalar pitch of a bundle is computed from intrinsic member pitches only, and a carried pair is stored only as
+ * a pair entry of a horizontal face. The matrix: the end faces horizontal or lateral, the pair needs on one end, the other, or both; and an
+ * unrelated pair on a shared face. Each case enters before stage 5 (real `sizeNodes`, `skeleton`, `sidesTwo`) and is compared with the same
+ * model without the injected pairs.
+ */
+describe('a bundle pair floor never becomes a face-wide minimum (review 4)', () => {
+  const sheet = (edge: string, r1: string, extra = ''): string => `portograph: 2
+profile: network
+groups:
+  top: {tier: 0}
+  mid: {tier: 1}
+nodes:
+  edge: {group: top${edge}}
+  r1: {group: mid${r1}}${extra ? '\n  r2: {group: mid}' : ''}
+links:
+- [r1${r1 ? '.p1' : ''}, edge${edge ? '.p1' : ''}, {id: l1}]
+- [r1${r1 ? '.p2' : ''}, edge${edge ? '.p2' : ''}, {id: l2}]
+- [r1${r1 ? '.p3' : ''}, edge${edge ? '.p3' : ''}, {id: l3}]
+${extra}`;
+  const lateral = (side: string): string => `, ports: [{name: p1, side: ${side}}, {name: p2, side: ${side}}, {name: p3, side: ${side}}]`;
+  type Needs = readonly [number, number, number];
+  const PAIRS = [[0, 1], [0, 2], [1, 2]] as const;
+  const members = (model: LayoutModel) => model.links.filter(link => link.bundle !== undefined).sort((a, b) => a.id.localeCompare(b.id));
+  const end = (link: LayoutModel['links'][number], id: string) => (link.attachments!.from.node === id ? link.attachments!.from : link.attachments!.to);
+  const portOf = (model: LayoutModel, link: LayoutModel['links'][number], id: string) => model.nodes[id]!.ports.find(port => portId(port.ref) === portId(end(link, id)))!;
+  /** Stage 5 on `yaml`, with the pair needs `needs` written on the face of each named node before sizing. */
+  async function stage5(yaml: string, needs: Record<string, Needs> = {}, extra?: (model: LayoutModel) => void): Promise<LayoutModel> {
+    const model = sidesOne(resolve(parse(yaml))), links = members(model);
+    expect(links).toHaveLength(3);
+    for (const [id, values] of Object.entries(needs)) {
+      const side = (portOf(model, links[0]!, id).side ?? portOf(model, links[0]!, id).sizingSide) as 'top' | 'bottom';
+      addPairPitches(model.nodes[id]!, side, PAIRS.map(([a, b], k) => ({ rule: 'fan' as const, ports: [portId(end(links[a]!, id)), portId(end(links[b]!, id))].sort(), min: values[k]! })));
+    }
+    extra?.(model);
+    sizeNodes(model);
+    await skeleton(model, { createAttempt });
+    return sidesTwo(model);
+  }
+  /** The pitch of each two members at node `id`, and the scalar of the member face. */
+  const read = (model: LayoutModel, id: string) => {
+    const links = members(model), side = portOf(model, links[0]!, id).side!;
+    return { side, scalar: model.nodes[id]!.sidePitch![side]!, pairs: PAIRS.map(([a, b]) => neighbourPitch(model.nodes[id]!, side, end(links[a]!, id), end(links[b]!, id))),
+      offsets: faceOffsets(model.nodes[id]!, side, links.map(link => portOf(model, link, id))) };
+  };
+  const cases: { name: string; yaml: string; sides: [string, string]; needs: Record<string, Needs>; want: Record<string, Needs | 'base'> }[] = [
+    { name: 'horizontal to horizontal, needs on the source', yaml: sheet('', ''), sides: ['bottom', 'top'], needs: { edge: [60, 30, 30] }, want: { edge: [60, 30, 30], r1: [60, 30, 30] } },
+    { name: 'horizontal to horizontal, needs on the destination', yaml: sheet('', ''), sides: ['bottom', 'top'], needs: { r1: [60, 30, 30] }, want: { edge: [60, 30, 30], r1: [60, 30, 30] } },
+    { name: 'horizontal to horizontal, unequal needs on both', yaml: sheet('', ''), sides: ['bottom', 'top'], needs: { edge: [60, 30, 30], r1: [30, 45, 50] }, want: { edge: [60, 45, 50], r1: [60, 45, 50] } },
+    { name: 'horizontal to lateral, needs on the horizontal end', yaml: sheet('', lateral('left')), sides: ['bottom', 'left'], needs: { edge: [60, 30, 30] }, want: { edge: [60, 30, 30], r1: 'base' } },
+    { name: 'lateral to horizontal, needs on the horizontal end', yaml: sheet(lateral('right'), ''), sides: ['right', 'top'], needs: { r1: [60, 30, 30] }, want: { edge: 'base', r1: [60, 30, 30] } },
+    { name: 'lateral to lateral, no pair record on either end', yaml: sheet(lateral('right'), lateral('left')), sides: ['right', 'left'], needs: {}, want: { edge: 'base', r1: 'base' } },
+  ];
+  for (const item of cases) it(item.name, async () => {
+    const base = await stage5(item.yaml), out = await stage5(item.yaml, item.needs);
+    expect([read(out, 'edge').side, read(out, 'r1').side]).toEqual(item.sides);
+    for (const id of ['edge', 'r1'] as const) {
+      const now = read(out, id), was = read(base, id), want = item.want[id]!;
+      // The scalar of each member face is the intrinsic one, with or without pair needs.
+      expect(now.scalar).toBe(was.scalar);
+      if (want === 'base') expect(now.offsets).toEqual(was.offsets);
+      else {
+        expect(now.pairs).toEqual(want);
+        // Members in link order stand at the pair pitches of their two neighbour pairs.
+        expect(now.offsets).toEqual([0, want[0], want[0] + want[2]]);
+      }
+    }
+  }, 180_000);
+
+  it('does not widen a bundle for an unrelated pair on a shared face', async () => {
+    const yaml = sheet('', '', '- [r2, edge, {id: l4}]\n');
+    const unrelated = (model: LayoutModel): void => {
+      const edge = model.nodes['edge']!, links = members(model), other = model.links.find(link => link.bundle === undefined && link.attachments?.from.node === 'r2')!;
+      addPairPitches(edge, 'bottom', [0, 1, 2].map(k => ({ rule: 'fan' as const, ports: [portId(end(links[k]!, 'edge')), portId(end(other, 'edge'))].sort(), min: 60 })));
+    };
+    const base = await stage5(yaml), out = await stage5(yaml, {}, unrelated);
+    for (const id of ['edge', 'r1'] as const) {
+      expect(read(out, id).side).toBe(id === 'edge' ? 'bottom' : 'top');
+      expect(read(out, id).scalar).toBe(read(base, id).scalar);
+      expect(read(out, id).pairs).toEqual(read(base, id).pairs);
+    }
+  }, 180_000);
+});
