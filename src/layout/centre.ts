@@ -759,12 +759,12 @@ function centringOffset(chosen: readonly Feed[]): number {
  * The feeds a group step centres on, and the offset its main move takes toward them (`centringOffset`), as the step reads them: undefined for a
  * group the step does not centre (a bar, or a group with no feed of its own).
  */
-function ownCentring(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string): { chosen: Feed[]; offset: number } | undefined {
+function ownCentring(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string): { own: Feed[]; chosen: Feed[]; offset: number } | undefined {
   if (model.document.groups[id]!.shape === 'bar') return undefined;
   const { own, yielded } = groupFeeds(model, context, tier, list, id, false);
   if (!own.length) return undefined;
   const chosen = moveBeforeGrow(model) ? seatedFeeds(model, chosenFeeds(context, tier, own, yielded)) : chosenFeeds(context, tier, own, yielded);
-  return { chosen, offset: centringOffset(chosen) };
+  return { own, chosen, offset: centringOffset(chosen) };
 }
 /**
  * The seat of the centred groups of one row (dense-16x9 ticket 27): the least-absolute-deviations solution of "each group at the x its own feeds
@@ -775,16 +775,19 @@ function ownCentring(model: LayoutModel, context: CentreContext, tier: number, l
  * its own feeds (the heaviest side holds), and a run of equal members stands centred, its middle member at the common mean. When the weight
  * splits evenly, the unit takes the middle of the median interval, so equal halves stand symmetric. The weight of a group is the number of its
  * wanted child ports: each drop of the group slants by the group's miss; the width of a box is no part of a drop.
- * A run is broken by a group the step does not centre, by a rank cell (its frame column holds it), and between groups that a lane of 7a parts
- * (different lane windows). Returns the pooled box x of each group the unit moves off its own wanted x; a member at its own x, and a group alone,
+ * A run holds only groups fed by the same parent nodes (the parents of all the group's own feeds): those are the groups that pile up on one
+ * feed mean. Groups fed by different parents that the packing pushes together keep the old pack (measured on the corpus: pooling every packed
+ * run moved 55 sheets and bent links on 17 of them, because the unit moved a group off feeds it stood straight on). A run is also broken by a
+ * group the step does not centre, by a rank cell (its frame column holds it), and between groups that a lane of 7a parts (different lane
+ * windows). Returns the pooled box x of each group the unit moves off its own wanted x; a member at its own x, and a group alone,
  * take their own offset, as before. The row's slack and every bound are the step's: the main move stops at the overlay walls, the clamp takes the
  * window (lanes, flanks, frame columns, the group before it, the tail the groups after it reserve), and every guard of the step holds as it does for
  * a group's own mean. Read in group order, a geometric order (R3); a tie of values in the median is broken by that order.
  */
 function rowSeats(model: LayoutModel, context: CentreContext, tier: number, list: Feed[]): Map<string, number> {
   const order = context.groupOrder.get(tier)!, gap = bandGap(model), seats = new Map<string, number>();
-  type Item = { id: string; want: number; width: number; weight: number };
-  let run: Item[] = [], window = '';
+  type Item = { id: string; want: number; width: number; weight: number; parents: string };
+  let run: Item[] = [], window = '', feeding = '';
   /** The weighted median of `values`, the middle of the median interval when the weight splits evenly. */
   const median = (values: readonly { value: number; weight: number; at: number }[]): number => {
     const sorted = [...values].sort((p, q) => p.value - q.value || p.at - q.at), half = sorted.reduce((sum, item) => sum + item.weight, 0) / 2;
@@ -824,12 +827,14 @@ function rowSeats(model: LayoutModel, context: CentreContext, tier: number, list
   };
   for (const id of order) {
     const read = context.columns.some(column => column.cells.has(id)) ? undefined : ownCentring(model, context, tier, list, id);
-    if (read === undefined) { flush(); window = ''; continue; }
+    if (read === undefined) { flush(); window = ''; feeding = ''; continue; }
     const limit = context.limits.get(id)!, key = `${limit.low}|${limit.high}`;
-    if (key !== window) flush();
-    window = key;
+    // Only groups fed by the same parent nodes pile up on one feed mean: a run is broken where the set of parents changes.
+    const parents = [...new Set(read.own.map(feed => feed.parent.ref.node))].sort().join('|');
+    if (key !== window || parents !== feeding) flush();
+    window = key; feeding = parents;
     const box = model.groups[id]!.bounds!;
-    run.push({ id, want: box.x + read.offset, width: box.width, weight: new Set(read.chosen.map(feed => portId(feed.child.ref))).size });
+    run.push({ id, want: box.x + read.offset, width: box.width, weight: new Set(read.chosen.map(feed => portId(feed.child.ref))).size, parents });
   }
   flush();
   return seats;

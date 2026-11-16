@@ -1,9 +1,9 @@
 # Expected (dense-16x9 ticket 27): a row of groups that one pair of feeds centres stands centred under them as one unit.
 # Two hub groups of three nodes stand side by side on tier 0, the anchor tier; five site groups on tier 1 each link to the middle node of
 # both hubs, so every site wants the same x (the mean of the two hub ports it uses). Stage 7c centred each group alone, in group order, and packed each after the one before: the first
-# site stood at the mean and the other four stacked to its right. The row's seat is the least-squares solution of "each group at its
-# wanted x" under the order and the band gap (pool adjacent violators, `rowSeats` in centre.ts): the five sites are one unit, centred on
-# the mean of the hub ports. `row-seats.test.ts`.
+# site stood at the mean and the other four stacked to its right. Groups fed by the same parents are seated as one unit under the
+# order and the band gap (pool adjacent violators on the weighted median, `rowSeats` in centre.ts): the five sites stand centred on the
+# mean of the hub ports, none grown. `row-seats.test.ts`.
 portograph: 2
 groups:
   hub-a: { tier: 0 }

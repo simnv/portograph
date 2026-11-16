@@ -1126,19 +1126,23 @@ positions are fixed; if a child now overlaps a lane, push the child, not the lan
 step leaves off its lane is not left there for good: 7f moves the corridor to it under the rule
 § 7a states, after the last replay of this step.
 
-**The groups of a row the packing pushes together stand as one unit** (dense-16x9 ticket 27, `rowSeats`). Each group alone wants its box at the x
+**Groups of a row fed by the same parents stand as one unit** (dense-16x9 ticket 27, `rowSeats`). Each group alone wants its box at the x
 its own chosen feeds give (`x + centringOffset`, which does not depend on where the group stands). The steps of a tier read, once and where the tier
-stands when they begin (as the tail reservation is read), the least-squares seat of the row: each group at its wanted x under the order of the row
-and the band gap between neighbours, solved by pool adjacent violators. A run of groups whose wanted boxes would overlap is centred as one unit on
-the weighted mean of what its members want; the weight of a group is the number of its wanted child ports (the objective is the sum of the squared
-slants of the drops, and the width of a box is no part of a slant). A run is broken by a group the step does not centre (a bar, a group with no feed
-of its own), by a rank cell (its frame column holds it), and between groups that a lane of 7a parts. The main move of a pooled group goes toward
-its seat; a group alone moves toward its own mean, as before. The main move's overlay walls, the clamp into the step window and every guard of the
-step hold as they do for a group's own mean, so the seat stands inside the row's slack and every bound (frames, lanes, flanks, held chords). A
-group of a pooled run aligns inside the bodies it has: no growth and, with `moveBeforeGrow`, no seat slide. No member of the run stands at its own
-feeds, so a growth would only widen the unit and push the other members further off; the feeds pull the unit, as a solid block's feeds do, and
-the ports the body does not reach are named (`CENTRE_ALIGNMENT_INFEASIBLE`). Before, each group was centred alone and packed after the one before:
-groups with one feed mean stacked to one side of it. The 7f replays and the publication check run the same steps and read the seats the same way (R1).
+stands when they begin (as the tail reservation is read), the seat of the row: each group at its wanted x under the order of the row and the band
+gap between neighbours, solved by pool adjacent violators with the least absolute deviations. A run of groups whose wanted boxes would overlap
+stands as one unit on the weighted median of what its members want, the middle of the median interval when the weight splits evenly. The median,
+not the mean: a drop is straight or bent and its slant does not count, so the unit keeps one member on its own feeds, and a run of equal members
+stands centred with its middle member at the common mean. The weight of a group is the number of its wanted child ports. A run holds only groups
+fed by the same parent nodes (the parents of all the group's own feeds): those pile up on one feed mean. A run is also broken by a group the
+step does not centre (a bar, a group with no feed of its own), by a rank cell (its frame column holds it), and between groups that a lane of 7a
+parts. The main move of a group the unit moves off its own wanted x goes toward its seat; any other group moves toward its own mean, as before.
+The main move's overlay walls, the clamp into the step window and every guard of the step hold as they do for a group's own mean, so the seat
+stands inside the row's slack and every bound (frames, lanes, flanks, held chords). A group the unit moves off its own x aligns inside the bodies
+it has: no growth and, with `moveBeforeGrow`, no seat slide; a growth would widen the unit and push the other members further off, so its feeds
+pull the unit, as a solid block's feeds do, and the ports its body does not reach are named (`CENTRE_ALIGNMENT_INFEASIBLE`). Before, each group
+was centred alone and packed after the one before: groups with one feed mean stacked to one side of it. The 7f replays and the publication check
+run the same steps and read the seats the same way (R1). Measured: pooling every packed run (least squares or median) moved 55 to 58 corpus sheets
+and bent more links on 17 to 21 of them; the parents condition keeps the change to the rows that pile up.
 
 **A step keeps the verticals it reached** (architecture-2 ticket 65). From 7e on, a step counts its verticals before it moves and after
 the clamp: first the feeds that owe one (an orthogonal link, a frame chord, a direct member) and stand on it, then every feed that stands

@@ -8,8 +8,8 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 /**
- * Dense-16x9 ticket 27: the groups of one row that the packing pushes together stand as one unit, at the least-squares seat of the row
- * (`rowSeats` in centre.ts, pool adjacent violators over the x each group's own feeds want). Before, 7c centred each group alone in group
+ * Dense-16x9 ticket 27: the groups of one row that the packing pushes together and are fed by the same parents stand as one unit
+ * (`rowSeats` in centre.ts, pool adjacent violators on the weighted median of the x each group's own feeds want). Before, 7c centred each group alone in group
  * order and packed it after the one before: the first site stood under the hubs and grew to reach both, the other four stacked to its right.
  */
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-row-fed-by-two-hubs-stands-centred-under-them.yaml', import.meta.url), 'utf8');
