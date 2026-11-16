@@ -1452,18 +1452,24 @@ export function heldChordsIn(model: LayoutModel, gap: TierGap): HeldChord[] {
  * may lay it across or beside the chord. Neither changes anything; the gates judge.
  */
 export function chordGapNotes(model: LayoutModel, plans: readonly { gap: TierGap; plan: GapPlan }[]): Diagnostic[] {
-  const notes: Diagnostic[] = [], keep = nudgingDistance(model);
+  const notes: Diagnostic[] = [];
+  // Every segment reserved for a final path (`reservedRouted`, dense-16x9 ticket 14 slice 2), read once: a planned link is named where any of its
+  // reserved segments (its planned parts, its stems, its lanes) and a held chord make a G6 finding (`parallelClearance`, at each link's own stroke).
+  let reserved: ReturnType<typeof reservedRouted> | undefined;
   for (const { gap, plan } of plans) {
-    // The notes read the chords that cross the whole gap, as before ticket 14; the judges' reading of a chord that ends in the gap is slice 2.
-    for (const held of heldChordsIn(model, gap).filter(item => item.across)) {
+    // Every held chord with an extent in the gap, one that ends in it (on a pill face) as well as one across it (dense-16x9 ticket 14 slice 2).
+    for (const held of heldChordsIn(model, gap)) {
       const span = { x0: Math.min(held.low, held.high), x1: Math.max(held.low, held.high) };
+      reserved ??= reservedRouted(model, plans);
+      const chord = reserved.filter(entry => entry.link.id === held.link.id);
       for (const part of plan.parts) {
-        const near = plannedSegments(part, gap).filter(seg => Math.abs(seg.from.x - seg.to.x) < EPS && Math.abs(seg.from.y - seg.to.y) >= EPS)
-          .some(seg => {
-            return !strictCrossing(seg, held.segment) && segmentDistance(seg, held.segment) < keep - EPS;
-          });
+        let near = false;
+        for (const entry of reserved) {
+          if (near) break;
+          if (entry.link.id === part.link) for (const own of chord) parallelClearance(model, [entry, own], () => { near = true; });
+        }
         if (near) notes.push({ stage: 'placement', severity: 'info', code: 'TIER_GAP_CHORD_CROWDED',
-          message: `A vertical of ${part.link} in the tier gap above tier ${gap.below} stands within ${keep} px of the straight link ${held.link.id}.`,
+          message: `A reserved segment of ${part.link}, planned in the tier gap above tier ${gap.below}, stands within the G6 clearance of the straight link ${held.link.id}.`,
           owners: [{ kind: 'link', id: part.link }, { kind: 'link', id: held.link.id }] });
       }
       const left = new Set<string>();
@@ -1479,7 +1485,7 @@ export function chordGapNotes(model: LayoutModel, plans: readonly { gap: TierGap
     }
     // A row the plan could not lower clear of a fan chord within its bound (architecture-2 ticket 40): named once per unit; the 7f retry judges.
     for (const item of plan.slantLimited ?? []) notes.push({ stage: 'placement', severity: 'info', code: 'TIER_GAP_SLANT_LIMIT',
-      message: `The row of ${item.link} in the tier gap above tier ${gap.below} clears no fan chord within ${SLANT_LOWERING_KEEPS} x ${keep} px below its seat; it keeps its seat.`,
+      message: `The row of ${item.link} in the tier gap above tier ${gap.below} clears no fan chord within ${SLANT_LOWERING_KEEPS} x ${nudgingDistance(model)} px below its seat; it keeps its seat.`,
       owners: [{ kind: 'link', id: item.link }] });
   }
   return notes;

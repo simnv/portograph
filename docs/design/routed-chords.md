@@ -279,13 +279,13 @@ so it owns no lane.
 - the chord adds no term to `H`.
 
 A 7f move in x (the canton close-up, column moves), or a gap that grows in y and so turns the
-chord, can bring a leg nearer the chord after the decision. The plan names each planned vertical within `k` of a held chord that does not cross it
-strictly (`TIER_GAP_CHORD_CROWDED`, info), and G6 judges, as for two verticals within `k`
-(`crowded`).
+chord, can bring a leg nearer the chord after the decision. The plan names each planned link with a reserved segment (a planned part, a stem, a
+lane) that makes a G6 finding with a held chord of its gap (`TIER_GAP_CHORD_CROWDED`, info; since dense-16x9 ticket 14 slice 2, `reservedRouted`
+through `parallelClearance`, any held chord with an extent in the gap), and G6 judges, as for two verticals within `k` (`crowded`).
 
 *As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y (since dense-16x9 ticket 14, at its own end
 where it ends inside the gap, marked `partial`; `heldChordsIn` is the one reader, and `across` marks a chord over the whole gap, the only kind the
-notes, the fan rows and the hard wall of `middleDrops` read); `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
+fan rows and the hard wall of `middleDrops` read; the notes read every held chord since slice 2, `TIER_GAP_CHORD_EXPOSED` over its extent in the gap); `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
 once each. "Within `k`" is the centre-to-centre distance, 11.5 px (`k` holds the stroke). An unfit gap (`growth > 0` after the rounds) leaves all its parts to the
 router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
 
@@ -353,8 +353,8 @@ to reach this; ticket 103 measures it.
 |---|---|---|
 | `ROUTED_CHORD_REFUSED` | info | At the freeze, once per cross-frame candidate that is not held, with the first failed check: `transit`, `faces` (a port does not leave outward), `edge` (leaves through a side edge), `frame` (a foreign frame or canton box), `title`, `body`, `pill`, `lane`, `corridor` (another gate clearance), `chord` (a held chord), `leg` (an orthogonal leg). |
 | `ROUTED_CHORD_TITLE` | warning | 7f (label bands): a title could not stand clear of a held chord's crossing. |
-| `TIER_GAP_CHORD_CROWDED` | info | 7f: a planned vertical within `k` of a held chord, not crossing it. |
-| `TIER_GAP_CHORD_EXPOSED` | info | 7f: a residual or unfit part whose span overlaps a held chord. |
+| `TIER_GAP_CHORD_CROWDED` | info | 7f: a reserved segment of a planned link that makes a G6 finding with a held chord of its gap. |
+| `TIER_GAP_CHORD_EXPOSED` | info | 7f: a residual or unfit part whose span overlaps the extent of a held chord in its gap. |
 
 `STRAIGHT_LINK_HELD` and `STRAIGHT_LINK_BLOCKED` keep their meaning and cover both chord kinds.
 
