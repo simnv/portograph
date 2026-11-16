@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, score } from '../../src/index.js';
+import { layout, parse as parseDocument, score } from '../../src/index.js';
 import { centre, seatCandidates } from '../../src/layout/centre.js';
 import { flanks } from '../../src/layout/flanks.js';
 import { lanes } from '../../src/layout/lanes.js';
@@ -10,9 +10,14 @@ import { findPort } from '../../src/layout/row-paths.js';
 import { standsBySeatMove } from '../../src/layout/alignment-targets.js';
 import type { LayoutModel, LayoutNode } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
-import { createAttempt, placed } from './phase-two-fixture.js';
+import { createAttempt, placed as placedDocument } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from './joint-off.js';
+import { withMoveBeforeGrow } from './move-before-grow.js';
+
+// The seat (ADR-0027) is an opt-in until ticket 15: every sheet of this file is read with `layout.moveBeforeGrow: true`.
+const parse = (text: string): ReturnType<typeof parseDocument> => parseDocument(withMoveBeforeGrow(text));
+const placed = (text: string): ReturnType<typeof placedDocument> => placedDocument(withMoveBeforeGrow(text));
 
 // ADR-0027, dense-16x9 ticket 02: the seat moves a body inside the slack of its row before it grows the body.
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-child-moves-in-row-slack-before-it-grows.yaml', import.meta.url), 'utf8');

@@ -1,11 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse, score } from '../../src/index.js';
+import { layout, parse as parseDocument, score } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { laneRunKind } from '../../src/layout/lane-kind.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withoutJointOrder } from './joint-off.js';
+import { withMoveBeforeGrow } from './move-before-grow.js';
+
+// The seat (ADR-0027) is an opt-in until ticket 15: every sheet of this file is read with `layout.moveBeforeGrow: true`.
+const parse = (text: string): ReturnType<typeof parseDocument> => parseDocument(withMoveBeforeGrow(text));
 
 /**
  * The acceptance set of the seat (ADR-0027 and its addendum: a step is judged where it ends). These tests came from architecture-2 ticket 71

@@ -1,0 +1,30 @@
+# Expected: with `layout.moveBeforeGrow: true` (ADR-0027) a body grows to align its links only up to the alignment cap, five times
+# the width its own side needs. The sheet is sync-links-do-not-stack-a-tier with the option. `isp` feeds the three gateways of tier 1
+# from its bottom face. The seat of `isp` keeps two of its bottom ports and grows `isp` to 262 px; the third target needs a wider body,
+# so the record declines it with the reason `cap`, and routing completes that link with one bend. Without the option the body grows
+# to 473 px (main's allowance, twelve times) and all seven links stand straight.
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  upstream: { tier: 0, label: Upstream }
+  loc1: { tier: 1, label: Location 1 }
+  loc2: { tier: 1, label: Location 2 }
+  loc3: { tier: 1, label: Location 3 }
+nodes:
+  isp: { group: upstream, class: provider, label: ISP }
+  gw1: { group: loc1, class: router, label: Gateway 1 }
+  sw1: { group: loc1, class: switch, label: Switch 1 }
+  gw2: { group: loc2, class: router, label: Gateway 2 }
+  sw2: { group: loc2, class: switch, label: Switch 2 }
+  gw3: { group: loc3, class: router, label: Gateway 3 }
+  sw3: { group: loc3, class: switch, label: Switch 3 }
+links:
+  - [isp, gw1]
+  - [isp, gw2]
+  - [isp, gw3]
+  - [gw1, sw1]
+  - [gw2, sw2]
+  - [gw3, sw3]
+  - [gw1, gw2]
+  - [sw1, sw2, { route: overlay }]
+  - [sw1, sw3, { route: overlay }]

@@ -1,0 +1,33 @@
+# Expected: with `layout.moveBeforeGrow: true` (ADR-0027, clause 5) a centring step that widens a body and leaves every aligned port of
+# its group off its x is declined whole. The sheet is a-stranded-growth-is-given-back with the option and `layout.feedOrder: false`.
+# The step that widens `srv0` toward `sw1`, `sw2` and `sw4` strands that width, so the step is declined: `srv0` stays 56 px and the
+# target record keeps no target of it. `srv1` keeps its seat (two top ports, 247 px). Nothing is given back (no `givenBack` record):
+# with the option the centre rule runs its passes once. Without the option ticket 71's rule gives the growth back after a second run.
+portograph: 2
+layout: { moveBeforeGrow: true, feedOrder: false }
+groups:
+  src: { tier: 0 }
+  access: { tier: 1 }
+  edge-far: { tier: 2 }
+  edge-near: { tier: 2 }
+nodes:
+  isp0: { group: src, class: router, ports: [] }
+  isp1: { group: src, class: router, ports: [] }
+  sw0: { group: access, class: switch, ports: [] }
+  sw1: { group: access, class: switch, ports: [] }
+  sw2: { group: access, class: switch, ports: [] }
+  sw3: { group: access, class: switch, ports: [] }
+  sw4: { group: access, class: switch, ports: [] }
+  srv0: { group: edge-near, class: server, ports: [] }
+  srv1: { group: edge-far, class: server, ports: [] }
+links:
+  - [isp0, sw0]
+  - [isp1, sw1]
+  - [isp0, sw2]
+  - [isp1, sw3]
+  - [isp0, sw4]
+  - [sw0, srv1]
+  - [sw1, srv0]
+  - [sw2, srv0]
+  - [sw3, srv1]
+  - [sw4, srv0]
