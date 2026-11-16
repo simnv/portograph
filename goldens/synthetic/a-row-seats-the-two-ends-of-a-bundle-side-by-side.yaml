@@ -8,7 +8,7 @@ portograph: 2
 profile: network
 groups:
   upper: { tier: 0 }
-  place: { tier: 1 }
+  place: { tier: 1, shape: row }
   lower: { tier: 2 }
 nodes:
   head: { group: upper, ports: [{ name: p, side: bottom }] }

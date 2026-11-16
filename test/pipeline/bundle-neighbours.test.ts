@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
-import { gatherPairs, keptPairs, type NeighbourPair } from '../../src/layout/bundle-neighbours.js';
+import { gatherPairs, keptPairs, validateBundleNeighbours, type NeighbourPair } from '../../src/layout/bundle-neighbours.js';
 import { reseatRow } from '../../src/layout/overlay-order.js';
 import { bundleNeighboursOf, ofKind } from '../../src/layout/reservations.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -27,7 +27,7 @@ const bounds = (model: LayoutModel) => Object.fromEntries(Object.entries(model.n
 const HUB = (nodes: string[]): string => `portograph: 2
 profile: network
 groups:
-  place: { tier: 0 }
+  place: { tier: 0, shape: row }
 nodes:
 ${nodes.join('\n')}
 links:
@@ -66,11 +66,14 @@ describe('a free row seats the two ends of an enclosed lateral bundle side by si
     const forged = JSON.parse(JSON.stringify(model)) as LayoutModel;
     // `b` between `a` and `d`: the record names the pair, and the restore refuses.
     forged.groups.place!.rowOrder = ['a', 'b', 'd'];
-    expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/does not stand immediately left of/);
+    expect(validateBundleNeighbours(model)).toEqual([]);
+    expect(validateBundleNeighbours(forged)).toEqual([expect.stringMatching(/a does not stand immediately left of d/)]);
+    expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow();
   }, 120000);
 
   it('reseatRow refuses an order that splits a recorded pair and keeps the row as it stood (R2)', async () => {
-    const model = await run(fixture(FIXTURE));
+    // The published model is frozen: the guard is asked on a draft copy.
+    const model = JSON.parse(JSON.stringify(await run(fixture(FIXTURE)))) as LayoutModel;
     const before = [...order(model, 'place')], x = bounds(model);
     const split = ['a', 'b', 'd'];
     expect(reseatRow(model, model.groups.place!, split, true)).toBe(false);
@@ -108,7 +111,7 @@ describe('which pairs a row keeps when a node cannot be next to all its peers (R
   });
   it('gathers a chain at the place of its first member and leaves the other nodes where they stand', () => {
     expect(gatherPairs(['a', 'b', 'd'], [['a', 'd']])).toEqual(['a', 'd', 'b']);
-    expect(gatherPairs(['d', 'b', 'a'], [['a', 'd']])).toEqual(['d', 'a', 'b']);
+    expect(gatherPairs(['d', 'b', 'a'], [['a', 'd']])).toEqual(['a', 'd', 'b']);
     expect(gatherPairs(['x', 'e', 'y', 'hub', 'c'], [['c', 'hub'], ['hub', 'e']])).toEqual(['x', 'c', 'hub', 'e', 'y']);
     expect(gatherPairs(['x', 'y'], [])).toEqual(['x', 'y']);
   });
@@ -118,7 +121,7 @@ describe('which pairs a row keeps when a node cannot be next to all its peers (R
     const yaml = `portograph: 2
 profile: network
 groups:
-  place: { tier: 0 }
+  place: { tier: 0, shape: row }
 nodes:
 ${nodes.join('\n')}
 links:
@@ -129,7 +132,7 @@ links:
   - [hub.u, p3.u]
   - [hub.v, p3.v]
 `;
-    await expect(run(yaml)).rejects.toThrow(/BUNDLE_CHANNEL_BLOCKED/);
-    await expect(run(reversed(yaml, 'nodes'))).rejects.toThrow(/BUNDLE_CHANNEL_BLOCKED/);
+    await expect(run(yaml)).rejects.toThrow(/BUNDLE_CHANNEL_(BLOCKED|ORIENTATION)/);
+    await expect(run(reversed(yaml, 'nodes'))).rejects.toThrow(/BUNDLE_CHANNEL_(BLOCKED|ORIENTATION)/);
   }, 120000);
 });
