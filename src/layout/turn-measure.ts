@@ -66,7 +66,7 @@ export interface TurnVerdict {
   before?: Count;
   after?: Count;
 }
-interface Count { bent: number; turns: number; crossings: number }
+export interface Count { bent: number; turns: number; crossings: number }
 
 /** Better by the unified order, read lexicographically: fewer bent links, then fewer turns, then fewer crossings. Equal on all three is no gain. */
 export function betterByUnified(before: Count, after: Count): boolean {
@@ -75,38 +75,55 @@ export function betterByUnified(before: Count, after: Count): boolean {
 
 const countOf = (counts: ScoreCounts): Count => ({ bent: counts.routed.bent + counts.overlay.bent, turns: counts.routed.turns + counts.overlay.turns, crossings: counts.routed.crossings + counts.overlay.crossings.pairs });
 
+/** What the guards of a routed trial read, when they hold: the gate findings and counts of the baseline and of the trial. */
+export interface TrialReading { gatesThen: NonNullable<ReturnType<typeof gateFindings>>; gatesNow: NonNullable<ReturnType<typeof gateFindings>> }
+
 /**
- * The judge of the turn trial (Section 10). Kept only when: no link is removed; no new gate finding and no new hard constraint finding (as sets); no minimum
- * separation broken or deepened; every kept course publishes at most the turns it promised; the canvas does not grow; and the published result is better by the
- * unified order (fewer bent links over both layers, then fewer turns, then fewer crossings), read lexicographically: a trial that removes a crossing and adds a
- * turn is refused, and so is a trial that is equal on all three.
+ * What every judged re-run of a routed trial must hold, whatever it gains (the turn round and the far-end round share it, R1): no link is removed; no wall in the corridor of a
+ * spanning chord; every kept course publishes at most the turns it promised; no new gate finding and no new hard constraint finding (as sets); no minimum separation broken
+ * or deepened; and the canvas does not grow. The refusal reason, or the two readings the judge compares.
  */
-export function judgeTurnTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>): TurnVerdict {
+export function guardRoutedTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>): string | TrialReading {
   const was = routedBends(routedBase), now = routedBends(routedTrial);
   const removed = [...was.keys()].filter(id => !now.has(id));
-  const no = (reason: string): TurnVerdict => ({ kept: false, reason });
-  if (removed.length > 0) return no(`the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`);
+  if (removed.length > 0) return `the trial's route removes ${removed.join(', ')}, which the baseline's route keeps`;
   const blocked = spanBlockedNew(routedBase, routedTrial);
-  if (blocked.length > 0) return no(`a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})`);
+  if (blocked.length > 0) return `a move put a wall in the corridor of a spanning chord (${blocked.join(', ')})`;
   const lost = [...keptPromises].filter(([id, turns]) => (now.get(id) ?? Infinity) > turns).map(([id]) => id);
-  if (lost.length > 0) return no(`a kept course publishes more turns than it promised (${lost.join(', ')})`);
+  if (lost.length > 0) return `a kept course publishes more turns than it promised (${lost.join(', ')})`;
   const gatesNow = gateFindings(routedTrial), gatesThen = gateFindings(routedBase);
-  if (gatesNow === undefined || gatesThen === undefined) return no('the routed trial does not score');
+  if (gatesNow === undefined || gatesThen === undefined) return 'the routed trial does not score';
   const gateNew = namesAdded(gatesNow.findings, gatesThen.findings);
-  if (gateNew.length > 0) return no(`the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})`);
+  if (gateNew.length > 0) return `the routed trial has gate findings the baseline does not have (${gateNew.join('; ')})`;
   const constraintNew = namesAdded(constraintFindings(routedTrial), constraintFindings(routedBase));
-  if (constraintNew.length > 0) return no(`the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`);
+  if (constraintNew.length > 0) return `the routed trial breaks a hard constraint the baseline holds (${constraintNew.join('; ')})`;
   const separationNew = separationWorse(routedTrial, routedBase);
-  if (separationNew.length > 0) return no(`the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`);
-  if ((routedTrial.canvas?.width ?? 0) > (routedBase.canvas?.width ?? 0) + PLACEMENT_EPS || (routedTrial.canvas?.height ?? 0) > (routedBase.canvas?.height ?? 0) + PLACEMENT_EPS) return no('the routed trial grows the canvas');
-  const readingOf = (counts: ScoreCounts): Reading => {
-    const family = (bent: number, turns: number) => ({ straight: 0, bent, turns });
-    return reading({ routed: family(counts.routed.bent, counts.routed.turns), overlay: family(counts.overlay.bent, counts.overlay.turns),
-      crossings: lazyCount(() => counts.routed.crossings + counts.overlay.crossings.pairs), crossingMode: 'pairs', tie: [] });
-  };
-  const before = countOf(gatesThen.counts), after = countOf(gatesNow.counts);
+  if (separationNew.length > 0) return `the routed trial breaks or deepens a minimum separation (${separationNew.join('; ')})`;
+  if ((routedTrial.canvas?.width ?? 0) > (routedBase.canvas?.width ?? 0) + PLACEMENT_EPS || (routedTrial.canvas?.height ?? 0) > (routedBase.canvas?.height ?? 0) + PLACEMENT_EPS) return 'the routed trial grows the canvas';
+  return { gatesThen, gatesNow };
+}
+
+/** The unified reading of a score's counts: the profile the user approved reads it. */
+const readingOf = (counts: ScoreCounts): Reading => {
+  const family = (bent: number, turns: number) => ({ straight: 0, bent, turns });
+  return reading({ routed: family(counts.routed.bent, counts.routed.turns), overlay: family(counts.overlay.bent, counts.overlay.turns),
+    crossings: lazyCount(() => counts.routed.crossings + counts.overlay.crossings.pairs), crossingMode: 'pairs', tie: [] });
+};
+/** The counts a verdict names, and the profile order of the trial against the baseline (negative: the trial is better). */
+export function unifiedOrder(read: TrialReading): { before: Count; after: Count; order: number } {
+  return { before: countOf(read.gatesThen.counts), after: countOf(read.gatesNow.counts), order: compare(readingOf(read.gatesNow.counts), readingOf(read.gatesThen.counts), profiles.unified) };
+}
+
+/**
+ * The judge of the turn trial (Section 10). Kept only when the guards of `guardRoutedTrial` hold and the published result is better by the unified order (fewer bent links
+ * over both layers, then fewer turns, then fewer crossings), read lexicographically: a trial that removes a crossing and adds a turn is refused, and so is a trial that is
+ * equal on all three.
+ */
+export function judgeTurnTrial(routedBase: LayoutModel, routedTrial: LayoutModel, keptPromises: ReadonlyMap<string, number>): TurnVerdict {
+  const guarded = guardRoutedTrial(routedBase, routedTrial, keptPromises);
+  if (typeof guarded === 'string') return { kept: false, reason: guarded };
   // The profile and the plain comparison above must agree: the profile is the order the user approved, the function states it in three lines.
-  const order = compare(readingOf(gatesNow.counts), readingOf(gatesThen.counts), profiles.unified);
+  const { before, after, order } = unifiedOrder(guarded);
   if (order >= 0 || !betterByUnified(before, after)) return { kept: false, reason: `the routed trial is not better by the unified order (${after.bent} bent links, ${after.turns} turns, ${after.crossings} crossings, against ${before.bent}, ${before.turns} and ${before.crossings})`, before, after };
   return { kept: true, reason: '', before, after };
 }

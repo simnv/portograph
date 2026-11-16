@@ -22,7 +22,9 @@ import { attemptCounters } from '../layout/attempt-counters.js';
 import { tierGapPlans } from '../layout/gap-plan.js';
 import { judgeTurnTrial, measureTurnOrder } from '../layout/turn-measure.js';
 import { straightFaces } from '../layout/turn-order.js';
-import { pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
+import { judgeFarEndTrial, measureFarEndOrder } from '../layout/far-end-measure.js';
+import { proposalGroups, proposalKey, staleFaces, type FarEndFace } from '../layout/far-end-order.js';
+import { farEndEntries, pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import type { ReservationFailure } from '../layout/reservations.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute } from '../route/plan.js';
@@ -32,7 +34,7 @@ import { ROUTE_BUDGET_MS, systemRouteClock, withRouteSession } from '../route/wo
 import { CommandDeadlineError } from './budget.js';
 import type { Refusal, Round } from './round.js';
 import type { Env } from './env.js';
-import { FAN_ROUNDS, SIDE_ROUNDS } from './limits.js';
+import { FAN_ROUNDS, FAR_END_ORDER_RUNS, SIDE_ROUNDS } from './limits.js';
 import type { State } from './state.js';
 
 /** A refusal at the final 7e, with the ids of the reservations that did not hold. */
@@ -615,5 +617,100 @@ export const overlay: Round<OverlayOffer> = {
     const why = r.at === 'place' ? `the placement run rejected them (${r.why})` : r.at === 'fallback' ? 'ELK fell back during the overlay trial'
       : r.at === 'bands' ? `stage 7f rejected them (${r.why})` : r.why;
     env.options.testSideTrace?.({ ev: 'overlay-refused', links: o.offer.courses.map(item => item.link), why });
+  },
+};
+
+type FarEndTrialOffer = { faces: FarEndFace[]; current: LayoutModel; split: boolean; verdict?: ReturnType<typeof judgeFarEndTrial> };
+const faceNames = (faces: readonly { node: string; side: string }[]): string => faces.map(face => `${face.node} ${face.side}`).join(', ');
+/**
+ * The far-end round (dense-16x9 ticket 07). After every other round, on the kept result: stage 5 sorts the ports of a face by the far ends as they stand then, and 7c to 7f move
+ * those far ends afterwards, so the order can be stale at publication (G5). The round reads the final positions of the completed placement, proposes the order of every face that
+ * fails G5 and no other owner holds, reserves it (`farEndOrder`) and places again: a fresh stage 5 seats the sequence, and every later stage re-reserves its pitch, lanes and stems
+ * around it. The trial is kept only when the final ranges agree (`judgeFarEndTrial`); one that does not settle gives the next proposal, read from its own final positions. It never
+ * orders a face by guessing a move of 7c: the forecast is a whole placement. A refused or skipped trial leaves the layout as it was, and says why.
+ */
+export const farEnd: Round<FarEndTrialOffer> = {
+  id: 'farEnd', label: 'rerun-far-end', routed: true, children: [],
+  budget: { protects: [], tie: 0, visits: FAR_END_ORDER_RUNS, again: true, retries: ['verdict'], reopens: false, floor: FAR_END_ORDER_RUNS, own: true },
+  enabled: env => turnRoundOn(env) && env.options.testFarEndOrder !== false,
+  gain: () => [0, 0, 0],
+  skip(_env, s, o) {
+    s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'FAR_END_ORDER_UNSETTLED', owners: o.faces.map(face => ({ kind: 'node' as const, id: face.node })),
+      message: `The far-end order of ${faceNames(o.faces)} was not tried: the command has made its ${FAR_END_ORDER_RUNS} far-end trials.` });
+  },
+  // A trial of this round re-orders ports and nothing else, so the baseline already stands. Any invariant that 7f raises on the new geometry (a plain error, never the command's deadline) withdraws
+  // the trial by name (`FAR_END_ORDER_DECLINED` carries the message): a defect that only this order reaches is a finding, not a reason to lose a layout the command already has.
+  tolerates: (error, phase) => phase === 'place' ? error instanceof PlacementRefusal : error instanceof PlacementRefusal ? refusedAtBands(error) : !(error instanceof CommandDeadlineError),
+  async measure(env, s) {
+    const memory = s.farEnd ??= { seen: new Set(), noted: new Set() };
+    const current = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
+    let faces: FarEndFace[], split = false;
+    if (memory.next !== undefined) { faces = memory.next; delete memory.next; } else if (memory.queue !== undefined && memory.queue.length > 0) { faces = memory.queue.shift()!; split = true; } else {
+      const proposal = measureFarEndOrder(current);
+      faces = proposal.faces;
+      // A stale face that another owner holds keeps that owner's order; it is named once.
+      for (const item of proposal.owned) {
+        const name = `${item.node}|${item.side}`;
+        if (memory.noted.has(name)) continue;
+        memory.noted.add(name);
+        s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'FAR_END_ORDER_OWNED', owners: [{ kind: 'node', id: item.node }],
+          message: `The ${item.side} face of ${item.node} stays as it is: its order belongs to ${item.owner === 'turn' ? 'the turn order' : item.owner === 'order' ? 'its author' : `a ${item.owner}`}.` });
+      }
+    }
+    if (faces.length === 0) return undefined;
+    const id = proposalKey(faces);
+    if (memory.seen.has(id)) {
+      s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'FAR_END_ORDER_UNSETTLED', owners: faces.map(face => ({ kind: 'node' as const, id: face.node })),
+        message: `The far-end order of ${faceNames(faces)} repeats a proposal already tried and stays as the last coherent placement made it.` });
+      return undefined;
+    }
+    memory.seen.add(id);
+    return { faces, current, split };
+  },
+  reserve(env, s, o) {
+    // The kept turn order reaches this trial with the faces that hold a straight link on the baseline it reads now, as the overlay round does (docs/design/turn-order.md, Section 3).
+    const turn = turnOf(s.kept), straight = [...straightFaces(s.base)];
+    return addReservations(s.kept, [...floorEntries(keptFloors(env, s), 'farEnd', env.placements), ...farEndEntries(o.faces, 'farEnd', env.placements),
+      ...(turn.all || turn.links.length > 0 ? turnEntries(turn.all, turn.all ? [] : turn.links, false, 'farEnd', env.placements, straight) : [])]);
+  },
+  holdsAt7e(_env, _s, _o, ledger, trial7e) {
+    const broken = holds(ledger, trial7e);
+    return broken.length > 0 ? ledgerRefusal(broken, { why: `a reservation does not hold at stage 7e (${broken[0]!.why})` }) : undefined;
+  },
+  judge(env, s, o, t) {
+    const verdict = judgeFarEndTrial(o.current, t.routedTrial, promisedTurns(s.kept), o.faces);
+    o.verdict = verdict;
+    env.options.testSideTrace?.({ ev: 'far-end-trial', faces: o.faces, verdict, trial: t.trial, routedTrial: t.routedTrial, routedBase: o.current });
+    if (verdict.kept) return undefined;
+    // A trial that did not settle hands the next one the order read from its own final positions; any other refusal ends the round.
+    const memory = s.farEnd ??= { seen: new Set(), noted: new Set() };
+    if (verdict.next !== undefined && verdict.next.length > 0) memory.next = verdict.next;
+    else if (!o.split) {
+      // A proposal that a guard refused as a whole is tried again by group of faces that do not touch (the faces of one group are never split).
+      const groups = proposalGroups(o.current, o.faces);
+      if (groups.length > 1) memory.queue = groups;
+    }
+    return { at: 'verdict', why: verdict.reason };
+  },
+  commit(_env, s, o, t) {
+    s.base = t.trial; s.kept7e = t.trial7e; s.routedFinal = t.routedTrial; s.kept = t.ledger;
+    const verdict = o.verdict!;
+    // A face the trial settled takes the order; a face it left out of order (the trial was kept for the faces it did settle) stays named, and the round goes on with it.
+    const left = new Set(staleFaces(t.routedTrial).map(face => `${face.node}|${face.side}`));
+    const open = o.faces.filter(face => left.has(`${face.node}|${face.side}`));
+    if (open.length > 0) s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'FAR_END_ORDER_UNSETTLED', owners: open.map(face => ({ kind: 'node' as const, id: face.node })),
+      message: `The far-end order of ${faceNames(open)} did not settle in the trial that was kept; the final far ends still disagree with it.` });
+    for (const face of o.faces.filter(item => !left.has(`${item.node}|${item.side}`))) {
+      s.sideNotes.push({ stage: 'placement', severity: 'info', code: 'FAR_END_ORDER_TAKEN', owners: [{ kind: 'node', id: face.node }],
+        message: `The ports of the ${face.side} face of ${face.node} take the order of the final positions of their far ends: ${verdict.before} faces out of order on the baseline, ${verdict.after} after.` });
+    }
+  },
+  refuse(env, s, o, r) {
+    const why = r.at === 'place' ? `the placement run rejected it (${r.why})` : r.at === 'fallback' ? 'ELK fell back during the far-end trial'
+      : r.at === 'bands' ? `stage 7f rejected it (${r.why})` : r.why;
+    env.options.testSideTrace?.({ ev: 'far-end-refused', faces: o.faces.map(face => `${face.node}.${face.side}`), why });
+    const unsettled = r.at === 'verdict' && o.verdict?.next !== undefined;
+    s.sideNotes.push({ stage: 'placement', severity: 'info', code: unsettled ? 'FAR_END_ORDER_UNSETTLED' : 'FAR_END_ORDER_DECLINED', owners: o.faces.map(face => ({ kind: 'node' as const, id: face.node })),
+      message: `The far-end order of ${faceNames(o.faces)} is ${unsettled ? 'not settled' : 'declined'}: ${why}.` });
   },
 };

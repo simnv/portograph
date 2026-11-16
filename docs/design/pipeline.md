@@ -527,6 +527,22 @@ rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy
 positions. Preserve signed keys and the relative physical order of unequal author keys, not an
 absolute slot number.
 
+**That order is provisional, and a ledger entry can replace it** (dense-16x9 ticket 07). The far ends move after this sort: 7c centres and grows, the close-up and 7f move boxes, and
+a face sorted here can stand the wrong way round at publication (G5 fails it). Stage 5 stays the one place that seats a face. The **far-end round** (`farEnd`, `rounds.ts`; the last
+round of the command) reads the final positions of a completed placement, and for every face that fails G5 and that no other owner holds (a recorded first-turn face, a bar, a bundle
+member, a mesh-bus port, a solid-block face) proposes a sequence (`proposeFarEndOrder`, `far-end-order.ts`). Top and bottom faces read x, lateral faces read y. G5 fails a pair
+whose far-end ranges are strictly separated and whose ports stand the other way round, so those pairs are a partial order (an interval order); ranges that overlap impose nothing, and a
+port with no routed far end imposes nothing. Among the ports ready to go next, the one with the lowest key goes first: the mean of its routed far ends, the shared key of a facing pair
+(`pairedFaceKey`), or the ordinary key above for a port with no routed far end; a tie keeps the order the ports stand in, then the port identity (R3). An authored port keeps its slot.
+Both faces of a pair read one key per link, so no end sorts against the slots the other end changes. The sequence is reserved as a `farEndOrder` ledger entry (one per face, the whole
+face in engine order; a later entry for a face replaces the earlier one) and one more placement run seats it here, after the sort and before `seatAuthored`; every stage after it
+re-reserves its pitch, lanes, stems and rows around the new order, and the 7e check of the ledger refuses a run in which a stage moved the face. The face is no turn-ordered face and is
+outside the scope of the turn order (`turnScope`). `freeze.farEndOrder` records what was seated; it grants G5 no exemption: G5 judges the geometry. The trial is kept only if no
+proposed face still fails G5, no other face fails that did not before, and the guards of every judged re-run hold (no removed link, no new gate or constraint finding, no broken
+separation, no kept course over its turns, no larger canvas) and the unified order is not worse. A trial that leaves a proposed face stale hands the round the next proposal, read from
+its own final positions; the round makes at most `FAR_END_ORDER_RUNS` trials, spends the command's placement budget like every round, and stops on a repeated proposal. The notes
+`FAR_END_ORDER_TAKEN`, `FAR_END_ORDER_OWNED`, `FAR_END_ORDER_DECLINED` and `FAR_END_ORDER_UNSETTLED` say what happened. No 7c rule may re-order a port: the permission stays as it is.
+
 **A group box holds its own title from here on** (snack-theme ticket 157). The box a group's content asks for (`contentBox`, which
 `fitRegionGroup` fits) is at least as wide as the group's measured title plus the 8 px title inset on each side and one clearance step
 beyond each (`ownTitleFloor`, `titleRoom`, `title-room.ts`, the same geometry 7f places the title with), centred on its nodes. The step is

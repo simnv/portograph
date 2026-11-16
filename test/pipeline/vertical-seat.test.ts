@@ -16,7 +16,7 @@ import { reversed } from '../../scripts/r3-lib.mjs';
  */
 const source = (name: string): string => withoutJointOrderOn(name, readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
 const pinned = (name: string): string => withoutJointOrder(readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8'));
-const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testFarEndOrder: false as const });
 const bends = (model: LayoutModel): number => { const { routed, overlay } = score(model).snapshot.counts; return routed.turns + overlay.turns; };
 const violations = (model: LayoutModel, gate: 'G6'): number => score(model).snapshot.gates[gate].violations.length;
 const count = (model: LayoutModel, code: string): number => model.diagnostics.filter(item => item.code === code).length;

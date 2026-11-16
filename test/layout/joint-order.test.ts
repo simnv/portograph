@@ -38,7 +38,7 @@ const mirror = (yaml: string): string => {
   }
   return [...head, 'groups:', ...groups.reverse(), 'nodes:', ...nodes.reverse(), ...rest].join('\n');
 };
-const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt });
+const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createColdAttempt, createRouteAttempt: createAvoidAttempt, testFarEndOrder: false as const });
 const skeletonOf = async (yaml: string): Promise<LayoutModel> => {
   const model = sizeNodes(sidesOne(resolve(parse(yaml))));
   await skeleton(model, { createAttempt: createColdAttempt });

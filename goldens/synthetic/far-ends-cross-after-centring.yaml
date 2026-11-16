@@ -1,0 +1,25 @@
+# Expected: far-end order is read from final positions (dense-16x9 ticket 07), after the centring. `sink-near` has three feeds: the switches `sw-1` and `sw-2` of the tier above and the
+# router `src-a` two tiers up. Stage 5 sorts its top face by the feeds' x as they stand then; the centring grows the body toward feeds it does not keep and moves the far ends, so the
+# order is stale after 7c and G5 fails on `sink-near` before the far-end round (one crossing, four bends, 346 x 484 px). The round reads the final positions of the completed
+# placement, reserves the order of the top face (`farEndOrder`) and places once more: G5 passes, no crossing, two bends, canvas 399 x 484 px. `far-end-order.test.ts` reads the layout
+# with the round on and off. Same input as a-stretched-body-is-trimmed-to-its-ports, which tests the end trim with the round off.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group), so `access` is declared
+# before `src`; the canonical order is then the written order.
+portograph: 2
+groups:
+  access: { tier: 1 }
+  src: { tier: 0 }
+  far: { tier: 2 }
+  near: { tier: 2 }
+nodes:
+  src-a: { group: src, class: router, ports: [] }
+  src-b: { group: src, class: router, ports: [] }
+  sw-1: { group: access, class: switch, ports: [] }
+  sw-2: { group: access, class: switch, ports: [] }
+  sink-near: { group: near, class: server, ports: [] }
+  sink-far: { group: far, class: server, ports: [] }
+links:
+  - [sw-1, sink-near]
+  - [sw-2, sink-near]
+  - [src-a, sink-near]
+  - [src-b, sink-far]

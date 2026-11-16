@@ -28,7 +28,7 @@ async function run(name: string): Promise<{ model: LayoutModel; drafts: LayoutMo
   const drafts: LayoutModel[] = [], sink = targetTap.sink;
   targetTap.sink = (tap, value) => { if (tap === 'beforeEndTrim') drafts.push(JSON.parse(value) as LayoutModel); };
   try {
-    const model = await layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const model = await layout(parse(source(name)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testFarEndOrder: false as const });
     return { model, drafts };
   } finally { if (sink === undefined) delete targetTap.sink; else targetTap.sink = sink; }
 }
@@ -159,7 +159,7 @@ describe('a close-up keeps the stem depth record', () => {
     const lines = tierGap.split('\n'), at = lines.indexOf('links:');
     const reversed = [...lines.slice(0, at + 1), ...lines.slice(at + 1).filter(line => line.startsWith('  - ')).reverse()].join('\n') + '\n';
     for (const text of [sweep, reversed]) {
-      const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+      const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testFarEndOrder: false as const });
       expect(stemDepthsFault(model)).toBeUndefined();
     }
   }, 120000);

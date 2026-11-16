@@ -340,6 +340,8 @@ export function turnRecordFaults(model: LayoutModel, by: 'anchor' | 'engine'): T
  */
 export function turnScope(model: LayoutModel, node: string, side: Side): boolean {
   if (model.turnExcept?.includes(faceKey(node, side))) return false;
+  // A face with a far-end order from final positions (ticket 07) keeps it: no turn pass re-orders it.
+  if (model.farEndOrder?.some(face => face.node === node && face.side === side)) return false;
   if (model.turnLinks === undefined) return true;
   const wanted = new Set(model.turnLinks);
   return model.links.some(link => wanted.has(link.id) && [link.attachments?.from, link.attachments?.to].some(ref => ref !== undefined && ref.node === node && findPort(model, ref)?.side === side));

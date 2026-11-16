@@ -10,7 +10,7 @@ import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Rect,
 import { portKey } from './sides-one.js';
 import { frameSubtreeCells } from '../model/model.js';
 
-export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay';
+export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
 /** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
 export type ReservationOwner = Owner | { kind: 'command'; id: string };
 
@@ -32,6 +32,12 @@ export interface ReservationPayload {
    * a face that holds a held routed chord on the baseline of the turn round (`docs/design/turn-order.md`, Section 3).
    */
   turnOrder: { scope: { all: true } | { links: readonly string[] }; except?: readonly string[]; requireChanged: boolean };
+  /**
+   * Stage 5 gives the ports of the face `node`/`side` this order, the whole face in engine order, in place of the order of the far ends as they stood then (dense-16x9 ticket 07). The
+   * far-end round takes it from the final positions of a completed placement; later stages validate it and never choose another. Absent: the face keeps the order stage 5 finds.
+   * An entry for a face replaces an earlier entry for it (the latest proposal stands).
+   */
+  farEndOrder: { node: string; side: Side; ports: readonly PortRef[] };
   /** A trunk join (or every trunk join) that placement declines. */
   trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
   /** A move keeps every routed port of a member row's facing edge from standing deeper in a riser keep-out than it did (mesh-bus.md, section 11.5). */
@@ -94,7 +100,7 @@ const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
+  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton',
 };
 
@@ -131,6 +137,8 @@ export function reserve(ledger: Reservations, entries: Reservations): Reservatio
       if (old.payload.promise === undefined && entry.payload.promise !== undefined) result[at] = { ...old, payload: { ...old.payload, promise: entry.payload.promise } };
     } else if (old.kind === 'course' && entry.kind === 'course') {
       if (!same(old.payload.course, entry.payload.course)) throw new Error(`Reservation ${entry.id} conflicts with a course the ledger holds`);
+    } else if (old.kind === 'farEndOrder' && entry.kind === 'farEndOrder') {
+      result[at] = entry;
     } else if (old.kind === 'turnOrder' && entry.kind === 'turnOrder') {
       const except = [...new Set([...(old.payload.except ?? []), ...(entry.payload.except ?? [])])].sort();
       const requireChanged = old.payload.requireChanged || entry.payload.requireChanged;
@@ -268,6 +276,15 @@ export function turnEntries(turn: boolean, links: readonly string[], requireChan
   ];
 }
 
+/** The faces (`node|side`) the ledger gives a far-end order, with the sequence each takes, in node and side order. */
+export function farEndOrderOf(ledger: Reservations): { node: string; side: Side; ports: PortRef[] }[] {
+  return ofKind(ledger, 'farEndOrder').map(({ payload }) => ({ node: payload.node, side: payload.side, ports: payload.ports.map(ref => ({ ...ref })) }))
+    .sort((a, b) => (a.node < b.node ? -1 : a.node > b.node ? 1 : 0) || (a.side < b.side ? -1 : a.side > b.side ? 1 : 0));
+}
+export function farEndEntries(faces: readonly { node: string; side: Side; ports: readonly PortRef[] }[], producer: RoundId, revision: number): Reservations {
+  return faces.map(face => reservation('farEndOrder', { kind: 'node', id: face.node }, face.side, producer, revision, { node: face.node, side: face.side, ports: face.ports }));
+}
+
 /** The trunk joins that the next run resolves with declined. With `all` set (the budget is spent) every trunk reads as declined. */
 export class DeclinedTrunks extends Map<string, string> {
   all = false;
@@ -399,8 +416,8 @@ const isPort = (value: unknown): boolean => isObject(value) && isString(value['n
 const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.length > 0
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide']);
-const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'skeleton', 'lanes', 'bands']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide']);
+const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'lanes', 'bands']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
 function shapeFailure(entry: unknown): string | undefined {
@@ -431,6 +448,10 @@ function shapeFailure(entry: unknown): string | undefined {
       const scopeOk = isObject(scope) && (scope['all'] === true || (Array.isArray(scope['links']) && scope['links'].every(isString)));
       const exceptOk = payload['except'] === undefined || (Array.isArray(payload['except']) && payload['except'].every(isString));
       return scopeOk && exceptOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
+    }
+    case 'farEndOrder': {
+      const ports = payload['ports'];
+      return isString(payload['node']) && sides.includes(payload['side'] as string) && Array.isArray(ports) && ports.length > 1 && ports.every(isPort) && new Set(ports.map(item => JSON.stringify(item))).size === ports.length ? undefined : bad;
     }
     case 'rowOrder': {
       const order = payload['order'], one = isString(payload['cell']) !== isString(payload['frame']);
@@ -504,6 +525,10 @@ export function validateReservations(model: LayoutModel): void {
     // The spanning chords the ledger reserves are the frozen span hints, link for link in link order.
     const held = spansOf(ledger);
     if (!same(model.links.filter(link => held.has(link.id)).map(link => link.id), model.freeze?.spans ?? []) || held.size !== (model.freeze?.spans ?? []).length) throw new Error('Reserved spanning chords differ from the frozen span hints');
+  }
+  if (model.reservations !== undefined) {
+    // The far-end orders of the ledger are the far-end orders of the model, face for face.
+    if (!same(farEndOrderOf(ledger), model.farEndOrder ?? [])) throw new Error('The reserved far-end orders differ from the far-end orders of the model');
   }
   // A model that carries the turn order must carry the ledger that reserved it: without one the checks below would pass on whatever the model says.
   if (model.turnOrder === true && model.reservations === undefined) throw new Error('The turn order of the model has no reservation ledger');

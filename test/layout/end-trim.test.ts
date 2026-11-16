@@ -16,7 +16,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * replay of the publication check reads them (R1).
  */
 const source = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
-const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true });
+const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true, testFarEndOrder: false as const });
 const right = (box: { x: number; width: number }): number => box.x + box.width;
 const forge = (model: LayoutModel, edit: (copy: LayoutModel) => void): string => {
   const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;

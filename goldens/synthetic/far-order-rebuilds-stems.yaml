@@ -1,0 +1,24 @@
+# Expected: far-end order is read from final positions (dense-16x9 ticket 07) and every stem, lane and row is reserved again around it. `top-node` links down to `low-node` through a
+# transit lane past a wide middle group and to `wide-1`; stage 5 sorts the bottom face of `top-node` by far ends that the centring then moves, so G5 fails before the far-end round
+# (one crossing, canvas 563 x 496 px). The round reserves the reordered face and places once more: the transit lane and the stem of each link are reserved for the new order in placement, G5 passes, no
+# crossing, no bend, canvas 529 x 496 px.
+portograph: 2
+profile: network
+groups:
+  upper: { tier: 0, label: Upper }
+  middle: { tier: 1, label: Middle }
+  lower: { tier: 2, label: Lower }
+nodes:
+  top-node: { group: upper, class: router, label: Upper node }
+  low-node: { group: lower, class: switch, label: Low node }
+  wide-1: { group: middle, class: router, label: Middle 1 }
+  wide-2: { group: middle, class: router, label: Middle 2 }
+  wide-3: { group: middle, class: router, label: Middle 3 }
+  wide-4: { group: middle, class: router, label: Middle 4 }
+  wide-5: { group: middle, class: router, label: Middle 5 }
+links:
+  - [top-node, low-node]
+  - [top-node, wide-1]
+  - [wide-5, low-node]
+  - [wide-2, wide-3]
+  - [wide-3, wide-4]

@@ -15,3 +15,8 @@ export const MAX_RERUNS = 3;
 export class PlacementBudgetExceeded extends PlacementRefusal {
   constructor(readonly placements: number) { super('budget', `The command has placed ${placements} times, which is the most it may.`, { stage: 'place' }); }
 }
+/**
+ * Most trials of the far-end round in one command (dense-16x9 ticket 07): the first proposal and the retries that read the final positions of a trial that did not settle.
+ * Each trial is a placement run and spends the command's budget like every other (`MAX_RERUNS`); the count never resets and the clock never sets it (R4).
+ */
+export const FAR_END_ORDER_RUNS = 4;
