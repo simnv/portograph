@@ -49,6 +49,8 @@ export interface PlanInput {
   link: string;
   /** Model order of the link, then of the planned gap; breaks every tie. */
   order: number;
+  /** The link's own stroke (`linkStrokeWidth`), the width the scorer reads: the dodge judges its G6 pairs with it. */
+  stroke: number;
   /** The planned gap of the link (the index `stopsOf` pairs), and whether the link visits the upper end first: stage 8 reads them back. */
   index?: number;
   upperFirst?: boolean;
@@ -637,41 +639,54 @@ interface Forced {
   stands: ReadonlyMap<string, 'upper' | 'lower'>;
 }
 
+/** What `movedPairs` reads of the pairs that hold a moved part. */
+interface PairReading {
+  /** The G6 findings of each part pair (`parallelClearance`), and the least clearance of a finding segment pair: distance less the two half strokes. */
+  findings: Map<string, { count: number; clearance: number }>;
+  /** The strict crossings between planned parts (`strictCrossing`), segment by segment. */
+  crossings: number;
+}
+
 /**
- * What the planned parts that `moved` names stand against every planned part of `plan`: the gate's G6 findings (`parallelClearance`, one entry per
- * finding, by part pair) and the strict crossings (`strictCrossing`, segment by segment), counted once per pair. Each part is read as the gate reads a
- * path, at the plan's own stroke: `keep` less the node clearance (the widest routed stroke, `nudgingDistance`). A planned part has no bundle and no
- * junction, so the predicate's exemptions read an empty model.
+ * What the planned parts that `moved` names stand against every planned part of `plan`, read with the gate's own predicates and the gate's own
+ * inputs: each part's segments at its link's own stroke (`PlanInput.stroke`, the `linkStrokeWidth` the scorer reads). Each segment pair goes to
+ * `parallelClearance` alone, so a finding carries its distance. A planned part has no bundle and no junction, so the predicate's exemptions read an
+ * empty model. Undefined where a part has no stroke: the guard cannot read it and the try is refused (R6).
  */
-function movedPairs(plan: GapPlan, frame: PlanFrame, moved: ReadonlySet<string>): { clearance: Map<string, number>; crossings: number } {
-  const stroke = frame.keep - GROUP_LABEL_GEOMETRY.nodeClearance, gap = { low: frame.low, high: frame.bandTop };
-  const paths = plan.parts.map(part => ({ id: part.id, segments: plannedSegments(part, gap) }));
-  const runs: Segment[] = paths.flatMap(path => {
-    const link = { id: path.id, path: { segments: path.segments } } as unknown as LayoutLink;
-    return path.segments.map((segment, index) => ({ segment, link, index, stroke }));
-  });
-  const clearance = new Map<string, number>();
-  parallelClearance(NO_PLAN_MODEL, runs, (_gate, _code, elements) => {
-    if (!elements.some(id => moved.has(id))) return;
-    const key = [...elements].sort().join('\0');
-    clearance.set(key, (clearance.get(key) ?? 0) + 1);
-  });
+function movedPairs(plan: GapPlan, frame: PlanFrame, moved: ReadonlySet<string>, strokes: ReadonlyMap<string, number>): PairReading | undefined {
+  const gap = { low: frame.low, high: frame.bandTop };
+  const paths: { id: string; runs: Segment[] }[] = [];
+  for (const part of plan.parts) {
+    const stroke = strokes.get(part.id);
+    if (stroke === undefined) return undefined;
+    const segments = plannedSegments(part, gap), link = { id: part.id, path: { segments } } as unknown as LayoutLink;
+    paths.push({ id: part.id, runs: segments.map((segment, index) => ({ segment, link, index, stroke })) });
+  }
+  const findings = new Map<string, { count: number; clearance: number }>();
   let crossings = 0;
   for (const [index, a] of paths.entries()) for (const b of paths.slice(index + 1)) {
     if (!moved.has(a.id) && !moved.has(b.id)) continue;
-    for (const x of a.segments) for (const y of b.segments) if (strictCrossing(x, y)) crossings++;
+    const key = [a.id, b.id].sort().join('\0');
+    for (const x of a.runs) for (const y of b.runs) {
+      if (strictCrossing(x.segment, y.segment)) crossings++;
+      parallelClearance(NO_PLAN_MODEL, [x, y], () => {
+        const clearance = segmentDistance(x.segment, y.segment) - (x.stroke + y.stroke) / 2, found = findings.get(key);
+        findings.set(key, { count: (found?.count ?? 0) + 1, clearance: Math.min(found?.clearance ?? Infinity, clearance) });
+      });
+    }
   }
-  return { clearance, crossings };
+  return { findings, crossings };
 }
 /** The model `movedPairs` hands the G6 predicate: planned parts carry no bundle and no junction. */
 const NO_PLAN_MODEL = { links: [], bundles: [], junctions: [] } as unknown as LayoutModel;
 
 /**
  * Whether `trial` keeps what `base` reserved: the same parts, each of the same shape on the same rows, the same residual parts, the gap's height and
- * growth, no crowded or slant-limited entry `base` lacks, and, over every pair that holds a part the trial moved, no G6 finding and no strict crossing
- * more (`movedPairs`).
+ * growth, and no crowded or slant-limited entry `base` lacks. Over every pair that holds a part the trial moved (`movedPairs`): no pair with more G6
+ * findings, no pair with a finding in the base whose least clearance falls (an equal count must not hide a worse distance), and no increase in total
+ * crossings between planned parts.
  */
-function keepsPlan(base: GapPlan, trial: GapPlan, frame: PlanFrame): boolean {
+function keepsPlan(base: GapPlan, trial: GapPlan, frame: PlanFrame, strokes: ReadonlyMap<string, number>): boolean {
   const ids = (items: readonly { id: string }[]): string => items.map(item => item.id).sort().join('\0');
   if (ids(base.parts) !== ids(trial.parts) || ids(base.residual) !== ids(trial.residual)) return false;
   if (Math.abs(base.height - trial.height) > EPS || Math.abs(base.growth - trial.growth) > EPS) return false;
@@ -689,8 +704,12 @@ function keepsPlan(base: GapPlan, trial: GapPlan, frame: PlanFrame): boolean {
   const was = segmentsOf(base), now = segmentsOf(trial);
   const moved = new Set([...now].filter(([id, text]) => was.get(id) !== text).map(([id]) => id));
   if (!moved.size) return true;
-  const before = movedPairs(base, frame, moved), after = movedPairs(trial, frame, moved);
-  if ([...after.clearance].some(([key, count]) => count > (before.clearance.get(key) ?? 0))) return false;
+  const before = movedPairs(base, frame, moved, strokes), after = movedPairs(trial, frame, moved, strokes);
+  if (before === undefined || after === undefined) return false;
+  for (const [key, now] of after.findings) {
+    const was = before.findings.get(key);
+    if (was === undefined || now.count > was.count || now.clearance < was.clearance - EPS) return false;
+  }
   return after.crossings <= before.crossings;
 }
 
@@ -699,7 +718,7 @@ function keepsPlan(base: GapPlan, trial: GapPlan, frame: PlanFrame): boolean {
  * and a jogged drop reads no chord. Then every chord is a wall over its extent in the gap (`chordWall`), as a preference: in model order (the part
  * id last), a Z part whose middle drop stands in a wall tries each x clear of every wall (`middleDrops`, widest first), and a jogged drop whose long
  * vertical stands in a wall tries its other end's x where that is clear. A try is kept only where the plan keeps what it reserved (`keepsPlan`): no
- * shape, row, height or growth changes, so no bend is added, and no finding and no crossing between planned parts is added; else the next clear x is tried. With no such seat the part keeps its seat (a chord left
+ * shape, row, height or growth changes, so no bend is added, no finding is added, no pair's finding gets worse, and total crossings do not increase; else the next clear x is tried. With no such seat the part keeps its seat (a chord left
  * beside it is the 7f retry's to refuse, slice 3), so the wall never drops a reservation. The tries are finite: one per candidate x or stand.
  */
 function dodge(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
@@ -707,6 +726,7 @@ function dodge(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   const walls = (frame.chords ?? []).map(chord => chordWall(chord, frame.keep));
   if (!walls.length) return base;
   const walled = (x: number): boolean => walls.some(([x0, x1]) => x > x0 + EPS && x < x1 - EPS);
+  const strokes = new Map(inputs.map(input => [input.id, input.stroke]));
   const middles = new Map<string, number>(), stands = new Map<string, 'upper' | 'lower'>();
   let plan = base;
   for (const part of [...base.parts].sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
@@ -722,7 +742,7 @@ function dodge(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
     }
     for (const forced of tries) {
       const trial = planGapCore(inputs, frame, forced), moved = trial.parts.find(item => item.id === part.id);
-      if (!keepsPlan(base, trial, frame) || moved === undefined) continue;
+      if (!keepsPlan(base, trial, frame, strokes) || moved === undefined) continue;
       if (part.shape === 'z' ? !same(moved.middle!, forced.middles.get(part.id)!) : moved.stand !== forced.stands.get(part.id)) continue;
       plan = trial;
       for (const [id, x] of forced.middles) middles.set(id, x);
@@ -1098,7 +1118,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
           if (!tierGapUTurn(model, link.id) || Math.abs(tips[0]!.x - tips[1]!.x) < keep - EPS) fail('u-turn');
           else {
             const room = labelRoom(model, link);
-            inputs.push({ id, link: link.id, order, index, upperFirst: true, upper: tips[0]!, lower: tips[1]!, u: from!.side === 'bottom' ? 'low' : 'high', ...(room ? { labelRoom: room } : {}) });
+            inputs.push({ id, link: link.id, order, index, stroke: linkStrokeWidth(link), upperFirst: true, upper: tips[0]!, lower: tips[1]!, u: from!.side === 'bottom' ? 'low' : 'high', ...(room ? { labelRoom: room } : {}) });
           }
         }
         continue;
@@ -1117,7 +1137,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
           if (Math.abs(tip.x - mouth.x) < keep - EPS) { fail('u-turn'); continue; }
           const [first, second] = a.kind === 'port' ? [tip, mouth] : [mouth, tip];
           const room = labelRoom(model, link);
-          inputs.push({ id, link: link.id, order, index, upperFirst: true, upper: first, lower: second, u: 'low', ...(room ? { labelRoom: room } : {}) });
+          inputs.push({ id, link: link.id, order, index, stroke: linkStrokeWidth(link), upperFirst: true, upper: first, lower: second, u: 'low', ...(room ? { labelRoom: room } : {}) });
           continue;
         }
       }
@@ -1144,7 +1164,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
       if (upper.faces !== 'low' || lower.faces !== 'high') { fail('faces-away'); continue; }
       const strip = (item: Side): PlanEnd => ({ x: item.x, y: item.y, kind: item.kind, source: item.source });
       const room = labelRoom(model, link);
-      inputs.push({ id, link: link.id, order, index, upperFirst: upper === first, upper: strip(upper), lower: strip(lower),
+      inputs.push({ id, link: link.id, order, index, stroke: linkStrokeWidth(link), upperFirst: upper === first, upper: strip(upper), lower: strip(lower),
         ...(room ? { labelRoom: room } : {}) });
     }
   }

@@ -32,6 +32,8 @@ const rowsOf = (plan: GapPlan): Record<string, number[]> =>
   Object.fromEntries(plan.parts.filter(part => part.rows.length).map(part => [short(part.id), part.rows]));
 const pairs = (plan: GapPlan): string[] => plan.crossings.map(item => [short(item.run).replace(/[ab]$/, ''), short(item.vertical)].sort().join('x')).sort();
 const BAND_GAP = 60;
+/** The default routed stroke every hand-built part carries, unless a test says otherwise. */
+const STROKE = 1.5;
 /** The v5-4-0 shape with `access` declared before `src` (DR-04): the canonical link order lays the spec's shape out again. */
 const V540 = 'a-tier-gap-plan-orders-every-part-middle-tier-first';
 
@@ -156,7 +158,7 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
 
 /** The gap of the hand-built shapes: 248..308, flat stems (tips at 263 and 293), pitch and clearance 11.5. */
 const frame = (): PlanFrame => ({ low: 248, bandTop: 308, floor: BAND_GAP, keep: 11.5, pitch: 11.5, edge: 10.75, tips: [], lowerTips: [], obstacles: [], residual: [] });
-const part = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order,
+const part = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, stroke: STROKE,
   upper: { x: from, y: 263, kind: 'tip', source: `up${from}` }, lower: { x: to, y: 293, kind: 'tip', source: `low${to}` } });
 
 describe('the tier-gap plan on hand-built parts', () => {
@@ -535,8 +537,8 @@ describe('a held chord that ends in its gap is a wall over its extent there (den
       ...(chords !== undefined ? { chords } : {}) });
     const end = (x: number, y: number, source: string): PlanInput['upper'] => ({ x, y, kind: 'tip', source });
     const inputs: PlanInput[] = [
-      { id: 'P', link: 'P', order: 0, upper: end(113.72216796875, 15, 'right|bottom'), lower: end(-113.72216796875, high - 15, 'left|top') },
-      { id: 'Q', link: 'Q', order: 1, upper: end(-113.72216796875, 15, 'left|bottom'), lower: end(113.72216796875, high - 15, 'right|top') },
+      { id: 'P', link: 'P', order: 0, stroke: STROKE, upper: end(113.72216796875, 15, 'right|bottom'), lower: end(-113.72216796875, high - 15, 'left|top') },
+      { id: 'Q', link: 'Q', order: 1, stroke: STROKE, upper: end(-113.72216796875, 15, 'left|bottom'), lower: end(113.72216796875, high - 15, 'right|top') },
     ];
     const chordSegments = [
       { from: { x: -7.5, y: 13.5 }, to: { x: -50.22216796875, y: 196 }, owner: { kind: 'link' as const, id: 'A' } },
@@ -590,7 +592,7 @@ describe('a held chord that ends in its gap is a wall over its extent there (den
   describe('the dodge keeps every reservation of the plan (review 1 of slice 1)', () => {
     // Plan states of the review (design/14a-review-1.md), generic: upper tips at y 15, `keep` 11.5. Each part has its own sources.
     const reviewFrame = (bandTop: number): PlanFrame => ({ low: 0, bandTop, floor: 60, keep: 11.5, pitch: 11.5, edge: 10.75, tips: [], lowerTips: [], obstacles: [], residual: [] });
-    const parts = (lowerY: number, spans: readonly (readonly [string, number, number])[]): PlanInput[] => spans.map(([id, from, to], order) => ({ id, link: id, order,
+    const parts = (lowerY: number, spans: readonly (readonly [string, number, number])[]): PlanInput[] => spans.map(([id, from, to], order) => ({ id, link: id, order, stroke: STROKE,
       upper: { x: from, y: 15, kind: 'tip', source: `${id}u` }, lower: { x: to, y: lowerY, kind: 'tip', source: `${id}l` } }));
     const shape = (plan: GapPlan) => ({ height: plan.height, growth: plan.growth, residual: plan.residual.map(item => item.id),
       parts: plan.parts.map(item => [item.id, item.shape, item.rows, item.middle, item.stand]) });
@@ -633,6 +635,45 @@ describe('a held chord that ends in its gap is a wall over its extent there (den
       expect(before.crowded.map(item => [item.id, item.with].sort().join('/'))).toEqual(['D/P']);
       const plan = planGap(inputs, { ...tall, chords: [{ low: 90, high: 85, partial: true }] });
       expect(shape(plan)).toEqual(shape(before));
+    });
+
+    describe('reads each pair at its links\' own strokes, as the scorer does (review 3)', () => {
+      // keep 14: some other routed link is 4 px wide. D (x 100 to 106) would stand 7 px from Q's upper leg at x 113 (y 50 to 80) on its lower x; on
+      // its upper x it stands 13 px from it. P's upper end at x 95 crowds D on either x, so `crowded` names D/P in both plans.
+      const mixed = (d: number, q: number): { inputs: PlanInput[]; frame: PlanFrame } => {
+        const inputs = parts(285, [['P', 95, 40], ['D', 100, 106], ['Q', 113, 160]]);
+        inputs[1] = { ...inputs[1]!, stroke: d };
+        inputs[2] = { ...inputs[2]!, stroke: q, upper: { ...inputs[2]!.upper, y: 50 } };
+        return { inputs, frame: { ...reviewFrame(300), keep: 14, pitch: 14, edge: 12, floor: 200, obstacles: [{ x0: 113, x1: 160, anchor: 'above', bound: 80 }] } };
+      };
+      const wall = [{ low: 90, high: 85, partial: true as const }];
+
+      it('refuses a dodge that makes a real G6 finding of two thin parts, where the widest stroke saw one before and after', () => {
+        // 1.5 px each: 11.5 px of clearance before, 5.5 px after.
+        const { inputs, frame: thin } = mixed(1.5, 1.5);
+        const before = planGap(inputs, thin);
+        expect(shape(planGap(inputs, { ...thin, chords: wall }))).toEqual(shape(before));
+      });
+
+      it('refuses it when the moved part is thicker than its neighbour', () => {
+        // D 4 px, Q 1.5 px: 10.25 px before, 4.25 px after.
+        const { inputs, frame: thick } = mixed(4, 1.5);
+        const before = planGap(inputs, thick);
+        expect(shape(planGap(inputs, { ...thick, chords: wall }))).toEqual(shape(before));
+      });
+
+      it('refuses a dodge that keeps the count of a pair\'s findings but makes its clearance worse', () => {
+        // D and Q 4 px each: 9 px before (one finding), 3 px after (one finding).
+        const { inputs, frame: both } = mixed(4, 4);
+        const before = planGap(inputs, both);
+        expect(shape(planGap(inputs, { ...both, chords: wall }))).toEqual(shape(before));
+      });
+
+      it('still takes the dodge where nothing stands beside the clear end', () => {
+        const { inputs, frame: free } = mixed(1.5, 1.5);
+        const away = inputs.map(item => item.id === 'Q' ? { ...item, upper: { ...item.upper, x: 140 } } : item);
+        expect(planGap(away, { ...free, obstacles: [{ x0: 140, x1: 160, anchor: 'above', bound: 80 }], chords: wall }).parts.find(item => item.id === 'D')!.stand).toBe('lower');
+      });
     });
 
     it('takes no middle x that adds a crossing between planned parts: the next clear x, or the seat of today (review 2)', () => {
@@ -703,7 +744,7 @@ describe('the U part (ticket 15, phase 5)', () => {
   // ends and two legs that run down to it; it has no lower leg, so it asks for `keep` above the band below and nothing more.
   const tip = (x: number): PlanInput['upper'] => ({ x, y: 250, kind: 'tip', source: `t${x}` });
   const mouth = (x: number): PlanInput['upper'] => ({ x, y: 248 + 15, kind: 'mouth', source: `lane|${x}|low` });
-  const u = (id: string, order: number, from: PlanInput['upper'], to: PlanInput['upper']): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true, upper: from, lower: to, u: 'low' });
+  const u = (id: string, order: number, from: PlanInput['upper'], to: PlanInput['upper']): PlanInput => ({ id, link: id, order, stroke: STROKE, index: 0, upperFirst: true, upper: from, lower: to, u: 'low' });
 
   it('plans one row below both ends and no lower leg', () => {
     const plan = planGap([u('U', 0, tip(60), mouth(200))], frame());
@@ -754,8 +795,8 @@ describe('the high U part (dense-16x9 ticket 06)', () => {
   // Both ends of a high U part stand on the gap's high boundary (the stems of two top ports, 13 px above the band below at y 308). The plan gives it one row
   // above both tips, hung just above them and not at the top of the gap, and two legs that rise to it.
   const tip = (x: number, y = 295): PlanInput['upper'] => ({ x, y, kind: 'tip', source: `n${x}|top|${x}` });
-  const high = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true, upper: tip(from), lower: tip(to), u: 'high' });
-  const low = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true,
+  const high = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, stroke: STROKE, index: 0, upperFirst: true, upper: tip(from), lower: tip(to), u: 'high' });
+  const low = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, stroke: STROKE, index: 0, upperFirst: true,
     upper: { x: from, y: 262, kind: 'tip', source: `m${from}|bottom|${from}` }, lower: { x: to, y: 262, kind: 'tip', source: `m${to}|bottom|${to}` }, u: 'low' });
   const row = (plan: GapPlan, id: string): number => plan.parts.find(item => item.id === id)!.rows[0]!;
 
