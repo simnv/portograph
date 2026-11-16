@@ -286,10 +286,23 @@ lane) that makes a G6 finding with a held chord of its gap (`TIER_GAP_CHORD_CROW
 through `parallelClearance`, any held chord with an extent in the gap), and G6 judges, as for two verticals within `k` (`crowded`).
 
 *Publication step (dense-16x9 ticket 14, slice 3, built in ticket 04 slice 2; coordinator ruling: a chord is refused before a gate finding is
-published).* After the last round has settled, `refuseCrowdedChords` (pipeline/driver.ts) reads the state to publish once. A held chord that is
-no direct or fan member, that a `TIER_GAP_CHORD_CROWDED` note names, and that stands under the G6 clearance of the planned part
-(`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. Each is a reservation on the
-ledger of the kept 7e model (`refusedChord`, one entry per link, producer `publish`). Its one predicate (`refusedChordFailure`, entered in
+published).* After the last round has settled, `refuseCrowdedChords` (pipeline/driver.ts) reads the state to publish once. It refuses every held
+chord that would be published under the G6 clearance of a reserved segment (`crowdedHeldChords`, direct-families.ts); every such chord of that
+one read is refused together. Each source is read by the reader that already names it (R1):
+- a direct member that `crowdedDirectMembers` names, and a straight fan or solid-block member that `crowdedFanMembers` names `crowds`. Such a
+  member stands on the state to publish only when the 7f crowding retry gave up after `DIRECT_RETRIES` (`DIRECT_FAMILY_CROWDED`,
+  `FAN_MEMBER_CROWDED`), so this step is the last resort after that retry (dense-16x9 ticket 28). A member that only passes a sibling's stem
+  (`stem`) is no G6 reading and is not refused here.
+- any other held chord that a `TIER_GAP_CHORD_CROWDED` note names and that stands under the G6 clearance of the planned part.
+
+Before ticket 28 the step skipped every direct and fan member, because the 7f retry owns their crowding. But that retry is bounded: on the
+outside sheet with ticket 27, a solid-block member was crowded only in the third attempt, `FAN_MEMBER_CROWDED` named it, and it was published
+with a G6 finding. A refused direct member falls back through its family (7f puts the ledger's ids in the retry's `refused` too, since the
+family is decided only in that attempt); a refused fan or solid-block member falls back alone, as a retry makes it fall back (`refuseChords`):
+the block is not admitted again. No loop with the fan round: the step runs after the last round, no round reads its result, and nothing runs
+the step again.
+
+Each refused chord is a reservation on the ledger of the kept 7e model (`refusedChord`, one entry per link, producer `publish`). Its one predicate (`refusedChordFailure`, entered in
 `RESERVATION_CHECKS` for the round check, the restore of a frozen model and the early restore) holds that the model stands at `sides-two` or later,
 that the entry names a link, and that once the freeze is taken the link is no frozen chord. So an entry the freeze contradicts is refused, and so is
 any entry on a model before `sides-two`. Placement replays once from that ledger: 7f refuses each before the freeze as
@@ -618,7 +631,8 @@ two lateral faces there is no angle floor (a slight tilt is fine). Overlay chord
   held chord, at each link's own stroke and through the gate's predicate (`crowdedDirectMembers`, `reservedRouted`;
   dense-16x9 ticket 14 slice 2). The attempt then runs again from
   its start with those members refused (`crowds`), at most `DIRECT_RETRIES` (2) times; a member still crowded
-  after that is a `DIRECT_FAMILY_CROWDED` warning, and G6 judges it.
+  after that is a `DIRECT_FAMILY_CROWDED` warning, and the publication step (Section 8) refuses it through its family
+  (dense-16x9 ticket 28).
 - **Record.** `model.directFamilies`, triggered families only: absent before 7f means not planned, absent after
   the freeze means no family triggered (so a sheet with none keeps its bytes). Each family keeps its units,
   gap, peer order, the count, its witnesses, the inversions, the port plan
@@ -676,7 +690,8 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   The crowding retry of 7f refuses a member that a G6 reading of every reserved segment names (`crowds`,
   `crowdedFanMembers`, `reservedRouted`), that passes a sibling's stem (`stem`), or that a group title placed in 7f still meets
   (`title`, `titleCrowdedFanMembers`: the title planner found no room beside it). After `DIRECT_RETRIES` the rest
-  stay straight and `FAN_MEMBER_CROWDED` names each with its reason. `refuseChords` re-reads the held chords near
+  stay straight and `FAN_MEMBER_CROWDED` names each with its reason; the publication step (Section 8) refuses each one
+  that is still `crowds` on the state to publish, and it falls back alone (dense-16x9 ticket 28). `refuseChords` re-reads the held chords near
   the new legs, all of one round before any falls back (R3), and each chord that falls back there names its own
   fixed-point refusal (`leg`, `chord` or `title`), never `family`.
 - **Record.** `model.fanAdmissions`, set at the freeze, one entry per member in family order: `straight` with

@@ -132,8 +132,9 @@ function errorFindings(model: LayoutModel): Set<string> {
 
 /**
  * A chord is refused before a gate finding is published (dense-16x9 ticket 14, slice 3; coordinator ruling for ticket 04 slice 2). After the last
- * round has settled, the state to publish is read once: every held chord that is no direct or fan member, that the plan names crowded and that
- * stands under the G6 clearance (`crowdedHeldChords`) is refused, all of them in this one read. The refusal is a reservation (`refusedChord`, one
+ * round has settled, the state to publish is read once: every held chord that would stand under the G6 clearance (`crowdedHeldChords`) is refused,
+ * all of them in this one read. Since ticket 28 that covers the direct, fan and solid-block members that the 7f retry gave up on: this step is the
+ * last resort after that retry. It runs after `drive`, so no round (the fan round included) reads its result, and nothing runs it again: no loop. The refusal is a reservation (`refusedChord`, one
  * entry per chord) on the ledger of the kept 7e model, and placement replays once from it; 7f consumes the entries (R1). The replay is kept only when its routed result has no
  * error-gate finding that the state before it lacks; otherwise that state stays and `HELD_CHORD_CROWDED` names the chords. One pass at most
  * (R4): the replay is not read again. The rounds read the unrefused baselines, so a crowded baseline that a round repairs stays theirs.

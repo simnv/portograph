@@ -176,7 +176,10 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
     // `chordRefused` holds the fan members and the other held chords a retry refuses; a direct member is refused through its family (`refused`).
     const start = clone(draft), refused = new Map<string, DirectMemberReason>(), chordRefused = new Map<string, FanFallbackReason>();
     // The chords the publication step refused (`refusedChord` entries of the ledger, dense-16x9 ticket 14 slice 3) fall back before the freeze, as `crowds`.
-    for (const id of refusedChordsOf(draft.reservations ?? [])) chordRefused.set(id, 'crowds');
+    // A direct member is refused through its family, as a retry refuses it (`refused`); a fan member, a solid-block member and any other held chord
+    // fall back alone (`chordRefused`, ticket 28). The family is decided only in this attempt, so the id goes to both: each map ignores an id it
+    // does not own.
+    for (const id of refusedChordsOf(draft.reservations ?? [])) { chordRefused.set(id, 'crowds'); refused.set(id, 'crowds'); }
     for (let retry = 0; ; retry++) {
       attemptBody(draft, options, refused, chordRefused);
       const crowded = crowdedDirectMembers(draft).filter(id => !refused.has(id));
