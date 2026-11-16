@@ -2,14 +2,18 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, layout, parse, readCacheCounts, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
+import type { PathSegment } from '../../src/model/layout.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
 import { checkReadCaches } from '../../src/model/read-cache.js';
-import { facingTips, plannedSegments, planGap, tierGapPlan, tierGapPlans, type GapPlan, type PlanFrame, type PlanInput } from '../../src/layout/gap-plan.js';
+import { facingTips, heldChordsIn, plannedSegments, planGap, reservedSegments, tierGapPlan, tierGapPlans, type DodgeContext, type GapPlan, type PlanFrame, type PlanInput, type ReservedSegment } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
+import { nudgingDistance } from '../../src/layout/bands.js';
 import { EPS, segmentDistance } from '../../src/geometry/planar.js';
 import { strictCrossing } from '../../src/layout/read/crossings.js';
 import { createAttempt, placed } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { legReservation } from '../../src/layout/sides-two.js';
+import { preRoute } from '../../src/route/validate.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
 import { withoutJointOrderOn } from './joint-off.js';
 
@@ -31,6 +35,17 @@ const rowsOf = (plan: GapPlan): Record<string, number[]> =>
   Object.fromEntries(plan.parts.filter(part => part.rows.length).map(part => [short(part.id), part.rows]));
 const pairs = (plan: GapPlan): string[] => plan.crossings.map(item => [short(item.run).replace(/[ab]$/, ''), short(item.vertical)].sort().join('x')).sort();
 const BAND_GAP = 60;
+/** A held chord as `reservedSegments` reads it: the stored path from (low, top) to (high, bottom), straight, at the default stroke. */
+const line = (low: number, high: number, top: number, bottom: number): ReservedSegment =>
+  ({ link: `chord${low}`, kind: 'path', stroke: STROKE, segment: { from: { x: low, y: top }, to: { x: high, y: bottom }, owner: { kind: 'link', id: `chord${low}` }, straight: true } });
+/** A segment of `link` reserved before routing (a stem, a shared junction run), at the default stroke. */
+const held = (link: string, kind: ReservedSegment['kind'], from: { x: number; y: number }, to: { x: number; y: number }): ReservedSegment =>
+  ({ link, kind, stroke: STROKE, segment: { from, to, owner: { kind: 'link', id: link } } });
+/** What the dodge reads for the gap of `frame` (low y to band top): the given reserved segments, and where other gaps' parts can stand. Without it `planGap` moves no part. */
+const dodging = (frame: PlanFrame, reserved: readonly ReservedSegment[] = [], others: readonly { low: number; high: number }[] = []): DodgeContext =>
+  ({ gap: { low: frame.low, high: frame.bandTop }, reserved: () => reserved, others: () => others });
+/** The default routed stroke every hand-built part carries, unless a test says otherwise. */
+const STROKE = 1.5;
 /** The v5-4-0 shape with `access` declared before `src` (DR-04): the canonical link order lays the spec's shape out again. */
 const V540 = 'a-tier-gap-plan-orders-every-part-middle-tier-first';
 
@@ -155,7 +170,7 @@ describe('the tier-gap plan on the four shapes of the spec (Section 2.4)', () =>
 
 /** The gap of the hand-built shapes: 248..308, flat stems (tips at 263 and 293), pitch and clearance 11.5. */
 const frame = (): PlanFrame => ({ low: 248, bandTop: 308, floor: BAND_GAP, keep: 11.5, pitch: 11.5, edge: 10.75, tips: [], lowerTips: [], obstacles: [], residual: [] });
-const part = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order,
+const part = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, stroke: STROKE,
   upper: { x: from, y: 263, kind: 'tip', source: `up${from}` }, lower: { x: to, y: 293, kind: 'tip', source: `low${to}` } });
 
 describe('the tier-gap plan on hand-built parts', () => {
@@ -505,12 +520,369 @@ describe('a held routed chord in the gap (routed-chords.md, section 8)', () => {
   });
 });
 
+describe('a held chord that ends in its gap is a wall over its extent there (dense-16x9 ticket 14, slice 1)', () => {
+  it('reads a chord that ends on a pill face inside the gap over the part it has in the gap, and a chord across the gap at the gap\'s y', async () => {
+    // sw-1 and sw-2 stand in two rows of one group; their named ports carry pills that reach into the gap, so link-2 runs from pill face to pill
+    // face inside it. link-1 crosses the gap between the edge and access bands whole.
+    const model = await layout(parse(read('a-stem-tip-stands-beyond-its-pill-text')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const gaps = tierGaps(model);
+    const held = gaps.map(gap => ({ gap, chords: heldChordsIn(model, gap) })).filter(item => item.chords.length);
+    const inside = held.find(item => item.chords.some(chord => chord.link.id === 'link-2'))!;
+    const chord = inside.chords.find(item => item.link.id === 'link-2')!, segment = chord.segment;
+    expect(chord.across).toBe(false);
+    expect(Math.min(segment.from.y, segment.to.y)).toBeGreaterThan(inside.gap.low);
+    expect(Math.max(segment.from.y, segment.to.y)).toBeLessThan(inside.gap.high);
+    // Both ends stand inside the gap, so the extent is the whole chord: `low` is the x of its upper end, `high` of its lower end.
+    const [top, bottom] = segment.from.y < segment.to.y ? [segment.from, segment.to] : [segment.to, segment.from];
+    expect([chord.low, chord.high]).toEqual([top.x, bottom.x]);
+    const across = held.flatMap(item => item.chords.filter(each => each.link.id === 'link-1').map(each => ({ gap: item.gap, chord: each })));
+    expect(across).toHaveLength(1);
+    expect(across[0]!.chord.across).toBe(true);
+  });
+
+  describe('a-middle-drop-keeps-clear-of-a-chord-that-ends-in-its-gap', () => {
+    // The geometry of the second sighting, at plan level: a gap 168.5 px high, two parts that swap their ends at x -113.72 and 113.72 (a row
+    // cycle, so one becomes a Z part), and two held chords that leave the pill faces of one node 13.5 px below the gap's low y at x -7.5 and 7.5
+    // and reach the band below at x -50.22 and 50.22. The reader gives each chord its extent in the gap, from its tip to the gap's high y, as `partial`.
+    const high = 168.5, keep = 11.5;
+    const zFrame = (chords: PlanFrame['chords']): PlanFrame => ({ low: 0, bandTop: high, floor: high, keep, pitch: keep, edge: 10.75, tips: [], lowerTips: [], obstacles: [], residual: [],
+      ...(chords !== undefined ? { chords } : {}) });
+    const end = (x: number, y: number, source: string): PlanInput['upper'] => ({ x, y, kind: 'tip', source });
+    const inputs: PlanInput[] = [
+      { id: 'P', link: 'P', order: 0, stroke: STROKE, upper: end(113.72216796875, 15, 'right|bottom'), lower: end(-113.72216796875, high - 15, 'left|top') },
+      { id: 'Q', link: 'Q', order: 1, stroke: STROKE, upper: end(-113.72216796875, 15, 'left|bottom'), lower: end(113.72216796875, high - 15, 'right|top') },
+    ];
+    const chordSegments = [
+      { from: { x: -7.5, y: 13.5 }, to: { x: -50.22216796875, y: 196 }, owner: { kind: 'link' as const, id: 'A' } },
+      { from: { x: 7.5, y: 13.5 }, to: { x: 50.22216796875, y: 188.5 }, owner: { kind: 'link' as const, id: 'B' } },
+    ];
+    const at = (segment: (typeof chordSegments)[number], y: number): number => segment.from.x + (y - segment.from.y) / (segment.to.y - segment.from.y) * (segment.to.x - segment.from.x);
+    const walls = chordSegments.map(segment => ({ low: segment.from.x, high: at(segment, high), partial: true as const }));
+    const chordsHeld = chordSegments.map((segment): ReservedSegment => ({ link: segment.owner.id, kind: 'path', stroke: STROKE, segment: { ...segment, straight: true } }));
+    const zOf = (plan: GapPlan) => plan.parts.find(item => item.shape === 'z')!;
+    const clear = (plan: GapPlan): boolean => plan.parts.every(item => plannedSegments(item, { low: 0, high }).every(segment =>
+      chordSegments.every(chord => strictCrossing(segment, chord) || segmentDistance(segment, chord) >= keep - EPS)));
+
+    it('without the walls the middle drop stands between the two chord tips, 7.5 px from each', () => {
+      const plan = planGap(inputs, zFrame(undefined));
+      expect(zOf(plan).middle).toBeCloseTo(0, 6);
+      expect(clear(plan)).toBe(false);
+    });
+
+    it('with the walls the middle drop takes the widest interval clear of both, with the same rows and no bend more', () => {
+      const before = planGap(inputs, zFrame(undefined)), plan = planGap(inputs, zFrame(walls), dodging(zFrame(walls), chordsHeld));
+      const z = zOf(plan), middle = z.middle!;
+      for (const wall of walls) expect(middle <= Math.min(wall.low, wall.high) - keep + EPS || middle >= Math.max(wall.low, wall.high) + keep - EPS).toBe(true);
+      expect(plan.residual).toEqual([]);
+      expect(z.id).toBe(zOf(before).id);
+      expect(z.rows).toEqual(zOf(before).rows);
+      expect(plannedSegments(z, { low: 0, high })).toHaveLength(plannedSegments(zOf(before), { low: 0, high }).length);
+      expect(plan.height).toBeCloseTo(before.height, 6);
+      // Every planned segment either crosses a chord strictly or keeps the run clearance from it (G6).
+      expect(clear(plan)).toBe(true);
+      expect(planGap([...inputs].reverse(), zFrame(walls), dodging(zFrame(walls), chordsHeld)).parts.find(item => item.shape === 'z')!.middle).toBeCloseTo(middle, 6);
+    });
+
+    it('reads the dodge on a saved generic model: a held chord moved to stand 7.5 px beside a Z middle drop', () => {
+      // test/fixtures/staged/a-z-middle-drop-beside-a-chord-tip.json: the published layout of a generic sheet (three rows of one group), with the
+      // paths stage 8 drew taken off, and the path of the held chord link-11 moved in x so that its upper end, at the pill-face y inside the gap, stands
+      // 7.5 px right of the middle drop of link-15 at x 537.84. The plan moves the middle drop clear of the chord's wall and keeps both rows.
+      // This is a stored-path state, not end-to-end coverage: the chord's ports and pills stay where they were, so no YAML lays this state out and no
+      // restore would accept it. It tests the seam from `heldChordsIn` to `tierGapPlan` only. It stands in for the synthetic YAML that
+      // CODING_STANDARDS.md asks for, as a documented exception: the searches of slice 1 and its two reviews found no generic sheet with this geometry.
+      const model = JSON.parse(readFileSync(new URL('../fixtures/staged/a-z-middle-drop-beside-a-chord-tip.json', import.meta.url), 'utf8')) as LayoutModel;
+      const gap = tierGaps(model).find(item => heldChordsIn(model, item).some(chord => chord.link.id === 'link-11'))!;
+      const chord = heldChordsIn(model, gap).find(item => item.link.id === 'link-11')!;
+      expect(chord.across).toBe(false);
+      const z = tierGapPlan(model, gap).parts.find(item => item.link === 'link-15')!;
+      expect(z.shape).toBe('z');
+      expect(z.rows[0]).toBeCloseTo(451.75, 6);
+      expect(z.rows[1]).toBeCloseTo(497.75, 6);
+      expect(z.middle!).toBeLessThanOrEqual(Math.min(chord.low, chord.high) - nudgingDistance(model) + EPS);
+    });
+  });
+
+  describe('the dodge keeps every reservation of the plan (review 1 of slice 1)', () => {
+    // Plan states of the review (design/14a-review-1.md), generic: upper tips at y 15, `keep` 11.5. Each part has its own sources.
+    const reviewFrame = (bandTop: number): PlanFrame => ({ low: 0, bandTop, floor: 60, keep: 11.5, pitch: 11.5, edge: 10.75, tips: [], lowerTips: [], obstacles: [], residual: [] });
+    const parts = (lowerY: number, spans: readonly (readonly [string, number, number])[]): PlanInput[] => spans.map(([id, from, to], order) => ({ id, link: id, order, stroke: STROKE,
+      upper: { x: from, y: 15, kind: 'tip', source: `${id}u` }, lower: { x: to, y: lowerY, kind: 'tip', source: `${id}l` } }));
+    const shape = (plan: GapPlan) => ({ height: plan.height, growth: plan.growth, residual: plan.residual.map(item => item.id),
+      parts: plan.parts.map(item => [item.id, item.shape, item.rows, item.middle, item.stand]) });
+
+    it('takes no dodge that splits a second part into a Z (two bends more): the plan stays as before the wall', () => {
+      // Only E is a Z, at x 164. Its every clear x would make C a Z too and raise the height from 87.5 to 110.5.
+      const inputs = parts(185, [['A', 130, 58], ['B', 150, 20], ['C', 10, 178], ['D', 80, 192], ['E', 188, 72]]);
+      const before = planGap(inputs, reviewFrame(200));
+      expect(before.parts.filter(item => item.shape === 'z').map(item => item.id)).toEqual(['E']);
+      const plan = planGap(inputs, { ...reviewFrame(200), chords: [{ low: 150, high: 180, partial: true }] }, dodging(reviewFrame(200), [line(150, 180, 0, 200)]));
+      expect(shape(plan)).toEqual(shape(before));
+    });
+
+    it('takes no dodge that grows the gap', () => {
+      // C's middle at x 90 stands in the wall (58.5 to 131.5); the clear x 155 would raise the height from 64.5 to 76, a growth of 6 px.
+      const inputs = parts(55, [['A', 130, 20], ['B', 180, 50], ['C', 10, 180]]);
+      const before = planGap(inputs, reviewFrame(70));
+      const plan = planGap(inputs, { ...reviewFrame(70), chords: [{ low: 120, high: 70, partial: true }] }, dodging(reviewFrame(70), [line(120, 70, 0, 70)]));
+      expect(shape(plan)).toEqual(shape(before));
+      expect(plan.growth).toBeCloseTo(0, 6);
+    });
+
+    it('keeps the Z part planned where no x is clear of the wall: the wall never makes a part residual', () => {
+      // A and B swap their ends at x 0 and 100: B is a Z at x 50, and a wall over 0 to 100 leaves no clear x. B keeps its seat for the 7f retry.
+      const inputs = parts(85, [['A', 0, 100], ['B', 100, 0]]);
+      const before = planGap(inputs, reviewFrame(100));
+      const plan = planGap(inputs, { ...reviewFrame(100), chords: [{ low: 0, high: 100, partial: true }] }, dodging(reviewFrame(100), [line(0, 100, 0, 100)]));
+      expect(plan.residual).toEqual([]);
+      expect(shape(plan)).toEqual(shape(before));
+      expect(plan.parts.find(item => item.id === 'B')!.middle).toBeCloseTo(50, 6);
+    });
+
+    it('takes no stand of a jogged drop that adds a G6 pair the crowded entries do not name (review 2)', () => {
+      // D (x 100 to 106) clashes with P, so `crowded` names D/P. On its lower x D's long vertical would stand 11 px from Q's upper leg at x 117, 9.5 px
+      // after the two strokes: a new G6 pair hidden behind the old entry. The drop keeps its upper x.
+      const inputs = parts(285, [['P', 95, 40], ['D', 100, 106], ['Q', 117, 160]]);
+      inputs[2]!.upper.y = 50;
+      const tall: PlanFrame = { ...reviewFrame(300), floor: 200, obstacles: [{ x0: 117, x1: 160, anchor: 'above', bound: 80 }] };
+      const before = planGap(inputs, tall);
+      expect(before.crowded.map(item => [item.id, item.with].sort().join('/'))).toEqual(['D/P']);
+      const plan = planGap(inputs, { ...tall, chords: [{ low: 90, high: 85, partial: true }] }, dodging(tall, [line(90, 85, 0, 300)]));
+      expect(shape(plan)).toEqual(shape(before));
+    });
+
+    describe('reads each pair at its links\' own strokes, as the scorer does (review 3)', () => {
+      // keep 14: some other routed link is 4 px wide. D (x 100 to 106) would stand 7 px from Q's upper leg at x 113 (y 50 to 80) on its lower x; on
+      // its upper x it stands 13 px from it. P's upper end at x 95 crowds D on either x, so `crowded` names D/P in both plans.
+      const mixed = (d: number, q: number): { inputs: PlanInput[]; frame: PlanFrame } => {
+        const inputs = parts(285, [['P', 95, 40], ['D', 100, 106], ['Q', 113, 160]]);
+        inputs[1] = { ...inputs[1]!, stroke: d };
+        inputs[2] = { ...inputs[2]!, stroke: q, upper: { ...inputs[2]!.upper, y: 50 } };
+        return { inputs, frame: { ...reviewFrame(300), keep: 14, pitch: 14, edge: 12, floor: 200, obstacles: [{ x0: 113, x1: 160, anchor: 'above', bound: 80 }] } };
+      };
+      // The chord leaves a pill face 40 px below the gap's low y at x 90 and reaches the band below at x 85.
+      const wall = [{ low: 90, high: 85, partial: true as const }], chord = [line(90, 85, 40, 300)];
+
+      it('refuses a dodge that makes a real G6 finding of two thin parts, where the widest stroke saw one before and after', () => {
+        // 1.5 px each: 11.5 px of clearance before, 5.5 px after.
+        const { inputs, frame: thin } = mixed(1.5, 1.5);
+        const before = planGap(inputs, thin);
+        expect(shape(planGap(inputs, { ...thin, chords: wall }, dodging(thin, chord)))).toEqual(shape(before));
+      });
+
+      it('refuses it when the moved part is thicker than its neighbour', () => {
+        // D 4 px, Q 1.5 px: 10.25 px before, 4.25 px after.
+        const { inputs, frame: thick } = mixed(4, 1.5);
+        const before = planGap(inputs, thick);
+        expect(shape(planGap(inputs, { ...thick, chords: wall }, dodging(thick, chord)))).toEqual(shape(before));
+      });
+
+      it('refuses a dodge that keeps the count of a pair\'s findings but makes its clearance worse', () => {
+        // D and Q 4 px each: 9 px before (one finding), 3 px after (one finding).
+        const { inputs, frame: both } = mixed(4, 4);
+        const before = planGap(inputs, both);
+        expect(shape(planGap(inputs, { ...both, chords: wall }, dodging(both, chord)))).toEqual(shape(before));
+      });
+
+      it('still takes the dodge where nothing stands beside the clear end', () => {
+        const { inputs, frame: free } = mixed(1.5, 1.5);
+        const away = inputs.map(item => item.id === 'Q' ? { ...item, upper: { ...item.upper, x: 140 } } : item);
+        expect(planGap(away, { ...free, obstacles: [{ x0: 140, x1: 160, anchor: 'above', bound: 80 }], chords: wall }, dodging(free, chord)).parts.find(item => item.id === 'D')!.stand).toBe('lower');
+      });
+    });
+
+    describe('reads every segment reserved before routing (reviews 4 and 5)', () => {
+      // keep 14 (some other routed link is 4 px wide), 1.5 px parts. The chord leaves a pill face 40 px below the gap's low y at x 90 and reaches the band
+      // below at x 85: its wall (76 to 104) holds D's upper x 100 and not its lower x 106. The context hands the dodge what `reservedSegments` reads.
+      const stemFrame: PlanFrame = { low: 0, bandTop: 300, floor: 200, keep: 14, pitch: 14, edge: 12, tips: [], lowerTips: [], obstacles: [], residual: [] };
+      const wall = { ...stemFrame, chords: [{ low: 90, high: 85, partial: true as const }] }, chord = line(90, 85, 40, 300);
+      const drop: PlanInput = { id: 'D', link: 'D', order: 1, stroke: STROKE, upper: { x: 100, y: 15, kind: 'tip', source: 'Du' }, lower: { x: 106, y: 285, kind: 'tip', source: 'Dl' } };
+      const standOf = (plan: GapPlan): string | undefined => plan.parts.find(item => item.id === 'D')!.stand;
+
+      it('refuses a stand beside the upper stem of a planned part that the plan pieces do not show', () => {
+        // Q's port face is at y 0 and its tip at y 50: its stem is x 113, y 0 to 50, and its row lies on the tip. On x 106 D's long vertical (from the jog
+        // at y 28) would stand 7 px from it, 5.5 px after the strokes. The tip-to-tip pieces of Q hold no vertical there; the reader holds its stem.
+        const q: PlanInput = { id: 'Q', link: 'Q', order: 0, stroke: STROKE, upper: { x: 113, y: 50, kind: 'tip', source: 'Qu' }, lower: { x: 160, y: 285, kind: 'tip', source: 'Ql' } };
+        const before = planGap([q, drop], stemFrame);
+        expect(standOf(before)).toBe('upper');
+        expect(shape(planGap([q, drop], wall, dodging(stemFrame, [chord, held('Q', 'stem', { x: 113, y: 0 }, { x: 113, y: 50 })])))).toEqual(shape(before));
+        // With Q's port face on its tip (no stem), nothing stands beside x 106 and the drop moves.
+        expect(standOf(planGap([q, drop], wall, dodging(stemFrame, [chord])))).toBe('lower');
+      });
+
+      it('refuses a stand beside the stem of a port outside the plan', () => {
+        const stem = held('F', 'stem', { x: 113, y: 0 }, { x: 113, y: 50 });
+        const before = planGap([drop], { ...stemFrame, tips: [{ x: 113, y: 50 }] });
+        expect(standOf(before)).toBe('upper');
+        expect(shape(planGap([drop], { ...wall, tips: [{ x: 113, y: 50 }] }, dodging(stemFrame, [chord, stem])))).toEqual(shape(before));
+        expect(standOf(planGap([drop], { ...wall, tips: [{ x: 113, y: 50 }] }, dodging(stemFrame, [chord])))).toBe('lower');
+      });
+
+      it('takes no middle x beside the lower-end stem of a port outside the plan', () => {
+        // B is a Z part. The chord's wall (116.5 to 151.5) holds its middle drop; the widest clear x, 95, stands 7 px from a nested lower stem at x 88 that
+        // rises from the port face at y 300 to its tip at y 70, over the y of the middle drop. The next clear x is taken.
+        const inputs = parts(285, [['A', 210, 10], ['B', 10, 210], ['C', 10, 50], ['D', 40, 60], ['E', 0, 40]]);
+        const frame300: PlanFrame = { ...reviewFrame(300), lowerTips: [{ x: 88, y: 70 }], chords: [{ low: 140, high: 130, partial: true as const }] };
+        const lower = held('F', 'stem', { x: 88, y: 300 }, { x: 88, y: 70 });
+        const plan = planGap(inputs, frame300, dodging(frame300, [line(140, 130, 40, 300), lower]));
+        const z = plan.parts.find(item => item.id === 'B')!;
+        expect(z.shape).toBe('z');
+        for (const segment of plannedSegments(z, { low: 0, high: 300 })) {
+          expect(strictCrossing(segment, lower.segment) || segmentDistance(segment, lower.segment) - STROKE >= 10 - EPS, JSON.stringify(segment)).toBe(true);
+        }
+        // Without the stem the middle drop takes x 95.
+        expect(planGap(inputs, frame300, dodging(frame300, [line(140, 130, 40, 300)])).parts.find(item => item.id === 'B')!.middle).toBeCloseTo(95, 6);
+      });
+
+      it('refuses a stand beside a shared junction stem the router stitches back (review 5)', () => {
+        // The reviewer's state: a junction's shared stem of link Q at x 113, y 0 to 50 (a branch released at the freeze keeps it as a shared run). On x 106
+        // D's long vertical stands 7 px from it, 5.5 px after the strokes. On 0830b2aa the hand-made list held no shared run, and the drop moved.
+        const shared = held('Q', 'shared', { x: 113, y: 0 }, { x: 113, y: 50 });
+        const before = planGap([drop], stemFrame);
+        expect(standOf(before)).toBe('upper');
+        expect(shape(planGap([drop], wall, dodging(stemFrame, [chord, shared])))).toEqual(shape(before));
+        // The junction's other runs (a lane, a leg, a stored path of another link) are read alike: every reserved kind is one entry.
+        for (const kind of ['lane', 'leg', 'path', 'mouth'] as const) expect(standOf(planGap([drop], wall, dodging(stemFrame, [chord, { ...shared, kind }])))).toBe('upper');
+        // A shared run of D's own link is D's own geometry, not a neighbour: the drop moves.
+        expect(standOf(planGap([drop], wall, dodging(stemFrame, [chord, { ...shared, link: 'D' }])))).toBe('lower');
+      });
+
+      it('moves nothing without a context: no reader, no dodge (R6)', () => {
+        expect(shape(planGap([drop], wall))).toEqual(shape(planGap([drop], stemFrame)));
+      });
+    });
+
+    it('takes no middle x that adds a crossing between planned parts: the next clear x, or the seat of today (review 2)', () => {
+      // E's middle drop (x 166.5) stands in the wall 118.5 to 171.5. The x 195.5 would pass B's middle drop at x 181: crossings 7 to 9.
+      const inputs = parts(285, [['A', 152, 210], ['B', 220, 142], ['C', 30, 240], ['D', 140, 30], ['E', 240, 100]]);
+      const gap = { low: 0, high: 300 };
+      const crossings = (plan: GapPlan): number => plan.parts.reduce((sum, a, index) => sum + plan.parts.slice(index + 1).reduce((inner, b) =>
+        inner + plannedSegments(a, gap).reduce((n, x) => n + plannedSegments(b, gap).filter(y => strictCrossing(x, y)).length, 0), 0), 0);
+      const before = planGap(inputs, reviewFrame(300));
+      const plan = planGap(inputs, { ...reviewFrame(300), chords: [{ low: 130, high: 160, partial: true }] }, dodging(reviewFrame(300), [line(130, 160, 0, 300)]));
+      expect(crossings(before)).toBe(7);
+      expect(crossings(plan)).toBeLessThanOrEqual(crossings(before));
+      expect(plan.parts.find(item => item.id === 'E')!.middle).not.toBeCloseTo(195.5, 3);
+      expect(plan.parts.map(item => [item.id, item.shape, item.rows])).toEqual(before.parts.map(item => [item.id, item.shape, item.rows]));
+    });
+
+    it('takes no stand of a jogged drop that moves the row of another part', () => {
+      // The drop D (x 100 to 106) on its lower x would push S's row from 26.5 to 38: the drop keeps its upper x in the wall.
+      const inputs = parts(45, [['D', 100, 106], ['S', 40, 160]]);
+      const before = planGap(inputs, reviewFrame(60));
+      const plan = planGap(inputs, { ...reviewFrame(60), chords: [{ low: 90, high: 85, partial: true }] }, dodging(reviewFrame(60), [line(90, 85, 0, 60)]));
+      expect(shape(plan)).toEqual(shape(before));
+    });
+  });
+
+  describe('a-jogged-drop-takes-the-end-clear-of-a-chord', () => {
+    // A drop from x 100 down to x 106 (closer than `keep`, so jogged). Its long vertical stands on the upper x by default.
+    const drop = (order = 0): PlanInput => ({ ...part('D', order, 100, 106) });
+    const standOf = (plan: GapPlan): string | undefined => plan.parts.find(item => item.id === 'D')!.stand;
+
+    it('stands on the upper x with no chord, and on the lower x when only the lower x is clear of a chord wall', () => {
+      expect(standOf(planGap([drop()], frame()))).toBe('upper');
+      // A chord from x 90 at the low y to x 85 at the high y: its wall is 73.5 to 101.5, so x 100 is in it and x 106 is clear.
+      for (const chord of [{ low: 90, high: 85, partial: true as const }, { low: 90, high: 85 }]) {
+        const plan = planGap([drop()], { ...frame(), chords: [chord] }, dodging(frame(), [line(90, 85, 248, 308)]));
+        expect(standOf(plan)).toBe('lower');
+        // The long vertical (the jog stands one clearance below the upper tip) is on x 106.
+        const length = (segment: { from: { y: number }; to: { y: number } }): number => Math.abs(segment.to.y - segment.from.y);
+        const vertical = plannedSegments(plan.parts[0]!, { low: 248, high: 308 }).filter(segment => Math.abs(segment.from.x - segment.to.x) < EPS)
+          .reduce((a, b) => (length(b) > length(a) ? b : a));
+        expect(vertical.from.x).toBeCloseTo(106, 6);
+      }
+    });
+
+    it('keeps the upper x when both ends, or the lower end only, stand in a wall', () => {
+      expect(standOf(planGap([drop()], { ...frame(), chords: [{ low: 100, high: 110, partial: true }] }, dodging(frame(), [line(100, 110, 248, 308)])))).toBe('upper');
+      expect(standOf(planGap([drop()], { ...frame(), chords: [{ low: 115, high: 118, partial: true }] }, dodging(frame(), [line(115, 118, 248, 308)])))).toBe('upper');
+    });
+
+    it('keeps the stand a clash chose when the clear end would add a crowded finding, in either order of the parts', () => {
+      // Q's lower leg stands 8 px from the drop's upper x: the drop moves to its lower x (14 px from Q).
+      for (const [d, q] of [[0, 1], [1, 0]] as const) {
+        const parts = [drop(d), { ...part('Q', q, 40, 92) }];
+        const free = planGap(parts, frame());
+        expect(standOf(free)).toBe('lower');
+        expect(free.crowded).toEqual([]);
+        // A chord at x 115 to 118 puts x 106 in its wall (103.5 to 129.5). Back on x 100 the clash with Q would be a finding: the drop stays.
+        const walled = planGap(parts, { ...frame(), chords: [{ low: 115, high: 118, partial: true }] }, dodging(frame(), [line(115, 118, 248, 308)]));
+        expect(standOf(walled)).toBe('lower');
+        expect(walled.crowded).toEqual([]);
+      }
+    });
+  });
+});
+
+describe('the dodge reads all reserved geometry, uncropped, on the links the scorer counts (dense-16x9 ticket 14, review 6)', () => {
+  // keep 14 (a 4 px routed link elsewhere), 1.5 px parts. The chord C leaves a pill face at (87, 40) and reaches the band below at x 85: its wall
+  // (71 to 101) holds D's upper x 100 and not its lower x 106.
+  const frame6: PlanFrame = { low: 0, bandTop: 300, floor: 200, keep: 14, pitch: 14, edge: 12, tips: [], lowerTips: [], obstacles: [], residual: [],
+    chords: [{ low: 87, high: 85, partial: true }] };
+  const gap = { low: 0, high: 300 };
+  const drop = (lowerY: number): PlanInput => ({ id: 'D', link: 'D', order: 0, stroke: STROKE, upper: { x: 100, y: 15, kind: 'tip', source: 'Du' }, lower: { x: 106, y: lowerY, kind: 'tip', source: 'Dl' } });
+  const pathOf = (id: string, segments: PathSegment[], layer = 'routed', strokeWidth = STROKE) => ({ id, layer, strokeWidth, path: { segments } });
+  const run = (id: string, from: { x: number; y: number }, to: { x: number; y: number }, straight = false): PathSegment =>
+    ({ from, to, owner: { kind: 'link', id }, ...(straight ? { straight: true } : {}) });
+  const chord = pathOf('C', [run('C', { x: 87, y: 40 }, { x: 85, y: 300 }, true)]), wide = pathOf('wide', [], 'routed', 4);
+  const modelOf = (...links: object[]): LayoutModel => ({ links: [...links, chord, wide], bundles: [], junctions: [] }) as unknown as LayoutModel;
+  const contextOf = (model: LayoutModel, others: readonly { low: number; high: number }[] = []): DodgeContext => ({ gap, reserved: () => reservedSegments(model), others: () => others });
+  const standOf = (plan: GapPlan): string | undefined => plan.parts[0]!.stand;
+
+  it('reads a reserved segment beside a moved part whose tip stands beyond the gap (the off-boundary tip)', () => {
+    // D's lower tip stands at y 400, inside the band below (a top port face at y 415). On x 106 its vertical would pass Q's reserved run at x 113,
+    // y 350 to 380, 5.5 px after the strokes. 93948c09 cropped the reader to the gap's y-range and k, so Q was not read and D moved.
+    const q = pathOf('Q', [run('Q', { x: 113, y: 350 }, { x: 113, y: 380 })]), model = modelOf(q);
+    expect(reservedSegments(model).map(entry => entry.link).sort()).toEqual(['C', 'Q']);
+    expect(standOf(planGap([drop(400)], frame6))).toBe('upper');
+    expect(standOf(planGap([drop(400)], frame6, contextOf(model)))).toBe('upper');
+    // With Q away from the drop, the dodge moves it.
+    expect(standOf(planGap([drop(400)], frame6, contextOf(modelOf(pathOf('Q', [run('Q', { x: 160, y: 350 }, { x: 160, y: 380 })])))))).toBe('lower');
+  });
+
+  it('moves no part within keep of where another gap\'s planned parts can stand: they are reserved, but not readable here', () => {
+    expect(standOf(planGap([drop(400)], frame6, contextOf(modelOf(), [{ low: 410, high: 600 }])))).toBe('upper');
+    expect(standOf(planGap([drop(400)], frame6, contextOf(modelOf(), [{ low: 420, high: 600 }])))).toBe('lower');
+  });
+
+  it('takes no credit for a crossing or finding the gate does not count: a stored overlay path is no reserved segment', () => {
+    // The reviewer's state: on x 100 D crosses the overlay run O (98 to 102 at y 100); on x 106 it would cross the routed run Q (104 to 108). The
+    // overlay crossing is no G6 or crossing reading, so trading it for a routed crossing is a crossing more.
+    const flat = (id: string, x0: number, x1: number, layer: string) => pathOf(id, [run(id, { x: x0, y: 100 }, { x: x1, y: 100 })], layer);
+    const q = flat('Q', 104, 108, 'routed'), o = flat('O', 98, 102, 'overlay'), model = modelOf(q, o);
+    expect(reservedSegments(model).map(entry => entry.link).sort()).toEqual(['C', 'Q']);
+    const before = planGap([drop(285)], frame6), after = planGap([drop(285)], frame6, contextOf(model));
+    const routedCrossings = (plan: GapPlan): number => plannedSegments(plan.parts[0]!, gap).filter(segment => strictCrossing(segment, q.path.segments[0]!)).length;
+    expect(standOf(before)).toBe('upper');
+    expect(routedCrossings(after)).toBeLessThanOrEqual(routedCrossings(before));
+    expect(standOf(after)).toBe('upper');
+  });
+
+  it('reads a row-gap leg as placement plans it (`legReservation` on a-restored-route-keeps-its-planned-row-and-leg)', async () => {
+    // The corpus holds no leg within keep of a tier gap, so the plan state is built around the real leg: link-2 jogs in the row gap between a and b.
+    const model = preRoute(await layout(parse(read('a-restored-route-keeps-its-planned-row-and-leg')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
+    const leg = legReservation(model, model.links.find(link => link.id === 'link-2')!)!;
+    expect(reservedSegments(model).filter(entry => entry.kind === 'leg' && entry.link === 'link-2').map(entry => entry.segment)).toEqual([leg]);
+    const x = leg.from.x, top = Math.min(leg.from.y, leg.to.y), bottom = Math.max(leg.from.y, leg.to.y);
+    // A jogged drop from x - 13 to x - 7 over the leg's y-range: on its lower x its vertical stands 7 px from the leg, 5.5 px after the strokes; on
+    // its upper x the short lower vertical ends 13.5 px below the leg.
+    // A chord from x - 23 to x - 25 walls its upper x and not its lower x.
+    const legFrame: PlanFrame = { low: top - 40, bandTop: bottom + 40, floor: 60, keep: 11.5, pitch: 11.5, edge: 10.75, tips: [], lowerTips: [], obstacles: [], residual: [],
+      chords: [{ low: x - 23, high: x - 25, partial: true }] };
+    const part: PlanInput = { id: 'D', link: 'D', order: 0, stroke: STROKE, upper: { x: x - 13, y: top - 25, kind: 'tip', source: 'Du' }, lower: { x: x - 7, y: bottom + 25, kind: 'tip', source: 'Dl' } };
+    const legContext = (reserved: readonly ReservedSegment[]): DodgeContext => ({ gap: { low: legFrame.low, high: legFrame.bandTop }, reserved: () => reserved, others: () => [] });
+    const entry: ReservedSegment = { link: 'link-2', segment: leg, stroke: STROKE, kind: 'leg' };
+    expect(standOf(planGap([part], legFrame, legContext([])))).toBe('lower');
+    expect(standOf(planGap([part], legFrame, legContext([entry])))).toBe('upper');
+  });
+});
+
 describe('the U part (ticket 15, phase 5)', () => {
   // Both ends of a U part stand on the gap's low boundary (a bottom port's tip and the mouth of a column-gap lane). The plan gives it one row below both
   // ends and two legs that run down to it; it has no lower leg, so it asks for `keep` above the band below and nothing more.
   const tip = (x: number): PlanInput['upper'] => ({ x, y: 250, kind: 'tip', source: `t${x}` });
   const mouth = (x: number): PlanInput['upper'] => ({ x, y: 248 + 15, kind: 'mouth', source: `lane|${x}|low` });
-  const u = (id: string, order: number, from: PlanInput['upper'], to: PlanInput['upper']): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true, upper: from, lower: to, u: 'low' });
+  const u = (id: string, order: number, from: PlanInput['upper'], to: PlanInput['upper']): PlanInput => ({ id, link: id, order, stroke: STROKE, index: 0, upperFirst: true, upper: from, lower: to, u: 'low' });
 
   it('plans one row below both ends and no lower leg', () => {
     const plan = planGap([u('U', 0, tip(60), mouth(200))], frame());
@@ -561,8 +933,8 @@ describe('the high U part (dense-16x9 ticket 06)', () => {
   // Both ends of a high U part stand on the gap's high boundary (the stems of two top ports, 13 px above the band below at y 308). The plan gives it one row
   // above both tips, hung just above them and not at the top of the gap, and two legs that rise to it.
   const tip = (x: number, y = 295): PlanInput['upper'] => ({ x, y, kind: 'tip', source: `n${x}|top|${x}` });
-  const high = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true, upper: tip(from), lower: tip(to), u: 'high' });
-  const low = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, index: 0, upperFirst: true,
+  const high = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, stroke: STROKE, index: 0, upperFirst: true, upper: tip(from), lower: tip(to), u: 'high' });
+  const low = (id: string, order: number, from: number, to: number): PlanInput => ({ id, link: id, order, stroke: STROKE, index: 0, upperFirst: true,
     upper: { x: from, y: 262, kind: 'tip', source: `m${from}|bottom|${from}` }, lower: { x: to, y: 262, kind: 'tip', source: `m${to}|bottom|${to}` }, u: 'low' });
   const row = (plan: GapPlan, id: string): number => plan.parts.find(item => item.id === id)!.rows[0]!;
 
