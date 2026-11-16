@@ -13,7 +13,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 /**
  * Dense-16x9 ticket 06, slice B: a sibling-frame link is a level cross-frame chord. Two frames of one document tier stand on one sub-tier; a routed link between
  * a `right` face and the `left` face that looks at it is a chord candidate of kind `cross`, with no `2x` length limit, at any angle, judged by the foreign
- * frames and the facing edges like a chord between two tiers. Nothing yet seats the two ends at the facing ends of their rows (slice C); the fixture does.
+ * frames and the facing edges like a chord between two tiers. Stage 4 seats the two ends at the facing ends of their rows (slice C, `sibling-rows.test.ts`); the fixture already stands them there.
  */
 const NAME = 'two-sibling-frames-face-a-same-tier-pair';
 const text = readFileSync(new URL(`../../goldens/synthetic/${NAME}.yaml`, import.meta.url), 'utf8');

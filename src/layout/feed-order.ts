@@ -4,6 +4,7 @@ import { groupShape } from './grid.js';
 import { besideRows, tierRange } from './columns.js';
 import { withdrawPullsAcrossFlips } from './corridor-order.js';
 import { reseatRow } from './overlay-order.js';
+import { siblingSeatOrder } from './sibling-frames.js';
 import { placementWarning } from './regions.js';
 import { cellTier } from './read/tier.js';
 import { groupOrderFailure, ofKind, reservation, rowOrderFailure, type Reservation, type ReservationOf, type RowFeed } from './reservations.js';
@@ -225,7 +226,8 @@ function reader(model: LayoutModel) {
       const blockKeys = keysOf(blocks.map(block => ({ id: block[0]!, top: cell.tier!, nodes: block })))!.keys;
       if (!decided(blockKeys) && !blocks.some(block => decided(new Map(block.map(node => [node, keys.get(node)]))))) return undefined;
       const inner = new Map(blocks.map(block => [block[0]!, slotSort(block, keys, byKey)]));
-      return { order: slotSort(blocks.map(block => block[0]!), blockKeys, byKey).flatMap(head => inner.get(head)!), feeds: [read.feed] };
+      // A cell that stage 4 seated for its sibling-frame links keeps its seat: the feeds order the members between the two seated blocks (dense-16x9 ticket 06).
+      return { order: siblingSeatOrder(model, cell.id, slotSort(blocks.map(block => block[0]!), blockKeys, byKey).flatMap(head => inner.get(head)!)), feeds: [read.feed] };
     },
     frame: (id: string): Decision | undefined => {
       const tierOf = (cell: string): number => cellTier(model, cell);

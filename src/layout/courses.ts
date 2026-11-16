@@ -31,8 +31,8 @@ export const isCourseLane = (lane: Lane): boolean => lane.kind === 'gap' || lane
 const lateral = (side: Side): boolean => side === 'left' || side === 'right';
 const samePort = (a: PortRef, b: PortRef): boolean => a.node === b.node && a.ordinal === b.ordinal && (a.name ?? null) === (b.name ?? null) && (a.anonymous === true) === (b.anonymous === true);
 
-/** The number of link ends that stand on a port. */
-function linksAt(model: LayoutModel, ref: PortRef): number {
+/** The number of link ends that stand on a port: the one reader of a shared port for a course (a u-turn end owns its port). */
+export function linksAt(model: LayoutModel, ref: PortRef): number {
   let count = 0;
   for (const link of model.links) for (const end of [link.attachments?.from, link.attachments?.to]) if (end !== undefined && samePort(end, ref)) count++;
   return count;

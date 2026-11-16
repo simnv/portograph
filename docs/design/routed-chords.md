@@ -632,7 +632,7 @@ Ticket 85 owns cap-limited geometry, side entry and the sheaf rule, plus broader
 
 A **sibling-frame link** joins two members of two frames of one document tier, in un-flanked `row` cells on one sub-tier (`CONTEXT.md`). On facing
 lateral faces, `right` on the node that stands left and `left` on the node that stands right, it is a cross-frame chord candidate of kind `cross`
-(`chordKindOf`, `siblingFrameKind`). The two faces face one another on one sub-tier, so Section 3 items 3 and 4 read as follows for it: the document tiers
+(`chordKindOf`; `siblingFrameLink` is the topology predicate it shares with the seat of slice C). The two faces face one another on one sub-tier, so Section 3 items 3 and 4 read as follows for it: the document tiers
 are equal, the sub-tiers are equal, and the lateral sides are opposite. Items 1 and 2 hold as before. `levelCrossChord` is the one predicate for "this
 `cross` chord stands on one sub-tier": the verdict and the rows rule both ask it (R1).
 
@@ -642,8 +642,9 @@ are equal, the sub-tiers are equal, and the lateral sides are opposite. Items 1 
   2026-11-03).
 - **Rows rule.** `expectedRowPath` does not pin the level path (`expectedLevelPath`) for such a link: that path has the `2x` length limit, which binds a level
   pair inside one frame. The frame rule (`expectedFramePath`) reads the chord and freezes it at the start of 7f with the other chords.
-- **Not built here.** Nothing yet seats the two ends at the facing ends of their rows, or plans a U for a second pair (slices C): a link whose body stands on
-  the line keeps the orthogonal route and names `ROUTED_CHORD_REFUSED` (`body`).
+- **Seated in stage 4 (slice C).** Stage 4 seats the two ends at the facing ends of their rows and nests a second pair, which takes a planned U
+  (`siblingRows`, `docs/design/pipeline.md`, stage 4 and stage 5). A link whose body still stands on the line (a pair set the seat declined) keeps the
+  orthogonal route and names `ROUTED_CHORD_REFUSED` (`body`).
 - **The level relation is held after the freeze (slice B review 1).** `freezeChords` records the held level chords that stand level (`frozenLevelChords`, a subset of
   `frozenChords`; R1). `blockedChords`, the one predicate behind `chordsHold`, names a recorded level chord that is not level any more, so a guarded move that would tilt
   it is refused like a move that puts a body on it. The one forced writer that shifts a single frame's row, the top padding growth of `reserveAcrossRunRoom` (a label

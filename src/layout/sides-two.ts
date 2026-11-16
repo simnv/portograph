@@ -13,6 +13,7 @@ import { sizeNodes } from './size.js';
 import { bandGap, nodeGap, portId, SKELETON_SPACING as spacing } from './skeleton-graph.js';
 import { moveGroup, stackBands } from './skeleton-geometry.js';
 import { besideGap, separateFrameColumns } from './columns.js';
+import { planSiblingUTurns } from './sibling-frames.js';
 import { deriveFrames } from './frames.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { SideHintRefusal } from './placement-refusal.js';
@@ -948,6 +949,9 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
     if (natural !== 'top' && natural !== 'bottom') throw new SideHintRefusal(`Side hint on ${id}.${port.ref.name ?? '#'}${port.ref.ordinal} refused: its natural side is ${natural}`);
     port.naturalSide = natural;
   }
+  // The outer pairs of each sibling row (dense-16x9 ticket 06, slice C) leave one horizontal face for a U part of its tier gap: their ports move to that face
+  // here, on voted sides and before the nodes are sized, so `sizeNodes` sizes the face and 7a plans the row.
+  planSiblingUTurns(model);
   // The bus edge is read after the routed sides are settled (a shared port recomputes its majority), within the span
   // the skeleton order gives, and before stage 5 resizes the nodes and repacks the rows.
   // A trunk join reads the side of its trunk first: its bars take the edge that fewer legs cross over their extended spans (mesh-bus.md, section 12.4).

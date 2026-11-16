@@ -7,7 +7,8 @@ import { PlacementRefusal } from './placement-refusal.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
 import { orderByOverlay, orderFramesByOverlay } from './overlay-order.js';
 import { orderByCorridors, validateRowOrderDecisions } from './corridor-order.js';
-import { orderByFeeds, settlePullsAndFeeds, validateFeedOrders, withdrawBrokenGroupOrders } from './feed-order.js';
+import { orderByFeeds, refreshFeedOrders, settlePullsAndFeeds, validateFeedOrders, withdrawBrokenGroupOrders } from './feed-order.js';
+import { seatSiblingFrameEnds, siblingRowsFault } from './sibling-frames.js';
 import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
 export { buildSkeletonGraph } from './skeleton-graph.js';
 export { validateSkeletonBands } from './skeleton-geometry.js';
@@ -95,9 +96,18 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
     // free row that may feed a cell, so the feed orders are read again, and a re-seated cell may move the far node of another pull: the
     // two repeat until no pull is withdrawn (ticket 25 re-check).
     settlePullsAndFeeds(work);
+    // The ends of the sibling-frame links stand at the facing ends of their rows, and two or more pairs nest (dense-16x9 ticket 06, slice C): decided once the frame
+    // order has settled, recorded in `siblingRows`. A seated cell may feed a cell below it, so the feed orders are read again; the refresh keeps every seat.
+    if (seatSiblingFrameEnds(work)) {
+      rebuildBands(work, true);
+      refreshFeedOrders(work);
+      settlePullsAndFeeds(work);
+      rebuildBands(work, true);
+    }
     // A group order of the joint order (ticket 72) that the frame order broke is withdrawn by name before the check (R6).
     withdrawBrokenGroupOrders(work);
-    const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work), ...validateFeedOrders(work)];
+    const sibling = siblingRowsFault(work);
+    const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work), ...validateFeedOrders(work), ...(sibling === undefined ? [] : [`The sibling rows do not hold: ${sibling}`])];
     if (errors.length) throw new SkeletonError(errors.join('; '));
     work.stage = 'skeleton';
     work.runtime.stages.push({ stage: 'skeleton', durationMs: clock.now() - started });
