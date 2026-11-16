@@ -1826,7 +1826,13 @@ and its followers are walls. One judge reads every move after the freeze: `block
 - It reads `blockReservationFaults` where the move begins and where it ends. For each member these are all its faults: the faces, the
   block pitch of each port, the clearance of each box, the reserved gap and the reserved angle; for each follower, its alignment. A
   straight member of a flat block reads the floor angle and the box clearance (side exit allowed) on its drawn chord instead, as its
-  admission does (`flatMemberRefusal`). Each fault has a measure of how short it is (px, or degrees for the angle).
+  admission does (`flatMemberRefusal`). Each fault has a measure of how short it is, in px; the angle is read as the height the chord
+  lacks.
+- The angle, the floor and the box clearance hold within `BLOCK_TOLERANCE`, 0.01 px. The validator, the judge of a move and the judge of
+  a step read this one constant; `EPS` stays a float compare. Why 0.01 px: the block is reserved at exactly its demand, and the 7c passes
+  after the freeze are an iterative solve. Their residue moves one end of a member by 0.001 to 0.004 px, which left the ticket 31
+  synthetic 1.5e-4 to 2.4e-3 px of height short of 34 degrees. A drawn constraint cannot be held tighter than the residue of the solve
+  that runs after it; 0.01 px is about 4 times the largest dip measured, and invisible in the drawing.
 - It refuses a move that adds a fault: a new key, or a new constraint on a key that had a fault.
 - It refuses a move that takes a fault that stood further from its reservation (a member a little more off its angle).
 - A fault that stood may stay or heal. Before ticket 31, `chordsHold` refused every move while any block fault stood. A centring step
@@ -1849,10 +1855,10 @@ Its callers:
   chord step also gives back the state it holds outside the model (`saveChordState`): its movers may move again, and the growth its
   moves spent is not spent. The settled trials it read stay spent (R4).
 
-The steps inside one replay are not judged one by one: one row of a block moves, then the other follows, and a member may stand
-off its angle in between. So `chordsHold` reads a translation as a step (`step`): a fault that stood may grow there, a new fault is
-refused, and the mover around it is judged whole. The label-band producer right after the freeze is a required move, and it is not
-refused whole: the publication validator reads what it leaves.
+The rule is absolute: after every judged move or step, each member stands within the tolerance, or a fault that stood is no larger.
+That is the validator after every step, so drift cannot add up across steps or passes. `chordsHold` reads each translation so, the
+seat steps of 7c included. The label-band producer right after the freeze is a required move, and it is not refused whole: the
+publication validator reads what it leaves.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line, or on a held routed chord
 (ticket 22), lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows

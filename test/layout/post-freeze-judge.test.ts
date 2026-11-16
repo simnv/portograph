@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
-import { blockMoveRefusal, blockReservationFaults } from '../../src/layout/block-checks.js';
+import { BLOCK_ANGLE, BLOCK_TOLERANCE, angleShortfall, blockMoveRefusal, blockReservationFaults } from '../../src/layout/block-checks.js';
 import { POST_FREEZE_MOVE_REFUSED, judgedMove } from '../../src/layout/post-freeze-judge.js';
 import { chordsHold } from '../../src/layout/frame-paths.js';
 import { edge, saveChordState } from '../../src/layout/decide.js';
@@ -162,5 +162,24 @@ describe('a move after the chord freeze keeps every solid-block reservation (den
     // The move back heals the angle but takes the side crossing nearer the core box's corner: a fault grows, so it is refused too.
     expect(short(flatter, 'angle')).toBeLessThan(short(flattest, 'angle'));
     expect(blockMoveRefusal(flattest, flatter)?.fault).toBe('link-1 lost its reserved box clearance (edge), further than before the move');
+  }, 180000);
+
+  it('lets a step leave a member within BLOCK_TOLERANCE of its angle, and refuses a step that leaves it 0.02 px of height short (the review 1 ruling)', async () => {
+    const model = structuredClone(await run(yaml, true));
+    const member = model.links.find(link => link.id === 'link-11')!, mover = member.attachments!.to.node;
+    const anchor = (ref: NonNullable<typeof member.attachments>['to'], state = model) => state.nodes[ref.node]!.ports.find(port => port.ref.name === ref.name)!.anchor!;
+    const from = anchor(member.attachments!.from), to = anchor(member.attachments!.to);
+    expect(BLOCK_TOLERANCE).toBe(0.01);
+    // The step of the member's lower end, away from its upper end, that leaves the chord `short` px of height short of 34 degrees.
+    const away = Math.sign(to.x - from.x) || 1, slope = Math.tan(BLOCK_ANGLE * Math.PI / 180);
+    const stepTo = (short: number): number => away * (short - angleShortfall(from, to, BLOCK_ANGLE)) / slope;
+    const step = (dx: number) => [{ group: { nodes: [mover], bounds: model.nodes[mover]!.bounds! }, bounds: { ...model.nodes[mover]!.bounds!, x: model.nodes[mover]!.bounds!.x + dx } }];
+    // 0.005 px short: inside the tolerance, a residue of the solve; kept. 0.02 px short: past it; refused, by the step judge and the move judge alike.
+    expect(chordsHold(model, step(stepTo(0.005)), false)).toBe(true);
+    expect(chordsHold(model, step(stepTo(0.02)), false)).toBe(false);
+    const off = structuredClone(model);
+    shift(off, mover, stepTo(0.02));
+    expect(angleShortfall(anchor(member.attachments!.from, off), anchor(member.attachments!.to, off), BLOCK_ANGLE)).toBeCloseTo(0.02, 6);
+    expect(blockMoveRefusal(model, off)?.fault).toBe('link-11 lost its reserved angle');
   }, 180000);
 });

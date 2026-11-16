@@ -16,11 +16,19 @@ export const BLOCK_FLOOR_ANGLE = 15;
 export const flatMember = (model: LayoutModel, link: LayoutLink): boolean =>
   link.solidBlock === true && model.blockReservations?.find(item => item.family === link.fanFamily)?.mode === 'flat';
 
-/** How many degrees a chord from `a` to `b` stands flatter than `angle`, or 0 when it is no flatter (the one angle reading of a block member). */
-const angleShort = (a: Point, b: Point, angle: number): number => {
-  const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
-  return dy + EPS < dx * Math.tan(angle * Math.PI / 180) ? angle - Math.atan2(dy, dx) * 180 / Math.PI : 0;
-};
+/**
+ * The geometric tolerance of a solid-block reservation, in px (dense-16x9 ticket 31, review 1 ruling): how far a member may stand short of its
+ * angle (read in px of height), its floor, or its box clearance and still hold it. The publication validator, the judge of a move
+ * (`blockMoveRefusal`) and the judge of a step (`chordsHold`) read this one constant (R1); `EPS` stays a float compare. Why 0.01 px: the
+ * block is reserved at exactly its demand, and the 7c passes that run after the freeze are an iterative solve, whose residue moves one end of
+ * a member by 0.001 to 0.004 px. On the ticket 31 synthetic that left the chord 1.5e-4 to 2.4e-3 px of height short of 34 degrees, so a
+ * drawn constraint cannot be held tighter than that. 0.01 px is about 4 times the largest dip measured, and invisible in the drawing.
+ */
+export const BLOCK_TOLERANCE = 0.01;
+
+/** The height, in px, that a chord from `a` to `b` lacks to stand at `angle`: negative when it stands steeper (the one angle reading of a block member). */
+export const angleShortfall = (a: Point, b: Point, angle: number): number =>
+  Math.abs(b.x - a.x) * Math.tan(angle * Math.PI / 180) - Math.abs(b.y - a.y);
 
 /**
  * The per-member checks of a flat block (dense-16x9 ticket 04, slice 3): past the cap a member stands only when its chord leaves each endpoint box
@@ -33,7 +41,8 @@ export function flatMemberRefusal(model: LayoutModel, link: LayoutLink): 'edge' 
   // The chord as it is drawn, face point to face point (`memberChord`), as the floor reservation measured it (`reserveBlockGaps`; R1).
   const chord = memberChord(model, link);
   if (chord === undefined) return 'edge';
-  if (angleShort(chord.from, chord.to, BLOCK_FLOOR_ANGLE) > 0) return 'floor';
+  // The admission decides with the float compare; the validator after it allows `BLOCK_TOLERANCE`, so what is admitted stays held.
+  if (angleShortfall(chord.from, chord.to, BLOCK_FLOOR_ANGLE) > EPS) return 'floor';
   return chordBoxRefusal(model, link, { from: chord.from, to: chord.to, owner: link.owner }, 0, true);
 }
 
@@ -50,7 +59,8 @@ export function memberChord(model: LayoutModel, link: LayoutLink): { from: Point
 /**
  * One fault of a solid-block reservation: what it breaks (`constraint`, one per fault of a key: the record, a follower's seat, attachment or
  * alignment, a member's faces, the pitch of each port, each box it does not clear, its gap or its angle), its message, and how far it is short
- * of the reservation (px, or degrees for the angle; 0 for a fault with no measure, Infinity for one that cannot be measured).
+ * of the reservation (px; for an angle, the height the chord lacks; 0 for a fault with no measure, Infinity for one that cannot be measured).
+ * A shortfall of the angle, the floor or the box clearance counts only past `BLOCK_TOLERANCE`.
  */
 export interface BlockFault { readonly constraint: string; readonly fault: string; readonly short: number }
 
@@ -95,15 +105,14 @@ export function blockReservationsFault(model: LayoutModel): string | undefined {
 }
 
 /**
- * The one judge of a move after the freeze (dense-16x9 ticket 31, R1): the first block fault that `after` has and `before` (the faults read
- * where the move began, or the model it began on) did not have, or had and was less short of; undefined when the move breaks no reservation
- * and takes no broken one further from what it reserved. The faults are compared per key and constraint: a fault that stood when the move
- * began may stay or heal, never grow, and its key gains no other fault. A move that touches no block member adds no fault, so it is never
- * refused here.
- * With `step` set the move is one step of a mover whose whole result is judged again (a translation that `chordsHold` reads inside a centring
- * pass): a fault that stood may grow there, since one step moves one row of a block and the next the other; a new fault is still refused.
+ * The one judge of a move or a step after the freeze (dense-16x9 ticket 31, R1): the first block fault that `after` has and `before` (the
+ * faults read where the move began, or the model it began on) did not have, or had and was less short of; undefined when the move breaks no
+ * reservation and takes no broken one further from what it reserved. It is the validator after every judged move: each member stands within
+ * `BLOCK_TOLERANCE` of its reservation after it, or, where a fault stood beyond the tolerance, that fault is no larger than before (a float
+ * compare) and its key gains no other fault. So a residue inside the tolerance passes and no drift can add up past it. A move that touches
+ * no block member adds no fault, so it is never refused here.
  */
-export function blockMoveRefusal(before: BlockReading | LayoutModel, after: LayoutModel, step = false): { key: string; fault: string } | undefined {
+export function blockMoveRefusal(before: BlockReading | LayoutModel, after: LayoutModel): { key: string; fault: string } | undefined {
   const faults = blockReservationFaults(after);
   if (!faults.size) return undefined;
   // The model the move began on is read only when the result has a fault: most moves leave none.
@@ -113,7 +122,7 @@ export function blockMoveRefusal(before: BlockReading | LayoutModel, after: Layo
     for (const fault of list) {
       const was = stood?.find(item => item.constraint === fault.constraint);
       if (was === undefined) return { key, fault: fault.fault };
-      if (!step && fault.short > was.short + EPS) return { key, fault: `${fault.fault}, further than before the move` };
+      if (fault.short > was.short + EPS) return { key, fault: `${fault.fault}, further than before the move` };
     }
   }
   return undefined;
@@ -149,7 +158,8 @@ function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutM
   const [a, b] = ports.map(port => port!.anchor!);
   const boxes = (from: Point, to: Point, sideExit: boolean): void => {
     for (const box of chordBoxFaults(model, link, { from, to, owner: link.owner }, 0, sideExit)) {
-      faults.push({ constraint: `box:${box.constraint}`, fault: `${id} lost its reserved box clearance (${box.entry})`, short: box.short });
+      // A box clearance short by the tolerance or less holds; an edge the chord leaves by a face with no edge has no measure, and is a fault.
+      if (box.short > BLOCK_TOLERANCE || box.constraint.endsWith(':face')) faults.push({ constraint: `box:${box.constraint}`, fault: `${id} lost its reserved box clearance (${box.entry})`, short: box.short });
     }
   };
   if (entry.mode === 'flat') {
@@ -158,8 +168,8 @@ function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutM
     const chord = straight ? memberChord(model, link) : undefined;
     if (straight && chord === undefined) faults.push({ constraint: 'box:chord', fault: `${id} lost its reserved box clearance (edge)`, short: 0 });
     if (chord !== undefined) {
-      const floor = angleShort(chord.from, chord.to, BLOCK_FLOOR_ANGLE);
-      if (floor > 0) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: floor });
+      const floor = angleShortfall(chord.from, chord.to, BLOCK_FLOOR_ANGLE);
+      if (floor > BLOCK_TOLERANCE) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: floor });
       boxes(chord.from, chord.to, true);
     }
   } else boxes(a!, b!, false);
@@ -167,7 +177,7 @@ function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutM
   const lower = model.tierBands.find(band => band.tier === entry.below)?.bounds;
   const gap = upper && lower ? lower.y - upper.y - upper.height : -Infinity;
   if (gap + EPS < entry.chosen) faults.push({ constraint: 'gap', fault: `${id} lost its reserved gap`, short: Number.isFinite(gap) ? entry.chosen - gap : Infinity });
-  const angle = entry.mode === undefined ? angleShort(a!, b!, BLOCK_ANGLE) : 0;
-  if (angle > 0) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: angle });
+  const angle = entry.mode === undefined ? angleShortfall(a!, b!, BLOCK_ANGLE) : 0;
+  if (angle > BLOCK_TOLERANCE) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: angle });
   return faults;
 }
