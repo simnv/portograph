@@ -746,6 +746,11 @@ export function restoreLayoutModel(json: string): LayoutModel {
     return model;
   }
   const baseline = validateDocument(model);
+  // The chords the publication step refused (dense-16x9 ticket 14, slice 3): sorted, unique ids of links; 7f consumes them (R5: a forged record stops here).
+  const refused = model.refusedChords;
+  if (refused !== undefined && (!Array.isArray(refused) || refused.some((id, i) => typeof id !== 'string' || !model.links.some(link => link.id === id) || (i > 0 && refused[i - 1]! >= id)))) {
+    throw new Error('Invalid refused chords');
+  }
   return protect(model, baseline);
 }
 

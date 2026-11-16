@@ -4,6 +4,7 @@ import { layout, parse, score } from '../../src/index.js';
 import { resolveBeforeExpansion } from '../../src/internal.js';
 import { deriveRanks } from '../../src/layout/ranks.js';
 import { rankInputOf } from '../../src/layout/rank-input.js';
+import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -56,5 +57,21 @@ describe('two-pole ranks in the layout', () => {
     const failing = Object.entries(gates).filter(([, gate]) => gate.violations.length > 0).map(([id, gate]) => [id, gate.violations.map(item => item.code)]);
     // Measured before slice C of ticket 06: four parallel-clearance pairs between same-tier links (G6) and one port-order violation (G5).
     expect(failing).toEqual([]);
+  });
+
+  // Dense-16x9 ticket 04 (slice 2), the publication step of ticket 14 slice 3: after the rounds, the column pull after the freeze carries up-b1
+  // 16 px, and the plan names the held chord feed-b13 to up-b1 crowded by the planned leg of feed-b11 to up-b1, under the G6 clearance. The
+  // chord is refused before the gate finding is published: the 7e model records it (`refusedChords`), and 7f refuses it as `crowds`.
+  it('the twin: the held chord a planned leg crowds after the freeze falls back once, recorded on the model', async () => {
+    const model = await run(TWIN);
+    const chord = model.links.find(link => link.attachments!.from.node === 'feed-b13' && link.attachments!.to.node === 'up-b1')!;
+    expect(model.refusedChords).toEqual([chord.id]);
+    expect(model.frozenChords).not.toContain(chord.id);
+    expect(model.diagnostics.some(item => item.code === 'ROUTED_CHORD_REFUSED' && item.message.includes(`${chord.id} `) && item.message.endsWith('crowds.'))).toBe(true);
+    expect(model.diagnostics.filter(item => item.code === 'TIER_GAP_CHORD_CROWDED')).toEqual([]);
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+    // A forged record stops at the restore (R5): an unknown link, or ids out of order.
+    expect(() => restoreLayoutModel(JSON.stringify({ ...model, refusedChords: ['no-such-link'] }))).toThrow(/Invalid refused chords/);
+    expect(() => restoreLayoutModel(JSON.stringify({ ...model, refusedChords: ['link-9', 'link-10'] }))).toThrow(/Invalid refused chords/);
   });
 });

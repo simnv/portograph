@@ -272,6 +272,19 @@ chord, can bring a leg nearer the chord after the decision. The plan names each 
 strictly (`TIER_GAP_CHORD_CROWDED`, info), and G6 judges, as for two verticals within `k`
 (`crowded`).
 
+*Publication step (dense-16x9 ticket 14, slice 3, built in ticket 04 slice 2; coordinator ruling: a chord is refused before a gate finding is
+published).* After the last round has settled, `refuseCrowdedChords` (pipeline/driver.ts) reads the state to publish once. A held chord that is
+no direct or fan member, that a `TIER_GAP_CHORD_CROWDED` note names, and that stands under the G6 clearance of the planned part
+(`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. The kept 7e model records them
+(`refusedChords`, sorted ids; the restore refuses a forged record), and placement replays once from it: 7f refuses each before the freeze as
+`crowds` (R1, nothing decides it again). The replay is kept only when its routed result has no error-gate finding that the state before it
+lacks; else that state stays and `HELD_CHORD_CROWDED` (warning) names the chords. One pass at most. The rounds read their own unrefused
+baselines, so a crowded baseline that a round repairs stays available to that round (traced on
+`a-refused-close-up-of-card-nodes-keeps-the-node-labels-in-order`: a retry inside every 7f run refused link-21 in the baseline, and the course
+round then offered nothing, 42 to 46 bends). Measured case: the staged twin, where `holdColumnAxes` (slack 0, `holdColumnsAfterPush`, right
+after the freeze) moves a column 16 px and the planned leg of one feed comes 4.2 px from the held chord of the next. Not built (rest of slice 3):
+the shared reader `reservedSegments` of slice 2, the judge on a bare remainder, and any judge of a trial run.
+
 *As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y; `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
 once each. "Within `k`" is the centre-to-centre distance, 11.5 px (`k` holds the stroke). An unfit gap (`growth > 0` after the rounds) leaves all its parts to the
 router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
@@ -308,10 +321,11 @@ to reach this; ticket 103 measures it.
 
 | Code | Severity | When |
 |---|---|---|
-| `ROUTED_CHORD_REFUSED` | info | At the freeze, once per cross-frame candidate that is not held, with the first failed check: `transit`, `faces` (a port does not leave outward), `edge` (leaves through a side edge), `frame` (a foreign frame or canton box), `title`, `body`, `pill`, `lane`, `corridor` (another gate clearance), `chord` (a held chord), `leg` (an orthogonal leg). |
+| `ROUTED_CHORD_REFUSED` | info | At the freeze, once per cross-frame candidate that is not held, with the first failed check (`crowds`: refused by the publication step): `transit`, `faces` (a port does not leave outward), `edge` (leaves through a side edge), `frame` (a foreign frame or canton box), `title`, `body`, `pill`, `lane`, `corridor` (another gate clearance), `chord` (a held chord), `leg` (an orthogonal leg). |
 | `ROUTED_CHORD_TITLE` | warning | 7f (label bands): a title could not stand clear of a held chord's crossing. |
 | `TIER_GAP_CHORD_CROWDED` | info | 7f: a planned vertical within `k` of a held chord, not crossing it. |
 | `TIER_GAP_CHORD_EXPOSED` | info | 7f: a residual or unfit part whose span overlaps a held chord. |
+| `HELD_CHORD_CROWDED` | warning | Publication step: the held chords named crowded stay straight, because the replay without them adds an error-gate finding. |
 
 `STRAIGHT_LINK_HELD` and `STRAIGHT_LINK_BLOCKED` keep their meaning and cover both chord kinds.
 
