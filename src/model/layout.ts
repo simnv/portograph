@@ -646,6 +646,12 @@ export interface LayoutModel {
    */
   frozenChords?: string[];
   /**
+   * The frozen level cross-frame chords (dense-16x9 ticket 06, slice B) that stand level (equal y at both ends) when the freeze is taken, a subset of
+   * `frozenChords`. The relation is held after the freeze: a move that tilts one is refused (`blockedChords`, so `chordsHold`), and a mover that must shift
+   * one frame's row shifts its partners' rows with it (`levelChordPartners`). Written by the freeze only when one stands level: absent = none was (read `frozenChords` for whether the freeze was taken).
+   */
+  frozenLevelChords?: string[];
+  /**
    * The triggered direct families (architecture-2 ticket 22): one per source node of a pair of facing rows whose orthogonal drawing would cross
    * more than once at its members, decided once at the start of 7f, immediately before `freezeChords`. Absent before the freeze = not planned;
    * absent once `frozenChords` is set = planned, no family triggered (an untriggered family changes nothing and is not recorded). A direct

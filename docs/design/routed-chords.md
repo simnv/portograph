@@ -296,7 +296,7 @@ to reach this; ticket 103 measures it.
   node or a frame off an overlay chord. The refusals on the private sheet are the candidate rule
   and the title strips, not bodies. Ticket 104 extends the step only if ticket 103 reports links
   refused by a body or a frame.
-- **No same-tier chord between frames.** A level pair between two frames keeps the level path rule.
+- **No same-tier chord between frames.** *Superseded by Section 18* (dense-16x9 ticket 06, slice B): a level pair between two sibling frames on facing lateral faces is a cross-frame chord.
 
 ## 10. Diagnostics
 
@@ -627,3 +627,25 @@ Foreign boxes remain walls, every member enters/exits its own box through its ho
 There is no experimental local sheaf zone or side-entry permission in this slice.
 The existing body-refusal/fallback machinery remains; ticket 84 owns isolated fallback and interacting-block admission.
 Ticket 85 owns cap-limited geometry, side entry and the sheaf rule, plus broader ownership for labels, irregular/nested frames and adjacent ranks.
+
+## 18. Level cross-frame chords (dense-16x9 ticket 06, slice B)
+
+A **sibling-frame link** joins two members of two frames of one document tier, in un-flanked `row` cells on one sub-tier (`CONTEXT.md`). On facing
+lateral faces, `right` on the node that stands left and `left` on the node that stands right, it is a cross-frame chord candidate of kind `cross`
+(`chordKindOf`, `siblingFrameKind`). The two faces face one another on one sub-tier, so Section 3 items 3 and 4 read as follows for it: the document tiers
+are equal, the sub-tiers are equal, and the lateral sides are opposite. Items 1 and 2 hold as before. `levelCrossChord` is the one predicate for "this
+`cross` chord stands on one sub-tier": the verdict and the rows rule both ask it (R1).
+
+- **Verdict.** `chordVerdict` reads the direction from the faces: the chord leaves the `right` face toward larger x and the `left` face toward smaller x, or the
+  link is refused `faces` (the upper and lower faces of Section 3 do not apply). Foreign frames, the facing edge and the clearances of Section 4 hold as for a
+  chord between two tiers. The two heights may differ: the chord is one slanted segment, not a step (coordinator, 2026-11-15, from the owner's ruling of
+  2026-11-03).
+- **Rows rule.** `expectedRowPath` does not pin the level path (`expectedLevelPath`) for such a link: that path has the `2x` length limit, which binds a level
+  pair inside one frame. The frame rule (`expectedFramePath`) reads the chord and freezes it at the start of 7f with the other chords.
+- **Not built here.** Nothing yet seats the two ends at the facing ends of their rows, or plans a U for a second pair (slices C): a link whose body stands on
+  the line keeps the orthogonal route and names `ROUTED_CHORD_REFUSED` (`body`).
+- **The level relation is held after the freeze (slice B review 1).** `freezeChords` records the held level chords that stand level (`frozenLevelChords`, a subset of
+  `frozenChords`; R1). `blockedChords`, the one predicate behind `chordsHold`, names a recorded level chord that is not level any more, so a guarded move that would tilt
+  it is refused like a move that puts a body on it. The one forced writer that shifts a single frame's row, the top padding growth of `reserveAcrossRunRoom` (a label
+  needs the room, so it is not refused), shifts the rows of the groups in a level relation with it by the same amount (`levelChordPartners`). The publication check
+  reads the record against the geometry: a recorded chord that is not held or not level refuses the model (R5).

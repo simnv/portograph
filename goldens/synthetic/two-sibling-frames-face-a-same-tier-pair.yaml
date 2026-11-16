@@ -1,0 +1,21 @@
+# Expected: the link between w2 and e1 joins two frames of one tier on one sub-tier, with w2 at the east end of its row and e1 at the west end of
+# its row. It is one level straight segment from the `right` face of w2 to the `left` face of e1, 100 px long: as long as the straight-link length limit
+# (2 times the larger body dimension), which binds a level pair only inside one frame. Every gate passes, 0 crossings.
+# Test-only input owned by dense-16x9 ticket 06 (slice B): test/pipeline/sibling-frame-chord.test.ts.
+portograph: 2
+groups:
+  src: { tier: 0, label: Source }
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+nodes:
+  s0: { group: src, class: router }
+  w1: { group: west, class: switch, label: W1 }
+  w2: { group: west, class: switch, label: W2 }
+  e1: { group: east, class: switch, label: E1 }
+  e2: { group: east, class: switch, label: E2 }
+links:
+  - [s0, w1]
+  - [s0, w2]
+  - [s0, e1]
+  - [s0, e2]
+  - [w2, e1]
