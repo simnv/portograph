@@ -315,9 +315,22 @@ With any one producer left out of `reservedChain` the test fails. Stage order: e
 of the plans (7e rounds, 7f gap room, close-up, decide, the growth guard) see the model as it is then; the dodge keeps their height, growth
 and rows. The one corpus sheet with a row-gap leg holds none within `k` of a tier gap; a plan-level test reads its real `legReservation`.
 
-Slice 2 (`.scratch/dense-16x9/design/14-reserved-remainder.md`) has still to make the 7f judges read the same source: `crowded`,
-`crowdedChords` and `chordGapNotes`, `chordSettled` and `rankSettled`, the linkless and lane-reseat checks, and the wrap gate verdict each
-measure a planned part against their own subset of reserved geometry today; each one must read `reservedSegments` and drop its own list.
+*As built (dense-16x9 ticket 14, slice 2, first part).* Two readers read the same source, as the G6 predicate reads a routed segment
+(`reservedRouted`: the link, the index and the stroke). A link with a stored path is read on its path. A remainder is read on a provisional
+path: its reserved runs in the order its final path visits them (`reservedChain`), with two indices left between two runs that do not touch,
+where the router lays a piece. The tier-gap runs come from the plans of the model as it stands (`allocateGapRuns`): a gap that still asks for
+room before the one solve of 7f gives none, as stage 8 would stitch none there. The two readers:
+- `crowdedChords` (`crowdedDirectMembers`, `crowdedFanMembers`). It drops its own subset: the planned parts of one gap, a second copy of the
+  stem selection, and the other chords.
+- `chordGapNotes`.
+Neither changes a corpus layout.
+
+The rest of slice 2 waits for slice 3. That rest is `crowded` (`decide.ts`), the G6 set of `chordSettled`, `rankSettled`, the linkless step
+and the lane reseat, and the G6 check of `wrapGateVerdict`. Read on the reserved geometry before the tier-gap solve, `crowded` refuses moves
+whose chord crowded a reserved segment on main. Without the refusal of that chord on the published state it leaves the chord in place, and the
+result is worse. Two cases: the card-nodes sheet (42 to 50 bends), and two `feedOrder: false` variants (crossings 7 to 16, the same G6 pair
+kept).
+
 
 **Mesh bus and riser (tickets 82 to 84, 92; 94, 96, 97).** A bus bar, a stub, a riser and a
 riser lane are overlay geometry: `straightCorridorClear` and the router leave out overlay lanes,
