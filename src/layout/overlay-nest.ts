@@ -41,22 +41,9 @@ import { pointTurns } from '../geometry/planar.js';
  */
 export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel) => boolean = () => true,
   quick: (model: LayoutModel) => boolean = holds): string[] {
-  const links = model.links.filter(link => (link.layer ?? link.family) === 'overlay' && link.technique !== 'stub' && link.removed !== true
-    && link.meshBus === undefined && link.attachments !== undefined);
+  const { links, linkAt, free } = freeOverlayPorts(model);
   if (links.length < 2) return [];
-  const count = new Map<string, number>();
-  for (const link of model.links) for (const end of link.attachments ? [link.attachments.from, link.attachments.to] : []) count.set(portId(end), (count.get(portId(end)) ?? 0) + 1);
-  const linkAt = new Map<string, LayoutLink>();
-  for (const link of links) for (const end of [link.attachments!.from, link.attachments!.to]) linkAt.set(portId(end), link);
   const blockers = sharedBlockers(model);
-  // The overlay link of a parallel set with a routed link keeps the order stage 5 gave both ends (ticket 80, R1): this measure counts overlay crossings only, so a trade could move it across its own cable.
-  const ofSet = new Set(parallelSets(model).filter(set => set.kind === 'mixed').flatMap(set => set.links.map(link => link.id)));
-  const free = (port: LayoutPort): boolean => {
-    const key = portId(port.ref), link = linkAt.get(key);
-    return link !== undefined && !ofSet.has(link.id) && count.get(key) === 1 && port.anchor !== undefined && port.side !== undefined && port.authorOrder === undefined
-      && port.courseHint !== true && busOfPort(model, port.ref) === undefined && !overlayCourse(model, link)
-      && link.attachments!.from.node !== link.attachments!.to.node;
-  };
   const detour = (port: LayoutPort): boolean => overlayBasePath(model, linkAt.get(portId(port.ref))!, blockers).segments.length > 2;
   const faces: { node: string; ports: LayoutPort[] }[] = [];
   for (const id of orderedNodeIds(model.document)) for (const side of SIDE_TIE_ORDER) {
@@ -131,6 +118,29 @@ export function nestOverlayPorts(model: LayoutModel, holds: (model: LayoutModel)
   // A trade rebuilt one node's pills and labels; the whole sheet is rebuilt in document order, as every other rebuild leaves it.
   if (tried) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
   return [...moved].sort();
+}
+
+/**
+ * The overlay links the port trades and seats read (`nestOverlayPorts`, `seatOverlayEnds`), the overlay link on each of their ports, and
+ * which port is **free** to move (R1, one reader): no authored `order:`, no routed link and no other link on it, no mesh bus, no course,
+ * not a link of a parallel set with a routed link, not a link from a node to itself.
+ */
+export function freeOverlayPorts(model: LayoutModel): { links: LayoutLink[]; linkAt: Map<string, LayoutLink>; free: (port: LayoutPort) => boolean } {
+  const links = model.links.filter(link => (link.layer ?? link.family) === 'overlay' && link.technique !== 'stub' && link.removed !== true
+    && link.meshBus === undefined && link.attachments !== undefined);
+  const count = new Map<string, number>();
+  for (const link of model.links) for (const end of link.attachments ? [link.attachments.from, link.attachments.to] : []) count.set(portId(end), (count.get(portId(end)) ?? 0) + 1);
+  const linkAt = new Map<string, LayoutLink>();
+  for (const link of links) for (const end of [link.attachments!.from, link.attachments!.to]) linkAt.set(portId(end), link);
+  // The overlay link of a parallel set with a routed link keeps the order stage 5 gave both ends (ticket 80, R1): this measure counts overlay crossings only, so a trade could move it across its own cable.
+  const ofSet = new Set(parallelSets(model).filter(set => set.kind === 'mixed').flatMap(set => set.links.map(link => link.id)));
+  const free = (port: LayoutPort): boolean => {
+    const key = portId(port.ref), link = linkAt.get(key);
+    return link !== undefined && !ofSet.has(link.id) && count.get(key) === 1 && port.anchor !== undefined && port.side !== undefined && port.authorOrder === undefined
+      && port.courseHint !== true && busOfPort(model, port.ref) === undefined && !overlayCourse(model, link)
+      && link.attachments!.from.node !== link.attachments!.to.node;
+  };
+  return { links, linkAt, free };
 }
 
 /** The passes over the faces (R4: bounded by count); a trade only lowers the measure, so a pass that trades nothing ends it. */

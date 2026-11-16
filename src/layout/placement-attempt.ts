@@ -13,6 +13,7 @@ import { stepLinklessOutOfChords } from './overlay-place.js';
 import { type AdoptedCopy, stepOverChords } from './chord-clear.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { alignLinkedGroupGridAndPack, closeCantonsAndSettle, settleKeepOut, placeGroupTitles, produceGroupLabelBands, resyncLabelBands, labelBorders, roomHolds, roomLikelyHolds, gapLabelDeficits } from './bands.js';
+import { seatOverlayEnds } from './overlay-seat.js';
 import { nestOverlayPorts } from './overlay-nest.js';
 import { recordLabelYields } from './link-labels.js';
 import { holdColumnAxes, refreshHeldWarnings } from './columns.js';
@@ -396,7 +397,11 @@ function attemptBody(draft: LayoutModel, options: AttemptOptions, refused: Reado
   // centring the attempt declined (a replay that bent a chord no longer bends it), so the result keeps the centring findings it had or fewer, the
   // set test `chooseReseat` makes too (R2; snack-theme ticket 159).
   const centring = new Set(centreViolations(draft)), gapLabels = gapLabelDeficits(draft);
-  nestOverlayPorts(draft, model => roomHolds(model, gapLabels) && centreViolations(model).every(item => centring.has(item)), roomLikelyHolds);
+  const portsHold = (model: LayoutModel): boolean => roomHolds(model, gapLabels) && centreViolations(model).every(item => centring.has(item));
+  nestOverlayPorts(draft, portsHold, roomLikelyHolds);
+  // Two overlay end runs of different nodes that would stand on one track (ticket 26): a free port of the two takes a seat on its face one
+  // track pitch from the other run, under the same guard as the nest, so the track is reserved where the ports are seated.
+  seatOverlayEnds(draft, portsHold);
   // The tier gaps are solved once, after the last move in x and before the titles (architecture-2 ticket 57): the stem depths are
   // recorded, every plan and every label room across a gap is read once, the gaps grow, and the claims a move in y changes are rebuilt.
   // After a growth the linkless step runs once more, as a round did after a growth before (ticket 76 review): a held chord whose slope the
