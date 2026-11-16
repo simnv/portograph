@@ -36,12 +36,14 @@ export { overlayCrossings, pickRankMove, spent, type AdoptedCopy, type RankMove 
  * box of its group, in the row it stands in, keeping the row gap to its neighbours.
  *
  * A candidate is kept only when both of these hold:
- * - on the geometry after the move, `laneSidesHold` (a lane keeps its side, a frozen chord stays clear of every body), and the
- *   straight overlay count rises (a move that bends one link and straightens two is a trade that counts);
- * - on a copy of the model that `follow` has run, which is what the pipeline does next (the replays of the regions, the grid and
- *   the labels, then a round of the growth and the close-up), against the copy of the model without the move: the straight overlay
- *   count still rises, no routed link that ran on one axis or held a chord stops doing so, and no pair of routed links (G6), no
- *   port out of the order of its far ends (G5) and no tier-gap part the plan declines appears that was not there before.
+ * - on the geometry after the move: the move holds (`laneSidesHold`: a lane keeps its side, a frozen chord stays clear of every body), and
+ *   against the geometry before it (`judges.chordCheap`) the overlay links are better by the unified order (fewer bent links, then fewer
+ *   turns, then fewer crossings) with no body newly on a frozen chord;
+ * - on a copy of the model that `follow` has run, which is what the pipeline does next (the replays of the regions, the grid and the
+ *   labels, then a round of the growth and the close-up), against the copy of the model without the move (`judges.chordSettled`, a lower rank
+ *   `judges.rankSettled`): both layers better by the same unified order, so a straight link bent is no veto and the net count of bent
+ *   links decides (ticket 146), no column drift, no width past the cap, no new G6 pair, no port out of the order of its far ends (G5), no new residual, no
+ *   label room a replay would still grow, and no separation shortfall.
  * A frame of several cells (ticket 80) is the column pass's unit: it slides whole, every cell by the same dx, inside the slack its column
  * states (`frameColumns`), inside the box of the layout, between the plain groups and the lanes of its sub-tiers, and a node of one of its
  * cells moves alone inside the cell box when the frame edge (`cellReach`) stays as it is. The same acceptance judges both, on the settled

@@ -18,12 +18,13 @@ import { union } from './skeleton-geometry.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { measureNodeContent } from './size.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { alignLinkedGroupGrid, forgedRefusals, syncLabelBands } from './bands.js';
+import { alignLinkedGroupGrid, forgedRefusals, labelRoomHolds, syncLabelBands } from './bands.js';
 import { validateLanes } from './lanes.js';
 import { rebuildRuleGeometry } from './rule-geometry-hook.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { CLOSE_UP_MIN, closeUpSiblings, followingLanes, isCloseUpMover, shiftLane } from './close-up.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 const isBarNode = (model: LayoutModel, id: string): boolean => model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar';
 
@@ -137,6 +138,9 @@ export function trimBodies(draft: LayoutModel): void {
   if (!trims.length) return;
   // The draft as 7f left it, put back whole when the trim is declined: the grid may move a flank, its nodes and its lanes.
   const saved = JSON.stringify(draft);
+  // The rooms 7f reserved for link labels and overlay tracks, read before the trim: a trim that leaves one short where it held is declined.
+  // Shown only with seats, so read with `layout.moveBeforeGrow` (ADR-0027).
+  const roomBefore = moveBeforeGrow(draft) && labelRoomHolds(draft);
   const frames = new Map((draft.frames ?? []).map(frame => [frame.id, { ...frame.box }] as const));
   const boxes = new Map(Object.values(draft.groups).flatMap(group => group.bounds === undefined ? [] : [[group.id, { ...group.bounds }] as const]));
   const bodies = new Map(Object.values(draft.nodes).flatMap(node => node.bounds === undefined ? [] : [[node.id, { ...node.bounds }] as const]));
@@ -160,7 +164,7 @@ export function trimBodies(draft: LayoutModel): void {
     if (sameRect(draft.groups[id]!.bounds!, old)) draft.groups[id]!.bounds = old;
     else groups[id] = old;
   }
-  const refusal = trimRefusal(draft, boxes, bodies, deriveRegions(draft));
+  const refusal = trimRefusal(draft, boxes, bodies, deriveRegions(draft)) ?? (roomBefore && !labelRoomHolds(draft) ? 'a link label or an overlay track would lose the room 7f reserved for it' : undefined);
   if (refusal !== undefined) {
     const back = JSON.parse(saved) as Record<string, unknown>, target = draft as unknown as Record<string, unknown>;
     for (const key of Object.keys(target)) if (!(key in back)) delete target[key];

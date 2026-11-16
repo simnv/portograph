@@ -1,7 +1,7 @@
 /**
  * The one reader of the feeding chain of a fan wrap (decision review 2026-11, D-Q4, ticket 07). Stage 5 decides the chain once and
  * stores its units on the stagger row (`StaggerRow.chain`); the centre rule (7c), its replays, the feed split and the alignment
- * allowance read it here and decide nothing again (R1).
+ * cap read it here and decide nothing again (R1).
  */
 import type { LayoutModel } from '../../model/layout.js';
 
@@ -20,7 +20,7 @@ export function columnUnitId(model: LayoutModel, groupId: string): string {
 
 /**
  * The unit id of the wrapped block whose stored feeding chain holds `node`, or undefined. A held node does not grow for an alignment
- * (`alignmentAllowance`), and 7c centres it only on its feeds inside the chain or into that block (`centringFeeds`). Chains are disjoint.
+ * (`withinAlignmentCap`), and 7c centres it only on its feeds inside the chain or into that block (`centringFeeds`). Chains are disjoint.
  */
 export function chainBlockOf(model: LayoutModel, node: string): string | undefined {
   const rows = model.staggerRows?.filter(row => row.chain?.length);

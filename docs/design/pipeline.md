@@ -1063,6 +1063,18 @@ the second run strands is kept and named (`CENTRE_GROWTH_KEPT`, info), as is a g
 order; it is kept by every later rule and published, so the 7d to 7f replays and the publication check read the same decline (R1). A
 malformed record, or one before the centre rule, is refused.
 
+**With `layout.moveBeforeGrow: true`** (ADR-0027, an opt-in until ticket 15; dense-16x9 ticket 02). The rules above are the default. With
+the option, each node of a step takes one **seat** (`seatNode`): it slides the body inside the slack of its row (between its siblings,
+inside the group box less its insets, clear of the overlay walls) before it grows it, and grows only by what no slide gives, up to the
+alignment cap `ALIGNMENT_CAP_TIMES` = 5 times the width the node needs for itself (`withinAlignmentCap`), in place of
+`ALIGNMENT_MAX_GROWTH` = 12 (`alignmentAllowance`). A seat that slides or grows a body is recorded (`alignmentSeats`, kept through
+publication with `alignmentTargets`) and owns the body: the main move reads only its kept feeds, and a seat whose kept port no longer
+stands is withdrawn and gives the body back to the box it had before its first seat. The centre rule runs its passes once (no
+`givenBack` record), and a step that widens any body and leaves every aligned port of its group off its feed is declined whole (clause 5).
+At 7e a bent bundle block keeps the start of a face whose seat keeps a port. The publication check refuses a seat record in a model
+without the option, and a seat whose kept port stands off its feed, whatever the centring replay excuses (R5). ADR-0027 states the rule,
+its trades, its known failures and its acceptance set.
+
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
 Those groups move right. This includes a group the step does not centre. It also includes a group
 whose own window is too narrow to hold it.
