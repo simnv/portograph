@@ -3,7 +3,8 @@
 # both hubs, so every site wants the same x (the mean of the two hub ports it uses). Stage 7c centred each group alone, in group order, and packed each after the one before: the first
 # site stood at the mean and the other four stacked to its right. Groups fed by the same parents are seated as one unit under the
 # order and the band gap (pool adjacent violators on the weighted median, `rowSeats` in centre.ts): the five sites stand centred on the
-# mean of the hub ports, none grown. `row-seats.test.ts`.
+# mean of the hub ports. The middle site, at the median, stands on its own feeds and keeps the growth that stands its two drops straight;
+# the other four, off their own x, do not grow. A whole unit shifted off its seat is refused at restore (review 1). `row-seats.test.ts`.
 portograph: 2
 groups:
   hub-a: { tier: 0 }

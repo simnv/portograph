@@ -1659,7 +1659,11 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // corridor follows (`LANE_FOLLOWS_ITS_CHILD`) — putting that group back leaves the corridor
   // without the child it was moved for.
   const missAfter = total(endMisses);
-  if (wanted.size && !aligned.size && !own.some(feed => feed.transit) && missAfter > 0.5 && missAfter >= missBefore - 0.5) {
+  // A member of a row unit (`rowSeats`, dense-16x9 ticket 27) is moved toward the seat of its unit, not toward its own feeds: its progress is
+  // measured to that seat. Measured to its own feeds, a member on one side of the unit's centre always moves away from them, the guard gave
+  // its move back, and a unit shifted off its seat stood still at every step (review 1 of ticket 27).
+  const seatX = rowSeat.get(id), nearerSeat = seatX !== undefined && Math.abs(group.bounds!.x - seatX) < Math.abs(began - seatX) - 0.5;
+  if (wanted.size && !aligned.size && !own.some(feed => feed.transit) && missAfter > 0.5 && missAfter >= missBefore - 0.5 && !nearerSeat) {
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);
@@ -2169,9 +2173,43 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
       }
     }
+    result.push(...rowUnitFaults(model, replayed as LayoutModel, context, tier, authority, list, order, seats ??= rowSeats(model, context, tier, list), () => tail ??= tailReservation(model, context, tier, order)));
   }
   if (key !== undefined) checkedAnswers.set(model, { ...key, result: [...result], taps });
   return result;
+}
+/**
+ * The row units of one tier, checked as units (dense-16x9 ticket 27, review 1; R1, R5). The replay of each group above runs on the model as it
+ * stands, so a member of a unit that stands off its seat is held by its neighbours, which stand off it too: a whole unit shifted off its seat
+ * passes every replay of one group. The seat is joint (`rowSeats`: the unit's membership and the median of what its members want), so it is
+ * checked jointly: when a member stands off its seat (more than half a pixel), one pass of the tier's steps is replayed on a copy, in the order
+ * and with the seats and the tail reservation the passes of 7c read, and every member the pass moves (its box or a body) is a finding. A unit
+ * at its seat costs nothing; a unit the slack keeps off its seat (the clamp, a guard) stands where the pass leaves it, so the residual the slack
+ * forced is no finding. The check covers members with no candidate port (a bundle feed, a shared parent port): it reads boxes, not ports.
+ * The finding names the first own feed of the first moved member, so a spent budget names it as it names an open alignment (ADR-0010).
+ */
+function rowUnitFaults(model: LayoutModel, replayed: LayoutModel, context: CentreContext, tier: number, authority: number, list: Feed[], order: readonly string[],
+  seats: ReadonlyMap<string, number>, tail: () => Map<string, number>): string[] {
+  if (![...seats].some(([id, seat]) => Math.abs(model.groups[id]!.bounds!.x - seat) > 0.5)) return [];
+  const trial = JSON.parse(JSON.stringify(replayed)) as LayoutModel, reserved = tail();
+  const feeds = centringFeeds(trial, tier, authority);
+  let previous: LayoutGroup | undefined;
+  for (const id of order) {
+    const group = trial.groups[id]!;
+    if (trial.document.groups[id]!.shape === 'bar' || !feeds.some(feed => trial.document.nodes[feed.child.ref.node]!.group === id)) {
+      packClear(trial, context, tier, group, previous);
+      previous = standingBox(trial, group);
+      continue;
+    }
+    previous = centreGroupStep(trial, context, tier, feeds, id, previous, false, reserved, seats).group;
+  }
+  const moved = [...seats.keys()].filter(id => [id, ...model.groups[id]!.nodes].some(item => {
+    const was = (model.groups[item] ?? model.nodes[item])!.bounds!, now = (trial.groups[item] ?? trial.nodes[item])!.bounds!;
+    return Math.abs(now.x - was.x) > 0.5 || Math.abs(now.width - was.width) > 0.5;
+  }));
+  if (!moved.length) return [];
+  const link = groupFeeds(model, context, tier, list, moved[0]!, false).own[0]!.link;
+  return [`${link}: the row unit of ${[...seats.keys()].join(', ')} stands off its seat: a replay of its tier moves ${moved.join(', ')}`];
 }
 /** The code of the note that a model keeps the wide seats of the first feeds: narrowing it would have bent a link that stood straight (ticket 12, "narrow only if free"). */
 const KEPT_WIDE = 'CENTRE_SEATS_KEPT_WIDE';

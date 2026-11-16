@@ -1147,7 +1147,13 @@ group's own mean, so the seat stands inside the row's slack and every bound (fra
 its own x aligns inside the bodies it has (no growth and, with `moveBeforeGrow`, no seat slide): a growth would widen the unit and push the other
 members further off, so its feeds pull the unit and the ports its body does not reach are named (`CENTRE_ALIGNMENT_INFEASIBLE`). Such a member
 leaves its wanted ports unresolved by design, so the publication check excuses them only while its replay leaves the group's box and bodies
-where they stand (R5). The 7f replays and the publication check run the same steps and read the seats the same way (R1).
+where they stand (R5). The step measures a member's progress to its seat, not to its own feeds: measured to its feeds, a member on one side
+of the unit's centre always moves away from them, and the step gave its move back. The unit is also checked as a unit (`rowUnitFaults`, review
+1 of ticket 27): the replay of one group runs where its neighbours stand, so a whole unit shifted off its seat held each member in place. When
+a member stands off its seat, one pass of the tier's steps is replayed on a copy (the order, seats and tail reservation of 7c), and every
+member that pass moves is a finding; the residual that the slack forces (the clamp, a guard) stands where the pass leaves it, and the check
+reads boxes, so members with no candidate port are covered. The 7f replays and the publication check run the same steps and read the seats
+the same way (R1).
 Refused, measured on the 534 corpus sheets: pooling every packed run by least squares (58 sheets changed, bent links worse on 21, better on 14,
 one gate worse) or by the weighted median (55 changed, worse on 17, better on 5). Both moved groups with different feeds off feeds they stood
 straight on (a group of three straight drops for one diagonal chord on `a-node-spans-both-peers-to-keep-its-links-straight`). Refused as the
