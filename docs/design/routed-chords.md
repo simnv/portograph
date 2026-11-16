@@ -266,7 +266,9 @@ so it owns no lane.
   preference (dense-16x9 ticket 14, `dodge`): a middle drop, or the long vertical of a jogged drop,
   that stands in any chord's wall moves to an x clear of every wall only where the plan keeps every
   shape and row, its height and growth, adds no crowded part, and, over every pair that holds the
-  moved part read at each link's own stroke (`linkStrokeWidth`, as the scorer reads it), adds no G6
+  moved part, read at each link's own stroke (`linkStrokeWidth`, as the scorer reads it) with the
+  port-to-tip stems of every planned part, the stems of the frame's tips and residual parts, and the
+  held chords themselves (the inventory above `movedPairs`), adds no G6
   finding (`parallelClearance`), makes no pair's finding worse, and brings no increase in total
   crossings (`strictCrossing`); else the next clear x is tried, and with none it keeps its seat. Tests: plan states in `test/layout/gap-plan.test.ts`, and
   `test/fixtures/staged/a-z-middle-drop-beside-a-chord-tip.json`, a stored-path state (a chord path
