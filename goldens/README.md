@@ -416,6 +416,7 @@ Ticket 83 rule fixtures, retaining the prototype filenames:
 | `synthetic/a-solid-block-keeps-a-gap-that-already-fits.yaml` | A sufficient 34-degree/top-entry gap takes no growth after x settles. |
 | `synthetic/solid-blocks-that-share-nodes-keep-their-owners.yaml` | Shared-node blocks decline together pending the component decision of ticket 84. |
 | `synthetic/a-solid-block-keeps-the-box-corner-margin.yaml` | Packed far groups retain 10 px corner clearance for every solid chord (ticket 83 B1). |
+| `synthetic/a-block-face-sums-its-neighbour-pair-pitches.yaml` | Dense-16x9 ticket 04, slice 1: two block members and four plain uplinks on one face; each member port keeps the 21 px block pitch from both neighbours and the body end, two uplinks side by side keep 12 px, and the face capacity is the sum of the pair pitches. Test `test/layout/pair-pitch.test.ts`. |
 | `synthetic/a-solid-block-enters-beside-a-foreign-group.yaml` | A foreign middle group keeps its slot; each solid chord enters its own far box from above (ticket 83 B1/N7). |
 | `synthetic/a-solid-block-spans-two-far-groups.yaml` | A complete 2x4 block across two far pairs has one canonical owner; wide followers retain their own constraints (ticket 83 B2/N4). |
 | `synthetic/a-solid-block-proves-the-cap-before-region-placement.yaml` | A wide 2x6 block declines at stage 5 before the costly region probe (ticket 83 N2). |

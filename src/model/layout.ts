@@ -97,6 +97,13 @@ export interface LayoutPort extends OwnedElement {
   pill?: PillGeometry;
 }
 
+/**
+ * One neighbour-pair pitch of a face (`LayoutNode.pairPitch`). `fan`: the two ports (`portId`, sorted) keep `min` when they stand side by
+ * side; the fan round measured it on the placed chords (ticket 89). `block`: the one member port of a complete solid block keeps `min` from
+ * either neighbour (ticket 83's face pitch).
+ */
+export interface PairPitch { rule: 'fan' | 'block'; ports: string[]; min: number }
+
 export interface LayoutNode extends OwnedElement {
   id: string;
   /** Overrides the shared theme default; zero explicitly means no visible stroke. */
@@ -110,6 +117,12 @@ export interface LayoutNode extends OwnedElement {
   size?: Size;
   bounds?: Rect;
   sidePitch?: Partial<Record<Side, number>>;
+  /**
+   * The neighbour-pair pitches of the top and bottom faces above `sidePitch` (dense-16x9 ticket 04, slice 1; `pair-pitch.ts`). Two ports that
+   * stand side by side on a face keep the larger of the face's `sidePitch` and every entry that names them; the capacity of the face is the sum
+   * of its pair pitches, never the largest one times the gaps. Absent, or no entry for a face: every pair of that face keeps `sidePitch`.
+   */
+  pairPitch?: Partial<Record<'top' | 'bottom', PairPitch[]>>;
   /** Occupied corners only. Absent before sizing, or when no perpendicular named faces meet.
    * Sizing records the separating axis; later geometry must preserve it (R1/R2). */
   portCorners?: { lateral: 'left' | 'right'; horizontal: 'top' | 'bottom'; axis: 'x' | 'y'; clearance: number }[];
@@ -950,7 +963,7 @@ export interface FrozenPort {
 export interface PlacementSnapshot {
   sharedRuns: { link: string; runs: NonNullable<LayoutLink['sharedRuns']> }[];
   fixedSegments: { link: string; segments: PathSegment[] }[];
-  nodes: Record<string, Pick<LayoutNode, 'bounds' | 'size' | 'sizeFloor' | 'contentSize' | 'contentInsets' | 'sidePitch' | 'portCorners' | 'ports' | 'icon'>>;
+  nodes: Record<string, Pick<LayoutNode, 'bounds' | 'size' | 'sizeFloor' | 'contentSize' | 'contentInsets' | 'sidePitch' | 'pairPitch' | 'portCorners' | 'ports' | 'icon'>>;
   groups: Record<string, Pick<LayoutGroup, 'bounds' | 'rowOrder' | 'nodes' | 'tier' | 'flank'>>;
   tierBands: TierBand[];
   regions: Region[];

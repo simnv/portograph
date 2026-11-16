@@ -12,6 +12,7 @@ import { groupShape } from './grid.js';
 import { orderedNodeIds } from '../model/model.js';
 import { nodeTier } from './read/tier.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { facePairPitches } from './pair-pitch.js';
 
 /**
  * The order of the ports of one face from the planned first turn of their links (architecture ticket 24, `docs/design/turn-order.md`).
@@ -359,6 +360,9 @@ export function laneFaceOrder(model: LayoutModel, node: string, side: Side): Lay
   if (ports.length < 2 || ports.some(port => port.anchor === undefined) || !turnScope(model, node, side)) return undefined;
   const group = model.document.nodes[node]?.group;
   if (group !== undefined && groupShape(model, group) === 'bar') return undefined;
+  // A face with a neighbour-pair pitch (dense-16x9 ticket 04) keeps the order its pitches were reserved for: a new order would stand the ports
+  // in slots of other pairs.
+  if (facePairPitches(model.nodes[node]!, side).length) return undefined;
   if (model.links.some(link => link.bundle !== undefined && [link.attachments?.from, link.attachments?.to].some(ref => ref !== undefined && ref.node === node))) return undefined;
   const reserved = (port: LayoutPort): boolean => port.laneHint === true || port.sideHint === true || port.courseHint === true || linksAtPort(model, port.ref).some(link => link.spanHint === true
     || (model.courses ?? []).some(course => course.link === link.id) || model.lanes.some(lane => lane.owner.kind === 'link' && lane.owner.id === link.id && lane.kind !== undefined && lane.kind !== 'transit'));

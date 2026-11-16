@@ -4,6 +4,7 @@ import { measurePortPill } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { endPitch, pairExcess } from './pair-pitch.js';
 
 /** Immutable pill extents describe the required separation, never the choice of axis. */
 function cornerRequirements(node: LayoutNode) {
@@ -22,7 +23,8 @@ export function reservePortCorners(node: LayoutNode, width: number): void {
   if (node.portCorners !== undefined) return;
   const corners = cornerRequirements(node).map(corner => {
     const count = node.ports.filter(port => (port.side ?? port.sizingSide) === corner.horizontal).length;
-    const margin = (width - (count - 1) * node.sidePitch![corner.horizontal]!) / 2;
+    const pitch = node.sidePitch![corner.horizontal]!;
+    const margin = (width - (count - 1) * pitch - pairExcess(node, corner.horizontal, count, pitch)) / 2;
     const axis = margin >= corner.x ? 'x' : 'y';
     return { lateral: corner.lateral, horizontal: corner.horizontal, axis, clearance: corner[axis] } as const;
   });
@@ -37,7 +39,8 @@ export function lateralPillInset(node: LayoutNode, side: Side): number {
 
 /** Every face installer consumes the same stored corner choice. */
 export function portEndInsets(node: LayoutNode, side: Side, pitch = node.sidePitch![side]!): { low: number; high: number } {
-  const base = NODE_CONTENT_GEOMETRY.padding + pitch / 2;
+  // Half the pitch the end ports keep to the body ends (`endPitch`: the face pitch, or the block pitch of a member port on the face).
+  const base = NODE_CONTENT_GEOMETRY.padding + endPitch(node, side, pitch) / 2;
   const inset = Math.max(base, lateralPillInset(node, side));
   const horizontal = (node.portCorners ?? []).filter(corner => corner.horizontal === side && corner.axis === 'x');
   return {
@@ -46,11 +49,12 @@ export function portEndInsets(node: LayoutNode, side: Side, pitch = node.sidePit
   };
 }
 
-/** Measured face capacity, including the stored corner reservations. Empty faces keep the old floor. */
+/** Measured face capacity, including the stored corner reservations and the neighbour-pair pitches (`pairExcess`, the sum over the gaps in
+ * any order of the ports). Empty faces keep the old floor. */
 export function portSideCapacity(node: LayoutNode, side: Side, count: number, pitch = node.sidePitch![side]!): number {
   const { low, high } = portEndInsets(node, side, pitch);
   const extra = low + high - (2 * NODE_CONTENT_GEOMETRY.padding + pitch);
-  return count * pitch + 2 * NODE_CONTENT_GEOMETRY.padding + extra;
+  return count * pitch + pairExcess(node, side, count, pitch) + 2 * NODE_CONTENT_GEOMETRY.padding + extra;
 }
 
 /** Publication and restore check the stored axis, not whichever axis happens to separate later geometry. */

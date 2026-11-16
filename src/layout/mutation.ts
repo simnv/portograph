@@ -12,6 +12,7 @@ import { Validation } from '../parse/validation.js';
 import { portKey, sidesOne, SIDE_TIE_ORDER } from './sides-one.js';
 import { sizeNodes } from './size.js';
 import { lateralPillInset, portSideCapacity, validatePortCorners } from './port-insets.js';
+import { neighbourPitch, pairPitchFault } from './pair-pitch.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { measureText } from '../text/index.js';
 import { NODE_CONTENT_GEOMETRY } from '../theme/content.js';
@@ -183,7 +184,7 @@ function nodeLabels(model: LayoutModel) {
 function placement(model: LayoutModel): PlacementSnapshot {
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id,
-      pick(node, ['bounds', 'size', 'sizeFloor', 'contentSize', 'contentInsets', 'sidePitch', 'portCorners', 'ports', 'icon'])])),
+      pick(node, ['bounds', 'size', 'sizeFloor', 'contentSize', 'contentInsets', 'sidePitch', 'pairPitch', 'portCorners', 'ports', 'icon'])])),
     groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ['bounds', 'rowOrder', 'nodes', 'tier', 'flank'])])),
     tierBands: model.tierBands, regions: model.regions, lanes: model.lanes, labelBands: model.labelBands,
     sharedRuns: model.links.filter(link => link.sharedRuns !== undefined).map(link => ({ link: link.id, runs: link.sharedRuns! })),
@@ -535,6 +536,8 @@ function validateGeometry(model: LayoutModel): void {
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!, measured = expected.nodes[id]!, box = node.bounds;
     validatePortCorners(node);
+    const pairs = pairPitchFault(node);
+    if (pairs !== undefined) throw new Error(pairs);
     if (!box || !node.size || !node.sizeFloor || box.width <= 0 || box.height <= 0) throw new Error(`Missing positive geometry on ${id}`);
     if (stages.indexOf(model.stage) >= stages.indexOf('bars') && model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar') {
       const group = model.document.groups[model.document.nodes[id]!.group]!;
@@ -571,7 +574,9 @@ function validateGeometry(model: LayoutModel): void {
         if (!horizontal && (coordinate < box.y + corner - PLACEMENT_EPS || coordinate > box.y + box.height - corner + PLACEMENT_EPS)) {
           throw new Error(`Port corner clearance violated on ${id}.${side}`);
         }
-        if (coordinate - prior < pitch - PLACEMENT_EPS) throw new Error(`Port spacing/order violates pitch on ${id}.${side}`);
+        // Two neighbours keep their pair's pitch (`neighbourPitch`): the face pitch, or the stored pair pitch above it.
+        const need = index === 0 ? pitch : neighbourPitch(node, side, ports[index - 1]!.ref, port.ref, pitch);
+        if (coordinate - prior < need - PLACEMENT_EPS) throw new Error(`Port spacing/order violates pitch on ${id}.${side}`);
         prior = coordinate;
         if (port.authorOrder !== undefined) {
           if (!Number.isSafeInteger(port.authorOrder) || port.authorOrder < authored) throw new Error(`Author order reversed on ${id}.${side}`);

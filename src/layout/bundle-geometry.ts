@@ -15,6 +15,7 @@ import { gridChains } from './grid.js';
 import { BUNDLE_EDGE_EPS, PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 import { sidePillBodyReach } from './pill-reach.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
+import { neighbourPitch } from './pair-pitch.js';
 
 export const MEMBER_GAP = 16;
 export const MIN_STEM = 15;
@@ -758,9 +759,11 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     // A free port that stands before a planned one gives way to it: the ports on its left move left by a pitch each, rather than
     // pushing the planned port right out of line with its peers. `floorOf` has reserved the room.
     const wanted = ports.map(seat);
-    for (let i = ports.length - 2; i >= 0; i--) if (!plan.has(ports[i]!) && unrelated.has(ports[i]!)) wanted[i] = Math.min(wanted[i]!, wanted[i + 1]! - spacing);
+    // Each neighbour pair keeps its own pitch (`neighbourPitch`: the face pitch, or a pair pitch above it).
+    const gap = (i: number): number => i <= 0 ? spacing : neighbourPitch(node, side, ports[i - 1]!.ref, ports[i]!.ref, spacing);
+    for (let i = ports.length - 2; i >= 0; i--) if (!plan.has(ports[i]!) && unrelated.has(ports[i]!)) wanted[i] = Math.min(wanted[i]!, wanted[i + 1]! - gap(i + 1));
     ports.forEach((port, engineOrder) => {
-      const value = Math.max(wanted[engineOrder]!, prior + spacing);
+      const value = Math.max(wanted[engineOrder]!, prior + gap(engineOrder));
       port.engineOrder = engineOrder; port.anchor![tangent] = value; prior = value;
     });
     const dim = tangent === 'x' ? 'width' : 'height';

@@ -7,6 +7,7 @@
  * plain JSON), and every predicate that judges one is code in this file, outside the model.
  */
 import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Rect, Side, Size } from '../model/index.js';
+import type { PairPitch } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { frameSubtreeCells } from '../model/model.js';
 
@@ -17,6 +18,8 @@ export type ReservationOwner = Owner | { kind: 'command'; id: string };
 export interface ReservationPayload {
   /** A fan of chords needs this port pitch on a face (ticket 89). */
   pitchFloor: { node: string; side: Side; min: number };
+  /** A fan of chords needs this pitch between two ports (`portId`, sorted) of a face when they stand side by side (dense-16x9 ticket 04). */
+  pairFloor: { node: string; side: 'top' | 'bottom'; ports: readonly [string, string]; min: number };
   /** A hinted or course node keeps the size a measured run gave it (side-faces.md, Section 8). */
   nodeFloor: { node: string; min: Size };
   /** A lateral port takes `side`; `promise` is the routed shape the face was offered for. */
@@ -93,7 +96,7 @@ export const NO_RESERVATIONS: Reservations = [];
 const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner.kind}:${owner.node}:${owner.link}` : `${owner.kind}:${owner.id}`;
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
-  pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
+  pitchFloor: 'size', pairFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
   turnOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton',
 };
@@ -121,8 +124,8 @@ export function reserve(ledger: Reservations, entries: Reservations): Reservatio
     const at = result.findIndex(item => item.id === entry.id);
     if (at < 0) { result.push(entry); continue; }
     const old = result[at]!;
-    if (old.kind === 'pitchFloor' && entry.kind === 'pitchFloor') {
-      if (entry.payload.min > old.payload.min) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min: entry.payload.min } };
+    if ((old.kind === 'pitchFloor' && entry.kind === 'pitchFloor') || (old.kind === 'pairFloor' && entry.kind === 'pairFloor')) {
+      if (entry.payload.min > old.payload.min) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min: entry.payload.min } } as Reservation;
     } else if (old.kind === 'nodeFloor' && entry.kind === 'nodeFloor') {
       const min = { width: Math.max(old.payload.min.width, entry.payload.min.width), height: Math.max(old.payload.min.height, entry.payload.min.height) };
       if (!same(min, old.payload.min)) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min } };
@@ -169,6 +172,25 @@ export function pitchGrowth(ledger: Reservations, wanted: ReadonlyMap<string, Pa
   }
   return pitchFloors(grown, producer, revision);
 }
+
+/** The neighbour-pair pitches the fans need, per node and face, as the node stores them (`LayoutNode.pairPitch`, rule `fan`). */
+export function pairFloorsOf(ledger: Reservations): Map<string, Partial<Record<'top' | 'bottom', PairPitch[]>>> {
+  const floors = new Map<string, Partial<Record<'top' | 'bottom', PairPitch[]>>>();
+  for (const { payload } of ofKind(ledger, 'pairFloor')) {
+    const faces = floors.get(payload.node) ?? {};
+    faces[payload.side] = [...(faces[payload.side] ?? []), { rule: 'fan', ports: [...payload.ports], min: payload.min }];
+    floors.set(payload.node, faces);
+  }
+  return floors;
+}
+/** The pair entries of `wanted` that raise a floor the ledger holds: a value over the held one, or any when none is held. Empty when no pair needs more. */
+export function pairGrowth(ledger: Reservations, wanted: readonly { node: string; side: 'top' | 'bottom'; ports: readonly [string, string]; min: number }[], producer: RoundId, revision: number): Reservations {
+  const held = new Map(ofKind(ledger, 'pairFloor').map(({ payload }) => [pairDetail(payload), payload.min] as const));
+  return wanted.filter(item => item.min > (held.get(pairDetail(item)) ?? 0))
+    .map(item => reservation('pairFloor', { kind: 'node', id: item.node }, pairDetail(item), producer, revision, { node: item.node, side: item.side, ports: item.ports, min: item.min }));
+}
+/** The detail that tells two pair floors of one node apart: the face and the two port keys. */
+const pairDetail = (item: { side: string; ports: readonly string[] }): string => `${item.side}:${item.ports.join('|')}`;
 
 /** The node size floors, per node. */
 export function nodeFloorsOf(ledger: Reservations): Map<string, Size> {
@@ -303,6 +325,11 @@ export function floorFailure(item: Reservation, model: LayoutModel): string | un
     const have = model.nodes[item.payload.node]?.sidePitch?.[item.payload.side];
     return have !== undefined && have >= item.payload.min ? undefined : `the ${item.payload.side} pitch of ${item.payload.node} is under ${item.payload.min}`;
   }
+  if (item.kind === 'pairFloor') {
+    const node = model.nodes[item.payload.node];
+    const have = node?.pairPitch?.[item.payload.side]?.find(entry => entry.rule === 'fan' && entry.ports.join('|') === item.payload.ports.join('|'));
+    return have !== undefined && have.min >= item.payload.min ? undefined : `the ${item.payload.side} pair ${item.payload.ports.join(', ')} of ${item.payload.node} is under ${item.payload.min}`;
+  }
   if (item.kind === 'nodeFloor') {
     const size = model.nodes[item.payload.node]?.size;
     return size !== undefined && size.width >= item.payload.min.width && size.height >= item.payload.min.height ? undefined : `${item.payload.node} is smaller than its floor`;
@@ -399,7 +426,7 @@ const isPort = (value: unknown): boolean => isObject(value) && isString(value['n
 const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.length > 0
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide']);
 const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'skeleton', 'lanes', 'bands']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
@@ -414,6 +441,11 @@ function shapeFailure(entry: unknown): string | undefined {
   const sides = ['top', 'bottom', 'left', 'right'];
   switch (kind) {
     case 'pitchFloor': return isString(payload['node']) && sides.includes(payload['side'] as string) && isNumber(payload['min']) && (payload['min'] as number) > 0 ? undefined : bad;
+    case 'pairFloor': {
+      const ports = payload['ports'];
+      return isString(payload['node']) && (payload['side'] === 'top' || payload['side'] === 'bottom') && Array.isArray(ports) && ports.length === 2 && ports.every(isString)
+        && (ports[0] as string) < (ports[1] as string) && isNumber(payload['min']) && (payload['min'] as number) > 0 ? undefined : bad;
+    }
     case 'nodeFloor': {
       const min = payload['min'];
       return isString(payload['node']) && isObject(min) && isNumber(min['width']) && isNumber(min['height']) && (min['width'] as number) > 0 && (min['height'] as number) > 0 ? undefined : bad;

@@ -1,4 +1,5 @@
 import { portEndInsets } from './port-insets.js';
+import { neighbourPitch } from './pair-pitch.js';
 import type { LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import { readCache } from '../model/read-cache.js';
@@ -47,7 +48,9 @@ function faces(model: LayoutModel) {
     const node = model.nodes[port.ref.node]!, side = port.side!, box = node.bounds!, pitch = node.sidePitch![side]!, inset = portEndInsets(node, side, pitch);
     const ports = node.ports.filter(item => item.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
     const index = ports.findIndex(item => item === port);
-    return { low: index === 0 ? box.x + inset.low : ports[index - 1]!.anchor!.x + pitch, high: index === ports.length - 1 ? box.x + box.width - inset.high : ports[index + 1]!.anchor!.x - pitch };
+    // Each neighbour keeps the pitch of its pair (`neighbourPitch`: the face pitch, or a pair pitch above it).
+    return { low: index === 0 ? box.x + inset.low : ports[index - 1]!.anchor!.x + neighbourPitch(node, side, ports[index - 1]!.ref, port.ref, pitch),
+      high: index === ports.length - 1 ? box.x + box.width - inset.high : ports[index + 1]!.anchor!.x - neighbourPitch(node, side, port.ref, ports[index + 1]!.ref, pitch) };
   };
   return {
     linkOf,
