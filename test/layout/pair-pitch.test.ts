@@ -11,6 +11,8 @@ import { readDraft } from '../../src/layout/overlay-order.js';
 import { prepareBundleGeometry } from '../../src/layout/bundle-geometry.js';
 import { addPairPitch, addPairPitches } from '../../src/layout/pair-pitch.js';
 import { sizeNodes } from '../../src/layout/size.js';
+import { skeleton } from '../../src/layout/skeleton.js';
+import { sidesTwo } from '../../src/layout/sides-two.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { resolve } from '../../src/resolve/index.js';
 import { floorFailure, pairFloorsOf, pairGrowth, reservation, validateReservations } from '../../src/layout/reservations.js';
@@ -300,5 +302,45 @@ describe('the install merges a face in one pass (ticket 04, last step)', () => {
     expect(floorFailure(ledger[7]!, model)).toMatch(/is under 30/);
     addPairPitches(node, 'bottom', [{ rule: 'fan', ports: [...wanted[7]!.ports], min: 30 }]);
     expect(floorFailure(ledger[7]!, model)).toBeUndefined();
+  });
+});
+
+/**
+ * Review 3 of slice 1: stage 5 keeps the pair-specific gaps of a bundle and reserves them at its other end, and a face record holds one
+ * entry for each pair, so every reading of it is the same.
+ */
+describe('stage 5 and the record keep each pair (review 3)', () => {
+  const bundleText = readFileSync(new URL('../../goldens/synthetic/a-bundle-of-three-ports-agrees-at-both-ends.yaml', import.meta.url), 'utf8');
+
+  it('keeps unequal pair pitches of a bundle through stage 5 and reserves them at the other end', async () => {
+    // A 60 px round over two members, then a 30 px round over all three.
+    const model = sidesOne(resolve(parse(bundleText))), edge = model.nodes['edge']!;
+    const ports = edge.ports.filter(port => (port.side ?? port.sizingSide) === 'bottom'), keys = ports.map(port => portId(port.ref));
+    expect(ports).toHaveLength(3);
+    const fan = (a: number, b: number, min: number) => ({ rule: 'fan' as const, ports: [keys[a]!, keys[b]!].sort(), min });
+    edge.pairPitch = { bottom: [fan(0, 1, 60), fan(0, 2, 30), fan(1, 2, 30)] };
+    sizeNodes(model);
+    await skeleton(model, { createAttempt });
+    const out = sidesTwo(model), node = out.nodes['edge']!;
+    expect(faceOffsets(node, 'bottom', node.ports.filter(port => port.side === 'bottom'))).toEqual([0, 60, 90]);
+    expect(node.sidePitch!.bottom).toBeLessThan(30);
+    // Each two members keep one pair pitch at both ends, so the tracks stay parallel.
+    const links = out.links.filter(link => link.bundle !== undefined);
+    expect(links).toHaveLength(3);
+    const end = (link: typeof links[number], id: string) => (link.attachments!.from.node === id ? link.attachments!.from : link.attachments!.to);
+    for (const [i, one] of links.entries()) for (const two of links.slice(i + 1)) for (const [a, b] of [['edge', 'r1'], ['r1', 'edge']] as const) {
+      const side = (id: string, link: typeof one) => out.nodes[id]!.ports.find(port => portId(port.ref) === portId(end(link, id)))!.side!;
+      expect(neighbourPitch(out.nodes[a]!, side(a, one), end(one, a), end(two, a))).toBe(neighbourPitch(out.nodes[b]!, side(b, one), end(one, b), end(two, b)));
+    }
+  }, 180_000);
+
+  it('refuses a face record with two entries for one pair at restore (R5, R6)', () => {
+    const model = sidesOne(resolve(parse(bundleText))), node = model.nodes['edge']!, keys = node.ports.slice(0, 2).map(port => portId(port.ref)).sort();
+    node.pairPitch = { bottom: [{ rule: 'fan', ports: keys, min: 60 }, { rule: 'fan', ports: keys, min: 12 }] };
+    expect(() => restoreLayoutModel(JSON.stringify(model))).toThrow(/two pair pitches for one pair/);
+    node.pairPitch = { bottom: [{ rule: 'fan', ports: [...keys].reverse(), min: 60 }] };
+    expect(() => restoreLayoutModel(JSON.stringify(model))).toThrow(/two pair pitches for one pair/);
+    node.pairPitch = { bottom: [{ rule: 'fan', ports: keys, min: 60 }] };
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
   });
 });

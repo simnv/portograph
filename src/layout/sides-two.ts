@@ -1,4 +1,4 @@
-import { memberPitch } from './pair-pitch.js';
+import { addPairPitch, neighbourPitch } from './pair-pitch.js';
 import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { declineOversizedBlocks, reserveBlockPitch, seatBlockFollowers } from './solid-blocks.js';
 import type { PortRef } from '../model/document.js';
@@ -645,6 +645,34 @@ export function stemDepth(model: LayoutModel, port: LayoutPort, cache?: StemCach
 }
 
 /**
+ * The pair pitches of a bundle at its two ends (dense-16x9 ticket 04, review 3): each two members keep, at both ends, the larger of their pair
+ * pitches at the two ends (`neighbourPitch`), so the tracks stay parallel and each end reserves the gap the other end needs. Only the pairs of
+ * the bundle are carried; the face pitch stays the scalar of the faces, so a wide pair does not widen the other gaps. A top or bottom face
+ * stores the carried pair in its record (`addPairPitch`, which merges by pair; a pair entry, rule `fan`); a lateral face has no pair record and
+ * takes the pitch as its scalar. Returns whether a face changed. Nothing changes where no pair pitch binds two members.
+ */
+function carryBundlePairs(model: LayoutModel, links: readonly LayoutLink[]): boolean {
+  const ends = links.map(link => link.attachments!).filter(({ from, to }) => from.node !== to.node);
+  const nodes = [...new Set(ends.flatMap(({ from, to }) => [from.node, to.node]))].sort();
+  if (nodes.length !== 2) return false;
+  const at = (end: { from: PortRef; to: PortRef }, node: string): LayoutPort => findPort(model, end.from.node === node ? end.from : end.to)!;
+  let changed = false;
+  for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++) {
+    const pairs = nodes.map(node => [at(ends[i]!, node), at(ends[j]!, node)] as const)
+      .filter(([one, two]) => portKey(one.ref) !== portKey(two.ref) && one.side === two.side);
+    const need = Math.max(0, ...pairs.map(([one, two]) => neighbourPitch(model.nodes[one.ref.node]!, one.side!, one.ref, two.ref)));
+    for (const [one, two] of pairs) {
+      const node = model.nodes[one.ref.node]!, side = one.side!;
+      if (neighbourPitch(node, side, one.ref, two.ref) >= need) continue;
+      if (side === 'top' || side === 'bottom') addPairPitch(node, side, { rule: 'fan', ports: [portId(one.ref), portId(two.ref)].sort(), min: need });
+      else node.sidePitch![side] = need;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
  * Row gap between horizontal neighbours: the largest of the stroke-aware node clearance, the two
  * facing named pills with their visible wire, the stems and fans that turn here, and the described
  * facing link's label floor. Before the topology freeze only that straight label floor is known;
@@ -996,16 +1024,13 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       const links = model.links.filter(link => link.bundle === bundle.id);
       const ports = links.flatMap(link => [link.attachments!.from, link.attachments!.to])
         .map(ref => model.nodes[ref.node]!.ports.find(port => key(port.ref) === key(ref))!);
-      // The pitch of each member face, and the pair pitch of two members of the bundle on one face (`memberPitch`, dense-16x9 ticket 04): the
-      // far end keeps the step of the near end, so the tracks stay parallel. A pair pitch of a member with a port outside the bundle adds nothing.
-      const faces = new Map<string, LayoutPort[]>();
-      for (const port of ports) { const at = `${port.ref.node}\u0000${port.side}`; faces.set(at, [...faces.get(at) ?? [], port]); }
       const pitch = Math.max(16 + Math.max(DEFAULT_STROKE_WIDTHS.path, ...links.map(linkStrokeWidth)),
-        ...[...faces.values()].map(face => memberPitch(model.nodes[face[0]!.ref.node]!, face[0]!.side!, face.map(port => port.ref))));
+        ...ports.map(port => model.nodes[port.ref.node]!.sidePitch![port.side!]!));
       for (const port of ports) {
         const node = model.nodes[port.ref.node]!;
         if (node.sidePitch![port.side!]! < pitch) { node.sidePitch![port.side!] = pitch; pitchChanged = true; }
       }
+      if (carryBundlePairs(model, links)) pitchChanged = true;
     }
   }
   reserveBlockPitch(model);

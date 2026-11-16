@@ -386,7 +386,7 @@ export function declinedEntries(declined: DeclinedTrunks, revision: number): Res
 
 /**
  * Where each fan pair stood in a face record the last time the record was read (dense-16x9 ticket 04). A hint only, like `portPlaces`: it is
- * checked against the entry at that place on every use, and a pair is unique in a face record (`addPairPitches` merges by pair), so the answer
+ * checked against the entry at that place on every use, and a pair is unique in a face record (`addPairPitches` merges by pair, and `pairPitchFault` refuses a record with two entries for one pair), so the answer
  * is the one a search of the face gives. A ledger holds C(n, 2) pair floors of a face of n ports, and a search per floor made the check
  * quadratic in them (0.7 s at 100 ports, 2 ms with the hint).
  */

@@ -37,17 +37,6 @@ export function runPitches(node: LayoutNode, side: Side, refs: readonly PortRef[
 }
 
 /**
- * The largest pitch two of the ports `refs` of one face keep when they stand side by side, in any order: the face pitch, or a pair pitch of two
- * of them. Stage 5 reads it for the member ports of a bundle at each end, whose order is not fixed yet (dense-16x9 ticket 04, review 2). Only
- * the pairs of the bundle are read: a pair pitch of a member with a port outside the bundle, or with a port that has left the face, adds nothing.
- */
-export function memberPitch(node: LayoutNode, side: Side, refs: readonly PortRef[], pitch = node.sidePitch![side]!): number {
-  const keys = new Set(refs.map(portId));
-  return facePairPitches(node, side).reduce((most, entry) => (entry.rule === 'fan' ? entry.ports.every(key => keys.has(key)) : keys.has(entry.ports[0]!) && keys.size > 1)
-    ? Math.max(most, entry.min) : most, pitch);
-}
-
-/**
  * The pitch the two end ports of a face keep to its ends, doubled (`portEndInsets` adds half of it to the padding): the face pitch, or the
  * largest block pitch of a member port on the face. A body end is a neighbour of the member port beside it, and the order of the face is not
  * known to sizing, so every end keeps it. A fan pair binds no end.
@@ -102,16 +91,25 @@ export function pairExcess(node: LayoutNode, side: Side, count: number, pitch = 
   return Math.min((count - 1) * largest, fanSum + blockSum);
 }
 
-/** Why the pair pitches of a node cannot be read, or undefined (R6): every entry names ports of the node, by rule, with a positive finite pitch. */
+/**
+ * Why the pair pitches of a node cannot be read, or undefined (R6): every entry names ports of the node, by rule, with a positive finite pitch,
+ * and a face holds one entry for each rule and pair (the fan ports sorted). Validation and every restore ask it.
+ */
 export function pairPitchFault(node: LayoutNode): string | undefined {
   if (node.pairPitch === undefined) return undefined;
   const keys = new Set(node.ports.map(port => portId(port.ref)));
   for (const [side, entries] of Object.entries(node.pairPitch)) {
     if ((side !== 'top' && side !== 'bottom') || !Array.isArray(entries)) return `${node.id} has pair pitches on ${side}`;
+    const seen = new Set<string>();
     for (const entry of entries) {
       const size = entry.rule === 'fan' ? 2 : entry.rule === 'block' ? 1 : 0;
       if (!size || !Array.isArray(entry.ports) || entry.ports.length !== size || new Set(entry.ports).size !== size
         || !entry.ports.every(key => keys.has(key)) || !Number.isFinite(entry.min) || entry.min <= 0) return `${node.id} has an unreadable pair pitch on ${side}`;
+      // One entry for each rule and pair, with the ports of a fan pair sorted, as `addPairPitches` writes it: the readers read the first entry of
+      // a pair (`fanEntry` keeps its place), so a record with two entries for one pair has no one reading (dense-16x9 ticket 04, review 3).
+      const pair = `${entry.rule}\u0000${entry.ports.join('|')}`;
+      if ((entry.rule === 'fan' && entry.ports[0]! > entry.ports[1]!) || seen.has(pair)) return `${node.id} has two pair pitches for one pair on ${side}`;
+      seen.add(pair);
     }
   }
   return undefined;
