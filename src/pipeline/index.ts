@@ -11,6 +11,7 @@ import type { LayoutModel, NormalisedDocument } from '../model/index.js';
 import type { LayoutOptions } from './options.js';
 import { createEnv } from './env.js';
 import { checkReadCaches } from '../model/read-cache.js';
+import { openAdmissionMemo } from '../layout/admission-memo.js';
 import { firstState } from './initial.js';
 import { drive, refuseCrowdedChords } from './driver.js';
 import { publish } from './publish.js';
@@ -37,7 +38,9 @@ export type { LayoutOptions, LayoutProgress } from './options.js';
  */
 export async function layout(document: NormalisedDocument, options: LayoutOptions = {}): Promise<LayoutModel> {
   const run = (): Promise<LayoutModel> => document.layout?.maxWidth !== undefined ? fitWidthBudget(document, options, layoutOnce) : layoutOnce(document, options);
-  return options.checkCaches ? checkReadCaches(run, options.checkCaches === 'sampled' ? 'sampled' : 'all') : run();
+  // The admission memo lives while the command runs (dense-16x9 ticket 21).
+  const close = openAdmissionMemo();
+  try { return await (options.checkCaches ? checkReadCaches(run, options.checkCaches === 'sampled' ? 'sampled' : 'all') : run()); } finally { close(); }
 }
 
 /** One complete pipeline run; the width-budget trials share the caller's command deadline. */
