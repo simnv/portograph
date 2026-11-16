@@ -759,12 +759,14 @@ function centringOffset(chosen: readonly Feed[]): number {
  * The feeds a group step centres on, and the offset its main move takes toward them (`centringOffset`), as the step reads them: undefined for a
  * group the step does not centre (a bar, or a group with no feed of its own).
  */
-function ownCentring(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string): { own: Feed[]; chosen: Feed[]; offset: number } | undefined {
+function ownCentring(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string): { own: Feed[]; chosen: Feed[]; offset: number; verticals: number } | undefined {
   if (model.document.groups[id]!.shape === 'bar') return undefined;
   const { own, yielded } = groupFeeds(model, context, tier, list, id, false);
   if (!own.length) return undefined;
   const chosen = moveBeforeGrow(model) ? seatedFeeds(model, chosenFeeds(context, tier, own, yielded)) : chosenFeeds(context, tier, own, yielded);
-  return { own, chosen, offset: centringOffset(chosen) };
+  // The child ports whose feed may own a vertical (the first child by x of its parent port, not yielded): a fan remainder can stand no drop straight.
+  const owning = chosen.filter(feed => context.winners.get(`${tier}:${feed.key}`) === portId(feed.child.ref) && !yielded.has(feed));
+  return { own, chosen, offset: centringOffset(chosen), verticals: new Set(owning.map(feed => portId(feed.child.ref))).size };
 }
 /**
  * The seat of the centred groups of one row (dense-16x9 ticket 27): the least-absolute-deviations solution of "each group at the x its own feeds
@@ -773,8 +775,9 @@ function ownCentring(model: LayoutModel, context: CentreContext, tier: number, l
  * weighted median of what its members want, so the packing no longer stacks such a row to one side of its feeds (the first group at its mean,
  * the others to its right). The median, not the mean: a drop is straight or bent, and its slant does not count, so the unit keeps one member at
  * its own feeds (the heaviest side holds), and a run of equal members stands centred, its middle member at the common mean. When the weight
- * splits evenly, the unit takes the middle of the median interval, so equal halves stand symmetric. The weight of a group is the number of its
- * wanted child ports: each drop of the group slants by the group's miss; the width of a box is no part of a drop.
+ * splits evenly, the lower end of the median interval is the tie rule (one member stands on its feeds). The weight of a group is the number of
+ * its wanted child ports whose feed may own a vertical (a fan remainder may not): each such drop is straight only at the group's own x; the
+ * width of a box is no part of a drop, and a group with no such port pulls the unit nowhere.
  * A run holds only groups fed by the same parent nodes (the parents of all the group's own feeds): those are the groups that pile up on one
  * feed mean. Groups fed by different parents that the packing pushes together keep the old pack (measured on the corpus: pooling every packed
  * run moved 55 sheets and bent links on 17 of them, because the unit moved a group off feeds it stood straight on). A run is also broken by a
@@ -788,14 +791,16 @@ function rowSeats(model: LayoutModel, context: CentreContext, tier: number, list
   const order = context.groupOrder.get(tier)!, gap = bandGap(model), seats = new Map<string, number>();
   type Item = { id: string; want: number; width: number; weight: number; parents: string };
   let run: Item[] = [], window = '', feeding = '';
-  /** The weighted median of `values`, the middle of the median interval when the weight splits evenly. */
+  /**
+   * The lower weighted median of `values`: the first value, in ascending order and then group order, at which half the weight is reached. When
+   * the weight splits evenly, the lower end of the median interval is the tie rule: one member of the unit stands on its own feeds.
+   */
   const median = (values: readonly { value: number; weight: number; at: number }[]): number => {
     const sorted = [...values].sort((p, q) => p.value - q.value || p.at - q.at), half = sorted.reduce((sum, item) => sum + item.weight, 0) / 2;
     let below = 0;
-    for (const [i, item] of sorted.entries()) {
+    for (const item of sorted) {
       below += item.weight;
-      if (below > half + PLACEMENT_EPS) return item.value;
-      if (below >= half - PLACEMENT_EPS) return (item.value + sorted[i + 1]!.value) / 2;
+      if (below >= half - PLACEMENT_EPS) return item.value;
     }
     return sorted[sorted.length - 1]!.value;
   };
@@ -834,7 +839,7 @@ function rowSeats(model: LayoutModel, context: CentreContext, tier: number, list
     if (key !== window || parents !== feeding) flush();
     window = key; feeding = parents;
     const box = model.groups[id]!.bounds!;
-    run.push({ id, want: box.x + read.offset, width: box.width, weight: new Set(read.chosen.map(feed => portId(feed.child.ref))).size, parents });
+    run.push({ id, want: box.x + read.offset, width: box.width, weight: read.verticals, parents });
   }
   flush();
   return seats;
@@ -2146,9 +2151,15 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
           if (!sameDeclines(model.alignmentTargets[face], trial.alignmentTargets?.[face])) result.push(`${ALIGNMENT_TARGETS_DIFFER}: ${face}`);
         }
       }
+      // A group its row seats off its own wanted x (`rowSeats`) leaves its wanted ports unresolved by design, so its ports prove nothing: the replay
+      // must also leave its box and its bodies where they stand, or the group is off its seat and no port of it is excused (R5, dense-16x9 ticket 27).
+      const offSeat = pooled.has(id) && [group.id, ...group.nodes].some(item => {
+        const was = (model.groups[item] ?? model.nodes[item])!.bounds!, now = (trial.groups[item] ?? trial.nodes[item])!.bounds!;
+        return Math.abs(now.x - was.x) > 0.5 || Math.abs(now.width - was.width) > 0.5;
+      });
       for (const { child, x, feed, port } of candidates) {
         // Only the ports the producer's own step could not resolve are excused, never their siblings.
-        if (step.unresolved.has(child)) continue;
+        if (!offSeat && step.unresolved.has(child)) continue;
         result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
       }
     }
