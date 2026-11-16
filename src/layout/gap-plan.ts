@@ -121,8 +121,10 @@ export interface PlanFrame {
    */
   verticals?: readonly number[];
   /**
-   * The held routed chords that cross the gap, as slanted walls (docs/design/routed-chords.md, Section 8): the x of each at the gap's low y and at its
-   * high y. A Z part's middle drop keeps `keep` from the whole span of a chord in the gap. A chord asks for no height and a planned row may cross it.
+   * The held routed chords in the gap, as slanted walls (docs/design/routed-chords.md, Section 8): the x of each where its extent in the gap begins
+   * and ends, at the gap's low y and at its high y, or at its own end where it ends inside the gap (on a pill face, dense-16x9 ticket 14). A free
+   * vertical keeps `keep` from the whole x-span of that extent (`chordWall`): a Z part's middle drop, and the long vertical of a jogged drop, which
+   * takes the end x that is clear. A chord asks for no height and a planned row may cross it.
    */
   chords?: readonly { low: number; high: number }[];
   /**
@@ -244,7 +246,10 @@ const same = (a: number, b: number): boolean => Math.abs(a - b) <= EPS;
 interface Part extends PlanInput {
   drop: boolean;
   jogged: boolean;
-  /** Which end's x the vertical of a jogged drop stands on: the upper by default, the lower where that is the one that keeps `keep` from every foreign leg. */
+  /**
+   * Which end's x the vertical of a jogged drop stands on: the upper by default, the lower where an obstacle stops the upper vertical, where only the
+   * lower x is clear of every chord wall (`chordWall`), or where that is the one that keeps `keep` from every foreign leg (never into a chord wall from a clear x).
+   */
   stand: 'upper' | 'lower';
   depth: number;
   after: number;
@@ -405,6 +410,15 @@ function reaches(outgoing: ReadonlyMap<string, readonly PlanEdge[]>, from: strin
 }
 
 /**
+ * The x-interval a held chord forbids to a free vertical of the plan (a Z part's middle drop, the long vertical of a jogged drop): the x-span of the
+ * chord's extent in the gap, grown by `keep` on each side. A chord is a slanted wall: the vertical keeps `keep` from its whole span, not from one x.
+ * An x on an edge of the interval is clear.
+ */
+function chordWall(chord: { low: number; high: number }, keep: number): readonly [number, number] {
+  return [Math.min(chord.low, chord.high) - keep, Math.max(chord.low, chord.high) + keep];
+}
+
+/**
  * The x a Z part's middle drop may take (2.2 O6): the centre of every interval between the part's ends that stands `keep` clear of
  * every other leg and drop, widest first (the first of equally wide ones first). `solve` takes the first that breaks the cycle.
  */
@@ -418,8 +432,7 @@ function middleDrops(part: Part, parts: readonly Part[], split: ReadonlyMap<stri
     if (middle !== undefined) centres.push(middle);
   }
   const lo = Math.min(part.upper.x, part.lower.x), hi = Math.max(part.upper.x, part.lower.x);
-  // A chord is a slanted wall: the drop keeps `keep` from its whole span in the gap, not from one x.
-  const forbidden = [...centres.map(x => [x - keep, x + keep] as const), ...chords.map(chord => [Math.min(chord.low, chord.high) - keep, Math.max(chord.low, chord.high) + keep] as const)]
+  const forbidden = [...centres.map(x => [x - keep, x + keep] as const), ...chords.map(chord => chordWall(chord, keep))]
     .sort((a, b) => a[0] - b[0]);
   const found: { from: number; to: number }[] = [];
   let cursor = lo;
@@ -618,9 +631,17 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
       depth: input.u === 'high' ? frame.bandTop - Math.min(input.upper.y, input.lower.y) : keep };
     const drop = Math.abs(input.lower.x - input.upper.x) < keep - EPS;
     const jogged = drop && !same(input.lower.x, input.upper.x);
-    return { ...input, drop, jogged, stand: jogged && upperStandBlocked(input) ? 'lower' : 'upper', depth: frame.bandTop - input.lower.y,
+    return { ...input, drop, jogged, stand: jogged && (upperStandBlocked(input) || walled(input.upper.x) && !walled(input.lower.x)) ? 'lower' : 'upper',
+      depth: frame.bandTop - input.lower.y,
       after: Math.max(pitch, input.labelRoom ?? 0) };
   };
+  // A held chord is a wall over its extent in the gap (dense-16x9 ticket 14): the long vertical of a jogged drop takes the end x that stands clear of
+  // every wall. Where both ends or neither stand clear, the other rules choose.
+  const walled = (x: number): boolean => (frame.chords ?? []).some(chord => {
+    const [x0, x1] = chordWall(chord, keep);
+    return x > x0 + EPS && x < x1 - EPS;
+  });
+  const standWalled = (part: Part): boolean => part.jogged && walled(part.stand === 'upper' ? part.upper.x : part.lower.x);
   // The long vertical of a jogged drop that stands on its upper x runs down to one clearance above the lower tip, so an obstacle anchored to the
   // band below (a lane box, a bundle envelope) that stands over that x stops it: the drop then stands on its lower x (whose leg `blocked` reads).
   const upperStandBlocked = (input: PlanInput): boolean => (frame.blocks ?? []).some(block => block.owner !== input.link && block.anchor === 'below'
@@ -659,7 +680,8 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
     let clash = clashing(part);
     if (clash && part.jogged) {
       const other: Part = { ...part, stand: 'lower' };
-      if (!clashing(other)) { part = other; clash = undefined; }
+      // A clash with a leg does not move the vertical from a clear x into a chord wall.
+      if (!clashing(other) && (!standWalled(other) || standWalled(part))) { part = other; clash = undefined; }
     }
     if (clash) crowded.push({ id: part.id, link: part.link, with: clash.link });
     live.push(part);
@@ -669,6 +691,7 @@ function planGapCore(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
     if (!drop.jogged || !crowded.some(item => item.id === drop.id || item.with === drop.link)) continue;
     if (drop.stand === 'lower' && upperStandBlocked(drop)) continue;
     const flipped: Part = { ...drop, stand: drop.stand === 'upper' ? 'lower' : 'upper' };
+    if (standWalled(flipped) && !standWalled(drop)) continue;
     const others = live.filter(other => other !== drop);
     if (others.some(other => anyNear(legsOf(other, 'upper'), legsOf(flipped, 'upper')) || anyNear(legsOf(other, 'lower'), legsOf(flipped, 'lower')))) continue;
     live[index] = flipped;
@@ -1114,22 +1137,35 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   // Ports outside the plan still stand in the gap: a run keeps off their stems (O4).
   const ends = new Set(kept.flatMap(input => [`${input.upper.x}|${input.upper.y}`, `${input.lower.x}|${input.lower.y}`]));
   const tips = facingTips(model, gap, cache).filter(item => !ends.has(`${item.tip.x}|${item.tip.y}`));
-  const held = heldChordsAcross(model, gap);
+  const held = heldChordsIn(model, gap);
   return planGap(kept, { low: gap.low, bandTop, floor, keep, pitch: keep, edge: margin, obstacles, blocks,
     tips: tips.filter(item => item.side === 'bottom').map(item => item.tip),
     lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual,
     verticals: (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined
       && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x),
     chords: held.map(item => ({ low: item.low, high: item.high })),
-    ...(model.fanFamilies !== undefined ? { slants: held.filter(item => item.link.fanFamily !== undefined).map(item => item.segment) } : {}) });
+    // The fan rows read the chords that cross the whole gap, as before ticket 14.
+    ...(model.fanFamilies !== undefined ? { slants: held.filter(item => item.across && item.link.fanFamily !== undefined).map(item => item.segment) } : {}) });
+}
+
+/** A held routed chord with an extent in one tier gap. */
+export interface HeldChord {
+  link: LayoutLink;
+  segment: PathSegment;
+  /** The chord's x where its extent in the gap begins (the gap's low y, or its own upper end inside the gap) and where it ends (the high y, or its lower end). */
+  low: number;
+  high: number;
+  /** Whether the chord crosses the whole gap, from its low y to its high y. */
+  across: boolean;
 }
 
 /**
- * The held routed chords that cross the whole gap, with their x at the gap's low y and at its high y (a chord is one segment, so two numbers say
- * where it stands in the gap). A chord that ends short of the gap, or begins inside it, is no wall of this gap.
+ * The held routed chords with an extent in the gap, and the x of each where that extent begins and ends (a chord is one segment, so two numbers say
+ * where it stands in the gap). A chord that ends inside the gap, on a pill face below the band above or above the band below, is a wall over the part
+ * it has in the gap (dense-16x9 ticket 14); a chord that ends short of the gap, or stands level, is no wall of this gap.
  */
-function heldChordsAcross(model: LayoutModel, gap: TierGap): { link: LayoutLink; segment: PathSegment; low: number; high: number }[] {
-  const result: { link: LayoutLink; segment: PathSegment; low: number; high: number }[] = [];
+export function heldChordsIn(model: LayoutModel, gap: TierGap): HeldChord[] {
+  const result: HeldChord[] = [];
   const frozen = model.frozenChords ?? [];
   if (!frozen.length) return result;
   const linksById = new Map<string, LayoutLink>();
@@ -1138,9 +1174,12 @@ function heldChordsAcross(model: LayoutModel, gap: TierGap): { link: LayoutLink;
     const link = linksById.get(id), segment = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
     if (link === undefined || segment === undefined || !isRoutedChord(model, link)) continue;
     const top = Math.min(segment.from.y, segment.to.y), floor = Math.max(segment.from.y, segment.to.y);
-    if (top > gap.low + EPS || floor < gap.high - EPS || floor - top < EPS) continue;
+    if (floor - top < EPS) continue;
+    // The extent in the gap: from the gap's low y, or the chord's upper end where that lies inside; to the high y, or its lower end.
+    const from = top > gap.low + EPS ? top : gap.low, to = floor < gap.high - EPS ? floor : gap.high;
+    if (to - from < EPS) continue;
     const at = (y: number): number => segment.from.x + (y - segment.from.y) / (segment.to.y - segment.from.y) * (segment.to.x - segment.from.x);
-    result.push({ link, segment, low: at(gap.low), high: at(gap.high) });
+    result.push({ link, segment, low: at(from), high: at(to), across: from === gap.low && to === gap.high });
   }
   return result;
 }
@@ -1155,7 +1194,8 @@ function heldChordsAcross(model: LayoutModel, gap: TierGap): { link: LayoutLink;
 export function chordGapNotes(model: LayoutModel, plans: readonly { gap: TierGap; plan: GapPlan }[]): Diagnostic[] {
   const notes: Diagnostic[] = [], keep = nudgingDistance(model);
   for (const { gap, plan } of plans) {
-    for (const held of heldChordsAcross(model, gap)) {
+    // The notes read the chords that cross the whole gap, as before ticket 14; the judges' reading of a chord that ends in the gap is slice 2.
+    for (const held of heldChordsIn(model, gap).filter(item => item.across)) {
       const span = { x0: Math.min(held.low, held.high), x1: Math.max(held.low, held.high) };
       for (const part of plan.parts) {
         const near = plannedSegments(part, gap).filter(seg => Math.abs(seg.from.x - seg.to.x) < EPS && Math.abs(seg.from.y - seg.to.y) >= EPS)

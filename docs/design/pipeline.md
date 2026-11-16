@@ -920,11 +920,15 @@ reads and owns none of the gap's height: the plan asks for it, and 7f reserves i
 - A **drop** is a part whose two ends stand less than one run clearance `k` apart in x
   (`k = nudgingDistance`, `10 + stroke` = 11.5 px). It takes one vertical, with a jog where the ends
   differ; the vertical stands on the end x that keeps `k` from every foreign leg, and the jog on the
-  tip row, one clearance off it.
+  tip row, one clearance off it. A held chord is a wall over its extent in the gap: where only one end x
+  keeps `k` from the chord's x-span there, the vertical stands on that end, and a clash with a foreign leg
+  does not move it into the wall (dense-16x9 ticket 14).
 - A **stepped part** is any other. It takes an upper leg, a **run** on its **row**, and a lower leg,
   each on its own end's x.
 - A **Z part** is a stepped part with two rows and a **middle drop** between them, used only where
-  one row is impossible (a cycle among the rows).
+  one row is impossible (a cycle among the rows). The middle drop keeps `k` from the x-span of every
+  held chord over the chord's extent in the gap, also a chord that ends inside the gap on a pill face
+  (`heldChordsIn`, dense-16x9 ticket 14).
 
 The order is four rules over the parts. O1: parts that run the same way, do not interleave and
 overlap in x are ordered by their upper ends. O2: where the upper end of one part and the lower end

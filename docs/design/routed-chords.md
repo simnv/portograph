@@ -254,11 +254,13 @@ so it owns no lane.
   and excuses only a strict crossing (`parallelClearance`), so a strict crossing is legal. The
   crossing metric counts it: one crossing more in the score;
 - a **Z middle drop** keeps `k` from the chord. `solve` picks the middle drop's x before the rows
-  are seated, so the rows' y is not known then: `middleDrops` takes the chord's x-range over the
-  whole gap (its x at `low` and at the lower band's top), grown by `k`, out of the free intervals,
+  are seated, so the rows' y is not known then: `middleDrops` takes the chord's x-range over its
+  extent in the gap (its x at `low` and at the lower band's top, or at its own end where it ends
+  inside the gap, on a pill face; dense-16x9 ticket 14), grown by `k`, out of the free intervals,
   as it takes out the other legs and drops. A Z part left with no interval is rejected, as
   today;
-- a **jog** of a drop stands on a leg x, so Section 4 covers it;
+- a **jog** of a drop stands on a leg x, so Section 4 covers it; the long vertical of a jogged drop
+  takes the end x that stands outside the same wall where only one does (dense-16x9 ticket 14);
 - the chord adds no term to `H`.
 
 A 7f move in x (the canton close-up, column moves), or a gap that grows in y and so turns the
@@ -266,7 +268,8 @@ chord, can bring a leg nearer the chord after the decision. The plan names each 
 strictly (`TIER_GAP_CHORD_CROWDED`, info), and G6 judges, as for two verticals within `k`
 (`crowded`).
 
-*As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y; `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
+*As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y (since dense-16x9 ticket 14, at its own end
+where it ends inside the gap; `heldChordsIn` is the one reader, and `across` marks a chord over the whole gap, the only kind the notes and the fan rows read); `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
 once each. "Within `k`" is the centre-to-centre distance, 11.5 px (`k` holds the stroke). An unfit gap (`growth > 0` after the rounds) leaves all its parts to the
 router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
 
