@@ -7,6 +7,7 @@ import { faceKey } from './turn-order.js';
 import { portId } from './skeleton-graph.js';
 import { chordKind, isRoutedChord } from './frame-paths.js';
 import { linkById } from './peers.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 /**
  * The alignment-target record of the centring steps (architecture-2 ticket 66, `LayoutModel.alignmentTargets`). One producer writes it, the end of
@@ -24,6 +25,8 @@ export const ALIGNMENT_DECLINE_REASONS: readonly AlignmentDeclineReason[] = ['ri
 const RECORD_STAGES: readonly string[] = ['centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
 /** The record stages before the output of 7f: no guard has declined there yet. */
 const BEFORE_7F_OUTPUT: readonly string[] = ['centre', 'bars', 'bundles'];
+/** The record stages by default: from the centre rule's output to the output of 7f; the route rule drops the record. */
+const BEFORE_ROUTE: readonly string[] = ['centre', 'bars', 'bundles', 'bands'];
 /** The finding of the publication check: a face where the replay declines a target the record does not. */
 export const ALIGNMENT_TARGETS_DIFFER = 'alignment-targets-differ';
 
@@ -186,7 +189,8 @@ export function alignmentTargetsFault(model: LayoutModel): string | undefined {
   const record = model.alignmentTargets;
   // The record lives from the centre rule's output to publication (ADR-0027); before it is no record of anything. Absent is undecided.
   if (record === undefined) return undefined;
-  if (!RECORD_STAGES.includes(model.stage)) return `a record at stage ${model.stage}`;
+  // By default the route rule drops the record (architecture-2 ticket 66); with `layout.moveBeforeGrow` the routed layout keeps it (ADR-0027).
+  if (!(moveBeforeGrow(model) ? RECORD_STAGES : BEFORE_ROUTE).includes(model.stage)) return `a record at stage ${model.stage}`;
   if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'the record is not an object';
   const links = linkById(model);
   const finite = (value: unknown): boolean => typeof value === 'number' && Number.isFinite(value);

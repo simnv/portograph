@@ -724,7 +724,17 @@ export interface LayoutModel {
    */
   alignmentTargets?: Record<string, AlignmentTarget[]>;
   /**
-   * The seats of the centring steps (ADR-0027, dense-16x9 ticket 02), by node id: the last seat that changed the body, a slide in its row (`dx`),
+   * The growths the centre rule gave back (architecture-2 ticket 71), by node id: the wanted ports whose alignment widened the body and that no
+   * kept target used at the end of 7c (a growth the clamp stranded). Decided once, at the end of the centre rule, and stored; every later
+   * centring run and the publication replay read it (R1): a step that widens a given-back body and leaves every aligned port of its group off
+   * its x is declined, so the body keeps the width it began the step with. A sibling that stands a target lets the step keep the width; the
+   * centre rule then names the body (`CENTRE_GROWTH_KEPT`). Written only without `layout.moveBeforeGrow` (with it, a seat gives its own growth back). Absent = no growth was
+   * given back (a model before 7c, or one whose growths all serve a kept target). A present record names at least one node, each with at
+   * least one port, in port-key order.
+   */
+  givenBack?: Record<string, string[]>;
+  /**
+   * The seats of the centring steps (ADR-0027, dense-16x9 ticket 02; only with `layout.moveBeforeGrow`, absent otherwise), by node id: the last seat that changed the body, a slide in its row (`dx`),
    * a growth (`from` to `width`), or both, with the wanted ports it stood (`ports`, port-key order). A step writes it at its end when its
    * geometry stands; a seat that changes nothing writes nothing, so an entry keeps the pass that wrote it. One decision per node and step: the
    * seat (`seatNode`) moves the body inside the slack of its row first and grows it only by what no move gives, up to the alignment cap. Read by

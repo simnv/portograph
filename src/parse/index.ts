@@ -466,7 +466,7 @@ export function parseWithDiagnostics(text: string, options: ParseOptions = {}): 
         const style = v.choice(value, NODE_CONTENT_STYLES, '$.layout.nodeContent');
         if (style !== undefined) settings.nodeContent = style;
       }
-      else if (key !== 'overlayOverBodies' && key !== 'corridorRowOrder' && key !== 'farEndPull' && key !== 'feedOrder' && key !== 'autoArrange') v.report('UNKNOWN_KEY', `$.layout.${key}`, `Unknown key ${key}`);
+      else if (key !== 'overlayOverBodies' && key !== 'corridorRowOrder' && key !== 'farEndPull' && key !== 'feedOrder' && key !== 'autoArrange' && key !== 'moveBeforeGrow') v.report('UNKNOWN_KEY', `$.layout.${key}`, `Unknown key ${key}`);
       else if (typeof value !== 'boolean') v.report('INVALID_TYPE', `$.layout.${key}`, 'Expected a boolean');
       else settings[key] = value;
     }

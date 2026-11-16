@@ -25,7 +25,9 @@ import { isGridGroup, packRowsOf } from './grid.js';
 import { nodeTier } from './read/tier.js';
 import { rowGap } from './sides-two.js';
 import { linkLabelGap } from './bands.js';
-import { ownSideWidth, withinAlignmentCap } from './size.js';
+import { alignmentAllowance, ownSideWidth, withinAlignmentCap } from './size.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
+import { standsVertical, strandedGrowth } from './given-back.js';
 import { withStageMutation } from './mutation.js';
 import { barReach } from './bars.js';
 import { placeOverlayFree } from './overlay-place.js';
@@ -121,6 +123,11 @@ function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: 
   const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
   const box = node.bounds!, oldRight = right(box);
   if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return [];
+  // The default bound (ticket 29): no target whose reach leaves the body wider than its allowance. With `layout.moveBeforeGrow` the cap of the
+  // seat is judged on the side as a whole (ADR-0027).
+  const seats = moveBeforeGrow(model), allowance = seats ? Infinity : alignmentAllowance(model, node, side);
+  /** The width the body ends with when the port at `index` is aligned to `x`. */
+  const reach = (index: number, x: number): number => { const edges = alignedEdges(node, side, index, x, ports.length, pitch); return Math.max(oldRight, edges.high) - Math.min(box.x, edges.low); };
   /** Whether the body, grown in place to stand `list` (in engine order), keeps the alignment cap (ADR-0027). */
   const capHolds = (list: readonly { index: number; x: number }[]): boolean => {
     const low = alignedEdges(node, side, list[0]!.index, list[0]!.x, ports.length, pitch).low, high = alignedEdges(node, side, list.at(-1)!.index, list.at(-1)!.x, ports.length, pitch).high;
@@ -130,6 +137,7 @@ function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: 
     const key = portId(port.ref), x = targets.get(key), last = kept[kept.length - 1];
     const edges = x === undefined ? undefined : alignedEdges(node, side, index, x, ports.length, pitch);
     if (x !== undefined && (edges!.low < limit.low - EPS || edges!.high > limit.high + EPS)) continue;
+    if (x !== undefined && reach(index, x) > allowance + EPS) continue;
     // The overlay cap comes last, so it is named only where it alone declines the target.
     if (x !== undefined) {
       const beyondLow = edges!.low < stops.low - EPS;
@@ -141,6 +149,11 @@ function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: 
     if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) kept.push({ index, x, key });
   }
   if (!kept.length) return [];
+  if (!seats) {
+    const first = kept[0]!, last = kept[kept.length - 1]!;
+    return Math.max(oldRight, alignedEdges(node, side, last.index, last.x, ports.length, pitch).high)
+      - Math.min(box.x, alignedEdges(node, side, first.index, first.x, ports.length, pitch).low) > allowance + EPS ? [] : kept;
+  }
   // A seat has judged the cap on all its faces (`seatNode`); the parent spread asks it here, on the face it grows.
   return !judgeCap || capHolds(kept) ? kept : [];
 }
@@ -805,18 +818,29 @@ function alignedExtentOf(model: LayoutModel, context: CentreContext, tier: numbe
   const { farthestLeft, farthestRight } = farthest(model, walls);
   const dx = mainMove(model, group, farthestLeft, farthestRight, centringOffset(chosenFeeds(context, tier, own, yielded)));
   let bodyLow = Infinity, bodyHigh = -Infinity, grownLow = Infinity, grownHigh = -Infinity, kept = false;
-  const box = group.bounds!, inset = groupInsets(model, group), links = linkById(model), direct = directMembers(model);
-  const owes = seatOwes(model, seats, links, direct);
+  const box = group.bounds!, seated = moveBeforeGrow(model);
+  const inset = seated ? groupInsets(model, group) : undefined, owes = seated ? seatOwes(model, seats, linkById(model), directMembers(model)) : undefined;
   const movable = !isGridGroup(model, id) && !model.staggerRows?.some(row => row.group === id);
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!, body = node.bounds!;
     bodyLow = Math.min(bodyLow, body.x); bodyHigh = Math.max(bodyHigh, right(body));
     const moved: LayoutNode = { ...node, bounds: { ...body, x: body.x + dx }, ports: node.ports.map(port => ({ ...port, anchor: { ...port.anchor!, x: port.anchor!.x + dx } })) };
     const limit = siblingLimit(model, group, node);
+    if (!seated) {
+      // The default: each body grown in place to the targets the alignment keeps.
+      const targets = keptTargets(model, moved, 'bottom', wanted, { low: limit.low + dx, high: limit.high + dx }, overlayStops(model, moved));
+      grownLow = Math.min(grownLow, body.x + dx); grownHigh = Math.max(grownHigh, right(body) + dx);
+      if (!targets.length) continue;
+      kept = true;
+      const pitch = node.sidePitch!.bottom!, count = node.ports.filter(port => port.side === 'bottom').length, first = targets[0]!, last = targets[targets.length - 1]!;
+      grownLow = Math.min(grownLow, alignedEdges(node, 'bottom', first.index, first.x, count, pitch).low);
+      grownHigh = Math.max(grownHigh, alignedEdges(node, 'bottom', last.index, last.x, count, pitch).high);
+      continue;
+    }
     // The seat the step would take for the bottom face (ADR-0027), in the window the step gives a seat: the group box less its insets, moved
     // with the group. The window of the step is the one this extent reserves, so it is not read here.
-    const seat = seatCandidates(moved, seatTargets(moved, wanted, owes, ['bottom']), { siblings: { low: limit.low + dx, high: limit.high + dx },
-      window: { low: box.x + dx + inset.left, high: right(box) + dx - inset.right }, stops: overlayStops(model, moved) }, movable && chainBlockOf(model, nodeId) === undefined,
+    const seat = seatCandidates(moved, seatTargets(moved, wanted, owes!, ['bottom']), { siblings: { low: limit.low + dx, high: limit.high + dx },
+      window: { low: box.x + dx + inset!.left, high: right(box) + dx - inset!.right }, stops: overlayStops(model, moved) }, movable && chainBlockOf(model, nodeId) === undefined,
     seatCap(model, moved, moved.bounds!.width))[0];
     // A seat holds the body: a slide leaves the place the body had, a growth in place keeps it inside.
     const seatLow = seat?.x ?? body.x + dx, seatHigh = seat === undefined ? right(body) + dx : seat.x + seat.width;
@@ -925,7 +949,7 @@ function spreadParent(model: LayoutModel, context: CentreContext, tier: number, 
   const parents = mean(feeds.map(feed => feed.parent.anchor!.x)), children = mean(feeds.map(feed => feed.child.anchor!.x));
   const targets = new Map(feeds.map(feed => [feed.key, parents + feed.child.anchor!.x - children]));
   const unbounded = { low: -Infinity, high: Infinity }, stops = overlayStops(model, node);
-  if (keptTargets(model, node, 'bottom', targets, unbounded, stops).length !== feeds.length) return decline('the body would grow past the alignment cap or onto an overlay link');
+  if (keptTargets(model, node, 'bottom', targets, unbounded, stops).length !== feeds.length) return decline(`the body would grow past ${moveBeforeGrow(model) ? 'the alignment cap' : 'its alignment allowance'} or onto an overlay link`);
   const saved = JSON.stringify({ group, nodes: group.nodes.map(id => model.nodes[id]!) }), evidence = resizeEvidence(model, group);
   const restore = (): void => {
     const copy = JSON.parse(saved) as { group: LayoutGroup; nodes: LayoutNode[] };
@@ -1226,8 +1250,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
   // Centre under the feeds that may own an alignment; a yielded transit would only pull the group
   // away from the x its child is then aligned to. While a seat stands (`seatedFeeds`), a seated body pulls only through the feeds it keeps.
-  const record = model.alignmentSeats;
-  const chosen = seatedFeeds(model, chosenFeeds(context, tier, own, yielded));
+  const record = model.alignmentSeats, seated = moveBeforeGrow(model);
+  const chosen = seated ? seatedFeeds(model, chosenFeeds(context, tier, own, yielded)) : chosenFeeds(context, tier, own, yielded);
   /** How far each wanted port is from the x its feed asks for, in the model as it now stands. */
   const misses = (): Map<string, number> => {
     // One index of the group's ports per reading, the first port of a key first, as `find` gave it.
@@ -1273,13 +1297,24 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const links = linkById(model), direct = directMembers(model);
   // The ports each seat keeps (ADR-0027, the seat owns the body): the record once the centre rule has written one; before it, the wanted ports
   // that stood when the step began, which at a fixed point are the same. A kept port stays owed after the chord freeze.
-  const kept = new Set<string>(record === undefined ? [...startMisses].filter(([, miss]) => miss <= 0.5).map(([key]) => key)
+  const kept = new Set<string>(!seated ? [] : record === undefined ? [...startMisses].filter(([, miss]) => miss <= 0.5).map(([key]) => key)
     : group.nodes.flatMap(node => Object.hasOwn(record, node) ? record[node]!.ports : []));
-  const owedBefore = seatOwes(model, seats, links, direct), owes = (key: string): boolean => owedBefore(key) || kept.has(key);
+  const owedBefore = seated ? seatOwes(model, seats, links, direct) : () => true, owes = (key: string): boolean => owedBefore(key) || kept.has(key);
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
     const stops = walls.get(nodeId)!;
     let stoppedBy: string | undefined;
+    if (!seated) {
+      // The default: each face grows its body in place toward its targets, up to the allowance (`alignSide`).
+      for (const side of ['top', 'bottom'] as const) {
+        const box = node.bounds!, fromX = box.x, fromWidth = box.width;
+        const kept = alignSide(model, node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'), heldChordPorts(model, node));
+        for (const key of kept) aligned.add(key);
+        // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
+        if (box.x < fromX - EPS || box.width > fromWidth + EPS) for (const key of kept) notes.grown.set(key, { low: box.x - wanted.get(key)!, high: right(box) - wanted.get(key)! });
+      }
+    }
+    else {
     const nodePorts = new Set(node.ports.map(port => portId(port.ref)));
     const keptHere = record === undefined ? new Set([...kept].filter(key => nodePorts.has(key))) : Object.hasOwn(record, nodeId) ? new Set(record[nodeId]!.ports) : undefined;
     const recorded = record !== undefined && Object.hasOwn(record, nodeId) ? record[nodeId]! : undefined;
@@ -1302,6 +1337,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
       (notes.unseated ??= new Set()).add(nodeId);
     }
     for (const key of seat.capped) notes.declined.set(key, { reason: 'cap', by: nodeId });
+    }
     // Once per node, not once per pass and side.
     if (stoppedBy && warn && !model.diagnostics.some(d => d.code === 'ALIGNMENT_STOPPED_AT_OVERLAY' && d.message.startsWith(`${node.id} `))) {
       placementWarning(model, 'ALIGNMENT_STOPPED_AT_OVERLAY',
@@ -1362,12 +1398,13 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     if (Math.abs(port.anchor!.x - want) > 0.5) unresolved.add(key);
   }
   const endMisses = misses();
-  // A seat is judged where its step ends (ADR-0027, clause 5; once ticket 71's rule for a given-back body, now for every body). A step that widens a body
+  // A seat is judged where its step ends. By default this is ticket 71's rule for a body whose growth the centre rule gave back (`givenBack`); with
+  // `layout.moveBeforeGrow` it holds for every body (ADR-0027, clause 5). A step that widens such a body
   // and leaves every aligned port of the group off its x after the pack and the clamp is declined whole, as a window that cannot hold the group is:
   // the group stands near its feed with the widths it began the step with, and the aligned targets are named as alignments the row cannot hold (R6).
   // The publication check replays this step, so it reads the same record (R1, R5).
   if (aligned.size && [...aligned].every(key => (endMisses.get(key) ?? 0) > 0.5)
-    && group.nodes.some(nodeId => model.nodes[nodeId]!.bounds!.width > saved.nodes.find(node => node.id === nodeId)!.bounds!.width + EPS)) {
+    && group.nodes.some(nodeId => (seated || (model.givenBack !== undefined && Object.hasOwn(model.givenBack, nodeId))) && model.nodes[nodeId]!.bounds!.width > saved.nodes.find(node => node.id === nodeId)!.bounds!.width + EPS)) {
     if (warn) for (const feed of own) {
       if (!aligned.has(portId(feed.child.ref))) continue;
       placementWarning(model, 'CENTRE_ALIGNMENT_INFEASIBLE', `${feed.link} cannot align within its child's available row span; routing completes it.`, [feed.link]);
@@ -1499,7 +1536,7 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
   // A later run on a model whose centre rule ran no producer (a hand-made transaction) records no target and declines none, and says so (R6),
   // as the aligned extents do.
   if (model.alignmentTargets === undefined) {
-    if (model.stage === CENTRE_RULE_INPUT) { model.alignmentTargets = {}; model.alignmentSeats = {}; }
+    if (model.stage === CENTRE_RULE_INPUT) { model.alignmentTargets = {}; if (moveBeforeGrow(model)) model.alignmentSeats = {}; }
     else if (!model.diagnostics.some(d => d.code === 'ALIGNMENT_TARGETS_UNDECIDED')) {
       placementWarning(model, 'ALIGNMENT_TARGETS_UNDECIDED', `The centre rule recorded no alignment targets; this centring at stage ${model.stage} records none and declines none for good.`, []);
     }
@@ -1546,14 +1583,6 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     reportStall(model, [], 'Centering left an alignment off its feed after the last overlay windows and the passes the budget allowed; routing and the final gates decide the retained geometry.');
   }
   refreshWindowDeclines(model);
-}
-/** Whether the link stands vertical: its two ports face each other, one on a bottom face and one on a top face, within half a pixel in x. */
-export function standsVertical(model: LayoutModel, id: string): boolean {
-  const link = model.links.find(item => item.id === id);
-  if (!link?.attachments) return false;
-  const one = findPort(model, link.attachments.from), two = findPort(model, link.attachments.to);
-  if (!one?.anchor || !two?.anchor || ![one.side, two.side].includes('top') || ![one.side, two.side].includes('bottom')) return false;
-  return Math.abs(one.anchor.x - two.anchor.x) <= 0.5;
 }
 /**
  * A `CENTRE_ALIGNMENT_INFEASIBLE` names a feed that a step, or the parent stand, could not put on one x. A later pass, a parent spread, the parent
@@ -2013,6 +2042,42 @@ function hasRivals(model: LayoutModel): boolean {
 function dropEmptySpreads(model: LayoutModel): void {
   if (model.parentSpreads !== undefined && !Object.keys(model.parentSpreads).length) delete model.parentSpreads;
 }
+/**
+ * The centre rule's passes and its one judgement of their growths (architecture-2 ticket 71). The passes run from the rule's input; at their end a
+ * width the passes added to align a face's links and that no kept target or kept chord uses is stranded (`strandedGrowth`). When one is, the
+ * passes run once more from the same input with the record `givenBack`, and every step of a given-back body keeps a growth only for a target it
+ * stands. The judgement reads the end of all eight passes, not one pass: a growth one pass strands is the one a later pass may complete.
+ *
+ * Bound (R4): at most two runs of the passes, each on its own eight-pass budget (the first run is discarded whole, so its budget is no budget of
+ * the second). A growth the second run strands that the first did not is kept, and named (`CENTRE_GROWTH_KEPT`, info), as is a given-back body that
+ * ends the second run wider than the rule's input (its step is declined only when no aligned port of its group stands).
+ */
+function centreGivingBack(draft: LayoutModel): void {
+  // With `layout.moveBeforeGrow` a seat gives its own growth back (ADR-0027, clause 4): the passes run once.
+  if (moveBeforeGrow(draft)) { centreDraft(draft, createCentreBudget()); return; }
+  const input = JSON.stringify(draft);
+  centreDraft(draft, createCentreBudget());
+  const back = strandedGrowth(draft, JSON.parse(input) as LayoutModel);
+  if (!Object.keys(back).length) return;
+  for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
+  Object.assign(draft, JSON.parse(input) as LayoutModel, { givenBack: back });
+  centreDraft(draft, createCentreBudget());
+  const was = JSON.parse(input) as LayoutModel;
+  const kept = Object.keys(strandedGrowth(draft, was)).filter(node => !Object.hasOwn(back, node));
+  if (kept.length) {
+    draft.diagnostics.push({ stage: 'placement', severity: 'info', code: GROWTH_KEPT,
+      message: `The second run of the centring passes strands a growth of ${kept.join(', ')}; the centre rule judges its growths once, so the growth stays.` });
+  }
+  // The decline reads the targets of the whole group: a given-back body whose sibling stands a target keeps the step's growth (or one of its own
+  // ports stood and a later step moved it off). The record then names a growth the geometry keeps, and the note says so (R6).
+  const wide = Object.keys(back).filter(node => draft.nodes[node]!.bounds!.width > was.nodes[node]!.bounds!.width + EPS);
+  if (wide.length) {
+    draft.diagnostics.push({ stage: 'placement', severity: 'info', code: GROWTH_KEPT,
+      message: `${wide.join(', ')} ends the second run of the passes wider than the rule's input; its growth stays.` });
+  }
+}
+/** The note that the one judgement of the centre rule left a growth the second run stranded (ticket 71, R6). */
+const GROWTH_KEPT = 'CENTRE_GROWTH_KEPT';
 export function centre(model: LayoutModel): LayoutModel {
   return withStageMutation(model, 'centre', draft => {
     // The wide twin: the seats of the first feeds with the conflicting feeds pulling, as before ticket 12. It is built only where a port has two parents.
@@ -2022,9 +2087,9 @@ export function centre(model: LayoutModel): LayoutModel {
       return copy;
     };
     const wideTwin = hasRivals(draft) ? twin() : undefined;
-    orderBundles(draft); normalizePrimaryBundlePorts(draft); centreDraft(draft, createCentreBudget()); recordSeatedSideLanes(draft); dropEmptySpreads(draft);
+    orderBundles(draft); normalizePrimaryBundlePorts(draft); centreGivingBack(draft); recordSeatedSideLanes(draft); dropEmptySpreads(draft);
     if (!wideTwin) return;
-    centreDraft(wideTwin, createCentreBudget()); recordSeatedSideLanes(wideTwin); dropEmptySpreads(wideTwin);
+    centreGivingBack(wideTwin); recordSeatedSideLanes(wideTwin); dropEmptySpreads(wideTwin);
     // Narrow only if free: a link that stands straight under the wide seat must stand straight under the narrow one, or the node keeps its wide seat.
     const narrow = straightLinks(draft);
     if ([...straightLinks(wideTwin)].every(id => narrow.has(id))) return;

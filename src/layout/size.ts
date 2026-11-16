@@ -115,6 +115,36 @@ export function placeNodeContent(content: NodeContentMeasurement, box: Rect, ins
 }
 
 /**
+ * How much wider than itself a body may be made to seat a port under a coordinate another node
+ * owns. Stage 7c centres a child under its parents by widening it — nodes never move inside their
+ * row, so the widening is how a port travels — and nothing bounded that but a sibling, a reserved
+ * lane and a flank. On a wide sheet a node with a 99.5 px content floor was drawn 5 219 px wide to
+ * reach a feed at the other edge, and a four-node fixture walked a 50 px body to 3 014 px in eight
+ * passes (ticket 29).
+ *
+ * The same shape of decision as ADR-0012's linked-group grid, which grows one group box onto
+ * another's extent and refuses when the smaller box would be inflated to a much larger partner. Its
+ * constant stays its own: the grid measures two group boxes against their union, this measures one
+ * node body against what the node itself is.
+ *
+ * **12, measured.** The widths a working diagram needs: the approved golden's two providers, 50 px
+ * nodes drawn 166.75 px wide to sit under their feeds (3.34); and two inputs of the geometry corpus
+ * whose route loses a checkpoint when the widening is declined — `hub-t5-p3-f2-s3`, whose `n3_0` is
+ * 273 px against 50 (5.46), and `wide-t4-p2-f2-s3`, whose own `n3_0` is 450 px against 50 (9.0).
+ * Against them, the widths this rule was filed for: 52.4 and 74.4 times their own on the Enterprise
+ * NTP sheet, 60.3 in `bar-fan`. The NTP sheet answers the same at every bound from 1 to 16, so
+ * nothing on it chose this number; the corpus did, and the margin is thin. Of its 649 publishing
+ * inputs, 17 sit in [9.01, 12), **none** in [12, 16), and 3 above it — the highest the bound leaves
+ * untouched is `author-ordered-bundle` at **11.36**, a committed fixture, so there is 5.6 % of room
+ * under this number and none over it. It binds on exactly three inputs corpus-wide: `bar-fan`
+ * 60.28 → 10.75, the defect, and the fixtures `a-claimed-run-owns-only-its-pins` 18.00 → 11.57 and
+ * `a-claimed-run-clears-a-shared-run` 16.32 → 11.81, both of which still publish with their tests
+ * green — evidence that 16–18 was slack rather than need. At 8 the sheet's widest body falls further,
+ * to 637 px from 924, and `wide-t4-p2-f2-s3` stops publishing.
+ */
+export const ALIGNMENT_MAX_GROWTH = 12;
+
+/**
  * The alignment cap (ADR-0027, dense-16x9 ticket 02): how wide a seat of 7c may grow a body to stand its ports over their feeds,
  * as a multiple of the width the node needs for itself (`ownSideWidth`). A body grows only by what no move inside its row gives.
  *
@@ -126,10 +156,7 @@ export function placeNodeContent(content: NodeContentMeasurement, box: Rect, ins
  * worse on bends against 18) and on the dense 16:9 sheet (246 bends and a new G4 against 206 bends), so the owner took 5. The
  * sheet's widest grown body falls from 1 129 px on main to 427 px.
  *
- * **History.** Before ADR-0027 the cap was `ALIGNMENT_MAX_GROWTH = 12` times the width the face needs, a growth in place
- * (ranked-groups ticket 29). It was filed for 52.4 and 74.4 times on the Enterprise NTP sheet and 60.3 in `bar-fan`; with no
- * move, a body had to stretch to reach a feed, and the corpus set the number (`wide-t4-p2-f2-s3` stopped publishing at 8). The
- * seat moves the body first, so the growth that is left is smaller.
+ * Read only with `layout.moveBeforeGrow` (`moveBeforeGrow`); the default reads `ALIGNMENT_MAX_GROWTH` (`alignmentAllowance`).
  */
 export const ALIGNMENT_CAP_TIMES = 5;
 
@@ -149,6 +176,29 @@ export const ALIGNMENT_CAP_TIMES = 5;
 export function ownSideWidth(node: LayoutNode, side: Side): number {
   return Math.max(node.sizeFloor?.width ?? 0, node.contentSize?.width ?? 0,
     2 * theme.padding + node.ports.filter(port => port.side === side).length * (node.sidePitch?.[side] ?? 0));
+}
+
+/**
+ * The widest an alignment rule may leave this body. A body already wider than the allowance — one a
+ * bar span, a group grid or an earlier pass made wide — keeps that width and may align inside it;
+ * alignment may never be the reason it grows past the allowance. Reading the current width as a
+ * floor rather than as the reference is what keeps repeated passes from ratcheting: the allowance
+ * is a property of the node, not of how many times a rule has looked at it.
+ *
+ * That floor makes the bound depend on when it is read, which matters in one place: `centreViolations`
+ * replays a 7c step from a later stage, where a body a bar span or the group grid has since widened
+ * carries a larger allowance than the producer had, so the replay could keep a target the producer
+ * declined and report a violation the drawing does not have. Its `isBar` and bundled-port exclusions
+ * cover the rules that widen a body after 7c, and nothing reaches it across the suite or the
+ * geometry corpus; if anything ever does, it throws where it is read rather than drawing something
+ * wrong.
+ *
+ * A node of a stored feeding chain (`chainBlockOf`, fan wrap) may not grow at all: its allowance is its width.
+ */
+export function alignmentAllowance(model: LayoutModel, node: LayoutNode, side: Side): number {
+  // A node of a feeding chain (fan wrap, D-Q4) stands over its wrapped block by a stage-5 move; no alignment grows it toward a feed.
+  if (chainBlockOf(model, node.id) !== undefined) return node.bounds?.width ?? 0;
+  return Math.max(node.bounds?.width ?? 0, ALIGNMENT_MAX_GROWTH * ownSideWidth(node, side));
 }
 
 /** What the cap reads of a seat: the body width before (`from`) and after it (`width`). */

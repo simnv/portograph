@@ -4,6 +4,7 @@ import { findPort } from './row-paths.js';
 import { isSpreadFace } from './read/parent-spread.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 const HORIZONTAL: readonly Side[] = ['top', 'bottom'];
 /** A port is aligned with its peer when the two stand on one vertical within this distance. */
@@ -79,7 +80,7 @@ export function recentreSeatedFaces(model: LayoutModel, faces: readonly SeatedFa
     // A seat that grows a body in place after its group moved (ADR-0027) moves the face with the group and the body's left edge by the growth:
     // the first port and the left margin both change, but the block keeps its width. A block of another width was set by another rule.
     const block = box.width - m.low - m.high, was = face.width - 2 * face.low;
-    if (Math.abs(m.first - face.first) > PLACEMENT_EPS && Math.abs(m.low - face.low) > PLACEMENT_EPS && Math.abs(block - was) > PLACEMENT_EPS) continue;
+    if (Math.abs(m.first - face.first) > PLACEMENT_EPS && Math.abs(m.low - face.low) > PLACEMENT_EPS && (!moveBeforeGrow(model) || Math.abs(block - was) > PLACEMENT_EPS)) continue;
     const shift = (m.high - m.low) / 2;
     if (Math.abs(shift) <= PLACEMENT_EPS || pinned(model, node, face.side, feeds)) continue;
     for (const port of node.ports) if (port.side === face.side && port.anchor !== undefined) port.anchor.x += shift;

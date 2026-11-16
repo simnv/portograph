@@ -31,6 +31,8 @@ import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
 import { CENTRE_ALIGNMENT_OPEN, centreItemLink, flagUnverifiedCentring, publishedCentreViolations, selectAnchorTier, withdrawFallenSeatsOf } from './centre.js';
 import { ALIGNMENT_TARGETS_DIFFER, alignmentSeatsFault, alignmentTargetsFault } from './alignment-targets.js';
+import { givenBackFault } from './given-back.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 import { checkBodyTrims } from './end-trim.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
@@ -412,6 +414,9 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     // The seats are read by the acceptance gate of the fan wrap (ADR-0027, R1); a malformed one, or a seat past its cap, is refused (R5).
     const seats = alignmentSeatsFault(model);
     if (seats !== undefined) throw new Error(`The alignment seat record is forged: ${seats}`);
+    // The record of the growths the centre rule gave back is read by the replay below (architecture-2 ticket 71, R1); a malformed one is refused (R5).
+    const back = givenBackFault(model);
+    if (back !== undefined) throw new Error(`The given-back growth record is forged: ${back}`);
     const all = publishedCentreViolations(model, false, trims.untrimmed);
     // A replay that declines a target the record does not is a contradiction of the record, not an alignment a spent budget left unverified:
     // no diagnostic excuses it (R5; ADR-0010 covers the alignments only).
@@ -439,6 +444,7 @@ function validateRegionClaims(model: LayoutModel, intermediate = false): void {
     }
   }
   else if (model.anchorTier !== undefined) throw new Error('Premature anchor tier');
+  else if (givenBackFault(model, true) !== undefined) throw new Error(`The given-back growth record is forged: ${givenBackFault(model, true)}`);
   if (stages.indexOf(model.stage) < stages.indexOf('rows')) return;
   // A snapshot of the stages before the bundles skips the second derivation of the paths below (`withStageMutation`), but not the facing-order check:
   // it runs only before the bundle stage, so no later check reads it.
@@ -807,10 +813,12 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // The centre rule decides the aligned extents of the canton members once (architecture-2 ticket 31); every later rule keeps them.
     // It also records and withdraws the parent port moves it took at a frame-column wall (`parentWallMoves`, `standPortsOverChildren`),
     // and decides once which parents below the anchor tier spread their ports over their children (`parentSpreads`, architecture-2 ticket 32).
-    ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads'] : []),
-    // The centring steps of 7c to 7f write the record of their alignment targets (architecture-2 ticket 66) and of their seats (ADR-0027); a rule
-    // withdraws a seat its rebuild left off its feed. The routed layout keeps both.
-    ...(['centre', 'bars', 'bundles', 'bands'].includes(rule) ? ['alignmentTargets', 'alignmentSeats'] : []),
+    // It also gives back, once at its end, the growths no kept target uses (`givenBack`, architecture-2 ticket 71; not with `layout.moveBeforeGrow`).
+    ...(rule === 'centre' ? ['alignedExtents', 'parentWallMoves', 'parentSpreads', 'givenBack'] : []),
+    // The centring steps of 7c to 7f write the record of their alignment targets (architecture-2 ticket 66) and, with `layout.moveBeforeGrow`, of
+    // their seats (ADR-0027); a rule withdraws a seat its rebuild left off its feed. The route rule drops the targets by default (the publication
+    // of 7f has compared them) and keeps both records with the option.
+    ...(['centre', 'bars', 'bundles', 'bands', 'route'].includes(rule) ? ['alignmentTargets', 'alignmentSeats'] : []),
     // The end trim of 7f records the bodies and boxes it narrowed (architecture-2 ticket 68); every later rule keeps the record.
     ...(rule === 'bands' ? ['bodyTrims'] : []),
     // D-Q5: the publication writes the command's lift record (`decideLifts`); the entries it adds after the kept run are declined and move no band.
@@ -1058,7 +1066,10 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // (ticket 75; R1: the record and its replay read one seat record). With no stall recorded nothing is named, and the publication judges it.
     if (Object.keys(draft.alignmentSeats ?? {}).length < seats && draft.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) flagUnverifiedCentring(draft);
   }
-  // The routed layout keeps the records: its publication check replays the centring steps, and they read the seats the producer decided (ADR-0027).
+  // The last centring reading that reads the record is the publication of 7f: by default the routed layout publishes without it (architecture-2
+  // ticket 66). With `layout.moveBeforeGrow` the routed layout keeps the records: its publication check replays the centring steps, and they read
+  // the seats the producer decided (ADR-0027).
+  if (rule === 'route' && !moveBeforeGrow(draft)) delete draft.alignmentTargets;
   // The producers of 7e and 7f write after the rule checks above: their output is judged here, on the net draft after every dependent rebuild
   // and before commit (DR-11). Publication (`protect`) stays the second boundary.
   if (rule === 'bundles' || rule === 'bands') judgePostconditions(model, draft, rule);
