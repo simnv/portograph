@@ -26,8 +26,8 @@ import { deriveFrames } from './frames.js';
 import { bandHeldBy, bottom, fitRegionGroup, GROUP_PADDING, groupPadding, placementWarning, rebuildRegions, right } from './regions.js';
 import { withLayoutMutation } from './mutation.js';
 import { effectiveLayer } from '../score/model.js';
-import { LINK_LABEL_GEOMETRY, besideRunLabelBox, describedLink, labelBorders, linkLabelSize, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, tierGapSplit } from './link-labels.js';
-import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from './overlay-paths.js';
+import { LINK_LABEL_GEOMETRY, besideRunLabelBox, describedLink, labelBorders, linkLabelSize, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, labelGrowth } from './link-labels.js';
+import { overlayPath, overlayTrackRuns, straightChord } from './overlay-paths.js';
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
 import { chordKind, crossingRect, frozenLevelChordsFault, isRoutedChord, levelChordPartners } from './frame-paths.js';
 import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
@@ -44,6 +44,7 @@ import { isCantonFrame } from './read/canton.js';
 import { frameTitleEdge, groupTitleEdge } from './read/title-edge.js';
 import { straightOverlaysAsDrawn as straightOverlays } from './read/overlay-straight.js';
 import { straightFell, tapVerdict } from './objective.js';
+import { rowLabelNeed, rowLabelSplit } from './row-label-room.js';
 
 export { GROUP_LABEL_GEOMETRY } from './title-room.js';
 const OUTWARD: Record<Side, Point> = {
@@ -1206,46 +1207,10 @@ function alignGrid(model: LayoutModel, honour?: ReadonlySet<string>, hold?: Read
 function overlayLongestRun(model: LayoutModel, link: LayoutLink): PathSegment | undefined {
   return longestRun(overlayPath(model, link).segments);
 }
-/** `overlayRunMid` on the per-link path, before track separation (`overlayBasePath`): for the readers of placement that judge. */
-function overlayBaseRunAlong(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
-  const run = longestRun(overlayBasePath(model, link).segments);
-  if (!run || Math.abs(run.to[axis] - run.from[axis]) <= PLACEMENT_EPS) return undefined;
-  return (run.from[axis] + run.to[axis]) / 2;
-}
 function overlayRunMid(model: LayoutModel, link: LayoutLink, axis: 'x' | 'y'): number | undefined {
   const run = overlayLongestRun(model, link);
   if (!run || Math.abs(run.to[axis] - run.from[axis]) <= PLACEMENT_EPS) return undefined;
   return (run.from[axis] + run.to[axis]) / 2;
-}
-
-/**
- * The gap two nodes of one row must keep between their bodies for the label of a routed link between them: the room
- * `reserveLinkLabelRoom` reserves, read as a floor by the stages that widen a body into the row (ticket 33). Zero
- * without such a link. A routed link that detours needs more, and the reservation adds that on its own; this is the
- * least, so a widening never takes back a room the reservation has already given.
- */
-export function linkLabelGap(model: LayoutModel, a: string, b: string): number {
-  let gap = 0;
-  for (const link of model.links) {
-    const text = model.document.links[link.sourceIndex]?.label;
-    if (!text || link.technique === 'stub' || link.bundle || link.meshBus !== undefined || !link.attachments) continue;
-    const ends = [link.attachments.from.node, link.attachments.to.node];
-    if (!(ends.includes(a) && ends.includes(b))) continue;
-    const from = findPort(model, link.attachments.from), to = findPort(model, link.attachments.to);
-    if (!from?.anchor || !to?.anchor) continue;
-    const fromNode = model.nodes[link.attachments.from.node]!, toNode = model.nodes[link.attachments.to.node]!;
-    const found = sameTierEnds(from, fromNode, to, toNode);
-    if ('unreservable' in found) continue;
-    // The path of an overlay link is derived, which costs a search: it is asked for only once the two ends are known to face. A centring
-    // limit reads the per-link path (`overlayBasePath`, ticket 23): a separated run moves across its axis and keeps its direction.
-    if (effectiveLayer(link) === 'overlay' && (overlayLabelsSuppressed(model) || overlayBaseRunAlong(model, link, 'x') === undefined)) continue;
-    const { leftPort, leftNode, rightPort, rightNode } = found;
-    const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
-    const protrusion = Math.max(right(outer(leftPort, leftNode)) - leftPort.anchor!.x, rightPort.anchor!.x - outer(rightPort, rightNode).x, 0);
-    const required = measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width + 2 * LINK_LABEL_GEOMETRY.shortenMargin;
-    gap = Math.max(gap, required + 2 * protrusion);
-  }
-  return gap;
 }
 
 /**
@@ -1554,6 +1519,8 @@ export { labelBorders };
  * not face each other are diagnosed and left to the stage 9 ladder. Room beyond a reserved lane is inserted,
  * and the lane moves out with it (`insertRoomAt`). A label also stays in one region (ticket 19): on every run a label rides, one window
  * between the borders the run crosses must hold it (`labelWindowRoom`), and the growth is the larger of the two.
+ * `only: 'rows'` reads the row rooms alone (the row branch and the hinted overlay L): the across-run and track rooms and the rest of the
+ * tier-gap branch are left out. The row-room guards (`label-room-guard.ts`) read this, on a copy.
  */
 /**
  * Whether every room reserved for a link label or an overlay track still holds on `model`: the reading of the 7f publication
@@ -1563,7 +1530,7 @@ export function labelRoomHolds(model: LayoutModel): boolean {
   const shortfalls: LinkLabelShortfall[] = [];
   return !reserveLinkLabelRoom(clone(model), shortfalls) && !shortfalls.some(tierGapShortfall);
 }
-export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = [], gapRoom?: TierGapLabelRoom): boolean {
+export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = [], gapRoom?: TierGapLabelRoom, only?: 'rows'): boolean {
   let changed = false;
   // What each reservation was for. The replay that refuses a published model throws on the return
   // value alone, and the sentence named neither the link nor the amount: three rebuilds to find one
@@ -1575,12 +1542,13 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
   };
   const suppressed = overlayLabelsSuppressed(model);
   // Who yields among the labels on diagonal lines is decided once per pair, before the first reservation that reads it (R1).
-  recordLabelYields(model, labelBorders(model));
+  // The row reading of a guard reads the record the producer wrote and decides no pair again (R1).
+  if (only !== 'rows' || model.labelYields === undefined) recordLabelYields(model, labelBorders(model));
   const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
   const settle = (nodes: string[]): void => { if (nodes.length) rebuildNodeGeometry(model, nodes, 'current'); };
   // The room of separated overlay tracks first (ticket 23): a track decided beyond the edge it grows stands inside the box before a
   // label window is read on its run.
-  if (reserveAcrossRunRoom(model, settle, shortfalls, riddenRun, 'tracks')) changed = true;
+  if (only !== 'rows' && reserveAcrossRunRoom(model, settle, shortfalls, riddenRun, 'tracks')) changed = true;
   const unsettled = new Set(model.labelRoomUnsettled ?? []);
   for (const link of model.links) {
     // A bus member's label goes to the bus tooltip (mesh-bus.md, section 6): it asks for no room.
@@ -1644,6 +1612,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         changed = true;
         continue;
       }
+      // The row reading (`only: 'rows'`) stops here: the rest of the tier-gap branch records no row and moves nothing.
+      if (only === 'rows') continue;
       if (centre === undefined) { unreserved('draws its longest overlay run across the tier gap, not along it'); continue; }
       const mid = centre;
       // A side lane (side-faces.md, Section 10): the label rides the vertical run, the drop and the lane, so the run ends at the lateral port's y,
@@ -1671,7 +1641,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         ? (longest !== undefined && (diagonal || Math.abs(longest.to.x - longest.from.x) <= PLACEMENT_EPS) ? longest : undefined)
         : x === undefined || lowerEdge - upperEdge <= PLACEMENT_EPS ? undefined
           : { from: { x, y: upperEdge }, to: { x, y: lowerEdge }, owner: { ...link.owner } };
-      const split = tierGapSplit(model, link);
+      const growth = labelGrowth(model, link), split = growth.split;
       // Stage 9 tries the longest run first: a side lane's side run that is longer than its vertical run, and has a window that holds
       // the label now, carries the label, and the vertical run needs no window. The lengths here are the anchor runs, not the pieces
       // `labelRuns` joins (the router has not drawn them yet), so the order can differ from stage 9's by a stem. That decides only which
@@ -1684,8 +1654,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       // The window is read at the growth its gap takes anyway (the plan's, a label's before it, this run's symmetric room), never at
       // none (architecture-2 ticket 57).
       const base = Math.max(0, required - room, gapRoom?.floors.get(upperTier) ?? 0);
-      const windowed = onSide ? 0 : labelWindowRoom(model, ridden, measured.width, split, true,
-        diagonal ? { across: haloSize(measured).height, axis: 'y', link } : undefined, base);
+      const windowed = onSide ? 0 : labelWindowRoom(model, ridden, measured.width, split, growth.farEndMoves,
+        diagonal ? { across: haloSize(measured).height, axis: growth.axis, link } : undefined, base);
       if (windowed === undefined) unreserved(diagonal
         ? 'crosses a drawn box in its tier gap; no window between borders, clear of the reserved link runs and of the label bands it yields to, can be reserved for its label'
         : 'crosses a drawn box in its tier gap; no window between borders can be reserved for its label');
@@ -1720,15 +1690,14 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     const room = 2 * Math.min(mid - Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))), Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x) - mid);
     // A detour's long run ends at an anchor on one side and at a turn on the other, so its midpoint is
     // not the pill-face midpoint: the label centred there must clear the pill on the anchor side.
-    const protrusion = Math.max(right(outer(leftPort, leftNode)) - leftPort.anchor!.x, rightPort.anchor!.x - outer(rightPort, rightNode).x, 0);
-    const wanted = required + (detour ? stemReach(model, leftNode) + stemReach(model, rightNode) + 2 * protrusion : 0);
+    const wanted = rowLabelNeed(model, link, leftPort, rightPort, detour).wanted;
     // Insert the room at the gap itself: everything at or right of the split — in every tier — moves
     // right together, and a group straddling the split shifts only its nodes beyond it. Alignments,
     // flank sides and bar-to-source slots all survive because both ends of each of them move alike;
-    // nothing ever moves left into a preceding group. A reserved lane at or beyond the split cannot
-    // move, so such a link is diagnosed instead.
+    // nothing ever moves left into a preceding group. Reserved lanes at or beyond the split move with the room.
     const faceLeft = Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))), faceRight = Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x);
-    const split = (faceLeft + faceRight) / 2;
+    const growth = labelGrowth(model, link);
+    const split = rowLabelSplit(model, link)!;
     // A label stays in one region: one window of the run it rides, between the drawn borders the run crosses, must hold it
     // (`labelWindowDeficit`). The run is the overlay path's longest run, a held chord at its current anchors, or the straight run
     // between the two pill faces; a routed link that detours bends, and stage 9 decides.
@@ -1739,8 +1708,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
       ? (longest !== undefined && (diagonal || Math.abs(longest.to.y - longest.from.y) <= PLACEMENT_EPS) ? longest : undefined)
       : detour || faceRight - faceLeft <= PLACEMENT_EPS ? undefined
         : { from: { x: faceLeft, y: leftPort.anchor!.y }, to: { x: faceRight, y: leftPort.anchor!.y }, owner: { ...link.owner } };
-    const windowed = labelWindowRoom(model, ridden, measured.width, split, false,
-      diagonal ? { across: haloSize(measured).height, axis: 'x', link } : undefined);
+    const windowed = labelWindowRoom(model, ridden, measured.width, heldChord ? growth.split : split, heldChord ? growth.farEndMoves : false,
+      diagonal ? { across: haloSize(measured).height, axis: growth.axis, link } : undefined);
     if (windowed === undefined) unreserved('crosses a drawn box in its row; no window between borders can be reserved for its label');
     const deficit = Math.max(wanted - room, windowed ?? 0);
     if (deficit <= PLACEMENT_EPS) continue;
@@ -1752,7 +1721,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     changed = true;
   }
   // Room across a run (ticket 21), on the geometry the reservations along the runs left.
-  if (reserveAcrossRunRoom(model, settle, shortfalls)) changed = true;
+  if (only !== 'rows' && reserveAcrossRunRoom(model, settle, shortfalls)) changed = true;
   if (changed) { rebuildBands(model); rebuildRegions(model); }
   return changed;
 }
