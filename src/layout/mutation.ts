@@ -25,7 +25,7 @@ import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { heldSourceGroups, rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
 import { freezeChords, spanCandidate } from './frame-paths.js';
-import { faceKey, laneFaceOrder } from './turn-order.js';
+import { faceKey, laneFaceOrder, turnRecord, turnRecordFaults } from './turn-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
@@ -623,7 +623,9 @@ function validateFreeze(model: LayoutModel): void {
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
   validateSpans(model, freeze.spans);
-  if (freeze.turnOrder !== undefined && (model.turnOrder !== true || freeze.turnOrder.some(face => model.nodes[face.node] === undefined))) throw new Error('Frozen turn order names a face the model does not carry');
+  // The record of the turn round, in the order the ports stand (engine order here; G5 reads the anchors at publication).
+  const faulty = turnRecordFaults(model, 'engine')[0];
+  if (faulty !== undefined) throw new Error(`Frozen turn order${faulty.node === undefined ? '' : ` of ${faulty.node} ${faulty.side}`}: ${faulty.why}`);
   validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
   for (const floor of freeze.floors) if (floor.size.width <= 0 || floor.size.height <= 0) throw new Error('Invalid frozen floor');
@@ -656,7 +658,8 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
   if (model.feedSplits !== undefined) result.freeze.feedSplits = clone(model.feedSplits);
   const spans = model.links.filter(link => link.spanHint === true).map(link => link.id);
   if (spans.length) result.freeze.spans = spans;
-  if (turnFaces.length) result.freeze.turnOrder = turnFaces.map(face => ({ ...face }));
+  if (turnFaces.length) result.freeze.turnOrder = turnFaces.map(face => turnRecord(model, face.node, face.side));
+  if (model.turnExcept !== undefined) result.freeze.turnExcept = [...model.turnExcept];
   if (floored.length) result.freeze.nodeFloors = floored.map(id => ({ node: id, size: { ...nodeFloors!.get(id)! } }));
   return protect(result, baseline);
 }

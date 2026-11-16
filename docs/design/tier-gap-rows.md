@@ -73,7 +73,7 @@ router stem `m = 15 px` (`bands.ts:35`).
    to the plan, and they have no part.
 6. **Residual by shape.** These stay routed, as today, and are named `TIER_GAP_PART_RESIDUAL` with a reason (a cycle among
    the rows is `TIER_GAP_ROW_CYCLE`): a part that spans two gaps without a lane (`spans-two-gaps`); a lateral-port link that crosses
-   the gap (`lateral-port`); a same-boundary U-turn (`u-turn`: a link with no lane whose two ports face this gap from one band; no gap
+   the gap (`lateral-port`); a same-boundary U-turn (`u-turn`: a link with no lane and no `u-turn` course whose two ports face this gap from one band; no gap
    stands between its stops, so it is read from the ports, ticket 51); a port facing away from the gap (`faces-away`; both stops of a
    pair that fail the up-down test, which ticket 48 labelled `u-turn`); a span that crosses a through-lane's reserved run (`crosses-lane`). A gap that holds one of these is not router-free (Section 4).
 

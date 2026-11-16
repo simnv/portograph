@@ -19,17 +19,22 @@ Three rules for link descriptions (stage 9 labels):
    or beyond the split between the two pill faces moves right, and a group straddling the split shifts
    only its nodes beyond it, so alignments, flank sides and bar-to-source slots all move alike and
    nothing moves left into a preceding group; a reserved lane at or beyond the split makes the link
-   unreservable. A routed link whose
+   unreservable. An unheld routed link whose
    ends are not level, or whose straight run the corridor check finds blocked — by a node, a pill, a
    foreign group box with its margin, a lane, a fixed run, a bundle row or a bundle envelope — will detour: its run is reserved with both
    stroke-aware router stems and the anchor-side pill protrusion on top of the label, and the group's
    title band reserves, below the title, the room that label needs beside the detour (title margin,
-   label height, gap, stroke and the node clearance the run keeps). Every authored label on a drawn
+   label height, gap, stroke and the node clearance the run keeps). A held routed chord keeps its straight
+   segment between the current port faces, even when its ends are not level. Its label room adds no detour
+   stems or their pill allowance. A diagonal chord reserves a window for the turned label, on x at the row
+   split within one tier and on y at the tier-gap split between tiers. Within one tier, unreadable
+   held-chord ends are diagnosed rather than read as a level run. Every authored label on a drawn
    link counts — bars, and overlay links whose labels are not suppressed — except bundle members,
    whose geometry 7e owns. Self-links, same-tier links through top/bottom ports and pairs whose ports do
    not face each other across the gap are diagnosed rather than forced. (Amended by architecture-2
    ticket 23: room beyond a reserved lane is no longer diagnosed; it is inserted and the lane moves out
-   with it.) Moves settle pills before the next link measures, any
+   with it.) Moves settle pills before the next link measures. The title-band push also rebuilds every
+   moved node's pills and text, including lower tiers, before the column and label-room readers run. Any
    movement replays the region producers, and publication and restore re-run the reservation on a
    copy and reject a model it would still change. (Amended 2026-11-07, decision review ticket DR-02:
    label room is reserved by the producer and by the tier-gap solve only. The settle-time growth

@@ -1,6 +1,10 @@
 # Expected (architecture ticket 24, docs/design/turn-order.md): one node beside a neighbour group, two column-gap courses from its bottom face to two targets (the shape of
 # hand solve 09). Both skirts turn the same way and return into the gap beside their target; the nearer lane takes the slot on the turn side, so the two links nest and cross
 # nowhere. In a turn round the order of the face changes (TURN_ORDER_TAKEN) and the sheet has 0 crossings; in the far-end order it has 1.
+# Dense-16x9 ticket 05 (far-end order on straight faces): the two bottom ports of fl-1 form an orthogonal-only face, where the first-turn order differs from the far-end
+# order, and G5 passes there because it accepts the order that the turn round recorded (`freeze.turnOrder`). The same sheet, with fl-1's bottom face reserved for far-end order
+# (`testTurnExcept`, the reservation that the turn round makes for a face that holds a held routed chord on its baseline), keeps the far-end order, is not recorded, and G5 passes
+# there by the far-end ranges.
 # Test-only input owned by ticket 24; test/pipeline/turn-order.test.ts reads it.
 portograph: 2
 profile: network

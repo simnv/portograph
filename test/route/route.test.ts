@@ -120,13 +120,14 @@ links: [${reversed ? '[b.p, a.p]' : '[a.p, b.p]'}, [a.q, b.q], ${reversed ? '[a.
 
   it('routes between a right and a left port that no rule claimed', async () => {
     // Two groups of one tier: the rows rule declines the pin because the anchors are not aligned,
-    // and the reserved gap between the groups leaves room for both 15 px stems.
+    // and the reserved gap between the groups leaves room for both 15 px stems. The author's `route: orthogonal` keeps the pair from the level
+    // cross-frame chord (dense-16x9 ticket 06, slice B), which a sibling-frame link takes at any angle.
     const before = await throughBands(`portograph: 2
 groups: {g1: {tier: 0}, g2: {tier: 0}}
 nodes:
   a: {group: g1, class: router, description: a taller node, ports: [{name: p, side: right}]}
   b: {group: g2, ports: [{name: p, side: left}]}
-links: [[a.p, b.p]]`);
+links: [[a.p, b.p, {route: orthogonal}]]`);
     expect(routeRemainders(before)).toEqual(['link-1']);
     expect([before.nodes.a!.ports[0]!.side, before.nodes.b!.ports[0]!.side]).toEqual(['right', 'left']);
     expect(before.nodes.a!.ports[0]!.anchor!.y).not.toBe(before.nodes.b!.ports[0]!.anchor!.y);

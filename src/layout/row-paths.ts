@@ -7,7 +7,7 @@ import { groupConsumers } from '../score/model.js';
 import { portId } from './skeleton-graph.js';
 import { groupShape } from './grid.js';
 import { joinFanTrees } from './bundle-geometry.js';
-import { expectedFramePath, fanFamilyOf, isRoutedChord, routedChordCandidate, standaloneChord, withLinkFacts } from './frame-paths.js';
+import { expectedFramePath, fanFamilyOf, isRoutedChord, levelCrossChord, routedChordCandidate, standaloneChord, withLinkFacts } from './frame-paths.js';
 import { nodeTierIfAny } from './read/tier.js';
 import { admitFanFamilies, makeFanOrthogonal } from './fan-admission.js';
 import { diagonalMayCross } from './diagonal-text.js';
@@ -230,7 +230,8 @@ export function straightCorridorClear(model: LayoutModel, link: LayoutLink, segm
 /** The single straight horizontal path the rows rule pins for this link, or undefined when ineligible. */
 export function expectedRowPath(model: LayoutModel, link: LayoutLink): LayoutPath | undefined {
   if (!rowPathCandidate(model, link)) return undefined;
-  const level = link.groupLink === undefined ? expectedLevelPath(model, link) : undefined;
+  // A sibling-frame link is a cross-frame chord (dense-16x9 ticket 06): it has no `2x` length limit and may slant, so the frame rule reads it, not the level pair.
+  const level = link.groupLink === undefined && !levelCrossChord(model, link) ? expectedLevelPath(model, link) : undefined;
   // A level facing pair the rows rule pins keeps its anchor-to-anchor segment. Every other link inside
   // one frame answers to the frame rule, which reads the chord between the two faces (ticket 34).
   return level ?? (routedChordCandidate(model, link) ? expectedFramePath(model, link) : undefined);

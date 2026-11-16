@@ -132,8 +132,8 @@ export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): b
     const windows = labelRunWindows(boxes, line.line, line.across, runs(line, other)) ?? [];
     return Math.max(-Infinity, ...windows.map(window => window.to - window.from)) - line.extent;
   };
-  // Ticket 21: whether some growth 7f can make gives the line a window clear of the other's band (`labelWindowDeficit` defined), at
-  // the split and on the axis 7f grows it at (`tierGapSplit`); a line within one tier grows at no split.
+  // Ticket 21: whether growth at the tier-gap y split gives the line a window clear of the other's band (`labelWindowDeficit` defined).
+  // This ranking does not yet model the x growth of a same-tier held chord, which the room producer reads at its row split.
   const helped = (line: LabelledLine, other: LabelledLine): boolean =>
     labelWindowDeficit(boxes, line.line, line.extent, tierGapSplit(model, line.link), true, { across: line.across, axis: 'y', links: runs(line, other) }) !== undefined;
   for (const [i, mine] of lines.entries()) for (const other of lines.slice(i + 1)) {
@@ -158,8 +158,9 @@ export function recordLabelYields(model: LayoutModel, boxes: readonly Rect[]): b
 
 /**
  * Where 7f grows the tier gap a link between two tiers crosses (ticket 19): the top of the highest group below the tier of the link's
- * upper end, whose boxes all move down. `Infinity` for a link within one tier: no growth moves a diagonal there. 7f and the yield
- * ranking (`recordLabelYields`) read this one split (R1).
+ * upper end, whose boxes all move down. `Infinity` within one tier: there is no tier-gap y growth for that row. Tier-gap label room
+ * and the current yield ranking (`recordLabelYields`) read this y split. Same-tier held-chord room grows on x at the row split in
+ * `reserveLinkLabelRoom`; the yield ranking does not yet account for that growth.
  */
 export function tierGapSplit(model: LayoutModel, link: LayoutLink): number {
   const ends = link.attachments === undefined ? [] : [link.attachments.from.node, link.attachments.to.node].map(id => model.nodes[id]!);

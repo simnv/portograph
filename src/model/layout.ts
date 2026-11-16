@@ -602,6 +602,11 @@ export interface LayoutModel {
    * for its own link only). Absent reads as every face.
    */
   turnLinks?: string[];
+  /**
+   * With `turnOrder`: the faces (`node|side`, `faceKey`) that keep far-end order in this run although every other face takes the turn order. A face that holds a held
+   * routed chord stands here (`docs/design/turn-order.md`, Section 3): the turn round reads the baseline's `frozenChords` and reserves them. Absent reads as none.
+   */
+  turnExcept?: string[];
   /** The planned course of each link that has one (ticket 15); absent until stage 5 plans them, and still absent when no link has a detour. */
   courses?: Course[];
   document: NormalisedDocument;
@@ -640,6 +645,12 @@ export interface LayoutModel {
    * its geometry follows the ports, the decision is never re-taken, and a move that would put a body on it is refused.
    */
   frozenChords?: string[];
+  /**
+   * The frozen level cross-frame chords (dense-16x9 ticket 06, slice B) that stand level (equal y at both ends) when the freeze is taken, a subset of
+   * `frozenChords`. The relation is held after the freeze: a move that tilts one is refused (`blockedChords`, so `chordsHold`), and a mover that must shift
+   * one frame's row shifts its partners' rows with it (`levelChordPartners`). Written by the freeze only when one stands level: absent = none was (read `frozenChords` for whether the freeze was taken).
+   */
+  frozenLevelChords?: string[];
   /**
    * The triggered direct families (architecture-2 ticket 22): one per source node of a pair of facing rows whose orthogonal drawing would cross
    * more than once at its members, decided once at the start of 7f, immediately before `freezeChords`. Absent before the freeze = not planned;
@@ -925,10 +936,12 @@ export interface PlacementSnapshot {
   labelBands: LabelBand[];
   labels: LayoutLabel[];
 }
-/** A row keeps feed order in x; odd members stand one line away from their feeds. */
+/** A row keeps feed order in x; members in `far` stand one line away from their feeds. */
 export interface StaggerRow {
   group: string;
   order: string[];
+  /** Members standing on the far line (away from the feeds), in `order` order (required, never empty). */
+  far: string[];
   side: 'top' | 'bottom';
   /** The centre distance of each consecutive pair of members, `order.length - 1` entries (ticket 51: a gap between two parents is wider). */
   pitches: number[];
@@ -963,8 +976,13 @@ export interface LayoutFreeze {
   courses?: Course[];
   /** Present only when a span round placed a spanning chord (architecture ticket 22): the ids of the links that carry `spanHint`, in link order. A restore checks it against the model. */
   spans?: string[];
-  /** Present only when a turn-ordered run changed the order of a face (architecture ticket 24): node and side of each such face, in node and side order. G5 judges these faces by the turn order. */
-  turnOrder?: { node: string; side: Side }[];
+  /**
+   * Present only when a turn-ordered run changed the order of a face (architecture ticket 24): node, side and the ports of each such face in the order the round left
+   * them, in node and side order. G5 accepts these faces only while their ports stand in that order; a restore and every later rule check the same.
+   */
+  turnOrder?: { node: string; side: Side; ports: PortRef[] }[];
+  /** Present only when the run carried faces reserved for far-end order (`LayoutModel.turnExcept`): the scope the record of `turnOrder` was taken under. */
+  turnExcept?: string[];
   placement?: PlacementSnapshot;
 }
 

@@ -7,9 +7,9 @@ import type { PortRef } from '../model/document.js';
 import { DEFAULT_STROKE_WIDTHS as stroke, linkStrokeWidth, routedStrokeWidth } from '../theme/geometry.js';
 import { segmentRect, segmentRectDistance } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
-import { CourseRefusal, isCourseLane, validateCourseLane } from './courses.js';
+import { CourseRefusal, isCourseLane, uTurnFacesGap, uTurnNoGap, validateCourseLane } from './courses.js';
 import { isGapRun, laneRunKind } from './lane-kind.js';
-import { courseGeometry, courseOf, isApproachCourse, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
+import { courseGeometry, courseOf, isApproachCourse, isUTurnCourse, perimeterLaneId, ringsOf, type LaneDraft } from './course-lanes.js';
 import { gapEnds, gapGeometry, gapLaneId, gapReservation, isGapCourse } from './course-gap.js';
 import { admitBypassLanes, bypassGeometry, bypassLaneExtent, bypassLaneId, isBypassCourse } from './course-bypass.js';
 import { RING_PITCH, endMode } from './course-rows.js';
@@ -1551,6 +1551,11 @@ function reserveSideLanes(model: LayoutModel, pending: Lane[], occ: (group: Layo
 function reserveCourseLanes(model: LayoutModel, pending: Lane[], occ: (group: LayoutGroup, link?: LayoutLink) => Rect): void {
   const placed: Lane[] = [];
   for (const course of model.courses ?? []) {
+    if (isUTurnCourse(course)) {
+      // A U part needs the tier gap its face looks at; on the outer edge the padding row would serve it, and that row is not built (dense-16x9 ticket 06, slice A).
+      if (!uTurnFacesGap(model, course.link, course.from.face)) throw new CourseRefusal(uTurnNoGap(course), { owners: [{ kind: 'link', id: course.link }] });
+      continue;
+    }
     if (isGapCourse(course) || isApproachCourse(course) || isBypassCourse(course)) continue;
     const link = model.links.find(item => item.id === course.link);
     if (link?.attachments === undefined || course.side === undefined) throw new Error(`Course on ${course.link} cannot reserve a perimeter lane`);

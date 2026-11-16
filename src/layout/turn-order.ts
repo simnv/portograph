@@ -37,7 +37,7 @@ export function turnGroup(port: TurnPort): 1 | 2 | 3 | 4 | 5 {
 }
 
 /**
- * The rank of a port on its face, the one function that the comparator and G5 share. Low-turn `return` (1), low-turn `onward` (2), no turn (3), high-turn `onward` (4),
+ * The rank of a port on its face, the one function that the comparator and the turn offer share. Low-turn `return` (1), low-turn `onward` (2), no turn (3), high-turn `onward` (4),
  * high-turn `return` (5). A port with no turn that stands next to low-turn returns (overlay brackets) keeps the place ticket 15 gives it: above them (rank 0) when its far
  * end lies before their least reach, else in group 3.
  */
@@ -132,6 +132,19 @@ function skirtTurn(model: LayoutModel, link: LayoutLink, course: Course, which: 
 }
 
 /**
+ * The first turn of a `u-turn` end (dense-16x9 ticket 06): the stem leaves its horizontal face and turns toward the other end, along the row of the U part (or the padding row), and
+ * the second turn there goes back toward the node, so the shape is `return` and the reach is the centre of the other node. The end that stands left of the other turns `high`, the
+ * other `low`. Two ends in one column have no turn. Two U parts that leave one face and nest take the order of their reaches (the wider one stands farther out), so no leg stands inside another.
+ */
+function uTurnTurn(model: LayoutModel, link: LayoutLink, which: 'from' | 'to'): PlannedTurn | undefined {
+  const box = model.nodes[link.attachments![which].node]?.bounds, other = model.nodes[link.attachments![which === 'from' ? 'to' : 'from'].node]?.bounds;
+  if (box === undefined || other === undefined) return undefined;
+  const here = box.x + box.width / 2, there = other.x + other.width / 2;
+  if (Math.abs(there - here) <= PLACEMENT_EPS) return undefined;
+  return { turn: there > here ? 'high' : 'low', shape: 'return', reach: there };
+}
+
+/**
  * The first turn of a side lane port (Q109): the lane runs from the band edge that faces the far end to the lateral port, so the end turns up when the far end stands
  * in a higher sub-tier and down when in a lower one. Read from the tiers, which no centring moves (7c moves x only), and not from the y of the far port.
  */
@@ -156,7 +169,7 @@ function reservedTurn(model: LayoutModel, link: LayoutLink, which: 'from' | 'to'
     const row = bypassRowY(model, link, course);
     return row === undefined ? undefined : { turn: course.edge === 'top' ? 'low' : 'high', shape: 'onward', reach: row };
   }
-  if (course !== undefined) return course.kind === 'skirt' ? skirtTurn(model, link, course, which) : undefined;
+  if (course !== undefined) return course.kind === 'skirt' ? skirtTurn(model, link, course, which) : course.kind === 'u-turn' ? uTurnTurn(model, link, which) : undefined;
   if (own.laneHint === true) return sideLaneTurn(model, mine, other);
   return transit ? transitTurn(model, link, mine, own) : undefined;
 }
@@ -203,7 +216,7 @@ export function plannedTurns(model: LayoutModel, reservations: boolean = model.t
 }
 
 /**
- * The first turn of a published path at one end (Section 7): the first run along the face, its direction, the direction of the run after it (back to the node's
+ * The first turn of a published path at one end (Section 8, `PORT_TURN_MISSED`): the first run along the face, its direction, the direction of the run after it (back to the node's
  * side of the face line, or on), and the coordinate where it ends. A path with no run along the face, or a diagonal, has no turn.
  */
 export function publishedTurn(link: LayoutLink, which: 'from' | 'to', side: Side): PlannedTurn | undefined {
@@ -228,28 +241,6 @@ export function publishedTurn(link: LayoutLink, which: 'from' | 'to', side: Side
 export const faceKey = (node: string, side: Side): string => `${node}|${side}`;
 
 /**
- * The turn of one port as G5 and placement read it (Section 7): the published first turn of each link on it when the link has a path, else the planned turn of
- * the port. A shared port has a turn only when its links agree; a link that goes straight is no turn.
- */
-export function portTurn(side: Side, ends: readonly { link: LayoutLink; which: 'from' | 'to' }[], planned: PlannedTurn | undefined): PlannedTurn | undefined {
-  if (ends.length === 0 || ends.some(end => end.link.path === undefined)) return planned;
-  const turns = ends.map(end => publishedTurn(end.link, end.which, side)), first = turns[0];
-  if (first === undefined || turns.some(item => item?.turn !== first.turn || item.shape !== first.shape)) return undefined;
-  return { turn: first.turn, shape: first.shape, reach: turns.reduce((sum, item) => sum + item!.reach, 0) / turns.length };
-}
-
-/**
- * Whether the port at `own` (the lower slot) may stand before the port at `other` on a face the turn order placed. Two ports of one rank with no turn, or two onward ports of
- * one class, answer by their far-end ranges as before (`ranges`); any other pair by the rank (the comparator's own, `turnRanker`), and two returns of one class by their reach.
- */
-export function turnOrderViolated(a: TurnPort, b: TurnPort, rank: (port: TurnPort) => number, ranges: boolean): boolean {
-  const ra = rank(a), rb = rank(b), ga = turnGroup(a);
-  if (ra !== rb) return ra > rb;
-  if (ga === 3 || ga === 2 || ga === 4) return ranges;
-  return a.reach! < b.reach! - PLACEMENT_EPS;
-}
-
-/**
  * `PORT_TURN_MISSED` (warning): a published path whose first turn differs from the planned one at a port of a face the turn order placed. A defect of a
  * planner, not of the rule (Section 8).
  */
@@ -271,8 +262,84 @@ export function turnMissed(model: LayoutModel): Diagnostic[] {
   return found;
 }
 
-/** Whether a face takes the turn order in this run: every face, or with `turnLinks` only the faces that carry one of those links. */
+/**
+ * Whether a link is held straight: a held routed chord (`frozenChords`, decided at the start of 7f) or a level straight link that the rows rule pinned
+ * (`expectedLevelPath`: one fixed segment, no `straight` flag). Both stand as one segment from their port, so neither has a first turn.
+ */
+export function heldStraight(model: LayoutModel, link: LayoutLink): boolean {
+  if ((model.frozenChords ?? []).includes(link.id)) return true;
+  return link.layer === 'routed' && link.technique === 'straight' && link.path?.fixed === true && link.path.segments.length === 1;
+}
+
+/**
+ * The faces that hold a held straight link, by `faceKey` (docs/design/turn-order.md, Section 3), less the faces that the model's turn record already holds: a face that the
+ * turn order took keeps its recorded order, whatever it holds. The turn round reads it on its baseline to leave those faces out of its offer and to reserve them for far-end
+ * order. Reads stored decisions only (`frozenChords`, the pinned paths); nothing here derives a chord again (R1).
+ */
+export function straightFaces(model: LayoutModel): Set<string> {
+  const faces = new Set<string>();
+  for (const link of model.links) {
+    if (link.attachments === undefined || !heldStraight(model, link)) continue;
+    for (const ref of [link.attachments.from, link.attachments.to]) {
+      const side = findPort(model, ref)?.side;
+      if (side !== undefined) faces.add(faceKey(ref.node, side));
+    }
+  }
+  for (const face of model.freeze?.turnOrder ?? []) faces.delete(faceKey(face.node, face.side));
+  return faces;
+}
+
+/** The ports of a face in the order they stand: by anchor along the face (`anchor`, what G5 reads at publication) or by engine order, with a total order on ties. */
+export function faceSequence(model: LayoutModel, node: string, side: Side, by: 'anchor' | 'engine'): PortRef[] | undefined {
+  const ports = model.nodes[node]?.ports.filter(port => port.side === side);
+  if (ports === undefined) return undefined;
+  const along = (port: LayoutPort): number | undefined => (by === 'anchor' && port.anchor !== undefined ? (horizontalFace(side) ? port.anchor.x : port.anchor.y) : undefined);
+  return [...ports].sort((a, b) => (along(a) ?? 0) - (along(b) ?? 0) || (a.engineOrder ?? 0) - (b.engineOrder ?? 0)).map(port => ({ ...port.ref }));
+}
+
+/** The record of one face of the turn round: the ports of the face in the order the round left them. */
+export function turnRecord(model: LayoutModel, node: string, side: Side): { node: string; side: Side; ports: PortRef[] } {
+  return { node, side, ports: faceSequence(model, node, side, 'engine') ?? [] };
+}
+
+/** One thing that the record of the turn round cannot back: a face, or the record as a whole (`node` and `side` absent). */
+export interface TurnRecordFault { node?: string; side?: Side; why: string }
+
+/**
+ * What the record of the turn round (`freeze.turnOrder`, `freeze.turnExcept`) cannot back (R5: a validator trusts the stored record and the geometry, nothing a
+ * diagnostic says). The record as a whole needs a model that carries the turn order whenever it holds a face, a scope or an empty list (the pipeline writes the list
+ * only with a face in it), and a scope equal to the scope of the model (`turnExcept`), a face list or none. A recorded face needs a node and a side that exist, a place
+ * in the scope of the run (not a face reserved for far-end order, and a face of a `turnLinks` run), the ports the model holds on it, and those ports in the recorded
+ * order: by anchor along the face when `by` is `anchor`, else by engine order. A fault of the whole record carries no node.
+ */
+export function turnRecordFaults(model: LayoutModel, by: 'anchor' | 'engine'): TurnRecordFault[] {
+  const freeze = model.freeze, faults: TurnRecordFault[] = [];
+  if (freeze === undefined) return faults;
+  const record = freeze.turnOrder;
+  // The scope is the scope of the model whatever the record holds, also when no face was recorded.
+  if (JSON.stringify(freeze.turnExcept ?? []) !== JSON.stringify(model.turnExcept ?? [])) faults.push({ why: 'the recorded scope differs from the scope of the model' });
+  if ((record !== undefined || freeze.turnExcept !== undefined || model.turnExcept !== undefined) && model.turnOrder !== true) faults.push({ why: 'the model does not carry the turn order' });
+  if (record !== undefined && record.length === 0) faults.push({ why: 'the record holds no face' });
+  const seen = new Set<string>();
+  for (const face of record ?? []) {
+    const fault = (why: string): void => { faults.push({ node: face.node, side: face.side, why }); };
+    const key = faceKey(face.node, face.side);
+    if (!['top', 'right', 'bottom', 'left'].includes(face.side) || model.nodes[face.node] === undefined) { fault('the face does not exist'); continue; }
+    if (seen.has(key)) { fault('the face is recorded twice'); continue; }
+    seen.add(key);
+    if (!turnScope(model, face.node, face.side)) { fault('the face is outside the scope of the turn order'); continue; }
+    const now = faceSequence(model, face.node, face.side, by)!.map(ref => portId(ref));
+    if (!Array.isArray(face.ports) || JSON.stringify(face.ports.map(ref => portId(ref))) !== JSON.stringify(now)) fault('the ports do not stand in the recorded order');
+  }
+  return faults;
+}
+
+/**
+ * Whether a face takes the turn order in this run: every face but the ones reserved for far-end order (`turnExcept`: a face that holds a held routed chord), or with
+ * `turnLinks` only the faces that carry one of those links.
+ */
 export function turnScope(model: LayoutModel, node: string, side: Side): boolean {
+  if (model.turnExcept?.includes(faceKey(node, side))) return false;
   if (model.turnLinks === undefined) return true;
   const wanted = new Set(model.turnLinks);
   return model.links.some(link => wanted.has(link.id) && [link.attachments?.from, link.attachments?.to].some(ref => ref !== undefined && ref.node === node && findPort(model, ref)?.side === side));
@@ -346,5 +413,5 @@ export function orderPortsByLanes(model: LayoutModel, rounds: number = LANE_PASS
   for (const node of orderedNodeIds(model.document)) for (const side of ['bottom', 'right', 'top', 'left'] as const) {
     if (model.nodes[node]!.ports.some(port => port.side === side && port.engineOrder !== before.get(port))) faces.push({ node, side });
   }
-  if (faces.length > 0) model.freeze!.turnOrder = [...(model.freeze!.turnOrder ?? []), ...faces];
+  if (faces.length > 0) model.freeze!.turnOrder = [...(model.freeze!.turnOrder ?? []), ...faces.map(face => turnRecord(model, face.node, face.side))];
 }

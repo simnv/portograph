@@ -21,6 +21,8 @@ import { FLANK_LINK_AROUND_A_NEIGHBOUR } from '../hand-solves.js';
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 const solve09 = (): string => FLANK_LINK_AROUND_A_NEIGHBOUR;
 const counts = (model: LayoutModel) => score(model).snapshot.counts.routed;
+/** The faces the turn round recorded, without their ports. */
+const faces = (model: LayoutModel): { node: string; side: string }[] => (model.freeze?.turnOrder ?? []).map(face => ({ node: face.node, side: face.side }));
 
 describe('the turn order of a forced run (hand solve 09)', () => {
   it('is off with testTurnOrder false: no frozen faces and the far-end order', async () => {
@@ -32,7 +34,7 @@ describe('the turn order of a forced run (hand solve 09)', () => {
   it('removes the self crossing of the two skirts and adds no turn', async () => {
     const plain = await layout(parse(solve09()), { ...options, testTurnOrder: false });
     const forced = await layout(parse(solve09()), { ...options, testTurnOrder: true });
-    expect(forced.freeze?.turnOrder).toContainEqual({ node: 'mg-1', side: 'bottom' });
+    expect(faces(forced)).toContainEqual({ node: 'mg-1', side: 'bottom' });
     expect(counts(plain).crossings).toBe(1);
     expect(counts(forced).crossings).toBe(0);
     expect(counts(forced).turns).toBeLessThanOrEqual(counts(plain).turns);
@@ -49,6 +51,7 @@ describe('the turn order of a forced run (hand solve 09)', () => {
 });
 
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const readTurnFixture = (name: string): string => readFileSync(new URL(`../fixtures/turn-order/${name}.yaml`, import.meta.url), 'utf8');
 const geometry = (model: LayoutModel): string => JSON.stringify(model.links.map(link => [link.id, link.path?.segments.map(segment => [segment.from, segment.to])]));
 const codes = (model: LayoutModel): string[] => model.diagnostics.map(item => item.code);
 
@@ -63,7 +66,7 @@ describe('the turn round', () => {
     expect(counts(on).turns).toBeLessThanOrEqual(counts(skipped).turns);
     expect(counts(skipped).crossings).toBe(1);
     expect(codes(skipped)).not.toContain('TURN_ORDER_TAKEN');
-    expect(on.freeze?.turnOrder).toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(faces(on)).toContainEqual({ node: 'fl-1', side: 'bottom' });
   });
 
   it('is byte for byte the baseline when there is no offer (testTurnOrder false is the same layout)', async () => {
@@ -154,8 +157,8 @@ describe('the carried turn order and the budget', () => {
     const courses = full.courses!;
     const all = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnOrder: true });
     const scoped = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-6'] });
-    expect(all.freeze?.turnOrder).toContainEqual({ node: 'core-1', side: 'left' });
-    expect(scoped.freeze?.turnOrder).toEqual([{ node: 'mg-1', side: 'bottom' }]);
+    expect(faces(all)).toContainEqual({ node: 'core-1', side: 'left' });
+    expect(faces(scoped)).toEqual([{ node: 'mg-1', side: 'bottom' }]);
     const none = await layout(parse(solve09()), { ...options, testCourses: courses, testTurnLinks: ['link-1'] });
     expect(none.freeze?.turnOrder).toBeUndefined();
   });
@@ -197,5 +200,225 @@ describe('the carried turn order and the budget', () => {
     // With the one start of the budget set aside, a round that has used none of it has no start left; on a baseline without an offer it keeps its start.
     expect(chooseStart(1 - 1, [{ gain: [0, 0, 0], tie: 0 }])).toBe(-1);
     expect(chooseStart(1 - 0, [{ gain: [0, 0, 0], tie: 0 }])).toBe(0);
+  });
+});
+
+/**
+ * Dense-16x9 ticket 05: a face that holds a held straight link takes far-end order, a face with only orthogonal links keeps the first-turn order, and G5 accepts a face the turn
+ * round recorded while its ports stand in the recorded order (`freeze.turnOrder`). The sheet is `two-skirts-from-one-face-nest`: the bottom face of `fl-1` is an orthogonal-only face.
+ */
+describe('far-end order on a face that holds a straight link', () => {
+  const name = 'two-skirts-from-one-face-nest';
+  const bottomOrder = (model: LayoutModel): string[] => model.nodes['fl-1']!.ports.filter(port => port.side === 'bottom').sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => `${port.ref.name}#${port.ref.ordinal}`);
+  const g5 = (model: LayoutModel): number => score(model).snapshot.gates.G5.violations.length;
+  const forced = async (extra: object = {}): Promise<LayoutModel> => {
+    const courses = (await layout(parse(fixture(name)), { ...options, testTurnOrder: false })).courses!;
+    return layout(parse(fixture(name)), { ...options, testCourses: courses, testTurnOrder: true, ...extra });
+  };
+
+  it('an orthogonal-only face keeps the first-turn order, which differs from the far-end order, and G5 accepts it', async () => {
+    const plain = await layout(parse(fixture(name)), { ...options, testTurnOrder: false });
+    const on = await layout(parse(fixture(name)), options);
+    expect(faces(on)).toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(bottomOrder(on)).not.toEqual(bottomOrder(plain));
+    expect(on.frozenChords?.some(id => on.links.find(link => link.id === id)?.attachments?.from.node === 'fl-1')).toBeFalsy();
+    expect(g5(on)).toBe(0);
+  });
+
+  it('a face reserved for far-end order keeps the far-end order, is not recorded as turned, and G5 passes', async () => {
+    const plain = await layout(parse(fixture(name)), { ...options, testTurnOrder: false });
+    const model = await forced({ testTurnExcept: ['fl-1|bottom'] });
+    expect(model.turnExcept).toEqual(['fl-1|bottom']);
+    expect(faces(model)).not.toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(faces(model)).toContainEqual({ node: 'core-1', side: 'left' });
+    expect(bottomOrder(model)).toEqual(bottomOrder(plain));
+    expect(g5(model)).toBe(0);
+    // The reservation restores with the model, and a model that lost the record is refused.
+    expect(restoreLayoutModel(JSON.stringify(model)).turnExcept).toEqual(['fl-1|bottom']);
+    expect(() => restoreLayoutModel(JSON.stringify({ ...model, turnExcept: undefined }))).toThrow(/far-end faces|Frozen turn order/);
+  });
+
+  it('G5 reads the record of the turn round: a recorded face is accepted, the same order on a face with no record fails', async () => {
+    const turned = await forced();
+    expect(faces(turned)).toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(g5(turned)).toBe(0);
+    // A chord that the trial later holds on the face changes nothing: the gate reads the record (the ports in their order), and derives no turn from the published paths.
+    const link = turned.links.find(item => item.attachments?.from.node === 'fl-1' || item.attachments?.to.node === 'fl-1')!;
+    expect(g5({ ...turned, frozenChords: [...(turned.frozenChords ?? []), link.id] } as LayoutModel)).toBe(0);
+    const unrecorded = { ...turned, freeze: { ...turned.freeze!, turnOrder: turned.freeze!.turnOrder!.filter(face => face.node !== 'fl-1') } } as LayoutModel;
+    expect(score(unrecorded).snapshot.gates.G5.violations.map(item => item.elements[0])).toContain('fl-1');
+  });
+
+  it('the offer leaves out a face that holds a held chord and names it for the trial', async () => {
+    const base = await layout(parse(fixture(name)), { ...options, testTurnOrder: false });
+    expect(measureTurnOrder(base).faces).toContainEqual({ node: 'fl-1', side: 'bottom' });
+    expect(measureTurnOrder(base).except).not.toContain('fl-1|bottom');
+    const link = base.links.find(item => item.attachments?.from.node === 'fl-1')!;
+    const held = { ...base, frozenChords: [link.id] } as LayoutModel;
+    const offer = measureTurnOrder(held);
+    expect(offer.faces).not.toContainEqual({ node: 'fl-1', side: 'bottom' });
+    // Both ends of a held chord stand on faces that keep far-end order.
+    const ends = [link.attachments!.from, link.attachments!.to].map(ref => `${ref.node}|${base.nodes[ref.node]!.ports.find(port => port.ref.name === ref.name && port.ref.ordinal === ref.ordinal)!.side}`);
+    expect(offer.except).toEqual(expect.arrayContaining(ends));
+    expect(offer.except).toContain('fl-1|bottom');
+  });
+});
+
+/** A model as JSON, edited: the record of the turn round forged or aged. */
+const edited = (model: LayoutModel, edit: (copy: LayoutModel) => void): LayoutModel => {
+  const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
+  edit(copy);
+  return copy;
+};
+
+/**
+ * Dense-16x9 ticket 05, review: G5 accepts a recorded face only while the record holds (R5). `freeze.turnOrder` keeps the ports of each face in the order the round left
+ * them and `freeze.turnExcept` the scope it was taken under; a forged record, a face outside the scope and a move that reorders a recorded face all fail.
+ */
+describe('G5 and the record of the turn round', () => {
+  const name = 'two-skirts-from-one-face-nest';
+  const g5 = (model: LayoutModel): string[] => score(model).snapshot.gates.G5.violations.map(item => item.elements[0]!);
+  const forced = async (extra: object = {}): Promise<LayoutModel> => {
+    const courses = (await layout(parse(fixture(name)), { ...options, testTurnOrder: false })).courses!;
+    return layout(parse(fixture(name)), { ...options, testCourses: courses, testTurnOrder: true, ...extra });
+  };
+  const record = (model: LayoutModel, node: string) => model.freeze!.turnOrder!.find(face => face.node === node)!;
+  /** Swaps the seats of the first two ports of a face: the physical order of the face reverses, the record does not. */
+  const swapSeats = (model: LayoutModel, node: string, side: string, engine = false): void => {
+    const [a, b] = model.nodes[node]!.ports.filter(port => port.side === side).sort((x, y) => x.engineOrder! - y.engineOrder!);
+    if (engine) [a!.engineOrder, b!.engineOrder] = [b!.engineOrder!, a!.engineOrder!];
+    else [a!.anchor, b!.anchor] = [b!.anchor!, a!.anchor!];
+  };
+
+  it('records the ports of each recorded face, in the order the round left them', async () => {
+    const turned = await forced();
+    expect(turned.freeze!.turnOrder!.length).toBeGreaterThan(0);
+    for (const face of turned.freeze!.turnOrder!) {
+      const standing = turned.nodes[face.node]!.ports.filter(port => port.side === face.side).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.ref);
+      expect(face.ports).toEqual(standing);
+    }
+    expect(g5(turned)).toEqual([]);
+  });
+
+  it('fails a recorded face whose record lists its ports in another order, and one that lists other ports', async () => {
+    const turned = await forced();
+    expect(g5(edited(turned, copy => record(copy, 'fl-1').ports.reverse()))).toContain('fl-1');
+    expect(g5(edited(turned, copy => record(copy, 'fl-1').ports.pop()))).toContain('fl-1');
+  });
+
+  it('fails a face that the round never took: a face reserved for far-end order, a face of no node, a record without the turn order', async () => {
+    const reserved = await forced({ testTurnExcept: ['fl-1|bottom'] });
+    expect(g5(reserved)).toEqual([]);
+    const ports = reserved.nodes['fl-1']!.ports.filter(port => port.side === 'bottom').sort((a, b) => a.anchor!.x - b.anchor!.x).map(port => port.ref);
+    // The far-end order stands on that face, so the far-end check would pass it; the record still names a face the scope keeps out.
+    expect(g5(edited(reserved, copy => { copy.freeze!.turnOrder = [...(copy.freeze!.turnOrder ?? []), { node: 'fl-1', side: 'bottom', ports }]; }))).toContain('fl-1');
+    // A face of a node that the model does not have fails the freeze of a restore, as before.
+    expect(() => restoreLayoutModel(JSON.stringify(edited(reserved, copy => { copy.freeze!.turnOrder = [{ node: 'no-such-node', side: 'bottom', ports: [] }]; })))).toThrow(/Frozen turn order/);
+    const turned = await forced();
+    expect(g5(edited(turned, copy => { delete copy.turnOrder; }))).toContain('*');
+  });
+
+  it('fails a recorded scope that is not the scope of the model, and a stale scope on a restore', async () => {
+    const reserved = await forced({ testTurnExcept: ['fl-1|bottom'] });
+    expect(g5(edited(reserved, copy => { copy.freeze!.turnExcept = []; }))).toContain('*');
+    expect(() => restoreLayoutModel(JSON.stringify(edited(reserved, copy => { copy.freeze!.turnExcept = []; })))).toThrow(/Frozen turn order/);
+  });
+
+  it('fails a scope that the freeze did not record when the record of the faces is absent', async () => {
+    const turned = await forced();
+    expect(g5(edited(turned, copy => { delete copy.freeze!.turnOrder; copy.turnExcept = ['fl-1|bottom']; }))).toContain('*');
+  });
+
+  it('fails an empty record of faces beside a scope that the model does not carry, and an empty record on its own', async () => {
+    const reserved = await forced({ testTurnOrder: true, testTurnExcept: ['fl-1|bottom'] });
+    expect(g5(reserved)).toEqual([]);
+    expect(g5(edited(reserved, copy => { copy.freeze!.turnOrder = []; copy.freeze!.turnExcept = ['bogus|top']; }))).toContain('*');
+    expect(g5(edited(reserved, copy => { copy.freeze!.turnOrder = []; }))).toContain('*');
+  });
+
+  it('fails a record on a model that carries no turn order: a scope and an empty list in the freeze of a plain run', async () => {
+    const plain = await layout(parse(fixture(name)), { ...options, testTurnOrder: false });
+    expect(g5(plain)).toEqual([]);
+    const forge = (copy: LayoutModel): void => { copy.freeze!.turnExcept = ['fl-1|bottom']; copy.freeze!.turnOrder = []; };
+    expect(g5(edited(plain, forge))).toContain('*');
+    expect(() => restoreLayoutModel(JSON.stringify(edited(plain, forge)))).toThrow(/Frozen turn order/);
+  });
+
+  it('fails a recorded face of a node that the model does not have when the model reaches score() alone', async () => {
+    const turned = await forced();
+    expect(g5(edited(turned, copy => { copy.freeze!.turnOrder = [...copy.freeze!.turnOrder!, { node: 'no-such-node', side: 'bottom', ports: [] }]; }))).toContain('no-such-node');
+  });
+
+  it('refuses to restore a model that carries the turn order and no reservation ledger', async () => {
+    const turned = await forced();
+    expect(() => restoreLayoutModel(JSON.stringify(turned))).not.toThrow();
+    expect(() => restoreLayoutModel(JSON.stringify(edited(turned, copy => { delete copy.reservations; })))).toThrow(/reservation ledger/);
+  });
+
+  it('fails a recorded face when a move reorders it after the record: on the published anchors, and on a restore by engine order', async () => {
+    const turned = await forced();
+    expect(g5(edited(turned, copy => swapSeats(copy, 'fl-1', 'bottom')))).toContain('fl-1');
+    // A restore checks the record against the engine order: a record that lists the ports the other way round is refused at the freeze.
+    expect(() => restoreLayoutModel(JSON.stringify(edited(turned, copy => record(copy, 'fl-1').ports.reverse())))).toThrow(/Frozen turn order/);
+    expect(() => restoreLayoutModel(JSON.stringify(edited(turned, copy => swapSeats(copy, 'fl-1', 'bottom', true))))).toThrow();
+  });
+});
+
+/**
+ * Dense-16x9 ticket 05, review: one sheet that goes through the offer and the trial. `west-gw` faces down with two held straight links and one lane; `up-b` has two lanes and
+ * no straight link. The planned first turns would reorder both faces, the round offers `up-b` alone and reserves `west-gw` for far-end order.
+ */
+describe('a face with a held straight link, through the turn round', () => {
+  const name = 'a-face-with-a-held-straight-link-keeps-far-end-order';
+  const bottom = (model: LayoutModel, node: string): string[] => model.nodes[node]!.ports.filter(port => port.side === 'bottom').sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => `${port.ref.name ?? ''}#${port.ref.ordinal}`);
+  const trials: { turned: string[]; except: string[]; kept: boolean }[] = [];
+  const traced = { ...options, testSideTrace: (event: Record<string, unknown>) => {
+    if (event['ev'] !== 'turn-trial') return;
+    const trial = event['trial'] as LayoutModel;
+    trials.push({ turned: (trial.freeze?.turnOrder ?? []).map(face => `${face.node}|${face.side}`), except: trial.turnExcept ?? [], kept: (event['verdict'] as { kept: boolean }).kept });
+  } };
+
+  it('has the premise: a face with held straight links and a lane that the planned turns would move, and a face of lanes alone', async () => {
+    const base = await layout(parse(readTurnFixture(name)), { ...options, testTurnOrder: false });
+    const forced = await layout(parse(readTurnFixture(name)), { ...options, testCourses: base.courses ?? [], testTurnOrder: true });
+    expect(faces(forced)).toEqual(expect.arrayContaining([{ node: 'west-gw', side: 'bottom' }, { node: 'up-b', side: 'bottom' }]));
+    const ends = (node: string) => base.links.filter(link => [link.attachments!.from, link.attachments!.to].some(ref => ref.node === node && base.nodes[node]!.ports.find(port => port.ref.ordinal === ref.ordinal && port.ref.name === ref.name)!.side === 'bottom'));
+    expect(ends('west-gw').filter(link => link.technique === 'straight').length).toBeGreaterThanOrEqual(1);
+    expect(ends('west-gw').filter(link => link.technique !== 'straight').length).toBeGreaterThanOrEqual(1);
+    expect(ends('up-b').filter(link => link.technique === 'straight')).toEqual([]);
+    expect(base.frozenChords!.some(id => ends('west-gw').some(link => link.id === id))).toBe(true);
+  });
+
+  it('offers the face of lanes, reserves the straight face, and keeps the trial that turns the face of lanes alone', async () => {
+    trials.length = 0;
+    const base = await layout(parse(readTurnFixture(name)), { ...options, testTurnOrder: false });
+    const offer = measureTurnOrder(base);
+    expect(offer.faces).toEqual([{ node: 'up-b', side: 'bottom' }]);
+    expect(offer.except).toContain('west-gw|bottom');
+    const model = await layout(parse(readTurnFixture(name)), traced);
+    expect(trials).toHaveLength(1);
+    expect(trials[0]!.except).toEqual(offer.except);
+    expect(trials[0]!.turned).toEqual(['up-b|bottom']);
+    expect(trials[0]!.kept).toBe(true);
+    expect(faces(model)).toEqual([{ node: 'up-b', side: 'bottom' }]);
+    expect(model.turnExcept).toEqual(offer.except);
+    expect(model.freeze?.turnExcept).toEqual(offer.except);
+    expect(codes(model)).toContain('TURN_ORDER_TAKEN');
+    // The straight face keeps the far-end order that the baseline gave it, and G5 passes on both faces.
+    expect(bottom(model, 'west-gw')).toEqual(bottom(base, 'west-gw'));
+    // G5 accepts the recorded face, and the far-end faces fail it exactly as they do on the baseline (the stale order of stage 5, outside this rule): no violation is new.
+    const g5 = (m: LayoutModel): string[] => score(m).snapshot.gates.G5.violations.map(v => v.elements[0]!);
+    expect(g5(model)).not.toContain('up-b');
+    expect(g5(model)).toEqual(g5(base));
+    expect(restoreLayoutModel(JSON.stringify(model)).freeze?.turnOrder).toEqual(model.freeze?.turnOrder);
+  });
+
+  it('a run that carries faces for some links keeps them too (turnLinks with turnExcept)', async () => {
+    const base = await layout(parse(readTurnFixture(name)), { ...options, testTurnOrder: false });
+    const lanes = base.links.filter(link => [link.attachments!.from.node, link.attachments!.to.node].some(node => node === 'up-b')).map(link => link.id);
+    const scoped = await layout(parse(readTurnFixture(name)), { ...options, testCourses: base.courses ?? [], testTurnLinks: lanes, testTurnExcept: ['up-b|bottom'] });
+    expect(scoped.turnExcept).toEqual(['up-b|bottom']);
+    expect(faces(scoped)).not.toContainEqual({ node: 'up-b', side: 'bottom' });
+    expect(restoreLayoutModel(JSON.stringify(scoped)).turnExcept).toEqual(['up-b|bottom']);
   });
 });

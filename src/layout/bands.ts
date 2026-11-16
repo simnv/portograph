@@ -29,7 +29,7 @@ import { effectiveLayer } from '../score/model.js';
 import { LINK_LABEL_GEOMETRY, besideRunLabelBox, describedLink, labelBorders, linkLabelSize, haloSize, isDiagonalRun, labelWindowDeficit, labelYieldsFault, longestRun, overlayLabelsSuppressed, recordLabelYields, reservedLinkRuns, tierGapSplit } from './link-labels.js';
 import { overlayBasePath, overlayPath, overlayTrackRuns, straightChord } from './overlay-paths.js';
 import { paddingOf, trackLabelHeight, trackLabelRoom, trackRoomNeed } from './overlay-tracks.js';
-import { chordKind, crossingRect, isRoutedChord } from './frame-paths.js';
+import { chordKind, crossingRect, frozenLevelChordsFault, isRoutedChord, levelChordPartners } from './frame-paths.js';
 import { diagonalMayCross, GROUP_TITLE } from './diagonal-text.js';
 import { directFamiliesFault } from './direct-families.js';
 import { fanAdmissionsFault } from './fan-admission.js';
@@ -926,6 +926,7 @@ export function topUpBandClearance(model: LayoutModel): boolean {
   }));
   const topShift = (tier: number) => Math.max(0, ...ids.filter(id => model.groups[id]!.tier === tier).map(id => shifts.get(id)!.top));
   let moved = false;
+  const movedNodes = new Set<string>();
   for (const id of ids) {
     const group = model.groups[id]!, shift = shifts.get(id)!;
     const down = topShift(group.tier!);
@@ -935,6 +936,7 @@ export function topUpBandClearance(model: LayoutModel): boolean {
       const node = model.nodes[nodeId]!;
       node.bounds!.y += down;
       for (const port of node.ports) port.anchor!.y += down;
+      if (down) movedNodes.add(nodeId);
     }
     group.bounds!.height += down + shift.bottom;
   }
@@ -943,9 +945,14 @@ export function topUpBandClearance(model: LayoutModel): boolean {
   // The tiers below a band that grew move down by its growth, so every tier gap keeps its height.
   let shift = 0;
   for (const tierBand of [...model.tierBands].sort((a, b) => a.tier - b.tier)) {
-    if (shift) for (const group of Object.values(model.groups).filter(item => item.tier === tierBand.tier)) moveGroup(model, group, 0, shift);
+    if (shift) for (const group of Object.values(model.groups).filter(item => item.tier === tierBand.tier)) {
+      moveGroup(model, group, 0, shift);
+      for (const nodeId of group.nodes) movedNodes.add(nodeId);
+    }
     shift += Math.max(0, tierBand.bounds!.height - (before.get(tierBand.tier)?.height ?? tierBand.bounds!.height));
   }
+  // The first column and label-room reads follow this push, before a region rebuild can repair stale pills.
+  rebuildNodeGeometry(model, [...movedNodes], 'current');
   rebuildBands(model);
   syncBands(model, entries);
   return true;
@@ -1499,9 +1506,12 @@ export function reserveAcrossRunRoom(model: LayoutModel, settle: (nodes: string[
     const tier = group.tier!;
     if (room.side === 'top' || room.side === 'bottom') {
       // The tiers below move down; for the top edge the group's own content moves too, its box top stays, and a sibling of its tier stays (R2).
-      const moved = Object.values(model.groups).filter(item => (item.tier !== undefined && item.tier > tier) || (room.side === 'top' && item === group));
+      // A group in a level relation with it (a held level cross-frame chord, `frozenLevelChords`) moves its content down too, so the chord stays level.
+      const partners = room.side === 'top' ? levelChordPartners(model, group).map(id => model.groups[id]!) : [];
+      const moved = Object.values(model.groups).filter(item => (item.tier !== undefined && item.tier > tier) || (room.side === 'top' && item === group) || partners.includes(item));
       for (const item of moved) moveGroup(model, item, 0, deficit);
       settle(moved.flatMap(item => item.nodes));
+      for (const item of partners) fitRegionGroup(model, item);
     } else {
       const split = room.side === 'left' ? bodies.x : right(bodies);
       settle(insertRoomAt(model, split, deficit, tier));
@@ -1537,7 +1547,8 @@ export { labelBorders };
  * by the left end) and a node of any other tier when any part of it lies beyond (a wide source moves
  * with the bar slotted under it), so alignments, flank sides and bar-to-source slots all move alike.
  * A routed link that will detour (ends that are not level, or a straight run `straightCorridorClear`
- * rejects) adds both stroke-aware stems and the anchor-side pill protrusion. Every authored label on
+ * rejects) adds both stroke-aware stems and the anchor-side pill protrusion. A held routed chord keeps
+ * its straight run and reserves its turned label window from the current anchors. Every authored label on
  * a drawn link counts — bars, overlay links whose labels are not suppressed — except bundle members,
  * whose geometry 7e owns. Self-links, same-tier links through top/bottom ports and pairs whose ports do
  * not face each other are diagnosed and left to the stage 9 ladder. Room beyond a reserved lane is inserted,
@@ -1688,12 +1699,15 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     const centre = overlay ? overlayRunMid(model, link, 'x') : (leftPort.anchor!.x + rightPort.anchor!.x) / 2;
     if (centre === undefined) { unreserved('draws its longest overlay run across the row, not along it'); continue; }
     const mid = centre;
-    // A routed link detours when its ends are not level or when the straight run between them is not
-    // clear — the same stroke-aware reading of nodes, pills, foreign group boxes with their margin,
+    // A held routed chord has no detour stems, even when its ends are not level. Other routed links detour when their ends are not level
+    // or when the straight run between them is not clear — the same stroke-aware reading of nodes, pills, foreign group boxes with their margin,
     // lanes, fixed runs and bundle rows and envelopes that pins row paths and reserves corridors
     // (`straightCorridorClear`).
     const straight: PathSegment = { from: { ...leftPort.anchor! }, to: { ...rightPort.anchor! }, owner: { ...link.owner } };
-    const detour = !overlay
+    const heldChord = !overlay && isRoutedChord(model, link);
+    const anchored = heldChord ? straightChord(model, link, undefined, true) : undefined;
+    if (heldChord && anchored === undefined) { unreserved('cannot read the ends of its held chord'); continue; }
+    const detour = !overlay && !heldChord
       && (Math.abs(leftPort.anchor!.y - rightPort.anchor!.y) > PLACEMENT_EPS || !straightCorridorClear(model, link, straight));
     const room = 2 * Math.min(mid - Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))), Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x) - mid);
     // A detour's long run ends at an anchor on one side and at a turn on the other, so its midpoint is
@@ -1708,14 +1722,17 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     const faceLeft = Math.max(right(leftNode.bounds!), right(outer(leftPort, leftNode))), faceRight = Math.min(rightNode.bounds!.x, outer(rightPort, rightNode).x);
     const split = (faceLeft + faceRight) / 2;
     // A label stays in one region: one window of the run it rides, between the drawn borders the run crosses, must hold it
-    // (`labelWindowDeficit`). The run is the overlay path's longest run, or the straight run between the two pill faces; a routed
-    // link that detours bends, and stage 9 decides.
-    const longest = overlay ? overlayLongestRun(model, link) : undefined;
-    const ridden: PathSegment | undefined = overlay
-      ? (longest !== undefined && Math.abs(longest.to.y - longest.from.y) <= PLACEMENT_EPS ? longest : undefined)
+    // (`labelWindowDeficit`). The run is the overlay path's longest run, a held chord at its current anchors, or the straight run
+    // between the two pill faces; a routed link that detours bends, and stage 9 decides.
+    const chord: PathSegment | undefined = anchored === undefined ? undefined : { from: anchored.from, to: anchored.to, owner: { ...link.owner } };
+    const longest = overlay ? overlayLongestRun(model, link) : chord;
+    const diagonal = chord !== undefined && isDiagonalRun(chord);
+    const ridden: PathSegment | undefined = overlay || diagonal
+      ? (longest !== undefined && (diagonal || Math.abs(longest.to.y - longest.from.y) <= PLACEMENT_EPS) ? longest : undefined)
       : detour || faceRight - faceLeft <= PLACEMENT_EPS ? undefined
         : { from: { x: faceLeft, y: leftPort.anchor!.y }, to: { x: faceRight, y: leftPort.anchor!.y }, owner: { ...link.owner } };
-    const windowed = labelWindowRoom(model, ridden, measured.width, split);
+    const windowed = labelWindowRoom(model, ridden, measured.width, split, false,
+      diagonal ? { across: haloSize(measured).height, axis: 'x', link } : undefined);
     if (windowed === undefined) unreserved('crosses a drawn box in its row; no window between borders can be reserved for its label');
     const deficit = Math.max(wanted - room, windowed ?? 0);
     if (deficit <= PLACEMENT_EPS) continue;
@@ -1850,6 +1867,9 @@ export function validateGroupLabelBands(model: LayoutModel): void {
   // The fan admissions are read from their record and the geometry, never admitted again (architecture-2 ticket 40, R1/R5).
   const fan = fanAdmissionsFault(model);
   if (fan !== undefined) throw new Error(`The fan admission record is forged: ${fan}`);
+  // The level chords the freeze recorded are read from their record and the geometry (dense-16x9 ticket 06, R1/R5); `levelChordPartners` reads them as soon as 7f runs.
+  const level = frozenLevelChordsFault(model);
+  if (level !== undefined) throw new Error(`The level chord record is forged: ${level}`);
   const padding = labelPaddingFault(model);
   if (padding !== undefined) throw new Error(`The label padding record is forged: ${padding}`);
   // The stem depths are read from their record (architecture-2 ticket 57, R1); a record the geometry does not call for is refused (R5).
