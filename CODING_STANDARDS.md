@@ -70,9 +70,13 @@ Check: grep `Date.now|performance.now` in `src/layout`; a hit outside the budget
 A diagnostic in a serialised model can be forged or stale. Do not excuse a violation because a diagnostic names it.
 The one accepted exception is ADR-0010: a non-converged centring keeps its last state, records `CENTRE_INVARIANT_UNVERIFIED`, and the final gates judge it. One serialized code relaxes one named check, read only at restore from its named emitter (D15, 2026-11-07); no code relaxes a check model-wide.
 Limit every exemption to the owner and the stage that prove it.
+A reservation kind has one entry in `RESERVATION_CHECKS` (`reservations.ts`): its one per-entry predicate, and for each reader (the round check,
+restore of a frozen model, restore before the freeze) whether it calls that predicate or why it reads the kind another way. A new kind does not
+compile without its entry; never add a predicate to one reader alone.
 
 Evidence: m1-example-diagram ticket 19 (a forged `CENTRE_ALIGNMENT_INFEASIBLE` bypassed the invariant; an exemption covered sibling owners);
-architecture-2 ticket 16; ranked-groups ticket 114.
+architecture-2 ticket 16; ranked-groups ticket 114; dense-16x9 ticket 22 reviews 3 and 4 (a new kind checked by the round, then by final restore,
+and still not by early restore).
 Check: inject the diagnostic into a violating model; the validator still throws. Test an exempt item beside a non-exempt item.
 
 ### R6. A guard that cannot read its input refuses. A skipped item gets a named diagnostic.

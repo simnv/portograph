@@ -188,8 +188,8 @@ describe('fan wrap: the acceptance gate (D-Q4)', () => {
   it('keeps a wrap with less area and every straight link, and names the area when the alternative is smaller', async () => {
     const wrapped = await run(fixture(NAME));
     const plain = await run(oneLine(fixture(NAME)));
-    expect(wrapGateVerdict(wrapped, plain)).toBeUndefined();
-    expect(wrapGateVerdict(plain, wrapped)).toMatch(/^the complete placement is [\d.]+ x [\d.]+ px with two lines, not less area than [\d.]+ x [\d.]+ px without$/);
+    expect(wrapGateVerdict(wrapped, plain, 'block')).toBeUndefined();
+    expect(wrapGateVerdict(plain, wrapped, 'block')).toMatch(/^the complete placement is [\d.]+ x [\d.]+ px with two lines, not less area than [\d.]+ x [\d.]+ px without$/);
   }, 60000);
 
   it('declines, end to end and by name, a wrap that loses a straight link, also when the placement budget is one re-run', async () => {
@@ -234,8 +234,9 @@ ${links('a', 'sw1')}${links('b', 'sw2')}`;
     const model = await run(withAspect(yaml, '1:1'));
     expect(model.staggerRows?.map(row => row.group)).toEqual(['a']);
     const entry = model.groupArrangements!.b!;
-    expect(entry.chosen === 'row' && entry.reason).toMatch(/^aspect: /);
-    expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED')).toEqual([]);
+    // Stage 5 chooses `b` too; the gate judges it after `a` is kept, in keep mode (dense-16x9 ticket 22), so no run chooses again.
+    expect(entry).toEqual({ chosen: 'row', reason: 'the acceptance gate declined the two lines (FAN_WRAP_DECLINED names why)' });
+    expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED').map(note => note.owners)).toEqual([[{ kind: 'group', id: 'b' }]]);
   }, 120000);
 
   it('names a straight link the wrap would lose', async () => {
@@ -246,6 +247,6 @@ ${links('a', 'sw1')}${links('b', 'sw2')}`;
     const feed = moved.links.find(link => link.attachments?.from.node === 'w-gw' && link.attachments.to.node === 'w-hub')!;
     moved.nodes['w-gw']!.ports.find(item => item.side === 'bottom')!.anchor!.x += 30;
     delete feed.path;
-    expect(wrapGateVerdict(moved, plain)).toMatch(new RegExp(`^the link ${feed.id} is straight without the two lines and not with them$`));
+    expect(wrapGateVerdict(moved, plain, 'block')).toMatch(new RegExp(`^the link ${feed.id} is straight without the two lines and not with them$`));
   }, 60000);
 });

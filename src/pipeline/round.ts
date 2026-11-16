@@ -6,7 +6,9 @@
 import type { Diagnostic, LayoutModel } from '../model/index.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
 import { producerRefusal } from '../layout/placement-refusal.js';
-import type { Reservations } from '../layout/reservations.js';
+import { staggerRefusal } from '../layout/stagger.js';
+import { declineStagger, reserve as addReservations, type Reservations } from '../layout/reservations.js';
+import { holds } from '../layout/reservation-checks.js';
 import type { Env } from './env.js';
 import type { State, Trial } from './state.js';
 
@@ -96,10 +98,54 @@ export type AnyRound = Round<any>;
 /** A trial that was placed: the ledger it was placed with and its 7e model. */
 export interface Opened { ledger: Reservations; trial7e: LayoutModel }
 
-/** Whether `error` of a trial's run withdraws the trial: a producer refusal in every round (DR-11), else what the round tolerates. */
-const withdraws = <O>(round: Round<O>, error: unknown, phase: 'place' | 'bands'): boolean => producerRefusal(error) || round.tolerates(error, phase);
+/**
+ * Whether `error` of a trial's run withdraws the trial: a producer refusal in every round (DR-11), a stagger refusal at 7f in every round (the
+ * trial's stagger rows do not hold there, dense-16x9 ticket 22 review), else what the round tolerates.
+ */
+const withdraws = <O>(round: Round<O>, error: unknown, phase: 'place' | 'bands'): boolean =>
+  producerRefusal(error) || (phase === 'bands' && staggerRefusal(error)) || round.tolerates(error, phase);
 
 const refuse = <O>(env: Env, s: State, round: Round<O>, o: O, r: Refusal): Refusal => { round.refuse(env, s, o, r); return r; };
+
+/**
+ * An unrouted round's trial that holds stagger rows, checked at 7f (dense-16x9 ticket 22, reviews 1 and 2). Such a round commits its 7e unbanded, and the
+ * next baseline runs 7f on it (`driver.ts`, `baseline`), so its 7f runs here as a trial first: no round commits a placement that the next baseline refuses.
+ * - `undefined`: 7f keeps the trial.
+ * - A stagger row is kept only when the placement that follows from it can be kept. A stagger refusal that names a row of the trial (its own chord corridor,
+ *   say, after the fan floors moved its hub ports) declines that row by name in the ledger (`staggerDeclined`: every later run reads it, none decides it
+ *   again), and the baseline is placed once more, from the kept ledger, without it. That placement is returned: the round keeps it in place of its trial.
+ *   **The bound (R4):** each row is declined once at most in a command (`env.rebasedRows`), and each placement here declines at least one row, so a
+ *   command whose gate kept N rows places here at most N times, in every round and trial together. Each of those placements stands outside the cap with
+ *   the acceptance gate's (`env.gateRuns`, credited before it starts), as its consequence; the round's visit it took is given back (`State.rebased`).
+ * - Any other stagger or producer refusal at 7f refuses the trial (`at: 'bands'`), and the baseline stands. No routing pass.
+ */
+async function keptStaggers<O>(env: Env, s: State, round: Round<O>, ledger: Reservations, trial7e: LayoutModel): Promise<Opened | Refusal | undefined> {
+  let replaced = false;
+  for (;;) {
+    if (!trial7e.staggerRows?.length) return replaced ? { ledger, trial7e } : undefined;
+    try { await env.bands(trial7e, true); return replaced ? { ledger, trial7e } : undefined; } catch (error) {
+      if (!withdraws(round, error, 'bands')) throw error;
+      const rows = trial7e.staggerRows.map(row => row.group);
+      // A row this command declined once already (in a trial that was then dropped) is not declined again: the bound is one per row.
+      const named = staggerRefusal(error) ? [...new Set(error.owners.flatMap(owner => owner.kind === 'group' && rows.includes(owner.id) && !env.rebasedRows?.has(owner.id) ? [owner.id] : []))].sort() : [];
+      if (!named.length) return { at: 'bands', why: (error as Error).message, error: error as Error };
+      for (const group of named) (env.rebasedRows ??= new Set()).add(group);
+      ledger = addReservations(replaced ? ledger : s.kept, named.flatMap(group => declineStagger(group, (error as Error).message, round.id, env.placements)));
+      replaced = true;
+      // The placement stands outside the cap: it is credited before it starts (`place` counts and checks the cap at once), and the credit is set to the
+      // placements it started (none when it did not run).
+      const placedBefore = env.placements;
+      env.gateRuns++;
+      try { trial7e = await env.timed(round.label, () => env.place(ledger, env.trialAbort)); } catch (again) {
+        env.gateRuns += env.placements - placedBefore - 1;
+        if (!withdraws(round, again, 'place')) throw again;
+        return { at: 'place', why: (again as Error).message, error: again as Error };
+      }
+      env.gateRuns += env.placements - placedBefore - 1;
+      if (trial7e.fallbackUsed && !(s.fallbackFrom ?? s.kept7e).fallbackUsed) return { at: 'fallback', why: `ELK fell back during the ${round.id} trial` };
+    }
+  }
+}
 
 /** Reserve and place a trial of `round` on the offer `o`. A started placement is never given back. */
 export async function open<O>(env: Env, s: State, round: Round<O>, o: O): Promise<Opened | Refusal> {
@@ -117,11 +163,25 @@ export async function open<O>(env: Env, s: State, round: Round<O>, o: O): Promis
 
 /** Check, band, route, judge and commit a placed trial. Returns `undefined` when the trial was kept, else the refusal. */
 export async function close<O>(env: Env, s: State, round: Round<O>, o: O, { ledger, trial7e }: Opened): Promise<Refusal | undefined> {
+  if (!round.routed && trial7e.staggerRows?.length) {
+    const staggered = await keptStaggers(env, s, round, ledger, trial7e);
+    if (staggered !== undefined && 'at' in staggered) return refuse(env, s, round, o, staggered);
+    if (staggered !== undefined) {
+      // The baseline placed again without the declined rows stands in for the trial: the round keeps it, and its next visit measures again
+      // on it. Its own ledger is checked; the round's rules read a trial of the old baseline, which this is not.
+      const broken = holds(staggered.ledger, staggered.trial7e);
+      if (broken.length) return refuse(env, s, round, o, { at: 'ledger', why: broken[0]!.why, reservationIds: broken.map(item => item.id) });
+      round.commit(env, s, o, { ...staggered, trial: staggered.trial7e, routedTrial: staggered.trial7e, moved: false, unmoved: undefined });
+      s.rebased = (s.rebased ?? 0) + 1;
+      return undefined;
+    }
+  }
   const held = round.holdsAt7e(env, s, o, ledger, trial7e) ?? round.predict?.(env, s, o, trial7e);
   if (held !== undefined) return refuse(env, s, round, o, held);
   let t: Trial;
-  if (!round.routed) t = { ledger, trial7e, trial: trial7e, routedTrial: trial7e, moved: false, unmoved: undefined };
-  else {
+  if (!round.routed) {
+    t = { ledger, trial7e, trial: trial7e, routedTrial: trial7e, moved: false, unmoved: undefined };
+  } else {
     try {
       const preflight = await round.preflight?.(env, s, o, trial7e);
       if (preflight !== undefined) return refuse(env, s, round, o, preflight);

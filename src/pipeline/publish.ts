@@ -11,7 +11,8 @@ import { sideHintDiagnostics } from '../layout/side-hints.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { routedBends } from '../layout/side-judge.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
-import { sideHintsOf } from '../layout/reservations.js';
+import { declinedStaggersOf, sideHintsOf } from '../layout/reservations.js';
+import { FAN_WRAP_DECLINED } from '../layout/stagger.js';
 import { holdsRouted } from '../layout/reservation-checks.js';
 import type { Env } from './env.js';
 import { portName } from './rounds.js';
@@ -25,6 +26,11 @@ export async function publish(env: Env, s: State): Promise<LayoutModel> {
       message: `The port ${portName(key)} takes the side ${side}: the ${item.shape} shape of ${item.link} (${item.bends} bends).`, owners: [{ kind: 'link', id: item.link }] });
   }
   s.sideNotes.push(...s.keptNotes);
+  // A stagger a later placement refused is declined in the ledger (dense-16x9 ticket 22, review 2): the note reads that record.
+  for (const [group, reason] of declinedStaggersOf(s.kept)) {
+    s.sideNotes.push({ stage: 'placement', severity: 'info', code: FAN_WRAP_DECLINED, owners: [{ kind: 'group', id: group }],
+      message: `The two lines of ${group} are declined: a later placement refused them: ${reason}.` });
+  }
   // Read on the 7e model that publishes: the kept one, or the kept trial's.
   const declined = declinedFanDiagnostics(measureFans(s.kept7e).declined);
   const atFreeze = chordClearances(s.kept7e);
