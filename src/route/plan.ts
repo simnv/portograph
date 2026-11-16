@@ -47,7 +47,11 @@ const OPPOSITE: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'righ
 export type RoutePiece =
   | { kind: 'reserved'; segments: PathSegment[] }
   | { kind: 'allocated'; segments: PathSegment[] }
-  | { kind: 'straight'; segments: PathSegment[] }
+  /**
+   * `passes` is what placement reserved on the claimed run and the router would have had to pass head-on: each stem (port anchor to
+   * `stemCheckpoint`) and each lane approach (lane end to `approachCheckpoint`), terminal to checkpoint. The stitcher does not read it.
+   */
+  | { kind: 'straight'; segments: PathSegment[]; passes: Pick<PathSegment, 'from' | 'to'>[] }
   /**
    * `via` is the connector's checkpoints, in order: the points the router must pass between the two ends.
    * `producers` names, for each one, the rule that asked for it (`stem:<port>`, `lane:<lane>`,
@@ -195,9 +199,8 @@ export function stemCheckpoint(model: LayoutModel, port: LayoutPort, cache?: Ste
 function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
   pins: Map<string, RoutePin[]>, usage: Map<string, number>,
   cache: StemCache): { endpoint: RouteEndpoint; point: Point; directions: number; checkpoint?: Point; port?: LayoutPort } {
-  const runs = link.sharedRuns?.[end];
-  if (runs?.length) {
-    const terminal = runs.at(-1)!.to;
+  const { shared: runs, point: terminal } = terminalOf(model, link, end);
+  if (runs) {
     // A terminal that is the end of a reserved group exit is a handoff: the route leaves it away from the group it left, never back into it.
     const exit = model.groupExits?.find(item => item.link === link.id && item.end === end);
     const directions = exit ? ALL_DIRECTIONS & ~DIRECTION_BITS[OPPOSITE[exitSide(exit)]] : ALL_DIRECTIONS;
@@ -215,6 +218,91 @@ function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
   }
   return { endpoint: { kind: 'pin', shape: `node:${ref.node}`, classId }, point: { ...port.anchor! },
     directions: DIRECTION_BITS[port.side!], checkpoint: stemCheckpoint(model, port, cache), port };
+}
+
+/** A side run is the lateral port's own stem (side-faces.md, Section 10): it ends on the port's anchor. */
+const isSideRun = (segment: PathSegment | undefined): boolean => segment?.lane?.startsWith('side-lane:') === true || segment?.lane?.startsWith('perimeter:') === true || segment?.lane?.startsWith('gap-lane:') === true;
+
+/** Where a link's route starts or ends: the last point of the shared run at that end, or else the anchor of its port. */
+interface Terminal { point: Point; port?: LayoutPort; shared?: PathSegment[] }
+function terminalOf(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): Terminal {
+  const runs = link.sharedRuns?.[end];
+  if (runs?.length) return { point: runs.at(-1)!.to, shared: runs };
+  const port = endPort(model, link, end)!;
+  return { point: port.anchor!, port };
+}
+
+/** One checkpoint a routed gap passes head-on, with the terminal it belongs to and the rule that asked for it (`stem:<port>`, `lane:<lane>`). */
+export interface AskedCheckpoint { checkpoint: RouteCheckpoint; terminal: Point; producer: string; node?: string; side?: Side; port?: string }
+
+/**
+ * The pieces of `link` between its reserved runs (`fixed`, in traversal order: the lanes, the leg and the tier-gap runs), one per gap from
+ * the start terminal to the first run, between two runs, and from the last run to the end terminal: whether the piece is empty (`skip`: its two
+ * ends are one point, or it lies on a side run, the lateral port's own stem), and the checkpoints it passes head-on (a port's stem to
+ * `stemCheckpoint`, a lane's approach to `approachCheckpoint`), less those the adjacent shared run already passes (`reservedPasses`). The one
+ * selection `planRoute` asks the router by and `reservedRunsOf` reads the stems and mouths from (R1).
+ */
+export function pieceAsks(model: LayoutModel, link: LayoutLink, fixed: readonly PathSegment[], cache: StemCache): { skip: boolean; asked: AskedCheckpoint[] }[] {
+  const from = terminalOf(model, link, 'from'), to = terminalOf(model, link, 'to');
+  const result: { skip: boolean; asked: AskedCheckpoint[] }[] = [];
+  for (let index = 0; index <= fixed.length; index++) {
+    const first = index === 0, last = index === fixed.length;
+    const start = first ? from.point : fixed[index - 1]!.to, end = last ? to.point : fixed[index]!.from;
+    // A side run is the lateral port's own stem (side-faces.md, Section 10): it ends on the port's anchor, so the piece between that
+    // end and the port is empty and asks for no approach and no stem checkpoint.
+    const onSideRun = samePoint(start, end) && (isSideRun(fixed[index - 1]) || isSideRun(fixed[index]));
+    const points = !(first && from.port) && !(last && to.port);
+    if (onSideRun || (points && samePoint(start, end))) { result.push({ skip: true, asked: [] }); continue; }
+    // A reserved corridor admits only its owner's collinear run, so the gap beside it joins
+    // head-on: one approach checkpoint the standard stem away, outside the reservation. Each
+    // checkpoint carries the reach placement reserved for it, from the terminal it belongs to.
+    const asked: AskedCheckpoint[] = [
+      ...(first && from.port ? [{ checkpoint: { ...stemCheckpoint(model, from.port, cache), arrival: DIRECTION_BITS[OPPOSITE[from.port.side!]], departure: ALL_DIRECTIONS },
+        terminal: from.point, producer: `stem:${portId(from.port.ref)}`, node: from.port.ref.node, side: from.port.side!, port: portId(from.port.ref) }] : []),
+      // Only a lane is a corridor that admits its owner's run alone, so only a lane asks the gap
+      // beside it to join head-on. A leg's run is entered from the side by construction — the
+      // stem reaches its slot and turns into it — and an approach point on the leg's own line
+      // is one the router cannot reach (ADR-0015 rule 1).
+      ...(first || fixed[index - 1]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index - 1]!, 'to'), terminal: fixed[index - 1]!.to, producer: `lane:${fixed[index - 1]!.lane}` }]),
+      ...(last || fixed[index]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index]!, 'from'), terminal: fixed[index]!.from, producer: `lane:${fixed[index]!.lane}` }]),
+      ...(last && to.port ? [{ checkpoint: { ...stemCheckpoint(model, to.port, cache), arrival: ALL_DIRECTIONS, departure: DIRECTION_BITS[OPPOSITE[to.port.side!]] },
+        terminal: to.point, producer: `stem:${portId(to.port.ref)}`, node: to.port.ref.node, side: to.port.side!, port: portId(to.port.ref) }] : []),
+      // A checkpoint the adjacent reserved run already passes through, head-on and strictly
+      // inside a segment, is consumed by that run: a junction leaf that reaches deeper than a
+      // lane's approach point has honoured it, and the gap starting at the leaf could only
+      // reach it by turning back (ticket 20).
+    ].filter(item => !reservedPasses(first ? link.sharedRuns?.from : last ? link.sharedRuns?.to : undefined, item.checkpoint));
+    result.push({ skip: false, asked });
+  }
+  return result;
+}
+
+/** Which producer reserved a run `reservedRunsOf` reads. */
+export type ReservedRunKind = 'path' | 'shared' | 'lane' | 'leg' | 'stem' | 'mouth';
+
+/**
+ * Every run of `link` that its final routed path holds and that is known before stage 8 routes, the planned tier-gap parts aside (they are
+ * the gap plan's own, `plannedSegments`): a stored path (a held chord, a pinned or bundle path), the shared junction runs at both ends, the
+ * lane runs and the row-gap leg, which `planRoute` stitches unchanged; and the stems and lane mouths its pieces pass head-on (`pieceAsks`,
+ * the selection `planRoute` asks the router by), terminal to checkpoint. The tier-gap runs are not woven in: placement plans them per gap,
+ * after this read. A link stage 8 does not route (a stub, a removed or an overlay link without a stored path) holds none.
+ */
+export function reservedRunsOf(model: LayoutModel, link: LayoutLink, cache: StemCache = stemCache()): { kind: ReservedRunKind; segments: PathSegment[] }[] {
+  if (link.path) return [{ kind: 'path', segments: link.path.segments }];
+  if (!drawn(link) || effectiveLayer(link) !== 'routed') return [];
+  const result: { kind: ReservedRunKind; segments: PathSegment[] }[] = [];
+  if (link.sharedRuns?.from?.length) result.push({ kind: 'shared', segments: link.sharedRuns.from });
+  const leg = legReservation(model, link, cache);
+  const fixed = leg ? [...(link.fixedSegments ?? []), leg] : (link.fixedSegments ?? []);
+  for (const segment of link.fixedSegments ?? []) result.push({ kind: 'lane', segments: [segment] });
+  if (leg) result.push({ kind: 'leg', segments: [leg] });
+  if (link.sharedRuns?.to?.length) result.push({ kind: 'shared', segments: link.sharedRuns.to });
+  const owner = { kind: 'link' as const, id: link.id };
+  for (const piece of pieceAsks(model, link, fixed, cache)) for (const item of piece.asked) {
+    const tip = { x: item.checkpoint.x, y: item.checkpoint.y };
+    if (!samePoint(item.terminal, tip)) result.push({ kind: item.producer.startsWith('lane:') ? 'mouth' : 'stem', segments: [{ from: { ...item.terminal }, to: tip, owner }] });
+  }
+  return result;
 }
 
 /**
@@ -300,34 +388,13 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
     ];
     const pieces: RoutePiece[] = [], connectors: RouteConnector[] = [];
     if (link.sharedRuns?.from?.length) pieces.push({ kind: 'reserved', segments: link.sharedRuns.from });
+    const selection = pieceAsks(model, link, fixed, gaps);
     for (let index = 0; index * 2 < stops.length - 1; index++) {
       const start = stops[index * 2]!, end = stops[index * 2 + 1]!;
       const first = index === 0, last = index * 2 + 2 === stops.length;
-      // A side run is the lateral port's own stem (side-faces.md, Section 10): it ends on the port's anchor, so the piece between that
-      // end and the port is empty and asks for no approach and no stem checkpoint.
-      const isSideRun = (segment: PathSegment | undefined): boolean => segment?.lane?.startsWith('side-lane:') === true || segment?.lane?.startsWith('perimeter:') === true || segment?.lane?.startsWith('gap-lane:') === true;
-      const onSideRun = samePoint(start.point, end.point) && (isSideRun(fixed[index - 1]) || isSideRun(fixed[index]));
-      if (!onSideRun && !(start.endpoint.kind === 'point' && end.endpoint.kind === 'point' && samePoint(start.point, end.point))) {
+      if (!selection[index]!.skip) {
         const id = `${link.id}#${index}`;
-        // A reserved corridor admits only its owner's collinear run, so the gap beside it joins
-        // head-on: one approach checkpoint the standard stem away, outside the reservation. Each
-        // checkpoint carries the reach placement reserved for it, from the terminal it belongs to.
-        const asked: { checkpoint: RouteCheckpoint; terminal: Point; producer: string; node?: string; side?: Side; port?: string }[] = [
-          ...(first && from.checkpoint ? [{ checkpoint: { ...from.checkpoint, arrival: DIRECTION_BITS[OPPOSITE[from.port!.side!]], departure: ALL_DIRECTIONS },
-            terminal: from.point, producer: `stem:${portId(from.port!.ref)}`, node: from.port!.ref.node, side: from.port!.side!, port: portId(from.port!.ref) }] : []),
-          // Only a lane is a corridor that admits its owner's run alone, so only a lane asks the gap
-          // beside it to join head-on. A leg's run is entered from the side by construction — the
-          // stem reaches its slot and turns into it — and an approach point on the leg's own line
-          // is one the router cannot reach (ADR-0015 rule 1).
-          ...(first || fixed[index - 1]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index - 1]!, 'to'), terminal: fixed[index - 1]!.to, producer: `lane:${fixed[index - 1]!.lane}` }]),
-          ...(last || fixed[index]!.lane === undefined ? [] : [{ checkpoint: approachCheckpoint(fixed[index]!, 'from'), terminal: fixed[index]!.from, producer: `lane:${fixed[index]!.lane}` }]),
-          ...(last && to.checkpoint ? [{ checkpoint: { ...to.checkpoint, arrival: ALL_DIRECTIONS, departure: DIRECTION_BITS[OPPOSITE[to.port!.side!]] },
-            terminal: to.point, producer: `stem:${portId(to.port!.ref)}`, node: to.port!.ref.node, side: to.port!.side!, port: portId(to.port!.ref) }] : []),
-          // A checkpoint the adjacent reserved run already passes through, head-on and strictly
-          // inside a segment, is consumed by that run: a junction leaf that reaches deeper than a
-          // lane's approach point has honoured it, and the gap starting at the leaf could only
-          // reach it by turning back (ticket 20).
-        ].filter(item => !reservedPasses(first ? link.sharedRuns?.from : last ? link.sharedRuns?.to : undefined, item.checkpoint));
+        const asked = [...selection[index]!.asked];
         // A piece the router has nothing to choose about is claimed here instead of asked for: its
         // two ends and every checkpoint stand on one line, and the run between them is clear of
         // everything placement froze. See `straightRun`.
@@ -339,7 +406,8 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
         const pins = [...(first && from.port ? [from.port] : []), ...(last && to.port ? [to.port] : [])];
         const attached = { nodes: pins.map(port => port.ref.node), ports: pins.map(port => portId(port.ref)) };
         if (run && corridorFree(model, link, run, attached, reserved)) {
-          pieces.push({ kind: 'straight', segments: [{ ...run, owner: { kind: 'link' as const, id: link.id } }] });
+          pieces.push({ kind: 'straight', segments: [{ ...run, owner: { kind: 'link' as const, id: link.id } }],
+            passes: asked.map(item => ({ from: { ...item.terminal }, to: { x: item.checkpoint.x, y: item.checkpoint.y } })) });
           // `routed:` is `completedRouteObstacles`' own prefix for a chain it was handed, which the
           // leg and the tier-gap allocation carry for the same reason. It names the producer, not
           // the geometry: every cover this pass adds is under it, whoever fixed the run.
