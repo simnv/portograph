@@ -1,6 +1,6 @@
 import type { LayoutLink, LayoutModel, PathSegment, Point } from '../model/index.js';
 import { EPS, segmentDistance } from './geometry.js';
-import { port } from './model.js';
+import { chordEnds } from '../layout/overlay-paths.js';
 
 /** One run that the G6 clearance reads: its segment, its link and the stroke it is drawn with. */
 export type ClearanceRun = { segment: PathSegment; link: LayoutLink; stroke: number };
@@ -16,16 +16,19 @@ function remainder(segment: PathSegment, start: Point, zone: number): PathSegmen
   return { ...segment, from: { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t }, to: end };
 }
 
-/** The port anchor where `link` meets `node`, when `segment` is the whole chord and starts or ends there. */
+/**
+ * Where the chord of `link` starts on `node`, when `segment` is the whole chord: the outward face point of the port on that node, the point
+ * the chord is drawn from (`chordEnds`, the one end reader of a placement chord and of a routed straight path; R1). The face point is the
+ * anchor where the port draws no pill, and the pill's outer edge where it does. Undefined when `segment` does not join the two face points.
+ */
 function chordEnd(model: LayoutModel, link: LayoutLink, segment: PathSegment, node: string): Point | undefined {
-  const ends = link.attachments;
-  if (ends === undefined) return undefined;
-  const near = ends.from.node === node ? ends.from : ends.to.node === node ? ends.to : undefined;
-  const far = near === ends.from ? ends.to : ends.from;
-  const a = near === undefined ? undefined : port(model, near)?.anchor, b = port(model, far)?.anchor;
-  if (a === undefined || b === undefined) return undefined;
+  const ends = link.attachments, faces = chordEnds(model, link);
+  if (ends === undefined || faces === undefined) return undefined;
+  const near = ends.from.node === node ? faces.head.face : ends.to.node === node ? faces.tail.face : undefined;
+  if (near === undefined) return undefined;
+  const far = near === faces.head.face ? faces.tail.face : faces.head.face;
   const on = (p: Point, q: Point): boolean => Math.hypot(p.x - q.x, p.y - q.y) <= EPS;
-  return (on(segment.from, a) && on(segment.to, b)) || (on(segment.to, a) && on(segment.from, b)) ? a : undefined;
+  return (on(segment.from, near) && on(segment.to, far)) || (on(segment.to, near) && on(segment.from, far)) ? near : undefined;
 }
 
 /**

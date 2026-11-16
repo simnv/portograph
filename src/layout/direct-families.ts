@@ -11,6 +11,7 @@ import { portId } from './skeleton-graph.js';
 import { chordGapNotes, plannedSegments, tierGapPlan, tierGapPlans } from './gap-plan.js';
 import { tierGaps } from './gap-runs.js';
 import { clone } from './bundle-geometry.js';
+import { runClearance } from '../score/sheaf.js';
 
 /**
  * Facing units link direct (architecture-2 ticket 22, slice 1).
@@ -534,8 +535,10 @@ function crowdedChords(model: LayoutModel, direct: readonly { id: string; gap: {
     const link = model.links.find(item => item.id === id), chord = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
     if (link === undefined || chord === undefined) continue;
     const stroke = linkStrokeWidth(link);
-    const near = (segment: PathSegment, other: number): boolean => !strictCrossing(chord, segment)
-      && segmentDistance(chord, segment) - (stroke + other) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS;
+    // The one G6 measure (`runClearance`, R1): two chords of one solid block that share a node are excused within its sheaf zone, as the gate
+    // excuses them; a planned part is no whole chord, so it is measured whole.
+    const near = (segment: PathSegment, other: LayoutLink): boolean => !strictCrossing(chord, segment)
+      && runClearance(model, { segment: chord, link, stroke }, { segment, link: other, stroke: linkStrokeWidth(other) }) < STRAIGHT_PATH_CLEARANCE.path - EPS;
     const found = plans.find(item => item.gap.above === gap.above && item.gap.below === gap.below);
     let hit = false;
     for (const part of found?.plan.parts ?? []) {
@@ -548,12 +551,12 @@ function crowdedChords(model: LayoutModel, direct: readonly { id: string; gap: {
         const anchor = ends.find(point => point !== undefined && Math.abs(point.x - tip.x) < EPS);
         if (anchor && !samePoint(anchor, tip)) stems.push({ from: anchor, to: { x: tip.x, y: tip.y }, owner: owner.owner });
       }
-      if ([...plannedSegments(part, found!.gap), ...stems].some(segment => near(segment, linkStrokeWidth(owner)))) { hit = true; break; }
+      if ([...plannedSegments(part, found!.gap), ...stems].some(segment => near(segment, owner))) { hit = true; break; }
     }
     // Of two direct members that crowd each other only the first is refused: the other no longer has a chord near it.
     if (!hit) for (const other of model.links) {
       if (other.id === id || crowded.includes(other.id) || !isRoutedChord(model, other)) continue;
-      if (near(other.path!.segments[0]!, linkStrokeWidth(other))) { hit = true; break; }
+      if (near(other.path!.segments[0]!, other)) { hit = true; break; }
     }
     if (hit) crowded.push(id);
   }

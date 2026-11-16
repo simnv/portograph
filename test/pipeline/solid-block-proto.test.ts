@@ -7,6 +7,8 @@ import { resolve } from '../../src/resolve/index.js';
 import { chordsHold, edgeLeavers, fixedPointRefusal } from '../../src/layout/frame-paths.js';
 import { blockReservationsFault } from '../../src/layout/block-checks.js';
 import { admitFanFamilies } from '../../src/layout/fan-admission.js';
+import { crowdedFanMembers } from '../../src/layout/direct-families.js';
+import { segmentDistance } from '../../src/geometry/planar.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -138,6 +140,37 @@ describe('ticket 83 under-cap solid blocks', () => {
     expect(blockReservationsFault(two)).toBeUndefined();
     expect(Object.values(score(two).snapshot.gates).filter(gate => gate.severity === 'error' && gate.violations.length)).toEqual([]);
   });
+  it('judges the reserved blocks of one gap together, in family id order whatever the record order (dense-16x9 ticket 04, slice 3, step 1)', async () => {
+    const two = await lay(fixture('two-blocks-share-one-gap-past-the-cap'));
+    const admit = (reverse: boolean): { held: string[]; draft: typeof two } => {
+      const draft = structuredClone(two);
+      delete draft.frozenChords; delete draft.fanAdmissions;
+      if (reverse) draft.fanFamilies!.reverse();
+      admitFanFamilies(draft, draft.links.filter(link => link.solidBlock));
+      return { held: draft.links.filter(link => link.solidBlock && link.path?.segments.length === 1 && link.path.segments[0]!.straight).map(link => link.id).sort(), draft };
+    };
+    const forward = admit(false), backward = admit(true);
+    expect(backward.held).toEqual(forward.held);
+    expect(forward.held.length).toBeGreaterThan(0);
+    // The rounds end only when a round changes nothing, so every held chord holds beside the final state of both blocks (R2).
+    for (const id of forward.held) {
+      const link = forward.draft.links.find(item => item.id === id)!;
+      expect(fixedPointRefusal(forward.draft, link, link.path!.segments[0]!), id).toBeUndefined();
+    }
+    const notes = forward.draft.diagnostics.filter(note => note.code === 'SOLID_BLOCK_ADMISSION');
+    expect(notes).toHaveLength(2);
+    // A note names the rounds when the first round changed something (a round that changes nothing ends the verdict).
+    for (const note of notes) expect(note.message).toMatch(/sets, (\d+ joint rounds, )?\d+ held\.$/);
+  }, 120000);
+  it('measures two held siblings of a sheaf through the sheaf zone in the crowding retry (dense-16x9 ticket 04, slice 3, step 1)', async () => {
+    const one = await lay(readFileSync(new URL('../fixtures/staged/two-cores-reach-seven-pairs-through-hubs-on-the-last-rank.yaml', import.meta.url), 'utf8'));
+    const held = one.links.filter(link => link.solidBlock && one.frozenChords?.includes(link.id));
+    // Two siblings that share a node stand nearer than the 10 px clearance near it: only the sheaf zone excuses them.
+    const near = held.some(a => held.some(b => a.id < b.id && [a.attachments!.from.node, a.attachments!.to.node].some(node => [b.attachments!.from.node, b.attachments!.to.node].includes(node))
+      && segmentDistance(a.path!.segments[0]!, b.path!.segments[0]!) - 1.5 < 10));
+    expect(near).toBe(true);
+    expect([...crowdedFanMembers(one).keys()]).toEqual([]);
+  }, 180000);
   it('makes the rows fed from the reordered far groups follow them in the same step (dense-16x9 ticket 04, slice 3)', async () => {
     const model = await lay(fixture('a-child-row-follows-its-reordered-far-groups'));
     const centre = (id: string): number => model.groups[id]!.bounds!.x + model.groups[id]!.bounds!.width / 2;

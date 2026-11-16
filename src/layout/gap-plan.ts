@@ -161,7 +161,8 @@ export const SLANT_LOWERING_KEEPS = 4;
  * The highest row at `from` or below it where no piece of the unit stands within `keep` of a fan chord without crossing it strictly (G6 excuses
  * only a strict crossing). Where a chord passes a corner of the unit (an end of its run), the corner keeps `keep` from it, so the row steps past the
  * band of y around the chord's crossing of that corner's x. The candidates are `from` and the far edge of each such band no more than
- * `SLANT_LOWERING_KEEPS` x `keep` below `from`, tried in order (a finite list, R4). With none clear the row stays at `from` and `limited` is set:
+ * `SLANT_LOWERING_KEEPS` x `keep` below `from`, or the depth of that chord's whole band where it is deeper (a steep chord), tried in order (a
+ * finite list, R4). With none clear the row stays at `from` and `limited` is set:
  * the plan names the unit (`slantLimited`, `TIER_GAP_SLANT_LIMIT`), and the 7f retry judges the chord. The chords are read where they stand
  * when the plan runs; the growth the plan then asks for moves the band below and with it the chords' lower ends, which the rows do not read
  * again (slice 2).
@@ -171,17 +172,22 @@ function clearOfSlants(unit: { part: PlanInput; half: 0 | 1 | 2; xu: number; xl:
     return strictCrossing(piece, chord) || segmentDistance(piece, chord) >= keep - EPS;
   }));
   if (clear(from)) return { y: from, limited: false };
-  const candidates: number[] = [];
+  // Each candidate is the far edge of the band a corner steps past; the band is `2 x keep x span / |dx|` deep, so a steep chord's band is
+  // deeper than the four clearances: the window reaches the whole band of the chord that gives the candidate, so the row that the stem rule
+  // of the admission let the chord cross (`fixedPointRefusal`) is always seated clear of that one chord (R1: the plan keeps the promise the
+  // admission read).
+  const candidates: { y: number; reach: number }[] = [];
   for (const chord of slants) {
     const dx = chord.to.x - chord.from.x, dy = chord.to.y - chord.from.y, span = Math.hypot(dx, dy);
     if (Math.abs(dx) < EPS || span < EPS) continue;
+    const band = keep * span / Math.abs(dx);
     for (const x of [unit.xu, unit.xl]) {
       const t = (x - chord.from.x) / dx;
       if (t < 0 || t > 1) continue;
-      candidates.push(chord.from.y + t * dy + keep * span / Math.abs(dx) + 2 * EPS);
+      candidates.push({ y: chord.from.y + t * dy + band + 2 * EPS, reach: Math.max(SLANT_LOWERING_KEEPS * keep, 2 * band) });
     }
   }
-  const found = candidates.filter(y => y > from && y <= from + SLANT_LOWERING_KEEPS * keep + EPS).sort((a, b) => a - b).find(clear);
+  const found = candidates.filter(item => item.y > from && item.y <= from + item.reach + EPS).map(item => item.y).sort((a, b) => a - b).find(clear);
   return found === undefined ? { y: from, limited: true } : { y: found, limited: false };
 }
 

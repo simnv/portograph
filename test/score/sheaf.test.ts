@@ -8,7 +8,7 @@ import { segmentDistance } from '../../src/score/geometry.js';
  * `min(max(body.width, body.height), lengthA / 2, lengthB / 2)` from their ports on it; each remainder is measured against the whole other chord.
  */
 const hub = { bounds: { x: 0, y: -40, width: 100, height: 40 } };
-const port = (node: string, name: string, x: number, y: number) => ({ ref: { node, name }, anchor: { x, y } });
+const port = (node: string, name: string, x: number, y: number, side = node === 'hub' ? 'bottom' : 'top') => ({ ref: { node, name }, side, anchor: { x, y } });
 function model(): LayoutModel {
   return { nodes: {
     hub: { ...hub, ports: [port('hub', 'p1', 40, 0), port('hub', 'p2', 46, 0)] },
@@ -46,4 +46,15 @@ describe('runClearance: the sheaf zone of a solid block', () => {
     const rc = run(c, { x: 46, y: 0 }, { x: 46, y: 400 });
     expect(runClearance(m, ra, rc)).toBeCloseTo(6 - 1.5, 9);
   });
+  it('reads a placement chord that starts on the face point of a pill (one end reader with the routed path, R1)', () => {
+    // The hub ports draw pills 27 px deep: the chord leaves each pill's outer edge, 13.5 px below the anchor, where `chordEnds` puts it.
+    const m = model();
+    for (const item of m.nodes.hub!.ports) (item as { pill?: unknown }).pill = { bounds: { x: item.anchor!.x - 5.5, y: -13.5, width: 11, height: 27 } };
+    const fa = run(a, { x: 40, y: 13.5 }, { x: 40, y: 400 }), fb = run(b, { x: 46, y: 13.5 }, { x: 106, y: 400 });
+    const whole = segmentDistance(fa.segment, fb.segment) - 1.5;
+    expect(runClearance(m, fa, fb)).toBeGreaterThan(whole + 5);
+    // A run from the anchor is not the drawn chord of a pilled port: nothing is excused.
+    expect(runClearance(m, ra, rb)).toBeCloseTo(segmentDistance(ra.segment, rb.segment) - 1.5, 9);
+  });
 });
+

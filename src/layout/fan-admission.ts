@@ -199,30 +199,88 @@ export function refuseStemCrowded(draft: LayoutModel): Map<string, FanFallbackRe
  * Admit every fan family of the draft, in family id order (R3): each family's verdict is drawn before the next family is read, so a later family
  * reads the earlier one's chords as held and its fallbacks' legs as walls. `members` are the draft's member links that are chord candidates.
  * Before the freeze only; a truncated search is named once per family (`FAN_SEARCH_TRUNCATED`). `budget` is the count of tested configurations
- * per family (`FAN_SEARCH_BUDGET`; a test passes a smaller one).
+ * per family and verdict (`FAN_SEARCH_BUDGET`; a test passes a smaller one).
+ *
+ * The reserved solid blocks of one gap are judged together (`admitJointBlocks`, dense-16x9 ticket 04): none of them is judged against
+ * another one that is not decided yet, whose members would all stand as fallback legs.
  */
 export function admitFanFamilies(draft: LayoutModel, members: readonly LayoutLink[], budget = FAN_SEARCH_BUDGET): void {
+  const gapOf = (id: string): string | undefined => {
+    const record = draft.blockReservations?.find(item => item.family === id);
+    return record === undefined ? undefined : `${record.above}|${record.below}`;
+  };
+  const done = new Set<string>();
   for (const family of draft.fanFamilies ?? []) {
+    if (done.has(family.id)) continue;
     const own = members.filter(link => link.fanFamily === family.id);
     if (!own.length) continue;
     // A solid block is offered only after settled placement has reserved its gap. Earlier row probes own no decision.
-    if (family.kind === 'solid' && !draft.blockReservations?.some(item => item.family === family.id)) {
+    if (family.kind === 'solid' && gapOf(family.id) === undefined) {
       for (const link of own) makeFanOrthogonal(draft, link);
       continue;
     }
-    const verdict = familyVerdict(draft, family, own, budget);
-    if (family.kind === 'solid') {
-      const prefix = `${family.id}: `;
-      draft.diagnostics = draft.diagnostics.filter(note => note.code !== 'SOLID_BLOCK_ADMISSION' || !note.message.startsWith(prefix));
-      draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'SOLID_BLOCK_ADMISSION',
-        message: `${prefix}${own.length} members, ${verdict.segments.size} standalone, ${verdict.bodyRefusals} body refusals, ${verdict.segments.size * (verdict.segments.size - 1) / 2} pair checks, ${verdict.tested} sets, ${verdict.straight.length} held${verdict.truncated ? ', truncated' : ''}.`,
-        owners: own.map(link => link.owner) });
-    }
-    for (const link of verdict.straight) makeChord(draft, link, verdict.segments.get(link.id)!);
-    if (verdict.truncated && !draft.diagnostics.some(item => item.code === 'FAN_SEARCH_TRUNCATED' && item.owners?.some(owner => owner.kind === 'link' && owner.id === own[0]!.id))) {
-      draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_SEARCH_TRUNCATED',
-        message: `The member search of the fan family ${family.id} stopped at ${budget} tested configurations; the best set found is kept.`,
-        owners: own.map(link => ({ kind: 'link' as const, id: link.id })) });
+    if (family.kind !== 'solid') { admitFamily(draft, family, own, budget); continue; }
+    // The first family of the gap, in family id order, starts the joint verdict of every reserved block of that gap.
+    const joint = (draft.fanFamilies ?? []).filter(item => item.kind === 'solid' && gapOf(item.id) === gapOf(family.id) && members.some(link => link.fanFamily === item.id))
+      .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    for (const item of joint) done.add(item.id);
+    admitJointBlocks(draft, joint, members, budget);
+  }
+}
+
+/**
+ * The joint verdict of the reserved solid blocks of one gap (dense-16x9 ticket 04). Before the first verdict, every member of the blocks whose
+ * chord stands alone (`chordVerdict`) holds it. Then rounds: in each round each block, in family id order, takes the largest set of its
+ * members that still hold a chord which holds together beside everything else as it stands (`familyVerdict`), and the rest of those members
+ * fall back. A member that fell back is never offered again, so each round that changes something draws fewer chords, and the rounds end
+ * when a round changes nothing: at most one round per member, and one more (R4). At that point every block's set was judged against the final
+ * state of the others, so every held chord holds (R2). Order: family ids, then the port keys of each search (R3).
+ *
+ * A block that must lose a member loses that member only: the search keeps the largest set, and the other blocks lose a member only where
+ * the fallback's own legs refuse it.
+ */
+function admitJointBlocks(draft: LayoutModel, blocks: readonly FanFamily[], members: readonly LayoutLink[], budget: number): void {
+  const ownOf = new Map(blocks.map(family => [family.id, members.filter(link => link.fanFamily === family.id)]));
+  for (const own of ownOf.values()) for (const link of own) {
+    const verdict = chordVerdict(draft, link, SIDE_EDGE_SLACK);
+    if ('segment' in verdict) makeChord(draft, link, verdict.segment); else makeFanOrthogonal(draft, link);
+  }
+  const first = new Map<string, FamilyVerdict>(), tested = new Map<string, number>();
+  const bound = [...ownOf.values()].reduce((sum, own) => sum + own.length, 0) + 1;
+  let rounds = 0;
+  for (let changed = true; changed && rounds < bound; rounds++) {
+    changed = false;
+    for (const family of blocks) {
+      const own = ownOf.get(family.id)!, offered = own.filter(link => isRoutedChord(draft, link));
+      const verdict = familyVerdict(draft, family, offered, budget);
+      if (!first.has(family.id)) first.set(family.id, verdict);
+      tested.set(family.id, (tested.get(family.id) ?? 0) + verdict.tested);
+      for (const link of verdict.straight) makeChord(draft, link, verdict.segments.get(link.id)!);
+      if (verdict.straight.length !== offered.length) changed = true;
+      if (verdict.truncated) noteTruncated(draft, family, own, budget);
     }
   }
+  for (const family of blocks) {
+    const own = ownOf.get(family.id)!, opening = first.get(family.id)!;
+    const held = own.filter(link => isRoutedChord(draft, link)).length;
+    noteBlockAdmission(draft, family, own, `${opening.segments.size} standalone, ${opening.bodyRefusals} body refusals, ${opening.segments.size * (opening.segments.size - 1) / 2} pair checks, ${tested.get(family.id)} sets, ${rounds > 1 ? `${rounds} joint rounds, ` : ''}${held} held`);
+  }
+}
+
+/** One family's verdict on the draft, drawn: the fan families, one at a time. */
+function admitFamily(draft: LayoutModel, family: FanFamily, own: readonly LayoutLink[], budget: number): void {
+  const verdict = familyVerdict(draft, family, own, budget);
+  for (const link of verdict.straight) makeChord(draft, link, verdict.segments.get(link.id)!);
+  if (verdict.truncated) noteTruncated(draft, family, own, budget);
+}
+function noteBlockAdmission(draft: LayoutModel, family: FanFamily, own: readonly LayoutLink[], counts: string): void {
+  const prefix = `${family.id}: `;
+  draft.diagnostics = draft.diagnostics.filter(note => note.code !== 'SOLID_BLOCK_ADMISSION' || !note.message.startsWith(prefix));
+  draft.diagnostics.push({ stage: 'placement', severity: 'info', code: 'SOLID_BLOCK_ADMISSION', message: `${prefix}${own.length} members, ${counts}.`, owners: own.map(link => link.owner) });
+}
+function noteTruncated(draft: LayoutModel, family: FanFamily, own: readonly LayoutLink[], budget: number): void {
+  if (draft.diagnostics.some(item => item.code === 'FAN_SEARCH_TRUNCATED' && item.owners?.some(owner => owner.kind === 'link' && owner.id === own[0]!.id))) return;
+  draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_SEARCH_TRUNCATED',
+    message: `The member search of the fan family ${family.id} stopped at ${budget} tested configurations; the best set found is kept.`,
+    owners: own.map(link => ({ kind: 'link' as const, id: link.id })) });
 }
