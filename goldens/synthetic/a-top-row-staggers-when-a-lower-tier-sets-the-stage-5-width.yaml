@@ -1,6 +1,7 @@
 # Expected (dense-16x9 ticket 22): the acceptance gate judges a stagger on the complete placement, not on the stage-5 canvas.
 # `leaves` (12 one-link members, six on each hub of `core`) stands on the top tier; eight sites on tier 2 link to both hubs, `pe-8` to `hub-1`
-# only, so the hubs and the sites form no complete solid block (one would stand flat and straight, dense-16x9 ticket 04 slice 3). At stage 5
+# only, so the hubs and the sites form no complete solid block (one would stand flat and straight, dense-16x9 ticket 04 slice 3): the sheet
+# keeps its premise, a plain row of one-link members that staggers on two lines. At stage 5
 # the sites set the canvas width (about 1169 px; the leaf row ends near 906 px), so two lines of `leaves` give the same stage-5 width and more
 # height, and the stage-5 area objective refused them ("two lines give 1168.65 x 437.50 px, not less area than 1168.65 x 381.00 px"). 7c
 # then stands the sites under their feeds: the published width is the union of the leaf row's left edge and the sites' right edge, and
