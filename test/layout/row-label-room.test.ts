@@ -14,7 +14,8 @@ import type { AlignmentTarget, LayoutModel } from '../../src/model/layout.js';
 import { fitRegionGroup } from '../../src/layout/regions.js';
 import * as guards from '../../src/layout/label-room-guard.js';
 import * as targets from '../../src/layout/alignment-targets.js';
-import { rowRoomKeptByStep } from '../../src/layout/label-room-guard.js';
+import { rowRoomHolds, rowRoomKeptByStep, rowRoomShortNow } from '../../src/layout/label-room-guard.js';
+import { deriveFrames } from '../../src/layout/frames.js';
 
 const right = (box: { x: number; width: number }): number => box.x + box.width;
 
@@ -149,4 +150,25 @@ it('a refused centring step leaves no growth of its own in the alignment record 
   } finally { guard.mockRestore(); writer.mockRestore(); }
   expect(refusals).toBeGreaterThan(0);
   expect(found).toEqual([]);
+});
+
+it('refuses a step or a move whose cell on another tier grows a frame into the label window (review 10b-2)', async () => {
+  // zone-2 (tier 0) and zone-4 (tier 1) become cells of one frame. The labelled zone-4 -> zone-5 link keeps both ends; zone-2 widens on
+  // tier 0, the frame's right edge follows it, and the frame border cuts the tier-1 window. Both guard entry points must read it.
+  const model = structuredClone(await layout(parse(crossGroup()), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
+  const cell = model.nodes['unit-2']!, group = model.groups['zone-2']!;
+  group.frame = 'west-frame';
+  model.groups['zone-4']!.frame = 'west-frame';
+  model.document.frames = { 'west-frame': { label: 'West', cells: ['zone-2', 'zone-4'] } };
+  model.frames = deriveFrames(model) ?? [];
+  reserveLinkLabelRoom(model);
+  expect(rowShortfalls(model)).toEqual([]);
+  const before = structuredClone({ group, nodes: [cell] }), found = structuredClone(model);
+  const proposed = [{ group: found.groups['zone-2']!, bounds: { ...found.groups['zone-2']!.bounds!, width: found.groups['zone-2']!.bounds!.width + 10 }, dx: 0 }];
+  cell.bounds!.width += 10; group.bounds!.width += 10;
+  expect(rowShortfalls(model).map(item => item.axis)).toEqual(['row window']);
+  expect(rowRoomKeptByStep(model, before, false)).toBe(false);
+  const short = rowRoomShortNow(found, proposed);
+  expect(short).toEqual([]);
+  expect(rowRoomHolds(found, proposed, short!)).toBe(false);
 });

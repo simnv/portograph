@@ -1519,6 +1519,8 @@ export { labelBorders };
  * not face each other are diagnosed and left to the stage 9 ladder. Room beyond a reserved lane is inserted,
  * and the lane moves out with it (`insertRoomAt`). A label also stays in one region (ticket 19): on every run a label rides, one window
  * between the borders the run crosses must hold it (`labelWindowRoom`), and the growth is the larger of the two.
+ * `only: 'rows'` reads the row rooms alone (the row branch and the hinted overlay L): the across-run and track rooms and the rest of the
+ * tier-gap branch are left out. The row-room guards (`label-room-guard.ts`) read this, on a copy.
  */
 /**
  * Whether every room reserved for a link label or an overlay track still holds on `model`: the reading of the 7f publication
@@ -1528,7 +1530,7 @@ export function labelRoomHolds(model: LayoutModel): boolean {
   const shortfalls: LinkLabelShortfall[] = [];
   return !reserveLinkLabelRoom(clone(model), shortfalls) && !shortfalls.some(tierGapShortfall);
 }
-export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = [], gapRoom?: TierGapLabelRoom): boolean {
+export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelShortfall[] = [], gapRoom?: TierGapLabelRoom, only?: 'rows'): boolean {
   let changed = false;
   // What each reservation was for. The replay that refuses a published model throws on the return
   // value alone, and the sentence named neither the link nor the amount: three rebuilds to find one
@@ -1540,12 +1542,13 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
   };
   const suppressed = overlayLabelsSuppressed(model);
   // Who yields among the labels on diagonal lines is decided once per pair, before the first reservation that reads it (R1).
-  recordLabelYields(model, labelBorders(model));
+  // The row reading of a guard reads the record the producer wrote and decides no pair again (R1).
+  if (only !== 'rows' || model.labelYields === undefined) recordLabelYields(model, labelBorders(model));
   const outer = (port: LayoutPort, node: LayoutNode): Rect => port.pill ? port.pill.bounds : node.bounds!;
   const settle = (nodes: string[]): void => { if (nodes.length) rebuildNodeGeometry(model, nodes, 'current'); };
   // The room of separated overlay tracks first (ticket 23): a track decided beyond the edge it grows stands inside the box before a
   // label window is read on its run.
-  if (reserveAcrossRunRoom(model, settle, shortfalls, riddenRun, 'tracks')) changed = true;
+  if (only !== 'rows' && reserveAcrossRunRoom(model, settle, shortfalls, riddenRun, 'tracks')) changed = true;
   const unsettled = new Set(model.labelRoomUnsettled ?? []);
   for (const link of model.links) {
     // A bus member's label goes to the bus tooltip (mesh-bus.md, section 6): it asks for no room.
@@ -1609,6 +1612,8 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
         changed = true;
         continue;
       }
+      // The row reading (`only: 'rows'`) stops here: the rest of the tier-gap branch records no row and moves nothing.
+      if (only === 'rows') continue;
       if (centre === undefined) { unreserved('draws its longest overlay run across the tier gap, not along it'); continue; }
       const mid = centre;
       // A side lane (side-faces.md, Section 10): the label rides the vertical run, the drop and the lane, so the run ends at the lateral port's y,
@@ -1716,7 +1721,7 @@ export function reserveLinkLabelRoom(model: LayoutModel, shortfalls: LinkLabelSh
     changed = true;
   }
   // Room across a run (ticket 21), on the geometry the reservations along the runs left.
-  if (reserveAcrossRunRoom(model, settle, shortfalls)) changed = true;
+  if (only !== 'rows' && reserveAcrossRunRoom(model, settle, shortfalls)) changed = true;
   if (changed) { rebuildBands(model); rebuildRegions(model); }
   return changed;
 }
