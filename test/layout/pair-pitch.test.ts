@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel, LayoutNode, LayoutPort } from '../../src/index.js';
+import type { PairPitch } from '../../src/model/layout.js';
 import { layout, parse, score } from '../../src/index.js';
 import { blockReservationsFault } from '../../src/layout/block-checks.js';
 import { endPitch, faceExcess, faceOffsets, neighbourPitch, pairExcess, pairPitchFault } from '../../src/layout/pair-pitch.js';
@@ -8,7 +9,7 @@ import { portSideCapacity } from '../../src/layout/port-insets.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { readDraft } from '../../src/layout/overlay-order.js';
 import { prepareBundleGeometry } from '../../src/layout/bundle-geometry.js';
-import { addPairPitch } from '../../src/layout/pair-pitch.js';
+import { addPairPitch, addPairPitches } from '../../src/layout/pair-pitch.js';
 import { sizeNodes } from '../../src/layout/size.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { resolve } from '../../src/resolve/index.js';
@@ -255,4 +256,34 @@ describe('a bundle reads only its own neighbour pairs (review 2)', () => {
     expect(gaps(own)).toEqual([base, base]);
     expect(node.sidePitch!.bottom).toBe(base);
   }, 180_000);
+});
+
+describe('the install merges a face in one pass (ticket 04, last step)', () => {
+  /** The install of slice 1, one entry at a time: copy the face, find the entry, sort the face. The reference the bulk merge must equal. */
+  function oneAtATime(node: LayoutNode, side: 'top' | 'bottom', entry: PairPitch): void {
+    const ports = entry.rule === 'fan' ? [...entry.ports].sort() : [...entry.ports];
+    const list = [...(node.pairPitch?.[side] ?? [])];
+    const at = list.findIndex(item => item.rule === entry.rule && item.ports.join('|') === ports.join('|'));
+    if (at >= 0) list[at] = { ...list[at]!, min: Math.max(list[at]!.min, entry.min) };
+    else list.push({ rule: entry.rule, ports, min: entry.min });
+    list.sort((a, b) => a.rule.localeCompare(b.rule) || a.ports.join('|').localeCompare(b.ports.join('|')));
+    node.pairPitch = { ...node.pairPitch, [side]: list };
+  }
+
+  it('gives the record and the offsets of the install one entry at a time on a 28-port face', () => {
+    const keys = face(28, undefined).ports.map(port => portId(port.ref));
+    // Two fan rounds over overlapping ports (every pair at 30, then the first ten at 50, given in reverse with unsorted pairs), and two block ports.
+    const pairs = (from: number, to: number, min: number) => keys.slice(from, to).flatMap((one, k) => keys.slice(from + k + 1, to).map(two => ({ rule: 'fan' as const, ports: [one, two], min })));
+    const entries = [...pairs(0, 28, 30), ...pairs(0, 10, 50).map(entry => ({ ...entry, ports: [...entry.ports].reverse() })).reverse(),
+      { rule: 'block' as const, ports: [keys[3]!], min: 40 }, { rule: 'block' as const, ports: [keys[3]!], min: 45 }, { rule: 'block' as const, ports: [keys[20]!], min: 35 }];
+    const old = face(28, undefined), bulk = face(28, undefined), single = face(28, undefined);
+    for (const entry of entries) oneAtATime(old, 'bottom', entry);
+    addPairPitches(bulk, 'bottom', entries);
+    for (const entry of entries) addPairPitch(single, 'bottom', entry);
+    expect(old.pairPitch!.bottom!.length).toBe(28 * 27 / 2 + 2);
+    expect(bulk.pairPitch).toEqual(old.pairPitch);
+    expect(single.pairPitch).toEqual(old.pairPitch);
+    expect(faceOffsets(bulk, 'bottom', bulk.ports)).toEqual(faceOffsets(old, 'bottom', old.ports));
+    expect(pairExcess(bulk, 'bottom', 28)).toBe(pairExcess(old, 'bottom', 28));
+  });
 });

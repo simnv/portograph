@@ -119,11 +119,23 @@ export function pairPitchFault(node: LayoutNode): string | undefined {
 
 /** Add `entry` to a face of `node`; an entry of the same rule and ports keeps the larger pitch. */
 export function addPairPitch(node: LayoutNode, side: 'top' | 'bottom', entry: PairPitch): void {
-  const ports = entry.rule === 'fan' ? [...entry.ports].sort() : [...entry.ports];
+  addPairPitches(node, side, [entry]);
+}
+
+/**
+ * Add `entries` to a face of `node` in one merge (the one merge rule, R1): an entry of the same rule and ports keeps the larger pitch, and the
+ * face is sorted once. Adding them one at a time gives the same record, but copies and sorts the face per entry: about quartic in the ports
+ * of a face whose fan writes every pair (2.1 s at 100 ports, review 2 of ticket 04); in one merge it is the sort of the C(n, 2) entries.
+ */
+export function addPairPitches(node: LayoutNode, side: 'top' | 'bottom', entries: readonly PairPitch[]): void {
   const list = [...(node.pairPitch?.[side] ?? [])];
-  const at = list.findIndex(item => item.rule === entry.rule && item.ports.join('|') === ports.join('|'));
-  if (at >= 0) list[at] = { ...list[at]!, min: Math.max(list[at]!.min, entry.min) };
-  else list.push({ rule: entry.rule, ports, min: entry.min });
+  const at = new Map(list.map((item, index) => [`${item.rule}\u0000${item.ports.join('|')}`, index]));
+  for (const entry of entries) {
+    const ports = entry.rule === 'fan' ? [...entry.ports].sort() : [...entry.ports];
+    const key = `${entry.rule}\u0000${ports.join('|')}`, index = at.get(key);
+    if (index !== undefined) list[index] = { ...list[index]!, min: Math.max(list[index]!.min, entry.min) };
+    else { at.set(key, list.length); list.push({ rule: entry.rule, ports, min: entry.min }); }
+  }
   // A content order, never the order the entries were added in (R3): the rule, then the port keys.
   list.sort((a, b) => a.rule.localeCompare(b.rule) || a.ports.join('|').localeCompare(b.ports.join('|')));
   node.pairPitch = { ...node.pairPitch, [side]: list };

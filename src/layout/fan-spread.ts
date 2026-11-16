@@ -104,8 +104,8 @@ export function measureFans(model: LayoutModel): FanMeasure {
       // The cost (R4, measured in review 2): n(n - 1) / 2 entries for a face of n ports, so at most 2 * C(n, 2) for the ports of a node over its
       // top and bottom faces; a later round merges by pair and keeps the larger pitch, so the count does not grow with the rounds. Measured on
       // one face: 28 ports, 378 entries, 147 kB of record and ledger, 20 ms to install; 56 ports, 1540 entries, 600 kB, 261 ms; 100 ports,
-      // 4950 entries, 1.9 MB, 2.1 s. The install is about quartic because `addPairPitch` copies and sorts the face per entry (a bulk merge with
-      // one sort removes that); the geometry reads only the n - 1 neighbour pairs of an order (`faceOffsets`), and `pairExcess` at most
+      // 4950 entries, 1.9 MB, 2.1 s to install one entry at a time, which copies and sorts the face per entry (about quartic); the install
+      // merges each face in one pass and one sort (`addPairPitches`). The geometry reads only the n - 1 neighbour pairs of an order (`faceOffsets`), and `pairExcess` at most
       // (n - 1) times the largest excess. An entry whose port has left the face reserves nothing: every reader reads the ports on the face.
       if (most === 0) continue;
       for (let k = 0; k < face.length; k++) for (let l = k + 1; l < face.length; l++) {

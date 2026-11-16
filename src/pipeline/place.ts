@@ -3,7 +3,7 @@
  */
 import type { Course, LayoutModel, LayoutStage, Side } from '../model/index.js';
 import type { PairPitch } from '../model/layout.js';
-import { addPairPitch } from '../layout/pair-pitch.js';
+import { addPairPitches } from '../layout/pair-pitch.js';
 import { resolve } from '../resolve/index.js';
 import { portKey, sidesOne } from '../layout/sides-one.js';
 import { movesPort } from '../layout/course-rows.js';
@@ -72,7 +72,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   for (const [id, pitch] of pitchFloorsOf(reservations)) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
   // The neighbour-pair floors of the fans (dense-16x9 ticket 04): sizing reads their sum, the installers each pair.
   for (const [id, faces] of pairFloorsOf(reservations)) for (const [side, entries] of Object.entries(faces) as ['top' | 'bottom', PairPitch[]][]) {
-    for (const entry of entries) addPairPitch(resolved.nodes[id]!, side, entry);
+    addPairPitches(resolved.nodes[id]!, side, entries);
   }
   // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
   const nodeFloors = nodeFloorsOf(reservations);
