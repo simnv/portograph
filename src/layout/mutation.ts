@@ -26,7 +26,7 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { heldSourceGroups, rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
-import { freezeChords, spanCandidate } from './frame-paths.js';
+import { freezeChords, refusedChordsFault, spanCandidate } from './frame-paths.js';
 import { faceKey, laneFaceOrder, turnRecord, turnRecordFaults } from './turn-order.js';
 import { farEndFaceFailure, farEndOwner } from './far-end-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
@@ -746,11 +746,10 @@ export function restoreLayoutModel(json: string): LayoutModel {
     return model;
   }
   const baseline = validateDocument(model);
-  // The chords the publication step refused (dense-16x9 ticket 14, slice 3): sorted, unique ids of links; 7f consumes them (R5: a forged record stops here).
-  const refused = model.refusedChords;
-  if (refused !== undefined && (!Array.isArray(refused) || refused.some((id, i) => typeof id !== 'string' || !model.links.some(link => link.id === id) || (i > 0 && refused[i - 1]! >= id)))) {
-    throw new Error('Invalid refused chords');
-  }
+  // The chords the publication step refused (dense-16x9 ticket 14, slice 3), read by the one check of the round (`refusedChordsFault`): 7f consumes
+  // them, and a record the freeze contradicts stops here (R5).
+  const refused = refusedChordsFault(model);
+  if (refused !== undefined) throw new Error(`Invalid refused chords: ${refused}`);
   return protect(model, baseline);
 }
 

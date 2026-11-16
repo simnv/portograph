@@ -23,6 +23,7 @@ import { transitTiers } from './read/tier.js';
 import { strictCrossing } from './read/crossings.js';
 import { isSideEntry } from './lift.js';
 import { chordRowOf } from './read/stagger.js';
+import { stemCache, stemDepth, type StemCache } from './sides-two.js';
 import type { PortRef } from '../model/document.js';
 
 /**
@@ -55,6 +56,14 @@ function sameFrame(model: LayoutModel, a: string, b: string): boolean {
  */
 export function fanFamilyOf(model: LayoutModel, link: LayoutLink): FanFamily | undefined {
   return link.fanFamily === undefined ? undefined : model.fanFamilies?.find(family => family.id === link.fanFamily);
+}
+/**
+ * Whether the gap plan seats every row against the chord of `link` (its `slants`, gap-plan.ts) and so the stem rule of `fixedPointRefusal`
+ * lets the chord cross another link's fallback leg strictly beyond its stem: a fan or block member, or a member link of a chord row (dense-16x9
+ * ticket 04, slice 2; review 1, finding 2: one predicate for the admission and the planner, R1).
+ */
+export function seatsRowsAgainst(model: LayoutModel, link: LayoutLink): boolean {
+  return link.fanFamily !== undefined || chordRowOf(model, link) !== undefined;
 }
 /** Whether two links are members of one fan family: the fallback legs of one are crossed by the chord of the other, and their crossings are faint. */
 export function fanSiblings(a: LayoutLink, b: LayoutLink): boolean {
@@ -551,10 +560,10 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
   // chord. Stage 8 cannot make room the chord took, so the chord stays clear of every stem placement has
   // already promised, its own ports' other links included. The stem is only the start of a vertical leg that runs on
   // to the link's gap row, so the chord holds the clearance against the whole leg (ticket 91).
-  // The stem rule holds for a chord the gap plan seats rows against (a fan or block member, `slants` in gap-plan.ts) and for a chord of a
-  // chord row (stage 5 reserved its stems in its corridor). The plan does not read any other chord, so a row could meet it: that chord keeps
-  // the clearance from the whole leg.
-  const slant = link.fanFamily !== undefined || chordRowOf(model, link) !== undefined;
+  // The stem rule holds for a chord the gap plan seats rows against (`seatsRowsAgainst`, the one predicate of both readers). The plan does
+  // not read any other chord, so a row could meet it: that chord keeps the clearance from the whole leg.
+  const slant = seatsRowsAgainst(model, link);
+  let stems: StemCache | undefined;
   for (const other of model.links) {
     if (other.id === link.id || other.layer !== 'routed' || other.technique === 'stub' || !other.attachments || other.removed === true) continue;
     // The span offer reads every candidate as a chord to be (ticket 22): the legs of the ones not yet decided are no wall.
@@ -570,7 +579,7 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
       // beyond its stem keeps the clearance from the whole leg, as G6 measures it (ticket 91).
       const spans = Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS;
       if (crossable?.has(other.id) && spans) continue;
-      if (slant && spans && crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other), legStem(model, other, end))) continue;
+      if (slant && spans && crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other), legStem(model, other, end, stems ??= stemCache()))) continue;
       if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }
@@ -590,23 +599,27 @@ export function siblingStemCrowded(model: LayoutModel, link: LayoutLink): boolea
   const segment = link.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
   if (segment === undefined) return false;
   const stroke = linkStrokeWidth(link);
+  let stems: StemCache | undefined;
   for (const other of model.links) {
     if (other.id === link.id || !fanSiblings(link, other) || isRoutedChord(model, other) || !other.attachments) continue;
     for (const end of ['from', 'to'] as const) {
       const leg = orthogonalLeg(model, other, end);
       if (!leg) continue;
       const spans = Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS;
-      if (!spans || crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other), legStem(model, other, end))) continue;
+      if (!spans || crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other), legStem(model, other, end, stems ??= stemCache()))) continue;
       if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return true;
     }
   }
   return false;
 }
 
-/** The stem of a link's end that stands whatever row the plan seats the link on: the reach its port's side asks for (`portStemReach`). */
-function legStem(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): number {
+/**
+ * The stem of a link's end that stands whatever row the plan seats the link on: the depth routing consumes (`stemDepth`, the one source of
+ * `stemCheckpoint` and so of `reservedRunsOf`), a nested stem's full depth included (review 1 of slice 2, finding 1), never less than 15 px.
+ */
+function legStem(model: LayoutModel, link: LayoutLink, end: 'from' | 'to', cache: StemCache): number {
   const port = findPort(model, link.attachments![end]);
-  return port === undefined ? GROUP_LABEL_GEOMETRY.routerStem : Math.max(GROUP_LABEL_GEOMETRY.routerStem, portStemReach(model, port));
+  return port?.anchor === undefined || port.side === undefined ? GROUP_LABEL_GEOMETRY.routerStem : Math.max(GROUP_LABEL_GEOMETRY.routerStem, stemDepth(model, port, cache));
 }
 
 /**
@@ -715,6 +728,25 @@ function standsLevel(model: LayoutModel, link: LayoutLink): boolean {
   if (!levelCrossChord(model, link)) return false;
   const chord = straightChord(model, link, undefined, true);
   return chord !== undefined && Math.abs(chord.to.y - chord.from.y) <= PLACEMENT_EPS;
+}
+
+/**
+ * What a validator checks on `model.refusedChords` (R5), the chords the publication step refused (dense-16x9 ticket 14, slice 3): sorted, unique ids
+ * of links, and, once the freeze is taken, no entry is a frozen chord (7f seeds its refusals from the record, so a refused chord falls back).
+ * Before the freeze (the 7e replay input) the record only names links. One check for the round (`validateGroupLabelBands`, `validateRoutedPaths`)
+ * and for restore (`restoreLayoutModel`), so a record that says 7f refused a chord the freeze held stops at both (review 1 of slice 2, finding 3).
+ */
+export function refusedChordsFault(model: LayoutModel): string | undefined {
+  const record = model.refusedChords as unknown;
+  if (record === undefined) return undefined;
+  if (!Array.isArray(record)) return 'the record is no list';
+  const frozen = new Set(model.frozenChords ?? []);
+  for (const [index, id] of (record as unknown[]).entries()) {
+    if (typeof id !== 'string' || !model.links.some(link => link.id === id)) return `${String(id)} is no link`;
+    if (index > 0 && (record as string[])[index - 1]! >= id) return `${id} is out of order or named twice`;
+    if (frozen.has(id)) return `${id} is refused, but the freeze held it`;
+  }
+  return undefined;
 }
 
 /**

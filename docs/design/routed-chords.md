@@ -289,7 +289,8 @@ strictly (`TIER_GAP_CHORD_CROWDED`, info), and G6 judges, as for two verticals w
 published).* After the last round has settled, `refuseCrowdedChords` (pipeline/driver.ts) reads the state to publish once. A held chord that is
 no direct or fan member, that a `TIER_GAP_CHORD_CROWDED` note names, and that stands under the G6 clearance of the planned part
 (`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. The kept 7e model records them
-(`refusedChords`, sorted ids; the restore refuses a forged record), and placement replays once from it: 7f refuses each before the freeze as
+(`refusedChords`, sorted ids of links; once the freeze is taken no entry is a frozen chord. One check, `refusedChordsFault`, holds at restore and in
+the round's checks of 7f and of the routed model, so a record the freeze contradicts is refused), and placement replays once from it: 7f refuses each before the freeze as
 `crowds` (R1, nothing decides it again). The replay is kept only when its routed result has no error-gate finding that the state before it
 lacks; else that state stays and `HELD_CHORD_CROWDED` (warning) names the chords. One pass at most. The rounds read their own unrefused
 baselines, so a crowded baseline that a round repairs stays available to that round (traced on
@@ -640,7 +641,7 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   leg of a sibling that falls back (the crossing is faint); that leg's side is final only at the freeze, so there a
   member that passes a sibling's stem (no strict crossing beyond the stem with the clearance, `siblingStemCrowded`)
   falls back (`refuseStemCrowded`, reason `stem`), and the crowding retry reads the same test at the end of 7f.
-- **Reservation.** The tier-gap plan reads the straight members of a gap (`PlanFrame.slants`): a row moves down
+- **Reservation.** The tier-gap plan reads the straight chords of a gap that the stem rule admits across a leg (`PlanFrame.slants`, `seatsRowsAgainst`: a fan or block member, or a chord-row member): a row moves down
   until its legs and run cross a chord strictly or keep the clearance (`clearOfSlants`), and the gap grows for it.
   A row moves at most `SLANT_LOWERING_KEEPS` (4) run clearances; where no candidate within that clears, it keeps its
   seat and `TIER_GAP_SLANT_LIMIT` names it. The rows read the chords where they stand when the plan runs; the growth
@@ -676,9 +677,11 @@ Blocks that share nodes, a gap or a face are reserved together: the gap takes th
 Different member sets that overlap still decline as `overlapping-blocks`.
 
 **Stem rule** (slice 2, replaces the fan-sibling and chord-row memberships of `fixedPointRefusal`). A chord may cross the fallback leg of any other
-link strictly beyond that leg's stem (`crossesLegBeyondStem`; the stem is the reach the port's side asks for, `portStemReach`, at least 15 px),
-when the chord is one the gap plan seats rows against (a fan or block member, `slants`) or a chord of a chord row (its stems are reserved in its corridor at
-stage 5). Any other chord keeps the clearance from the whole leg (ticket 91). The ticket-22 `crossable` offer of a direct family stays as it is.
+link strictly beyond that leg's stem (`crossesLegBeyondStem`; the stem is the depth routing consumes, `stemDepth`, the one source of `stemCheckpoint`
+and `reservedRunsOf`, a nested stem's full depth included, at least 15 px), when the chord is one the gap plan seats rows against: a fan or block member,
+or a chord of a chord row (`seatsRowsAgainst`; the plan's `slants` and the rule read this one predicate, so a row meets no chord the rule admits).
+Any other chord keeps the clearance from the whole leg (ticket 91). The ticket-22 `crossable` offer of a direct family stays as it is.
+Review 1 of slice 2 found the plain reach short of a nested stem and the chord-row chords outside `slants`; both read the shared source now.
 The scope is the one the plan honours: with every held chord in `slants`, the plan lowered rows onto one another (G4 on four corpus sheets), and with the
 rule for every chord, the rows of plain links met chords that the plan did not read (G6 on five sheets).
 

@@ -6,7 +6,7 @@ import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js
 import { cantonTiers, GROUP_LABEL_GEOMETRY, nodeObstacleReach, nudgingDistance, routedStroke } from './bands.js';
 import { drawn, edgeOf, nestedTips, stopsOf, tierGaps, type NestedTip, type TierGap } from './gap-runs.js';
 import { LINK_LABEL_GEOMETRY } from './link-labels.js';
-import { isRoutedChord } from './frame-paths.js';
+import { isRoutedChord, seatsRowsAgainst } from './frame-paths.js';
 import { endPort } from './approach.js';
 import { findPort } from './row-paths.js';
 import { courseOf, tierGapUTurn } from './course-lanes.js';
@@ -1336,10 +1336,14 @@ function gapPlanOf(model: LayoutModel, gap: TierGap, dodging: boolean): GapPlan 
     verticals: (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined
       && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x),
     chords: held.map(item => ({ low: item.low, high: item.high, ...(item.across ? {} : { partial: true as const }) })),
-    // The fan rows read the chords that cross the whole gap, as before ticket 14.
-    ...(model.fanFamilies !== undefined ? { slants: held.filter(item => item.across && item.link.fanFamily !== undefined).map(item => item.segment) } : {}) },
+    // The rows are seated against every chord that crosses the whole gap and that the stem rule lets cross a fallback leg (`seatsRowsAgainst`,
+    // the admission's own predicate): a fan or block member, or a chord-row member (dense-16x9 ticket 04, slice 2, review 1).
+    ...slantsOf(held.filter(item => item.across && seatsRowsAgainst(model, item.link)).map(item => item.segment)) },
     dodging ? context : undefined);
 }
+
+/** The `slants` key of a plan frame: absent when no chord is one, so a sheet with none keeps its plan bytes. */
+const slantsOf = (slants: PathSegment[]): { slants?: PathSegment[] } => slants.length ? { slants } : {};
 
 /** One segment that a final routed path will hold, known before stage 8 routes (`reservedSegments`). */
 export interface ReservedSegment {

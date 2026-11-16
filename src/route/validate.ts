@@ -7,7 +7,7 @@ import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { EPS, horizontal, length, near, retracingRuns, samePoint, segmentRect, vertical } from '../geometry/planar.js';
 import { outward } from '../score/model.js';
 import { effectiveLayer, placementRuns, plannedRunsOf, planRoute, reversedRuns, type LinkPlan, type PlannedRun } from './plan.js';
-import { frozenLevelChordsFault, isRoutedChord } from '../layout/frame-paths.js';
+import { frozenLevelChordsFault, isRoutedChord, refusedChordsFault } from '../layout/frame-paths.js';
 import { pathEnd } from '../layout/path-end.js';
 import { sharedBlockers, overlayPath, publishedOverlayPath, type ShapeQuery } from '../layout/overlay-paths.js';
 import { ownedLanes, simplify, skippedCheckpoint, stubCandidate, tryStitch } from './paths.js';
@@ -155,6 +155,9 @@ function frozenChordsHeld(model: LayoutModel): void {
   // The record of the level chords is read by the one check of the placement stages (`frozenLevelChordsFault`): a route model keeps its claims (R5).
   const level = frozenLevelChordsFault(model);
   if (level !== undefined) throw new Error(`The level chord record is forged: ${level}`);
+  // So is the record of the chords the publication step refused (`refusedChordsFault`).
+  const refused = refusedChordsFault(model);
+  if (refused !== undefined) throw new Error(`The refused chord record is forged: ${refused}`);
 }
 
 /**
