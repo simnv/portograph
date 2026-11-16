@@ -71,6 +71,14 @@ describe('a top leaf row takes the order of its hubs (dense-16x9 ticket 20)', ()
     expect(rowEntries(model)).toEqual([]);
   }, 60000);
 
+  it('leaves a free top row that the corridor step judged in its measured order (`kept`): the feed order crossed no less there', async () => {
+    // The top row `a1`, `a2` feeds `m2`, `m1` below; read from below it would turn, and the corridor-aware draft keeps it (2 crossings, not 4).
+    const model = await skeletonOf(readFileSync(new URL('../../goldens/synthetic/a-chord-and-a-lane-share-a-middle-tier.yaml', import.meta.url), 'utf8'));
+    expect(model.groups.top!.rowOrderDecision?.rule).toBe('kept');
+    expect(orderOf(model, 'top')).toEqual(['a1', 'a2']);
+    expect(rowEntries(model)).toEqual([]);
+  }, 60000);
+
   it('decides the same order when the links are listed the other way round (R3)', async () => {
     const [head, list] = yaml.split('links:\n');
     const turned = `${head}links:\n${list!.trimEnd().split('\n').reverse().join('\n')}\n`;

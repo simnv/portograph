@@ -36,8 +36,8 @@ const SAME_KEY = 1e-9;
  *   feeds, and ordered inside by their own keys. A frame row: every unit must have a key, and a tie keeps declaration order (the frame's
  *   own cells first, then its children in declaration order).
  * - **A top row** (dense-16x9 ticket 20): a row that no row above feeds (no routed link of a member ends in a sub-tier above it), a rank
- *   cell or a free row that the corridor step left as it found it (`kept`, `frame-columns`, or no record; no far-end pull, no group order of
- *   the joint order reading it), reads its feeds into the sub-tier directly below by the same rule, a tie keeping declaration order: a member
+ *   cell or a free row that the corridor step could not judge (`frame-columns`, or no record; no far-end pull, no group order of the joint
+ *   order reading it), reads its feeds into the sub-tier directly below by the same rule, a tie keeping declaration order: a member
  *   linked to two hubs stands between their runs. A row fed from above, also from both sides, is not read from below. A turned free row
  *   records `feed-order`; its entry names the row (`row`). `layout.corridorRowOrder: false` keeps a free top row's authored order.
  * - **The reservation.** Each decided row is one `rowOrder` entry (`rowOrderOf` is the one reader), with its premise: the feeding rows and
@@ -275,13 +275,14 @@ function reader(model: LayoutModel) {
     /** The frames with children, by id; a canton is author-fixed (D1). */
     frames: (): string[] => Object.keys(frames).filter(id => frames[id]!.kind !== 'canton' && Object.values(frames).some(frame => frame.parent === id)).sort(compareId),
     /**
-     * The free rows the feeds below may order (dense-16x9 ticket 20): a free row of two or more nodes that no row above feeds, whose order the
-     * corridor step left as it found it (`kept`, `frame-columns`, or no record), with no far-end pull and no group order of the joint order
-     * reading it. An authored order (`layout.corridorRowOrder: false`) stands.
+     * The free rows the feeds below may order (dense-16x9 ticket 20): a free row of two or more nodes that no row above feeds and that the
+     * corridor step could not judge (`frame-columns`: its turn changes a region with a frame cell; or no record: no anchor tier), with no
+     * far-end pull and no group order of the joint order reading it. A row the corridor step judged keeps its measured order: the feed order
+     * was among its candidates and crossed no less. An authored order (`layout.corridorRowOrder: false`) stands.
      */
     tops: (): LayoutGroup[] => model.document.layout?.corridorRowOrder === false ? [] : placed.filter(group => group.nodes.length > 1 && freeRow(group)
       && !joint.has(group.id) && !fedFromAbove(group) && group.rowOrderDecision?.pulledFrom === undefined
-      && (group.rowOrderDecision === undefined || group.rowOrderDecision.rule === 'kept' || group.rowOrderDecision.rule === 'frame-columns')),
+      && (group.rowOrderDecision === undefined || group.rowOrderDecision.rule === 'frame-columns')),
     /** The cells a feed may order and the given free top rows, in their judging order: top-down, by id within a sub-tier, so a row reads the order this step gave the row above it. */
     rows: (tops: readonly LayoutGroup[]): LayoutGroup[] => [...placed.filter(group => group.frame !== undefined && group.nodes.length > 1 && isRow(group) && !flanked.has(group.id)), ...tops]
       .sort((a, b) => a.tier! - b.tier! || compareId(a.id, b.id)),

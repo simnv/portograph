@@ -459,8 +459,9 @@ order, a node without a feed keeps its slot, a tie keeps the order ELK gave (its
 a peer link joins move as one block; in a frame every unit must have a key, and a tie keeps the declaration order (own cells first,
 then the children). Feed order beats declaration order. A canton is author-fixed (D1) and a free row keeps the corridor order and the joint order (ticket 72).
 **A top row** (dense-16x9 ticket 20) is a row that no row above feeds (no routed link of a member ends in a sub-tier above it): a rank
-cell, or a free row that the corridor step left as it found it (`kept`, `frame-columns`, or no record), with no far-end pull and no group
-order of the joint order reading it. It reads its feeds into the sub-tier directly below instead, by the same rule: the feeding row is
+cell, or a free row that the corridor step could not judge (`frame-columns`: a turn changes a region with a frame cell; or no record: no
+anchor tier), with no far-end pull and no group order of the joint order reading it. A free row the corridor step judged keeps its
+measured order (`kept` included): the feed order was among its candidates and crossed no less. It reads its feeds into the sub-tier directly below instead, by the same rule: the feeding row is
 one group, each member stands at the mean position of its far ends there, a member with no feed keeps its slot, peer neighbours move as
 one block, and a tie keeps declaration order. A member linked to two hubs so stands between their runs: the left hub's members, the
 shared ones, the right hub's members. A row fed from above, also one fed from both sides, is not read from below and stands as before.
