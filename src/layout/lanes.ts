@@ -30,6 +30,7 @@ import { orderPortsByLanes } from './turn-order.js';
 import { facingPairs } from './parallel-sets.js';
 import { trunkBuses, trunkGeometry, trunkHeads, trunkRing } from './trunk.js';
 import { PlacementRefusal } from './placement-refusal.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 /** A corridor `reseatLanes` moved, and the child port it moved it onto. */
 export interface LaneFollow { lane: string; child: PortRef }
@@ -666,9 +667,9 @@ export function reseatLanes(model: LayoutModel, followed?: LaneFollow[]): boolea
     const group = Object.values(model.groups).filter(item => item.tier === lane.tier)
       .sort((a, b) => Math.abs(anchor.x - (a.bounds!.x + a.bounds!.width / 2)) - Math.abs(anchor.x - (b.bounds!.x + b.bounds!.width / 2)))[0];
     if (!group) continue;
-    // The corridor does not follow its child across a group it stands beside: the group would change side of the lane, which the producer
-    // postconditions of 7f refuse (`laneSide`). The child keeps its jog.
-    if (crossesBeside(model, lane, anchor.x, group.id)) continue;
+    // With `layout.moveBeforeGrow` (ADR-0027) the corridor does not follow its child across a group it stands beside: the group would change
+    // side of the lane, which the producer postconditions of 7f refuse (`laneSide`). The child keeps its jog. Shown only with seats, so opt-in.
+    if (moveBeforeGrow(model) && crossesBeside(model, lane, anchor.x, group.id)) continue;
     lane.x = anchor.x;
     lane.bounds.x = anchor.x - lane.bounds.width / 2;
     lane.group = group.id;

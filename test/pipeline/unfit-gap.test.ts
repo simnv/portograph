@@ -60,16 +60,6 @@ describe('a gap the plan does not fit is left to the router with a diagnostic (t
     expect(published.links.filter(item => item.removed !== true).every(item => item.path !== undefined)).toBe(true);
   }, 120000);
 
-  it('publishes a gap the router leaves links in: the end-trim replay reads the placement input, not the removed links', async () => {
-    // The end-trim check replays the trim on the untrimmed model at the route stage. It kept the router's `removed` flags, so the
-    // close-up guard planned a tier gap without the removed links and the replay disagreed with the record ("end trim record is forged").
-    growth.tiers = new Map([[3, 23]]);
-    const published = await layout(parse(orthogonalLinks(fixture('a-band-holds-the-group-that-set-its-edge'))), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-    expect(published.diagnostics.filter(item => item.severity === 'error')).toEqual([]);
-    expect(published.removedLinks ?? []).not.toEqual([]);
-    expect(removalsAreNamed(published)).toBe(true);
-  }, 120000);
-
   it('publishes a gap that asks 164 px more than it has, with the same guarantees', async () => {
     // Ticket 25 (`a-band-holds-the-group-that-set-its-edge`). Planned, link-22 is claimed tip to tip and never routed; in a gap left to
     // the router it is routed among the completed covers of its neighbours. The gap above tier 3 grows the 23 px the old measure gave

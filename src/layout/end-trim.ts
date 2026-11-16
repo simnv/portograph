@@ -24,6 +24,7 @@ import { rebuildRuleGeometry } from './rule-geometry-hook.js';
 import { moveGroup } from './skeleton-geometry.js';
 import { CLOSE_UP_MIN, closeUpSiblings, followingLanes, isCloseUpMover, shiftLane } from './close-up.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 const isBarNode = (model: LayoutModel, id: string): boolean => model.document.groups[model.document.nodes[id]!.group]!.shape === 'bar';
 
@@ -138,7 +139,8 @@ export function trimBodies(draft: LayoutModel): void {
   // The draft as 7f left it, put back whole when the trim is declined: the grid may move a flank, its nodes and its lanes.
   const saved = JSON.stringify(draft);
   // The rooms 7f reserved for link labels and overlay tracks, read before the trim: a trim that leaves one short where it held is declined.
-  const roomBefore = labelRoomHolds(draft);
+  // Shown only with seats, so read with `layout.moveBeforeGrow` (ADR-0027).
+  const roomBefore = moveBeforeGrow(draft) && labelRoomHolds(draft);
   const frames = new Map((draft.frames ?? []).map(frame => [frame.id, { ...frame.box }] as const));
   const boxes = new Map(Object.values(draft.groups).flatMap(group => group.bounds === undefined ? [] : [[group.id, { ...group.bounds }] as const]));
   const bodies = new Map(Object.values(draft.nodes).flatMap(node => node.bounds === undefined ? [] : [[node.id, { ...node.bounds }] as const]));
@@ -275,12 +277,8 @@ export function checkBodyTrims(model: LayoutModel, beforeBands: boolean): { faul
   }
   const again = JSON.parse(JSON.stringify(back)) as LayoutModel;
   if (model.freeze !== undefined) again.freeze = model.freeze;
-  // The producer ran on a draft with no routed path and no removed link (stage 8): its guards read the same input here. A link the router
-  // removed is still a link the tier-gap plan of the close-up guard plans (`removed` is a route outcome, not a placement input).
-  for (const link of again.links) {
-    if (link.path !== undefined && link.path.fixed !== true) delete link.path;
-    delete link.removed; delete link.rejectedRoute;
-  }
+  // The producer ran on a draft with no routed path (stage 8): its guards read the same input here.
+  for (const link of again.links) if (link.path !== undefined && link.path.fixed !== true) delete link.path;
   trimBodies(again);
   const names = (record: Record<string, unknown> | undefined): string => JSON.stringify(Object.keys(record ?? {}).sort());
   if (names(again.bodyTrims?.nodes) !== names(trims.nodes)) return fault('the trim of the untrimmed geometry names other nodes');

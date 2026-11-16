@@ -13,6 +13,7 @@ import { rebuildBundlePaths } from './bundle-paths.js';
 import { timed } from './attempt-timings.js';
 import { moveGroup, rebuildBands, span, union } from './skeleton-geometry.js';
 import { registerRuleGeometryRebuild } from './rule-geometry-hook.js';
+import { moveBeforeGrow } from './read/move-before-grow.js';
 
 const barStages = ['bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
 
@@ -94,8 +95,9 @@ export function rebuildRegionGeometry(draft: LayoutModel, budget?: CentreBudget,
     if (budget) timed('centre-flag', () => flagUnverifiedCentring(draft, deferOpenCentringNames));
     // A rebuild that centres nothing (the centre rule's own transaction) still moves what depends on the centring: the regions, the lanes and the
     // node geometry. Where the centre step recorded a stall, the alignments it left open are named again on the geometry the rebuild leaves, so the
-    // publication reads a record of the model it judges (ticket 75: no unexplained centring violation). A model with no stall is not read.
-    else if (centre && draft.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) timed('centre-flag', () => flagUnverifiedCentring(draft, deferOpenCentringNames));
+    // publication reads a record of the model it judges (ticket 75: no unexplained centring violation). A model with no stall is not read. Shown only
+    // with seats, so read with `layout.moveBeforeGrow` (ADR-0027).
+    else if (centre && moveBeforeGrow(draft) && draft.diagnostics.some(d => d.stage === 'placement' && d.code === CENTRE_ALIGNMENT_OPEN)) timed('centre-flag', () => flagUnverifiedCentring(draft, deferOpenCentringNames));
   });
 }
 

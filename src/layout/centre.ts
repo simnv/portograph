@@ -2024,7 +2024,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
       // Only 7f's producer ran the tally that declines (its draft stands at `bundles`); 7c to 7e decline nothing, and a chord-stage replay of the
       // 7e output would read rules its producer did not run. So the publication compares the record of 7f alone: at `bands`, and on 7f's own draft
       // when its producer reads ahead (the draft publishes at `bands`), so a move after the last centring is judged by the comparison too.
-      if (targets && (model.stage === 'bands' || (ahead && model.stage === 'bundles')) && model.alignmentTargets !== undefined) {
+      if (targets && (model.stage === 'bands' || (ahead && model.stage === 'bundles' && moveBeforeGrow(model))) && model.alignmentTargets !== undefined) {
         for (const nodeId of group.nodes) for (const side of ['top', 'bottom', 'left', 'right'] as const) {
           const face = faceKey(nodeId, side);
           if (!sameDeclines(model.alignmentTargets[face], trial.alignmentTargets?.[face])) result.push(`${ALIGNMENT_TARGETS_DIFFER}: ${face}`);

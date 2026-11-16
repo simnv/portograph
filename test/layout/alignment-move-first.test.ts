@@ -111,7 +111,7 @@ describe('the seat of a node (ADR-0027)', () => {
     expect(model.removedLinks ?? []).toEqual([]);
   }, 300000);
 
-  it('publishes the feedOrder:false copy of a-tier-gap-plan-orders-every-part-middle-tier-first: the centre rule\'s rebuild names its open alignments again (ticket 75)', async () => {
+  it('publishes the feedOrder:false copy of a-tier-gap-plan-orders-every-part-middle-tier-first (ticket 75)', async () => {
     // The centre stage recorded a stall; its own transaction then rebuilt the region, which moved isp1 off the alignment the record named.
     // The publication judged the rebuilt geometry against the stale record and failed the centring invariant.
     const yaml = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part-middle-tier-first.yaml', import.meta.url), 'utf8'));
