@@ -1,46 +1,10 @@
-import type { Bundle, LayoutModel, Side } from '../model/index.js';
+import type { LayoutModel } from '../model/index.js';
 import { compareId } from './skeleton-graph.js';
-import { naturalSideOf } from './port-side.js';
-import { findPort } from './row-paths.js';
+import { formsChains, gatherPairs, lateralPairs, type NeighbourPair } from './bundle-ends.js';
+export type { NeighbourPair };
+export { gatherPairs };
 import { orderTools, reseatRow } from './overlay-order.js';
 import { bundleNeighboursFailure, ofKind, reservation, splitPair, type Reservation } from './reservations.js';
-
-/** One bundle that a row encloses and that stands lateral: `left` leaves to the right and `right` is entered from the left. */
-export interface NeighbourPair { left: string; right: string; bundle: string; members: number }
-
-/**
- * The side each end of `bundle` takes when every member agrees on it, as `[side at nodes[0], side at nodes[1]]`; undefined when a member
- * disagrees or a port has no side yet.
- */
-function endSides(model: LayoutModel, bundle: Bundle): [Side, Side] | undefined {
-  const sides: [Set<Side>, Set<Side>] = [new Set(), new Set()];
-  for (const id of bundle.members) {
-    const link = model.links.find(item => item.id === id)?.attachments;
-    if (link === undefined) return undefined;
-    const reversed = link.from.node !== bundle.nodes[0];
-    for (const [end, ref] of [[0, reversed ? link.to : link.from], [1, reversed ? link.from : link.to]] as const) {
-      const side = naturalSideOf(findPort(model, ref)!);
-      if (side === undefined) return undefined;
-      sides[end].add(side);
-    }
-  }
-  return sides[0].size === 1 && sides[1].size === 1 ? [[...sides[0]][0]!, [...sides[1]][0]!] : undefined;
-}
-
-/**
- * The bundles of `group` that a row owes room: both ends are its own nodes, and the two end faces look at each other along the row
- * (one `right`, the other `left`). A bundle whose faces look the same way, or up and down, owes no neighbour: its channel is not the gap
- * between two bodies of one row.
- */
-export function lateralPairs(model: LayoutModel, group: string): NeighbourPair[] {
-  return model.bundles.flatMap(bundle => {
-    if (!bundle.nodes.every(node => model.document.nodes[node]?.group === group)) return [];
-    const sides = endSides(model, bundle);
-    if (sides === undefined || sides[0] === sides[1] || !sides.every(side => side === 'left' || side === 'right')) return [];
-    const [left, right] = sides[0] === 'right' ? bundle.nodes : [bundle.nodes[1], bundle.nodes[0]];
-    return [{ left, right, bundle: bundle.id, members: bundle.members.length }];
-  });
-}
 
 /**
  * The pairs a row keeps (R3). A node has one neighbour on its right and one on its left, and a chain never closes a ring, so a node
@@ -49,36 +13,9 @@ export function lateralPairs(model: LayoutModel, group: string): NeighbourPair[]
  */
 export function keptPairs(pairs: readonly NeighbourPair[]): NeighbourPair[] {
   const ranked = [...pairs].sort((a, b) => b.members - a.members || compareId(a.left, b.left) || compareId(a.right, b.right));
-  const next = new Map<string, string>(), previous = new Map<string, string>(), kept: NeighbourPair[] = [];
-  for (const pair of ranked) {
-    if (next.has(pair.left) || previous.has(pair.right)) continue;
-    // A ring: the right end already leads, through kept pairs, back to the left end.
-    let cursor: string | undefined = pair.right;
-    while (cursor !== undefined && cursor !== pair.left) cursor = next.get(cursor);
-    if (cursor === pair.left) continue;
-    next.set(pair.left, pair.right); previous.set(pair.right, pair.left); kept.push(pair);
-  }
+  const kept: NeighbourPair[] = [];
+  for (const pair of ranked) if (formsChains([...kept, pair].map(item => [item.left, item.right] as const))) kept.push(pair);
   return kept;
-}
-
-/**
- * `order` with every kept pair side by side, `left` before `right`. A chain of pairs stands as one block at the place of its first member in
- * `order`; every other node keeps its place. The result is a function of `order` and the pairs only.
- */
-export function gatherPairs(order: readonly string[], pairs: readonly (readonly [string, string])[]): string[] {
-  const next = new Map(pairs), heads = pairs.filter(([left]) => !pairs.some(([, right]) => right === left)).map(([left]) => left);
-  const chains = new Map<string, string[]>();
-  for (const head of heads) {
-    const chain = [head];
-    for (let node = next.get(head); node !== undefined; node = next.get(node)) chain.push(node);
-    for (const node of chain) chains.set(node, chain);
-  }
-  const seated = new Set<string>(), result: string[] = [];
-  for (const node of order) {
-    if (seated.has(node)) continue;
-    for (const member of chains.get(node) ?? [node]) { result.push(member); seated.add(member); }
-  }
-  return result;
 }
 
 /**
@@ -109,7 +46,7 @@ export function seatBundleNeighbours(model: LayoutModel): void {
   if (entries.length) model.reservations = [...(model.reservations ?? []), ...entries];
 }
 
-/** The stage-4 check (R2, R5): every `bundleNeighbours` entry holds on the row as it stands. Reads the record, never the bundles. */
+/** The stage-4 check (R2, R5): every `bundleNeighbours` entry holds on the row as it stands, by the predicate the restore asks (`bundleNeighboursFailure`). */
 export function validateBundleNeighbours(model: LayoutModel): string[] {
   return ofKind(model.reservations ?? [], 'bundleNeighbours').flatMap(entry => {
     const why = bundleNeighboursFailure(entry, model);

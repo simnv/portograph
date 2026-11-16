@@ -8,6 +8,8 @@
  */
 import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Rect, Side, Size } from '../model/index.js';
 import { portKey } from './sides-one.js';
+import { formsChains, lateralPairs } from './bundle-ends.js';
+import { PLACEMENT_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay';
@@ -264,13 +266,34 @@ export function bundleNeighboursOf(ledger: Reservations | undefined, group: stri
 export function splitPair(pairs: readonly (readonly [string, string])[], order: readonly string[]): readonly [string, string] | undefined {
   return pairs.find(([left, right]) => order.indexOf(left) < 0 || order.indexOf(right) !== order.indexOf(left) + 1);
 }
-/** The predicate of a bundle neighbour entry against a placed model (R2): the row stands in an order that holds every pair. Order only, so it holds at every stage after 4. */
+/**
+ * The predicate of a bundle neighbour entry against a placed model (R2, R5), asked by the stage-4 check, the guards and every restore. It reads the
+ * record and the model, and decides no pair: each recorded pair is two distinct nodes of the group, joined by an enclosed lateral bundle whose
+ * `left` end leaves to the right (`lateralPairs`, the writer's reader); the pairs form chains (`formsChains`, the writer's predicate); the row order
+ * holds each pair (`splitPair`); and the boxes agree with the order (`left` stands left of `right`, no body of the group between their left edges).
+ */
 export function bundleNeighboursFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'bundleNeighbours') return undefined;
   const group = model.groups[item.payload.group];
   if (group === undefined) return `${item.payload.group} is missing`;
-  const split = splitPair(item.payload.pairs, group.rowOrder ?? group.nodes);
-  return split === undefined ? undefined : `${split[0]} does not stand immediately left of ${split[1]}, the two ends of a bundle in ${group.id}`;
+  const pairs = item.payload.pairs, supported = lateralPairs(model, group.id);
+  for (const [left, right] of pairs) {
+    if (!group.nodes.includes(left) || !group.nodes.includes(right) || model.nodes[left] === undefined || model.nodes[right] === undefined) return `${left} and ${right} are not both nodes of ${group.id}`;
+    if (!supported.some(pair => pair.left === left && pair.right === right)) return `no enclosed bundle of ${group.id} leaves ${left} to the right and enters ${right} from the left`;
+  }
+  if (!formsChains(pairs)) return `the bundle neighbours of ${group.id} are not chains`;
+  const split = splitPair(pairs, group.rowOrder ?? group.nodes);
+  if (split !== undefined) return `${split[0]} does not stand immediately left of ${split[1]}, the two ends of a bundle in ${group.id}`;
+  // The boxes agree with the order, read at the left edges, the key the row order is read by (a stage-4 row may still hold two layers whose boxes overlap in x): `left` stands left of `right`, and no body of the group stands between them.
+  const edge = (id: string): number | undefined => model.nodes[id]?.bounds?.x;
+  for (const [left, right] of pairs) {
+    const from = edge(left), to = edge(right);
+    if (from === undefined || to === undefined) return `${left} or ${right} has no box`;
+    if (from > to + PLACEMENT_EPS) return `${left} does not stand left of ${right}, the two ends of a bundle in ${group.id}`;
+    const between = group.nodes.find(id => { const at = edge(id); return id !== left && id !== right && at !== undefined && at > from + PLACEMENT_EPS && at < to - PLACEMENT_EPS; });
+    if (between !== undefined) return `${between} stands between ${left} and ${right}, the two ends of a bundle in ${group.id}`;
+  }
+  return undefined;
 }
 
 /** Whether every face takes the turn order, the links whose faces take it when not every face does, and the faces that keep far-end order in either case. */
@@ -479,12 +502,8 @@ function shapeFailure(entry: unknown): string | undefined {
   }
 }
 
-/**
- * A restored layout must carry a ledger that agrees with what the model records. Each channel checks its own kind against the field it
- * stands behind; a ledger entry the model does not show, or a model field no entry explains, is a layout the pipeline did not publish.
- */
-export function validateReservations(model: LayoutModel): void {
-  const ledger = model.reservations ?? [];
+/** The ledger is a list of well-formed entries with unique ids, each active from its kind's stage. */
+function validateLedgerShape(ledger: Reservations): void {
   if (!Array.isArray(ledger)) throw new Error('Reservations must be a list');
   for (const entry of ledger) {
     const bad = shapeFailure(entry);
@@ -499,6 +518,29 @@ export function validateReservations(model: LayoutModel): void {
     if (item.activeFrom !== ACTIVE_FROM[item.kind as ReservationKind]) throw new Error(`Reservation ${item.id} is active from the wrong stage`);
     if (!Number.isInteger(item.revision) || (item.revision as number) < 0) throw new Error(`Reservation ${item.id} has no revision`);
   }
+}
+
+/**
+ * The restore of a model before the port topology freezes (stages up to `size`, and `skeleton`): the ledger is well formed, and the order
+ * reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
+ */
+export function validateEarlyReservations(model: LayoutModel): void {
+  if (model.reservations === undefined) return;
+  validateLedgerShape(model.reservations);
+  for (const item of model.reservations) {
+    const why = rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
+    if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
+  }
+}
+
+
+/**
+ * A restored layout must carry a ledger that agrees with what the model records. Each channel checks its own kind against the field it
+ * stands behind; a ledger entry the model does not show, or a model field no entry explains, is a layout the pipeline did not publish.
+ */
+export function validateReservations(model: LayoutModel): void {
+  const ledger = model.reservations ?? [];
+  validateLedgerShape(ledger);
   if (model.reservations !== undefined) {
     // The size floors the ledger reserves are the ones the freeze records, node for node.
     const held = nodeFloorsOf(ledger), frozen = new Map((model.freeze?.nodeFloors ?? []).map(floor => [floor.node, floor.size] as const));

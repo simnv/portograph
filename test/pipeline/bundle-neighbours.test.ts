@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse } from '../../src/index.js';
-import { restoreLayoutModel } from '../../src/internal.js';
+import { resolve, restoreLayoutModel, sidesOne, sizeNodes, skeleton } from '../../src/internal.js';
 import { gatherPairs, keptPairs, validateBundleNeighbours, type NeighbourPair } from '../../src/layout/bundle-neighbours.js';
 import { reseatRow } from '../../src/layout/overlay-order.js';
 import { bundleNeighboursOf, ofKind } from '../../src/layout/reservations.js';
@@ -93,6 +93,68 @@ describe('a free row seats the two ends of an enclosed lateral bundle side by si
     for (const key of ['links', 'nodes'] as const) {
       const copy = await run(reversed(HUB(HUB_NODES), key));
       expect(bounds(copy)).toEqual(bounds(written));
+    }
+  }, 120000);
+});
+
+describe('the record is read by one predicate, at every stage that holds it (ticket 18 review)', () => {
+  const draft = async (): Promise<LayoutModel> => JSON.parse(JSON.stringify(await run(fixture(FIXTURE)))) as LayoutModel;
+  const setPairs = (model: LayoutModel, value: [string, string][]): void => { ofKind(model.reservations!, 'bundleNeighbours')[0]!.payload.pairs = value; };
+
+  it('refuses a recorded pair that no enclosed lateral bundle supports, however the row stands (R5)', async () => {
+    const forged = await draft();
+    // `d` then `b` stand side by side in the row order, and no bundle joins them.
+    expect(order(forged, 'place').join()).toBe('a,d,b');
+    setPairs(forged, [['d', 'b']]);
+    expect(validateBundleNeighbours(forged)).toEqual([expect.stringMatching(/no enclosed bundle of place leaves d to the right and enters b/)]);
+    expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/no enclosed bundle/);
+    // The same bundle read the other way round is no pair either: `d` enters from the left.
+    setPairs(forged, [['d', 'a']]);
+    expect(validateBundleNeighbours(forged)).toEqual([expect.stringMatching(/no enclosed bundle/)]);
+  }, 120000);
+
+  it('refuses a pair that names a node the group does not hold, and pairs that are no chains', async () => {
+    const forged = await draft();
+    setPairs(forged, [['a', 'zz']]);
+    expect(validateBundleNeighbours(forged)).toEqual([expect.stringMatching(/not both nodes of place/)]);
+    setPairs(forged, [['a', 'd'], ['a', 'b']]);
+    expect(validateBundleNeighbours(forged).join()).toMatch(/not chains|no enclosed bundle/);
+    delete (forged.nodes as Record<string, unknown>)['a'];
+    expect(validateBundleNeighbours(forged)).not.toEqual([]);
+  }, 120000);
+
+  it('refuses a body that stands between the two ends although the row order is unchanged (R5)', async () => {
+    const forged = await draft();
+    expect(validateBundleNeighbours(forged)).toEqual([]);
+    const a = forged.nodes.a!.bounds!, d = forged.nodes.d!.bounds!;
+    forged.nodes.b!.bounds = { ...forged.nodes.b!.bounds!, x: (a.x + d.x) / 2 };
+    expect(validateBundleNeighbours(forged)).toEqual([expect.stringMatching(/b stands between a and d/)]);
+  }, 120000);
+
+  it('validates the record when a stage-4 model is restored, before the topology freezes (R2, R5)', async () => {
+    const model = sizeNodes(sidesOne(resolve(parse(fixture(FIXTURE)))));
+    await skeleton(model, { createAttempt });
+    expect(model.stage).toBe('skeleton');
+    expect(pairs(model, 'place')).toEqual([['a', 'd']]);
+    expect(restoreLayoutModel(JSON.stringify(model)).stage).toBe('skeleton');
+    const forged = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    forged.groups.place!.rowOrder = ['a', 'b', 'd'];
+    expect(validateBundleNeighbours(forged)).not.toEqual([]);
+    expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow(/does not stand immediately left of/);
+    const malformed = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    ofKind(malformed.reservations!, 'bundleNeighbours')[0]!.payload.pairs = [];
+    expect(() => restoreLayoutModel(JSON.stringify(malformed))).toThrow(/malformed/);
+  }, 120000);
+
+  it('keeps the pair through the solid-block order: the declaration order is a tie, the ends of a bundle are none (R2)', async () => {
+    const model = await run(fixture('a-solid-block-keeps-the-ends-of-a-bundle-side-by-side'));
+    const upper = model.groups.upper!.rowOrder!;
+    expect(upper.indexOf('d')).toBe(upper.indexOf('a') + 1);
+    expect(pairs(model, 'upper')).toEqual([['a', 'd']]);
+    expect(model.fanFamilies?.some(family => family.kind === 'solid')).toBe(true);
+    for (const key of ['links', 'nodes'] as const) {
+      const copy = await run(reversed(fixture('a-solid-block-keeps-the-ends-of-a-bundle-side-by-side'), key));
+      expect(copy.groups.upper!.rowOrder!.join()).toBe(upper.join());
     }
   }, 120000);
 });
