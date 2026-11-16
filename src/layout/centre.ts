@@ -1196,8 +1196,9 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
   packClear(model, context, tier, snapshot.group, previous);
-  // The undo gives back the geometry the step began on, not the step's own geometry a decline was judged against: no decline of this step stands.
-  return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group, notes: { ...result.notes, declined: new Map() } };
+  // The undo gives back the geometry the step began on, not the step's own geometry a decline or a growth was judged against: no decline and no
+  // growth of this step stands, and the record keeps what earlier steps wrote (review 10b F2; the rollback of the given-back branch does the same).
+  return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group, notes: { ...result.notes, grown: new Map(), declined: new Map() } };
 }
 /** The verticals a centring step counts (ticket 65): the feeds that owe one and stand on it, then every feed that stands on one. */
 type VerticalTally = readonly [owed: number, all: number];

@@ -6,6 +6,7 @@
  * the model as the move would leave it and asks the producer's own reading (`reserveLinkLabelRoom`, R1) for a row shortfall the model has not now.
  */
 import type { LayoutGroup, LayoutModel, LayoutNode } from '../model/layout.js';
+import type { Rect } from '../model/geometry.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
 import { describedLink, overlayLabelsSuppressed } from './run-label-box.js';
 import type { ProposedBox } from './frames.js';
@@ -31,17 +32,32 @@ function movedModel(model: LayoutModel, proposed: readonly ProposedBox[]): { mov
   return { moved: { ...model, groups, nodes }, shift };
 }
 
+/** The x of every vertical border of a group box that a change moves, before and after, with the tier of the group. */
+interface MovedBorders { tier: number | undefined; edges: number[] }
+function movedBorders(group: LayoutGroup, was: Rect, now: Rect): MovedBorders {
+  const edges: number[] = [];
+  if (now.x !== was.x) edges.push(was.x, now.x);
+  if (now.x + now.width !== was.x + was.width) edges.push(was.x + was.width, now.x + now.width);
+  return { tier: group.tier, edges };
+}
+
 /**
- * The described links of one tier whose two ends the change moves differently: the only runs it can shorten. `shift` keys each moved node by its
- * move (a translation by its dx; a resize by both edge moves); a node it does not hold stands still.
+ * Whether a change can close a row room: a described link of one tier whose two ends it moves differently (`shift` keys each moved node by its
+ * move: a translation by its dx, a resize by both edge moves; a node it does not hold stands still), or a group border of that tier that it moves
+ * across the x span of such a link's two end bodies (a border beside or between the ends cuts the window the label rides; review 10b F1).
+ * The move guard and the centring step guard read this one scope (R1).
  */
-function stretched(model: LayoutModel, shift: ReadonlyMap<string, number | string>): boolean {
+function closesRowRun(model: LayoutModel, shift: ReadonlyMap<string, number | string>, borders: readonly MovedBorders[]): boolean {
   const suppressed = overlayLabelsSuppressed(model);
   return model.links.some(link => {
     if (!link.attachments || !describedLink(model, link, suppressed)) return false;
     const from = link.attachments.from.node, to = link.attachments.to.node;
-    if (from === to || (shift.get(from) ?? 0) === (shift.get(to) ?? 0)) return false;
-    return model.groups[model.document.nodes[from]!.group]?.tier === model.groups[model.document.nodes[to]!.group]?.tier;
+    const tier = model.groups[model.document.nodes[from]!.group]?.tier;
+    if (from === to || tier !== model.groups[model.document.nodes[to]!.group]?.tier) return false;
+    if ((shift.get(from) ?? 0) !== (shift.get(to) ?? 0)) return true;
+    const a = model.nodes[from]!.bounds!, b = model.nodes[to]!.bounds!;
+    const low = Math.min(a.x, b.x), high = Math.max(a.x + a.width, b.x + b.width);
+    return borders.some(border => border.tier === tier && border.edges.some(x => x > low && x < high));
   });
 }
 
@@ -57,11 +73,12 @@ export function rowRoomShortOf(model: LayoutModel): string[] | undefined {
   return model.document.links.some(link => link.label !== undefined) ? [...rowShort(model)] : undefined;
 }
 
-/** The links whose row room is short before the move: a move may not add one. Absent when no described link of one tier has its ends shifted apart. */
+/** The links whose row room is short before the move: a move may not add one. Absent when the move cannot close a row run (`closesRowRun`). */
 export function rowRoomShortNow(model: LayoutModel, proposed: readonly ProposedBox[]): string[] | undefined {
   if (!model.document.links.some(link => link.label !== undefined)) return undefined;
   const { moved, shift } = movedModel(model, proposed);
-  return stretched(moved, shift) ? [...rowShort(model)] : undefined;
+  const borders = proposed.map(({ group, bounds }) => movedBorders(group, group.bounds!, bounds));
+  return closesRowRun(moved, shift, borders) ? [...rowShort(model)] : undefined;
 }
 
 /** Whether the move leaves every row room that held; `allowed` is `rowRoomShortNow`. */
@@ -74,8 +91,8 @@ export function rowRoomHolds(model: LayoutModel, proposed: readonly ProposedBox[
 
 /**
  * Whether a centring step kept every row room that held: the step rewrote one group and its nodes, and `before` holds them as the step found them.
- * A step that left them as they were changed nothing the producer reads, and a step that moves the two ends of no described same-tier link apart
- * shortens no row run (`stretched`, the scope of the move guard). Otherwise the producer is replayed on the model now, and only when that finds a
+ * A step that left them as they were changed nothing the producer reads, and a step that neither moves the ends of a described same-tier link
+ * apart nor moves a group border across its span closes no row run (`closesRowRun`, the scope of the move guard). Otherwise the producer is replayed on the model now, and only when that finds a
  * shortfall on the model as the step found it too; the step may not add one (R1: the same replay as `rowRoomHolds`).
  */
 export function rowRoomKeptByStep(model: LayoutModel, before: { group: LayoutGroup; nodes: readonly LayoutNode[] }, unchanged: boolean): boolean {
@@ -86,7 +103,7 @@ export function rowRoomKeptByStep(model: LayoutModel, before: { group: LayoutGro
     const left = now.x - was.x, right = now.x + now.width - was.x - was.width;
     if (left !== 0 || right !== 0) shift.set(node.id, left === right ? left : `${left}|${right}`);
   }
-  if (!stretched(model, shift)) return true;
+  if (!closesRowRun(model, shift, [movedBorders(model.groups[before.group.id]!, before.group.bounds!, model.groups[before.group.id]!.bounds!)])) return true;
   const now = rowShort(model);
   if (now.size === 0) return true;
   const found = rowShort({ ...model, groups: { ...model.groups, [before.group.id]: before.group },

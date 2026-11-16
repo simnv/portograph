@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { bars, bundles, centre, flanks, lanes, rows } from '../../src/internal.js';
 import { reserveLinkLabelRoom, topUpBandClearance, type LinkLabelShortfall } from '../../src/layout/bands.js';
@@ -10,6 +10,13 @@ import { createAttempt, placed } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
 import { freezeChords } from '../../src/layout/frame-paths.js';
+import type { AlignmentTarget, LayoutModel } from '../../src/model/layout.js';
+import { fitRegionGroup } from '../../src/layout/regions.js';
+import * as guards from '../../src/layout/label-room-guard.js';
+import * as targets from '../../src/layout/alignment-targets.js';
+import { rowRoomKeptByStep } from '../../src/layout/label-room-guard.js';
+
+const right = (box: { x: number; width: number }): number => box.x + box.width;
 
 const fixture = readFileSync(new URL('../../goldens/synthetic/a-same-row-link-label-keeps-a-straight-overlay-straight.yaml', import.meta.url), 'utf8');
 const required = (text: string): number => measureText(text, { fontSize: LINK_LABEL_GEOMETRY.fontSize, weight: LINK_LABEL_GEOMETRY.fontWeight }).width
@@ -82,4 +89,64 @@ it.each([
   expect(reserveLinkLabelRoom(structuredClone(model))).toBe(false);
   expect(score(model).snapshot.passed).toBe(true);
   expect(model.removedLinks ?? []).toEqual([]);
+});
+
+const crossGroup = (): string => readFileSync(new URL('../../goldens/synthetic/a-centre-replay-keeps-a-cross-group-label-window.yaml', import.meta.url), 'utf8');
+const rowShortfalls = (model: LayoutModel): LinkLabelShortfall[] => {
+  const shortfalls: LinkLabelShortfall[] = [];
+  reserveLinkLabelRoom(structuredClone(model), shortfalls);
+  return shortfalls.filter(item => item.axis === 'row' || item.axis === 'row window');
+};
+
+it('refuses a step whose unlabelled sibling grows a border into a cross-group label window (review 10b F1)', async () => {
+  // Both ends of the labelled zone-4 -> zone-5 link stand still. An unlabelled grid sibling below the end body, inside the group's box,
+  // widens past the end body, and the region fit moves zone-4's right border into the window the label rides.
+  const model = structuredClone(await layout(parse(crossGroup()), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
+  const group = model.groups['zone-4']!;
+  const sibling = { ...structuredClone(model.nodes['unit-4']!), id: 'spare', ports: [], bounds: { x: 48, y: 278, width: 27, height: 17 } };
+  delete sibling.icon;
+  model.nodes.spare = sibling;
+  model.document.nodes.spare = { ...structuredClone(model.document.nodes['unit-4']!), label: 'spare', ports: [] };
+  model.document.groups['zone-4']!.shape = 'grid';
+  group.nodes.push('spare'); group.rowOrder!.push('spare');
+  fitRegionGroup(model, group);
+  const before = structuredClone({ group, nodes: group.nodes.map(id => model.nodes[id]!) });
+  expect(rowShortfalls(model)).toEqual([]);
+  sibling.bounds.width += 10;
+  fitRegionGroup(model, group);
+  expect(right(group.bounds!)).toBeGreaterThan(right(before.group.bounds!));
+  expect(rowShortfalls(model).map(item => item.axis)).toEqual(['row window']);
+  expect(rowRoomKeptByStep(model, before, false)).toBe(false);
+});
+
+it('a refused centring step leaves no growth of its own in the alignment record (review 10b F2)', async () => {
+  // The whole-step guard restores the group and its nodes. The record must then keep what accepted steps wrote: the refused step's growth
+  // is gone with its geometry (R1, R5).
+  const originalGuard = guards.rowRoomKeptByStep, originalWrite = targets.writeAlignmentTargets;
+  let prior: Record<string, AlignmentTarget[]> | undefined, refusals = 0;
+  const found: unknown[] = [];
+  const guard = vi.spyOn(guards, 'rowRoomKeptByStep').mockImplementation((...args) => {
+    const holds = originalGuard(...args);
+    // The record as the step found it: the step writes its targets only after this verdict.
+    prior = holds ? undefined : structuredClone(args[0].alignmentTargets);
+    if (!holds) refusals++;
+    return holds;
+  });
+  const writer = vi.spyOn(targets, 'writeAlignmentTargets').mockImplementation((model, nodes, notes, pass) => {
+    originalWrite(model, nodes, notes, pass);
+    if (prior !== undefined) for (const key of notes.wanted.keys()) {
+      const entry = Object.values(model.alignmentTargets ?? {}).flat().find(item => item.port === key);
+      const was = Object.values(prior).flat().find(item => item.port === key);
+      if (entry?.state !== 'grown') continue;
+      // A grown entry after a refused step is the one an accepted step wrote, or the room at the step's start for a target that stood.
+      const allowed = was?.state === 'grown' ? was.extent : was?.state === 'kept' ? notes.start.get(key) : undefined;
+      if (allowed === undefined || allowed.low !== entry.extent!.low || allowed.high !== entry.extent!.high) found.push({ key, entry, was });
+    }
+    prior = undefined;
+  });
+  try {
+    await layout(parse(crossGroup()), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+  } finally { guard.mockRestore(); writer.mockRestore(); }
+  expect(refusals).toBeGreaterThan(0);
+  expect(found).toEqual([]);
 });

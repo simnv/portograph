@@ -1707,12 +1707,14 @@ label placement decides: with no window the label may lie across a border, with 
 a place on a link. No gate judges it (G3 leaves out overlay labels; `labelBorderCrossings` is a counter). The validator refuses a record that
 names no described link. The settled chord and rank judges, as the lane reseat, refuse a move that names a new link in the room set
 (`noNewFindings('room')`, `roomFindings`): a room given up, and a room a reservation would still grow.
-A move that runs after the reservation keeps a same-tier row room: `holdsMove` has the kind `labelRoom` (`label-room-guard.ts`), which refuses a move that shifts the ends of a described same-tier link apart and leaves a row shortfall the model did not have (decision review ticket DR-02, R2). Nothing reserves the room again.
+A move that runs after the reservation keeps a same-tier row room: `holdsMove` has the kind `labelRoom` (`label-room-guard.ts`), which refuses a move that shifts the ends of a described same-tier link apart, or moves a group border of that tier across the link's span, and leaves a row shortfall the model did not have (decision review ticket DR-02, R2). Nothing reserves the room again.
 A complete centring step can also widen a body inside its group. After chords settle, its postcondition (`rowRoomKeptByStep`) reads the
 same producer replay as `rowRoomHolds`; it refuses any new same-tier shortfall, including a cross-group window that `siblingLimit`
 cannot bound. The move, growth and clamp are accepted or restored together (dense ticket 10). The replay has the scope of the move
-guard: it runs only for a step that moves the two ends of a described same-tier link differently (a resize counts both edges), and it
-reads the model as the step found it only when the model now has a shortfall. A centring pass runs thousands of steps on a large sheet,
+guard (`closesRowRun`): it runs only for a step that moves the two ends of a described same-tier link differently (a resize counts both
+edges), or that moves a border of a group of that tier across the span of the link's two end bodies (an unlabelled sibling can widen a
+border into the window; review 10b F1). It reads the model as the step found it only when the model now has a shortfall. A refused
+step returns no growth and no decline of its own, so the alignment record keeps what accepted steps wrote (review 10b F2). A centring pass runs thousands of steps on a large sheet,
 and most leave their group as it was.
 Publication and restore re-run the reservation on a copy and reject a model it would still change.
 
