@@ -6,6 +6,7 @@ import { UNBOUNDED_BUDGET, type Budget } from '../pipeline/budget.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { buildSkeletonGraph } from './skeleton-graph.js';
 import { orderByOverlay, orderFramesByOverlay } from './overlay-order.js';
+import { seatBundleNeighbours, validateBundleNeighbours } from './bundle-neighbours.js';
 import { orderByCorridors, validateRowOrderDecisions } from './corridor-order.js';
 import { orderByFeeds, settlePullsAndFeeds, validateFeedOrders, withdrawBrokenGroupOrders } from './feed-order.js';
 import { packGridGroups, placeFlanksAndPeers, readSkeleton, rebuildBands, stackBands, validateSkeletonBands } from './skeleton-geometry.js';
@@ -83,6 +84,8 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
       }
       stackBands(work, false);
     }
+    // A free row keeps the two ends of an enclosed lateral bundle side by side (ticket 18, the ledger's `bundleNeighbours`); every order below asks it.
+    seatBundleNeighbours(work);
     // Overlay links weigh the order ELK chose (ranked-groups spec 3.2); sides-two reads the result.
     orderByOverlay(work);
     if (work.fanFamilies?.some(family => family.kind === 'solid')) seatBlockOrder(work);
@@ -97,7 +100,7 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
     settlePullsAndFeeds(work);
     // A group order of the joint order (ticket 72) that the frame order broke is withdrawn by name before the check (R6).
     withdrawBrokenGroupOrders(work);
-    const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work), ...validateFeedOrders(work)];
+    const errors = [...validateSkeletonBands(work), ...validateRowOrderDecisions(work), ...validateFeedOrders(work), ...validateBundleNeighbours(work)];
     if (errors.length) throw new SkeletonError(errors.join('; '));
     work.stage = 'skeleton';
     work.runtime.stages.push({ stage: 'skeleton', durationMs: clock.now() - started });
