@@ -25,6 +25,9 @@ import { plannedBends } from '../../src/layout/side-measure.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withLayoutEntry } from '../aspect-fixture.js';
+import { restoreFinalLayout } from '../../src/internal.js';
+import { declineStagger } from '../../src/layout/reservations.js';
+import { holds } from '../../src/layout/reservation-checks.js';
 
 // Dense-16x9 ticket 22: the acceptance gate judges each stagger on the complete placement, aspect aim first; the stage-5 canvas judges nothing.
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-top-row-staggers-when-a-lower-tier-sets-the-stage-5-width.yaml', import.meta.url), 'utf8');
@@ -69,6 +72,13 @@ describe('a top row staggers when a lower tier sets the stage-5 width (dense-16x
     expect(wrapGateVerdict(forged, one, 'aspect')).toBe(`the planned bends rise from ${total(one)} to ${total(forged)} with two lines`);
   }, 180000);
 
+  it('checks a declined stagger in the ledger: a model that still stands the row on two lines does not hold it (R5)', async () => {
+    const [lines, one] = await Promise.all([run(yaml), run(withLayoutEntry(yaml, 'autoArrange: false'))]);
+    const ledger = declineStagger('leaves', 'a named refusal', 'fan', 1);
+    expect(holds(ledger, lines).map(failure => failure.why)).toEqual(['the row leaves stands on two lines although its stagger is declined']);
+    expect(holds(ledger, one)).toEqual([]);
+  }, 180000);
+
   it('declines a row by name when its trial fails a publication check in 7f, and never throws', async () => {
     refuse.on = true;
     try {
@@ -80,17 +90,26 @@ describe('a top row staggers when a lower tier sets the stage-5 width (dense-16x
     } finally { refuse.on = false; }
   }, 180000);
 
-  // Review 1 of ticket 22: the fan round is unrouted and committed its 7e with no 7f, so the next baseline threw the refusal.
-  it('drops a fan re-run whose 7f trial refuses the kept stagger, names the refusal, and keeps the stagger of the baseline', async () => {
+  // Reviews 1 and 2 of ticket 22: the fan round is unrouted and committed its 7e with no 7f, so the next baseline threw the refusal (review 1);
+  // the fix of review 1 then cut the fan round and kept the stagger without the fan pitch (review 2). A stagger row is kept only when the
+  // placement that follows from it can be kept.
+  it('declines a kept stagger by name when the fan round\'s 7f trial refuses it, and places the baseline again without it', async () => {
     refuse.fan = true;
     try {
-      const model = await run(yaml);
-      expect(model.groupArrangements?.leaves).toEqual({ chosen: 'stagger' });
-      expect(model.staggerRows?.map(row => row.group)).toEqual(['leaves']);
-      expect((model.reservations ?? []).filter(entry => entry.kind === 'pairFloor')).toEqual([]);
-      expect(model.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT').map(item => item.message)).toContain(
-        'A fan re-run was cut: its 7f trial refused it (Stagger chord corridor of link link-1 enters leaf-2), and the re-run was dropped. '
-        + 'The fans keep the pitch of the last completed placement, and this layout may differ from one made with more time.');
+      const [model, one] = await Promise.all([run(yaml), run(withLayoutEntry(yaml, 'autoArrange: false'))]);
+      const reason = 'Stagger chord corridor of link link-1 enters leaf-2';
+      expect(model.groupArrangements?.leaves).toEqual({ chosen: 'row', reason: `a later placement refused the two lines: ${reason}` });
+      expect(model.staggerRows ?? []).toEqual([]);
+      expect((model.reservations ?? []).filter(entry => entry.kind === 'staggerDeclined').map(entry => entry.payload)).toEqual([{ group: 'leaves', reason }]);
+      // The fan round goes on on the baseline without the row: its floors stand, as in the one-line run.
+      const floors = (item: LayoutModel): number => (item.reservations ?? []).filter(entry => entry.kind === 'pairFloor').length;
+      expect(floors(model)).toBe(floors(one));
+      expect(floors(model)).toBeGreaterThan(0);
+      expect(model.diagnostics.filter(item => item.code === 'FAN_SPREAD_CUT')).toEqual([]);
+      expect(model.diagnostics.filter(item => item.code === FAN_WRAP_DECLINED).map(item => item.message))
+        .toEqual([`The two lines of leaves are declined: a later placement refused them: ${reason}.`]);
+      expect(failed(model)).toEqual(failed(one));
+      expect(() => restoreFinalLayout(JSON.stringify(model))).not.toThrow();
     } finally { refuse.fan = false; }
   }, 180000);
 });

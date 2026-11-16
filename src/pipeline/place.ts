@@ -18,7 +18,7 @@ import { bars } from '../layout/bars.js';
 import { bundles } from '../layout/bundles.js';
 import { elkDeadlineMs } from '../layout/elk-worker.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
-import { farEndOrderOf, pairFloorsOf, pitchFloorsOf, nodeFloorsOf, coursesOf, declinedTrunksOf, laneKeysOf, sideHintsOf, spansOf, turnOf, type Reservations } from '../layout/reservations.js';
+import { farEndOrderOf, pairFloorsOf, pitchFloorsOf, nodeFloorsOf, coursesOf, declinedStaggersOf, declinedTrunksOf, laneKeysOf, sideHintsOf, spansOf, turnOf, type Reservations } from '../layout/reservations.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 import { CommandDeadlineError } from './budget.js';
 import { PlacementBudgetExceeded } from './limits.js';
@@ -40,8 +40,14 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   const declinedTrunks = declinedTrunksOf(reservations);
   const resolved = stepIn('resolve', () => resolve(env.document, { ...(env.declinedSolidBlocks ? { declinedSolidBlocks: env.declinedSolidBlocks } : {}), ...(env.options.diagnostics ? { diagnostics: env.options.diagnostics } : {}), ...(declinedTrunks.size || declinedTrunks.all ? { declinedTrunks } : {}), ...(env.groupLifts !== undefined ? { groupLifts: env.groupLifts } : {}) }));
   resolved.reservations = JSON.parse(JSON.stringify(reservations)) as Reservations;
-  if (env.staggerRows?.length) resolved.staggerRows = JSON.parse(JSON.stringify(env.staggerRows)) as typeof env.staggerRows;
-  if (env.groupArrangements !== undefined) resolved.groupArrangements = JSON.parse(JSON.stringify(env.groupArrangements)) as typeof env.groupArrangements;
+  // A stagger the ledger declines stands one line in this run, with its reason (dense-16x9 ticket 22, review 2): the record is read, not decided again.
+  const declinedStaggers = declinedStaggersOf(reservations);
+  const staggerRows = env.staggerRows?.filter(row => !declinedStaggers.has(row.group));
+  if (staggerRows?.length) resolved.staggerRows = JSON.parse(JSON.stringify(staggerRows)) as typeof staggerRows;
+  if (env.groupArrangements !== undefined) {
+    resolved.groupArrangements = JSON.parse(JSON.stringify(env.groupArrangements)) as typeof env.groupArrangements;
+    for (const [group, reason] of declinedStaggers) resolved.groupArrangements![group] = { chosen: 'row', reason: `a later placement refused the two lines: ${reason}` };
+  }
   const courses = coursesOf(reservations), spans = spansOf(reservations);
   // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
   const courseFaces = new Map<string, Side>();

@@ -81,7 +81,10 @@ async function trial(env: Env, s: State, root: AnyRound, offer: unknown, reserve
 /** The visits of one round: it runs a trial on its first offer, and may measure again and try once more when its budget says so and a start is left. */
 async function visit(env: Env, s: State, round: AnyRound, first: unknown, reserved: number): Promise<void> {
   for (let visits = 0, offer = first; offer !== undefined && visits < round.budget.visits; visits++) {
+    const rebased = s.rebased ?? 0;
     const refusal = await trial(env, s, round, offer, reserved);
+    // A baseline placed again without a declined stagger is no trial of the round: its visit is given back (bounded by the rows, `keptStaggers`).
+    if ((s.rebased ?? 0) > rebased) visits--;
     if (refusal === undefined ? !round.budget.again : !round.budget.retries.includes(refusal.at)) return;
     if (visits + 1 >= round.budget.visits) return;
     offer = await round.measure(env, s);

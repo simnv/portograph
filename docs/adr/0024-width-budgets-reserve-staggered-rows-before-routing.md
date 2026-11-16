@@ -143,5 +143,6 @@ The second amendment changes as follows.
 - As before, no link the baseline makes straight is lost, and no hard separation is shorter.
 - A refusal in a trial's placement or 7f declines that row by name. Each trial runs the same publication checks as every placement.
 - The trials stand outside `MAX_RERUNS` and the placement cap. With N chosen rows the gate costs one plain placement plus at most N row trials.
-- A later unrouted round (the fan round) whose trial holds a stagger runs 7f as a trial before it commits. A stagger or producer refusal there drops the trial by name, and the baseline stands. No round commits a placement that the next baseline refuses (review 1 of ticket 22).
+- A later unrouted round (the fan round) whose trial holds a stagger runs 7f as a trial before it commits. No round commits a placement that the next baseline refuses (review 1 of ticket 22).
+- A stagger row is kept only when the placement that follows from it can be kept (review 2 of ticket 22). When that 7f trial refuses a row of the trial by name, the row is declined in the ledger (`staggerDeclined`, read by every later run), and the baseline is placed once more without it; the fan round then measures on that placement with its full budget. Each row is declined once at most: N rows cost at most N more placements. Any other refusal there drops the trial by name, and the baseline stands.
 

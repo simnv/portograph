@@ -99,6 +99,12 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
       const why = farEndFaceFailure(model, { node: item.payload.node, side: item.payload.side, ports: [...item.payload.ports] });
       return why === undefined ? undefined : { why: `the ${item.payload.side} face of ${item.payload.node}: ${why}` };
     }
+    case 'staggerDeclined': {
+      // The row stands one line: no stagger record, and its arrangement is not a stagger.
+      const group = item.payload.group;
+      return (model.staggerRows ?? []).some(row => row.group === group) || model.groupArrangements?.[group]?.chosen === 'stagger'
+        ? { why: `the row ${group} stands on two lines although its stagger is declined` } : undefined;
+    }
     case 'trunkDeclined': {
       const keys = trunkHeads(model).map(head => trunkKey(trunkBuses(model, head)));
       const scope = item.payload.scope;

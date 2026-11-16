@@ -37,6 +37,11 @@ export interface State {
   /** Whether the unmoved baseline was rebuilt for a side offer: it is rebuilt at most once in a command. */
   unmovedRebuilt: boolean;
   /**
+   * The baselines a round placed again without a stagger it declined (`keptStaggers` in `round.ts`, dense-16x9 ticket 22 review 2). Such a placement is
+   * no trial of the round: the visit it took is given back (at most one per declined row).
+   */
+  rebased?: number;
+  /**
    * The course round's second trial, set when its first trial is refused: `without-steps` when that trial held a step course beside a poor-route course (the
    * second trial offers the poor routes alone), `none` otherwise (a second trial would repeat the first). Absent before the first refusal.
    */
