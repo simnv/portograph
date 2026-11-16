@@ -200,7 +200,7 @@ cross-frame chords that hold at the 12 px base pitch can still put a 16 px floor
 need more than 60 px is declined (`FAN_SPREAD_DECLINED`); the unit test forges the shallow geometry, and no layout input reaches it.
 Since dense-16x9 ticket 04 (slice 1) the cap is per chord pair (a pair over it is declined alone) and the floors are stored as
 neighbour-pair pitches (`LayoutNode.pairPitch`); the face holds their sum. Slice 1 still writes the largest need of a face on every
-neighbour pair of it: exact floors per pair leave no room for the drift of 7f, one crowded direct member then refuses its family through
+pair of its ports, so a port order that a later round changes keeps it too: exact floors per pair leave no room for the drift of 7f, one crowded direct member then refuses its family through
 the leg cascade, and five corpus sheets lost straight links. Slice 2 changes that with the isolated fallback.
 
 After the freeze, `chordsHold` and `blockedChords` also read foreign frame and canton boxes and

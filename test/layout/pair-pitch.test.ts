@@ -6,6 +6,10 @@ import { blockReservationsFault } from '../../src/layout/block-checks.js';
 import { endPitch, faceExcess, faceOffsets, neighbourPitch, pairExcess, pairPitchFault } from '../../src/layout/pair-pitch.js';
 import { portSideCapacity } from '../../src/layout/port-insets.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { readDraft } from '../../src/layout/overlay-order.js';
+import { sizeNodes } from '../../src/layout/size.js';
+import { sidesOne } from '../../src/layout/sides-one.js';
+import { resolve } from '../../src/resolve/index.js';
 import { floorFailure, pairFloorsOf, pairGrowth, reservation, validateReservations } from '../../src/layout/reservations.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
 import { NODE_CONTENT_GEOMETRY } from '../../src/theme/content.js';
@@ -158,5 +162,49 @@ describe('the pair floor of the fan round', () => {
     const bad = reservation('pairFloor', { kind: 'node', id: 'n' }, 'bottom:x', 'fan', 0, { node: 'n', side: 'bottom', ports: [ports[1], ports[0]], min: 20 });
     const model = { reservations: [bad], nodes: {}, links: [] } as unknown as LayoutModel;
     expect(() => validateReservations(model)).toThrow(/wrong shape/);
+  });
+});
+
+/**
+ * Review 1 of slice 1: every reader of a face pitch reads the pitch of each pair (the draft of the overlay order, the bundle planners), and a
+ * model restored before stage 5 keeps its pair pitches readable, its floors held and its faces within capacity.
+ */
+describe('the readers of slice 1 read the pair pitch (review 1)', () => {
+  const fan = readFileSync(new URL('../../goldens/synthetic/a-fan-spreads-its-ports-so-its-chords-hold-clearance.yaml', import.meta.url), 'utf8');
+
+  it('stands the ports of the overlay draft at their pair pitches', async () => {
+    const model = await lay(text), node = model.nodes['core-1']!;
+    const draft = (at: LayoutModel): ((port: LayoutPort) => number) => { const read = readDraft(at)!; return port => read.portX(port.ref); };
+    const order = node.ports.filter(port => port.side === 'bottom').sort((a, b) => draft(model)(a) - draft(model)(b));
+    const forged = structuredClone(model), held = forged.nodes['core-1']!;
+    held.pairPitch = { bottom: [{ rule: 'fan', ports: [portId(order[1]!.ref), portId(order[2]!.ref)].sort(), min: 60 }] };
+    const x = order.map(draft(forged));
+    const gaps = x.slice(1).map((at, index) => at - x[index]!);
+    expect(gaps[1]).toBeCloseTo(60, 6);
+    order.slice(1).forEach((port, index) => expect(gaps[index]).toBeGreaterThanOrEqual(neighbourPitch(held, 'bottom', order[index]!.ref, port.ref) - 1e-6));
+  });
+
+  it('keeps the crossings of a face that holds a fan and a bundle, as the scalar pitch did', async () => {
+    const model = await lay(`${fan}\n  - [core-1, edge-1]\n  - [core-1, edge-1]\n`);
+    expect(model.bundles.length).toBeGreaterThan(0);
+    expect(score(model).snapshot.counts.routed.crossings).toBe(5);
+  }, 180_000);
+
+  it('refuses a stage-3 model whose pair pitch is unreadable, over capacity or under its floor (R5, R6)', () => {
+    const base = sizeNodes(sidesOne(resolve(parse(fan))));
+    expect(base.stage).toBe('size');
+    expect(() => restoreLayoutModel(JSON.stringify(base))).not.toThrow();
+    const node = Object.values(base.nodes).find(item => item.ports.filter(port => (port.side ?? port.sizingSide) === 'bottom').length >= 2)!;
+    const keys = node.ports.filter(port => (port.side ?? port.sizingSide) === 'bottom').slice(0, 2).map(port => portId(port.ref)).sort() as [string, string];
+    const forge = (ports: string[], min: number, floor: number): string => {
+      const model = structuredClone(base);
+      model.nodes[node.id]!.pairPitch = { bottom: [{ rule: 'fan', ports, min }] };
+      model.reservations = pairGrowth([], [{ node: node.id, side: 'bottom', ports: keys, min: floor }], 'fan', 1);
+      return JSON.stringify(model);
+    };
+    expect(() => restoreLayoutModel(forge(keys, 12, 12))).not.toThrow();
+    expect(() => restoreLayoutModel(forge([keys[0], 'missing'], 12, 12))).toThrow(/unreadable pair pitch/);
+    expect(() => restoreLayoutModel(forge(keys, 100_000, 12))).toThrow(/Port capacity exceeds/);
+    expect(() => restoreLayoutModel(forge(keys, 12, 60))).toThrow(/does not hold/);
   });
 });

@@ -38,7 +38,7 @@ export interface FanMeasure {
  *
  * Dense-16x9 ticket 04 (slice 1): the floor is stored as neighbour-pair pitches (`LayoutNode.pairPitch`, rule `fan`), and the face holds their
  * sum. The slide a chord pair needs is shared by the gaps between its two ports; the largest such pitch of the face is written on every
- * neighbour pair of the face (see below). A chord pair that would need more than `FAN_PITCH_CAP` is declined alone (the cap is per pair).
+ * pair of its ports, so that a later order of the face keeps it too (see below). A chord pair that would need more than `FAN_PITCH_CAP` is declined alone (the cap is per pair).
  */
 export function measureFans(model: LayoutModel): FanMeasure {
   const floors = new Map<string, FanPairFloor>(), declined: FanMeasure['declined'] = [];

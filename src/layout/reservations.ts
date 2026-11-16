@@ -553,14 +553,16 @@ function validateLedgerShape(ledger: Reservations): void {
 }
 
 /**
- * The restore of a model before the port topology freezes (stages up to `size`, and `skeleton`): the ledger is well formed, and the order
- * reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
+ * The restore of a model before the port topology freezes (stages up to `size`, and `skeleton`): the ledger is well formed, the floors hold
+ * from stage 3 on, and the order reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
  */
 export function validateEarlyReservations(model: LayoutModel): void {
   if (model.reservations === undefined) return;
   validateLedgerShape(model.reservations);
+  // A floor is active from stage 3 (`size`): a stage-3 or stage-4 model keeps its pitch, pair and node floors (dense-16x9 ticket 04 review).
+  const sized = model.stage === 'size' || model.stage === 'skeleton';
   for (const item of model.reservations) {
-    const why = rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
+    const why = (sized ? floorFailure(item, model) : undefined) ?? rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }
