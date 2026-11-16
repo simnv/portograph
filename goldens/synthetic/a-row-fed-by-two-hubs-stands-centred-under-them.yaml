@@ -1,0 +1,39 @@
+# Expected (dense-16x9 ticket 27): a row of groups that one pair of feeds centres stands centred under them as one unit.
+# Two hub groups of three nodes stand side by side on tier 0, the anchor tier; five site groups on tier 1 each link to the middle node of
+# both hubs, so every site wants the same x (the mean of the two hub ports it uses). Stage 7c centred each group alone, in group order, and packed each after the one before: the first
+# site stood at the mean and the other four stacked to its right. Groups fed by the same parents are seated as one unit under the
+# order and the band gap (pool adjacent violators on the weighted median, `rowSeats` in centre.ts): the five sites stand centred on the
+# mean of the hub ports. The middle site, at the median, stands on its own feeds and keeps the growth that stands its two drops straight;
+# the other four, off their own x, do not grow. A whole unit shifted off its seat is refused at restore (review 1). `row-seats.test.ts`.
+portograph: 2
+groups:
+  hub-a: { tier: 0 }
+  hub-b: { tier: 0 }
+  site-1: { tier: 1 }
+  site-2: { tier: 1 }
+  site-3: { tier: 1 }
+  site-4: { tier: 1 }
+  site-5: { tier: 1 }
+nodes:
+  spine-a1: { group: hub-a, class: switch }
+  core-a: { group: hub-a, class: switch }
+  spine-a2: { group: hub-a, class: switch }
+  spine-b1: { group: hub-b, class: switch }
+  core-b: { group: hub-b, class: switch }
+  spine-b2: { group: hub-b, class: switch }
+  edge-1: { group: site-1, class: router }
+  edge-2: { group: site-2, class: router }
+  edge-3: { group: site-3, class: router }
+  edge-4: { group: site-4, class: router }
+  edge-5: { group: site-5, class: router }
+links:
+  - [core-a, edge-1]
+  - [core-b, edge-1]
+  - [core-a, edge-2]
+  - [core-b, edge-2]
+  - [core-a, edge-3]
+  - [core-b, edge-3]
+  - [core-a, edge-4]
+  - [core-b, edge-4]
+  - [core-a, edge-5]
+  - [core-b, edge-5]

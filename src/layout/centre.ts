@@ -42,7 +42,7 @@ import { linkById } from './peers.js';
 import { ALIGNMENT_TARGETS_DIFFER, declinedTargets, directMembers, tapTarget, owesVertical, sameDeclines, writeAlignmentSeats, writeAlignmentTargets, type TargetNotes } from './alignment-targets.js';
 import { faceKey } from './turn-order.js';
 import { untrimmedModel } from './end-trim.js';
-import { NO_MOVE_EPS, RISER_DEPTH_EPS } from './tolerance.js';
+import { NO_MOVE_EPS, PLACEMENT_EPS, RISER_DEPTH_EPS } from './tolerance.js';
 import { chainBlockOf } from './read/chain.js';
 
 export interface CentreBudget { remaining: number; passes: number }
@@ -756,6 +756,111 @@ function centringOffset(chosen: readonly Feed[]): number {
   return mean(new Map(chosen.map(feed => [feed.key, feed.x])).values()) - mean(new Map(chosen.map(feed => [portId(feed.child.ref), feed.child.anchor!.x])).values());
 }
 /**
+ * The feeds a group step centres on, and the offset its main move takes toward them (`centringOffset`), as the step reads them: undefined for a
+ * group the step does not centre (a bar, or a group with no feed of its own).
+ */
+function ownCentring(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string): { own: Feed[]; chosen: Feed[]; offset: number; verticals: number } | undefined {
+  if (model.document.groups[id]!.shape === 'bar') return undefined;
+  const { own, yielded } = groupFeeds(model, context, tier, list, id, false);
+  if (!own.length) return undefined;
+  const chosen = moveBeforeGrow(model) ? seatedFeeds(model, chosenFeeds(context, tier, own, yielded)) : chosenFeeds(context, tier, own, yielded);
+  // The child ports whose feed may own a vertical (the first child by x of its parent port, not yielded): a fan remainder can stand no drop straight.
+  const owning = chosen.filter(feed => context.winners.get(`${tier}:${feed.key}`) === portId(feed.child.ref) && !yielded.has(feed));
+  return { own, chosen, offset: centringOffset(chosen), verticals: new Set(owning.map(feed => portId(feed.child.ref))).size };
+}
+/**
+ * The seat of the centred groups of one row (dense-16x9 ticket 27): the least-absolute-deviations solution of "each group at the x its own feeds
+ * want" under the order of the row and the band gap between neighbours. Each group alone wants its box at `x + centringOffset`, which does not
+ * depend on where the group stands. Pool adjacent violators: a run of groups whose wanted boxes would overlap is seated as one unit on the
+ * weighted median of what its members want, so the packing no longer stacks such a row to one side of its feeds (the first group at its mean,
+ * the others to its right). The median, not the mean: a drop is straight or bent, and its slant does not count, so the unit keeps one member at
+ * its own feeds (the heaviest side holds), and a run of equal members stands centred, its middle member at the common mean. When the weight
+ * splits evenly, every value of the median interval is a median; the tie rule takes the end at which the member that comes first in the row
+ * stands on its own feeds. The weight of a group is the number of
+ * its wanted child ports whose feed may own a vertical (a fan remainder may not): each such drop is straight only at the group's own x; the
+ * width of a box is no part of a drop, and a group with no such port pulls the unit nowhere.
+ * A run holds only groups fed by the same parent nodes (the parents of all the group's own feeds): those are the groups that pile up on one
+ * feed mean. Groups fed by different parents that the packing pushes together keep the old pack (measured on the corpus: pooling every packed
+ * run moved 55 sheets and bent links on 17 of them, because the unit moved a group off feeds it stood straight on). A run is also broken by a
+ * group the step does not centre, by a rank cell (its frame column holds it), and between groups that a lane of 7a parts (different lane
+ * windows). Returns the pooled box x of each group the unit moves off its own wanted x; a member at its own x, and a group alone,
+ * take their own offset, as before. The row's slack and every bound are the step's: the main move stops at the overlay walls, the clamp takes the
+ * window (lanes, flanks, frame columns, the group before it, the tail the groups after it reserve), and every guard of the step holds as it does for
+ * a group's own mean. Read in group order, a geometric order (R3); a tie of values in the median is broken by that order.
+ */
+function rowSeats(model: LayoutModel, context: CentreContext, tier: number, list: Feed[]): Map<string, number> {
+  const order = context.groupOrder.get(tier)!, gap = bandGap(model), seats = new Map<string, number>();
+  type Item = { id: string; want: number; width: number; weight: number; parents: string };
+  let run: Item[] = [], window = '', feeding = '';
+  /**
+   * The weighted median of `values`: the first value, in ascending order and then group order, at which half the weight is reached. When the
+   * weight splits evenly there, that value and the next bound the median interval, and the tie rule takes the end that belongs to the member that
+   * comes first in the row (`at`): that member stands on its own feeds. The lower end alone measured worse: on `own-lane-is-an-obstacle` it put
+   * the second group on its feeds, and the first group's two drops bent and crossed (2 to 4 bends, 0 to 1 crossing).
+   */
+  const median = (values: readonly { value: number; weight: number; at: number }[]): number => {
+    const sorted = [...values].sort((p, q) => p.value - q.value || p.at - q.at), half = sorted.reduce((sum, item) => sum + item.weight, 0) / 2;
+    let below = 0;
+    for (const [index, item] of sorted.entries()) {
+      below += item.weight;
+      if (below < half - PLACEMENT_EPS) continue;
+      // An even split: every value between this one and the next is a median. The member that comes first in the row keeps its own feeds.
+      const next = sorted[index + 1];
+      return below <= half + PLACEMENT_EPS && next !== undefined && next.at < item.at ? next.value : item.value;
+    }
+    return sorted[sorted.length - 1]!.value;
+  };
+  const flush = (): void => {
+    if (run.length > 1) {
+      // In the coordinates `want - before`, where `before` is the room the groups ahead of a group take with their gaps, the order constraint is
+      // monotonicity, and the pooled blocks are its least-absolute-deviations fit.
+      const blocks: { members: { value: number; weight: number; at: number }[]; value: number }[] = [];
+      let before = 0;
+      for (const [at, item] of run.entries()) {
+        let block = { members: [{ value: item.want - before, weight: item.weight, at }], value: item.want - before };
+        before += item.width + gap;
+        while (blocks.length && blocks[blocks.length - 1]!.value > block.value + PLACEMENT_EPS) {
+          const members = [...blocks.pop()!.members, ...block.members];
+          block = { members, value: median(members) };
+        }
+        blocks.push(block);
+      }
+      for (const block of blocks) {
+        if (block.members.length < 2) continue;
+        for (const { at } of block.members) {
+          let x = block.value;
+          for (let i = 0; i < at; i++) x += run[i]!.width + gap;
+          if (Math.abs(x - run[at]!.want) > PLACEMENT_EPS) seats.set(run[at]!.id, x);
+        }
+      }
+    }
+    run = [];
+  };
+  for (const id of order) {
+    const read = context.columns.some(column => column.cells.has(id)) ? undefined : ownCentring(model, context, tier, list, id);
+    if (read === undefined) { flush(); window = ''; feeding = ''; continue; }
+    const limit = context.limits.get(id)!, key = `${limit.low}|${limit.high}`;
+    // Only groups fed by the same parent nodes pile up on one feed mean: a run is broken where the set of parents changes.
+    const parents = [...new Set(read.own.map(feed => feed.parent.ref.node))].sort().join('|');
+    if (key !== window || parents !== feeding) flush();
+    window = key; feeding = parents;
+    const box = model.groups[id]!.bounds!;
+    run.push({ id, want: box.x + read.offset, width: box.width, weight: read.verticals, parents });
+  }
+  flush();
+  return seats;
+}
+/**
+ * The offset the main move of the step of group `id` takes: toward the seat of its row (`rowSeats`) when the group stands in a pooled run, else
+ * toward the mean of its own chosen feeds. The seats are read once per tier, where the tier stands when its steps begin, as the tail reservation
+ * is: a step never moves the groups after it, so each later step begins where the seats were read, and a grown body of an earlier step changes
+ * the seats only at the next pass. The passes of 7c, their replays in 7f and the publication check read them the same way (R1).
+ */
+function stepOffset(model: LayoutModel, id: string, chosen: readonly Feed[], seats: ReadonlyMap<string, number>): number {
+  const seat = seats.get(id);
+  return seat === undefined ? centringOffset(chosen) : seat - model.groups[id]!.bounds!.x;
+}
+/**
  * The feeds the main move of a step centres on while seats stand (ADR-0027: the seat owns the body). A node the record seats on at least one
  * port of a node feed pulls the group only through the feeds of its kept ports: a feed its seat left out (the cap, the order of the face, the
  * row) would carry the body off the feeds it stands, pass after pass. A seat on transit-lane ports alone holds nothing: a lane follows its
@@ -1089,10 +1194,10 @@ let stepPass = 0;
 const carryCache = readCache('centreCarry');
 /** The groups a foreign drop would run along, by id. */
 const breachedIds = (model: LayoutModel): Set<string> => new Set([...keepOutShifts(model).keys()].map(item => item.id));
-function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
+function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   return withStepLinkKinds(model, () => {
     const began = model.groups[id];
-    const step = centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, base, carried);
+    const step = centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, rowSeat, base, carried);
     // The targets the step kept, grew toward or declined, read on the geometry it leaves on every exit (architecture-2 ticket 66).
     writeAlignmentTargets(model, model.groups[id]!.nodes, step.notes, warn ? stepPass : 0);
     // The seats, only when the step's own geometry stands: a step given back or kept at its start leaves no seat of its own (ADR-0027).
@@ -1164,11 +1269,11 @@ export function fallenSeatFault(model: LayoutModel): string | undefined {
   const fallen = fallenSeats(model, Object.keys(model.alignmentSeats).sort(), seatFeeds(model, centreContext(model, model.anchorTier)));
   return fallen.values().next().value;
 }
-function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
+function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
-  if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
+  if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat);
   const group = model.groups[id]!;
   const unbuilt = carried === undefined ? undefined : group.nodes.map(node => JSON.stringify(model.nodes[node]));
   // `moveGroup` leaves pill bounds behind, and the chord reads them: both readings are taken on rebuilt nodes.
@@ -1192,7 +1297,7 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   }
   const text = JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) });
   const snapshot = JSON.parse(text) as { group: LayoutGroup; nodes: LayoutNode[] };
-  const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
+  const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
@@ -1283,7 +1388,7 @@ function snapAlignedFaces(model: LayoutModel, group: LayoutGroup, wanted: Readon
     }
   }
 }
-function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>): { unresolved: Set<string>; group: LayoutGroup; notes: TargetNotes } {
+function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>): { unresolved: Set<string>; group: LayoutGroup; notes: TargetNotes } {
   const group = model.groups[id]!;
   const { own, wanted, yielded, conflicts, seats } = groupFeeds(model, context, tier, list, id, warn);
   const unresolved = new Set<string>(conflicts);
@@ -1334,7 +1439,8 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // has not grown moves as it always did; the wall then bounds only the growth that follows.
   const walls = new Map(group.rowOrder!.map(id => [id, overlayStops(model, model.nodes[id]!)]));
   const { farthestLeft, farthestRight } = farthest(model, walls);
-  const began = group.bounds!.x, toMean = centringOffset(chosen);
+  // Toward the seat of its row when the packing pools the group with its neighbours (dense-16x9 ticket 27), else toward its own feeds.
+  const began = group.bounds!.x, toMean = stepOffset(model, id, chosen, rowSeat);
   moveGroup(model, group, mainMove(model, group, farthestLeft, farthestRight, toMean), 0);
   const aligned = new Set<string>();
   // The window a seat slides a body in (ADR-0027): the slack of its row inside its group box, less the insets the box keeps beyond its bodies.
@@ -1348,6 +1454,10 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   const kept = new Set<string>(!seated ? [] : record === undefined ? [...startMisses].filter(([, miss]) => miss <= 0.5).map(([key]) => key)
     : group.nodes.flatMap(node => Object.hasOwn(record, node) ? record[node]!.ports : []));
   const owedBefore = seated ? seatOwes(model, seats, links, direct) : () => true, owes = (key: string): boolean => owedBefore(key) || kept.has(key);
+  // A group of a pooled run (`rowSeats`, dense-16x9 ticket 27) aligns inside the bodies it has: no member of the run stands at its own feeds, so a
+  // growth toward them would only widen the unit and push the other members further off; its feeds pull the unit, as a solid block's feeds do.
+  const pooled = rowSeat.has(id);
+  const inBody = (node: LayoutNode, limit: WideningLimit): WideningLimit => pooled ? { low: Math.max(limit.low, node.bounds!.x), high: Math.min(limit.high, right(node.bounds!)) } : limit;
   for (const nodeId of group.rowOrder!) {
     const node = model.nodes[nodeId]!;
     const stops = walls.get(nodeId)!;
@@ -1356,7 +1466,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
       // The default: each face grows its body in place toward its targets, up to the allowance (`alignSide`).
       for (const side of ['top', 'bottom'] as const) {
         const box = node.bounds!, fromX = box.x, fromWidth = box.width;
-        const kept = alignSide(model, node, side, wanted, siblingLimit(model, group, node), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'), heldChordPorts(model, node));
+        const kept = alignSide(model, node, side, wanted, inBody(node, siblingLimit(model, group, node)), stops, link => { stoppedBy ??= link; }, riserAvoidance(model, group.tier!, side as 'top' | 'bottom'), heldChordPorts(model, node));
         for (const key of kept) aligned.add(key);
         // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
         if (box.x < fromX - EPS || box.width > fromWidth + EPS) for (const key of kept) notes.grown.set(key, { low: box.x - wanted.get(key)!, high: right(box) - wanted.get(key)! });
@@ -1367,7 +1477,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const keptHere = record === undefined ? new Set([...kept].filter(key => nodePorts.has(key))) : Object.hasOwn(record, nodeId) ? new Set(record[nodeId]!.ports) : undefined;
     const recorded = record !== undefined && Object.hasOwn(record, nodeId) ? record[nodeId]! : undefined;
     const seatedFrom = node.bounds!.x;
-    const seat = seatNode(model, group, node, wanted, owes, rowWindow, stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from);
+    const seat = seatNode(model, group, node, wanted, owes, inBody(node, rowWindow), stops, link => { stoppedBy ??= link; }, seats, warn, keptHere, recorded?.from);
     for (const key of seat.kept) aligned.add(key);
     // A body that widened toward its targets records the room it reached, from each target's x (the record's `grown`, ticket 66).
     const box = node.bounds!;
@@ -1549,7 +1659,11 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // corridor follows (`LANE_FOLLOWS_ITS_CHILD`) — putting that group back leaves the corridor
   // without the child it was moved for.
   const missAfter = total(endMisses);
-  if (wanted.size && !aligned.size && !own.some(feed => feed.transit) && missAfter > 0.5 && missAfter >= missBefore - 0.5) {
+  // A member of a row unit (`rowSeats`, dense-16x9 ticket 27) is moved toward the seat of its unit, not toward its own feeds: its progress is
+  // measured to that seat. Measured to its own feeds, a member on one side of the unit's centre always moves away from them, the guard gave
+  // its move back, and a unit shifted off its seat stood still at every step (review 1 of ticket 27).
+  const seatX = rowSeat.get(id), nearerSeat = seatX !== undefined && Math.abs(group.bounds!.x - seatX) < Math.abs(began - seatX) - 0.5;
+  if (wanted.size && !aligned.size && !own.some(feed => feed.transit) && missAfter > 0.5 && missAfter >= missBefore - 0.5 && !nearerSeat) {
     model.groups[id] = saved.group;
     for (const node of saved.nodes) model.nodes[node.id] = node;
     packClear(model, context, tier, saved.group, previous);
@@ -1744,7 +1858,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
     let carry: CarriedReadings | undefined;
     for (const { tier, authority } of context.steps) {
       const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
-      const tail = tailReservation(model, context, tier, order);
+      const tail = tailReservation(model, context, tier, order), seats = rowSeats(model, context, tier, list);
       let previous: LayoutGroup | undefined;
       for (const id of order) {
         const group = model.groups[id]!;
@@ -1758,7 +1872,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
           continue;
         }
         const start = geometry(model);
-        const result = centreGroupStep(model, context, tier, list, id, previous, true, tail, undefined, carry);
+        const result = centreGroupStep(model, context, tier, list, id, previous, true, tail, seats, undefined, carry);
         carry = result.carry;
         if (!stepped && geometry(model).some((value, i) => Math.abs(value - start[i]!) > 0.5)) stepped = true;
         if (result.unresolved.size) unresolved.add(id);
@@ -1958,7 +2072,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
   for (const { tier, authority } of context.steps) {
     const list = centringFeeds(model, tier, authority), order = context.groupOrder.get(tier)!;
     // The reservation of the tier is read only by a replay, and a replay runs only for a group with a candidate: the first one reads it.
-    let tail: Map<string, number> | undefined;
+    let tail: Map<string, number> | undefined, seats: Map<string, number> | undefined;
     let previous: LayoutGroup | undefined;
     for (const id of order) {
       const group = model.groups[id]!;
@@ -2015,7 +2129,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
         sharedParts = JSON.parse(stillText) as Record<string, unknown>;
         freezeDeep(sharedParts);
       }
-      const reserved = tail ??= tailReservation(model, context, tier, order);
+      const reserved = tail ??= tailReservation(model, context, tier, order), pooled = seats ??= rowSeats(model, context, tier, list);
       const base: BaseReadings = baseReadings ??= { texts: nodeTexts! };
       const attempt = (full: boolean): { trial: LayoutModel; step: ReturnType<typeof centreGroupStep> } => {
         let trial: LayoutModel;
@@ -2027,7 +2141,7 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
           const fresh = JSON.parse(replayedText!) as Record<string, unknown>;
           trial = Object.assign(fresh, sharedParts, { nodes }) as unknown as LayoutModel;
         }
-        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved, base) };
+        return { trial, step: centreGroupStep(trial, context, tier, centringFeeds(trial, tier, authority), id, previous && trial.groups[previous.id], false, reserved, pooled, base) };
       };
       let replay: ReturnType<typeof attempt>;
       try { replay = recordTaps(taps, true, () => attempt(false)); } catch (error) {
@@ -2047,15 +2161,55 @@ function readCentreViolations(model: LayoutModel, ahead: boolean, shared: Centre
           if (!sameDeclines(model.alignmentTargets[face], trial.alignmentTargets?.[face])) result.push(`${ALIGNMENT_TARGETS_DIFFER}: ${face}`);
         }
       }
+      // A group its row seats off its own wanted x (`rowSeats`) leaves its wanted ports unresolved by design, so its ports prove nothing: the replay
+      // must also leave its box and its bodies where they stand, or the group is off its seat and no port of it is excused (R5, dense-16x9 ticket 27).
+      const offSeat = pooled.has(id) && [group.id, ...group.nodes].some(item => {
+        const was = (model.groups[item] ?? model.nodes[item])!.bounds!, now = (trial.groups[item] ?? trial.nodes[item])!.bounds!;
+        return Math.abs(now.x - was.x) > 0.5 || Math.abs(now.width - was.width) > 0.5;
+      });
       for (const { child, x, feed, port } of candidates) {
         // Only the ports the producer's own step could not resolve are excused, never their siblings.
-        if (step.unresolved.has(child)) continue;
+        if (!offSeat && step.unresolved.has(child)) continue;
         result.push(`${feed.link}: ${child} sits at x ${port.anchor!.x} instead of its feed x ${x}`);
       }
     }
+    result.push(...rowUnitFaults(model, replayed as LayoutModel, context, tier, authority, list, order, seats ??= rowSeats(model, context, tier, list), () => tail ??= tailReservation(model, context, tier, order)));
   }
   if (key !== undefined) checkedAnswers.set(model, { ...key, result: [...result], taps });
   return result;
+}
+/**
+ * The row units of one tier, checked as units (dense-16x9 ticket 27, review 1; R1, R5). The replay of each group above runs on the model as it
+ * stands, so a member of a unit that stands off its seat is held by its neighbours, which stand off it too: a whole unit shifted off its seat
+ * passes every replay of one group. The seat is joint (`rowSeats`: the unit's membership and the median of what its members want), so it is
+ * checked jointly: when a member stands off its seat (more than half a pixel), one pass of the tier's steps is replayed on a copy, in the order
+ * and with the seats and the tail reservation the passes of 7c read, and every member the pass moves (its box or a body) is a finding. A unit
+ * at its seat costs nothing; a unit the slack keeps off its seat (the clamp, a guard) stands where the pass leaves it, so the residual the slack
+ * forced is no finding. The check covers members with no candidate port (a bundle feed, a shared parent port): it reads boxes, not ports.
+ * The finding names the first own feed of the first moved member, so a spent budget names it as it names an open alignment (ADR-0010).
+ */
+function rowUnitFaults(model: LayoutModel, replayed: LayoutModel, context: CentreContext, tier: number, authority: number, list: Feed[], order: readonly string[],
+  seats: ReadonlyMap<string, number>, tail: () => Map<string, number>): string[] {
+  if (![...seats].some(([id, seat]) => Math.abs(model.groups[id]!.bounds!.x - seat) > 0.5)) return [];
+  const trial = JSON.parse(JSON.stringify(replayed)) as LayoutModel, reserved = tail();
+  const feeds = centringFeeds(trial, tier, authority);
+  let previous: LayoutGroup | undefined;
+  for (const id of order) {
+    const group = trial.groups[id]!;
+    if (trial.document.groups[id]!.shape === 'bar' || !feeds.some(feed => trial.document.nodes[feed.child.ref.node]!.group === id)) {
+      packClear(trial, context, tier, group, previous);
+      previous = standingBox(trial, group);
+      continue;
+    }
+    previous = centreGroupStep(trial, context, tier, feeds, id, previous, false, reserved, seats).group;
+  }
+  const moved = [...seats.keys()].filter(id => [id, ...model.groups[id]!.nodes].some(item => {
+    const was = (model.groups[item] ?? model.nodes[item])!.bounds!, now = (trial.groups[item] ?? trial.nodes[item])!.bounds!;
+    return Math.abs(now.x - was.x) > 0.5 || Math.abs(now.width - was.width) > 0.5;
+  }));
+  if (!moved.length) return [];
+  const link = groupFeeds(model, context, tier, list, moved[0]!, false).own[0]!.link;
+  return [`${link}: the row unit of ${[...seats.keys()].join(', ')} stands off its seat: a replay of its tier moves ${moved.join(', ')}`];
 }
 /** The code of the note that a model keeps the wide seats of the first feeds: narrowing it would have bent a link that stood straight (ticket 12, "narrow only if free"). */
 const KEPT_WIDE = 'CENTRE_SEATS_KEPT_WIDE';
