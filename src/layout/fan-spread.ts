@@ -105,7 +105,7 @@ export function measureFans(model: LayoutModel): FanMeasure {
       // top and bottom faces; a later round merges by pair and keeps the larger pitch, so the count does not grow with the rounds. Measured on
       // one face: 28 ports, 378 entries, 147 kB of record and ledger, 20 ms to install; 56 ports, 1540 entries, 600 kB, 261 ms; 100 ports,
       // 4950 entries, 1.9 MB, 2.1 s to install one entry at a time, which copies and sorts the face per entry (about quartic); the install
-      // merges each face in one pass and one sort (`addPairPitches`, 4 ms at 100 ports), and the floor check finds each pair through an index (`fanEntry`, 2 ms). The geometry reads only the n - 1 neighbour pairs of an order (`faceOffsets`), and `pairExcess` at most
+      // merges each face in one pass and one sort (`addPairPitches`, 4 ms at 100 ports), and the floor check finds each pair through a checked place hint (`fanEntry`, 2 ms). The geometry reads only the n - 1 neighbour pairs of an order (`faceOffsets`), and `pairExcess` at most
       // (n - 1) times the largest excess. An entry whose port has left the face reserves nothing: every reader reads the ports on the face.
       if (most === 0) continue;
       for (let k = 0; k < face.length; k++) for (let l = k + 1; l < face.length; l++) {

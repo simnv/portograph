@@ -384,25 +384,24 @@ export function declinedEntries(declined: DeclinedTrunks, revision: number): Res
 
 // ---- Predicates and validators ---------------------------------------------------------------------------------------------------
 
-/** An index of the fan entries of each face record, by their sorted port keys, with the length it was read at. */
-const fanIndex = new WeakMap<readonly PairPitch[], { length: number; entries: Map<string, PairPitch> }>();
 /**
- * The first fan entry of `list` for `ports`, as `list.find` gives it, in constant time after one pass over the face (dense-16x9 ticket 04): a
- * ledger holds C(n, 2) pair floors of a face of n ports, and a search per floor made the check quadratic in them (0.7 s at 100 ports). The
- * index is rebuilt when the face record changes its length, and a hit is read again against its ports, so it gives what the search gives.
+ * Where each fan pair stood in a face record the last time the record was read (dense-16x9 ticket 04). A hint only, like `portPlaces`: it is
+ * checked against the entry at that place on every use, and a pair is unique in a face record (`addPairPitches` merges by pair), so the answer
+ * is the one a search of the face gives. A ledger holds C(n, 2) pair floors of a face of n ports, and a search per floor made the check
+ * quadratic in them (0.7 s at 100 ports, 2 ms with the hint).
  */
+const fanPlaces = new WeakMap<readonly PairPitch[], Map<string, number>>();
 function fanEntry(list: readonly PairPitch[] | undefined, ports: readonly string[]): PairPitch | undefined {
   if (list === undefined) return undefined;
-  let index = fanIndex.get(list);
-  if (index === undefined || index.length !== list.length) {
-    const entries = new Map<string, PairPitch>();
-    for (const entry of list) if (entry.rule === 'fan' && !entries.has(entry.ports.join('|'))) entries.set(entry.ports.join('|'), entry);
-    index = { length: list.length, entries };
-    fanIndex.set(list, index);
-  }
-  const key = ports.join('|'), hit = index.entries.get(key);
-  if (hit !== undefined && hit.rule === 'fan' && hit.ports.join('|') === key) return hit;
-  return list.find(entry => entry.rule === 'fan' && entry.ports.join('|') === key);
+  const key = ports.join('|');
+  const holds = (at: number | undefined): at is number => at !== undefined && list[at]?.rule === 'fan' && list[at]!.ports.join('|') === key;
+  const hinted = fanPlaces.get(list)?.get(key);
+  if (holds(hinted)) return list[hinted];
+  const places = new Map<string, number>();
+  list.forEach((entry, at) => { const pair = entry.ports.join('|'); if (entry.rule === 'fan' && !places.has(pair)) places.set(pair, at); });
+  fanPlaces.set(list, places);
+  const at = places.get(key);
+  return at === undefined ? undefined : list[at];
 }
 
 /** The predicate of a floor against a placed model: sizes and pitches only grow, so it holds at every stage. */
