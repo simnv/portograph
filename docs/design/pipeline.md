@@ -965,38 +965,17 @@ not transit feeds; 7e owns their geometry. **Parents are authoritative during th
 port x is fixed by stage 5/7a, and below the anchor tier by the parent spread made once before the first step (below; Q120 reverses
 the old rule "parents are authoritative" there, architecture-2 ticket 32). G is centred
 horizontally under the barycentre of the feed set within the space between the lanes (7a) and
-neighbouring groups; then each node takes its **seat** (ADR-0027, `seatNode`): one decision that
-chooses the targets it stands, where its body stands in the slack of its row and how wide the body
-is, so each child port x := its parent port x where the seat holds it. Each window of targets
-consecutive in x whose targets keep the pitch of their face needs an interval (`alignedEdges`). The
-body slides to the nearest x that holds the interval inside its width; when the interval is wider,
-the body moves to its low edge and grows the rest. The slide stays between the row siblings, inside
-the group box less its insets and inside the window of the step, and clear of the overlay walls: the
-group moves by the main move, toward the mean of its feeds, and a slide past its box would grow the
-group. A grid cell, a stagger member and a node of a feeding chain do not slide. Each window also
-gives a growth in place, as before ADR-0027, for a body a guard keeps from moving. The seats rank by
-the most owed verticals (before 7f freezes the chords every target owes one), then the most
-targets, the least growth, the least slide, a move before a growth in place, then the port keys
-(R3). At most `SEAT_TRIES = 4` seats are made on the model and judged: every face keeps its targets
-(`alignSide`: the riser keep-out, the held chords of the ports it packs), and a seat that slides the
-body keeps the node move (`holdsNodeMove`), each held chord that follows a moved port, and what a
-resize keeps (`seatRefusal`: lane windows and sides, riser keep-out, span corridors, the label room
-of same-tier links, trunk extensions, side-lane far ports, and the exits of 7e). A refused seat is
-undone whole; when every try is refused the body stays and `ALIGNMENT_SEAT_REFUSED` names the guard.
-A body moves only for a seat that stands an owed vertical: a held chord runs at any angle, and a move for it alone would only take turns with the main move pass after pass. A seat that slides or grows a body is recorded (`alignmentSeats`, R1), and the record owns the body (ADR-0027, amendment of 2026-11-15): while the seat stands, the main move reads only the feeds of its kept ports; the recorded window is tried first and may move the body as far as a move+grow; the seat is decided again only for more owed verticals or targets; its cap reads the recorded width before the first seat (`from`); and a seat that falls in its step gives the body back to that box (`from` at the recorded offset `at`). The record lives through publication: a seat that no longer stands is withdrawn when the passes end and at the end of each rule from `centre` to `bands`, and a kept port off its feed at publication is a layout error. A port outside the seat keeps
-its pitch slot and its link is reported. A growth is bounded a third way as well, by the alignment cap
-(`withinAlignmentCap`, ADR-0027): the body may not end wider than `ALIGNMENT_CAP_TIMES` (5) × the width
-the node itself needs — its content and author floor, or its own ports on that side at their reserved
-pitch — and a body already wider than that, from a bar span or an earlier rule, aligns inside the width
-it has (ticket 29). A target that only a seat past the cap would stand, and that would stand more
-owed verticals or more targets than the chosen seat, is declined `cap` in the alignment target
-record; that decline names where the body stood, so the writer does not keep it and the publication
-and the vertical tally do not read it as a decision. A fourth bound is an
+neighbouring groups; then each child port x := its parent port x. A child port's x is feasible
+only if the child node can be widened to contain it without overlapping a sibling; if not, the
+link remains unpinned and is reported. A widening is bounded a third way as well: the body may not
+end wider than `ALIGNMENT_MAX_GROWTH` × the width the node itself needs — its content and author
+floor, or its own ports on that side at their reserved pitch — and a body already wider than that,
+from a bar span or an earlier rule, aligns inside the width it has (ticket 29). A fourth bound is an
 overlay chord. An overlay link with no end on the node, whose chord reaches the rows of the body and
 is not already under the body, stops the growth on its side at the chord less the node clearance
 (20 px) and half the node stroke. A port the stop declines stays at pitch from the last kept one, and
-the feed is reported `CENTRE_ALIGNMENT_INFEASIBLE`; the stop is reported `ALIGNMENT_STOPPED_AT_OVERLAY`. A node of a stored feeding chain (stage 5, fan wrap) never grows (`withinAlignmentCap` refuses any growth), and `centringFeeds` gives it only its feeds from its own chain or its block: stage 5 stood the chain over the block, and a feed from elsewhere would pull it off. A group lift can leave bands that hold only lifted groups (a push leaves them between a feeder and the units it fed before; `GroupLift.push`, stage 4): a tier whose authority band holds only lifted groups (and their flanks) is centred a second time on the nearest band toward the anchor that holds a group that did not lift (`centreContext`), so a vertical feed across those bands stays vertical; with no such band the step list is unchanged.
-A body that has grown wider than its own width
+the feed is reported `CENTRE_ALIGNMENT_INFEASIBLE`; the stop is reported `ALIGNMENT_STOPPED_AT_OVERLAY`. A node of a stored feeding chain (stage 5, fan wrap) has no growth allowance at all (`alignmentAllowance` returns its width), and `centringFeeds` gives it only its feeds from its own chain or its block: stage 5 stood the chain over the block, and a feed from elsewhere would pull it off. A group lift can leave bands that hold only lifted groups (a push leaves them between a feeder and the units it fed before; `GroupLift.push`, stage 4): a tier whose authority band holds only lifted groups (and their flanks) is centred a second time on the nearest band toward the anchor that holds a group that did not lift (`centreContext`), so a vertical feed across those bands stays vertical; with no such band the step list is unchanged.
+The bound of `ALIGNMENT_MAX_GROWTH` is unchanged. A body that has grown wider than its own width
 does not move past the same chord when centring moves its group. A body that has not grown moves as
 before. Unequal-x top/bottom normals generally need two orthogonal bends; routing determines the actual count. A parent port feeding **two** children cannot be vertical to
 both: the first (by child x) is vertical, the rest fan through a shared stem — the junction tree 7e
@@ -1049,23 +1028,37 @@ ticket 65's post-conditions, it leaves every overlay link that the step's own ge
 by count as ticket 75's guard reads it) still straight. A refused keep falls through to the step's geometry and declines the targets only
 the kept geometry stands: reason `riser`, `lane-crossing`, `span`, `chord-clearance` or `overlay-straight`, by the first key in key order.
 A decline is final for the placement attempt: the tally counts it neither before nor after, so no later pass tries the keep again. The
-centre rule creates the record `{}` at its input; it is read and written through 7f (the replays of the region too), and it lives until
-publication (ADR-0027, `RECORD_STAGES`), so the published layout carries it. A record before the centre rule's output and a guard decline
-in a model before the output of 7f (no producer before 7f runs the tally) are refused, as is a malformed record. A `cap` decline is the
-seat's own: it may stand from the centre rule on, its `by` is the node of its face, and the next step decides it again. A model whose centre rule ran no
+centre rule creates the record `{}` at its input; it is read and written through 7f (the replays of the region too), published with the
+output of 7f, and dropped by the route rule, so a routed layout does not carry it. A routed model with the record and a decline in a model
+before the output of 7f (no producer before 7f runs the tally) are refused, as is a malformed record. A model whose centre rule ran no
 producer (a hand-made transaction) has none: a later run records and declines nothing and warns `ALIGNMENT_TARGETS_UNDECIDED`. At the output of 7f the publication check names a face where its replay declines a target the record does not
 (`alignment-targets-differ`), and no diagnostic excuses it; `kept` and `grown` are history a later move leaves behind and are not compared. A guard on
 port order (G5) was measured and dropped: on the three sheets it changed it gave back the two bends ticket 65 won, because the only kept
 geometry that stands them turns another node's ports out of order (ticket 77 owns the face order).
 
-**A step is judged where it ends** (ADR-0027, clause 5; it replaces architecture-2 ticket 71). A step can widen a body toward its targets
-(`alignSide`) and then clamp the group into its window, so that no target stands; the width would stay, and no later rule removes it (the
-end trim keeps the port x). A step that widens a body and leaves every aligned port of its group off its x after the pack and the clamp is
-declined whole, as a window decline is: the group stands near its feed with the widths it began the step with, the record holds no growth
-and no seat of it, and the aligned targets are named as alignments the row cannot hold (R6). Ticket 71 gave such a growth back once, at the
-end of the centre rule, through a record (`givenBack`) and a second run of the passes; with the decline in every step the record named no
-node on any corpus sheet, and dense-16x9 ticket 02 removed it. The acceptance set of the seat (`test/layout/seat-acceptance.test.ts`) keeps
-its geometry tests.
+**A stranded growth is given back** (architecture-2 ticket 71, `LayoutModel.givenBack`, `src/layout/given-back.ts`). A step can widen a
+body toward its targets (`alignSide`) and then clamp the group into its window, so that no target stands; the width stays, and no later
+rule removes it (the end trim keeps the port x). The centre rule judges this once, at its end, on the record above: a node gives its
+growth back when its body is wider than at the rule's input, its faces hold a `grown` target and no `kept` one, none of its links stands
+vertical (a kept chord), and no parent spread grew it. A node at one end of a transit link gives back only when the port at the other end
+is given back too: 7f moves a corridor to a child it could not seat (`reseatLanes`) and refuses the move when the parent could then align
+to it, so a narrow child whose parent still chases the corridor would lose the follow. When anything is given back, the passes run once
+more from the rule's input with the record, and a step that widens a given-back body and leaves every aligned port of its group off its x after the clamp is
+declined as a window decline is: the group stands near its feed with the widths it began with. The judgement reads the end of all the
+passes, not one pass: a growth one pass strands is the one a later pass may complete. At most two runs, each with its own budget; a growth
+the second run strands is kept and named (`CENTRE_GROWTH_KEPT`, info), as is a given-back body a sibling's standing target lets keep its width. The record names each node and its `grown` ports in code-unit
+order; it is kept by every later rule and published, so the 7d to 7f replays and the publication check read the same decline (R1). A
+malformed record, or one before the centre rule, is refused.
+
+**With `layout.moveBeforeGrow: true`** (ADR-0027, an opt-in until ticket 15; dense-16x9 ticket 02). The rules above are the default. With
+the option, each node of a step takes one **seat** (`seatNode`): it slides the body inside the slack of its row (between its siblings,
+inside the group box less its insets, clear of the overlay walls) before it grows it, and grows only by what no slide gives, up to the
+alignment cap `ALIGNMENT_CAP_TIMES` = 5 times the width the node needs for itself (`withinAlignmentCap`), in place of
+`ALIGNMENT_MAX_GROWTH` = 12 (`alignmentAllowance`). A seat that slides or grows a body is recorded (`alignmentSeats`, kept through
+publication with `alignmentTargets`) and owns the body: the main move reads only its kept feeds, and a seat whose kept port no longer
+stands is withdrawn and gives the body back to the box it had before its first seat. The centre rule runs its passes once (no
+`givenBack` record), and a step that widens any body and leaves every aligned port of its group off its feed is declined whole (clause 5).
+At 7e a bent bundle block keeps the start of a face whose seat keeps a port. ADR-0027 states the rule, its trades and its acceptance set.
 
 **The sibling push covers the whole tier.** A widening takes the space of the groups after it.
 Those groups move right. This includes a group the step does not centre. It also includes a group
@@ -1090,7 +1083,7 @@ again after every replay.
 member just above the anchor tier is only as wide as the anchor row of its canton, and the member aligned over that row needs
 its end-port insets and its side-face pills beyond the outer feeds. That room is known before centring, so the centre rule
 records it before its first step (`alignedExtents`): the box the step would give the member, moved by the step's own main move
-and grown to the targets `keptTargets` keeps (the alignment's own bounds: the row siblings, the alignment cap and the
+and grown to the targets `keptTargets` keeps (the alignment's own bounds: the row siblings, `ALIGNMENT_MAX_GROWTH` and the
 overlay stops), with the margins and pills the box has beyond its bodies. Each edge is stored against an anchor-tier feed port,
 so the record moves with the canton. A member with a feed from outside its canton, or a transit feed, reserves nothing. Only
 the centre rule decides; a later replay that finds no record in a model with a canton reserves nothing and warns
@@ -1107,7 +1100,7 @@ child side alone aligns, and a child row cannot put two ports closer than its ro
 closer together than the top ports of its children, the drops slanted, and the child row stood under a neighbour of the parent. The
 centre rule therefore spreads such a parent once, at its first run, before its first step and before the aligned extents
 (`reserveParentSpreads`): each fed port goes to the spacing of its child, about the mean of the fed ports, so a block centred on its
-face stays centred (ticket 10). The body grows by the deficit and no further (`alignSide`, bounded by the alignment cap and the
+face stays centred (ticket 10). The body grows by the deficit and no further (`alignSide`, bounded by `ALIGNMENT_MAX_GROWTH` and the
 overlay stops, with no sibling bound), the nodes of its row before it move left by the growth on the left, the ones after it right
 by the growth on the right, and the group is clamped into the window the step of the parent's tier gives it (`stepWindow`: the lanes
 and flanks of 7a, the frame columns, the group before it and the room the groups after it reserve). A resize is no translation: the
@@ -1512,8 +1505,7 @@ node floor). A face with lateral ports keeps its x; a node with ports on both la
 their x and no node moves, so no plan, chord, lane or course changes. Each group box shrinks to its content (title floor
 included) inside the box it had; the linked-group grid runs again (honouring `gridRefusals`) and may grow a box onto a linked partner's
 extent, as its rule says; the regions, frames, tier bands and label bands are derived again. A trim whose grid would move a node, change a
-box's height or widen the drawing, or that would change a label band's clearance, end a grid refusal, contradict a lane, or leave a link
-label or an overlay track short of the room 7f reserved for it where that room held before the trim (`labelRoomHolds`), is declined
+box's height or widen the drawing, or that would change a label band's clearance, end a grid refusal or contradict a lane, is declined
 whole (`END_TRIM_DECLINED`, with the reason) and the draft is the one 7f left. A held chord that now leaves a narrower frame by a
 side edge is named by `STRAIGHT_LINK_EDGE`, as every 7f move after the freeze is. The record `bodyTrims` holds the body and box each
 trimmed node and changed group had before the trim; the centring replay of the publication check reads that geometry (`untrimmedModel`),
@@ -1530,9 +1522,8 @@ with no centring (`rebuildRegionGeometry(..., false)`), then the label bands and
 declines the move, undone whole (`CLOSE_UP_DECLINED`, with the group and the reason), when a port does not move by the shift with its
 node (a bundle seats it again), a label band changes, the grid moves a box or a grid refusal would no longer hold, two boxes overlap that
 did not, `validateLanes` fails, a frozen chord becomes blocked or leaves its frame by an edge, a reservation fails that held, a tier-gap
-plan needs more height or gets a new residual part or crowded leg, a link whose two ends stood on one x does not, a port that stood
-under the lane of its link (a perimeter or span lane, which does not follow the group) does not (ADR-0027, amendment of 2026-11-15),
-an overlay link loses its straight chord, or a link label loses its room. The shifts are recorded in `bodyTrims.shifts` and `bodyTrims.laneShifts`; the
+plan needs more height or gets a new residual part or crowded leg, a link whose two ends stood on one x does not, an overlay link loses
+its straight chord, or a link label loses its room. The shifts are recorded in `bodyTrims.shifts` and `bodyTrims.laneShifts`; the
 replay (`untrimmedModel`) moves the groups and lanes back, drops the routed paths and derives the rule geometry again, and the validator
 requires the close-up of that geometry to give the same shifts (`checkBodyTrims`). The close-up runs after the last move in x: before
 the chord freeze every centring replay of the 7f rounds reads a lane's x as its feed's x and moves the group back.

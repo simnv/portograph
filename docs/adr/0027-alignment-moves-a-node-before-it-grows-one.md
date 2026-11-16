@@ -1,6 +1,23 @@
 # ADR-0027: Alignment moves a node before it grows one
 
-Status: accepted for implementation (owner ruling, 2026-11-15). Tickets: `.scratch/dense-16x9/`.
+Status: opt-in until ticket 15 (owner ruling, 2026-11-16). The rule ships behind `layout.moveBeforeGrow: true`; the default
+stays the rule before this ADR (a body grows in place up to `ALIGNMENT_MAX_GROWTH` = 12 times its own width, and the centre rule
+gives back a stranded growth, architecture-2 ticket 71). It becomes the default when ticket 15 (the joint seat plan) passes the
+acceptance set. Accepted for implementation 2026-11-15. Tickets: `.scratch/dense-16x9/`.
+
+With the option off, every corpus sheet lays out as on main dc568f88 (0 layout-hash changes on the full corpus, 510 sheets). With
+the option on, every sheet lays out as the branch before the opt-in (e95b4aea merged with dc568f88). Six fixes of the branch change
+no corpus sheet with the option off, each alone and the six together, so they stand in both modes:
+
+- the lane reseat of 7f keeps a group beside its lane on its side (`crossesBeside`);
+- `chooseReseat` and the 7f draft compare the alignment target record when they judge a reseat;
+- the close-up keeps a port under its lane (`lanePorts`);
+- the end trim keeps the label room of a same-tier link (`labelRoomHolds`);
+- the end-trim replay reads the placement input, not the removed links;
+- the region rebuild of the centre rule names its open alignments.
+
+Every other part of the branch reads the option, the face recentring of 7c among them (81f108fd; it changes 7 corpus sheets with the
+option off).
 
 ## Decision
 
