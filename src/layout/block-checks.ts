@@ -3,6 +3,7 @@ import { chordEnds } from './overlay-paths.js';
 import type { Point } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
+import { BLOCK_TOLERANCE } from './tolerance.js';
 import { findPort } from './row-paths.js';
 import { facePairPitches } from './pair-pitch.js';
 import { portId } from './skeleton-graph.js';
@@ -16,15 +17,8 @@ export const BLOCK_FLOOR_ANGLE = 15;
 export const flatMember = (model: LayoutModel, link: LayoutLink): boolean =>
   link.solidBlock === true && model.blockReservations?.find(item => item.family === link.fanFamily)?.mode === 'flat';
 
-/**
- * The geometric tolerance of a solid-block reservation, in px (dense-16x9 ticket 31, review 1 ruling): how far a member may stand short of its
- * angle (read in px of height), its floor, or its box clearance and still hold it. The publication validator, the judge of a move
- * (`blockMoveRefusal`) and the judge of a step (`chordsHold`) read this one constant (R1); `EPS` stays a float compare. Why 0.01 px: the
- * block is reserved at exactly its demand, and the 7c passes that run after the freeze are an iterative solve, whose residue moves one end of
- * a member by 0.001 to 0.004 px. On the ticket 31 synthetic that left the chord 1.5e-4 to 2.4e-3 px of height short of 34 degrees, so a
- * drawn constraint cannot be held tighter than that. 0.01 px is about 4 times the largest dip measured, and invisible in the drawing.
- */
-export const BLOCK_TOLERANCE = 0.01;
+/** The geometric tolerance of a solid-block reservation, px (`tolerance.ts`, dense-16x9 ticket 31). */
+export { BLOCK_TOLERANCE };
 
 /** The height, in px, that a chord from `a` to `b` lacks to stand at `angle`: negative when it stands steeper (the one angle reading of a block member). */
 export const angleShortfall = (a: Point, b: Point, angle: number): number =>
