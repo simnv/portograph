@@ -1,0 +1,62 @@
+# Expected: two complete 2x7 blocks of two hub groups share one tier gap past the cap; the gap is reserved once for both (dense-16x9 ticket 04, slice 3).
+# The sheaf excuses chords of one block only: members that crowd the other block's chords fall back alone.
+portograph: 2
+profile: network
+groups:
+  core-west: {tier: 0}
+  core-east: {tier: 0}
+  pair1: {tier: 1}
+  pair2: {tier: 1}
+  pair3: {tier: 1}
+  pair4: {tier: 1}
+  pair5: {tier: 1}
+  pair6: {tier: 1}
+  pair7: {tier: 1}
+nodes:
+  core-west-a: {group: core-west, class: router}
+  core-west-b: {group: core-west, class: router}
+  core-east-a: {group: core-east, class: router}
+  core-east-b: {group: core-east, class: router}
+  node1a: {group: pair1, class: router}
+  node1b: {group: pair1, class: router}
+  node2a: {group: pair2, class: router}
+  node2b: {group: pair2, class: router}
+  node3a: {group: pair3, class: router}
+  node3b: {group: pair3, class: router}
+  node4a: {group: pair4, class: router}
+  node4b: {group: pair4, class: router}
+  node5a: {group: pair5, class: router}
+  node5b: {group: pair5, class: router}
+  node6a: {group: pair6, class: router}
+  node6b: {group: pair6, class: router}
+  node7a: {group: pair7, class: router}
+  node7b: {group: pair7, class: router}
+links:
+  - [core-west-a, node1a]
+  - [core-west-a, node2a]
+  - [core-west-a, node3a]
+  - [core-west-a, node4a]
+  - [core-west-a, node5a]
+  - [core-west-a, node6a]
+  - [core-west-a, node7a]
+  - [core-west-b, node1b]
+  - [core-west-b, node2b]
+  - [core-west-b, node3b]
+  - [core-west-b, node4b]
+  - [core-west-b, node5b]
+  - [core-west-b, node6b]
+  - [core-west-b, node7b]
+  - [core-east-a, node1a]
+  - [core-east-a, node2a]
+  - [core-east-a, node3a]
+  - [core-east-a, node4a]
+  - [core-east-a, node5a]
+  - [core-east-a, node6a]
+  - [core-east-a, node7a]
+  - [core-east-b, node1b]
+  - [core-east-b, node2b]
+  - [core-east-b, node3b]
+  - [core-east-b, node4b]
+  - [core-east-b, node5b]
+  - [core-east-b, node6b]
+  - [core-east-b, node7b]

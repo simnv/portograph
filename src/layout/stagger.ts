@@ -1063,7 +1063,7 @@ function validateChain(model: LayoutModel, plan: StaggerRow, claimed: ReadonlySe
 }
 
 /** The extent of every node, group box and frame box of a placed model, width x height (the acceptance gate's canvas). */
-function placedExtent(model: LayoutModel): { width: number; height: number } {
+export function placedExtent(model: LayoutModel): { width: number; height: number } {
   const boxes = [...Object.values(model.nodes).flatMap(node => node.bounds ? [node.bounds] : []),
     ...Object.values(model.groups).flatMap(group => group.bounds && group.nodes.length ? [group.bounds] : []), ...(deriveFrames(model) ?? []).map(frame => frame.box)];
   if (!boxes.length) return { width: 0, height: 0 };

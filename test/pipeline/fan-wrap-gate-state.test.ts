@@ -21,7 +21,8 @@ describe('fan wrap: the comparison run leaves no state behind a kept wrap', () =
       options: {}, maxReruns: 3, placements: 0, reruns: 0, blockProbes: 0, gateRuns: 0, placeCap: 4,
       timed: async <T>(_label: string, run: () => T | Promise<T>): Promise<T> => run(),
       place: async (kept: Parameters<Env['place']>[0]): Promise<LayoutModel> => {
-        env.placements++;
+        // As `place` counts: a placement started inside an exempt trial is credited as it starts (`Env.exemptPlacing`).
+        env.placements++; if (env.exemptPlacing) env.gateRuns++;
         calls.push({ arranged: env.arranged, trunks: declinedTrunksOf(kept).has('t') });
         if (calls.length === 1) { env.arrangedRows = ['w']; return wrapped; }
         env.arrangedRows = [];

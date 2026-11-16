@@ -692,6 +692,11 @@ export interface LayoutModel {
   fanFamilies?: FanFamily[];
   /** Ticket 83. Absent before the settled gap draft or with no solid block; [] cannot validate a block. */
   blockReservations?: BlockReservation[];
+  /**
+   * The gap the aspect choice of the complete placement gave each flat solid block (dense-16x9 ticket 04, slice 3; `chooseFlatGaps` in
+   * pipeline/initial.ts): a placement input, read by `reserveBlockGaps` in 7e. Absent: every flat gap at its floor.
+   */
+  flatBlockGaps?: FlatBlockGap[];
   /** Placement refusals restored by stage 1; absent when no geometry probe declined a block. */
   declinedSolidBlocks?: { family: string; reason: string }[];
   /** Terminal one-link followers seated below the block in stage 5. */
@@ -836,11 +841,11 @@ export interface LayoutModel {
 /** A unit of a direct family: one node, or one packed row of one layout group (`group`). */
 export type DirectUnit = { kind: 'node'; id: string; group: string } | { kind: 'row'; id: string; group: string; nodes: string[] };
 /**
- * Why a member of a triggered direct family stays orthogonal: a `chordVerdict` refusal, `crossing` or
+ * Why a member of a triggered direct family stays orthogonal: a `chordVerdict` refusal (`floor` is a solid block member's only, never a direct one's), `crossing` or
  * `clearance` (another member of the chosen set), `leg`, `chord` or `title` (the fixed-point checks beside the chosen set), `crowds` (it
  * would push a chosen member off its fixed point).
  */
-export type DirectMemberReason = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg'
+export type DirectMemberReason = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg' | 'floor'
   | 'angle' | 'crossing' | 'clearance' | 'crowds';
 /** One direct family as 7f decided it (`LayoutModel.directFamilies`). */
 export interface DirectFamily {
@@ -886,6 +891,8 @@ export interface FanFamily {
   members: { link: string; hub: string; unit: string }[];
 }
 /** Placement-owned floor between tier-band edges, capped before acceptance. Mandatory room may exceed it. */
+/** The gap of one flat solid block that the aspect choice took (`LayoutModel.flatBlockGaps`). */
+export interface FlatBlockGap { family: string; gap: number }
 export interface BlockReservation {
   family: string;
   above: number;
@@ -894,13 +901,18 @@ export interface BlockReservation {
   cap: number;
   chosen: number;
   pitch: number;
+  /** Past the cap: the block stays straight and flatter, its gap chosen by the aspect aim at `floor` or more (dense-16x9 ticket 04, slice 3). */
+  mode?: 'flat';
+  /** The gap that holds the flattest member at the floor angle; set with `mode: 'flat'`. */
+  floor?: number;
 }
 /**
  * Why a fan member stays orthogonal: a chord refusal of its own (at the freeze, or in the cascade after a sibling fell back: `chord`, `leg`,
  * `title`), `family` (the joint search left it out), `stem` (it passes the stem of a sibling fallback, at the freeze or at the end of 7f),
- * `crowds` (7f brought it within the clearance of a planned part) or `title` (a group title placed in 7f still meets it).
+ * `crowds` (7f brought it within the clearance of a planned part), `title` (a group title placed in 7f still meets it) or `floor` (a member of a flat
+ * solid block flatter than the floor angle, dense-16x9 ticket 04).
  */
-export type FanFallbackReason = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg' | 'family' | 'stem' | 'crowds';
+export type FanFallbackReason = 'transit' | 'faces' | 'edge' | 'frame' | 'title' | 'body' | 'pill' | 'lane' | 'corridor' | 'chord' | 'leg' | 'family' | 'stem' | 'crowds' | 'floor';
 /** How the freeze drew one fan member (`LayoutModel.fanAdmissions`). */
 export interface FanAdmission {
   link: string;

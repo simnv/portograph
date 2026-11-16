@@ -12,8 +12,8 @@ import { portId } from './skeleton-graph.js';
 import { gatherPairs } from './bundle-ends.js';
 import { bundleNeighboursOf } from './reservations.js';
 import { SolidBlockRefusal } from './placement-refusal.js';
-import { BLOCK_ANGLE, BLOCK_CAP } from './block-checks.js';
-const radians = BLOCK_ANGLE * Math.PI / 180;
+import { BLOCK_ANGLE, BLOCK_CAP, BLOCK_FLOOR_ANGLE, memberChord } from './block-checks.js';
+const radians = BLOCK_ANGLE * Math.PI / 180, floorRadians = BLOCK_FLOOR_ANGLE * Math.PI / 180;
 
 /**
  * Ticket 83: capacity is owned before resizing, never by the chord consumer. Dense-16x9 ticket 04 (slice 1): the pitch is a neighbour-pair
@@ -130,18 +130,45 @@ export function seatBlockOrder(model: LayoutModel): void {
     }
     const free = groups.filter(id => model.groups[id]!.frame === undefined && id !== family.group);
     permuteGroupSlots(model, free);
-    // A block's declaration tie also orders its terminal follower groups by their parents.
-    // Otherwise an incidental ELK link order leaves the follower tier opposite the reordered far tier.
-    const followers = terminalFollowerRows(model, new Set(family.farNodes!)).map(({ group, links }) => ({
-      id: group.id,
-      target: links.reduce((sum, { parent }) => {
-        const box = model.nodes[parent.node]!.bounds!;
-        return sum + box.x + box.width / 2;
-      }, 0) / links.length,
-    })).sort((a, b) => a.target - b.target || a.id.localeCompare(b.id)); // Final tie-break: group id.
-    permuteGroupSlots(model, followers.map(item => item.id));
+    // Every free row that takes its order from the reordered groups follows in this step (dense-16x9 ticket 04, slice 3), tier by tier down.
+    orderFedGroups(model, free);
   }
   rebuildBands(model, false);
+}
+
+/**
+ * The free groups that take their order from groups this step reordered (`moved`): on the sub-tier directly below each moved group, every free
+ * group (no frame, no flank) with a link of any layer, bundle or kind to a node of a moved group. Its feed key is the mean centre x of the
+ * far ends of all its links into the sub-tier above, read on the group (not `orderByFeeds`' key, which reads the row positions of the routed feeds of frame cells); the fed groups take their tier's
+ * slots in key order (group id breaks a tie) and foreign slots stay. The groups it turns are moved in their turn, so a row fed from them
+ * follows too: one pass per sub-tier, at most the sub-tier count (R4). Frame cells and child frames follow through `orderByFeeds`, which
+ * runs after this step; a canton keeps its author order (D1).
+ */
+function orderFedGroups(model: LayoutModel, moved: readonly string[]): void {
+  let from = new Set(moved);
+  for (let pass = 0, tiers = new Set(Object.values(model.groups).map(group => group.tier)).size; from.size && pass < tiers; pass++) {
+    const nodes = new Set([...from].flatMap(id => model.groups[id]!.nodes));
+    const above = new Set([...from].map(id => model.groups[id]!.tier!));
+    const keys = new Map<string, number[]>();
+    for (const link of model.links) {
+      const ends = link.attachments ? [link.attachments.from.node, link.attachments.to.node] : [link.from.node, link.to.node];
+      if (ends.some(end => end === undefined)) continue;
+      for (const [own, far] of [[ends[0]!, ends[1]!], [ends[1]!, ends[0]!]] as const) {
+        const group = model.groups[model.document.nodes[own]!.group]!, parent = model.groups[model.document.nodes[far]!.group]!;
+        if (group.frame !== undefined || group.flank !== undefined || from.has(group.id) || !above.has(group.tier! - 1) || parent.tier !== group.tier! - 1) continue;
+        const box = model.nodes[far]!.bounds!;
+        (keys.get(group.id) ?? keys.set(group.id, []).get(group.id)!).push(box.x + box.width / 2);
+      }
+    }
+    // A group with no link into a moved group keeps its slot.
+    const fed = [...keys].filter(([id]) => model.links.some(link => {
+      const ends = link.attachments ? [link.attachments.from.node, link.attachments.to.node] : [link.from.node, link.to.node];
+      return ends.some(end => end !== undefined && model.document.nodes[end]!.group === id) && ends.some(end => end !== undefined && nodes.has(end));
+    })).map(([id, xs]) => ({ id, key: xs.reduce((sum, x) => sum + x, 0) / xs.length }))
+      .sort((a, b) => a.key - b.key || a.id.localeCompare(b.id)); // Final tie-break: group id.
+    permuteGroupSlots(model, fed.map(item => item.id));
+    from = new Set(fed.map(item => item.id));
+  }
 }
 
 /** The same terminal rows are eligible for parent order at stage 4 and a facing-port seat at stage 5. */
@@ -178,14 +205,20 @@ function permuteGroupSlots(model: LayoutModel, ids: readonly string[]): void {
   }
 }
 
-/** Final-x draft before the freeze. Replays after the freeze only read this record.
+/**
+ * The gap each solid block owes before the freeze. Replays after the freeze only read this record.
  * Angle and each facing-edge demand combine by max; shared gap demands also combine by max.
  * The initial draft and the mandatory-pack forecast each contribute one read and one y move; pitch already fixes x capacity.
+ *
+ * Past the cap (dense-16x9 ticket 04, slice 3): a block whose 34 degree demand passes `BLOCK_CAP` stays straight and flatter (`mode: 'flat'`). Its
+ * floor is the demand that holds its flattest member at `BLOCK_FLOOR_ANGLE`. The gap stands at the floor, or at the gap the aspect choice of the
+ * complete placement gave it (`flatBlockGaps`, chosen by `chooseFlatGaps` on a placement with every flat gap at its floor), clamped to the floor and
+ * the 34 degree demand. Under-cap blocks that share a gap with a flat block keep their own floor (by max).
  */
 export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutModel, growth: Map<number, number>) => void, geometry = model): void {
   if (model.frozenChords !== undefined || (geometry === model && model.blockReservations !== undefined) || !model.fanFamilies?.some(family => family.kind === 'solid')) return;
-  const grown = new Map<number, number>();
   const declined = new Map<string, string>();
+  const demands: { family: string; above: number; below: number; steep: number; floor: number; gap: number; pitch: number }[] = [];
   model.blockReservations = [];
   for (const family of model.fanFamilies) {
     if (family.kind !== 'solid') continue;
@@ -194,16 +227,19 @@ export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutMo
       const ports = Object.values(link.attachments!).map(ref => findPort(geometry, ref)!).sort((a, b) => a.anchor!.y - b.anchor!.y);
       return ports[0]!.side !== 'bottom' || ports[1]!.side !== 'top';
     })) { declined.set(family.id, 'non-facing-ports'); continue; }
-    let required = 0, above = Infinity, below = -Infinity, gap: number;
+    let steep = 0, floor = 0, above = Infinity, below = -Infinity;
     for (const link of links) {
       const ends = Object.values(link.attachments!).map(ref => ({ ref, port: findPort(geometry, ref)!, tier: model.groups[model.document.nodes[ref.node]!.group]!.tier! })).sort((a, b) => a.tier - b.tier);
       const upper = ends[0]!, lower = ends[1]!, a = upper.port.anchor!, b = lower.port.anchor!;
       above = upper.tier; below = lower.tier;
       const dx = Math.abs(b.x - a.x), dy = b.y - a.y;
+      // The drawn chord runs face point to face point (`memberChord`; a named port's pill shortens its rise): the floor is read on it (R1).
+      const drawn = memberChord(geometry, link), faceDy = drawn === undefined ? dy : Math.abs(drawn.to.y - drawn.from.y);
       const top = geometry.tierBands.find(band => band.tier === above)!.bounds!;
       const bottom = geometry.tierBands.find(band => band.tier === below)!.bounds!;
-      gap = bottom.y - top.y - top.height;
-      let target = dx * Math.tan(radians);
+      const gap = bottom.y - top.y - top.height;
+      // The endpoint boxes: a chord that leaves a box through its facing edge, not its side, owes this rise whatever its angle.
+      let entry = 0;
       for (const box of groupBoxes(geometry)) {
         const cells = model.document.frames?.[box.id] ? frameSubtreeCells(model.document.frames, box.id) : [box.id];
         const ownsUpper = cells.includes(model.document.nodes[upper.ref.node]!.group);
@@ -213,45 +249,39 @@ export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutMo
         const offset = ownsUpper ? box.bounds.y + box.bounds.height - a.y : b.y - box.bounds.y;
         const towardRight = ownsUpper ? b.x > a.x : a.x > b.x;
         const room = towardRight ? box.bounds.x + box.bounds.width - GROUP_EDGE_LINK_CLEARANCE - port.x : port.x - box.bounds.x - GROUP_EDGE_LINK_CLEARANCE;
-        if (offset > 0) target = Math.max(target, room > 0 ? offset * dx / room : Infinity);
+        if (offset > 0) entry = Math.max(entry, room > 0 ? offset * dx / room : Infinity);
       }
       // Each chord owes only the deficit beyond the height already inside its endpoint bands.
-      required = Math.max(required, target - (dy - gap));
+      // A member that no gap lets leave its box through the facing edge (an infinite entry) owes the angle only, and falls back alone (`chordBoxRefusal`).
+      steep = Math.max(steep, Math.max(dx * Math.tan(radians), Number.isFinite(entry) ? entry : 0) - (dy - gap));
+      // The floor is the angle alone: a member whose box entry asks more than the chosen gap falls back alone (`chordBoxRefusal`).
+      floor = Math.max(floor, dx * Math.tan(floorRadians) - (faceDy - gap));
     }
-    if (required > BLOCK_CAP + EPS) { declined.set(family.id, 'gap-cap: needs ' + required.toFixed(2) + ' px, cap ' + BLOCK_CAP + ' px'); continue; }
     const originalTop = model.tierBands.find(band => band.tier === above)!.bounds!;
     const originalBottom = model.tierBands.find(band => band.tier === below)!.bounds!;
-    gap = originalBottom.y - originalTop.y - originalTop.height;
-    const chosen = Math.max(gap, required);
-    model.blockReservations.push({ family: family.id, above, below, target: required, cap: BLOCK_CAP, chosen, pitch: blockPitch(links) });
-    grown.set(below, Math.max(grown.get(below) ?? 0, chosen - gap));
+    demands.push({ family: family.id, above, below, steep, floor, gap: originalBottom.y - originalTop.y - originalTop.height, pitch: blockPitch(links) });
   }
   if (declined.size) throw new SolidBlockRefusal(declined);
-  if ([...grown.values()].some(value => value > EPS)) moveBands(model, grown);
-}
-
-
-/** A conservative stage-5 cap bound: even zero inter-node gaps and optimal row translation
- * cannot place one hub face within 34 degrees of both ends of a wider complete row.
- * Endpoint band heights are credited in full, so this can only decline a provably over-cap block.
- */
-export function declineOversizedBlocks(model: LayoutModel): void {
-  const declined = new Map<string, string>();
-  for (const family of model.fanFamilies ?? []) {
-    if (family.kind !== 'solid') continue;
-    const sides = [family.hubs, family.farNodes!];
-    if (sides.some(ids => new Set(ids.map(id => model.groups[model.document.nodes[id]!.group]!.tier)).size !== 1)) continue;
-    let span = 0;
-    for (const [index, ids] of sides.entries()) {
-      const widths = ids.map(id => model.nodes[id]!.size!.width).sort((a, b) => b - a);
-      const interior = widths.slice(2).reduce((sum, width) => sum + width, 0);
-      const face = Math.max(...sides[1 - index]!.map(id => model.nodes[id]!.size!.width));
-      span = Math.max(span, (interior - face) / 2);
-    }
-    const tiers = sides.map(ids => model.groups[model.document.nodes[ids[0]!]!.group]!.tier!);
-    const credit = tiers.reduce((sum, tier) => sum + model.tierBands.find(band => band.tier === tier)!.bounds!.height, 0);
-    const floor = span * Math.tan(radians) - credit;
-    if (floor > BLOCK_CAP + EPS) declined.set(family.id, `gap-cap: stage-5 lower bound ${floor.toFixed(2)} px, cap ${BLOCK_CAP} px`);
+  const flat = (item: typeof demands[number]): boolean => item.steep > BLOCK_CAP + EPS;
+  // The mandatory gap of each tier gap: every under-cap block's 34 degree demand and every flat block's floor, by max.
+  const mandatory = new Map<number, number>(), room = new Map<number, number>();
+  for (const item of demands) mandatory.set(item.below, Math.max(mandatory.get(item.below) ?? item.gap, item.gap, flat(item) ? item.floor : item.steep));
+  // The room of a flat gap: up to its 34 degree demand, box entries included.
+  for (const item of demands) if (flat(item)) room.set(item.below, Math.max(room.get(item.below) ?? 0, item.steep - mandatory.get(item.below)!));
+  // A flat gap stands at its floor, or at the gap the aspect choice of the complete placement gave it (`flatBlockGaps`, `chooseFlatGaps`),
+  // never below the floor nor past the 34 degree demand of the gap.
+  const gapOf = new Map(mandatory);
+  for (const [below, value] of room) {
+    const asked = Math.max(-Infinity, ...demands.filter(item => item.below === below && flat(item))
+      .map(item => model.flatBlockGaps?.find(entry => entry.family === item.family)?.gap ?? -Infinity));
+    if (Number.isFinite(asked)) gapOf.set(below, Math.min(mandatory.get(below)! + value, Math.max(mandatory.get(below)!, asked)));
   }
-  if (declined.size) throw new SolidBlockRefusal(declined);
+  const growth = new Map<number, number>();
+  for (const item of demands) {
+    const chosen = gapOf.get(item.below)!;
+    model.blockReservations.push({ family: item.family, above: item.above, below: item.below, target: item.steep, cap: BLOCK_CAP, chosen, pitch: item.pitch,
+      ...(flat(item) ? { mode: 'flat' as const, floor: item.floor } : {}) });
+    growth.set(item.below, chosen - item.gap);
+  }
+  if ([...growth.values()].some(value => value > EPS)) moveBands(model, growth);
 }

@@ -1,4 +1,4 @@
-# Expected: Stage 5 proves this wide complete 2x6 block exceeds the cap before a region-placement probe (ticket 83 review).
+# Expected: this wide complete 2x6 block passes the cap (ticket 83 review); since dense-16x9 ticket 04 slice 3 it stays straight and flatter, its gap set by the aspect aim.
 portograph: 2
 profile: network
 groups:

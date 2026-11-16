@@ -15,11 +15,14 @@ const yaml = readFileSync(new URL('../../goldens/synthetic/a-centring-step-after
 const run = (text: string, cold = false): Promise<LayoutModel> =>
   layout(parse(text), { createElkAttempt: cold ? createColdAttempt : createAttempt, createRouteAttempt: createAvoidAttempt });
 const solidMembers = (model: LayoutModel): string[] => (model.fanFamilies ?? []).filter(family => family.kind === 'solid').flatMap(family => family.members.map(member => member.link));
-/** Moves one node and its ports by dx, as a mover after the freeze would. */
-const shift = (model: LayoutModel, id: string, dx: number): void => {
+/** Moves one node, its ports and their pills by (dx, dy), as a mover after the freeze would. */
+const shift = (model: LayoutModel, id: string, dx: number, dy = 0): void => {
   const node = model.nodes[id]!;
-  node.bounds = { ...node.bounds!, x: node.bounds!.x + dx };
-  for (const port of node.ports) if (port.anchor) port.anchor = { ...port.anchor, x: port.anchor.x + dx };
+  node.bounds = { ...node.bounds!, x: node.bounds!.x + dx, y: node.bounds!.y + dy };
+  for (const port of node.ports) {
+    if (port.anchor) port.anchor = { x: port.anchor.x + dx, y: port.anchor.y + dy };
+    if (port.pill) port.pill = { ...port.pill, bounds: { ...port.pill.bounds, x: port.pill.bounds.x + dx, y: port.pill.bounds.y + dy } };
+  }
 };
 
 describe('a move after the chord freeze keeps every solid-block reservation (dense-16x9 ticket 31)', () => {
@@ -128,5 +131,36 @@ describe('a move after the chord freeze keeps every solid-block reservation (den
     expect(JSON.stringify({ ...model, diagnostics: model.diagnostics.filter(item => item.code !== POST_FREEZE_MOVE_REFUSED) })).toBe(before);
     expect(edge(model).grown).toBe(0);
     expect([...history]).toEqual(['node:earlier', 'rank-spent:hub#1:0']);
+  }, 180000);
+
+  it('reads a flat block member by its sizes too: the box clearance and the floor angle of its drawn chord (dense-16x9 ticket 04 slice 3)', async () => {
+    const flat = structuredClone(await run(readFileSync(new URL('../../goldens/synthetic/a-two-by-seven-block-past-the-cap-stays-straight.yaml', import.meta.url), 'utf8')));
+    expect(flat.blockReservations!.map(entry => entry.mode)).toEqual(['flat']);
+    expect(blockReservationFaults(flat).size).toBe(0);
+    const member = flat.links.find(link => link.id === 'link-1')!, core = member.attachments!.from.node, other = member.attachments!.to.node;
+    const away = Math.sign(flat.nodes[other]!.bounds!.x - flat.nodes[core]!.bounds!.x) || 1;
+    const short = (state: LayoutModel, constraint: string): number => blockReservationFaults(state).get('link-1')?.find(fault => fault.constraint.startsWith(constraint))?.short ?? 0;
+    // The core end 20 px aside: link-1 leaves the core box by the side edge, too near the corner.
+    const broken = structuredClone(flat);
+    shift(broken, core, -20);
+    expect([...blockReservationFaults(broken).keys()]).toEqual(['link-1']);
+    expect(short(broken, 'box:')).toBeGreaterThan(0);
+    // The pixel that takes the crossing nearer the corner is refused; the move back is kept.
+    const nudged = (dx: number): LayoutModel => { const state = structuredClone(broken); shift(state, core, dx); return state; };
+    const worse = [nudged(-1), nudged(1)].find(state => short(state, 'box:') > short(broken, 'box:'))!;
+    expect(worse).toBeDefined();
+    expect(blockMoveRefusal(broken, worse)?.fault).toBe('link-1 lost its reserved box clearance (edge), further than before the move');
+    expect(blockMoveRefusal(worse, broken)).toBeUndefined();
+    // The other end moved away along its row: the drawn chord flattens past the floor; one more pixel is refused.
+    let dx = 1;
+    const flatter = structuredClone(flat);
+    for (; dx < 5000 && short(flatter, 'angle') === 0; dx++) shift(flatter, other, away, 0);
+    expect(short(flatter, 'angle')).toBeGreaterThan(0);
+    const flattest = structuredClone(flatter);
+    shift(flattest, other, away, 0);
+    expect(blockMoveRefusal(flatter, flattest)?.fault).toBe('link-1 lost its reserved angle, further than before the move');
+    // The move back heals the angle but takes the side crossing nearer the core box's corner: a fault grows, so it is refused too.
+    expect(short(flatter, 'angle')).toBeLessThan(short(flattest, 'angle'));
+    expect(blockMoveRefusal(flattest, flatter)?.fault).toBe('link-1 lost its reserved box clearance (edge), further than before the move');
   }, 180000);
 });

@@ -1,5 +1,7 @@
-import { chordBoxFaults } from './chord-boxes.js';
-import type { LayoutModel } from '../model/layout.js';
+import { chordBoxFaults, chordBoxRefusal } from './chord-boxes.js';
+import { chordEnds } from './overlay-paths.js';
+import type { Point } from '../model/geometry.js';
+import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
 import { facePairPitches } from './pair-pitch.js';
@@ -7,7 +9,43 @@ import { portId } from './skeleton-graph.js';
 
 export const BLOCK_ANGLE = 34;
 export const BLOCK_CAP = 600;
-const radians = BLOCK_ANGLE * Math.PI / 180;
+/** Past the cap a block stays straight and flatter, never flatter than this (owner ruling 2026-11-15). */
+export const BLOCK_FLOOR_ANGLE = 15;
+
+/** Whether `link` is a member of a flat solid block: it may leave its own box by a side edge (`chordBoxRefusal` with `sideExit`). */
+export const flatMember = (model: LayoutModel, link: LayoutLink): boolean =>
+  link.solidBlock === true && model.blockReservations?.find(item => item.family === link.fanFamily)?.mode === 'flat';
+
+/** How many degrees a chord from `a` to `b` stands flatter than `angle`, or 0 when it is no flatter (the one angle reading of a block member). */
+const angleShort = (a: Point, b: Point, angle: number): number => {
+  const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
+  return dy + EPS < dx * Math.tan(angle * Math.PI / 180) ? angle - Math.atan2(dy, dx) * 180 / Math.PI : 0;
+};
+
+/**
+ * The per-member checks of a flat block (dense-16x9 ticket 04, slice 3): past the cap a member stands only when its chord leaves each endpoint box
+ * through the facing edge or the side edge it runs toward (`chordBoxRefusal` with `sideExit`: the reserved gap holds the floor angle, not every
+ * box entry) and is no flatter than `BLOCK_FLOOR_ANGLE`. A member that fails falls back alone; the block stays. Undefined for a member of an
+ * under-cap block, whose reservation holds both.
+ */
+export function flatMemberRefusal(model: LayoutModel, link: LayoutLink): 'edge' | 'frame' | 'floor' | undefined {
+  if (!flatMember(model, link)) return undefined;
+  // The chord as it is drawn, face point to face point (`memberChord`), as the floor reservation measured it (`reserveBlockGaps`; R1).
+  const chord = memberChord(model, link);
+  if (chord === undefined) return 'edge';
+  if (angleShort(chord.from, chord.to, BLOCK_FLOOR_ANGLE) > 0) return 'floor';
+  return chordBoxRefusal(model, link, { from: chord.from, to: chord.to, owner: link.owner }, 0, true);
+}
+
+/**
+ * The chord a flat block member is drawn as: from the face point of one port to the face point of the other (`chordEnds`, the one end reader of
+ * a placement chord and of a routed straight path; the anchor, or the outer edge of a named port's pill). The floor reservation, the admission
+ * and the restore read this one segment (dense-16x9 ticket 04 slice 3, review 1, finding 1). Undefined where an end states no face.
+ */
+export function memberChord(model: LayoutModel, link: LayoutLink): { from: Point; to: Point } | undefined {
+  const ends = chordEnds(model, link);
+  return ends === undefined ? undefined : { from: { ...ends.head.face }, to: { ...ends.tail.face } };
+}
 
 /**
  * One fault of a solid-block reservation: what it breaks (`constraint`, one per fault of a key: the record, a follower's seat, attachment or
@@ -37,10 +75,14 @@ export function blockReservationFaults(model: LayoutModel): Map<string, BlockFau
   }
   for (const family of families) {
     const entry = model.blockReservations.find(item => item.family === family.id);
+    // Under the cap the gap holds the 34 degree demand; past it (flat) the gap holds the floor, which never passes the 34 degree demand.
     if (!entry || ![entry.target, entry.cap, entry.chosen, entry.pitch].every(Number.isFinite) || entry.cap !== BLOCK_CAP
-      || entry.chosen + EPS < Math.min(entry.target, entry.cap) || entry.target > entry.cap + EPS) { faults.set(family.id, [record(`${family.id} has an unreadable reservation`)]); continue; }
+      || (entry.mode === undefined ? entry.floor !== undefined || entry.chosen + EPS < entry.target || entry.target > entry.cap + EPS
+        : entry.mode !== 'flat' || entry.floor === undefined || !Number.isFinite(entry.floor) || entry.target <= entry.cap + EPS
+          || entry.floor > entry.target + EPS || entry.chosen + EPS < entry.floor)) { faults.set(family.id, [record(`${family.id} has an unreadable reservation`)]); continue; }
+    const frozen = new Set(model.frozenChords);
     for (const member of family.members) {
-      const found = memberFaults(model, member.link, entry);
+      const found = memberFaults(model, member.link, entry, frozen.has(member.link));
       if (found.length && !faults.has(member.link)) faults.set(member.link, found);
     }
   }
@@ -89,7 +131,7 @@ function followerFault(model: LayoutModel, id: string): BlockFault | undefined {
   return undefined;
 }
 
-function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutModel['blockReservations']>[number]): BlockFault[] {
+function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutModel['blockReservations']>[number], straight: boolean): BlockFault[] {
   const link = model.links.find(item => item.id === id);
   if (!link?.attachments) return [{ constraint: 'endpoints', fault: `${id} has no endpoints`, short: 0 }];
   const ports = Object.values(link.attachments).map(ref => findPort(model, ref));
@@ -105,14 +147,27 @@ function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutM
     if (!(pitch >= entry.pitch)) faults.push({ constraint: `pitch:${key}`, fault: `${id} lost its block pitch`, short: Number.isFinite(pitch) ? entry.pitch - pitch : Infinity });
   }
   const [a, b] = ports.map(port => port!.anchor!);
-  for (const box of chordBoxFaults(model, link, { from: a!, to: b!, owner: link.owner })) {
-    faults.push({ constraint: `box:${box.constraint}`, fault: `${id} lost its reserved box clearance (${box.entry})`, short: box.short });
-  }
+  const boxes = (from: Point, to: Point, sideExit: boolean): void => {
+    for (const box of chordBoxFaults(model, link, { from, to, owner: link.owner }, 0, sideExit)) {
+      faults.push({ constraint: `box:${box.constraint}`, fault: `${id} lost its reserved box clearance (${box.entry})`, short: box.short });
+    }
+  };
+  if (entry.mode === 'flat') {
+    // A flat block holds the floor angle and box clearance on its straight members only, on the chord as drawn (`flatMemberRefusal`, the
+    // admission's own check): a member that fell back owes neither.
+    const chord = straight ? memberChord(model, link) : undefined;
+    if (straight && chord === undefined) faults.push({ constraint: 'box:chord', fault: `${id} lost its reserved box clearance (edge)`, short: 0 });
+    if (chord !== undefined) {
+      const floor = angleShort(chord.from, chord.to, BLOCK_FLOOR_ANGLE);
+      if (floor > 0) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: floor });
+      boxes(chord.from, chord.to, true);
+    }
+  } else boxes(a!, b!, false);
   const upper = model.tierBands.find(band => band.tier === entry.above)?.bounds;
   const lower = model.tierBands.find(band => band.tier === entry.below)?.bounds;
   const gap = upper && lower ? lower.y - upper.y - upper.height : -Infinity;
   if (gap + EPS < entry.chosen) faults.push({ constraint: 'gap', fault: `${id} lost its reserved gap`, short: Number.isFinite(gap) ? entry.chosen - gap : Infinity });
-  const dx = Math.abs(b!.x - a!.x), dy = Math.abs(b!.y - a!.y);
-  if (dy + EPS < dx * Math.tan(radians)) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: BLOCK_ANGLE - Math.atan2(dy, dx) * 180 / Math.PI });
+  const angle = entry.mode === undefined ? angleShort(a!, b!, BLOCK_ANGLE) : 0;
+  if (angle > 0) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: angle });
   return faults;
 }

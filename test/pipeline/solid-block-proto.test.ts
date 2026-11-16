@@ -7,6 +7,8 @@ import { resolve } from '../../src/resolve/index.js';
 import { chordsHold, edgeLeavers, fixedPointRefusal } from '../../src/layout/frame-paths.js';
 import { blockReservationsFault } from '../../src/layout/block-checks.js';
 import { admitFanFamilies } from '../../src/layout/fan-admission.js';
+import { crowdedFanMembers } from '../../src/layout/direct-families.js';
+import { segmentDistance } from '../../src/geometry/planar.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -57,13 +59,13 @@ describe('ticket 83 under-cap solid blocks', () => {
     for (const key of ['links', 'nodes'] as const) {
       const input = reversed(source, key), model = await lay(input);
       expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
-      if (name.includes('proves-the-cap') || name.includes('lateral-faces')) {
-        expect(model.declinedSolidBlocks?.some(item => item.reason.startsWith(name.includes('proves-the-cap') ? 'gap-cap:' : 'non-facing-ports'))).toBe(true);
+      if (name.includes('lateral-faces')) {
+        expect(model.declinedSolidBlocks?.some(item => item.reason.startsWith('non-facing-ports'))).toBe(true);
         baseline.enabled = true;
         try { expect(geometry(model)).toEqual(geometry(await lay(input))); } finally { baseline.enabled = false; }
       } else {
         expect(model.fanFamilies?.filter(item => item.kind === 'solid')).toHaveLength(1);
-        expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(name.includes('two-far') ? 8 : 4);
+        expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(name.includes('two-far') ? 8 : name.includes('proves-the-cap') ? 12 : 4);
         expect(blockReservationsFault(model)).toBeUndefined();
         const snapshot = score(model).snapshot;
         expect(snapshot.metrics.crossings.count).toBe(original.metrics.crossings.count);
@@ -94,8 +96,18 @@ describe('ticket 83 under-cap solid blocks', () => {
     const model = await layout(parse(canton), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testMaxReruns: 0 });
     expect(model.fanFamilies?.filter(family => family.kind === 'solid')).toHaveLength(1);
   });
-  it('rejects a provably capped block at stage 5 before region placement', async () => {
-    await expect(placed(fixture('a-solid-block-proves-the-cap-before-region-placement'))).rejects.toThrow(/gap-cap: stage-5 lower bound/);
+  it('keeps a block past the cap straight and flatter, its gap set by the aspect aim (dense-16x9 ticket 04, slice 3)', async () => {
+    // Stage 5 no longer proves the cap: past it the block stays, and 7e reserves the floor and the aspect choice.
+    const model = await lay(fixture('a-solid-block-proves-the-cap-before-region-placement'));
+    const record = model.blockReservations?.[0];
+    expect(model.declinedSolidBlocks).toBeUndefined();
+    expect(record?.mode).toBe('flat');
+    expect(record!.target).toBeGreaterThan(record!.cap);
+    expect(record!.floor!).toBeLessThan(record!.target);
+    // The sheet stays wider than the aim at the 34 degree gap, so the aim takes the whole 34 degree demand.
+    expect(record!.chosen).toBeCloseTo(record!.target, 6);
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(12);
+    expect(score(model).snapshot.counts.routed.bent).toBe(0);
   });
   it('keeps widening distinct from moving a frozen follower and rejects forged entry', async () => {
     const model = await lay(fixture('a-crossing-pair-across-two-tiers-keeps-its-course'));
@@ -115,14 +127,80 @@ describe('ticket 83 under-cap solid blocks', () => {
     expect(blockReservationsFault(forged)).toContain('box clearance (frame)');
     expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow();
   });
-  it('declines an over-cap block before freeze and restores the main drawing and restore contract', async () => {
+  it('keeps a 2x7 block past the cap straight, and two blocks that share the gap on one chosen gap (dense-16x9 ticket 04, slice 3)', async () => {
+    const one = await lay(fixture('a-two-by-seven-block-past-the-cap-stays-straight'));
+    expect(one.blockReservations?.map(item => item.mode)).toEqual(['flat']);
+    expect(one.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(14);
+    expect(score(one).snapshot.counts.routed.bent).toBe(0);
+    const two = await lay(fixture('two-blocks-share-one-gap-past-the-cap'));
+    const records = two.blockReservations ?? [];
+    expect(records.map(item => item.mode ?? 'steep').sort()).toEqual(['flat', 'steep']);
+    // One tier gap, one chosen height: the steep block holds the flat block's gap too (by max).
+    expect(new Set(records.map(item => item.chosen)).size).toBe(1);
+    expect(blockReservationsFault(two)).toBeUndefined();
+    expect(Object.values(score(two).snapshot.gates).filter(gate => gate.severity === 'error' && gate.violations.length)).toEqual([]);
+  });
+  it('judges the reserved blocks of one gap together, in family id order whatever the record order (dense-16x9 ticket 04, slice 3, step 1)', async () => {
+    const two = await lay(fixture('two-blocks-share-one-gap-past-the-cap'));
+    const admit = (reverse: boolean): { held: string[]; draft: typeof two } => {
+      const draft = structuredClone(two);
+      delete draft.frozenChords; delete draft.fanAdmissions;
+      if (reverse) draft.fanFamilies!.reverse();
+      admitFanFamilies(draft, draft.links.filter(link => link.solidBlock));
+      return { held: draft.links.filter(link => link.solidBlock && link.path?.segments.length === 1 && link.path.segments[0]!.straight).map(link => link.id).sort(), draft };
+    };
+    const forward = admit(false), backward = admit(true);
+    expect(backward.held).toEqual(forward.held);
+    expect(forward.held.length).toBeGreaterThan(0);
+    // The rounds end only when a round changes nothing, so every held chord holds beside the final state of both blocks (R2).
+    for (const id of forward.held) {
+      const link = forward.draft.links.find(item => item.id === id)!;
+      expect(fixedPointRefusal(forward.draft, link, link.path!.segments[0]!), id).toBeUndefined();
+    }
+    const notes = forward.draft.diagnostics.filter(note => note.code === 'SOLID_BLOCK_ADMISSION');
+    expect(notes).toHaveLength(2);
+    // A note names the rounds when the first round changed something (a round that changes nothing ends the verdict).
+    for (const note of notes) expect(note.message).toMatch(/sets, (\d+ joint rounds, )?\d+ held\.$/);
+  }, 120000);
+  it('measures two held siblings of a sheaf through the sheaf zone in the crowding retry (dense-16x9 ticket 04, slice 3, step 1)', async () => {
+    const one = await lay(readFileSync(new URL('../fixtures/staged/two-cores-reach-seven-pairs-through-hubs-on-the-last-rank.yaml', import.meta.url), 'utf8'));
+    const held = one.links.filter(link => link.solidBlock && one.frozenChords?.includes(link.id));
+    // Two siblings that share a node stand nearer than the 10 px clearance near it: only the sheaf zone excuses them.
+    const near = held.some(a => held.some(b => a.id < b.id && [a.attachments!.from.node, a.attachments!.to.node].some(node => [b.attachments!.from.node, b.attachments!.to.node].includes(node))
+      && segmentDistance(a.path!.segments[0]!, b.path!.segments[0]!) - 1.5 < 10));
+    expect(near).toBe(true);
+    expect([...crowdedFanMembers(one).keys()]).toEqual([]);
+  }, 180000);
+  it('makes the rows fed from the reordered far groups follow them in the same step (dense-16x9 ticket 04, slice 3)', async () => {
+    const model = await lay(fixture('a-child-row-follows-its-reordered-far-groups'));
+    const centre = (id: string): number => model.groups[id]!.bounds!.x + model.groups[id]!.bounds!.width / 2;
+    for (let i = 1; i <= 7; i++) expect(centre(`unit${i}`)).toBeCloseTo(centre(`pair${i}`), 6);
+    expect(score(model).snapshot.counts.routed.bent).toBe(0);
+  });
+  it('lets a flat member fall back alone when the aspect gap is below its box entry (dense-16x9 ticket 04, slice 3)', async () => {
+    const model = await lay(fixture('a-flat-block-member-that-leaves-its-box-by-a-side-falls-back'));
+    const record = model.blockReservations![0]!;
+    expect(record.mode).toBe('flat');
+    expect(record.chosen).toBeGreaterThan(record.floor! + 1);
+    expect(record.chosen).toBeLessThan(record.target - 1);
+    const reasons = (model.fanAdmissions ?? []).filter(item => item.mode !== 'straight').map(item => item.reason);
+    expect(reasons).toContain('edge');
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight').length).toBeGreaterThan(0);
+    expect(blockReservationsFault(model)).toBeUndefined();
+    // Every straight member keeps the 15 degree floor.
+    for (const link of model.links.filter(item => item.solidBlock && model.frozenChords?.includes(item.id))) {
+      const segment = link.path!.segments[0]!;
+      expect(Math.abs(segment.to.y - segment.from.y)).toBeGreaterThanOrEqual(Math.abs(segment.to.x - segment.from.x) * Math.tan(15 * Math.PI / 180) - 1e-6);
+    }
+  });
+  it('keeps an over-cap block flat and straight beside foreign boxes, and the restore contract (dense-16x9 ticket 04, slice 3)', async () => {
     const source = fixture('a-capped-solid-block-prototype-keeps-foreign-boxes');
     const model = await lay(source);
-    expect(model.fanFamilies?.some(family => family.kind === 'solid') ?? false).toBe(false);
-    expect(model.declinedSolidBlocks?.some(item => item.reason.startsWith('gap-cap:'))).toBe(true);
+    expect(model.declinedSolidBlocks).toBeUndefined();
+    expect(model.blockReservations?.map(item => item.mode)).toEqual(['flat']);
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(36);
+    expect(blockReservationsFault(model)).toBeUndefined();
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
-    baseline.enabled = true;
-    try { expect(geometry(model)).toEqual(geometry(await lay(source))); } finally { baseline.enabled = false; }
   });
   it('declines authored lateral faces without granting solid side entry', async () => {
     const source = fixture('a-solid-block-keeps-authored-lateral-faces');

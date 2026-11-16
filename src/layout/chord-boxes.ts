@@ -20,39 +20,40 @@ export function chordHolders(model: LayoutModel, node: string): Set<string> {
 /**
  * What a cross-frame chord must clear beyond the bodies (docs/design/routed-chords.md, Section 4). Every box of `groupBoxes` that holds neither end
  * and does not consume the link is a wall with the group edge margin; a box that holds one end only is left through the horizontal edge the port
- * faces, at least the margin from each corner. Reads `model.frames`, which equals the cells after every transaction.
+ * faces, at least the margin from each corner; with `sideExit` (a member of a flat solid block) also through the side edge it runs toward. Reads
+ * `model.frames`, which equals the cells after every transaction.
  */
-export function chordBoxRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): 'edge' | 'frame' | undefined {
+export function chordBoxRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0, sideExit = false): 'edge' | 'frame' | undefined {
   let found: 'edge' | 'frame' | undefined;
-  scanChordBoxes(model, link, segment, sideSlack, fault => { found = fault.entry; return true; });
+  scanChordBoxes(model, link, segment, sideSlack, sideExit, fault => { found = fault.entry; return true; });
   return found;
 }
 
 /**
  * One box a chord does not clear (`chordBoxRefusal`): the entry it breaks, what it breaks (`constraint`: the box, the entry, and for an edge
- * whether the chord misses the edge's span, misses the edge, or leaves by a face that has no edge) and how far it is short, in px; 0 for a
- * face with no edge.
+ * whether the chord misses the edge's span, misses the edge, or leaves by a face that has no edge; `side` for the side edge of `sideExit`) and
+ * how far it is short, in px; 0 for a face with no edge.
  */
 export interface ChordBoxFault { readonly entry: 'edge' | 'frame'; readonly constraint: string; readonly short: number }
 
 /** Every box the chord does not clear, in the order of `groupBoxes`. */
-export function chordBoxFaults(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): ChordBoxFault[] {
+export function chordBoxFaults(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0, sideExit = false): ChordBoxFault[] {
   const faults: ChordBoxFault[] = [];
-  scanChordBoxes(model, link, segment, sideSlack, fault => { faults.push(fault); return false; });
+  scanChordBoxes(model, link, segment, sideSlack, sideExit, fault => { faults.push(fault); return false; });
   return faults;
 }
 
 /** The one reading of `chordBoxRefusal` and `chordBoxFaults`: `visit` gets each box the chord does not clear, and stops the scan by returning true. */
-function scanChordBoxes(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack: number, visit: (fault: ChordBoxFault) => boolean): void {
+function scanChordBoxes(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack: number, sideExit: boolean, visit: (fault: ChordBoxFault) => boolean): void {
   const ends = link.attachments!, stroke = linkStrokeWidth(link);
   const from = chordHolders(model, ends.from.node), to = chordHolders(model, ends.to.node);
   const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
   const dx = segment.to.x - segment.from.x, dy = segment.to.y - segment.from.y;
   const margin = GROUP_EDGE_LINK_CLEARANCE - EPS;
   /** The fault of an edge the chord must cross at `along` within [low, high] of the edge's span, where `t` is where on the chord it meets the edge line. */
-  const crossing = (id: string, t: number, along: number, low: number, high: number, miss: number): ChordBoxFault | undefined => {
-    if (!(t >= -EPS && t <= 1 + EPS)) return { entry: 'edge', constraint: `${id}:edge:reach`, short: miss };
-    if (along < low || along > high) return { entry: 'edge', constraint: `${id}:edge:span`, short: Math.max(low - along, along - high) };
+  const crossing = (id: string, t: number, along: number, low: number, high: number, miss: number, edge = 'edge'): ChordBoxFault | undefined => {
+    if (!(t >= -EPS && t <= 1 + EPS)) return { entry: 'edge', constraint: `${id}:${edge}:reach`, short: miss };
+    if (along < low || along > high) return { entry: 'edge', constraint: `${id}:${edge}:span`, short: Math.max(low - along, along - high) };
     return undefined;
   };
   for (const { id, bounds } of groupBoxes(model)) {
@@ -77,6 +78,15 @@ function scanChordBoxes(model: LayoutModel, link: LayoutLink, segment: PathSegme
       const t = Math.abs(dy) < EPS ? Infinity : (edge - segment.from.y) / dy;
       const miss = Math.min(Math.abs(edge - segment.from.y), Math.abs(edge - segment.to.y));
       fault = crossing(id, t, segment.from.x + t * dx, bounds.x + margin, bounds.x + bounds.width - margin, miss);
+      // A member of a flat solid block may leave or enter its own box by the side edge toward its other end (`sideExit`, dense-16x9 ticket 04
+      // slice 3; owner drawing rules 2026-11-03: side entry is fine), at least the margin from each corner.
+      if (fault !== undefined && sideExit && Math.abs(dx) >= EPS) {
+        // The wall between the end in this box and the other end: the chord leaves (or enters) the box through it.
+        const inside = one ? segment.from : segment.to, outside = one ? segment.to : segment.from;
+        const wall = outside.x > inside.x ? bounds.x + bounds.width : bounds.x, u = (wall - segment.from.x) / dx;
+        const sideMiss = Math.min(Math.abs(wall - segment.from.x), Math.abs(wall - segment.to.x));
+        fault = crossing(id, u, segment.from.y + u * dy, bounds.y + margin, bounds.y + bounds.height - margin, sideMiss, 'side');
+      }
     }
     if (fault !== undefined && visit(fault)) return;
   }
