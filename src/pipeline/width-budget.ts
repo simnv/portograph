@@ -8,17 +8,22 @@ import { restoreLayoutModel } from '../layout/mutation.js';
 import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { pathBends } from '../layout/objective.js';
 import { isDeadlineError } from './deadline.js';
+import { chordHubOf } from '../layout/read/stagger.js';
 
 type Run = (document: NormalisedDocument, options: LayoutOptions, rows?: StaggerRow[]) => Promise<LayoutModel>;
 
-/** A staggered member's routed links are complete vertical drops, including through the near line. */
+/**
+ * A staggered member's routed links are complete vertical drops, including through the near line; a link to a compact hub (dense-16x9 ticket 03,
+ * slice C) is one segment with no bend, its chord.
+ */
 function straightDrops(model: LayoutModel): boolean {
   const members = new Set((model.staggerRows ?? []).flatMap(row => row.order));
   return model.links.filter(link => link.layer === 'routed' && link.attachments
     && [link.attachments.from.node, link.attachments.to.node].some(id => members.has(id)))
     .every(link => link.removed !== true && link.path !== undefined && link.path.segments.length > 0
       && pathBends(link) === 0
-      && link.path.segments.every(segment => Math.abs(segment.from.x - segment.to.x) <= PLACEMENT_EPS));
+      && (chordHubOf(model, link) !== undefined ? link.path.segments.length === 1
+        : link.path.segments.every(segment => Math.abs(segment.from.x - segment.to.x) <= PLACEMENT_EPS)));
 }
 
 export async function fitWidthBudget(input: NormalisedDocument, options: LayoutOptions, run: Run): Promise<LayoutModel> {

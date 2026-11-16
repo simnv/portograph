@@ -22,6 +22,13 @@
 export const PLACEMENT_EPS = 1e-6;
 
 /**
+ * The margin a chord corridor step adds to its shortfall, px (`chordSteps`, dense-16x9 ticket 03, slice C). The corridors of one row move each
+ * other's hubs, so the seat-and-measure loop closes a shortfall geometrically; the margin ends that tail inside `CHORD_SEAT_PASSES` seats. Edge:
+ * a gap whose shortfall is above `PLACEMENT_EPS` grows by the step plus this margin.
+ */
+export const CHORD_CORRIDOR_SLACK = 1;
+
+/**
  * No move, px: a move guard treats a displacement `|dx| <= NO_MOVE_EPS` as no move and holds it without reading its evidence. One name for
  * every kind of `holdsMove` and for `holdsNodeMove` (audit P-06-F7), so a shift has one verdict, move or no move, for all six kinds. Strict
  * (ADR-0010: lane guards stay strict): at the reservation tolerance a shift of 9e-7 toward a riser took a port 5e-7 outside the keep-out

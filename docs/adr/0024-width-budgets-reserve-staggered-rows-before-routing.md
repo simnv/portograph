@@ -105,3 +105,20 @@ The user ruled that a tier block must not be much wider than its sheet because o
 Evidence: two proofs of concept on the fan wrap. On the key sheet
 `a-chain-of-tiers-packs-over-its-feeds-final-x` the canvas goes from 2937 x 1069 to 1845 x 1126 px (area -33.8 %), with no bend and no
 straight link lost.
+
+## Third amendment (2026-11-16, dense-16x9 ticket 03, slice C; owner ruling 15): rows of members with several links
+
+A leaf row whose members have several plain routed links may stagger too. The far-line rule, the compact hubs and the chord corridors are
+in `docs/design/pipeline.md` (stage 5, *chord row*); this amendment states the decisions.
+
+- Lines: a member with several links stands on the near line; a one-link member stands on the far line when the member before it stands on
+  the near line. A row of one-link members alternates as before, so its record and drawing do not change.
+- Hubs: a row that holds a member with several links has compact hubs (`StaggerRow.chordHubs`). A one-link fan wrap keeps the hub that
+  spans its two lines (owner's mock A, 2026-11-08; the design note's open question 1, answer (a)). A compact hub takes the width its ports
+  need at the pitch its chords need and stands at the midpoint of its targets; clashing hubs stand as one packed run (coordinator's ruling B,
+  2026-11-16, which also removes the interleave refusal for compact hubs).
+- Corridor: the far-line member stands over its chord corridor, and a chord refused at the freeze keeps its reserved stem there, so the row
+  stays on two lines (owner ruling 15, drawing A).
+- Legs: two member links of one chord row may cross each other's fallback legs, read from the stage-5 record (`legSiblings`), as fan
+  members do (Q126). Without it the freeze of the first placement refused every member chord (`leg`) and the acceptance gate declined every
+  chord row. Ticket 04 replaces this membership with its general stem rule.
