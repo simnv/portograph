@@ -74,4 +74,14 @@ describe('two-pole ranks in the layout', () => {
     expect(() => restoreLayoutModel(JSON.stringify({ ...model, refusedChords: ['no-such-link'] }))).toThrow(/Invalid refused chords/);
     expect(() => restoreLayoutModel(JSON.stringify({ ...model, refusedChords: ['link-9', 'link-10'] }))).toThrow(/Invalid refused chords/);
   });
+
+  // The other outcome of the step: on sweep variant v7-3-2 the replay without the crowded chords adds an error-gate finding, so the state before it
+  // stays (no record) and a warning names the chords. The kept state is a protected model, so the warning goes with the published notes.
+  it('keeps the state and names the chords when the replay adds a gate finding (sweep v7-3-2)', async () => {
+    const model = await layout(parse(readFileSync(new URL('../fixtures/sweep/v7-3-2.yaml', import.meta.url), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const note = model.diagnostics.find(item => item.code === 'HELD_CHORD_CROWDED');
+    expect(note?.owners?.length).toBeGreaterThan(0);
+    expect(model.refusedChords).toBeUndefined();
+    for (const owner of note!.owners!) expect(model.frozenChords).toContain((owner as { id: string }).id);
+  });
 });

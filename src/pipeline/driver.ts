@@ -143,7 +143,8 @@ export async function refuseCrowdedChords(env: Env, s: State): Promise<void> {
   const routed = await env.route(banded.model);
   const was = errorFindings(before);
   if ([...errorFindings(routed)].some(key => !was.has(key))) {
-    s.base.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'HELD_CHORD_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
+    // The kept state is a protected model: the warning joins the notes that stage 9 publishes.
+    s.sideNotes.push({ stage: 'placement', severity: 'warning', code: 'HELD_CHORD_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
       message: `The held ${crowded.length === 1 ? 'chord' : 'chords'} ${crowded.join(', ')} ${crowded.length === 1 ? 'stands' : 'stand'} under the clearance of a planned part; the replay without ${crowded.length === 1 ? 'it' : 'them'} adds a gate finding, so ${crowded.length === 1 ? 'it stays' : 'they stay'} straight and the gates judge.` });
     return;
   }
