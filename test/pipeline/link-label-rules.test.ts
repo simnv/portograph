@@ -933,15 +933,16 @@ it('labelWindowDeficit on a diagonal: the least growth after which a window hold
 });
 
 it('a mesh-bus riser beyond a labelled row link\'s split moves out with the room (ticket 23)', async () => {
-  const model = await run(fixture('a-riser-beyond-a-labelled-rows-split-moves-with-the-room'));
+  const source = fixture('a-riser-beyond-a-labelled-rows-split-moves-with-the-room');
+  const model = await run(source);
   const bus = model.meshBuses!.find(item => item.riser !== undefined)!, riser = bus.riser!;
   const lane = model.lanes.find(item => item.id === riser.lanes[0])!;
-  // The riser lane, the riser and its two ends stand at one x, beyond the label's run and left of `mid`.
+  // Early row room can put the riser on either outer side of the row. Its lane and both ends agree.
   expect(lane.x).toBe(riser.x);
   expect(riser.from!.x).toBe(riser.x);
   expect(riser.to!.x).toBe(riser.x);
   const p2 = model.nodes.p2!.bounds!, mid = model.groups.mid!.bounds!;
-  expect(riser.x).toBeGreaterThan(p2.x + p2.width);
+  expect(riser.x < model.nodes.p1!.bounds!.x || riser.x > p2.x + p2.width).toBe(true);
   expect(riser.x).toBeLessThan(mid.x);
   // The label is reserved and drawn on its run, not left to the ladder.
   const label = model.labels.find(item => item.role === 'link')!.bounds!;
@@ -949,13 +950,17 @@ it('a mesh-bus riser beyond a labelled row link\'s split moves out with the room
   expect(label.x + label.width).toBeLessThan(p2.x);
   expect(model.diagnostics.filter(item => item.code === 'LINK_LABEL_ROOM_UNRESERVED')).toEqual([]);
 
-  // The riser moves by the deficit. Pull `p2` back 60 px over its own run: the reservation owes the room again, inserts it at the split,
-  // and `p2`, the riser, its lane and its ends all move by that one deficit.
-  const short = JSON.parse(JSON.stringify(model)) as LayoutModel;
+  // Exercise a late deficit independently of stage 5: place the unlabelled control, then ask the
+  // reservation for this label. Its riser is beyond the split, so every part must move by the deficit.
+  const control = parse(source), description = control.links.find(link => link.label !== undefined)!;
+  const text = description.label!;
+  delete description.label;
+  const short = structuredClone(await layout(control, { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
+  const peering = short.links.find(link => link.attachments?.from.node === 'p1' && link.attachments.to.node === 'p2')!;
+  short.document.links[peering.sourceIndex]!.label = text;
   const node = short.nodes.p2!;
-  node.bounds!.x -= 60;
-  for (const port of node.ports) { port.anchor!.x -= 60; if (port.pill) port.pill.bounds.x -= 60; }
   const pulled = node.bounds!.x, upper = short.meshBuses!.find(item => item.riser !== undefined)!.riser!, before = upper.x;
+  expect(before).toBeGreaterThan(node.bounds!.x + node.bounds!.width);
   expect(reserveLinkLabelRoom(short)).toBe(true);
   const deficit = short.nodes.p2!.bounds!.x - pulled;
   expect(deficit).toBeGreaterThan(0);

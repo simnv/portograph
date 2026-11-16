@@ -34,6 +34,7 @@ import { reserveColumns, seatColumn } from './column-arrangement.js';
 import { ofKind } from './reservations.js';
 import { pairedFaceKey, parallelSets, visitOrder, type ParallelSet } from './parallel-sets.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { rowLabelGap } from './row-label-room.js';
 const key = portId;
 
 /**
@@ -643,10 +644,11 @@ export function stemDepth(model: LayoutModel, port: LayoutPort, cache?: StemCach
 
 /**
  * Row gap between horizontal neighbours: the largest of the stroke-aware node clearance, the two
- * facing named pills with their visible wire, and the stem a port that passes its neighbour by
- * needs in order to leave its node at all.
+ * facing named pills with their visible wire, the stems and fans that turn here, and the described
+ * facing link's label floor. Before the topology freeze only that straight label floor is known;
+ * rows asks for detour stems after levelling, and later readers keep the same floor.
  */
-export function rowGap(model: LayoutModel, a: string, b: string): number {
+export function rowGap(model: LayoutModel, a: string, b: string, labelDetours = model.freeze !== undefined): number {
   const protrusion = (id: string, side: Side): number => Math.max(0, ...model.nodes[id]!.ports
     .filter(port => port.side === side && port.ref.anonymous !== true)
     .map(port => measurePortPill(port.ref.name!).width / 2 + DEFAULT_STROKE_WIDTHS.pill / 2));
@@ -732,7 +734,7 @@ export function rowGap(model: LayoutModel, a: string, b: string): number {
   const fans = Math.max(reachA ? reachA + stemReach(model, model.nodes[b]!) : 0,
     reachB ? reachB + stemReach(model, model.nodes[a]!) : 0, shared);
   return Math.max(nodeGap(model, a, b), left + right + (left > 0 && right > 0 ? PILL_WIRE_GAP : 0),
-    passByStem(b, 'left', a), passByStem(a, 'right', b), turning, fans);
+    passByStem(b, 'left', a), passByStem(a, 'right', b), turning, fans, rowLabelGap(model, a, b, labelDetours));
 }
 
 /**

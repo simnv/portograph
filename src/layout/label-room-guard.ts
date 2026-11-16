@@ -5,12 +5,13 @@
  * reserves it again, so the move is held here (R2): a move that would take a row room below what its link reserved is not made. The check reads
  * the model as the move would leave it and asks the producer's own reading (`reserveLinkLabelRoom`, R1) for a row shortfall the model has not now.
  */
-import type { LayoutModel } from '../model/layout.js';
+import type { LayoutGroup, LayoutModel, LayoutNode } from '../model/layout.js';
+import type { Rect } from '../model/geometry.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
-import { describedLink, overlayLabelsSuppressed } from './run-label-box.js';
 import type { ProposedBox } from './frames.js';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const sameRect = (a: Rect, b: Rect): boolean => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 const isRow = (item: LinkLabelShortfall): boolean => item.axis === 'row' || item.axis === 'row window';
 
 /** The model with the proposed boxes and the bodies that move with them, as `spanBreaches` builds it; the model is not changed. */
@@ -31,21 +32,10 @@ function movedModel(model: LayoutModel, proposed: readonly ProposedBox[]): { mov
   return { moved: { ...model, groups, nodes }, shift };
 }
 
-/** The described links of one tier whose two ends the move shifts by different amounts: the only runs it can shorten. */
-function stretched(model: LayoutModel, shift: ReadonlyMap<string, number>): boolean {
-  const suppressed = overlayLabelsSuppressed(model);
-  return model.links.some(link => {
-    if (!link.attachments || !describedLink(model, link, suppressed)) return false;
-    const from = link.attachments.from.node, to = link.attachments.to.node;
-    if (from === to || (shift.get(from) ?? 0) === (shift.get(to) ?? 0)) return false;
-    return model.groups[model.document.nodes[from]!.group]?.tier === model.groups[model.document.nodes[to]!.group]?.tier;
-  });
-}
-
 /** The links with a row shortfall on `model`, by the producer's reading on a copy. */
 function rowShort(model: LayoutModel): Set<string> {
   const shortfalls: LinkLabelShortfall[] = [];
-  reserveLinkLabelRoom(clone(model), shortfalls);
+  reserveLinkLabelRoom(clone(model), shortfalls, undefined, 'rows');
   return new Set(shortfalls.filter(isRow).map(item => item.link));
 }
 
@@ -54,11 +44,16 @@ export function rowRoomShortOf(model: LayoutModel): string[] | undefined {
   return model.document.links.some(link => link.label !== undefined) ? [...rowShort(model)] : undefined;
 }
 
-/** The links whose row room is short before the move: a move may not add one. Absent when no described link of one tier has its ends shifted apart. */
+/**
+ * The links whose row room is short before the move: a move may not add one. Absent when the move moves nothing. Any moved box or body can
+ * close a window: a border of any tier (a frame takes its edges from cells of other tiers), a run's end, a reserved run (review 10b, F1 and
+ * its follow-up), so the move is judged by the producer's own row reading and by no list of what can close one (R1).
+ */
 export function rowRoomShortNow(model: LayoutModel, proposed: readonly ProposedBox[]): string[] | undefined {
   if (!model.document.links.some(link => link.label !== undefined)) return undefined;
-  const { moved, shift } = movedModel(model, proposed);
-  return stretched(moved, shift) ? [...rowShort(model)] : undefined;
+  const { shift } = movedModel(model, proposed);
+  const moves = shift.size > 0 || proposed.some(({ group, bounds }) => !sameRect(group.bounds!, bounds));
+  return moves ? [...rowShort(model)] : undefined;
 }
 
 /** Whether the move leaves every row room that held; `allowed` is `rowRoomShortNow`. */
@@ -67,4 +62,18 @@ export function rowRoomHolds(model: LayoutModel, proposed: readonly ProposedBox[
   const known = new Set(allowed);
   for (const id of rowShort(moved)) if (!known.has(id)) return false;
   return true;
+}
+
+/**
+ * Whether a centring step kept every row room that held: the step rewrote one group and its nodes, and `before` holds them as the step found them.
+ * A step that left them as they were changed nothing the producer reads. Otherwise the producer's row reading runs on the model now, and only
+ * when that finds a shortfall on the model as the step found it too; the step may not add one (R1: the same reading as `rowRoomHolds`).
+ */
+export function rowRoomKeptByStep(model: LayoutModel, before: { group: LayoutGroup; nodes: readonly LayoutNode[] }, unchanged: boolean): boolean {
+  if (unchanged || !model.document.links.some(link => link.label !== undefined)) return true;
+  const now = rowShort(model);
+  if (now.size === 0) return true;
+  const found = rowShort({ ...model, groups: { ...model.groups, [before.group.id]: before.group },
+    nodes: { ...model.nodes, ...Object.fromEntries(before.nodes.map(node => [node.id, node])) } });
+  return [...now].every(id => found.has(id));
 }

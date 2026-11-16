@@ -5,6 +5,7 @@ import type { Rect, Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, rightWallReach, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { holdsMove, holdsNodeMove, resizeEvidence, resizeHolds, seatRefusal, type ResizeEvidence } from './move-reservations.js';
+import { rowRoomKeptByStep } from './label-room-guard.js';
 import { cellReach } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
@@ -24,7 +25,6 @@ import { recentreSeatedFaces, seatedFaces } from './face-centre.js';
 import { isGridGroup, packRowsOf } from './grid.js';
 import { nodeTier } from './read/tier.js';
 import { rowGap } from './sides-two.js';
-import { linkLabelGap } from './bands.js';
 import { alignmentAllowance, ownSideWidth, withinAlignmentCap } from './size.js';
 import { moveBeforeGrow } from './read/move-before-grow.js';
 import { standsVertical, strandedGrowth } from './given-back.js';
@@ -61,8 +61,8 @@ function siblingLimit(model: LayoutModel, group: LayoutGroup, node: LayoutNode):
     if (id === node.id) continue;
     const other = model.nodes[id]!.bounds!;
     if (Math.min(box.y + box.height, other.y + other.height) <= Math.max(box.y, other.y) + EPS) continue;
-    if (otherIndex < index) limit.low = Math.max(limit.low, right(other) + Math.max(rowGap(model, id, node.id), linkLabelGap(model, id, node.id)));
-    else limit.high = Math.min(limit.high, other.x - Math.max(rowGap(model, node.id, id), linkLabelGap(model, node.id, id)));
+    if (otherIndex < index) limit.low = Math.max(limit.low, right(other) + rowGap(model, id, node.id));
+    else limit.high = Math.min(limit.high, other.x - rowGap(model, node.id, id));
   }
   return limit;
 }
@@ -1180,20 +1180,25 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
     held = standing && base.held ? base.held : straightChordIds(model); breached = standing && base.breached ? base.breached : breachedIds(model);
     if (standing) { base.held = held; base.breached = breached; }
   }
-  const snapshot = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
+  const text = JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) });
+  const snapshot = JSON.parse(text) as { group: LayoutGroup; nodes: LayoutNode[] };
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
   // A frame edge that a foreign drop would run along is a spacing routing can only discover; a step may not make one (ticket 75).
   const after = holds(reading({ overlay: straightOf(now) }), reading({ overlay: straightOf(held) }), profiles.keepCount) ? breachedIds(model) : undefined;
-  const stands = after !== undefined && [...after].every(item => breached.has(item));
+  // A complete step can move and widen a body inside its group. Keep the same-tier windows 7f reserved, including cross-group runs outside
+  // siblingLimit: the move and resize guards share this producer replay (R1, R2). It runs only for a step that changed its group.
+  const stands = after !== undefined && [...after].every(item => breached.has(item))
+    && rowRoomKeptByStep(model, snapshot, JSON.stringify({ group: model.groups[id]!, nodes: model.groups[id]!.nodes.map(node => model.nodes[node]!) }) === text);
   tapVerdict('centreGroupStep', () => `${stands} ${now.size}/${held.size}`);
   if (stands) return { ...result, carry: { held: now, breached: after } };
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
   packClear(model, context, tier, snapshot.group, previous);
-  // The undo gives back the geometry the step began on, not the step's own geometry a decline was judged against: no decline of this step stands.
-  return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group, notes: { ...result.notes, declined: new Map() } };
+  // The undo gives back the geometry the step began on, not the step's own geometry a decline or a growth was judged against: no decline and no
+  // growth of this step stands, and the record keeps what earlier steps wrote (review 10b F2; the rollback of the given-back branch does the same).
+  return { unresolved: new Set(groupFeeds(model, context, tier, list, id, false).wanted.keys()), group: snapshot.group, notes: { ...result.notes, grown: new Map(), declined: new Map() } };
 }
 /** The verticals a centring step counts (ticket 65): the feeds that owe one and stand on it, then every feed that stands on one. */
 type VerticalTally = readonly [owed: number, all: number];
