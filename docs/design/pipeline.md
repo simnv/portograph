@@ -570,6 +570,31 @@ rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy
 positions. Preserve signed keys and the relative physical order of unequal author keys, not an
 absolute slot number.
 
+**That order is provisional, and a ledger entry can replace it** (dense-16x9 ticket 07). The far ends move after this sort: 7c centres and grows, the close-up and 7f move boxes, and
+a face sorted here can stand the wrong way round at publication (G5 fails it). Stage 5 stays the one place that seats a face. The **far-end round** (`farEnd`, `rounds.ts`; the last
+round of the command) reads the final positions of a completed placement, and for every face that fails G5 and that no other owner holds (a recorded first-turn face, a bar, a bundle
+member, a mesh-bus port, a solid-block face) proposes a sequence (`proposeFarEndOrder`, `far-end-order.ts`). Top and bottom faces read x, lateral faces read y. G5 fails a pair
+whose far-end ranges are strictly separated and whose ports stand the other way round, so those pairs are a partial order (an interval order); ranges that overlap impose nothing, and a
+port with no routed far end imposes nothing. Among the ports ready to go next, the one with the lowest key goes first: the mean of its routed far ends, the shared key of a facing pair
+(`pairedFaceKey`), or the ordinary key above for a port with no routed far end; a tie keeps the order the ports stand in, then the port identity (R3). An authored port keeps its slot.
+Both faces of a pair read one key per link, so no end sorts against the slots the other end changes. The sequence is reserved as a `farEndOrder` ledger entry (one per face, the whole
+face in engine order; a later entry for a face replaces the earlier one) and one more placement run seats it here, after the sort and before `seatAuthored`; every stage after it
+re-reserves its pitch, lanes, stems and rows around the new order, and the 7e check of the ledger refuses a run in which a stage moved the face. The face is no turn-ordered face and is
+outside the scope of the turn order (`turnScope`). `freeze.farEndOrder` records what was seated; it grants G5 no exemption: G5 judges the geometry. The trial is kept when no
+other face fails that did not before, at least one proposed face settles, no proposed face is worse, and the guards of every judged re-run hold (no removed link, no new gate or
+constraint finding, no broken separation, no kept course over its turns) and the unified order is not worse. The canvas guard reads the **published canvas**: the canvas that stage 9
+(`linkLabels`, `refitCanvas`) publishes after the route, not the routed canvas, which stage 9 refits afterwards. A trial whose published canvas has more than `FAR_END_CANVAS_GROWTH`
+(1.25) times the area of the baseline's is refused; a smaller growth is kept, and the note names it ("the published canvas grows from A to B px"). A proposed face that stays stale after a
+kept trial hands the round the next proposal, read from its own final positions. The round has **its own count**: at most `FAR_END_ORDER_RUNS` (2) placement runs in one run of the stages
+(one `Env`; a group lift or a width trial makes a further `Env`, so a command can make that many more), outside the shared re-run budget (`MAX_RERUNS`) and the placement cap, so the
+rounds before it cannot starve the one round that reads their settled result. A sheet with no stale face makes no run. A proposal that repeats a state the round has already tried
+ends the round (`proposalKey`), so a face that flips back is refused once and not tried again. A trial is withdrawn on a **named refusal** only: a placement refusal of the bands, or a
+postcondition refusal of a producer (`PostconditionRefusal`). A deadline, a budget refusal and a plain `Error` end the command; the round never swallows them. The record is backed
+by the ledger: restore and the freeze check refuse a `freeze.farEndOrder` with no ledger, with a face held twice, with a face of another owner (a recorded first-turn face, a bar, a
+bundle member, a bus port, a solid-block face), or with a face that no entry reserves. Production writes a record only when it holds a face; an absent record and an empty record
+are the same. The notes `FAR_END_ORDER_TAKEN`, `FAR_END_ORDER_OWNED`, `FAR_END_ORDER_DECLINED` and `FAR_END_ORDER_UNSETTLED` say what happened. No 7c rule may re-order a port: the
+permission stays as it is.
+
 **The U of a sibling row (dense-16x9 ticket 06, slice C).** Once the sides are voted, and before the nodes are sized, each outer
 link of each `siblingRows` record takes a `u-turn` course (`planSiblingUTurns`): both ports move to one horizontal face of the
 sub-tier (`courseHint`, the voted lateral side as `naturalSide`), the course joins `courses` and the ledger (producer `sides-two`),

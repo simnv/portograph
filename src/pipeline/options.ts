@@ -56,6 +56,10 @@ export interface LayoutOptions {
   testCourses?: readonly Course[];
   /** Test only (architecture ticket 24, phase 2). `true` forces the turn order on every placement run: stage 5 orders the ports of a face by the planned first turn of their links. */
   testTurnOrder?: boolean;
+  /** Test only (ticket 07 of dense-16x9). `false` turns the far-end round off: stage 5 keeps the order of the far ends as they stand then, and G5 judges the result. */
+  testFarEndOrder?: false;
+  /** Test only (ticket 07 of dense-16x9). The most far-end trials of the command, in place of `FAR_END_ORDER_RUNS` (a lower count only). */
+  testFarEndRuns?: number;
   /** Test only (ticket 24): the links whose faces every placement run orders by their turns, and no other face (see `LayoutModel.turnLinks`). */
   testTurnLinks?: readonly string[];
   /** Test only (ticket 05 of dense-16x9): the faces (`node|side`) that keep far-end order in a run that carries the turn order (see `LayoutModel.turnExcept`). */

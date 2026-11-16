@@ -627,6 +627,12 @@ export interface LayoutModel {
    * routed chord stands here (`docs/design/turn-order.md`, Section 3): the turn round reads the baseline's `frozenChords` and reserves them. Absent reads as none.
    */
   turnExcept?: string[];
+  /**
+   * An input of the placement run (dense-16x9 ticket 07): the faces whose ports stage 5 seats in the order the ledger reserved (`farEndOrder`), the whole face in engine order,
+   * in node and side order. The far-end round takes each sequence from the final positions of a completed placement. Absent reads as no face: stage 5 sorts by the far ends as
+   * they stand then. `freeze.farEndOrder` is the record of the faces stage 5 seated.
+   */
+  farEndOrder?: { node: string; side: Side; ports: PortRef[] }[];
   /** The planned course of each link that has one (ticket 15); absent until stage 5 plans them, and still absent when no link has a detour. */
   courses?: Course[];
   document: NormalisedDocument;
@@ -1046,6 +1052,8 @@ export interface LayoutFreeze {
   turnOrder?: { node: string; side: Side; ports: PortRef[] }[];
   /** Present only when the run carried faces reserved for far-end order (`LayoutModel.turnExcept`): the scope the record of `turnOrder` was taken under. */
   turnExcept?: string[];
+  /** Present only when the run carried a far-end order (`LayoutModel.farEndOrder`): each face and the ports in the order stage 5 seated them. A restore checks the engine order against it; G5 still judges the geometry. */
+  farEndOrder?: { node: string; side: Side; ports: PortRef[] }[];
   placement?: PlacementSnapshot;
 }
 

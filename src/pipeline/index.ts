@@ -5,6 +5,7 @@
  * own: every stage is the module that owns it, called in order, each one handed the immutable model
  * the previous stage published. What this file does own is the *budget*: one remainder shared by
  * the ELK attempts and the router, so a command cannot spend a fresh stage policy per attempt.
+ * The far-end round (`FAR_END_ORDER_RUNS`) keeps a count of its own in each `Env`; a group lift and a width trial each create a further `Env`, so a command can make that many more runs.
  */
 import type { LayoutModel, NormalisedDocument } from '../model/index.js';
 import type { LayoutOptions } from './options.js';

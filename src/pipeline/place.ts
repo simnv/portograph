@@ -18,7 +18,7 @@ import { bars } from '../layout/bars.js';
 import { bundles } from '../layout/bundles.js';
 import { elkDeadlineMs } from '../layout/elk-worker.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
-import { pairFloorsOf, pitchFloorsOf, nodeFloorsOf, coursesOf, declinedTrunksOf, laneKeysOf, sideHintsOf, spansOf, turnOf, type Reservations } from '../layout/reservations.js';
+import { farEndOrderOf, pairFloorsOf, pitchFloorsOf, nodeFloorsOf, coursesOf, declinedTrunksOf, laneKeysOf, sideHintsOf, spansOf, turnOf, type Reservations } from '../layout/reservations.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 import { CommandDeadlineError } from './budget.js';
 import { PlacementBudgetExceeded } from './limits.js';
@@ -34,7 +34,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   // Every started run stays counted. The probes preserve the legacy optimisation allowance when a block is declined.
   env.placements++; attemptCounters.placeStarts++;
   // The placements of the fan-wrap acceptance gate's comparison run are outside the cap as well (`env.gateRuns`).
-  if (env.placements - env.blockProbes - env.gateRuns > env.placeCap) throw new PlacementBudgetExceeded(env.placements - 1);
+  if (env.placements - env.blockProbes - env.gateRuns - env.farEndRuns > env.placeCap) throw new PlacementBudgetExceeded(env.placements - 1);
   const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return env.step(stage, run); };
   // The trunk joins a placement run found blocked (mesh-bus.md, section 12.4) are declined in the next: the ledger names them, or all of them once the budget is spent.
   const declinedTrunks = declinedTrunksOf(reservations);
@@ -57,6 +57,9 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   if (turn.all) resolved.turnOrder = true;
   else if (turn.links.length > 0) { resolved.turnOrder = true; resolved.turnLinks = [...turn.links]; }
   if (resolved.turnOrder === true && turn.except.length > 0) resolved.turnExcept = [...turn.except];
+  // The far-end orders the ledger reserves (ticket 07): stage 5 seats those faces in them, in place of the order of the far ends as they stand then.
+  const farEnd = farEndOrderOf(reservations);
+  if (farEnd.length > 0) resolved.farEndOrder = farEnd;
   const hints = sideHintsOf(reservations), laneKeys = laneKeysOf(reservations);
   stepIn('sides-one', () => sidesOne(resolved, hints, laneKeys, courseFaces));
   if (courses.length) resolved.courses = JSON.parse(JSON.stringify(courses)) as Course[];

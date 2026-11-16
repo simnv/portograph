@@ -10,7 +10,7 @@ import type { Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
 import type { State, Trial } from './state.js';
 
-export type RoundId = 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay';
+export type RoundId = 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
 /** Where a trial ended: the placement run, the ELK fallback check, the ledger at 7e, the side predictor, stage 7f or the route, the judge's verdict, or a kept promise at the route. */
 export type RefusalAt = 'place' | 'fallback' | 'ledger' | 'predict' | 'bands' | 'verdict' | 'promise';
 
@@ -43,6 +43,8 @@ export interface RoundBudget {
   reopens: boolean;
   /** Starts the round has even when the command's budget is lower: the fan's two. */
   floor: number;
+  /** The round's starts are its own (`env.farEndRuns`, at most `floor`): they spend neither the command's re-runs nor its placement cap (the far-end round). */
+  own?: true;
 }
 
 export interface Round<O> {
@@ -102,7 +104,7 @@ const refuse = <O>(env: Env, s: State, round: Round<O>, o: O, r: Refusal): Refus
 /** Reserve and place a trial of `round` on the offer `o`. A started placement is never given back. */
 export async function open<O>(env: Env, s: State, round: Round<O>, o: O): Promise<Opened | Refusal> {
   const ledger = round.reserve(env, s, o);
-  env.reruns++;
+  if (round.budget.own === true) { env.farEndRuns++; attemptCounters.farEndStarts++; } else env.reruns++;
   if (round.invalidation !== undefined) attemptCounters.invalidations[round.invalidation]++;
   let trial7e: LayoutModel;
   try { trial7e = await env.timed(round.label, () => env.place(ledger, env.trialAbort)); } catch (error) {

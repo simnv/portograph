@@ -1,0 +1,29 @@
+# Expected: the input of `goldens/synthetic/a-stretched-body-is-trimmed-to-its-ports.yaml` with the order of the ports of the stale face authored (dense-16x9 ticket 07). The golden fails G5 on its own
+# stage-5 order, and the far-end round repairs it, which removes the stretch the end trim and the close-up are tested on. An authored order is no far-end order (G5 judges the free
+# ports only), so here the stale order stands, nothing is repaired, and the trim and the close-up have their state on the production path. Read by test/layout/end-trim.test.ts and close-up.test.ts.
+# DR-04: links take the canonical order (group declaration order, then node order inside the group), so `access` is declared
+# before `src`; the canonical order is then the written order.
+portograph: 2
+groups:
+  access: { tier: 1 }
+  src: { tier: 0 }
+  far: { tier: 2 }
+  near: { tier: 2 }
+nodes:
+  src-a: { group: src, class: router, ports: [] }
+  src-b: { group: src, class: router, ports: [] }
+  sw-1: { group: access, class: switch, ports: [] }
+  sw-2: { group: access, class: switch, ports: [] }
+  sink-near:
+    group: near
+    class: server
+    ports:
+      - { name: in, side: top, order: 1 }
+      - { name: in, side: top, order: 2 }
+      - { name: in, side: top, order: 3 }
+  sink-far: { group: far, class: server, ports: [] }
+links:
+  - [sw-1, sink-near.in#1]
+  - [sw-2, sink-near.in#3]
+  - [src-a, sink-near.in#2]
+  - [src-b, sink-far]

@@ -28,6 +28,7 @@ import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, fla
 import { heldSourceGroups, rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
 import { freezeChords, spanCandidate } from './frame-paths.js';
 import { faceKey, laneFaceOrder, turnRecord, turnRecordFaults } from './turn-order.js';
+import { farEndFaceFailure, farEndOwner } from './far-end-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';
 import { rebuildFrames } from './frames.js';
 import { groupPadding, rebuildRegions } from './regions.js';
@@ -653,6 +654,18 @@ function validateFreeze(model: LayoutModel): void {
   // The record of the turn round, in the order the ports stand (engine order here; G5 reads the anchors at publication).
   const faulty = turnRecordFaults(model, 'engine')[0];
   if (faulty !== undefined) throw new Error(`Frozen turn order${faulty.node === undefined ? '' : ` of ${faulty.node} ${faulty.side}`}: ${faulty.why}`);
+  // The far-end order stage 5 seated (ticket 07): the faces the model was told to seat, in the order they stand. G5 judges the geometry; the record grants it no exemption.
+  same(freeze.farEndOrder, model.farEndOrder, 'Frozen far-end order changed');
+  const seatedFaces = new Set<string>();
+  for (const face of freeze.farEndOrder ?? []) {
+    const why = farEndFaceFailure(model, face);
+    if (why !== undefined) throw new Error(`Frozen far-end order of ${face.node} ${face.side}: ${why}`);
+    // One owner per face (R1, R5): a face is seated once, and not a face that a block, a bar, a bundle, a mesh bus or the turn order owns (the same predicate the proposal reads).
+    const name = faceKey(face.node, face.side), owner = farEndOwner(model, face.node, face.side);
+    if (seatedFaces.has(name)) throw new Error(`Frozen far-end order names the ${face.side} face of ${face.node} twice`);
+    seatedFaces.add(name);
+    if (owner !== undefined) throw new Error(`Frozen far-end order of ${face.node} ${face.side}: the face belongs to ${owner === 'turn' ? 'the turn order' : `a ${owner}`}`);
+  }
   validateCourses(model);
   same(freeze.floors.map(floor => floor.node), orderedNodeIds(model.document), 'Frozen floors omit or repeat nodes');
   for (const floor of freeze.floors) if (floor.size.width <= 0 || floor.size.height <= 0) throw new Error('Invalid frozen floor');
@@ -688,6 +701,7 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
   if (spans.length) result.freeze.spans = spans;
   if (turnFaces.length) result.freeze.turnOrder = turnFaces.map(face => turnRecord(model, face.node, face.side));
   if (model.turnExcept !== undefined) result.freeze.turnExcept = [...model.turnExcept];
+  if (model.farEndOrder !== undefined) result.freeze.farEndOrder = clone(model.farEndOrder);
   if (floored.length) result.freeze.nodeFloors = floored.map(id => ({ node: id, size: { ...nodeFloors!.get(id)! } }));
   return protect(result, baseline);
 }

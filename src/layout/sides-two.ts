@@ -17,7 +17,8 @@ import { besideGap, separateFrameColumns } from './columns.js';
 import { planSiblingUTurns } from './sibling-frames.js';
 import { deriveFrames } from './frames.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { SideHintRefusal } from './placement-refusal.js';
+import { PlacementRefusal, SideHintRefusal } from './placement-refusal.js';
+import { farEndOwner } from './far-end-order.js';
 import { carriesTitle, nodeObstacleReach, nudgingDistance, portStemReach, routedStroke, sideStemReach, stemReach } from './bands.js';
 import { MEMBER_GAP, fanEnd } from './bundle-geometry.js';
 import { laneSource, laneWidth, reservedCorridorX, transitTiers } from './lanes.js';
@@ -858,6 +859,19 @@ export function sortFace(model: LayoutModel, ports: readonly LayoutPort[], slots
   const byslot = turnOrder([...slots.values()]);
   return [...ports].sort((a, b) => bus.get(a)! - bus.get(b)! || byslot(slots.get(a)!, slots.get(b)!));
 }
+/**
+ * The ports of a face in the order the ledger reserved (`farEndOrder`, ticket 07). The reserved sequence must name exactly the ports of the face: a face whose ports changed since the
+ * sequence was taken is refused by name (`FAR_END_ORDER_DECLINED`), never seated by guesswork (R6). The authored ports keep the seats `seatAuthored` gives them after this.
+ */
+function farEndSeating(ports: readonly LayoutPort[], reserved: { node: string; side: Side; ports: readonly PortRef[] }): LayoutPort[] {
+  const byKey = new Map(ports.map(port => [key(port.ref), port] as const)), seated = reserved.ports.map(ref => byKey.get(key(ref)));
+  if (seated.length !== ports.length || seated.some(port => port === undefined) || new Set(seated).size !== ports.length) farEndDeclined(reserved, 'the face does not hold the ports of the reserved order');
+  return seated as LayoutPort[];
+}
+function farEndDeclined(reserved: { node: string; side: Side }, why: string): never {
+  throw new PlacementRefusal('ledger', `FAR_END_ORDER_DECLINED: the ${reserved.side} face of ${reserved.node}: ${why}`,
+    { stage: 'sides-two', reservationIds: [`farEndOrder:node:${reserved.node}:${reserved.side}`], owners: [{ kind: 'node', id: reserved.node }] });
+}
 /** The ports with an authored `order:` take the slots of the authored ports, in author order; the free ports keep theirs. */
 export function seatAuthored(ports: readonly LayoutPort[]): LayoutPort[] {
   const authored = ports.filter(port => port.authorOrder !== undefined).sort((a, b) => a.authorOrder! - b.authorOrder!);
@@ -1075,8 +1089,18 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       const usePlanned = turnScope(model, id, side) ? planned : plainTurns;
       const plain = usePlanned === plainTurns ? undefined : sorted(plainTurns);
       ports.splice(0, ports.length, ...sorted(usePlanned));
-      if (plain !== undefined && plain.some((port, index) => port !== ports[index])) turned.push({ node: id, side });
+      // A face the ledger gives a far-end order (ticket 07) is seated in it, and is no turn-ordered face: the order came from final positions, not from the planned turns.
+      const reserved = (model.farEndOrder ?? []).find(face => face.node === id && face.side === side);
+      if (reserved !== undefined) {
+        // A face that another owner holds is never seated by this order (the proposal leaves it out; a ledger that names it is refused by name, R5).
+        const owner = farEndOwner(model, id, side);
+        if (owner !== undefined) farEndDeclined(reserved, `the face belongs to ${owner === 'turn' ? 'the turn order' : `a ${owner}`}`);
+        ports.splice(0, ports.length, ...farEndSeating(ports, reserved));
+      }
+      else if (plain !== undefined && plain.some((port, index) => port !== ports[index])) turned.push({ node: id, side });
       const ordered = seatAuthored(ports);
+      // The seats of the authored ports may move the sequence: the face then stands in an order the ledger did not reserve, and the record could not back it.
+      if (reserved !== undefined && ordered.some((port, index) => key(port.ref) !== key(reserved.ports[index]!))) farEndDeclined(reserved, 'the authored ports take other seats than the reserved order gives');
       ordered.forEach((port, index) => { port.engineOrder = index; });
       const seated = ordered.filter(port => port.anchor !== undefined);
       if (seated.length > 1 && seated.some(port => bundled.has(key(port.ref)))) {

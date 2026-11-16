@@ -11,13 +11,13 @@ import { beats } from '../layout/course-measure.js';
 import type { Env } from './env.js';
 import { FAN_ROUNDS } from './limits.js';
 import { close, open, type AnyRound, type Opened, type Refusal } from './round.js';
-import { course, fan, overlay, side, span, turn } from './rounds.js';
+import { course, fan, farEnd, overlay, side, span, turn } from './rounds.js';
 import type { State } from './state.js';
 
-/** The rounds in the order of the pipeline. A group holds the rounds that compete for the same starts: the fan, the span, the side and course, the turn and overlay. */
-const PLAN: readonly (readonly AnyRound[])[] = [[fan], [span], [side, course], [turn, overlay]];
+/** The rounds in the order of the pipeline. A group holds the rounds that compete for the same starts: the fan, the span, the side and course, the turn and overlay, and last the far-end round, which reads the settled result of all of them. */
+const PLAN: readonly (readonly AnyRound[])[] = [[fan], [span], [side, course], [turn, overlay], [farEnd]];
 /** The starts a round may still take: the command's budget less the starts spent, or the floor the round has of its own. */
-const tokens = (env: Env, round: AnyRound): number => Math.max(env.maxReruns, round.budget.floor) - env.reruns;
+const tokens = (env: Env, round: AnyRound): number => round.budget.own === true ? (env.options.testFarEndRuns ?? round.budget.floor) - env.farEndRuns : Math.max(env.maxReruns, round.budget.floor) - env.reruns;
 const tied = (a: readonly number[], b: readonly number[]): boolean => !beats(a, b) && !beats(b, a);
 
 /**

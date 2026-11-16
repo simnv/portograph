@@ -15,3 +15,10 @@ export const MAX_RERUNS = 3;
 export class PlacementBudgetExceeded extends PlacementRefusal {
   constructor(readonly placements: number) { super('budget', `The command has placed ${placements} times, which is the most it may.`, { stage: 'place' }); }
 }
+/**
+ * Most placement runs of the far-end round in one run of the stages (dense-16x9 ticket 07): the first proposal and the one retry that reads the final positions of a trial that
+ * did not settle. The count is the round's own: it is outside the shared re-run budget (`MAX_RERUNS`) and the placement cap, and a sheet with no stale face makes no run. A group
+ * lift or a width trial makes a further `Env`, each with its own count (R4: the clock never sets it). Measured on the corpus (ticket 07, review 1): 1 run fixes 7 of the 16 G5
+ * sheets of main, 2 and 4 runs fix the same 10 and cost +16.6 % and +21.9 % of corpus time; the third and fourth run changed no geometry.
+ */
+export const FAR_END_ORDER_RUNS = 2;

@@ -6,6 +6,7 @@
 import type { Diagnostic, LayoutModel } from '../model/index.js';
 import type { Reservations } from '../layout/reservations.js';
 import type { SideOffer } from '../layout/side-measure.js';
+import type { FarEndFace } from '../layout/far-end-order.js';
 
 export interface State {
   /** The kept result of stages 1 to 7e: the model a measure reads, and the key of the stage-3 sizes. */
@@ -40,6 +41,11 @@ export interface State {
    * second trial offers the poor routes alone), `none` otherwise (a second trial would repeat the first). Absent before the first refusal.
    */
   courseRetry?: 'without-steps' | 'none';
+  /**
+   * The far-end round's memory (dense-16x9 ticket 07): the proposals already tried (the repeated-state check), the proposal that a trial which did not settle read from its own
+   * final positions (the next trial's offer), and the faces whose owner was named already.
+   */
+  farEnd?: { seen: Set<string>; next?: FarEndFace[]; queue?: FarEndFace[][]; noted: Set<string> };
 }
 
 /** One try of a round, built from its ledger: the 7e result, the 7f result, the routed result and what 7f did. */
