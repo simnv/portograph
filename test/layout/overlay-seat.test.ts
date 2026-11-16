@@ -4,13 +4,14 @@ import { layout, parse, score } from '../../src/index.js';
 import type { LayoutModel, Point } from '../../src/index.js';
 import { overlayBasePath, publishedOverlayPath, sharedBlockers } from '../../src/layout/overlay-paths.js';
 import { sharedTrackPairs } from '../../src/layout/overlay-tracks.js';
-import { seatMoves, seatOverlayEnds } from '../../src/layout/overlay-seat.js';
+import { OVERLAY_SEAT_CUT, SEAT_TRIALS, seatMoves, seatOverlayEnds } from '../../src/layout/overlay-seat.js';
 import { freeOverlayPorts } from '../../src/layout/overlay-nest.js';
 import { portEndInsets } from '../../src/layout/port-insets.js';
 import { linkStrokeWidth, overlayTrackPitch } from '../../src/theme/geometry.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
+import { withLayoutEntry } from '../aspect-fixture.js';
 
 // Dense-16x9 ticket 26: two overlay end runs of different nodes never stand on one track where a free port can take a seat.
 const yaml = readFileSync(new URL('../../goldens/synthetic/an-overlay-end-run-seats-its-port-a-track-pitch-off-a-foreign-end-run.yaml', import.meta.url), 'utf8');
@@ -80,4 +81,64 @@ describe('an overlay end run seats its port a track pitch off a foreign end run 
     expect(portOf(links, 't2').anchor).toEqual(portOf(model, 't2').anchor);
     expect(shares(links, link => pointsOf(link.path!.segments))).toBe(0);
   }, 180000);
+  // Review 1 of ticket 26: the straight test reads the published path, under every option. With `overlayOverBodies` both links publish as
+  // one segment over the bodies, though their base paths still detour and stand 1.1 px apart: no port takes a seat for a share the
+  // published layer does not have.
+  it('leaves the port of an overlay that publishes straight where it stands, under overlayOverBodies', async () => {
+    const model = await run(withLayoutEntry(yaml, 'overlayOverBodies: true'));
+    expect(overlays(model).map(link => link.path!.segments.length)).toEqual([1, 1]);
+    const base = (link: LayoutModel['links'][number]) => pointsOf(overlayBasePath(model, link).segments);
+    const one = base(linkOf(model, 't1')), two = base(linkOf(model, 't2'));
+    expect(Math.abs(two[0]!.x - one.at(-1)!.x)).toBeLessThan(overlayTrackPitch(1.5, 1.5));
+    expect(portOf(model, 't2').anchor!.x).toBeCloseTo(two[0]!.x, 6);
+    expect(shares(model, base)).toBe(1);
+    expect(shares(model, link => pointsOf(link.path!.segments))).toBe(0);
+  }, 120000);
+
+  // Review 1 of ticket 26 (R4, R6): twenty copies of the pair, side by side, and a guard that declines every seat. The seat stops at
+  // SEAT_TRIALS and names the pairs it left untried.
+  it('names the pairs left untried when the trials run out', async () => {
+    const placed = structuredClone(await run(yaml));
+    const port = portOf(placed, 't2');
+    port.anchor = { ...port.anchor!, x: pointsOf(linkOf(placed, 't1').path!.segments).at(-1)!.x - 1.1 };
+    const COPIES = 20;
+    const ids = new Set([...Object.keys(placed.nodes), ...Object.keys(placed.groups), ...placed.links.map(link => link.id)]);
+    const copyOf = (index: number): LayoutModel => {
+      const name = (value: string): string => (ids.has(value) ? `c${String(index).padStart(2, '0')}-${value}` : value);
+      const walk = (value: unknown, parent = ''): unknown => {
+        if (Array.isArray(value)) return value.map(item => walk(item, parent));
+        if (typeof value === 'string') return name(value);
+        if (value === null || typeof value !== 'object') return value;
+        return Object.fromEntries(Object.entries(value).map(([key, item]) => [parent === 'nodes' || parent === 'groups' ? name(key) : key,
+          key === 'x' && typeof item === 'number' ? item + 1000 * index : ['side', 'sizingSide'].includes(key) ? item : walk(item, key)]));
+      };
+      return walk({ nodes: placed.nodes, groups: placed.groups, links: placed.links, labels: placed.labels, document: placed.document }) as LayoutModel;
+    };
+    const model = structuredClone(placed);
+    model.nodes = {}; model.groups = {}; model.links = []; model.labels = [];
+    model.document = { ...placed.document, nodes: {}, groups: {}, links: [] };
+    for (let index = 0; index < COPIES; index++) {
+      const copy = copyOf(index);
+      Object.assign(model.nodes, copy.nodes); Object.assign(model.groups, copy.groups);
+      model.links.push(...copy.links); model.labels.push(...copy.labels);
+      Object.assign(model.document.nodes, copy.document.nodes); Object.assign(model.document.groups, copy.document.groups);
+      model.document.links.push(...copy.document.links);
+    }
+    const before = model.diagnostics.length;
+    let trials = 0;
+    expect(seatOverlayEnds(model, () => { trials++; return false; })).toEqual([]);
+    expect(trials).toBe(SEAT_TRIALS);
+    const cut = model.diagnostics.slice(before);
+    expect(cut.map(item => item.code)).toEqual([OVERLAY_SEAT_CUT]);
+    const named = cut[0]!.owners!.flatMap(owner => ('id' in owner ? [owner.id] : []));
+    // The first copies were tried in full; the last one was not.
+    expect(named.some(id => id.startsWith('c00-'))).toBe(false);
+    expect(named.some(id => id.startsWith(`c${COPIES - 1}-`))).toBe(true);
+    // With a guard that keeps each seat, one trial seats each pair: the first SEAT_TRIALS copies take a seat, and the cut names the rest.
+    const kept = structuredClone(model);
+    kept.diagnostics = [];
+    expect(seatOverlayEnds(kept)).toHaveLength(SEAT_TRIALS);
+    const left = [...new Set(kept.diagnostics.filter(item => item.code === OVERLAY_SEAT_CUT).flatMap(item => item.owners!.flatMap(owner => ('id' in owner ? [owner.id.slice(0, 3)] : []))))];
+    expect(left).toEqual(Array.from({ length: COPIES - SEAT_TRIALS }, (_, index) => `c${SEAT_TRIALS + index}`));
+  }, 120000);
 });

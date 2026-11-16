@@ -1775,14 +1775,16 @@ its record; no replay asks it again (a choice, not a fixed point).
 overlay end runs (the first or the last run of a path, at its port) of different links with different end nodes
 stand on one track on the base paths (`overlayBasePath`; `sharedTrackPairs`, the one predicate), a free port of
 the two takes a seat on its face one track pitch from the other run (`seatOverlayEnds`). The separation cannot
-part such a pair: it moves middle runs, and an end run stands on its port. The seated port is never that of a
-straight overlay, and the run must leave its face square. The neighbours on the side it moves to that would stand
+part such a pair: it moves middle runs, and an end run stands on its port. The seated port is never that of an
+overlay that publishes straight (read on the published path, `publishedOverlayPath`, under every option: with
+`overlayOverBodies` a base detour can publish straight), and the run must leave its face square. The neighbours on the side it moves to that would stand
 nearer than their neighbour pitch (`neighbourPitch`, the spacing the node geometry check reads) move on by just
 that pitch, in face order; each of them must be free, and the last port that moves stays inside the face's end
 insets. No routed port moves. A seat stays only when the base paths then hold fewer such pairs and the published
-overlay paths share no more tracks and have no more bent links, turns or crossing points; otherwise nothing
-moves and the pair stays. Pairs go in the order of their track, candidates by the length of the move, then the
-node id, then the place on the face (R3); at most `SEAT_TRIALS` (16) seats are tried per attempt (R4). The
+overlay paths share no more tracks and have no more bent links, turns or crossing points, and every link that
+published straight still does (a pushed port may carry one); otherwise nothing moves and the pair stays. Pairs go in the order of their track, candidates by the length of the move, then the
+node id, then the place on the face (R3); at most `SEAT_TRIALS` (16) seats are tried per attempt (R4), and the pairs left untried then are named by
+`OVERLAY_SEAT_CUT` (a warning, R6). The
 anchors are its record, as for the nest.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line, or on a held routed chord
 (ticket 22), lies on the line,

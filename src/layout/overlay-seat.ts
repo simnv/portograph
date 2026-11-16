@@ -23,19 +23,19 @@ import { PLACEMENT_EPS } from './tolerance.js';
  * Decided at the end of the 7f attempt, after the ports nest (`nestOverlayPorts`), on the geometry that publishes, under the same guard
  * (`holds`: the room 7f reserved, and no centring finding more). The fact is the shared-track predicate (`sharedTrackPairs`, one predicate,
  * R1) read on the base paths, kept where both runs are end runs and their end nodes differ. The seat moves only a free overlay port
- * (`freeOverlayPorts`: no authored order, no routed link and no other link on it, no bus, no course); the seated port is never that of a
- * straight overlay, and its run leaves the face square. The port keeps its order on the face (`engineOrder` does not change) and its
+ * (`freeOverlayPorts`: no authored order, no routed link and no other link on it, no bus, no course); the seated port is never that of an
+ * overlay that publishes straight (`publishedOverlayPath`, under every option), and its run leaves the face square. The port keeps its order on the face (`engineOrder` does not change) and its
  * neighbour pitch (`neighbourPitch`) to each neighbour, the spacing the node geometry check reads, so a pill keeps the clearance the face
  * pitch gives it: the neighbours on the side it moves to that would stand nearer move on by just that pitch, each of them free, and the
  * last port that moves stays inside the face's end insets (`seatMoves`; ruling of 2026-11-16). A pushed port may carry a straight overlay:
- * the judge below refuses any link that bends. A seat is kept only when the layer then shows fewer such pairs and,
+ * the judge below refuses a seat after which a link that published straight does not. A seat is kept only when the layer then shows fewer such pairs and,
  * on the published overlay paths, no more shared tracks, bent links, turns or crossing points; otherwise nothing moves and the pair
  * stays, as before the rule. The anchor is the record, as for the nest trades: no later stage seats an anchor from its slot again, and no
  * replay asks the seat again (a choice, not a fixed point).
  *
  * Order (R3): pairs by the track they share (axis, then position across, then along), then the ids of the two end nodes; candidates by
  * the length of the move, then the node id, then the position of the port on its face, then the direction (last key). At most
- * `SEAT_TRIALS` seats are tried per attempt (R4). Returns the port ids that moved, sorted.
+ * `SEAT_TRIALS` seats are tried per attempt (R4); pairs left untried then are named by `OVERLAY_SEAT_CUT` (R6). Returns the port ids that moved, sorted.
  */
 export function seatOverlayEnds(model: LayoutModel, holds: (model: LayoutModel) => boolean = () => true): string[] {
   const { links, free } = freeOverlayPorts(model);
@@ -51,28 +51,34 @@ export function seatOverlayEnds(model: LayoutModel, holds: (model: LayoutModel) 
     const paths = links.map(link => pointsOf(overlayBasePath(model, link, shapes).segments));
     return endShares(links, paths, strokes);
   };
-  const measure = (): number[] => {
+  // The published overlay paths (`publishedOverlayPath`, what stage 8 draws and the scorer reads, under every layout option): the layer's
+  // keys, and the links that publish straight, by index. One reading for the straight test and the judge (R1).
+  const measure = (): { keys: number[]; straight: Set<number> } => {
     const shapes = sharedBlockers(model);
     const points = links.map(link => pointsOf(publishedOverlayPath(model, link, shapes).segments));
     const shares = sharedTrackPairs(points.map((item, index) => ({ points: item, strokeWidth: strokes[index]! }))).length;
     const bent = points.filter(item => item.length > 2).length, turns = points.reduce((sum, item) => sum + pointTurns(item), 0);
     const crossings = overlayCrossingPoints(links.map((link, index) => drawn(points[index]!, [portKey(link.attachments!.from), portKey(link.attachments!.to)])));
-    return [shares, bent, turns, crossings];
+    const straight = new Set(points.flatMap((item, index) => (item.length <= 2 ? [index] : [])));
+    return { keys: [shares, bent, turns, crossings], straight };
   };
   let current = facts();
   if (!current.length) return [];
   let measured = measure();
   const moved = new Set<string>();
   let trials = 0, tried = false;
+  // The pairs the cap leaves untried (R4, R6): named once at the end.
+  const cut: Fact[] = [];
   for (const fact of [...current]) {
-    if (trials >= SEAT_TRIALS) break;
     // A seat kept for an earlier pair may have parted this one too.
     if (!current.some(item => item.key === fact.key)) continue;
+    if (trials >= SEAT_TRIALS) { cut.push(fact); continue; }
     const candidates: Seat[] = [];
     for (const [own, other] of [[fact.one, fact.two], [fact.two, fact.one]] as const) {
       const link = links[own.path]!, end = own.run === 0 ? 'from' : 'to', port = portOf(link, end);
-      // A straight overlay keeps its port: its one segment is the line the port was aligned for.
-      if (port === undefined || !free(port) || own.points.length <= 2) continue;
+      // A straight overlay keeps its port: it publishes as one segment (the published path, not the base path: with `overlayOverBodies` a
+      // base detour can publish straight).
+      if (port === undefined || !free(port) || measured.straight.has(own.path)) continue;
       const node = model.nodes[port.ref.node]!, side = port.side!, along = side === 'top' || side === 'bottom';
       // The end run leaves the face square: across the run is along the face.
       if (own.horizontal === along) continue;
@@ -87,13 +93,15 @@ export function seatOverlayEnds(model: LayoutModel, holds: (model: LayoutModel) 
     // Last key: the direction of the move.
     candidates.sort((a, b) => Math.abs(a.to - a.from) - Math.abs(b.to - b.from) || (a.node < b.node ? -1 : a.node > b.node ? 1 : 0) || a.from - b.from || a.to - b.to);
     for (const seat of candidates) {
-      if (trials >= SEAT_TRIALS) break;
+      if (trials >= SEAT_TRIALS) { cut.push(fact); break; }
       trials++; tried = true;
       const anchors = seat.moves.map(({ port }) => port.anchor!);
       for (const { port, to } of seat.moves) port.anchor = seat.along ? { x: to, y: port.anchor!.y } : { x: port.anchor!.x, y: to };
       rebuildNodeGeometry(model, [seat.node], 'current');
       const next = facts(), after = next.length < current.length && !next.some(item => item.key === fact.key) ? measure() : undefined;
-      if (after !== undefined && after.every((value, index) => value <= measured[index]!) && holds(model)) {
+      // No key of the layer rises, and every link that published straight still does (a pushed port may carry one).
+      if (after !== undefined && after.keys.every((value, index) => value <= measured.keys[index]!) && [...measured.straight].every(index => after.straight.has(index))
+        && holds(model)) {
         current = next; measured = after;
         for (const { port } of seat.moves) moved.add(portId(port.ref));
         break;
@@ -104,11 +112,18 @@ export function seatOverlayEnds(model: LayoutModel, holds: (model: LayoutModel) 
   }
   // A seat rebuilt one node's pills and labels; the whole sheet is rebuilt in document order, as every other rebuild leaves it.
   if (tried) rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current');
+  if (cut.length) {
+    const ids = [...new Set(cut.flatMap(fact => [links[fact.one.path]!.id, links[fact.two.path]!.id]))].sort();
+    model.diagnostics.push({ stage: 'placement', severity: 'warning', code: OVERLAY_SEAT_CUT, owners: ids.map(id => ({ kind: 'link', id })),
+      message: `The overlay port seat stopped at ${SEAT_TRIALS} trials; these pairs of end runs still share a track, and their seats were not all tried: ${cut.map(fact => fact.key.replace('|', ' and ')).join(', ')}.` });
+  }
   return [...moved].sort();
 }
 
 /** The seats tried per attempt (R4: bounded by count); each one derives the base paths of the overlay layer again. */
-const SEAT_TRIALS = 16;
+export const SEAT_TRIALS = 16;
+/** The seat ran out of trials with pairs left untried (R6): it names them. */
+export const OVERLAY_SEAT_CUT = 'OVERLAY_SEAT_CUT';
 
 interface EndRun { readonly path: number; readonly run: number; readonly horizontal: boolean; readonly at: number; readonly points: readonly Point[] }
 interface Fact { readonly key: string; readonly one: EndRun; readonly two: EndRun }
