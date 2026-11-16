@@ -59,7 +59,8 @@ router stem `m = 15 px` (`bands.ts:35`).
 4. **Drops.** A part with `|x_lower − x_upper| < k` is a drop (ticket 42 rule 2, `gap-runs.ts:303`,
    kept). Its vertical stands on the end x that keeps `k` from every foreign leg: the upper end's x by
    default, the lower end's x where that is the one that clears (ticket 50, review). Then `dodge` (dense-16x9 ticket 14) may move it to the other end's x where only that x keeps `k` from the
-   x-span of every held chord in the gap, if every shape, row, the height and the growth stay and no crowded part is added. Where the ends
+   x-span of every held chord in the gap, if every shape, row, the height and the growth stay, no crowded part is added and no G6 finding against
+   the other parts and every segment reserved before routing beside the gap (`reservedSegments`, `routed-chords.md` Section 8). Where the ends
    differ, the jog stands one clearance above the lower tip row, or `e` off an O5 band anchored below over its x if that is higher (upper stand: `bandTop - max(depth + k, band)`), or one clearance below
    the upper tip row (lower stand); either way the tip is entered along its normal. Both are reserved.
    The vertical below the jog of an upper stand, and the stub beside the jog of a lower stand, is a

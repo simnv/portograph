@@ -266,11 +266,11 @@ so it owns no lane.
   preference (dense-16x9 ticket 14, `dodge`): a middle drop, or the long vertical of a jogged drop,
   that stands in any chord's wall moves to an x clear of every wall only where the plan keeps every
   shape and row, its height and growth, adds no crowded part, and, over every pair that holds the
-  moved part, read at each link's own stroke (`linkStrokeWidth`, as the scorer reads it) with the
-  port-to-tip stems of every planned part, the stems of the frame's tips and residual parts, and the
-  held chords themselves (the inventory above `movedPairs`), adds no G6
-  finding (`parallelClearance`), makes no pair's finding worse, and brings no increase in total
-  crossings (`strictCrossing`); else the next clear x is tried, and with none it keeps its seat. Tests: plan states in `test/layout/gap-plan.test.ts`, and
+  moved part, read at each link's own stroke (`linkStrokeWidth`, as the scorer reads it) against the
+  other planned parts and every segment reserved before routing beside the gap (`reservedSegments`,
+  below), adds no G6 finding (`parallelClearance`), makes no pair's finding worse, and brings no
+  increase in total crossings (`strictCrossing`); else the next clear x is tried, and with none it
+  keeps its seat. `planGap` without a context (`DodgeContext`: the gap and its reader) moves nothing. Tests: plan states in `test/layout/gap-plan.test.ts`, and
   `test/fixtures/staged/a-z-middle-drop-beside-a-chord-tip.json`, a stored-path state (a chord path
   moved beside a Z middle drop; its ports stay), not end-to-end coverage: a documented exception to
   the synthetic-YAML rule of `CODING_STANDARDS.md`, since no generic sheet with this geometry was found;
@@ -287,6 +287,27 @@ where it ends inside the gap, marked `partial`; `heldChordsIn` is the one reader
 notes, the fan rows and the hard wall of `middleDrops` read); `chordGapNotes` (`gap-plan.ts`) names both notes from the plans of the gaps as they stand after the solve (`solveTierGaps`, architecture-2 ticket 57),
 once each. "Within `k`" is the centre-to-centre distance, 11.5 px (`k` holds the stroke). An unfit gap (`growth > 0` after the rounds) leaves all its parts to the
 router, so every part over a chord's span there is `TIER_GAP_CHORD_EXPOSED`.
+
+*As built (dense-16x9 ticket 14, review 5).* The dodge reads one source, `reservedSegments(model, gap, plan?)` (`gap-plan.ts`): every
+**reserved segment** a final path holds within `k` of the gap's y-range, with its link, its stroke and its producer. It reads each link through
+`reservedRunsOf` (`route/plan.ts`), which applies the rules `planRoute` stitches by: a stored path (a held chord, a pinned or bundle path), the
+shared junction runs at both ends (a stem kept after a branch release included), the lane runs and their mouths (lane end to
+`approachCheckpoint`), the row-gap leg, and the stem of each port end that has no shared run (anchor to `stemCheckpoint`); given the gap's plan,
+it adds its planned parts where the plan fits. It replaces the hand-made list of reviews 1 to 4 (planned stems, frame tips, residual stems, chord
+lines). The planned parts of other gaps, and what stage 8 makes itself (a routed gap, a straight claim), are not in it. The predicate reads no
+exemption: a moved part is never a bundle member, and a junction's stem is measured against every link, members included, which can only
+refuse a dodge the gate would allow. Completeness is a test, not a list: `test/layout/reserved-segments.test.ts` lays out 27 corpus sheets
+(junctions, lanes and mouths, U and Z parts, held chords, and ten others) and requires, per tier gap, that every segment stage 8 keeps of
+placement (`planRoute`'s reserved and allocated pieces, the stems and lane approaches its routed gaps and straight claims pass, the stored
+paths) lies on `reservedSegments` entries of its link, and that every entry lies on the final path of its link. A producer added to
+`planRoute` without `reservedRunsOf` fails it. Stage order: every stitched plan is read from the model `planRoute` reads (stage 8 `route`, and
+the 7e route trial), so no reserved kind is missing when the dodge decides a seat that is stitched. The earlier reads of the plans (7e rounds,
+7f gap room, close-up, decide, the growth guard) see the model as it is then; the dodge keeps their height, growth and rows. The corpus holds
+no row-gap leg within `k` of a tier gap, so the test reads that kind on no sheet.
+
+Slice 2 (`.scratch/dense-16x9/design/14-reserved-remainder.md`) has still to make the 7f judges read the same source: `crowded`,
+`crowdedChords` and `chordGapNotes`, `chordSettled` and `rankSettled`, the linkless and lane-reseat checks, and the wrap gate verdict each
+measure a planned part against their own subset of reserved geometry today; each one must read `reservedSegments` and drop its own list.
 
 **Mesh bus and riser (tickets 82 to 84, 92; 94, 96, 97).** A bus bar, a stub, a riser and a
 riser lane are overlay geometry: `straightCorridorClear` and the router leave out overlay lanes,

@@ -47,7 +47,11 @@ const OPPOSITE: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'righ
 export type RoutePiece =
   | { kind: 'reserved'; segments: PathSegment[] }
   | { kind: 'allocated'; segments: PathSegment[] }
-  | { kind: 'straight'; segments: PathSegment[] }
+  /**
+   * `passes` is what placement reserved on the claimed run and the router would have had to pass head-on: each stem (port anchor to
+   * `stemCheckpoint`) and each lane approach (lane end to `approachCheckpoint`), terminal to checkpoint. The stitcher does not read it.
+   */
+  | { kind: 'straight'; segments: PathSegment[]; passes: Pick<PathSegment, 'from' | 'to'>[] }
   /**
    * `via` is the connector's checkpoints, in order: the points the router must pass between the two ends.
    * `producers` names, for each one, the rule that asked for it (`stem:<port>`, `lane:<lane>`,
@@ -217,6 +221,59 @@ function endpointFor(model: LayoutModel, link: LayoutLink, end: 'from' | 'to',
     directions: DIRECTION_BITS[port.side!], checkpoint: stemCheckpoint(model, port, cache), port };
 }
 
+/** A side run is the lateral port's own stem (side-faces.md, Section 10): it ends on the port's anchor. */
+const isSideRun = (segment: PathSegment | undefined): boolean => segment?.lane?.startsWith('side-lane:') === true || segment?.lane?.startsWith('perimeter:') === true || segment?.lane?.startsWith('gap-lane:') === true;
+
+/** Which producer reserved a run `reservedRunsOf` reads. */
+export type ReservedRunKind = 'path' | 'shared' | 'lane' | 'leg' | 'stem' | 'mouth';
+
+/**
+ * Every run of `link` that its final routed path holds and that is known before stage 8 routes, the planned tier-gap parts aside (they are
+ * the gap plan's own, `plannedSegments`): a stored path (a held chord, a pinned or bundle path), the shared junction runs at both ends, the
+ * lane runs and the row-gap leg, which `planRoute` stitches unchanged; the stem of each port end, from the anchor to `stemCheckpoint`, and
+ * the mouth of each lane, from its end to `approachCheckpoint`, which the routed gap beside them passes head-on. The rules are `planRoute`'s
+ * own, read without its pins and obstacles; the reserved-segments completeness test holds the two to one answer on the corpus. A link
+ * stage 8 does not route (a stub, a removed or an overlay link without a stored path) holds none.
+ */
+export function reservedRunsOf(model: LayoutModel, link: LayoutLink, cache: StemCache = stemCache()): { kind: ReservedRunKind; segments: PathSegment[] }[] {
+  if (link.path) return [{ kind: 'path', segments: link.path.segments }];
+  if (!drawn(link) || effectiveLayer(link) !== 'routed') return [];
+  const result: { kind: ReservedRunKind; segments: PathSegment[] }[] = [];
+  const shared = { from: link.sharedRuns?.from?.length ? link.sharedRuns.from : undefined, to: link.sharedRuns?.to?.length ? link.sharedRuns.to : undefined };
+  if (shared.from) result.push({ kind: 'shared', segments: shared.from });
+  const leg = legReservation(model, link, cache);
+  const fixed = leg ? [...(link.fixedSegments ?? []), leg] : (link.fixedSegments ?? []);
+  for (const segment of link.fixedSegments ?? []) result.push({ kind: 'lane', segments: [segment] });
+  if (leg) result.push({ kind: 'leg', segments: [leg] });
+  if (shared.to) result.push({ kind: 'shared', segments: shared.to });
+  const owner = { kind: 'link' as const, id: link.id };
+  const terminal = (end: 'from' | 'to'): { point: Point; port?: LayoutPort } => {
+    const runs = shared[end];
+    if (runs) return { point: runs.at(-1)!.to };
+    const port = endPort(model, link, end)!;
+    return { point: port.anchor!, port };
+  };
+  const from = terminal('from'), to = terminal('to');
+  for (let index = 0; index <= fixed.length; index++) {
+    const first = index === 0, last = index === fixed.length;
+    const start = first ? from : { point: fixed[index - 1]!.to }, end = last ? to : { point: fixed[index]!.from };
+    if (samePoint(start.point, end.point) && (start.port === undefined && end.port === undefined || isSideRun(fixed[index - 1]) || isSideRun(fixed[index]))) continue;
+    const asked: { kind: 'stem' | 'mouth'; terminal: Point; checkpoint: RouteCheckpoint }[] = [
+      ...(first && from.port ? [{ kind: 'stem' as const, terminal: from.point, checkpoint: { ...stemCheckpoint(model, from.port, cache),
+        arrival: DIRECTION_BITS[OPPOSITE[from.port.side!]], departure: ALL_DIRECTIONS } }] : []),
+      ...(first || fixed[index - 1]!.lane === undefined ? [] : [{ kind: 'mouth' as const, terminal: fixed[index - 1]!.to, checkpoint: approachCheckpoint(fixed[index - 1]!, 'to') }]),
+      ...(last || fixed[index]!.lane === undefined ? [] : [{ kind: 'mouth' as const, terminal: fixed[index]!.from, checkpoint: approachCheckpoint(fixed[index]!, 'from') }]),
+      ...(last && to.port ? [{ kind: 'stem' as const, terminal: to.point, checkpoint: { ...stemCheckpoint(model, to.port, cache),
+        arrival: ALL_DIRECTIONS, departure: DIRECTION_BITS[OPPOSITE[to.port.side!]] } }] : []),
+    ].filter(item => !reservedPasses(first ? shared.from : last ? shared.to : undefined, item.checkpoint));
+    for (const item of asked) {
+      const tip = { x: item.checkpoint.x, y: item.checkpoint.y };
+      if (!samePoint(item.terminal, tip)) result.push({ kind: item.kind, segments: [{ from: { ...item.terminal }, to: tip, owner }] });
+    }
+  }
+  return result;
+}
+
 /**
  * Plan stage 8 without touching the model: which links the router owns, which reserved runs it
  * must stitch around, which obstacles each link already owns, and the ownership batches that
@@ -305,7 +362,6 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
       const first = index === 0, last = index * 2 + 2 === stops.length;
       // A side run is the lateral port's own stem (side-faces.md, Section 10): it ends on the port's anchor, so the piece between that
       // end and the port is empty and asks for no approach and no stem checkpoint.
-      const isSideRun = (segment: PathSegment | undefined): boolean => segment?.lane?.startsWith('side-lane:') === true || segment?.lane?.startsWith('perimeter:') === true || segment?.lane?.startsWith('gap-lane:') === true;
       const onSideRun = samePoint(start.point, end.point) && (isSideRun(fixed[index - 1]) || isSideRun(fixed[index]));
       if (!onSideRun && !(start.endpoint.kind === 'point' && end.endpoint.kind === 'point' && samePoint(start.point, end.point))) {
         const id = `${link.id}#${index}`;
@@ -339,7 +395,8 @@ export function planRoute(model: LayoutModel, plans?: Parameters<typeof allocate
         const pins = [...(first && from.port ? [from.port] : []), ...(last && to.port ? [to.port] : [])];
         const attached = { nodes: pins.map(port => port.ref.node), ports: pins.map(port => portId(port.ref)) };
         if (run && corridorFree(model, link, run, attached, reserved)) {
-          pieces.push({ kind: 'straight', segments: [{ ...run, owner: { kind: 'link' as const, id: link.id } }] });
+          pieces.push({ kind: 'straight', segments: [{ ...run, owner: { kind: 'link' as const, id: link.id } }],
+            passes: asked.map(item => ({ from: { ...item.terminal }, to: { x: item.checkpoint.x, y: item.checkpoint.y } })) });
           // `routed:` is `completedRouteObstacles`' own prefix for a chain it was handed, which the
           // leg and the tier-gap allocation carry for the same reason. It names the producer, not
           // the geometry: every cover this pass adds is under it, whoever fixed the run.

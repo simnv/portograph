@@ -18,6 +18,7 @@ import { strictCrossing } from './read/crossings.js';
 import { readCache } from '../model/read-cache.js';
 import { parallelClearance } from '../score/gates.js';
 import type { Segment } from '../score/model.js';
+import { reservedRunsOf, type ReservedRunKind } from '../route/plan.js';
 import { attemptCounters } from './attempt-counters.js';
 
 /**
@@ -34,12 +35,6 @@ import { attemptCounters } from './attempt-counters.js';
  * one row; every other stepped part has one.
  */
 
-/**
- * A stem tip of a port outside the plan: one entry per link that uses the port, with the y of its port face and that link's stroke (`linkStrokeWidth`),
- * so the dodge reads the stem as the scorer does. Absent `face` or `stroke`: the stem is not known, and the dodge refuses to move a part (R6).
- */
-export interface FrameTip { x: number; y: number; face?: number; stroke?: number }
-
 /** One end of a part: a port's stem tip, or a lane's mouth (one router stem inside the gap boundary). */
 export interface PlanEnd {
   x: number;
@@ -47,12 +42,6 @@ export interface PlanEnd {
   kind: 'tip' | 'mouth';
   /** The port or the lane the end belongs to. Two ends of one source share their leg; two others may not stand within `keep`. */
   source: string;
-  /**
-   * The y of the port face of a tip: its stem runs from (x, face) to (x, y), outside the plan's own pieces (dense-16x9 ticket 14, review 4). Absent on a
-   * mouth, whose piece from the gap boundary `plannedSegments` already holds; absent on a tip where the face is not known, and then the dodge refuses
-   * to move a part beside it (R6).
-   */
-  face?: number;
 }
 
 /** A part as the plan takes it: `upper` is the end nearer the low boundary. */
@@ -121,8 +110,8 @@ export interface PlanFrame {
   pitch: number;
   edge: number;
   /** Upper tips and lower tips of ports that belong to no part of this gap (a residual link, a bundle port). */
-  tips: readonly FrameTip[];
-  lowerTips: readonly FrameTip[];
+  tips: readonly { x: number; y: number }[];
+  lowerTips: readonly { x: number; y: number }[];
   obstacles: readonly PlanObstacle[];
   /**
    * Fixed obstacles a leg may not pass through (a group label, a foreign lane box, a bundle envelope, a placed obstacle), with the
@@ -142,10 +131,9 @@ export interface PlanFrame {
    * A chord across the whole gap (no `partial`) is a hard wall to a Z part's middle drop: the drop keeps `keep` from the whole x-span (`chordWall`).
    * Every chord is also a preference wall (`dodge`): a middle drop or the long vertical of a jogged drop that stands in a wall moves to an x clear of
    * every wall only where that keeps every part's shape and rows, the gap's height and growth, and adds no finding; else the seat stays. A chord asks
-   * for no height and a planned row may cross it. `line` is the held chord itself and its link's stroke, for the dodge's G6 and crossing reading
-   * (absent: the dodge cannot read the chord and moves nothing, R6).
+   * for no height and a planned row may cross it.
    */
-  chords?: readonly { low: number; high: number; partial?: true; line?: { segment: PathSegment; stroke: number } }[];
+  chords?: readonly { low: number; high: number; partial?: true }[];
   /**
    * The held chords of fan members that cross the gap (architecture-2 ticket 40). A fan member crosses the fallback legs of its own family
    * (`fixedPointRefusal`), so where such a leg ends on its row is not known when the chord is admitted: the plan seats every row so that its
@@ -623,7 +611,23 @@ const gapPlanCache = readCache('gapPlan');
  * first, then the smaller lb, then model order, each on the highest row it may take, packed from `low`. `H` is
  * computed afterwards from the crossings the packed order really has (Section 3).
  */
-export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
+export function planGap(inputs: readonly PlanInput[], frame: PlanFrame, context?: DodgeContext): GapPlan {
+  const base = basePlan(inputs, frame);
+  return context === undefined ? base : dodge(base, inputs, frame, context);
+}
+
+/**
+ * What the dodge reads beyond the plan's own numbers: the gap the planned pieces stand in, and every segment reserved before routing in and at the
+ * boundary of the gap (`reservedSegments`), read once and only when a try needs it. Absent: the dodge cannot read the geometry beside a moved
+ * part and moves nothing (R6).
+ */
+export interface DodgeContext {
+  gap: { low: number; high: number };
+  reserved: () => readonly ReservedSegment[];
+}
+
+/** The plan of the gap as before ticket 14 (no dodge), memoized by its inputs and frame. */
+function basePlan(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
   attemptCounters.gapPlan.calls++;
   const key = JSON.stringify([inputs, frame]);
   const cachedText = gapPlanMemo.get(key);
@@ -632,11 +636,11 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan
     gapPlanMemo.set(key, cachedText);
     attemptCounters.gapPlan.memoHits++;
     const cachedPlan = JSON.parse(cachedText) as GapPlan;
-    return gapPlanCache.hit({} as LayoutModel, cachedPlan, () => dodge(inputs, frame));
+    return gapPlanCache.hit({} as LayoutModel, cachedPlan, () => planGapCore(inputs, frame, NO_FORCE));
   }
   gapPlanCache.miss();
   attemptCounters.gapPlan.computes++;
-  const computed = dodge(inputs, frame);
+  const computed = planGapCore(inputs, frame, NO_FORCE);
   const serialized = JSON.stringify(computed);
   if (gapPlanMemo.size >= GAP_PLAN_MEMO_LIMIT) {
     const oldest = gapPlanMemo.keys().next().value;
@@ -651,73 +655,43 @@ interface Forced {
   middles: ReadonlyMap<string, number>;
   stands: ReadonlyMap<string, 'upper' | 'lower'>;
 }
+const NO_FORCE: Forced = { middles: new Map(), stands: new Map() };
 
 /** What `movedPairs` reads of the pairs that hold a moved part. */
 interface PairReading {
-  /** The G6 findings of each pair (`parallelClearance`), and the least clearance of a finding segment pair: distance less the two half strokes. */
+  /** The G6 findings of each part pair (`parallelClearance`), and the least clearance of a finding segment pair: distance less the two half strokes. */
   findings: Map<string, { count: number; clearance: number }>;
-  /** The strict crossings of the pairs that hold a moved part (`strictCrossing`), segment by segment. */
+  /** The strict crossings between planned parts (`strictCrossing`), segment by segment. */
   crossings: number;
 }
 
 /**
- * What the parts that `moved` names stand against everything the gate reads in and at the boundary of the gap, read with the gate's own predicates
- * (`parallelClearance` alone per segment pair, so a finding carries its distance, and `strictCrossing`) and the scorer's own inputs (each link's
- * `linkStrokeWidth`). A planned part has no bundle and no junction, so the predicate's exemptions read an empty model.
- *
- * The inventory of that geometry, for a planned link of the gap (dense-16x9 ticket 14, review 4), and what this reading holds of it:
- * - The port-to-tip stem at each tip end of a planned part: held, from the port face (`PlanEnd.face`) to the tip. The stems do not move, but the
- *   moved part does, so a pair with a stem can change.
- * - The tip-to-tip pieces of every planned part (legs, rows, a Z middle drop, a drop's vertical and jog, a U part's legs and row): held
- *   (`plannedSegments`); a mouth end's piece starts at the gap boundary, where the lane's reserved run ends.
- * - Lane mouths and lane runs: a mouth's piece is held above. A lane that crosses the gap is a wall; a part whose span comes within `keep` of it is
- *   residual before the plan (`crosses-lane`), and every moved vertical stands inside its own part's span, so no such lane run stands within `keep`
- *   of it. A lane box that ends in the gap is an O5 obstacle and a block, which the plan's rows, jogs and stands keep off for any seat the dodge tries
- *   (`lbOf`, `fixedNeed`, `jogOf`, `upperStandBlocked`), and the try keeps every row. A lane run outside the gap is outside the moved geometry's y.
- * The planner's own admission does not measure this: a stand is admitted by the x of the ends alone (`legsOf`, `near`: two legs of other sources
- * within `keep` are named in `crowded`, never refused, with no stroke and no y-extent), and a middle drop keeps `keep` from the x of the ends of the
- * planned parts but not from the stems of the frame's tips. So the dodge reads the whole geometry here, and keeps every crowded entry of the base.
- * - The stems of ports outside the plan (`frame.tips`, `frame.lowerTips`: residual links, bundle ports), once per link with its own stroke: held.
- * - Residual parts: their stems are held (from the frame's tips, or from the ends of a part the plan itself declined). Their interior is the router's
- *   (ADR-0021 decision 4) and is not known here; `keepsPlan` keeps the residual set, and the 7f judges read the rest (slices 2 and 3).
- * - Held chords (the walls): held, from `PlanFrame.chords[].line` with the chord link's stroke.
- * Undefined where any of it cannot be read (a tip without a face, a stem or a chord without its stroke or line): the try is refused (R6).
+ * What the parts that `moved` names stand against everything reserved in and at the boundary of the gap before routing: the other planned parts of
+ * this plan (`plannedSegments`) and `reservedSegments`, less the moved parts' own links. Both are read with the gate's own predicates
+ * (`parallelClearance`, one segment pair at a time so a finding carries its distance, and `strictCrossing`) and the scorer's own strokes
+ * (`linkStrokeWidth`). The pairs are keyed by the moved part and the other link. The exemptions of the predicate read an empty model: a moved part
+ * is never a bundle member, and a junction's stem is measured against every link, members included, which can only refuse a try the gate would allow.
+ * Undefined where a part has no stroke (R6).
  */
-function movedPairs(plan: GapPlan, frame: PlanFrame, moved: ReadonlySet<string>, strokes: ReadonlyMap<string, number>): PairReading | undefined {
-  const gap = { low: frame.low, high: frame.bandTop };
-  const items: { id: string; runs: Segment[] }[] = [];
-  const item = (id: string, segments: readonly PathSegment[], stroke: number): void => {
+function movedPairs(plan: GapPlan, moved: ReadonlySet<string>, strokes: ReadonlyMap<string, number>, gap: { low: number; high: number },
+  reserved: readonly ReservedSegment[]): PairReading | undefined {
+  const runs = (id: string, segments: readonly PathSegment[], stroke: number): Segment[] => {
     const link = { id, path: { segments } } as unknown as LayoutLink;
-    items.push({ id, runs: segments.map((segment, index) => ({ segment, link, index, stroke })) });
+    return segments.map((segment, index) => ({ segment, link, index, stroke }));
   };
-  const owner = (id: string): PathSegment['owner'] => ({ kind: 'link', id });
-  const stem = (end: PlanEnd, id: string): PathSegment[] | undefined => end.kind !== 'tip' ? [] : end.face === undefined ? undefined
-    : same(end.face, end.y) ? [] : [{ from: { x: end.x, y: end.face }, to: { x: end.x, y: end.y }, owner: owner(id) }];
+  const movers: { id: string; runs: Segment[] }[] = [], others: { id: string; runs: Segment[] }[] = [];
+  const movedLinks = new Set<string>();
   for (const part of plan.parts) {
-    const stroke = strokes.get(part.id), upper = stem(part.upper, part.id), lower = stem(part.lower, part.id);
-    if (stroke === undefined || upper === undefined || lower === undefined) return undefined;
-    item(part.id, [...upper, ...plannedSegments(part, gap), ...lower], stroke);
+    const stroke = strokes.get(part.id);
+    if (stroke === undefined) return undefined;
+    const item = { id: part.id, runs: runs(part.link, plannedSegments(part, gap), stroke) };
+    if (moved.has(part.id)) { movers.push(item); movedLinks.add(part.link); } else others.push({ ...item, id: part.link });
   }
-  for (const part of plan.residual) {
-    const ends = [part.upper, part.lower].filter((end): end is PlanEnd => end !== undefined);
-    if (!ends.length) continue;
-    const stroke = strokes.get(part.id), stems = ends.map(end => stem(end, part.id));
-    if (stroke === undefined || stems.some(found => found === undefined)) return undefined;
-    item(`residual:${part.id}`, stems.flat() as PathSegment[], stroke);
-  }
-  for (const [index, tip] of [...frame.tips, ...frame.lowerTips].entries()) {
-    if (tip.face === undefined || tip.stroke === undefined) return undefined;
-    if (!same(tip.face, tip.y)) item(`stem:${index}`, [{ from: { x: tip.x, y: tip.face }, to: { x: tip.x, y: tip.y }, owner: owner(`stem:${index}`) }], tip.stroke);
-  }
-  for (const [index, chord] of (frame.chords ?? []).entries()) {
-    if (chord.line === undefined) return undefined;
-    item(`chord:${index}`, [chord.line.segment], chord.line.stroke);
-  }
+  for (const entry of reserved) if (!movedLinks.has(entry.link)) others.push({ id: entry.link, runs: runs(entry.link, [entry.segment], entry.stroke) });
   const findings = new Map<string, { count: number; clearance: number }>();
   let crossings = 0;
-  for (const [index, a] of items.entries()) for (const b of items.slice(index + 1)) {
-    if (!moved.has(a.id) && !moved.has(b.id)) continue;
-    const key = [a.id, b.id].sort().join('\0');
+  const pair = (a: { id: string; runs: Segment[] }, b: { id: string; runs: Segment[] }): void => {
+    const key = `${a.id}\0${b.id}`;
     for (const x of a.runs) for (const y of b.runs) {
       if (strictCrossing(x.segment, y.segment)) crossings++;
       parallelClearance(NO_PLAN_MODEL, [x, y], () => {
@@ -725,10 +699,14 @@ function movedPairs(plan: GapPlan, frame: PlanFrame, moved: ReadonlySet<string>,
         findings.set(key, { count: (found?.count ?? 0) + 1, clearance: Math.min(found?.clearance ?? Infinity, clearance) });
       });
     }
+  };
+  for (const [index, mover] of movers.entries()) {
+    for (const other of others) pair(mover, other);
+    for (const second of movers.slice(index + 1)) pair(mover, second);
   }
   return { findings, crossings };
 }
-/** The model `movedPairs` hands the G6 predicate: planned parts carry no bundle and no junction. */
+/** The model `movedPairs` hands the G6 predicate: no bundle and no junction, so no exemption. */
 const NO_PLAN_MODEL = { links: [], bundles: [], junctions: [] } as unknown as LayoutModel;
 
 /**
@@ -737,7 +715,7 @@ const NO_PLAN_MODEL = { links: [], bundles: [], junctions: [] } as unknown as La
  * findings, no pair with a finding in the base whose least clearance falls (an equal count must not hide a worse distance), and no increase in total
  * crossings between planned parts.
  */
-function keepsPlan(base: GapPlan, trial: GapPlan, frame: PlanFrame, strokes: ReadonlyMap<string, number>): boolean {
+function keepsPlan(base: GapPlan, trial: GapPlan, strokes: ReadonlyMap<string, number>, gap: { low: number; high: number }, reserved: () => readonly ReservedSegment[]): boolean {
   const ids = (items: readonly { id: string }[]): string => items.map(item => item.id).sort().join('\0');
   if (ids(base.parts) !== ids(trial.parts) || ids(base.residual) !== ids(trial.residual)) return false;
   if (Math.abs(base.height - trial.height) > EPS || Math.abs(base.growth - trial.growth) > EPS) return false;
@@ -751,11 +729,11 @@ function keepsPlan(base: GapPlan, trial: GapPlan, frame: PlanFrame, strokes: Rea
   if (![...keys(trial.crowded)].every(key => crowded.has(key)) || ![...keys(trial.slantLimited)].every(key => limited.has(key))) return false;
   // Every pair that holds a moved part: no G6 finding the base lacks (the first clash `crowded` names is not the only one), and no crossing more
   // between planned parts (dense-16x9 ticket 14, review 2: a dodge never adds a crossing).
-  const segmentsOf = (plan: GapPlan): Map<string, string> => new Map(plan.parts.map(part => [part.id, JSON.stringify(plannedSegments(part, { low: frame.low, high: frame.bandTop }))]));
+  const segmentsOf = (plan: GapPlan): Map<string, string> => new Map(plan.parts.map(part => [part.id, JSON.stringify(plannedSegments(part, gap))]));
   const was = segmentsOf(base), now = segmentsOf(trial);
   const moved = new Set([...now].filter(([id, text]) => was.get(id) !== text).map(([id]) => id));
   if (!moved.size) return true;
-  const before = movedPairs(base, frame, moved, strokes), after = movedPairs(trial, frame, moved, strokes);
+  const before = movedPairs(base, moved, strokes, gap, reserved()), after = movedPairs(trial, moved, strokes, gap, reserved());
   if (before === undefined || after === undefined) return false;
   for (const [key, now] of after.findings) {
     const was = before.findings.get(key);
@@ -772,8 +750,9 @@ function keepsPlan(base: GapPlan, trial: GapPlan, frame: PlanFrame, strokes: Rea
  * shape, row, height or growth changes, so no bend is added, no finding is added, no pair's finding gets worse, and total crossings do not increase; else the next clear x is tried. With no such seat the part keeps its seat (a chord left
  * beside it is the 7f retry's to refuse, slice 3), so the wall never drops a reservation. The tries are finite: one per candidate x or stand.
  */
-function dodge(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
-  const base = planGapCore(inputs, frame, { middles: new Map(), stands: new Map() });
+function dodge(base: GapPlan, inputs: readonly PlanInput[], frame: PlanFrame, context: DodgeContext): GapPlan {
+  let read: readonly ReservedSegment[] | undefined;
+  const reserved = (): readonly ReservedSegment[] => (read ??= context.reserved());
   const walls = (frame.chords ?? []).map(chord => chordWall(chord, frame.keep));
   if (!walls.length) return base;
   const walled = (x: number): boolean => walls.some(([x0, x1]) => x > x0 + EPS && x < x1 - EPS);
@@ -793,7 +772,7 @@ function dodge(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
     }
     for (const forced of tries) {
       const trial = planGapCore(inputs, frame, forced), moved = trial.parts.find(item => item.id === part.id);
-      if (!keepsPlan(base, trial, frame, strokes) || moved === undefined) continue;
+      if (!keepsPlan(base, trial, strokes, context.gap, reserved) || moved === undefined) continue;
       if (part.shape === 'z' ? !same(moved.middle!, forced.middles.get(part.id)!) : moved.stand !== forced.stands.get(part.id)) continue;
       plan = trial;
       for (const [id, x] of forced.middles) middles.set(id, x);
@@ -1164,8 +1143,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
           // Only a link with a `u-turn` course of the tier gap is planned (ADR-0021: `u-turn` stays residual for a link with no course): stage 5 set both faces for it.
           const tips = [from!, to!].map(port => {
             const sign = port.side === 'bottom' ? 1 : -1;
-            return { x: port.anchor!.x, y: port.anchor!.y + sign * stemPlan(model, port, cache).depth, kind: 'tip' as const, source: `${port.ref.node}|${port.side}|${port.anchor!.x}`,
-              face: port.anchor!.y };
+            return { x: port.anchor!.x, y: port.anchor!.y + sign * stemPlan(model, port, cache).depth, kind: 'tip' as const, source: `${port.ref.node}|${port.side}|${port.anchor!.x}` };
           });
           if (!tierGapUTurn(model, link.id) || Math.abs(tips[0]!.x - tips[1]!.x) < keep - EPS) fail('u-turn');
           else {
@@ -1184,7 +1162,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
         if (edgeOf(gap, laneStop.point) === 'low' && portEnd?.anchor !== undefined && portEnd.side === 'bottom' && same(portEnd.anchor.x, portStop.point.x) && same(portEnd.anchor.y, portStop.point.y)
           && portEnd.anchor.y <= gap.low + EPS && portEnd.anchor.y >= above.y - EPS) {
           const depth = stemPlan(model, portEnd, cache).depth;
-          const tip: PlanEnd = { x: portEnd.anchor.x, y: portEnd.anchor.y + depth, kind: 'tip', source: `${portEnd.ref.node}|${portEnd.side}|${portEnd.anchor.x}`, face: portEnd.anchor.y };
+          const tip: PlanEnd = { x: portEnd.anchor.x, y: portEnd.anchor.y + depth, kind: 'tip', source: `${portEnd.ref.node}|${portEnd.side}|${portEnd.anchor.x}` };
           const mouth: PlanEnd = { x: laneStop.point.x, y: gap.low + stem, kind: 'mouth', source: `lane|${laneStop.point.x}|low` };
           if (Math.abs(tip.x - mouth.x) < keep - EPS) { fail('u-turn'); continue; }
           const [first, second] = a.kind === 'port' ? [tip, mouth] : [mouth, tip];
@@ -1214,7 +1192,7 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
       if (first === 'off' || second === 'off') { fail('off-boundary'); continue; }
       const [upper, lower] = first.from <= second.from ? [first, second] : [second, first];
       if (upper.faces !== 'low' || lower.faces !== 'high') { fail('faces-away'); continue; }
-      const strip = (item: Side): PlanEnd => ({ x: item.x, y: item.y, kind: item.kind, source: item.source, ...(item.kind === 'tip' ? { face: item.from } : {}) });
+      const strip = (item: Side): PlanEnd => ({ x: item.x, y: item.y, kind: item.kind, source: item.source });
       const room = labelRoom(model, link);
       inputs.push({ id, link: link.id, order, index, stroke: linkStrokeWidth(link), upperFirst: upper === first, upper: strip(upper), lower: strip(lower),
         ...(room ? { labelRoom: room } : {}) });
@@ -1320,20 +1298,53 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   const ends = new Set(kept.flatMap(input => [`${input.upper.x}|${input.upper.y}`, `${input.lower.x}|${input.lower.y}`]));
   const tips = facingTips(model, gap, cache).filter(item => !ends.has(`${item.tip.x}|${item.tip.y}`));
   const held = heldChordsIn(model, gap);
-  // A foreign stem, once per link that uses its port, with that link's stroke: the dodge reads it as the scorer does.
-  const linkOf = new Map(model.links.map(link => [link.id, link]));
-  const frameTips = (items: readonly NestedTip[]): FrameTip[] => items.flatMap(item => [...item.consumers].sort().map(id => {
-    const link = linkOf.get(id);
-    return { x: item.tip.x, y: item.tip.y, face: item.anchor.y, ...(link !== undefined ? { stroke: linkStrokeWidth(link) } : {}) };
-  }));
+  // The dodge reads every segment reserved before routing beside the gap, once and only when it tries a seat.
+  const context: DodgeContext = { gap, reserved: () => reservedSegments(model, gap, undefined, cache) };
   return planGap(kept, { low: gap.low, bandTop, floor, keep, pitch: keep, edge: margin, obstacles, blocks,
-    tips: frameTips(tips.filter(item => item.side === 'bottom')), lowerTips: frameTips(tips.filter(item => item.side === 'top')), residual,
+    tips: tips.filter(item => item.side === 'bottom').map(item => item.tip),
+    lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual,
     verticals: (model.meshBuses ?? []).filter(bus => bus.riser !== undefined && bus.cross !== undefined
       && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x),
-    chords: held.map(item => ({ low: item.low, high: item.high, ...(item.across ? {} : { partial: true as const }),
-      line: { segment: item.segment, stroke: linkStrokeWidth(item.link) } })),
+    chords: held.map(item => ({ low: item.low, high: item.high, ...(item.across ? {} : { partial: true as const }) })),
     // The fan rows read the chords that cross the whole gap, as before ticket 14.
-    ...(model.fanFamilies !== undefined ? { slants: held.filter(item => item.across && item.link.fanFamily !== undefined).map(item => item.segment) } : {}) });
+    ...(model.fanFamilies !== undefined ? { slants: held.filter(item => item.across && item.link.fanFamily !== undefined).map(item => item.segment) } : {}) }, context);
+}
+
+/** One segment that a final routed path will hold, known before stage 8 routes (`reservedSegments`). */
+export interface ReservedSegment {
+  link: string;
+  segment: PathSegment;
+  /** The link's own stroke (`linkStrokeWidth`), as the scorer reads it. */
+  stroke: number;
+  /** Which producer reserved it (`reservedRunsOf`), or `planned`: a planned part of the gap's own plan. */
+  kind: ReservedRunKind | 'planned';
+}
+
+/**
+ * Every segment reserved before routing that a final routed path holds in or at the boundary of `gap`: within `keep` of its y-range, as nothing
+ * farther can stand within the G6 clearance of a piece inside the gap, or cross one. The one reader of what stage 8 keeps of placement: each
+ * link's `reservedRunsOf` (a stored path, the shared junction runs at both ends, the lane runs and their mouths, the row-gap leg, the port
+ * stems), and, given the gap's plan, its planned parts where the plan fits (as `allocateGapRuns` stitches them). The planned parts of other gaps
+ * stand in their own gaps, which the bands keep farther apart than `keep`. A straight piece stage 8 claims and a routed gap are stage 8's own and
+ * are not here. `plan` absent: the gap's own planned parts are left out (the dodge supplies them). A new producer of reserved geometry joins
+ * `reservedRunsOf`, or the completeness test fails (test/layout/reserved-segments.test.ts).
+ */
+export function reservedSegments(model: LayoutModel, gap: { low: number; high: number }, plan?: GapPlan, cache: StemCache = stemCache()): ReservedSegment[] {
+  const keep = nudgingDistance(model), top = gap.low - keep, floor = gap.high + keep;
+  const near = (segment: PathSegment): boolean => Math.max(segment.from.y, segment.to.y) >= top - EPS && Math.min(segment.from.y, segment.to.y) <= floor + EPS;
+  const result: ReservedSegment[] = [];
+  const add = (link: LayoutLink, kind: ReservedSegment['kind'], segment: PathSegment): void => {
+    if (near(segment)) result.push({ link: link.id, segment, stroke: linkStrokeWidth(link), kind });
+  };
+  for (const link of model.links) for (const run of reservedRunsOf(model, link, cache)) for (const segment of run.segments) add(link, run.kind, segment);
+  if (plan !== undefined && plan.growth <= EPS) {
+    const links = new Map(model.links.map(link => [link.id, link]));
+    for (const part of plan.parts) {
+      const link = links.get(part.link);
+      if (link !== undefined) for (const segment of plannedSegments(part, gap)) add(link, 'planned', segment);
+    }
+  }
+  return result;
 }
 
 /** A held routed chord with an extent in one tier gap. */
