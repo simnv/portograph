@@ -6,6 +6,7 @@ import { findPort } from '../row-paths.js';
 import { portId } from '../skeleton-graph.js';
 import { nodeTier } from './tier.js';
 import { chainBlockOf, columnUnitId } from './chain.js';
+import { chordHubOf } from './stagger.js';
 
 /**
  * Shared readers: "what feeds this group?" Two modes, and they are not one answer. Ticket 74 unifies them; until then each is
@@ -48,6 +49,9 @@ export function centringFeeds(model: LayoutModel, tier: number, authority: numbe
       // A bar takes its slots from the reserved stagger, so it cannot also dictate the child's old x.
       if (model.staggerRows?.some(row => row.group === model.document.nodes[childRef.node]!.group)
         && model.document.groups[model.document.nodes[parentRef.node]!.group]!.shape === 'bar') continue;
+      // A compact hub's member link is a routed chord (dense-16x9 ticket 03, slice C): stage 5 seated the hub, and 7c neither moves the hub
+      // over the member nor the member under the hub.
+      if (chordHubOf(model, link) !== undefined) continue;
       if (parent.side !== (tier > authority ? 'bottom' : 'top') || child.side !== (tier > authority ? 'top' : 'bottom')) continue;
       // A bundle member carries its lane only until 7e, which owns member geometry; only a
       // non-bundle transit with an owned lane in the authority tier fixes its child's x here.

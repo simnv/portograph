@@ -22,6 +22,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { transitTiers } from './read/tier.js';
 import { strictCrossing } from './read/crossings.js';
 import { isSideEntry } from './lift.js';
+import { chordRowOf } from './read/stagger.js';
 import type { PortRef } from '../model/document.js';
 
 /**
@@ -54,6 +55,15 @@ function sameFrame(model: LayoutModel, a: string, b: string): boolean {
  */
 export function fanFamilyOf(model: LayoutModel, link: LayoutLink): FanFamily | undefined {
   return link.fanFamily === undefined ? undefined : model.fanFamilies?.find(family => family.id === link.fanFamily);
+}
+/**
+ * Whether the chord of one link may cross the fallback leg of the other (`fixedPointRefusal`): two members of one fan family (Q126), or two member
+ * links of one chord row (dense-16x9 ticket 03, slice C), each read from its stage-5 record.
+ */
+export function legSiblings(model: LayoutModel, a: LayoutLink, b: LayoutLink): boolean {
+  if (fanSiblings(a, b)) return true;
+  const row = chordRowOf(model, a);
+  return row !== undefined && row === chordRowOf(model, b);
 }
 /** Whether two links are members of one fan family: the fallback legs of one are crossed by the chord of the other, and their crossings are faint. */
 export function fanSiblings(a: LayoutLink, b: LayoutLink): boolean {
@@ -545,7 +555,10 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
       // a direct member reads a fallback leg. The tier-gap plan seats the fallback's row across the chord or clear of it (`slants`, gap-plan.ts).
       // A fallback's leg is not final before the freeze (a side round can move it), so its stem is judged there: a chord that still passes a
       // sibling's stem falls back (`refuseStemCrowded`), and the crowding retry reads the same test at the end of 7f (`siblingStemCrowded`).
-      if (spans && fanSiblings(link, other)) continue;
+      // Two member links of one chord row (dense-16x9 ticket 03, slice C; the stage-5 record `chordHubs`) read each other's legs the same way: the
+      // stage-5 seat reserved each far-line stem in its corridor, so a chord may cross a sibling's fallback leg. Ticket 04 replaces both memberships
+      // with its general stem rule.
+      if (spans && legSiblings(model, link, other)) continue;
       if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }

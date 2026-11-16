@@ -976,6 +976,13 @@ export interface StaggerRow {
    * block and no chain). Publication and restore check that a chain still stands over its block (`validateStaggerRows`).
    */
   chain?: string[];
+  /**
+   * The compact hubs of a row that holds a member with several links (dense-16x9 ticket 03, slice C; ADR-0024): the far nodes of the member
+   * links, sorted by id. Each keeps its width and stands in one packed run with the others, and every member link is a cross-frame routed chord
+   * to it. `[]`: decided, every hub spans its drops (the one-link rule). The first stage-5 seat decides it; absent on a seated or published row
+   * is invalid. A seat input (the width-budget search, a test) may leave it out.
+   */
+  chordHubs?: string[];
 }
 /**
  * One feed split (ticket 73): the feeding side of the step `tier` (child) and `authority` (the adjacent sub-tier toward the anchor) right of x `at`

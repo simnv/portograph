@@ -58,12 +58,12 @@ export const BOX_WRITERS: readonly BoxWriter[] = [
   { id: 'S12', file: 'src/layout/columns.ts', fn: 'packStep', guard: { kind: 'pre-7a' } },
   { id: 'S13', file: 'src/layout/columns.ts', fn: 'packStep', guard: { kind: 'pre-7a' } },
   { id: 'S14', file: 'src/layout/sides-two.ts', fn: 'sweepTiers', guard: { kind: 'pre-7a' } },
-  { id: 'S15', file: 'src/layout/stagger.ts', fn: 'seatStaggerRows', guard: { kind: 'pre-7a' } },
+  { id: 'S15', file: 'src/layout/stagger.ts', fn: 'seatOnce', guard: { kind: 'pre-7a' } },
   { id: 'S16', file: 'src/layout/rows.ts', fn: 'reseatBands', guard: { kind: 'pre-7a' } },
   { id: 'S17', file: 'src/layout/stagger.ts', fn: 'standChain', guard: { kind: 'pre-7a' } },
   // The group lift (D-Q5, ticket 08): `seatLifts` stands a lifted component beside the units of the bands it shares, in stage 4 and again after a fan-wrap chain move in stage 5.
   { id: 'S18', file: 'src/layout/skeleton-geometry.ts', fn: 'placeFlanksAndPeers', guard: { kind: 'pre-7a' } },
-  { id: 'S19', file: 'src/layout/stagger.ts', fn: 'seatStaggerRows', guard: { kind: 'pre-7a' } },
+  { id: 'S19', file: 'src/layout/stagger.ts', fn: 'seatOnce', guard: { kind: 'pre-7a' } },
   // 7a and 7b: the rule checks of the transaction see these writes.
   { id: 'W01', file: 'src/layout/lanes.ts', fn: 'allocateLanes', guard: { kind: 'guarded', by: 'the lanes rule checks of mutate (whole-group x translation, occupied intermediate tiers, fixed transit sources); the kinds begin here' } },
   { id: 'W02', file: 'src/layout/flanks.ts', fn: 'alignFlanks', guard: { kind: 'guarded', by: 'the flanks rule checks of mutate (no x translation, a common y translation of the flank group)' } },
