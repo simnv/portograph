@@ -26,7 +26,8 @@ import { rebuildBands, span, union, validateSkeletonBands } from './skeleton-geo
 import { rebuildRowPaths, rowPathCandidate } from './row-paths.js';
 import { flankPathCandidate, rebuildFlankPaths, normalizePrimaryBundlePorts, flankPair } from './flanks.js';
 import { heldSourceGroups, rebuildLaneExtents, validateLanes, transitTiers } from './lanes.js';
-import { freezeChords, refusedChordsFault, spanCandidate } from './frame-paths.js';
+import { freezeChords, spanCandidate } from './frame-paths.js';
+import { refusedChordsFault } from './refused-chords.js';
 import { faceKey, laneFaceOrder, turnRecord, turnRecordFaults } from './turn-order.js';
 import { farEndFaceFailure, farEndOwner } from './far-end-order.js';
 import { isCourseLane, sameCourses, validateCourses } from './courses.js';

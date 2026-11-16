@@ -11,6 +11,7 @@ import type { PairPitch } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { refusedChordsFault } from './refused-chords.js';
 import { frameSubtreeCells } from '../model/model.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
@@ -605,6 +606,9 @@ function validateLedgerShape(ledger: Reservations): void {
  * from stage 3 on, and the order reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
  */
 export function validateEarlyReservations(model: LayoutModel): void {
+  // The chords the publication step refused are written on the kept 7e model only (stage `sides-two` on), so no model before it has the record
+  // (review 2 of dense-16x9 ticket 04 slice 2): a present one is refused, with the fault of the one check (`refusedChordsFault`) when it is malformed.
+  if (model.refusedChords !== undefined) throw new Error(`Invalid refused chords: ${refusedChordsFault(model) ?? `a ${model.stage} model has no record`}`);
   if (model.reservations === undefined) return;
   validateLedgerShape(model.reservations);
   // A floor is active from stage 3 (`size`): a stage-3 or stage-4 model keeps its pitch, pair and node floors (dense-16x9 ticket 04 review).

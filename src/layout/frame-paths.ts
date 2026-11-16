@@ -731,25 +731,6 @@ function standsLevel(model: LayoutModel, link: LayoutLink): boolean {
 }
 
 /**
- * What a validator checks on `model.refusedChords` (R5), the chords the publication step refused (dense-16x9 ticket 14, slice 3): sorted, unique ids
- * of links, and, once the freeze is taken, no entry is a frozen chord (7f seeds its refusals from the record, so a refused chord falls back).
- * Before the freeze (the 7e replay input) the record only names links. One check for the round (`validateGroupLabelBands`, `validateRoutedPaths`)
- * and for restore (`restoreLayoutModel`), so a record that says 7f refused a chord the freeze held stops at both (review 1 of slice 2, finding 3).
- */
-export function refusedChordsFault(model: LayoutModel): string | undefined {
-  const record = model.refusedChords as unknown;
-  if (record === undefined) return undefined;
-  if (!Array.isArray(record)) return 'the record is no list';
-  const frozen = new Set(model.frozenChords ?? []);
-  for (const [index, id] of (record as unknown[]).entries()) {
-    if (typeof id !== 'string' || !model.links.some(link => link.id === id)) return `${String(id)} is no link`;
-    if (index > 0 && (record as string[])[index - 1]! >= id) return `${id} is out of order or named twice`;
-    if (frozen.has(id)) return `${id} is refused, but the freeze held it`;
-  }
-  return undefined;
-}
-
-/**
  * What a validator checks on `model.frozenLevelChords` (R5): it reads the record and the geometry, and never takes the freeze decision again (R1). Absent = no held chord
  * was level at the freeze. A record before the freeze is a fault; every entry names a frozen chord once, that chord is a sibling-frame chord (`levelCrossChord`: two
  * frames of one document tier, one sub-tier, facing lateral faces), and it stands level now. One check for every publication from stage 7f on, at restore too

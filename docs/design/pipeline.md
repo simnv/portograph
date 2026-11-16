@@ -2356,7 +2356,8 @@ pinned turn, so the masks stay advisory.
 Before stage 9, after the last round, one bounded step reads the state to publish: a held chord that the plan names crowded and that stands
 under the G6 clearance is refused, and placement replays once (`refuseCrowdedChords`, `refusedChords`; `docs/design/routed-chords.md`, the
 publication step after Section 8). Restore and the checks of 7f and of the routed model read the record through one check
-(`refusedChordsFault`): once the freeze is taken, no refused chord is a frozen chord.
+(`refusedChordsFault`): once the freeze is taken, no refused chord is a frozen chord. The record is written on the kept 7e model only, so the
+early restore (`validateEarlyReservations`, every stage before `sides-two`) refuses a present record and names the check's fault when it is malformed.
 
 Placed after routing on the longest segment of the computed path, then checked against every
 label, node and segment; on collision, try the next-longest segment, then offset to the other

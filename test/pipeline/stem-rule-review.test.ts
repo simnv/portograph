@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { validateEarlyReservations } from '../../src/layout/reservations.js';
+import { resolve } from '../../src/resolve/index.js';
 import { fixedPointRefusal, seatsRowsAgainst } from '../../src/layout/frame-paths.js';
 import { plannedSegments, tierGapPlan } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
@@ -84,5 +86,20 @@ describe('restore reads the refused chords against the freeze (review 1, finding
     // The record says 7f refused the chord; the freeze and the geometry say it held.
     expect(() => restoreLayoutModel(JSON.stringify({ ...model, refusedChords: [held] }))).toThrow(/refused chords/);
     // The record before the freeze (the 7e replay input) stays valid: the publication step restores it (two-pole-ranks.test.ts).
+  });
+});
+
+describe('the early restore refuses a refused-chord record (review 2)', () => {
+  const source = 'portograph: 2\ngroups: {a: {tier: 0}, b: {tier: 1}}\nnodes: {p: {group: a}, q: {group: b}}\nlinks: [[p,q]]\n';
+  // The publication step writes the record on the kept 7e model only, so a model before `sides-two` has none: a malformed record names the fault
+  // of the one check (`refusedChordsFault`), a well-formed one is refused for its stage.
+  it.each([
+    ['no list', 'not-a-list', /the record is no list/],
+    ['an unknown id', ['no-such-link'], /no-such-link is no link/],
+    ['a link id', ['link-1'], /a resolve model has no record/],
+  ])('refuses %s', (_name, record, fault) => {
+    const model = { ...resolve(parse(source)), refusedChords: record } as unknown as LayoutModel;
+    expect(() => validateEarlyReservations(model)).toThrow(fault);
+    expect(() => restoreLayoutModel(JSON.stringify(model))).toThrow(fault);
   });
 });

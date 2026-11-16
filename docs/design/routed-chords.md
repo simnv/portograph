@@ -290,7 +290,8 @@ published).* After the last round has settled, `refuseCrowdedChords` (pipeline/d
 no direct or fan member, that a `TIER_GAP_CHORD_CROWDED` note names, and that stands under the G6 clearance of the planned part
 (`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. The kept 7e model records them
 (`refusedChords`, sorted ids of links; once the freeze is taken no entry is a frozen chord. One check, `refusedChordsFault`, holds at restore and in
-the round's checks of 7f and of the routed model, so a record the freeze contradicts is refused), and placement replays once from it: 7f refuses each before the freeze as
+the round's checks of 7f and of the routed model, so a record the freeze contradicts is refused; a model before `sides-two` has no record, and the early
+restore refuses a present one), and placement replays once from it: 7f refuses each before the freeze as
 `crowds` (R1, nothing decides it again). The replay is kept only when its routed result has no error-gate finding that the state before it
 lacks; else that state stays and `HELD_CHORD_CROWDED` (warning) names the chords. One pass at most. The rounds read their own unrefused
 baselines, so a crowded baseline that a round repairs stays available to that round (traced on
