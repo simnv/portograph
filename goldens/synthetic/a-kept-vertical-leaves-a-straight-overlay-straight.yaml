@@ -1,9 +1,10 @@
 # Expected: a centring step that would keep the geometry it found for its vertical tally (ticket 65) keeps it only when every overlay link
 # that the step's own geometry draws straight stays straight (architecture-2 ticket 66). `f2` feeds three location routers and a spare,
-# and draws the overlay `f2 -> b-s2` from its bottom face. Before the seat invariant (ADR-0027) the step of `feeds` stood one vertical
-# fewer from 7e on, the guard declined the keep (`overlay-straight`) and the overlay was one segment. Under the invariant `f2` stands both
-# owed verticals (to `a-r1` and `b-r1`, 548 px), the keep branch does not run, and the overlay to `b-s2` bends: a named trade of
-# dense-16x9 ticket 02 on the owner's list. Test `alignment-targets.test.ts` (the guard is unreachable there; its header gives the evidence).
+# and draws the overlay `f2 -> b-s2` straight from its bottom face. From 7e on the step of `feeds` would stand one vertical fewer than it
+# found; the geometry it found puts a body on the overlay's straight chord, so the keep is declined (`overlay-straight`, by that overlay
+# link), the step's own geometry stands, and the decline is final for the placement attempt (the tally no longer counts the target).
+# The overlay is one segment. Without the guard it bends into five. The same on reversed links and reversed nodes (R3).
+# Test `alignment-targets.test.ts`.
 portograph: 2
 groups:
   feeds: { tier: 0, label: Feeds }

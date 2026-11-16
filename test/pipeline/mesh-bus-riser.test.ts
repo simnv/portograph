@@ -173,15 +173,12 @@ describe('the riser in placement (ticket 96)', () => {
   });
 
   it('refuses a move of a member row that puts a routed port within the riser keep-out', async () => {
-    // Read on the 7c model: from 7f on the member ports stand on held straight chords, and a held chord is a wall (`chordsHold`, ticket 34) that
-    // refuses any move before the keep-out is read (dense-16x9 ticket 02). At 7c the riser stands and no chord is a wall yet.
-    const model = centre(flanks(lanes(rows(await placedModel(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'))))));
+    const model = await run(fixture('a-mesh-over-two-rows-joins-its-bars-with-one-riser'));
     const upper = model.meshBuses![0]!, x = upper.riser!.x;
     const used = new Set(model.links.filter(link => link.layer === 'routed' && link.technique !== 'stub' && link.attachments)
       .flatMap(link => [link.attachments!.from, link.attachments!.to]).map(ref => `${ref.node}:${ref.ordinal}`));
     const found = Object.values(model.groups).flatMap(group => group.tier === upper.row ? group.nodes.flatMap(id => model.nodes[id]!.ports
       .filter(port => port.side === 'bottom' && used.has(`${id}:${port.ref.ordinal}`)).map(port => ({ group, port }))) : [])[0];
-    expect(found).toBeDefined();
     if (found === undefined) return;
     const bounds = found.group.bounds!, dx = x - found.port.anchor!.x + 2;
     expect(holdsMove(model, [{ group: found.group, bounds: { ...bounds, x: bounds.x + dx } }], false)).toBe(false);

@@ -56,8 +56,7 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
     expect(sides(joint)).toEqual(['link-10 left of aggr', 'link-11 right of aggr']);
     expect(sides(alone)).toEqual([]);
     expect([crossings(joint), bends(joint)]).toEqual([1, 6]);
-    // ADR-0027 removes the joint-off body's stretch: 7/8 becomes 7/14 and, with the seat of dense-16x9 ticket 02, 7/7; the joint order (1/6) still wins.
-    expect([crossings(alone), bends(alone)]).toEqual([7, 7]);
+    expect([crossings(alone), bends(alone)]).toEqual([7, 8]);
     expect(validateRowOrderDecisions(joint)).toEqual([]);
   }, 120000);
 
@@ -83,8 +82,7 @@ describe('the joint stage-4 order (architecture-2 ticket 72)', () => {
     for (const entry of ofKind(joint.reservations ?? [], 'corridorSide')) expect(corridorSideFailure(entry, joint)).toBeUndefined();
     // Bends 2 before architecture-2 ticket 73: the feed split stands both sink groups under their feeds.
     expect([crossings(joint), bends(joint)]).toEqual([1, 0]);
-    // ADR-0027 removes the joint-off body's stretch: 6/5 becomes 15/18 and, with the seat of dense-16x9 ticket 02, 15/12; the corridor-side gain (1/0) stands.
-    expect([crossings(alone), bends(alone)]).toEqual([15, 12]);
+    expect([crossings(alone), bends(alone)]).toEqual([6, 5]);
   }, 120000);
 
   it('lays the mirrored input out: it publishes, refuses nothing and removes no link (R3)', async () => {

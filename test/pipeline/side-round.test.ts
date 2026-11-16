@@ -83,10 +83,7 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // Architecture-2 ticket 57: the model gains `stemDepths`, and the orthogonal counterfactual of the two direct families (`directFamilies`,
     // read at the start of 7f) counts 8 and 5 crossings, not 7 and 3, its witnesses 17.5 px lower; no drawn geometry differs (80554445aba21345 before).
     // Architecture-2 ticket 73: the model gains `feedSplits: []` (and its freeze copy); without that key the hash is the old 89c13145a5d4be12.
-    // ADR-0027 (the alignment cap and the seat of dense-16x9 ticket 02) replaced the geometry that main drew: 90ec7d9b78710dd1 before. The rule
-    // is the comparison with the run that has no re-run (so no side round and no fan round): not the literal.
-    expect(hash(model)).toBe('a99c7fe9688dfafb');
-    expect(hash((await run(FAN, { testMaxReruns: 0 })).model)).toBe(hash(model));
+    expect(hash(model)).toBe('90ec7d9b78710dd1');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);
@@ -111,9 +108,7 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // Architecture-2 ticket 73: without `feedSplits` the hash is the old 7149b9a576a2ee40.
     // Ticket DR-04: link-2 and link-3 change ids in the canonical link order (and so in their anonymous port ordinals); an id-free diff against
     // the layout before DR-04 shows the same canvas, bodies, ports, paths, boxes and labels (79188b2a83e27b6e before).
-    // ADR-0027 (the alignment cap and the seat of dense-16x9 ticket 02) replaced the geometry that main drew: 32e6ad72742765ec before.
-    expect(hash(model)).toBe('7c024f7ca125ffd9');
-    expect(hash((await run(BLOCKED, { testMaxReruns: 0 })).model)).toBe(hash(model));
+    expect(hash(model)).toBe('32e6ad72742765ec');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);

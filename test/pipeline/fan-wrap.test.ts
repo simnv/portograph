@@ -18,7 +18,7 @@ import { withAspect } from '../aspect-fixture.js';
 const NAME = 'a-leaf-cell-wider-than-its-block-wraps';
 const CHAIN = 'a-feeding-chain-moves-over-its-wrapped-block';
 const KEY = 'a-chain-of-tiers-packs-over-its-feeds-final-x';
-const DECLINED = 'a-wrap-that-bends-a-straight-overlay-is-declined';
+const DECLINED = 'a-wrap-that-loses-a-straight-link-is-declined';
 const CELL = 'west-zone#2';
 const fixture = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
 const run = (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
@@ -122,9 +122,8 @@ describe('fan wrap: the feeding chain stands over its wrapped block (D-Q4)', () 
     expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED')).toEqual([]);
     const plain = await run(oneLine(fixture(CHAIN)));
     expect(area(model)).toBeLessThan(area(plain));
-    // Before ADR-0027 the one-line layout stretched Dist one toward West gateway, and this line proved that the chain move saves that growth.
-    // The seat now moves Dist one before it grows it, so the one-line layout stretches nothing either; the chain still grows no body (above).
-    expect(stretched(plain, ['dist-1'])).toEqual([]);
+    // The one-line layout stretches Dist one toward West gateway; the chain move makes that growth unnecessary.
+    expect(stretched(plain, ['dist-1'])).toEqual(['dist-1']);
     expect(failedGates(model)).toEqual([]);
     expect(score(model).snapshot.counters.removedLinks).toBe(0);
   }, 60000);

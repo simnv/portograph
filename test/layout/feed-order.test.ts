@@ -91,9 +91,7 @@ describe('the cells of a fan follow the order of the far ends (architecture-2 ti
     // Only the three crossings between locations stay (hub2's link to a location against hub1's link to each location right of it).
     const { metrics, counts } = score(model).snapshot;
     expect(metrics.crossings.count).toBe(3);
-    // ADR-0027: the hubs no longer stretch to 416 px over their three locations (62 and 68 px, an alignment cap of 5 times their need), so three of the six
-    // fan links that stood straight under a stretched hub are planned jogs (1, 2 and 1 bends: link-4, link-5, link-6). The order and the crossings are the rule here.
-    expect(counts.routed.bent).toBeLessThanOrEqual(5);
+    expect(counts.routed.bent).toBeLessThanOrEqual(2);
     expect(errorGates(model)).toEqual([]);
   }, 120000);
 

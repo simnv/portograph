@@ -15,7 +15,7 @@
     "pullTier": "24 8dfd57517d5d3dc4"
   },
   "a-mover-takes-the-position-that-clears-most-chords": {
-    "attemptCheap": "3 18827a4f3671f35c",
+    "attemptCheap": "3 f26fec4a40bed0de",
     "centreGroupStep": "3 52618acacbccbbe8",
     "holdsSettled": "1 753a417fc6b9821f",
     "pickTarget": "10 ffb0041210a253ec"
@@ -37,16 +37,16 @@
     "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "three-canton-groups-close-up-to-a-band-gap-canton-b-first": {
-    "attemptCheap": "148 b1b067aa061eab60",
-    "centreGroupStep": "1008 43e517dbea95342f",
-    "closeUp": "10 920e58a515d2674a",
-    "holdsSettled": "4 af06a53353ac7514",
+    "attemptCheap": "142 348a16597fa595b0",
+    "centreGroupStep": "882 a62794ea5ec63f7d",
+    "closeUp": "10 0eafacb749a676f9",
+    "holdsSettled": "4 e89c4b645a2df1eb",
     "judgeTrial": "1 cbf69f5f691d95cd",
-    "pickRankMove": "4 18b74eeb924c72c2",
+    "pickRankMove": "4 48b3104acefbefdc",
     "pickTarget": "108 be9a265db9d192c4",
     "pullTier": "252 1d429b2f849547b7",
-    "sheetGains": "11 16a96a5e0f268ff0",
-    "windowsHold": "15 9a3d708cc12c1647"
+    "sheetGains": "11 7a33818caf2f69ae",
+    "windowsHold": "15 c74a892df43701da"
   },
   "a-canton-member-frame-slides-off-a-straight-chord": {
     "centreGroupStep": "9 7831835520a204ed",
@@ -65,17 +65,14 @@
     "windowsHold": "21 871a1c71727589f9"
   },
   "a-group-with-routed-links-steps-off-a-straight-chord": {
-    "attemptCheap": "2 56b9d7afcb409531",
-    "centreGroupStep": "30 3f92744cdf38281c",
-    "fanRoundHolds": "1 0a22f04442a90cca",
-    "holdsSettled": "2 78c619d452aa1fee",
-    "judgeTrial": "1 91bcbb903350cca7"
+    "centreGroupStep": "8 a0aee1f9cf73c946",
+    "fanRoundHolds": "1 0a22f04442a90cca"
   },
   "a-linked-node-steps-out-of-a-straight-chord": {
     "attemptCheap": "2 4c9158be6e09263a",
     "centreGroupStep": "4 e8ab5492e0d707d1",
     "holdsSettled": "2 47fc55890f8a1429",
-    "pickTarget": "12 66a810993c18b02d"
+    "pickTarget": "12 e6765e397995a2f5"
   },
   "overlay-links-reorder-two-locations": {
     "centreGroupStep": "76 bd264ed0f9f725a1",

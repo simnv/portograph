@@ -34,8 +34,7 @@ const clone = (model: LayoutModel): LayoutModel => structuredClone(model);
 describe('a fan family draws straight and crosses itself faintly', () => {
   let model: LayoutModel;
 
-  // Expected to fail: one member falls back (d-1|hub-a, `body`), 7 straight, 6 bends before; now two fall back (d-1|hub-b too, `faces`), 6 straight, 7 bends (ticket 15; seat addendum of ADR-0027).
-  it.fails('admits the members jointly: straight on one chord, and the member that passes the vault falls back alone with `body`', async () => {
+  it('admits the members jointly: straight on one chord, and the member that passes the vault falls back alone with `body`', async () => {
     model = await lay(text);
     const record = model.fanAdmissions!;
     expect(record).toHaveLength(8);
@@ -69,8 +68,7 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     expect(failed).toEqual([]);
   });
 
-  // Expected to fail: the member d-1|hub-b is one diagonal before; now it falls back to 4 segments, as in the row above (ticket 15; seat addendum of ADR-0027).
-  it.fails('lets the Site D title stand over the member that enters on its edge: a diagonal may cross a title (ticket 162)', () => {
+  it('lets the Site D title stand over the member that enters on its edge: a diagonal may cross a title (ticket 162)', () => {
     const chord = model.links.find(link => ends(model, link.id) === 'd-1|hub-b')!;
     expect(chord.path!.segments).toHaveLength(1);
     const segment = chord.path!.segments[0]!;
@@ -94,8 +92,7 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     expect(fanAdmissionsFault(reordered)).toMatch(/in order/);
   });
 
-  // Expected to fail: the member d-1|hub-b is a chord to forge before; now it is orthogonal, as in the first row (ticket 15; seat addendum of ADR-0027).
-  it.fails('refuses at the end of 7f a member that passes the stem of a sibling fallback (no title crowds a member, ticket 54)', () => {
+  it('refuses at the end of 7f a member that passes the stem of a sibling fallback (no title crowds a member, ticket 54)', () => {
     // Nothing is crowded as drawn.
     const straight = model.fanAdmissions!.filter(item => item.mode === 'straight').map(item => model.links.find(link => link.id === item.link)!);
     expect(straight.filter(link => siblingStemCrowded(model, link)).map(link => link.id)).toEqual([]);
@@ -119,8 +116,7 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     expect(fanAdmissionsFault(forged)).toBeUndefined();
   });
 
-  // Expected to fail: d-1|hub-b is a straight member before; now it has no straight admission, as in the first row (ticket 15; seat addendum of ADR-0027).
-  it.fails('lets G2 excuse a straight member only in the boxes its admission names', () => {
+  it('lets G2 excuse a straight member only in the boxes its admission names', () => {
     // A foreign group grown over the middle of a straight member: G2 fails until the record names that group.
     const straight = model.fanAdmissions!.find(item => item.mode === 'straight' && ends(model, item.link) === 'd-1|hub-b')!;
     const grown = clone(model);
@@ -153,8 +149,7 @@ describe('a fan family draws straight and crosses itself faintly', () => {
     expect(named[0]!.message).toMatch(/stopped at 1 tested configurations/);
   });
 
-  // Expected to fail: the cascade names b-2, c-2 and d-1 to hub-b before; d-1|hub-b is no chord now, so only c-2|hub-b is named, as in the first row (ticket 15; seat addendum of ADR-0027).
-  it.fails('drops the cascade of a refusal round by round, whatever the order of the links (R3)', () => {
+  it('drops the cascade of a refusal round by round, whatever the order of the links (R3)', () => {
     // Hub B's bottom face holds the ports of the members to C 2 (refused here) and to D 1. The member to D 1 is led 4 px beside the leg of the
     // member to C 2, so it falls back in the first round; the member from B 2 to Hub B is led 5 px beside the leg of the member to D 1 at its
     // hub port, so it falls back in the second round only.

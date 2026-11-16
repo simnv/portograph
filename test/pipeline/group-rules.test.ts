@@ -117,12 +117,10 @@ nodes:
       - {name: p, side: top, order: 0}
       - {name: q, side: top, order: 1}
 links: [[a.p, c.q, {route: orthogonal}], [b.p, c.p, {route: orthogonal}]]`))))));
-  // Before ADR-0027's seat record this model spent its budget: c alternated between its two feeds pass by pass. The seat now owns c, so the
-  // model settles with one link kept and the other diagnosed infeasible; the rest of the test reads the same diagnosis on a settled model.
-  expect(incompatible.diagnostics.map(d => d.code)).toContain('CENTRE_ALIGNMENT_INFEASIBLE');
-  expect(incompatible.diagnostics.map(d => d.code)).not.toContain('PLACEMENT_NON_CONVERGENCE');
+  expect(incompatible.diagnostics.map(d => d.code)).toEqual(expect.arrayContaining(['CENTRE_ALIGNMENT_INFEASIBLE', 'PLACEMENT_NON_CONVERGENCE']));
   expect(restoreLayoutModel(JSON.stringify(incompatible))).toEqual(incompatible);
-  // The infeasible port excuses only itself: sliding the node also moves its feasible sibling off b.p, and the model settled, so the slide is rejected.
+  // The infeasible port excuses only itself: sliding the node also moves its feasible sibling off b.p.
+  // This model genuinely spent its budget, so the slide is recorded on it rather than rejected.
   const slid = JSON.parse(JSON.stringify(incompatible)) as LayoutModel;
   slid.nodes.c!.bounds!.x += 5;
   for (const port of slid.nodes.c!.ports) { port.anchor!.x += 5; if (port.pill) port.pill.bounds.x += 5; }

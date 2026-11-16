@@ -17,7 +17,7 @@ import { right } from '../../src/layout/regions.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
 import { stemPlan } from '../../src/layout/sides-two.js';
 import { rebuildNodeGeometry } from '../../src/layout/node-geometry.js';
-import { ALIGNMENT_CAP_TIMES, ownSideWidth, sizeNodes } from '../../src/layout/size.js';
+import { ALIGNMENT_MAX_GROWTH, ownSideWidth, sizeNodes } from '../../src/layout/size.js';
 import { rebuildBands, moveGroup, union } from '../../src/layout/skeleton-geometry.js';
 import { rebuildRegionGeometry } from '../../src/layout/region-rebuild.js';
 import { findPort } from '../../src/layout/row-paths.js';
@@ -314,7 +314,7 @@ describe('parents-authoritative bounded centering', () => {
     expect(ends(model).from.anchor).toEqual(ends(input).from.anchor);
     expect(model.nodes.first!.bounds!.width).toBeLessThan(200);
   });
-  it('settles incompatible author-order alignment within the budget and keeps structural validation', async () => {
+  it('bounds incompatible author-order alignment at eight passes and keeps structural validation', async () => {
     const yaml = `portograph: 2
 groups: {parents: {tier: 0}, children: {tier: 1}}
 nodes:
@@ -324,10 +324,8 @@ nodes:
 links: [[parent.p, child.q], [parent.q, child.p]]`;
     const input = flanks(lanes(rows(await placed(yaml)))), budget = createCentreBudget();
     const model = withLayoutMutation(input, 'centre', draft => centreDraft(draft, budget));
-    // Before ADR-0027's seat record the child alternated between its two crossed feeds and spent all eight passes (that pinned the bound). The seat
-    // now owns the child, so the passes settle; the eight-pass bound is held by centre-fixed-point.test.ts.
-    expect(budget.remaining).toBeGreaterThan(0);
-    expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(0);
+    expect(budget).toEqual({ remaining: 0, passes: 8 });
+    expect(model.diagnostics.filter(d => d.code === 'PLACEMENT_NON_CONVERGENCE')).toHaveLength(1);
     expect(model.nodes.parent).toEqual(input.nodes.parent);
     expect(model.nodes.child!.ports.map(port => port.engineOrder)).toEqual(input.nodes.child!.ports.map(port => port.engineOrder));
     expect(restoreLayoutModel(JSON.stringify(model))).toEqual(model);
@@ -392,8 +390,7 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     expect(right(box)).toBeGreaterThan(1024);
     expect(right(box) - box.x).not.toBe(box.width);
   });
-  // Expected to fail: premise not reachable under the 5 times cap; a content-wide child is the case to build; ticket 15.
-  it.fails('ticket 01: packs the tier when a widened child swallows the group beside it', async () => {
+  it('ticket 01: packs the tier when a widened child swallows the group beside it', async () => {
     const input = flanks(lanes(rows(await placed(fixture('widened-child-packs-tier')))));
     const model = bands(bundles(bars(centre(input))));
     const tier = Object.values(model.groups).filter(group => group.tier === 1).sort((a, b) => a.bounds!.x - b.bounds!.x);
@@ -440,7 +437,7 @@ links: [[a.p, c.p], [a.q, b.p]]`;
     // needs a body twenty times what the node is. The allowance declines both, and the body keeps
     // the width its own content and its two ports need.
     const own = ownSideWidth(node, side);
-    expect(node.bounds!.width).toBeLessThanOrEqual(ALIGNMENT_CAP_TIMES * own);
+    expect(node.bounds!.width).toBeLessThanOrEqual(ALIGNMENT_MAX_GROWTH * own);
     expect(node.bounds!.width).toBe(input.nodes.target!.bounds!.width);
     const feeds = ['feed-left', 'feed-right'].map(id => model.nodes[id]!.ports[0]!.anchor!.x);
     expect(Math.max(...feeds) - Math.min(...feeds)).toBeGreaterThan(20 * own);

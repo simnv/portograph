@@ -6,8 +6,6 @@
 # With the rule the piece holds nothing, the gap grows 77.25 px for the other pair's rows, nothing is removed and every gate
 # passes.
 # Test-only input owned by ranked-groups ticket 42; test/pipeline/near-vertical-piece.test.ts reads the layout.
-# Under the alignment cap (ADR-0027) the bodies no longer stretch to the distance that gave 1.1 px; `r2` keeps a 180 px body (its floor, height by
-# content) so that its two links leave the same pair of ports again, 1.1 px apart.
 # The feed order is off (architecture-2 ticket 25, `layout.feedOrder: false`): the subject is the crossing of link-7 over the
 # near-vertical piece, which the order of the feeds would take apart.
 portograph: 2
@@ -19,7 +17,7 @@ nodes:
   isp: { group: upstream, class: provider }
   r0: { group: site, class: router }
   r1: { group: site, class: router }
-  r2: { group: site, class: router, size: { width: 180, height: 0 } }
+  r2: { group: site, class: router }
   s0: { group: site, class: switch }
   s1: { group: site, class: switch }
   s2: { group: site, class: switch }

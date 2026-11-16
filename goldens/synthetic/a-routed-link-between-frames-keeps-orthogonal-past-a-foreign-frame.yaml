@@ -1,4 +1,3 @@
-# ADR-0027: authored width floors preserve the clear W1 chords and make the M1-B1 chord reach the foreign frame before its own edge.
 # Expected: A routed link between two groups keeps the orthogonal route when a foreign group box stands on its chord
 # (ranked-groups ticket 99, Q108). Two feeds stand on tier 0 and three groups on tier 1; `wide` is a free group, its own frame for
 # this rule. `middle` links up to both feeds. The chord from m1 to b1 leaves m1 for the far left and would run over the top of
@@ -20,8 +19,8 @@ nodes:
   b1: { group: feed-b, class: router, label: "b1" }
   b2: { group: feed-b, class: router, label: "b2" }
   b3: { group: feed-b, class: router, label: "b3" }
-  w1: { size: { width: 250, height: 0 }, group: wide, class: rr, label: "w1" }
-  m1: { size: { width: 180, height: 0 }, group: middle, class: provider, label: "m1" }
+  w1: { group: wide, class: rr, label: "w1" }
+  m1: { group: middle, class: provider, label: "m1" }
   e1: { group: edge, class: provider, label: "e1" }
 links:
   - [w1, a1]

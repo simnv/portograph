@@ -1,10 +1,10 @@
-# Expected: The sheet of a-feeding-chain-moves-over-its-wrapped-block with one more link: Dist one also feeds East gateway. Dist one is then a
-# shared parent of both locations, so the feeding chain is empty and nothing moves over the wrapped `west`. Stage 5 stands the 24 leaves on
-# two lines, and the acceptance gate (fan wrap, decision D-Q4, ticket 07) keeps them: the complete placement takes less area (canvas
-# 1442 x 818 against 2323 x 761 px) and every link the one-line placement stands straight after 7f stays straight with the two lines (the
-# overlay link Core two to East hub included). Before the seat invariant (dense-16x9 ticket 02, ADR-0027) the gate declined the two lines
-# for that overlay link; a-wrap-that-bends-a-straight-overlay-is-declined now holds that premise. Test-only input; listed as changed by
-# ticket 02.
+# Expected: The acceptance gate declines a fan wrap that loses a straight link (fan wrap, decision D-Q4, ticket 07; FAN_WRAP_DECLINED).
+# The sheet of a-feeding-chain-moves-over-its-wrapped-block with one more link: Dist one also feeds East gateway. Dist one is then a shared
+# parent of both locations, so the feeding chain is empty and nothing moves over the wrapped `west`. Stage 5 still stands the 24 leaves on
+# two lines (less stage-5 area), but in the complete placement `east` closes up under the chain that stayed, and the overlay link Core two
+# to East hub, one straight segment on one line, is no longer straight. The gate keeps the one-line placement: no stagger row,
+# `groupArrangements` names the gate for `west-zone#2`, and the info diagnostic FAN_WRAP_DECLINED names the lost link. The same holds with a
+# placement budget of one re-run: the comparison run never spends the budget. Test-only input; test/pipeline/fan-wrap.test.ts reads it.
 portograph: 2
 groups:
   core: { tier: 0, label: Core }

@@ -32,9 +32,7 @@ describe('a stretched body is trimmed to its ports', () => {
     const was = model.bodyTrims?.nodes['sink-near'];
     expect(was).toBeDefined();
     const node = model.nodes['sink-near']!, body = node.bounds!;
-    // The alignment cap (ADR-0027) bounds the stretch, so the trim no longer frees three quarters of a body (it did before: 811 px to 104 px):
-    // a body trimmed to under half of the stretched one is still a stretched body that the trim narrows to its ports.
-    expect(body.width).toBeLessThan(was!.width / 2);
+    expect(body.width).toBeLessThan(was!.width / 4);
     const xs = node.ports.filter(port => port.side === 'top').map(port => port.anchor!.x), inset = portEndInsets(node, 'top');
     expect(body.x).toBeCloseTo(Math.min(...xs) - inset.low, 6);
     expect(right(body)).toBeCloseTo(Math.max(...xs) + inset.high, 6);
@@ -112,12 +110,9 @@ describe('a stretched body is trimmed to its ports', () => {
 });
 
 describe('the centring replay reads the bodies the producer decided on (R1)', () => {
-  // A sheet whose replay over the trimmed bodies keeps a target the producer could not keep: the seats grow `p1` and `p2` in place over one
-  // feed each (56 px to 262.5 px) and the trim narrows them back to 56 px. It was a-stem-of-a-link-that-turns-straight-does-not-block-a-chord, one of the four synthetics the
-  // prototype's trim was refused on; under the seat addendum (ADR-0027) its trim gives `n4` back the width its seat began from, and the
-  // replay without the record reads what the producer read.
+  // One of the four synthetics the prototype's trim was refused on: with the trimmed siblings the replay kept a target the producer could not keep.
   let model: LayoutModel;
-  beforeAll(async () => { model = await run(source('a-batch-splits-by-the-covers-its-links-cross')); }, 120000);
+  beforeAll(async () => { model = await run(source('a-stem-of-a-link-that-turns-straight-does-not-block-a-chord')); }, 120000);
 
   it('publishes trimmed, and its restore reads the record', () => {
     expect(Object.keys(model.bodyTrims?.nodes ?? {}).length).toBeGreaterThan(0);
@@ -139,10 +134,7 @@ describe('the centring replay reads the bodies the producer decided on (R1)', ()
 
 describe('a trimmed group box keeps its title floor', () => {
   it('holds the title of a group whose label is wider than its trimmed bodies (review round 1)', async () => {
-    // The fixture as it is, with a title wider than the trimmed body: the rule under test, a title floor on a trimmed box, needs a trimmed body.
-    const plain = source('a-stretched-body-is-trimmed-to-its-ports');
-    const text = plain.replace('near: { tier: 2, shape: grid }', 'near: { tier: 2, shape: grid, label: A title far wider than the one sink it holds }');
-    expect(text).not.toBe(plain);
+    const text = source('a-stretched-body-is-trimmed-to-its-ports').replace('near: { tier: 2 }', 'near: { tier: 2, label: A title far wider than the one sink it holds }');
     const model = await run(text);
     expect(model.bodyTrims?.nodes['sink-near']).toBeDefined();
     expect(model.diagnostics.filter(item => item.code === 'GROUP_LABEL_GAP_INFEASIBLE')).toEqual([]);

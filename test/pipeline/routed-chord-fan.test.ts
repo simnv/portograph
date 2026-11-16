@@ -134,9 +134,10 @@ describe('a face that takes cross-frame chords spreads its ports', () => {
     const straight = model.links.filter(link => link.technique === 'straight' && link.path?.segments.length === 1);
     expect(straight.map(link => link.id).sort()).toEqual(model.links.map(link => link.id).sort());
     expect(score(model).snapshot.Q).toBeGreaterThan(0.8);
-    // Before dense-16x9 ticket 02 a fan re-run lost one chord and gained none, and was dropped by name (one FAN_ROUND_DROPPED, info). With a seated
-    // body pulling only through its kept feeds the three chords stand straight with no re-run to drop (Q 0.8109).
+    // The dropped re-run is named, never silent: it lost one chord and gained none.
     const note = model.diagnostics.filter(item => item.code === 'FAN_ROUND_DROPPED');
-    expect(note).toEqual([]);
+    expect(note).toHaveLength(1);
+    expect(note[0]!.severity).toBe('info');
+    expect(note[0]!.message).toMatch(/lost 1 held chord .*and gained 0/);
   }, 120000);
 });

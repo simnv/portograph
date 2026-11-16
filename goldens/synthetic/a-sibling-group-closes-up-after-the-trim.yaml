@@ -1,30 +1,28 @@
-# Expected: A sibling group closes up after the end trim (architecture-2 ticket 69). Reduced from a-face: `near` and `access` are
-# grids, so the seat of `sink-near` grows it in place over two of its feeds (68 px to 317 px, under the alignment cap of ADR-0027);
-# the end trim narrows it to its top ports (119.5 px), and the box of `near` shrinks with it. The gap between `near` and `far` grows
-# by the width the trim freed, and `far` then moves left toward `near` by 57.9 px, its order and the band gap kept.
-# `bodyTrims.shifts` records the move; the replay moves it back. Since dense-16x9 ticket 02 a step that grows a body and leaves every aligned port of its group
-# off its feed is declined whole, so the stretch of `sink-far` in the first version (293 px) is gone and nothing closed up; the
-# grids and the feed from `src-c` give the premise back. Bends, crossings and routed links as before the close-up. Test
-# `test/layout/close-up.test.ts` reads the layout.
+# Expected: A sibling group closes up after the end trim (architecture-2 ticket 69). Reduced from a-face: the centring stretches
+# `sink-far` (681 px) toward feeds it does not keep; the end trim narrows it to its top ports, and the box of `far` shrinks with it.
+# The gap between `near` and `far` grows by that width, and `far` then moves left toward `near` by the width the trim freed (592 px),
+# its order and the band gap kept. `bodyTrims.shifts` records the move; the replay moves it back. Canvas 1002 to 410 px; bends,
+# crossings and routed links as before. Test `test/layout/close-up.test.ts` reads the layout.
 # DR-04: links take the canonical order (group declaration order, then node order inside the group), so `access` is declared
 # before `src`; the canonical order is then the written order.
 portograph: 2
 groups:
-  access: { tier: 1, shape: grid }
+  access: { tier: 1 }
   src: { tier: 0 }
+  side: { tier: 1 }
   far: { tier: 2 }
-  near: { tier: 2, shape: grid }
+  near: { tier: 2 }
 nodes:
   src-a: { group: src, class: router, ports: [] }
   src-b: { group: src, class: router, ports: [] }
-  src-c: { group: src, class: router, ports: [] }
   sw-1: { group: access, class: switch, ports: [] }
   sw-2: { group: access, class: switch, ports: [] }
+  sw-3: { group: side, class: switch, ports: [] }
   sink-near: { group: near, class: server, ports: [] }
   sink-far: { group: far, class: server, ports: [] }
 links:
   - [sw-1, sink-near]
+  - [sw-2, sink-near]
   - [src-a, sink-near]
   - [src-b, sink-far]
-  - [src-b, sink-near]
-  - [src-c, sink-near]
+  - [sw-3, sink-far]

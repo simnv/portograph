@@ -63,13 +63,6 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * the recorded digests exactly, so the new ones follow from the order alone. `three-canton-groups-close-up-to-a-band-gap` is replaced by its
  * copy `-canton-b-first`, which declares canton `b` first (the canton order ELK gave before) and calls the ten judges main called on the
  * original (`judgeTrial` and `pickRankMove` included; the original now calls eight); its digests are recorded from the copy.
- * Four were re-recorded for ADR-0027: seats move before capped growth, so the judges see other geometry and replay counts.
- * The old and new streams pin the verdicts of the same objective module; no judge source changed. The changed figures and counts
- * belong to centreGroupStep on the lane-hint, canton-order and group-step fixtures, pickTarget on the linked-node fixture, and the
- * attemptCheap, holdsSettled and judgeTrial calls added by the group-step fixture's new trial.
- * Two were re-recorded for the ADR-0027 seat addendum (dense-16x9 ticket 02): `objective.ts` is unchanged, but a seat pulls only through its kept feeds and
- * a step that grows a body and stands nothing is declined whole, so `a-chord-hint-and-a-lane-hint-never-share-a-batch` (`centreGroupStep`) and
- * `three-canton-groups-close-up-to-a-band-gap-canton-b-first` (eight judges) are called on other geometry. The other fourteen digests are unchanged.
  */
 const FIXTURES = [
   'a-free-client-group-stands-where-its-overlay-links-cross-least', 'a-lower-rank-steps-off-the-chords-of-rank-0', 'a-mover-takes-the-position-that-clears-most-chords',

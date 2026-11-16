@@ -13,9 +13,7 @@ import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 const threeCantonYaml = readFileSync(new URL('../../goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml', import.meta.url), 'utf8');
-// Under the alignment cap and the seat (ADR-0027, dense-16x9 ticket 02) private-datacenter-spine-leaf settles with 0 bends and tries no course, so
-// the doomed trial of the second test is read on a sheet whose close-up the 7e preflight refuses.
-const closeUpYaml = readFileSync(new URL('../../goldens/synthetic/a-close-up-keeps-the-row-room-of-a-same-tier-label.yaml', import.meta.url), 'utf8');
+const spineLeafYaml = readFileSync(new URL('../../goldens/real/private-datacenter-spine-leaf.yaml', import.meta.url), 'utf8');
 const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 
 const layoutHash = (model: LayoutModel): string => {
@@ -71,26 +69,13 @@ describe('course 7e preflight', () => {
     expect(events).toEqual(['refuse:bands:route timed out']);
   });
 
-  it('refuses the doomed course trial at 7e on goldens/synthetic/a-close-up-keeps-the-row-room-of-a-same-tier-label.yaml with an identical layout hash', async () => {
+  it('refuses the doomed course trial at 7e on goldens/real/private-datacenter-spine-leaf.yaml with an identical layout hash', async () => {
     resetAttemptCounters();
-    const model = await layout(parse(closeUpYaml), options);
+    const model = await layout(parse(spineLeafYaml), options);
     expect(attemptCounters.coursePreflight.checked).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.coursePreflight.refusedAt7e).toBeGreaterThanOrEqual(1);
     expect(attemptCounters.attempts).toBe(1);
-    // This hash pins the layout retained after the doomed trial on this sheet (79bb6df44f93 was that of private-datacenter-spine-leaf); the rule is the
-    // equality with the run that bypasses the preflight, below.
-    expect(layoutHash(model)).toBe('a8811f7221ad');
-
-    const savedPreflight = course.preflight;
-    course.preflight = async () => undefined;
-    let withoutPreflight: LayoutModel;
-    try {
-      withoutPreflight = await layout(parse(closeUpYaml), options);
-    } finally {
-      if (savedPreflight !== undefined) course.preflight = savedPreflight;
-      else delete course.preflight;
-    }
-    expect(layoutHash(model)).toBe(layoutHash(withoutPreflight));
+    expect(layoutHash(model)).toBe('56f38cf75727');
   }, 60000);
 
   it('refuses the doomed course trial at 7e on goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml identically to bypassing preflight', async () => {

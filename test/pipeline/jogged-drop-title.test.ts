@@ -44,11 +44,7 @@ describe('a jogged drop under a group title stays in its tier gap (architecture-
     ['a-jogged-drop-beside-a-frame-title-stays-in-its-gap', 'link-2', 'label:group:access#0'],
   ] as const) {
     it(`${name}: every jog stands a group-edge margin off every group box; G3 passes; no planned jog is a detour`, async () => {
-      // Under the alignment cap (ADR-0027) the bodies no longer stretch to the distance that gave the drop its 1 px jog: `r2` keeps a 140 px body (its
-      // floor, height by content), which stands the pair of ports of the named drop 1 px apart again.
-      const yaml = fixture(name).replace(/( {2}r2: \{ group: [\w-]+, class: \w+) \}/, '$1, size: { width: 140, height: 0 } }');
-      expect(yaml).not.toBe(fixture(name));
-      const model = await run(yaml);
+      const model = await run(fixture(name));
       const margin = GROUP_EDGE_LINK_CLEARANCE + routedStroke(model) / 2;
       const found = jogs(model);
       // The premise: the named drop jogs, and its jog stands within the detour reach (twice the link-free margin) of the title.

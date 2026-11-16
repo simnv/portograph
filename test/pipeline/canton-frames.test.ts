@@ -6,7 +6,6 @@ import { deriveFrames } from '../../src/layout/frames.js';
 import { rows } from '../../src/layout/rows.js';
 import { drawio } from '../../src/render/drawio.js';
 import { bandGap } from '../../src/layout/skeleton-graph.js';
-import { findPort } from '../../src/layout/row-paths.js';
 import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -72,12 +71,7 @@ describe('canton frames and the unit (canton-groups ticket 2)', () => {
     expect(beta.parent).toBe('west');
     expect(alpha.box.x).toBeLessThan(beta.box.x);
     expect(beta.box.x - right(alpha.box)).toBeCloseTo(40, 3);
-    // Re-pin (ADR-0027, the seat owns the body): the old line held `lab` centred under the pair, which proved that the member-wall pull read both
-    // feeds of srv. srv (52 px) cannot stand both gateways; its seat stands a-gw, and the pull now reads only the kept feed, as the main move of 7c
-    // does, so srv stays on its vertical and `lab` stands under it, inside the canton.
-    const link = model.links.find(item => [item.attachments!.from.node, item.attachments!.to.node].sort().join() === 'a-gw,srv')!;
-    expect(Math.abs(findPort(model, link.attachments!.from)!.anchor!.x - findPort(model, link.attachments!.to)!.anchor!.x)).toBeLessThan(0.5);
-    expect(model.alignmentSeats?.['srv']?.ports.length).toBe(1);
+    expect(Math.abs(centreX(lab.box) - (alpha.box.x + right(beta.box)) / 2)).toBeLessThan(2);
     expect(holds(west.box, alpha.box) && holds(west.box, beta.box) && holds(west.box, lab.box)).toBe(true);
     expect(score(model).snapshot.gates.G9.passed).toBe(true);
   }, 60000);

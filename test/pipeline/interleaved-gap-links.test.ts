@@ -63,8 +63,7 @@ function gatesPass(model: LayoutModel): void {
 }
 
 describe('interleaved links of one tier gap cross on the row of the earlier link (ranked-groups ticket 39)', () => {
-  // Expected to fail: link-4 on row 327.5 before, now 339: r2 keeps its 50 px floor (main grew it to 56 px) and link-7 is a Z part; the sheet goes from 10 to 12 bends (a cap trade).
-  it.fails('gives the earlier link the row between its tip rows, so the later link crosses it and is not removed', async () => {
+  it('gives the earlier link the row between its tip rows, so the later link crosses it and is not removed', async () => {
     const model = await routed('two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row');
     expect(model.removedLinks ?? []).toEqual([]);
     expect(model.diagnostics.filter(diagnostic => diagnostic.code === 'ROUTE_CHECKPOINT_SKIPPED')).toEqual([]);

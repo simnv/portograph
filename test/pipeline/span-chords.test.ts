@@ -215,8 +215,7 @@ describe('the span round on the sheets', () => {
 
   // A refused span trial spends placements and fan re-runs; it must not starve the course round that main runs (a-tier-gap-plan-orders-every-part: Q 0.6466 -> 0.4481, G5 failing).
   // Ticket DR-04: the copy whose canonical link order gives each node its links in the original's written order.
-  // Expected to fail: a perimeter lane and G5 passing before; now no span trial and no course in either run, and G5 port-order in both (ticket 15).
-  it.fails('a refused span trial does not starve the course round', async () => {
+  it('a refused span trial does not starve the course round', async () => {
     const text = withoutJointOrder(readFileSync(new URL('../../goldens/synthetic/a-tier-gap-plan-orders-every-part-lower-groups-first.yaml', import.meta.url), 'utf8'));
     const options = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testLiftOff: true };
     const model = await layout(parse(text), options);
