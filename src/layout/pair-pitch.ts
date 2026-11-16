@@ -27,7 +27,15 @@ export function neighbourPitch(node: LayoutNode, side: Side, a: PortRef, b: Port
   return entries.reduce((most, entry) => binds(entry, one, two) ? Math.max(most, entry.min) : most, pitch);
 }
 
-/** The offset of each port of a face from the first one, for the ports in the order given: the running sum of the neighbour pitches. */
+/**
+ * The largest pitch a port keeps from a neighbour on `side`: the face pitch, or an entry that names the port (a fan pair it is one of, its own
+ * block pitch). A bundle reads it for each member port, so its member pitch holds every pair its ports stand in, at both ends.
+ */
+export function portPitch(node: LayoutNode, side: Side, ref: PortRef, pitch = node.sidePitch![side]!): number {
+  const key = portId(ref);
+  return facePairPitches(node, side).reduce((most, entry) => entry.ports.includes(key) ? Math.max(most, entry.min) : most, pitch);
+}
+
 /**
  * The pitch the two end ports of a face keep to its ends, doubled (`portEndInsets` adds half of it to the padding): the face pitch, or the
  * largest block pitch of a member port on the face. A body end is a neighbour of the member port beside it, and the order of the face is not
@@ -52,6 +60,7 @@ export function faceExcess(node: LayoutNode, side: Side, ports: readonly LayoutP
   });
 }
 
+/** The offset of each port of a face from the first one, for the ports in the order given: the running sum of the neighbour pitches. */
 export function faceOffsets(node: LayoutNode, side: Side, ports: readonly LayoutPort[], pitch = node.sidePitch![side]!): number[] {
   // `index * pitch` plus the running excess, so that a face no pair pitch binds keeps the exact offsets of the scalar pitch.
   return faceExcess(node, side, ports, pitch).map((excess, index) => index * pitch + excess);

@@ -1,5 +1,6 @@
 import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { declineOversizedBlocks, reserveBlockPitch, seatBlockFollowers } from './solid-blocks.js';
+import { portPitch } from './pair-pitch.js';
 import type { PortRef } from '../model/document.js';
 import { reserveFeedSplits } from './feed-split.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
@@ -976,7 +977,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
       const ports = links.flatMap(link => [link.attachments!.from, link.attachments!.to])
         .map(ref => model.nodes[ref.node]!.ports.find(port => key(port.ref) === key(ref))!);
       const pitch = Math.max(16 + Math.max(DEFAULT_STROKE_WIDTHS.path, ...links.map(linkStrokeWidth)),
-        ...ports.map(port => model.nodes[port.ref.node]!.sidePitch![port.side!]!));
+        ...ports.map(port => portPitch(model.nodes[port.ref.node]!, port.side!, port.ref)));
       for (const port of ports) {
         const node = model.nodes[port.ref.node]!;
         if (node.sidePitch![port.side!]! < pitch) { node.sidePitch![port.side!] = pitch; pitchChanged = true; }

@@ -687,6 +687,26 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
   return protect(result, baseline);
 }
 
+/**
+ * The pitch records of a model restored before stage 5 (dense-16x9 ticket 04, R5, R6): the pair pitches name ports of their node and read,
+ * and from stage 3 on each top and bottom face fits the sum of its pitches. `validateEarlyReservations` checks the floors of the ledger.
+ */
+function validateEarlyPitches(model: LayoutModel): void {
+  const at = stages.indexOf(model.stage);
+  for (const node of Object.values(model.nodes ?? {})) {
+    const fault = pairPitchFault(node);
+    if (fault !== undefined) throw new Error(fault);
+  }
+  if (at < stages.indexOf('size')) return;
+  for (const node of Object.values(model.nodes)) {
+    if (node.size === undefined || node.sidePitch === undefined) throw new Error(`Missing size on ${node.id}`);
+    for (const side of ['top', 'bottom'] as const) {
+      const count = node.ports.filter(port => (port.side ?? port.sizingSide) === side).length;
+      if (count && node.size.width + PLACEMENT_EPS < portSideCapacity(node, side, count)) throw new Error(`Port capacity exceeds ${node.id}.${side}`);
+    }
+  }
+}
+
 /** Resume serialized output through this API; JSON.parse alone returns unprotected data. */
 export function restoreLayoutModel(json: string): LayoutModel {
   const model = JSON.parse(json) as LayoutModel;
@@ -696,6 +716,7 @@ export function restoreLayoutModel(json: string): LayoutModel {
     if (model.freeze) throw new Error('Premature topology freeze');
     validateDocumentCss(model);
     resolve(model.document);
+    validateEarlyPitches(model);
     return model;
   }
   const baseline = validateDocument(model);

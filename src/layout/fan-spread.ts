@@ -7,7 +7,7 @@ import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { strictCrossing } from './read/crossings.js';
 import { portId } from './skeleton-graph.js';
 import { PLACEMENT_EPS } from './tolerance.js';
-import { neighbourPitch } from './pair-pitch.js';
+import { endPitch, neighbourPitch } from './pair-pitch.js';
 import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js';
 
 /**
@@ -63,7 +63,9 @@ export function measureFans(model: LayoutModel): FanMeasure {
         const p = ports[i - 1]!, q = ports[i]!, gap = q.anchor.x - p.anchor.x;
         // The two ports may stand k pitch steps apart (a port between them that carries no chord, or a spread centring made); a slide of t px
         // over k steps is t / k on each, so each gap between them takes its pitch plus that share, never the gap.
-        const pitch = node.sidePitch?.[side] ?? 12, steps = Math.max(1, Math.round(gap / pitch));
+        // The steps are counted at the face's largest pitch (`endPitch`: the face pitch, or its largest pair pitch), as the face pitch of
+        // ticket 89 counted them; each pair then takes its own pitch plus the share.
+        const pitch = node.sidePitch?.[side] ?? 12, steps = Math.max(1, Math.round(gap / endPitch(node, side, pitch)));
         let share = 0, over = false;
         const tooClose: string[] = [];
         for (const la of byPort.get(portId(p.ref))!) for (const lb of byPort.get(portId(q.ref))!) {
@@ -93,13 +95,15 @@ export function measureFans(model: LayoutModel): FanMeasure {
         }
         most = Math.max(most, ...pairs.map(pair => pair.min));
       }
-      // Slice 1 writes the largest need of the face on every neighbour pair of it, as main's face pitch did. Slice 2 of ticket 04 changes this
+      // Slice 1 writes the largest need of the face on every pair of its ports, as main's face pitch did. Slice 2 of ticket 04 changes this
       // one place to the exact need of each pair, together with the isolated fallback. Exact floors leave no margin: the drift of 7f crowds one
       // direct member, the sequential family decision and the leg cascade then refuse the rest (traced on
       // `a-fan-spreads-its-ports-so-its-chords-hold-clearance`, 10 of 10 straight on main, 4 of 10 with exact floors; five corpus sheets worse).
+      // Every two ports of the face, not only the neighbours of this order: a later rule may stand any two of them side by side (a course
+      // that takes a port to a lateral face, a bundle that reorders its block), and each such pair keeps the face's pitch, as main's did.
       if (most === 0) continue;
-      for (let k = 1; k < face.length; k++) {
-        const ports = [portId(face[k - 1]!.ref), portId(face[k]!.ref)].sort() as [string, string];
+      for (let k = 0; k < face.length; k++) for (let l = k + 1; l < face.length; l++) {
+        const ports = [portId(face[k]!.ref), portId(face[l]!.ref)].sort() as [string, string];
         floors.set(`${node.id}\u0000${side}\u0000${ports.join('|')}`, { node: node.id, side, ports, min: most });
       }
     }

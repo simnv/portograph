@@ -13,6 +13,7 @@ import { cellReach, foreignRoot } from './frames.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { frameTiers, packTier, unitOrder, type Column } from './columns.js';
 import { PLACEMENT_EPS } from './tolerance.js';
+import { faceOffsets, facePairPitches } from './pair-pitch.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { isCantonUnit } from './read/canton.js';
 import { overlayCourse } from './courses.js';
@@ -83,7 +84,7 @@ export function readDraft(model: LayoutModel) {
   };
   /**
    * The x a port on a top or bottom face is predicted to hold (ticket 17 and its follow-up). The draft has no final port x yet: `sides-two`
-   * centres the ports of a face over the node at the face's pitch, in its provisional engine order, and gives the face of an alignment
+   * centres the ports of a face over the node at the face's pitch and its pair pitches, in its provisional engine order, and gives the face of an alignment
    * end at least the lane width as pitch. This reads that order with the same functions (`faceSortKey`, `sortFace`, `seatAuthored`,
    * `lanePitchFloors`; R1) on the draft, without the planned first turns (stage 5 plans them later) and without a bundle's pitch. A port is on
    * the face of its side, else of its sizing side (`sideOf`, as stage 3 reads it); one whose side is not `top` or `bottom` is read at its
@@ -104,7 +105,13 @@ export function readDraft(model: LayoutModel) {
     const faceKey = memo.key ??= faceSortKey(model, peers, sideOf);
     const face = seatAuthored(sortFace(model, ports, new Map(ports.map(port => [port, { far: faceKey(port.ref, side) }])), buses));
     const pitch = Math.max(node.sidePitch?.[side] ?? 0, floors.get(`${ref.node}\u0000${side}`)?.width ?? 0);
-    face.forEach((port, at) => memo.port.set(portId(port.ref), centre(ref.node) + (at - (face.length - 1) / 2) * pitch));
+    if (!facePairPitches(node, side).length) face.forEach((port, at) => memo.port.set(portId(port.ref), centre(ref.node) + (at - (face.length - 1) / 2) * pitch));
+    else {
+      // A face with neighbour-pair pitches (dense-16x9 ticket 04) stands its ports at their pair pitches, centred as one block, as stage 5
+      // installs them (`faceOffsets`, R1); the lane floor is the base pitch of each pair.
+      const offsets = faceOffsets(node, side, face, pitch), half = offsets.at(-1)! / 2;
+      face.forEach((port, at) => memo.port.set(portId(port.ref), centre(ref.node) + offsets[at]! - half));
+    }
     return memo.port.get(id)!;
   };
   /** The x the alignment end of a transit link is predicted to hold. */

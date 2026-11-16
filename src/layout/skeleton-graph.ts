@@ -115,7 +115,8 @@ export function buildSkeletonGraph(model: LayoutModel, tier?: number): ElkNode {
               'elk.portConstraints': 'FIXED_SIDE', 'elk.nodeSize.constraints': '[MINIMUM_SIZE, PORTS]',
               'elk.nodeSize.minimum': `[${node.size.width}, ${node.size.height}]`,
               'elk.position': `[${order.indexOf(id) * 100}, 0]`,
-              'elk.spacing.portPort': String(Math.max(12, ...Object.values(node.sidePitch ?? {}))),
+              // The neighbour-pair pitches count as face pitches here (dense-16x9 ticket 04): ELK spaces ports by one number per node.
+              'elk.spacing.portPort': String(Math.max(12, ...Object.values(node.sidePitch ?? {}), ...Object.values(node.pairPitch ?? {}).flat().map(entry => entry.min))),
             },
             ports: node.ports.map(port => ({ id: portId(port.ref), width: 0, height: 0,
               layoutOptions: { 'elk.port.side': sideNames[naturalSideOf(port)!] } })),
