@@ -89,7 +89,7 @@ export type Reservation = { [K in ReservationKind]: Readonly<{
   id: string;
   kind: K;
   owner: ReservationOwner;
-  producer: RoundId | 'skeleton' | 'lanes' | 'bands';
+  producer: RoundId | 'skeleton' | 'sides-two' | 'lanes' | 'bands';
   /** The measured baseline the reservation was made on: the number of placements the command had started. */
   revision: number;
   activeFrom: LayoutStage;
@@ -244,11 +244,11 @@ export function laneOwners(keys: Iterable<string>, hints: ReadonlyMap<string, 'l
   return entries;
 }
 
-/** The courses every placement run reserves, in declaration order. */
+/** The courses every placement run reserves, in declaration order, then the u-turn courses stage 5 of the run planned for its sibling rows (producer `sides-two`). */
 export function coursesOf(ledger: Reservations): Course[] {
   return ofKind(ledger, 'course').map(({ payload }) => clone(payload.course));
 }
-export function courseEntries(courses: readonly Course[], promised: ReadonlyMap<string, number> | undefined, producer: RoundId, revision: number): Reservations {
+export function courseEntries(courses: readonly Course[], promised: ReadonlyMap<string, number> | undefined, producer: Reservation['producer'], revision: number): Reservations {
   return courses.map(course => reservation('course', { kind: 'link', id: course.link }, '', producer, revision,
     { course, ...(promised?.has(course.link) ? { maxTurns: promised.get(course.link)! } : {}) }));
 }
@@ -475,7 +475,7 @@ const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.le
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
 const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
-const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'skeleton', 'lanes', 'bands']);
+const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'skeleton', 'sides-two', 'lanes', 'bands']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
 function shapeFailure(entry: unknown): string | undefined {

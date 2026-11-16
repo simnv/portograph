@@ -5,7 +5,7 @@ import { crossingsOf } from './read/crossings.js';
 import { hintsFacingAway } from './side-hints.js';
 import { sharedBlockers } from './overlay-paths.js';
 import { plannedBends } from './side-measure.js';
-import { added as namesAdded, constraintFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
+import { added as namesAdded, constraintFindings, gateFindings, separationWorse, spanBlockedNew } from './trial-findings.js';
 import { compare, pathBends, reading, refusal, routedBends, routedFamily, sideTrialProfile, tapVerdict } from './objective.js';
 
 /**
@@ -46,7 +46,7 @@ export interface Verdict {
 }
 
 /**
- * Section 19.4: `holds` (no hinted link worse than on the baseline, no link removed, no hint newly facing away) and `gains` (over every link, the
+ * Section 19.4: `holds` (no hinted link worse than on the baseline, no link removed, no hint newly facing away, no error-gate finding the baseline lacks) and `gains` (over every link, the
  * bent count falls, or it is equal and the total bends fall; no straight chord is lost). A batch is judged whole: a hinted link short of its
  * promise that has no more bends than the baseline does not refuse it.
  */
@@ -84,6 +84,13 @@ export function judgeTrial(input: TrialInput): Verdict {
   }
   const lost = refusal(now, then, by.late);
   if (lost !== undefined) return verdict(false, lost);
+  // A preference step never buys with a gate failure (review 06c-1): a finding of an error gate that the routed baseline lacks refuses the trial, read from the
+  // scorer's own gates (G6 included), so the round asks no clearance rule of its own. A trial that does not score is refused too (R6). The clause comes last:
+  // the order changes only the reason, and only a trial that every bend clause keeps pays for the two scores.
+  const gatesNow = gateFindings(input.routedTrial, 'error'), gatesThen = gateFindings(input.routedBase, 'error');
+  if (gatesNow === undefined) return verdict(false, 'the routed trial does not score');
+  const gateNew = namesAdded(gatesNow.findings, gatesThen?.findings ?? new Set());
+  if (gateNew.length > 0) return verdict(false, `the routed trial has error-gate findings the baseline does not have (${gateNew.join('; ')})`);
   return verdict(true, '');
 }
 

@@ -24,11 +24,17 @@ export function separationWorse(trial: LayoutModel, base: LayoutModel): string[]
   return worseSeparations(separationShortfalls(trial), separationShortfalls(base));
 }
 
-/** The gate violations of the routed model, by gate, code and elements,; undefined when the model does not score. */
-export function gateFindings(model: LayoutModel): { findings: Set<string>; counts: ScoreCounts } | undefined {
+/**
+ * The gate violations of the routed model, by gate, code and elements; undefined when the model does not score. `severity` keeps the gates of that
+ * severity only (the side round asks for the error gates: a preference step never buys with a gate failure).
+ */
+export function gateFindings(model: LayoutModel, severity?: 'error' | 'warning'): { findings: Set<string>; counts: ScoreCounts } | undefined {
   try {
     const findings = new Set<string>(), snapshot = score(model, { force: true }).snapshot;
-    for (const [id, gate] of Object.entries(snapshot.gates)) if (!gate.passed) for (const violation of gate.violations) findings.add(`${id}|${violation.code}|${violation.elements.join(',')}`);
+    for (const [id, gate] of Object.entries(snapshot.gates)) {
+      if (gate.passed || (severity !== undefined && gate.severity !== severity)) continue;
+      for (const violation of gate.violations) findings.add(`${id}|${violation.code}|${violation.elements.join(',')}`);
+    }
     return { findings, counts: snapshot.counts };
   } catch { return undefined; }
 }

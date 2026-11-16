@@ -2,6 +2,7 @@ import { validateEarlyReservations, validateReservations } from './reservations.
 import { validateStaggerRows } from './stagger.js';
 import { validateGroupLifts } from './lift.js';
 import { validateFeedSplits } from './feed-split.js';
+import { siblingRowsFault } from './sibling-frames.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
@@ -643,6 +644,9 @@ function validateFreeze(model: LayoutModel): void {
   same(model.staggerRows, freeze.staggerRows, 'Frozen stagger reservation changed');
   same(model.feedSplits, freeze.feedSplits, 'Frozen feed splits changed');
   validateFeedSplits(model);
+  same(model.siblingRows, freeze.siblingRows, 'Frozen sibling rows changed');
+  const sibling = siblingRowsFault(model);
+  if (sibling !== undefined) throw new Error(`The sibling rows do not hold: ${sibling}`);
   same(topology(model), freeze.topology, 'Frozen port topology changed');
   if (!sameCourses(model.courses, freeze.courses)) throw new Error('Frozen courses changed');
   validateSpans(model, freeze.spans);
@@ -679,6 +683,7 @@ export function freezePortTopology(model: LayoutModel, nodeFloors?: ReadonlyMap<
   if (model.courses !== undefined) result.freeze.courses = clone(model.courses);
   if (model.staggerRows !== undefined) result.freeze.staggerRows = clone(model.staggerRows);
   if (model.feedSplits !== undefined) result.freeze.feedSplits = clone(model.feedSplits);
+  if (model.siblingRows !== undefined) result.freeze.siblingRows = clone(model.siblingRows);
   const spans = model.links.filter(link => link.spanHint === true).map(link => link.id);
   if (spans.length) result.freeze.spans = spans;
   if (turnFaces.length) result.freeze.turnOrder = turnFaces.map(face => turnRecord(model, face.node, face.side));
@@ -719,6 +724,11 @@ export function restoreLayoutModel(json: string): LayoutModel {
     validateEarlyPitches(model);
     // The order reservations stage 4 wrote hold on the stage-4 model (ticket 18 review): the stages before the freeze check them here.
     validateEarlyReservations(model);
+    // The sibling rows stage 4 decided (dense-16x9 ticket 06, slice C) hold on the stage-4 model, before stage 5 reads them for the u-turn courses; no
+    // stage before 4 has one (R5, R6: a forged record is refused here, it never reaches a reader).
+    if (model.siblingRows !== undefined && stages.indexOf(model.stage) < stages.indexOf('skeleton')) throw new Error(`The sibling rows do not hold: a ${model.stage} model has no record`);
+    const sibling = siblingRowsFault(model);
+    if (sibling !== undefined) throw new Error(`The sibling rows do not hold: ${sibling}`);
     return model;
   }
   const baseline = validateDocument(model);

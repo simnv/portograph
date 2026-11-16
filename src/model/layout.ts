@@ -598,6 +598,13 @@ export interface LayoutModel {
    * The freeze keeps a copy; the stage-5 publication and its restore check each pair's room.
    */
   feedSplits?: FeedSplit[];
+  /**
+   * Dense-16x9 ticket 06, slice C: the rows stage 4 seated for their sibling-frame links (`sibling-frames.ts`), one entry per pair of cells, by sub-tier and
+   * then left cell. Absent = the model holds no sibling-frame link that the rule may seat (nothing to decide, so a sheet without one keeps its bytes); `[]` = it holds
+   * one or more, and stage 4 declined every pair set by name. Each placement run decides on its own stage-4 geometry; stage 5 reads it for the u-turn courses.
+   * The freeze keeps a copy; every publication from stage 5 on and its restore check the row orders against it (`validateSiblingRows`).
+   */
+  siblingRows?: SiblingRow[];
   freeze?: LayoutFreeze;
   /**
    * What this placement run was told to keep (architecture 2, ticket 03): pitch and size floors, side faces, lane owners, courses, spanning chords, the turn
@@ -995,6 +1002,25 @@ export interface StaggerRow {
  * moved `width` px right, so the two sibling groups `pair` (left, right) of `tier` can both stand under their feeds.
  */
 export interface FeedSplit { tier: number; authority: number; pair: [string, string]; at: number; width: number }
+/**
+ * One pair of cells whose members a sibling-frame link joins (dense-16x9 ticket 06, slice C): two rows of one sub-tier in two frames of one document tier,
+ * `leftCell` left of `rightCell`. The linked members of each cell stand at the end of its row that faces the other cell, and the pairs nest: the inner
+ * pair stands on the two facing row ends and the other pairs stand next to it in mirrored order, outermost first in `outerLinks`.
+ */
+export interface SiblingRow {
+  subTier: number;
+  leftCell: string;
+  rightCell: string;
+  /**
+   * The cell whose linked block stage 4 turned so the pairs nest; `none` when they already nested, or when one pair joins the cells. History, not proof: the order
+   * before the seat is gone, so no check can read it; the validator checks the nested order of the pairs, not this flag.
+   */
+  mirrored: 'left' | 'right' | 'none';
+  /** The link of the inner pair: a level chord candidate on the facing lateral faces. Absent when a unit or a frame stands between the two cells on their sub-tier: every pair is then a U. */
+  levelLink?: string;
+  /** The links of the other pairs, outermost first: stage 5 gives each a u-turn course on one face of the sub-tier. */
+  outerLinks: string[];
+}
 /** Ticket 51: a group stands on two lines (`stagger`) or stays one row; a `row` names the first rule that kept it. */
 export type GroupArrangement = { chosen: 'stagger' } | { chosen: 'column' } | { chosen: 'row'; reason: string };
 export interface LayoutFreeze {
@@ -1002,6 +1028,8 @@ export interface LayoutFreeze {
   staggerRows?: StaggerRow[];
   /** Stage-5 feed splits (ticket 73), absent when the model has no record. */
   feedSplits?: FeedSplit[];
+  /** The stage-4 sibling rows (dense-16x9 ticket 06, slice C), absent when the model has no record. */
+  siblingRows?: SiblingRow[];
   version: 1;
   topology: { node: string; ports: FrozenPort[]; portCorners?: LayoutNode['portCorners'] }[];
   floors: { node: string; size: Size }[];
