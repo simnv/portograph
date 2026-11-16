@@ -12,6 +12,7 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceOffsets, neighbourPitch } from './pair-pitch.js';
 import { aspectAim, aspectGap } from './aspect.js';
+import { plannedBends } from './side-measure.js';
 import { ASPECT_EPS, CHORD_CORRIDOR_SLACK, PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
@@ -1103,8 +1104,9 @@ export const staggerTrigger = (row: StaggerRow): 'block' | 'aspect' => Array.isA
  * - `block` (a rank cell, the fan wrap of D-Q4: its block is too wide for its hub): less area, strictly;
  * - `aspect` (a plain row: the sheet is wider than the aim): nearer the aspect aim (ADR-0025, `aspectGap` smaller by more than
  *   `ASPECT_EPS`), or, at an equal gap, less area.
- * Then, for both, every link `plain` places straight stays straight, and no hard separation is shorter than in `plain`. Returns the reason
- * to decline, or undefined to keep.
+ * Then, for both, every link `plain` places straight stays straight, no hard separation is shorter than in `plain`, and the planned bends of
+ * all links (`plannedBends`, the placement's lower bound, CONTEXT.md) add up to no more than in `plain` (the gate trades no turn it can see;
+ * dense-16x9 ticket 22 review). Returns the reason to decline, or undefined to keep.
  */
 export function wrapGateVerdict(wrapped: LayoutModel, plain: LayoutModel, trigger: 'block' | 'aspect'): string | undefined {
   const w = placedExtent(wrapped), p = placedExtent(plain), aim = aspectAim(plain.document), less = w.width * w.height < p.width * p.height - PLACEMENT_EPS;
@@ -1121,5 +1123,9 @@ export function wrapGateVerdict(wrapped: LayoutModel, plain: LayoutModel, trigge
   if (lost.length) return `the link${lost.length > 1 ? 's' : ''} ${lost.join(', ')} ${lost.length > 1 ? 'are' : 'is'} straight without the two lines and not with them`;
   const short = worseSeparations(separationShortfalls(wrapped), separationShortfalls(plain)).sort(compareId);
   if (short.length) return `the two lines leave the separation ${short[0]} short`;
+  // Last, so a lost straight link (which also adds planned bends) is named as such.
+  const bends = (model: LayoutModel): number => model.links.reduce((sum, link) => sum + (link.removed === true ? 0 : plannedBends(model, link)), 0);
+  const [after, before] = [bends(wrapped), bends(plain)];
+  if (after > before) return `the planned bends rise from ${before} to ${after} with two lines`;
   return undefined;
 }

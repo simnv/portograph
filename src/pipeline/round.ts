@@ -6,6 +6,7 @@
 import type { Diagnostic, LayoutModel } from '../model/index.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
 import { producerRefusal } from '../layout/placement-refusal.js';
+import { staggerRefusal } from '../layout/stagger.js';
 import type { Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
 import type { State, Trial } from './state.js';
@@ -96,8 +97,12 @@ export type AnyRound = Round<any>;
 /** A trial that was placed: the ledger it was placed with and its 7e model. */
 export interface Opened { ledger: Reservations; trial7e: LayoutModel }
 
-/** Whether `error` of a trial's run withdraws the trial: a producer refusal in every round (DR-11), else what the round tolerates. */
-const withdraws = <O>(round: Round<O>, error: unknown, phase: 'place' | 'bands'): boolean => producerRefusal(error) || round.tolerates(error, phase);
+/**
+ * Whether `error` of a trial's run withdraws the trial: a producer refusal in every round (DR-11), a stagger refusal at 7f in every round (the
+ * trial's stagger rows do not hold there, dense-16x9 ticket 22 review), else what the round tolerates.
+ */
+const withdraws = <O>(round: Round<O>, error: unknown, phase: 'place' | 'bands'): boolean =>
+  producerRefusal(error) || (phase === 'bands' && staggerRefusal(error)) || round.tolerates(error, phase);
 
 const refuse = <O>(env: Env, s: State, round: Round<O>, o: O, r: Refusal): Refusal => { round.refuse(env, s, o, r); return r; };
 
@@ -120,8 +125,18 @@ export async function close<O>(env: Env, s: State, round: Round<O>, o: O, { ledg
   const held = round.holdsAt7e(env, s, o, ledger, trial7e) ?? round.predict?.(env, s, o, trial7e);
   if (held !== undefined) return refuse(env, s, round, o, held);
   let t: Trial;
-  if (!round.routed) t = { ledger, trial7e, trial: trial7e, routedTrial: trial7e, moved: false, unmoved: undefined };
-  else {
+  if (!round.routed) {
+    // An unrouted round commits its 7e unbanded, and the next baseline runs 7f on it (`driver.ts`, `baseline`). A trial that holds stagger rows
+    // runs 7f as a trial first, so no round commits a placement that the next baseline refuses (dense-16x9 ticket 22 review): a stagger or
+    // producer refusal there retains the baseline and names the refusal. No routing pass.
+    if (trial7e.staggerRows?.length) {
+      try { await env.bands(trial7e, true); } catch (error) {
+        if (!withdraws(round, error, 'bands')) throw error;
+        return refuse(env, s, round, o, { at: 'bands', why: (error as Error).message, error: error as Error });
+      }
+    }
+    t = { ledger, trial7e, trial: trial7e, routedTrial: trial7e, moved: false, unmoved: undefined };
+  } else {
     try {
       const preflight = await round.preflight?.(env, s, o, trial7e);
       if (preflight !== undefined) return refuse(env, s, round, o, preflight);

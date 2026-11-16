@@ -65,12 +65,13 @@ for (;;) {
 await placeFirst();
 // The acceptance gate of the staggers stage 5 chose (fan wrap, D-Q4; ADR-0024, second amendment; dense-16x9 ticket 22): each row is judged on
 // its own, greedy in the stage-5 order (widest first). A row keeps its two lines only when the complete placement with it beats the placement
-// with the rows kept so far (`wrapGateVerdict`: nearer the aspect aim, or less area at an equal gap; no straight link lost; no separation
-// shorter; a fan wrap, the block trigger, keeps the area rule of D-Q4: less area). Each trial is a placement of the first run's choice in keep mode with only those rows staggered (every other chosen row a `row`),
+// with the rows kept so far (`wrapGateVerdict`: nearer the aspect aim, or less area at an equal gap; no more planned bends; no straight link
+// lost; no separation shorter; a fan wrap, the block trigger, keeps the area rule of D-Q4: less area). Each trial is a placement of the first run's choice in keep mode with only those rows staggered (every other chosen row a `row`),
 // and its 7f run as a trial: the same publication checks as every placement. A stagger refusal or a producer refusal (DR-11) of a trial
 // declines that row by name, never thrown. The trials spend no `MAX_RERUNS` (`env.gateRuns` lifts the placement cap by their placements), so the
 // gate is always available; the state (the ledger, the declined blocks, the re-run count) of the run it keeps is the state the command goes on
-// with. The trial of every chosen row together is the first run itself.
+// with. With N chosen rows the gate costs one plain placement plus at most N row trials: the trial of every chosen row together is the first
+// run itself.
 const chosen = (first.staggerRows ?? []).map(row => row.group)
   .filter(group => (env.arrangedRows ?? []).includes(group) && first.groupArrangements?.[group]?.chosen === 'stagger');
 const gateNotes: Diagnostic[] = [];

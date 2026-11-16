@@ -269,6 +269,17 @@ ${[1, 2, 3, 4, 5, 6].map(i => `  - [p, n${i}]`).join('\n')}
     expect(model.groupArrangements!.leaves).toEqual({ chosen: 'stagger' });
     expect(failedGates(model)).toEqual([]);
   }, 60000);
+
+  // The default changed in dense-16x9 ticket 22 (review 1): under the 16:9 aim the seat still admits the parent, and the acceptance gate
+  // declines the two lines, because the complete placement stands farther from the aim with them.
+  it('declines the same row at the gate under the default aim, after the seat admits it', async () => {
+    const fits = crowded.replace('  q: { group: feeds, class: switch }\n', '').replace('  z: { group: side, class: server }\n', '').replace('  - [q, z]\n', '');
+    const model = await run(fits);
+    expect(model.groupArrangements!.leaves).toEqual({ chosen: 'row', reason: 'the acceptance gate declined the two lines (FAN_WRAP_DECLINED names why)' });
+    expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED').map(note => note.message))
+      .toEqual([expect.stringMatching(/^The two lines of leaves are declined: the complete placement is [\d.]+ x [\d.]+ px with two lines, farther from the aim 1\.778 than [\d.]+ x [\d.]+ px without\.$/)]);
+    expect(failedGates(model)).toEqual([]);
+  }, 60000);
 });
 
 describe('arrangeGroups records only a stagger refusal (review finding 4)', () => {

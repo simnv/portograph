@@ -83,7 +83,8 @@ const fanRound = (child: boolean): Round<{ grown: Reservations }> => ({
     if (child) return;
     // A producer refusal at the placement run (DR-11) is a broken reservation, as one found at 7e.
     s.cuts.push(r.note ?? cutNote(r.at === 'place' && !producerRefusal(r.error) ? 'a trunk join was blocked by the moved rows, and the re-run was dropped'
-      : r.at === 'fallback' ? 'ELK fell back during it, and the re-run was dropped' : `it broke a reservation (${r.why})`));
+      : r.at === 'fallback' ? 'ELK fell back during it, and the re-run was dropped'
+      : r.at === 'bands' ? `its 7f trial refused it (${r.why}), and the re-run was dropped` : `it broke a reservation (${r.why})`));
   },
 });
 export const fan = fanRound(false);

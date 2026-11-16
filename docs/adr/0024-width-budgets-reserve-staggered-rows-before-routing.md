@@ -139,7 +139,9 @@ The second amendment changes as follows.
 - The size test of that placement (after 7f, before routing) follows the row's trigger, as stage 5 does.
   - A fan wrap (block trigger: the block is too wide for its hub) keeps the area rule of this amendment, strictly less area. It is an owner ruling (D-Q4, decision review 2026-11-07); aspect first would decline a wrap on any sheet near or under the aim.
   - A plain row (aspect trigger: the sheet is wider than the aim) keeps its two lines when the placement stands nearer the aspect aim (ADR-0025), or takes less area at an equal gap.
+- The planned bends of all links (the placement's lower bound, CONTEXT.md) add up to no more than in the baseline: the gate trades no turn it can see (review 1 of ticket 22).
 - As before, no link the baseline makes straight is lost, and no hard separation is shorter.
 - A refusal in a trial's placement or 7f declines that row by name. Each trial runs the same publication checks as every placement.
-- The trials stand outside `MAX_RERUNS` and the placement cap: one placement per chosen row.
+- The trials stand outside `MAX_RERUNS` and the placement cap. With N chosen rows the gate costs one plain placement plus at most N row trials.
+- A later unrouted round (the fan round) whose trial holds a stagger runs 7f as a trial before it commits. A stagger or producer refusal there drops the trial by name, and the baseline stands. No round commits a placement that the next baseline refuses (review 1 of ticket 22).
 
