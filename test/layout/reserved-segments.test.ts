@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import type { LayoutModel, PathSegment } from '../../src/model/layout.js';
 import { reservedSegments, tierGapPlans } from '../../src/layout/gap-plan.js';
-import { nudgingDistance } from '../../src/layout/bands.js';
+import { routed } from '../../src/score/model.js';
 import { planRoute } from '../../src/route/plan.js';
 import { preRoute } from '../../src/route/validate.js';
 import { createAttempt } from './phase-two-fixture.js';
@@ -57,8 +57,8 @@ function stitched(view: LayoutModel): { link: string; segment: Run }[] {
 }
 
 /**
- * The sheets the test reads: the synthetics whose plans hold junction (shared) runs, lanes and their mouths, U and Z parts and held chords, and ten
- * others. With any one producer left out of `reservedRunsOf` (a stored path, a shared run, a lane, a mouth, a stem), at least one of them fails;
+ * The sheets the test reads: the synthetics whose plans hold junction (shared) runs, lanes and their mouths, a row-gap leg, U and Z parts and held chords,
+ * and ten others. With any one producer left out of `reservedRunsOf` (a stored path, a shared run, a lane, a mouth, a leg, a stem), at least one of them fails;
  * the last test checks that they still hold every kind.
  */
 const SHEETS = [
@@ -71,6 +71,8 @@ const SHEETS = [
   // U and Z parts.
   'synthetic/two-skirts-from-one-face-nest', 'synthetic/a-link-listed-from-the-lateral-end-takes-the-column-gap-course',
   'synthetic/a-row-cycle-leaves-a-part-to-the-router', 'synthetic/an-allocated-run-starts-beyond-the-stem',
+  // A row-gap leg (`legReservation`).
+  'synthetic/a-restored-route-keeps-its-planned-row-and-leg',
   // Held chords.
   'synthetic/a-chord-under-a-stem-is-no-crossing', 'synthetic/a-chord-spans-a-gap-the-solve-grows', 'synthetic/a-stem-tip-stands-beyond-its-pill-text',
   // Ten others.
@@ -81,33 +83,27 @@ const SHEETS = [
 ];
 
 describe('reservedSegments reads every segment reserved before routing, and nothing else (dense-16x9 ticket 14, review 5)', () => {
-  // The published layout, seen as stage 8 received it (`preRoute`). Two directions, per tier gap and within `keep` of it:
-  //   - every segment of a final path that stage 8 did not make (`stitched`: what `planRoute` stitches, and what it passes head-on) is on the
-  //     collinear union of `reservedSegments` entries of its link; a producer of reserved geometry that the reader does not read fails here;
+  // The published layout, seen as stage 8 received it (`preRoute`), over the whole sheet (no window: a planned piece can end on a tip beyond its
+  // gap), on the links the scorer counts (`routed`, with a final path). Two directions:
+  //   - every segment of a final path that stage 8 did not make (`stitched`: what `planRoute` stitches, and what it passes head-on) lies on its
+  //     final path and on the collinear union of `reservedSegments` entries of its link; a producer the reader does not read fails here;
   //   - every `reservedSegments` entry lies on the final path of its link; an entry no path keeps (a guessed stem, a wrong mouth) fails here.
   const seen = new Set<string>();
   for (const sheet of SHEETS) it(sheet, async () => {
     const model = await layout(parse(fixture(sheet)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-    const view = preRoute(model), keep = nudgingDistance(view), kept = stitched(view);
-    const missing: unknown[] = [], stray: unknown[] = [];
-    for (const { gap, plan } of tierGapPlans(view)) {
-      const reserved = reservedSegments(view, gap, plan);
-      for (const entry of reserved) seen.add(entry.kind);
-      for (const part of plan.parts) seen.add(`shape:${part.shape}`);
-      const near = (run: Run): boolean => Math.max(run.from.y, run.to.y) >= gap.low - keep - TOLERANCE && Math.min(run.from.y, run.to.y) <= gap.high + keep + TOLERANCE;
-      for (const item of kept) {
-        if (near(item.segment) && !covered(item.segment, reserved.filter(entry => entry.link === item.link).map(entry => entry.segment))) missing.push({ gap: [gap.low, gap.high], ...item });
-      }
-      for (const entry of reserved) {
-        const link = model.links.find(candidate => candidate.id === entry.link)!;
-        if (link.removed || link.path === undefined) continue;
-        if (!covered(entry.segment, link.path.segments)) stray.push({ gap: [gap.low, gap.high], link: entry.link, kind: entry.kind, segment: entry.segment });
-      }
-    }
-    expect({ missing, stray }).toEqual({ missing: [], stray: [] });
+    const view = preRoute(model), plans = tierGapPlans(view);
+    const counted = new Map(model.links.filter(link => routed(link) && link.path !== undefined).map(link => [link.id, link.path!.segments]));
+    const reserved = reservedSegments(view, plans);
+    for (const entry of reserved) seen.add(entry.kind);
+    for (const { plan } of plans) for (const part of plan.parts) seen.add(`shape:${part.shape}`);
+    const kept = stitched(view).filter(item => counted.has(item.link));
+    const off = kept.filter(item => !covered(item.segment, counted.get(item.link)!));
+    const missing = kept.filter(item => !covered(item.segment, reserved.filter(entry => entry.link === item.link).map(entry => entry.segment)));
+    const stray = reserved.filter(entry => counted.has(entry.link) && !covered(entry.segment, counted.get(entry.link)!));
+    expect({ off, missing, stray }).toEqual({ off: [], missing: [], stray: [] });
   }, 60000);
 
   it('reads every kind of reserved geometry and every shape of planned part on these sheets', () => {
-    expect([...seen].sort()).toEqual(['lane', 'mouth', 'path', 'planned', 'shape:drop', 'shape:stepped', 'shape:u', 'shape:z', 'shared', 'stem']);
+    expect([...seen].sort()).toEqual(['lane', 'leg', 'mouth', 'path', 'planned', 'shape:drop', 'shape:stepped', 'shape:u', 'shape:z', 'shared', 'stem']);
   });
 });

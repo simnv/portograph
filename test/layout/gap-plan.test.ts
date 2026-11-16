@@ -2,15 +2,18 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { bands, bars, bundles, centre, flanks, lanes, layout, parse, readCacheCounts, rows } from '../../src/internal.js';
 import type { LayoutModel } from '../../src/index.js';
+import type { PathSegment } from '../../src/model/layout.js';
 import { attemptCounters, resetAttemptCounters } from '../../src/layout/attempt-counters.js';
 import { checkReadCaches } from '../../src/model/read-cache.js';
-import { facingTips, heldChordsIn, plannedSegments, planGap, tierGapPlan, tierGapPlans, type DodgeContext, type GapPlan, type PlanFrame, type PlanInput, type ReservedSegment } from '../../src/layout/gap-plan.js';
+import { facingTips, heldChordsIn, plannedSegments, planGap, reservedSegments, tierGapPlan, tierGapPlans, type DodgeContext, type GapPlan, type PlanFrame, type PlanInput, type ReservedSegment } from '../../src/layout/gap-plan.js';
 import { tierGaps } from '../../src/layout/gap-runs.js';
 import { nudgingDistance } from '../../src/layout/bands.js';
 import { EPS, segmentDistance } from '../../src/geometry/planar.js';
 import { strictCrossing } from '../../src/layout/read/crossings.js';
 import { createAttempt, placed } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { legReservation } from '../../src/layout/sides-two.js';
+import { preRoute } from '../../src/route/validate.js';
 import { orthogonalLinks } from '../orthogonal-links.js';
 import { withoutJointOrderOn } from './joint-off.js';
 
@@ -38,8 +41,9 @@ const line = (low: number, high: number, top: number, bottom: number): ReservedS
 /** A segment of `link` reserved before routing (a stem, a shared junction run), at the default stroke. */
 const held = (link: string, kind: ReservedSegment['kind'], from: { x: number; y: number }, to: { x: number; y: number }): ReservedSegment =>
   ({ link, kind, stroke: STROKE, segment: { from, to, owner: { kind: 'link', id: link } } });
-/** What the dodge reads beside the gap of `frame` (low y to band top): the given reserved segments. Without it `planGap` moves no part. */
-const dodging = (frame: PlanFrame, reserved: readonly ReservedSegment[] = []): DodgeContext => ({ gap: { low: frame.low, high: frame.bandTop }, reserved: () => reserved });
+/** What the dodge reads for the gap of `frame` (low y to band top): the given reserved segments, and where other gaps' parts can stand. Without it `planGap` moves no part. */
+const dodging = (frame: PlanFrame, reserved: readonly ReservedSegment[] = [], others: readonly { low: number; high: number }[] = []): DodgeContext =>
+  ({ gap: { low: frame.low, high: frame.bandTop }, reserved: () => reserved, others: () => others });
 /** The default routed stroke every hand-built part carries, unless a test says otherwise. */
 const STROKE = 1.5;
 /** The v5-4-0 shape with `access` declared before `src` (DR-04): the canonical link order lays the spec's shape out again. */
@@ -686,7 +690,7 @@ describe('a held chord that ends in its gap is a wall over its extent there (den
       });
     });
 
-    describe('reads every segment reserved before routing beside the gap (reviews 4 and 5)', () => {
+    describe('reads every segment reserved before routing (reviews 4 and 5)', () => {
       // keep 14 (some other routed link is 4 px wide), 1.5 px parts. The chord leaves a pill face 40 px below the gap's low y at x 90 and reaches the band
       // below at x 85: its wall (76 to 104) holds D's upper x 100 and not its lower x 106. The context hands the dodge what `reservedSegments` reads.
       const stemFrame: PlanFrame = { low: 0, bandTop: 300, floor: 200, keep: 14, pitch: 14, edge: 12, tips: [], lowerTips: [], obstacles: [], residual: [] };
@@ -807,6 +811,69 @@ describe('a held chord that ends in its gap is a wall over its extent there (den
         expect(walled.crowded).toEqual([]);
       }
     });
+  });
+});
+
+describe('the dodge reads all reserved geometry, uncropped, on the links the scorer counts (dense-16x9 ticket 14, review 6)', () => {
+  // keep 14 (a 4 px routed link elsewhere), 1.5 px parts. The chord C leaves a pill face at (87, 40) and reaches the band below at x 85: its wall
+  // (71 to 101) holds D's upper x 100 and not its lower x 106.
+  const frame6: PlanFrame = { low: 0, bandTop: 300, floor: 200, keep: 14, pitch: 14, edge: 12, tips: [], lowerTips: [], obstacles: [], residual: [],
+    chords: [{ low: 87, high: 85, partial: true }] };
+  const gap = { low: 0, high: 300 };
+  const drop = (lowerY: number): PlanInput => ({ id: 'D', link: 'D', order: 0, stroke: STROKE, upper: { x: 100, y: 15, kind: 'tip', source: 'Du' }, lower: { x: 106, y: lowerY, kind: 'tip', source: 'Dl' } });
+  const pathOf = (id: string, segments: PathSegment[], layer = 'routed', strokeWidth = STROKE) => ({ id, layer, strokeWidth, path: { segments } });
+  const run = (id: string, from: { x: number; y: number }, to: { x: number; y: number }, straight = false): PathSegment =>
+    ({ from, to, owner: { kind: 'link', id }, ...(straight ? { straight: true } : {}) });
+  const chord = pathOf('C', [run('C', { x: 87, y: 40 }, { x: 85, y: 300 }, true)]), wide = pathOf('wide', [], 'routed', 4);
+  const modelOf = (...links: object[]): LayoutModel => ({ links: [...links, chord, wide], bundles: [], junctions: [] }) as unknown as LayoutModel;
+  const contextOf = (model: LayoutModel, others: readonly { low: number; high: number }[] = []): DodgeContext => ({ gap, reserved: () => reservedSegments(model), others: () => others });
+  const standOf = (plan: GapPlan): string | undefined => plan.parts[0]!.stand;
+
+  it('reads a reserved segment beside a moved part whose tip stands beyond the gap (the off-boundary tip)', () => {
+    // D's lower tip stands at y 400, inside the band below (a top port face at y 415). On x 106 its vertical would pass Q's reserved run at x 113,
+    // y 350 to 380, 5.5 px after the strokes. 93948c09 cropped the reader to the gap's y-range and k, so Q was not read and D moved.
+    const q = pathOf('Q', [run('Q', { x: 113, y: 350 }, { x: 113, y: 380 })]), model = modelOf(q);
+    expect(reservedSegments(model).map(entry => entry.link).sort()).toEqual(['C', 'Q']);
+    expect(standOf(planGap([drop(400)], frame6))).toBe('upper');
+    expect(standOf(planGap([drop(400)], frame6, contextOf(model)))).toBe('upper');
+    // With Q away from the drop, the dodge moves it.
+    expect(standOf(planGap([drop(400)], frame6, contextOf(modelOf(pathOf('Q', [run('Q', { x: 160, y: 350 }, { x: 160, y: 380 })])))))).toBe('lower');
+  });
+
+  it('moves no part within keep of where another gap\'s planned parts can stand: they are reserved, but not readable here', () => {
+    expect(standOf(planGap([drop(400)], frame6, contextOf(modelOf(), [{ low: 410, high: 600 }])))).toBe('upper');
+    expect(standOf(planGap([drop(400)], frame6, contextOf(modelOf(), [{ low: 420, high: 600 }])))).toBe('lower');
+  });
+
+  it('takes no credit for a crossing or finding the gate does not count: a stored overlay path is no reserved segment', () => {
+    // The reviewer's state: on x 100 D crosses the overlay run O (98 to 102 at y 100); on x 106 it would cross the routed run Q (104 to 108). The
+    // overlay crossing is no G6 or crossing reading, so trading it for a routed crossing is a crossing more.
+    const flat = (id: string, x0: number, x1: number, layer: string) => pathOf(id, [run(id, { x: x0, y: 100 }, { x: x1, y: 100 })], layer);
+    const q = flat('Q', 104, 108, 'routed'), o = flat('O', 98, 102, 'overlay'), model = modelOf(q, o);
+    expect(reservedSegments(model).map(entry => entry.link).sort()).toEqual(['C', 'Q']);
+    const before = planGap([drop(285)], frame6), after = planGap([drop(285)], frame6, contextOf(model));
+    const routedCrossings = (plan: GapPlan): number => plannedSegments(plan.parts[0]!, gap).filter(segment => strictCrossing(segment, q.path.segments[0]!)).length;
+    expect(standOf(before)).toBe('upper');
+    expect(routedCrossings(after)).toBeLessThanOrEqual(routedCrossings(before));
+    expect(standOf(after)).toBe('upper');
+  });
+
+  it('reads a row-gap leg as placement plans it (`legReservation` on a-restored-route-keeps-its-planned-row-and-leg)', async () => {
+    // The corpus holds no leg within keep of a tier gap, so the plan state is built around the real leg: link-2 jogs in the row gap between a and b.
+    const model = preRoute(await layout(parse(read('a-restored-route-keeps-its-planned-row-and-leg')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt }));
+    const leg = legReservation(model, model.links.find(link => link.id === 'link-2')!)!;
+    expect(reservedSegments(model).filter(entry => entry.kind === 'leg' && entry.link === 'link-2').map(entry => entry.segment)).toEqual([leg]);
+    const x = leg.from.x, top = Math.min(leg.from.y, leg.to.y), bottom = Math.max(leg.from.y, leg.to.y);
+    // A jogged drop from x - 13 to x - 7 over the leg's y-range: on its lower x its vertical stands 7 px from the leg, 5.5 px after the strokes; on
+    // its upper x the short lower vertical ends 13.5 px below the leg.
+    // A chord from x - 23 to x - 25 walls its upper x and not its lower x.
+    const legFrame: PlanFrame = { low: top - 40, bandTop: bottom + 40, floor: 60, keep: 11.5, pitch: 11.5, edge: 10.75, tips: [], lowerTips: [], obstacles: [], residual: [],
+      chords: [{ low: x - 23, high: x - 25, partial: true }] };
+    const part: PlanInput = { id: 'D', link: 'D', order: 0, stroke: STROKE, upper: { x: x - 13, y: top - 25, kind: 'tip', source: 'Du' }, lower: { x: x - 7, y: bottom + 25, kind: 'tip', source: 'Dl' } };
+    const legContext = (reserved: readonly ReservedSegment[]): DodgeContext => ({ gap: { low: legFrame.low, high: legFrame.bandTop }, reserved: () => reserved, others: () => [] });
+    const entry: ReservedSegment = { link: 'link-2', segment: leg, stroke: STROKE, kind: 'leg' };
+    expect(standOf(planGap([part], legFrame, legContext([])))).toBe('lower');
+    expect(standOf(planGap([part], legFrame, legContext([entry])))).toBe('upper');
   });
 });
 

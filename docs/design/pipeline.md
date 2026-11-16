@@ -942,7 +942,8 @@ reads and owns none of the gap's height: the plan asks for it, and 7f reserves i
   only the other end x keeps `k` from the chord's x-span there, the vertical moves to that end if the
   plan keeps every shape, row, its height and growth and adds no crowded part and no G6 finding, at each
   link's own stroke, over the pairs that hold the moved part and every segment reserved before routing
-  beside the gap (`reservedSegments`), with no increase in total crossings (`dodge`, dense-16x9 ticket 14).
+  (`reservedSegments`), keeps `k` from where another gap's parts can stand, with no increase in total
+  crossings (`dodge`, dense-16x9 ticket 14).
 - A **stepped part** is any other. It takes an upper leg, a **run** on its **row**, and a lower leg,
   each on its own end's x.
 - A **Z part** is a stepped part with two rows and a **middle drop** between them, used only where
@@ -950,7 +951,8 @@ reads and owns none of the gap's height: the plan asks for it, and 7f reserves i
   held chord across the gap. A chord that ends inside the gap on a pill face (`heldChordsIn`) is a
   preference: the middle drop moves to an x clear of it only where the plan keeps every shape, row,
   its height and growth, adds no G6 finding against the other parts and every segment reserved before
-  routing beside the gap (`reservedSegments`), and brings no increase in total crossings; with no such x
+  routing (`reservedSegments`), keeps `k` from where another gap's parts can stand, and brings no
+  increase in total crossings; with no such x
   it keeps its seat (`dodge`, dense-16x9 ticket 14).
 
 The order is four rules over the parts. O1: parts that run the same way, do not interleave and

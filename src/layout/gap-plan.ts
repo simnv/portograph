@@ -17,7 +17,7 @@ import { stemCache, stemPlan, type StemCache } from './sides-two.js';
 import { strictCrossing } from './read/crossings.js';
 import { readCache } from '../model/read-cache.js';
 import { parallelClearance } from '../score/gates.js';
-import type { Segment } from '../score/model.js';
+import { routed, type Segment } from '../score/model.js';
 import { reservedRunsOf, type ReservedRunKind } from '../route/plan.js';
 import { attemptCounters } from './attempt-counters.js';
 
@@ -617,13 +617,18 @@ export function planGap(inputs: readonly PlanInput[], frame: PlanFrame, context?
 }
 
 /**
- * What the dodge reads beyond the plan's own numbers: the gap the planned pieces stand in, and every segment reserved before routing in and at the
- * boundary of the gap (`reservedSegments`), read once and only when a try needs it. Absent: the dodge cannot read the geometry beside a moved
- * part and moves nothing (R6).
+ * What the dodge reads beyond the plan's own numbers: the gap the planned pieces stand in, and every segment reserved before routing
+ * (`reservedSegments`, uncropped: a planned piece can reach a tip beyond the gap), read once and only when a try needs it. Absent: the dodge
+ * cannot read the geometry beside a moved part and moves nothing (R6).
  */
 export interface DodgeContext {
   gap: { low: number; high: number };
   reserved: () => readonly ReservedSegment[];
+  /**
+   * The y-ranges where the planned parts of the other tier gaps can stand. They are reserved geometry too, but each of those plans dodges as
+   * well, so reading them would make each gap's plan depend on the other's: a part is not moved where it would come within `keep` of one.
+   */
+  others: () => readonly { low: number; high: number }[];
 }
 
 /** The plan of the gap as before ticket 14 (no dodge), memoized by its inputs and frame. */
@@ -715,7 +720,8 @@ const NO_PLAN_MODEL = { links: [], bundles: [], junctions: [] } as unknown as La
  * findings, no pair with a finding in the base whose least clearance falls (an equal count must not hide a worse distance), and no increase in total
  * crossings between planned parts.
  */
-function keepsPlan(base: GapPlan, trial: GapPlan, strokes: ReadonlyMap<string, number>, gap: { low: number; high: number }, reserved: () => readonly ReservedSegment[]): boolean {
+function keepsPlan(base: GapPlan, trial: GapPlan, strokes: ReadonlyMap<string, number>, keep: number, context: DodgeContext): boolean {
+  const { gap } = context;
   const ids = (items: readonly { id: string }[]): string => items.map(item => item.id).sort().join('\0');
   if (ids(base.parts) !== ids(trial.parts) || ids(base.residual) !== ids(trial.residual)) return false;
   if (Math.abs(base.height - trial.height) > EPS || Math.abs(base.growth - trial.growth) > EPS) return false;
@@ -733,7 +739,14 @@ function keepsPlan(base: GapPlan, trial: GapPlan, strokes: ReadonlyMap<string, n
   const was = segmentsOf(base), now = segmentsOf(trial);
   const moved = new Set([...now].filter(([id, text]) => was.get(id) !== text).map(([id]) => id));
   if (!moved.size) return true;
-  const before = movedPairs(base, moved, strokes, gap, reserved()), after = movedPairs(trial, moved, strokes, gap, reserved());
+  // The other gaps' parts are not read (`DodgeContext.others`): no moved part, before or after, comes within `keep` of where they can stand.
+  const others = context.others();
+  for (const plan of [base, trial]) for (const part of plan.parts) {
+    if (!moved.has(part.id)) continue;
+    const ys = plannedSegments(part, gap).flatMap(segment => [segment.from.y, segment.to.y]), low = Math.min(...ys), high = Math.max(...ys);
+    if (others.some(range => range.low < high + keep + EPS && range.high > low - keep - EPS)) return false;
+  }
+  const before = movedPairs(base, moved, strokes, gap, context.reserved()), after = movedPairs(trial, moved, strokes, gap, context.reserved());
   if (before === undefined || after === undefined) return false;
   for (const [key, now] of after.findings) {
     const was = before.findings.get(key);
@@ -751,8 +764,8 @@ function keepsPlan(base: GapPlan, trial: GapPlan, strokes: ReadonlyMap<string, n
  * beside it is the 7f retry's to refuse, slice 3), so the wall never drops a reservation. The tries are finite: one per candidate x or stand.
  */
 function dodge(base: GapPlan, inputs: readonly PlanInput[], frame: PlanFrame, context: DodgeContext): GapPlan {
-  let read: readonly ReservedSegment[] | undefined;
-  const reserved = (): readonly ReservedSegment[] => (read ??= context.reserved());
+  let read: readonly ReservedSegment[] | undefined, reach: readonly { low: number; high: number }[] | undefined;
+  const once: DodgeContext = { gap: context.gap, reserved: () => (read ??= context.reserved()), others: () => (reach ??= context.others()) };
   const walls = (frame.chords ?? []).map(chord => chordWall(chord, frame.keep));
   if (!walls.length) return base;
   const walled = (x: number): boolean => walls.some(([x0, x1]) => x > x0 + EPS && x < x1 - EPS);
@@ -772,7 +785,7 @@ function dodge(base: GapPlan, inputs: readonly PlanInput[], frame: PlanFrame, co
     }
     for (const forced of tries) {
       const trial = planGapCore(inputs, frame, forced), moved = trial.parts.find(item => item.id === part.id);
-      if (!keepsPlan(base, trial, strokes, context.gap, reserved) || moved === undefined) continue;
+      if (!keepsPlan(base, trial, strokes, frame.keep, once) || moved === undefined) continue;
       if (part.shape === 'z' ? !same(moved.middle!, forced.middles.get(part.id)!) : moved.stand !== forced.stands.get(part.id)) continue;
       plan = trial;
       for (const [id, x] of forced.middles) middles.set(id, x);
@@ -1109,6 +1122,23 @@ function labelRoom(model: LayoutModel, link: LayoutLink): number {
  * The model is the one `allocateGapRuns` sees: after 7f, lane x fixed, stems planned. Nothing is written.
  */
 export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
+  return gapPlanOf(model, gap, true);
+}
+
+/**
+ * Where the planned parts of the other tier gaps can stand, in y: each gap's range, grown to the ends of the parts its plan holds before the
+ * dodge. The dodge never moves an end, and every planned piece runs between its two ends and the rows inside its gap, so no piece of that gap's
+ * final plan leaves the range.
+ */
+function otherGapReach(model: LayoutModel, gap: TierGap): { low: number; high: number }[] {
+  return tierGaps(model).filter(other => other.above !== gap.above || other.below !== gap.below).map(other => {
+    const ys = gapPlanOf(model, other, false).parts.flatMap(part => [part.upper.y, part.lower.y]);
+    return { low: Math.min(other.low, ...ys), high: Math.max(other.high, ...ys) };
+  });
+}
+
+/** The plan of one tier gap; `dodging` false: the plan before the dodge (`otherGapReach` reads it). */
+function gapPlanOf(model: LayoutModel, gap: TierGap, dodging: boolean): GapPlan {
   const gaps = tierGaps(model), cache = stemCache();
   const keep = nudgingDistance(model), half = routedStroke(model) / 2;
   const margin = GROUP_EDGE_LINK_CLEARANCE + half, stem = GROUP_LABEL_GEOMETRY.routerStem;
@@ -1298,8 +1328,8 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
   const ends = new Set(kept.flatMap(input => [`${input.upper.x}|${input.upper.y}`, `${input.lower.x}|${input.lower.y}`]));
   const tips = facingTips(model, gap, cache).filter(item => !ends.has(`${item.tip.x}|${item.tip.y}`));
   const held = heldChordsIn(model, gap);
-  // The dodge reads every segment reserved before routing beside the gap, once and only when it tries a seat.
-  const context: DodgeContext = { gap, reserved: () => reservedSegments(model, gap, undefined, cache) };
+  // The dodge reads every segment reserved before routing, and where the other gaps' parts can stand, once and only when it tries a seat.
+  const context: DodgeContext = { gap, reserved: () => reservedSegments(model, [], cache), others: () => otherGapReach(model, gap) };
   return planGap(kept, { low: gap.low, bandTop, floor, keep, pitch: keep, edge: margin, obstacles, blocks,
     tips: tips.filter(item => item.side === 'bottom').map(item => item.tip),
     lowerTips: tips.filter(item => item.side === 'top').map(item => item.tip), residual,
@@ -1307,7 +1337,8 @@ export function tierGapPlan(model: LayoutModel, gap: TierGap): GapPlan {
       && model.meshBuses!.some(other => other.id === bus.joined && bus.row <= gap.above && gap.below <= other.row)).map(bus => bus.riser!.x),
     chords: held.map(item => ({ low: item.low, high: item.high, ...(item.across ? {} : { partial: true as const }) })),
     // The fan rows read the chords that cross the whole gap, as before ticket 14.
-    ...(model.fanFamilies !== undefined ? { slants: held.filter(item => item.across && item.link.fanFamily !== undefined).map(item => item.segment) } : {}) }, context);
+    ...(model.fanFamilies !== undefined ? { slants: held.filter(item => item.across && item.link.fanFamily !== undefined).map(item => item.segment) } : {}) },
+    dodging ? context : undefined);
 }
 
 /** One segment that a final routed path will hold, known before stage 8 routes (`reservedSegments`). */
@@ -1321,24 +1352,27 @@ export interface ReservedSegment {
 }
 
 /**
- * Every segment reserved before routing that a final routed path holds in or at the boundary of `gap`: within `keep` of its y-range, as nothing
- * farther can stand within the G6 clearance of a piece inside the gap, or cross one. The one reader of what stage 8 keeps of placement: each
- * link's `reservedRunsOf` (a stored path, the shared junction runs at both ends, the lane runs and their mouths, the row-gap leg, the port
- * stems), and, given the gap's plan, its planned parts where the plan fits (as `allocateGapRuns` stitches them). The planned parts of other gaps
- * stand in their own gaps, which the bands keep farther apart than `keep`. A straight piece stage 8 claims and a routed gap are stage 8's own and
- * are not here. `plan` absent: the gap's own planned parts are left out (the dodge supplies them). A new producer of reserved geometry joins
+ * Every segment reserved before routing that a final routed path holds, on the links the scorer counts (`routed`: an overlay, stub or removed
+ * link is no G6 or crossing reading, so it is never a baseline the dodge may trade against). The one reader of what stage 8 keeps of placement:
+ * each link's `reservedRunsOf` (a stored path, the shared junction runs at both ends, the lane runs and their mouths, the row-gap leg, the port
+ * stems), and the planned parts of each given plan that fits (as `allocateGapRuns` stitches them). It crops nothing: a planned piece ends on
+ * its port's tip, which can stand beyond its gap, so no y-range bounds what can stand beside it. A straight piece stage 8 claims and a routed
+ * gap are stage 8's own and are not here. The dodge passes no plan (it supplies the gap's own parts). A new producer of reserved geometry joins
  * `reservedRunsOf`, or the completeness test fails (test/layout/reserved-segments.test.ts).
  */
-export function reservedSegments(model: LayoutModel, gap: { low: number; high: number }, plan?: GapPlan, cache: StemCache = stemCache()): ReservedSegment[] {
-  const keep = nudgingDistance(model), top = gap.low - keep, floor = gap.high + keep;
-  const near = (segment: PathSegment): boolean => Math.max(segment.from.y, segment.to.y) >= top - EPS && Math.min(segment.from.y, segment.to.y) <= floor + EPS;
+export function reservedSegments(model: LayoutModel, plans: readonly { gap: { low: number; high: number }; plan: GapPlan }[] = [], cache: StemCache = stemCache()): ReservedSegment[] {
   const result: ReservedSegment[] = [];
   const add = (link: LayoutLink, kind: ReservedSegment['kind'], segment: PathSegment): void => {
-    if (near(segment)) result.push({ link: link.id, segment, stroke: linkStrokeWidth(link), kind });
+    result.push({ link: link.id, segment, stroke: linkStrokeWidth(link), kind });
   };
-  for (const link of model.links) for (const run of reservedRunsOf(model, link, cache)) for (const segment of run.segments) add(link, run.kind, segment);
-  if (plan !== undefined && plan.growth <= EPS) {
-    const links = new Map(model.links.map(link => [link.id, link]));
+  const links = new Map<string, LayoutLink>();
+  for (const link of model.links) {
+    if (!routed(link)) continue;
+    links.set(link.id, link);
+    for (const run of reservedRunsOf(model, link, cache)) for (const segment of run.segments) add(link, run.kind, segment);
+  }
+  for (const { gap, plan } of plans) {
+    if (plan.growth > EPS) continue;
     for (const part of plan.parts) {
       const link = links.get(part.link);
       if (link !== undefined) for (const segment of plannedSegments(part, gap)) add(link, 'planned', segment);
