@@ -29,8 +29,16 @@ import { clone } from './bundle-geometry.js';
  * it the chord again. Slice 1 takes anonymous or distinct-port, unlabelled, non-bundle members between two `row` units (no grid, bar or flank).
  */
 
-/** Retries of a 7f attempt whose direct members a later move crowded (R4: per attempt); each retry refuses the crowded members. */
-export const DIRECT_RETRIES = 2;
+/**
+ * The safety bound of the 7f crowding retry (R4: per attempt): the member count, the direct members and the fan and solid-block members of the
+ * attempt (dense-16x9 ticket 28). The retry runs until no new member is crowded. Each retry refuses at least one member that no earlier retry
+ * refused, and the refusals only grow, so it ends after at most this count; the bound is hit only if the member set changes between attempts, and
+ * `DIRECT_FAMILY_CROWDED` or `FAN_MEMBER_CROWDED` then names the members that stay straight. Until ticket 28 the bound was 2: a cascade where each
+ * refused member's fallback crowds the next member (two flat solid blocks of the outside sheet with ticket 27) needed 3 or more.
+ */
+export function crowdRetryBound(model: LayoutModel): number {
+  return new Set([...(model.directFamilies ?? []).flatMap(family => family.members.map(member => member.link)), ...(model.fanAdmissions ?? []).map(item => item.link)]).size;
+}
 /** The member sets one family's search tries at most (R4: per family). A truncated search keeps the best set found and says so. */
 export const DIRECT_SEARCH_BUDGET = 4096;
 
@@ -506,8 +514,8 @@ export function crowdedFanMembers(model: LayoutModel): Map<string, 'crowds' | 's
  * pipeline/driver.ts) and refuses each chord (`crowds`) before a gate finding is published. Three sources, each read by the reader that already
  * names it, so no rule is decided twice (R1):
  * - a direct member that `crowdedDirectMembers` names, and a straight fan member (a solid-block member too) that `crowdedFanMembers` names
- *   `crowds`: the readers of the 7f retry. On the state to publish such a member stands only when that retry gave up after `DIRECT_RETRIES`
- *   (`DIRECT_FAMILY_CROWDED`, `FAN_MEMBER_CROWDED`), so the publication step is the last resort after it. A fan member that only passes a
+ *   `crowds`: the readers of the 7f retry. On the state to publish such a member stands only when that retry reached its bound (`crowdRetryBound`;
+ *   `DIRECT_FAMILY_CROWDED`, `FAN_MEMBER_CROWDED`), so the publication step is the last resort after it. A fan member that only passes a
  *   sibling's stem (`stem`) is not refused here: that is no G6 reading.
  * - any other held chord that a `TIER_GAP_CHORD_CROWDED` note of the plan names (`chordGapNotes`) and that a G6 reading of the final paths
  *   names (`crowdedChords`: against every reserved segment, `reservedRouted`). A later move of 7f put it there.
