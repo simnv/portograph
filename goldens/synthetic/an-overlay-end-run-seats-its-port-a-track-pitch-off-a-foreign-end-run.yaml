@@ -1,0 +1,42 @@
+# Expected (dense-16x9 ticket 26): two overlay end runs of different nodes never stand on one track when a free port can take a seat.
+# T1 and T2 stand side by side on the Top row; each has one `sync` overlay link to the Base row, three tiers down, and each detours round
+# the rows between. T1's link ends on B1 by a riser that comes down beside T2's port, and T2's link leaves that port by a riser that
+# goes down beside it: by the per-link rule the two end runs stand 1.1 px apart across a long stretch, nearer than the overlay track
+# pitch (5.5 px), and read as one line. The separation cannot part them (it moves middle runs; an end run stands on its port). At the
+# end of 7f, after the ports nest, T2's overlay port takes a seat on its face one track pitch from T1's riser (`seatOverlayEnds`):
+# inside the face's end insets, in its face order, a neighbour pitch from each routed port beside it; no routed port moves. No pair
+# of overlay runs shares a track (`overlayTrackShares` absent); no link bends more, no turn and no crossing is added; G1-G9 pass.
+# Test-only input; test/layout/overlay-seat.test.ts reads it.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  mid: { tier: 1, label: Mid }
+  low: { tier: 2, label: Low }
+  base: { tier: 3, label: Base }
+nodes:
+  t1: { group: top, class: router, label: T1 }
+  t2: { group: top, class: router, label: T2 }
+  m1: { group: mid, class: router, label: M1 }
+  m2: { group: mid, class: router, label: M2 }
+  m3: { group: mid, class: router, label: M3 }
+  l1: { group: low, class: router, label: L1 }
+  l2: { group: low, class: router, label: L2 }
+  l3: { group: low, class: router, label: L3 }
+  b1: { group: base, class: router, label: B1 }
+  b2: { group: base, class: router, label: B2 }
+  b3: { group: base, class: router, label: B3 }
+  b4: { group: base, class: router, label: B4 }
+links:
+  - [l1, b2]
+  - [l1, b4]
+  - [l3, b1]
+  - [l3, b3]
+  - [m1, l1]
+  - [m1, l3]
+  - [m2, l2]
+  - [m3, l3]
+  - [t2, m1]
+  - [t2, m2]
+  - [t2, m3]
+  - { from: t1, to: b1, class: sync }
+  - { from: t2, to: b4, class: sync }
