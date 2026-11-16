@@ -1494,7 +1494,8 @@ freeze holds the accepted members. After 7f,
 a member that makes a G6 finding with any segment reserved for a final path (a planned part, a stem, a lane run or its mouth, a
 row-gap leg, a shared run, a stored path or another held chord; `crowdedDirectMembers` reads `reservedRouted` through
 `parallelClearance`, dense-16x9 ticket 14 slice 2) is refused, and the attempt runs again with it refused (`orthogonal`, reason
-`crowds`; `DIRECT_RETRIES`, 2). A straight fan member is judged the same way (`crowdedFanMembers`).
+`crowds`), until no new member is crowded: the refusals only grow, so the retries end after at most the member count (`crowdRetryBound`,
+R4; dense-16x9 ticket 28, before it 2). A straight fan member is judged the same way (`crowdedFanMembers`).
 
 **A frame keeps out of a foreign drop's clearance** (ticket 75). A routed link between a cell of a frame and a port of another tier
 drops to the x of that port from a row in the padding of the frame. When that x stands outside the frame, closer to a left or right
@@ -2388,8 +2389,9 @@ pinned turn, so the masks stay advisory.
 
 ## Stage 9 — link labels
 
-Before stage 9, after the last round, one bounded step reads the state to publish: a held chord that the plan names crowded and that stands
-under the G6 clearance is refused, and placement replays once (`refuseCrowdedChords`, the `refusedChord` reservation; `docs/design/routed-chords.md`, the
+Before stage 9, after the last round, one bounded step reads the state to publish: every held chord that would stand under the G6 clearance
+is refused (a direct, fan or solid-block member that the 7f crowding retry gave up on, since dense-16x9 ticket 28; any other held chord that the
+plan names crowded), and placement replays once (`refuseCrowdedChords`, the `refusedChord` reservation; `docs/design/routed-chords.md`, the
 publication step after Section 8). The kind has one predicate in `RESERVATION_CHECKS` (`refusedChordFailure`), which all three readers call: once
 the freeze is taken, no refused chord is a frozen chord, and a model before `sides-two` carries no entry.
 

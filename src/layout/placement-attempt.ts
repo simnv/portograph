@@ -4,7 +4,7 @@ import { refusedChordsOf } from './reservations.js';
 import { tapTarget } from './alignment-targets.js';
 import type { Diagnostic, DirectMemberReason, FanFallbackReason, LayoutModel } from '../model/layout.js';
 import { blockedChords, edgeLeavers, freezeChords } from './frame-paths.js';
-import { crowdedDirectMembers, crowdedFanMembers, DIRECT_RETRIES, planDirectFamilies } from './direct-families.js';
+import { crowdedDirectMembers, crowdedFanMembers, crowdRetryBound, planDirectFamilies } from './direct-families.js';
 import { refuseChords, refuseStemCrowded } from './fan-admission.js';
 import { freezeFanKeepers } from './bundle-junctions.js';
 import { seatLaneSources } from './parent-stand.js';
@@ -190,11 +190,15 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
   attemptCounters.attempts++; attemptCounters.in7f++;
   try {
     // A direct member that 7f's later moves bring within the clearance of a fallback's planned part is not unfrozen: the attempt is run again
-    // from its start with that member refused (`crowds`, architecture-2 ticket 22). The refusals only grow, so the retries end (R2, R4).
+    // from its start with that member refused (`crowds`, architecture-2 ticket 22), until no new member is crowded (dense-16x9 ticket 28). Each
+    // retry refuses at least one new member and the refusals only grow, so the retries end after at most the member count (`crowdRetryBound`, R2, R4).
     // `chordRefused` holds the fan members and the other held chords a retry refuses; a direct member is refused through its family (`refused`).
     const start = clone(draft), refused = new Map<string, DirectMemberReason>(), chordRefused = new Map<string, FanFallbackReason>();
     // The chords the publication step refused (`refusedChord` entries of the ledger, dense-16x9 ticket 14 slice 3) fall back before the freeze, as `crowds`.
-    for (const id of refusedChordsOf(draft.reservations ?? [])) chordRefused.set(id, 'crowds');
+    // A direct member is refused through its family, as a retry refuses it (`refused`); a fan member, a solid-block member and any other held chord
+    // fall back alone (`chordRefused`, ticket 28). The family is decided only in this attempt, so the id goes to both: each map ignores an id it
+    // does not own.
+    for (const id of refusedChordsOf(draft.reservations ?? [])) { chordRefused.set(id, 'crowds'); refused.set(id, 'crowds'); }
     for (let retry = 0; ; retry++) {
       attemptBody(draft, options, refused, chordRefused);
       const crowded = crowdedDirectMembers(draft).filter(id => !refused.has(id));
@@ -206,15 +210,17 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
         for (const id of chordRefused.keys()) fans.delete(id);
       }
       if (!crowded.length && !fans.size) break;
-      if (retry >= DIRECT_RETRIES) {
+      const bound = crowdRetryBound(draft);
+      if (retry >= bound) {
         if (crowded.length) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'DIRECT_FAMILY_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
-          message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${DIRECT_RETRIES} retries of 7f; the gates judge.` });
+          message: `The direct ${crowded.length === 1 ? 'member' : 'members'} ${crowded.join(', ')} stand within the clearance of a planned part after ${retry} retries of 7f (the member count is ${bound}); the gates judge.` });
         // The members stay straight as frozen.
         const ids = [...fans.keys()].sort(), named = ids.map(id => `${id} (${fans.get(id)})`);
         if (fans.size) draft.diagnostics.push({ stage: 'placement', severity: 'warning', code: 'FAN_MEMBER_CROWDED', owners: ids.map(id => ({ kind: 'link' as const, id })),
-          message: `The fan ${ids.length === 1 ? 'member' : 'members'} ${named.join(', ')} still ${ids.length === 1 ? 'meets' : 'meet'} a planned part or a sibling's stem after ${DIRECT_RETRIES} retries of 7f and ${ids.length === 1 ? 'stays' : 'stay'} straight; the gates judge.` });
+          message: `The fan ${ids.length === 1 ? 'member' : 'members'} ${named.join(', ')} still ${ids.length === 1 ? 'meets' : 'meet'} a planned part or a sibling's stem after ${retry} retries of 7f (the member count is ${bound}) and ${ids.length === 1 ? 'stays' : 'stay'} straight; the gates judge.` });
         break;
       }
+      attemptCounters.crowdRetries++;
       for (const [id, reason] of fans) chordRefused.set(id, reason);
       for (const id of crowded) refused.set(id, 'crowds');
       for (const key of Object.keys(draft)) delete (draft as unknown as Record<string, unknown>)[key];
