@@ -56,15 +56,6 @@ function sameFrame(model: LayoutModel, a: string, b: string): boolean {
 export function fanFamilyOf(model: LayoutModel, link: LayoutLink): FanFamily | undefined {
   return link.fanFamily === undefined ? undefined : model.fanFamilies?.find(family => family.id === link.fanFamily);
 }
-/**
- * Whether the chord of one link may cross the fallback leg of the other (`fixedPointRefusal`): two members of one fan family (Q126), or two member
- * links of one chord row (dense-16x9 ticket 03, slice C), each read from its stage-5 record.
- */
-export function legSiblings(model: LayoutModel, a: LayoutLink, b: LayoutLink): boolean {
-  if (fanSiblings(a, b)) return true;
-  const row = chordRowOf(model, a);
-  return row !== undefined && row === chordRowOf(model, b);
-}
 /** Whether two links are members of one fan family: the fallback legs of one are crossed by the chord of the other, and their crossings are faint. */
 export function fanSiblings(a: LayoutLink, b: LayoutLink): boolean {
   return a.fanFamily !== undefined && a.fanFamily === b.fanFamily;
@@ -560,6 +551,10 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
   // chord. Stage 8 cannot make room the chord took, so the chord stays clear of every stem placement has
   // already promised, its own ports' other links included. The stem is only the start of a vertical leg that runs on
   // to the link's gap row, so the chord holds the clearance against the whole leg (ticket 91).
+  // The stem rule holds for a chord the gap plan seats rows against (a fan or block member, `slants` in gap-plan.ts) and for a chord of a
+  // chord row (stage 5 reserved its stems in its corridor). The plan does not read any other chord, so a row could meet it: that chord keeps
+  // the clearance from the whole leg.
+  const slant = link.fanFamily !== undefined || chordRowOf(model, link) !== undefined;
   for (const other of model.links) {
     if (other.id === link.id || other.layer !== 'routed' || other.technique === 'stub' || !other.attachments || other.removed === true) continue;
     // The span offer reads every candidate as a chord to be (ticket 22): the legs of the ones not yet decided are no wall.
@@ -567,19 +562,15 @@ export function fixedPointRefusal(model: LayoutModel, link: LayoutLink, segment:
     for (const end of ['from', 'to'] as const) {
       const leg = orthogonalLeg(model, other, end);
       if (!leg) continue;
-      // A direct member may cross the fallback leg of another source node's fan (ticket 22, user 2026-10-23). The leg reserved here runs to the far
-      // stem tip, but the real one ends at a row the plan seats later, anywhere in the gap: so the chord crosses the leg's line, and a chord whose
-      // x-span holds the leg's x strictly is taken as crossing it. Otherwise it keeps the clearance, as G6 measures it.
+      // A direct member may cross the fallback leg of another source node's fan where its x-span holds the leg's x (ticket 22, `crossable`).
+      // A chord the stem rule covers (`slant`) may cross the fallback leg of any other link strictly beyond that leg's stem (dense-16x9 ticket 04). The leg
+      // reserved here runs to the far stem tip, but the real one ends at a row the plan seats later, anywhere in the gap: so the chord crosses
+      // the leg's line, and the plan seats the leg's row across the chord or clear of it (`slants`, gap-plan.ts). Only the stem stands
+      // wherever the row goes, so the chord keeps the run clearance from the stem (`crossesLegBeyondStem`). A chord that does not cross the leg
+      // beyond its stem keeps the clearance from the whole leg, as G6 measures it (ticket 91).
       const spans = Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS;
       if (crossable?.has(other.id) && spans) continue;
-      // A fan member crosses the fallback legs of its own family (architecture-2 ticket 40, user ruling Q126): the crossing is faint, and read as
-      // a direct member reads a fallback leg. The tier-gap plan seats the fallback's row across the chord or clear of it (`slants`, gap-plan.ts).
-      // A fallback's leg is not final before the freeze (a side round can move it), so its stem is judged there: a chord that still passes a
-      // sibling's stem falls back (`refuseStemCrowded`), and the crowding retry reads the same test at the end of 7f (`siblingStemCrowded`).
-      // Two member links of one chord row (dense-16x9 ticket 03, slice C; the stage-5 record `chordHubs`) read each other's legs the same way: the
-      // stage-5 seat reserved each far-line stem in its corridor, so a chord may cross a sibling's fallback leg. Ticket 04 replaces both memberships
-      // with its general stem rule.
-      if (spans && legSiblings(model, link, other)) continue;
+      if (slant && spans && crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other), legStem(model, other, end))) continue;
       if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return 'leg';
     }
   }
@@ -605,24 +596,30 @@ export function siblingStemCrowded(model: LayoutModel, link: LayoutLink): boolea
       const leg = orthogonalLeg(model, other, end);
       if (!leg) continue;
       const spans = Math.abs(leg.from.x - leg.to.x) < EPS && leg.from.x > Math.min(segment.from.x, segment.to.x) + EPS && leg.from.x < Math.max(segment.from.x, segment.to.x) - EPS;
-      if (!spans || crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other))) continue;
+      if (!spans || crossesLegBeyondStem(segment, leg, stroke, linkStrokeWidth(other), legStem(model, other, end))) continue;
       if (segmentDistance(segment, leg) - (stroke + linkStrokeWidth(other)) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS) return true;
     }
   }
   return false;
 }
 
+/** The stem of a link's end that stands whatever row the plan seats the link on: the reach its port's side asks for (`portStemReach`). */
+function legStem(model: LayoutModel, link: LayoutLink, end: 'from' | 'to'): number {
+  const port = findPort(model, link.attachments![end]);
+  return port === undefined ? GROUP_LABEL_GEOMETRY.routerStem : Math.max(GROUP_LABEL_GEOMETRY.routerStem, portStemReach(model, port));
+}
+
 /**
  * Whether a chord crosses a vertical leg strictly, past the leg's stem: its crossing of the leg's line lies inside the leg, and it keeps the run
- * clearance from the stem (the first `routerStem` px of the leg, from the port), which stands whatever row the plan seats the leg's link on.
+ * clearance from the stem (the first `reach` px of the leg, from the port, `legStem`), which stands whatever row the plan seats the leg's link on.
  */
-function crossesLegBeyondStem(chord: PathSegment, leg: PathSegment, stroke: number, legStroke: number): boolean {
+function crossesLegBeyondStem(chord: PathSegment, leg: PathSegment, stroke: number, legStroke: number, reach: number): boolean {
   const dx = chord.to.x - chord.from.x;
   if (Math.abs(dx) < EPS) return false;
   const y = chord.from.y + (leg.from.x - chord.from.x) / dx * (chord.to.y - chord.from.y);
   if (y <= Math.min(leg.from.y, leg.to.y) + EPS || y >= Math.max(leg.from.y, leg.to.y) - EPS) return false;
-  const reach = Math.min(GROUP_LABEL_GEOMETRY.routerStem, Math.abs(leg.to.y - leg.from.y));
-  const stem: PathSegment = { from: leg.from, to: { x: leg.from.x, y: leg.from.y + Math.sign(leg.to.y - leg.from.y) * reach }, owner: leg.owner };
+  const depth = Math.min(reach, Math.abs(leg.to.y - leg.from.y));
+  const stem: PathSegment = { from: leg.from, to: { x: leg.from.x, y: leg.from.y + Math.sign(leg.to.y - leg.from.y) * depth }, owner: leg.owner };
   return segmentDistance(chord, stem) - (stroke + legStroke) / 2 >= STRAIGHT_PATH_CLEARANCE.path - EPS;
 }
 

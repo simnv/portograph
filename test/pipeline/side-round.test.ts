@@ -74,7 +74,8 @@ describe('a diagram with no side candidate is the layout main makes', () => {
   // Hashes of the layout JSON without `runtime`, and the number of placement runs, measured on main at 964d77f.
   it('a fan-only input: same bytes, same number of placement runs, nothing offered, no side diagnostic', async () => {
     const { model, places } = await run(FAN);
-    expect(places).toBe(2);
+    // 2 before dense-16x9 ticket 04 (slice 2) added the spare core-rank node to the fan input (the fan is no solid block); main places 3 times on it too.
+    expect(places).toBe(3);
     // The hash moved from 6e2c23e8fd517290 with the message rewrite (ticket 02): the only difference in the layout JSON is the text of
     // the ROUTE_UNSUPPORTED message, 'M1 draws the members for group-link' now 'A group-link is drawn as its member links'.
     // Ticket 22: the fan is a triggered direct family, and its record is published (db0b5d006f05102c before).
@@ -86,7 +87,8 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // Dense-16x9 ticket 04 (slice 1): the fan floors are stored as neighbour-pair pitches (`pairPitch`, `pairFloor` reservations) and the face
     // pitch stays the base pitch; the nodes, ports, paths and labels are byte-identical (90ec7d9b78710dd1 before). Review 1 of slice 1 writes
     // the fan floor on every pair of the face's ports, not only on neighbours: again only the records move (b81cb20be4a70512 before).
-    expect(hash(model)).toBe('d6114bdfe765f40a');
+    // Slice 2 of ticket 04 adds the spare core-rank node to the input; main lays the new input out with the same hash (d6114bdfe765f40a before).
+    expect(hash(model)).toBe('e373421ae6a994a1');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);

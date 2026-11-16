@@ -1,0 +1,22 @@
+# Dense-16x9 ticket 04 (slice 2): a complete solid block between two adjacent ranks of one group. x1 and x2 stand on rank 0 of
+# `stack` and each links to y1, y2 and y3 on rank 1: one block of six members, its gap reserved at 34 degrees, every member straight.
+portograph: 2
+groups:
+  top: { tier: 0, label: Top }
+  stack: { tier: 1, label: Stack }
+nodes:
+  core: { group: top, class: router }
+  x1: { group: stack, class: router }
+  x2: { group: stack, class: router }
+  y1: { group: stack, class: switch }
+  y2: { group: stack, class: switch }
+  y3: { group: stack, class: switch }
+links:
+  - [core, x1]
+  - [core, x2]
+  - [x1, y1]
+  - [x1, y2]
+  - [x1, y3]
+  - [x2, y1]
+  - [x2, y2]
+  - [x2, y3]

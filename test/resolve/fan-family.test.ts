@@ -47,9 +47,10 @@ describe('the fan family is decided in stage 1', () => {
   it('takes a dotted class too, and no solid class (Q124: dashed or dotted classes only)', () => {
     expect(resolve(parse(sheet(3, 'dotted'))).fanFamilies).toHaveLength(1);
     expect(resolve(parse(sheet(3, 'dashed'))).fanFamilies).toHaveLength(1);
+    // A solid class takes no fan family. The same incidence is a complete solid block at the far-unit level (dense-16x9 ticket 04, slice 2).
     const solid = resolve(parse(sheet(3, 'default')));
-    expect(solid.fanFamilies).toBeUndefined();
-    expect(solid.links.some(link => link.fanFamily !== undefined)).toBe(false);
+    expect(solid.fanFamilies?.map(family => family.kind)).toEqual(['solid']);
+    expect(solid.links.some(link => link.fanFamily !== undefined && !link.solidBlock)).toBe(false);
   });
 
   it('needs two hubs and three far units, and complete incidence', () => {

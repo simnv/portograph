@@ -65,7 +65,8 @@ describe('the round loop (ticket 115, side-faces.md Section 7)', () => {
 
   it('refuses a hint whose placement run is rejected, and offers again in the retry round', async () => {
     const model = await run(FAN, call => bogus(call));
-    expect(model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED')).toHaveLength(2);
+    // 2 before dense-16x9 ticket 04 (slice 2) added the spare core-rank node to the fan input; main gives 1 on the new input too.
+    expect(model.diagnostics.filter(item => item.code === 'SIDE_HINT_REFUSED')).toHaveLength(1);
     expect(state.calls).toBe(2);
     expect(withoutNotes(model)).toBe(withoutNotes(await run(FAN)));
   }, 60000);

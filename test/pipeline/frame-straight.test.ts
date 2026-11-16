@@ -179,6 +179,18 @@ describe('a group-link member inside one frame takes the chord', () => {
 
   it('draws every member between a parent and its child frame as one straight segment', () => check(yaml));
 
-  it('draws every member between two rank cells of one frame as one straight segment', () => check(readFileSync(
-    new URL('../../goldens/synthetic/a-group-link-member-between-two-rank-cells-is-straight.yaml', import.meta.url), 'utf8')));
+  // Dense-16x9 ticket 04 (slice 2): the complete set between two adjacent ranks of one frame is a solid block, which the inferred group-link yields to.
+  it('draws every member between two rank cells of one frame as one straight segment, owned by the block', async () => {
+    const model = await run(readFileSync(new URL('../../goldens/synthetic/a-group-link-member-between-two-rank-cells-is-straight.yaml', import.meta.url), 'utf8'));
+    expect(model.groupLinks).toEqual([]);
+    expect(model.fanFamilies?.filter(family => family.kind === 'solid').map(family => family.id)).toEqual(['block:site#0:site#1:']);
+    expect(model.removedLinks ?? []).toEqual([]);
+    const members = model.links.filter(link => link.solidBlock);
+    expect(members).toHaveLength(4);
+    for (const link of members) {
+      expect(link.technique).toBe('straight');
+      expect(link.path!.segments).toHaveLength(1);
+    }
+    expect(score(model).snapshot.passed).toBe(true);
+  });
 });

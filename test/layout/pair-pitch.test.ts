@@ -192,7 +192,8 @@ describe('the readers of slice 1 read the pair pitch (review 1)', () => {
   it('keeps the crossings of a face that holds a fan and a bundle, as the scalar pitch did', async () => {
     const model = await lay(`${fan}\n  - [core-1, edge-1]\n  - [core-1, edge-1]\n`);
     expect(model.bundles.length).toBeGreaterThan(0);
-    expect(score(model).snapshot.counts.routed.crossings).toBe(5);
+    // 6 since slice 2 added the spare core-rank node to the fan fixture (5 before); main draws the new input with 6 too.
+    expect(score(model).snapshot.counts.routed.crossings).toBe(6);
   }, 180_000);
 
   it('refuses a stage-3 model whose pair pitch is unreadable, over capacity or under its floor (R5, R6)', () => {

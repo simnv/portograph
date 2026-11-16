@@ -201,7 +201,9 @@ need more than 60 px is declined (`FAN_SPREAD_DECLINED`); the unit test forges t
 Since dense-16x9 ticket 04 (slice 1) the cap is per chord pair (a pair over it is declined alone) and the floors are stored as
 neighbour-pair pitches (`LayoutNode.pairPitch`); the face holds their sum. Slice 1 still writes the largest need of a face on every
 pair of its ports, so a port order that a later round changes keeps it too: exact floors per pair leave no room for the drift of 7f, one crowded direct member then refuses its family through
-the leg cascade, and five corpus sheets lost straight links. Slice 2 changes that with the isolated fallback.
+the leg cascade, and five corpus sheets lost straight links. Slice 2 measured exact floors again with the stem rule in place and kept the
+largest need: on `a-fan-spreads-its-ports-so-its-chords-hold-clearance` the re-run with exact floors loses two held chords to the drift
+and is dropped (`FAN_ROUND_DROPPED`), so six of eight fan links stay orthogonal. That loss is no leg cascade, and the stem rule does not remove it.
 
 After the freeze, `chordsHold` and `blockedChords` also read foreign frame and canton boxes and
 the facing-edge rule for a cross-frame chord. `chordsHold` moves nodes only today, so it derives
@@ -609,7 +611,17 @@ Every hub and every node of the far groups participates, with at least two nodes
 Reverse cohorts strictly contained in another complete cohort yield to it before overlap checks. Identical member sets canonicalize to the smaller hub group, upper on a tie. Partial cohorts are not mined for bicliques.
 Non-facing final ports decline as `non-facing-ports`, retaining authored sides; the slice grants no lateral block entry.
 An inferred group-link yields ownership; an incompatible authored route, bundle, label, shared port, non-row or nested shape declines by name.
-Blocks sharing nodes decline together as interacting-blocks: their face and gap decisions belong to ticket 84.
+Dense-16x9 ticket 04 (slice 2) widens the scope. A block between two adjacent ranks of one group is a block (its far units are nodes). Across tiers, a block is complete
+at the far-unit level: each hub links to every far group (or frame) when there are two far units or more, and to every far node when there is one.
+Blocks that share nodes, a gap or a face are reserved together: the gap takes the largest demand, and a shared face keeps each pair pitch (merged by pair).
+Different member sets that overlap still decline as `overlapping-blocks`.
+
+**Stem rule** (slice 2, replaces the fan-sibling and chord-row memberships of `fixedPointRefusal`). A chord may cross the fallback leg of any other
+link strictly beyond that leg's stem (`crossesLegBeyondStem`; the stem is the reach the port's side asks for, `portStemReach`, at least 15 px),
+when the chord is one the gap plan seats rows against (a fan or block member, `slants`) or a chord of a chord row (its stems are reserved in its corridor at
+stage 5). Any other chord keeps the clearance from the whole leg (ticket 91). The ticket-22 `crossable` offer of a direct family stays as it is.
+The scope is the one the plan honours: with every held chord in `slants`, the plan lowered rows onto one another (G4 on four corpus sheets), and with the
+rule for every chord, the rows of plain links met chords that the plan did not read (G6 on five sheets).
 
 Stage 4 keeps declaration order where complete incidence ties, permuting block slots within the whole tier while retaining foreign slots and packing all units without overlap. Terminal follower groups use their parents' geometric order (group id breaks a final tie), so an incidental link order cannot leave the follower tier opposite the newly ordered far tier. Stage 5 reserves ceil((10 + stroke) / sin(34 degrees)) pitch before sizing.
 Block feeds centre a row but do not own individual vertical alignment targets. Terminal one-link followers request the widened row's spacing at stage 5. Placement fits all eligible rows on one draft and uses the shared separation catalogue to check siblings and frames. Every seat in a new or deepened spacing violation declines together as `BLOCK_FOLLOWER_SEAT_DECLINED` (`sibling-spacing`); an internally overlapping row declines as `node-spacing`. Restored siblings can obstruct another seat, so each refusal round rechecks the remaining set, removing at least one seat per round. A declined row keeps its previous owner and geometry. An accepted seat is provisional: `frozenBlockFollowers` records only those still vertical at the chord freeze (`[]` means none; absent means not frozen or no seats). Chord move guards, node-move guards, settled-draft adoption, trim and publication checks hold that record. Widening a box with `dx: 0` moves no node.

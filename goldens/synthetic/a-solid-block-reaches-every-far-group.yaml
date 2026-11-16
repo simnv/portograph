@@ -1,0 +1,20 @@
+# Dense-16x9 ticket 04 (slice 2): a block is complete at the level of the far unit. Each hub links to one node of each far group
+# (s1 to l1 and l3, s2 to l2 and l4), so every hub reaches every far group but not every far node: one block of four members, all
+# straight. With one far group only, completeness asks for every far node (no block for s1-l1 and s2-l2 alone).
+portograph: 2
+groups:
+  spines: { tier: 0 }
+  la: { tier: 1 }
+  lb: { tier: 1 }
+nodes:
+  s1: { group: spines, class: router }
+  s2: { group: spines, class: router }
+  l1: { group: la, class: router }
+  l2: { group: la, class: router }
+  l3: { group: lb, class: router }
+  l4: { group: lb, class: router }
+links:
+  - { from: s1, to: l1 }
+  - { from: s1, to: l3 }
+  - { from: s2, to: l2 }
+  - { from: s2, to: l4 }

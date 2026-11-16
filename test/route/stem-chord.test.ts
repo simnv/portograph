@@ -50,9 +50,10 @@ describe('the chord splits a batch but does not open a pending stem', () => {
     expect(requests).toEqual([]);
     const plan = tierGapPlans(placedModel).find(item => item.plan.parts.length > 2)!.plan;
     expect(plan.residual).toEqual([]);
-    expect(plan.order.map(id => id.replace('link-', '').replace('#0', ''))).toEqual(['11a', '10', '9', '4', '5', '6', '11b']);
-    // Verdana metrics (snack-theme ticket 157): 223.75 with Arial.
-    expect(plan.parts.find(part => part.link === 'link-11')!.middle).toBeCloseTo(236.30517578125, 6);
+    expect(plan.order.map(id => id.replace('link-', '').replace('#0', ''))).toEqual(['9a', '10', '11', '8', '7', '6', '9b']);
+    // Verdana metrics (snack-theme ticket 157): 223.75 with Arial. Dense-16x9 ticket 04 (slice 2) added the spare core-rank node that keeps the
+    // fan from being a solid block: the cores moved, link-9 is now the Z part (middle drop at 108.94) and the order is 9a, 10, 11, 8, 7, 6, 9b.
+    expect(plan.parts.find(part => part.link === 'link-9')!.middle).toBeCloseTo(108.93505859375, 6);
     expect(model.removedLinks ?? []).toEqual([]);
     expect(model.diagnostics.filter(item => item.code === 'ROUTE_CHECKPOINT_SKIPPED' || item.code === 'ROUTE_GAP_REJECTED')).toEqual([]);
     for (const link of model.links) expect(link.path, link.id).toBeDefined();

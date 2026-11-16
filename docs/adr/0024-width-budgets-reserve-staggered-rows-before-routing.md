@@ -119,6 +119,6 @@ in `docs/design/pipeline.md` (stage 5, *chord row*); this amendment states the d
   2026-11-16, which also removes the interleave refusal for compact hubs).
 - Corridor: the far-line member stands over its chord corridor, and a chord refused at the freeze keeps its reserved stem there, so the row
   stays on two lines (owner ruling 15, drawing A).
-- Legs: two member links of one chord row may cross each other's fallback legs, read from the stage-5 record (`legSiblings`), as fan
+- Legs: two member links of one chord row may cross each other's fallback legs, read from the stage-5 record, as fan
   members do (Q126). Without it the freeze of the first placement refused every member chord (`leg`) and the acceptance gate declined every
-  chord row. Ticket 04 replaces this membership with its general stem rule.
+  chord row. Amended by ticket 04, slice 2: the stem rule replaces the membership; a chord of a chord row crosses a fallback leg strictly beyond its stem.
