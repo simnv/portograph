@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
-import { restoreLayoutModel } from '../../src/internal.js';
+import { resolve, restoreLayoutModel, sidesOne, sidesTwo, sizeNodes, skeleton } from '../../src/internal.js';
+import { addPairPitch } from '../../src/layout/pair-pitch.js';
+import { portSideCapacity } from '../../src/layout/port-insets.js';
+import { portId } from '../../src/layout/skeleton-graph.js';
+import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
 import type { LayoutModel } from '../../src/index.js';
 import { fixedPointRefusal, isRoutedChord, legSiblings } from '../../src/layout/frame-paths.js';
 import { lineOf } from '../../src/layout/read/stagger.js';
@@ -112,5 +116,28 @@ ${leaves.flatMap(i => [`  - [leaf-${i}, hub-1]`, `  - [leaf-${i}, hub-2]`]).join
     expect(model.staggerRows).toBeUndefined();
     expect(model.groupArrangements).toBeUndefined();
     expect(new Set(leaves.map(i => model.nodes[`leaf-${i}`]!.bounds!.y)).size).toBe(1);
+  });
+});
+
+describe('the compact hub seat reads the neighbour-pair pitch (dense-16x9 ticket 04, slice 1)', () => {
+  it('seats a stored pair floor above the face pitch at that floor and every other pair at the face pitch', async () => {
+    const model = sizeNodes(sidesOne(resolve(parse(fixture(CONTIGUOUS)))));
+    await skeleton(model, { createAttempt });
+    const hub = model.nodes['hub-1']!;
+    // The ports of hub-1 that leaf-2 and leaf-3 reach stand side by side in far-end order; that pair keeps 40 px, the others the face pitch.
+    const portOf = (leaf: string) => hub.ports.find(port => model.links.some(link => link.attachments!.from.node === leaf && portId(link.attachments!.to) === portId(port.ref)))!;
+    const pair = [portId(portOf('leaf-2').ref), portId(portOf('leaf-3').ref)] as [string, string];
+    addPairPitch(hub, 'top', { rule: 'fan', ports: pair, min: 40 });
+    model.staggerRows = [{ group: 'leaves', order: [...model.groups.leaves!.rowOrder!], far: [], side: 'bottom', pitches: [], step: 0 }];
+    const seated = sidesTwo(model);
+    const node = seated.nodes['hub-1']!, pitch = node.sidePitch!.top!;
+    expect(seated.staggerRows![0]!.chordHubs).toEqual(['hub-1', 'hub-2']);
+    const ports = node.ports.filter(port => port.side === 'top').sort((a, b) => a.anchor!.x - b.anchor!.x);
+    const steps = ports.slice(1).map((port, i) => ({ pair: [portId(ports[i]!.ref), portId(port.ref)].sort().join('|'), step: port.anchor!.x - ports[i]!.anchor!.x }));
+    expect(40).toBeGreaterThan(pitch);
+    for (const { pair: key, step } of steps) expect(step, key).toBeCloseTo(key === [...pair].sort().join('|') ? 40 : pitch, 6);
+    // The body holds the face: its width is at least the sum of the pair pitches, and the pair floor stays a pair floor, not the face pitch.
+    expect(node.bounds!.width).toBeGreaterThanOrEqual(portSideCapacity(node, 'top', ports.length) - PLACEMENT_EPS);
+    expect(pitch).toBeLessThan(40);
   });
 });

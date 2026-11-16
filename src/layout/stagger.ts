@@ -10,7 +10,7 @@ import { fitRegionGroup } from './regions.js';
 import { nodeObstacleReach, routedStroke } from './bands.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
-import { neighbourPitch } from './pair-pitch.js';
+import { faceOffsets, neighbourPitch } from './pair-pitch.js';
 import { aspectAim, aspectGap } from './aspect.js';
 import { ASPECT_EPS, CHORD_CORRIDOR_SLACK, PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
@@ -340,10 +340,11 @@ function seatChordHubs(model: LayoutModel, plan: StaggerRow, fans: ReadonlyMap<s
     const targets = farEnds(hub.id), inset = portEndInsets(node, side);
     const ports = node.ports.filter(port => port.side === side)
       .sort((a, b) => (targets.get(portId(a.ref)) ?? a.anchor!.x) - (targets.get(portId(b.ref)) ?? b.anchor!.x) || a.engineOrder! - b.engineOrder!);
-    const room = width - inset.low - inset.high;
-    if ((ports.length - 1) * pitch > room + PLACEMENT_EPS) refuse(plan, `its compact hub ${hub.id} cannot hold its ${ports.length} ports at the pitch ${pitch.toFixed(2)} px`);
-    const first = x + inset.low + (room - (ports.length - 1) * pitch) / 2;
-    ports.forEach((port, index) => { port.anchor!.x = first + index * pitch; port.engineOrder = index; });
+    // Each step of the face keeps its neighbour-pair pitch (`faceOffsets`, dense-16x9 ticket 04): the face pitch, or a stored pair floor above it.
+    const room = width - inset.low - inset.high, offsets = faceOffsets(node, side, ports, pitch), span = offsets.at(-1) ?? 0;
+    if (span > room + PLACEMENT_EPS) refuse(plan, `its compact hub ${hub.id} cannot hold its ${ports.length} ports at the pitch ${pitch.toFixed(2)} px and its pair pitches`);
+    const first = x + inset.low + (room - span) / 2;
+    ports.forEach((port, index) => { port.anchor!.x = first + offsets[index]!; port.engineOrder = index; });
     const authored = ports.filter(port => port.authorOrder !== undefined);
     if (authored.some((port, k) => k > 0 && port.authorOrder! < authored[k - 1]!.authorOrder!)) refuse(plan, `its compact hub ${hub.id} cannot keep its authored port order`);
     x += width;
@@ -544,10 +545,11 @@ function chordSteps(model: LayoutModel, plan: StaggerRow): number[] {
   return steps;
 }
 /**
- * The face pitch each compact hub of a seated chord row needs for its chords to stand apart (dense-16x9 ticket 03, slice C): the least pitch,
+ * The face pitch each compact hub of a seated chord row needs for its chords to stand apart (dense-16x9 ticket 03, slice C): the least face pitch,
  * from the face's own up to `FAN_PITCH_CAP` in whole px, at which every two chords of neighbouring ports cross strictly or keep the clearance
  * the fan rule measures (`STRAIGHT_PATH_CLEARANCE.path` plus `FAN_SLACK`, both strokes; `measureFans`). The ports stand centred at that pitch,
- * the member ends where they stand. Only a hub that needs more than it has is listed; a hub that the cap cannot help keeps its pitch, and the
+ * each pair at no less than a pair floor the face stores (`faceOffsets`, `neighbourPitch`), the member ends where they stand. The result is a
+ * face-wide pitch for `sidePitch`; a pair floor never enters it. Only a hub that needs more than it has is listed; a hub that the cap cannot help keeps its pitch, and the
  * freeze judges its chords.
  */
 function chordPitches(model: LayoutModel, plan: StaggerRow): Map<string, number> {
@@ -563,7 +565,8 @@ function chordPitches(model: LayoutModel, plan: StaggerRow): Map<string, number>
         const [hubEnd, memberEnd] = endsOf(link, id).own === link.attachments!.from ? [chord.from, chord.to] : [chord.to, chord.from];
         return [{ dx: hubEnd.x - port.anchor!.x, y: hubEnd.y, far: memberEnd, stroke: linkStrokeWidth(link) }];
       }));
-    const at = (k: number, pitch: number): number => centre + (k - (ports.length - 1) / 2) * pitch;
+    // The ports stand centred at the trial face pitch, each step at its neighbour-pair pitch (`faceOffsets`), as `seatChordHubs` seats them.
+    const at = (k: number, pitch: number): number => { const offsets = faceOffsets(node, side, ports, pitch); return centre - offsets.at(-1)! / 2 + offsets[k]!; };
     const segment = (k: number, pitch: number, chord: typeof chords[number][number]): PathSegment =>
       ({ from: { x: at(k, pitch) + chord.dx, y: chord.y }, to: chord.far, owner: { kind: 'link', id } });
     // A chord also clears the routed pills of the neighbouring ports of its face, as the corridor test reads them (`straightCorridorClear`).
