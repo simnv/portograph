@@ -112,6 +112,11 @@ function verifyJsonValue(model: LayoutModel): void {
 }
 /** A box with its y left out: what a vertical translation keeps. */
 function verticalOnly(box: Rect): Omit<Rect, 'y'> { return { x: box.x, width: box.width, height: box.height }; }
+/** The rows rule may shift a box vertically, never move or resize it: x, width and height agree within the placement tolerance. */
+function sameVertical(a: Rect, b: Rect): boolean {
+  const now = verticalOnly(a), was = verticalOnly(b);
+  return (['x', 'width', 'height'] as const).every(key => Math.abs(now[key] - was[key]) <= PLACEMENT_EPS);
+}
 function same(a: unknown, b: unknown, message: string): void { if (!equal(a, b)) throw new Error(message); }
 function pick<T extends object, K extends keyof T>(value: T, keys: readonly K[]): Pick<T, K> {
   return Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])) as Pick<T, K>;
@@ -912,10 +917,10 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // `rebuildBoxes` re-derives the box of an unmoved flank from its nodes (`farX - x`), which leaves 1e-14 on its width. Fixing it there changes
     // 1e-13 digits in 8 published sheets and the verdict digests of `objective-differential`, so the check reads within the placement tolerance.
     if (rule === 'rows' && group.flank) {
-      const now = verticalOnly(group.bounds!), was = verticalOnly(model.groups[id]!.bounds!);
-      if (!(['x', 'width', 'height'] as const).every(key => Math.abs(now[key] - was[key]) <= PLACEMENT_EPS)) throw new Error('Rows cannot move flank groups');
+      if (!sameVertical(group.bounds!, model.groups[id]!.bounds!)) throw new Error('Rows cannot move flank groups');
     }
-    if (rule === 'rows' && !group.flank && groupShape(draft, id) !== 'row') same(verticalOnly(group.bounds!), verticalOnly(model.groups[id]!.bounds!), 'Rows cannot change non-row groups');
+    // The same reading for a non-row group (dense-16x9 ticket 17): `rebuildBoxes` writes the width of an unmoved grid as `farX - x`, one ULP off.
+    if (rule === 'rows' && !group.flank && groupShape(draft, id) !== 'row' && !sameVertical(group.bounds!, model.groups[id]!.bounds!)) throw new Error('Rows cannot change non-row groups');
     // `fitRegionGroup` re-derives the box of a flank from its nodes, which leaves 1e-14 on x: a flank is moved when it is off by more than the placement tolerance.
     if (rule === 'flanks' && group.flank && Math.abs(group.bounds!.x - model.groups[id]!.bounds!.x) > PLACEMENT_EPS) throw new Error('Flanks cannot translate groups horizontally');
     if (rule === 'bars' && draft.document.groups[id]!.shape !== 'bar') same(group, model.groups[id], 'Bars cannot move another group');
