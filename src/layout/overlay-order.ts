@@ -16,7 +16,7 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { DEFAULT_STROKE_WIDTHS } from '../theme/geometry.js';
 import { isCantonUnit } from './read/canton.js';
 import { overlayCourse } from './courses.js';
-import { feedingRowsOf, rowOrderOf } from './reservations.js';
+import { bundleNeighboursOf, feedingRowsOf, rowOrderOf, splitPair } from './reservations.js';
 
 /** Two placed nodes that a link joins, and the link. */
 export interface Pair { from: string; to: string; link: LayoutLink }
@@ -264,6 +264,8 @@ export function readDraft(model: LayoutModel) {
  * Returns whether the row was seated.
  */
 export function reseatRow(model: LayoutModel, group: LayoutGroup, next: string[], grow: boolean | 'column'): boolean {
+  // The ends of an enclosed bundle that stage 4 seated side by side stay so (`bundleNeighbours`, R2): the guard reads the record.
+  if (splitPair(bundleNeighboursOf(model.reservations, group.id), next) !== undefined) return false;
   const order = group.rowOrder ?? group.nodes;
   const left = Math.min(...order.map(node => model.nodes[node]!.bounds!.x));
   let need = left;

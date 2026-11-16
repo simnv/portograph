@@ -1,4 +1,4 @@
-import { validateReservations } from './reservations.js';
+import { validateEarlyReservations, validateReservations } from './reservations.js';
 import { validateStaggerRows } from './stagger.js';
 import { validateGroupLifts } from './lift.js';
 import { validateFeedSplits } from './feed-split.js';
@@ -691,6 +691,8 @@ export function restoreLayoutModel(json: string): LayoutModel {
     if (model.freeze) throw new Error('Premature topology freeze');
     validateDocumentCss(model);
     resolve(model.document);
+    // The order reservations stage 4 wrote hold on the stage-4 model (ticket 18 review): the stages before the freeze check them here.
+    validateEarlyReservations(model);
     return model;
   }
   const baseline = validateDocument(model);
