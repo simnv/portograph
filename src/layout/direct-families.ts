@@ -9,7 +9,7 @@ import { strictCrossing } from './read/crossings.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
-import { plannedSegments, reservedRouted, tierGapPlan, tierGapPlans } from './gap-plan.js';
+import { chordGapNotes, plannedSegments, reservedRouted, tierGapPlan, tierGapPlans } from './gap-plan.js';
 import { tierGaps } from './gap-runs.js';
 import { clone } from './bundle-geometry.js';
 
@@ -498,6 +498,20 @@ export function crowdedFanMembers(model: LayoutModel): Map<string, 'crowds' | 's
   for (const { id } of straight) if (siblingStemCrowded(model, model.links.find(other => other.id === id)!)) found.set(id, 'stem');
   for (const id of crowdedChords(model, straight.map(item => item.id))) found.set(id, 'crowds');
   return found;
+}
+
+/**
+ * The other held chords that the plan names crowded (dense-16x9 ticket 14, slice 3, built for ticket 04 slice 2): a held chord that is neither a
+ * direct member nor a fan member, that a `TIER_GAP_CHORD_CROWDED` note of the plan names (`chordGapNotes`), and that a G6 reading of the final
+ * paths would name (`crowdedChords`: against every reserved segment, `reservedRouted`). A later move of 7f put it there. The publication step
+ * reads this on the state to publish (`refuseCrowdedChords` in pipeline/driver.ts) and refuses the chord (`crowds`) before a gate finding is
+ * published. Sorted ids.
+ */
+export function crowdedHeldChords(model: LayoutModel): string[] {
+  const members = new Set([...(model.directFamilies ?? []).flatMap(family => family.members.map(member => member.link)), ...(model.fanAdmissions ?? []).map(item => item.link)]);
+  const named = chordGapNotes(model, tierGapPlans(model)).filter(note => note.code === 'TIER_GAP_CHORD_CROWDED').map(note => (note.owners![1] as { id: string }).id);
+  const held = [...new Set(named)].filter(id => !members.has(id) && isRoutedChord(model, model.links.find(link => link.id === id)!));
+  return crowdedChords(model, held).sort();
 }
 
 /**

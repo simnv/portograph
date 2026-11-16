@@ -5,6 +5,8 @@
 # x 75.1; its cover (x 66 to 86.6) then closes link-10's near tip (75, 263), and link-10 is skipped and
 # removed. With the chord dropped for consumers the stem stays an obstacle, link-9 drops at x 63.3 and
 # link-10 routes.
+# A third router on the core rank (spare, fed by the ISP only) keeps the two cores from being a complete solid block (dense-16x9
+# ticket 04, slice 2: a block takes the whole hub rank), so the fan keeps its orthogonal parts.
 # Test-only input owned by ranked-groups ticket 30; the route test asserts that no link is removed.
 portograph: 2
 groups:
@@ -18,6 +20,7 @@ nodes:
   e2: { group: site, class: router, label: Edge 2 }
   e3: { group: site, class: switch, label: Edge 3 }
   e4: { group: site, class: switch, label: Edge 4 }
+  spare: { group: site, class: router, label: Spare }
 links:
   - [isp, c1]
   - [isp, c2]
@@ -32,3 +35,4 @@ links:
   - [c2, e4]
   - [e1, e2]
   - [e3, e4]
+  - [isp, spare]

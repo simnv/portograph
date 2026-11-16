@@ -7,7 +7,7 @@ import { portSideCapacity } from '../../src/layout/port-insets.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
 import { PLACEMENT_EPS } from '../../src/layout/tolerance.js';
 import type { LayoutModel } from '../../src/index.js';
-import { fixedPointRefusal, isRoutedChord, legSiblings } from '../../src/layout/frame-paths.js';
+import { fixedPointRefusal, isRoutedChord } from '../../src/layout/frame-paths.js';
 import { lineOf } from '../../src/layout/read/stagger.js';
 import { pathBends } from '../../src/layout/objective.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
@@ -63,13 +63,11 @@ describe('the chord row record', () => {
     expect(() => restoreLayoutModel(forge(row => { row.far = [...row.far, 'leaf-6']; }))).toThrow(/stagger/i);
   });
 
-  it('lets a chord cross the fallback leg of its own row only, read from the record', async () => {
+  it('lets a chord of a row cross a fallback leg beyond its stem, read from the record (the stem rule, ticket 04)', async () => {
     const model = await run(fixture(CONTIGUOUS));
     const link = (from: string) => model.links.find(item => item.attachments!.from.node === from)!;
     // leaf-1's chord runs to the right, over the vertical leg leaf-2 would take as an orthogonal link.
-    const chord = link('leaf-1'), sibling = link('leaf-2'), outside = model.links.find(item => item.attachments!.from.node === 'hub-1' && item.attachments!.to.node === 'store-1')!;
-    expect(legSiblings(model, chord, sibling)).toBe(true);
-    expect(legSiblings(model, chord, outside)).toBe(false);
+    const chord = link('leaf-1'), sibling = link('leaf-2');
     const fallback = (copy: LayoutModel): LayoutModel => {
       const other = copy.links.find(item => item.id === sibling.id)!;
       other.technique = 'orthogonal';
@@ -79,7 +77,7 @@ describe('the chord row record', () => {
     const segment = chord.path!.segments[0]!;
     // With the record, the sibling's fallback leg does not refuse the chord.
     expect(fixedPointRefusal(fallback(JSON.parse(JSON.stringify(model)) as LayoutModel), chord, segment)).toBeUndefined();
-    // The same leg of a link outside every chord row refuses it: the row is gone from the record.
+    // Without the record the chord is no chord of a row, so the plan does not seat the leg's row against it: the same leg refuses it.
     const outsideRow = fallback(JSON.parse(JSON.stringify(model)) as LayoutModel);
     outsideRow.staggerRows = outsideRow.staggerRows!.filter(plan => plan.group !== 'leaves');
     expect(fixedPointRefusal(outsideRow, chord, segment)).toBe('leg');

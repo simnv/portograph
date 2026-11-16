@@ -87,8 +87,8 @@ describe('the three regression classes of a per-step decline', () => {
     expect(bends(await runText(widenedChild))).toBe(2);
   }, 120000);
 
-  // Expected to fail: 6 bends before, now 7 (ticket 15).
-  it.fails('pass order: a-hub-tiers-fan-draws-straight-and-crosses-itself keeps the growth a later pass completes (bends 6)', async () => {
+  // 6 bends before, 7 after ticket 15, 6 again since dense-16x9 ticket 04 (slice 2).
+  it('pass order: a-hub-tiers-fan-draws-straight-and-crosses-itself keeps the growth a later pass completes (bends 6)', async () => {
     expect(bends(await run('a-hub-tiers-fan-draws-straight-and-crosses-itself'))).toBe(6);
   }, 120000);
 });

@@ -201,7 +201,9 @@ need more than 60 px is declined (`FAN_SPREAD_DECLINED`); the unit test forges t
 Since dense-16x9 ticket 04 (slice 1) the cap is per chord pair (a pair over it is declined alone) and the floors are stored as
 neighbour-pair pitches (`LayoutNode.pairPitch`); the face holds their sum. Slice 1 still writes the largest need of a face on every
 pair of its ports, so a port order that a later round changes keeps it too: exact floors per pair leave no room for the drift of 7f, one crowded direct member then refuses its family through
-the leg cascade, and five corpus sheets lost straight links. Slice 2 changes that with the isolated fallback.
+the leg cascade, and five corpus sheets lost straight links. Slice 2 measured exact floors again with the stem rule in place and kept the
+largest need: on `a-fan-spreads-its-ports-so-its-chords-hold-clearance` the re-run with exact floors loses two held chords to the drift
+and is dropped (`FAN_ROUND_DROPPED`), so six of eight fan links stay orthogonal. That loss is no leg cascade, and the stem rule does not remove it.
 
 After the freeze, `chordsHold` and `blockedChords` also read foreign frame and canton boxes and
 the facing-edge rule for a cross-frame chord. `chordsHold` moves nodes only today, so it derives
@@ -282,6 +284,22 @@ A 7f move in x (the canton close-up, column moves), or a gap that grows in y and
 chord, can bring a leg nearer the chord after the decision. The plan names each planned link with a reserved segment (a planned part, a stem, a
 lane) that makes a G6 finding with a held chord of its gap (`TIER_GAP_CHORD_CROWDED`, info; since dense-16x9 ticket 14 slice 2, `reservedRouted`
 through `parallelClearance`, any held chord with an extent in the gap), and G6 judges, as for two verticals within `k` (`crowded`).
+
+*Publication step (dense-16x9 ticket 14, slice 3, built in ticket 04 slice 2; coordinator ruling: a chord is refused before a gate finding is
+published).* After the last round has settled, `refuseCrowdedChords` (pipeline/driver.ts) reads the state to publish once. A held chord that is
+no direct or fan member, that a `TIER_GAP_CHORD_CROWDED` note names, and that stands under the G6 clearance of the planned part
+(`crowdedHeldChords`, direct-families.ts) is refused; every such chord of that one read is refused together. Each is a reservation on the
+ledger of the kept 7e model (`refusedChord`, one entry per link, producer `publish`). Its one predicate (`refusedChordFailure`, entered in
+`RESERVATION_CHECKS` for the round check, the restore of a frozen model and the early restore) holds that the model stands at `sides-two` or later,
+that the entry names a link, and that once the freeze is taken the link is no frozen chord. So an entry the freeze contradicts is refused, and so is
+any entry on a model before `sides-two`. Placement replays once from that ledger: 7f refuses each before the freeze as
+`crowds` (R1, nothing decides it again). The replay is kept only when its routed result has no error-gate finding that the state before it
+lacks; else that state stays and `HELD_CHORD_CROWDED` (warning) names the chords. One pass at most. The rounds read their own unrefused
+baselines, so a crowded baseline that a round repairs stays available to that round (traced on
+`a-refused-close-up-of-card-nodes-keeps-the-node-labels-in-order`: a retry inside every 7f run refused link-21 in the baseline, and the course
+round then offered nothing, 42 to 46 bends). Measured case: the staged twin, where `holdColumnAxes` (slack 0, `holdColumnsAfterPush`, right
+after the freeze) moves a column 16 px and the planned leg of one feed comes 4.2 px from the held chord of the next. Not built (rest of slice 3):
+the 7f judges on the shared reader `reservedSegments` (ticket 14 slice 1), the judge on a bare remainder, and any judge of a trial run.
 
 *As built (ticket 101).* `PlanFrame.chords` holds the chord's x at the gap's low y and at its high y (since dense-16x9 ticket 14, at its own end
 where it ends inside the gap, marked `partial`; `heldChordsIn` is the one reader, and `across` marks a chord over the whole gap, the only kind the
@@ -374,10 +392,11 @@ to reach this; ticket 103 measures it.
 
 | Code | Severity | When |
 |---|---|---|
-| `ROUTED_CHORD_REFUSED` | info | At the freeze, once per cross-frame candidate that is not held, with the first failed check: `transit`, `faces` (a port does not leave outward), `edge` (leaves through a side edge), `frame` (a foreign frame or canton box), `title`, `body`, `pill`, `lane`, `corridor` (another gate clearance), `chord` (a held chord), `leg` (an orthogonal leg). |
+| `ROUTED_CHORD_REFUSED` | info | At the freeze, once per cross-frame candidate that is not held, with the first failed check (`crowds`: refused by the publication step): `transit`, `faces` (a port does not leave outward), `edge` (leaves through a side edge), `frame` (a foreign frame or canton box), `title`, `body`, `pill`, `lane`, `corridor` (another gate clearance), `chord` (a held chord), `leg` (an orthogonal leg). |
 | `ROUTED_CHORD_TITLE` | warning | 7f (label bands): a title could not stand clear of a held chord's crossing. |
 | `TIER_GAP_CHORD_CROWDED` | info | 7f: a reserved segment of a planned link that makes a G6 finding with a held chord of its gap. |
 | `TIER_GAP_CHORD_EXPOSED` | info | 7f: a residual or unfit part whose span overlaps the extent of a held chord in its gap. |
+| `HELD_CHORD_CROWDED` | warning | Publication step: the held chords named crowded stay straight, because the replay without them adds an error-gate finding. |
 
 `STRAIGHT_LINK_HELD` and `STRAIGHT_LINK_BLOCKED` keep their meaning and cover both chord kinds.
 
@@ -649,7 +668,7 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   leg of a sibling that falls back (the crossing is faint); that leg's side is final only at the freeze, so there a
   member that passes a sibling's stem (no strict crossing beyond the stem with the clearance, `siblingStemCrowded`)
   falls back (`refuseStemCrowded`, reason `stem`), and the crowding retry reads the same test at the end of 7f.
-- **Reservation.** The tier-gap plan reads the straight members of a gap (`PlanFrame.slants`): a row moves down
+- **Reservation.** The tier-gap plan reads the straight chords of a gap that the stem rule admits across a leg (`PlanFrame.slants`, `seatsRowsAgainst`: a fan or block member, or a chord-row member): a row moves down
   until its legs and run cross a chord strictly or keep the clearance (`clearOfSlants`), and the gap grows for it.
   A row moves at most `SLANT_LOWERING_KEEPS` (4) run clearances; where no candidate within that clears, it keeps its
   seat and `TIER_GAP_SLANT_LIMIT` names it. The rows read the chords where they stand when the plan runs; the growth
@@ -679,7 +698,19 @@ Every hub and every node of the far groups participates, with at least two nodes
 Reverse cohorts strictly contained in another complete cohort yield to it before overlap checks. Identical member sets canonicalize to the smaller hub group, upper on a tie. Partial cohorts are not mined for bicliques.
 Non-facing final ports decline as `non-facing-ports`, retaining authored sides; the slice grants no lateral block entry.
 An inferred group-link yields ownership; an incompatible authored route, bundle, label, shared port, non-row or nested shape declines by name.
-Blocks sharing nodes decline together as interacting-blocks: their face and gap decisions belong to ticket 84.
+Dense-16x9 ticket 04 (slice 2) widens the scope. A block between two adjacent ranks of one group is a block (its far units are nodes). Across tiers, a block is complete
+at the far-unit level: each hub links to every far group (or frame) when there are two far units or more, and to every far node when there is one.
+Blocks that share nodes, a gap or a face are reserved together: the gap takes the largest demand, and a shared face keeps each pair pitch (merged by pair).
+Different member sets that overlap still decline as `overlapping-blocks`.
+
+**Stem rule** (slice 2, replaces the fan-sibling and chord-row memberships of `fixedPointRefusal`). A chord may cross the fallback leg of any other
+link strictly beyond that leg's stem (`crossesLegBeyondStem`; the stem is the depth routing consumes, `stemDepth`, the one source of `stemCheckpoint`
+and `reservedRunsOf`, a nested stem's full depth included, at least 15 px), when the chord is one the gap plan seats rows against: a fan or block member,
+or a chord of a chord row (`seatsRowsAgainst`; the plan's `slants` and the rule read this one predicate, so a row meets no chord the rule admits).
+Any other chord keeps the clearance from the whole leg (ticket 91). The ticket-22 `crossable` offer of a direct family stays as it is.
+Review 1 of slice 2 found the plain reach short of a nested stem and the chord-row chords outside `slants`; both read the shared source now.
+The scope is the one the plan honours: with every held chord in `slants`, the plan lowered rows onto one another (G4 on four corpus sheets), and with the
+rule for every chord, the rows of plain links met chords that the plan did not read (G6 on five sheets).
 
 Stage 4 keeps declaration order where complete incidence ties, permuting block slots within the whole tier while retaining foreign slots and packing all units without overlap. Terminal follower groups use their parents' geometric order (group id breaks a final tie), so an incidental link order cannot leave the follower tier opposite the newly ordered far tier. Stage 5 reserves ceil((10 + stroke) / sin(34 degrees)) pitch before sizing.
 Block feeds centre a row but do not own individual vertical alignment targets. Terminal one-link followers request the widened row's spacing at stage 5. Placement fits all eligible rows on one draft and uses the shared separation catalogue to check siblings and frames. Every seat in a new or deepened spacing violation declines together as `BLOCK_FOLLOWER_SEAT_DECLINED` (`sibling-spacing`); an internally overlapping row declines as `node-spacing`. Restored siblings can obstruct another seat, so each refusal round rechecks the remaining set, removing at least one seat per round. A declined row keeps its previous owner and geometry. An accepted seat is provisional: `frozenBlockFollowers` records only those still vertical at the chord freeze (`[]` means none; absent means not frozen or no seats). Chord move guards, node-move guards, settled-draft adoption, trim and publication checks hold that record. Widening a box with `dx: 0` moves no node.

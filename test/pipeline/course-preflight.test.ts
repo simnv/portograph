@@ -77,8 +77,9 @@ describe('course 7e preflight', () => {
     expect(attemptCounters.attempts).toBe(1);
     // Dense-16x9 ticket 04 (slice 1): only the pitch records moved (fan floors stored as `pairPitch` and `pairFloor`, the face pitch the base
     // pitch); every node, port, path and label is the same (56f38cf75727 before). Review 1 of slice 1 writes the fan floor on every pair of
-    // the face's ports: again only the records move (17e350ee17c2 before).
-    expect(layoutHash(model)).toBe('f6e67a88cd23');
+    // the face's ports: again only the records move (17e350ee17c2 before). Slice 2 reserves the sheet's two blocks together (main declined them
+    // as interacting-blocks): twelve members straight, 9 px taller (f6e67a88cd23 before).
+    expect(layoutHash(model)).toBe('58164b95287a');
   }, 60000);
 
   it('refuses the doomed course trial at 7e on goldens/synthetic/three-canton-groups-close-up-to-a-band-gap.yaml identically to bypassing preflight', async () => {

@@ -5,6 +5,8 @@
 # (two cells of `site`), so a member takes the straight technique like any routed link of ticket 34:
 # one segment between the two port faces, no lane, no gap run, no stem. The uplinks from the ISP leave the
 # frame and are unchanged. Nothing is removed.
+# Since dense-16x9 ticket 04 (slice 2) the four links are a complete solid block between two adjacent ranks of one group: the
+# block owns them (the inferred group-link yields to it), and each member is still one straight segment.
 # Test-only input owned by ranked-groups ticket 38; test/pipeline/frame-straight.test.ts reads the layout.
 portograph: 2
 groups:

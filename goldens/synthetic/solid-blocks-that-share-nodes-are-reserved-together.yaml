@@ -1,0 +1,13 @@
+# Dense-16x9 ticket 04 (slice 2): two complete blocks share the nodes of the middle tier (c, d are the far nodes of one block and the hubs
+# of the other). Blocks that share a gap or a face are reserved together: each keeps its 34 degree gap and its neighbour-pair pitch on
+# the shared faces, and all eight members are straight. Before slice 2 both declined as interacting-blocks and kept their orthogonal owners.
+portograph: 2
+groups: { upper: { tier: 0 }, middle: { tier: 1 }, lower: { tier: 2 } }
+nodes:
+  a: { group: upper }
+  b: { group: upper }
+  c: { group: middle }
+  d: { group: middle }
+  e: { group: lower }
+  f: { group: lower }
+links: [[a,c], [a,d], [b,c], [b,d], [c,e], [c,f], [d,e], [d,f]]

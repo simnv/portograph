@@ -56,9 +56,12 @@ describe('the seat owns the body (ADR-0027)', () => {
     expect(bends(model)).toBe(7);
   }, 120000);
 
-  it('a-step-keeps-the-vertical-it-reached keeps its 13 verticals with no gate failed and settles', async () => {
+  it('a-step-keeps-the-vertical-it-reached keeps its verticals with no gate failed and settles', async () => {
     const model = await run(read('synthetic/a-step-keeps-the-vertical-it-reached'));
-    expect(vertical(model)).toHaveLength(13);
+    // 13 before dense-16x9 ticket 04 (slice 2). Its three complete blocks are now reserved together and drawn straight at 34 degrees, so six
+    // block members and one feed (zone2-wan2 to edge-cloud) leave the vertical for one straight segment; two feeds take the vertical. No link bends.
+    expect(vertical(model)).toHaveLength(8);
+    expect(model.links.every(link => link.path!.segments.length === 1)).toBe(true);
     expect(failed(model)).toEqual([]);
     expect(spent(model)).toBe(false);
   }, 120000);

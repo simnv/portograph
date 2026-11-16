@@ -28,12 +28,15 @@ const lean = (model: LayoutModel, id: string): number => {
 
 describe('a step keeps the vertical it reached', () => {
   const text = source('a-step-keeps-the-vertical-it-reached');
-  it('keeps link-12 vertical once reached: 6 bends, one gap growth, no gap short', async () => {
+  it('keeps link-12 vertical once reached: no bend, no gap short', async () => {
     const model = await run(text);
     expect(lean(model, 'link-12')).toBeLessThanOrEqual(0.5);
-    // 8 bends before ticket DR-04; in the canonical link order the sheet has 6.
-    expect(bends(model)).toBe(6);
-    expect(count(model, 'TIER_GAP_GROWN')).toBe(1);
+    // 8 bends before ticket DR-04; in the canonical link order the sheet has 6. Since dense-16x9 ticket 04 (slice 2) its three complete blocks
+    // are drawn straight (the stem rule ends the leg cascade between them): no bend.
+    expect(bends(model)).toBe(0);
+    // The tier-gap plan grew one gap before slice 2; the block reservations of 7e now set the gaps, and the plan grows none.
+    expect(count(model, 'TIER_GAP_GROWN')).toBe(0);
+    expect(model.blockReservations).toHaveLength(3);
     expect(count(model, 'TIER_GAP_PART_UNFIT')).toBe(0);
     expect(count(model, 'TIER_GAP_SOLVE_SHORT')).toBe(0);
   }, 120000);

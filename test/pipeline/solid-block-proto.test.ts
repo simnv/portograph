@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { resolve } from '../../src/resolve/index.js';
-import { chordsHold, edgeLeavers } from '../../src/layout/frame-paths.js';
+import { chordsHold, edgeLeavers, fixedPointRefusal } from '../../src/layout/frame-paths.js';
 import { blockReservationsFault } from '../../src/layout/block-checks.js';
 import { admitFanFamilies } from '../../src/layout/fan-admission.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
@@ -131,13 +131,63 @@ describe('ticket 83 under-cap solid blocks', () => {
     baseline.enabled = true;
     try { expect(geometry(model)).toEqual(geometry(await lay(source))); } finally { baseline.enabled = false; }
   });
-  it('keeps interacting blocks under their previous owners', async () => {
-    const source = fixture('solid-blocks-that-share-nodes-keep-their-owners');
+  it('reserves blocks that share nodes together (dense-16x9 ticket 04, slice 2)', async () => {
+    const model = await lay(fixture('solid-blocks-that-share-nodes-are-reserved-together'));
+    expect(model.diagnostics.filter(item => item.code === 'SOLID_BLOCK_DECLINED')).toEqual([]);
+    expect(model.fanFamilies?.filter(family => family.kind === 'solid').map(family => family.id).sort()).toEqual(['block:middle:2:', 'block:upper:1:']);
+    expect(model.blockReservations?.map(item => item.family).sort()).toEqual(['block:middle:2:', 'block:upper:1:']);
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(8);
+    expect(blockReservationsFault(model)).toBeUndefined();
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+  });
+  it('finds a block between adjacent ranks of one group (dense-16x9 ticket 04, slice 2)', async () => {
+    const source = fixture('a-solid-block-between-two-ranks-of-one-group');
+    for (const input of [source, reversed(source, 'links'), reversed(source, 'nodes')]) {
+      const model = await lay(input);
+      const families = model.fanFamilies?.filter(family => family.kind === 'solid') ?? [];
+      expect(families.map(family => [family.id, [...family.hubs].sort(), family.members.length])).toEqual([['block:stack#0:stack#1:', ['x1', 'x2'], 6]]);
+      expect(model.blockReservations?.map(item => item.family)).toEqual(['block:stack#0:stack#1:']);
+      expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(6);
+      expect(score(model).snapshot.counts.routed.bent).toBe(0);
+    }
+  });
+  it('finds a block complete at the far-group level, and asks for every far node with one far group (slice 2)', async () => {
+    const model = await lay(fixture('a-solid-block-reaches-every-far-group'));
+    const family = model.fanFamilies?.find(item => item.kind === 'solid');
+    expect(family?.members.map(member => member.unit).sort()).toEqual(['la', 'la', 'lb', 'lb']);
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(4);
+    // One far group: s1 and s2 each reach one of its two nodes, which is no complete block.
+    const one = `portograph: 2
+groups: { spines: { tier: 0 }, la: { tier: 1 } }
+nodes: { s1: { group: spines }, s2: { group: spines }, l1: { group: la }, l2: { group: la } }
+links: [[s1, l1], [s2, l2]]
+`;
+    expect((await lay(one)).fanFamilies?.some(item => item.kind === 'solid') ?? false).toBe(false);
+  });
+  it('lets a block chord cross a fallback leg beyond its stem only (the stem rule, slice 2)', async () => {
+    const source = fixture('a-step-keeps-the-vertical-it-reached');
     const model = await lay(source);
-    expect(model.diagnostics.filter(item => item.code === 'SOLID_BLOCK_DECLINED')).toHaveLength(2);
-    expect(model.groupLinks).toHaveLength(2);
-    baseline.enabled = true;
-    try { expect(geometry(model)).toEqual(geometry(await lay(source))); } finally { baseline.enabled = false; }
+    const members = model.links.filter(link => link.solidBlock);
+    // Main refused block members by the whole fallback legs of a neighbouring block's members (the leg cascade); the stem rule keeps all straight.
+    expect(members).toHaveLength(12);
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(12);
+    // A forged fallback of one member: each other member chord that spans its leg is held exactly when it crosses the leg beyond the stem
+    // (with a fan record), and the same chord without the record keeps the whole-leg clearance.
+    let seen = 0;
+    for (const other of members) for (const link of members) {
+      if (link === other) continue;
+      const copy = JSON.parse(JSON.stringify(model)) as typeof model;
+      const fallback = copy.links.find(item => item.id === other.id)!;
+      fallback.technique = 'orthogonal';
+      delete fallback.path;
+      const chord = copy.links.find(item => item.id === link.id)!, segment = chord.path!.segments[0]!;
+      const held = fixedPointRefusal(copy, chord, segment);
+      delete chord.fanFamily;
+      const plain = fixedPointRefusal(copy, chord, segment);
+      if (held === undefined && plain === 'leg') seen++;
+      expect(held === undefined || plain !== undefined).toBe(true);
+    }
+    expect(seen).toBeGreaterThan(0);
   });
   it('adds no height when the settled block already meets the angle and top entry', async () => {
     const source = fixture('a-solid-block-keeps-a-gap-that-already-fits');

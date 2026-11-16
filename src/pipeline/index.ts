@@ -12,7 +12,7 @@ import type { LayoutOptions } from './options.js';
 import { createEnv } from './env.js';
 import { checkReadCaches } from '../model/read-cache.js';
 import { firstState } from './initial.js';
-import { drive } from './driver.js';
+import { drive, refuseCrowdedChords } from './driver.js';
 import { publish } from './publish.js';
 import { fitWidthBudget } from './width-budget.js';
 import { decideLifts } from './lift-round.js';
@@ -53,5 +53,7 @@ async function layoutOnce(document: NormalisedDocument, options: LayoutOptions, 
   if (staggerRows !== undefined) env.staggerRows = staggerRows;
   const state = await firstState(env);
   await drive(env, state);
+  // The state to publish: a held chord the plan names crowded falls back before a gate finding is published (one bounded replay).
+  await refuseCrowdedChords(env, state);
   return publish(env, state);
 }

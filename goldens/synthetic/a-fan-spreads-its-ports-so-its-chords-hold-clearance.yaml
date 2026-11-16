@@ -4,6 +4,8 @@
 # (core-1 to edge-1 and core-2 to edge-4) take the frame chord; the other six keep the orthogonal route. Placement spreads
 # the ports of the fan (and grows the node) until neighbouring chords hold the clearance, so all eight links take the
 # frame-straight technique (ranked-groups ticket 89).
+# A third router on the core rank (spare, fed by the ISP only) keeps the two cores from being a complete solid block (dense-16x9
+# ticket 04, slice 2: a block takes the whole hub rank), so this input still shows the fan rule.
 # Test-only input owned by ranked-groups ticket 89; test/pipeline/frame-fan-spread.test.ts reads it.
 portograph: 2
 groups:
@@ -17,6 +19,7 @@ nodes:
   edge-2: { group: site, class: router, label: Edge 2 }
   edge-3: { group: site, class: router, label: Edge 3 }
   edge-4: { group: site, class: router, label: Edge 4 }
+  spare: { group: site, class: router, label: Spare }
 links:
   - [isp, core-1]
   - [isp, core-2]
@@ -28,3 +31,4 @@ links:
   - [core-2, edge-2]
   - [core-2, edge-3]
   - [core-2, edge-4]
+  - [isp, spare]

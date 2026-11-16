@@ -65,7 +65,9 @@ const ROWS: Row[] = [
   // The far-end pull (ticket 22) stands lb next to fe4, so its link is a chord (1/14/7/3 before).
   // Ticket 75: the pull is idempotent, so the 7f held-axes probe moves nothing (probe 1 before).
   row('a-chord-hint-and-a-lane-hint-never-share-a-batch', '1/13/7/3', 4, 1, 1, 0, 0),
-  row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/7/7/3', 2, 1, 1, 0, 0),
+  // Dense-16x9 ticket 04 (slice 2) adds a spare node to the core rank so that the fan is no solid block; main counts the same on the new input
+  // (1/7/7/3, 2 runs, no pre-7f chord before).
+  row('a-fan-spreads-its-ports-so-its-chords-hold-clearance', '1/24/7/3', 3, 1, 1, 0, 0, { preChords: 1 }),
   row('transit-fan', '1/4/7/3', 1, 1, 1, 0, 0),
   // Ticket 162 (a diagonal may cross a title): the two feeds the canton titles refused are chords before centring, which takes them off (pre-7f chords
   // lost 2), and the sheet needs two centring passes less (1/10/7/3 before).
