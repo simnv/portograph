@@ -71,7 +71,7 @@ export function gridChainsOf(model: LayoutModel, id: string): Chain[] {
  * `undefined`.
  *
  * **A group that holds both ends of a link owes that link the space between its two endpoint
- * bodies.** A `row` gives it for nothing, because every node of a row stands on one line. A shape
+ * bodies.** A `row` gives it once it keeps the two ends side by side (`bundle-neighbours.ts`, ticket 18). A shape
  * that stacks its nodes has to earn it, and for a **bundle** it cannot: a bundle's members turn in
  * a **channel**, the space between the two endpoint bodies along the bundle's own normal, and the
  * rows are stacked before the bundle rules **grow** a body across them. `parallelPaths`

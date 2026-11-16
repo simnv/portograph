@@ -9,6 +9,8 @@ import { rebuildNodeGeometry } from './node-geometry.js';
 import { addPairPitch } from './pair-pitch.js';
 import { portId } from './skeleton-graph.js';
 
+import { gatherPairs } from './bundle-ends.js';
+import { bundleNeighboursOf } from './reservations.js';
 import { SolidBlockRefusal } from './placement-refusal.js';
 import { BLOCK_ANGLE, BLOCK_CAP } from './block-checks.js';
 const radians = BLOCK_ANGLE * Math.PI / 180;
@@ -111,7 +113,10 @@ export function seatBlockOrder(model: LayoutModel): void {
     const nodes = new Set([...family.hubs, ...family.farNodes!]);
     const groups = orderedGroupIds(model.document).filter(id => model.groups[id]?.nodes.some(node => nodes.has(node)));
     for (const id of groups) {
-      const group = model.groups[id]!, order = orderedNodeIds(model.document).filter(node => group.nodes.includes(node));
+      // The declaration order breaks a tie of a complete block, and a bundle's two ends are no tie: a row that stage 4 recorded neighbours for keeps
+      // them side by side (`bundleNeighbours`, R2). The record is read, never decided again (R1); the same gather the writer used seats them.
+      const group = model.groups[id]!, kept = bundleNeighboursOf(model.reservations, id);
+      const order = gatherPairs(orderedNodeIds(model.document).filter(node => group.nodes.includes(node)), kept);
       const old = [...group.nodes].sort((a, b) => model.nodes[a]!.bounds!.x - model.nodes[b]!.bounds!.x);
       const gap = old.length > 1 ? Math.min(...old.slice(1).map((node, i) => model.nodes[node]!.bounds!.x - model.nodes[old[i]!]!.bounds!.x - model.nodes[old[i]!]!.bounds!.width)) : 0;
       let x = Math.min(...old.map(node => model.nodes[node]!.bounds!.x));
