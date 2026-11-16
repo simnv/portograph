@@ -16,6 +16,8 @@ import { gapBandDemand } from './gap-band.js';
 import { stemCache, stemPlan, type StemCache } from './sides-two.js';
 import { strictCrossing } from './read/crossings.js';
 import { readCache } from '../model/read-cache.js';
+import { parallelClearance } from '../score/gates.js';
+import type { Segment } from '../score/model.js';
 import { attemptCounters } from './attempt-counters.js';
 
 /**
@@ -635,8 +637,41 @@ interface Forced {
   stands: ReadonlyMap<string, 'upper' | 'lower'>;
 }
 
-/** Whether `trial` keeps what `base` reserved: the same parts, each of the same shape on the same rows, the same residual parts, the gap's height and growth, and no crowded or slant-limited entry `base` lacks. */
-function keepsPlan(base: GapPlan, trial: GapPlan): boolean {
+/**
+ * What the planned parts that `moved` names stand against every planned part of `plan`: the gate's G6 findings (`parallelClearance`, one entry per
+ * finding, by part pair) and the strict crossings (`strictCrossing`, segment by segment), counted once per pair. Each part is read as the gate reads a
+ * path, at the plan's own stroke: `keep` less the node clearance (the widest routed stroke, `nudgingDistance`). A planned part has no bundle and no
+ * junction, so the predicate's exemptions read an empty model.
+ */
+function movedPairs(plan: GapPlan, frame: PlanFrame, moved: ReadonlySet<string>): { clearance: Map<string, number>; crossings: number } {
+  const stroke = frame.keep - GROUP_LABEL_GEOMETRY.nodeClearance, gap = { low: frame.low, high: frame.bandTop };
+  const paths = plan.parts.map(part => ({ id: part.id, segments: plannedSegments(part, gap) }));
+  const runs: Segment[] = paths.flatMap(path => {
+    const link = { id: path.id, path: { segments: path.segments } } as unknown as LayoutLink;
+    return path.segments.map((segment, index) => ({ segment, link, index, stroke }));
+  });
+  const clearance = new Map<string, number>();
+  parallelClearance(NO_PLAN_MODEL, runs, (_gate, _code, elements) => {
+    if (!elements.some(id => moved.has(id))) return;
+    const key = [...elements].sort().join('\0');
+    clearance.set(key, (clearance.get(key) ?? 0) + 1);
+  });
+  let crossings = 0;
+  for (const [index, a] of paths.entries()) for (const b of paths.slice(index + 1)) {
+    if (!moved.has(a.id) && !moved.has(b.id)) continue;
+    for (const x of a.segments) for (const y of b.segments) if (strictCrossing(x, y)) crossings++;
+  }
+  return { clearance, crossings };
+}
+/** The model `movedPairs` hands the G6 predicate: planned parts carry no bundle and no junction. */
+const NO_PLAN_MODEL = { links: [], bundles: [], junctions: [] } as unknown as LayoutModel;
+
+/**
+ * Whether `trial` keeps what `base` reserved: the same parts, each of the same shape on the same rows, the same residual parts, the gap's height and
+ * growth, no crowded or slant-limited entry `base` lacks, and, over every pair that holds a part the trial moved, no G6 finding and no strict crossing
+ * more (`movedPairs`).
+ */
+function keepsPlan(base: GapPlan, trial: GapPlan, frame: PlanFrame): boolean {
   const ids = (items: readonly { id: string }[]): string => items.map(item => item.id).sort().join('\0');
   if (ids(base.parts) !== ids(trial.parts) || ids(base.residual) !== ids(trial.residual)) return false;
   if (Math.abs(base.height - trial.height) > EPS || Math.abs(base.growth - trial.growth) > EPS) return false;
@@ -647,7 +682,16 @@ function keepsPlan(base: GapPlan, trial: GapPlan): boolean {
   }
   const keys = (items: readonly { id: string; with?: string }[] | undefined): Set<string> => new Set((items ?? []).map(item => `${item.id}\0${item.with ?? ''}`));
   const crowded = keys(base.crowded), limited = keys(base.slantLimited);
-  return [...keys(trial.crowded)].every(key => crowded.has(key)) && [...keys(trial.slantLimited)].every(key => limited.has(key));
+  if (![...keys(trial.crowded)].every(key => crowded.has(key)) || ![...keys(trial.slantLimited)].every(key => limited.has(key))) return false;
+  // Every pair that holds a moved part: no G6 finding the base lacks (the first clash `crowded` names is not the only one), and no crossing more
+  // between planned parts (dense-16x9 ticket 14, review 2: a dodge never adds a crossing).
+  const segmentsOf = (plan: GapPlan): Map<string, string> => new Map(plan.parts.map(part => [part.id, JSON.stringify(plannedSegments(part, { low: frame.low, high: frame.bandTop }))]));
+  const was = segmentsOf(base), now = segmentsOf(trial);
+  const moved = new Set([...now].filter(([id, text]) => was.get(id) !== text).map(([id]) => id));
+  if (!moved.size) return true;
+  const before = movedPairs(base, frame, moved), after = movedPairs(trial, frame, moved);
+  if ([...after.clearance].some(([key, count]) => count > (before.clearance.get(key) ?? 0))) return false;
+  return after.crossings <= before.crossings;
 }
 
 /**
@@ -655,7 +699,7 @@ function keepsPlan(base: GapPlan, trial: GapPlan): boolean {
  * and a jogged drop reads no chord. Then every chord is a wall over its extent in the gap (`chordWall`), as a preference: in model order (the part
  * id last), a Z part whose middle drop stands in a wall tries each x clear of every wall (`middleDrops`, widest first), and a jogged drop whose long
  * vertical stands in a wall tries its other end's x where that is clear. A try is kept only where the plan keeps what it reserved (`keepsPlan`): no
- * shape, row, height or growth changes, so no bend is added, and no finding is added. With no such seat the part keeps its seat (a chord left
+ * shape, row, height or growth changes, so no bend is added, and no finding and no crossing between planned parts is added; else the next clear x is tried. With no such seat the part keeps its seat (a chord left
  * beside it is the 7f retry's to refuse, slice 3), so the wall never drops a reservation. The tries are finite: one per candidate x or stand.
  */
 function dodge(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
@@ -678,7 +722,7 @@ function dodge(inputs: readonly PlanInput[], frame: PlanFrame): GapPlan {
     }
     for (const forced of tries) {
       const trial = planGapCore(inputs, frame, forced), moved = trial.parts.find(item => item.id === part.id);
-      if (!keepsPlan(base, trial) || moved === undefined) continue;
+      if (!keepsPlan(base, trial, frame) || moved === undefined) continue;
       if (part.shape === 'z' ? !same(moved.middle!, forced.middles.get(part.id)!) : moved.stand !== forced.stands.get(part.id)) continue;
       plan = trial;
       for (const [id, x] of forced.middles) middles.set(id, x);

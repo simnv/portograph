@@ -570,8 +570,11 @@ describe('a held chord that ends in its gap is a wall over its extent there (den
 
     it('reads the dodge on a saved generic model: a held chord moved to stand 7.5 px beside a Z middle drop', () => {
       // test/fixtures/staged/a-z-middle-drop-beside-a-chord-tip.json: the published layout of a generic sheet (three rows of one group), with the
-      // paths stage 8 drew taken off, and the held chord link-11 moved in x so that its upper tip, on a pill face inside the gap, stands 7.5 px right of
-      // the middle drop of link-15 at x 537.84. The plan moves the middle drop clear of the chord's wall and keeps both rows.
+      // paths stage 8 drew taken off, and the path of the held chord link-11 moved in x so that its upper end, at the pill-face y inside the gap, stands
+      // 7.5 px right of the middle drop of link-15 at x 537.84. The plan moves the middle drop clear of the chord's wall and keeps both rows.
+      // This is a stored-path state, not end-to-end coverage: the chord's ports and pills stay where they were, so no YAML lays this state out and no
+      // restore would accept it. It tests the seam from `heldChordsIn` to `tierGapPlan` only. It stands in for the synthetic YAML that
+      // CODING_STANDARDS.md asks for, as a documented exception: the searches of slice 1 and its two reviews found no generic sheet with this geometry.
       const model = JSON.parse(readFileSync(new URL('../fixtures/staged/a-z-middle-drop-beside-a-chord-tip.json', import.meta.url), 'utf8')) as LayoutModel;
       const gap = tierGaps(model).find(item => heldChordsIn(model, item).some(chord => chord.link.id === 'link-11'))!;
       const chord = heldChordsIn(model, gap).find(item => item.link.id === 'link-11')!;
@@ -618,6 +621,32 @@ describe('a held chord that ends in its gap is a wall over its extent there (den
       expect(plan.residual).toEqual([]);
       expect(shape(plan)).toEqual(shape(before));
       expect(plan.parts.find(item => item.id === 'B')!.middle).toBeCloseTo(50, 6);
+    });
+
+    it('takes no stand of a jogged drop that adds a G6 pair the crowded entries do not name (review 2)', () => {
+      // D (x 100 to 106) clashes with P, so `crowded` names D/P. On its lower x D's long vertical would stand 11 px from Q's upper leg at x 117, 9.5 px
+      // after the two strokes: a new G6 pair hidden behind the old entry. The drop keeps its upper x.
+      const inputs = parts(285, [['P', 95, 40], ['D', 100, 106], ['Q', 117, 160]]);
+      inputs[2]!.upper.y = 50;
+      const tall: PlanFrame = { ...reviewFrame(300), floor: 200, obstacles: [{ x0: 117, x1: 160, anchor: 'above', bound: 80 }] };
+      const before = planGap(inputs, tall);
+      expect(before.crowded.map(item => [item.id, item.with].sort().join('/'))).toEqual(['D/P']);
+      const plan = planGap(inputs, { ...tall, chords: [{ low: 90, high: 85, partial: true }] });
+      expect(shape(plan)).toEqual(shape(before));
+    });
+
+    it('takes no middle x that adds a crossing between planned parts: the next clear x, or the seat of today (review 2)', () => {
+      // E's middle drop (x 166.5) stands in the wall 118.5 to 171.5. The x 195.5 would pass B's middle drop at x 181: crossings 7 to 9.
+      const inputs = parts(285, [['A', 152, 210], ['B', 220, 142], ['C', 30, 240], ['D', 140, 30], ['E', 240, 100]]);
+      const gap = { low: 0, high: 300 };
+      const crossings = (plan: GapPlan): number => plan.parts.reduce((sum, a, index) => sum + plan.parts.slice(index + 1).reduce((inner, b) =>
+        inner + plannedSegments(a, gap).reduce((n, x) => n + plannedSegments(b, gap).filter(y => strictCrossing(x, y)).length, 0), 0), 0);
+      const before = planGap(inputs, reviewFrame(300));
+      const plan = planGap(inputs, { ...reviewFrame(300), chords: [{ low: 130, high: 160, partial: true }] });
+      expect(crossings(before)).toBe(7);
+      expect(crossings(plan)).toBeLessThanOrEqual(crossings(before));
+      expect(plan.parts.find(item => item.id === 'E')!.middle).not.toBeCloseTo(195.5, 3);
+      expect(plan.parts.map(item => [item.id, item.shape, item.rows])).toEqual(before.parts.map(item => [item.id, item.shape, item.rows]));
     });
 
     it('takes no stand of a jogged drop that moves the row of another part', () => {

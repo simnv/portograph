@@ -261,7 +261,12 @@ so it owns no lane.
 - a chord that ends inside the gap (on a pill face) is a wall over its extent there, as a
   preference (dense-16x9 ticket 14, `dodge`): a middle drop, or the long vertical of a jogged drop,
   that stands in any chord's wall moves to an x clear of every wall only where the plan keeps every
-  shape and row, its height and growth, and adds no crowded part; else it keeps its seat;
+  shape and row, its height and growth, adds no crowded part, and, over every pair that holds the
+  moved part, adds no G6 finding (`parallelClearance`) and no strict crossing; else the next clear x
+  is tried, and with none it keeps its seat. Tests: plan states in `test/layout/gap-plan.test.ts`, and
+  `test/fixtures/staged/a-z-middle-drop-beside-a-chord-tip.json`, a stored-path state (a chord path
+  moved beside a Z middle drop; its ports stay), not end-to-end coverage: a documented exception to
+  the synthetic-YAML rule of `CODING_STANDARDS.md`, since no generic sheet with this geometry was found;
 - a **jog** of a drop stands on a leg x, so Section 4 covers it;
 - the chord adds no term to `H`.
 

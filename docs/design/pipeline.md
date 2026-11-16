@@ -922,14 +922,16 @@ reads and owns none of the gap's height: the plan asks for it, and 7f reserves i
   differ; the vertical stands on the end x that keeps `k` from every foreign leg, and the jog on the
   tip row, one clearance off it. A held chord is a preference wall over its extent in the gap: where
   only the other end x keeps `k` from the chord's x-span there, the vertical moves to that end if the
-  plan keeps every shape, row, its height and growth and adds no crowded part (`dodge`, dense-16x9 ticket 14).
+  plan keeps every shape, row, its height and growth and adds no crowded part, no G6 finding and no
+  crossing over the pairs that hold the moved part (`dodge`, dense-16x9 ticket 14).
 - A **stepped part** is any other. It takes an upper leg, a **run** on its **row**, and a lower leg,
   each on its own end's x.
 - A **Z part** is a stepped part with two rows and a **middle drop** between them, used only where
   one row is impossible (a cycle among the rows). The middle drop keeps `k` from the x-span of every
   held chord across the gap. A chord that ends inside the gap on a pill face (`heldChordsIn`) is a
   preference: the middle drop moves to an x clear of it only where the plan keeps every shape, row,
-  its height and growth; with no such x it keeps its seat (`dodge`, dense-16x9 ticket 14).
+  its height and growth and adds no G6 finding and no crossing between planned parts; with no such x
+  it keeps its seat (`dodge`, dense-16x9 ticket 14).
 
 The order is four rules over the parts. O1: parts that run the same way, do not interleave and
 overlap in x are ordered by their upper ends. O2: where the upper end of one part and the lower end
