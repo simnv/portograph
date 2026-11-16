@@ -1,0 +1,25 @@
+# Expected: lays out and draws. The grid `access` stands on its own tier and no stage moves it. When the rows rule moves a node of another tier, the
+# transaction rebuilds every group box from its nodes, and the width of the unmoved `access` comes back as `(x + width) - x`, 3e-14 px off (161.50000000000003
+# for 161.5). The rows rule may shift a non-row group vertically and no more, so it compares x, width and height within the placement tolerance, as it does for a
+# flank; an exact compare refused the sheet with `Rows cannot change non-row groups`. The title of `near` is wider than its one sink: that sets the x of `access`.
+# Test-only input owned by dense-16x9 ticket 17: test/pipeline/rows-grid-box-noise.test.ts.
+portograph: 2
+groups:
+  access: { tier: 1, shape: grid }
+  src: { tier: 0 }
+  far: { tier: 2 }
+  near: { tier: 2, shape: grid, label: A title far wider than the one sink it holds }
+nodes:
+  src-a: { group: src, class: router, ports: [] }
+  src-b: { group: src, class: router, ports: [] }
+  src-c: { group: src, class: router, ports: [] }
+  sw-1: { group: access, class: switch, ports: [] }
+  sw-2: { group: access, class: switch, ports: [] }
+  sink-near: { group: near, class: server, ports: [] }
+  sink-far: { group: far, class: server, ports: [] }
+links:
+  - [sw-1, sink-near]
+  - [src-a, sink-near]
+  - [src-b, sink-far]
+  - [src-b, sink-near]
+  - [sw-2, sink-near]
