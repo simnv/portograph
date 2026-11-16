@@ -16,7 +16,7 @@ import { moveBeforeGrow } from './read/move-before-grow.js';
  */
 
 /** The reasons a step declines a target, in the order the kept branch reads them: ticket 65's post-conditions, then the overlay guard. */
-export const ALIGNMENT_DECLINE_REASONS: readonly AlignmentDeclineReason[] = ['riser', 'lane-crossing', 'span', 'chord-clearance', 'block-reservation', 'overlay-straight', 'cap'];
+export const ALIGNMENT_DECLINE_REASONS: readonly AlignmentDeclineReason[] = ['riser', 'lane-crossing', 'span', 'chord-clearance', 'overlay-straight', 'cap'];
 /**
  * The model stages at which the record may be there: from the centre rule's output on. The seat owns its body (ADR-0027), and every later reading
  * of a centring step, the publication check of the routed layout included, reads the seats and the targets the producer decided, so the

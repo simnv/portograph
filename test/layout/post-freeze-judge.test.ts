@@ -4,6 +4,7 @@ import { layout, parse } from '../../src/index.js';
 import type { LayoutModel } from '../../src/index.js';
 import { blockMoveRefusal, blockReservationFaults } from '../../src/layout/block-checks.js';
 import { POST_FREEZE_MOVE_REFUSED, judgedMove } from '../../src/layout/post-freeze-judge.js';
+import { chordsHold } from '../../src/layout/frame-paths.js';
 import { createAttempt, createColdAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
@@ -64,5 +65,21 @@ describe('a move after the chord freeze keeps every solid-block reservation (den
     delete early.frozenChords;
     expect(blockReservationFaults(early).size).toBe(0);
     expect(judgedMove(early, 'early move', () => { shift(early, mover, 500); return 'moved'; }, 'refused')).toBe('moved');
+  }, 180000);
+
+  it('lets chordsHold keep a move that adds no fault while another fault stands, and refuse one that adds a fault', async () => {
+    // The synthetic's failure on main 92b16e7f: a centring step took link-11 off its angle for a moment, and chordsHold then refused every
+    // move, the one that brings the member back too, because it read a fault the move had not made.
+    const model = structuredClone(await run(yaml, true));
+    const member = model.links.find(link => link.id === 'link-11')!, mover = member.attachments!.to.node;
+    const site = model.groups.site!;
+    const siteMove = [{ group: { id: site.id, nodes: [...site.nodes], bounds: site.bounds! }, bounds: { ...site.bounds!, x: site.bounds!.x + 1 } }];
+    const memberMove = (dx: number) => [{ group: { nodes: [mover], bounds: model.nodes[mover]!.bounds! }, bounds: { ...model.nodes[mover]!.bounds!, x: model.nodes[mover]!.bounds!.x + dx } }];
+    // On the published model: a move of the member's end far aside adds a fault and is refused.
+    expect(chordsHold(model, memberMove(2000), false)).toBe(false);
+    // With link-11 off its angle already, a move of the site row adds no fault and is kept.
+    shift(model, mover, 2000);
+    expect(blockReservationFaults(model).has('link-11')).toBe(true);
+    expect(chordsHold(model, siteMove, false)).toBe(true);
   }, 180000);
 });

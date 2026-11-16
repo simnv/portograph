@@ -1,12 +1,12 @@
 # Expected (dense-16x9 ticket 31): a move after the chord freeze of 7f never takes a solid-block member off the angle its block reserved.
 # The Hub frame holds three rows: Top-2 and Top-4 over Mid-2, Mid-3 and Mid-4 over Spine-1 and Spine-2. The two spines and the three mids
 # form a solid block (K2,3), Top-2 fans out to the Upstream row, and each spine feeds one Site leaf. The nodes are declared in an order
-# (spines first, Mid-3 before Mid-2) that makes the centring replay inside the label-band producer of 7f move the spine row after the
-# freeze. On main 92b16e7f that step took a block member off its reserved angle and nothing refused it: publication threw "The fan
-# admission record is forged: link-11 lost its reserved angle". Now every mover after the freeze is judged by the one judge
-# (`blockMoveRefusal`): the centring step that would break the reservation is declined, the sheet publishes, and every block
-# reservation holds (`blockReservationFaults` empty).
-# Test-only input; test/layout/post-freeze-judge.test.ts reads it.
+# (spines first, Mid-3 before Mid-2) that makes a centring step inside the label-band producer of 7f, after the freeze, take block member
+# link-11 off its reserved angle for a moment. On main 92b16e7f `chordsHold` then refused every move while that fault stood (it read
+# faults the move had not made), the member never came back, and publication threw "The fan admission record is forged: link-11 lost
+# its reserved angle". Now the one judge of a move after the freeze (`blockMoveRefusal`) refuses only a move that adds a fault: the
+# replay brings the member back, the sheet publishes, and every block reservation holds.
+# Test-only input; test/pipeline/post-freeze-block-reservations.test.ts and test/layout/post-freeze-judge.test.ts read it.
 portograph: 2
 profile: network
 layout: { moveBeforeGrow: true, nodeContent: card }

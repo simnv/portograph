@@ -918,7 +918,7 @@ export interface LabelPaddingEntry { room: number; links: string[] }
  * Why a centring step declined to keep a target (`AlignmentTarget.reason`, architecture-2 ticket 66): the guard or the ticket-65 post-condition that refused the kept geometry,
  * or `cap`: the seat that would stand it grows the body past the alignment cap (ADR-0027; `by` = the node).
  */
-export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossing' | 'span' | 'chord-clearance' | 'block-reservation' | 'cap';
+export type AlignmentDeclineReason = 'overlay-straight' | 'riser' | 'lane-crossing' | 'span' | 'chord-clearance' | 'cap';
 /**
  * One alignment target of a face (`LayoutModel.alignmentTargets`): the wanted `port`, the feed's `link`, and where the target x is read (`far`:
  * the far port id, or `lane:<id>` for a transit feed; no x is stored, so the entry moves with the geometry). `owes`: `vertical` for an
