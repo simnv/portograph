@@ -457,7 +457,21 @@ cell reads the order this step gave the cell above it. Feeds from two groups are
 decide nothing. A row is decided when two of its units have different keys: in a cell the keyed nodes take the keyed slots in key
 order, a node without a feed keeps its slot, a tie keeps the order ELK gave (its input is the declaration order), and two neighbours
 a peer link joins move as one block; in a frame every unit must have a key, and a tie keeps the declaration order (own cells first,
-then the children). Feed order beats declaration order. A canton is author-fixed (D1) and a free row keeps the corridor order and the joint order (ticket 72). Each
+then the children). Feed order beats declaration order. A canton is author-fixed (D1) and a free row keeps the corridor order and the joint order (ticket 72).
+**A top row** (dense-16x9 ticket 20) is a row that no row above feeds (no routed link of a member ends in a sub-tier above it): a rank
+cell, or a free row that the corridor step could not judge (`frame-columns`: a turn changes a region with a frame cell; or no record: no
+anchor tier), with no far-end pull and no group order of the joint order reading it. A free row the corridor step judged keeps its
+measured order (`kept` included): the feed order was among its candidates and crossed no less. It reads its feeds into the sub-tier directly below instead, by the same rule: the feeding row is
+one group, each member stands at the mean position of its far ends there, a member with no feed keeps its slot, peer neighbours move as
+one block, and a tie keeps declaration order. A member linked to two hubs so stands between their runs: the left hub's members, the
+shared ones, the right hub's members. A row fed from above, also one fed from both sides, is not read from below and stands as before.
+A turned free row records `feed-order`, and its entry names the row (`row`). The rows are judged top-down; the row below may read the
+top row in its turn (a rank cell under it), so the rows are judged again while an entry's premise does not hold, at most one round per
+judged row and one more (R4), and an entry still broken then is withdrawn by name (`FEED_ORDER_WITHDRAWN`). The refresh does not turn
+a free top row again: it keeps the entry where the feeds still give the order the row stands in, and drops it by name otherwise.
+One predicate (`readsBelow`) decides whether a row reads from below, for every kind of row: `layout.feedOrder: false` and
+`layout.corridorRowOrder: false` each keep the authored order of a top row, a rank cell as well as a free row. A cell fed from above
+answers to `feedOrder` only, as before. Each
 decided row is one **`rowOrder`** entry of the ledger, the one decision (R1; `rowOrderOf` is the one reader), with its premise: the
 feeding rows and the order they were read in. A cell is re-seated in its order here, the replay of ELK's output (ELK gets no hint,
 because the feeding row's order is known only after ELK and the free-row orders, and the column pack, not ELK, places a child frame);
@@ -468,7 +482,7 @@ frame order the feeds no longer give is dropped by name (`FEED_ORDER_WITHDRAWN`)
 pull, so the two steps repeat until no pull is withdrawn (`settlePullsAndFeeds`; a withdrawn row records no pull, so at most one round
 per row with a pull, and one more). `validateFeedOrders` checks every entry and its
 premise at the end of stage 4, and `validateReservations` on every later snapshot (R2). One sort per row, no search, so no cap.
-`layout.feedOrder: false` writes no entry: ELK's order and the overlay side stand (a test input whose subject needs the declared order
+`layout.feedOrder: false` writes no entry: ELK's order, the overlay side and the order of every top row stand (a test input whose subject needs the declared order
 pins it so). On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone of Location 4 stands under its feeds.
 
 **Sibling rows (dense-16x9 ticket 06, slice C; owner ruling "mirror one pair", 2026-11-15).** Once the frame order has settled

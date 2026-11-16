@@ -143,7 +143,8 @@ export interface LayoutGroup extends OwnedElement {
   /**
    * The stage-4 decision on the order of a free row (architecture-2 ticket 17, `corridor-order.ts`). Set on every free row of two or
    * more nodes, also when nothing changed: `kept` when the order stands (`before` equals `after`), `corridor-crossings` when the row
-   * took the order that the corridors through it cross least, `author` when `layout.corridorRowOrder: false` keeps it, `frame-columns` when a turn would change a
+   * took the order that the corridors through it cross least, `feed-order` when the joint order or, for a top row, its feeds into the row
+   * below (dense-16x9 ticket 20, `orderByFeeds`) turned it, `author` when `layout.corridorRowOrder: false` keeps it, `frame-columns` when a turn would change a
    * region that holds a frame cell, whose column is packed after the step (both: `before` equals `after`). Absent: the step did not decide this row (a flank, a frame cell, a grid, a bar or a nested group pins it, or the sheet has
    * no main tier). The stage-4 validator reads it; 7b to 7e may reorder later.
    */

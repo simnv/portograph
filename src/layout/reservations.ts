@@ -61,10 +61,12 @@ export interface ReservationPayload {
   /**
    * The order the feeds give a row (architecture-2 ticket 25, `feed-order.ts`): for `cell`, the nodes of a rank cell left to right; for
    * `frame`, the units that stand beside each other in the frame left to right, the frame's own cells named by the frame id and each
-   * child frame by its id. `feeds` is the premise: each feeding row the order was read from, with the order it stood in. Stage 4 writes
-   * it after the free rows are ordered; an absent entry means the feeds decide nothing there.
+   * child frame by its id; for `row`, the nodes of a free row that no row above feeds, ordered by its feeds into the row below (dense-16x9
+   * ticket 20; a rank cell so ordered is a `cell` entry). `feeds` is the premise: each feeding row the order was read from, with the order
+   * it stood in. Stage 4 writes it after the free rows are ordered; an absent entry means the feeds decide nothing there.
    */
-  rowOrder: { cell: string; order: readonly string[]; feeds: readonly RowFeed[] } | { frame: string; order: readonly string[]; feeds: readonly RowFeed[] };
+  rowOrder: { cell: string; order: readonly string[]; feeds: readonly RowFeed[] } | { frame: string; order: readonly string[]; feeds: readonly RowFeed[] }
+    | { row: string; order: readonly string[]; feeds: readonly RowFeed[] };
   /**
    * The group order of the sub-tier `tier` that the joint stage-4 order decided with the free rows of the next sub-tier toward the anchor
    * (architecture-2 ticket 72, `joint-order.ts`): the groups named in `order` stand left to right. `feeds` is the premise, the free rows
@@ -434,6 +436,11 @@ export function rowOrderFailure(item: Reservation, model: LayoutModel): string |
     const row = model.groups[feed.row];
     if (row === undefined || !same(row.rowOrder ?? row.nodes, feed.order)) return `the feeding row ${feed.row} no longer stands in the order the entry read`;
   }
+  if ('row' in payload) {
+    const group = model.groups[payload.row];
+    if (group === undefined || group.frame !== undefined) return `${payload.row} is no free row`;
+    return same(group.rowOrder ?? group.nodes, payload.order) ? undefined : `${payload.row} does not stand in the order its feeds give`;
+  }
   if ('cell' in payload) {
     const group = model.groups[payload.cell];
     if (group === undefined || group.frame === undefined) return `${payload.cell} is no rank cell`;
@@ -554,7 +561,7 @@ function shapeFailure(entry: unknown): string | undefined {
       return isString(payload['node']) && sides.includes(payload['side'] as string) && Array.isArray(ports) && ports.length > 1 && ports.every(isPort) && new Set(ports.map(item => JSON.stringify(item))).size === ports.length ? undefined : bad;
     }
     case 'rowOrder': {
-      const order = payload['order'], one = isString(payload['cell']) !== isString(payload['frame']);
+      const order = payload['order'], one = [payload['cell'], payload['frame'], payload['row']].filter(isString).length === 1;
       return one && feedsShape(payload['feeds']) && orderShape(order) ? undefined : bad;
     }
     case 'groupOrder': {
