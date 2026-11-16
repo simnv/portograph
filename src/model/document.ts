@@ -145,7 +145,8 @@ export interface NormalisedDocument {
     overlayOverBodies?: boolean;
     /**
      * When false, every free row keeps the order the skeleton gave it, and the corridor row order (architecture-2 ticket 17) records
-     * `author` for it. Default true: a free row takes the order that the corridors through it cross least.
+     * `author` for it, and every top row (a rank cell or a free row that no row above feeds) keeps its declared order instead of reading
+     * its feeds from the row below (dense-16x9 ticket 20). Default true: a free row takes the order that the corridors through it cross least.
      */
     corridorRowOrder?: boolean;
     /**
@@ -154,8 +155,8 @@ export interface NormalisedDocument {
      */
     farEndPull?: boolean;
     /**
-     * When false, no rank cell or child frame takes the order its feeds give (architecture-2 ticket 25, `orderByFeeds`): the ledger
-     * holds no `rowOrder` entry, and ELK's order and the overlay partners stand. Default true.
+     * When false, no rank cell, child frame or top row takes the order its feeds give (architecture-2 ticket 25, dense-16x9 ticket 20,
+     * `orderByFeeds`): the ledger holds no `rowOrder` entry, and ELK's order, the overlay partners and the declared order of a top row stand. Default true.
      */
     feedOrder?: boolean;
     /**

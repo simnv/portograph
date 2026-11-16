@@ -1,9 +1,9 @@
-import type { LayoutGroup, LayoutModel } from '../model/layout.js';
+import type { LayoutGroup, LayoutModel, RowOrderDecision } from '../model/layout.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { groupShape } from './grid.js';
 import { besideRows, tierRange } from './columns.js';
 import { withdrawPullsAcrossFlips } from './corridor-order.js';
-import { reseatRow } from './overlay-order.js';
+import { orderTools, reseatRow } from './overlay-order.js';
 import { siblingSeatOrder } from './sibling-frames.js';
 import { placementWarning } from './regions.js';
 import { cellTier } from './read/tier.js';
@@ -35,6 +35,12 @@ const SAME_KEY = 1e-9;
  *   link (a routed link inside the cell) joins stay next to each other: the run moves as one block, keyed by the mean of its members'
  *   feeds, and ordered inside by their own keys. A frame row: every unit must have a key, and a tie keeps declaration order (the frame's
  *   own cells first, then its children in declaration order).
+ * - **A top row** (dense-16x9 ticket 20): a row that no row above feeds (no routed link of a member ends in a sub-tier above it), a rank
+ *   cell or a free row that the corridor step could not judge (`frame-columns`, or no record; no far-end pull, no group order of the joint
+ *   order reading it), reads its feeds into the sub-tier directly below by the same rule, a tie keeping declaration order: a member
+ *   linked to two hubs stands between their runs. A row fed from above, also from both sides, is not read from below. A turned free row
+ *   records `feed-order`; its entry names the row (`row`). `layout.feedOrder: false` and `layout.corridorRowOrder: false` keep the
+ *   authored order of every top row, a rank cell or a free row (`readsBelow`, the one test).
  * - **The reservation.** Each decided row is one `rowOrder` entry (`rowOrderOf` is the one reader), with its premise: the feeding rows and
  *   the order they were read in (`feeds`). A cell is re-seated in its order here (the replay of ELK's output); the column pack (`standOf`)
  *   stands a child frame on the side its entry names; the overlay order of the frames chains neither a reserved cell nor a feeding row
@@ -42,29 +48,40 @@ const SAME_KEY = 1e-9;
  *   `validateFeedOrders`, and `validateReservations` on every later snapshot, check the order and its premise.
  *
  * `layout.feedOrder: false` switches the step off (a test input whose subject needs the declared order pins it so).
- * No search: one sort per row, a finite traversal (R4 needs no cap). Runs after the free-row orders of stage 4 and before the frames are
+ * No search: one sort per row. The row below a top row may read the top row in its turn, so the rows are judged again while a premise
+ * breaks, at most one round per judged row and one more (R4); an entry still broken is withdrawn by name (`FEED_ORDER_WITHDRAWN`). Runs after the free-row orders of stage 4 and before the frames are
  * packed. The entries of an earlier run are replaced, so a placement re-run decides again on its own skeleton.
  */
 export function orderByFeeds(model: LayoutModel): void {
   const kept = (model.reservations ?? []).filter(entry => entry.kind !== 'rowOrder');
-  const entries: Reservation[] = [];
-  const read = reader(model);
-  let moved = false;
-  // `layout.feedOrder: false` keeps ELK's order of every cell and the overlay side of every child frame: no entry is written.
-  const off = model.document.layout?.feedOrder === false;
-  for (const cell of off ? [] : read.cells()) {
-    const decision = read.cell(cell);
-    if (decision === undefined) continue;
-    if (!sameOrder(decision.order, cell.rowOrder ?? cell.nodes)) {
-      // The cell may grow to the right over its neighbour: every group of a tier that holds a frame is laid by the column pack after this
-      // step, and `placeFlanksAndPeers` then pushes any overlap apart (ELK can stack two linked members of a cell, which the rows stage
-      // lays side by side). `reseatRow` with `'column'` refuses only at a flank, which the pack does not lay; the refusal is named (R6).
-      if (!reseatRow(model, cell, decision.order, 'column')) { refused(model, cell, decision.order); continue; }
-      moved = true;
+  // `layout.feedOrder: false` keeps ELK's order of every cell, the overlay side of every child frame and the order of every top row: no entry is written.
+  if (model.document.layout?.feedOrder === false) { if (model.reservations !== undefined) model.reservations = kept; return; }
+  const read = reader(model), rows = read.rows(read.tops());
+  const rules = new Map(rows.map(row => [row, row.rowOrderDecision?.rule]));
+  let entries: Reservation[], moved = false;
+  // A top row reads the row below, and that row may read the top row in its turn (a rank cell under it): the rows are judged again while
+  // an entry's premise does not hold. R4: at most one round per judged row and one more; an entry still broken then is withdrawn by name.
+  for (let round = 0; ; round++) {
+    entries = [];
+    for (const row of rows) {
+      const decision = read.row(row);
+      if (decision === undefined) continue;
+      if (!sameOrder(decision.order, row.rowOrder ?? row.nodes)) {
+        // A cell may grow to the right over its neighbour: every group of a tier that holds a frame is laid by the column pack after this
+        // step, and `placeFlanksAndPeers` then pushes any overlap apart (ELK can stack two linked members of a cell, which the rows stage
+        // lays side by side). `reseatRow` with `'column'` refuses only at a flank, which the pack does not lay; a free row grows only into
+        // the room its tier leaves. The refusal is named (R6).
+        if (!reseatRow(model, row, decision.order, row.frame === undefined ? true : 'column')) { refused(model, row, decision.order); continue; }
+        moved = true;
+        turned(row, rules.get(row));
+      }
+      entries.push(rowEntry(row, decision));
     }
-    entries.push(cellEntry(cell.id, decision));
+    const broken = entries.filter(entry => rowOrderFailure(entry, model) !== undefined);
+    if (!broken.length) break;
+    if (round >= rows.length) { withdraw(model, broken); entries = entries.filter(entry => !broken.includes(entry)); break; }
   }
-  for (const id of off ? [] : read.frames()) {
+  for (const id of read.frames()) {
     const decision = read.frame(id);
     if (decision !== undefined) entries.push(frameEntry(id, decision));
   }
@@ -77,26 +94,37 @@ export function orderByFeeds(model: LayoutModel): void {
  * Reads the feed order again after a feeding row turned once the frames were packed (ticket 25 review: `withdrawPullsAcrossFlips` re-seats a
  * free row that may feed a cell). Every cell is judged again top-down, so a cell under a re-seated cell reads its new order: a cell whose
  * decision changed is re-seated inside the room its tier leaves (the frames stand packed now; a row that does not fit is refused by name,
- * `FEED_ORDER_REFUSED`, and its entry dropped), and a cell that the feeds no longer decide drops its entry. A frame entry whose premise
- * changed and whose order the feeds still give takes the new premise; one the feeds now order otherwise is dropped by name
- * (`FEED_ORDER_WITHDRAWN`): its child stands where the pack laid it. Returns whether the ledger or a cell changed.
+ * `FEED_ORDER_REFUSED`, and its entry dropped), and a cell that the feeds no longer decide drops its entry. A frame entry, and the entry of
+ * a free top row, whose premise changed and whose order the feeds still give takes the new premise; one the feeds now order otherwise is
+ * dropped by name (`FEED_ORDER_WITHDRAWN`): the child stands where the pack laid it, the row as it stands. A top row's entry whose row below
+ * the refresh then turned is dropped by name too. Returns whether the ledger or a cell changed.
  */
 export function refreshFeedOrders(model: LayoutModel): boolean {
   if (model.document.layout?.feedOrder === false) return false;
-  const read = reader(model), before = JSON.stringify(ofKind(model.reservations ?? [], 'rowOrder'));
+  const read = reader(model), ledger = ofKind(model.reservations ?? [], 'rowOrder'), before = JSON.stringify(ledger);
   const kept = (model.reservations ?? []).filter(entry => entry.kind !== 'rowOrder');
-  const entries: Reservation[] = [];
+  let entries: Reservation[] = [];
   let moved = false;
-  for (const cell of read.cells()) {
-    const decision = read.cell(cell);
+  // A free top row is not turned again here: it keeps an entry only where its feeds still give the order it stands in.
+  const tops = ledger.flatMap(({ payload }) => 'row' in payload ? [model.groups[payload.row]!] : []);
+  for (const row of read.rows(tops)) {
+    const decision = read.row(row);
+    if (row.frame === undefined) {
+      if (decision !== undefined && sameOrder(decision.order, row.rowOrder ?? row.nodes)) entries.push(rowEntry(row, decision));
+      else placementWarning(model, 'FEED_ORDER_WITHDRAWN', `The feeds of row ${row.id} no longer give the order it stands in: the row below it turned after the frames were packed. The order stands, with no reservation.`, [row.id], 'group');
+      continue;
+    }
     if (decision === undefined) continue;
-    if (!sameOrder(decision.order, cell.rowOrder ?? cell.nodes)) {
-      if (!reseatRow(model, cell, decision.order, true)) { refused(model, cell, decision.order); continue; }
+    if (!sameOrder(decision.order, row.rowOrder ?? row.nodes)) {
+      if (!reseatRow(model, row, decision.order, true)) { refused(model, row, decision.order); continue; }
       moved = true;
     }
-    entries.push(cellEntry(cell.id, decision));
+    entries.push(rowEntry(row, decision));
   }
-  for (const entry of ofKind(model.reservations ?? [], 'rowOrder')) {
+  const broken = entries.filter(entry => rowOrderFailure(entry, model) !== undefined);
+  withdraw(model, broken);
+  entries = entries.filter(entry => !broken.includes(entry));
+  for (const entry of ledger) {
     if (!('frame' in entry.payload)) continue;
     const id = entry.payload.frame, decision = read.frame(id);
     if (decision !== undefined && sameOrder(decision.order, entry.payload.order)) { entries.push(frameEntry(id, decision)); continue; }
@@ -155,8 +183,25 @@ const cellEntry = (cell: string, { order, feeds }: Decision): ReservationOf<'row
   reservation('rowOrder', { kind: 'group', id: cell }, 'cell', 'skeleton', 0, { cell, order, feeds });
 const frameEntry = (frame: string, { order, feeds }: Decision): ReservationOf<'rowOrder'> =>
   reservation('rowOrder', { kind: 'group', id: frame }, 'frame', 'skeleton', 0, { frame, order, feeds });
-function refused(model: LayoutModel, cell: LayoutGroup, order: readonly string[]): void {
-  placementWarning(model, 'FEED_ORDER_REFUSED', `Cell ${cell.id} cannot stand in the order its feeds give (${order.join(', ')}): it does not fit its room. The order it stands in stays, with no reservation.`, [cell.id], 'group');
+/** A rank cell's entry names the cell, a free top row's entry the row (dense-16x9 ticket 20). */
+const rowEntry = (group: LayoutGroup, decision: Decision): ReservationOf<'rowOrder'> => group.frame !== undefined ? cellEntry(group.id, decision)
+  : reservation('rowOrder', { kind: 'group', id: group.id }, 'row', 'skeleton', 0, { row: group.id, order: decision.order, feeds: decision.feeds });
+/** The free row's stage-4 record follows its new order: `feed-order` while it stands off the order the corridor step left, else the rule that step gave. */
+function turned(group: LayoutGroup, rule: RowOrderDecision['rule'] | undefined): void {
+  const decision = group.rowOrderDecision;
+  if (decision === undefined || rule === undefined || group.frame !== undefined) return;
+  const after = [...(group.rowOrder ?? group.nodes)];
+  group.rowOrderDecision = { ...decision, rule: sameOrder(decision.before, after) ? rule : 'feed-order', after };
+}
+function refused(model: LayoutModel, row: LayoutGroup, order: readonly string[]): void {
+  placementWarning(model, 'FEED_ORDER_REFUSED', `Row ${row.id} cannot stand in the order its feeds give (${order.join(', ')}): it does not fit its room. The order it stands in stays, with no reservation.`, [row.id], 'group');
+}
+function withdraw(model: LayoutModel, entries: readonly Reservation[]): void {
+  for (const entry of entries) {
+    if (entry.kind !== 'rowOrder') continue;
+    const id = 'cell' in entry.payload ? entry.payload.cell : 'row' in entry.payload ? entry.payload.row : entry.payload.frame;
+    placementWarning(model, 'FEED_ORDER_WITHDRAWN', `The feed order of ${id} is withdrawn: ${rowOrderFailure(entry, model)}. The row stands as it stands, with no reservation.`, [id], 'group');
+  }
 }
 
 /** What the writer and the refresh read: the eligible cells and frames in their judging order, and the decision of each. */
@@ -165,16 +210,20 @@ function reader(model: LayoutModel) {
   const placed = Object.values(model.groups).filter(group => !group.flank && group.nodes.length > 0 && group.tier !== undefined);
   const tiers = [...new Set(placed.map(group => group.tier!))].sort((a, b) => a - b);
   const above = (tier: number): number | undefined => tiers[tiers.indexOf(tier) - 1];
+  const below = (tier: number): number | undefined => tiers[tiers.indexOf(tier) + 1];
   const ends = routedEnds(model);
   const isRow = (group: LayoutGroup): boolean => groupShape(model, group.id) === 'row' && model.document.groups[group.id]?.shape !== 'bar';
   // A row a flank stands beside is re-packed after this step (its primary peer goes to the outer end): it is no feeding row, and no cell to order.
   const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
-  /** The key of each unit (`undefined`: no feed) and the feeding row; the whole answer `undefined` when the feeds come from more than one row, or no row. */
-  const keysOf = (units: readonly Unit[]): { keys: Map<string, number | undefined>; feed: RowFeed } | undefined => {
+  /**
+   * The key of each unit (`undefined`: no feed) and the feeding row, read in the sub-tier `toward` names (the one above, or the one below
+   * for a top row); the whole answer `undefined` when the feeds come from more than one row, or no row.
+   */
+  const keysOf = (units: readonly Unit[], toward: (tier: number) => number | undefined = above): { keys: Map<string, number | undefined>; feed: RowFeed } | undefined => {
     let row: LayoutGroup | undefined;
     const feeds = new Map<string, string[]>();
     for (const unit of units) {
-      const tier = above(unit.top);
+      const tier = toward(unit.top);
       const far = tier === undefined ? [] : unit.nodes.flatMap(node => (ends.get(node) ?? []).filter(other => groupOf(other).tier === tier));
       for (const other of far) {
         const group = groupOf(other);
@@ -199,28 +248,60 @@ function reader(model: LayoutModel) {
     // Last key: the place in `order` (R3: ELK's order of a cell, the declaration order of a frame row).
     return Math.abs(d) > SAME_KEY ? d : order.indexOf(a) - order.indexOf(b);
   };
+  /** Whether a routed link of the row ends in a row above it: a row fed from above (from both sides too) never reads the row below. */
+  const fedFromAbove = (group: LayoutGroup): boolean => group.nodes.some(node => (ends.get(node) ?? []).some(other => (groupOf(other).tier ?? Infinity) < group.tier!));
+  /**
+   * The one test of whether a row reads its feeds from the row below (dense-16x9 ticket 20), for every kind of row: a rank cell and a free
+   * row alike. Only a top row does, and an authored order stands: `layout.feedOrder: false` (no feed order at all) and
+   * `layout.corridorRowOrder: false` (the order the skeleton gave a row that no row above orders) each keep it. A cell fed from above is
+   * not asked: its downward feed order answers to `feedOrder` only, as before.
+   */
+  const authored = model.document.layout?.feedOrder === false || model.document.layout?.corridorRowOrder === false;
+  const readsBelow = (group: LayoutGroup): boolean => !authored && !fedFromAbove(group);
+  /**
+   * The order of a row by the keys `toward` reads: the blocks of peer neighbours take the order of their keys, the members of a block the
+   * order of their own keys; a member with no key keeps its slot; `tie` breaks an equal key.
+   */
+  const ordered = (row: LayoutGroup, toward: (tier: number) => number | undefined, tie: (items: readonly string[]) => readonly string[]): Decision | undefined => {
+    const order = [...(row.rowOrder ?? row.nodes)];
+    const read = keysOf(order.map(node => ({ id: node, top: row.tier!, nodes: [node] })), toward);
+    if (read === undefined || !decided(read.keys)) return undefined;
+    const { keys } = read;
+    // A peer pair that stands side by side stays side by side: a run of neighbours that routed links inside the row join is one block.
+    const blocks = peerBlocks(order, ends);
+    const blockKeys = keysOf(blocks.map(block => ({ id: block[0]!, top: row.tier!, nodes: block })), toward)!.keys;
+    if (!decided(blockKeys) && !blocks.some(block => decided(new Map(block.map(node => [node, keys.get(node)]))))) return undefined;
+    const inner = new Map(blocks.map(block => [block[0]!, slotSort(block, keys, byKey(keys, tie(block)))]));
+    const heads = blocks.map(block => block[0]!);
+    // A cell that stage 4 seated for its sibling-frame links keeps its seat: the feeds order the members between the two seated blocks (dense-16x9 ticket 06).
+    return { order: siblingSeatOrder(model, row.id, slotSort(heads, blockKeys, byKey(blockKeys, tie(heads))).flatMap(head => inner.get(head)!)), feeds: [read.feed] };
+  };
+  const { freeRow } = orderTools(model);
+  const joint = new Set(ofKind(model.reservations ?? [], 'groupOrder').flatMap(({ payload }) => payload.feeds.map(feed => feed.row)));
   const frames = model.document.frames ?? {};
   const nodesAt = (cells: readonly string[], tier: number): string[] => cells.filter(cell => cellTier(model, cell) === tier).flatMap(cell => model.groups[cell]!.nodes);
   return {
-    /** The cells a feed may order, top-down and by id within a sub-tier: a cell reads the order this step gave the cell above it. */
-    cells: (): LayoutGroup[] => placed.filter(group => group.frame !== undefined && group.nodes.length > 1 && isRow(group) && !flanked.has(group.id))
-      .sort((a, b) => a.tier! - b.tier! || compareId(a.id, b.id)),
     /** The frames with children, by id; a canton is author-fixed (D1). */
     frames: (): string[] => Object.keys(frames).filter(id => frames[id]!.kind !== 'canton' && Object.values(frames).some(frame => frame.parent === id)).sort(compareId),
-    cell: (cell: LayoutGroup): Decision | undefined => {
-      const order = [...(cell.rowOrder ?? cell.nodes)];
-      const read = keysOf(order.map(node => ({ id: node, top: cell.tier!, nodes: [node] })));
-      if (read === undefined || !decided(read.keys)) return undefined;
-      const { keys } = read;
-      // A peer pair that stands side by side stays side by side: a run of neighbours that routed links inside the cell join is one block.
-      // The blocks take the order of their keys, the members of a block the order of their own keys.
-      const blocks = peerBlocks(order, ends);
-      const blockKeys = keysOf(blocks.map(block => ({ id: block[0]!, top: cell.tier!, nodes: block })))!.keys;
-      if (!decided(blockKeys) && !blocks.some(block => decided(new Map(block.map(node => [node, keys.get(node)]))))) return undefined;
-      const inner = new Map(blocks.map(block => [block[0]!, slotSort(block, keys, byKey)]));
-      // A cell that stage 4 seated for its sibling-frame links keeps its seat: the feeds order the members between the two seated blocks (dense-16x9 ticket 06).
-      return { order: siblingSeatOrder(model, cell.id, slotSort(blocks.map(block => block[0]!), blockKeys, byKey).flatMap(head => inner.get(head)!)), feeds: [read.feed] };
-    },
+    /**
+     * The free rows the feeds below may order (dense-16x9 ticket 20): a free row of two or more nodes that no row above feeds and that the
+     * corridor step could not judge (`frame-columns`: its turn changes a region with a frame cell; or no record: no anchor tier), with no
+     * far-end pull and no group order of the joint order reading it. A row the corridor step judged keeps its measured order: the feed order
+     * was among its candidates and crossed no less. An authored order stands (`readsBelow`).
+     */
+    tops: (): LayoutGroup[] => placed.filter(group => group.nodes.length > 1 && freeRow(group)
+      && !joint.has(group.id) && readsBelow(group) && group.rowOrderDecision?.pulledFrom === undefined
+      && (group.rowOrderDecision === undefined || group.rowOrderDecision.rule === 'frame-columns')),
+    /** The cells a feed may order and the given free top rows, in their judging order: top-down, by id within a sub-tier, so a row reads the order this step gave the row above it. */
+    rows: (tops: readonly LayoutGroup[]): LayoutGroup[] => [...placed.filter(group => group.frame !== undefined && group.nodes.length > 1 && isRow(group) && !flanked.has(group.id)), ...tops]
+      .sort((a, b) => a.tier! - b.tier! || compareId(a.id, b.id)),
+    /**
+     * The order the feeds give a row: a row that a row above feeds (a rank cell) reads the feeds from above, a tie keeping the order it stands
+     * in (ELK's); a row that no row above feeds reads its feeds into the row below when `readsBelow` lets it (dense-16x9 ticket 20), a tie
+     * keeping declaration order.
+     */
+    row: (row: LayoutGroup): Decision | undefined => readsBelow(row) ? ordered(row, below, () => row.nodes)
+      : fedFromAbove(row) && row.frame !== undefined ? ordered(row, above, items => items) : undefined,
     frame: (id: string): Decision | undefined => {
       const tierOf = (cell: string): number => cellTier(model, cell);
       const blocks = Object.keys(frames).filter(child => frames[child]!.parent === id).map(child => { const [low, high] = tierRange(model, child); return { child, low, high }; });
@@ -270,9 +351,8 @@ export function peerBlocks(order: readonly string[], ends: ReadonlyMap<string, r
   return blocks;
 }
 
-/** `items` with the keyed ones in the keyed slots, in key order (`byKey`, last key the place in `items`); an item with no key keeps its slot. */
-function slotSort(items: readonly string[], keys: ReadonlyMap<string, number | undefined>,
-  byKey: (keys: ReadonlyMap<string, number | undefined>, order: readonly string[]) => (a: string, b: string) => number): string[] {
-  const queue = items.filter(item => keys.get(item) !== undefined).sort(byKey(keys, items));
+/** `items` with the keyed ones in the keyed slots, in the order `compare` gives (`byKey`); an item with no key keeps its slot. */
+function slotSort(items: readonly string[], keys: ReadonlyMap<string, number | undefined>, compare: (a: string, b: string) => number): string[] {
+  const queue = items.filter(item => keys.get(item) !== undefined).sort(compare);
   return items.map(item => keys.get(item) === undefined ? item : queue.shift()!);
 }
