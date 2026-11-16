@@ -3,12 +3,13 @@ import type { DirectFamily, DirectMemberReason, DirectUnit, LayoutLink, LayoutMo
 import { EPS, intersection, samePoint, segmentDistance } from '../geometry/planar.js';
 import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { effectiveLayer } from '../score/model.js';
+import { parallelClearance } from '../score/gates.js';
 import { chordKind, chordVerdict, fixedPointRefusal, isRoutedChord, orthogonalLeg, SIDE_EDGE_SLACK, siblingStemCrowded } from './frame-paths.js';
 import { strictCrossing } from './read/crossings.js';
 import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { groupShape } from './grid.js';
 import { portId } from './skeleton-graph.js';
-import { plannedSegments, tierGapPlan, tierGapPlans } from './gap-plan.js';
+import { plannedSegments, reservedRouted, tierGapPlan, tierGapPlans } from './gap-plan.js';
 import { tierGaps } from './gap-runs.js';
 import { clone } from './bundle-geometry.js';
 
@@ -478,63 +479,46 @@ export function directFamiliesFault(model: LayoutModel): string | undefined {
 }
 
 /**
- * The direct members that stand, after 7f, within the chord clearance of a part the tier-gap plan seats in their gap (a leg, a row, a drop, a
- * stem), or of another held chord, and cross it nowhere strictly: what G6 would fail. Read on the model as 7f leaves it. Of two members
- * that crowd only each other, the first in family and peer order is named.
+ * The direct members that a G6 reading of every segment reserved for a final path names, after 7f (`crowdedChords`). Read on the model as 7f
+ * leaves it. Of two members that crowd only each other, the first in family and peer order is named.
  */
 export function crowdedDirectMembers(model: LayoutModel): string[] {
-  const direct = (model.directFamilies ?? []).flatMap(family => family.members.filter(member => member.mode === 'direct').map(member => ({ id: member.link, gap: family.gap })));
-  return crowdedChords(model, direct);
+  return crowdedChords(model, (model.directFamilies ?? []).flatMap(family => family.members.filter(member => member.mode === 'direct').map(member => member.link)));
 }
 
 /**
- * The straight fan members (architecture-2 ticket 40) that 7f brought within the chord clearance of a planned part of their gap, or of another
- * held chord, crossing it nowhere strictly (`crowds`: what G6 would fail), or that pass the stem of a sibling fallback (`stem`). The gap is the one
- * between the sub-tiers of the member's two ends. A member both crowd names `crowds`.
+ * The straight fan members (architecture-2 ticket 40) that a G6 reading of the reserved geometry names after 7f (`crowds`, `crowdedChords`), or
+ * that pass the stem of a sibling fallback (`stem`). A member both crowd names `crowds`.
  */
 export function crowdedFanMembers(model: LayoutModel): Map<string, 'crowds' | 'stem'> {
-  const straight = (model.fanAdmissions ?? []).filter(item => item.mode === 'straight').flatMap(item => {
-    const link = model.links.find(other => other.id === item.link);
-    if (link?.attachments === undefined) return [];
-    const tiers = [link.attachments.from.node, link.attachments.to.node].map(node => model.groups[model.document.nodes[node]!.group]!.tier!);
-    return [{ id: link.id, gap: { above: Math.min(...tiers), below: Math.max(...tiers) } }];
-  });
+  const straight = (model.fanAdmissions ?? []).filter(item => item.mode === 'straight')
+    .filter(item => model.links.find(other => other.id === item.link)?.attachments !== undefined).map(item => ({ id: item.link }));
   // A member that still passes a sibling fallback's stem is crowded too: the admission let it cross the leg, the leg's stem is final only now.
   const found = new Map<string, 'crowds' | 'stem'>();
   for (const { id } of straight) if (siblingStemCrowded(model, model.links.find(other => other.id === id)!)) found.set(id, 'stem');
-  for (const id of crowdedChords(model, straight)) found.set(id, 'crowds');
+  for (const id of crowdedChords(model, straight.map(item => item.id))) found.set(id, 'crowds');
   return found;
 }
 
-/** The held chords of `entries` that stand within the chord clearance of a planned part of their gap or of another held chord, crossing it nowhere strictly. */
-function crowdedChords(model: LayoutModel, direct: readonly { id: string; gap: { above: number; below: number } }[]): string[] {
-  if (!direct.length) return [];
-  const plans = tierGapPlans(model);
+/**
+ * The held chords of `ids` that a G6 reading of the final paths would name (`parallelClearance`, the gate's predicate, at each link's own
+ * stroke): against every segment the model has reserved for a final path (`reservedRouted`, dense-16x9 ticket 14 slice 2: the stored paths
+ * and chords, the planned parts of every gap that fits, the lanes, the legs, the stems), uncropped. Of two chords that crowd only each other,
+ * the first is named: the other no longer has a chord near it.
+ */
+function crowdedChords(model: LayoutModel, ids: readonly string[]): string[] {
+  if (!ids.length) return [];
+  const reserved = reservedRouted(model, tierGapPlans(model));
   const crowded: string[] = [];
-  for (const { id, gap } of direct) {
-    const link = model.links.find(item => item.id === id), chord = link?.path?.segments.length === 1 ? link.path.segments[0]! : undefined;
-    if (link === undefined || chord === undefined) continue;
-    const stroke = linkStrokeWidth(link);
-    const near = (segment: PathSegment, other: number): boolean => !strictCrossing(chord, segment)
-      && segmentDistance(chord, segment) - (stroke + other) / 2 < STRAIGHT_PATH_CLEARANCE.path - EPS;
-    const found = plans.find(item => item.gap.above === gap.above && item.gap.below === gap.below);
+  for (const id of ids) {
+    const own = reserved.filter(entry => entry.link.id === id);
+    const link = model.links.find(item => item.id === id);
+    if (link?.path?.segments.length !== 1 || !own.length) continue;
     let hit = false;
-    for (const part of found?.plan.parts ?? []) {
-      const owner = model.links.find(item => item.id === part.link);
-      if (owner === undefined) continue;
-      const ends = [findPort(model, owner.attachments!.from)?.anchor, findPort(model, owner.attachments!.to)?.anchor];
-      const stems: PathSegment[] = [];
-      for (const tip of [part.upper, part.lower]) {
-        if (tip.kind !== 'tip') continue;
-        const anchor = ends.find(point => point !== undefined && Math.abs(point.x - tip.x) < EPS);
-        if (anchor && !samePoint(anchor, tip)) stems.push({ from: anchor, to: { x: tip.x, y: tip.y }, owner: owner.owner });
-      }
-      if ([...plannedSegments(part, found!.gap), ...stems].some(segment => near(segment, linkStrokeWidth(owner)))) { hit = true; break; }
-    }
-    // Of two direct members that crowd each other only the first is refused: the other no longer has a chord near it.
-    if (!hit) for (const other of model.links) {
-      if (other.id === id || crowded.includes(other.id) || !isRoutedChord(model, other)) continue;
-      if (near(other.path!.segments[0]!, linkStrokeWidth(other))) { hit = true; break; }
+    for (const other of reserved) {
+      if (other.link.id === id || crowded.includes(other.link.id)) continue;
+      for (const mine of own) parallelClearance(model, [mine, other], () => { hit = true; });
+      if (hit) break;
     }
     if (hit) crowded.push(id);
   }

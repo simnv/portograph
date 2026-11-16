@@ -571,8 +571,10 @@ two lateral faces there is no angle floor (a slight tilt is fine). Overlay chord
   Ties: the shorter chords, then the port keys. A family decided first read the later families' members as
   legs; once all stand, a member refused for a leg or a chord takes its chord where it now holds and every
   held chord still holds beside it, in family and peer order until nothing changes.
-- **Crowding.** The centring of 7f can still move x after the freeze and bring a direct member within the chord
-  clearance of a planned leg or another held chord (`crowdedDirectMembers`). The attempt then runs again from
+- **Crowding.** The centring of 7f can still move x after the freeze and bring a direct member within the G6
+  clearance of a segment reserved for a final path: a planned part, a stem, a lane, a leg, a shared run or another
+  held chord, at each link's own stroke and through the gate's predicate (`crowdedDirectMembers`, `reservedRouted`;
+  dense-16x9 ticket 14 slice 2). The attempt then runs again from
   its start with those members refused (`crowds`), at most `DIRECT_RETRIES` (2) times; a member still crowded
   after that is a `DIRECT_FAMILY_CROWDED` warning, and G6 judges it.
 - **Record.** `model.directFamilies`, triggered families only: absent before 7f means not planned, absent after
@@ -629,8 +631,8 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   A row moves at most `SLANT_LOWERING_KEEPS` (4) run clearances; where no candidate within that clears, it keeps its
   seat and `TIER_GAP_SLANT_LIMIT` names it. The rows read the chords where they stand when the plan runs; the growth
   the plan asks for then moves the band below and the chords' lower ends, which the rows do not read again (slice 2).
-  The crowding retry of 7f refuses a member that a moved part comes within the clearance of (`crowds`,
-  `crowdedFanMembers`), that passes a sibling's stem (`stem`), or that a group title placed in 7f still meets
+  The crowding retry of 7f refuses a member that a G6 reading of every reserved segment names (`crowds`,
+  `crowdedFanMembers`, `reservedRouted`), that passes a sibling's stem (`stem`), or that a group title placed in 7f still meets
   (`title`, `titleCrowdedFanMembers`: the title planner found no room beside it). After `DIRECT_RETRIES` the rest
   stay straight and `FAN_MEMBER_CROWDED` names each with its reason. `refuseChords` re-reads the held chords near
   the new legs, all of one round before any falls back (R3), and each chord that falls back there names its own
