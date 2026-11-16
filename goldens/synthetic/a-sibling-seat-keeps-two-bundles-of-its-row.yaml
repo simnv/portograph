@@ -1,0 +1,41 @@
+# Expected: the west row holds two authored lateral bundles, w1 to w2 and w3 to w4 (right ports to left ports), and w1 and w3 both link to the east
+# frame. Seating them at the east end of the west row would stand each right end left of its left end: the seat reads every bundle of the row, so the
+# sibling seat of west is declined by name for both links (SIBLING_SEAT_REFUSED, info), both bundles keep their order, every gate passes and no link
+# is removed.
+# Test-only input owned by dense-16x9 ticket 06 (slice C, review 2): test/pipeline/sibling-rows.test.ts.
+portograph: 2
+layout: { autoArrange: false }
+groups:
+  src: { tier: 0, label: Source }
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  sink: { tier: 2, label: Sink }
+nodes:
+  s0: { group: src, class: router }
+  wt: { group: west, class: router }
+  w1: { group: west, class: switch, ports: [{name: a, order: 1, side: right}, {name: b, order: 2, side: right}] }
+  w2: { group: west, class: switch, ports: [{name: a, order: 1, side: left}, {name: b, order: 2, side: left}] }
+  w3: { group: west, class: switch, ports: [{name: a, order: 1, side: right}, {name: b, order: 2, side: right}] }
+  w4: { group: west, class: switch, ports: [{name: a, order: 1, side: left}, {name: b, order: 2, side: left}] }
+  et: { group: east, class: router }
+  e1: { group: east, class: switch }
+  e2: { group: east, class: switch }
+  k1: { group: sink, class: router }
+  k2: { group: sink, class: router }
+links:
+  - [s0, wt]
+  - [s0, et]
+  - [wt, w1]
+  - [wt, w2]
+  - [wt, w3]
+  - [wt, w4]
+  - [et, e1]
+  - [et, e2]
+  - [w1.a, w2.a]
+  - [w1.b, w2.b]
+  - [w3.a, w4.a]
+  - [w3.b, w4.b]
+  - [w1, e1]
+  - [w3, e2]
+  - [w1, k1]
+  - [e1, k2]

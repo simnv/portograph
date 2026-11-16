@@ -1,0 +1,34 @@
+# Expected: w1 links to the east frame, so its facing end is the east end of the west row; but w1 leaves an authored lateral bundle (two links, right
+# ports of w1 to left ports of w2), and that channel needs w1 left of w2. The bundle is the harder order: the west row keeps it, the sibling seat
+# of west is declined by name (SIBLING_SEAT_REFUSED, info), and the link from w1 to e1 keeps the route stage 8 gives. Every gate passes and no link is removed.
+# Before the rule kept the bundle, the seat put w2 left of w1 and the bundle ran backward through both bodies (G2, G3, G5 and G6 findings).
+# Test-only input owned by dense-16x9 ticket 06 (slice C, review 1): test/pipeline/sibling-rows.test.ts.
+portograph: 2
+layout: { autoArrange: false }
+groups:
+  src: { tier: 0, label: Source }
+  west: { tier: 1, label: West }
+  east: { tier: 1, label: East }
+  sink: { tier: 2, label: Sink }
+nodes:
+  s0: { group: src, class: router }
+  wt: { group: west, class: router }
+  w1: { group: west, class: switch, ports: [{name: a, order: 1, side: right}, {name: b, order: 2, side: right}] }
+  w2: { group: west, class: switch, ports: [{name: a, order: 1, side: left}, {name: b, order: 2, side: left}] }
+  et: { group: east, class: router }
+  e1: { group: east, class: switch }
+  e2: { group: east, class: switch }
+  k1: { group: sink, class: router }
+  k2: { group: sink, class: router }
+links:
+  - [s0, wt]
+  - [s0, et]
+  - [wt, w1]
+  - [wt, w2]
+  - [et, e1]
+  - [et, e2]
+  - [w1.a, w2.a]
+  - [w1.b, w2.b]
+  - [w1, e1]
+  - [w1, k1]
+  - [e1, k2]

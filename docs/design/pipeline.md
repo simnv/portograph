@@ -471,6 +471,35 @@ premise at the end of stage 4, and `validateReservations` on every later snapsho
 `layout.feedOrder: false` writes no entry: ELK's order and the overlay side stand (a test input whose subject needs the declared order
 pins it so). On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone of Location 4 stands under its feeds.
 
+**Sibling rows (dense-16x9 ticket 06, slice C; owner ruling "mirror one pair", 2026-11-15).** Once the frame order has settled
+(after `settlePullsAndFeeds`), `seatSiblingFrameEnds` (`src/layout/sibling-frames.ts`) seats the ends of every **sibling-frame link**
+(`siblingFrameLink`, the one predicate; a cell that a flank stands beside is left alone) at the end of its row that faces the other
+cell. The links between one pair of cells are a pair set; with two or more pairs one cell turns its linked block so the pairs nest:
+the cell whose order its feeds decided (a `rowOrder` entry) keeps it, and when both or neither did the left cell keeps its order and
+the right one mirrors (R3: x order, never declaration order). The inner pair stands on the two facing row ends; the others stand next
+to it, outermost first. A cell's left-facing blocks stand first (the nearest cell's members on the end), its right-facing blocks last,
+and its other members keep the order they stand in. The unit a seat moves is a peer block of the feed reader (`peerBlocks`: neighbours a
+routed link inside the row joins): the seated members of a block stand at the facing end, its other members next to them on the inner side. A
+lateral bundle of the row (`lateralPairs`, the reader of ticket 18, read for the whole row) is harder than a facing end. The invariant
+(review 06c-2): a seat is admissible only if, for every lateral bundle the row encloses, the end that leaves to the right still stands left of
+the end it enters, adjacent or not, with any number of members between them (`turnedBundle`, the one predicate of the seat and the
+feed refresh; a pair the row already stands turned is not the seat's to keep). A seat that would turn one, or a block that would face both
+ends of a row of more blocks, declines the pair sets of that row by name
+(`SIBLING_SEAT_REFUSED`), and the other sets are seated again without them (each round drops a set, so at most one round per set). The decision is **`LayoutModel.siblingRows`**, one record per pair of cells
+`{subTier, leftCell, rightCell, mirrored, levelLink?, outerLinks}`: absent when the model holds no sibling-frame link the seat may move,
+`[]` when every pair set was declined. `levelLink` is absent when a group or a foreign frame stands between the two cells on their
+sub-tier (a level chord would cross it), and every pair is then outer. Declined by name, at severity `info`: a pair set that is not one
+pair per member, or a member linked to two cells on one side (it faces the nearer one; `SIBLING_PAIR_NON_MATCHING`); a member of a row of
+two or more linked toward both sides (the side with more pairs keeps it, a tie the left end; `SIBLING_FRAME_END_CONFLICT`); and a row
+that does not fit its room in the seated order (`SIBLING_SEAT_REFUSED`: no row is seated, `siblingRows: []`). Three cuts of this first slice
+against the design note (review 06c-1 judged them sound): the links on the losing side of a relay take no U, they keep the stage-8 route; a pair
+set that is not one pair per member is declined whole, with no partial admission; and when the feeds decided both cells, the left cell keeps its
+order, with no comparison of the two feed spreads. `mirrored` is history, not proof: the validator reads the nested order of the pairs, not the flag. A seated cell may feed a
+cell below it, so the feed orders are read again (`refreshFeedOrders`); the feed reader keeps every seat (`siblingSeatOrder`: the feeds
+order only the members between the two seated blocks, and a feed order that would turn a lateral bundle of the row, by the same predicate, leaves the row as it
+stands). `siblingRowsFault` checks the record and the row orders at the end of stage 4 and at the restore of a stage-4 model, before stage 5
+reads it; the freeze keeps a copy, and every publication from stage 5 on and its restore check both (R1, R5).
+
 **Group lift (decision review 2026-11, D-Q5, ticket 08; ADR-0008 amendment).** A **float component** (`CONTEXT.md`) may stand in
 bands above its document tier's bands. The decision is band input, made before any placement run of a command: `decideLifts`
 (`src/pipeline/lift-round.ts`) runs the command once with no lift, measures the components on its published model (`measureLifts`, a
@@ -565,6 +594,16 @@ by the ledger: restore and the freeze check refuse a `freeze.farEndOrder` with n
 bundle member, a bus port, a solid-block face), or with a face that no entry reserves. Production writes a record only when it holds a face; an absent record and an empty record
 are the same. The notes `FAR_END_ORDER_TAKEN`, `FAR_END_ORDER_OWNED`, `FAR_END_ORDER_DECLINED` and `FAR_END_ORDER_UNSETTLED` say what happened. No 7c rule may re-order a port: the
 permission stays as it is.
+
+**The U of a sibling row (dense-16x9 ticket 06, slice C).** Once the sides are voted, and before the nodes are sized, each outer
+link of each `siblingRows` record takes a `u-turn` course (`planSiblingUTurns`): both ports move to one horizontal face of the
+sub-tier (`courseHint`, the voted lateral side as `naturalSide`), the course joins `courses` and the ledger (producer `sides-two`),
+and 7a plans its U part in the tier gap that face looks at, so stage 8 discovers no row. One face per record: of the faces whose
+tier gap exists (`uTurnFacesGap`), the one with fewer ports on the nodes of the sub-tier between the two ends of the outermost link
+(their links cross the rows); a tie takes fewer ports on the U ends, then `top`. Nested pairs nest their U parts (`uEdges`). An outer
+link keeps its side and the route stage 8 gives, named `SIBLING_UTURN_DECLINED`, when it has a course already, when an end is
+authored, hinted or shared by another link, or when neither face looks at a tier gap (the padding row of the outer sheet edge is not
+built, slice A).
 
 **A group box holds its own title from here on** (snack-theme ticket 157). The box a group's content asks for (`contentBox`, which
 `fitRegionGroup` fits) is at least as wide as the group's measured title plus the 8 px title inset on each side and one clearance step

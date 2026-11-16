@@ -737,6 +737,12 @@ publish route(base) (reuse routedBase or routedTrial; link labels, score)
   baseline's route keeps, and no hinted port faces away that did not already face away on the
   baseline (main's `awayBefore` exclusion, for test hints). A hinted link with fewer bends than on
   the baseline but more than promised is `short`: kept, and named by `SIDE_SHAPE_SHORT` (info).
+  Nor does the routed trial publish a finding of an error-severity gate (G1 to G9 as the scorer reads
+  them, `gateFindings(model, 'error')`, by gate, code and elements) that the routed baseline lacks: a
+  preference step never buys a bend with a gate failure (dense-16x9 review 06c-1: a trial kept with
+  two fewer bent links added three G6 findings next to two hinted chords). The judge checks this
+  last, after `gains`: the order changes only the reason, and only a trial that every other clause
+  keeps pays for the two scores.
 - `gains(r, rb, trial7e, kept7e)`: by the published path of **every** link (routed and overlay), the
   bent count falls, or it is equal and the total bends fall; and `straightChords(trial7e) >=
   straightChords(kept7e)`. Collateral is counted on every link, not only near the moved nodes. The
