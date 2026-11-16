@@ -1067,19 +1067,6 @@ describe('the rows keep off the chords of a fan family (architecture-2 ticket 40
     for (const segment of plannedSegments(planned!, { low: 248, high: 308 })) expect(strictOrClear(segment), JSON.stringify(segment)).toBe(true);
     expect(plan.height).toBeGreaterThanOrEqual(before.height);
   });
-
-  it('lowers the row past the whole band of a steep chord, deeper than four clearances (dense-16x9 ticket 04, slice 3, step 1)', () => {
-    // B runs left from its upper leg at x 100. The steep chord passes 1 px right of that corner at the first seat (263) and meets the leg's line
-    // 7 px below it. Its band is 11.5 x |chord| / |dx| = 81.3 px deep: four clearances (46 px) left the row on the chord, and G6 failed on it.
-    const steep = { from: { x: 110, y: 200 }, to: { x: 60, y: 550 }, owner: { kind: 'link' as const, id: 'F' } };
-    const plan = planGap([part('B', 0, 100, 0)], { ...frame(), slants: [steep] });
-    expect(plan.slantLimited).toBeUndefined();
-    const [planned] = plan.parts;
-    expect(planned!.rows[0]! - 263).toBeGreaterThan(4 * 11.5);
-    for (const segment of plannedSegments(planned!, { low: 248, high: 308 })) {
-      expect(strictCrossing(segment, steep) || segmentDistance(segment, steep) >= 11.5 - EPS, JSON.stringify(segment)).toBe(true);
-    }
-  });
 });
 
 describe('planGap value memo, read cache, and deterministic counters (ticket 01)', () => {

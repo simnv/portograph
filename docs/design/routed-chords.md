@@ -670,9 +670,7 @@ Status: decided by the user 2026-10-30 (rulings Q124 to Q126). Slice 1 as built.
   falls back (`refuseStemCrowded`, reason `stem`), and the crowding retry reads the same test at the end of 7f.
 - **Reservation.** The tier-gap plan reads the straight chords of a gap that the stem rule admits across a leg (`PlanFrame.slants`, `seatsRowsAgainst`: a fan or block member, or a chord-row member): a row moves down
   until its legs and run cross a chord strictly or keep the clearance (`clearOfSlants`), and the gap grows for it.
-  A row moves at most `SLANT_LOWERING_KEEPS` (4) run clearances, or past the whole band of the chord that gives the
-  candidate where that band is deeper (a steep chord: `2 x keep x length / |dx|`; dense-16x9 ticket 04, slice 3, step 1,
-  so the plan keeps the promise of the stem rule for one chord); where no candidate within that clears, it keeps its
+  A row moves at most `SLANT_LOWERING_KEEPS` (4) run clearances; where no candidate within that clears, it keeps its
   seat and `TIER_GAP_SLANT_LIMIT` names it. The rows read the chords where they stand when the plan runs; the growth
   the plan asks for then moves the band below and the chords' lower ends, which the rows do not read again (slice 2).
   The crowding retry of 7f refuses a member that a G6 reading of every reserved segment names (`crowds`,
