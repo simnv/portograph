@@ -6,6 +6,8 @@
 # a hub and the tier below, so the 28 links from the hubs to the seven groups of two nodes on tier 2 take a routed chord: no lane for them.
 # Before ADR-0026 the depth counted from `up-x1` and `up-x2` alone, and `mid-x3`, `mid-x4`, `leaf-x1` and `leaf-x2` took a rank below the hubs, and `up-x3` and `up-x4` stood beside them (four ranks).
 # Seven groups of two nodes stand on tier 2 and one stub group under each pair on tier 3. Every link asks for `route: straight`.
+# As on the sheet it stands for, some feeds link to both upper anchors (dense-16x9 ticket 03, slice C): `feed-a5` in Feeds A, and `feed-b5`
+# and `feed-b7` in Feeds B, inside the run of `up-b1`. Each leaf row then holds members with several links: both stand in two lines with compact hubs.
 # STAGED outside goldens/synthetic/ (the corpus gate would fail it): the sheet still fails G5 (port order, dense-16x9 ticket 05) and G6
 # (parallel clearance of the same-tier links between the hubs, ticket 06). It moves to goldens/synthetic/ when tickets 04, 05 and 06 make it clean.
 # Test-only input owned by dense-16x9 ticket 01; test/pipeline/two-pole-ranks.test.ts reads the ranks. Other dense-16x9 tickets measure on it.
@@ -111,6 +113,7 @@ links:
   - [feed-a7, up-a1, { route: straight }]
   - [feed-a8, up-a2, { route: straight }]
   - [feed-a9, up-a1, { route: straight }]
+  - [feed-a5, up-a2, { route: straight }]
   - [up-a1, mid-a1, { route: straight }]
   - [up-a2, mid-a2, { route: straight }]
   - [up-a3, mid-a3, { route: straight }]
@@ -144,6 +147,8 @@ links:
   - [feed-b11, up-b1, { route: straight }]
   - [feed-b12, up-b2, { route: straight }]
   - [feed-b13, up-b1, { route: straight }]
+  - [feed-b5, up-b2, { route: straight }]
+  - [feed-b7, up-b2, { route: straight }]
   - [up-b1, mid-b1, { route: straight }]
   - [up-b2, mid-b2, { route: straight }]
   - [up-b3, mid-b3, { route: straight }]
