@@ -1,0 +1,188 @@
+# Expected: the 2x7 block of a-two-by-seven-block-past-the-cap-stays-straight with a named port at each member end and an 8:1 aspect aim, so the
+# block stands at its floor (dense-16x9 ticket 04 slice 3, review 1, finding 1). A named port's pill moves the chord's end to the pill's outer
+# edge: the floor is read on the drawn chord, face point to face point (`memberChord`), and every straight member stands at 15 degrees or steeper.
+portograph: 2
+profile: network
+groups:
+  core:
+    tier: 0
+  pair1:
+    tier: 1
+  pair2:
+    tier: 1
+  pair3:
+    tier: 1
+  pair4:
+    tier: 1
+  pair5:
+    tier: 1
+  pair6:
+    tier: 1
+  pair7:
+    tier: 1
+nodes:
+  core-a:
+    group: core
+    class: router
+    ports:
+      - name: p0
+      - name: p1
+      - name: p2
+      - name: p3
+      - name: p4
+      - name: p5
+      - name: p6
+  core-b:
+    group: core
+    class: router
+    ports:
+      - name: p7
+      - name: p8
+      - name: p9
+      - name: p10
+      - name: p11
+      - name: p12
+      - name: p13
+  node1a:
+    group: pair1
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node1b:
+    group: pair1
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node2a:
+    group: pair2
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node2b:
+    group: pair2
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node3a:
+    group: pair3
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node3b:
+    group: pair3
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node4a:
+    group: pair4
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node4b:
+    group: pair4
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node5a:
+    group: pair5
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node5b:
+    group: pair5
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node6a:
+    group: pair6
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node6b:
+    group: pair6
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node7a:
+    group: pair7
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+  node7b:
+    group: pair7
+    class: router
+    size:
+      width: 300
+      height: 0
+    ports:
+      - name: up
+links:
+  - - core-a.p0
+    - node1a.up
+  - - core-a.p1
+    - node2a.up
+  - - core-a.p2
+    - node3a.up
+  - - core-a.p3
+    - node4a.up
+  - - core-a.p4
+    - node5a.up
+  - - core-a.p5
+    - node6a.up
+  - - core-a.p6
+    - node7a.up
+  - - core-b.p7
+    - node1b.up
+  - - core-b.p8
+    - node2b.up
+  - - core-b.p9
+    - node3b.up
+  - - core-b.p10
+    - node4b.up
+  - - core-b.p11
+    - node5b.up
+  - - core-b.p12
+    - node6b.up
+  - - core-b.p13
+    - node7b.up
+layout:
+  aspect: 8:1

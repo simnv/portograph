@@ -12,7 +12,7 @@ import { portId } from './skeleton-graph.js';
 import { gatherPairs } from './bundle-ends.js';
 import { bundleNeighboursOf } from './reservations.js';
 import { SolidBlockRefusal } from './placement-refusal.js';
-import { BLOCK_ANGLE, BLOCK_CAP, BLOCK_FLOOR_ANGLE } from './block-checks.js';
+import { BLOCK_ANGLE, BLOCK_CAP, BLOCK_FLOOR_ANGLE, memberChord } from './block-checks.js';
 const radians = BLOCK_ANGLE * Math.PI / 180, floorRadians = BLOCK_FLOOR_ANGLE * Math.PI / 180;
 
 /**
@@ -139,7 +139,7 @@ export function seatBlockOrder(model: LayoutModel): void {
 /**
  * The free groups that take their order from groups this step reordered (`moved`): on the sub-tier directly below each moved group, every free
  * group (no frame, no flank) with a link of any layer, bundle or kind to a node of a moved group. Its feed key is the mean centre x of the
- * far ends of all its links into the sub-tier above (the feed key of `orderByFeeds`, read on the group); the fed groups take their tier's
+ * far ends of all its links into the sub-tier above, read on the group (not `orderByFeeds`' key, which reads the row positions of the routed feeds of frame cells); the fed groups take their tier's
  * slots in key order (group id breaks a tie) and foreign slots stay. The groups it turns are moved in their turn, so a row fed from them
  * follows too: one pass per sub-tier, at most the sub-tier count (R4). Frame cells and child frames follow through `orderByFeeds`, which
  * runs after this step; a canton keeps its author order (D1).
@@ -233,6 +233,8 @@ export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutMo
       const upper = ends[0]!, lower = ends[1]!, a = upper.port.anchor!, b = lower.port.anchor!;
       above = upper.tier; below = lower.tier;
       const dx = Math.abs(b.x - a.x), dy = b.y - a.y;
+      // The drawn chord runs face point to face point (`memberChord`; a named port's pill shortens its rise): the floor is read on it (R1).
+      const drawn = memberChord(geometry, link), faceDy = drawn === undefined ? dy : Math.abs(drawn.to.y - drawn.from.y);
       const top = geometry.tierBands.find(band => band.tier === above)!.bounds!;
       const bottom = geometry.tierBands.find(band => band.tier === below)!.bounds!;
       const gap = bottom.y - top.y - top.height;
@@ -253,7 +255,7 @@ export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutMo
       // A member that no gap lets leave its box through the facing edge (an infinite entry) owes the angle only, and falls back alone (`chordBoxRefusal`).
       steep = Math.max(steep, Math.max(dx * Math.tan(radians), Number.isFinite(entry) ? entry : 0) - (dy - gap));
       // The floor is the angle alone: a member whose box entry asks more than the chosen gap falls back alone (`chordBoxRefusal`).
-      floor = Math.max(floor, dx * Math.tan(floorRadians) - (dy - gap));
+      floor = Math.max(floor, dx * Math.tan(floorRadians) - (faceDy - gap));
     }
     const originalTop = model.tierBands.find(band => band.tier === above)!.bounds!;
     const originalBottom = model.tierBands.find(band => band.tier === below)!.bounds!;

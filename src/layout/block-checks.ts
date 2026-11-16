@@ -1,4 +1,6 @@
 import { chordBoxRefusal } from './chord-boxes.js';
+import { chordEnds } from './overlay-paths.js';
+import type { Point } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { findPort } from './row-paths.js';
@@ -23,11 +25,22 @@ export const flatMember = (model: LayoutModel, link: LayoutLink): boolean =>
 
 export function flatMemberRefusal(model: LayoutModel, link: LayoutLink): 'edge' | 'frame' | 'floor' | undefined {
   if (!flatMember(model, link)) return undefined;
-  // The chord between the two port anchors, as the reservation measured it (`reserveBlockGaps`).
-  const [a, b] = Object.values(link.attachments!).map(ref => findPort(model, ref)?.anchor);
-  if (a === undefined || b === undefined) return 'edge';
+  // The chord as it is drawn, face point to face point (`memberChord`), as the floor reservation measured it (`reserveBlockGaps`; R1).
+  const chord = memberChord(model, link);
+  if (chord === undefined) return 'edge';
+  const { from: a, to: b } = chord;
   if (Math.abs(b.y - a.y) + EPS < Math.abs(b.x - a.x) * Math.tan(floorRadians)) return 'floor';
   return chordBoxRefusal(model, link, { from: a, to: b, owner: link.owner }, 0, true);
+}
+
+/**
+ * The chord a flat block member is drawn as: from the face point of one port to the face point of the other (`chordEnds`, the one end reader of
+ * a placement chord and of a routed straight path; the anchor, or the outer edge of a named port's pill). The floor reservation, the admission
+ * and the restore read this one segment (dense-16x9 ticket 04 slice 3, review 1, finding 1). Undefined where an end states no face.
+ */
+export function memberChord(model: LayoutModel, link: LayoutLink): { from: Point; to: Point } | undefined {
+  const ends = chordEnds(model, link);
+  return ends === undefined ? undefined : { from: { ...ends.head.face }, to: { ...ends.tail.face } };
 }
 
 /** Read the stored floor; do not choose a new cap or boundary mode at publication. */

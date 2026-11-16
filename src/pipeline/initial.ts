@@ -170,13 +170,14 @@ if (flat.length) {
     const saved = { kept, declinedSolidBlocks: env.declinedSolidBlocks, blockProbes: env.blockProbes, reruns: env.reruns, floor: first };
     env.flatBlockGaps = flat.map(record => ({ family: record.family, gap: record.chosen + (share.get(record.below) ?? 0) }));
     if (env.declinedSolidBlocks !== undefined) env.declinedSolidBlocks = new Map(env.declinedSolidBlocks);
-    const placedBefore = env.placements;
     let refused: string | undefined;
+    // Every placement of the trial, its retries included, is credited outside the cap as it starts (`env.exemptPlacing`), before `place`
+    // checks the cap: a command that spent its allowance before still has this trial (R4; review 1, finding 2).
+    env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
     try { await placeFirst(); } catch (error) {
-      if (!(staggerRefusal(error) || producerRefusal(error))) { env.gateRuns += env.placements - placedBefore; throw error; }
+      if (!(staggerRefusal(error) || producerRefusal(error))) throw error;
       refused = (error as Error).message;
-    }
-    env.gateRuns += env.placements - placedBefore;
+    } finally { env.exemptPlacing--; }
     const chosenBanded = refused === undefined ? await trial(first) : undefined, chosenBox = chosenBanded === undefined ? undefined : placedExtent(chosenBanded);
     const nearer = floorBox !== undefined && chosenBox !== undefined
       && aspectGap(chosenBox.width, chosenBox.height, aim) < aspectGap(floorBox.width, floorBox.height, aim) - ASPECT_EPS;

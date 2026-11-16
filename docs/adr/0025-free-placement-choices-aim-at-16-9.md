@@ -41,7 +41,7 @@ an earlier stage (the defect class of ticket 22: a choice made on a stale extent
 - Its 7f trial gives the placed extent W x H (`placedExtent`, the extent the stagger gate reads; no routing pass). The sheet wants H* = W / aim.
 - The flat gaps share max(0, H* - H) equally, each clamped to [its floor, its 34 degree demand]; a gap that reaches its demand passes its share on.
 - One more placement stands at the chosen gaps. It is kept only when its 7f trial stands nearer the aim than the floor placement (the width can
-  move); else the floor stands. A sheet already taller than the aim keeps the floor, the densest result; no sheet overshoots the aim.
+  move); else the floor stands. A sheet already taller than the aim keeps the floor, the densest result. The chosen placement is kept only when it stands nearer the aim than the floor placement; its width can move, so this bounds the result by the comparison, not by the aim itself.
 - Bound: one placement more per command for all flat blocks together, and two 7f trials. Its placements stand outside the placement cap, as the
   stagger gate trials do (`env.gateRuns`).
 

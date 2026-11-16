@@ -28,6 +28,11 @@ export interface Env {
    * their trunk re-runs. Like the probes, outside the placement cap.
    */
   gateRuns: number;
+  /**
+   * While above 0, a placement that starts is an exempt trial's (the flat-gap choice, `initial.ts`): `place` credits it to `gateRuns` before its
+   * cap check, every retry inside the trial included (dense-16x9 ticket 04 slice 3, review 1, finding 2). Absent or 0 otherwise.
+   */
+  exemptPlacing?: number;
   /** The stagger rows a round declined and placed again without (`keptStaggers` in `round.ts`, dense-16x9 ticket 22 review 3): each once at most in a command. */
   rebasedRows?: Set<string>;
   /** The placements of the far-end round (dense-16x9 ticket 07, at most `FAR_END_ORDER_RUNS`): its own count, outside the re-run budget and the placement cap, so the shared budget the other rounds spend does not starve the one round that reads their settled result. */

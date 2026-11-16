@@ -33,6 +33,8 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   // The original rounds have MAX_RERUNS + 1 placements; ticket 83 adds at most one failed probe per named block.
   // Every started run stays counted. The probes preserve the legacy optimisation allowance when a block is declined.
   env.placements++; attemptCounters.placeStarts++;
+  // A placement of an exempt trial stands outside the cap: it is credited as it starts, before the check (`env.exemptPlacing`).
+  if (env.exemptPlacing) env.gateRuns++;
   // The placements of the fan-wrap acceptance gate's comparison run are outside the cap as well (`env.gateRuns`).
   if (env.placements - env.blockProbes - env.gateRuns - env.farEndRuns > env.placeCap) throw new PlacementBudgetExceeded(env.placements - 1);
   const stepIn = <T>(stage: LayoutStage, run: () => T): T => { abort?.(stage); return env.step(stage, run); };
