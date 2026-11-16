@@ -114,8 +114,9 @@ const refuse = <O>(env: Env, s: State, round: Round<O>, o: O, r: Refusal): Refus
  * - A stagger row is kept only when the placement that follows from it can be kept. A stagger refusal that names a row of the trial (its own chord corridor,
  *   say, after the fan floors moved its hub ports) declines that row by name in the ledger (`staggerDeclined`: every later run reads it, none decides it
  *   again), and the baseline is placed once more, from the kept ledger, without it. That placement is returned: the round keeps it in place of its trial.
- *   Each row is declined once at most, so a sheet with N rows places at most N more times (R4); those placements stand outside the cap with the acceptance
- *   gate's (`env.gateRuns`), as its consequence.
+ *   **The bound (R4):** each row is declined once at most in a command (`env.rebasedRows`), and each placement here declines at least one row, so a
+ *   command whose gate kept N rows places here at most N times, in every round and trial together. Each of those placements stands outside the cap with
+ *   the acceptance gate's (`env.gateRuns`, credited before it starts), as its consequence; the round's visit it took is given back (`State.rebased`).
  * - Any other stagger or producer refusal at 7f refuses the trial (`at: 'bands'`), and the baseline stands. No routing pass.
  */
 async function keptStaggers<O>(env: Env, s: State, round: Round<O>, ledger: Reservations, trial7e: LayoutModel): Promise<Opened | Refusal | undefined> {
@@ -125,17 +126,22 @@ async function keptStaggers<O>(env: Env, s: State, round: Round<O>, ledger: Rese
     try { await env.bands(trial7e, true); return replaced ? { ledger, trial7e } : undefined; } catch (error) {
       if (!withdraws(round, error, 'bands')) throw error;
       const rows = trial7e.staggerRows.map(row => row.group);
-      const named = staggerRefusal(error) ? [...new Set(error.owners.flatMap(owner => owner.kind === 'group' && rows.includes(owner.id) ? [owner.id] : []))].sort() : [];
+      // A row this command declined once already (in a trial that was then dropped) is not declined again: the bound is one per row.
+      const named = staggerRefusal(error) ? [...new Set(error.owners.flatMap(owner => owner.kind === 'group' && rows.includes(owner.id) && !env.rebasedRows?.has(owner.id) ? [owner.id] : []))].sort() : [];
       if (!named.length) return { at: 'bands', why: (error as Error).message, error: error as Error };
+      for (const group of named) (env.rebasedRows ??= new Set()).add(group);
       ledger = addReservations(replaced ? ledger : s.kept, named.flatMap(group => declineStagger(group, (error as Error).message, round.id, env.placements)));
       replaced = true;
+      // The placement stands outside the cap: it is credited before it starts (`place` counts and checks the cap at once), and the credit is set to the
+      // placements it started (none when it did not run).
       const placedBefore = env.placements;
+      env.gateRuns++;
       try { trial7e = await env.timed(round.label, () => env.place(ledger, env.trialAbort)); } catch (again) {
-        env.gateRuns += env.placements - placedBefore;
+        env.gateRuns += env.placements - placedBefore - 1;
         if (!withdraws(round, again, 'place')) throw again;
         return { at: 'place', why: (again as Error).message, error: again as Error };
       }
-      env.gateRuns += env.placements - placedBefore;
+      env.gateRuns += env.placements - placedBefore - 1;
       if (trial7e.fallbackUsed && !(s.fallbackFrom ?? s.kept7e).fallbackUsed) return { at: 'fallback', why: `ELK fell back during the ${round.id} trial` };
     }
   }

@@ -16,7 +16,7 @@ import { trunkBuses, trunkHeads } from './trunk.js';
 import { portKey } from './sides-one.js';
 import { faceKey } from './turn-order.js';
 import { farEndFaceFailure } from './far-end-order.js';
-import { bundleNeighboursFailure, corridorSideFailure, floorFailure, groupOrderFailure, ofKind, rowOrderFailure, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
+import { bundleNeighboursFailure, corridorSideFailure, floorFailure, groupOrderFailure, ofKind, rowOrderFailure, staggerDeclineFailure, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
 
 type Found = { why: string; key?: string; link?: string };
 
@@ -100,10 +100,8 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
       return why === undefined ? undefined : { why: `the ${item.payload.side} face of ${item.payload.node}: ${why}` };
     }
     case 'staggerDeclined': {
-      // The row stands one line: no stagger record, and its arrangement is not a stagger.
-      const group = item.payload.group;
-      return (model.staggerRows ?? []).some(row => row.group === group) || model.groupArrangements?.[group]?.chosen === 'stagger'
-        ? { why: `the row ${group} stands on two lines although its stagger is declined` } : undefined;
+      const why = staggerDeclineFailure(item, model);
+      return why === undefined ? undefined : { why };
     }
     case 'trunkDeclined': {
       const keys = trunkHeads(model).map(head => trunkKey(trunkBuses(model, head)));

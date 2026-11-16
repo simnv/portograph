@@ -77,6 +77,10 @@ describe('a top row staggers when a lower tier sets the stage-5 width (dense-16x
     const ledger = declineStagger('leaves', 'a named refusal', 'fan', 1);
     expect(holds(ledger, lines).map(failure => failure.why)).toEqual(['the row leaves stands on two lines although its stagger is declined']);
     expect(holds(ledger, one)).toEqual([]);
+    // Restore reads the same predicate (review 3): a stored decline that the stored stagger contradicts does not restore.
+    const forged = { ...lines, reservations: [...(lines.reservations ?? []), ...ledger] };
+    expect(() => restoreFinalLayout(JSON.stringify(forged))).toThrow('does not hold: the row leaves stands on two lines although its stagger is declined');
+    expect(() => restoreFinalLayout(JSON.stringify({ ...one, reservations: [...(one.reservations ?? []), ...ledger] }))).not.toThrow();
   }, 180000);
 
   it('declines a row by name when its trial fails a publication check in 7f, and never throws', async () => {

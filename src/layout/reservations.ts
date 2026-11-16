@@ -440,6 +440,17 @@ export function floorFailure(item: Reservation, model: LayoutModel): string | un
  * of a frame entry the one named first stands left of the other on every sub-tier they share. The premise holds too: each feeding row
  * stands in the order the entry read (a row that turned would make the reserved order cross). Order only, so it holds at every stage after 4.
  */
+/**
+ * Why a declined stagger (`staggerDeclined`, dense-16x9 ticket 22 review 2) does not hold on `model`, or `undefined`: the row stands one line, with no
+ * stagger record and an arrangement that is not a stagger. The one predicate of the kind: the round check (`holds`) and restore (`validateReservations`) call it.
+ */
+export function staggerDeclineFailure(item: Reservation, model: LayoutModel): string | undefined {
+  if (item.kind !== 'staggerDeclined') return undefined;
+  const group = item.payload.group;
+  return (model.staggerRows ?? []).some(row => row.group === group) || model.groupArrangements?.[group]?.chosen === 'stagger'
+    ? `the row ${group} stands on two lines although its stagger is declined` : undefined;
+}
+
 export function rowOrderFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'rowOrder') return undefined;
   const payload = item.payload;
@@ -686,10 +697,11 @@ export function validateReservations(model: LayoutModel): void {
     if (!same(turn.all ? [] : turn.links, model.turnLinks ?? [])) throw new Error('The reserved turn links differ from the turn links of the model');
     if (!same(turn.except, model.turnExcept ?? []) || (model.turnExcept !== undefined && model.turnOrder !== true)) throw new Error('The reserved far-end faces differ from the far-end faces of the model');
   }
-  // A floor is a promise about the placed geometry, which later stages may only grow, and a feed order a promise no later stage may turn;
-  // the kinds below are checked on every restored stage.
+  // A floor is a promise about the placed geometry, which later stages may only grow, a feed order a promise no later stage may turn, and a
+  // declined stagger a row no later run stands on two lines; the kinds below are checked on every restored stage.
   for (const item of ledger) {
-    const why = floorFailure(item, model) ?? rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
+    const why = floorFailure(item, model) ?? rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model)
+      ?? staggerDeclineFailure(item, model);
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }
