@@ -7,7 +7,9 @@
 # Before ADR-0026 the depth counted from `up-x1` and `up-x2` alone, and `mid-x3`, `mid-x4`, `leaf-x1` and `leaf-x2` took a rank below the hubs, and `up-x3` and `up-x4` stood beside them (four ranks).
 # Seven groups of two nodes stand on tier 2 and one stub group under each pair on tier 3. Every link asks for `route: straight`.
 # As on the sheet it stands for, some feeds link to both upper anchors (dense-16x9 ticket 03, slice C): `feed-a5` in Feeds A, and `feed-b5`
-# and `feed-b7` in Feeds B, inside the run of `up-b1`. Each leaf row then holds members with several links: both stand in two lines with compact hubs.
+# and `feed-b7` in Feeds B, inside the run of `up-b1`. Each leaf row then holds members with several links. Two lines are PENDING: both rows
+# seat and pass the stage-5 proof, and stage 5 then keeps each on one line by its area objective ("two lines give 3201.48 x 1456.17 px, not
+# less area than 3201.48 x 1390.67 px"): the pair tier sets the stage-5 width, so the second line adds height and takes no width.
 # STAGED outside goldens/synthetic/ (the corpus gate would fail it): the sheet still fails G5 (port order, dense-16x9 ticket 05) and G6
 # (parallel clearance of the same-tier links between the hubs, ticket 06). It moves to goldens/synthetic/ when tickets 04, 05 and 06 make it clean.
 # Test-only input owned by dense-16x9 ticket 01; test/pipeline/two-pole-ranks.test.ts reads the ranks. Other dense-16x9 tickets measure on it.

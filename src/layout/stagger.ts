@@ -909,7 +909,8 @@ export function arrangeGroups(model: LayoutModel, declined: ReadonlyMap<string, 
       continue;
     }
     const proved = draft.staggerRows!.find(item => item.group === row.group)!;
-    accepted.push({ ...row, far: [...proved.far] }); base = draft;
+    // The proved draft decided the lines and the compact hubs (`[]` included); the retained row carries both, so no later seat decides them again (R1).
+    accepted.push({ ...row, far: [...proved.far], chordHubs: [...proved.chordHubs!] }); base = draft;
   }
   const arrangements: Record<string, GroupArrangement> = {};
   for (const id of ids) arrangements[id] = column.has(id) ? { chosen: 'column' } : accepted.some(row => row.group === id) ? { chosen: 'stagger' } : { chosen: 'row', reason: reasons.get(id)! };
