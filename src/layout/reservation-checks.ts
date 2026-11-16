@@ -16,36 +16,19 @@ import { trunkBuses, trunkHeads } from './trunk.js';
 import { portKey } from './sides-one.js';
 import { faceKey } from './turn-order.js';
 import { farEndFaceFailure } from './far-end-order.js';
-import { bundleNeighboursFailure, corridorSideFailure, floorFailure, groupOrderFailure, ofKind, rowOrderFailure, staggerDeclineFailure, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
+import { entryFailure, ofKind, RESERVATION_CHECKS, type Reservation, type ReservationFailure, type Reservations } from './reservations.js';
 
 type Found = { why: string; key?: string; link?: string };
 
 const portOf = (model: LayoutModel, ref: { node: string }, key: string) => model.nodes[ref.node]?.ports.find(port => portKey(port.ref) === key);
 
 function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
+  // The kinds with one per-entry predicate (`RESERVATION_CHECKS`, `round`): the same check restore makes.
+  if (RESERVATION_CHECKS[item.kind].at.round === true) {
+    const why = entryFailure(item, model, 'round');
+    return why === undefined ? undefined : { why, ...(item.kind === 'corridorSide' ? { link: item.payload.link } : {}) };
+  }
   switch (item.kind) {
-    case 'rowOrder': {
-      const why = rowOrderFailure(item, model);
-      return why === undefined ? undefined : { why };
-    }
-    case 'groupOrder': {
-      const why = groupOrderFailure(item, model);
-      return why === undefined ? undefined : { why };
-    }
-    case 'bundleNeighbours': {
-      const why = bundleNeighboursFailure(item, model);
-      return why === undefined ? undefined : { why };
-    }
-    case 'corridorSide': {
-      const why = corridorSideFailure(item, model);
-      return why === undefined ? undefined : { why, link: item.payload.link };
-    }
-    case 'pitchFloor':
-    case 'pairFloor':
-    case 'nodeFloor': {
-      const why = floorFailure(item, model);
-      return why === undefined ? undefined : { why };
-    }
     case 'spanChord': {
       const link = model.links.find(other => other.id === item.payload.link), id = item.payload.link;
       if (link === undefined) return { why: `${id} is missing`, link: id };
@@ -99,17 +82,21 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
       const why = farEndFaceFailure(model, { node: item.payload.node, side: item.payload.side, ports: [...item.payload.ports] });
       return why === undefined ? undefined : { why: `the ${item.payload.side} face of ${item.payload.node}: ${why}` };
     }
-    case 'staggerDeclined': {
-      const why = staggerDeclineFailure(item, model);
-      return why === undefined ? undefined : { why };
-    }
     case 'trunkDeclined': {
       const keys = trunkHeads(model).map(head => trunkKey(trunkBuses(model, head)));
       const scope = item.payload.scope;
       if ('all' in scope) return keys.length === 0 ? undefined : { why: 'a trunk join stands although every trunk is declined' };
       return keys.includes(scope.key) ? { why: `the trunk join ${scope.key} stands although it is declined` } : undefined;
     }
-    default: return undefined;
+    // Read through `RESERVATION_CHECKS` above, or transient (never stored).
+    case 'pitchFloor': case 'pairFloor': case 'nodeFloor': case 'staggerDeclined': case 'rowOrder': case 'groupOrder': case 'corridorSide': case 'bundleNeighbours':
+    case 'riserKeepOut': case 'trunkExtension': case 'laneSide': case 'sideAlignment': case 'spanCorridor': case 'groupExit': case 'labelRoom':
+      return undefined;
+    default: {
+      // Every kind has a case: a new kind does not compile until it says how the round checks it.
+      const unchecked: never = item;
+      throw new Error(`Reservation kind ${(unchecked as Reservation).kind} has no round check`);
+    }
   }
 }
 

@@ -120,7 +120,7 @@ const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', pairFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
+  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton', bundleNeighbours: 'skeleton',
 };
 
@@ -627,13 +627,56 @@ function validateLedgerShape(ledger: Reservations): void {
  * The restore of a model before the port topology freezes (stages up to `size`, and `skeleton`): the ledger is well formed, the floors hold
  * from stage 3 on, and the order reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
  */
+/**
+ * Where each reservation kind is checked (dense-16x9 ticket 22, review 4): one entry per kind, which typecheck enforces (a mapped type over
+ * `ReservationKind`: a new kind without an entry does not compile). `predicate` is the kind's one per-entry check, when it has one. `at` names the
+ * three readers: the round check (`holds` in `reservation-checks.ts`), restore of a frozen model (`validateReservations`) and restore of a model
+ * before the freeze (`validateEarlyReservations`). For each, `true` means the reader calls `predicate` on every entry of the kind, a function means
+ * it calls it on the models the function admits, and a string says how that reader reads the kind instead, or why the kind does not apply there.
+ */
+type ReaderCheck = true | ((model: LayoutModel) => boolean) | string;
+export interface KindCheck { readonly predicate?: (item: Reservation, model: LayoutModel) => string | undefined; readonly at: { readonly round: ReaderCheck; readonly final: ReaderCheck; readonly early: ReaderCheck } }
+const TRANSIENT = 'transient: it lives for one move check and is never stored (`validateLedgerShape` refuses it)';
+const ROUND_OWN = 'its own check in `holdsOne` (`reservation-checks.ts`), which reads the 7e geometry';
+const NOT_EARLY_YET = 'not compared before the freeze (open since before ticket 22; review 4 report)';
+const AFTER_FREEZE = 'active from stage 5 (`sides-two`): a model before the freeze carries none of what it reserves';
+const sized = (model: LayoutModel): boolean => model.stage === 'size' || model.stage === 'skeleton';
+const transientKind: KindCheck = { at: { round: TRANSIENT, final: TRANSIENT, early: TRANSIENT } };
+const everywhere = (predicate: NonNullable<KindCheck['predicate']>): KindCheck => ({ predicate, at: { round: true, final: true, early: true } });
+// A floor is active from stage 3 (`size`): a stage-3 or stage-4 model keeps its pitch, pair and node floors (dense-16x9 ticket 04 review).
+const floor: KindCheck = { predicate: (item, model) => floorFailure(item, model), at: { round: true, final: true, early: sized } };
+export const RESERVATION_CHECKS: { readonly [K in ReservationKind]: KindCheck } = {
+  pitchFloor: floor,
+  pairFloor: floor,
+  nodeFloor: floor,
+  sideFace: { at: { round: ROUND_OWN, final: 'compared as a whole with the side hints of the ports (`validateReservations`)', early: NOT_EARLY_YET } },
+  laneOwner: { at: { round: ROUND_OWN, final: 'compared as a whole with the lane hints of the ports (`validateReservations`)', early: NOT_EARLY_YET } },
+  course: { at: { round: ROUND_OWN, final: 'compared as a whole with the courses of the model (`validateReservations`)', early: NOT_EARLY_YET } },
+  spanChord: { at: { round: ROUND_OWN, final: 'compared as a whole with the frozen span hints (`validateReservations`)', early: NOT_EARLY_YET } },
+  turnOrder: { at: { round: ROUND_OWN, final: 'compared as a whole with the turn order of the model (`validateReservations`)', early: AFTER_FREEZE } },
+  farEndOrder: { at: { round: ROUND_OWN, final: 'compared as a whole with the far-end orders of the model (`validateReservations`)', early: AFTER_FREEZE } },
+  trunkDeclined: { at: { round: ROUND_OWN, final: 'compared with the declined trunk joins of the model (`validateReservations`)', early: NOT_EARLY_YET } },
+  // The keep-mode run copies the stagger rows into the resolved model (`place.ts`), so every stage of a run carries them (review 4).
+  staggerDeclined: everywhere((item, model) => staggerDeclineFailure(item, model)),
+  riserKeepOut: transientKind, trunkExtension: transientKind, laneSide: transientKind, sideAlignment: transientKind, spanCorridor: transientKind, groupExit: transientKind, labelRoom: transientKind,
+  rowOrder: everywhere((item, model) => rowOrderFailure(item, model)),
+  groupOrder: everywhere((item, model) => groupOrderFailure(item, model)),
+  corridorSide: everywhere((item, model) => corridorSideFailure(item, model)),
+  bundleNeighbours: everywhere((item, model) => bundleNeighboursFailure(item, model)),
+};
+/** Why `item` fails the per-entry check `reader` makes on `model` (`RESERVATION_CHECKS`), or `undefined`. */
+export function entryFailure(item: Reservation, model: LayoutModel, reader: keyof KindCheck['at']): string | undefined {
+  const check = RESERVATION_CHECKS[item.kind], at = check.at[reader];
+  if (typeof at === 'string' || (typeof at === 'function' && !at(model))) return undefined;
+  return check.predicate!(item, model);
+}
+
 export function validateEarlyReservations(model: LayoutModel): void {
   if (model.reservations === undefined) return;
   validateLedgerShape(model.reservations);
-  // A floor is active from stage 3 (`size`): a stage-3 or stage-4 model keeps its pitch, pair and node floors (dense-16x9 ticket 04 review).
-  const sized = model.stage === 'size' || model.stage === 'skeleton';
+  // Every kind the table checks per entry before the freeze (`RESERVATION_CHECKS`, `early`).
   for (const item of model.reservations) {
-    const why = (sized ? floorFailure(item, model) : undefined) ?? rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
+    const why = entryFailure(item, model, 'early');
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }
@@ -697,11 +740,9 @@ export function validateReservations(model: LayoutModel): void {
     if (!same(turn.all ? [] : turn.links, model.turnLinks ?? [])) throw new Error('The reserved turn links differ from the turn links of the model');
     if (!same(turn.except, model.turnExcept ?? []) || (model.turnExcept !== undefined && model.turnOrder !== true)) throw new Error('The reserved far-end faces differ from the far-end faces of the model');
   }
-  // A floor is a promise about the placed geometry, which later stages may only grow, a feed order a promise no later stage may turn, and a
-  // declined stagger a row no later run stands on two lines; the kinds below are checked on every restored stage.
+  // Every kind the table checks per entry on a frozen model (`RESERVATION_CHECKS`, `final`): the floors, the feed orders, the declined staggers.
   for (const item of ledger) {
-    const why = floorFailure(item, model) ?? rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model)
-      ?? staggerDeclineFailure(item, model);
+    const why = entryFailure(item, model, 'final');
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }
