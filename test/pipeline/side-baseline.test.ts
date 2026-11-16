@@ -223,7 +223,8 @@ describe('the batch (Section 19.8)', () => {
     const overlay = overlayOf(plain).id, neighbour = routedNeighbour(plain);
     const trial = bendTo(bendTo(plain, overlay, 0), neighbour, 1);
     const verdict = judgeTrial({ routedBase: plain, routedTrial: trial, kept7e: plain, trial7e: plain, hinted: new Map([[overlay, 0]]) });
-    expect(verdict.kept).toBe(true);
+    // Every bend clause keeps the trial; only the last clause refuses it, for the gate findings of the forged (diagonal) jog of the neighbour (review 06c-1).
+    expect(verdict.reason).toMatch(/^the routed trial has error-gate findings the baseline does not have/);
     const notes = trialNotes(plain, trial, verdict, [overlay]);
     expect(notes.map(item => item.code)).toEqual(['SIDE_HINT_BENDS_NEIGHBOUR']);
     expect(notes[0]!.owners).toEqual([{ kind: 'link', id: neighbour }]);
