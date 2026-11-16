@@ -142,6 +142,8 @@ const CANARY_SHEETS = [
   'goldens/real/avd-dual-dc-l3ls.yaml',
   'goldens/synthetic/drawio-bus-marks-stay-on-face.yaml',
   'goldens/synthetic/a-seated-column-leaves-a-corridor-open.yaml',
+  // Hits the row reading memo of the row-room guards (`rowRoomReading`, dense-16x9 ticket 21).
+  'goldens/synthetic/a-centre-replay-keeps-a-cross-group-label-window.yaml',
 ];
 
 function checkCachesCanary() {
