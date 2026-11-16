@@ -286,8 +286,12 @@ and not left for a later stage to discover.
    other along the row (one `right`, the other `left`) a free row therefore **keeps the two ends
    side by side**, `right`-facing end first (ticket 18, `bundle-neighbours.ts`): stage 4 decides
    which pairs the row keeps right after ELK's result is read, seats the order, and writes the
-   ledger entry `bundleNeighbours`; `reseatRow` refuses an order that splits a pair, and the stage-4
-   check and every restore read the entry. A node ends at most one pair on each side and a chain
+   ledger entry `bundleNeighbours`; `reseatRow` refuses an order that splits a pair, the solid-block
+   order seats the recorded pair with its declaration tie (`gatherPairs`), and the stage-4 check and
+   every restore, the stages before the freeze included, read the entry by one predicate
+   (`bundleNeighboursFailure`): each pair is two nodes of the group joined by an enclosed lateral
+   bundle that leaves `left` to the right, the pairs form chains, the row order holds each pair and
+   the boxes agree with it. A node ends at most one pair on each side and a chain
    never closes a ring, so a node with enclosed bundles to three peers keeps what it can (the
    heaviest bundle first, then the node names; never the input order) and the bundle left out keeps
    the typed refusal. A canton, a rank cell, a flanked row, a grid and a bar are not free rows: a
