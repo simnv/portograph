@@ -2,6 +2,8 @@
  * Stages 1 to 7e: one placement run. Its one input is the reservation ledger; its one assertion is the placement budget.
  */
 import type { Course, LayoutModel, LayoutStage, Side } from '../model/index.js';
+import type { PairPitch } from '../model/layout.js';
+import { addPairPitches } from '../layout/pair-pitch.js';
 import { resolve } from '../resolve/index.js';
 import { portKey, sidesOne } from '../layout/sides-one.js';
 import { movesPort } from '../layout/course-rows.js';
@@ -16,7 +18,7 @@ import { bars } from '../layout/bars.js';
 import { bundles } from '../layout/bundles.js';
 import { elkDeadlineMs } from '../layout/elk-worker.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
-import { farEndOrderOf, pitchFloorsOf, nodeFloorsOf, coursesOf, declinedTrunksOf, laneKeysOf, sideHintsOf, spansOf, turnOf, type Reservations } from '../layout/reservations.js';
+import { farEndOrderOf, pairFloorsOf, pitchFloorsOf, nodeFloorsOf, coursesOf, declinedTrunksOf, laneKeysOf, sideHintsOf, spansOf, turnOf, type Reservations } from '../layout/reservations.js';
 import { countStage, ledgerOn, ledgerSnapshot, startPlacementEntry, type LedgerSnapshot } from '../layout/attempt-ledger.js';
 import { CommandDeadlineError } from './budget.js';
 import { PlacementBudgetExceeded } from './limits.js';
@@ -71,6 +73,10 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
     }
   }
   for (const [id, pitch] of pitchFloorsOf(reservations)) resolved.nodes[id]!.sidePitch = { ...resolved.nodes[id]!.sidePitch, ...pitch };
+  // The neighbour-pair floors of the fans (dense-16x9 ticket 04): sizing reads their sum, the installers each pair.
+  for (const [id, faces] of pairFloorsOf(reservations)) for (const [side, entries] of Object.entries(faces) as ['top' | 'bottom', PairPitch[]][]) {
+    addPairPitches(resolved.nodes[id]!, side, entries);
+  }
   // A hinted node keeps the size the measured run gave it, so the skeleton input is the same (a floor on `size`, not on `sizeFloor`, which alignment reads).
   const nodeFloors = nodeFloorsOf(reservations);
   for (const [id, size] of nodeFloors) resolved.nodes[id]!.size = { ...size };

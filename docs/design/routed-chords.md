@@ -198,6 +198,10 @@ provider node that takes chords from three locations on one top face needs this.
 *As built (ticket 102).* Nothing beyond ticket 99: `measureFans` reads `routedChordCandidate`, `fanRoundHolds` drops a fan re-run when the number of held chords of both kinds falls (`FAN_ROUND_DROPPED`, info, names the lost and gained chords), unless the kept placement has a chord pair under the 10 px clearance that the re-run clears and no frame chord is lost. A face is measured with `FAN_SLACK` (4 px) of drift room, so three
 cross-frame chords that hold at the 12 px base pitch can still put a 16 px floor on their face; the fixture `a-provider-face-spreads-for-three-routed-chords` shows that. A face whose neighbouring chords
 need more than 60 px is declined (`FAN_SPREAD_DECLINED`); the unit test forges the shallow geometry, and no layout input reaches it.
+Since dense-16x9 ticket 04 (slice 1) the cap is per chord pair (a pair over it is declined alone) and the floors are stored as
+neighbour-pair pitches (`LayoutNode.pairPitch`); the face holds their sum. Slice 1 still writes the largest need of a face on every
+pair of its ports, so a port order that a later round changes keeps it too: exact floors per pair leave no room for the drift of 7f, one crowded direct member then refuses its family through
+the leg cascade, and five corpus sheets lost straight links. Slice 2 changes that with the isolated fallback.
 
 After the freeze, `chordsHold` and `blockedChords` also read foreign frame and canton boxes and
 the facing-edge rule for a cross-frame chord. `chordsHold` moves nodes only today, so it derives

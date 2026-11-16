@@ -551,7 +551,7 @@ raise it later and never lower it.
 
 ## Stage 5 — sides, phase two; resize; repack
 
-Ticket 83 reserves block-face pitch before sizing and rejects a provably over-cap span at the end of stage 5, before region placement. It records declaration ties in the stage-4 row draft, preserving foreign-group slots and carrying the parents' geometric order through the terminal follower tier. Terminal follower rows are then fitted jointly on a draft: seats that add or deepen a sibling/frame spacing violation all decline by name before any node moves. Each refusal restores that row and rechecks the remaining proposals; the loop is bounded by the number of candidate rows.
+Ticket 83 reserves the block pitch before sizing (since dense-16x9 ticket 04 a neighbour-pair pitch of each member port, `LayoutNode.pairPitch`; sizing, the alignment allowance and the trim read the sum of the pair pitches of a face, `pairExcess`) and rejects a provably over-cap span at the end of stage 5, before region placement. It records declaration ties in the stage-4 row draft, preserving foreign-group slots and carrying the parents' geometric order through the terminal follower tier. Terminal follower rows are then fitted jointly on a draft: seats that add or deepen a sibling/frame spacing violation all decline by name before any node moves. Each refusal restores that row and rechecks the remaining proposals; the loop is bounded by the number of candidate rows.
 
 Immediately after the skeleton, before anything is pinned. Undecided same-tier directions take
 `left`/`right` from the in-row order — except inside a **grid**, where a peer may stand above or

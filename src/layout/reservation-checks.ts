@@ -41,6 +41,7 @@ function holdsOne(item: Reservation, model: LayoutModel): Found | undefined {
       return why === undefined ? undefined : { why, link: item.payload.link };
     }
     case 'pitchFloor':
+    case 'pairFloor':
     case 'nodeFloor': {
       const why = floorFailure(item, model);
       return why === undefined ? undefined : { why };

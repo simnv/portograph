@@ -1,0 +1,31 @@
+# Dense-16x9 ticket 04, slice 1: a face holds the sum of its neighbour-pair pitches.
+# Expected: core one carries two members of a complete solid block (to site one and site two) and four plain uplinks
+# (to the four lab nodes) on its bottom face. A member port keeps the 34-degree block pitch (21 px) from both neighbours
+# and from the body end; two uplink ports side by side keep the base pitch (12 px). The capacity of the face is the sum
+# of its pair pitches in any order of its ports: four block gaps and one base gap at most (9 px less than a block pitch
+# on all five gaps), and every block member is one straight segment.
+portograph: 2
+profile: network
+layout: { autoArrange: false }
+groups:
+  core: { tier: 0 }
+  site: { tier: 1, label: Sites }
+  lab: { tier: 1, label: Lab }
+nodes:
+  core-1: { group: core, class: router }
+  core-2: { group: core, class: router }
+  site-1: { group: site, class: router }
+  site-2: { group: site, class: router }
+  lab-1: { group: lab, class: router }
+  lab-2: { group: lab, class: router }
+  lab-3: { group: lab, class: router }
+  lab-4: { group: lab, class: router }
+links:
+  - { from: core-1, to: site-1 }
+  - { from: core-1, to: site-2 }
+  - { from: core-2, to: site-1 }
+  - { from: core-2, to: site-2 }
+  - { from: core-1, to: lab-1, class: uplink }
+  - { from: core-1, to: lab-2, class: uplink }
+  - { from: core-1, to: lab-3, class: uplink }
+  - { from: core-1, to: lab-4, class: uplink }

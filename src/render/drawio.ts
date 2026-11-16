@@ -73,6 +73,7 @@ import { legendKeyRadius, themeById } from '../profiles/network/themes.js';
 import type { Theme } from '../profiles/network/themes.js';
 import { effectiveLayer, validate } from '../score/model.js';
 import { visibleEnd } from '../layout/path-end.js';
+import { endPitch } from '../layout/pair-pitch.js';
 import { FONT_FAMILY, measureText } from '../text/index.js';
 import { ANONYMOUS_DOT_SIZE, CORNER_RADII, DEFAULT_STROKE_WIDTHS, OVERLAY_ENDPOINT_RADIUS, linkStrokeWidth } from '../theme/geometry.js';
 import { boxesBehind, groupShapes } from './frame-order.js';
@@ -995,7 +996,8 @@ export function drawio(layout: LayoutModel, options: DrawioOptions = {}): string
     // hand-drawn connector then lands where the pipeline would have put one, instead of wherever
     // the pointer was. See `sideGrid` for why the phase is the anchors and not the corner.
     for (const side of ['top', 'bottom', 'left', 'right'] as const) {
-      const pitch = node.sidePitch?.[side];
+      // A face with neighbour-pair pitches (dense-16x9 ticket 04) offers its slots at the largest of them, the pitch its end ports keep.
+      const pitch = node.sidePitch?.[side] === undefined ? undefined : endPitch(node, side);
       if (pitch === undefined) continue;
       const horizontal = side === 'top' || side === 'bottom';
       const along = horizontal ? node.bounds!.width : node.bounds!.height;

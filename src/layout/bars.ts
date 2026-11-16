@@ -11,6 +11,7 @@ import { withStageMutation } from './mutation.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { BAR_PADDING, barLabelFloor } from './bar-width.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
+import { neighbourPitch } from './pair-pitch.js';
 
 const MIN_STEM = 15;
 const FOREIGN_NODE_CLEARANCE = 10;
@@ -107,7 +108,8 @@ function slotsForNode(model: LayoutModel, node: LayoutNode, links: BarLink[]): P
   }] : []);
   let prior: PortSlot | undefined;
   for (const item of authorConstrainedOrder(items)) {
-    const gap = prior !== undefined && prior.port.side === item.port.side ? Math.max(prior.pitch, item.pitch) : 12;
+    // Two ports of one face keep their neighbour pitch (`neighbourPitch`: the face pitch, or a pair pitch above it).
+    const gap = prior !== undefined && prior.port.side === item.port.side ? Math.max(prior.pitch, item.pitch, neighbourPitch(node, item.port.side!, prior.port.ref, item.port.ref)) : 12;
     item.slot = prior === undefined ? item.desired : Math.max(item.desired, prior.slot + gap);
     if (item.links.length && item.slot > item.desired + PLACEMENT_EPS) {
       const owners = item.links.map(link => link.link.owner);

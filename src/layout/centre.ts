@@ -1,5 +1,6 @@
 import { liftedGroups } from './lift.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
+import { faceExcess, facePairPitches } from './pair-pitch.js';
 import type { AlignedExtentEdge, AlignmentDeclineReason, Diagnostic, LayoutGroup, LayoutLink, LayoutModel, LayoutNode, LayoutPort, LayoutStage, ParentSpread } from '../model/layout.js';
 import type { Rect, Side } from '../model/geometry.js';
 import { portAnchor } from '../geometry/index.js';
@@ -114,13 +115,24 @@ function overlayStops(model: LayoutModel, node: LayoutNode): OverlayStops {
  * and the aligned extent (`alignedExtentOf`) read it.
  */
 function alignedEdges(node: LayoutNode, side: Side, index: number, x: number, count: number, pitch: number): { low: number; high: number } {
-  const inset = portEndInsets(node, side, pitch);
-  return { low: x - index * pitch - inset.low, high: x + (count - 1 - index) * pitch + inset.high };
+  const inset = portEndInsets(node, side, pitch), excess = engineExcess(node, side, pitch);
+  const before = excess[index] ?? 0, after = (excess[count - 1] ?? 0) - before;
+  return { low: x - index * pitch - before - inset.low, high: x + (count - 1 - index) * pitch + after + inset.high };
 }
+/**
+ * The running pair-pitch excess of a face in engine order (`faceExcess`, dense-16x9 ticket 04), or none on a face no pair pitch binds: the
+ * alignment adds it to its `index * pitch` arithmetic, which stays exact on a face of one pitch.
+ */
+function engineExcess(node: LayoutNode, side: Side, pitch = node.sidePitch![side]!): number[] {
+  if (!facePairPitches(node, side).length) return [];
+  return faceExcess(node, side, node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!), pitch);
+}
+/** The distance from the port at engine index `i` to the one at `j` of a face standing at its pitch and its pair pitches (`engineExcess`). */
+const stepSpan = (excess: readonly number[], pitch: number, i: number, j: number): number => (j - i) * pitch + ((excess[j] ?? 0) - (excess[i] ?? 0));
 /** The keep decision of `alignSide` without its mutation: the targets a side keeps, none when the side is declined as a whole (architecture ticket 12). */
 function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void = () => {}, judgeCap = true): { index: number; x: number; key: string }[] {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
-  const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [];
+  const pitch = node.sidePitch![side]!, kept: { index: number; x: number; key: string }[] = [], excess = engineExcess(node, side, pitch);
   const box = node.bounds!, oldRight = right(box);
   if (box.x < limit.low - EPS || oldRight > limit.high + EPS) return [];
   // The default bound (ticket 29): no target whose reach leaves the body wider than its allowance. With `layout.moveBeforeGrow` the cap of the
@@ -146,7 +158,7 @@ function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: 
         continue;
       }
     }
-    if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) kept.push({ index, x, key });
+    if (x !== undefined && (!last || x - last.x >= stepSpan(excess, pitch, last.index, index))) kept.push({ index, x, key });
   }
   if (!kept.length) return [];
   if (!seats) {
@@ -174,11 +186,20 @@ function keptTargets(model: LayoutModel, node: LayoutNode, side: Side, targets: 
 function alignSide(model: LayoutModel, node: LayoutNode, side: Side, targets: Map<string, number>, limit: WideningLimit, stops: OverlayStops, stopped: (link: string) => void,
   avoid: { xs: number[]; keep: number; routed: Set<string> } = { xs: [], keep: 0, routed: new Set() }, held: ReadonlyMap<string, (x: number) => boolean> = new Map(), judgeCap = true): Set<string> {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
-  const pitch = node.sidePitch![side]!;
+  const pitch = node.sidePitch![side]!, excess = engineExcess(node, side, pitch);
   const box = node.bounds!, oldRight = right(box);
   const kept = keptTargets(model, node, side, targets, limit, stops, stopped, judgeCap);
   if (!kept.length) return new Set();
   const first = kept[0]!, last = kept[kept.length - 1]!;
+  /** Where the port at `index` stands: spread between two kept targets in proportion to its pitches, else at its pitches beside the nearest one. */
+  const seatOf = (index: number): number => {
+    const before = [...kept].reverse().find(target => target.index <= index), after = kept.find(target => target.index >= index);
+    if (before && after && before.index !== after.index) {
+      return excess.length ? before.x + stepSpan(excess, pitch, before.index, index) * (after.x - before.x) / stepSpan(excess, pitch, before.index, after.index)
+        : before.x + (index - before.index) * (after.x - before.x) / (after.index - before.index);
+    }
+    return before ? before.x + stepSpan(excess, pitch, before.index, index) : first.x - stepSpan(excess, pitch, index, first.index);
+  };
   // The width the alignment needs is what each edge moved outward, added to the width the node
   // already has. `Math.max(oldRight, grown) - box.x` states the same thing through two absolute
   // edges, and a rectangle recovered through an edge it was not stored with does not come back:
@@ -191,22 +212,14 @@ function alignSide(model: LayoutModel, node: LayoutNode, side: Side, targets: Ma
   // consumer reads that edge, and the last kept port sits 10 + pitch / 2 inside it.
   // The riser keep-out (mesh-bus.md, section 11.5): an alignment that would put a port of the facing edge of a member row within `k` of the riser is declined.
   if (avoid.xs.length) {
-    const landing = ports.map((_, index) => {
-      const before = [...kept].reverse().find(target => target.index <= index), after = kept.find(target => target.index >= index);
-      return before && after && before.index !== after.index ? before.x + (index - before.index) * (after.x - before.x) / (after.index - before.index)
-        : before ? before.x + (index - before.index) * pitch : first.x - (first.index - index) * pitch;
-    });
+    const landing = ports.map((_, index) => seatOf(index));
     if (landing.some((x, index) => avoid.routed.has(portId(ports[index]!.ref)) && avoid.xs.some(riser => Math.abs(x - riser) < avoid.keep))) return new Set();
   }
   // A port of a held chord that is not itself an alignment target is packed against the kept ones, and the chord follows it. The chord was decided
   // at the old x; where the new one lays it across the lane of another link, `validateLanes` refuses the fixed path at publication. The side is declined
   // instead, like the riser case above; stage 8 routes the feeds that lose their alignment.
   if (held.size) {
-    const seats = ports.map((_, index) => {
-      const before = [...kept].reverse().find(target => target.index <= index), after = kept.find(target => target.index >= index);
-      return before && after && before.index !== after.index ? before.x + (index - before.index) * (after.x - before.x) / (after.index - before.index)
-        : before ? before.x + (index - before.index) * pitch : first.x - (first.index - index) * pitch;
-    });
+    const seats = ports.map((_, index) => seatOf(index));
     if (seats.some((x, index) => !kept.some(target => target.index === index) && Math.abs(x - ports[index]!.anchor!.x) > EPS
       && held.get(portId(ports[index]!.ref))?.(x) === false)) return new Set();
   }
@@ -218,12 +231,7 @@ function alignSide(model: LayoutModel, node: LayoutNode, side: Side, targets: Ma
     if (port.side === 'left') port.anchor!.x = box.x;
     if (port.side === 'right') port.anchor!.x = right(box);
   }
-  ports.forEach((port, index) => {
-    const before = [...kept].reverse().find(target => target.index <= index), after = kept.find(target => target.index >= index);
-    const x = before && after && before.index !== after.index ? before.x + (index - before.index) * (after.x - before.x) / (after.index - before.index)
-      : before ? before.x + (index - before.index) * pitch : first.x - (first.index - index) * pitch;
-    port.anchor = portAnchor(box, side, x - box.x);
-  });
+  ports.forEach((port, index) => { port.anchor = portAnchor(box, side, seatOf(index) - box.x); });
   return new Set(kept.map(target => target.key));
 }
 /**
@@ -291,6 +299,7 @@ function giveBackGrowth(model: LayoutModel, node: LayoutNode, recorded: number, 
 export function seatCandidates(node: LayoutNode, targets: readonly SeatTarget[], bounds: SeatBounds, movable: boolean, cap: SeatCap, capped: SeatCandidate[] = []): SeatCandidate[] {
   const box = node.bounds!, x0 = box.x, w0 = box.width, result: SeatCandidate[] = [];
   const counts = { top: node.ports.filter(port => port.side === 'top').length, bottom: node.ports.filter(port => port.side === 'bottom').length };
+  const excesses = { top: node.sidePitch?.top === undefined ? [] : engineExcess(node, 'top'), bottom: node.sidePitch?.bottom === undefined ? [] : engineExcess(node, 'bottom') };
   const low = Math.max(bounds.siblings.low, bounds.window.low, bounds.stops.low), high = Math.min(bounds.siblings.high, bounds.window.high, bounds.stops.high);
   // A body that becomes its interval grows: the siblings and the overlay walls bound it, as they bound a growth in place, and the group box grows with it.
   const growLow = Math.max(bounds.siblings.low, bounds.stops.low), growHigh = Math.min(bounds.siblings.high, bounds.stops.high);
@@ -300,8 +309,8 @@ export function seatCandidates(node: LayoutNode, targets: readonly SeatTarget[],
     const last: Partial<Record<'top' | 'bottom', SeatTarget>> = {};
     for (let j = i; j < targets.length; j++) {
       const target = targets[j]!, facePitch = node.sidePitch![target.side]!, before = last[target.side];
-      // A face keeps its engine order at its pitch; a window that breaks it breaks every wider window too.
-      if (before !== undefined && !(target.index > before.index && target.x - before.x >= (target.index - before.index) * facePitch)) break;
+      // A face keeps its engine order at its pitch and its pair pitches; a window that breaks it breaks every wider window too.
+      if (before !== undefined && !(target.index > before.index && target.x - before.x >= stepSpan(excesses[target.side], facePitch, before.index, target.index))) break;
       last[target.side] = target;
       const edges = alignedEdges(node, target.side, target.index, target.x, counts[target.side], facePitch);
       edgeLow = Math.min(edgeLow, edges.low); edgeHigh = Math.max(edgeHigh, edges.high);
@@ -673,10 +682,11 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
 /** How many targets of a face stand in engine order at the face's pitch: the in-order keep of `keptTargets` without its limits, cap or stops. */
 function inOrderTargets(node: LayoutNode, side: Side, targets: ReadonlyMap<string, number>): number {
   const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!), pitch = node.sidePitch![side]!;
+  const excess = engineExcess(node, side, pitch);
   let last: { index: number; x: number } | undefined, count = 0;
   for (const [index, port] of ports.entries()) {
     const x = targets.get(portId(port.ref));
-    if (x !== undefined && (!last || x - last.x >= (index - last.index) * pitch)) { last = { index, x }; count++; }
+    if (x !== undefined && (!last || x - last.x >= stepSpan(excess, pitch, last.index, index))) { last = { index, x }; count++; }
   }
   return count;
 }
@@ -1224,9 +1234,11 @@ function verticalTally(model: LayoutModel, group: LayoutGroup, wanted: ReadonlyM
     const node = model.nodes[id]!;
     for (const side of ['top', 'bottom'] as const) {
       const ports = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
+      if (ports.length < 2) continue;
+      const pitch = node.sidePitch![side]!, excess = engineExcess(node, side, pitch);
       for (let i = 0; i < ports.length; i++) for (let j = i + 1; j < ports.length; j++) {
         const one = portId(ports[i]!.ref), two = portId(ports[j]!.ref), x = wanted.get(one), y = wanted.get(two);
-        if (x !== undefined && y !== undefined && x > y - (j - i) * node.sidePitch![side]! && (seats.get(one)?.transit || seats.get(two)?.transit)) inverted.add(`${id}:${side}`);
+        if (x !== undefined && y !== undefined && x > y - stepSpan(excess, pitch, i, j) && (seats.get(one)?.transit || seats.get(two)?.transit)) inverted.add(`${id}:${side}`);
       }
     }
   }

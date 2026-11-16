@@ -15,6 +15,7 @@ import { gridChains } from './grid.js';
 import { BUNDLE_EDGE_EPS, PLACEMENT_EPS, SIGN_EPS } from './tolerance.js';
 import { sidePillBodyReach } from './pill-reach.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
+import { faceExcess, neighbourPitch, runPitches } from './pair-pitch.js';
 
 export const MEMBER_GAP = 16;
 export const MIN_STEM = 15;
@@ -584,6 +585,21 @@ export function prepareBundleGeometry(model: LayoutModel): void {
       && !model.barDrops.some(drop => bundle.members.includes(drop.link) && drop.barCross.length);
     const spacing = Math.max(q * (inverted || freeBarStar ? 2 : 1), ...list.flatMap(m => [model.nodes[m.a.ref.node]!.sidePitch![m.a.side!]!, model.nodes[m.b.ref.node]!.sidePitch![m.b.side!]!]));
     for (const item of list) for (const p of [item.a, item.b]) model.nodes[p.ref.node]!.sidePitch![p.side!] = spacing;
+    // The members stand in the order of each end, and the step between members k - 1 and k is the larger pair pitch of the two ends at that step
+    // (dense-16x9 ticket 04, review 2): both ends keep one offset per member, so the tracks stay parallel. Only the pairs of the bundle are read
+    // (`runPitches`); a pair pitch of a member with a port outside the bundle, or with a port that has left the face, does not raise the face
+    // pitch, which stays the scalar `spacing`. `extra[k]` is the running excess over `k * spacing`: all zero where no pair pitch binds a step,
+    // so the arithmetic of the scalar pitch stays exact there.
+    const orderAt = (end: 'a' | 'b'): Member[] => {
+      const far = end === 'a' ? 'b' : 'a';
+      return [...list].sort((a, b) => a[end].engineOrder! - b[end].engineOrder! || a[far].engineOrder! - b[far].engineOrder! || a.link.sourceIndex - b.link.sourceIndex);
+    };
+    const steps = (end: 'a' | 'b'): number[] => { const ordered = orderAt(end), at = ordered[0]![end]; return runPitches(model.nodes[at.ref.node]!, at.side!, ordered.map(m => m[end].ref), spacing); };
+    const own = { a: steps('a'), b: steps('b') };
+    const extra = [0];
+    own.a.forEach((step, index) => extra.push(extra[index]! + Math.max(step, own.b[index]!) - spacing));
+    // What the steps of the bundle add at one end beyond the neighbour pitches of that face, which `faceExcess` counts already.
+    const beyond = (end: 'a' | 'b'): number => own[end].reduce((sum, step, index) => sum + Math.max(step, own[end === 'a' ? 'b' : 'a'][index]!) - step, 0);
     // Ports outside every bundle that stage 7b seated before this block keep their place before it
     // (ticket 09), so the block starts after them rather than at the node's edge.
     const inAnyBundle = new Set(model.links.filter(l => l.bundle).flatMap(l => [portId(l.attachments!.from), portId(l.attachments!.to)]));
@@ -593,13 +609,18 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     };
     const lead = new Map<string, number>(list.flatMap(m => [m.a, m.b]).map(p => [p.ref.node, leading(p)] as const));
     const sideOf = (id: string): Side => list.flatMap(m => [m.a, m.b]).find(p => p.ref.node === id)!.side!;
-    const floorOf = (id: string): number => model.nodes[id]!.bounds![tangent] + portEndInsets(model.nodes[id]!, sideOf(id), spacing).low + (lead.get(id) ?? 0) * spacing;
+    // The running pair-pitch excess of the face in engine order (`faceExcess`, dense-16x9 ticket 04): the room the plan reserves is the room
+    // the installer below takes, pair by pair; all zero on a face no pair pitch binds.
+    const excessOf = (id: string): number[] => {
+      const node = model.nodes[id]!, side = sideOf(id);
+      return faceExcess(node, side, node.ports.filter(p => p.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!), spacing);
+    };
+    const floorOf = (id: string): number => model.nodes[id]!.bounds![tangent] + portEndInsets(model.nodes[id]!, sideOf(id), spacing).low + (lead.get(id) ?? 0) * spacing + (excessOf(id)[lead.get(id) ?? 0] ?? 0);
     const floors = bundle.nodes.map(floorOf), commonStart = Math.max(lower ?? -Infinity, ...floors);
     // The ends that did not reach the common start: a limit left the block bent at their own floor.
     const bent = new Set<string>();
     for (const end of ['a', 'b'] as const) {
-      const far = end === 'a' ? 'b' : 'a';
-      const ordered = [...list].sort((a, b) => a[end].engineOrder! - b[end].engineOrder! || a[far].engineOrder! - b[far].engineOrder! || a.link.sourceIndex - b.link.sourceIndex);
+      const ordered = orderAt(end);
       const ports = [...new Set(ordered.map(m => m[end]))];
       const node = model.nodes[ports[0]!.ref.node]!, dim = tangent === 'x' ? 'width' : 'height';
       const inset = portEndInsets(node, ports[0]!.side!, spacing);
@@ -628,7 +649,8 @@ export function prepareBundleGeometry(model: LayoutModel): void {
         // Alignment is optional; capacity and immutable lanes are not. Leave a bundle bent when
         // projecting a distant peer's x would grow this node across a sibling or reserved lane.
         const sideCount = node.ports.filter(port => port.side === ports[0]!.side).length - (lead.get(node.id) ?? 0);
-        if (start + (sideCount - 1) * spacing + inset.high > limit) {
+        const excess = excessOf(node.id), rest = (excess.at(-1) ?? 0) - (excess[lead.get(node.id) ?? 0] ?? 0) + beyond(end);
+        if (start + (sideCount - 1) * spacing + rest + inset.high > limit) {
           start = floorOf(node.id);
           // The seat owns the body (ADR-0027): a block that cannot reach its peers aligns nothing by moving, so on a face where a seat keeps a
           // port it stays where it stands, and the free ports before it keep the feeds the seat stood them on. Only a start with the room
@@ -636,12 +658,12 @@ export function prepareBundleGeometry(model: LayoutModel): void {
           const seat = model.alignmentSeats?.[node.id];
           const held = Math.min(...ports.map(coordinate));
           if (seat !== undefined && node.ports.some(port => port.side === ports[0]!.side && seat.ports.includes(portId(port.ref)))
-            && held >= start - PLACEMENT_EPS && held + (sideCount - 1) * spacing + inset.high <= limit + PLACEMENT_EPS) start = held;
+            && held >= start - PLACEMENT_EPS && held + (sideCount - 1) * spacing + rest + inset.high <= limit + PLACEMENT_EPS) start = held;
           if (start < commonStart - PLACEMENT_EPS) bent.add(node.id);
         }
       }
-      ports.forEach(port => set(port, start + ordered.findIndex(m => m[end] === port) * spacing));
-      node.bounds![dim] = Math.max(node.bounds![dim], start + (list.length - 1) * spacing + inset.high - node.bounds![tangent]);
+      ports.forEach(port => { const at = ordered.findIndex(m => m[end] === port); set(port, start + at * spacing + extra[at]!); });
+      node.bounds![dim] = Math.max(node.bounds![dim], start + (list.length - 1) * spacing + extra.at(-1)! + inset.high - node.bounds![tangent]);
       node.size![dim] = node.bounds![dim];
     }
     if (tangent === 'x') for (const item of list) for (const port of [item.a, item.b]) {
@@ -758,9 +780,11 @@ export function prepareBundleGeometry(model: LayoutModel): void {
     // A free port that stands before a planned one gives way to it: the ports on its left move left by a pitch each, rather than
     // pushing the planned port right out of line with its peers. `floorOf` has reserved the room.
     const wanted = ports.map(seat);
-    for (let i = ports.length - 2; i >= 0; i--) if (!plan.has(ports[i]!) && unrelated.has(ports[i]!)) wanted[i] = Math.min(wanted[i]!, wanted[i + 1]! - spacing);
+    // Each neighbour pair keeps its own pitch (`neighbourPitch`: the face pitch, or a pair pitch above it).
+    const gap = (i: number): number => i <= 0 ? spacing : neighbourPitch(node, side, ports[i - 1]!.ref, ports[i]!.ref, spacing);
+    for (let i = ports.length - 2; i >= 0; i--) if (!plan.has(ports[i]!) && unrelated.has(ports[i]!)) wanted[i] = Math.min(wanted[i]!, wanted[i + 1]! - gap(i + 1));
     ports.forEach((port, engineOrder) => {
-      const value = Math.max(wanted[engineOrder]!, prior + spacing);
+      const value = Math.max(wanted[engineOrder]!, prior + gap(engineOrder));
       port.engineOrder = engineOrder; port.anchor![tangent] = value; prior = value;
     });
     const dim = tangent === 'x' ? 'width' : 'height';

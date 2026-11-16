@@ -7,6 +7,7 @@
  * plain JSON), and every predicate that judges one is code in this file, outside the model.
  */
 import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Rect, Side, Size } from '../model/index.js';
+import type { PairPitch } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -19,6 +20,8 @@ export type ReservationOwner = Owner | { kind: 'command'; id: string };
 export interface ReservationPayload {
   /** A fan of chords needs this port pitch on a face (ticket 89). */
   pitchFloor: { node: string; side: Side; min: number };
+  /** A fan of chords needs this pitch between two ports (`portId`, sorted) of a face when they stand side by side (dense-16x9 ticket 04). */
+  pairFloor: { node: string; side: 'top' | 'bottom'; ports: readonly [string, string]; min: number };
   /** A hinted or course node keeps the size a measured run gave it (side-faces.md, Section 8). */
   nodeFloor: { node: string; min: Size };
   /** A lateral port takes `side`; `promise` is the routed shape the face was offered for. */
@@ -109,7 +112,7 @@ export const NO_RESERVATIONS: Reservations = [];
 const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner.kind}:${owner.node}:${owner.link}` : `${owner.kind}:${owner.id}`;
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
-  pitchFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
+  pitchFloor: 'size', pairFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
   turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton', bundleNeighbours: 'skeleton',
 };
@@ -137,8 +140,8 @@ export function reserve(ledger: Reservations, entries: Reservations): Reservatio
     const at = result.findIndex(item => item.id === entry.id);
     if (at < 0) { result.push(entry); continue; }
     const old = result[at]!;
-    if (old.kind === 'pitchFloor' && entry.kind === 'pitchFloor') {
-      if (entry.payload.min > old.payload.min) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min: entry.payload.min } };
+    if ((old.kind === 'pitchFloor' && entry.kind === 'pitchFloor') || (old.kind === 'pairFloor' && entry.kind === 'pairFloor')) {
+      if (entry.payload.min > old.payload.min) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min: entry.payload.min } } as Reservation;
     } else if (old.kind === 'nodeFloor' && entry.kind === 'nodeFloor') {
       const min = { width: Math.max(old.payload.min.width, entry.payload.min.width), height: Math.max(old.payload.min.height, entry.payload.min.height) };
       if (!same(min, old.payload.min)) result[at] = { ...old, revision: entry.revision, producer: entry.producer, payload: { ...old.payload, min } };
@@ -187,6 +190,25 @@ export function pitchGrowth(ledger: Reservations, wanted: ReadonlyMap<string, Pa
   }
   return pitchFloors(grown, producer, revision);
 }
+
+/** The neighbour-pair pitches the fans need, per node and face, as the node stores them (`LayoutNode.pairPitch`, rule `fan`). */
+export function pairFloorsOf(ledger: Reservations): Map<string, Partial<Record<'top' | 'bottom', PairPitch[]>>> {
+  const floors = new Map<string, Partial<Record<'top' | 'bottom', PairPitch[]>>>();
+  for (const { payload } of ofKind(ledger, 'pairFloor')) {
+    const faces = floors.get(payload.node) ?? {};
+    (faces[payload.side] ??= []).push({ rule: 'fan', ports: [...payload.ports], min: payload.min });
+    floors.set(payload.node, faces);
+  }
+  return floors;
+}
+/** The pair entries of `wanted` that raise a floor the ledger holds: a value over the held one, or any when none is held. Empty when no pair needs more. */
+export function pairGrowth(ledger: Reservations, wanted: readonly { node: string; side: 'top' | 'bottom'; ports: readonly [string, string]; min: number }[], producer: RoundId, revision: number): Reservations {
+  const held = new Map(ofKind(ledger, 'pairFloor').map(({ payload }) => [pairDetail(payload), payload.min] as const));
+  return wanted.filter(item => item.min > (held.get(pairDetail(item)) ?? 0))
+    .map(item => reservation('pairFloor', { kind: 'node', id: item.node }, pairDetail(item), producer, revision, { node: item.node, side: item.side, ports: item.ports, min: item.min }));
+}
+/** The detail that tells two pair floors of one node apart: the face and the two port keys. */
+const pairDetail = (item: { side: string; ports: readonly string[] }): string => `${item.side}:${item.ports.join('|')}`;
 
 /** The node size floors, per node. */
 export function nodeFloorsOf(ledger: Reservations): Map<string, Size> {
@@ -362,11 +384,36 @@ export function declinedEntries(declined: DeclinedTrunks, revision: number): Res
 
 // ---- Predicates and validators ---------------------------------------------------------------------------------------------------
 
+/**
+ * Where each fan pair stood in a face record the last time the record was read (dense-16x9 ticket 04). A hint only, like `portPlaces`: it is
+ * checked against the entry at that place on every use, and a pair is unique in a face record (`addPairPitches` merges by pair, and `pairPitchFault` refuses a record with two entries for one pair), so the answer
+ * is the one a search of the face gives. A ledger holds C(n, 2) pair floors of a face of n ports, and a search per floor made the check
+ * quadratic in them (0.7 s at 100 ports, 2 ms with the hint).
+ */
+const fanPlaces = new WeakMap<readonly PairPitch[], Map<string, number>>();
+function fanEntry(list: readonly PairPitch[] | undefined, ports: readonly string[]): PairPitch | undefined {
+  if (list === undefined) return undefined;
+  const key = ports.join('|');
+  const holds = (at: number | undefined): at is number => at !== undefined && list[at]?.rule === 'fan' && list[at]!.ports.join('|') === key;
+  const hinted = fanPlaces.get(list)?.get(key);
+  if (holds(hinted)) return list[hinted];
+  const places = new Map<string, number>();
+  list.forEach((entry, at) => { const pair = entry.ports.join('|'); if (entry.rule === 'fan' && !places.has(pair)) places.set(pair, at); });
+  fanPlaces.set(list, places);
+  const at = places.get(key);
+  return at === undefined ? undefined : list[at];
+}
+
 /** The predicate of a floor against a placed model: sizes and pitches only grow, so it holds at every stage. */
 export function floorFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind === 'pitchFloor') {
     const have = model.nodes[item.payload.node]?.sidePitch?.[item.payload.side];
     return have !== undefined && have >= item.payload.min ? undefined : `the ${item.payload.side} pitch of ${item.payload.node} is under ${item.payload.min}`;
+  }
+  if (item.kind === 'pairFloor') {
+    const node = model.nodes[item.payload.node];
+    const have = fanEntry(node?.pairPitch?.[item.payload.side], item.payload.ports);
+    return have !== undefined && have.min >= item.payload.min ? undefined : `the ${item.payload.side} pair ${item.payload.ports.join(', ')} of ${item.payload.node} is under ${item.payload.min}`;
   }
   if (item.kind === 'nodeFloor') {
     const size = model.nodes[item.payload.node]?.size;
@@ -464,7 +511,7 @@ const isPort = (value: unknown): boolean => isObject(value) && isString(value['n
 const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.length > 0
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
 const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'sides-two', 'lanes', 'bands']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
@@ -479,6 +526,11 @@ function shapeFailure(entry: unknown): string | undefined {
   const sides = ['top', 'bottom', 'left', 'right'];
   switch (kind) {
     case 'pitchFloor': return isString(payload['node']) && sides.includes(payload['side'] as string) && isNumber(payload['min']) && (payload['min'] as number) > 0 ? undefined : bad;
+    case 'pairFloor': {
+      const ports = payload['ports'];
+      return isString(payload['node']) && (payload['side'] === 'top' || payload['side'] === 'bottom') && Array.isArray(ports) && ports.length === 2 && ports.every(isString)
+        && (ports[0] as string) < (ports[1] as string) && isNumber(payload['min']) && (payload['min'] as number) > 0 ? undefined : bad;
+    }
     case 'nodeFloor': {
       const min = payload['min'];
       return isString(payload['node']) && isObject(min) && isNumber(min['width']) && isNumber(min['height']) && (min['width'] as number) > 0 && (min['height'] as number) > 0 ? undefined : bad;
@@ -542,14 +594,16 @@ function validateLedgerShape(ledger: Reservations): void {
 }
 
 /**
- * The restore of a model before the port topology freezes (stages up to `size`, and `skeleton`): the ledger is well formed, and the order
- * reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
+ * The restore of a model before the port topology freezes (stages up to `size`, and `skeleton`): the ledger is well formed, the floors hold
+ * from stage 3 on, and the order reservations stage 4 writes hold on the model (R2, R5). The freeze-bound checks of `validateReservations` need the freeze and wait for it.
  */
 export function validateEarlyReservations(model: LayoutModel): void {
   if (model.reservations === undefined) return;
   validateLedgerShape(model.reservations);
+  // A floor is active from stage 3 (`size`): a stage-3 or stage-4 model keeps its pitch, pair and node floors (dense-16x9 ticket 04 review).
+  const sized = model.stage === 'size' || model.stage === 'skeleton';
   for (const item of model.reservations) {
-    const why = rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
+    const why = (sized ? floorFailure(item, model) : undefined) ?? rowOrderFailure(item, model) ?? groupOrderFailure(item, model) ?? corridorSideFailure(item, model) ?? bundleNeighboursFailure(item, model);
     if (why !== undefined) throw new Error(`Reservation ${item.id} does not hold: ${why}`);
   }
 }

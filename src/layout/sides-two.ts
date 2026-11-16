@@ -1,3 +1,4 @@
+import { addPairPitch, neighbourPitch } from './pair-pitch.js';
 import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { declineOversizedBlocks, reserveBlockPitch, seatBlockFollowers } from './solid-blocks.js';
 import type { PortRef } from '../model/document.js';
@@ -644,6 +645,36 @@ export function stemDepth(model: LayoutModel, port: LayoutPort, cache?: StemCach
 }
 
 /**
+ * The pair pitches of a bundle at its two ends (dense-16x9 ticket 04, reviews 3 and 4): where both ends stand on a top or bottom face, each two
+ * members keep, at both ends, the larger of their pair pitches at the two ends (`neighbourPitch`), so the tracks stay parallel and each end
+ * reserves the gap the other end needs. The carried pair is stored only as a pair entry of that face (`addPairPitch`, which merges by pair;
+ * rule `fan`). This function never writes `sidePitch`: a pair floor must not become a face-wide minimum (the invariant of the bundle pitch,
+ * below). A lateral end takes no carried pair: a lateral face has no pair record, and its gaps stand across those of a horizontal end (the
+ * block of 7d is planned only for facing ends, `facing`), so a lateral end keeps its own scalar pitch. Returns whether a record changed.
+ * Nothing changes where no pair pitch binds two members.
+ */
+function carryBundlePairs(model: LayoutModel, links: readonly LayoutLink[]): boolean {
+  const ends = links.map(link => link.attachments!).filter(({ from, to }) => from.node !== to.node);
+  const nodes = [...new Set(ends.flatMap(({ from, to }) => [from.node, to.node]))].sort();
+  if (nodes.length !== 2) return false;
+  const at = (end: { from: PortRef; to: PortRef }, node: string): LayoutPort => findPort(model, end.from.node === node ? end.from : end.to)!;
+  let changed = false;
+  for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++) {
+    const pairs = nodes.map(node => [at(ends[i]!, node), at(ends[j]!, node)] as const)
+      .filter(([one, two]) => portKey(one.ref) !== portKey(two.ref) && one.side === two.side);
+    if (!pairs.every(([one]) => one.side === 'top' || one.side === 'bottom')) continue;
+    const need = Math.max(0, ...pairs.map(([one, two]) => neighbourPitch(model.nodes[one.ref.node]!, one.side!, one.ref, two.ref)));
+    for (const [one, two] of pairs) {
+      const node = model.nodes[one.ref.node]!, side = one.side!;
+      if (neighbourPitch(node, side, one.ref, two.ref) >= need) continue;
+      addPairPitch(node, side as 'top' | 'bottom', { rule: 'fan', ports: [portId(one.ref), portId(two.ref)].sort(), min: need });
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
  * Row gap between horizontal neighbours: the largest of the stroke-aware node clearance, the two
  * facing named pills with their visible wire, the stems and fans that turn here, and the described
  * facing link's label floor. Before the topology freeze only that straight label floor is known;
@@ -988,11 +1019,15 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   }
   // Bundle membership and link widths are already known. Reserve their minimum side capacity
   // before lanes freeze, rather than discovering a larger row width in stage 7e.
+  // The invariant of the bundle pitch (dense-16x9 ticket 04, review 4): the common scalar pitch of a bundle is computed from intrinsic member
+  // pitches only, the stroke pitch and the scalar `sidePitch` of each member face, and it is computed to its fixed point before any pair is
+  // carried. A pair requirement never enters a scalar: the carry below writes pair entries only (`carryBundlePairs`), and this loop reads no
+  // pair entry. So a pair floor cannot become a face-wide minimum through a bundle, at either end.
+  const bundleLinks = model.bundles.map(bundle => model.links.filter(link => link.bundle === bundle.id));
   let pitchChanged = true;
   while (pitchChanged) {
     pitchChanged = false;
-    for (const bundle of model.bundles) {
-      const links = model.links.filter(link => link.bundle === bundle.id);
+    for (const links of bundleLinks) {
       const ports = links.flatMap(link => [link.attachments!.from, link.attachments!.to])
         .map(ref => model.nodes[ref.node]!.ports.find(port => key(port.ref) === key(ref))!);
       const pitch = Math.max(16 + Math.max(DEFAULT_STROKE_WIDTHS.path, ...links.map(linkStrokeWidth)),
@@ -1002,6 +1037,11 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
         if (node.sidePitch![port.side!]! < pitch) { node.sidePitch![port.side!] = pitch; pitchChanged = true; }
       }
     }
+  }
+  // Then the pairs, to their own fixed point (two bundles may share a face): pair entries only, read by no scalar.
+  for (let carried = true; carried;) {
+    carried = false;
+    for (const links of bundleLinks) if (carryBundlePairs(model, links)) carried = true;
   }
   reserveBlockPitch(model);
   // Final sides and bundle pitches replace stage 3's provisional topology before corners freeze.

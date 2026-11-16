@@ -83,7 +83,10 @@ describe('a diagram with no side candidate is the layout main makes', () => {
     // Architecture-2 ticket 57: the model gains `stemDepths`, and the orthogonal counterfactual of the two direct families (`directFamilies`,
     // read at the start of 7f) counts 8 and 5 crossings, not 7 and 3, its witnesses 17.5 px lower; no drawn geometry differs (80554445aba21345 before).
     // Architecture-2 ticket 73: the model gains `feedSplits: []` (and its freeze copy); without that key the hash is the old 89c13145a5d4be12.
-    expect(hash(model)).toBe('90ec7d9b78710dd1');
+    // Dense-16x9 ticket 04 (slice 1): the fan floors are stored as neighbour-pair pitches (`pairPitch`, `pairFloor` reservations) and the face
+    // pitch stays the base pitch; the nodes, ports, paths and labels are byte-identical (90ec7d9b78710dd1 before). Review 1 of slice 1 writes
+    // the fan floor on every pair of the face's ports, not only on neighbours: again only the records move (b81cb20be4a70512 before).
+    expect(hash(model)).toBe('d6114bdfe765f40a');
     expect(measureSides(model, model, new Set()).hints.size).toBe(0);
     expect(codes(model).filter(code => code.startsWith('SIDE_'))).toEqual([]);
   }, 60000);

@@ -25,7 +25,7 @@ import { straightFaces } from '../layout/turn-order.js';
 import { linkLabels } from '../layout/link-labels.js';
 import { judgeFarEndTrial, measureFarEndOrder } from '../layout/far-end-measure.js';
 import { proposalGroups, proposalKey, staleFaces, type FarEndFace } from '../layout/far-end-order.js';
-import { farEndEntries, pitchGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
+import { farEndEntries, pairGrowth, nodeFloors as floorEntries, courseEntries, laneOwners, promisedTurns, reserve as addReservations, sideFaces, sideHintsOf, spanEntries, turnEntries, turnOf, type Reservations } from '../layout/reservations.js';
 import { holds, holdsRouted } from '../layout/reservation-checks.js';
 import type { ReservationFailure } from '../layout/reservations.js';
 import { batchRequest, completedCrossingObstacles, pendingStemObstacles, planRoute } from '../route/plan.js';
@@ -67,7 +67,7 @@ const fanRound = (child: boolean): Round<{ grown: Reservations }> => ({
   tolerates: (error, phase) => phase === 'place' && (child ? error instanceof PlacementRefusal : error instanceof TrunkBlocked || error instanceof SolidBlockRefusal || staggerRefusal(error)),
   async measure(env, s) {
     const measure = await env.timed('measureFans', () => measureFans(s.kept7e));
-    const grown = pitchGrowth(s.kept, measure.floors, child ? 'span' : 'fan', env.placements);
+    const grown = pairGrowth(s.kept, measure.floors, child ? 'span' : 'fan', env.placements);
     return grown.length === 0 ? undefined : { grown };
   },
   reserve: (_env, s, o) => addReservations(s.kept, o.grown),

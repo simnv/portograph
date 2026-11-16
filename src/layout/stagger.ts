@@ -10,6 +10,7 @@ import { fitRegionGroup } from './regions.js';
 import { nodeObstacleReach, routedStroke } from './bands.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
+import { neighbourPitch } from './pair-pitch.js';
 import { aspectAim, aspectGap } from './aspect.js';
 import { ASPECT_EPS, PLACEMENT_EPS } from './tolerance.js';
 import { PlacementRefusal } from './placement-refusal.js';
@@ -211,7 +212,7 @@ function seatFeeds(model: LayoutModel): SeatedParent[] {
     const ports = node.ports.filter(port => port.side === side);
     const wanted = ports.filter(port => targets.has(portId(port.ref))).sort((a, b) => targets.get(portId(a.ref))! - targets.get(portId(b.ref))! || a.engineOrder! - b.engineOrder!);
     for (let i = 1; i < wanted.length; i++) {
-      if (targets.get(portId(wanted[i]!.ref))! - targets.get(portId(wanted[i - 1]!.ref))! < node.sidePitch![side]! - PLACEMENT_EPS) {
+      if (targets.get(portId(wanted[i]!.ref))! - targets.get(portId(wanted[i - 1]!.ref))! < neighbourPitch(node, side, wanted[i - 1]!.ref, wanted[i]!.ref) - PLACEMENT_EPS) {
         throw new PlacementRefusal('stagger', 'A feeding face cannot keep its pitch over the stagger');
       }
     }
@@ -269,7 +270,7 @@ function seatedParentFits(model: LayoutModel, parent: SeatedParent): void {
   };
   let authored = -Infinity;
   for (const [i, port] of ports.entries()) {
-    if (i > 0 && port.anchor!.x - ports[i - 1]!.anchor!.x < pitch - PLACEMENT_EPS) {
+    if (i > 0 && port.anchor!.x - ports[i - 1]!.anchor!.x < neighbourPitch(node, side, ports[i - 1]!.ref, port.ref, pitch) - PLACEMENT_EPS) {
       refuseParent(model, parent, `cannot keep its pitch between ${named(ports[i - 1]!.ref)} and ${named(port.ref)}`);
     }
     if (port.authorOrder !== undefined) {

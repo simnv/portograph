@@ -77,6 +77,7 @@ const EXPECTED_WEAKMAPS: Readonly<Record<string, { count: number; reason: string
   'src/layout/approach.ts': { count: 1, reason: 'approachReach virtual port stem-reach metadata handoff' },
   'src/parse/validation.ts': { count: 1, reason: 'known AST source-location provenance map' },
   'src/layout/row-paths.ts': { count: 2, reason: 'portPlaces self-verifying port index hint (validated on every hit)' },
+  'src/layout/reservations.ts': { count: 1, reason: 'fanPlaces self-verifying fan-pair place hint (validated on every hit)' },
 };
 
 /** Every module-scope `new Map` in `src/`. */
