@@ -40,8 +40,9 @@ export interface BoxWriter {
   guard: WriterGuard;
   /**
    * Set on a writer that runs after the chord freeze of 7f with no judge of a move after the freeze (`blockMoveRefusal`) on its path: how its
-   * write keeps the solid-block reservations, and the last resort where it does not (dense-16x9 ticket 33). No other writer moves a box after
-   * the freeze unjudged: `test/layout/post-freeze-movers.test.ts` finds the writers that do and fails on one with no entry here.
+   * write keeps the solid-block reservations, and the last resort where it does not (dense-16x9 ticket 33). No other `moveGroup` writer moves a box
+   * after the freeze unjudged on the sheets of `test/layout/post-freeze-movers.test.ts`, which finds the writers that do and fails on one with no
+   * entry here (coverage evidence for `moveGroup`, not a proof for the direct writes listed above).
    */
   afterFreeze?: string;
 }
@@ -103,7 +104,7 @@ export const BOX_WRITERS: readonly BoxWriter[] = [
   { id: 'W25', file: 'src/layout/decide.ts', fn: 'chooseStep', guard: { kind: 'guarded', by: 'the caller asks holdsMove; then a profile judgment with undo' } },
   { id: 'W26', file: 'src/layout/chord-clear.ts', fn: 'stepOverChords', guard: { kind: 'guarded', by: 'decision.choose with holdsMove and chordsHold, saveGroups undo' } },
   { id: 'W27', file: 'src/layout/chord-clear.ts', fn: 'stepOverChords', guard: { kind: 'guarded', by: 'decision.choose with holdsMove and chordsHold, saveGroups undo' } },
-  { id: 'W28', file: 'src/layout/centre.ts', fn: 'packClear', guard: { kind: 'guarded', by: 'laneSidesHold and the window bound; refused, CENTRE_TIER_PACK_INFEASIBLE' } },
+  { id: 'W28', file: 'src/layout/centre.ts', fn: 'packClear', guard: { kind: 'guarded', by: 'laneSidesHold and the window bound, and after the chord freeze blockMoveRefusal with an exact undo; refused, CENTRE_TIER_PACK_INFEASIBLE' } },
   { id: 'W29', file: 'src/layout/centre.ts', fn: 'standNearFeed', guard: { kind: 'guarded', by: 'holdsMove' } },
   { id: 'W30', file: 'src/layout/centre.ts', fn: 'spreadParent', guard: { kind: 'guarded', by: 'resizeEvidence before, resizeHolds after, undo on refusal' } },
   { id: 'W31', file: 'src/layout/centre.ts', fn: 'centreGroupStepRaw', guard: { kind: 'guarded', by: 'the step window and a post-condition (riser, span, lane crossings, chord clearance); on failure the saved group is restored' } },

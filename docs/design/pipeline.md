@@ -1866,16 +1866,22 @@ The rule is absolute: after every judged move or step, each member stands within
 That is the validator after every step, so drift cannot add up across steps or passes. `chordsHold` reads each translation so, the
 seat steps of 7c included. The label-band producer right after the freeze is a required move, and it is not refused whole. Its
 centring replay is judged step by step instead (dense-16x9 ticket 33): from 7e on, a 7c group step that leaves a member or a follower
-past the tolerance where it held, or further past it, is given back like any step that does not stand (`centreGroupStepChecked`).
+past the allowance of a constraint where it held, or further past it, is given back like any step that does not stand
+(`centreGroupStepChecked`). A step that does not stand gives back its whole write set: its group's box, its nodes with their anchors
+and pills, the node labels its rebuild wrote, and the warnings it named (33 review 1). The pack that then clears the restored group of
+the group before it (`packClear`) is judged too: a pack the judge refuses is undone and named (`CENTRE_TIER_PACK_INFEASIBLE`).
 Before ticket 33 a group step of a block's lower row moved its member ends without the row above, in the producer's first replay,
 and left a member 15 px of height short of its angle; nothing after it moved the row above, and publication threw.
 The column pull of the producer (`holdColumnsAfterPush`, `pullTier`) is judged the same way: a pull after the freeze that the judge
 refuses is undone with the plan, as a pull a lane refuses is. The producer's y growth (`topUpBandClearance`) cannot be refused. A
-y-only band shift keeps the faces and the pitch of a block, but it can take a straight member of a flat block past its box. That
-member falls back alone in the crowding retry of 7f (`flatMemberFaults`), as a crowded fan member does, so publication reads a
-reservation that holds and does not throw. The box writer table states this for each writer that moves a box after the freeze with
-no judge on its path (`afterFreeze`). A test runs sheets with blocks, finds every such writer on the call stack, and fails on a
-writer the table does not explain.
+y-only band shift keeps the faces and the pitch of a block and only steepens a member across the shift, but it can take a straight
+member of a flat block past its box. That member falls back alone in the crowding retry of 7f (`flatMemberFaults`, with the reason of
+its first fault), as a crowded fan member does, so publication reads a reservation that holds and does not throw. The box writer
+table states this for each writer that moves a box after the freeze with no judge on its path (`afterFreeze`). A test runs four
+sheets with blocks, records every `moveGroup` after the freeze, and fails on a writer with no judge on its call stack that the table
+does not explain. That test is coverage evidence, not a proof: it sees `moveGroup` only, and a judge on the stack does not show that
+the judge's before and after readings enclose the move. The direct node and anchor writers (the list in `box-writers.ts`) are judged
+by the movers that call them, by the producer postconditions, or not at all.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line, or on a held routed chord
 (ticket 22), lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows

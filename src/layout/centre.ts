@@ -13,7 +13,7 @@ import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
 import { holds, profiles, reading, straightOf, tapVerdict, verdictTap } from './objective.js';
-import { besideGap, besideWalls, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
+import { besideGap, besideWalls, exactUndo, frameColumns, keepOutShifts, packBesideRows, type CellWindow, type FrameColumn } from './columns.js';
 import { findPort } from './row-paths.js';
 import { attemptCounters } from './attempt-counters.js';
 import { timed } from './attempt-timings.js';
@@ -660,7 +660,17 @@ function packClear(model: LayoutModel, context: CentreContext, tier: number, gro
       [group.id], 'group');
     return;
   }
+  // After the chord freeze the pack is judged as every move is (`blockMoveRefusal`, 33 review 1): it runs after a refused step gives its group
+  // back, so the step's own judge does not read it. A pack the judge refuses is undone and named as a pack the lanes refuse.
+  const blockBefore = model.frozenChords !== undefined && model.blockReservations?.length ? blockReservationFaults(model) : undefined;
+  const undo = blockBefore === undefined ? undefined : exactUndo(model, [group]);
   moveGroup(model, group, low - group.bounds!.x, 0);
+  const refusal = blockBefore === undefined ? undefined : blockMoveRefusal(blockBefore, model);
+  if (refusal === undefined) return;
+  undo!();
+  placementWarning(model, 'CENTRE_TIER_PACK_INFEASIBLE',
+    `${group.id} cannot clear ${previous.id} without leaving the reservation of a solid block (${refusal.fault}); the final gates judge the result.`,
+    [group.id], 'group');
 }
 
 /**
@@ -1275,8 +1285,8 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
   // After the chord freeze a step is judged by the one judge of a move after the freeze (`blockMoveRefusal`, dense-16x9 ticket 33): a step that
-  // leaves a solid-block member or follower past `BLOCK_TOLERANCE` of its reservation where it held, or further past it, is given back. The
-  // label-band producer replays the centring at the freeze unjudged as a whole, so its steps are judged here, one by one.
+  // leaves a solid-block member or follower past the allowance of a constraint of its reservation where it held, or further past it, is given
+  // back. The label-band producer replays the centring at the freeze unjudged as a whole, so its steps are judged here, one by one.
   if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat);
   const group = model.groups[id]!;
   const unbuilt = carried === undefined ? undefined : group.nodes.map(node => JSON.stringify(model.nodes[node]));
@@ -1301,6 +1311,9 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   }
   const text = JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) });
   const snapshot = JSON.parse(text) as { group: LayoutGroup; nodes: LayoutNode[] };
+  // The step's whole write set, read where it began (33 review 1): its group's box, its nodes with their anchors and pills, the labels the
+  // rebuild below writes from its geometry, and the warnings it names. A step that does not stand gives all of them back.
+  const labels = [...model.labels], diagnostics = [...model.diagnostics];
   const blockBefore = model.frozenChords !== undefined && model.blockReservations?.length ? blockReservationFaults(model) : undefined;
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
@@ -1316,6 +1329,8 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   if (stands) return { ...result, carry: { held: now, breached: after } };
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
+  model.labels = labels;
+  model.diagnostics = diagnostics;
   packClear(model, context, tier, snapshot.group, previous);
   // The undo gives back the geometry the step began on, not the step's own geometry a decline or a growth was judged against: no decline and no
   // growth of this step stands, and the record keeps what earlier steps wrote (review 10b F2; the rollback of the given-back branch does the same).

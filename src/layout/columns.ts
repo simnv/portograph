@@ -690,7 +690,7 @@ function stepBlock(model: LayoutModel, tier: readonly Unit[], run: readonly Unit
  * The way back for a move that may be refused: the boxes of the groups, their nodes and the anchors of their ports as they stand, put
  * back exactly. A move by `dx` and back by `-dx` leaves float noise, and publication re-derives regions and label bands from the geometry.
  */
-function exactUndo(model: LayoutModel, groups: Iterable<LayoutGroup>): () => void {
+export function exactUndo(model: LayoutModel, groups: Iterable<LayoutGroup>): () => void {
   const saved = [...groups].map(group => ({ group, bounds: { ...group.bounds! }, nodes: group.nodes.map(id => ({ node: model.nodes[id]!, bounds: { ...model.nodes[id]!.bounds! },
     anchors: model.nodes[id]!.ports.map(port => port.anchor && { ...port.anchor }) })) }));
   return () => {

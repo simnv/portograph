@@ -12,6 +12,8 @@ import { createAvoidAttempt } from '../route/fixture.js';
 // or states in the box writer table (`afterFreeze`) why a required move cannot be refused and what its last resort is. The movers are found,
 // not listed: the test runs sheets with solid and flat blocks, records every `moveGroup` after the freeze, and reads on the call stack whether
 // a judge is on its path. The judges are found too: each top-level function of `src/` that calls `blockMoveRefusal`.
+// Coverage evidence, not a proof (33 review 1): it sees `moveGroup` only, on four sheets, and a judge on the stack does not show that the
+// judge's before and after readings enclose the move. A new unjudged `moveGroup` writer after the freeze on these sheets fails it.
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const walk = (dir: string): string[] => readdirSync(dir).sort().flatMap(name => {
   const path = join(dir, name);

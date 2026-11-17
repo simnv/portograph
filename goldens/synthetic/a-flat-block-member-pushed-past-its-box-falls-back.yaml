@@ -1,3 +1,9 @@
+# Expected (dense-16x9 ticket 33): a required move of 7f that takes a straight member of a flat block past its reservation lets that member
+# fall back alone; publication never throws. Hub-1 and hub-2 in the Core frame feed the twelve leaves of six Site frames below, a flat block
+# past the cap (2 x 12). The label-band producer at the chord freeze tops up a band clearance in y (`topUpBandClearance`), a move it cannot
+# refuse, and takes member link-8 12.8 px past its side-edge box. On main b259aed5 publication threw "The fan admission record is forged:
+# link-8 lost its reserved box clearance (edge)" (reversed nodes: link-12). Now the crowding retry of 7f refuses that member
+# (`flatMemberFaults`): it is drawn orthogonal, every other member stays straight, and every block reservation holds.
 portograph: 2
 layout: {moveBeforeGrow: true, nodeContent: card}
 groups:

@@ -5,7 +5,7 @@ import { resolve } from '../../src/resolve/index.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';
 import { deriveFrames } from '../../src/layout/frames.js';
-import { blockMoveRefusal, blockReservationFaults, blockReservationsFault, memberChord, rowRoomClearance } from '../../src/layout/block-checks.js';
+import { blockMoveRefusal, blockReservationFaults, blockReservationsFault, flatMemberFaults, memberChord, rowRoomClearance } from '../../src/layout/block-checks.js';
 import { segmentRectDistance } from '../../src/geometry/planar.js';
 import { BLOCK_TOLERANCE } from '../../src/layout/tolerance.js';
 import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../../src/theme/geometry.js';
@@ -125,6 +125,11 @@ describe('the one judge of a move after the freeze reads the row room (ticket 31
     b.x = a.x + a.width + 1;
     expect(blockReservationsFault(moved)).toMatch(/lost its reserved row room beside core-b/);
     expect(blockMoveRefusal(before, moved)?.fault).toMatch(/row room beside core-b/);
+    // The 7f retry lets such a member fall back by the reason of its first fault (dense-16x9 ticket 33, review 1): `body`, not `edge`.
+    const faults = blockReservationFaults(moved), fallen = flatMemberFaults(moved);
+    const room = [...faults].filter(([, list]) => list[0]!.constraint === 'room:core-b').map(([id]) => id);
+    expect(room.length).toBeGreaterThan(0);
+    for (const id of room) expect(fallen.get(id), id).toBe('body');
   }, 180000);
 });
 
