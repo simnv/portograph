@@ -183,8 +183,8 @@ a-stranded-growth-is-given-back has main's 6 bends and settles.
 
 ## Amendment: a seat set owns a child row (dense-16x9 ticket 36, slice 1, 2026-11-17)
 
-With the option on, a rank cell that stage 5 seats as one set (`seatSet`, docs/design/pipeline.md, stage 5) is owned by that entry, not by the
-seats of this ADR: its bodies keep the widths stage 5 gave them (no alignment growth inside the set), 7c applies the stored positions, and no
+With the option on, a rank cell that the rows rule seats as one set (`seatSet`, docs/design/pipeline.md, stage 6) is owned by that entry, not by the
+seats of this ADR: its bodies keep the widths placement gave them (no alignment growth inside the set), 7c applies the stored positions, and no
 clause of this ADR chooses a seat for its members. A set that cannot stand is withdrawn whole by name, and its row falls back to the clauses
 above. Rows outside the scope of the set (staggered, in a canton, in a feeding chain) keep the clauses above. The test option `testSeatSets:
 false` keeps the clauses above for every row, for tests whose subject is one of them.

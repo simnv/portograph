@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { repackOverlaps } from '../../src/layout/rows.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { ofKind, type Reservation } from '../../src/layout/reservations.js';
 import type { LayoutModel } from '../../src/model/layout.js';
@@ -76,6 +77,19 @@ describe('the seat set of a child row (dense-16x9 ticket 36, slice 1)', () => {
     for (const seat of seatSets(flipped)[0]!.payload.seats) expect(vertical(flipped, seat.link), seat.link).toBe(true);
     for (const id of ['c1', 'c2']) expect(flipped.nodes[id]!.bounds!.width, id).toBe(flipped.nodes.n1!.bounds!.width);
   }, 120000);
+
+  // The rows rule decides the sets in its last repack; every later repack (the call of 7e in bundle-geometry.ts) applies them and decides none.
+  it('a later repack applies the sets it finds and decides none', async () => {
+    const model = await run(fixture);
+    const again = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    repackOverlaps(again);
+    expect(seatSets(again)).toEqual(seatSets(model));
+    for (const id of seatSets(model)[0]!.payload.order) expect(again.nodes[id]!.bounds).toEqual(model.nodes[id]!.bounds);
+    const none = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    none.reservations = (none.reservations ?? []).filter(entry => entry.kind !== 'seatSet');
+    repackOverlaps(none);
+    expect(seatSets(none)).toEqual([]);
+  }, 60000);
 
   it('makes no seat set without moveBeforeGrow', async () => {
     const model = await run(fixture.replace('layout: { moveBeforeGrow: true }', 'layout: { moveBeforeGrow: false }'));

@@ -11,9 +11,9 @@ import { rowLabelGap } from './row-label-room.js';
 import { groupShape } from './grid.js';
 import { chainBlockOf } from './read/chain.js';
 import { isCantonFrame } from './read/canton.js';
-import { contentBox, GROUP_PADDING } from './regions.js';
-import { deriveFrames, frameDepth } from './frames.js';
-import { besideGap, separateFrameColumns } from './columns.js';
+import { contentBox } from './regions.js';
+import { deriveFrames } from './frames.js';
+import { besideGap, holdColumnAxes, separateFrameColumns } from './columns.js';
 import { validateSkeletonBands } from './skeleton-geometry.js';
 import { blockDemands, type BlockDemand } from './solid-blocks.js';
 import { BLOCK_CAP } from './block-checks.js';
@@ -41,6 +41,12 @@ export const SEAT_SET_CANDIDATES = 8;
  * expansions; a row that needs more is a cut (`SEAT_SET_BOUND`) and keeps no record.
  */
 export const SEAT_SET_VISITS = 5000;
+/**
+ * The most times the rows rule decides the seat sets again after the frame columns, moved apart for them, brought a frame or a row group
+ * nearer than the beside gap to a flank, bar or grid (`seatRowsAndColumns`). Each time refuses one more set, so the count of sets bounds the
+ * loop too; the constant states the bound as a count (R4). Past it every set of the run is refused by name.
+ */
+export const SEAT_SET_REDECISIONS = 8;
 
 export type { SeatEquation, SeatSetPayload };
 
@@ -227,28 +233,6 @@ const fixedKind = (model: LayoutModel, group: LayoutGroup): string | undefined =
   : groupShape(model, group.id) !== 'row' ? `the ${groupShape(model, group.id)}` : undefined;
 
 /**
- * Why the interval `[low, high]` brings the row, or the top-level frame that holds it, nearer than the beside gap to a flank, bar or grid, or
- * undefined. Those groups do not move for a row, and the frame columns move apart only as wholes (`separateFrameColumns`): a frame that grows
- * toward a fixed group across any of its sub-tiers would have to pass it.
- */
-function fixedNeighbourFault(model: LayoutModel, group: LayoutGroup, low: number, high: number): string | undefined {
-  const frames = deriveFrames(model, false) ?? [];
-  let frame = frames.find(item => item.id === group.frame);
-  while (frame?.parent !== undefined) { const parent: string = frame.parent; frame = frames.find(item => item.id === parent); }
-  const box = group.bounds!, pad = GROUP_PADDING * (1 + frameDepth(model, group.id));
-  const span = frame === undefined ? { x: low, y: box.y, width: high - low, height: box.height }
-    : { x: Math.min(frame.box.x, low - pad), y: frame.box.y, width: Math.max(right(frame.box), high + pad) - Math.min(frame.box.x, low - pad), height: frame.box.height };
-  const gap = besideGap(model, true, false);
-  for (const other of Object.values(model.groups)) {
-    const kind = other.id === group.id || !other.bounds ? undefined : fixedKind(model, other);
-    if (kind === undefined || other.nodes.length === 0 && other.flank === undefined) continue;
-    const o = other.bounds!;
-    if (o.y < span.y + span.height && span.y < o.y + o.height && o.x < right(span) + gap && span.x - gap < right(o)) return `the row would bring ${frame === undefined ? 'its box' : `the frame ${frame.id}`} nearer than ${gap} px to ${kind} ${other.id}`;
-  }
-  return undefined;
-}
-
-/**
  * The seat set of the cell `group` on `model` (no write): the best assignment that breaks no owner, as a record payload, or why there is
  * none. The model is moved only to read an owner, and is given back exactly.
  */
@@ -270,7 +254,7 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
     const box = input.group.bounds!, undo = moveMembers(model, input.order, leaf.xs);
     const fit = contentBox(model, input.group);
     undo(); input.group.bounds = box;
-    const fault = blockOwnerFault(model, input, leaf.xs, blocks) ?? fixedNeighbourFault(model, group, fit.x, right(fit));
+    const fault = blockOwnerFault(model, input, leaf.xs, blocks);
     if (fault !== undefined) { first ??= fault; continue; }
     return { kind: 'set', payload: payloadOf(model, input, leaf, fit) };
   }
@@ -346,15 +330,20 @@ export function seatRows(model: LayoutModel, solve: boolean, refused: ReadonlyMa
   return moved;
 }
 
-/** The pairs (frame or row group, fixed group) that stand nearer than the beside gap across a sub-tier they share: the clearance G9 reads. */
-function fixedClearances(model: LayoutModel): Set<string> {
-  const pairs = new Set<string>(), gap = besideGap(model, true, false);
+/**
+ * The pairs (frame or row group, fixed group) that stand nearer than the beside gap across a sub-tier they share, the clearance G9 reads, each
+ * with how much of the gap it lacks.
+ */
+function fixedClearances(model: LayoutModel): Map<string, number> {
+  const pairs = new Map<string, number>(), gap = besideGap(model, true, false);
   const fixed = Object.values(model.groups).filter(group => group.bounds !== undefined && fixedKind(model, group) !== undefined && (group.nodes.length > 0 || group.flank !== undefined));
   const units = [...(deriveFrames(model, false) ?? []).filter(frame => frame.parent === undefined).map(frame => ({ id: `frame:${frame.id}`, box: frame.box })),
     ...Object.values(model.groups).filter(group => group.frame === undefined && group.bounds !== undefined && fixedKind(model, group) === undefined).map(group => ({ id: group.id, box: group.bounds! }))];
   for (const unit of units) for (const other of fixed) {
     const o = other.bounds!, b = unit.box;
-    if (o.y < b.y + b.height && b.y < o.y + o.height && o.x < right(b) + gap - PLACEMENT_EPS && b.x - gap + PLACEMENT_EPS < right(o)) pairs.add(`${unit.id}|${other.id}`);
+    if (!(o.y < b.y + b.height && b.y < o.y + o.height)) continue;
+    const short = gap - Math.max(o.x - right(b), b.x - right(o));
+    if (short > PLACEMENT_EPS) pairs.set(`${unit.id}|${other.id}`, short);
   }
   return pairs;
 }
@@ -366,19 +355,30 @@ function fixedClearances(model: LayoutModel): Set<string> {
  * again, at most once per set. Every other repack applies the sets it finds.
  */
 export function seatRowsAndColumns(model: LayoutModel, solve: boolean): void {
-  if (!solve) { if (seatRows(model, false)) separateFrameColumns(model); return; }
+  if (!solve) { if (seatRows(model, false)) { separateFrameColumns(model); holdColumnAxes(model); } return; }
   const before = fixedClearances(model), saved = JSON.stringify({ nodes: model.nodes, groups: model.groups, labels: model.labels, reservations: model.reservations, diagnostics: model.diagnostics });
+  const restore = (): void => { Object.assign(model, JSON.parse(saved) as Pick<LayoutModel, 'nodes' | 'groups' | 'labels' | 'reservations' | 'diagnostics'>); };
   const refused = new Map<string, string>();
-  for (;;) {
+  for (let round = 0; ; round++) {
     if (!seatRows(model, true, refused)) return;
+    // The column moves of every later repack, here once: the frames move apart, and each column is pulled back toward its feeds (both move
+    // whole frames, so no seat moves). The clearance to a fixed group is read where those moves leave the frames, not before them.
     separateFrameColumns(model);
-    const added = [...fixedClearances(model)].filter(pair => !before.has(pair)).sort();
+    holdColumnAxes(model);
+    // A pair the sets bring nearer than it stood (or that is new) is theirs; a pair the repack left short as it is, later moves settle.
+    const added = [...fixedClearances(model)].filter(([pair, short]) => short > (before.get(pair) ?? 0) + PLACEMENT_EPS).map(([pair]) => pair).sort();
     const sets = (model.reservations ?? []).filter(entry => entry.kind === 'seatSet');
     if (!added.length || !sets.length) return;
     const [unit, fixed] = added[0]!.split('|');
-    const last = sets.at(-1)!.payload.row;
-    refused.set(last, `the frame columns would move ${unit!.replace('frame:', 'the frame ')} nearer than the beside gap to ${fixedKind(model, model.groups[fixed!]!)} ${fixed}, which gives no way`);
-    Object.assign(model, JSON.parse(saved) as Pick<LayoutModel, 'nodes' | 'groups' | 'labels' | 'reservations' | 'diagnostics'>);
+    const why = `the frame columns would move ${unit!.replace('frame:', 'the frame ')} nearer than the beside gap to ${fixedKind(model, model.groups[fixed!]!)} ${fixed}, which gives no way`;
+    restore();
+    if (round + 1 >= SEAT_SET_REDECISIONS) {
+      // The bound: every set of the run is refused by name, and the rows stand as the repack left them.
+      for (const entry of sets) refused.set(entry.payload.row, `${why} (the sets were decided ${SEAT_SET_REDECISIONS} times)`);
+      seatRows(model, true, refused);
+      return;
+    }
+    refused.set(sets.at(-1)!.payload.row, why);
   }
 }
 
