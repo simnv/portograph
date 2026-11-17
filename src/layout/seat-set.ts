@@ -16,6 +16,7 @@ import { contentBox } from './regions.js';
 import { deriveFrames } from './frames.js';
 import { besideGap, holdColumnAxes, separateFrameColumns } from './columns.js';
 import { rebuildBands, validateSkeletonBands } from './skeleton-geometry.js';
+import { validateLanes } from './lanes.js';
 import { blockDemands, type BlockDemand } from './solid-blocks.js';
 import { BLOCK_CAP } from './block-checks.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
@@ -438,19 +439,22 @@ function boundaryFault(model: LayoutModel, p: SeatSetPayload): string | undefine
 
 /**
  * Why the translated row breaks what a step of 7c may not change, or undefined: a band check the row did not fail before (a cell over a
- * sibling cell), or a lane of its tier that its box now meets or stands on the wrong side of. The row's own repack (`seatRows`) makes its
+ * sibling cell), or a lane fault `validateLanes` did not read before (a lane the box now meets, or a lane on the wrong side of its group). The row's own repack (`seatRows`) makes its
  * siblings give way instead; from 7c on the lanes own their windows and the step only translates.
  */
-function translationFault(model: LayoutModel, group: LayoutGroup, before: ReadonlySet<string>): string | undefined {
-  const added = validateSkeletonBands(model, true, group.tier).find(error => !before.has(error));
+function translationFault(model: LayoutModel, group: LayoutGroup, before: TranslationReading): string | undefined {
+  const added = validateSkeletonBands(model, true, group.tier).find(error => !before.bands.has(error));
   if (added !== undefined) return `the translated row breaks the band: ${added}`;
-  const box = group.bounds!;
-  for (const lane of model.lanes ?? []) {
-    if (lane.tier !== group.tier) continue;
-    if (lane.group === group.id && (lane.side === 'left' ? lane.x >= box.x : lane.x <= right(box))) return `the lane ${lane.id} would stand on the wrong side of the row`;
-    if (lane.group !== group.id && lane.bounds.x < right(box) - PLACEMENT_EPS && box.x < lane.bounds.x + lane.bounds.width - PLACEMENT_EPS) return `the row would meet the lane ${lane.id}`;
-  }
+  const lane = laneFault(model);
+  if (lane !== undefined && lane !== before.lane) return `the translated row breaks a lane: ${lane}`;
   return undefined;
+}
+
+/** What the translation check compares against: the band errors of the tier and the lane fault (`validateLanes`) before the row moved. */
+interface TranslationReading { bands: ReadonlySet<string>; lane: string | undefined }
+/** The first fault `validateLanes` reads on `model`, or undefined: the lanes own their windows after 7a, and the validator is their one reader. */
+function laneFault(model: LayoutModel): string | undefined {
+  try { validateLanes(model); return undefined; } catch (error) { return (error as Error).message; }
 }
 
 /** The wall a step of 7c reads for a translated row: why its box leaves the window centring gives the cell (its frame column), or undefined. */
@@ -469,15 +473,15 @@ export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetP
   const origin = boundaryOrigin(model, p)!, xs = p.xs.map(x => origin + x);
   const moves = p.order.some((id, i) => Math.abs(model.nodes[id]!.bounds!.x - xs[i]!) > PLACEMENT_EPS);
   if (guard && moves && group.tier === model.anchorTier) return 'its row is the anchor tier, which the centring step does not move';
-  const before = guard ? new Set(validateSkeletonBands(model, true, group.tier)) : undefined, was = { ...group.bounds! };
+  const before: TranslationReading | undefined = guard && moves ? { bands: new Set(validateSkeletonBands(model, true, group.tier)), lane: laneFault(model) } : undefined, was = { ...group.bounds! };
   const undo = moveMembers(model, p.order, xs);
   rebuildNodeGeometry(model, p.order, 'current');
   const box = contentBox(model, group);
   group.bounds = { ...group.bounds!, x: box.x, width: box.width };
   coverInterval(model, group, p);
   // The bands are derived from the boxes: read the band check on bands rebuilt for the translated row, and rebuild them again on a refusal.
-  if (before !== undefined && moves) rebuildBands(model);
-  const refused = before === undefined || !moves ? undefined : wall!(group) ?? translationFault(model, group, before);
+  if (before !== undefined) rebuildBands(model);
+  const refused = before === undefined ? undefined : wall!(group) ?? translationFault(model, group, before);
   if (refused !== undefined) { undo(); rebuildNodeGeometry(model, p.order, 'current'); group.bounds = was; rebuildBands(model); }
   return refused;
 }
