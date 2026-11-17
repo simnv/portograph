@@ -12,7 +12,9 @@ import type { PairPitch } from '../model/layout.js';
 import { LAYOUT_STAGES, stageReached } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { equationEnds, equationKind } from './read/seat-equation.js';
-import { openMemberFault, openMembers } from './read/open-member.js';
+import { openMemberFault, openSlotHeld } from './read/open-member.js';
+import { chainBlockOf } from './read/chain.js';
+import { belowReader } from './feed-order.js';
 import { staleThrough } from './far-end-order.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
@@ -529,13 +531,29 @@ export function staggerDeclineFailure(item: Reservation, model: LayoutModel): st
  * Why the open members of a cell entry are no facts of `model` (dense-16x9 ticket 36, slice 3), or undefined: each is a member of the cell, named
  * once, and stands only on links into the sub-tier directly below (`openMemberFault`: no feed from above, no peer link in the row).
  */
-function openFault(model: LayoutModel, group: LayoutGroup, payload: { cell: string; open?: readonly string[] }): string | undefined {
-  for (const [i, node] of (payload.open ?? []).entries()) {
-    if (!group.nodes.includes(node) || payload.open!.indexOf(node) !== i) return `the open member ${node} of ${payload.cell} is no member of the cell, or is named twice`;
+function openFault(model: LayoutModel, group: LayoutGroup, payload: { cell: string; order: readonly string[]; open?: readonly string[] }): string | undefined {
+  if (!payload.open?.length) return undefined;
+  // The proof stage 4 made (review 1 of slice 3), with its own reader: the links of the member, and every other slot of it in the entry's order.
+  const below = belowReader(model), today = below(group, payload.order);
+  for (const [i, node] of payload.open.entries()) {
+    if (!group.nodes.includes(node) || !payload.order.includes(node) || payload.open.indexOf(node) !== i) return `the open member ${node} of ${payload.cell} is no member of the cell, or is named twice`;
     const why = openMemberFault(model, group, node);
     if (why !== undefined) return `the open member ${node} of ${payload.cell} is not free: ${why}`;
+    const held = openSlotHeld(group, node, payload.order, below, today);
+    if (held !== undefined) return `the open member ${node} of ${payload.cell} is not free: at place ${held + 1} of the row the rows below it would be ordered otherwise`;
   }
   return undefined;
+}
+
+/**
+ * The order stage 4 recorded for the cell `row` when its entry names open members and proves them (`openFault`), else undefined (review 1 of slice 3).
+ * A premise that read the row reads this order: the row may stand off it only in its proved open members, which its own entry checks (`closedSlotsFault`).
+ */
+function openOrder(model: LayoutModel, row: string): readonly string[] | undefined {
+  const entry = (model.reservations ?? []).find(item => item.kind === 'rowOrder' && 'cell' in item.payload && item.payload.cell === row);
+  const group = model.groups[row];
+  if (entry?.kind !== 'rowOrder' || !('cell' in entry.payload) || !entry.payload.open?.length || group === undefined) return undefined;
+  return openFault(model, group, entry.payload) === undefined ? entry.payload.order : undefined;
 }
 
 /**
@@ -547,6 +565,10 @@ function closedSlotsFault(model: LayoutModel, payload: { cell: string; order: re
   const open = new Set(payload.open ?? []), fixed = (order: readonly string[]): string[] => order.filter(id => !open.has(id));
   if (now.length !== payload.order.length || !payload.order.every(id => now.includes(id)) || !same(fixed(now), fixed(payload.order))) return `${payload.cell} does not stand in the order its feeds give`;
   if (!stageReached(model.stage, 'rows')) return `${payload.cell} moves its open members on a ${model.stage} model, before the rows rule closes them`;
+  // Stage 5 decides the stagger rows and their feeding chains after stage 4 recorded the open members: such a row closes no slot (review 1 of slice 3).
+  if (model.staggerRows?.some(row => row.group === payload.cell)) return `${payload.cell} moves its open members, and it is a stagger row`;
+  const chain = model.groups[payload.cell]!.nodes.find(node => chainBlockOf(model, node) !== undefined);
+  if (chain !== undefined) return `${payload.cell} moves its open members, and it stands in a feeding chain`;
   const set = (model.reservations ?? []).find(entry => entry.kind === 'seatSet' && entry.payload.row === payload.cell);
   const withdrawn = (model.reservations ?? []).some(entry => entry.kind === 'seatSetDeclined' && entry.payload.row === payload.cell && entry.payload.at !== 'input');
   if (set?.kind === 'seatSet' ? !same(set.payload.order, now) : !withdrawn) return `${payload.cell} moves its open members, and no seat set of the row stands in that order`;
@@ -758,11 +780,11 @@ export const refuseChordEntries = (links: readonly string[], revision: number): 
 export function rowOrderFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'rowOrder') return undefined;
   const payload = item.payload;
-  // A feeding row's open members (dense-16x9 ticket 36, slice 3) are read out of the premise: their slots decide nothing in this entry.
-  const closed = (row: string, order: readonly string[]): string[] => { const open = openMembers(model.reservations, row); return order.filter(id => !open.has(id)); };
+  // A feeding row with proved open members (dense-16x9 ticket 36, slice 3, review 1) is read in the order stage 4 recorded for it: the seat set may
+  // close its open slots, and the row's own entry proves that only those moved. Any other feeding row stands in the order the entry read.
   for (const feed of payload.feeds) {
-    const row = model.groups[feed.row];
-    if (row === undefined || !same(closed(feed.row, row.rowOrder ?? row.nodes), closed(feed.row, feed.order))) return `the feeding row ${feed.row} no longer stands in the order the entry read`;
+    const row = model.groups[feed.row], recorded = openOrder(model, feed.row);
+    if (row === undefined || !same(recorded ?? row.rowOrder ?? row.nodes, feed.order)) return `the feeding row ${feed.row} no longer stands in the order the entry read`;
   }
   if ('row' in payload) {
     const group = model.groups[payload.row];

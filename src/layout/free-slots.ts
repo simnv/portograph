@@ -1,19 +1,21 @@
 import type { Side } from '../model/geometry.js';
 import type { LayoutModel } from '../model/layout.js';
 import { orderedNodeIds } from '../model/model.js';
+import { busOfPort } from './bus.js';
 import { farEndOwner } from './far-end-order.js';
 import { groupShape } from './grid.js';
 import { placeFaceFromSlots, rebuildNodeGeometry, standsOnSlots } from './node-geometry.js';
 import { SIDE_TIE_ORDER } from './sides-one.js';
-import { faceKeyReads, faceSortOf, orderFace } from './sides-two.js';
+import { faceKeyReads, faceSortOf, orderFace, type FaceSort } from './sides-two.js';
+import { turnScope } from './turn-order.js';
 import { portId } from './skeleton-graph.js';
 
 /**
  * The faces a closed slot sorts again (dense-16x9 ticket 36, slice 3). An open member that the seat set seats in another slot of its row moves the
  * far ends of the faces that read it: stage 5 sorted those faces by the provisional slot. The faces are found by the stage-5 sorter's own key reader
  * (`faceKeyReads`: every face whose key reads the position of a moved member) and sorted again by the one stage-5 sorter (`orderFace`), on the slots
- * of stage 5 (`placeFaceFromSlots`). A face that another owner holds (a turn record or the planned turns, a far-end order, a bar, a bundle, a bus, a
- * stagger row, a flank, a grid), or that stands off its slots, is not sorted here: the slot is declined by name (R6).
+ * of stage 5 (`placeFaceFromSlots`). A face that another owner holds (`faceHeld`: a turn record or the planned turns, a far-end order, a bar, a bundle,
+ * a bus, a stagger row, a flank, a grid), or that stands off its slots, is not sorted here: the slot is declined by name (R6).
  */
 export interface Resorted {
   /** The faces whose order changed, in node and side order, with their port keys before and after. */
@@ -22,12 +24,21 @@ export interface Resorted {
   undo: () => void;
 }
 
-/** Why the `side` face of `node` is no face the seat set may sort again, or undefined. */
-function faceOwner(model: LayoutModel, node: string, side: Side, turned: boolean): string | undefined {
-  const owner = farEndOwner(model, node, side);
+/**
+ * The other owner that holds the `side` face of `node`, or undefined (review 1 of slice 3: one predicate for "held by another owner"): a turn record,
+ * a bar, a bundle, a bus (`farEndOwner`; a solid block is no owner here, its faces are sorted by the stage-5 key), a far-end order of the ledger, the
+ * planned first turns of the face (`turnScope` with the turn reservations), a flank, a stagger row, or a group that is no row (a grid). It reads the
+ * owners and never the sorter's answer: `orderFace` seats a held order before it answers, so its answer cannot tell a held face.
+ */
+export function faceHeld(model: LayoutModel, sort: FaceSort, node: string, side: Side): string | undefined {
+  const owner = farEndOwner(model, node, side), ports = model.nodes[node]!.ports.filter(port => port.side === side), keys = new Set(ports.map(port => portId(port.ref)));
   if (owner !== undefined && owner !== 'block') return `a ${owner === 'turn' ? 'turn record' : owner}`;
+  // `farEndOwner` answers the first owner it meets, and a solid-block link comes first: a bundle link or a bus port of the same face is read here too.
+  if (model.links.some(link => link.bundle !== undefined && [link.attachments?.from, link.attachments?.to].some(end => end !== undefined && keys.has(portId(end))))) return 'a bundle';
+  if (ports.some(port => busOfPort(model, port.ref) !== undefined)) return 'a bus';
   if ((model.farEndOrder ?? []).some(face => face.node === node && face.side === side)) return 'a far-end order';
-  if (turned) return 'the planned first turns';
+  if (turnScope(model, node, side) && sort.planned !== sort.plainTurns && ports.some(port => sort.planned.has(portId(port.ref))))
+    return 'the planned first turns';
   const group = model.groups[model.document.nodes[node]!.group]!;
   if (group.flank !== undefined) return 'a flank';
   if (model.staggerRows?.some(row => row.group === group.id)) return 'a stagger row';
@@ -37,18 +48,23 @@ function faceOwner(model: LayoutModel, node: string, side: Side, turned: boolean
 
 /**
  * Sorts again every face whose stage-5 key reads one of `moved`, after the members stand in their new slots: the engine order and the anchors on
- * the slots, the pills rebuilt with `pills`. Gives back what it changed, or why a face cannot be sorted (nothing changed then).
+ * the slots, the pills rebuilt with `pills`. A face that reads a moved member and that another owner holds (`faceHeld`) declines the slot by name
+ * before any face is sorted, whether or not its order would change. Gives back what it changed, or why a face cannot be sorted (nothing changed then).
  */
 export function resortFaces(model: LayoutModel, moved: ReadonlySet<string>, pills: boolean): Resorted | string {
   if (!moved.size) return { faces: [], undo: () => {} };
-  const sort = faceSortOf(model), plan: { node: string; side: Side; ordered: ReturnType<typeof orderFace>['ordered'] }[] = [];
+  const sort = faceSortOf(model), reading: { node: string; side: Side }[] = [];
   for (const id of orderedNodeIds(model.document)) for (const side of SIDE_TIE_ORDER) {
-    const node = model.nodes[id]!;
-    if (!node.ports.some(port => port.side === side) || ![...faceKeyReads(model, sort, id, side)].some(read => moved.has(read))) continue;
-    const face = orderFace(model, sort, id, side), owner = faceOwner(model, id, side, face.turned);
+    if (!model.nodes[id]!.ports.some(port => port.side === side) || ![...faceKeyReads(model, sort, id, side)].some(read => moved.has(read))) continue;
+    const owner = faceHeld(model, sort, id, side);
+    if (owner !== undefined) return `the ${side} face of ${id} reads a moved member and belongs to ${owner}`;
+    reading.push({ node: id, side });
+  }
+  const plan: { node: string; side: Side; ordered: ReturnType<typeof orderFace>['ordered'] }[] = [];
+  for (const { node: id, side } of reading) {
+    const node = model.nodes[id]!, face = orderFace(model, sort, id, side);
     const now = node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
     if (face.ordered.every((port, index) => port === now[index])) continue;
-    if (owner !== undefined) return `the ${side} face of ${id} reads a moved member and belongs to ${owner}`;
     if (!standsOnSlots(node, side)) return `the ${side} face of ${id} reads a moved member and stands off its slots`;
     plan.push({ node: id, side, ordered: face.ordered });
   }

@@ -124,16 +124,25 @@ export function facingPairs(model: LayoutModel, sideOf: (ref: PortRef) => Side |
  * of each face sort against that. Both faces read one key per link, so the pair keeps one order at both ends; equal keys keep the sort's own tie order.
  * The one reader of that rule: stage 5 and its stage-4 prediction (`faceSortKey`), and the turn passes of 7a and of the turn round (`laneFaceOrder`,
  * `measureTurnOrder`), so a turn pass never sorts a pair against the order stage 5 gave it (R1). The pair keys are read once, when it is called, before
- * any face is sorted (stage 5 sorts face after face on moving anchors); the other ports read `far` on every lookup.
+ * any face is sorted (stage 5 sorts face after face on moving anchors); the other ports read `far` on every lookup. `cached`, when given, is called on each
+ * lookup of a pair key with the end the key was read from (`source`, the pair end at the held node's far side), so a reader of what a key depends on
+ * (`faceKeyReads`, dense-16x9 ticket 36, slice 3, review 1) reads the same far end again and loses no dependency to the cache.
  */
-export function pairedFaceKey(model: LayoutModel, far: (ref: PortRef, side: Side) => number, sideOf: (ref: PortRef) => Side | undefined): (ref: PortRef, side: Side) => number {
-  const keys = new Map<string, number>();
+export function pairedFaceKey(model: LayoutModel, far: (ref: PortRef, side: Side) => number, sideOf: (ref: PortRef) => Side | undefined,
+  cached?: (source: PortRef, side: Side) => void): (ref: PortRef, side: Side) => number {
+  const keys = new Map<string, { at: number; source: PortRef; side: Side }>();
   for (const { links, held } of facingPairs(model, sideOf)) {
     for (const link of links) {
-      const ends = link.attachments!, other = ends.from.node === held ? ends.to : ends.from;
-      const at = far(other, sideOf(other)!);
-      keys.set(portId(ends.from), at); keys.set(portId(ends.to), at);
+      const ends = link.attachments!, other = ends.from.node === held ? ends.to : ends.from, side = sideOf(other)!;
+      const key = { at: far(other, side), source: other, side };
+      keys.set(portId(ends.from), key); keys.set(portId(ends.to), key);
     }
   }
-  return (ref, side) => keys.get(portId(ref)) ?? far(ref, side);
+  return (ref, side) => {
+    const key = keys.get(portId(ref));
+    if (key === undefined) return far(ref, side);
+    // A cached key read the far end of `source` when it was made: a caller that collects what a key reads (`faceKeyReads`) is told on each lookup.
+    cached?.(key.source, key.side);
+    return key.at;
+  };
 }

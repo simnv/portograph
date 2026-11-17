@@ -882,7 +882,9 @@ export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, rea
  */
 export function faceSortKey(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>,
   sideOf: (port: LayoutPort | undefined) => Side | undefined = port => port?.side, reads: { into?: Set<string> } = {}): (ref: PortRef, side: Side) => number {
-  return pairedFaceKey(model, (ref, side) => farCoordinate(model, peers, ref, side, reads.into), ref => sideOf(findPort(model, ref)));
+  return pairedFaceKey(model, (ref, side) => farCoordinate(model, peers, ref, side, reads.into), ref => sideOf(findPort(model, ref)),
+    // A pair key is cached before `faceKeyReads` collects: its lookup reads the far end of the key's source again into the collector (review 1 of slice 3).
+    (source, side) => { if (reads.into !== undefined) farCoordinate(model, peers, source, side, reads.into); });
 }
 
 /**

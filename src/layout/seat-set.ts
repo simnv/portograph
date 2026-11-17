@@ -174,8 +174,10 @@ function keptFeeds(input: RowInput, xs: readonly number[]): Feed[] {
 }
 
 /**
- * One link of an open member (slice 3) as the slot choice reads it: the member's index in the order, its port's offset on the body and the far port's
- * x where it stands now. The slot choice prefers the slots nearest the far ends (`reach`; the far-end pull of a free member, architecture-2 ticket 22).
+ * One link of an open member (slice 3) as the slot choice reads it: the member's index in the order, its port's offset on the body and the centre x of
+ * the far node. The slot choice prefers the slots nearest the far ends (`reach`; the far-end pull of a free member, architecture-2 ticket 22). The far
+ * node's centre, not its port: the far face is sorted again for the slot the candidate takes, so the port's slot now is the slot of the provisional
+ * order, which declaration order decides between two equal open members (review 1 of slice 3, R3).
  */
 interface OpenEnd { member: number; offset: number; x: number }
 /** The links of the `open` members of `input` (`OpenEnd`), in member and link order (R3: by the content key of the link). */
@@ -185,9 +187,9 @@ function openEnds(model: LayoutModel, input: RowInput, open: ReadonlySet<string>
     const a = link.attachments;
     if (a === undefined) continue;
     for (const [mine, other] of [[a.from, a.to], [a.to, a.from]] as const) {
-      const member = input.order.indexOf(mine.node), port = findPort(model, mine), far = findPort(model, other);
-      if (!open.has(mine.node) || member < 0 || port?.anchor === undefined || far?.anchor === undefined) continue;
-      ends.push({ member, offset: port.anchor.x - input.x0[member]!, x: far.anchor.x, key: linkKey(link) });
+      const member = input.order.indexOf(mine.node), port = findPort(model, mine), far = model.nodes[other.node]?.bounds;
+      if (!open.has(mine.node) || member < 0 || port?.anchor === undefined || far === undefined) continue;
+      ends.push({ member, offset: port.anchor.x - input.x0[member]!, x: far.x + far.width / 2, key: linkKey(link) });
     }
   }
   return ends.sort((p, q) => p.member - q.member || p.key.localeCompare(q.key)).map(({ member, offset, x }) => ({ member, offset, x }));
@@ -240,14 +242,13 @@ function blockHeights(demands: readonly BlockDemand[]): Map<number, number> {
   return heights;
 }
 
-/** The cost of `leaf` (`Cost`) against the row where it stands now (`start`: its box width, the block heights, the extent of the groups). */
-function candidateCost(model: LayoutModel, group: LayoutGroup, leaf: Leaf, stage: Stage, blocks: boolean,
+/**
+ * The cost of `leaf` (`Cost`) against the row where it stands now (`start`: its box width, the block heights, the extent of the groups), from what
+ * `planSeatSet` read once with the leaf staged: the cell's content box `fit` and the block demands `demands` (undefined: the row feeds no block).
+ */
+function candidateCost(leaf: Leaf, fit: Rect, demands: readonly BlockDemand[] | undefined,
   start: { width: number; heights: ReadonlyMap<number, number>; w: number; h: number }): Cost {
-  const undo = stand(stage, leaf), box = group.bounds!;
-  const fit = contentBox(model, group);
-  group.bounds = fit;
-  let heights: Map<number, number> | undefined;
-  try { heights = blocks ? blockHeights(blockDemands(model).demands) : undefined; } finally { group.bounds = box; undo(); }
+  const heights = demands === undefined ? undefined : blockHeights(demands);
   const dw = Math.max(0, fit.width - start.width);
   let dh = 0;
   for (const [below, height] of heights ?? []) dh += Math.max(0, height - (start.heights.get(below) ?? height));
@@ -264,13 +265,14 @@ function groupExtent(model: LayoutModel): { w: number; h: number } {
 
 /**
  * The order the candidates are read in (owner ruling 'tight room'): the most kept verticals, then the least interval width, the open members nearest
- * their far ends (`reach`, slice 3; 0 in a row with none), the least movement,
- * the kept links by content, the row order by content (the slots of the open members, slice 3), then sourceIndex (R3). The read bound (`SEAT_SET_GAIN_READS`) cuts this order, so the candidate this order admits
- * first is always read.
+ * their far nodes (`reach`, slice 3; 0 in a row with none), the row order by content (the slots of the open members, slice 3), the least movement,
+ * the kept links by content, then sourceIndex (R3). The row order comes before the movement: the movement reads the provisional x of each member,
+ * which declaration order decides for two equal open members (review 1 of slice 3); the leaves of one row order tie on it, so a row with no open
+ * member reads as in slice 1. The read bound (`SEAT_SET_GAIN_READS`) cuts this order, so the candidate this order admits first is always read.
  */
 const readOrder = (a: Leaf, b: Leaf): number => b.kept.length - a.kept.length || (Math.abs(a.width - b.width) > PLACEMENT_EPS ? a.width - b.width : 0)
-  || (Math.abs(a.reach - b.reach) > PLACEMENT_EPS ? a.reach - b.reach : 0) || (Math.abs(a.movement - b.movement) > PLACEMENT_EPS ? a.movement - b.movement : 0) || a.key.localeCompare(b.key)
-  || a.order.join('|').localeCompare(b.order.join('|')) || a.index.localeCompare(b.index);
+  || (Math.abs(a.reach - b.reach) > PLACEMENT_EPS ? a.reach - b.reach : 0) || a.order.join('|').localeCompare(b.order.join('|'))
+  || (Math.abs(a.movement - b.movement) > PLACEMENT_EPS ? a.movement - b.movement : 0) || a.key.localeCompare(b.key) || a.index.localeCompare(b.index);
 
 /**
  * The choice among the admitted candidates of the most kept verticals and the narrowest row (owner ruling of 2026-11-17: straight links win
@@ -293,13 +295,12 @@ function moveMembers(model: LayoutModel, order: readonly string[], xs: readonly 
   return () => { for (const item of saved) { item.node.bounds = item.box; item.node.ports.forEach((port, i) => { if (item.anchors[i]) port.anchor = item.anchors[i]; }); } };
 }
 
-/** Why the members at `xs` break a block owner, or undefined: an under-cap block passes the cap, or a flat block's floor demand grows past its gap. */
-function blockOwnerFault(model: LayoutModel, group: LayoutGroup, leaf: Leaf, stage: Stage, before: readonly BlockDemand[]): string | undefined {
-  if (!before.length) return undefined;
-  const undo = stand(stage, leaf), box = group.bounds!;
-  group.bounds = contentBox(model, group);
-  let after: BlockDemand[];
-  try { after = blockDemands(model).demands; } finally { group.bounds = box; undo(); }
+/**
+ * Why the candidate breaks a block owner, or undefined: an under-cap block passes the cap, or a flat block's floor demand grows past its gap. `after`
+ * is the block demands read once with the candidate staged (`planSeatSet`).
+ */
+function blockOwnerFault(model: LayoutModel, before: readonly BlockDemand[], after: readonly BlockDemand[] | undefined): string | undefined {
+  if (!before.length || after === undefined) return undefined;
   for (const was of before) {
     const now = after.find(item => item.family === was.family)!;
     if (was.steep <= BLOCK_CAP + EPS && now.steep > BLOCK_CAP + EPS) return `the block ${was.family} would pass its ${BLOCK_CAP} px cap (${now.steep.toFixed(1)} px)`;
@@ -349,12 +350,6 @@ function stageLeaf(stage: Stage, leaf: Pick<Leaf, 'order' | 'xs'>, pills = false
   const resorted = resortFaces(model, moved, pills);
   if (typeof resorted === 'string') { members(); back(); return resorted; }
   return { faces: resorted.faces, undo: () => { resorted.undo(); members(); back(); } };
-}
-/** The undo of a leaf that `planSeatSet` has staged once already (so it stands again). */
-function stand(stage: Stage, leaf: Leaf): () => void {
-  const staged = stageLeaf(stage, leaf);
-  if (typeof staged === 'string') throw new Error(`The seat set of ${stage.group.id} no longer stands its candidate: ${staged}`);
-  return staged.undo;
 }
 /** The links of the ports of `faces`: the other links of a face sorted again, which ruling 4 reads too. */
 function faceLinks(model: LayoutModel, faces: Resorted['faces']): Set<string> {
@@ -421,13 +416,16 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
     // The gain is read on both faces of the members (ruling 4 of 2026-11-17), and on the other links of a face sorted again (slice 3): a set that
     // wins k verticals and turns more than k straight links into bends or refused chords is no gain. Read on the moved members, before the model is given back.
     const also = faceLinks(model, staged.faces), after = straightLinks(model, leaf.order, also);
+    // The block demands with the candidate staged and the cell box over it, read once for the owner check and the area (review 1 of slice 3: one staging).
+    let demands: BlockDemand[] | undefined;
+    if (hasBlocks) { group.bounds = fit; try { demands = blockDemands(model).demands; } finally { group.bounds = box; } }
     staged.undo(); group.bounds = box;
     const before = also.size ? straightLinks(model, base, also) : baseline;
-    const fault = blockOwnerFault(model, group, leaf, stage, blocks);
+    const fault = blockOwnerFault(model, blocks, demands);
     if (fault !== undefined) { first ??= fault; continue; }
     const gained = [...after.vertical].filter(id => !before.vertical.has(id)).length, gone = [...before.straight].filter(id => !after.straight.has(id)).sort();
     if (gone.length > gained) { lost ??= `wins ${gained} verticals and loses ${gone.length} straight links (${gone.join(', ')})`; continue; }
-    admitted.push({ leaf, cost: candidateCost(model, group, leaf, stage, hasBlocks, start), fit });
+    admitted.push({ leaf, cost: candidateCost(leaf, fit, demands, start), fit });
   }
   if (admitted.length) {
     const best = admitted.sort(choice)[0]!;

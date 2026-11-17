@@ -1,0 +1,31 @@
+# Expected (dense-16x9 ticket 36, slice 3, review 1): with `layout.moveBeforeGrow: true` the open member `r1` of the row `site#1` has two links to
+# the hub `h1` below, both `route: orthogonal`, so they are a facing pair: stage 5 sorts both faces of the pair by one key per link, read at `r1`.
+# When the seat set moves `r1` to another slot, the top face of `h1` reads the moved member through that pair key and is sorted again by the
+# stage-5 sorter; every face of the sheet then stands in the order the stage-5 sort gives. Before review 1 the dependency reader lost the cached
+# pair key: `h1.top` was not sorted again and the seat set failed its own check at the rows rule.
+# Test: test/layout/free-slots.test.ts (the facing pair).
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  up: { tier: 0 }
+  site: { tier: 1, label: "One site in ranks" }
+  down: { tier: 2 }
+nodes:
+  t0: { group: up, ports: [{ name: a, side: bottom }, { name: b, side: bottom }] }
+  p1: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  p2: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  c1: { group: site, ports: [{ name: u1, side: top }, { name: e1, side: bottom }, { name: e2, side: bottom }] }
+  c2: { group: site, ports: [{ name: u1, side: top }, { name: e1, side: bottom }, { name: e2, side: bottom }] }
+  r1: { group: site, ports: [{name: e3, side: bottom}, { name: e1, side: bottom }, { name: e2, side: bottom }] }
+  h1: { group: site, ports: [{name: z, side: top}, { name: a, side: top }, { name: b, side: top }, { name: c, side: top }, { name: d, side: bottom }] }
+  d0: { group: down, ports: [{ name: u, side: top }, { name: v, side: top }] }
+links:
+  - { from: t0.a, to: p1.up }
+  - { from: t0.b, to: p2.up }
+  - { from: p1.d1, to: c1.u1 }
+  - { from: p2.d1, to: c2.u1 }
+  - { from: c1.e1, to: h1.a }
+  - { from: c2.e1, to: h1.c }
+  - { from: r1.e1, to: h1.b, route: orthogonal }
+  - { from: h1.d, to: d0.u }
+  - { from: r1.e3, to: h1.z, route: orthogonal }

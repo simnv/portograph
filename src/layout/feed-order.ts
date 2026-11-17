@@ -9,7 +9,7 @@ import { placementWarning } from './regions.js';
 import { cellTier } from './read/tier.js';
 import { groupOrderFailure, ofKind, reservation, rowOrderFailure, type Reservation, type ReservationOf, type RowFeed } from './reservations.js';
 import { compareId } from './skeleton-graph.js';
-import { openMemberFault } from './read/open-member.js';
+import { openMemberFault, openSlotHeld } from './read/open-member.js';
 import { choosePairOrder, PAIR_ORDER_BOUND, PAIR_SEARCH_VISITS, type PairChoice } from './row-pairs.js';
 import { rebuildBands } from './skeleton-geometry.js';
 
@@ -225,7 +225,7 @@ export const FEED_ORDER_SLOT_HELD = 'FEED_ORDER_SLOT_HELD';
 /**
  * The cell entry with its open members (dense-16x9 ticket 36, slice 3; owner ruling 2 of 2026-11-17): with `layout.moveBeforeGrow`, a member whose
  * links all end in the sub-tier directly below (`openMemberFault`) and whose slot, at every other place in the row, leaves the decisions below the cell
- * as they are (`below`: the joint choice of the pair under it, the feed order of each row it feeds, the frame orders) is open. Stage 4 keeps the
+ * as they are (`openSlotHeld` over `below`: the joint choice of the pair under it, the feed order of each row it feeds, the frame orders) is open. Stage 4 keeps the
  * order it chose; the seat set of the row closes the open slots at stage 6, inside this record. A member that only the decisions below hold is named
  * (`FEED_ORDER_SLOT_HELD`). An authored order opens nothing. Every slot is tried once per member: at most the row length times the members (R4).
  */
@@ -236,12 +236,7 @@ function withOpen(model: LayoutModel, read: Reader, entry: Reservation): Reserva
   const today = read.below(cell, order), open: string[] = [];
   for (const node of order) {
     if (openMemberFault(model, cell, node) !== undefined) continue;
-    const rest = order.filter(id => id !== node);
-    let held: number | undefined;
-    for (let slot = 0; slot <= rest.length && held === undefined; slot++) {
-      const variant = [...rest.slice(0, slot), node, ...rest.slice(slot)];
-      if (!sameOrder(variant, order) && read.below(cell, variant) !== today) held = slot;
-    }
+    const held = openSlotHeld(cell, node, order, read.below, today);
     if (held === undefined) { open.push(node); continue; }
     const message = `${node} keeps its slot in ${cell.id}: at place ${held + 1} of the row the rows below it would be ordered otherwise.`;
     if (!model.diagnostics.some(item => item.code === FEED_ORDER_SLOT_HELD && item.message === message))

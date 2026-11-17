@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel, withLayoutMutation } from '../../src/layout/mutation.js';
-import { entryFailure, ofKind, type Reservation } from '../../src/layout/reservations.js';
+import { entryFailure, ofKind, reservation, type Reservation } from '../../src/layout/reservations.js';
+import { withdrawSeatSet } from '../../src/layout/seat-set.js';
+import { faceHeld, resortFaces } from '../../src/layout/free-slots.js';
+import { portId } from '../../src/layout/skeleton-graph.js';
+import { retryWithdrawnSeatSets } from '../../src/pipeline/seat-retry.js';
 import { FEED_ORDER_SLOT_HELD } from '../../src/layout/feed-order.js';
 import { faceSortOf, orderFace } from '../../src/layout/sides-two.js';
 import { staleFaces } from '../../src/layout/far-end-order.js';
@@ -169,4 +173,137 @@ describe('an open member stands in a gap its row seats leave (dense-16x9 ticket 
     expect([...nodes.groups['site#1']!.rowOrder!].sort()).toEqual(['c1', 'c2', 'r1']);
     for (const model of [links, nodes]) { expect(staleFaces(model)).toEqual([]); expect(findings(model)).toEqual([]); }
   }, 240000);
+});
+
+/**
+ * Review 1 of slice 3 (design/36c-review-1.md): the facing-pair key the dependency reader lost, a held face that bypassed the slot refusal, an open
+ * record accepted without its proof, and a slot contest decided by declaration order. Each test was red on eb506a7e.
+ */
+const PAIR = sheet('an-open-member-with-a-facing-pair-sorts-the-pair-face-again');
+const COMPETE = sheet('two-open-members-take-one-gap-by-content');
+/** The gap sheet with one hub below (h2 and its links left out). */
+const SINGLE = GAP.split('\n').filter(line => !line.startsWith('  h2:') && !line.includes('to: h2.') && !line.includes('from: h2.')).join('\n');
+/** Every face that the stage-5 sorter would order otherwise than it stands. */
+const unsorted = (model: LayoutModel): string[] => {
+  const sort = faceSortOf(model), changed: string[] = [];
+  for (const id of Object.keys(model.nodes).sort()) for (const side of SIDE_TIE_ORDER) {
+    const now = model.nodes[id]!.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!);
+    if (orderFace(model, sort, id, side).ordered.some((port, index) => port !== now[index])) changed.push(`${id}.${side}`);
+  }
+  return changed;
+};
+/** Swaps two declaration lines of the YAML (the lines that start with `a` and `b`). */
+const swapLines = (yaml: string, a: string, b: string): string => {
+  const lines = yaml.split('\n'), i = lines.findIndex(line => line.startsWith(a)), j = lines.findIndex(line => line.startsWith(b));
+  [lines[i], lines[j]] = [lines[j]!, lines[i]!];
+  return lines.join('\n');
+};
+/** The model with `open` of the `cell` entry replaced (a forged record). */
+const forgeOpen = (model: LayoutModel, cell: string, open: string[]): Reservation => {
+  const entry = cellEntry(model, cell)!, forged = { ...entry, payload: { ...entry.payload, open } } as Reservation;
+  model.reservations = model.reservations!.map(item => item === entry ? forged : item);
+  return forged;
+};
+
+describe('slice 3, review 1', () => {
+  // Finding 1: a facing pair's key is cached when the sort is made; the face that reads a moved member through it is found and sorted again.
+  it('sorts again a face that reads a moved open member through a facing pair', async () => {
+    const rows = await atRows(PAIR);
+    expect(rows.groups['site#1']!.rowOrder).toEqual(['c1', 'r1', 'c2']);
+    expect(unsorted(rows)).toEqual([]);
+    const model = await run(PAIR);
+    expect(staleFaces(model)).toEqual([]);
+    expect(findings(model)).toEqual([]);
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+  }, 120000);
+
+  // Finding 2: a face that the ledger holds in a far-end order declines the slot by name; the placement keeps the other slot.
+  it('declines a slot whose face below a far-end order holds', async () => {
+    const env = createEnv(parse(SINGLE), opts);
+    const held = reservation('farEndOrder', { kind: 'node', id: 'h1' }, 'top', 'sides-two', 0,
+      { node: 'h1', side: 'top', ports: ['a', 'c', 'b'].map(name => ({ node: 'h1', name, ordinal: 1 })) });
+    const model = await env.place([held]);
+    expect(model.groups['site#1']!.rowOrder).toEqual(['c1', 'c2', 'r1']);
+    expect(face(model, 'h1', 'top')).toEqual(['a', 'c', 'b']);
+  }, 120000);
+
+  // Finding 2, as a class: one predicate names every other owner of a face (`faceHeld`), read before any face is sorted; one forged owner per kind.
+  it('names every other owner of a face that reads a moved member before any face is sorted', async () => {
+    const rows = await atRows(GAP), cell = rows.document.nodes.h1!.group;
+    const top = (model: LayoutModel) => model.nodes.h1!.ports.filter(port => port.side === 'top');
+    const atH1 = (model: LayoutModel) => model.links.filter(link => top(model).some(port => portId(port.ref) === portId(link.attachments!.to)));
+    const forgeries: [string, (model: LayoutModel) => void, RegExp][] = [
+      ['turn record', model => { model.freeze = { ...model.freeze, turnOrder: [{ node: 'h1', side: 'top' }] } as NonNullable<LayoutModel['freeze']>; }, /a turn record/],
+      ['bar', model => { model.document.groups[cell] = { ...model.document.groups[cell]!, shape: 'bar' }; }, /a bar/],
+      ['bundle', model => { for (const link of atH1(model)) link.bundle = 'forged'; }, /a bundle/],
+      ['bus', model => { model.meshBuses = [{ id: 'forged', ports: [top(model)[0]!.ref] }] as unknown as NonNullable<LayoutModel['meshBuses']>; }, /a bus/],
+      ['far-end order', model => { model.farEndOrder = [{ node: 'h1', side: 'top', ports: top(model).map(port => port.ref) }]; }, /a far-end order/],
+      ['flank', model => { model.groups[cell]!.flank = { of: 'site#1' } as NonNullable<LayoutModel['groups'][string]['flank']>; }, /a flank/],
+      ['stagger row', model => { model.staggerRows = [{ group: cell }] as unknown as NonNullable<LayoutModel['staggerRows']>; }, /a stagger row/],
+      ['grid', model => { model.document.groups[cell] = { ...model.document.groups[cell]!, shape: 'grid' }; }, /a grid/],
+    ];
+    for (const [kind, forge, why] of forgeries) {
+      const model = structuredClone(rows);
+      forge(model);
+      expect(`${kind}: ${faceHeld(model, faceSortOf(model), 'h1', 'top')}`).toMatch(why);
+      const out = resortFaces(model, new Set(['r1']), false);
+      expect(typeof out === 'string' ? out : 'SORTED', kind).toMatch(new RegExp(`the top face of h1 reads a moved member and belongs to ${why.source}`));
+    }
+    // The planned first turns: a sort whose turn reservations plan a turn on the face.
+    const sort = faceSortOf(rows), port = top(rows)[0]!;
+    const planned = { ...sort, planned: new Map([[portId(port.ref), { turn: 'low', shape: 'return', reach: 0 }]]), plainTurns: new Map() } as typeof sort;
+    expect(faceHeld(rows, planned, 'h1', 'top')).toBe('the planned first turns');
+    expect(faceHeld(rows, sort, 'h1', 'top')).toBeUndefined();
+  }, 120000);
+
+  // Finding 3: `open` is proved at every read by stage 4's own proof (`openProofFault`), and a premise reads an open member only through a proved record.
+  it('refuses an open record without its lower-row proof, and a premise it would hide', async () => {
+    const model = structuredClone(await run(HELD));
+    const forged = forgeOpen(model, 'site#1', ['r1']);
+    const out = reads(model, forged);
+    expect(out.filter(item => item === 'ACCEPTED')).toEqual([]);
+    expect(out[0]).toMatch(/the open member r1 of site#1 is not free: at place 1 of the row the rows below it would be ordered otherwise/);
+    const premise = structuredClone(model), lower = cellEntry(premise, 'site#2')!;
+    const feed = lower.payload.feeds.find(item => item.row === 'site#1')!;
+    (feed as unknown as { order: string[] }).order = ['r1', 'c1', 'c2'];
+    const lowerOut = reads(premise, lower);
+    expect(lowerOut.filter(item => item === 'ACCEPTED')).toEqual([]);
+  }, 120000);
+
+  it('opens no member whose link ends on a lateral face, and no member of a canton row', async () => {
+    const lateral = GAP.replace('h1: { group: site, ports: [{ name: a, side: top }, { name: b, side: top }', 'h1: { group: site, ports: [{ name: a, side: top }, { name: b, side: left }');
+    const canton = GAP.replace('groups:\n', 'groups:\n  zone: { label: Zone }\n').replace('site: { tier: 1,', 'site: { tier: 1, canton: zone,');
+    for (const [yaml, why] of [[lateral, /ends on a left face/], [canton, /in a canton/]] as const) {
+      const model = structuredClone(await run(yaml));
+      expect((cellEntry(model, 'site#1')?.payload as { open?: string[] } | undefined)?.open).toBeUndefined();
+      const out = reads(model, forgeOpen(model, 'site#1', ['r1']));
+      expect(out.filter(item => item === 'ACCEPTED')).toEqual([]);
+      expect(out[0]).toMatch(why);
+    }
+  }, 240000);
+
+  // Finding 4: two open members that compete for one gap; the choice ends on content, not on the declaration order (R3).
+  it('chooses between competing open members by content (R3)', async () => {
+    const plain = await run(COMPETE);
+    expect(plain.groups['site#1']!.rowOrder).toEqual(['c1', 'r1', 'c2', 'r2']);
+    for (const yaml of [swapLines(COMPETE, '  r1:', '  r2:'), reversed(COMPETE, 'links')]) {
+      const model = await run(yaml);
+      expect(model.groups['site#1']!.rowOrder).toEqual(['c1', 'r1', 'c2', 'r2']);
+      expect(findings(model)).toEqual([]);
+    }
+  }, 240000);
+
+  // Remaining check: a withdrawn set that closed a slot gives the slot and the faces back when the command places once more without it.
+  it('gives the slot and the faces back when a withdrawn set is placed once more without it', async () => {
+    const env = createEnv(parse(GAP), opts), model = structuredClone(await env.place([]));
+    expect(model.groups['site#1']!.rowOrder).toEqual(['c1', 'r1', 'c2']);
+    withdrawSeatSet(model, 'site#1', 'a withdrawal for the test');
+    const out = await retryWithdrawnSeatSets(model, { place: () => env.place([]), declined: () => env.seatSetDeclined ?? new Map(),
+      decline: rows => { env.seatSetDeclined = new Map([...(env.seatSetDeclined ?? []), ...rows]); }, snapshot: () => env.seatSetDeclined,
+      restore: saved => { if (saved === undefined) delete env.seatSetDeclined; else env.seatSetDeclined = saved; }, refused: () => false });
+    expect(out.retries).toBe(1);
+    expect(out.model.groups['site#1']!.rowOrder).toEqual(['c1', 'c2', 'r1']);
+    expect(face(out.model, 'h1', 'top')).toEqual(['a', 'c', 'b']);
+    expect(() => restoreLayoutModel(JSON.stringify(out.model))).not.toThrow();
+  }, 120000);
 });
