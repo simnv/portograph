@@ -520,7 +520,20 @@ export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetP
   if (before !== undefined) rebuildBands(model);
   const refused = before === undefined ? undefined : wall!(group) ?? translationFault(model, group, before);
   if (refused !== undefined) { undo(); rebuildNodeGeometry(model, p.order, 'current'); group.bounds = was; rebuildBands(model); }
+  else if (moves || Object.entries(was).some(([key, value]) => Math.abs((group.bounds as unknown as Record<string, number>)[key]! - (value as number)) > PLACEMENT_EPS)) seatMoves.add(model);
   return refused;
+}
+
+/** The models on which a seat-set application moved a member or a cell box since the last read of `takeSeatSetMoves`. */
+const seatMoves = new WeakSet<LayoutModel>();
+/**
+ * Whether a seat set was applied with a move on `model` since the last call (and forget it): 7c rebuilds its regions after the seat applications of
+ * a pass only when one moved something (review 1 of slice 1: an unconditional rebuild doubled the centring passes of a large sheet).
+ */
+export function takeSeatSetMoves(model: LayoutModel): boolean {
+  const moved = seatMoves.has(model);
+  seatMoves.delete(model);
+  return moved;
 }
 const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((item, i) => item === b[i]);
 

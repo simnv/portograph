@@ -5,7 +5,7 @@ import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { repackOverlaps } from '../../src/layout/rows.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { entryFailure, ofKind, type Reservation, type SeatSetPayload } from '../../src/layout/reservations.js';
-import { SEAT_SET_REDECISIONS, seatSetScope } from '../../src/layout/seat-set.js';
+import { SEAT_SET_REDECISIONS, applySeatSet, seatSetScope, takeSeatSetMoves } from '../../src/layout/seat-set.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { attemptCounters } from '../../src/layout/attempt-counters.js';
@@ -93,6 +93,18 @@ describe('the seat set of a child row (dense-16x9 ticket 36, slice 1)', () => {
     const grown = JSON.parse(JSON.stringify(model)) as LayoutModel;
     seatSets(grown)[0]!.payload.seats[0]!.farOffset += 100;
     expect(entryFailure(seatSets(grown)[0]!, grown, 'round')).toBeUndefined();
+  }, 60000);
+
+  // Review 1: 7c rebuilds its regions after the seat applications of a pass only when one moved a member or a cell box.
+  it('names an application that moved something, and only that one (takeSeatSetMoves)', async () => {
+    const model = JSON.parse(JSON.stringify(await run(fixture))) as LayoutModel, [entry] = seatSets(model), group = model.groups[entry!.payload.row]!;
+    takeSeatSetMoves(model);
+    expect(applySeatSet(model, group, entry!.payload)).toBeUndefined();
+    expect(takeSeatSetMoves(model)).toBe(false);
+    // The members stand 5 px off their seats: the application moves them back, and says so once.
+    for (const id of entry!.payload.order) { const node = model.nodes[id]!; node.bounds = { ...node.bounds!, x: node.bounds!.x + 5 }; for (const port of node.ports) if (port.anchor) port.anchor = { ...port.anchor, x: port.anchor.x + 5 }; }
+    expect(applySeatSet(model, group, entry!.payload)).toBeUndefined();
+    expect([takeSeatSetMoves(model), takeSeatSetMoves(model)]).toEqual([true, false]);
   }, 60000);
 
   // With the links reversed the sheet is the same, and so is the set. With the nodes reversed stage 4 stands the parents the other way round

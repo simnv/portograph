@@ -1,5 +1,5 @@
 import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
-import { applySeatSet, applySeatSets, seatSetNodes, seatSetOf, withdrawSeatSet, type SeatWall } from './seat-set.js';
+import { applySeatSet, applySeatSets, seatSetNodes, seatSetOf, takeSeatSetMoves, withdrawSeatSet, type SeatWall } from './seat-set.js';
 import { liftedGroups } from './lift.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceExcess, facePairPitches } from './pair-pitch.js';
@@ -1759,11 +1759,13 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     recentreSeatedFaces(model, seated, feedPorts(model));
     if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
     // The rows with a seat set stand on their seats where the rules above left their parents (dense-16x9 ticket 36): moved, or withdrawn by name.
-    // The steps applied the sets without a region rebuild of their own, so the regions are rebuilt whenever a set exists.
+    // The steps applied the sets without a region rebuild of their own, so the regions are rebuilt when an application of this pass (a step's or
+    // this one) moved a member or a cell box (`takeSeatSetMoves`), and only then.
     if (model.reservations?.some(entry => entry.kind === 'seatSet')) {
       const walls = model.anchorTier !== undefined && model.tierBands.some(band => band.tier === model.anchorTier) ? centreContext(model, model.anchorTier) : undefined;
-      applySeatSets(model, walls === undefined ? () => undefined : seatWall(model, walls)); rebuildRegions(model);
+      applySeatSets(model, walls === undefined ? () => undefined : seatWall(model, walls));
     }
+    if (takeSeatSetMoves(model)) rebuildRegions(model);
     // The parent stand, the seated faces and the overlay windows move feeds after the last step: a seat whose kept port they leave off its feed is withdrawn.
     withdrawFallenSeatsOf(model);
   };
