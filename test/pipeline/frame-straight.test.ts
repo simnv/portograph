@@ -86,7 +86,8 @@ describe('a link inside one frame is a straight segment', () => {
     expect(model.groups['site#1']!.rowOrder).toEqual(['mid', 'west', 'east']);
     expect(linkOf(model, 'west', 'east').technique).toBe('straight');
     const { counts, metrics } = score(model).snapshot;
-    expect([counts.routed.bent, metrics.crossings.count]).toEqual([0, 1]);
+    // The cell and the row below it are ordered together (dense-16x9 ticket 32): the one crossing of the links between them is gone.
+    expect([counts.routed.bent, metrics.crossings.count]).toEqual([0, 0]);
   }, 60000);
 
   it('takes the straight technique for a clear chord, vertical or diagonal, and keeps the blocked one orthogonal', async () => {

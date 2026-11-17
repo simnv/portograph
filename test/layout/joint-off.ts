@@ -10,7 +10,10 @@ export function withoutJointOrder(yaml: string): string {
   return yaml.replace(/^portograph: 2\n/m, 'portograph: 2\nlayout: { feedOrder: false }\n');
 }
 
-/** The corpus sheets whose layout the joint order changes (ticket 72, `gate:compare` against main 6a373b17: 38 sheets), and the DR-04 copies of three of them (`-middle-tier-first`). */
+/**
+ * The corpus sheets whose layout the joint order changes (ticket 72, `gate:compare` against main 6a373b17: 38 sheets), and the DR-04 copies of three of them (`-middle-tier-first`),
+ * and the sheets whose subject the joint order of two rows (dense-16x9 ticket 32) takes away.
+ */
 export const JOINT_REORDERED: ReadonlySet<string> = new Set([
   'a-band-holds-the-group-that-set-its-edge',
   'a-bent-member-passes-a-linked-peer-whose-links-stay-straight',
@@ -52,6 +55,8 @@ export const JOINT_REORDERED: ReadonlySet<string> = new Set([
   'overlay-links-reorder-an-indifferent-tier',
   'two-facing-rows-pull-toward-each-other',
   'two-fans-leave-their-group-on-one-row',
+  // Dense-16x9 ticket 32: the joint order of a cell and the row below it uncrosses the two interleaved links the tier-gap plan is about.
+  'two-interleaved-links-of-one-tier-gap-cross-on-a-reserved-row',
   'widened-child-packs-tier',
 ]);
 /** `yaml` pinned as `withoutJointOrder` does when the sheet `name` is one the joint order changes, else as it is: a reader for a file whose other sheets keep their feed orders. */

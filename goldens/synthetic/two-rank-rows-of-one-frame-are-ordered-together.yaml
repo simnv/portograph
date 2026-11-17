@@ -1,0 +1,59 @@
+# Expected (dense-16x9 ticket 32): the edge row and the router row of the Core frame are ordered together, to no crossing between them.
+# Edge-1 and edge-2 are fed by the Upstream row (up-3 feeds both); edge-3 and edge-4 have no feed from above. Each router links one or two
+# edges; rr-1 and rr-2 link only to the hubs below, a complete block. The planar orders are many; among them no member stands between the
+# two edges up-3 feeds, then declaration order: [edge-3, edge-1, edge-2, edge-4] over [pe-3, pe-1, pe-2, pe-4, rr-1, rr-2].
+# Main 01415610: the rows as declared, 17 routed crossings and 6 bent links; here 15 and 0.
+portograph: 2
+profile: network
+groups:
+  upstream: { tier: 0, label: Upstream }
+  core: { tier: 1, label: Core }
+  site: { tier: 2, label: Site }
+nodes:
+  up-1: { group: upstream, class: provider }
+  up-2: { group: upstream, class: provider }
+  up-3: { group: upstream, class: provider }
+  up-4: { group: upstream, class: provider }
+  up-5: { group: upstream, class: provider }
+  edge-1: { group: core, class: edge }
+  edge-2: { group: core, class: edge }
+  edge-3: { group: core, class: edge }
+  edge-4: { group: core, class: edge }
+  pe-1: { group: core, class: router }
+  pe-2: { group: core, class: router }
+  pe-3: { group: core, class: router }
+  pe-4: { group: core, class: router }
+  rr-1: { group: core, class: router }
+  rr-2: { group: core, class: router }
+  hub-1: { group: core, class: backbone }
+  hub-2: { group: core, class: backbone }
+  leaf-1: { group: site, class: router }
+  leaf-2: { group: site, class: router }
+links:
+  - [edge-1, up-1]
+  - [edge-1, up-2]
+  - [edge-1, up-3]
+  - [edge-2, up-3]
+  - [edge-2, up-4]
+  - [edge-2, up-5]
+  - [pe-1, edge-1]
+  - [pe-2, edge-2]
+  - [pe-3, edge-3]
+  - [pe-1, edge-3]
+  - [pe-4, edge-4]
+  - [pe-2, edge-4]
+  - [hub-1, hub-2]
+  - [hub-1, pe-1]
+  - [hub-1, pe-2]
+  - [hub-1, pe-3]
+  - [hub-1, pe-4]
+  - [hub-1, rr-1]
+  - [hub-1, rr-2]
+  - [hub-2, pe-1]
+  - [hub-2, pe-2]
+  - [hub-2, pe-3]
+  - [hub-2, pe-4]
+  - [hub-2, rr-1]
+  - [hub-2, rr-2]
+  - [hub-1, leaf-1]
+  - [hub-2, leaf-2]

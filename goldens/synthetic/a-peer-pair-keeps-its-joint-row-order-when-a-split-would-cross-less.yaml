@@ -1,0 +1,34 @@
+# Expected (dense-16x9 ticket 32): a peer link counts in the joint order. Mid-3 links to top-1 and top-2; standing between the peers mid-1
+# and mid-2 it would cross no link, but the peer link would pass its two links. With the peer link counted, the order as it stands is a
+# minimum and stays: no worse than main 01415610 (1 routed crossing, no bent link).
+portograph: 2
+profile: network
+groups:
+  upstream: { tier: 0, label: Upstream }
+  core: { tier: 1, label: Core }
+  site: { tier: 2, label: Site }
+nodes:
+  up-1: { group: upstream, class: provider }
+  up-2: { group: upstream, class: provider }
+  top-1: { group: core, class: edge }
+  top-2: { group: core, class: edge }
+  top-3: { group: core, class: edge }
+  mid-1: { group: core, class: router }
+  mid-2: { group: core, class: router }
+  mid-3: { group: core, class: router }
+  mid-4: { group: core, class: router }
+  leaf-1: { group: site, class: router }
+  leaf-2: { group: site, class: router }
+links:
+  - [top-1, up-1]
+  - [top-2, up-2]
+  - [mid-1, mid-2]
+  - [mid-1, top-1]
+  - [mid-2, top-2]
+  - [mid-3, top-1]
+  - [mid-3, top-2]
+  - [mid-4, top-3]
+  - [mid-1, leaf-1]
+  - [mid-2, leaf-1]
+  - [mid-3, leaf-2]
+  - [mid-4, leaf-2]

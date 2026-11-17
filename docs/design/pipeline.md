@@ -483,9 +483,39 @@ read again (`refreshFeedOrders`): a cell is re-seated inside the room its tier l
 frame order the feeds no longer give is dropped by name (`FEED_ORDER_WITHDRAWN`). A re-seated cell can move the far node of another
 pull, so the two steps repeat until no pull is withdrawn (`settlePullsAndFeeds`; a withdrawn row records no pull, so at most one round
 per row with a pull, and one more). `validateFeedOrders` checks every entry and its
-premise at the end of stage 4, and `validateReservations` on every later snapshot (R2). One sort per row, no search, so no cap.
+premise at the end of stage 4, and `validateReservations` on every later snapshot (R2). One sort per row, and the bounded search of a
+pair (below).
 `layout.feedOrder: false` writes no entry: ELK's order, the overlay side and the order of every top row stand (a test input whose subject needs the declared order
 pins it so). On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and the zone of Location 4 stands under its feeds.
+
+**Two rows ordered together** (dense-16x9 ticket 32). A rank cell and the row directly below it are one **pair** when every link of the
+cell down to that sub-tier ends in that one row, and that row is fed from above by the cell alone. The row below is a rank cell, or a
+free row that the corridor step could not judge (`frame-columns`, as for a top row), with no far-end pull and no group order reading
+it. The orders of the pair are chosen together (`choosePairOrder`, `row-pairs.ts`): an exact search over every order of both rows, to
+the fewest crossings of the links between them. A peer link counts too: one whose ends a member stands between passes that member's
+links between the rows. The members the row above feeds keep their feed keys: a member with a smaller key stands left of one with a
+larger key. Members with one key, the unfed members (ticket 30's free variables) and every member of the row below are free. A run of
+peer neighbours as it stands is one unit. Members that no rule tells apart (one row, the same links, key and feeders, no peer link)
+are merged and stand in declaration order. The search is bounded by `PAIR_ORDER_BOUND`, 10000 joint orders per pair (R4). The
+competition case of ticket 30's review has 8640, and the corpus pairs have 100 or fewer. Past the bound, today's order stays and
+`FEED_ORDER_PAIR_BOUND` names the pair (R6).
+- The order the rows have stays when it is a minimum: an earlier joint choice first (the previous round, or the ledger in the
+  refresh), then today's order (the cell's one-row order, and the lower row's read under it). Today's rules then order the rows as
+  before.
+- Among the minima, in this order: the fewest members between the members that one node of the row above links to (a node fed by two
+  members wants them side by side, or its port order breaks); the smallest spread of each outside feeder's links over each row; the
+  smallest total span of the links between the rows (read on the linked members, each row from its middle, so a mirrored pair has the
+  mirrored span); declaration order (R3: the last key).
+- Each row of a chosen pair is re-seated and gets one `rowOrder` entry. The entry names the other row with its order: the joint premise,
+  which `rowOrderFailure` checks for every reader (`RESERVATION_CHECKS`). The upper row's entry also names the row above that feeds it.
+  A free lower row records `feed-order`. `layout.feedOrder: false` and `layout.corridorRowOrder: false` keep the authored order: no
+  pair is judged.
+- **The mutual read.** A top row above the cell (ticket 20) reads the cell, and the cell's feed keys read the top row. The rows are
+  judged top-down, so the top row decides first: it reads the cell as the cell stands. The pair then decides under the keys that order
+  gives. When the pair turns the cell, the top row's premise breaks, and the next round reads the cell again. The top row's new order
+  sorts the cell's fed members by their places, and the pair stood them in key order, so the keys keep their order. The earlier joint
+  choice is then still a minimum, and it stays. So the second round ends the loop; the cap of one round per judged row and one more
+  (R4) withdraws by name any entry still broken.
 
 **Sibling rows (dense-16x9 ticket 06, slice C; owner ruling "mirror one pair", 2026-11-15).** Once the frame order has settled
 (after `settlePullsAndFeeds`), `seatSiblingFrameEnds` (`src/layout/sibling-frames.ts`) seats the ends of every **sibling-frame link**

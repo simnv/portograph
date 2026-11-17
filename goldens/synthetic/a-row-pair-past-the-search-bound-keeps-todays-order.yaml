@@ -1,0 +1,40 @@
+# Expected (dense-16x9 ticket 32): a pair with more joint orders than the bound is not searched. Top-1 and top-2 differ by their links, and
+# no rule merges two of the seven mids (their links up and their leaves differ): 2 x 7! = 10080 orders, past PAIR_ORDER_BOUND (10000).
+# FEED_ORDER_PAIR_BOUND names the pair and the order of each row alone stays, as on main 01415610.
+portograph: 2
+profile: network
+groups:
+  upstream: { tier: 0, label: Upstream }
+  core: { tier: 1, label: Core }
+  site: { tier: 2, label: Site }
+nodes:
+  up-1: { group: upstream, class: provider }
+  top-1: { group: core, class: edge }
+  top-2: { group: core, class: edge }
+  mid-1: { group: core, class: router }
+  mid-2: { group: core, class: router }
+  mid-3: { group: core, class: router }
+  mid-4: { group: core, class: router }
+  mid-5: { group: core, class: router }
+  mid-6: { group: core, class: router }
+  mid-7: { group: core, class: router }
+  leaf-1: { group: site, class: router }
+  leaf-2: { group: site, class: router }
+links:
+  - [top-1, up-1]
+  - [top-2, up-1]
+  - [mid-1, top-1]
+  - [mid-2, top-1]
+  - [mid-3, top-1]
+  - [mid-4, top-2]
+  - [mid-5, top-2]
+  - [mid-6, top-1]
+  - [mid-6, top-2]
+  - [mid-7, top-1]
+  - [mid-7, top-2]
+  - [mid-1, leaf-1]
+  - [mid-2, leaf-2]
+  - [mid-4, leaf-1]
+  - [mid-5, leaf-2]
+  - [mid-6, leaf-1]
+  - [mid-7, leaf-2]

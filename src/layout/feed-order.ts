@@ -9,12 +9,16 @@ import { placementWarning } from './regions.js';
 import { cellTier } from './read/tier.js';
 import { groupOrderFailure, ofKind, reservation, rowOrderFailure, type Reservation, type ReservationOf, type RowFeed } from './reservations.js';
 import { compareId } from './skeleton-graph.js';
+import { choosePairOrder, PAIR_ORDER_BOUND, type PairChoice } from './row-pairs.js';
 import { rebuildBands } from './skeleton-geometry.js';
 
 /** One unit of a fed row: a node of a rank cell, or the own cells or a child frame of a frame. `top` is its first sub-tier, `nodes` its nodes there. */
 interface Unit { id: string; top: number; nodes: readonly string[] }
 /** A decided row: its order, and the feeding rows with the order they were read in (the premise the entry stores). */
 interface Decision { order: string[]; feeds: RowFeed[] }
+
+/** A pair of rows ordered together (dense-16x9 ticket 32): the upper row's and the lower row's orders. */
+interface PairOrders { upper: readonly string[]; lower: readonly string[] }
 
 /** Two feed keys closer than this are one key: a mean of row positions differs by 1/n or more where it differs at all. */
 const SAME_KEY = 1e-9;
@@ -47,8 +51,15 @@ const SAME_KEY = 1e-9;
  *   (`feedingRowsOf`). A free row that a withdrawn pull turns after the frames are packed is read again (`refreshFeedOrders`).
  *   `validateFeedOrders`, and `validateReservations` on every later snapshot, check the order and its premise.
  *
+ * - **A pair** (dense-16x9 ticket 32): a rank cell and the row below it that only it feeds are ordered together, to the fewest crossings of
+ *   the links between them (`choosePairOrder`, an exact search bounded by `PAIR_ORDER_BOUND`, R4; past it `FEED_ORDER_PAIR_BOUND` names the
+ *   pair and today's order stays). The cell's fed members keep their feed keys, the rest are free; an order that is a minimum stays (an
+ *   earlier joint choice first, then today's). Each row gets one entry naming the other with its order (the joint premise); the lower row
+ *   is not judged again in the round. The top row above the cell decides first (top-down); the second round finds the joint choice still a
+ *   minimum, so it stays.
+ *
  * `layout.feedOrder: false` switches the step off (a test input whose subject needs the declared order pins it so).
- * No search: one sort per row. The row below a top row may read the top row in its turn, so the rows are judged again while a premise
+ * One sort per row, and the bounded search of a pair. The row below a top row may read the top row in its turn, so the rows are judged again while a premise
  * breaks, at most one round per judged row and one more (R4); an entry still broken is withdrawn by name (`FEED_ORDER_WITHDRAWN`). Runs after the free-row orders of stage 4 and before the frames are
  * packed. The entries of an earlier run are replaced, so a placement re-run decides again on its own skeleton.
  */
@@ -59,11 +70,22 @@ export function orderByFeeds(model: LayoutModel): void {
   const read = reader(model), rows = read.rows(read.tops());
   const rules = new Map(rows.map(row => [row, row.rowOrderDecision?.rule]));
   let entries: Reservation[], moved = false;
+  const chosen = new Map<string, PairOrders>();
   // A top row reads the row below, and that row may read the top row in its turn (a rank cell under it): the rows are judged again while
   // an entry's premise does not hold. R4: at most one round per judged row and one more; an entry still broken then is withdrawn by name.
   for (let round = 0; ; round++) {
     entries = [];
+    const jointly = new Set<string>();
     for (const row of rows) {
+      if (jointly.has(row.id)) continue;
+      const pair = judgePair(model, read, row, chosen.get(row.id), 'column', rules);
+      if (pair !== undefined) {
+        entries.push(...pair.entries);
+        jointly.add(pair.lower);
+        chosen.set(row.id, pair.orders);
+        moved ||= pair.moved;
+        continue;
+      }
       const decision = read.row(row);
       if (decision === undefined) continue;
       if (!sameOrder(decision.order, row.rowOrder ?? row.nodes)) {
@@ -107,7 +129,17 @@ export function refreshFeedOrders(model: LayoutModel): boolean {
   let moved = false;
   // A free top row is not turned again here: it keeps an entry only where its feeds still give the order it stands in.
   const tops = ledger.flatMap(({ payload }) => 'row' in payload ? [model.groups[payload.row]!] : []);
+  const jointly = new Set<string>();
   for (const row of read.rows(tops)) {
+    if (jointly.has(row.id)) continue;
+    // A pair ordered together stays while its choice is still a minimum on the rows as they read now (dense-16x9 ticket 32).
+    const pair = judgePair(model, read, row, read.pairOf(row, ledger), true);
+    if (pair !== undefined) {
+      entries.push(...pair.entries);
+      jointly.add(pair.lower);
+      moved ||= pair.moved;
+      continue;
+    }
     const decision = read.row(row);
     if (row.frame === undefined) {
       if (decision !== undefined && sameOrder(decision.order, row.rowOrder ?? row.nodes)) entries.push(rowEntry(row, decision));
@@ -196,6 +228,44 @@ function turned(group: LayoutGroup, rule: RowOrderDecision['rule'] | undefined):
 function refused(model: LayoutModel, row: LayoutGroup, order: readonly string[]): void {
   placementWarning(model, 'FEED_ORDER_REFUSED', `Row ${row.id} cannot stand in the order its feeds give (${order.join(', ')}): it does not fit its room. The order it stands in stays, with no reservation.`, [row.id], 'group');
 }
+/**
+ * Judges the pair whose upper row is `row` (dense-16x9 ticket 32): when the joint search chooses an order, or an earlier joint choice stays,
+ * both rows are re-seated in it and get one entry each, each naming the other row with its order (the joint premise); the upper row's entry
+ * also names the row above that feeds it. Undefined when the pair is not one (`read.pair`), when today's order is a minimum (today's rules
+ * order the rows), when the bound or the keys stop the search (the bound is named, `FEED_ORDER_PAIR_BOUND`, R6), or when a row does not fit
+ * its room (named, `FEED_ORDER_REFUSED`; a row the step re-seated goes back).
+ */
+function judgePair(model: LayoutModel, read: Reader, row: LayoutGroup, previous: PairOrders | undefined, mode: true | 'column',
+  rules?: Map<LayoutGroup, RowOrderDecision['rule'] | undefined>): { entries: Reservation[]; lower: string; orders: PairOrders; moved: boolean } | undefined {
+  const pair = read.pair(row, previous);
+  if (pair === undefined) return undefined;
+  const { choice, lower, above } = pair;
+  if (choice.kind === 'bound') bounded(model, row, lower, choice);
+  if (choice.kind !== 'chosen' && choice.kind !== 'stays') return undefined;
+  const orders = { upper: choice.upper, lower: choice.lower };
+  if (rules !== undefined && !rules.has(lower)) rules.set(lower, lower.rowOrderDecision?.rule);
+  const was = [...(row.rowOrder ?? row.nodes)];
+  let moved = false;
+  for (const [group, order] of [[row, orders.upper], [lower, orders.lower]] as const) {
+    if (sameOrder(order, group.rowOrder ?? group.nodes)) continue;
+    if (!reseatRow(model, group, [...order], group.frame === undefined ? true : mode)) {
+      refused(model, group, order);
+      if (group === lower && !sameOrder(was, row.rowOrder ?? row.nodes)) reseatRow(model, row, was, true);
+      return undefined;
+    }
+    moved = true;
+    if (rules !== undefined) turned(group, rules.get(group));
+  }
+  const entries = [
+    rowEntry(row, { order: [...orders.upper], feeds: [...(above === undefined ? [] : [above]), { row: lower.id, order: [...orders.lower] }] }),
+    rowEntry(lower, { order: [...orders.lower], feeds: [{ row: row.id, order: [...orders.upper] }] }),
+  ];
+  return { entries, lower: lower.id, orders, moved };
+}
+function bounded(model: LayoutModel, row: LayoutGroup, lower: LayoutGroup, choice: Extract<PairChoice, { kind: 'bound' }>): void {
+  const message = `The rows ${row.id} and ${lower.id} have more than ${PAIR_ORDER_BOUND} joint orders (at least ${choice.orders}): they are not ordered together, and today's order stays.`;
+  if (!model.diagnostics.some(item => item.code === 'FEED_ORDER_PAIR_BOUND' && item.message === message)) placementWarning(model, 'FEED_ORDER_PAIR_BOUND', message, [row.id, lower.id], 'group');
+}
 function withdraw(model: LayoutModel, entries: readonly Reservation[]): void {
   for (const entry of entries) {
     if (entry.kind !== 'rowOrder') continue;
@@ -204,6 +274,7 @@ function withdraw(model: LayoutModel, entries: readonly Reservation[]): void {
   }
 }
 
+type Reader = ReturnType<typeof reader>;
 /** What the writer and the refresh read: the eligible cells and frames in their judging order, and the decision of each. */
 function reader(model: LayoutModel) {
   const groupOf = (node: string): LayoutGroup => model.groups[model.document.nodes[node]!.group]!;
@@ -212,6 +283,11 @@ function reader(model: LayoutModel) {
   const above = (tier: number): number | undefined => tiers[tiers.indexOf(tier) - 1];
   const below = (tier: number): number | undefined => tiers[tiers.indexOf(tier) + 1];
   const ends = routedEnds(model);
+  // The orders a pair judgement assumes for a row it has not re-seated yet (dense-16x9 ticket 32): today's order of the lower row is read
+  // under today's order of the upper row.
+  const assumed = new Map<string, readonly string[]>();
+  const orderOf = (group: LayoutGroup): string[] => [...(assumed.get(group.id) ?? group.rowOrder ?? group.nodes)];
+  const declared = new Map(Object.keys(model.document.nodes).map((node, at) => [node, at]));
   const isRow = (group: LayoutGroup): boolean => groupShape(model, group.id) === 'row' && model.document.groups[group.id]?.shape !== 'bar';
   // A row a flank stands beside is re-packed after this step (its primary peer goes to the outer end): it is no feeding row, and no cell to order.
   const flanked = new Set(Object.values(model.groups).flatMap(group => group.flank ? [group.flank.of] : []));
@@ -233,7 +309,7 @@ function reader(model: LayoutModel) {
       feeds.set(unit.id, far);
     }
     if (row === undefined) return undefined;
-    const order = [...(row.rowOrder ?? row.nodes)];
+    const order = orderOf(row);
     return {
       keys: new Map(units.map(unit => { const far = feeds.get(unit.id)!; return [unit.id, far.length ? far.reduce((sum, node) => sum + order.indexOf(node), 0) / far.length : undefined]; })),
       feed: { row: row.id, order },
@@ -263,7 +339,7 @@ function reader(model: LayoutModel) {
    * order of their own keys; a member with no key keeps its slot; `tie` breaks an equal key.
    */
   const ordered = (row: LayoutGroup, toward: (tier: number) => number | undefined, tie: (items: readonly string[]) => readonly string[]): Decision | undefined => {
-    const order = [...(row.rowOrder ?? row.nodes)];
+    const order = orderOf(row);
     const read = keysOf(order.map(node => ({ id: node, top: row.tier!, nodes: [node] })), toward);
     if (read === undefined || !decided(read.keys)) return undefined;
     const { keys } = read;
@@ -276,8 +352,76 @@ function reader(model: LayoutModel) {
     // A cell that stage 4 seated for its sibling-frame links keeps its seat: the feeds order the members between the two seated blocks (dense-16x9 ticket 06).
     return { order: siblingSeatOrder(model, row.id, slotSort(heads, blockKeys, byKey(blockKeys, tie(heads))).flatMap(head => inner.get(head)!)), feeds: [read.feed] };
   };
+  /**
+   * The order the feeds give a row: a row that a row above feeds (a rank cell) reads the feeds from above, a tie keeping the order it stands
+   * in (ELK's); a row that no row above feeds reads its feeds into the row below when `readsBelow` lets it (dense-16x9 ticket 20), a tie
+   * keeping declaration order.
+   */
+  const rowDecision = (row: LayoutGroup): Decision | undefined => readsBelow(row) ? ordered(row, below, () => row.nodes)
+    : fedFromAbove(row) && row.frame !== undefined ? ordered(row, above, items => items) : undefined;
   const { freeRow } = orderTools(model);
   const joint = new Set(ofKind(model.reservations ?? [], 'groupOrder').flatMap(({ payload }) => payload.feeds.map(feed => feed.row)));
+  /**
+   * The row a rank cell's links down all reach, when only that cell feeds it from above and a rule here may order it (dense-16x9 ticket 32):
+   * a rank cell, or a free row the corridor step could not judge (as for a top row), with no far-end pull and no group order reading it.
+   */
+  const lowerOf = (row: LayoutGroup): LayoutGroup | undefined => {
+    const tier = below(row.tier!);
+    let lower: LayoutGroup | undefined;
+    for (const node of row.nodes) for (const other of ends.get(node) ?? []) {
+      const group = groupOf(other);
+      if (tier === undefined || group.tier !== tier) continue;
+      if (lower !== undefined && lower !== group) return undefined;
+      lower = group;
+    }
+    if (lower === undefined || lower.flank || flanked.has(lower.id) || !isRow(lower)) return undefined;
+    if (lower.frame === undefined && (!freeRow(lower) || joint.has(lower.id) || lower.rowOrderDecision?.pulledFrom !== undefined
+      || lower.rowOrderDecision !== undefined && lower.rowOrderDecision.rule !== 'frame-columns')) return undefined;
+    const inside = new Set(row.nodes);
+    const fedElsewhere = lower.nodes.some(node => (ends.get(node) ?? []).some(other => (groupOf(other).tier ?? Infinity) < lower!.tier! && !inside.has(other)));
+    return fedElsewhere ? undefined : lower;
+  };
+  /**
+   * The joint order of a rank cell and the row below it that only it feeds (dense-16x9 ticket 32, `choosePairOrder`), or undefined when the
+   * two are no such pair or an authored order stands (`readsBelow`'s test). The members the row above feeds keep their feed keys; the
+   * unfed members are free. Today's order is what the one-row rules give: the cell's, and the lower row's read under it.
+   */
+  const pairOf = (row: LayoutGroup, previous?: PairOrders): { choice: PairChoice; lower: LayoutGroup; above: RowFeed | undefined } | undefined => {
+    if (authored || row.frame === undefined || !isRow(row) || flanked.has(row.id)) return undefined;
+    const lower = lowerOf(row);
+    if (lower === undefined || row.nodes.length + lower.nodes.length < 3) return undefined;
+    const fed = fedFromAbove(row) ? keysOf(row.nodes.map(node => ({ id: node, top: row.tier!, nodes: [node] }))) : undefined;
+    if (fedFromAbove(row) && fed === undefined) return undefined;
+    const upper = rowDecision(row)?.order ?? orderOf(row);
+    assumed.set(row.id, upper);
+    const today = (lower.frame === undefined ? undefined : rowDecision(lower)?.order) ?? orderOf(lower);
+    assumed.delete(row.id);
+    const inUpper = new Set(row.nodes), inLower = new Set(lower.nodes), members = new Set([...row.nodes, ...lower.nodes]);
+    const links: [string, string][] = [], peers: [string, string][] = [];
+    for (const link of model.links) {
+      if (link.layer !== 'routed' || link.meshBus !== undefined || !link.attachments) continue;
+      const a = link.attachments.from.node, b = link.attachments.to.node;
+      if (a === b) continue;
+      if (inUpper.has(a) && inLower.has(b)) links.push([a, b]);
+      else if (inUpper.has(b) && inLower.has(a)) links.push([b, a]);
+      else if (inUpper.has(a) && inUpper.has(b) || inLower.has(a) && inLower.has(b)) peers.push([a, b]);
+    }
+    const outside = new Map<string, string[]>();
+    for (const node of members) for (const other of ends.get(node) ?? []) if (!members.has(other)) outside.set(other, [...(outside.get(other) ?? []), node]);
+    const feeders = [...outside.keys()].sort(compareId).map(node => outside.get(node)!);
+    const tierAbove = above(row.tier!);
+    const fromAbove = [...outside.keys()].sort(compareId).filter(node => groupOf(node).tier === tierAbove)
+      .map(node => [...new Set(outside.get(node)!.filter(item => inUpper.has(item)))]).filter(items => items.length > 1);
+    // The keys go to the search as ranks: two keys within `SAME_KEY` are one rank.
+    const values = [...(fed?.keys ?? new Map<string, number | undefined>())].filter((entry): entry is [string, number] => entry[1] !== undefined);
+    const distinct = [...new Set(values.map(([, key]) => key))].sort((a, b) => a - b).filter((key, at, all) => at === 0 || key - all[at - 1]! > SAME_KEY);
+    const keys = new Map(values.map(([node, key]) => [node, distinct.filter(value => value <= key + SAME_KEY).length - 1]));
+    const choice = choosePairOrder({ upper, lower: today, links, peers, keys, above: fromAbove, feeders, declared, ...(previous === undefined ? {} : { previous }) });
+    // A cell that stage 4 seated for its sibling-frame links keeps its seat (dense-16x9 ticket 06): a joint order that would move it is not taken.
+    if ((choice.kind === 'chosen' || choice.kind === 'stays') && [[row, choice.upper], [lower, choice.lower]].some(([group, order]) =>
+      (group as LayoutGroup).frame !== undefined && !sameOrder(siblingSeatOrder(model, (group as LayoutGroup).id, order as string[]), order as string[]))) return undefined;
+    return { choice, lower, above: fed?.feed };
+  };
   const frames = model.document.frames ?? {};
   const nodesAt = (cells: readonly string[], tier: number): string[] => cells.filter(cell => cellTier(model, cell) === tier).flatMap(cell => model.groups[cell]!.nodes);
   return {
@@ -300,8 +444,14 @@ function reader(model: LayoutModel) {
      * in (ELK's); a row that no row above feeds reads its feeds into the row below when `readsBelow` lets it (dense-16x9 ticket 20), a tie
      * keeping declaration order.
      */
-    row: (row: LayoutGroup): Decision | undefined => readsBelow(row) ? ordered(row, below, () => row.nodes)
-      : fedFromAbove(row) && row.frame !== undefined ? ordered(row, above, items => items) : undefined,
+    row: rowDecision,
+    pair: (row: LayoutGroup, previous?: PairOrders) => pairOf(row, previous),
+    /** The earlier joint choice of the pair whose upper row is `row`, read off its ledger entry (it names the lower row as a feed). */
+    pairOf: (row: LayoutGroup, ledger: readonly ReservationOf<'rowOrder'>[]): PairOrders | undefined => {
+      const entry = ledger.find(({ payload }) => 'cell' in payload && payload.cell === row.id);
+      const tier = below(row.tier!), feed = entry?.payload.feeds.find(item => model.groups[item.row]?.tier === tier);
+      return entry === undefined || feed === undefined ? undefined : { upper: entry.payload.order, lower: feed.order };
+    },
     frame: (id: string): Decision | undefined => {
       const tierOf = (cell: string): number => cellTier(model, cell);
       const blocks = Object.keys(frames).filter(child => frames[child]!.parent === id).map(child => { const [low, high] = tierRange(model, child); return { child, low, high }; });

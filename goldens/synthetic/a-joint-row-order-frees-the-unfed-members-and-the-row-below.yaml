@@ -1,0 +1,40 @@
+# Expected (dense-16x9 ticket 32; the competition case of ticket 30's review 1): a1 and a2 are fed in that order, b1 and b2 have no feed
+# from above, and the free row below is fed by the core cell alone. Ordered one block at a time, the unfed members reached 9 crossings
+# between the two rows; ordered together with the row below they reach 2: [a1, a2, b2, b1] over [c1, c5, c4, c0, c3, c2].
+# Main 01415610: the rows as declared, 21 routed crossings and no bent link; here 2 crossings and 4 bent links.
+portograph: 2
+groups:
+  source: {tier: 0}
+  feeds: {tier: 1}
+  outer: {}
+  core: {tier: 2, canton: outer}
+  lower: {tier: 3}
+nodes:
+  root: {group: source}
+  p1: {group: feeds}
+  p2: {group: feeds}
+  a1: {group: core, ports: [{name: peer, side: left}]}
+  a2: {group: core, ports: [{name: peer, side: left}]}
+  b1: {group: core, ports: [{name: peer, side: right}]}
+  b2: {group: core, ports: [{name: peer, side: right}]}
+  c0: {group: lower}
+  c1: {group: lower}
+  c2: {group: lower}
+  c3: {group: lower}
+  c4: {group: lower}
+  c5: {group: lower}
+links:
+  - [root, p1]
+  - [root, p2]
+  - [p1, a1]
+  - [p2, a2]
+  - [a1, c1]
+  - [a1, c5]
+  - [a2, c3]
+  - [a2, c4]
+  - [a2, c5]
+  - [b1, c2]
+  - [b1, c3]
+  - [b2, c0]
+  - [b2, c3]
+  - [b2, c4]
