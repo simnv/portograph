@@ -1,5 +1,5 @@
 import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
-import { applySeatSet, applySeatSets, seatSetNodes, seatSetOf, takeSeatSetMoves, withdrawSeatSet, type SeatWall } from './seat-set.js';
+import { applySeatSet, applySeatSets, nameFarEndRefusal, seatFarEndRefusal, seatSetNodes, seatSetOf, takeSeatSetMoves, withdrawSeatSet, type SeatWall } from './seat-set.js';
 import { liftedGroups } from './lift.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceExcess, facePairPitches } from './pair-pitch.js';
@@ -502,7 +502,13 @@ function geometry(model: LayoutModel): number[] {
 }
 /** The child columns stand against the parent cells beside them again; the anchor tier and the flanks keep their place in centring (idempotent, ticket 28). */
 function settleRows(model: LayoutModel): boolean {
-  return packBesideRows(model, cell => model.groups[cell]!.tier !== model.anchorTier && !model.groups[cell]!.flank);
+  return packBesideRows(model, cell => {
+    if (model.groups[cell]!.tier === model.anchorTier || model.groups[cell]!.flank) return false;
+    // A cell with a far end of a standing seat set stays, and its child frame with it (dense-16x9 ticket 36a).
+    const fixed = seatFarEndRefusal(model, [cell]);
+    if (fixed !== undefined) nameFarEndRefusal(model, 'the child-frame pack', cell, fixed);
+    return fixed === undefined;
+  });
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 export interface CentreContext {
@@ -640,7 +646,9 @@ function tailReservation(model: LayoutModel, context: CentreContext, tier: numbe
   // exact for the whole tier step. It costs one pass over the groups of the tier.
   for (const id of [...order].reverse()) {
     result.set(id, bound);
-    bound = Math.min(bound, reservedWindow(model, context, tier, id).high, guardWall(model, id)) - model.groups[id]!.bounds!.width - bandGap(model);
+    // A row with a far end of a standing seat set does not give way (dense-16x9 ticket 36a): the groups before it end where it stands.
+    const fixed = seatFarEndRefusal(model, [id]) !== undefined ? model.groups[id]!.bounds!.x + model.groups[id]!.bounds!.width : Infinity;
+    bound = Math.min(bound, fixed, reservedWindow(model, context, tier, id).high, guardWall(model, id)) - model.groups[id]!.bounds!.width - bandGap(model);
   }
   return result;
 }
@@ -658,6 +666,13 @@ function packClear(model: LayoutModel, context: CentreContext, tier: number, gro
   const low = Math.max(window.low, right(previous.bounds!) + bandGap(model));
   if (group.bounds!.x >= low - EPS) return;
   const bounds = { ...group.bounds!, x: low };
+  // A row with a far end of a standing seat set keeps its stage-6 x (dense-16x9 ticket 36a); the tail reservation keeps the groups before it
+  // clear of it, so a pack it would need is named as infeasible.
+  const fixed = seatFarEndRefusal(model, [group.id]);
+  if (fixed !== undefined) {
+    placementWarning(model, 'CENTRE_TIER_PACK_INFEASIBLE', `${group.id} cannot clear ${previous.id}: ${fixed}; the final gates judge the result.`, [group.id], 'group');
+    return;
+  }
   // A forced move: it passes the lane sides but not the side-lane frame guard (the riser keep-out is exempt the same way).
   if (low + group.bounds!.width > window.high + EPS || !laneSidesHold(model, [{ group, bounds }], true, false)) {
     placementWarning(model, 'CENTRE_TIER_PACK_INFEASIBLE',
@@ -692,6 +707,8 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
   if (!standsInCanton(model, group) || !Number.isFinite(target) || box.width > high - low + EPS) return;
   const dx = Math.max(low, Math.min(target, high - box.width)) - box.x;
   if (Math.abs(dx) <= EPS || !holdsMove(model, [{ group, bounds: { ...box, x: box.x + dx } }])) return;
+  const fixed = seatFarEndRefusal(model, [id]);
+  if (fixed !== undefined) { nameFarEndRefusal(model, 'the stand near the feed', id, fixed); return; }
   moveGroup(model, group, dx, 0);
 }
 
@@ -1076,6 +1093,10 @@ function spreadParent(model: LayoutModel, context: CentreContext, tier: number, 
   // The ports as the model holds them now: a spread before this one, or its undoing, moved or replaced the nodes of its row.
   const feeds = plan.feeds.map(feed => ({ key: feed.key, link: feed.link, parent: findPort(model, feed.parent.ref)!, child: findPort(model, feed.child.ref)! }));
   const decline = (why: string): undefined => declineSpread(model, plan.node, feeds.map(feed => feed.link), why);
+  // A spread moves its row (the growth shifts the neighbours, the clamp moves the group): a row with a far end of a standing seat set keeps its
+  // stage-6 x (dense-16x9 ticket 36a), so the spread is declined by that name.
+  const fixed = seatFarEndRefusal(model, [group.id]);
+  if (fixed !== undefined) return decline(fixed);
   // The ports take the spacing of their children about their own mean: a block centred on the face stays centred on it (ticket 10), and the body grows
   // by the deficit, half on each side. Sums in ascending order (R3), as `centringOffset` takes them.
   const mean = (values: number[]): number => [...values].sort((a, b) => a - b).reduce((sum, x) => sum + x, 0) / values.length;
@@ -1436,6 +1457,13 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const why = applySeatSet(model, group, owned, seatWall(model, context));
     if (why === undefined) return { unresolved, group, notes };
     withdrawSeatSet(model, id, why);
+  }
+  // A row that carries a far end of a standing seat set keeps its stage-6 x (dense-16x9 ticket 36a): the step is refused by name, its wanted
+  // ports stay open, and the next reading of the set finds its far ends where it planned them.
+  const fixed = seatFarEndRefusal(model, [id]);
+  if (fixed !== undefined) {
+    nameFarEndRefusal(model, 'the centring step', id, fixed);
+    return { unresolved: new Set([...unresolved, ...wanted.keys()]), group, notes };
   }
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };

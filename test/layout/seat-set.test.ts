@@ -193,22 +193,17 @@ describe('a fan row the wrap gate owns takes no seat set (dense-16x9 ticket 36, 
 
 const seatNotes = (model: LayoutModel, code: string): string[] => (model.diagnostics ?? []).filter(item => item.code === code).map(item => item.message);
 
-// Ruling B, scope V: a set that the kept placement's 7c withdraws is declined in the ledger, and the command places once more from stage 6 without it;
-// a compared placement carries its withdrawal without acting on it.
-describe('a withdrawn seat set is declined and the command places once more (dense-16x9 ticket 36, ruling B, scope V)', () => {
-  it('declines the row the kept placement withdrew; a row a compared placement withdrew is decided again and stands; restores', async () => {
+// Ruling B, scope V, with the far ends fixed in 7c (dense-16x9 ticket 36a): on the sheet where a compared placement withdrew a set at centre and the
+// kept placement withdrew another on the column wall, no placement withdraws one now. The kept retry is covered by test/pipeline/seat-retry-*.test.ts.
+describe('a compared placement and the kept placement hold the same seat sets (dense-16x9 ticket 36, ruling B, scope V; ticket 36a)', () => {
+  it('withdraws no set in any placement, declines no row, and restores', async () => {
     const withdrawn = attemptCounters.seatWithdrawals;
-    const model = await run(sheet('a-compared-placement-withdraws-a-seat-set-the-kept-placement-holds'));
-    // Three withdrawals in the command (traced): loc#2 once and zone#4 once in compared placements, and zone#4 in the kept placement.
-    expect(attemptCounters.seatWithdrawals - withdrawn).toBe(3);
-    const declined = ofKind(model.reservations ?? [], 'seatSetDeclined').map(entry => entry.payload);
-    // Scope V: the kept placement's 7f withdrew zone#4 and the baseline placed once more without it; loc#2, which a comparison placement
-    // withdrew, was decided again by the kept placement and stands.
-    expect(declined.map(entry => [entry.row, entry.at])).toEqual([['zone#4', 'input']]);
-    expect(seatSets(model).map(item => item.payload.row)).toContain('loc#2');
-    expect(seatSets(model).map(item => item.payload.row).filter(row => declined.some(entry => entry.row === row))).toEqual([]);
+    const model = await run(sheet('a-compared-placement-holds-the-seat-sets-the-kept-placement-holds'));
+    expect(attemptCounters.seatWithdrawals - withdrawn).toBe(0);
+    expect(ofKind(model.reservations ?? [], 'seatSetDeclined')).toEqual([]);
+    expect(seatSets(model).map(item => item.payload.row)).toEqual(expect.arrayContaining(['loc#2', 'zone#4']));
     expect(seatNotes(model, 'SEAT_SET_WITHDRAWN')).toEqual([]);
-    expect(seatNotes(model, 'SEAT_SET_DECLINED').filter(message => message.includes('(withdrawn)'))).toHaveLength(1);
+    expect(seatNotes(model, 'SEAT_SET_DECLINED').filter(message => message.includes('(withdrawn)'))).toEqual([]);
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
   }, 120000);
 });

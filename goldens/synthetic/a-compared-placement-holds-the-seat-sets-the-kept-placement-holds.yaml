@@ -1,8 +1,8 @@
-# Expected (dense-16x9 ticket 36, ruling B, scope V): a decline is a fact of the placement the command keeps, not of a placement it compares.
-# The sheet of ranked-groups ticket 28 with moveBeforeGrow. A placement the command compares (the first run, before its room rounds) withdraws
-# the seat set of loc#2 at centre: its row is the anchor tier of that placement. That placement only carries its seatSetDeclined entry; the
-# placement the command keeps decides the set again on its own geometry, and it stands. zone#4, which the kept placement's 7f withdraws,
-# is declined at the baseline and placed once more without its set. No seatSet for a declined row, every withdrawal named, the restore passes.
+# Expected (dense-16x9 ticket 36a, ruling on review 1 finding 2): the placements the command compares and the placement it keeps hold the same
+# seat sets. The sheet of ranked-groups ticket 28 with moveBeforeGrow. Under ticket 36 a compared placement (the first run, before its room rounds)
+# withdrew the set of loc#2 at centre (its row was the anchor tier of that placement), and the kept placement withdrew zone#4 on the wall of its
+# frame column ("the row would leave the column of its frame") and declined it. No 7c mover now moves a row that carries a far end of a standing
+# set (`seatFarEndRefusal`): no placement withdraws a set, no row is declined, and loc#2 and zone#4 stand. The restore passes.
 # Test-only input owned by dense-16x9 ticket 36; test/layout/seat-set.test.ts reads the layout.
 portograph: 2
 layout: { moveBeforeGrow: true }

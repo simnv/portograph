@@ -1,0 +1,113 @@
+# Expected (dense-16x9 ticket 36a): a member that stands a vertical within SEAT_STANDS_EPS (the half pixel 7c counts as standing) keeps its x, and
+# the seat set records the vertical as a hold. The publication check of the rows rule reads a hold to that half pixel too. Before, it read every
+# equation to PLACEMENT_EPS: a hold of core#1 that stood 0.5 px off its far port in a site row below failed the rows rule that recorded it, and
+# the command ended ("the link ... no longer stands vertical in the seat set of core#1"). The command now completes.
+# Test: test/layout/seat-far-end-movers.test.ts.
+portograph: 2
+profile: network
+layout: { moveBeforeGrow: true, aspect: "21:10", nodeContent: card }
+groups:
+  up: { tier: 0, label: Upstream }
+  core: { tier: 1, label: Core }
+  pop-a: { tier: 2, label: Site A }
+  pop-b: { tier: 2, label: Site B }
+  pop-c: { tier: 2, label: Site C }
+  pop-d: { tier: 2, label: Site D }
+  pop-e: { tier: 2, label: Site E }
+  pop-f: { tier: 2, label: Site F }
+  pop-g: { tier: 2, label: Site G }
+nodes:
+  u01: { group: up, class: provider, label: Upstream 01 }
+  u02: { group: up, class: provider, label: Upstream 02 }
+  u03: { group: up, class: provider, label: Upstream 03 }
+  u04: { group: up, class: provider, label: Upstream 04 }
+  u05: { group: up, class: provider, label: Upstream 05 }
+  u06: { group: up, class: provider, label: Upstream 06 }
+  u07: { group: up, class: provider, label: Upstream 07 }
+  u08: { group: up, class: provider, label: Upstream 08 }
+  u09: { group: up, class: provider, label: Upstream 09 }
+  u10: { group: up, class: provider, label: Upstream 10 }
+  u11: { group: up, class: provider, label: Upstream 11 }
+  u12: { group: up, class: provider, label: Upstream 12 }
+  u13: { group: up, class: provider, label: Upstream 13 }
+  e1: { group: core, class: edge, label: Edge 1 }
+  e2: { group: core, class: edge, label: Edge 2 }
+  e3: { group: core, class: edge, label: Edge 3 }
+  e4: { group: core, class: edge, label: Edge 4 }
+  r1: { group: core, class: router, label: Router 1 }
+  r2: { group: core, class: router, label: Router 2 }
+  r3: { group: core, class: router, label: Router 3 }
+  r4: { group: core, class: router, label: Router 4 }
+  q1: { group: core, class: router, label: Reflector 1 }
+  q2: { group: core, class: router, label: Reflector 2 }
+  b1: { group: core, class: switch, label: Spine 1 }
+  b2: { group: core, class: switch, label: Spine 2 }
+  sa1: { group: pop-a, class: router, label: Site A 1 }
+  sa2: { group: pop-a, class: router, label: Site A 2 }
+  sb1: { group: pop-b, class: router, label: Site B 1 }
+  sb2: { group: pop-b, class: router, label: Site B 2 }
+  sc1: { group: pop-c, class: router, label: Site C 1 }
+  sc2: { group: pop-c, class: router, label: Site C 2 }
+  sd1: { group: pop-d, class: router, label: Site D 1 }
+  sd2: { group: pop-d, class: router, label: Site D 2 }
+  se1: { group: pop-e, class: router, label: Site E 1 }
+  se2: { group: pop-e, class: router, label: Site E 2 }
+  sf1: { group: pop-f, class: router, label: Site F 1 }
+  sf2: { group: pop-f, class: router, label: Site F 2 }
+  sg1: { group: pop-g, class: router, label: Site G 1 }
+  sg2: { group: pop-g, class: router, label: Site G 2 }
+links:
+  - [e1, u01, { id: up01 }]
+  - [e1, u02, { id: up02 }]
+  - [e1, u03, { id: up03 }]
+  - [e1, u04, { id: up04 }]
+  - [e2, u04, { id: up05 }]
+  - [e2, u05, { id: up06 }]
+  - [e2, u06, { id: up07 }]
+  - [e2, u07, { id: up08 }]
+  - [e3, u07, { id: up09 }]
+  - [e3, u08, { id: up10 }]
+  - [e3, u09, { id: up11 }]
+  - [e3, u10, { id: up12 }]
+  - [e4, u10, { id: up13 }]
+  - [e4, u11, { id: up14 }]
+  - [e4, u12, { id: up15 }]
+  - [e4, u13, { id: up16 }]
+  - [r1, se1, { id: l18 }]
+  - [r1, se1, { id: l19 }]
+  - [r1, se1, { id: l20 }]
+  - [r1, e3, { id: l21 }]
+  - [r2, se2, { id: l22 }]
+  - [r2, se2, { id: l23 }]
+  - [r2, se2, { id: l24 }]
+  - [r2, e4, { id: l25 }]
+  - [r3, e3, { id: l26 }]
+  - [r4, e4, { id: l27 }]
+  - [b1, r1, { id: l28 }]
+  - [b1, r2, { id: l29 }]
+  - [b1, r3, { id: l30 }]
+  - [b1, r4, { id: l31 }]
+  - [b1, q1, { id: l32 }]
+  - [b1, q2, { id: l33 }]
+  - [b2, r1, { id: l34 }]
+  - [b2, r2, { id: l35 }]
+  - [b2, r3, { id: l36 }]
+  - [b2, r4, { id: l37 }]
+  - [b2, q1, { id: l38 }]
+  - [b2, q2, { id: l39 }]
+  - [b1, sb2, { id: l40 }]
+  - [b1, sa1, { id: l41 }]
+  - [b2, sa2, { id: l42 }]
+  - [b1, sb1, { id: l43 }]
+  - [b2, sb2, { id: l44 }]
+  - [b1, sc1, { id: l45 }]
+  - [b2, sc2, { id: l46 }]
+  - [b1, sd1, { id: l47 }]
+  - [b2, sd2, { id: l48 }]
+  - [b1, se1, { id: l49 }]
+  - [b2, se2, { id: l50 }]
+  - [b1, sf1, { id: l51 }]
+  - [b2, sf2, { id: l52 }]
+  - [b1, sg1, { id: l53 }]
+  - [b2, sg2, { id: l54 }]
+

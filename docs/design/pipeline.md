@@ -832,12 +832,18 @@ gate owns (`wrapGateOwns`: its one-line reading passes `rowReason` and every hub
 row arrangement, so the gate decides on the premise it read); solid-block members are in scope. A feed
 is a top port of a member linked to a bottom port of a node in a higher tier of the same frame (not a bundle member and not a solid-block
 link: the block owns its chords). A member that already stands a vertical to a node outside the row (within `SEAT_STANDS_EPS`, the half
-pixel 7c counts as standing) keeps its x. Each member is offered one x per distinct seat position, at most `SEAT_SET_CANDIDATES` (8); the
+pixel 7c counts as standing) keeps its x; the set records it as a hold, and every check reads a hold to that half pixel (a hold read 0.5 px off
+otherwise failed the publication of the rows rule that recorded it). Each member is offered one x per distinct seat position, at most `SEAT_SET_CANDIDATES` (8); the
 search tries a seat or no seat for each fed member under the row order and the gaps of the repack itself (`rowGap` with the label detours,
 and the room of a labelled link across more gaps from `labelSpans`, the repack's own reader), one seat per parent port, at most
 `SEAT_SET_VISITS` (5000) visits; a member without a seat stands nearest its own x in the room its neighbours leave. It ranks by the most
-kept verticals, then the least body span (owner ruling "tight room"), then the least movement, then the kept links by content (port ids),
-then `sourceIndex`. A candidate that wins k verticals and turns more than k straight links of the members into bends or refused chords is no
+kept verticals, then the least added area (owner ruling "tight room", amended 2026-11-17: area, not span), then the least movement, then the
+kept links by content (port ids), then `sourceIndex`. The added area of a candidate (`candidateCost`) is read with its members moved: the
+growth `dw` of the cell box, the growth `dh` of the tier gaps its solid blocks then demand (`blockDemands` with the candidate's xs, each gap the
+larger of its band gap and the 34 degree demand, or the floor of a flat block, as `reserveBlockGaps` reserves them), and the extent `W x H` of
+the placed groups: `(W + dw)(H + dh) - W H`. A candidate whose block height takes more than `SEAT_SET_BLOCK_AREA_PER_VERTICAL` (1 %) of `W x H`
+for each vertical it wins, `(W + dw) dh / (W H)`, is not the tight room asked for, and the search moves on to the next candidate; a row
+whose every candidate passes it is declined (`no-gain`, with the share). A candidate that wins k verticals and turns more than k straight links of the members into bends or refused chords is no
 gain (ruling 4 of 2026-11-17): before and with the candidate, `straightLinks` reads every routed link of a member to a node outside the row, both
 faces, as vertical, or straight when the frame and row rules would pin it on those anchors (`expectedRowPath`, the reading `rebuildRowPaths`
 makes after the rows rule), and the search moves on to the next candidate; at most `SEAT_SET_GAIN_READS` (16) candidates are read. What
@@ -1153,7 +1159,12 @@ links on the peer.
 the first parent port where that port stands now, and chooses nothing; the cell box covers the interval (`fitRegionGroup` reads the entry,
 so no fit gives that room back). The step only translates the row: the anchor tier does not move, and the row stays in the window of its
 frame column (`columnWindow`), on its side of every lane of its tier, and adds no band error. The parent spread leaves the members and
-parents of a set where they stand. After the overlay windows each run of the passes applies every set again. A set whose parent ports no
+parents of a set where they stand. A far end of a standing set is a bound of its interval (dense-16x9 ticket 36a), so no 7c step moves the
+row that carries one: its own centring step, a parent spread, the pack of the tier (`packClear`, and `tailReservation` ends the groups
+before it where it stands), the child-frame pack (`settleRows`) and the stand near the feed each read `seatFarEndRefusal` and leave the row
+at its stage-6 x, named (`SEAT_FAR_END_FIXED`, info; a refused spread and pack keep their own codes). The overlay window
+(`placeOverlayFree`) does not read it yet: it packs runs of groups, and a fixed row there must be a wall of the pack. A new 7c mover that does not read it
+fails `test/layout/seat-far-end-movers.test.ts`, which records every move of such a row in 7c and the far ends' x before and after. After the overlay windows each run of the passes applies every set again. A set whose parent ports no
 longer stand at their stored offsets, whose translation a wall refuses, or whose step does not stand is withdrawn whole by name
 (`SEAT_SET_WITHDRAWN`, with the failed condition), and the step seats the row as before; so is a set that any rule from 7c to 7f leaves
 broken (`withdrawBrokenSeatSets`, at the end of each rule). What a withdrawal cannot give back is the room the interval reserved in the
@@ -1169,6 +1180,7 @@ compares. The scopes, one table:
 | A compared placement (`initial.ts`: the first run, each trial of the stagger gate, the leg-pitch and room rounds) | stays an entry of that placement; nothing acts on it, and the next placement decides the set again on its own geometry |
 | The kept placement, at the 7f run of the driver's baseline | declines the row for the command (`env.seatSetDeclined`, like the steep blocks) and places once more from stage 6 |
 | A routed trial of a round, at its 7f run | declines the row and places the trial once more; a refused trial gives back the declines its 7f added; the placement that replaces the trial passes the same admission (`admitPlacement`: fallback, the round's 7e checks, preflight) before it is banded, and a refusal there refuses the trial |
+| Every placement, compared or kept, on one ledger | holds the sets of the kept placement: no 7c mover takes a far end along (`seatFarEndRefusal`), so the column wall withdraws none of them (`a-stagger-gate-compares-placements-that-hold-the-same-seat-sets.yaml`: the gate's trials and the kept placement hold the same set) |
 | The publication replay (`refuseCrowdedChords`), at its 7f run | declines the row and places the replay once more from its ledger, before the gates judge it; a replay the gates discard gives back its declines and publishes none of its notes |
 
 Stage 6 writes each decline at its input (`at: 'input'`) and names the row (clause `withdrawn`), so no kept placement holds an interval

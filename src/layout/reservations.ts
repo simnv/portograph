@@ -11,7 +11,7 @@ import type { PlacementInputField } from '../model/layout.js';
 import type { PairPitch } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { blockBoxPadsFault, blockRowGapsFault, flatBlockGapsFault, steepBlocksFault } from './placement-inputs.js';
 
@@ -541,7 +541,10 @@ function seatSetShapeFailure(payload: Record<string, unknown>): string | undefin
  * Why a seat set (`seatSet`, dense-16x9 ticket 36) does not hold on `model`, or `undefined`. The one predicate of the kind, at the round check and
  * at both restores. Relative to its first boundary node, every member stands at its x with its width, in the cell's order; every seat and hold
  * equation holds, with its ports where the offsets put them; the boundary nodes stand where they stood relative to each other; the block faces keep
- * their port order; and the cell box covers the interval. All to `PLACEMENT_EPS`: the set moves only as a whole.
+ * their port order; and the cell box covers the interval. All to `PLACEMENT_EPS`: the set moves only as a whole. One reading is wider: a hold is
+ * a vertical the member stood when the rows rule read it, within `SEAT_STANDS_EPS` (`readRow`), so its two anchors are read to that half pixel.
+ * The set moves the member and the far port rigidly, so the hold keeps the offset it was read with (dense-16x9 ticket 36a: a hold read 0.5 px
+ * off failed the publication of the rows rule that recorded it).
  */
 export function seatSetFault(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'seatSet') return undefined;
@@ -567,7 +570,8 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
   for (const eq of [...p.seats, ...p.holds]) {
     const a = port(eq.member), b = port(eq.far), ma = model.nodes[eq.member.node]?.bounds;
     if (a?.anchor === undefined || b?.anchor === undefined || ma === undefined) return `the equation of ${eq.link} in the seat set of ${p.row} has no ports`;
-    if (off(a.anchor.x - ma.x, eq.memberOffset) || off(a.anchor.x, b.anchor.x)) return `the link ${eq.link} no longer stands vertical in the seat set of ${p.row}`;
+    const stands = p.holds.includes(eq) ? Math.abs(a.anchor.x - b.anchor.x) <= SEAT_STANDS_EPS : !off(a.anchor.x, b.anchor.x);
+    if (off(a.anchor.x - ma.x, eq.memberOffset) || !stands) return `the link ${eq.link} no longer stands vertical in the seat set of ${p.row}`;
   }
   for (const face of p.blockFaces) {
     const now = (model.nodes[face.node]?.ports ?? []).filter(item => item.side === face.side && item.anchor && face.ports.includes(portKey(item.ref)))
