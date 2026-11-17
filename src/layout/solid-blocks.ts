@@ -205,22 +205,18 @@ function permuteGroupSlots(model: LayoutModel, ids: readonly string[]): void {
   }
 }
 
+/** One solid block's gap demand on `geometry` (`blockDemands`): its tiers, its 34 degree demand with the box entries (`steep`), its floor-angle
+ * demand (`floor`), the gap of the model's bands, and its pitch. */
+export interface BlockDemand { family: string; above: number; below: number; steep: number; floor: number; gap: number; pitch: number }
 /**
- * The gap each solid block owes before the freeze. Replays after the freeze only read this record.
- * Angle and each facing-edge demand combine by max; shared gap demands also combine by max.
- * The initial draft and the mandatory-pack forecast each contribute one read and one y move; pitch already fixes x capacity.
- *
- * Past the cap (dense-16x9 ticket 04, slice 3): a block whose 34 degree demand passes `BLOCK_CAP` stays straight and flatter (`mode: 'flat'`). Its
- * floor is the demand that holds its flattest member at `BLOCK_FLOOR_ANGLE`. The gap stands at the floor, or at the gap the aspect choice of the
- * complete placement gave it (`flatBlockGaps`, chosen by `chooseFlatGaps` on a placement with every flat gap at its floor), clamped to the floor and
- * the 34 degree demand. Under-cap blocks that share a gap with a flat block keep their own floor (by max).
+ * The gap demand of every solid block, read on `geometry` with the bands of `model` (the one demand reader, R1): `reserveBlockGaps` reserves from
+ * it, and the seat set of a row (dense-16x9 ticket 36) reads it before and after its seats, so that it never takes a block past its cap or a flat
+ * block past its chosen gap. `declined` names the families whose members do not stand on facing horizontal faces.
  */
-export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutModel, growth: Map<number, number>) => void, geometry = model): void {
-  if (model.frozenChords !== undefined || (geometry === model && model.blockReservations !== undefined) || !model.fanFamilies?.some(family => family.kind === 'solid')) return;
+export function blockDemands(model: LayoutModel, geometry: LayoutModel = model): { demands: BlockDemand[]; declined: Map<string, string> } {
   const declined = new Map<string, string>();
-  const demands: { family: string; above: number; below: number; steep: number; floor: number; gap: number; pitch: number }[] = [];
-  model.blockReservations = [];
-  for (const family of model.fanFamilies) {
+  const demands: BlockDemand[] = [];
+  for (const family of model.fanFamilies ?? []) {
     if (family.kind !== 'solid') continue;
     const links = model.links.filter(link => link.fanFamily === family.id);
     if (links.some(link => {
@@ -261,8 +257,25 @@ export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutMo
     const originalBottom = model.tierBands.find(band => band.tier === below)!.bounds!;
     demands.push({ family: family.id, above, below, steep, floor, gap: originalBottom.y - originalTop.y - originalTop.height, pitch: blockPitch(links) });
   }
+  return { demands, declined };
+}
+
+/**
+ * The gap each solid block owes before the freeze. Replays after the freeze only read this record.
+ * Angle and each facing-edge demand combine by max; shared gap demands also combine by max.
+ * The initial draft and the mandatory-pack forecast each contribute one read and one y move; pitch already fixes x capacity.
+ *
+ * Past the cap (dense-16x9 ticket 04, slice 3): a block whose 34 degree demand passes `BLOCK_CAP` stays straight and flatter (`mode: 'flat'`). Its
+ * floor is the demand that holds its flattest member at `BLOCK_FLOOR_ANGLE`. The gap stands at the floor, or at the gap the aspect choice of the
+ * complete placement gave it (`flatBlockGaps`, chosen by `chooseFlatGaps` on a placement with every flat gap at its floor), clamped to the floor and
+ * the 34 degree demand. Under-cap blocks that share a gap with a flat block keep their own floor (by max).
+ */
+export function reserveBlockGaps(model: LayoutModel, moveBands: (model: LayoutModel, growth: Map<number, number>) => void, geometry = model): void {
+  if (model.frozenChords !== undefined || (geometry === model && model.blockReservations !== undefined) || !model.fanFamilies?.some(family => family.kind === 'solid')) return;
+  const { demands, declined } = blockDemands(model, geometry);
+  model.blockReservations = [];
   if (declined.size) throw new SolidBlockRefusal(declined);
-  const flat = (item: typeof demands[number]): boolean => item.steep > BLOCK_CAP + EPS;
+  const flat = (item: BlockDemand): boolean => item.steep > BLOCK_CAP + EPS;
   // The mandatory gap of each tier gap: every under-cap block's 34 degree demand and every flat block's floor, by max.
   const mandatory = new Map<number, number>(), room = new Map<number, number>();
   for (const item of demands) mandatory.set(item.below, Math.max(mandatory.get(item.below) ?? item.gap, item.gap, flat(item) ? item.floor : item.steep));
