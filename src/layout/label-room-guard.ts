@@ -44,16 +44,31 @@ function readRows(text: string): string[] {
  * step found it: the same model text many times. The reading runs on a copy parsed from `JSON.stringify(model)`, and on nothing else (the copy
  * shares no object with any cache or scope), so that text is its complete input and the key. A key is the whole content: no write to a model
  * can leave an entry stale, and no mutation boundary has to drop one. One map per document object: `resolve` parses a fresh document for every
- * placement, and the models of that placement and their copies share it, so an entry lives no longer than that placement's models. Bounded by
- * count (R4): `ROW_READING_MEMO_LIMIT` keys per document, the least recently used one dropped first.
+ * placement, and the models of that placement and their copies share it. The memo is open while a command runs (`openRowReadingMemo`, called by
+ * `layout`) and every map is dropped when the last running command ends, so a published model that keeps its document keeps no entry (review 1
+ * of ticket 21); outside a command the reading runs directly. Bounded by count (R4): `ROW_READING_MEMO_LIMIT` keys per document, the least
+ * recently used one dropped first.
  */
 const ROW_READING_MEMO_LIMIT = 64;
-const rowReadings = new WeakMap<object, Map<string, readonly string[]>>();
+let rowReadings = new WeakMap<object, Map<string, readonly string[]>>();
 const rowReadingCache = readCache('rowRoomReading');
+let commands = 0;
+
+/** Opens the row reading memo for one command; the function returned closes it, and the last close drops every entry. */
+export function openRowReadingMemo(): () => void {
+  commands++;
+  let open = true;
+  return () => {
+    if (!open) return;
+    open = false;
+    if (--commands === 0) rowReadings = new WeakMap<object, Map<string, readonly string[]>>();
+  };
+}
 
 /** The links with a row shortfall on `model`, by the producer's reading on a copy. */
 function rowShort(model: LayoutModel): Set<string> {
   const text = JSON.stringify(model);
+  if (commands === 0) return new Set(readRows(text));
   let memo = rowReadings.get(model.document);
   if (memo === undefined) rowReadings.set(model.document, memo = new Map());
   const cached = memo.get(text);

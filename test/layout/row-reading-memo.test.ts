@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from '../../src/layout/bands.js';
-import { rowRoomShortOf } from '../../src/layout/label-room-guard.js';
+import { openRowReadingMemo, rowRoomShortOf } from '../../src/layout/label-room-guard.js';
 import { checkReadCaches, readCacheCounts } from '../../src/model/read-cache.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { createAttempt } from './phase-two-fixture.js';
@@ -18,6 +18,9 @@ const fresh = (model: LayoutModel): string[] => {
   reserveLinkLabelRoom(structuredClone(model), shortfalls, undefined, 'rows');
   return [...new Set(shortfalls.filter(item => item.axis === 'row' || item.axis === 'row window').map(item => item.link))];
 };
+let close: (() => void) | undefined;
+beforeEach(() => { close = openRowReadingMemo(); });
+afterEach(() => { close?.(); close = undefined; });
 
 it('reads a model text once, and answers what the reading answers', async () => {
   const model = await laidOut();
@@ -74,4 +77,19 @@ it('reads the rows again on every hit under the cache check', async () => {
   const before = counts().checked;
   await checkReadCaches(async () => { rowRoomShortOf(model); });
   expect(counts().checked).toBe(before + 1);
+});
+
+it('keeps no entry outside a command, and drops every entry when the last command ends', async () => {
+  const model = await laidOut();
+  rowRoomShortOf(model);
+  const before = counts();
+  // The last command ends: the next command reads the same text again.
+  close?.(); close = openRowReadingMemo();
+  rowRoomShortOf(model);
+  expect(counts().misses).toBe(before.misses + 1);
+  // Outside a command the reading runs directly: neither a hit nor a miss.
+  close(); close = undefined;
+  const outside = counts();
+  expect(rowRoomShortOf(model)).toEqual(fresh(model));
+  expect(counts()).toEqual(outside);
 });

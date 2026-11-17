@@ -63,7 +63,7 @@ const EXPECTED_WEAKMAPS: Readonly<Record<string, { count: number; reason: string
   'src/layout/alignment-targets.ts': { count: 1, reason: 'alignmentLinkIndex readCache' },
   'src/layout/bands.ts': { count: 1, reason: 'bandsRoutedStroke readCache' },
   'src/layout/centre.ts': { count: 1, reason: 'centreCheckAnswer readCache' },
-  'src/layout/label-room-guard.ts': { count: 1, reason: 'rowRoomReading readCache: one memo per document object, keyed by the whole model text' },
+  'src/layout/label-room-guard.ts': { count: 2, reason: 'rowRoomReading readCache: one memo per document object, keyed by the whole model text (init + reset when the last command ends)' },
   'src/layout/lanes.ts': { count: 1, reason: 'facingRoutedPorts readCache' },
   'src/layout/overlay-paths.ts': { count: 3, reason: 'overlaySharedBlockers, overlayTracks, overlayDocumentPrints readCaches' },
   'src/layout/peers.ts': { count: 5, reason: 'linkById, linkByEnds, unreservedPeers, routedLinksAt, allPeers readCaches' },
