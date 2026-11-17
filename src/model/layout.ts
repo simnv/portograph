@@ -6,6 +6,11 @@ import type { Reservations } from '../layout/reservations.js';
 export type LayoutStage = 'normalised' | 'resolve' | 'sides-one' | 'size' | 'skeleton'
   | 'sides-two' | 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
+/** The stages in pipeline order: the one order every stage comparison reads. */
+export const LAYOUT_STAGES: readonly LayoutStage[] = ['normalised', 'resolve', 'sides-one', 'size', 'skeleton', 'sides-two',
+  'rows', 'lanes', 'flanks', 'centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
+/** Whether a model at stage `at` has completed stage `stage`. */
+export const stageReached = (at: LayoutStage, stage: LayoutStage): boolean => LAYOUT_STAGES.indexOf(at) >= LAYOUT_STAGES.indexOf(stage);
 
 export type Layer = 'routed' | 'overlay';
 export type Owner =

@@ -109,8 +109,8 @@ const restoreEnv = (state: EnvSnapshot): void => {
 };
 // Dense-16x9 ticket 29: the leg pitch of a u-turn course port beside solid-block members reads the angle its blocks reserve, a fact the block
 // records only after sizing (`reserveBlockGaps`). The first complete placement records it. When a course port would take a leg pitch on a block it
-// recorded under the cap, the command places again with those blocks as the input `steepBlocks` (read by stage 6). `place` refuses a run whose
-// records do not hold a block of its input steep (`unheldSteepBlocks`, by name); this round then drops the named blocks and places again. So the
+// recorded under the cap, the command places again with those blocks as the input `steepBlocks` (read by stage 6). The 7e postconditions refuse a
+// run whose records do not hold a block of its input steep (`unheldSteepBlocks`, by name, before publication); this round then drops the named blocks and places again. So the
 // round ends on a placement that holds its whole input, or with no input on the first placement (`COURSE_LEG_PITCH_WITHDRAWN`, or
 // `COURSE_LEG_PITCH_REFUSED` for any other refusal). Bound (R4, review 2): the candidate set is read once, and each refused call drops one block at
 // least, so at most that many calls to `placeFirst` (each with its own retry bounds: block probes, trunk declines, stagger refusals). Each refused
@@ -129,7 +129,7 @@ const legNotes: Diagnostic[] = [];
       if (!(staggerRefusal(error) || producerRefusal(error))) throw error;
       refusal = error as Error;
     } finally { env.exemptPlacing--; }
-    // The exit is the premise itself (`unheldSteepBlocks`, the reader `place` refuses a run by and restore checks): a placement that holds its whole
+    // The exit is the premise itself (`unheldSteepBlocks`, the reader the 7e postconditions refuse a run by and restore checks): a placement that holds its whole
     // input ends the round, one that does not is undone and its unheld blocks leave the input.
     const unheld = refusal === undefined ? unheldSteepBlocks(first) : [];
     if (refusal === undefined && !unheld.length) break;
@@ -142,11 +142,13 @@ const legNotes: Diagnostic[] = [];
         message: `The placement with the leg pitches of the u-turn course ports (steep blocks ${target.join(', ')}) was refused (${refusal!.message}); the placement before it stands.` });
       break;
     }
-    target = legs(target.filter(family => !lost.includes(family)));
-    if (!target.length) {
-      legNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_LEG_PITCH_WITHDRAWN', owners: [],
-        message: `With their leg pitches the blocks ${lost.join(', ')} are not recorded under the cap; no leg pitch is reserved, and the placement before it stands.` });
-    }
+    // Every withdrawal is named (review 3), the last one with what stands.
+    const rest = target.filter(family => !lost.includes(family)), next = legs(rest);
+    legNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_LEG_PITCH_WITHDRAWN', owners: [],
+      message: `With their leg pitches the blocks ${lost.join(', ')} are not recorded under the cap; their leg pitches are withdrawn` + (next.length
+        ? `, and the command places again with the steep blocks ${next.join(', ')}.`
+        : rest.length ? `; the blocks ${rest.join(', ')} ask no leg pitch alone, and the placement before it stands.` : '; no leg pitch is reserved, and the placement before it stands.') });
+    target = next;
   }
 }
 // The acceptance gate of the staggers stage 5 chose (fan wrap, D-Q4; ADR-0024, second amendment; dense-16x9 ticket 22): each row is judged on

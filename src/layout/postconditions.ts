@@ -16,12 +16,14 @@ import { blockedChords } from './frame-paths.js';
 import { holds } from './reservation-checks.js';
 import { groupExitViolations, missingGroupExits } from './group-exit-check.js';
 import { PostconditionRefusal } from './placement-refusal.js';
+import { unheldSteepBlocks } from './placement-inputs.js';
 
 /**
  * The kinds a postcondition reads. `laneSide` is the lanes clear of every occupied box and no group across a lane it stood beside; `frozenChord`
- * a frozen chord newly blocked; `groupExit` a reserved exit broken by a box, or a required exit missing; `stored` a ledger entry newly failed.
+ * a frozen chord newly blocked; `groupExit` a reserved exit broken by a box, or a required exit missing; `stored` a ledger entry newly failed;
+ * `steepBlocks` a block of the input `steepBlocks` that the block records of 7e do not hold steep (`STEEP_PREMISE`).
  */
-export type PostconditionKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'frozenChord' | 'sideAlignment' | 'spanCorridor' | 'groupExit' | 'stored';
+export type PostconditionKind = 'riserKeepOut' | 'trunkExtension' | 'laneSide' | 'frozenChord' | 'sideAlignment' | 'spanCorridor' | 'groupExit' | 'stored' | 'steepBlocks';
 
 export interface PostconditionViolation {
   rule: 'bundles' | 'bands';
@@ -97,6 +99,12 @@ export function postconditionViolations(before: LayoutModel, after: LayoutModel,
   attempt('groupExit', () => {
     for (const item of groupExitViolations(after)) add('groupExit', `${item.link}:${item.end}`, `the exit ${item.link}:${item.end} is broken (${item.why}${item.box === undefined ? '' : ` by ${item.box}`})`);
     for (const item of missingGroupExits(after)) add('groupExit', `${item.link}:${item.end}`, `the exit ${item.link}:${item.end} is required, free and not reserved`);
+  });
+  // The steep-block premise (dense-16x9 ticket 29, review 3): 7e owns the block records, so it is the producer boundary of the input `steepBlocks`.
+  // Each block of the input stands recorded under the cap, read absolutely (the input is the run's own), before publication validates the same
+  // predicate (`steepBlocksFault`): the run is refused by name, never by a validator error.
+  if (rule === 'bundles') attempt('steepBlocks', () => {
+    for (const family of unheldSteepBlocks(after, true)) add('steepBlocks', family, 'the leg pitch was reserved at the 34 degree angle and the block is not recorded under the cap');
   });
   // Stored kinds: no ledger entry fails that held at entry.
   attempt('stored', () => {

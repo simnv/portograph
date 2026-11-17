@@ -6,6 +6,7 @@ import { siblingRowsFault } from './sibling-frames.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
+import { LAYOUT_STAGES } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
 import { filterCss } from '../parse/css.js';
@@ -52,8 +53,7 @@ import { columnOf } from './read/arrangement.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
-const stages: LayoutStage[] = ['normalised', 'resolve', 'sides-one', 'size', 'skeleton', 'sides-two',
-  'rows', 'lanes', 'flanks', 'centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
+const stages = LAYOUT_STAGES;
 export const publicationCounters: { protects: number; documentShared: number; jsonWalks: number } = {
   protects: 0,
   documentShared: 0,

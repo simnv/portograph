@@ -5,7 +5,7 @@ import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { pairPitchFault } from '../../src/layout/pair-pitch.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
-import { steepBlocksFault, steepFamilies } from '../../src/layout/placement-inputs.js';
+import { STEEP_PREMISE, steepBlocksFault, steepFamilies, unheldSteepBlocks } from '../../src/layout/placement-inputs.js';
 import { courseLegPitchFault, courseLegPitches, reservedBlockAngle } from '../../src/layout/solid-blocks.js';
 import { BLOCK_ANGLE } from '../../src/layout/block-checks.js';
 import { resolve } from '../../src/resolve/index.js';
@@ -15,13 +15,14 @@ import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createEnv } from '../../src/pipeline/env.js';
 import { firstState } from '../../src/pipeline/initial.js';
-import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
+import { PlacementRefusal, PostconditionRefusal, SolidBlockRefusal } from '../../src/layout/placement-refusal.js';
 
 // Dense-16x9 ticket 29: a u-turn course port on a face with solid-block member ports keeps the `leg` pair pitch at which a member chord at the
 // angle its block reserves passes the tip of the course's stem. On main 906de428 the member beside the course port stood 21 px from it, its
 // chord crossed the U's stem, and 8 of the 12 block members fell back.
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-u-course-port-keeps-the-pitch-a-block-chord-needs-past-its-stem.yaml', import.meta.url), 'utf8');
 const flat = readFileSync(new URL('../../goldens/synthetic/a-u-course-port-beside-a-flat-block-keeps-no-leg-pitch.yaml', import.meta.url), 'utf8');
+const near = readFileSync(new URL('../../goldens/synthetic/a-u-course-port-whose-leg-pitch-takes-its-block-past-the-cap-withdraws-the-pitch.yaml', import.meta.url), 'utf8');
 const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const legs = (model: LayoutModel): { node: string; min: number }[] => Object.values(model.nodes)
   .flatMap(node => (['top', 'bottom'] as const).flatMap(side => (node.pairPitch?.[side] ?? []).filter(entry => entry.rule === 'leg').map(entry => ({ node: node.id, min: entry.min }))));
@@ -173,4 +174,82 @@ describe('the steep-block input holds only blocks recorded under the cap (dense-
     expect(env.steepBlocks).toBeUndefined();
     expect(state.keptNotes.map(note => note.code)).toContain('COURSE_LEG_PITCH_REFUSED');
   }, 180000);
+});
+
+// Review 3 of ticket 29: the premise is judged at its producer boundary (the 7e postconditions, before publication), and from 7e on an absent
+// record list holds none of the input. One state table over every outcome of a leg call, one invariant after each.
+describe('every outcome of a leg call keeps an input its placement holds, and names what it drops (dense-16x9 ticket 29, review 3)', () => {
+  const blockA = 'block:core-a#1:core-a#0:', blockB = 'block:core-b#1:core-b#0:';
+  const steepFinding = (family: string): { kind: string; subject: string; detail: string } => ({ kind: STEEP_PREMISE, subject: family, detail: 'a controlled finding' });
+  type Leg = (place: () => Promise<LayoutModel>, input: readonly string[]) => Promise<LayoutModel>;
+  // `leg` replaces the first call of the leg round (the second `place` call); every other call is the real `place`.
+  const rows: { name: string; sheet: string; leg?: Leg; input: string[] | undefined; notes: string[] }[] = [
+    { name: 'holds every block of its input', sheet: yaml, input: [blockA, blockB], notes: [] },
+    { name: 'stands holding a part of its input', sheet: yaml, input: [blockB], notes: ['COURSE_LEG_PITCH_WITHDRAWN'],
+      leg: async place => { const model = structuredClone(await place()); model.blockReservations = model.blockReservations!.filter(item => item.family !== blockA); return model; } },
+    { name: 'stands with no block records', sheet: yaml, input: undefined, notes: ['COURSE_LEG_PITCH_WITHDRAWN'],
+      leg: async place => { const model = structuredClone(await place()); delete model.blockReservations; return model; } },
+    { name: 'declines every block of its input and places again with no record (the real retry)', sheet: yaml, input: undefined, notes: ['COURSE_LEG_PITCH_WITHDRAWN'],
+      leg: (_place, input) => { throw new SolidBlockRefusal(new Map(input.map(family => [family, 'a controlled refusal']))); } },
+    { name: 'is refused by name for a block of its input (real: the leg pitch takes block A past the cap)', sheet: near, input: [blockB], notes: ['COURSE_LEG_PITCH_WITHDRAWN'] },
+    { name: 'is refused by name for a block of its input (controlled)', sheet: yaml, input: [blockB], notes: ['COURSE_LEG_PITCH_WITHDRAWN'],
+      leg: () => { throw new PostconditionRefusal('bundles', [steepFinding(blockA)]); } },
+    { name: 'is refused by name for a block outside its input', sheet: yaml, input: undefined, notes: ['COURSE_LEG_PITCH_REFUSED'],
+      leg: () => { throw new PostconditionRefusal('bundles', [steepFinding('block:elsewhere')]); } },
+    { name: 'is refused with no finding', sheet: yaml, input: undefined, notes: ['COURSE_LEG_PITCH_REFUSED'],
+      leg: () => { throw new PostconditionRefusal('bundles', []); } },
+  ];
+  for (const row of rows) it(row.name, async () => {
+    const env = createEnv(parse(row.sheet), { createElkAttempt: createAttempt });
+    const place = env.place;
+    let calls = 0, firstModel: LayoutModel | undefined;
+    env.place = async (...args) => {
+      const call = calls++;
+      if (call === 1 && row.leg) return row.leg(() => place(...args), env.steepBlocks ?? []);
+      const model = await place(...args);
+      if (call === 0) firstModel = model;
+      return model;
+    };
+    // No plain validator error reaches the command: a refusal of the premise is typed, or the row fails here.
+    const state = await firstState(env);
+    const kept = state.kept7e, input = kept.steepBlocks;
+    expect(input).toEqual(row.input);
+    expect(env.steepBlocks).toEqual(input);
+    // The invariant: the kept placement's input is a subset of the blocks it records steep.
+    expect(unheldSteepBlocks(kept)).toEqual([]);
+    for (const family of input ?? []) expect(steepFamilies(kept)).toContain(family);
+    // A diagnostic names every withdrawal or stop, and every candidate block the input lost.
+    const notes = state.keptNotes.filter(note => note.code.startsWith('COURSE_LEG_PITCH'));
+    expect(notes.map(note => note.code)).toEqual(row.notes);
+    for (const family of steepFamilies(firstModel!).filter(item => !(input ?? []).includes(item))) expect(notes.some(note => note.message.includes(family))).toBe(true);
+    expect(() => restoreLayoutModel(JSON.stringify(kept))).not.toThrow();
+  }, 240000);
+
+  it('lets a plain error of a leg call through: the round catches no validator error', async () => {
+    const env = createEnv(parse(yaml), { createElkAttempt: createAttempt });
+    const place = env.place;
+    let calls = 0;
+    env.place = async (...args) => { if (calls++ === 1) throw new Error('a controlled validator error'); return place(...args); };
+    await expect(firstState(env)).rejects.toThrow('a controlled validator error');
+  }, 240000);
+
+  it('publishes the near-cap sheet with the withdrawal named, as before the premise check', async () => {
+    const model = await run(near);
+    expect(model.steepBlocks).toEqual([blockB]);
+    expect(model.diagnostics.filter(item => item.code === 'COURSE_LEG_PITCH_WITHDRAWN').map(item => item.message).join()).toContain(blockA);
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+  }, 240000);
+
+  it('refuses at restore an input on a placement that ran 7e and recorded no block', async () => {
+    const env = createEnv(parse(yaml), { createElkAttempt: createAttempt });
+    env.declinedSolidBlocks = new Map([[blockA, 'a controlled refusal'], [blockB, 'a controlled refusal']]);
+    const kept = (await firstState(env)).kept7e;
+    expect(kept.blockReservations).toBeUndefined();
+    expect(() => restoreLayoutModel(JSON.stringify(kept))).not.toThrow();
+    const copy = JSON.parse(JSON.stringify(kept)) as LayoutModel;
+    copy.steepBlocks = [blockA, blockB];
+    expect(unheldSteepBlocks(copy)).toEqual([blockA, blockB]);
+    expect(steepBlocksFault(copy)).toMatch(/is not recorded under the cap/);
+    expect(() => restoreLayoutModel(JSON.stringify(copy))).toThrow(/steepBlocks/);
+  }, 240000);
 });
