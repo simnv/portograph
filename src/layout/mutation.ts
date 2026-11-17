@@ -40,7 +40,7 @@ import { checkBodyTrims } from './end-trim.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { reserveBlockGaps } from './solid-blocks.js';
+import { courseLegPitchFault, reserveBlockGaps } from './solid-blocks.js';
 import { moveBands } from './gap-room.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -540,6 +540,11 @@ function validateGeometry(model: LayoutModel): void {
     delete node.sizeFloor; delete node.size; delete node.contentSize; delete node.contentInsets; delete node.sidePitch;
   }
   sizeNodes(expected);
+  // The leg pitches of the course ports are the ones the rule gives (dense-16x9 ticket 29, R5): the producer's own function.
+  if (stages.indexOf(model.stage) >= stages.indexOf('sides-two')) {
+    const legs = courseLegPitchFault(model);
+    if (legs !== undefined) throw new Error(legs);
+  }
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!, measured = expected.nodes[id]!, box = node.bounds;
     validatePortCorners(node);

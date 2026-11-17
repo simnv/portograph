@@ -45,7 +45,8 @@ export function endPitch(node: LayoutNode, side: Side, pitch = node.sidePitch![s
   const entries = facePairPitches(node, side);
   if (!entries.length) return pitch;
   const onFace = new Set(node.ports.filter(port => (port.side ?? port.sizingSide) === side).map(port => portId(port.ref)));
-  return entries.reduce((most, entry) => entry.ports.every(key => onFace.has(key)) ? Math.max(most, entry.min) : most, pitch);
+  // A `leg` pitch keeps a member chord off a course stem: a body end draws no chord, so it keeps none.
+  return entries.reduce((most, entry) => entry.rule !== 'leg' && entry.ports.every(key => onFace.has(key)) ? Math.max(most, entry.min) : most, pitch);
 }
 
 /**
@@ -82,7 +83,7 @@ export function pairExcess(node: LayoutNode, side: Side, count: number, pitch = 
     if (entry.rule === 'fan') {
       const key = [...entry.ports].sort().join('|');
       fans.set(key, Math.max(fans.get(key) ?? 0, excess));
-    } else blocks.set(entry.ports[0]!, Math.max(blocks.get(entry.ports[0]!) ?? 0, excess));
+    } else blocks.set(entry.ports[0]!, Math.max(blocks.get(entry.ports[0]!) ?? 0, excess)); // a `block` or a `leg` port: both neighbours
   }
   const largest = Math.max(0, ...fans.values(), ...blocks.values());
   const fanSum = [...fans.values()].reduce((sum, value) => sum + value, 0);
@@ -102,7 +103,7 @@ export function pairPitchFault(node: LayoutNode): string | undefined {
     if ((side !== 'top' && side !== 'bottom') || !Array.isArray(entries)) return `${node.id} has pair pitches on ${side}`;
     const seen = new Set<string>();
     for (const entry of entries) {
-      const size = entry.rule === 'fan' ? 2 : entry.rule === 'block' ? 1 : 0;
+      const size = entry.rule === 'fan' ? 2 : entry.rule === 'block' || entry.rule === 'leg' ? 1 : 0;
       if (!size || !Array.isArray(entry.ports) || entry.ports.length !== size || new Set(entry.ports).size !== size
         || !entry.ports.every(key => keys.has(key)) || !Number.isFinite(entry.min) || entry.min <= 0) return `${node.id} has an unreadable pair pitch on ${side}`;
       // One entry for each rule and pair, with the ports of a fan pair sorted, as `addPairPitches` writes it: the readers read the first entry of
