@@ -3,7 +3,7 @@ import type { Rect } from '../model/geometry.js';
 import { findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 import { portKey } from './sides-one.js';
-import { reservation, type ReservationOf, type SeatEquation, type SeatSetPayload } from './reservations.js';
+import { reservation, seatSetFault, type ReservationOf, type SeatEquation, type SeatSetPayload } from './reservations.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { orderedNodeIds } from '../model/model.js';
 import { rowGap } from './sides-two.js';
@@ -389,4 +389,16 @@ export function applySeatSets(model: LayoutModel): boolean {
     if (entry.payload.order.some((id, i) => Math.abs(model.nodes[id]!.bounds!.x - (before[i] ?? NaN)) > PLACEMENT_EPS)) moved = true;
   }
   return moved;
+}
+
+/**
+ * At the end of each rule from 7c to 7f (`mutation.ts`, beside the fallen seats of ADR-0027): a seat set its rule's moves broke is withdrawn
+ * whole, by name, with the fault that broke it. The members stay where the rule left them; the record names only sets that stand (R5).
+ */
+export function withdrawBrokenSeatSets(model: LayoutModel): void {
+  for (const entry of [...(model.reservations ?? [])]) {
+    if (entry.kind !== 'seatSet' || entry.owner.kind !== 'group') continue;
+    const fault = seatSetFault(entry, model);
+    if (fault !== undefined) withdrawSeatSet(model, entry.owner.id, fault);
+  }
 }

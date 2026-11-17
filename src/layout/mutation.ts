@@ -1,4 +1,5 @@
 import { validateEarlyReservations, validateReservations } from './reservations.js';
+import { withdrawBrokenSeatSets } from './seat-set.js';
 import { validateStaggerRows } from './stagger.js';
 import { validateGroupLifts } from './lift.js';
 import { validateFeedSplits } from './feed-split.js';
@@ -1129,6 +1130,8 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   if (rule === 'bars') rebuildBarDrops(draft);
   // A rebuild can move a seated body or its feed: the record the rule publishes names only the seats its geometry holds (ADR-0027).
   if (stages.indexOf(rule) >= stages.indexOf('centre') && stages.indexOf(rule) <= stages.indexOf('bands')) withdrawFallenSeatsOf(draft);
+  // So is a seat set (dense-16x9 ticket 36): one the rule's moves broke is withdrawn whole, by name (`SEAT_SET_WITHDRAWN`).
+  if (stages.indexOf(rule) >= stages.indexOf('centre') && stages.indexOf(rule) <= stages.indexOf('bands')) withdrawBrokenSeatSets(draft);
   // The last centring reading that reads the record is the publication of 7f: by default the routed layout publishes without it (architecture-2
   // ticket 66). With `layout.moveBeforeGrow` the routed layout keeps the records: its publication check replays the centring steps, and they read
   // the seats the producer decided (ADR-0027).
