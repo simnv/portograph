@@ -6,7 +6,7 @@ import { validateFeedSplits } from './feed-split.js';
 import { siblingRowsFault } from './sibling-frames.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
-import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
+import type { Lane, LayoutFreeze, LayoutGroup, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
 import { LAYOUT_STAGES } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
@@ -43,6 +43,8 @@ import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
 import { courseLegPitchFault, reserveBlockGaps } from './solid-blocks.js';
+import { openMembers } from './read/open-member.js';
+import { faceSortOf, orderFace, type FaceSort } from './sides-two.js';
 import { moveBands } from './gap-room.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -176,13 +178,17 @@ function topology(model: LayoutModel) {
  * order the nodes of a group in which no node has a routed link (ranked-groups spec 3.1); the check
  * for that sits beside the group loop below.
  */
-function structure(model: LayoutModel, ordered = false) {
+function structure(model: LayoutModel, ordered = false, open?: (group: string) => ReadonlySet<string>) {
+  // The rows rule closes the open slots of a cell (dense-16x9 ticket 36, slice 3): it may move only the open members its `rowOrder` entry names.
+  const order = (group: LayoutGroup): readonly string[] | undefined => open === undefined || group.rowOrder === undefined ? group.rowOrder
+    : group.rowOrder.filter(id => !open(group.id).has(id));
   return {
     nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, node]) => [id, {
       ...pick(node, ['id', 'owner', 'layer', 'strokeWidth', 'portCorners']),
       ports: node.ports.map(port => pick(port, ['ref', 'class', 'side', 'authorOrder', 'owner', 'layer', 'unused', 'sizingSide', 'sideHint', 'laneHint', 'courseHint', 'naturalSide'])),
     }])),
-    groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, pick(group, ordered ? ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank'] : ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank', 'rowOrder'])])),
+    groups: Object.fromEntries(Object.entries(model.groups).map(([id, group]) => [id, ordered ? pick(group, ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank'])
+      : { ...pick(group, ['id', 'owner', 'layer', 'nodes', 'tier', 'frame', 'flank']), ...(order(group) === undefined ? {} : { rowOrder: order(group) }) }])),
     ...pick(model, ['fallbackUsed', 'deadlineHit']),
   };
 }
@@ -925,7 +931,8 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
   same(draft.stage, model.stage, 'Transaction owns the stage marker');
   same(draft.document, model.document, 'Document changed'); same(unfaced(draft).freeze, unfaced(model).freeze, 'Freeze metadata changed');
-  same(structure(draft, rule === 'centre'), structure(model, rule === 'centre'), 'Topology or membership changed');
+  const open = rule === 'rows' ? (group: string): ReadonlySet<string> => openMembers(model.reservations, group) : undefined;
+  same(structure(draft, rule === 'centre', open), structure(model, rule === 'centre', open), 'Topology or membership changed');
   if (rule === 'centre') {
     if (draft.anchorTier !== undefined) same(draft.anchorTier, selectAnchorTier(draft), 'Invalid anchor tier');
     const anchor = selectAnchorTier(draft);
@@ -993,7 +1000,8 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     }
   }
   for (const [id, group] of Object.entries(draft.groups)) {
-    same(omit(group, rule === 'centre' ? ['bounds', 'rowOrder'] : ['bounds']), omit(model.groups[id]!, rule === 'centre' ? ['bounds', 'rowOrder'] : ['bounds']), 'Undeclared group field changed');
+    // The row order is judged by `structure` above (the centre rule's own groups, the rows rule's open members).
+    same(omit(group, rule === 'centre' || rule === 'rows' ? ['bounds', 'rowOrder'] : ['bounds']), omit(model.groups[id]!, rule === 'centre' || rule === 'rows' ? ['bounds', 'rowOrder'] : ['bounds']), 'Undeclared group field changed');
     // Centring may reorder the row of a group only where no node has a routed link: nothing routed
     // then reads the order, and the overlay barycentre is the one rule that asks for it.
     if (rule === 'centre' && !equal(group.rowOrder, model.groups[id]!.rowOrder)
@@ -1029,6 +1037,7 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     || draft.canvas.y + draft.canvas.height < model.canvas.y + model.canvas.height)) throw new Error('Canvas may only expand');
   const flankNodes = new Set(Object.values(model.groups).filter(group => group.flank).flatMap(group => [...group.nodes, ...(group.flank!.primaryPeer ? [group.flank!.primaryPeer] : [])]));
   const reordered: string[] = [];
+  let draftSort: FaceSort | undefined;
   for (const id of orderedNodeIds(model.document)) {
     const old = model.nodes[id]!, node = draft.nodes[id]!;
     same(omit(node, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), omit(old, ['bounds', 'size', 'sidePitch', 'ports', 'icon']), 'Undeclared node field changed');
@@ -1052,6 +1061,15 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
         // The ports exchange the slots of the face: the anchors stay where they were.
         const seats = old.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => port.anchor!);
         node.ports.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).forEach((port, index) => seated.set(portKey(port.ref), seats[index]!));
+      }
+    } else if (!permission.reorder && rule === 'rows' && model.document.layout?.moveBeforeGrow === true) {
+      // The rows rule reorders a face only to the order the stage-5 sorter gives it on the draft (`orderFace`): a face that reads an open member the
+      // seat set seated in another slot (dense-16x9 ticket 36, slice 3).
+      for (const side of SIDE_TIE_ORDER) {
+        const refs = (list: typeof node.ports): string[] => list.filter(port => port.side === side).sort((a, b) => a.engineOrder! - b.engineOrder!).map(port => portKey(port.ref));
+        if (refs(node.ports).join('|') === refs(old.ports).join('|')) continue;
+        draftSort ??= faceSortOf(draft);
+        if (orderFace(draft, draftSort, id, side).ordered.map(port => portKey(port.ref)).join('|') !== refs(node.ports).join('|')) throw new Error(`${rule} cannot reorder ports`);
       }
     } else if (!permission.reorder) same(node.ports.map(port => port.engineOrder), old.ports.map(port => port.engineOrder), `${rule} cannot reorder ports`);
     for (const side of SIDE_TIE_ORDER) {

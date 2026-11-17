@@ -6,6 +6,9 @@ import { portId } from './skeleton-graph.js';
 import { portKey } from './sides-one.js';
 import { ofKind, reservation, seatSetFault, type ReservationOf, type SeatEquation, type SeatSetPayload } from './reservations.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { movedOpen, resortFaces, type Resorted } from './free-slots.js';
+import { belowReader } from './feed-order.js';
+import { openMembers } from './read/open-member.js';
 import { rowGap } from './sides-two.js';
 import { labelSpans, rowGroups } from './rows.js';
 import { rowLabelGap } from './row-label-room.js';
@@ -111,8 +114,8 @@ function repackGaps(model: LayoutModel, order: readonly string[], widths: readon
 }
 
 /** The row as the solver reads it: members, widths, gaps, the feeds from a higher tier of the frame, the verticals a member holds. */
-function readRow(model: LayoutModel, group: LayoutGroup): RowInput | string {
-  const order = [...(group.rowOrder ?? group.nodes)], index = new Map(order.map((id, i) => [id, i]));
+function readRow(model: LayoutModel, group: LayoutGroup, rowOrder: readonly string[] = group.rowOrder ?? group.nodes): RowInput | string {
+  const order = [...rowOrder], index = new Map(order.map((id, i) => [id, i]));
   const bodies = order.map(id => model.nodes[id]!.bounds!);
   const gaps = repackGaps(model, order, bodies.map(body => body.width));
   const feeds: Feed[] = [], holds: RowInput['holds'] = [];
@@ -170,13 +173,33 @@ function keptFeeds(input: RowInput, xs: readonly number[]): Feed[] {
   return kept;
 }
 
-interface Leaf { xs: number[]; kept: Feed[]; width: number; movement: number; key: string; index: string }
+/**
+ * One link of an open member (slice 3) as the slot choice reads it: the member's index in the order, its port's offset on the body and the far port's
+ * x where it stands now. The slot choice prefers the slots nearest the far ends (`reach`; the far-end pull of a free member, architecture-2 ticket 22).
+ */
+interface OpenEnd { member: number; offset: number; x: number }
+/** The links of the `open` members of `input` (`OpenEnd`), in member and link order (R3: by the content key of the link). */
+function openEnds(model: LayoutModel, input: RowInput, open: ReadonlySet<string>): OpenEnd[] {
+  const ends: (OpenEnd & { key: string })[] = [];
+  for (const link of model.links) {
+    const a = link.attachments;
+    if (a === undefined) continue;
+    for (const [mine, other] of [[a.from, a.to], [a.to, a.from]] as const) {
+      const member = input.order.indexOf(mine.node), port = findPort(model, mine), far = findPort(model, other);
+      if (!open.has(mine.node) || member < 0 || port?.anchor === undefined || far?.anchor === undefined) continue;
+      ends.push({ member, offset: port.anchor.x - input.x0[member]!, x: far.anchor.x, key: linkKey(link) });
+    }
+  }
+  return ends.sort((p, q) => p.member - q.member || p.key.localeCompare(q.key)).map(({ member, offset, x }) => ({ member, offset, x }));
+}
+/** One assignment of a row order (`order`, read as `input`): the member x, the kept feeds, the row width, the movement and the content keys. */
+interface Leaf { xs: number[]; kept: Feed[]; width: number; reach: number; movement: number; key: string; index: string; order: string[]; input: RowInput }
 
 /**
  * Every assignment of the fed members (a seat position, or free) that the row order and gaps admit, with one seat per parent port.
  * Undefined when the count bound cuts the search (R4).
  */
-function assignments(input: RowInput): Leaf[] | undefined {
+function assignments(input: RowInput, ends: readonly OpenEnd[] = []): Leaf[] | undefined {
   const n = input.order.length, leaves: Leaf[] = [];
   const span = (i: number, j: number): number => { let s = 0; for (let k = i; k < j; k++) s += input.widths[k]! + input.gaps[k]!; return s; };
   let visits = 0, cut = false;
@@ -187,8 +210,8 @@ function assignments(input: RowInput): Leaf[] | undefined {
       const xs = placeFree(input, anchors), kept = keptFeeds(input, xs);
       const low = Math.min(...xs), high = Math.max(...xs.map((x, i) => x + input.widths[i]!));
       const keys = kept.map(feed => linkKey(feed.link)).sort();
-      leaves.push({ xs, kept, width: high - low, movement: xs.reduce((sum, x, i) => sum + Math.abs(x - input.x0[i]!), 0), key: keys.join('|'),
-        index: kept.map(feed => feed.link.sourceIndex).sort((a, b) => a - b).join(',') });
+      leaves.push({ xs, kept, width: high - low, reach: ends.reduce((sum, end) => sum + Math.abs(xs[end.member]! + end.offset - end.x), 0), movement: xs.reduce((sum, x, i) => sum + Math.abs(x - input.x0[i]!), 0), key: keys.join('|'),
+        index: kept.map(feed => feed.link.sourceIndex).sort((a, b) => a - b).join(','), order: input.order, input });
       return;
     }
     const options = input.candidates[k]!;
@@ -218,13 +241,13 @@ function blockHeights(demands: readonly BlockDemand[]): Map<number, number> {
 }
 
 /** The cost of `leaf` (`Cost`) against the row where it stands now (`start`: its box width, the block heights, the extent of the groups). */
-function candidateCost(model: LayoutModel, input: RowInput, leaf: Leaf, blocks: boolean,
+function candidateCost(model: LayoutModel, group: LayoutGroup, leaf: Leaf, stage: Stage, blocks: boolean,
   start: { width: number; heights: ReadonlyMap<number, number>; w: number; h: number }): Cost {
-  const undo = moveMembers(model, input.order, leaf.xs), box = input.group.bounds!;
-  const fit = contentBox(model, input.group);
-  input.group.bounds = fit;
+  const undo = stand(stage, leaf), box = group.bounds!;
+  const fit = contentBox(model, group);
+  group.bounds = fit;
   let heights: Map<number, number> | undefined;
-  try { heights = blocks ? blockHeights(blockDemands(model).demands) : undefined; } finally { input.group.bounds = box; undo(); }
+  try { heights = blocks ? blockHeights(blockDemands(model).demands) : undefined; } finally { group.bounds = box; undo(); }
   const dw = Math.max(0, fit.width - start.width);
   let dh = 0;
   for (const [below, height] of heights ?? []) dh += Math.max(0, height - (start.heights.get(below) ?? height));
@@ -240,12 +263,14 @@ function groupExtent(model: LayoutModel): { w: number; h: number } {
 }
 
 /**
- * The order the candidates are read in (owner ruling 'tight room'): the most kept verticals, then the least interval width, the least movement,
- * the kept links by content, then sourceIndex (R3). The read bound (`SEAT_SET_GAIN_READS`) cuts this order, so the candidate this order admits
+ * The order the candidates are read in (owner ruling 'tight room'): the most kept verticals, then the least interval width, the open members nearest
+ * their far ends (`reach`, slice 3; 0 in a row with none), the least movement,
+ * the kept links by content, the row order by content (the slots of the open members, slice 3), then sourceIndex (R3). The read bound (`SEAT_SET_GAIN_READS`) cuts this order, so the candidate this order admits
  * first is always read.
  */
 const readOrder = (a: Leaf, b: Leaf): number => b.kept.length - a.kept.length || (Math.abs(a.width - b.width) > PLACEMENT_EPS ? a.width - b.width : 0)
-  || (Math.abs(a.movement - b.movement) > PLACEMENT_EPS ? a.movement - b.movement : 0) || a.key.localeCompare(b.key) || a.index.localeCompare(b.index);
+  || (Math.abs(a.reach - b.reach) > PLACEMENT_EPS ? a.reach - b.reach : 0) || (Math.abs(a.movement - b.movement) > PLACEMENT_EPS ? a.movement - b.movement : 0) || a.key.localeCompare(b.key)
+  || a.order.join('|').localeCompare(b.order.join('|')) || a.index.localeCompare(b.index);
 
 /**
  * The choice among the admitted candidates of the most kept verticals and the narrowest row (owner ruling of 2026-11-17: straight links win
@@ -269,12 +294,12 @@ function moveMembers(model: LayoutModel, order: readonly string[], xs: readonly 
 }
 
 /** Why the members at `xs` break a block owner, or undefined: an under-cap block passes the cap, or a flat block's floor demand grows past its gap. */
-function blockOwnerFault(model: LayoutModel, input: RowInput, xs: readonly number[], before: readonly BlockDemand[]): string | undefined {
+function blockOwnerFault(model: LayoutModel, group: LayoutGroup, leaf: Leaf, stage: Stage, before: readonly BlockDemand[]): string | undefined {
   if (!before.length) return undefined;
-  const undo = moveMembers(model, input.order, xs), box = input.group.bounds!;
-  input.group.bounds = contentBox(model, input.group);
+  const undo = stand(stage, leaf), box = group.bounds!;
+  group.bounds = contentBox(model, group);
   let after: BlockDemand[];
-  try { after = blockDemands(model).demands; } finally { input.group.bounds = box; undo(); }
+  try { after = blockDemands(model).demands; } finally { group.bounds = box; undo(); }
   for (const was of before) {
     const now = after.find(item => item.family === was.family)!;
     if (was.steep <= BLOCK_CAP + EPS && now.steep > BLOCK_CAP + EPS) return `the block ${was.family} would pass its ${BLOCK_CAP} px cap (${now.steep.toFixed(1)} px)`;
@@ -282,6 +307,59 @@ function blockOwnerFault(model: LayoutModel, input: RowInput, xs: readonly numbe
     if (was.steep > BLOCK_CAP + EPS && now.floor > gap + EPS) return `the flat block ${was.family} would need ${now.floor.toFixed(1)} px, past its gap ${gap.toFixed(1)} px`;
   }
   return undefined;
+}
+
+/**
+ * The most row orders the slot choice of one row tries (dense-16x9 ticket 36, slice 3; R4: a count). Each order is read by stage 4's own reader
+ * (`belowReader`, the pair search under the row) and searched by `assignments`. Two open members in a row of six, the core rows of the outside sheet,
+ * give 30 orders; past the bound the open members keep their provisional slots, named (`SEAT_SET_SLOT_BOUND`).
+ */
+export const SEAT_SET_SLOT_ORDERS = 64;
+/** The diagnostic of a row whose slot orders pass `SEAT_SET_SLOT_ORDERS`: its open members keep the slots stage 4 gave them. */
+export const SEAT_SET_SLOT_BOUND = 'SEAT_SET_SLOT_BOUND';
+
+/**
+ * The orders the slot choice of `group` tries (dense-16x9 ticket 36, slice 3): its order now first, then every order that puts the `movable` open
+ * members in other slots and keeps the other members in their order, if stage 4's reader decides the same below the row under it (`belowReader`).
+ */
+function slotOrders(model: LayoutModel, group: LayoutGroup, base: readonly string[], movable: ReadonlySet<string>): { orders: string[][]; bound?: number } {
+  if (!movable.size) return { orders: [[...base]] };
+  const rest = base.filter(id => !movable.has(id)), items = base.filter(id => movable.has(id));
+  let count = 1;
+  for (let k = 1; k <= items.length; k++) count *= rest.length + k;
+  if (count > SEAT_SET_SLOT_ORDERS) return { orders: [[...base]], bound: count };
+  let orders = [rest];
+  for (const item of items) orders = orders.flatMap(order => Array.from({ length: order.length + 1 }, (_, i) => [...order.slice(0, i), item, ...order.slice(i)]));
+  const below = belowReader(model), today = below(group, base);
+  return { orders: [[...base], ...orders.filter(order => !sameOrder(order, base) && below(group, order) === today)] };
+}
+
+/** What stands a leaf (`stageLeaf`): the cell, its order now, and its open members. */
+interface Stage { model: LayoutModel; group: LayoutGroup; base: readonly string[]; open: ReadonlySet<string> }
+
+/**
+ * Stands the members of `group` as `leaf` has them: the cell in the leaf's order, the bodies at its x, and every face that reads a moved open member
+ * sorted again by the stage-5 sorter (`resortFaces`, with the pills when `pills`). Gives back the undo and the faces sorted again, or why a face cannot be.
+ */
+function stageLeaf(stage: Stage, leaf: Pick<Leaf, 'order' | 'xs'>, pills = false): { undo: () => void; faces: Resorted['faces'] } | string {
+  const { model, group } = stage, was = group.rowOrder, moved = movedOpen(stage.open, stage.base, leaf.order);
+  const back = (): void => { if (moved.size) { if (was === undefined) delete group.rowOrder; else group.rowOrder = was; } };
+  if (moved.size) group.rowOrder = [...leaf.order];
+  const members = moveMembers(model, leaf.order, leaf.xs);
+  const resorted = resortFaces(model, moved, pills);
+  if (typeof resorted === 'string') { members(); back(); return resorted; }
+  return { faces: resorted.faces, undo: () => { resorted.undo(); members(); back(); } };
+}
+/** The undo of a leaf that `planSeatSet` has staged once already (so it stands again). */
+function stand(stage: Stage, leaf: Leaf): () => void {
+  const staged = stageLeaf(stage, leaf);
+  if (typeof staged === 'string') throw new Error(`The seat set of ${stage.group.id} no longer stands its candidate: ${staged}`);
+  return staged.undo;
+}
+/** The links of the ports of `faces`: the other links of a face sorted again, which ruling 4 reads too. */
+function faceLinks(model: LayoutModel, faces: Resorted['faces']): Set<string> {
+  const ports = new Set(faces.flatMap(face => face.after));
+  return new Set(model.links.filter(link => link.attachments !== undefined && (ports.has(portId(link.attachments.from)) || ports.has(portId(link.attachments.to)))).map(link => link.id));
 }
 
 /** A group the rows rule does not move for a row: a flank, or a group that is no row (a bar, a grid). The name it has in a decline. */
@@ -295,40 +373,65 @@ const fixedKind = (model: LayoutModel, group: LayoutGroup): string | undefined =
 export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutcome {
   const scope = seatSetScope(model, group);
   if (scope !== undefined) return { kind: 'declined', clause: 'scope', why: scope };
-  const input = readRow(model, group);
+  const base = [...(group.rowOrder ?? group.nodes)];
+  const input = readRow(model, group, base);
   if (typeof input === 'string') return { kind: 'declined', clause: 'bound', why: input };
   if (!input.feeds.length) return { kind: 'declined', clause: 'scope', why: NO_FEED };
-  const leaves = assignments(input);
-  if (leaves === undefined) return { kind: 'declined', clause: 'bound', why: `the search passed ${SEAT_SET_VISITS} visits` };
+  // The open members (slice 3, `rowOrder.open`) that hold no vertical move to the slots the choice tries; the others keep their slots.
+  const open = openMembers(model.reservations, group.id);
+  const movable = new Set([...open].filter(id => input.order.includes(id) && !input.fixed.has(input.order.indexOf(id))));
+  const slots = slotOrders(model, group, base, movable);
+  if (slots.bound !== undefined) {
+    const message = `The open members of ${group.id} keep their slots: ${slots.bound} slot orders, more than ${SEAT_SET_SLOT_ORDERS}.`;
+    if (!model.diagnostics.some(item => item.code === SEAT_SET_SLOT_BOUND && item.message === message))
+      model.diagnostics.push({ stage: 'placement', severity: 'info', code: SEAT_SET_SLOT_BOUND, message, owners: [{ kind: 'group', id: group.id }] });
+  }
+  const leaves: Leaf[] = [];
+  for (const order of slots.orders) {
+    const read: RowInput | string = order === slots.orders[0] ? input : readRow(model, group, order);
+    if (typeof read === 'string') continue;
+    const found = assignments(read, openEnds(model, read, movable));
+    if (found === undefined) return { kind: 'declined', clause: 'bound', why: `the search passed ${SEAT_SET_VISITS} visits` };
+    if (read === input) { leaves.push(...found); continue; }
+    // An order the slot choice adds is one candidate per kept set: its first leaf in read order (the narrowest row, then the least movement). Its other
+    // leaves differ only where the free members stand, and would spend the read bound of the row on one slot choice.
+    const best = new Map<string, Leaf>();
+    for (const leaf of found.sort(readOrder)) if (!best.has(leaf.key)) best.set(leaf.key, leaf);
+    leaves.push(...best.values());
+  }
   const now = keptFeeds(input, input.x0).length;
   const hasBlocks = input.order.some(id => model.links.some(link => link.solidBlock && (link.attachments?.from.node === id || link.attachments?.to.node === id)));
   const blocks = hasBlocks ? blockDemands(model).demands : [];
-  const start = { width: input.group.bounds!.width, heights: blockHeights(blocks), ...groupExtent(model) };
+  const start = { width: group.bounds!.width, heights: blockHeights(blocks), ...groupExtent(model) };
   const gaining = leaves.filter(leaf => leaf.kept.length > now).sort(readOrder);
+  const stage: Stage = { model, group, base, open: movable };
   let first: string | undefined, reads = 0, lost: string | undefined;
-  const before = straightLinks(model, input.order), admitted: { leaf: Leaf; cost: Cost; fit: Rect }[] = [];
+  const baseline = straightLinks(model, base), admitted: { leaf: Leaf; cost: Cost; fit: Rect }[] = [];
   // In read order, up to the read bound: the first admitted candidate sets the kept verticals and the row width, and every later candidate
   // with both (the width to PLACEMENT_EPS) is read too; the choice among them is made by area.
   for (const leaf of gaining) {
     const head = admitted[0]?.leaf;
     if (head && (leaf.kept.length < head.kept.length || leaf.width - head.width > PLACEMENT_EPS)) break;
     if (reads >= SEAT_SET_GAIN_READS) break;
-    const box = input.group.bounds!, undo = moveMembers(model, input.order, leaf.xs);
-    const fit = contentBox(model, input.group);
-    // The gain is read on both faces of the members (ruling 4 of 2026-11-17): a set that wins k verticals and turns more than k straight links
-    // of its members (verticals or chords that hold) into bends or refused chords is no gain. Read on the moved members, before the model is given back.
-    const after = straightLinks(model, input.order);
-    undo(); input.group.bounds = box;
+    const box = group.bounds!, staged = stageLeaf(stage, leaf);
     reads++;
-    const fault = blockOwnerFault(model, input, leaf.xs, blocks);
+    // A face that reads a moved open member and that another owner holds declines the candidate by name (slice 3).
+    if (typeof staged === 'string') { first ??= staged; continue; }
+    const fit = contentBox(model, group);
+    // The gain is read on both faces of the members (ruling 4 of 2026-11-17), and on the other links of a face sorted again (slice 3): a set that
+    // wins k verticals and turns more than k straight links into bends or refused chords is no gain. Read on the moved members, before the model is given back.
+    const also = faceLinks(model, staged.faces), after = straightLinks(model, leaf.order, also);
+    staged.undo(); group.bounds = box;
+    const before = also.size ? straightLinks(model, base, also) : baseline;
+    const fault = blockOwnerFault(model, group, leaf, stage, blocks);
     if (fault !== undefined) { first ??= fault; continue; }
     const gained = [...after.vertical].filter(id => !before.vertical.has(id)).length, gone = [...before.straight].filter(id => !after.straight.has(id)).sort();
     if (gone.length > gained) { lost ??= `wins ${gained} verticals and loses ${gone.length} straight links (${gone.join(', ')})`; continue; }
-    admitted.push({ leaf, cost: candidateCost(model, input, leaf, hasBlocks, start), fit });
+    admitted.push({ leaf, cost: candidateCost(model, group, leaf, stage, hasBlocks, start), fit });
   }
   if (admitted.length) {
     const best = admitted.sort(choice)[0]!;
-    return { kind: 'set', payload: payloadOf(model, input, best.leaf, best.fit) };
+    return { kind: 'set', payload: payloadOf(model, best.leaf.input, best.leaf, best.fit) };
   }
   if (first !== undefined) return { kind: 'declined', clause: 'owner', why: first };
   return { kind: 'declined', clause: 'no-gain', why: lost !== undefined ? `the best seat set ${lost}`
@@ -336,16 +439,16 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
 }
 
 /**
- * The links of the members of `order` to nodes outside the row, on both faces, that stand vertical and that stand straight on the anchors now: vertical (within
+ * The links of the members of `order` to nodes outside the row (and the links `also` names: the other links of a face the slot choice sorts again), on both faces, that stand vertical and that stand straight on the anchors now: vertical (within
  * `SEAT_STANDS_EPS`), or a path the frame and row rules would pin on these anchors (`expectedRowPath`: a held chord or a level path). This is
  * what placement can read at stage 6 of what a set costs elsewhere: the chords are decided after the rows rule (`rebuildRowPaths`) on the
  * same reading. A link an overlay or a later rule draws is not read.
  */
-function straightLinks(model: LayoutModel, order: readonly string[]): { vertical: Set<string>; straight: Set<string> } {
+function straightLinks(model: LayoutModel, order: readonly string[], also: ReadonlySet<string> = new Set()): { vertical: Set<string>; straight: Set<string> } {
   const members = new Set(order), vertical = new Set<string>(), straight = new Set<string>();
   for (const link of model.links) {
     const ends = link.attachments;
-    if (ends === undefined || link.layer !== 'routed' || members.has(ends.from.node) === members.has(ends.to.node)) continue;
+    if (ends === undefined || link.layer !== 'routed' || (members.has(ends.from.node) === members.has(ends.to.node) && !also.has(link.id))) continue;
     const a = findPort(model, ends.from)?.anchor, b = findPort(model, ends.to)?.anchor;
     if (a === undefined || b === undefined) continue;
     if (Math.abs(a.x - b.x) <= SEAT_STANDS_EPS) { vertical.add(link.id); straight.add(link.id); }
@@ -411,7 +514,9 @@ export function seatRows(model: LayoutModel, solve: boolean, refused: ReadonlyMa
           continue;
         }
         const p = plan.payload, origin = boundaryOrigin(model, p)!;
-        moveMembers(model, p.order, p.xs.map(x => origin + x));
+        // The slots of the open members close here (slice 3): the cell takes the set's order and the faces that read a moved open member are sorted again.
+        const base = group.rowOrder ?? group.nodes, staged = stageLeaf({ model, group, base, open: openMembers(model.reservations, group.id) }, { order: p.order, xs: p.xs.map(x => origin + x) }, true);
+        if (typeof staged === 'string') throw new Error(`The seat set of ${group.id} no longer stands its plan: ${staged}`);
         rebuildNodeGeometry(model, p.order, 'current');
         coverInterval(model, group, p);
         model.reservations = [...(model.reservations ?? []), reservation('seatSet', { kind: 'group', id: group.id }, '', 'rows', 0, p)];

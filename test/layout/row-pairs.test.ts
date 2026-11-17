@@ -26,12 +26,12 @@ describe('the joint order of two rows (dense-16x9 ticket 32)', () => {
 
   it('keeps today\'s order when it is a minimum', () => {
     const today = { upper: ['a1', 'a2', 'b2', 'b1'], lower: ['c1', 'c5', 'c4', 'c0', 'c3', 'c2'] };
-    expect(choosePairOrder({ ...competition, ...today })).toEqual({ kind: 'kept', ...today });
+    expect(choosePairOrder({ ...competition, ...today })).toEqual({ kind: 'kept', ...today, crossings: expect.any(Number) });
   });
 
   it('keeps an earlier joint choice while it is still a minimum', () => {
     const previous = { upper: ['a1', 'a2', 'b2', 'b1'], lower: ['c1', 'c5', 'c4', 'c0', 'c3', 'c2'] };
-    expect(choosePairOrder({ ...competition, previous })).toEqual({ kind: 'stays', ...previous });
+    expect(choosePairOrder({ ...competition, previous })).toEqual({ kind: 'stays', ...previous, crossings: expect.any(Number) });
   });
 
   it('counts a peer link whose ends a member stands between: the peer pair stays side by side', () => {

@@ -82,6 +82,28 @@ function faceFails(model: LayoutModel, node: string, side: Side, index: Readonly
   return faceIsStale(facePositions(model.nodes[node]!, side, index));
 }
 
+/**
+ * The faces that fail G5 on this model through a port whose far ends stand on one of `moved` (dense-16x9 ticket 36, slice 3): every face of a node
+ * linked to them, judged by the G5 predicate (`facePositions`, `standsWrong`) on the pairs of ports one of which reads a moved node, on the anchors
+ * of every routed-layer link (a placement model has no paths yet). In node and side order.
+ */
+export function staleThrough(model: LayoutModel, moved: ReadonlySet<string>): { node: string; side: Side }[] {
+  // Read on the anchors from the rows rule on, before the route rule gives the links their paths: every link of the routed layer.
+  const routedLinks = new Set(model.links.filter(isRoutedLink)), index = farAnchorIndex(model, routedLinks), near = new Set<string>(), reads = new Set<string>();
+  for (const link of routedLinks) {
+    const { from, to } = endpoints(link);
+    for (const [a, b] of [[from, to], [to, from]] as const) if (moved.has(b.node)) { near.add(a.node); reads.add(refKey(a)); }
+  }
+  const found: { node: string; side: Side }[] = [];
+  for (const id of orderedNodeIds(model.document)) for (const side of SIDE_TIE_ORDER) {
+    if (!near.has(id) || (model.freeze?.turnOrder ?? []).some(face => face.node === id && face.side === side)) continue;
+    const positions = facePositions(model.nodes[id]!, side, index);
+    const wrong = positions.some((a, i) => positions.some((b, j) => j !== i && (reads.has(refKey(a.port.ref)) || reads.has(refKey(b.port.ref))) && standsWrong(a, b)));
+    if (wrong) found.push({ node: id, side });
+  }
+  return found;
+}
+
 /** The faces that fail G5 on this model, in node and side order. */
 export function staleFaces(model: LayoutModel, routedLinks: ReadonlySet<LayoutLink> = routedLinksOf(model)): { node: string; side: Side }[] {
   const index = farAnchorIndex(model, routedLinks), found: { node: string; side: Side }[] = [];

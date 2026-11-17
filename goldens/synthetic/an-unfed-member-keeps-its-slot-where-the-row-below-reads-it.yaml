@@ -1,0 +1,30 @@
+# Expected (dense-16x9 ticket 36, slice 3): `r1` feeds only `h1`, and `c1` feeds `h1` and `c2` feeds `h2`, so a slot of `r1` before `c1` would let
+# stage 4 order the row below with fewer crossings: the slot is no free choice. Stage 4 names it (`FEED_ORDER_SLOT_HELD`), records no open
+# member, and `r1` keeps the slot stage 4 gave it, at the end of the row.
+# Test: test/layout/free-slots.test.ts.
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  up: { tier: 0 }
+  site: { tier: 1, label: "One site in ranks" }
+  down: { tier: 2 }
+nodes:
+  t0: { group: up, ports: [{ name: a, side: bottom }, { name: b, side: bottom }] }
+  p1: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  p2: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  c1: { group: site, ports: [{ name: u1, side: top }, { name: e1, side: bottom }] }
+  c2: { group: site, ports: [{ name: u1, side: top }, { name: e1, side: bottom }] }
+  r1: { group: site, ports: [{ name: e1, side: bottom }] }
+  h1: { group: site, ports: [{ name: a, side: top }, { name: b, side: top }, { name: d, side: bottom }] }
+  h2: { group: site, ports: [{ name: a, side: top }, { name: d, side: bottom }] }
+  d0: { group: down, ports: [{ name: u, side: top }, { name: v, side: top }] }
+links:
+  - { from: t0.a, to: p1.up }
+  - { from: t0.b, to: p2.up }
+  - { from: p1.d1, to: c1.u1 }
+  - { from: p2.d1, to: c2.u1 }
+  - { from: c1.e1, to: h1.a }
+  - { from: c2.e1, to: h2.a }
+  - { from: r1.e1, to: h1.b }
+  - { from: h1.d, to: d0.u }
+  - { from: h2.d, to: d0.v }

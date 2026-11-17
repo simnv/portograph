@@ -6,12 +6,14 @@
  * reserved in placement; the ledger makes that rule explicit. A reservation is plain JSON data (it lives on the model, which requires
  * plain JSON), and every predicate that judges one is code in this file, outside the model.
  */
-import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Rect, Side, Size } from '../model/index.js';
+import type { Course, GroupExit, LayoutGroup, LayoutModel, LayoutStage, Owner, PortRef, Rect, Side, Size } from '../model/index.js';
 import type { PlacementInputField } from '../model/layout.js';
 import type { PairPitch } from '../model/layout.js';
 import { LAYOUT_STAGES, stageReached } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { equationEnds, equationKind } from './read/seat-equation.js';
+import { openMemberFault, openMembers } from './read/open-member.js';
+import { staleThrough } from './far-end-order.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
@@ -99,9 +101,12 @@ export interface ReservationPayload {
    * `frame`, the units that stand beside each other in the frame left to right, the frame's own cells named by the frame id and each
    * child frame by its id; for `row`, the nodes of a free row that no row above feeds, ordered by its feeds into the row below (dense-16x9
    * ticket 20; a rank cell so ordered is a `cell` entry). `feeds` is the premise: each feeding row the order was read from, with the order
-   * it stood in. Stage 4 writes it after the free rows are ordered; an absent entry means the feeds decide nothing there.
+   * it stood in. Stage 4 writes it after the free rows are ordered; an absent entry means the feeds decide nothing there. `open` (a `cell`
+   * only, dense-16x9 ticket 36, slice 3): the members whose slot stage 4 leaves open (`openMemberFault`, and no other slot changes a decision
+   * below the cell); the seat set of the row closes them at stage 6 and is then the one reader of their slots. A premise that reads this cell's
+   * order reads it without them.
    */
-  rowOrder: { cell: string; order: readonly string[]; feeds: readonly RowFeed[] } | { frame: string; order: readonly string[]; feeds: readonly RowFeed[] }
+  rowOrder: { cell: string; order: readonly string[]; feeds: readonly RowFeed[]; open?: readonly string[] } | { frame: string; order: readonly string[]; feeds: readonly RowFeed[] }
     | { row: string; order: readonly string[]; feeds: readonly RowFeed[] };
   /**
    * The group order of the sub-tier `tier` that the joint stage-4 order decided with the free rows of the next sub-tier toward the anchor
@@ -520,6 +525,34 @@ export function staggerDeclineFailure(item: Reservation, model: LayoutModel): st
   return unknown === undefined ? undefined : `the decline of ${group} names the link ${unknown}, which the model does not have`;
 }
 
+/**
+ * Why the open members of a cell entry are no facts of `model` (dense-16x9 ticket 36, slice 3), or undefined: each is a member of the cell, named
+ * once, and stands only on links into the sub-tier directly below (`openMemberFault`: no feed from above, no peer link in the row).
+ */
+function openFault(model: LayoutModel, group: LayoutGroup, payload: { cell: string; open?: readonly string[] }): string | undefined {
+  for (const [i, node] of (payload.open ?? []).entries()) {
+    if (!group.nodes.includes(node) || payload.open!.indexOf(node) !== i) return `the open member ${node} of ${payload.cell} is no member of the cell, or is named twice`;
+    const why = openMemberFault(model, group, node);
+    if (why !== undefined) return `the open member ${node} of ${payload.cell} is not free: ${why}`;
+  }
+  return undefined;
+}
+
+/**
+ * Why a cell that stands off its entry's order breaks it, or undefined (dense-16x9 ticket 36, slice 3): only the open members moved (the other
+ * members in the entry's order), and only the seat set of the row moved them, from the rows rule on: a standing set in exactly this order, or a set
+ * this run withdrew (its members stay where the set left them until the command places once more without it).
+ */
+function closedSlotsFault(model: LayoutModel, payload: { cell: string; order: readonly string[]; open?: readonly string[] }, now: readonly string[]): string | undefined {
+  const open = new Set(payload.open ?? []), fixed = (order: readonly string[]): string[] => order.filter(id => !open.has(id));
+  if (now.length !== payload.order.length || !payload.order.every(id => now.includes(id)) || !same(fixed(now), fixed(payload.order))) return `${payload.cell} does not stand in the order its feeds give`;
+  if (!stageReached(model.stage, 'rows')) return `${payload.cell} moves its open members on a ${model.stage} model, before the rows rule closes them`;
+  const set = (model.reservations ?? []).find(entry => entry.kind === 'seatSet' && entry.payload.row === payload.cell);
+  const withdrawn = (model.reservations ?? []).some(entry => entry.kind === 'seatSetDeclined' && entry.payload.row === payload.cell && entry.payload.at !== 'input');
+  if (set?.kind === 'seatSet' ? !same(set.payload.order, now) : !withdrawn) return `${payload.cell} moves its open members, and no seat set of the row stands in that order`;
+  return undefined;
+}
+
 /** Why a `seatSet` payload is malformed, or undefined (the shape check of the kind). */
 function seatSetShapeFailure(payload: Record<string, unknown>): string | undefined {
   const strings = (value: unknown): boolean => Array.isArray(value) && value.every(item => typeof item === 'string');
@@ -558,6 +591,8 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
   const group = model.groups[p.row];
   if (group?.bounds === undefined || group.frame !== p.frame) return `${p.row} is no cell of ${p.frame}`;
   if (!same(group.rowOrder ?? group.nodes, p.order)) return `${p.row} no longer stands in the order of its seat set`;
+  const slots = closedSlotsFaultOf(model, p);
+  if (slots !== undefined) return slots;
   const port = (ref: PortRef) => model.nodes[ref.node]?.ports.find(item => portKey(item.ref) === portKey(ref));
   const provenance = seatSetProvenanceFault(p, model, port);
   if (provenance !== undefined) return provenance;
@@ -589,6 +624,20 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
   const low = Math.min(...p.xs), high = Math.max(...p.xs.map((x, i) => x + p.widths[i]!));
   if (p.interval.low > low + PLACEMENT_EPS || p.interval.high < high - PLACEMENT_EPS) return `the interval of the seat set of ${p.row} does not cover its members (${low} to ${high})`;
   return undefined;
+}
+
+/**
+ * Why the order of a seat set is no closing of its row's open slots (dense-16x9 ticket 36, slice 3), or undefined: against the cell's `rowOrder`
+ * entry, only the open members stand in other slots, and every face that reads an open member stands in the order of its far ends (the G5 predicate,
+ * `staleThrough`): a row reordered with the faces below left in their stage-5 order is refused. A row with no entry keeps the order it stands in.
+ */
+function closedSlotsFaultOf(model: LayoutModel, p: SeatSetPayload): string | undefined {
+  const entry = (model.reservations ?? []).find(item => item.kind === 'rowOrder' && 'cell' in item.payload && item.payload.cell === p.row);
+  if (entry?.kind !== 'rowOrder' || !('cell' in entry.payload) || same(entry.payload.order, p.order)) return undefined;
+  const order = entry.payload.order, open = new Set(entry.payload.open ?? []), fixed = (items: readonly string[]): string[] => items.filter(id => !open.has(id));
+  if (p.order.length !== order.length || !order.every(id => p.order.includes(id)) || !same(fixed(p.order), fixed(order))) return `the seat set of ${p.row} moves a member that the order of its row fixes`;
+  const stale = staleThrough(model, open)[0];
+  return stale === undefined ? undefined : `the ${stale.side} face of ${stale.node} reads a moved open member of ${p.row} and stands out of the order of its far ends`;
 }
 
 /**
@@ -709,9 +758,11 @@ export const refuseChordEntries = (links: readonly string[], revision: number): 
 export function rowOrderFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'rowOrder') return undefined;
   const payload = item.payload;
+  // A feeding row's open members (dense-16x9 ticket 36, slice 3) are read out of the premise: their slots decide nothing in this entry.
+  const closed = (row: string, order: readonly string[]): string[] => { const open = openMembers(model.reservations, row); return order.filter(id => !open.has(id)); };
   for (const feed of payload.feeds) {
     const row = model.groups[feed.row];
-    if (row === undefined || !same(row.rowOrder ?? row.nodes, feed.order)) return `the feeding row ${feed.row} no longer stands in the order the entry read`;
+    if (row === undefined || !same(closed(feed.row, row.rowOrder ?? row.nodes), closed(feed.row, feed.order))) return `the feeding row ${feed.row} no longer stands in the order the entry read`;
   }
   if ('row' in payload) {
     const group = model.groups[payload.row];
@@ -721,7 +772,10 @@ export function rowOrderFailure(item: Reservation, model: LayoutModel): string |
   if ('cell' in payload) {
     const group = model.groups[payload.cell];
     if (group === undefined || group.frame === undefined) return `${payload.cell} is no rank cell`;
-    return same(group.rowOrder ?? group.nodes, payload.order) ? undefined : `${payload.cell} does not stand in the order its feeds give`;
+    const open = openFault(model, group, payload);
+    if (open !== undefined) return open;
+    const now = group.rowOrder ?? group.nodes;
+    return same(now, payload.order) ? undefined : closedSlotsFault(model, payload, now);
   }
   const frames = model.document.frames ?? {};
   if (frames[payload.frame] === undefined) return `${payload.frame} is no frame`;
@@ -850,8 +904,9 @@ function shapeFailure(entry: unknown): string | undefined {
       return isString(payload['node']) && sides.includes(payload['side'] as string) && Array.isArray(ports) && ports.length > 1 && ports.every(isPort) && new Set(ports.map(item => JSON.stringify(item))).size === ports.length ? undefined : bad;
     }
     case 'rowOrder': {
-      const order = payload['order'], one = [payload['cell'], payload['frame'], payload['row']].filter(isString).length === 1;
-      return one && feedsShape(payload['feeds']) && orderShape(order) ? undefined : bad;
+      const order = payload['order'], one = [payload['cell'], payload['frame'], payload['row']].filter(isString).length === 1, open = payload['open'];
+      const openShape = open === undefined || (isString(payload['cell']) && Array.isArray(open) && open.length > 0 && open.every(isString));
+      return one && feedsShape(payload['feeds']) && orderShape(order) && openShape ? undefined : bad;
     }
     case 'groupOrder': {
       return Number.isInteger(payload['tier']) && feedsShape(payload['feeds']) && orderShape(payload['order']) ? undefined : bad;

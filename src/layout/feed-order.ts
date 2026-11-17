@@ -9,6 +9,7 @@ import { placementWarning } from './regions.js';
 import { cellTier } from './read/tier.js';
 import { groupOrderFailure, ofKind, reservation, rowOrderFailure, type Reservation, type ReservationOf, type RowFeed } from './reservations.js';
 import { compareId } from './skeleton-graph.js';
+import { openMemberFault } from './read/open-member.js';
 import { choosePairOrder, PAIR_ORDER_BOUND, PAIR_SEARCH_VISITS, type PairChoice } from './row-pairs.js';
 import { rebuildBands } from './skeleton-geometry.js';
 
@@ -103,6 +104,7 @@ export function orderByFeeds(model: LayoutModel): void {
     const decision = read.frame(id);
     if (decision !== undefined) entries.push(frameEntry(id, decision));
   }
+  entries = entries.map(entry => withOpen(model, read, entry));
   // A model placed without a ledger (a stage test) gets one only when a feed decides a row.
   if (model.reservations !== undefined || entries.length) model.reservations = [...kept, ...entries];
   if (moved) rebuildBands(model, false);
@@ -153,6 +155,7 @@ export function refreshFeedOrders(model: LayoutModel): boolean {
     if (decision !== undefined && sameOrder(decision.order, entry.payload.order)) { entries.push(frameEntry(id, decision)); continue; }
     placementWarning(model, 'FEED_ORDER_WITHDRAWN', `The feeds of frame ${id} no longer give the order its units were packed in (${entry.payload.order.join(', ')}): a feeding row turned after the pack. The order stands as packed, with no reservation.`, [id], 'group');
   }
+  entries = entries.map(entry => withOpen(model, read, entry));
   model.reservations = [...kept, ...entries];
   const withdrawn = withdrawBrokenGroupOrders(model);
   if (moved) rebuildBands(model, false);
@@ -216,6 +219,37 @@ function turned(group: LayoutGroup, rule: RowOrderDecision['rule'] | undefined):
   const after = [...(group.rowOrder ?? group.nodes)];
   group.rowOrderDecision = { ...decision, rule: sameOrder(decision.before, after) ? rule : 'feed-order', after };
 }
+/** The diagnostic of a member that keeps its slot because another slot would change what stage 4 decides below it (dense-16x9 ticket 36, slice 3). */
+export const FEED_ORDER_SLOT_HELD = 'FEED_ORDER_SLOT_HELD';
+
+/**
+ * The cell entry with its open members (dense-16x9 ticket 36, slice 3; owner ruling 2 of 2026-11-17): with `layout.moveBeforeGrow`, a member whose
+ * links all end in the sub-tier directly below (`openMemberFault`) and whose slot, at every other place in the row, leaves the decisions below the cell
+ * as they are (`below`: the joint choice of the pair under it, the feed order of each row it feeds, the frame orders) is open. Stage 4 keeps the
+ * order it chose; the seat set of the row closes the open slots at stage 6, inside this record. A member that only the decisions below hold is named
+ * (`FEED_ORDER_SLOT_HELD`). An authored order opens nothing. Every slot is tried once per member: at most the row length times the members (R4).
+ */
+function withOpen(model: LayoutModel, read: Reader, entry: Reservation): Reservation {
+  if (model.document.layout?.moveBeforeGrow !== true || model.document.layout?.corridorRowOrder === false || entry.kind !== 'rowOrder' || !('cell' in entry.payload)) return entry;
+  const cell = model.groups[entry.payload.cell], order = [...entry.payload.order];
+  if (cell === undefined || order.length < 2) return entry;
+  const today = read.below(cell, order), open: string[] = [];
+  for (const node of order) {
+    if (openMemberFault(model, cell, node) !== undefined) continue;
+    const rest = order.filter(id => id !== node);
+    let held: number | undefined;
+    for (let slot = 0; slot <= rest.length && held === undefined; slot++) {
+      const variant = [...rest.slice(0, slot), node, ...rest.slice(slot)];
+      if (!sameOrder(variant, order) && read.below(cell, variant) !== today) held = slot;
+    }
+    if (held === undefined) { open.push(node); continue; }
+    const message = `${node} keeps its slot in ${cell.id}: at place ${held + 1} of the row the rows below it would be ordered otherwise.`;
+    if (!model.diagnostics.some(item => item.code === FEED_ORDER_SLOT_HELD && item.message === message))
+      model.diagnostics.push({ stage: 'placement', severity: 'info', code: FEED_ORDER_SLOT_HELD, message, owners: [{ kind: 'group', id: cell.id }] });
+  }
+  return open.length ? reservation('rowOrder', { kind: 'group', id: cell.id }, 'cell', 'skeleton', 0, { ...entry.payload, open }) : entry;
+}
+
 function refused(model: LayoutModel, row: LayoutGroup, order: readonly string[]): void {
   placementWarning(model, 'FEED_ORDER_REFUSED', `Row ${row.id} cannot stand in the order its feeds give (${order.join(', ')}): it does not fit its room. The order it stands in stays, with no reservation.`, [row.id], 'group');
 }
@@ -289,6 +323,14 @@ function withdraw(model: LayoutModel, entries: readonly Reservation[]): void {
 }
 
 type Reader = ReturnType<typeof reader>;
+/**
+ * What an order of a rank cell decides below it, read by stage 4's own reader (`below`: the pair under it, the feed order of each row it feeds, the
+ * frame orders). The seat set reads it for each order its slot choice tries at stage 6 (dense-16x9 ticket 36, slice 3): an order whose signature
+ * differs from the cell's own is no candidate. Topology only; one reader per model.
+ */
+export function belowReader(model: LayoutModel): (cell: LayoutGroup, order: readonly string[]) => string {
+  return reader(model).below;
+}
 /** What the writer and the refresh read: the eligible cells and frames in their judging order, and the decision of each. */
 function reader(model: LayoutModel) {
   const groupOf = (node: string): LayoutGroup => model.groups[model.document.nodes[node]!.group]!;
@@ -443,7 +485,7 @@ function reader(model: LayoutModel) {
   };
   const frames = model.document.frames ?? {};
   const nodesAt = (cells: readonly string[], tier: number): string[] => cells.filter(cell => cellTier(model, cell) === tier).flatMap(cell => model.groups[cell]!.nodes);
-  return {
+  const tools = {
     /** The frames with children, by id; a canton is author-fixed (D1). */
     frames: (): string[] => Object.keys(frames).filter(id => frames[id]!.kind !== 'canton' && Object.values(frames).some(frame => frame.parent === id)).sort(compareId),
     /**
@@ -490,6 +532,25 @@ function reader(model: LayoutModel) {
         feeds.push(read.feed);
       }
       return order.length ? { order, feeds } : undefined;
+    },
+  };
+  return {
+    ...tools,
+    /**
+     * What stage 4 decides below the cell `cell` when it stands in `order` (dense-16x9 ticket 36, slice 3), as one signature: the joint choice of the
+     * pair whose upper row is `cell`, with `order` fixed (the lower order and its crossings), the order the feeds give each row of the sub-tier below
+     * that `cell` feeds, and the order of every frame. Two orders with one signature decide the same below them; it reads topology only.
+     */
+    below: (cell: LayoutGroup, order: readonly string[]): string => {
+      const pair = tools.pair(cell, undefined, order)?.choice;
+      const pairSig = pair === undefined ? null : pair.kind === 'bound' || pair.kind === 'infeasible' ? pair.kind : [[...pair.lower], pair.crossings ?? null];
+      const tier = below(cell.tier!), inside = new Set(cell.nodes);
+      assumed.set(cell.id, [...order]);
+      try {
+        const rows = placed.filter(group => tier !== undefined && group.tier === tier && group.nodes.some(node => (ends.get(node) ?? []).some(other => inside.has(other))))
+          .sort((a, b) => compareId(a.id, b.id)).map(group => [group.id, rowDecision(group)?.order ?? null]);
+        return JSON.stringify([pairSig, rows, tools.frames().map(id => [id, tools.frame(id)?.order ?? null])]);
+      } finally { assumed.delete(cell.id); }
     },
   };
 }

@@ -849,8 +849,9 @@ export function portPeers(model: LayoutModel): Map<string, PortRef[]> {
  * A peerless port reads `Infinity`. The stage-4 draft reads the same key (`readDraft`, architecture-2 ticket 17). A peer across a sub-tier whose
  * corridor side stage 4 reserved (ticket 72) is read at that corridor's margin (`reservedCorridorX`), the way the link leaves the face.
  */
-export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>, ref: PortRef, side: Side): number {
+export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>, ref: PortRef, side: Side, reads?: Set<string>): number {
   const list = peers.get(key(ref)) ?? [];
+  if (reads !== undefined) for (const peer of list) reads.add(peer.node);
   const reserved = (side === 'top' || side === 'bottom') && model.reservations !== undefined ? ofKind(model.reservations, 'corridorSide') : [];
   const myTier = reserved.length ? model.groups[model.document.nodes[ref.node]?.group ?? '']?.tier : undefined;
   const refKey = reserved.length ? key(ref) : '';
@@ -880,9 +881,73 @@ export function farCoordinate(model: LayoutModel, peers: ReadonlyMap<string, rea
  * `sideOf` reads a port's side (the final side by default).
  */
 export function faceSortKey(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]>,
-  sideOf: (port: LayoutPort | undefined) => Side | undefined = port => port?.side): (ref: PortRef, side: Side) => number {
-  return pairedFaceKey(model, (ref, side) => farCoordinate(model, peers, ref, side), ref => sideOf(findPort(model, ref)));
+  sideOf: (port: LayoutPort | undefined) => Side | undefined = port => port?.side, reads: { into?: Set<string> } = {}): (ref: PortRef, side: Side) => number {
+  return pairedFaceKey(model, (ref, side) => farCoordinate(model, peers, ref, side, reads.into), ref => sideOf(findPort(model, ref)));
 }
+
+/**
+ * What the stage-5 face sort reads once per model: the far-end key (`faceSortKey`), the planned first turns with and without the turn reservations, and the
+ * bus ports. `reads.into`, while set, collects the nodes whose positions a key reads (`faceKeyReads`). One sorter for stage 5 and for a face the seat set
+ * sorts again at stage 6 (dense-16x9 ticket 36, slice 3; R1): `faceSortOf` with `orderFace`.
+ */
+export interface FaceSort {
+  faceKey: (ref: PortRef, side: Side) => number;
+  planned: Map<string, PlannedTurn>;
+  plainTurns: Map<string, PlannedTurn>;
+  buses: Set<string>;
+  reads: { into?: Set<string> };
+}
+export function faceSortOf(model: LayoutModel, peers: ReadonlyMap<string, readonly PortRef[]> = portPeers(model)): FaceSort {
+  // The planned first turn of each overlay course port (ticket 15): its lane runs to its far end's row, beyond it by a padding row, short of it by a drop.
+  const planned = plannedTurns(model), plainTurns = model.turnOrder === true ? plannedTurns(model, false) : planned, reads: { into?: Set<string> } = {};
+  // A facing pair (decision review ticket 17) orders both of its faces by one key per link, read once here from the anchors before any face is sorted.
+  return { faceKey: faceSortKey(model, peers, undefined, reads), planned, plainTurns, buses: busPortKeys(model), reads };
+}
+
+/** The nodes whose positions the sort key of the `side` face of `node` reads (`faceSortKey` on its own far reader): a face that reads none of the moved nodes keeps its order. */
+export function faceKeyReads(model: LayoutModel, sort: FaceSort, node: string, side: Side): Set<string> {
+  const into = new Set<string>();
+  sort.reads.into = into;
+  try { for (const port of model.nodes[node]!.ports) if (port.side === side) sort.faceKey(port.ref, side); } finally { delete sort.reads.into; }
+  return into;
+}
+
+/**
+ * The engine order stage 5 gives the `side` face of `node`, and whether the planned first turns moved it (`turned`): the ports by their far-end key
+ * (`sortFace`), a bus port last; a face the ledger gives a far-end order (ticket 07) seated in it; then the authored ports in their seats
+ * (`seatAuthored`). Writes nothing. The stage-5 loop and the seat set at stage 6 (`resortFaces`) call it (R1).
+ */
+export function orderFace(model: LayoutModel, sort: FaceSort, node: string, side: Side): { ordered: LayoutPort[]; turned: boolean } {
+  const ports = model.nodes[node]!.ports.filter(port => port.side === side);
+  const far = (ref: PortRef): number => sort.faceKey(ref, side);
+  // The bus port is the last port in engine order on its side, after a peerless port too (`sortFace`; an authored `order:` still wins below).
+  // Two overlay courses that leave one lateral face are brackets of one margin and nest (ticket 15, P2): the lane that runs farther along its margin stands outside
+  // the other, so its port stands where its run does not cross the other's. One comparator on one y scale (`turnOrder`): a routed port is not pushed past the brackets by their order.
+  const lateral = side === 'left' || side === 'right';
+  const slotsOf = (turns: ReadonlyMap<string, PlannedTurn>): Map<LayoutPort, TurnPort> => new Map(ports.map(port => {
+    const turn = lateral || turns !== sort.plainTurns ? turns.get(key(port.ref)) : undefined;
+    return [port, { far: far(port.ref), ...(turn === undefined ? {} : turn) }] as const;
+  }));
+  const sorted = (turns: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => sortFace(model, ports, slotsOf(turns), sort.buses);
+  // A run that carries the order for some links only (`turnLinks`) orders the other faces as today.
+  const usePlanned = turnScope(model, node, side) ? sort.planned : sort.plainTurns;
+  const plain = usePlanned === sort.plainTurns ? undefined : sorted(sort.plainTurns);
+  let face = sorted(usePlanned), turned = false;
+  // A face the ledger gives a far-end order (ticket 07) is seated in it, and is no turn-ordered face: the order came from final positions, not from the planned turns.
+  const reserved = (model.farEndOrder ?? []).find(item => item.node === node && item.side === side);
+  if (reserved !== undefined) {
+    // A face that another owner holds is never seated by this order (the proposal leaves it out; a ledger that names it is refused by name, R5).
+    const owner = farEndOwner(model, node, side);
+    if (owner !== undefined) farEndDeclined(reserved, `the face belongs to ${owner === 'turn' ? 'the turn order' : `a ${owner}`}`);
+    face = farEndSeating(face, reserved);
+  }
+  else if (plain !== undefined && plain.some((port, index) => port !== face[index])) turned = true;
+  const ordered = seatAuthored(face);
+  // The seats of the authored ports may move the sequence: the face then stands in an order the ledger did not reserve, and the record could not back it.
+  if (reserved !== undefined && ordered.some((port, index) => key(port.ref) !== key(reserved.ports[index]!))) farEndDeclined(reserved, 'the authored ports take other seats than the reserved order gives');
+  return { ordered, turned };
+}
+
 /** The keys of every mesh-bus port (`busOfPort` answers a bus for exactly these). A caller that sorts many faces reads it once. */
 export function busPortKeys(model: LayoutModel): Set<string> {
   return new Set(meshBuses(model).flatMap(bus => bus.ports.map(key)));
@@ -1106,43 +1171,15 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
     }
     if (set.kind === 'mixed' && held === 2) mixed.push(set);
   }
-  // The planned first turn of each overlay course port (ticket 15; `turn-order.ts`): its lane runs to its far end's row, beyond it by a padding row, short of it by a drop.
-  const planned = plannedTurns(model), plainTurns = model.turnOrder === true ? plannedTurns(model, false) : planned;
+  // The ports of a face in the stage-5 engine order (`orderFace`, with what it reads once per model: `faceSortOf`).
+  const sort = faceSortOf(model, peers);
   // The faces that a planned first turn moved (ticket 24): the order with the turns differs from the order with the overlay brackets alone.
   const turned: { node: string; side: Side }[] = [];
-  const sortOrder = orderedNodeIds(model.document), buses = busPortKeys(model);
-  // A facing pair (decision review ticket 17) orders both of its faces by one key per link, read once here from the anchors before any face is sorted.
-  const faceKey = faceSortKey(model, peers);
+  const sortOrder = orderedNodeIds(model.document);
   for (const id of visitOrder(model, [...sortOrder.filter(item => leaders.has(item)), ...sortOrder.filter(item => !leaders.has(item))], mixed, leaders)) {
-    const node = model.nodes[id]!;
     for (const side of SIDE_TIE_ORDER) {
-      const ports = node.ports.filter(port => port.side === side);
-      const far = (ref: PortRef): number => faceKey(ref, side);
-      // The bus port is the last port in engine order on its side, after a peerless port too (`sortFace`; an authored `order:` still wins below).
-      // Two overlay courses that leave one lateral face are brackets of one margin and nest (ticket 15, P2): the lane that runs farther along its margin stands outside
-      // the other, so its port stands where its run does not cross the other's. One comparator on one y scale (`turnOrder`): a routed port is not pushed past the brackets by their order.
-      const lateral = side === 'left' || side === 'right';
-      const slotsOf = (turns: ReadonlyMap<string, PlannedTurn>): Map<LayoutPort, TurnPort> => new Map(ports.map(port => {
-        const turn = lateral || turns !== plainTurns ? turns.get(key(port.ref)) : undefined;
-        return [port, { far: far(port.ref), ...(turn === undefined ? {} : turn) }] as const;
-      }));
-      const sorted = (turns: ReadonlyMap<string, PlannedTurn>): LayoutPort[] => sortFace(model, ports, slotsOf(turns), buses);
-      // A run that carries the order for some links only (`turnLinks`) orders the other faces as today.
-      const usePlanned = turnScope(model, id, side) ? planned : plainTurns;
-      const plain = usePlanned === plainTurns ? undefined : sorted(plainTurns);
-      ports.splice(0, ports.length, ...sorted(usePlanned));
-      // A face the ledger gives a far-end order (ticket 07) is seated in it, and is no turn-ordered face: the order came from final positions, not from the planned turns.
-      const reserved = (model.farEndOrder ?? []).find(face => face.node === id && face.side === side);
-      if (reserved !== undefined) {
-        // A face that another owner holds is never seated by this order (the proposal leaves it out; a ledger that names it is refused by name, R5).
-        const owner = farEndOwner(model, id, side);
-        if (owner !== undefined) farEndDeclined(reserved, `the face belongs to ${owner === 'turn' ? 'the turn order' : `a ${owner}`}`);
-        ports.splice(0, ports.length, ...farEndSeating(ports, reserved));
-      }
-      else if (plain !== undefined && plain.some((port, index) => port !== ports[index])) turned.push({ node: id, side });
-      const ordered = seatAuthored(ports);
-      // The seats of the authored ports may move the sequence: the face then stands in an order the ledger did not reserve, and the record could not back it.
-      if (reserved !== undefined && ordered.some((port, index) => key(port.ref) !== key(reserved.ports[index]!))) farEndDeclined(reserved, 'the authored ports take other seats than the reserved order gives');
+      const face = orderFace(model, sort, id, side), ordered = face.ordered;
+      if (face.turned) turned.push({ node: id, side });
       ordered.forEach((port, index) => { port.engineOrder = index; });
       const seated = ordered.filter(port => port.anchor !== undefined);
       if (seated.length > 1 && seated.some(port => bundled.has(key(port.ref)))) {

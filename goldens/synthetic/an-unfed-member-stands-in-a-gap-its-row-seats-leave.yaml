@@ -1,0 +1,35 @@
+# Expected (dense-16x9 ticket 36, slice 3; owner ruling 2): with `layout.moveBeforeGrow: true` the unfed member `r1` of the child row `site#1`
+# stands in the gap its seated neighbours leave: the row is `c1`, `r1`, `c2`, with `c1` under `p1` and `c2` under `p2`. Stage 4 records `r1` as an
+# open member of the row (`rowOrder.open`: every link of it ends in the sub-tier directly below, and no other slot changes what stage 4 decides
+# below); the seat set closes the slot at stage 6, and the top faces of `h1` and `h2` (the solid block below, which `r1` feeds) are sorted again
+# by the stage-5 sorter, so each stands in the order of its far ends. Main keeps `r1` at the end of the row, and the block below is wider.
+# Test: test/layout/free-slots.test.ts (the slot, the faces, the guards, the forged records and R3).
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  up: { tier: 0 }
+  site: { tier: 1, label: "One site in ranks" }
+  down: { tier: 2 }
+nodes:
+  t0: { group: up, ports: [{ name: a, side: bottom }, { name: b, side: bottom }] }
+  p1: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  p2: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  c1: { group: site, ports: [{ name: u1, side: top }, { name: e1, side: bottom }, { name: e2, side: bottom }] }
+  c2: { group: site, ports: [{ name: u1, side: top }, { name: e1, side: bottom }, { name: e2, side: bottom }] }
+  r1: { group: site, ports: [{ name: e1, side: bottom }, { name: e2, side: bottom }] }
+  h1: { group: site, ports: [{ name: a, side: top }, { name: b, side: top }, { name: c, side: top }, { name: d, side: bottom }] }
+  h2: { group: site, ports: [{ name: a, side: top }, { name: b, side: top }, { name: c, side: top }, { name: d, side: bottom }] }
+  d0: { group: down, ports: [{ name: u, side: top }, { name: v, side: top }] }
+links:
+  - { from: t0.a, to: p1.up }
+  - { from: t0.b, to: p2.up }
+  - { from: p1.d1, to: c1.u1 }
+  - { from: p2.d1, to: c2.u1 }
+  - { from: c1.e1, to: h1.a }
+  - { from: c1.e2, to: h2.a }
+  - { from: c2.e1, to: h1.c }
+  - { from: c2.e2, to: h2.c }
+  - { from: r1.e1, to: h1.b }
+  - { from: r1.e2, to: h2.b }
+  - { from: h1.d, to: d0.u }
+  - { from: h2.d, to: d0.v }

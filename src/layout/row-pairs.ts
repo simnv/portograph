@@ -49,9 +49,9 @@ export interface RowPair {
 
 export type PairChoice =
   /** Today's order is a minimum, or there is nothing to choose: it stays, and the caller records it as the joint choice. */
-  | { kind: 'kept'; upper: readonly string[]; lower: readonly string[] }
+  | { kind: 'kept'; upper: readonly string[]; lower: readonly string[]; crossings?: number }
   /** The earlier joint choice is still a minimum: it stays. */
-  | { kind: 'stays'; upper: readonly string[]; lower: readonly string[] }
+  | { kind: 'stays'; upper: readonly string[]; lower: readonly string[]; crossings?: number }
   /** Past a bound: more orders than `PAIR_ORDER_BOUND` (`count`, a count the walk reached past it), or more visited prefixes than `PAIR_SEARCH_VISITS`. */
   | { kind: 'bound'; reason: 'orders' | 'visits'; count: number }
   /** No order keeps the feed keys of the upper row (two units whose key ranges overlap, or a unit whose keys fall): nothing searched. */
@@ -94,9 +94,9 @@ export function choosePairOrder(pair: RowPair, limits: PairLimits = LIMITS): Pai
   for (const upper of uppers) for (const lower of lowers) best = Math.min(best, cost(upper, lower));
   const { previous } = pair;
   if (previous !== undefined && sameMembers(previous, pair) && keepsKeys(units(previous.upper, pair), pair.keys)
-    && cost(previous.upper, previous.lower) === best) return { kind: 'stays', upper: previous.upper, lower: previous.lower };
+    && cost(previous.upper, previous.lower) === best) return { kind: 'stays', upper: previous.upper, lower: previous.lower, crossings: best };
   const was = cost(pair.upper, pair.lower);
-  if (was === best || uppers.length * lowers.length === 1) return { kind: 'kept', upper: pair.upper, lower: pair.lower };
+  if (was === best || uppers.length * lowers.length === 1) return { kind: 'kept', upper: pair.upper, lower: pair.lower, crossings: was };
   let chosen: { upper: string[]; lower: string[]; rank: number[] } | undefined;
   for (const upper of uppers) for (const lower of lowers) {
     if (cost(upper, lower) !== best) continue;
