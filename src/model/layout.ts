@@ -575,7 +575,24 @@ export interface LayoutRuntime {
 }
 
 /** Geometry remains optional until the stage that produces it has completed. */
-export interface LayoutModel {
+/**
+ * The room records of the flat block members (dense-16x9 ticket 04, slice 3, step 2): placement inputs that stand in model fields outside the
+ * ledger. This is their one declaration: `LayoutModel` takes its fields from it, and the restore table `FIELD_CHECKS` (`reservations.ts`) is a
+ * mapped type over its keys, so a new room field without a check does not compile (review 2 of step 2, R5).
+ */
+export interface RoomRecords {
+  /**
+   * The side paddings of the boxes that hold an end of a flat block member (`blockBoxPadsAsked` in layout/block-pads.ts): read on a complete
+   * placement, held by a free group's insets and a frame's box from stage 5 on. Absent: no box asks for one. Sorted by box, then side.
+   */
+  blockBoxPads: BlockBoxPad[];
+  /** The least gaps between row neighbours that flat block members ask (`blockRowGapsAsked`): read by `rowGap`. Absent: none. */
+  blockRowGaps: BlockRowGap[];
+}
+/** The name of one room record (`RoomRecords`). */
+export type RoomField = keyof RoomRecords;
+
+export interface LayoutModel extends Partial<RoomRecords> {
   /** Ticket 166: stage-5 reservations. Absent means normal rows; kept across placement replays. */
   staggerRows?: StaggerRow[];
   /**
@@ -697,14 +714,6 @@ export interface LayoutModel {
    * pipeline/initial.ts): a placement input, read by `reserveBlockGaps` in 7e. Absent: every flat gap at its floor.
    */
   flatBlockGaps?: FlatBlockGap[];
-  /**
-   * The side paddings of the boxes that hold an end of a flat block member (dense-16x9 ticket 04, slice 3, step 2; `blockBoxPadsAsked` in
-   * layout/block-pads.ts): a placement input read on a complete placement, held by a free group's insets and a frame's box from stage 5 on.
-   * Absent: no box asks for one. Sorted by box, then side.
-   */
-  blockBoxPads?: BlockBoxPad[];
-  /** The least gaps between row neighbours that flat block members ask (`blockRowGapsAsked`): a placement input read by `rowGap`. Absent: none. */
-  blockRowGaps?: BlockRowGap[];
   /** Placement refusals restored by stage 1; absent when no geometry probe declined a block. */
   declinedSolidBlocks?: { family: string; reason: string }[];
   /** Terminal one-link followers seated below the block in stage 5. */

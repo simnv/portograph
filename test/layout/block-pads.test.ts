@@ -5,6 +5,7 @@ import { blockBoxPadsFault, blockRowGapsFault } from '../../src/layout/room-reco
 import { GROUP_EDGE_LINK_CLEARANCE, DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../../src/theme/geometry.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../../src/layout/row-paths.js';
 import { SIDE_EDGE_SLACK } from '../../src/layout/frame-paths.js';
+import { blockReserve } from '../../src/layout/tolerance.js';
 
 /**
  * The room a flat block member asks of placement (dense-16x9 ticket 04, slice 3, step 2), read at its angle at the block's floor: the side
@@ -76,10 +77,11 @@ describe('blockRowGapsAsked: the row gap beside the end of a flat member', () =>
   it('asks a gap that holds the node clearance from the corner of a taller neighbour at the floor angle', () => {
     const asked = blockRowGapsAsked(model(far, { hubNodes: ['hub', 'tall'], tall: tall(120) }));
     expect(asked.map(item => [item.left, item.right])).toEqual([['hub', 'tall']]);
-    // The corner of `tall` at that gap: its distance from the chord at the floor angle is the clearance and the slack.
+    // The corner of `tall` at that gap: its distance from the chord at the floor angle is the clearance, its reserved margin (the row room
+    // backs G6: `blockReserve`) and the slack.
     const corner = { x: 200 + asked[0]!.gap, y: 120 };
     const distance = Math.abs((corner.x - 180) * floorDy - (corner.y - 100) * dx) / length;
-    expect(distance).toBeCloseTo(clearance + SIDE_EDGE_SLACK, 6);
+    expect(distance).toBeCloseTo(clearance + blockReserve('room') + SIDE_EDGE_SLACK, 6);
     expect(blockRowGapsFault({ ...model(far), blockRowGaps: asked })).toBeUndefined();
   });
 

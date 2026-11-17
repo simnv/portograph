@@ -1833,6 +1833,13 @@ and its followers are walls. One judge reads every move after the freeze: `block
   after the freeze are an iterative solve. Their residue moves one end of a member by 0.001 to 0.004 px, which left the ticket 31
   synthetic 1.5e-4 to 2.4e-3 px of height short of 34 degrees. A drawn constraint cannot be held tighter than the residue of the solve
   that runs after it; 0.01 px is about 4 times the largest dip measured, and invisible in the drawing.
+- A constraint that backs a gate threshold is different (dense-16x9 ticket 04, slice 3, step 2, review 2; coordinator ruling): a judge's
+  tolerance must never reach under a gate. Such a constraint is reserved with the tolerance as margin (reserved = the gate threshold +
+  `BLOCK_TOLERANCE`, `blockReserve`), and the validator and the judges accept it down to the gate threshold exactly, with the gate's float
+  compare (`blockAllowance`). One table names them and their gates (`GATE_BACKED_BLOCK_CONSTRAINTS`, `tolerance.ts`): the foreign-box
+  clearance of a solid member (`frame`, G6 `segment-group-edge`, met where a chord runs along a box edge on one axis; the admission of a solid
+  member reserves the margin) and the row room of a flat member (`room`, G6 `segment-node-clearance`; `blockRowGaps` reserves it). The
+  angle, the floor and the own-box crossing back no gate and keep `BLOCK_TOLERANCE`.
 - It refuses a move that adds a fault: a new key, or a new constraint on a key that had a fault.
 - It refuses a move that takes a fault that stood further from its reservation (a member a little more off its angle).
 - A fault that stood may stay or heal. Before ticket 31, `chordsHold` refused every move while any block fault stood. A centring step

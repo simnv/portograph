@@ -19,7 +19,7 @@ import type { Rect } from '../model/geometry.js';
 import { groupBoxes, groupConsumers } from '../score/model.js';
 import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { deriveFrames } from './frames.js';
-import { PLACEMENT_EPS } from './tolerance.js';
+import { PLACEMENT_EPS, blockReserve } from './tolerance.js';
 import { transitTiers } from './read/tier.js';
 import { strictCrossing } from './read/crossings.js';
 import { isSideEntry } from './lift.js';
@@ -335,7 +335,8 @@ export type ChordRefusal = 'transit' | 'faces' | 'edge' | 'frame' | 'body' | 'pi
 /** Faint fans keep their recorded exception; solid chords use the shared box predicate. */
 function crossRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0): 'edge' | 'frame' | undefined {
   if (link.fanFamily !== undefined && link.solidBlock !== true && fanFamilyOf(model, link) !== undefined) return fanBoxRefusal(model, link, segment);
-  return chordBoxRefusal(model, link, segment, sideSlack, flatMember(model, link));
+  // A solid-block member's admission reserves the margin of the gate-backed box clearance (`blockReserve`); the judge accepts down to the gate.
+  return chordBoxRefusal(model, link, segment, sideSlack, flatMember(model, link), link.solidBlock === true ? blockReserve('frame') : 0);
 }
 
 /**
@@ -864,7 +865,7 @@ export function chordsHold(model: LayoutModel, proposed: { group: { id?: string;
     trial.frames = frames;
   }
   // The judge of a move after the freeze (dense-16x9 ticket 31): a move that takes a block member off a reservation it found holding is refused.
-  // A step leaves every member within `BLOCK_TOLERANCE` of its reservation, or a fault that stood no larger: the validator after every step.
+  // A step leaves every member within the allowance of its reservation (`blockAllowance`), or a fault that stood no larger: the validator after every step.
   if (blockMoveRefusal(model, trial) !== undefined) return false;
   const held = blockedChordsAt(trial);
   // A caller that tries many candidates asks with `report` off and reports the final verdict itself (ticket 77).

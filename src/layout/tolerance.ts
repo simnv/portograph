@@ -15,6 +15,7 @@
  * residual (`RESIDUAL_TOLERANCE`) and the renderer's own owners (`render/drawio.ts`: `EPS`, `PHASE_GRAIN`; a renderer must not import a
  * placement rule). A new comparison reads a name here, or names its own quantity and adds it to the lint.
  */
+import { EPS } from '../geometry/planar.js';
 
 // ---- distances, px ----------------------------------------------------------------------------------------------------------------
 
@@ -37,6 +38,27 @@ export const CHORD_CORRIDOR_SLACK = 1;
  * drawn constraint cannot be held tighter than that. 0.01 px is about 4 times the largest dip measured, and invisible in the drawing.
  */
 export const BLOCK_TOLERANCE = 0.01;
+
+/**
+ * The solid-block constraints that back a gate threshold, and the gate each one backs: the one place that says which (dense-16x9 ticket 04,
+ * slice 3, step 2, review 2; coordinator ruling). A judge's tolerance must never reach under a gate threshold. So such a constraint is reserved
+ * with `BLOCK_TOLERANCE` as margin (`blockReserve`: reserved = the gate threshold + BLOCK_TOLERANCE), and the validator and the judges of a move
+ * and of a step accept it down to the gate threshold exactly, with the gate's own float compare (`blockAllowance`: `EPS`). The tolerance spends
+ * only the reserved margin. Every other block constraint backs no gate and keeps `BLOCK_TOLERANCE` as its allowance, with no reserve:
+ * - the 34 degree angle and the 15 degree floor;
+ * - the own-box crossing margin (`edge`): a gate excuses a segment inside its own box, and a member does not run along its own box's edge on
+ *   one axis.
+ * The two that back a gate:
+ * - `room`: a row neighbour's body from a straight flat member (`blockRowGaps`): G6 `segment-node-clearance`.
+ * - `frame`: a foreign group box from a solid-block member: G6 `segment-group-edge`, met where the chord runs along a box edge on one axis.
+ */
+export const GATE_BACKED_BLOCK_CONSTRAINTS = { room: 'G6 segment-node-clearance', frame: 'G6 segment-group-edge' } as const;
+export type BlockConstraint = keyof typeof GATE_BACKED_BLOCK_CONSTRAINTS | 'angle' | 'floor' | 'edge';
+const gateBacked = (constraint: BlockConstraint): boolean => Object.hasOwn(GATE_BACKED_BLOCK_CONSTRAINTS, constraint);
+/** How far a block constraint may stand short of its threshold and still hold, px: `EPS` where it backs a gate, else `BLOCK_TOLERANCE`. */
+export function blockAllowance(constraint: BlockConstraint): number { return gateBacked(constraint) ? EPS : BLOCK_TOLERANCE; }
+/** The margin a reservation (or an admission) of a block constraint adds over its threshold, px: `BLOCK_TOLERANCE` where it backs a gate, else 0. */
+export function blockReserve(constraint: BlockConstraint): number { return gateBacked(constraint) ? BLOCK_TOLERANCE : 0; }
 
 /**
  * No move, px: a move guard treats a displacement `|dx| <= NO_MOVE_EPS` as no move and holds it without reading its evidence. One name for

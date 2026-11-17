@@ -6,6 +6,7 @@ import { chordHolders } from './chord-boxes.js';
 import { memberChord, rowRoomClearance } from './block-checks.js';
 import { SIDE_EDGE_SLACK } from './frame-paths.js';
 import { findPort } from './row-paths.js';
+import { blockReserve } from './tolerance.js';
 
 /**
  * The side room of a box for the own-box exit of flat block members (dense-16x9 ticket 04, slice 3, step 2).
@@ -136,7 +137,8 @@ export function blockRowGapsAsked(model: LayoutModel): BlockRowGap[] {
         // The corner's reach past the point the chord starts from (the face point: the anchor, or a pill's outer edge).
         const drop = face === 'bottom' ? other.y + other.height - anchor.y : anchor.y - other.y;
         const inset = toward > 0 ? edge - anchor.x : anchor.x - edge;
-        const clearance = rowRoomClearance(model, link, next.id);
+        // The row room backs G6: it is reserved with the tolerance as margin (`blockReserve`), which the judge then accepts down to the gate.
+        const clearance = rowRoomClearance(model, link, next.id) + blockReserve('room');
         if ((clearance + drop * cos) / sin - inset <= next.gap + EPS) continue;
         // A short gap takes `SIDE_EDGE_SLACK` more in the clearance, for the same drift as the box room.
         const need = (clearance + SIDE_EDGE_SLACK + drop * cos) / sin - inset;
