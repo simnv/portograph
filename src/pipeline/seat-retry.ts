@@ -77,7 +77,8 @@ type Banded = Awaited<ReturnType<Env['bands']>>;
  * A placed model and its 7f run, with ruling B applied at 7f: when the 7f run withdraws a seat set, the ledger `ledger` is placed once more with
  * that row declined and banded again (`retryWithdrawnSeatSets`), each placement credited outside the cap (`env.exemptPlacing`), as the room rounds
  * are. The state it writes is the declines of the command (`env.seatSetDeclined`) and the placement it returns; a refused retry gives back both.
- * The baseline of the driver and every routed trial of a round read 7f through it, so no kept 7f result keeps room for a withdrawn set.
+ * The baseline of the driver and every routed trial of a round read 7f through it, so no kept 7f result keeps room for a withdrawn set. The
+ * placements `initial.ts` compares do not (scope V): a compared placement carries its withdrawal and the next placement decides the set again.
  */
 export async function bandsWithoutWithdrawnSeats(env: Env, ledger: Reservations, placed: LayoutModel, trial: boolean, notes: Diagnostic[]): Promise<{ placed: LayoutModel; banded: Banded }> {
   const band = (model: LayoutModel): Promise<Banded> => trial ? env.bands(model, true) : env.bands(model);

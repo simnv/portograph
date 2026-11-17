@@ -837,7 +837,12 @@ search tries a seat or no seat for each fed member under the row order and the g
 and the room of a labelled link across more gaps from `labelSpans`, the repack's own reader), one seat per parent port, at most
 `SEAT_SET_VISITS` (5000) visits; a member without a seat stands nearest its own x in the room its neighbours leave. It ranks by the most
 kept verticals, then the least body span (owner ruling "tight room"), then the least movement, then the kept links by content (port ids),
-then `sourceIndex`. The best candidate that breaks no owner wins: a solid block may not pass `BLOCK_CAP` and a flat block's floor demand
+then `sourceIndex`. A candidate that wins k verticals and turns more than k straight links of the members into bends or refused chords is no
+gain (ruling 4 of 2026-11-17): before and with the candidate, `straightLinks` reads every routed link of a member to a node outside the row, both
+faces, as vertical, or straight when the frame and row rules would pin it on those anchors (`expectedRowPath`, the reading `rebuildRowPaths`
+makes after the rows rule), and the search moves on to the next candidate; at most `SEAT_SET_GAIN_READS` (16) candidates are read. What
+stage 6 cannot read this way: a link that a later rule straightens or bends (a centring move of 7c, an overlay, a chord of another row's
+frame). The best candidate that breaks no owner wins: a solid block may not pass `BLOCK_CAP` and a flat block's floor demand
 may not pass its gap (both read with `blockDemands`, the one demand reader `reserveBlockGaps` reserves from). A cut search (`bound`), a row
 out of scope, a row where no set keeps more than it stands (`no-gain`) and a row whose every better set breaks an owner (`owner`) keep no
 record and are named (`SEAT_SET_DECLINED`). A set moves its members, makes the cell box cover its interval and writes one `seatSet` entry
@@ -1154,17 +1159,26 @@ longer stand at their stored offsets, whose translation a wall refuses, or whose
 broken (`withdrawBrokenSeatSets`, at the end of each rule). What a withdrawal cannot give back is the room the interval reserved in the
 frame column: after 7a the lanes own their windows, and the message says so.
 
-So the command places once more without the set (ruling B; `src/pipeline/seat-retry.ts`). A withdrawal replaces the entry with a
-`seatSetDeclined` entry (the row, the rule that withdrew it, the failed condition; under `RESERVATION_CHECKS`: a declined row holds no
-`seatSet` entry). When the 7f run of a placement holds such an entry for a row the command has not declined, the command declines that row
-(`env.seatSetDeclined`, command state like the steep blocks) and places once more from stage 6 with the same ledger; stage 6 writes the
-decline at its input (`at: 'input'`) and names the row (clause `withdrawn`), so no interval stays without a set that stands. The first
-placement, the baseline of the driver and every routed trial of a round read 7f through the one loop (`retryWithdrawnSeatSets`,
-`bandsWithoutWithdrawnSeats`). A retry that withdraws another row declines it too and places again; a retry whose placement is refused gives
-the declines back (`snapshotEnv` and `restoreEnv`, or the trial's own copy) and the placement before it stands (`SEAT_SET_RETRY_REFUSED`); a
-refused round trial gives back the declines its 7f added. Bound: each row is declined once per command, and at most `SEAT_SET_RETRIES`
-placements per loop run (`SEAT_SET_RETRY_BOUND` past it); every retry is credited outside the placement cap (`env.exemptPlacing`), as the
-room rounds are, and counted (`attemptCounters.seatRetries`).
+So the command places once more without the set where it keeps a placement (ruling B, scope V; `src/pipeline/seat-retry.ts`). A
+withdrawal replaces the entry with a `seatSetDeclined` entry (the row, the rule that withdrew it, the failed condition; under
+`RESERVATION_CHECKS`: a declined row holds no `seatSet` entry). A decline is a fact of the placement the command keeps, not of a placement it
+compares. The scopes, one table:
+
+| Placement | A withdrawal in it |
+|---|---|
+| A compared placement (`initial.ts`: the first run, each trial of the stagger gate, the leg-pitch and room rounds) | stays an entry of that placement; nothing acts on it, and the next placement decides the set again on its own geometry |
+| The kept placement, at the 7f run of the driver's baseline | declines the row for the command (`env.seatSetDeclined`, like the steep blocks) and places once more from stage 6 |
+| A routed trial of a round, at its 7f run | declines the row and places the trial once more; a refused trial gives back the declines its 7f added |
+
+Stage 6 writes each decline at its input (`at: 'input'`) and names the row (clause `withdrawn`), so no kept placement holds an interval
+without a set that stands. One loop serves both kept scopes (`retryWithdrawnSeatSets`, `bandsWithoutWithdrawnSeats`): a retry that
+withdraws another row declines it too and places again; a retry whose placement is refused gives the declines back and the placement before it
+stands (`SEAT_SET_RETRY_REFUSED`). Bound: each row is declined once per command, and at most `SEAT_SET_RETRIES` placements per loop run
+(`SEAT_SET_RETRY_BOUND` past it); every retry is credited outside the placement cap (`env.exemptPlacing`), as the room rounds are, and
+counted (`attemptCounters.seatRetries`; every withdrawal, kept or compared: `attemptCounters.seatWithdrawals`). Why compared placements do not
+act: a command-wide decline from the stagger gate's plain trial took the core row's set from every later run of an outside sheet, whose kept
+arrangement held it (29 bent links at 21:10 against 1). What a compared placement costs: its canvas keeps the room of a withdrawn set, so a
+gate that compares placements by extent reads that placement a little larger than its kept form would be.
 
 Ticket 83 block feeds centre the row without stretching its faces toward individual peers.
 The gap decision waits for settled 7e geometry and its disposable mandatory label/grid packing forecast; an earlier 7c replay reserves no speculative height. The forecast transfers only gap demand, before the real chord freeze.

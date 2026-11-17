@@ -1,6 +1,6 @@
 import { LAYOUT_STAGES, type LayoutGroup, type LayoutLink, type LayoutModel, type LayoutPort } from '../model/layout.js';
 import type { Rect } from '../model/geometry.js';
-import { findPort } from './row-paths.js';
+import { expectedRowPath, findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 import { portKey } from './sides-one.js';
 import { ofKind, reservation, seatSetFault, type ReservationOf, type SeatEquation, type SeatSetPayload } from './reservations.js';
@@ -20,6 +20,7 @@ import { validateLanes } from './lanes.js';
 import { blockDemands, type BlockDemand } from './solid-blocks.js';
 import { BLOCK_CAP } from './block-checks.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
+import { attemptCounters } from './attempt-counters.js';
 import { EPS } from '../geometry/planar.js';
 
 /**
@@ -49,6 +50,12 @@ export const SEAT_SET_VISITS = 5000;
  * loop too; the constant states the bound as a count (R4). Past it every set of the run is refused by name.
  */
 export const SEAT_SET_REDECISIONS = 8;
+
+/**
+ * The most candidates whose gain one row reads (`straightLinks` on the moved members, ruling 4 of 2026-11-17). Each read checks the corridor of every
+ * link of the members; past the bound the row is declined (clause `no-gain`) with the best candidate it read. R4: a count, not a time.
+ */
+export const SEAT_SET_GAIN_READS = 16;
 
 export type { SeatEquation, SeatSetPayload };
 
@@ -251,17 +258,47 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
   leaves.sort(rank);
   const blocks = input.order.some(id => model.links.some(link => link.solidBlock && (link.attachments?.from.node === id || link.attachments?.to.node === id)))
     ? blockDemands(model).demands : [];
-  let first: string | undefined;
+  let first: string | undefined, reads = 0, lost: string | undefined;
+  const before = straightLinks(model, input.order);
   for (const leaf of leaves) {
     if (leaf.kept.length <= now) break;
     const box = input.group.bounds!, undo = moveMembers(model, input.order, leaf.xs);
     const fit = contentBox(model, input.group);
+    // The gain is read on both faces of the members (ruling 4 of 2026-11-17): a set that wins k verticals and turns more than k straight links
+    // of its members (verticals or chords that hold) into bends or refused chords is no gain. Read on the moved members, before the model is given back.
+    const after = reads < SEAT_SET_GAIN_READS ? straightLinks(model, input.order) : undefined;
     undo(); input.group.bounds = box;
+    if (after === undefined) break;
+    reads++;
     const fault = blockOwnerFault(model, input, leaf.xs, blocks);
     if (fault !== undefined) { first ??= fault; continue; }
+    const won = [...after.vertical].filter(id => !before.vertical.has(id)).length, gone = [...before.straight].filter(id => !after.straight.has(id)).sort();
+    if (gone.length > won) { lost ??= `wins ${won} verticals and loses ${gone.length} straight links (${gone.join(', ')})`; continue; }
     return { kind: 'set', payload: payloadOf(model, input, leaf, fit) };
   }
-  return first !== undefined ? { kind: 'declined', clause: 'owner', why: first } : { kind: 'declined', clause: 'no-gain', why: `no seat set keeps more than the ${now} verticals the row stands` };
+  if (first !== undefined) return { kind: 'declined', clause: 'owner', why: first };
+  return { kind: 'declined', clause: 'no-gain', why: lost !== undefined
+    ? `the best seat set ${lost}`
+    : `no seat set keeps more than the ${now} verticals the row stands` };
+}
+
+/**
+ * The links of the members of `order` to nodes outside the row, on both faces, that stand vertical and that stand straight on the anchors now: vertical (within
+ * `SEAT_STANDS_EPS`), or a path the frame and row rules would pin on these anchors (`expectedRowPath`: a held chord or a level path). This is
+ * what placement can read at stage 6 of what a set costs elsewhere: the chords are decided after the rows rule (`rebuildRowPaths`) on the
+ * same reading. A link an overlay or a later rule draws is not read.
+ */
+function straightLinks(model: LayoutModel, order: readonly string[]): { vertical: Set<string>; straight: Set<string> } {
+  const members = new Set(order), vertical = new Set<string>(), straight = new Set<string>();
+  for (const link of model.links) {
+    const ends = link.attachments;
+    if (ends === undefined || link.layer !== 'routed' || members.has(ends.from.node) === members.has(ends.to.node)) continue;
+    const a = findPort(model, ends.from)?.anchor, b = findPort(model, ends.to)?.anchor;
+    if (a === undefined || b === undefined) continue;
+    if (Math.abs(a.x - b.x) <= SEAT_STANDS_EPS) { vertical.add(link.id); straight.add(link.id); }
+    else if (expectedRowPath(model, link) !== undefined) straight.add(link.id);
+  }
+  return { vertical, straight };
 }
 
 function payloadOf(model: LayoutModel, input: RowInput, leaf: Leaf, fit: Rect): SeatSetPayload {
@@ -496,6 +533,7 @@ export function withdrawSeatSet(model: LayoutModel, group: string, why: string):
   if (model.reservations === undefined || seatSetOf(model, group) === undefined) return;
   // A rule edits a draft that still carries the stage before it: the rule that withdraws is the next stage.
   const rule = LAYOUT_STAGES[LAYOUT_STAGES.indexOf(model.stage) + 1] ?? model.stage;
+  attemptCounters.seatWithdrawals++;
   // The withdrawal is a decline in the ledger (ruling B): the command reads it and places once more without the set (`retryWithdrawnSeatSets`).
   model.reservations = [...model.reservations.filter(entry => !(entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group)),
     reservation('seatSetDeclined', { kind: 'group', id: group }, '', 'rows', 0, { row: group, at: rule, why })];

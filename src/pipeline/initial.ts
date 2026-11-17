@@ -13,9 +13,6 @@ import { blockBoxPadsAsked, blockRowGapsAsked, blockRoomBound, roomShort } from 
 import { courseLegPitches } from '../layout/solid-blocks.js';
 import { STEEP_PREMISE, steepFamilies, unheldSteepBlocks } from '../layout/placement-inputs.js';
 import { PostconditionRefusal } from '../layout/placement-refusal.js';
-import { withdrawnSeatRows } from '../layout/seat-set.js';
-import { retryWithdrawnSeatSets } from './seat-retry.js';
-import { attemptCounters } from '../layout/attempt-counters.js';
 
 /** The placements the block box paddings may spend per command (R4): each reads the paddings of the one before (`blockBoxPadsAsked`). */
 import type { Diagnostic } from '../model/index.js';
@@ -111,31 +108,13 @@ const restoreEnv = (state: EnvSnapshot): void => {
   if (state.steepBlocks === undefined) delete env.steepBlocks; else env.steepBlocks = state.steepBlocks;
   if (state.seatSetDeclined === undefined) delete env.seatSetDeclined; else env.seatSetDeclined = state.seatSetDeclined;
 };
-// Dense-16x9 ticket 36, ruling B: a placement that withdrew a seat set is placed once more with that row declined (`retryWithdrawnSeatSets`),
-// so no room stays for a set that no longer stands. Every caller of `placeFirst` (the first run, the leg-pitch rounds, the stagger gate's
-// trials) gets a placement whose own withdrawals are declined. The declines are command state (`env.seatSetDeclined`): every later run and
-// trial reads them, and a refused call is undone whole with the rest of that state (`restoreEnv`). Each retry is credited outside the cap
-// (`env.exemptPlacing`), as the room rounds are; `SEAT_SET_RETRIES` bounds them per call.
-const seatNotes: Diagnostic[] = [];
-const placeFirst = async (): Promise<void> => {
-  await placeOnce();
-  if (!withdrawnSeatRows(first).size) return;
-  const result = await retryWithdrawnSeatSets(first, {
-    place: async () => {
-      env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
-      try { await placeOnce(); } finally { env.exemptPlacing--; }
-      return first;
-    },
-    declined: () => env.seatSetDeclined ?? new Map(),
-    decline: rows => { env.seatSetDeclined = new Map([...(env.seatSetDeclined ?? []), ...rows]); },
-    snapshot: () => ({ state: snapshotEnv(), first }),
-    restore: saved => { restoreEnv(saved.state); first = saved.first; },
-    refused: error => staggerRefusal(error) || producerRefusal(error),
-  });
-  first = result.model;
-  attemptCounters.seatRetries += result.retries;
-  seatNotes.push(...result.notes);
-};
+// Dense-16x9 ticket 36, ruling B, scope V (coordinator, 2026-11-17): a decline is a fact of the placement the command keeps, not of a placement it
+// compares. The placements of this function (the first run, the stagger gate's trials, the leg-pitch and room rounds) are comparisons: a seat set
+// one of them withdraws keeps its `seatSetDeclined` entry in that placement, and nothing acts on it here. The retry runs where a placement is
+// kept: the 7f run of the driver's baseline and of every routed round trial (`bandsWithoutWithdrawnSeats`), which read the entry the kept
+// placement carries. A command-wide decline from a comparison trial took a set from later runs whose arrangement held it (the core row of an
+// outside sheet: 29 bent links at 21:10 against 1).
+const placeFirst = placeOnce;
 await placeFirst();
 // Dense-16x9 ticket 29: the leg pitch of a u-turn course port beside solid-block members reads the angle its blocks reserve, a fact the block
 // records only after sizing (`reserveBlockGaps`). The first complete placement records it. When a course port would take a leg pitch on a block it
@@ -366,5 +345,5 @@ if (flat.length) {
     }
   }
 }
-return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: [...seatNotes, ...legNotes, ...gateNotes], promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
+return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: [...legNotes, ...gateNotes], promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
 }

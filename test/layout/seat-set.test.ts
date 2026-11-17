@@ -8,6 +8,7 @@ import { ofKind, type Reservation } from '../../src/layout/reservations.js';
 import { SEAT_SET_REDECISIONS, seatSetScope } from '../../src/layout/seat-set.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
+import { attemptCounters } from '../../src/layout/attempt-counters.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { withMoveBeforeGrow } from './move-before-grow.js';
@@ -154,15 +155,22 @@ describe('a fan row the wrap gate owns takes no seat set (dense-16x9 ticket 36, 
 
 const seatNotes = (model: LayoutModel, code: string): string[] => (model.diagnostics ?? []).filter(item => item.code === code).map(item => item.message);
 
-// Ruling B: a set that 7c withdraws is declined in the ledger, and the command places once more from stage 6 without it.
-describe('a withdrawn seat set is declined and the command places once more (dense-16x9 ticket 36, ruling B)', () => {
-  it('keeps no set and no withdrawal for the rows an earlier placement withdrew, names each one, and restores', async () => {
-    const model = await run(withMoveBeforeGrow(sheet('a-leaf-child-and-its-beside-cells-stay-one-row')));
+// Ruling B, scope V: a set that the kept placement's 7c withdraws is declined in the ledger, and the command places once more from stage 6 without it;
+// a compared placement carries its withdrawal without acting on it.
+describe('a withdrawn seat set is declined and the command places once more (dense-16x9 ticket 36, ruling B, scope V)', () => {
+  it('declines the row the kept placement withdrew; a row a compared placement withdrew is decided again and stands; restores', async () => {
+    const withdrawn = attemptCounters.seatWithdrawals;
+    const model = await run(sheet('a-compared-placement-withdraws-a-seat-set-the-kept-placement-holds'));
+    // Three withdrawals in the command (traced): loc#2 once and zone#4 once in compared placements, and zone#4 in the kept placement.
+    expect(attemptCounters.seatWithdrawals - withdrawn).toBe(3);
     const declined = ofKind(model.reservations ?? [], 'seatSetDeclined').map(entry => entry.payload);
-    expect(declined.map(entry => [entry.row, entry.at])).toEqual([['loc#2', 'input'], ['zone#4', 'input']]);
+    // Scope V: the kept placement's 7f withdrew zone#4 and the baseline placed once more without it; loc#2, which a comparison placement
+    // withdrew, was decided again by the kept placement and stands.
+    expect(declined.map(entry => [entry.row, entry.at])).toEqual([['zone#4', 'input']]);
+    expect(seatSets(model).map(item => item.payload.row)).toContain('loc#2');
     expect(seatSets(model).map(item => item.payload.row).filter(row => declined.some(entry => entry.row === row))).toEqual([]);
     expect(seatNotes(model, 'SEAT_SET_WITHDRAWN')).toEqual([]);
-    expect(seatNotes(model, 'SEAT_SET_DECLINED').filter(message => message.includes('(withdrawn)'))).toHaveLength(2);
+    expect(seatNotes(model, 'SEAT_SET_DECLINED').filter(message => message.includes('(withdrawn)'))).toHaveLength(1);
     expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
   }, 120000);
 });
