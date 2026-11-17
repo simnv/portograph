@@ -6,6 +6,7 @@ import { entryFailure, ofKind, reservation, type Reservation } from '../../src/l
 import { withdrawSeatSet } from '../../src/layout/seat-set.js';
 import { faceHeld, resortFaces } from '../../src/layout/free-slots.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
+import { columnUnitId } from '../../src/layout/read/chain.js';
 import { retryWithdrawnSeatSets } from '../../src/pipeline/seat-retry.js';
 import { FEED_ORDER_SLOT_HELD } from '../../src/layout/feed-order.js';
 import { faceSortOf, orderFace } from '../../src/layout/sides-two.js';
@@ -318,3 +319,44 @@ describe('slice 3, review 1', () => {
     expect(() => restoreLayoutModel(JSON.stringify(out.model))).not.toThrow();
   }, 120000);
 });
+
+/**
+ * Review 2 of slice 3 (design/36c-review-2.md): the proof of an open record carries every clause of the writer's scope, read where the writer reads
+ * it: the opt-in, the authored orders (`feedOrder`, `corridorRowOrder`, an authored port order), and the arrangements stage 5 decides later (a
+ * stagger row, a feeding chain), which refuse the slot. Each test was red on 13b1fc1d.
+ */
+describe('slice 3, review 2', () => {
+  it('refuses an open record and its slot under an authored order or without the opt-in', async () => {
+    const published = await run(GAP);
+    expect(published.groups['site#1']!.rowOrder).toEqual(['c1', 'r1', 'c2']);
+    for (const [field, value, why] of [['corridorRowOrder', false, /layout.corridorRowOrder: false/], ['feedOrder', false, /layout.feedOrder: false/],
+      ['moveBeforeGrow', false, /layout.moveBeforeGrow/]] as const) {
+      const model = structuredClone(published);
+      model.document.layout = { ...model.document.layout, [field]: value };
+      const out = reads(model, cellEntry(model, 'site#1')!);
+      expect(out.filter(item => item === 'ACCEPTED'), field).toEqual([]);
+      expect(out[0], field).toMatch(why);
+    }
+  }, 120000);
+
+  it('opens no member whose link ends on a port with an authored order', async () => {
+    const authored = GAP.replace('h1: { group: site, ports: [{ name: a, side: top }, { name: b, side: top }', 'h1: { group: site, ports: [{ name: a, side: top }, { name: b, side: top, order: 1 }');
+    const model = structuredClone(await run(authored));
+    expect((cellEntry(model, 'site#1')?.payload as { open?: string[] } | undefined)?.open).toBeUndefined();
+    expect(model.groups['site#1']!.rowOrder).toEqual(['c1', 'c2', 'r1']);
+    const out = reads(model, forgeOpen(model, 'site#1', ['r1']));
+    expect(out.filter(item => item === 'ACCEPTED')).toEqual([]);
+    expect(out[0]).toMatch(/ends on h1\.b, a port with an authored order/);
+  }, 120000);
+
+  it('refuses a slot moved in a stagger row or in a feeding chain', async () => {
+    const published = await run(GAP);
+    const stagger = structuredClone(published);
+    stagger.staggerRows = [{ group: 'site#1' }] as unknown as NonNullable<LayoutModel['staggerRows']>;
+    expect(entryFailure(cellEntry(stagger, 'site#1')!, stagger, 'final')).toMatch(/it is a stagger row/);
+    const chain = structuredClone(published);
+    chain.staggerRows = [{ group: 'up', chain: [columnUnitId(chain, 'site#1')] }] as unknown as NonNullable<LayoutModel['staggerRows']>;
+    expect(entryFailure(cellEntry(chain, 'site#1')!, chain, 'final')).toMatch(/it stands in a feeding chain/);
+  }, 120000);
+});
+

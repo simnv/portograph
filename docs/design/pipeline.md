@@ -528,16 +528,18 @@ stays and `FEED_ORDER_PAIR_BOUND` names the pair (R6).
 - **Open members** (dense-16x9 ticket 36, slice 3; only with `layout.moveBeforeGrow: true`; owner ruling 2 of 2026-11-17: unfed members
   may stand in the gaps the seats leave). After the cells are decided (`orderByFeeds`, and again in `refreshFeedOrders`), `withOpen`
   reads each cell entry once more. A member is **open** when every link of it leaves its bottom face and ends on the top face of a node
-  in the sub-tier directly below the cell, and the cell stands in no canton (`openMemberFault`, `read/open-member.ts`: no feed from
-  above, no self link, no peer link in the row), and when, at every other slot of the row, stage 4's own reader (`below`) decides the
+  in the sub-tier directly below the cell, no end of its links has an authored port order, and the cell stands in no canton
+  (`openMemberFault`, `read/open-member.ts`: no feed from above, no self link, no peer link in the row; it reads the sheet's scope first,
+  `openScopeFault`: the opt-in and no authored row order), and when, at every other slot of the row, stage 4's own reader (`below`) decides the
   same below the cell (`openSlotHeld`): the joint choice of the pair under it with its crossings, the feed order of each row it feeds,
   and every frame order. The order stage 4 chose stays; the entry lists the open members (`open`), and
   the seat set closes their slots in stage 6. A member that the decisions below hold keeps its slot, named
   (`FEED_ORDER_SLOT_HELD`, at the first place that changes them; fixture
   `an-unfed-member-keeps-its-slot-where-the-row-below-reads-it`). `layout.corridorRowOrder: false` and `layout.feedOrder: false` open
   nothing. Every slot is tried once per member (at most the row length times its members, R4). `rowOrderFailure` proves the record at
-  every read with the writer's proof (review 1 of slice 3): it refuses an entry that lists a member twice, a member that `openMemberFault`
-  refuses, or a member that `openSlotHeld` holds, read with `belowReader` on the entry's order. A premise that read a cell with proved
+  every read with the writer's proof (reviews 1 and 2 of slice 3; the clause audit is in `test/layout/seat-set-guards.test.ts`): it
+  refuses an entry that lists a member twice, a member that `openMemberFault` refuses (the scope included: a sheet without the opt-in or
+  with an authored row order opens nothing), or a member that `openSlotHeld` holds, read with `belowReader` on the entry's order. A premise that read a cell with proved
   open members reads the order stage 4 recorded for that cell; any other feeding row must stand in the order the premise read. The cell
   may stand in another order only when it permutes open members alone, from stage 6 on, in no stagger row and no feeding chain (stage 5
   decides both after this record), with a `seatSet` entry in that order (or a `seatSetDeclined` entry past the input).

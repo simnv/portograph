@@ -45,18 +45,30 @@ import { createAvoidAttempt } from '../route/fixture.js';
 //   declined[]                 seatSetProvenanceFault: a feed of the row by `equationKind`, once, and no equation of the set. reason: shape only;
 //                              a label of the diagnostic, read by no decision.
 // rowOrder.payload.open (slice 3; the other fields of rowOrder are ticket 25's)
-//   open[]                     rowOrderFailure (`openFault`), with the writer's proof (review 1 of slice 3): each a member of the cell and of the
-//                              entry's order, once; every link leaves its bottom face for the top face of a node in the sub-tier directly below,
-//                              and the cell stands in no canton (`openMemberFault`: no feed from above, no peer link); no other slot of it in
-//                              the entry's order changes a decision below (`openSlotHeld` over `belowReader`, the reader stage 4 wrote it with).
-//                              The cell may stand off the entry's order only in its open members (`closedSlotsFault`), from the rows rule on,
-//                              in no stagger row and no feeding chain, in the order of a standing seat set of the row (or of a set this run
-//                              withdrew); a premise that reads a cell with proved open members reads the order stage 4 recorded for it
-//                              (`openOrder`), any other feeding row the order it stands in. The mutation guard lets only the rows rule move
-//                              them (`structure` with the open members read out). Forged rows: test/layout/free-slots.test.ts (a fed member
-//                              listed open, a member with a peer link, a member that a slot below holds, a premise that hides one, a member
-//                              with a link to a lateral face, a member of a canton row, an open member moved with no seat set, a permutation
-//                              that moves a fed member, a rule other than rows that moves an open member).
+//   open[]                     rowOrderFailure (`openFault`), with the writer's proof: each a member of the cell and of the entry's order, once.
+//                              Then every clause of stage 4's eligibility (`withOpen`), each by the predicate the writer calls, at round, early
+//                              and final reads (`RESERVATION_CHECKS.rowOrder`) and at both restores (review 2 of slice 3: the clause audit):
+//     opt-in                   openScopeFault (via openMemberFault): layout.moveBeforeGrow is true. Writer: withOpen reads openScopeFault.
+//     authored row order       openScopeFault: neither layout.feedOrder nor layout.corridorRowOrder is false (the settings `readsBelow` reads).
+//     authored port order      openMemberFault: no end of a link of the member has an authored `order:`.
+//     unfed                    openMemberFault: every link ends in the sub-tier directly below the cell (no feed from above, no self link).
+//     no peer link             openMemberFault: no link ends on a member of the cell.
+//     top-face-only links      openMemberFault: every link leaves the member's bottom face and ends on a top face.
+//     canton                   openMemberFault: no frame of the cell, up the frame chain, is a canton.
+//     lower row order          openSlotHeld over belowReader, on the entry's order: no other slot of the member changes the pair under the cell,
+//                              the feed order of a row it feeds, or a frame order (the reader stage 4 wrote the record with).
+//     stagger row, chain       decided by stage 5, after the record: closedSlotsFault refuses a cell that stands off the entry's order while it
+//                              is a stagger row or stands in a feeding chain (early and final reads; at round before stage 5 there is none), and
+//                              seatSetScope never closes a slot there. The record itself stays a fact of stage 4.
+//                              The cell may stand off the entry's order only in its open members (`closedSlotsFault`), from the rows rule on, in
+//                              the order of a standing seat set of the row (or of a set this run withdrew); a premise that reads a cell with
+//                              proved open members reads the order stage 4 recorded for it (`openOrder`), any other feeding row the order it
+//                              stands in. The mutation guard lets only the rows rule move them (`structure` with the open members read out).
+//                              Forged rows: test/layout/free-slots.test.ts (a fed member listed open, a member with a peer link, a member that a
+//                              slot below holds, a premise that hides one, a member with a link to a lateral face, a member of a canton row, an
+//                              open member moved with no seat set, a permutation that moves a fed member, a rule other than rows that moves an
+//                              open member; review 2: corridorRowOrder false, feedOrder false, no opt-in, an authored port order, a stagger row,
+//                              a feeding chain).
 // seatSetDeclined (entry)
 //   id, activeFrom, revision   ledger, as above.
 //   owner, producer            seatSetDeclinedFault: the group of `row`, producer 'rows'; one decline per row; no seat set of the row stands.

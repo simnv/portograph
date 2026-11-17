@@ -9,7 +9,7 @@ import { placementWarning } from './regions.js';
 import { cellTier } from './read/tier.js';
 import { groupOrderFailure, ofKind, reservation, rowOrderFailure, type Reservation, type ReservationOf, type RowFeed } from './reservations.js';
 import { compareId } from './skeleton-graph.js';
-import { openMemberFault, openSlotHeld } from './read/open-member.js';
+import { openMemberFault, openScopeFault, openSlotHeld } from './read/open-member.js';
 import { choosePairOrder, PAIR_ORDER_BOUND, PAIR_SEARCH_VISITS, type PairChoice } from './row-pairs.js';
 import { rebuildBands } from './skeleton-geometry.js';
 
@@ -230,7 +230,7 @@ export const FEED_ORDER_SLOT_HELD = 'FEED_ORDER_SLOT_HELD';
  * (`FEED_ORDER_SLOT_HELD`). An authored order opens nothing. Every slot is tried once per member: at most the row length times the members (R4).
  */
 function withOpen(model: LayoutModel, read: Reader, entry: Reservation): Reservation {
-  if (model.document.layout?.moveBeforeGrow !== true || model.document.layout?.corridorRowOrder === false || entry.kind !== 'rowOrder' || !('cell' in entry.payload)) return entry;
+  if (openScopeFault(model) !== undefined || entry.kind !== 'rowOrder' || !('cell' in entry.payload)) return entry;
   const cell = model.groups[entry.payload.cell], order = [...entry.payload.order];
   if (cell === undefined || order.length < 2) return entry;
   const today = read.below(cell, order), open: string[] = [];
