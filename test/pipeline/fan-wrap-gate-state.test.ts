@@ -50,16 +50,18 @@ describe('fan wrap: the comparison run leaves no state behind a kept wrap', () =
   });
 });
 
+const PLAIN_SIZES = new Map([['a', { width: 40, height: 30 }]]);
+
 // DR-11 review: a producer refusal at 7f of a gate run is a trial's refusal, as a stagger refusal is. It declines the lines when the wrapped run
 // refuses, and keeps the wrapped run with no comparison when the plain run refuses; it never ends the command.
 describe('fan wrap: a producer refusal at 7f of a gate run', () => {
-  const run = async (refuses: 'wrapped' | 'plain'): Promise<{ state: Awaited<ReturnType<typeof firstState>>; wrapped: LayoutModel; plain: LayoutModel }> => {
+  const run = async (refuses: 'wrapped' | 'plain'): Promise<{ state: Awaited<ReturnType<typeof firstState>>; wrapped: LayoutModel; plain: LayoutModel; env: Env }> => {
     const wrapped = { groupArrangements: { w: { chosen: 'stagger' } }, staggerRows: [{ group: 'w', order: ['a', 'b', 'c'], far: ['b'], side: 'top', pitches: [1, 1], step: 1 }] } as unknown as LayoutModel;
     const plain = { groupArrangements: { w: { chosen: 'row', reason: 'gate' } } } as unknown as LayoutModel;
     const refused = refuses === 'wrapped' ? wrapped : plain;
     let placed = 0;
     const env = {
-      options: {}, maxReruns: 3, placements: 0, reruns: 0, blockProbes: 0, gateRuns: 0, placeCap: 4,
+      options: {}, maxReruns: 3, placements: 0, reruns: 0, blockProbes: 0, gateRuns: 0, placeCap: 4, stage3Sizes: new WeakMap([[plain, PLAIN_SIZES]]),
       timed: async <T>(_label: string, work: () => T | Promise<T>): Promise<T> => work(),
       place: async (): Promise<LayoutModel> => {
         env.placements++; placed++;
@@ -71,17 +73,19 @@ describe('fan wrap: a producer refusal at 7f of a gate run', () => {
         return { model, moved: false, unmoved: undefined };
       },
     } as unknown as Env;
-    return { state: await firstState(env), wrapped, plain };
+    return { state: await firstState(env), wrapped, plain, env };
   };
 
   // Every decline of the gate is in the ledger with its clause (dense-16x9 ticket 35): the kept ledger declines the row, and publication names
   // the decline from that entry only, so the gate itself leaves no note.
   it('declines the lines by name in the ledger when the wrapped run refuses', async () => {
-    const { state, plain } = await run('wrapped');
+    const { state, plain, env } = await run('wrapped');
     expect(state.kept7e).toMatchObject(plain);
     const entries = ofKind(state.kept, 'staggerDeclined');
     // The kept placement carries the same entries: the published ledger holds the decline.
     expect(state.kept7e.reservations).toEqual(entries);
+    // The copy keys the stage-3 sizes of the placement it copies: a round's size floors read them (`movedFloor`).
+    expect(env.stage3Sizes.get(state.kept7e)).toBe(PLAIN_SIZES);
     expect(entries.map(entry => [entry.producer, entry.payload.group, entry.payload.clause, entry.payload.links])).toEqual([['initial', 'w', 'trial', undefined]]);
     expect(declinedStaggersOf(state.kept).get('w')?.reason).toMatch(/^7f refused them: Postcondition of bands failed: laneSide g/);
     expect(state.keptNotes.filter(note => note.code === 'FAN_WRAP_DECLINED')).toEqual([]);

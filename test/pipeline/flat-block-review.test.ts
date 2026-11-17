@@ -87,7 +87,7 @@ describe('a placement started inside an exempt trial is credited once (review 2)
   const stub = (first: object, later: object, refuseAt: number, extra: object = {}): Env => {
     let calls = 0;
     const env = { document: { layout: { aspect: 2 } }, options: {}, maxReruns: 3, placeCap: 4, placements: 0, reruns: 0, blockProbes: 0, gateRuns: 0,
-      farEndRuns: 0, timed: async (_: string, run: () => unknown) => run(), ...extra,
+      farEndRuns: 0, stage3Sizes: new WeakMap(), timed: async (_: string, run: () => unknown) => run(), ...extra,
       step: () => { if (calls === refuseAt) throw new SolidBlockRefusal(new Map([['b', 'refused in the trial']])); throw reached; },
       place: async (kept: unknown) => {
         calls++;

@@ -158,6 +158,9 @@ if (chosen.length) {
   if (entries.length) {
     kept = addReservations(kept, entries);
     first = restoreLayoutModel(JSON.stringify({ ...best.model, reservations: addReservations(best.model.reservations ?? [], entries) }));
+    // The stage-3 sizes are keyed by the placed model object (`movedFloor`): the copy keys the same sizes, or a round's floors would read none.
+    const sizes = env.stage3Sizes.get(best.model);
+    if (sizes !== undefined) env.stage3Sizes.set(first, sizes);
   }
   ran = { model: first, banded: best.banded };
 }
