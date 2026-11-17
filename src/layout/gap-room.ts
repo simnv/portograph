@@ -1,3 +1,4 @@
+import { judgedMove } from './post-freeze-judge.js';
 import type { LayoutModel } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
 import { centreViolations } from './centre.js';
@@ -196,15 +197,20 @@ export function solveTierGaps(model: LayoutModel, rebuild: (model: LayoutModel, 
     // Since architecture-2 ticket 65 the settle after the 7f rounds reaches the alignments before the solve, and the second trigger fires on no
     // corpus sheet; it stays as the safety net for a growth that breaks an excused alignment (measured: a card-node variant of
     // `a-refused-close-up-keeps-the-node-labels-in-order` throws `Centring invariant violated` without it).
-    const stepped = afterGrowth(model);
-    if (stepped || (!model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE') && centreViolations(model).length > 0)) {
+    // The linkless step and the centring replay are one mover under the judge of a move after the freeze (dense-16x9 ticket 31): one that would
+    // take a block member off its reservation is refused whole, and the x check below reads the coordinates the growth left.
+    const replayed = judgedMove(model, 'centring replay after the tier-gap growth', () => {
+      const stepped = afterGrowth(model);
+      if (!stepped && (model.diagnostics.some(item => item.code === 'PLACEMENT_NON_CONVERGENCE') || centreViolations(model).length === 0)) return undefined;
       // The centring replay may move x: its grid holds nothing.
       timed('solve-rebuild', () => { rebuildRegionGeometry(model, undefined, undefined, true, true); rebuild(model, new Set()); });
       placementWarning(model, 'TIER_GAP_CENTRING_REPLAYED', stepped
         ? 'a group with no links stepped out of a held chord after the tier gaps grew; the centring was replayed once.'
         : 'the tier gaps grew and an alignment the centring must reach stood off its feed; the centring was replayed once.', []);
+      return xCoordinates(model);
+    }, undefined);
+    if (replayed !== undefined) {
       apart = new Set(gridPairsApart(model, 'x'));
-      const replayed = xCoordinates(model);
       for (const key of before.keys()) before.set(key, replayed.get(key) ?? before.get(key)!);
     }
     // A nested leg still reads the bundle envelopes, the obstacles and the reserved runs of the whole sheet (`legClear`), and the growth
