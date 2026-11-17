@@ -491,25 +491,34 @@ pins it so). On NTP the MPLS fan follows its hubs (`crt001` before `crt002`) and
 **Two rows ordered together** (dense-16x9 ticket 32). A rank cell and the row directly below it are one **pair** when every link of the
 cell down to that sub-tier ends in that one row, and that row is fed from above by the cell alone. The row below is a rank cell, or a
 free row that the corridor step could not judge (`frame-columns`, as for a top row), with no far-end pull and no group order reading
-it. The orders of the pair are chosen together (`choosePairOrder`, `row-pairs.ts`): an exact search over every order of both rows, to
+it; a free row this pair turned earlier records `feed-order` and stays the pair's lower row, read from the pair's earlier choice (the
+round before, or the ledger in the refresh). Each row has two members or more. The orders of the pair are chosen together (`choosePairOrder`, `row-pairs.ts`): an exact search over every order of both rows, to
 the fewest crossings of the links between them. A peer link counts too: one whose ends a member stands between passes that member's
 links between the rows. The members the row above feeds keep their feed keys: a member with a smaller key stands left of one with a
 larger key. Members with one key, the unfed members (ticket 30's free variables) and every member of the row below are free. A run of
 peer neighbours as it stands is one unit. Members that no rule tells apart (one row, the same links, key and feeders, no peer link)
-are merged and stand in declaration order. The search is bounded by `PAIR_ORDER_BOUND`, 10000 joint orders per pair (R4). The
-competition case of ticket 30's review has 8640, and the corpus pairs have 100 or fewer. Past the bound, today's order stays and
-`FEED_ORDER_PAIR_BOUND` names the pair (R6).
+are merged and stand in declaration order. Two bounds hold per pair (R4): `PAIR_ORDER_BOUND`, 10000 joint orders, counted on the merged
+classes by a product that stops past the bound (the competition case of ticket 30's review has 8640, and the corpus pairs have 100 or
+fewer); and `PAIR_SEARCH_VISITS`, 20 x 10000 visited prefixes, the work of the walk itself. The walk visits only prefixes that can still
+keep the keys, and units whose key ranges overlap end the search before any walk (no order keeps them). Past a bound, today's order
+stays and `FEED_ORDER_PAIR_BOUND` names the pair (R6).
 - The order the rows have stays when it is a minimum: an earlier joint choice first (the previous round, or the ledger in the
-  refresh), then today's order (the cell's one-row order, and the lower row's read under it). Today's rules then order the rows as
-  before.
+  refresh), then today's order (the cell's one-row order, and the lower row's read under it). Either is recorded as the joint choice.
 - Among the minima, in this order: the fewest members between the members that one node of the row above links to (a node fed by two
   members wants them side by side, or its port order breaks); the smallest spread of each outside feeder's links over each row; the
   smallest total span of the links between the rows (read on the linked members, each row from its middle, so a mirrored pair has the
   mirrored span); declaration order (R3: the last key).
-- Each row of a chosen pair is re-seated and gets one `rowOrder` entry. The entry names the other row with its order: the joint premise,
-  which `rowOrderFailure` checks for every reader (`RESERVATION_CHECKS`). The upper row's entry also names the row above that feeds it.
-  A free lower row records `feed-order`. `layout.feedOrder: false` and `layout.corridorRowOrder: false` keep the authored order: no
-  pair is judged.
+- Each row of a pair the search answers (a new choice, an earlier one that stays, or today's order that is already a minimum) is
+  re-seated and gets one `rowOrder` entry. The entry names the other row with its order: the joint premise, which `rowOrderFailure`
+  checks for every reader (`RESERVATION_CHECKS`). The upper row's entry also names the row above that feeds it. A free lower row that
+  turns records `feed-order`. A try whose second row does not fit is refused by name (`FEED_ORDER_REFUSED`) and gives back its whole
+  write set: the order, the box and the node boxes and anchors of both rows. `layout.feedOrder: false` and
+  `layout.corridorRowOrder: false` keep the authored order: no pair is judged.
+- **Stacked pairs** (owner ruling, 32 review 1). The pairs are judged top-down, and a row that a pair has judged is settled for the pairs
+  below it. When it is the upper row of the next pair, its order is fixed there: it goes in as the keys, one rank per member, so the
+  search moves only the lower row, and its entry names the row above and the row below. There is no three-row objective. On the
+  three-row case (`a-row-a-pair-settled-keeps-its-order-in-the-pair-below`) the first pair stays at its minimum of 4 crossings; before
+  the ruling the pair below turned the middle row to 5, and a refresh turned it back.
 - **The mutual read.** A top row above the cell (ticket 20) reads the cell, and the cell's feed keys read the top row. The rows are
   judged top-down, so the top row decides first: it reads the cell as the cell stands. The pair then decides under the keys that order
   gives. When the pair turns the cell, the top row's premise breaks, and the next round reads the cell again. The top row's new order

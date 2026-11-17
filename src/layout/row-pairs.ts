@@ -1,7 +1,7 @@
 /**
  * The joint order of two rows (dense-16x9 ticket 32): an upper row and the row directly below it that only it feeds are ordered together, to
  * the fewest crossings of the links between them. An exact search, bounded: the orders of both rows are enumerated, interchangeable members
- * merged, and a pair with more than `PAIR_ORDER_BOUND` orders is not searched. Pure: the caller reads the rows off the model and records the
+ * merged, and a pair with more than `PAIR_ORDER_BOUND` orders, or whose walk visits more than `PAIR_SEARCH_VISITS` prefixes, is not searched. Pure: the caller reads the rows off the model and records the
  * choice (`feed-order.ts`).
  */
 
@@ -11,6 +11,18 @@
  * no rule merges) has 12 x 720 = 8640 orders, and the corpus pairs have 100 or fewer; one order costs one pass over the pairs of links.
  */
 export const PAIR_ORDER_BOUND = 10000;
+
+/**
+ * The most prefixes the walks of one pair visit (R4, per pair; 32 review 1): the work the search does, not only the orders it finds. Past it
+ * the pair is not searched, today's order stays and the caller names it as for the order bound. Why 20 x `PAIR_ORDER_BOUND`: a walk of that
+ * many orders of up to 20 units visits at most that many prefixes, and the walk visits only prefixes that can still keep the feed keys, so a
+ * search within the order bound stays under it; it cuts a walk this reasoning missed instead of letting it grow factorially.
+ */
+export const PAIR_SEARCH_VISITS = 20 * PAIR_ORDER_BOUND;
+
+/** The bounds of one search: the production values, or smaller ones a test passes. */
+export interface PairLimits { orders: number; visits: number }
+const LIMITS: PairLimits = { orders: PAIR_ORDER_BOUND, visits: PAIR_SEARCH_VISITS };
 
 export interface RowPair {
   /** The upper row's members, and the lower row's, in the order today's rules give them (`today`). */
@@ -36,13 +48,13 @@ export interface RowPair {
 }
 
 export type PairChoice =
-  /** Today's order is a minimum, or there is nothing to choose: today's rules order the rows. */
-  | { kind: 'kept' }
+  /** Today's order is a minimum, or there is nothing to choose: it stays, and the caller records it as the joint choice. */
+  | { kind: 'kept'; upper: readonly string[]; lower: readonly string[] }
   /** The earlier joint choice is still a minimum: it stays. */
   | { kind: 'stays'; upper: readonly string[]; lower: readonly string[] }
-  /** More orders than the bound (`orders`, a count the search reached past it): nothing searched. */
-  | { kind: 'bound'; orders: number }
-  /** No order keeps the feed keys of the upper row (a peer block that straddles two keys): nothing searched. */
+  /** Past a bound: more orders than `PAIR_ORDER_BOUND` (`count`, a count the walk reached past it), or more visited prefixes than `PAIR_SEARCH_VISITS`. */
+  | { kind: 'bound'; reason: 'orders' | 'visits'; count: number }
+  /** No order keeps the feed keys of the upper row (two units whose key ranges overlap, or a unit whose keys fall): nothing searched. */
   | { kind: 'infeasible' }
   | { kind: 'chosen'; upper: string[]; lower: string[]; crossings: number; was: number };
 
@@ -59,17 +71,24 @@ export type PairChoice =
  *    outside feeder's links over each row; then the smallest total span of the links between the rows (`span`); then
  *    declaration order (the upper row's, then the lower row's).
  */
-export function choosePairOrder(pair: RowPair): PairChoice {
+export function choosePairOrder(pair: RowPair, limits: PairLimits = LIMITS): PairChoice {
   const upperUnits = units(pair.upper, pair), lowerUnits = units(pair.lower, pair);
+  // Units whose key ranges overlap can stand in no order: nothing is walked (32 review 1).
+  if (!keysCompatible(upperUnits, pair.keys)) return { kind: 'infeasible' };
   const upperClasses = classes(upperUnits, pair, 'upper'), lowerClasses = classes(lowerUnits, pair, 'lower');
-  const lowerCount = multinomial(lowerClasses.map(item => item.length));
-  if (lowerCount > PAIR_ORDER_BOUND) return { kind: 'bound', orders: lowerCount };
-  // The orders of the upper row are walked with the keys as a prefix test, and the walk stops past the bound.
-  const most = Math.floor(PAIR_ORDER_BOUND / lowerCount), found = arrangements(upperClasses, prefix => keepsKeys(prefix, pair.keys), most);
-  if (found === undefined) return { kind: 'bound', orders: (most + 1) * lowerCount };
+  // Counted on the merged classes with a product that stops past the bound: no factorial overflows (32 review 1).
+  const lowerCount = multinomial(lowerClasses.map(item => item.length), limits.orders);
+  if (lowerCount > limits.orders) return { kind: 'bound', reason: 'orders', count: lowerCount };
+  // The orders of the upper row are walked on the prefixes that can still keep the keys; the walk stops past either bound.
+  const budget = { visits: 0, limit: limits.visits };
+  const most = Math.floor(limits.orders / lowerCount), found = arrangements(upperClasses, (prefix, rest) => viable(prefix, rest, pair.keys), most, budget);
+  if (found === 'visits') return { kind: 'bound', reason: 'visits', count: budget.visits };
+  if (found === undefined) return { kind: 'bound', reason: 'orders', count: (most + 1) * lowerCount };
   const uppers = found.map(flat);
   if (!uppers.length) return { kind: 'infeasible' };
-  const lowers = arrangements(lowerClasses, () => true, PAIR_ORDER_BOUND)!.map(flat);
+  const walked = arrangements(lowerClasses, () => true, limits.orders, budget);
+  if (walked === 'visits') return { kind: 'bound', reason: 'visits', count: budget.visits };
+  const lowers = walked!.map(flat);
   const cost = costOf(pair);
   let best = Infinity;
   for (const upper of uppers) for (const lower of lowers) best = Math.min(best, cost(upper, lower));
@@ -77,7 +96,7 @@ export function choosePairOrder(pair: RowPair): PairChoice {
   if (previous !== undefined && sameMembers(previous, pair) && keepsKeys(units(previous.upper, pair), pair.keys)
     && cost(previous.upper, previous.lower) === best) return { kind: 'stays', upper: previous.upper, lower: previous.lower };
   const was = cost(pair.upper, pair.lower);
-  if (was === best || uppers.length * lowers.length === 1) return { kind: 'kept' };
+  if (was === best || uppers.length * lowers.length === 1) return { kind: 'kept', upper: pair.upper, lower: pair.lower };
   let chosen: { upper: string[]; lower: string[]; rank: number[] } | undefined;
   for (const upper of uppers) for (const lower of lowers) {
     if (cost(upper, lower) !== best) continue;
@@ -113,29 +132,66 @@ function classes(list: readonly string[][], pair: RowPair, side: 'upper' | 'lowe
   return [...groups.values()].map(items => [...items].sort((a, b) => pair.declared.get(a[0]!)! - pair.declared.get(b[0]!)!));
 }
 
-const factorial = (n: number): number => n <= 1 ? 1 : n * factorial(n - 1);
-const multinomial = (sizes: readonly number[]): number => factorial(sizes.reduce((sum, size) => sum + size, 0)) / sizes.reduce((product, size) => product * factorial(size), 1);
+/** The number of multiset permutations of classes of these sizes, or `cap + 1` once it passes `cap`: a product of binomials that stops there. */
+function multinomial(sizes: readonly number[], cap: number): number {
+  let total = 0, product = 1;
+  for (const size of sizes) {
+    total += size;
+    const k = Math.min(size, total - size);
+    let binomial = 1;
+    // C(total, i + 1) = C(total, i) (total - i) / (i + 1) is a whole number at every step, and it grows with i up to k <= total / 2.
+    for (let i = 0; i < k && binomial <= cap; i++) binomial = binomial * (total - i) / (i + 1);
+    product *= binomial;
+    if (product > cap) return cap + 1;
+  }
+  return product;
+}
 
 /**
  * Every sequence of the units in which the units of one class keep their order (each multiset permutation once) and every prefix passes
- * `accept`; undefined when there are more than `most`.
+ * `accept` (it reads the units not placed yet too); undefined when there are more than `most`, `'visits'` when the walk visits more
+ * prefixes than the budget allows (the budget is shared by the walks of one pair).
  */
-function arrangements(groups: readonly (readonly string[][])[], accept: (prefix: readonly (readonly string[])[]) => boolean, most: number): string[][][] | undefined {
+function arrangements(groups: readonly (readonly string[][])[], accept: (prefix: readonly (readonly string[])[], rest: readonly (readonly string[])[]) => boolean,
+  most: number, budget: { visits: number; limit: number }): string[][][] | undefined | 'visits' {
   const result: string[][][] = [], taken = groups.map(() => 0), total = groups.reduce((sum, items) => sum + items.length, 0), current: string[][] = [];
-  const walk = (): boolean => {
-    if (current.length === total) { result.push([...current]); return result.length <= most; }
+  let over: 'orders' | 'visits' | undefined;
+  const rest = (): string[][] => groups.flatMap((items, at) => items.slice(taken[at]!));
+  const walk = (): void => {
+    if (current.length === total) { result.push([...current]); if (result.length > most) over = 'orders'; return; }
     for (const [at, items] of groups.entries()) {
       if (taken[at]! >= items.length) continue;
+      if (++budget.visits > budget.limit) { over = 'visits'; return; }
       current.push(items[taken[at]!]!); taken[at]!++;
-      const going = !accept(current) || walk();
+      if (accept(current, rest())) walk();
       taken[at]!--; current.pop();
-      if (!going) return false;
+      if (over !== undefined) return;
     }
-    return true;
   };
-  return walk() ? result : undefined;
+  walk();
+  return over === 'visits' ? 'visits' : over === 'orders' ? undefined : result;
 }
 const flat = (order: readonly (readonly string[])[]): string[] => order.flat();
+
+/** The keys of a unit's members, in the order they stand. */
+const keysOf = (unit: readonly string[], keys: ReadonlyMap<string, number>): number[] => unit.map(node => keys.get(node)).filter((key): key is number => key !== undefined);
+
+/**
+ * Whether some order of the units keeps the feed keys: each unit's keys rise inside it, and of every two keyed units one ends at or below
+ * the other's least key (their key ranges do not overlap; the relation is then an order, so the test of the pairs is the whole test).
+ */
+function keysCompatible(list: readonly (readonly string[])[], keys: ReadonlyMap<string, number>): boolean {
+  const ranges = list.map(unit => keysOf(unit, keys)).filter(mine => mine.length);
+  if (ranges.some(mine => mine.some((key, i) => i > 0 && key < mine[i - 1]!))) return false;
+  return ranges.every((a, i) => ranges.every((b, j) => j <= i || Math.max(...a) <= Math.min(...b) || Math.max(...b) <= Math.min(...a)));
+}
+
+/** Whether a prefix can still end in an order that keeps the keys: it keeps them, and no unit left to place has a key below one placed. */
+function viable(prefix: readonly (readonly string[])[], rest: readonly (readonly string[])[], keys: ReadonlyMap<string, number>): boolean {
+  if (!keepsKeys(prefix, keys)) return false;
+  const placed = prefix.flatMap(unit => keysOf(unit, keys)), left = rest.flatMap(unit => keysOf(unit, keys));
+  return !placed.length || !left.length || Math.max(...placed) <= Math.min(...left);
+}
 
 /** Whether a sequence of units keeps the feed keys: no member stands left of a member with a smaller key. */
 function keepsKeys(order: readonly (readonly string[])[], keys: ReadonlyMap<string, number>): boolean {

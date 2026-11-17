@@ -1,7 +1,9 @@
 # Expected (dense-16x9 ticket 32; the competition case of ticket 30's review 1): a1 and a2 are fed in that order, b1 and b2 have no feed
 # from above, and the free row below is fed by the core cell alone. Ordered one block at a time, the unfed members reached 9 crossings
 # between the two rows; ordered together with the row below they reach 2: [a1, a2, b2, b1] over [c1, c5, c4, c0, c3, c2].
-# Main 01415610: the rows as declared, 21 routed crossings and no bent link; here 2 crossings and 4 bent links.
+# Main 01415610: the rows as declared, 21 routed crossings and no bent link; here 2 crossings and 4 bent links (8 turns). That is the trade
+# the ruled objective makes: it counts the crossings of the pair (peer links included), not bends. Links a1-c1, a1-c5, a2-c4 and a2-c5
+# cross the legs of their siblings as straight segments on the uncrossed rows, so they keep the orthogonal route (ROUTED_CHORD_REFUSED leg).
 portograph: 2
 groups:
   source: {tier: 0}

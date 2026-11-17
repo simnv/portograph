@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import { layout, parse, score } from '../../src/index.js';
-import { validateFeedOrders } from '../../src/layout/feed-order.js';
+import { orderByFeeds, refreshFeedOrders, validateFeedOrders } from '../../src/layout/feed-order.js';
+import { reseatRow } from '../../src/layout/overlay-order.js';
 import { ofKind } from '../../src/layout/reservations.js';
-import { createAttempt } from '../layout/phase-two-fixture.js';
+import { createAttempt, placed } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 
@@ -43,7 +44,9 @@ describe('two rank rows of one frame are ordered together (dense-16x9 ticket 32)
     const upper = entries.find(({ payload }) => 'cell' in payload && payload.cell === 'core#0')!.payload;
     const lower = entries.find(({ payload }) => 'cell' in payload && payload.cell === 'core#1')!.payload;
     expect(upper.feeds.map(feed => feed.row)).toEqual(['upstream', 'core#1']);
-    expect(lower.feeds).toEqual([{ row: 'core#0', order: upper.order }]);
+    // The router row is settled by this pair and is the upper row of the next pair (over the hubs): its entry names both.
+    expect(lower.feeds[0]).toEqual({ row: 'core#0', order: upper.order });
+    expect(lower.feeds.map(feed => feed.row)).toEqual(['core#0', 'core#2']);
     expect(validateFeedOrders(model)).toEqual([]);
   }, 120000);
 
@@ -81,11 +84,13 @@ describe('two rank rows of one frame are ordered together (dense-16x9 ticket 32)
     expect(named[0]!.message).toContain('more than 10000 joint orders (at least 10080)');
     // The order the one-row rules give (main 01415610), with no joint entry.
     expect(order(model, 'core#1')).toEqual(['mid-1', 'mid-2', 'mid-3', 'mid-6', 'mid-7', 'mid-4', 'mid-5']);
+    // No joint premise between the two rows of the bounded pair: the edge row's entry does not name the mid row (the mid row reads the edge
+    // row as its feed from above, as every fed cell does).
     const entries = ofKind(model.reservations ?? [], 'rowOrder');
-    expect(entries.some(({ payload }) => payload.feeds.some(feed => feed.row === 'core#1'))).toBe(false);
+    expect(entries.some(({ payload }) => 'cell' in payload && payload.cell === 'core#0' && payload.feeds.some(feed => feed.row === 'core#1'))).toBe(false);
   }, 120000);
 
-  it('gives the same rows with the links and with the nodes declared the other way round (R3)', async () => {
+  it('gives the same rows with the links reversed, and the mirrored rows with the nodes reversed (R3; a mirror, not the same output)', async () => {
     for (const [name, rows] of [[PLANAR, ['core#0', 'core#1']], ['a-joint-row-order-frees-the-unfed-members-and-the-row-below', ['core#0', 'lower']]] as const) {
       const base = await run(sheet(name));
       for (const block of ['links', 'nodes'] as const) {
@@ -111,4 +116,52 @@ describe('two rank rows of one frame are ordered together (dense-16x9 ticket 32)
       expect(order(model, 'core#1'), flag).toEqual(['pe-1', 'pe-2', 'pe-3', 'pe-4', 'rr-1', 'rr-2']);
     }
   }, 240000);
+});
+
+describe('stacked pairs, the refresh and a refused try (dense-16x9 ticket 32, review 1)', () => {
+  const THREE = 'a-row-a-pair-settled-keeps-its-order-in-the-pair-below';
+  const COMPETITION = 'a-joint-row-order-frees-the-unfed-members-and-the-row-below';
+  const rowEntries = (model: LayoutModel) => ofKind(model.reservations ?? [], 'rowOrder');
+
+  it('keeps an unchanged joint reservation with a free lower row through a refresh', async () => {
+    const model = structuredClone(await placed(sheet(COMPETITION)));
+    const before = structuredClone(rowEntries(model));
+    expect(before.some(({ payload }) => 'row' in payload && payload.row === 'lower')).toBe(true);
+    refreshFeedOrders(model);
+    expect(rowEntries(model)).toEqual(before);
+    expect(model.diagnostics.filter(item => item.code === 'FEED_ORDER_WITHDRAWN')).toEqual([]);
+  }, 120000);
+
+  it('settles the middle row in the first pair: the pair below moves only its lower row, and a refresh agrees', async () => {
+    // The first pair (a row over m row) is already a minimum, 4 crossings, as the middle row stands ([m3, m1, m2]). The pair below (m row
+    // over b row) took the middle row to [m1, m3, m2] on 10fa07cc, 5 crossings for the first pair, and a refresh turned it back.
+    const model = await run(sheet(THREE));
+    expect(order(model, 'core#1')).toEqual(['m3', 'm1', 'm2']);
+    expect(between(model, 'core#0', 'core#1')).toBe(4);
+    const stage = structuredClone(await placed(sheet(THREE)));
+    expect(order(stage, 'core#1')).toEqual(['m3', 'm1', 'm2']);
+    const ledger = structuredClone(rowEntries(stage));
+    const middle = ledger.find(({ payload }) => 'cell' in payload && payload.cell === 'core#1')!.payload;
+    expect(middle.feeds.map(feed => feed.row)).toEqual(['core#0', 'core#2']);
+    refreshFeedOrders(stage);
+    expect(order(stage, 'core#1')).toEqual(['m3', 'm1', 'm2']);
+    expect(rowEntries(stage)).toEqual(ledger);
+    expect(validateFeedOrders(stage)).toEqual([]);
+  }, 120000);
+
+  it('gives back the whole upper row when the lower row of a try does not fit', () => {
+    // Main 01415610's stage-4 state of the competition sheet: two thick members, and a wall 110 px right of the lower row. The try seats the
+    // upper row (it grows to 401 px), then the lower row does not fit: the upper row's box goes back too, not only its order.
+    const model = JSON.parse(readFileSync(new URL('../fixtures/staged/a-joint-row-order-competition-at-stage-4-before-the-feed-order.json', import.meta.url), 'utf8')) as LayoutModel;
+    const upper = model.groups['core#0']!, lower = model.groups['lower']!;
+    model.nodes['b2']!.strokeWidth = 100; model.nodes['c0']!.strokeWidth = 100;
+    reseatRow(model, upper, [...upper.rowOrder!], true); reseatRow(model, lower, [...lower.rowOrder!], true);
+    const right = lower.bounds!.x + lower.bounds!.width;
+    model.groups['blocker'] = { ...structuredClone(lower), id: 'blocker', nodes: [], rowOrder: [], bounds: { x: right + 110, y: lower.bounds!.y, width: 100, height: lower.bounds!.height } };
+    const before = structuredClone({ upper, nodes: upper.nodes.map(node => model.nodes[node]) });
+    orderByFeeds(model);
+    expect(model.diagnostics.some(item => item.code === 'FEED_ORDER_REFUSED')).toBe(true);
+    expect(upper.bounds).toEqual(before.upper.bounds);
+    expect(upper.nodes.map(node => model.nodes[node])).toEqual(before.nodes);
+  });
 });
