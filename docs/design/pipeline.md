@@ -1169,9 +1169,12 @@ step over chords): it holds 0; a set whose row moves along sets no bound; a set 
 whose box does not stand in its window now, does not move; a set whose seated row carries far ends of a further set takes that set along (a
 chain, each set read once); a set withdrawn from 7c on keeps its far ends where 7c left them (`seatSetDeclined.fixed`: the rest of the run,
 its publication replays included, reads them as fixed, R1). A set seated on the anchor tier cannot translate and sets no bound: the step
-moves its far ends, the rule withdraws it ("its row is the anchor tier"), and the command places once more without it. A clamp at 0 there
-froze the parent row and cost more straight links than the set holds; a clamp at the lanes kept a parent off its feed (forced-on corpus,
-2026-11-17), so a translation that crosses a lane is withdrawn by `translationFault` as before. Every mover clamps its shift to the range
+moves its far ends, the rule withdraws it ("its row is the anchor tier"), and the command places once more without it. The room is the
+frame column only: a translation that crosses a lane is withdrawn by `translationFault` as before. Both are deviations from the clamp of
+ruling 3, measured on the forced-on corpus (2026-11-17; 559 sheets, 1966 bends at 5c32149b and at this rule): a clamp at 0 for an anchor-tier
+set froze the parent row and gave a new G5 (`an-allocated-run-ends-on-the-tip-of-a-lone-port`) and +6, +2 and +4 bends on three sheets; a
+clamp at the lanes too (`reservedWindow`) gave 1978 bends, +14 on `a-single-feed-port-follows-its-child-over-a-pushed-row` (14 to 28),
+whose G5 it cleared. With both deviations the corpus keeps 1966 bends, the same gate findings, no sheet worse and no column-wall withdrawal. Every mover clamps its shift to the range
 and names the clamp (`SEAT_FAR_END_CLAMPED`, info): the centring step (`holdFarEnds` keeps the step when its far ports moved as one inside
 the range, else moves the group by the clamped shift), the stand near the feed, the pack of the tier (`packClear`, and `tailReservation` ends
 the groups before it where the range ends), and the child-frame pack (`settleRows`, which refuses a clamped pack whole). A parent spread
