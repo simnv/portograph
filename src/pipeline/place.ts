@@ -5,6 +5,8 @@ import type { Course, LayoutModel, LayoutStage, Side } from '../model/index.js';
 import type { PairPitch } from '../model/layout.js';
 import { addPairPitches } from '../layout/pair-pitch.js';
 import { resolve } from '../resolve/index.js';
+import { STEEP_PREMISE, unheldSteepBlocks } from '../layout/placement-inputs.js';
+import { PostconditionRefusal } from '../layout/placement-refusal.js';
 import { portKey, sidesOne } from '../layout/sides-one.js';
 import { movesPort } from '../layout/course-rows.js';
 import { sizeNodes } from '../layout/size.js';
@@ -132,5 +134,10 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   model = stepIn('bars', () => bars(model)); account('bars');
   model = stepIn('bundles', () => bundles(model)); account('bundles');
   env.stage3Sizes.set(model, sizes);
+  // The premise of the input `steepBlocks` (dense-16x9 ticket 29, review 2): every block it names stands recorded under the cap in this run, or the
+  // leg pitch stage 6 reserved for it promised an angle the block does not hold. The run is refused by name (a producer refusal): a trial withdraws,
+  // and the leg-pitch rounds of `initial.ts` drop the named blocks from the input.
+  const unheld = unheldSteepBlocks(model);
+  if (unheld.length) throw new PostconditionRefusal('bundles', unheld.map(family => ({ kind: STEEP_PREMISE, subject: family, detail: 'the leg pitch was reserved at the 34 degree angle and the block is not recorded under the cap' })));
   return model;
 }

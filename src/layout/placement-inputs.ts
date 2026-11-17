@@ -45,9 +45,34 @@ export function flatBlockGapsFault(model: LayoutModel): string | undefined {
 }
 
 /**
+ * The solid blocks a placement recorded under the cap: the families of `blockReservations` with no `mode: 'flat'` (`reserveBlockGaps` decides the
+ * mode from the 34 degree demand against `BLOCK_CAP`), sorted. The one reader of that fact for the leg pitch: `initial.ts` writes it as the placement
+ * input `steepBlocks` from a complete placement, and stage 6 of every later run reads the input (`reservedBlockAngle`).
+ */
+export function steepFamilies(model: LayoutModel): string[] {
+  return (model.blockReservations ?? []).filter(record => record.mode !== 'flat').map(record => record.family).sort();
+}
+
+/** The finding kind of a placement run refused for a steep block it does not hold (`place`; `PostconditionRefusal`). */
+export const STEEP_PREMISE = 'steepBlocks';
+
+/**
+ * The families of the input `steepBlocks` that the block records of `model` do not hold steep: a family with no record, or with `mode: 'flat'`
+ * (dense-16x9 ticket 29, review 2). The one premise of the input, read wherever the records stand: the end of every placement run (`place`
+ * refuses a run that breaks it, so the run the input came from and every later run hold it), the leg-pitch rounds of `initial.ts` (their exit),
+ * and the restore of a model (`steepBlocksFault`). Empty where the model holds no record yet: before 7e nothing can break it.
+ */
+export function unheldSteepBlocks(model: LayoutModel): string[] {
+  if (model.steepBlocks === undefined || model.blockReservations === undefined) return [];
+  const steep = new Set(steepFamilies(model));
+  return model.steepBlocks.filter(family => !steep.has(family));
+}
+
+/**
  * What a validator checks on `model.steepBlocks` (R5, dense-16x9 ticket 29): a sorted list of distinct family ids, not empty, each naming a solid
- * family of the model once the families stand. The input is the decision of the placement that recorded it; a later run keeps it (the room it
- * reserves is a floor), so its records are not compared here.
+ * family of the model once the families stand, and, once the block records stand (7e on), each held steep by its record (`unheldSteepBlocks`,
+ * review 2: the premise of the 34 degree leg pitch, the same reader `place` refuses a run by). A model before the records holds no fact to
+ * compare: the families are checked where they stand, and the premise where the records stand (R6: what exists is checked).
  */
 export function steepBlocksFault(model: LayoutModel): string | undefined {
   const record = model.steepBlocks;
@@ -59,6 +84,8 @@ export function steepBlocksFault(model: LayoutModel): string | undefined {
     const stray = record.find(item => !solid.includes(item) && !model.declinedSolidBlocks?.some(declined => declined.family === item));
     if (stray !== undefined) return `the steep block ${stray} names no solid block`;
   }
+  const unheld = unheldSteepBlocks(model);
+  if (unheld.length) return `the steep block ${unheld[0]} is not recorded under the cap`;
   return undefined;
 }
 

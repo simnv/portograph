@@ -5,14 +5,17 @@ import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { pairPitchFault } from '../../src/layout/pair-pitch.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
-import { steepBlocksFault } from '../../src/layout/placement-inputs.js';
-import { courseLegPitchFault, courseLegPitches, reservedBlockAngle, steepFamilies } from '../../src/layout/solid-blocks.js';
+import { steepBlocksFault, steepFamilies } from '../../src/layout/placement-inputs.js';
+import { courseLegPitchFault, courseLegPitches, reservedBlockAngle } from '../../src/layout/solid-blocks.js';
 import { BLOCK_ANGLE } from '../../src/layout/block-checks.js';
 import { resolve } from '../../src/resolve/index.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
+import { createEnv } from '../../src/pipeline/env.js';
+import { firstState } from '../../src/pipeline/initial.js';
+import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
 
 // Dense-16x9 ticket 29: a u-turn course port on a face with solid-block member ports keeps the `leg` pair pitch at which a member chord at the
 // angle its block reserves passes the tip of the course's stem. On main 906de428 the member beside the course port stood 21 px from it, its
@@ -104,5 +107,70 @@ describe('a u-turn course port keeps the pitch a block chord needs past its stem
       expect(steepBlocksFault(copy)).toBeDefined();
       expect(() => restoreLayoutModel(JSON.stringify(copy))).toThrow(/steepBlocks|leg pitch/);
     }
+  }, 180000);
+});
+
+// Review 2 of ticket 29: the premise of `steepBlocks` is one predicate (`unheldSteepBlocks`): `place` refuses a run by it, the leg-pitch rounds of
+// `initial.ts` end on it, and restore checks it wherever block records exist.
+describe('the steep-block input holds only blocks recorded under the cap (dense-16x9 ticket 29, review 2)', () => {
+  it('refuses a flat block named steep at restore, by the premise and not by the list shape', async () => {
+    const model = await run(flat);
+    const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    copy.steepBlocks = (copy.blockReservations ?? []).map(record => record.family).sort();
+    expect(copy.steepBlocks.length).toBe(2);
+    expect(steepBlocksFault(copy)).toMatch(/is not recorded under the cap/);
+    expect(() => restoreLayoutModel(JSON.stringify(copy))).toThrow(/steepBlocks|leg pitch/);
+  }, 180000);
+
+  it('shrinks the input against a bound read once, and ends on a placement that holds its input', async () => {
+    // A third block beside the two of the synthetic, so that the controlled placements below can drop the blocks one at a time.
+    const text = yaml.replace('nodes:\n', '  core-c: {tier: 1}\nnodes:\n  t-c: {group: top, class: router}\n'
+      + [1, 2, 3].map(i => `  c-pe-${i}: {group: core-c, class: router}\n`).join('') + [1, 2].map(i => `  c-hub-${i}: {group: core-c, class: switch}\n`).join(''))
+      + [1, 2, 3].map(i => `  - [t-c, c-pe-${i}]\n`).join('') + [1, 2].flatMap(i => [1, 2, 3].map(j => `  - [c-hub-${i}, c-pe-${j}]\n`)).join('')
+      + [1, 2].flatMap(i => [5, 6, 7, 8].map(j => `  - [c-hub-${i}, s-${j}]\n`)).join('');
+    const seed = (await firstState(createEnv(parse(text), { createElkAttempt: createAttempt }))).kept7e;
+    expect(seed.blockReservations?.length).toBe(3);
+    // Controlled placements: the first records three blocks under the cap; the next keeps two of them (a third declined), the next one, flat.
+    const env = createEnv(parse(text), {});
+    const inputs: (string[] | undefined)[] = [];
+    env.place = async () => {
+      const call = inputs.length, model = structuredClone(seed), records = model.blockReservations!;
+      inputs.push(env.steepBlocks === undefined ? undefined : [...env.steepBlocks]);
+      if (env.steepBlocks === undefined) delete model.steepBlocks; else model.steepBlocks = [...env.steepBlocks];
+      if (call === 1) model.blockReservations = records.slice(0, 2);
+      else if (call >= 2) model.blockReservations = [{ ...records[0]!, mode: 'flat', target: 700, chosen: 300, floor: 300 }];
+      const removed = records.filter(record => !model.blockReservations!.some(kept => kept.family === record.family));
+      if (removed.length) {
+        model.declinedSolidBlocks = removed.map(record => ({ family: record.family, reason: 'a controlled refusal' }));
+        env.declinedSolidBlocks = new Map(model.declinedSolidBlocks.map(item => [item.family, item.reason]));
+        model.fanFamilies = model.fanFamilies!.filter(family => !removed.some(record => record.family === family.id));
+        for (const link of model.links) if (removed.some(record => record.family === link.fanFamily)) delete link.fanFamily;
+      }
+      return model;
+    };
+    env.bands = async () => { throw new PlacementRefusal('postcondition', 'no later stage in this test'); };
+    const state = await firstState(env);
+    expect(inputs[0]).toBeUndefined();
+    expect(inputs.length).toBeGreaterThan(2);
+    // No placement held its input: the command keeps the first placement and no input names a block it did not record steep.
+    expect(env.steepBlocks).toBeUndefined();
+    expect(state.keptNotes.map(note => note.code)).toContain('COURSE_LEG_PITCH_WITHDRAWN');
+  }, 240000);
+
+  it('gives back the whole environment a refused leg placement wrote', async () => {
+    const env = createEnv(parse(yaml), { createElkAttempt: createAttempt });
+    const place = env.place;
+    let calls = 0;
+    env.place = async (...args) => {
+      if (calls++ === 0) return place(...args);
+      env.arrangedRows = ['trial-row'];
+      env.declinedArrangements = new Map([['trial-row', 'a trial refusal']]);
+      throw new PlacementRefusal('postcondition', 'a controlled refusal after stage 5');
+    };
+    const state = await firstState(env);
+    expect(env.declinedArrangements).toBeUndefined();
+    expect(env.arrangedRows).toEqual([]);
+    expect(env.steepBlocks).toBeUndefined();
+    expect(state.keptNotes.map(note => note.code)).toContain('COURSE_LEG_PITCH_REFUSED');
   }, 180000);
 });

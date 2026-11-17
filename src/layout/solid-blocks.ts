@@ -38,15 +38,6 @@ export function reserveBlockPitch(model: LayoutModel): void {
 }
 
 /**
- * The solid blocks a placement recorded under the cap: the families of `blockReservations` with no `mode: 'flat'` (`reserveBlockGaps` decides the
- * mode from the 34 degree demand against `BLOCK_CAP`), sorted. The one reader of that fact for the leg pitch: `initial.ts` writes it as the placement
- * input `steepBlocks` from a complete placement, and stage 6 of every later run reads the input (`reservedBlockAngle`).
- */
-export function steepFamilies(model: LayoutModel): string[] {
-  return (model.blockReservations ?? []).filter(record => record.mode !== 'flat').map(record => record.family).sort();
-}
-
-/**
  * The angle a solid block reserves for its members, as stage 6 knows it before sizing (dense-16x9 ticket 29): `BLOCK_ANGLE` for a block a complete
  * placement of this command recorded under the cap (`steepBlocks`). Undefined otherwise: a flat block (its floor angle asks a leg pitch past the cap)
  * or a block no placement has recorded yet. Stage 6 never assumes an angle: with no fact it reserves no leg pitch, and a member beside the course
