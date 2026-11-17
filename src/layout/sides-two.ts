@@ -934,7 +934,7 @@ export function lanePitchFloors(model: LayoutModel): Map<string, { node: string;
  * run before refused and why; `keep` on every later run, which keeps the record and rows it is given and decides nothing.
  */
 export type Arrange = { mode: 'decide'; declined: ReadonlyMap<string, string> } | { mode: 'keep' };
-export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>, arrange: Arrange = { mode: 'decide', declined: new Map() }): LayoutModel {
+export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Size>, arrange: Arrange = { mode: 'decide', declined: new Map() }, seatSets = true): LayoutModel {
   if (model.stage !== 'skeleton' || model.freeze) throw new Error('Phase-two sides require the skeleton stage');
   const peers = portPeers(model);
   // The votes of one undecided port, from where its peers sit.
@@ -1166,6 +1166,6 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
   });
   model.stage = 'sides-two';
   // The seat sets of the child rows (dense-16x9 ticket 36, slice 1), on the final stage-5 geometry, before the freeze.
-  reserveSeatSets(model);
+  if (seatSets) reserveSeatSets(model);
   return freezePortTopology(model, nodeFloors, turned);
 }

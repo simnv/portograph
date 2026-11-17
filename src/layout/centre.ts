@@ -1,5 +1,5 @@
 import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
-import { applySeatSet, seatSetNodes, seatSetOf, withdrawSeatSet } from './seat-set.js';
+import { applySeatSet, applySeatSets, seatSetNodes, seatSetOf, withdrawSeatSet } from './seat-set.js';
 import { liftedGroups } from './lift.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceExcess, facePairPitches } from './pair-pitch.js';
@@ -1754,6 +1754,8 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     }
     recentreSeatedFaces(model, seated, feedPorts(model));
     if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
+    // The rows with a seat set stand on their seats where the rules above left their parents (dense-16x9 ticket 36): moved, or withdrawn by name.
+    if (applySeatSets(model)) rebuildRegions(model);
     // The parent stand, the seated faces and the overlay windows move feeds after the last step: a seat whose kept port they leave off its feed is withdrawn.
     withdrawFallenSeatsOf(model);
   };
@@ -1899,6 +1901,13 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
         // Bar shaping owns their source-derived slots and stacked spans; row centering cannot repack
         // them. A group this step does not centre still yields the space a widened neighbour took.
         if (model.document.groups[id]!.shape === 'bar' || !list.some(feed => model.document.nodes[feed.child.ref.node]!.group === id)) {
+          // A row with a seat set stands on its seats whether or not this step reads its feeds (dense-16x9 ticket 36).
+          const owned = seatSetOf(model, id);
+          if (owned !== undefined) {
+            const why = applySeatSet(model, group, owned);
+            if (why === undefined) { carry = undefined; previous = group; continue; }
+            withdrawSeatSet(model, id, why);
+          }
           packClear(model, context, tier, group, previous);
           carry = undefined;
           // A bar stands where 7d will shape it, which may move no other group: the groups after it clear the extent its span gives it, not the box it has now (ticket 19).

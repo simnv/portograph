@@ -371,3 +371,22 @@ export function withdrawSeatSet(model: LayoutModel, group: string, why: string):
   model.diagnostics.push({ stage: 'placement', severity: 'warning', code: SEAT_SET_WITHDRAWN, owners: [{ kind: 'group', id: group }],
     message: `The seat set of ${group} is withdrawn at ${model.stage}: ${why}. The row is seated by the centring step; the room its interval reserved in the frame column stays, because the lanes own their windows.` });
 }
+
+/**
+ * Applies every seat set of `model` where its boundary stands now (`applySeatSet`), and withdraws by name each one that cannot stand. 7c
+ * calls it after the rules that move groups it does not step (the settled rows, the overlay windows), so that a row stands on its seats
+ * at the end of every run of the passes. True when a member moved.
+ */
+export function applySeatSets(model: LayoutModel): boolean {
+  let moved = false;
+  for (const entry of [...(model.reservations ?? [])]) {
+    if (entry.kind !== 'seatSet' || entry.owner.kind !== 'group') continue;
+    const group = model.groups[entry.owner.id];
+    if (group === undefined) { withdrawSeatSet(model, entry.owner.id, 'its row has no group'); continue; }
+    const before = entry.payload.order.map(id => model.nodes[id]?.bounds?.x);
+    const why = applySeatSet(model, group, entry.payload);
+    if (why !== undefined) { withdrawSeatSet(model, group.id, why); continue; }
+    if (entry.payload.order.some((id, i) => Math.abs(model.nodes[id]!.bounds!.x - (before[i] ?? NaN)) > PLACEMENT_EPS)) moved = true;
+  }
+  return moved;
+}

@@ -58,6 +58,8 @@ export interface LayoutOptions {
   testTurnOrder?: boolean;
   /** Test only (ticket 07 of dense-16x9). `false` turns the far-end round off: stage 5 keeps the order of the far ends as they stand then, and G5 judges the result. */
   testFarEndOrder?: false;
+  /** Test only (dense-16x9 ticket 36). `false` makes no seat set: with `layout.moveBeforeGrow` 7c seats every row as before the slice. */
+  testSeatSets?: false;
   /** Test only (ticket 07 of dense-16x9). The most far-end trials of the command, in place of `FAR_END_ORDER_RUNS` (a lower count only). */
   testFarEndRuns?: number;
   /** Test only (ticket 24): the links whose faces every placement run orders by their turns, and no other face (see `LayoutModel.turnLinks`). */

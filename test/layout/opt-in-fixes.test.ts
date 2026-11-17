@@ -10,7 +10,7 @@ import { withMoveBeforeGrow } from './move-before-grow.js';
 // them, and with the option on each of these sheets fails without its fix. The other fixes that read the option have their tests beside the
 // rule they hold: reseat-lane-sides.test.ts (the lane side and the record comparison) and seat-owns-body.test.ts (the close-up lane port).
 const sheet = (path: string): string => withMoveBeforeGrow(readFileSync(new URL(`../../goldens/${path}.yaml`, import.meta.url), 'utf8'));
-const publish = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+const publish = (text: string, options: { testSeatSets?: false } = {}): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...options });
 
 describe('the fixes that read layout.moveBeforeGrow (ADR-0027)', () => {
   it('the end trim keeps the room 7f reserved for a link label: an-overlay-row-label-keeps-clear-of-both-group-borders publishes', async () => {
@@ -22,7 +22,8 @@ describe('the fixes that read layout.moveBeforeGrow (ADR-0027)', () => {
 
   it('the centre rule\'s rebuild names its open alignments: the NTP sheet publishes', async () => {
     // Without the naming in the rebuild the publication refuses it: "Centring invariant violated" at a port of loc5crt003.
-    const model = await publish(sheet('real/ntp'));
+    // The subject is the rebuild's naming, which the seat sets of dense-16x9 ticket 36 leave no open alignment to show: the test makes none.
+    const model = await publish(sheet('real/ntp'), { testSeatSets: false });
     expect(model.document.layout?.moveBeforeGrow).toBe(true);
     expect(model.diagnostics.some(item => item.code === 'CENTRE_ALIGNMENT_OPEN')).toBe(true);
   }, 300000);

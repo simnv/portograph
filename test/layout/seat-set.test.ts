@@ -66,6 +66,12 @@ describe('the seat set of a child row (dense-16x9 ticket 36, slice 1)', () => {
     for (const id of ['c1', 'c2']) expect(flipped.nodes[id]!.bounds!.width, id).toBe(flipped.nodes.n1!.bounds!.width);
   }, 120000);
 
+  it('is what keeps the children narrow: without seat sets 7c grows them toward their feeds', async () => {
+    const legacy = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSeatSets: false });
+    expect(seatSets(legacy)).toEqual([]);
+    for (const id of ['c1', 'c2']) expect(legacy.nodes[id]!.bounds!.width, id).toBeGreaterThan(legacy.nodes.n1!.bounds!.width);
+  }, 60000);
+
   it('makes no seat set without moveBeforeGrow', async () => {
     const model = await run(fixture.replace('layout: { moveBeforeGrow: true }', 'layout: { moveBeforeGrow: false }'));
     expect(seatSets(model)).toEqual([]);

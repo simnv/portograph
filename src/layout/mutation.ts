@@ -791,6 +791,12 @@ function claims(model: LayoutModel) {
     labelBands: model.labelBands, barDrops: model.barDrops, obstacles: model.obstacles,
     labels: model.labels.filter(label => !['node', 'description', 'pill'].includes(label.role ?? '')) };
 }
+/** Whether `after` is `before` with some seatSet entries withdrawn and nothing else changed (dense-16x9 ticket 36). */
+function onlySeatSetsWithdrawn(after: LayoutModel['reservations'], before: LayoutModel['reservations']): boolean {
+  if (after === before || before === undefined || after === undefined) return false;
+  const kept = new Set(after.map(entry => entry.id));
+  return JSON.stringify(after) === JSON.stringify(before.filter(entry => entry.kind !== 'seatSet' || kept.has(entry.id)));
+}
 function hasUnsupportedClaims(model: LayoutModel): boolean {
   const rowStage = stages.indexOf(model.stage) >= stages.indexOf('rows');
   const laneStage = stages.indexOf(model.stage) >= stages.indexOf('lanes');
@@ -883,7 +889,10 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     // The end trim of 7f records the bodies and boxes it narrowed (architecture-2 ticket 68); every later rule keeps the record.
     ...(rule === 'bands' ? ['bodyTrims'] : []),
     // D-Q5: the publication writes the command's lift record (`decideLifts`); the entries it adds after the kept run are declined and move no band.
-    ...(rule === 'link-labels' ? ['groupLifts'] : [])];
+    ...(rule === 'link-labels' ? ['groupLifts'] : []),
+    // The centring of 7c to 7f withdraws a seat set that cannot stand (dense-16x9 ticket 36, `SEAT_SET_WITHDRAWN`): the ledger may lose seatSet
+    // entries there, and nothing else.
+    ...(['centre', 'bars', 'bundles', 'bands'].includes(rule) && onlySeatSetsWithdrawn(draft.reservations, model.reservations) ? ['reservations'] : [])];
   same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');
