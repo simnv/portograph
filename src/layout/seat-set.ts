@@ -195,13 +195,13 @@ function openEnds(model: LayoutModel, input: RowInput, open: ReadonlySet<string>
   return ends.sort((p, q) => p.member - q.member || p.key.localeCompare(q.key)).map(({ member, offset, x }) => ({ member, offset, x }));
 }
 /** One assignment of a row order (`order`, read as `input`): the member x, the kept feeds, the row width, the movement and the content keys. */
-interface Leaf { xs: number[]; kept: Feed[]; width: number; reach: number; movement: number; key: string; index: string; order: string[]; input: RowInput }
+interface Leaf { xs: number[]; kept: Feed[]; width: number; reach: number; settled: number; slotted: boolean; movement: number; key: string; index: string; order: string[]; input: RowInput }
 
 /**
  * Every assignment of the fed members (a seat position, or free) that the row order and gaps admit, with one seat per parent port.
  * Undefined when the count bound cuts the search (R4).
  */
-function assignments(input: RowInput, ends: readonly OpenEnd[] = []): Leaf[] | undefined {
+function assignments(input: RowInput, ends: readonly OpenEnd[] = [], open: ReadonlySet<string> = new Set()): Leaf[] | undefined {
   const n = input.order.length, leaves: Leaf[] = [];
   const span = (i: number, j: number): number => { let s = 0; for (let k = i; k < j; k++) s += input.widths[k]! + input.gaps[k]!; return s; };
   let visits = 0, cut = false;
@@ -212,7 +212,9 @@ function assignments(input: RowInput, ends: readonly OpenEnd[] = []): Leaf[] | u
       const xs = placeFree(input, anchors), kept = keptFeeds(input, xs);
       const low = Math.min(...xs), high = Math.max(...xs.map((x, i) => x + input.widths[i]!));
       const keys = kept.map(feed => linkKey(feed.link)).sort();
-      leaves.push({ xs, kept, width: high - low, reach: ends.reduce((sum, end) => sum + Math.abs(xs[end.member]! + end.offset - end.x), 0), movement: xs.reduce((sum, x, i) => sum + Math.abs(x - input.x0[i]!), 0), key: keys.join('|'),
+      const moves = xs.map((x, i) => Math.abs(x - input.x0[i]!));
+      leaves.push({ xs, kept, width: high - low, reach: ends.reduce((sum, end) => sum + Math.abs(xs[end.member]! + end.offset - end.x), 0),
+        settled: moves.reduce((sum, move, i) => open.has(input.order[i]!) ? sum : sum + move, 0), slotted: false, movement: moves.reduce((sum, move) => sum + move, 0), key: keys.join('|'),
         index: kept.map(feed => feed.link.sourceIndex).sort((a, b) => a - b).join(','), order: input.order, input });
       return;
     }
@@ -265,14 +267,17 @@ function groupExtent(model: LayoutModel): { w: number; h: number } {
 
 /**
  * The order the candidates are read in (owner ruling 'tight room'): the most kept verticals, then the least interval width, the open members nearest
- * their far nodes (`reach`, slice 3; 0 in a row with none), the row order by content (the slots of the open members, slice 3), the least movement,
- * the kept links by content, then sourceIndex (R3). The row order comes before the movement: the movement reads the provisional x of each member,
- * which declaration order decides for two equal open members (review 1 of slice 3); the leaves of one row order tie on it, so a row with no open
- * member reads as in slice 1. The read bound (`SEAT_SET_GAIN_READS`) cuts this order, so the candidate this order admits first is always read.
+ * their far nodes (`reach`, slice 3; 0 in a row with none), the least movement of the members that are not movable open members (`settled`), the
+ * order stage 4 left before an order the slot choice adds (`slotted`: an open member takes another slot only for a gain above), the row order by
+ * content (the slots of the open members, slice 3), the least movement of all members, the kept links by content, then sourceIndex (R3). The
+ * movement of a movable open member comes after the row order: it reads the member's provisional x, which declaration order decides for two equal
+ * open members (review 1 of slice 3). In a row with no movable member `settled` is the movement and the leaves of the one row order tie on the rest,
+ * so the row reads as in slice 1. The read bound (`SEAT_SET_GAIN_READS`) cuts this order, so the candidate this order admits first is always read.
  */
 const readOrder = (a: Leaf, b: Leaf): number => b.kept.length - a.kept.length || (Math.abs(a.width - b.width) > PLACEMENT_EPS ? a.width - b.width : 0)
-  || (Math.abs(a.reach - b.reach) > PLACEMENT_EPS ? a.reach - b.reach : 0) || a.order.join('|').localeCompare(b.order.join('|'))
-  || (Math.abs(a.movement - b.movement) > PLACEMENT_EPS ? a.movement - b.movement : 0) || a.key.localeCompare(b.key) || a.index.localeCompare(b.index);
+  || (Math.abs(a.reach - b.reach) > PLACEMENT_EPS ? a.reach - b.reach : 0) || (Math.abs(a.settled - b.settled) > PLACEMENT_EPS ? a.settled - b.settled : 0)
+  || Number(a.slotted) - Number(b.slotted) || a.order.join('|').localeCompare(b.order.join('|')) || (Math.abs(a.movement - b.movement) > PLACEMENT_EPS ? a.movement - b.movement : 0)
+  || a.key.localeCompare(b.key) || a.index.localeCompare(b.index);
 
 /**
  * The choice among the admitted candidates of the most kept verticals and the narrowest row (owner ruling of 2026-11-17: straight links win
@@ -385,9 +390,10 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
   for (const order of slots.orders) {
     const read: RowInput | string = order === slots.orders[0] ? input : readRow(model, group, order);
     if (typeof read === 'string') continue;
-    const found = assignments(read, openEnds(model, read, movable));
+    const found = assignments(read, openEnds(model, read, movable), movable);
     if (found === undefined) return { kind: 'declined', clause: 'bound', why: `the search passed ${SEAT_SET_VISITS} visits` };
     if (read === input) { leaves.push(...found); continue; }
+    for (const leaf of found) leaf.slotted = true;
     // An order the slot choice adds is one candidate per kept set: its first leaf in read order (the narrowest row, then the least movement). Its other
     // leaves differ only where the free members stand, and would spend the read bound of the row on one slot choice.
     const best = new Map<string, Leaf>();

@@ -1,8 +1,10 @@
 # Expected (dense-16x9 ticket 36, slice 1, a trade the coordinator accepted): the seated members `c1` and `c2` also feed `k1` in the row
 # below. Main stretches `c1` and `c2` to 220 px: both stand under their parents, their bottom ports stand 72 px apart over `k1`, and one feed
 # to `k1` is a short chord. The seat set keeps both at 50 px (no stretched nodes): their bottom ports stand 442 px apart, `k1` stands under
-# `c1`, and the feed from `c2` is a chord of about 6 degrees. The sheet has no gate finding.
-# Slice 3 (both adjacent rows) owns the lower row.
+# one parent, and the feed from the other is a chord of about 6 degrees. The sheet has no gate finding.
+# Slice 3 (both adjacent rows) owns the lower row: `n1` (no link) is an open member, so it steps aside and `k1` takes the seat under `c2`,
+# nearer where it stood, at the same row width (slice 3, review 1: the movement of an open member no longer decides).
+# Test: test/layout/free-slots.test.ts (an open member steps aside).
 # Test: test/layout/seat-set.test.ts.
 portograph: 2
 layout: { moveBeforeGrow: true }

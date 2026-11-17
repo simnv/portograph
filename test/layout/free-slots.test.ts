@@ -293,6 +293,17 @@ describe('slice 3, review 1', () => {
     }
   }, 240000);
 
+  // A sheet of the corpus where a slot moves: `n1` has no link, so it is open. With the movement of the open member out of the leading keys (the fix
+  // of finding 4), `k1` takes the seat nearer where it stood (under c2), and `n1` steps aside to the row end; the row width is the same.
+  it('lets an open member step aside so the fed member takes the nearer seat', async () => {
+    const model = await run(sheet('a-seated-row-leaves-its-lower-row-one-feed'));
+    expect(model.groups['site#2']!.rowOrder).toEqual(['k1', 'n1']);
+    const set = ofKind(model.reservations ?? [], 'seatSet').find(entry => entry.payload.row === 'site#2')!;
+    expect(set.payload.seats.map(seat => seat.far.node)).toEqual(['c2']);
+    expect(staleFaces(model)).toEqual([]);
+    expect(findings(model)).toEqual([]);
+  }, 120000);
+
   // Remaining check: a withdrawn set that closed a slot gives the slot and the faces back when the command places once more without it.
   it('gives the slot and the faces back when a withdrawn set is placed once more without it', async () => {
     const env = createEnv(parse(GAP), opts), model = structuredClone(await env.place([]));

@@ -891,10 +891,13 @@ a row of six give 30 orders. Each order is searched as above (`assignments`); an
 in read order. The read order puts the **reach** after the row width: the sum of the distances from each open member's ports to the
 centres of its far nodes (the far-end pull of a free member, architecture-2 ticket 22; the far node, not its port, because the far face is
 sorted again for each slot and its port stands now where the provisional order put it). So a slot choice never costs a seat (the kept
-verticals first), then ruling 4, then the row width, then the area with the block height, as before. Then come the row order by content,
-the movement, the kept links by content and `sourceIndex` (R3). The row order comes before the movement because the movement reads the
-provisional x of each member, which the declaration order decides between two equal open members (review 1; fixture
-`two-open-members-take-one-gap-by-content`); the leaves of one row order tie on it, so a row with no open member reads as in slice 1. A gap too small for an open member loses seats there, so the kept verticals reject it. A
+verticals first), then ruling 4, then the row width, then the area with the block height, as before. Then come the movement of the members
+that are not movable open members, the order stage 4 left before an added order (an open member takes another slot only for a gain above),
+the row order by content, the movement of all members, the kept links by content and `sourceIndex` (R3). The movement of a movable open
+member comes after the row order because it reads the member's provisional x, which the declaration order decides between two equal open
+members (review 1; fixture `two-open-members-take-one-gap-by-content`). In a row with no movable member the first movement is the whole
+movement, so the row reads as in slice 1. On `a-seated-row-leaves-its-lower-row-one-feed` the open member `n1` (no link) steps aside, so
+`k1` takes the seat nearer where it stood at the same row width. A gap too small for an open member loses seats there, so the kept verticals reject it. A
 candidate stands its order (`stageLeaf`): the cell takes the order, and every face whose stage-5 key reads a moved open member
 (`faceKeyReads`) is sorted again by the stage-5 sorter (`orderFace`) on its stage-5 slots (`faceSlots`, `placeFaceFromSlots`;
 `resortFaces`, `free-slots.ts`). The key reader loses no dependency to a cache: a facing pair's key, read once per sort, names the far
