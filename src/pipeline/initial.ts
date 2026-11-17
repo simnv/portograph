@@ -10,6 +10,9 @@ import { aspectAim, aspectGap } from '../layout/aspect.js';
 import { ASPECT_EPS } from '../layout/tolerance.js';
 import { EPS } from '../geometry/planar.js';
 import { blockBoxPadsAsked, blockRowGapsAsked, blockRoomBound, roomShort } from '../layout/block-pads.js';
+import { courseLegPitches } from '../layout/solid-blocks.js';
+import { STEEP_PREMISE, steepFamilies, unheldSteepBlocks } from '../layout/placement-inputs.js';
+import { PostconditionRefusal } from '../layout/placement-refusal.js';
 
 /** The placements the block box paddings may spend per command (R4): each reads the paddings of the one before (`blockBoxPadsAsked`). */
 import type { Diagnostic } from '../model/index.js';
@@ -84,6 +87,70 @@ for (;;) {
 }
 };
 await placeFirst();
+/**
+ * The environment a placement run of this function writes, besides the model it returns (`first`): the ledger, the declined blocks, the counters
+ * a refused run must not keep, the arrangement state stage 5 records (ticket 51) and the steep-block input (dense-16x9 ticket 29). The one snapshot of
+ * every trial here that is undone whole: the stagger gate and the leg-pitch rounds (review 2 of ticket 29: one write set, not a list per caller).
+ * Started placements stay counted (`env.placements`); a snapshot never gives one back.
+ */
+type EnvSnapshot = { [K in 'declinedSolidBlocks' | 'arranged' | 'staggerRows' | 'groupArrangements' | 'arrangedRows' | 'declinedArrangements' | 'steepBlocks']: Env[K] | undefined }
+  & Pick<Env, 'blockProbes' | 'reruns'> & { kept: Reservations };
+const snapshotEnv = (): EnvSnapshot => ({ kept, declinedSolidBlocks: env.declinedSolidBlocks, blockProbes: env.blockProbes, reruns: env.reruns, arranged: env.arranged,
+  staggerRows: env.staggerRows, groupArrangements: env.groupArrangements, arrangedRows: env.arrangedRows, declinedArrangements: env.declinedArrangements, steepBlocks: env.steepBlocks });
+const restoreEnv = (state: EnvSnapshot): void => {
+  kept = state.kept; env.blockProbes = state.blockProbes; env.reruns = state.reruns;
+  if (state.declinedSolidBlocks === undefined) delete env.declinedSolidBlocks; else env.declinedSolidBlocks = state.declinedSolidBlocks;
+  if (state.arranged === undefined) delete env.arranged; else env.arranged = state.arranged;
+  if (state.staggerRows === undefined) delete env.staggerRows; else env.staggerRows = state.staggerRows;
+  if (state.groupArrangements === undefined) delete env.groupArrangements; else env.groupArrangements = state.groupArrangements;
+  if (state.arrangedRows === undefined) delete env.arrangedRows; else env.arrangedRows = state.arrangedRows;
+  if (state.declinedArrangements === undefined) delete env.declinedArrangements; else env.declinedArrangements = state.declinedArrangements;
+  if (state.steepBlocks === undefined) delete env.steepBlocks; else env.steepBlocks = state.steepBlocks;
+};
+// Dense-16x9 ticket 29: the leg pitch of a u-turn course port beside solid-block members reads the angle its blocks reserve, a fact the block
+// records only after sizing (`reserveBlockGaps`). The first complete placement records it. When a course port would take a leg pitch on a block it
+// recorded under the cap, the command places again with those blocks as the input `steepBlocks` (read by stage 6). The 7e postconditions refuse a
+// run whose records do not hold a block of its input steep (`unheldSteepBlocks`, by name, before publication); this round then drops the named blocks and places again. So the
+// round ends on a placement that holds its whole input, or with no input on the first placement (`COURSE_LEG_PITCH_WITHDRAWN`, or
+// `COURSE_LEG_PITCH_REFUSED` for any other refusal). Bound (R4, review 2): the candidate set is read once, and each refused call drops one block at
+// least, so at most that many calls to `placeFirst` (each with its own retry bounds: block probes, trunk declines, stagger refusals). Each refused
+// call is undone whole (`restoreEnv`); every placement is credited outside the cap (`env.exemptPlacing`), as the room rounds are.
+const legNotes: Diagnostic[] = [];
+{
+  const recorded = steepFamilies(first), before = first, saved = snapshotEnv();
+  const legs = (families: readonly string[]): string[] => families.length && courseLegPitches({ ...first, steepBlocks: [...families] }).length ? [...families] : [];
+  let target = legs(recorded);
+  for (let call = 0, limit = target.length; target.length && call < limit; call++) {
+    env.steepBlocks = target;
+    if (env.declinedSolidBlocks !== undefined) env.declinedSolidBlocks = new Map(env.declinedSolidBlocks);
+    let refusal: Error | undefined;
+    env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
+    try { await placeFirst(); } catch (error) {
+      if (!(staggerRefusal(error) || producerRefusal(error))) throw error;
+      refusal = error as Error;
+    } finally { env.exemptPlacing--; }
+    // The exit is the premise itself (`unheldSteepBlocks`, the reader the 7e postconditions refuse a run by and restore checks): a placement that holds its whole
+    // input ends the round, one that does not is undone and its unheld blocks leave the input.
+    const unheld = refusal === undefined ? unheldSteepBlocks(first) : [];
+    if (refusal === undefined && !unheld.length) break;
+    restoreEnv(saved); first = before;
+    const lost = refusal === undefined ? unheld
+      : refusal instanceof PostconditionRefusal && refusal.findings.length && refusal.findings.every(item => item.kind === STEEP_PREMISE && target.includes(item.subject))
+        ? refusal.findings.map(item => item.subject) : undefined;
+    if (lost === undefined) {
+      legNotes.push({ stage: 'placement', severity: 'warning', code: 'COURSE_LEG_PITCH_REFUSED', owners: [],
+        message: `The placement with the leg pitches of the u-turn course ports (steep blocks ${target.join(', ')}) was refused (${refusal!.message}); the placement before it stands.` });
+      break;
+    }
+    // Every withdrawal is named (review 3), the last one with what stands.
+    const rest = target.filter(family => !lost.includes(family)), next = legs(rest);
+    legNotes.push({ stage: 'placement', severity: 'info', code: 'COURSE_LEG_PITCH_WITHDRAWN', owners: [],
+      message: `With their leg pitches the blocks ${lost.join(', ')} are not recorded under the cap; their leg pitches are withdrawn` + (next.length
+        ? `, and the command places again with the steep blocks ${next.join(', ')}.`
+        : rest.length ? `; the blocks ${rest.join(', ')} ask no leg pitch alone, and the placement before it stands.` : '; no leg pitch is reserved, and the placement before it stands.') });
+    target = next;
+  }
+}
 // The acceptance gate of the staggers stage 5 chose (fan wrap, D-Q4; ADR-0024, second amendment; dense-16x9 ticket 22): each row is judged on
 // its own, greedy in the stage-5 order (widest first). A row keeps its two lines only when the complete placement with it beats the placement
 // with the rows kept so far (`wrapGateDecline`: nearer the aspect aim, or less area at an equal gap; no more planned bends; no link held
@@ -99,19 +166,9 @@ const gateNotes: Diagnostic[] = [];
 /** The last 7f trial of this function and its placement: first the one the stagger gate ran on the placement it kept (dense-16x9 ticket 21). */
 let ran: RanTrial | undefined;
 if (chosen.length) {
-  type Snapshot = { [K in 'declinedSolidBlocks' | 'arranged' | 'staggerRows' | 'groupArrangements' | 'arrangedRows' | 'declinedArrangements']: Env[K] | undefined }
-    & Pick<Env, 'blockProbes' | 'reruns'> & { kept: Reservations };
-  const snapshot = (): Snapshot => ({ kept, declinedSolidBlocks: env.declinedSolidBlocks, blockProbes: env.blockProbes, reruns: env.reruns, arranged: env.arranged,
-    staggerRows: env.staggerRows, groupArrangements: env.groupArrangements, arrangedRows: env.arrangedRows, declinedArrangements: env.declinedArrangements });
-  const restore = (state: Snapshot): void => {
-    kept = state.kept; env.blockProbes = state.blockProbes; env.reruns = state.reruns;
-    if (state.declinedSolidBlocks === undefined) delete env.declinedSolidBlocks; else env.declinedSolidBlocks = state.declinedSolidBlocks;
-    if (state.arranged === undefined) delete env.arranged; else env.arranged = state.arranged;
-    if (state.staggerRows === undefined) delete env.staggerRows; else env.staggerRows = state.staggerRows;
-    if (state.groupArrangements === undefined) delete env.groupArrangements; else env.groupArrangements = state.groupArrangements;
-    if (state.arrangedRows === undefined) delete env.arrangedRows; else env.arrangedRows = state.arrangedRows;
-    if (state.declinedArrangements === undefined) delete env.declinedArrangements; else env.declinedArrangements = state.declinedArrangements;
-  };
+  // The one snapshot of the trials of this function (`snapshotEnv`, `restoreEnv`).
+  type Snapshot = EnvSnapshot;
+  const snapshot = snapshotEnv, restore = restoreEnv;
   // A stagger refusal or a producer refusal in 7f declines the trial's lines by name: every model here is a trial. Any other error (a deadline
   // included) ends the command.
   const banded = async (model: LayoutModel): Promise<LayoutModel | Error> => {
@@ -279,5 +336,5 @@ if (flat.length) {
     }
   }
 }
-return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: gateNotes, promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
+return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: [...legNotes, ...gateNotes], promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
 }

@@ -7,6 +7,7 @@ import { siblingRowsFault } from './sibling-frames.js';
 import { equal } from '../model/json-equality.js';
 import type { Rect, Side, Size } from '../model/geometry.js';
 import type { Lane, LayoutFreeze, LayoutModel, LayoutStage, MeshBus, PlacementSnapshot } from '../model/layout.js';
+import { LAYOUT_STAGES } from '../model/layout.js';
 import { orderedNodeIds, orderedGroupIds } from '../model/model.js';
 import { resolve } from '../resolve/index.js';
 import { filterCss } from '../parse/css.js';
@@ -41,7 +42,7 @@ import { checkBodyTrims } from './end-trim.js';
 import { rebuildRegionGeometry } from './region-rebuild.js';
 import { barLink, rebuildBarDrops, shapeBars } from './bars.js';
 import { rebuildBundlePaths } from './bundle-paths.js';
-import { reserveBlockGaps } from './solid-blocks.js';
+import { courseLegPitchFault, reserveBlockGaps } from './solid-blocks.js';
 import { moveBands } from './gap-room.js';
 import { produceGroupLabelBands, validateGroupLabelBands } from './bands.js';
 import { PLACEMENT_EPS } from './tolerance.js';
@@ -53,8 +54,7 @@ import { columnOf } from './read/arrangement.js';
 
 export type PlacementRule = 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
-const stages: LayoutStage[] = ['normalised', 'resolve', 'sides-one', 'size', 'skeleton', 'sides-two',
-  'rows', 'lanes', 'flanks', 'centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
+const stages = LAYOUT_STAGES;
 export const publicationCounters: { protects: number; documentShared: number; jsonWalks: number } = {
   protects: 0,
   documentShared: 0,
@@ -541,6 +541,11 @@ function validateGeometry(model: LayoutModel): void {
     delete node.sizeFloor; delete node.size; delete node.contentSize; delete node.contentInsets; delete node.sidePitch;
   }
   sizeNodes(expected);
+  // The leg pitches of the course ports are the ones the rule gives (dense-16x9 ticket 29, R5): the producer's own function.
+  if (stages.indexOf(model.stage) >= stages.indexOf('sides-two')) {
+    const legs = courseLegPitchFault(model);
+    if (legs !== undefined) throw new Error(legs);
+  }
   for (const id of orderedNodeIds(model.document)) {
     const node = model.nodes[id]!, measured = expected.nodes[id]!, box = node.bounds;
     validatePortCorners(node);
@@ -716,6 +721,15 @@ function validateEarlyPitches(model: LayoutModel): void {
   for (const node of Object.values(model.nodes ?? {})) {
     const fault = pairPitchFault(node);
     if (fault !== undefined) throw new Error(fault);
+    // A leg pitch belongs to a u-turn course end (dense-16x9 ticket 29), and courses stand from stage 6 on: before it no reader can check one,
+    // so none may stand (R6). From stage 6 on the producer's own function checks every entry (R5).
+    if (at < stages.indexOf('sides-two') && Object.values(node.pairPitch ?? {}).some(entries => entries?.some(entry => entry.rule === 'leg'))) {
+      throw new Error(`${node.id} has a leg pitch before stage 6, where its course stands`);
+    }
+  }
+  if (at >= stages.indexOf('sides-two')) {
+    const legs = courseLegPitchFault(model);
+    if (legs !== undefined) throw new Error(legs);
   }
   if (at < stages.indexOf('size')) return;
   for (const node of Object.values(model.nodes)) {

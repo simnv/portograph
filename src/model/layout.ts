@@ -6,6 +6,11 @@ import type { Reservations } from '../layout/reservations.js';
 export type LayoutStage = 'normalised' | 'resolve' | 'sides-one' | 'size' | 'skeleton'
   | 'sides-two' | 'rows' | 'lanes' | 'flanks' | 'centre' | 'bars' | 'bundles'
   | 'bands' | 'route' | 'link-labels' | 'validate' | 'emit';
+/** The stages in pipeline order: the one order every stage comparison reads. */
+export const LAYOUT_STAGES: readonly LayoutStage[] = ['normalised', 'resolve', 'sides-one', 'size', 'skeleton', 'sides-two',
+  'rows', 'lanes', 'flanks', 'centre', 'bars', 'bundles', 'bands', 'route', 'link-labels', 'validate', 'emit'];
+/** Whether a model at stage `at` has completed stage `stage`. */
+export const stageReached = (at: LayoutStage, stage: LayoutStage): boolean => LAYOUT_STAGES.indexOf(at) >= LAYOUT_STAGES.indexOf(stage);
 
 export type Layer = 'routed' | 'overlay';
 export type Owner =
@@ -100,9 +105,11 @@ export interface LayoutPort extends OwnedElement {
 /**
  * One neighbour-pair pitch of a face (`LayoutNode.pairPitch`). `fan`: the two ports (`portId`, sorted) keep `min` when they stand side by
  * side; the fan round measured it on the placed chords (ticket 89). `block`: the one member port of a complete solid block keeps `min` from
- * either neighbour (ticket 83's face pitch).
+ * either neighbour (ticket 83's face pitch). `leg`: the one port of a `u-turn` course end on a face with solid-block member ports keeps `min`
+ * from either neighbour, so that a member chord beside it passes the tip of its stem (dense-16x9 ticket 29, `courseLegPitch`); a body end is
+ * no chord and keeps no `leg` pitch.
  */
-export interface PairPitch { rule: 'fan' | 'block'; ports: string[]; min: number }
+export interface PairPitch { rule: 'fan' | 'block' | 'leg'; ports: string[]; min: number }
 
 export interface LayoutNode extends OwnedElement {
   id: string;
@@ -594,6 +601,12 @@ export interface PlacementInputs {
   blockBoxPads: BlockBoxPad[];
   /** The least gaps between row neighbours that flat block members ask (step 2; `blockRowGapsAsked`): read by `rowGap`. Absent: none. */
   blockRowGaps: BlockRowGap[];
+  /**
+   * Dense-16x9 ticket 29: the solid blocks a complete placement of this command recorded under the cap (a `blockReservations` record with no
+   * `mode: 'flat'`, `steepFamilies`), sorted: the fact stage 6 reads for the angle of a `leg` pitch (`reservedBlockAngle`). Sizing comes before the
+   * block records, so a run reads the fact a placement before it recorded. Absent: no such placement asked for a leg pitch; no leg pitch is reserved.
+   */
+  steepBlocks: string[];
 }
 /** The name of one placement input (`PlacementInputs`). */
 export type PlacementInputField = keyof PlacementInputs;

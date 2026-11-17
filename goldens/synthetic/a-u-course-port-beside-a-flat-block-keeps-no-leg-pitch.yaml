@@ -1,0 +1,72 @@
+# Expected (dense-16x9 ticket 29, review 1): the same two sibling frames as
+# a-u-course-port-keeps-the-pitch-a-block-chord-needs-past-its-stem, with wide pe labels, named u-turn ports and a 20:1 aim. Both blocks hub -> pe
+# are flat (34 degree demands 1872 and 815 px, past the 600 px cap), and the aspect choice gives them no gap (no `flatBlockGaps`): a floor-only
+# flat block. No placement records them under the cap, so `steepBlocks` stays absent and stage 6 reserves no `leg` pitch (at the 15 degree floor
+# it would ask about 100 px, past the 60 px pair cap); the members beside the course fall back by name, as on main 906de428 (29 bent links, the
+# canvas 7044 x 894 px). On 060cdb3d stage 6 assumed 34 degrees: both course ports took a 43 px leg pitch, the hubs grew 104 -> 148 px.
+# Test-only input owned by dense-16x9 ticket 29: test/pipeline/course-leg-pitch.test.ts.
+portograph: 2
+layout: {aspect: "20:1", autoArrange: false}
+groups:
+  top: {tier: 0}
+  core-a: {tier: 1}
+  core-b: {tier: 1}
+  site: {tier: 2}
+nodes:
+  t-a: {group: top, class: router, ports: []}
+  t-b: {group: top, class: router, ports: []}
+  a-pe-1: {group: core-a, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  a-pe-2: {group: core-a, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  a-pe-3: {group: core-a, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  a-hub-1: {group: core-a, class: switch, ports: [u]}
+  a-hub-2: {group: core-a, class: switch, ports: []}
+  b-pe-1: {group: core-b, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  b-pe-2: {group: core-b, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  b-pe-3: {group: core-b, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  b-hub-1: {group: core-b, class: switch, ports: [u]}
+  b-hub-2: {group: core-b, class: switch, ports: []}
+  s-1: {group: site, class: switch, ports: []}
+  s-2: {group: site, class: switch, ports: []}
+  s-3: {group: site, class: switch, ports: []}
+  s-4: {group: site, class: switch, ports: []}
+  s-5: {group: site, class: switch, ports: []}
+  s-6: {group: site, class: switch, ports: []}
+  s-7: {group: site, class: switch, ports: []}
+  s-8: {group: site, class: switch, ports: []}
+links:
+  - [t-a, a-pe-1]
+  - [t-a, a-pe-2]
+  - [t-a, a-pe-3]
+  - [t-b, b-pe-1]
+  - [t-b, b-pe-2]
+  - [t-b, b-pe-3]
+  - [a-hub-1, a-pe-1]
+  - [a-hub-1, a-pe-2]
+  - [a-hub-1, a-pe-3]
+  - [a-hub-2, a-pe-1]
+  - [a-hub-2, a-pe-2]
+  - [a-hub-2, a-pe-3]
+  - [b-hub-1, b-pe-1]
+  - [b-hub-1, b-pe-2]
+  - [b-hub-1, b-pe-3]
+  - [b-hub-2, b-pe-1]
+  - [b-hub-2, b-pe-2]
+  - [b-hub-2, b-pe-3]
+  - [a-hub-1.u, b-hub-1.u]
+  - [a-hub-2, b-hub-2]
+  - [a-hub-1, s-1]
+  - [a-hub-1, s-2]
+  - [a-hub-1, s-3]
+  - [a-hub-1, s-4]
+  - [a-hub-2, s-1]
+  - [a-hub-2, s-2]
+  - [a-hub-2, s-3]
+  - [a-hub-2, s-4]
+  - [b-hub-1, s-5]
+  - [b-hub-1, s-6]
+  - [b-hub-1, s-7]
+  - [b-hub-1, s-8]
+  - [b-hub-2, s-5]
+  - [b-hub-2, s-6]
+  - [b-hub-2, s-7]
+  - [b-hub-2, s-8]

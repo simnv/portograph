@@ -1,0 +1,73 @@
+# Expected (dense-16x9 ticket 29, review 3): the same two sibling frames as
+# a-u-course-port-keeps-the-pitch-a-block-chord-needs-past-its-stem, with pe labels of medium width, named u-turn ports and a 20:1 aim. The first
+# placement records both blocks hub -> pe under the 600 px cap, so the command places again with both as the input `steepBlocks`. With its 43 px
+# leg pitch block A grows past the cap and is no longer recorded under it: the 7e postconditions refuse that run by name (kind `steepBlocks`) before publication,
+# block A leaves the input (`COURSE_LEG_PITCH_WITHDRAWN`), and the placement with block B alone holds its input. The sheet publishes as on
+# 92fefb73: 22 bent routed links, 32 crossings, the canvas 2714 x 897 px, every gate passes. On 4d1b1762 the publication validator met the
+# unheld input first and the command failed with a plain error.
+# Test-only input owned by dense-16x9 ticket 29: test/pipeline/course-leg-pitch.test.ts.
+portograph: 2
+layout: {aspect: "20:1", autoArrange: false}
+groups:
+  top: {tier: 0}
+  core-a: {tier: 1}
+  core-b: {tier: 1}
+  site: {tier: 2}
+nodes:
+  t-a: {group: top, class: router, ports: []}
+  t-b: {group: top, class: router, ports: []}
+  a-pe-1: {group: core-a, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  a-pe-2: {group: core-a, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  a-pe-3: {group: core-a, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  a-hub-1: {group: core-a, class: switch, ports: [u]}
+  a-hub-2: {group: core-a, class: switch, ports: []}
+  b-pe-1: {group: core-b, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  b-pe-2: {group: core-b, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  b-pe-3: {group: core-b, label: "wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-wide-peer-", class: router, ports: []}
+  b-hub-1: {group: core-b, class: switch, ports: [u]}
+  b-hub-2: {group: core-b, class: switch, ports: []}
+  s-1: {group: site, class: switch, ports: []}
+  s-2: {group: site, class: switch, ports: []}
+  s-3: {group: site, class: switch, ports: []}
+  s-4: {group: site, class: switch, ports: []}
+  s-5: {group: site, class: switch, ports: []}
+  s-6: {group: site, class: switch, ports: []}
+  s-7: {group: site, class: switch, ports: []}
+  s-8: {group: site, class: switch, ports: []}
+links:
+  - [t-a, a-pe-1]
+  - [t-a, a-pe-2]
+  - [t-a, a-pe-3]
+  - [t-b, b-pe-1]
+  - [t-b, b-pe-2]
+  - [t-b, b-pe-3]
+  - [a-hub-1, a-pe-1]
+  - [a-hub-1, a-pe-2]
+  - [a-hub-1, a-pe-3]
+  - [a-hub-2, a-pe-1]
+  - [a-hub-2, a-pe-2]
+  - [a-hub-2, a-pe-3]
+  - [b-hub-1, b-pe-1]
+  - [b-hub-1, b-pe-2]
+  - [b-hub-1, b-pe-3]
+  - [b-hub-2, b-pe-1]
+  - [b-hub-2, b-pe-2]
+  - [b-hub-2, b-pe-3]
+  - [a-hub-1.u, b-hub-1.u]
+  - [a-hub-2, b-hub-2]
+  - [a-hub-1, s-1]
+  - [a-hub-1, s-2]
+  - [a-hub-1, s-3]
+  - [a-hub-1, s-4]
+  - [a-hub-2, s-1]
+  - [a-hub-2, s-2]
+  - [a-hub-2, s-3]
+  - [a-hub-2, s-4]
+  - [b-hub-1, s-5]
+  - [b-hub-1, s-6]
+  - [b-hub-1, s-7]
+  - [b-hub-1, s-8]
+  - [b-hub-2, s-5]
+  - [b-hub-2, s-6]
+  - [b-hub-2, s-7]
+  - [b-hub-2, s-8]

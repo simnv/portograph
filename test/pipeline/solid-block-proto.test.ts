@@ -206,9 +206,11 @@ describe('ticket 83 under-cap solid blocks', () => {
     expect(members).toHaveLength(28);
     expect(members.every(item => item.mode === 'straight')).toBe(true);
     // The taller hub beside a hub's end (E) and the far groups' walls (D) are placement's reservations, and a fixed point.
-    expect(model.blockRowGaps?.length).toBeGreaterThan(0);
+    // Dense-16x9 ticket 29: the u-turn course port of hub-b1 keeps its `leg` pitch, so hub-b1 is wide enough that hub-b2 no longer reaches past
+    // its face and no row gap is asked here (main 906de428: hub-b2 to hub-b1, 84.2 px). The row gap stays covered by
+    // a-tall-hub-takes-its-row-gap-at-the-fixed-point (block-room-review) and block-pads.test.
     expect(model.blockBoxPads?.length).toBeGreaterThan(0);
-    expect(blockRowGapsAsked(model)).toEqual(model.blockRowGaps);
+    expect(blockRowGapsAsked(model)).toEqual(model.blockRowGaps ?? []);
     expect(blockBoxPadsAsked(model)).toEqual(model.blockBoxPads);
     expect(blockReservationsFault(model)).toBeUndefined();
     expect(Object.entries(score(model).snapshot.gates).flatMap(([id, gate]) => gate.violations.map(() => id))).toEqual([]);

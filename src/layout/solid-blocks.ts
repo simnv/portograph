@@ -1,12 +1,14 @@
-import type { LayoutGroup, LayoutModel } from '../model/layout.js';
+import type { LayoutGroup, LayoutModel, PairPitch } from '../model/layout.js';
 import { frameSubtreeCells, orderedGroupIds, orderedNodeIds } from '../model/model.js';
 import { EPS } from '../geometry/planar.js';
 import { GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
 import { groupBoxes } from '../score/model.js';
-import { findPort } from './row-paths.js';
+import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { moveGroup, rebuildBands } from './skeleton-geometry.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { addPairPitch } from './pair-pitch.js';
+import { portStemReach } from './bands.js';
+import { FAN_PITCH_CAP } from './fan-spread.js';
 import { portId } from './skeleton-graph.js';
 
 import { gatherPairs } from './bundle-ends.js';
@@ -32,6 +34,78 @@ export function reserveBlockPitch(model: LayoutModel): void {
       else node.sidePitch![side] = Math.max(node.sidePitch![side]!, pitch);
     }
   }
+  for (const [node, side, entry] of courseLegPitches(model)) addPairPitch(model.nodes[node]!, side, entry);
+}
+
+/**
+ * The angle a solid block reserves for its members, as stage 6 knows it before sizing (dense-16x9 ticket 29): `BLOCK_ANGLE` for a block a complete
+ * placement of this command recorded under the cap (`steepBlocks`). Undefined otherwise: a flat block (its floor angle asks a leg pitch past the cap)
+ * or a block no placement has recorded yet. Stage 6 never assumes an angle: with no fact it reserves no leg pitch, and a member beside the course
+ * falls back by name as before.
+ */
+export function reservedBlockAngle(model: LayoutModel, family: string): number | undefined {
+  return model.steepBlocks?.includes(family) === true ? BLOCK_ANGLE : undefined;
+}
+
+/**
+ * Dense-16x9 ticket 29: the `leg` pair pitches of the model. The port of a `u-turn` course end stands on a horizontal face; when that face carries
+ * member ports of a solid block, a member port beside it sends its chord over the course's stem, and the fixed point refuses a chord that crosses the
+ * stem (`fixedPointRefusal`, `leg`). So the course port keeps from either neighbour the pitch at which a member chord at the angle its block reserves
+ * passes the tip of that stem with the chord clearance: ceil((10 + stroke + stem * cos a) / sin a), with the angle the blocks on the face reserve
+ * (`reservedBlockAngle`: only blocks a placement recorded under the cap; any other block leaves the port without one) and the widest stroke of the
+ * course and the members. A pitch past `FAN_PITCH_CAP` (the most two neighbouring ports are held apart, per pair) is not reserved: the face keeps
+ * its pitch and the member beside the course falls back by name, as before. Only the `u-turn` course kind: another orthogonal end beside block ports
+ * (a skirt, a transit, a refused chord) keeps the fallback. Sizing budgets the pitch on both gaps of the port (`pairExcess`; the order of the face
+ * is set after sizing), so a course port at a face end leaves one of them unused. Stage 6 reserves it with the block pitch; the validator reads
+ * this function (R1, R5).
+ */
+export function courseLegPitches(model: LayoutModel): [string, 'top' | 'bottom', PairPitch][] {
+  const families = new Map<string, string>();
+  for (const family of model.fanFamilies ?? []) {
+    if (family.kind !== 'solid') continue;
+    for (const link of model.links) if (link.fanFamily === family.id) for (const ref of Object.values(link.attachments!)) families.set(portId(ref), family.id);
+  }
+  if (!families.size) return [];
+  const result: [string, 'top' | 'bottom', PairPitch][] = [];
+  for (const course of model.courses ?? []) {
+    if (course.kind !== 'u-turn') continue;
+    const link = model.links.find(item => item.id === course.link);
+    if (link?.attachments === undefined) continue;
+    for (const ref of Object.values(link.attachments)) {
+      const port = findPort(model, ref), node = model.nodes[ref.node];
+      if (port === undefined || node === undefined || (port.side !== 'top' && port.side !== 'bottom')) continue;
+      const members = node.ports.filter(other => other.side === port.side && families.has(portId(other.ref)));
+      if (!members.length) continue;
+      // Every block on the face must be known steep: one with no fact (flat, or not recorded yet) leaves the port with no leg pitch.
+      const angles = members.map(member => reservedBlockAngle(model, families.get(portId(member.ref))!));
+      if (angles.some(item => item === undefined)) continue;
+      const angle = Math.min(...(angles as number[])) * Math.PI / 180;
+      const memberLinks = model.links.filter(item => item.fanFamily !== undefined && members.some(member => Object.values(item.attachments ?? {}).some(end => portId(end) === portId(member.ref))));
+      const stroke = Math.max(linkStrokeWidth(link), ...memberLinks.map(linkStrokeWidth));
+      const min = Math.ceil((STRAIGHT_PATH_CLEARANCE.path + stroke + portStemReach(model, port) * Math.cos(angle)) / Math.sin(angle));
+      if (min <= FAN_PITCH_CAP) result.push([node.id, port.side, { rule: 'leg', ports: [portId(ref)], min }]);
+    }
+  }
+  return result;
+}
+
+/**
+ * Why the `leg` pair pitches of the model differ from the ones `courseLegPitches` gives it, or undefined (R5): every entry names the pitch the rule
+ * gives that port on that face, and every pitch the rule gives stands. Read from stage 6 on, where the courses and the block pitch stand.
+ */
+export function courseLegPitchFault(model: LayoutModel): string | undefined {
+  const wanted = new Map(courseLegPitches(model).map(([node, side, entry]) => [`${node}|${side}|${entry.ports[0]}`, entry.min]));
+  for (const node of Object.values(model.nodes)) for (const side of ['top', 'bottom'] as const) {
+    for (const entry of node.pairPitch?.[side] ?? []) {
+      if (entry.rule !== 'leg') continue;
+      const key = `${node.id}|${side}|${entry.ports[0]}`, min = wanted.get(key);
+      if (min === undefined) return `${node.id} has a leg pitch on ${side} that no course port asks for`;
+      if (Math.abs(min - entry.min) > EPS) return `${node.id} has a leg pitch of ${entry.min} px on ${side}, not ${min} px`;
+      wanted.delete(key);
+    }
+  }
+  const missing = [...wanted.keys()].sort()[0];
+  return missing === undefined ? undefined : `${missing.split('|')[0]} lacks the leg pitch of its course port on ${missing.split('|')[1]}`;
 }
 
 /** The face pitch of a block (ticket 83): two neighbouring chords at the block angle keep the 10 px chord clearance and the widest stroke. */

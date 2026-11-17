@@ -47,6 +47,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   const staggerRows = env.staggerRows?.filter(row => !declinedStaggers.has(row.group));
   if (staggerRows?.length) resolved.staggerRows = JSON.parse(JSON.stringify(staggerRows)) as typeof staggerRows;
   if (env.flatBlockGaps?.length) resolved.flatBlockGaps = JSON.parse(JSON.stringify(env.flatBlockGaps)) as typeof env.flatBlockGaps;
+  if (env.steepBlocks?.length) resolved.steepBlocks = [...env.steepBlocks];
   if (env.blockBoxPads?.length) resolved.blockBoxPads = JSON.parse(JSON.stringify(env.blockBoxPads)) as typeof env.blockBoxPads;
   if (env.blockRowGaps?.length) resolved.blockRowGaps = JSON.parse(JSON.stringify(env.blockRowGaps)) as typeof env.blockRowGaps;
   if (env.groupArrangements !== undefined) {
@@ -131,5 +132,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   model = stepIn('bars', () => bars(model)); account('bars');
   model = stepIn('bundles', () => bundles(model)); account('bundles');
   env.stage3Sizes.set(model, sizes);
+  // The premise of the input `steepBlocks` (dense-16x9 ticket 29) is judged by the 7e postconditions, before publication: a run that does not hold
+  // a block of it is refused there by name (`PostconditionRefusal`, kind `steepBlocks`).
   return model;
 }

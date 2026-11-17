@@ -1,0 +1,72 @@
+# Expected (dense-16x9 ticket 29): the outer pair a-hub-1 to b-hub-1 of the two sibling frames takes a u-turn course on the top face of its
+# sub-tier, beside the member ports of the complete solid blocks hub -> pe. Stage 6 gives each course port a `leg` pair pitch, the pitch at which
+# a member chord at the 34 degree block angle passes the tip of the course's stem with the chord clearance (43 px here), so every member of both
+# blocks is a straight chord and every gate passes. On main 906de428 the member port beside the course stood 21 px from it, its chord crossed the
+# U's stem, and 8 of the 12 members of the two blocks fell back to orthogonal routes. The angle is a fact of the first placement: it records
+# both blocks under the cap, and the command places once more with them as the input `steepBlocks`. Trade against main: bent 9 -> 1,
+# crossings 24 -> 28, canvas 652 x 648 -> 706 x 622 px (the hubs hold the 43 px pitch on both gaps of the course port).
+# Test-only input owned by dense-16x9 ticket 29: test/pipeline/course-leg-pitch.test.ts.
+portograph: 2
+groups:
+  top: {tier: 0}
+  core-a: {tier: 1}
+  core-b: {tier: 1}
+  site: {tier: 2}
+nodes:
+  t-a: {group: top, class: router, ports: []}
+  t-b: {group: top, class: router, ports: []}
+  a-pe-1: {group: core-a, class: router, ports: []}
+  a-pe-2: {group: core-a, class: router, ports: []}
+  a-pe-3: {group: core-a, class: router, ports: []}
+  a-hub-1: {group: core-a, class: switch, ports: []}
+  a-hub-2: {group: core-a, class: switch, ports: []}
+  b-pe-1: {group: core-b, class: router, ports: []}
+  b-pe-2: {group: core-b, class: router, ports: []}
+  b-pe-3: {group: core-b, class: router, ports: []}
+  b-hub-1: {group: core-b, class: switch, ports: []}
+  b-hub-2: {group: core-b, class: switch, ports: []}
+  s-1: {group: site, class: switch, ports: []}
+  s-2: {group: site, class: switch, ports: []}
+  s-3: {group: site, class: switch, ports: []}
+  s-4: {group: site, class: switch, ports: []}
+  s-5: {group: site, class: switch, ports: []}
+  s-6: {group: site, class: switch, ports: []}
+  s-7: {group: site, class: switch, ports: []}
+  s-8: {group: site, class: switch, ports: []}
+links:
+  - [t-a, a-pe-1]
+  - [t-a, a-pe-2]
+  - [t-a, a-pe-3]
+  - [t-b, b-pe-1]
+  - [t-b, b-pe-2]
+  - [t-b, b-pe-3]
+  - [a-hub-1, a-pe-1]
+  - [a-hub-1, a-pe-2]
+  - [a-hub-1, a-pe-3]
+  - [a-hub-2, a-pe-1]
+  - [a-hub-2, a-pe-2]
+  - [a-hub-2, a-pe-3]
+  - [b-hub-1, b-pe-1]
+  - [b-hub-1, b-pe-2]
+  - [b-hub-1, b-pe-3]
+  - [b-hub-2, b-pe-1]
+  - [b-hub-2, b-pe-2]
+  - [b-hub-2, b-pe-3]
+  - [a-hub-1, b-hub-1]
+  - [a-hub-2, b-hub-2]
+  - [a-hub-1, s-1]
+  - [a-hub-1, s-2]
+  - [a-hub-1, s-3]
+  - [a-hub-1, s-4]
+  - [a-hub-2, s-1]
+  - [a-hub-2, s-2]
+  - [a-hub-2, s-3]
+  - [a-hub-2, s-4]
+  - [b-hub-1, s-5]
+  - [b-hub-1, s-6]
+  - [b-hub-1, s-7]
+  - [b-hub-1, s-8]
+  - [b-hub-2, s-5]
+  - [b-hub-2, s-6]
+  - [b-hub-2, s-7]
+  - [b-hub-2, s-8]
