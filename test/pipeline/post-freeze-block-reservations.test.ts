@@ -26,3 +26,21 @@ describe('a move after the chord freeze keeps the solid block on its reservation
     expect(blockReservationsFault(model)).toBeUndefined();
   }, 180000);
 });
+
+// Dense-16x9 ticket 33: the label-band producer at the freeze tops up the band clearance in y, a required move, and took link-8, a straight
+// member of a flat block, 12.8 px past its side-edge box. On main b259aed5 it threw at publication: "The fan admission record is forged: link-8
+// lost its reserved box clearance (edge)". Now the crowding retry of 7f lets that member fall back alone, as a crowded fan member does.
+const flat = readFileSync(new URL('../../goldens/synthetic/a-flat-block-member-pushed-past-its-box-falls-back.yaml', import.meta.url), 'utf8');
+
+describe('a flat block member a required move takes past its box falls back (dense-16x9 ticket 33)', () => {
+  it('publishes the sheet as declared, with every block reservation holding', async () => {
+    const model = await run(flat);
+    expect((model.fanFamilies ?? []).some(family => family.kind === 'solid')).toBe(true);
+    expect(blockReservationsFault(model)).toBeUndefined();
+  }, 180000);
+
+  it('publishes the sheet with its nodes declared the other way round as well (R3)', async () => {
+    const model = await run(reversed(flat, 'nodes'));
+    expect(blockReservationsFault(model)).toBeUndefined();
+  }, 180000);
+});

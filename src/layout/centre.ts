@@ -1,3 +1,4 @@
+import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
 import { liftedGroups } from './lift.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceExcess, facePairPitches } from './pair-pitch.js';
@@ -1273,6 +1274,9 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   // From 7e on, an overlay link that draws one straight segment keeps the space placement reserved for it. A step that leaves fewer
   // of them straight (a body or a pill now stands on a chord) is declined as a whole, like a step that solves nothing: the group stays
   // where it stood (ticket 75). A step that straightens one link for another is a trade the alignment is allowed to make.
+  // After the chord freeze a step is judged by the one judge of a move after the freeze (`blockMoveRefusal`, dense-16x9 ticket 33): a step that
+  // leaves a solid-block member or follower past `BLOCK_TOLERANCE` of its reservation where it held, or further past it, is given back. The
+  // label-band producer replays the centring at the freeze unjudged as a whole, so its steps are judged here, one by one.
   if (!CHORD_STAGES.includes(model.stage)) return centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat);
   const group = model.groups[id]!;
   const unbuilt = carried === undefined ? undefined : group.nodes.map(node => JSON.stringify(model.nodes[node]));
@@ -1297,6 +1301,7 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   }
   const text = JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) });
   const snapshot = JSON.parse(text) as { group: LayoutGroup; nodes: LayoutNode[] };
+  const blockBefore = model.frozenChords !== undefined && model.blockReservations?.length ? blockReservationFaults(model) : undefined;
   const result = centreGroupStepRaw(model, context, tier, list, id, previous, warn, tail, rowSeat);
   rebuildNodeGeometry(model, model.groups[id]!.nodes, 'current');
   const now = straightChordIds(model);
@@ -1305,7 +1310,8 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
   // A complete step can move and widen a body inside its group. Keep the same-tier windows 7f reserved, including cross-group runs outside
   // siblingLimit: the move and resize guards share this producer replay (R1, R2). It runs only for a step that changed its group.
   const stands = after !== undefined && [...after].every(item => breached.has(item))
-    && rowRoomKeptByStep(model, snapshot, JSON.stringify({ group: model.groups[id]!, nodes: model.groups[id]!.nodes.map(node => model.nodes[node]!) }) === text);
+    && rowRoomKeptByStep(model, snapshot, JSON.stringify({ group: model.groups[id]!, nodes: model.groups[id]!.nodes.map(node => model.nodes[node]!) }) === text)
+    && (blockBefore === undefined || blockMoveRefusal(blockBefore, model) === undefined);
   tapVerdict('centreGroupStep', () => `${stands} ${now.size}/${held.size}`);
   if (stands) return { ...result, carry: { held: now, breached: after } };
   model.groups[id] = snapshot.group;

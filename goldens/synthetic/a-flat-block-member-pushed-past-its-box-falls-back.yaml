@@ -1,0 +1,268 @@
+portograph: 2
+layout: {moveBeforeGrow: true, nodeContent: card}
+groups:
+  upstream: {tier: 0, label: Upstream}
+  core: {tier: 1, label: Core}
+  site-3: {tier: 2, label: Site 3}
+  site-4: {tier: 2, label: Site 4}
+  site-5: {tier: 2, label: Site 5}
+  site-6: {tier: 2, label: Site 6}
+  site-7: {tier: 2, label: Site 7}
+  site-9: {tier: 2, label: Site 9}
+  pod: {tier: 3, label: Pod}
+nodes:
+  hub-1:
+    group: core
+    class: backbone
+    label: hub-1
+    description: Backbone
+    ports:
+    - {name: et01}
+    - {name: et02}
+    - {name: et03}
+    - {name: et04}
+    - {name: et05}
+    - {name: et06}
+    - {name: et07}
+    - {name: et08}
+    - {name: et09}
+    - {name: et10}
+    - {name: et11}
+    - {name: et12}
+    - {name: et13}
+    - {name: et14}
+    - {name: et15}
+    - {name: et16}
+  hub-2:
+    group: core
+    class: backbone
+    label: hub-2
+    description: Backbone
+    ports:
+    - {name: et08}
+    - {name: et09}
+    - {name: et01}
+    - {name: et02}
+    - {name: et03}
+    - {name: et04}
+    - {name: et05}
+    - {name: et06}
+    - {name: et07}
+    - {name: et10}
+    - {name: et11}
+    - {name: et12}
+    - {name: et13}
+    - {name: et14}
+    - {name: et15}
+    - {name: et16}
+  leaf-31:
+    group: site-3
+    class: router
+    label: leaf-31
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-32:
+    group: site-3
+    class: router
+    label: leaf-32
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-41:
+    group: site-4
+    class: router
+    label: leaf-41
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-42:
+    group: site-4
+    class: router
+    label: leaf-42
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-51:
+    group: site-5
+    class: router
+    label: leaf-51
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-52:
+    group: site-5
+    class: router
+    label: leaf-52
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-61:
+    group: site-6
+    class: router
+    label: leaf-61
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-62:
+    group: site-6
+    class: router
+    label: leaf-62
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-71:
+    group: site-7
+    class: router
+    label: leaf-71
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-72:
+    group: site-7
+    class: router
+    label: leaf-72
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-91:
+    group: site-9
+    class: router
+    label: leaf-91
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  leaf-92:
+    group: site-9
+    class: router
+    label: leaf-92
+    description: PE router
+    ports:
+    - {name: et02}
+    - {name: et01}
+  up-13: {group: upstream, class: provider, label: up-13}
+  up-11: {group: upstream, class: provider, label: up-11}
+  stub: {group: pod, class: stub, label: stub, description: out-of-scope links, icon: cloud}
+  edge-3:
+    group: core
+    class: edge
+    label: edge-3
+    description: Edge router
+    ports:
+    - {name: po01}
+    - {name: po02}
+  edge-1:
+    group: core
+    class: edge
+    label: edge-1
+    description: Edge router
+    ports:
+    - {name: po02}
+    - {name: et01}
+    - {name: et02}
+    - {name: et03}
+    - {name: po01}
+  edge-2:
+    group: core
+    class: edge
+    label: edge-2
+    description: Edge router
+    ports:
+    - {name: po03}
+    - {name: et01}
+    - {name: et02}
+    - {name: et03}
+    - {name: et04}
+    - {name: po01}
+    - {name: po02}
+  agg-3:
+    group: core
+    class: router
+    label: agg-3
+    description: PE router
+    ports:
+    - {name: po01}
+    - {name: et01}
+    - {name: et02}
+  agg-2:
+    group: core
+    class: router
+    label: agg-2
+    description: PE router
+    ports:
+    - {name: po02}
+    - {name: po01}
+    - {name: et01}
+    - {name: et02}
+links:
+- - agg-2.po02
+  - edge-2.po03
+  - {route: straight}
+- - agg-3.po01
+  - edge-3.po01
+  - {route: straight}
+- - hub-1.et01
+  - leaf-31.et02
+  - {route: straight}
+- - hub-1.et10
+  - leaf-41.et02
+  - {route: straight}
+- - hub-1.et12
+  - leaf-51.et02
+  - {route: straight}
+- - hub-1.et13
+  - leaf-91.et02
+  - {route: straight}
+- - hub-1.et14
+  - leaf-61.et02
+  - {route: straight}
+- - hub-1.et15
+  - leaf-71.et02
+  - {route: straight}
+- - hub-2.et01
+  - leaf-32.et02
+  - {route: straight}
+- - hub-2.et02
+  - agg-2.et02
+  - {route: straight}
+- - hub-2.et03
+  - agg-3.et02
+  - {route: straight}
+- - hub-2.et10
+  - leaf-42.et02
+  - {route: straight}
+- - hub-2.et12
+  - leaf-52.et02
+  - {route: straight}
+- - hub-2.et13
+  - leaf-92.et02
+  - {route: straight}
+- - hub-2.et14
+  - leaf-62.et02
+  - {route: straight}
+- - hub-2.et15
+  - leaf-72.et02
+  - {route: straight}
+- - edge-1.po01
+  - up-13
+  - {route: straight}
+- - edge-2.po01
+  - up-11
+  - {route: straight}
+- - leaf-31
+  - stub
+  - {class: stub, route: straight}
+- - leaf-32
+  - stub
+  - {class: stub, route: straight}

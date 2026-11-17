@@ -1,4 +1,4 @@
-import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
+import { blockMoveRefusal, blockReservationFaults, flatMemberFaults } from './block-checks.js';
 import { judgedMove } from './post-freeze-judge.js';
 import { refusedChordsOf } from './reservations.js';
 import { tapTarget } from './alignment-targets.js';
@@ -213,6 +213,8 @@ export function placementAttempt(draft: LayoutModel, options: AttemptOptions = {
       const fans = new Map<string, FanFallbackReason>();
       if (draft.fanAdmissions !== undefined) {
         for (const [id, reason] of crowdedFanMembers(draft)) fans.set(id, reason);
+        // A straight member of a flat block that a required move took past its reservation falls back alone (dense-16x9 ticket 33).
+        for (const [id, reason] of flatMemberFaults(draft)) fans.set(id, reason);
         for (const id of chordRefused.keys()) fans.delete(id);
       }
       if (!crowded.length && !fans.size) break;

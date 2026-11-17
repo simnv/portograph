@@ -38,6 +38,12 @@ export interface BoxWriter {
   /** The top-level function that holds the call. */
   fn: string;
   guard: WriterGuard;
+  /**
+   * Set on a writer that runs after the chord freeze of 7f with no judge of a move after the freeze (`blockMoveRefusal`) on its path: how its
+   * write keeps the solid-block reservations, and the last resort where it does not (dense-16x9 ticket 33). No other writer moves a box after
+   * the freeze unjudged: `test/layout/post-freeze-movers.test.ts` finds the writers that do and fails on one with no entry here.
+   */
+  afterFreeze?: string;
 }
 
 const REPLAY = 'Sp, the frozen chords of La and Ex by the replay that follows (see the proof terms above)';
@@ -76,14 +82,14 @@ export const BOX_WRITERS: readonly BoxWriter[] = [
   { id: 'W08', file: 'src/layout/bundle-geometry.ts', fn: 'prepareBundleGeometry', guard: { kind: 'forced', keeps: 'a y-only band shift for the room of a bundle join: Ri, Si, lane sides, Tr', otherwise: REPLAY } },
   { id: 'W09', file: 'src/layout/bundle-geometry.ts', fn: 'prepareBundleGeometry', guard: { kind: 'guarded', by: 'holdsMove on the whole groups it moves in x, and on the widened box and the moved nodes (holdsNodeMove) of a group it moves in part; refused, no crossover room is taken (BUNDLE_ROOM_HELD) and the bundle draws straight members or refuses by name (ADR-0017)' } },
   { id: 'W10', file: 'src/layout/bundle-geometry.ts', fn: 'prepareBundleGeometry', guard: { kind: 'forced', keeps: 'a y-only band shift for the need of a facing bundle: Ri, Si, lane sides, Tr', otherwise: REPLAY } },
-  { id: 'W15', file: 'src/layout/bands.ts', fn: 'topUpBandClearance', guard: { kind: 'forced', keeps: 'a y-only band shift for the clearance of a label band: Ri, Si, lane sides, Tr', otherwise: `${REPLAY}; it runs after the chord freeze, so a chord it blocks ends as STRAIGHT_LINK_BLOCKED` } },
+  { id: 'W15', file: 'src/layout/bands.ts', fn: 'topUpBandClearance', guard: { kind: 'forced', keeps: 'a y-only band shift for the clearance of a label band: Ri, Si, lane sides, Tr', otherwise: `${REPLAY}; it runs after the chord freeze, so a chord it blocks ends as STRAIGHT_LINK_BLOCKED` }, afterFreeze: 'the label-band producer, a required move, runs it unjudged: a y-only band shift keeps the faces and the pitch of a block and only steepens a member across the shift; a straight member of a flat block it takes past its box falls back alone in the crowding retry of 7f (`flatMemberFaults`)' },
   { id: 'W18', file: 'src/layout/bands.ts', fn: 'insertRoomAt', guard: { kind: 'forced', keeps: 'an x shift of the half-plane right of the split in every tier, with every lane and riser right of it: Ri, Si, lane sides for every unit wholly on one side of the split', otherwise: `a node of a straddling group keeps its port where a lane or riser past the split moves (Si, Ri), and Tr, ${REPLAY}; label room wins over a lane beyond it (user, 2026-10-24); the producer postconditions judge the net draft` } },
   { id: 'W19', file: 'src/layout/bands.ts', fn: 'reserveAcrossRunRoom', guard: { kind: 'forced', keeps: 'a y-only shift of the tiers below (and, for a top edge, of the group and the groups in a level relation with it, `levelChordPartners`): Ri, Si, lane sides, the level of a held level chord', otherwise: `Tr and ${REPLAY}` } },
   { id: 'W20', file: 'src/layout/columns.ts', fn: 'separateFrameColumns', guard: { kind: 'forced', keeps: 'nothing moves while the frame columns stand apart; a move ends an overlap of two frame columns', otherwise: 'no proof for a move in a replay of 7e or 7f: the producer postconditions judge the net draft (a refusal withdraws a trial and fails the main line by name)' } },
   // `holdLifts` (D-Q5, ticket 08): a lifted component moves only away from the units and link corridors of its shared bands, by the least x that restores the beside gap a column pass took.
   { id: 'W38', file: 'src/layout/columns.ts', fn: 'separateFrameColumns', guard: { kind: 'forced', keeps: 'nothing moves while a lifted component keeps its beside gap; a move pushes the whole component away from the column that came nearer', otherwise: 'no proof for a move in a replay of 7e or 7f: the producer postconditions judge the net draft, and publication checks the recorded side (validateGroupLifts)' } },
   { id: 'W39', file: 'src/layout/columns.ts', fn: 'holdColumnAxes', guard: { kind: 'forced', keeps: 'nothing moves while a lifted component keeps its beside gap; a move pushes the whole component away from the column that came nearer', otherwise: 'no proof for a move in a replay of 7e or 7f: the producer postconditions judge the net draft, and publication checks the recorded side (validateGroupLifts)' } },
-  { id: 'W37', file: 'src/layout/gap-room.ts', fn: 'moveBands', guard: { kind: 'forced', keeps: 'a y-only band shift by the room the tier gaps above gained, label and canton bands with it: Ri, Si, lane sides, Tr; a solid block refuses by SolidBlockRefusal', otherwise: `${REPLAY}; after the gap solve the linkless groups step out of held chords` } },
+  { id: 'W37', file: 'src/layout/gap-room.ts', fn: 'moveBands', guard: { kind: 'forced', keeps: 'a y-only band shift by the room the tier gaps above gained, label and canton bands with it: Ri, Si, lane sides, Tr; a solid block refuses by SolidBlockRefusal', otherwise: `${REPLAY}; after the gap solve the linkless groups step out of held chords` }, afterFreeze: 'the tier-gap solve, a required move: a y-only band shift, and a solid block refuses it by SolidBlockRefusal; its centring replay runs under `judgedMove`' },
   // Guarded writes of 7c to 7f.
   { id: 'W12', file: 'src/layout/close-up.ts', fn: 'closeUpSiblings', guard: { kind: 'guarded', by: 'closeUpRefusal, check then undo (La by validateLanes and the chord sets; Si by construction; the stored ledger by holds); declined whole' } },
   { id: 'W13', file: 'src/layout/bands.ts', fn: 'settleKeepOut', guard: { kind: 'guarded', by: 'holdsMove before the move, then a straight-link check with rollback' } },
@@ -91,7 +97,7 @@ export const BOX_WRITERS: readonly BoxWriter[] = [
   { id: 'W16', file: 'src/layout/bands.ts', fn: 'alignGrid', guard: { kind: 'guarded', by: 'holdsMove, growthHolds, separationsBrokenBy, widensIntoFrame, packOpens, gapsHoldGrowth; a refusal is recorded in gridRefusals' } },
   { id: 'W17', file: 'src/layout/bands.ts', fn: 'alignGrid', guard: { kind: 'scratch', why: 'the rollback of W16 when a span corridor cannot follow' } },
   { id: 'W21', file: 'src/layout/columns.ts', fn: 'closeUp', guard: { kind: 'guarded', by: 'holdsMove, then a straight-overlay check with exact undo' } },
-  { id: 'W22', file: 'src/layout/columns.ts', fn: 'pullTier', guard: { kind: 'guarded', by: 'holdsMove, then a straight-overlay check and undo' } },
+  { id: 'W22', file: 'src/layout/columns.ts', fn: 'pullTier', guard: { kind: 'guarded', by: 'holdsMove, then a straight-overlay check and, after the chord freeze, blockMoveRefusal, with undo' } },
   { id: 'W23', file: 'src/layout/columns.ts', fn: 'pullTier', guard: { kind: 'scratch', why: 'a probe: moves a unit, reads whether a straight link bends, always undoes' } },
   { id: 'W24', file: 'src/layout/columns.ts', fn: 'packBesideRows', guard: { kind: 'guarded', by: 'holdsMove; a refusal names FRAME_PACK_HELD' } },
   { id: 'W25', file: 'src/layout/decide.ts', fn: 'chooseStep', guard: { kind: 'guarded', by: 'the caller asks holdsMove; then a profile judgment with undo' } },

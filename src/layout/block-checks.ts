@@ -122,6 +122,23 @@ export function blockMoveRefusal(before: BlockReading | LayoutModel, after: Layo
   return undefined;
 }
 
+/**
+ * The straight members of a flat block that stand past their reservation (`blockReservationFaults`), with the reason each falls back by:
+ * `floor` for the floor angle, `frame` or `edge` for the box clearance. A member of a flat block may fall back alone, the block stays (dense-16x9
+ * ticket 04 slice 3), so a required move of 7f that takes one past its reservation (the band top-up at the freeze moves the rows in y) is
+ * answered by the 7f retry, which refuses the member, and not by the validator, which would throw (dense-16x9 ticket 33).
+ */
+export function flatMemberFaults(model: LayoutModel): Map<string, 'floor' | 'frame' | 'edge'> {
+  const found = new Map<string, 'floor' | 'frame' | 'edge'>();
+  for (const [id, faults] of blockReservationFaults(model)) {
+    const link = model.links.find(item => item.id === id);
+    if (link === undefined || !flatMember(model, link) || !model.frozenChords?.includes(id)) continue;
+    const first = faults[0]!;
+    found.set(id, first.constraint === 'angle' ? 'floor' : first.constraint.endsWith(':frame') ? 'frame' : 'edge');
+  }
+  return found;
+}
+
 const record = (fault: string): BlockFault => ({ constraint: 'record', fault, short: 0 });
 
 function followerFault(model: LayoutModel, id: string): BlockFault | undefined {

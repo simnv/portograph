@@ -4,6 +4,7 @@ import { frameSubtreeCells } from '../model/model.js';
 import { CELL_TO_CHILD_FRAME_GAP, cellReach, deriveFrames, frameNodes } from './frames.js';
 import { GROUP_PADDING } from './group-padding.js';
 import { selectAnchorTier } from './lanes.js';
+import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
 import { holdLifts, liftedGroups } from './lift.js';
 import { holdsMove } from './move-reservations.js';
 import { findPort } from './row-paths.js';
@@ -1080,6 +1081,9 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
     // groups' node geometry is rebuilt before the reading, and again on rollback (ticket 17 review).
     const settle = (): void => rebuildNodeGeometry(model, [...shifts.keys()].flatMap(group => group.nodes), 'current');
     const undo = exactUndo(model, shifts.keys());
+    // After the chord freeze the pull is judged by the one judge of a move after the freeze (`blockMoveRefusal`, dense-16x9 ticket 33): the
+    // label-band producer runs it unjudged as a whole, and a pull of one row of a block takes the members off their reservation.
+    const blockBefore = allowed && model.frozenChords !== undefined && model.blockReservations?.length ? blockReservationFaults(model) : undefined;
     if (allowed) { for (const [group, dx] of shifts) moveGroup(model, group, dx, 0); settle(); }
     const after = new Map(deriveFrames(model)?.map(frame => [frame.id, frame.box]));
     // The ends are read after the move: a frame that ends a link takes its own ports with it.
@@ -1092,7 +1096,7 @@ function pullTier(model: LayoutModel, tiers: Unit[][], index: number, feeds: (un
       const was = item.unit.frame ? before.get(item.unit.id) : undefined, now = item.unit.frame ? after.get(item.unit.id) : undefined;
       return was !== undefined && now !== undefined && shifts.has(item.unit.groups[0]!) && !item.unit.groups.some(group => ends.has(group.id))
         && crosses(from, to, now) && !crosses(from, to, was);
-    })));
+    }))) || blockBefore !== undefined && blockMoveRefusal(blockBefore, model) !== undefined;
     if (blocked) { undo(); settle(); }
     return { shifts, allowed, blocked, bent };
   };

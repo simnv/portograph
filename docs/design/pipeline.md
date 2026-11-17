@@ -1857,8 +1857,18 @@ Its callers:
 
 The rule is absolute: after every judged move or step, each member stands within the tolerance, or a fault that stood is no larger.
 That is the validator after every step, so drift cannot add up across steps or passes. `chordsHold` reads each translation so, the
-seat steps of 7c included. The label-band producer right after the freeze is a required move, and it is not refused whole: the
-publication validator reads what it leaves.
+seat steps of 7c included. The label-band producer right after the freeze is a required move, and it is not refused whole. Its
+centring replay is judged step by step instead (dense-16x9 ticket 33): from 7e on, a 7c group step that leaves a member or a follower
+past the tolerance where it held, or further past it, is given back like any step that does not stand (`centreGroupStepChecked`).
+Before ticket 33 a group step of a block's lower row moved its member ends without the row above, in the producer's first replay,
+and left a member 15 px of height short of its angle; nothing after it moved the row above, and publication threw.
+The column pull of the producer (`holdColumnsAfterPush`, `pullTier`) is judged the same way: a pull after the freeze that the judge
+refuses is undone with the plan, as a pull a lane refuses is. The producer's y growth (`topUpBandClearance`) cannot be refused. A
+y-only band shift keeps the faces and the pitch of a block, but it can take a straight member of a flat block past its box. That
+member falls back alone in the crowding retry of 7f (`flatMemberFaults`), as a crowded fan member does, so publication reads a
+reservation that holds and does not throw. The box writer table states this for each writer that moves a box after the freeze with
+no judge on its path (`afterFreeze`). A test runs sheets with blocks, finds every such writer on the call stack, and fails on a
+writer the table does not explain.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line, or on a held routed chord
 (ticket 22), lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
