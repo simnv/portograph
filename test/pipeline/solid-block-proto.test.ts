@@ -6,6 +6,7 @@ import { layout, parse, score } from '../../src/index.js';
 import { resolve } from '../../src/resolve/index.js';
 import { chordsHold, edgeLeavers, fixedPointRefusal } from '../../src/layout/frame-paths.js';
 import { blockReservationsFault } from '../../src/layout/block-checks.js';
+import { blockBoxPadsAsked, blockRowGapsAsked } from '../../src/layout/block-pads.js';
 import { admitFanFamilies } from '../../src/layout/fan-admission.js';
 import { crowdedFanMembers } from '../../src/layout/direct-families.js';
 import { segmentDistance } from '../../src/geometry/planar.js';
@@ -177,22 +178,41 @@ describe('ticket 83 under-cap solid blocks', () => {
     for (let i = 1; i <= 7; i++) expect(centre(`unit${i}`)).toBeCloseTo(centre(`pair${i}`), 6);
     expect(score(model).snapshot.counts.routed.bent).toBe(0);
   });
-  it('lets a flat member fall back alone when the aspect gap is below its box entry (dense-16x9 ticket 04, slice 3)', async () => {
-    const model = await lay(fixture('a-flat-block-member-that-leaves-its-box-by-a-side-falls-back'));
+  it('gives a box the side room its flat members need at the floor angle, so none falls back at a corner (dense-16x9 ticket 04, slice 3, step 2)', async () => {
+    const model = await lay(fixture('a-flat-block-member-at-its-box-corner-takes-side-room'));
     const record = model.blockReservations![0]!;
     expect(record.mode).toBe('flat');
+    // The aspect gap stands between the floor and the 34 degree demand: without the room the outer members met the corners of `core` (edge).
     expect(record.chosen).toBeGreaterThan(record.floor! + 1);
     expect(record.chosen).toBeLessThan(record.target - 1);
-    const reasons = (model.fanAdmissions ?? []).filter(item => item.mode !== 'straight').map(item => item.reason);
-    expect(reasons).toContain('edge');
-    expect(model.fanAdmissions?.filter(item => item.mode === 'straight').length).toBeGreaterThan(0);
+    expect(model.blockBoxPads?.map(item => [item.box, item.side])).toEqual([['core', 'left'], ['core', 'right']]);
+    expect(model.diagnostics.some(item => item.code === 'BLOCK_ROOM')).toBe(true);
+    expect(model.fanAdmissions?.filter(item => item.mode === 'straight')).toHaveLength(14);
+    // The room is a fixed point: the published model asks for no more.
+    expect(blockBoxPadsAsked(model)).toEqual(model.blockBoxPads);
     expect(blockReservationsFault(model)).toBeUndefined();
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
     // Every straight member keeps the 15 degree floor.
     for (const link of model.links.filter(item => item.solidBlock && model.frozenChords?.includes(item.id))) {
       const segment = link.path!.segments[0]!;
       expect(Math.abs(segment.to.y - segment.from.y)).toBeGreaterThanOrEqual(Math.abs(segment.to.x - segment.from.x) * Math.tan(15 * Math.PI / 180) - 1e-6);
     }
   });
+  it('reserves the row gap beside a taller hub and the side room of the far groups: both flat blocks of the twin stand straight (dense-16x9 ticket 04, slice 3, step 2)', async () => {
+    const model = await lay(readFileSync(new URL('../fixtures/staged/two-cores-reach-seven-pairs-through-hubs-on-the-last-rank.yaml', import.meta.url), 'utf8'));
+    const flat = new Set(model.blockReservations!.filter(item => item.mode === 'flat').map(item => item.family));
+    expect(flat.size).toBe(2);
+    const members = (model.fanAdmissions ?? []).filter(item => flat.has(item.family));
+    expect(members).toHaveLength(28);
+    expect(members.every(item => item.mode === 'straight')).toBe(true);
+    // The taller hub beside a hub's end (E) and the far groups' walls (D) are placement's reservations, and a fixed point.
+    expect(model.blockRowGaps?.length).toBeGreaterThan(0);
+    expect(model.blockBoxPads?.length).toBeGreaterThan(0);
+    expect(blockRowGapsAsked(model)).toEqual(model.blockRowGaps);
+    expect(blockBoxPadsAsked(model)).toEqual(model.blockBoxPads);
+    expect(blockReservationsFault(model)).toBeUndefined();
+    expect(Object.entries(score(model).snapshot.gates).flatMap(([id, gate]) => gate.violations.map(() => id))).toEqual([]);
+  }, 180000);
   it('keeps an over-cap block flat and straight beside foreign boxes, and the restore contract (dense-16x9 ticket 04, slice 3)', async () => {
     const source = fixture('a-capped-solid-block-prototype-keeps-foreign-boxes');
     const model = await lay(source);

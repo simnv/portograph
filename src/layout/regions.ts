@@ -1,3 +1,4 @@
+import { blockBoxPad } from './block-pads.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import type { Rect, Side } from '../model/geometry.js';
 import { measurePortPill } from '../text/index.js';
@@ -95,6 +96,12 @@ export function groupInsets(model: LayoutModel, group: LayoutGroup): { top: numb
   // already in the band's clearance.
   const bus = heldBusRoom(model, group);
   for (const side of ['top', 'bottom'] as const) if (bus[side] > 0 && band?.side !== side) inset[side] = Math.max(padding[side], bus[side]);
+  // The side room a flat block member's own-box exit asks of a free group (`blockBoxPads`, dense-16x9 ticket 04 slice 3): a cell is no box of
+  // its own, its frame holds the room (`deriveFrames`).
+  if (group.frame === undefined) {
+    const pad = blockBoxPad(model, group.id);
+    inset.left += pad.left; inset.right += pad.right;
+  }
   return inset;
 }
 /**

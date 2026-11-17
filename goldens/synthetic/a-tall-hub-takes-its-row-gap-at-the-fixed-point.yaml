@@ -1,0 +1,48 @@
+# Expected (dense-16x9 ticket 04, slice 3, step 2, review 1): the corner sheet with `core-b` 1200 px tall. Its bottom corner reaches far
+# past the face of `core-a`, so the members of `core-a` ask a row gap beside it at their floor angle (`blockRowGaps`). Each placement with a
+# larger gap moves the far ends, so the next reading asks a little more: the rounds run to the fixed point (bound: one placement per flat
+# member), and all 14 members are straight. With the bound cut to three, the room is still short and `BLOCK_ROOM_UNSETTLED` names it.
+portograph: 2
+profile: network
+layout: {aspect: "4:1"}
+groups:
+  core: {tier: 0}
+  pair1: {tier: 1}
+  pair2: {tier: 1}
+  pair3: {tier: 1}
+  pair4: {tier: 1}
+  pair5: {tier: 1}
+  pair6: {tier: 1}
+  pair7: {tier: 1}
+nodes:
+  core-a: {group: core, class: router}
+  core-b: {group: core, class: router, size: {width: 100, height: 1200}}
+  node1a: {group: pair1, class: router, size: {width: 300, height: 0}}
+  node1b: {group: pair1, class: router, size: {width: 300, height: 0}}
+  node2a: {group: pair2, class: router, size: {width: 300, height: 0}}
+  node2b: {group: pair2, class: router, size: {width: 300, height: 0}}
+  node3a: {group: pair3, class: router, size: {width: 300, height: 0}}
+  node3b: {group: pair3, class: router, size: {width: 300, height: 0}}
+  node4a: {group: pair4, class: router, size: {width: 300, height: 0}}
+  node4b: {group: pair4, class: router, size: {width: 300, height: 0}}
+  node5a: {group: pair5, class: router, size: {width: 300, height: 0}}
+  node5b: {group: pair5, class: router, size: {width: 300, height: 0}}
+  node6a: {group: pair6, class: router, size: {width: 300, height: 0}}
+  node6b: {group: pair6, class: router, size: {width: 300, height: 0}}
+  node7a: {group: pair7, class: router, size: {width: 300, height: 0}}
+  node7b: {group: pair7, class: router, size: {width: 300, height: 0}}
+links:
+  - [core-a, node1a]
+  - [core-a, node2a]
+  - [core-a, node3a]
+  - [core-a, node4a]
+  - [core-a, node5a]
+  - [core-a, node6a]
+  - [core-a, node7a]
+  - [core-b, node1b]
+  - [core-b, node2b]
+  - [core-b, node3b]
+  - [core-b, node4b]
+  - [core-b, node5b]
+  - [core-b, node6b]
+  - [core-b, node7b]

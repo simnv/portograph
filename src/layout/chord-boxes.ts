@@ -23,9 +23,9 @@ export function chordHolders(model: LayoutModel, node: string): Set<string> {
  * faces, at least the margin from each corner; with `sideExit` (a member of a flat solid block) also through the side edge it runs toward. Reads
  * `model.frames`, which equals the cells after every transaction.
  */
-export function chordBoxRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0, sideExit = false): 'edge' | 'frame' | undefined {
+export function chordBoxRefusal(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0, sideExit = false, reserve = 0): 'edge' | 'frame' | undefined {
   let found: 'edge' | 'frame' | undefined;
-  scanChordBoxes(model, link, segment, sideSlack, sideExit, fault => { found = fault.entry; return true; });
+  scanChordBoxes(model, link, segment, sideSlack, sideExit, reserve, fault => { found = fault.entry; return true; });
   return found;
 }
 
@@ -39,12 +39,12 @@ export interface ChordBoxFault { readonly entry: 'edge' | 'frame'; readonly cons
 /** Every box the chord does not clear, in the order of `groupBoxes`. */
 export function chordBoxFaults(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack = 0, sideExit = false): ChordBoxFault[] {
   const faults: ChordBoxFault[] = [];
-  scanChordBoxes(model, link, segment, sideSlack, sideExit, fault => { faults.push(fault); return false; });
+  scanChordBoxes(model, link, segment, sideSlack, sideExit, 0, fault => { faults.push(fault); return false; });
   return faults;
 }
 
 /** The one reading of `chordBoxRefusal` and `chordBoxFaults`: `visit` gets each box the chord does not clear, and stops the scan by returning true. */
-function scanChordBoxes(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack: number, sideExit: boolean, visit: (fault: ChordBoxFault) => boolean): void {
+function scanChordBoxes(model: LayoutModel, link: LayoutLink, segment: PathSegment, sideSlack: number, sideExit: boolean, reserve: number, visit: (fault: ChordBoxFault) => boolean): void {
   const ends = link.attachments!, stroke = linkStrokeWidth(link);
   const from = chordHolders(model, ends.from.node), to = chordHolders(model, ends.to.node);
   const sides = { from: findPort(model, ends.from)?.side, to: findPort(model, ends.to)?.side };
@@ -60,7 +60,8 @@ function scanChordBoxes(model: LayoutModel, link: LayoutLink, segment: PathSegme
     const one = from.has(id), two = to.has(id);
     if (one && two) continue;
     if (!one && !two) {
-      const short = GROUP_EDGE_LINK_CLEARANCE + stroke / 2 - segmentRectDistance(segment, bounds);
+      // `reserve`: the margin an admission adds to a gate-backed clearance (`blockReserve` in tolerance.ts); 0 for the judge and the validator.
+      const short = GROUP_EDGE_LINK_CLEARANCE + reserve + stroke / 2 - segmentRectDistance(segment, bounds);
       if (short > EPS && !groupConsumers(model, id).includes(link.id) && visit({ entry: 'frame', constraint: `${id}:frame`, short })) return;
       continue;
     }

@@ -7,11 +7,13 @@
  * plain JSON), and every predicate that judges one is code in this file, outside the model.
  */
 import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Rect, Side, Size } from '../model/index.js';
+import type { PlacementInputField } from '../model/layout.js';
 import type { PairPitch } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
+import { blockBoxPadsFault, blockRowGapsFault, flatBlockGapsFault } from './placement-inputs.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
 /** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
@@ -694,6 +696,29 @@ export const RESERVATION_CHECKS: { readonly [K in ReservationKind]: KindCheck } 
   corridorSide: everywhere((item, model) => corridorSideFailure(item, model)),
   bundleNeighbours: everywhere((item, model) => bundleNeighboursFailure(item, model)),
 };
+/**
+ * The placement inputs that stand in model fields outside the ledger (dense-16x9 ticket 04, slice 3; `PlacementInputs`): the gaps of the flat
+ * blocks and the room of their members. They are not ledger entries: the rounds of `initial.ts` decide them before any round of the driver, `env` carries them and `place`
+ * copies them, unchanged, into every placement run from `resolve` on. One predicate per field and the same three readers as `RESERVATION_CHECKS`.
+ * The table is a mapped type over the keys of `PlacementInputs`, their one declaration: a new placement input without an entry does not compile.
+ */
+const NO_ROUND_WRITES = 'no round writes it: the input is decided before the rounds and copied unchanged into every run, so a round has nothing to compare';
+export const FIELD_CHECKS: { readonly [K in PlacementInputField]: { readonly predicate: (model: LayoutModel) => string | undefined; readonly at: KindCheck['at'] } } = {
+  // The records the predicate compares with are written from the placement stage on; before them it reads the entries alone.
+  flatBlockGaps: { predicate: flatBlockGapsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
+  blockBoxPads: { predicate: blockBoxPadsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
+  blockRowGaps: { predicate: blockRowGapsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
+};
+/** The first field of `FIELD_CHECKS` whose record fails the check `reader` makes on `model`, with why, or `undefined`. */
+export function fieldFailure(model: LayoutModel, reader: keyof KindCheck['at']): string | undefined {
+  for (const [field, check] of Object.entries(FIELD_CHECKS)) {
+    const at = check.at[reader];
+    if (typeof at === 'string' || (typeof at === 'function' && !at(model))) continue;
+    const why = check.predicate(model);
+    if (why !== undefined) return `${field}: ${why}`;
+  }
+  return undefined;
+}
 /** Why `item` fails the per-entry check `reader` makes on `model` (`RESERVATION_CHECKS`), or `undefined`. */
 export function entryFailure(item: Reservation, model: LayoutModel, reader: keyof KindCheck['at']): string | undefined {
   const check = RESERVATION_CHECKS[item.kind], at = check.at[reader];
@@ -702,6 +727,9 @@ export function entryFailure(item: Reservation, model: LayoutModel, reader: keyo
 }
 
 export function validateEarlyReservations(model: LayoutModel): void {
+  // The placement inputs outside the ledger (`FIELD_CHECKS`, `early`): `place` copies them right after `resolve`, so every stage carries them.
+  const field = fieldFailure(model, 'early');
+  if (field !== undefined) throw new Error(`The placement input ${field}`);
   if (model.reservations === undefined) return;
   validateLedgerShape(model.reservations);
   // Every kind the table checks per entry before the freeze (`RESERVATION_CHECKS`, `early`).
@@ -717,6 +745,9 @@ export function validateEarlyReservations(model: LayoutModel): void {
  * stands behind; a ledger entry the model does not show, or a model field no entry explains, is a layout the pipeline did not publish.
  */
 export function validateReservations(model: LayoutModel): void {
+  // The placement inputs outside the ledger (`FIELD_CHECKS`, `final`).
+  const field = fieldFailure(model, 'final');
+  if (field !== undefined) throw new Error(`The placement input ${field}`);
   const ledger = model.reservations ?? [];
   validateLedgerShape(ledger);
   if (model.reservations !== undefined) {

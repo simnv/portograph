@@ -1,6 +1,7 @@
 # Expected: past the cap the aspect aim 4:1, read on the complete placement, sets the gap between the 15 degree floor and the 34 degree demand
-# (dense-16x9 ticket 04, slice 3). The outer members then pass a corner of their box within its margin: each falls back alone ('edge'), the
-# block stays flat and the others straight but for the members beside a fallback's stem ('leg').
+# (dense-16x9 ticket 04, slice 3). The outer members would pass a corner of their hub box `core` within its margin, and fall back ('edge').
+# The box takes side room instead (step 2, `blockBoxPads`, BLOCK_ROOM): the padding at each member's angle at the block's floor, 48.14 px on
+# each side of `core`, which holds at every steeper gap. All 14 members are straight, and a second reading asks for no more room.
 portograph: 2
 profile: network
 layout: {aspect: "4:1"}

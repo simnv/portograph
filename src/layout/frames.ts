@@ -1,3 +1,4 @@
+import { blockBoxPad } from './block-pads.js';
 import { frameSubtreeCells } from '../model/model.js';
 import type { Rect } from '../model/geometry.js';
 import type { Frame, Lane, LayoutGroup, LayoutLink, LayoutModel } from '../model/layout.js';
@@ -109,6 +110,9 @@ export function deriveFrames(model: LayoutModel, withBands = true): Frame[] | un
     // union of its members grown by the margin, plus the band on the title edge.
     const band = withBands && source.kind === 'canton' ? model.labelBands.find(item => item.group === id && item.host === undefined) : undefined;
     let box = union(boxes);
+    // The side room a flat block member's own-box exit asks of the frame (`blockBoxPads`, dense-16x9 ticket 04 slice 3).
+    const pad = blockBoxPad(model, id);
+    if (pad.left > 0 || pad.right > 0) box = { ...box, x: box.x - pad.left, width: box.width + pad.left + pad.right };
     // An across-frames bus band on the canton's outer edge lies between the member frames and the canton's title band (mesh-bus.md,
     // section 4): the canton box grows by it, and the title band moves out by it.
     if (source.kind === 'canton') {

@@ -2,9 +2,10 @@ import { chordBoxFaults, chordBoxRefusal } from './chord-boxes.js';
 import { chordEnds } from './overlay-paths.js';
 import type { Point } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
-import { EPS } from '../geometry/planar.js';
-import { BLOCK_TOLERANCE } from './tolerance.js';
-import { findPort } from './row-paths.js';
+import { EPS, segmentRectDistance } from '../geometry/planar.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
+import { BLOCK_TOLERANCE, blockAllowance, blockReserve } from './tolerance.js';
+import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { facePairPitches } from './pair-pitch.js';
 import { portId } from './skeleton-graph.js';
 
@@ -35,9 +36,10 @@ export function flatMemberRefusal(model: LayoutModel, link: LayoutLink): 'edge' 
   // The chord as it is drawn, face point to face point (`memberChord`), as the floor reservation measured it (`reserveBlockGaps`; R1).
   const chord = memberChord(model, link);
   if (chord === undefined) return 'edge';
-  // The admission decides with the float compare; the validator after it allows `BLOCK_TOLERANCE`, so what is admitted stays held.
+  // The admission decides the angle with the float compare; the validator after it allows `BLOCK_TOLERANCE`, so what is admitted stays held.
   if (angleShortfall(chord.from, chord.to, BLOCK_FLOOR_ANGLE) > EPS) return 'floor';
-  return chordBoxRefusal(model, link, { from: chord.from, to: chord.to, owner: link.owner }, 0, true);
+  // The admission reserves the margin of a gate-backed clearance (`blockReserve`), which the judge then accepts down to the gate (R1).
+  return chordBoxRefusal(model, link, { from: chord.from, to: chord.to, owner: link.owner }, 0, true, blockReserve('frame'));
 }
 
 /**
@@ -54,7 +56,8 @@ export function memberChord(model: LayoutModel, link: LayoutLink): { from: Point
  * One fault of a solid-block reservation: what it breaks (`constraint`, one per fault of a key: the record, a follower's seat, attachment or
  * alignment, a member's faces, the pitch of each port, each box it does not clear, its gap or its angle), its message, and how far it is short
  * of the reservation (px; for an angle, the height the chord lacks; 0 for a fault with no measure, Infinity for one that cannot be measured).
- * A shortfall of the angle, the floor or the box clearance counts only past `BLOCK_TOLERANCE`.
+ * A shortfall counts only past its allowance (`blockAllowance`): `BLOCK_TOLERANCE` for the angle, the floor and the own-box crossing, the gate's
+ * float compare for the constraints that back a gate (the foreign-box clearance and the row room; `GATE_BACKED_BLOCK_CONSTRAINTS`).
  */
 export interface BlockFault { readonly constraint: string; readonly fault: string; readonly short: number }
 
@@ -102,7 +105,7 @@ export function blockReservationsFault(model: LayoutModel): string | undefined {
  * The one judge of a move or a step after the freeze (dense-16x9 ticket 31, R1): the first block fault that `after` has and `before` (the
  * faults read where the move began, or the model it began on) did not have, or had and was less short of; undefined when the move breaks no
  * reservation and takes no broken one further from what it reserved. It is the validator after every judged move: each member stands within
- * `BLOCK_TOLERANCE` of its reservation after it, or, where a fault stood beyond the tolerance, that fault is no larger than before (a float
+ * the allowance of each reservation after it (`blockAllowance`: `BLOCK_TOLERANCE`, or the gate threshold for a gate-backed one), or, where a fault stood beyond the tolerance, that fault is no larger than before (a float
  * compare) and its key gains no other fault. So a residue inside the tolerance passes and no drift can add up past it. A move that touches
  * no block member adds no fault, so it is never refused here.
  */
@@ -151,6 +154,27 @@ function followerFault(model: LayoutModel, id: string): BlockFault | undefined {
   return undefined;
 }
 
+/** The node clearance a flat member's chord keeps from a row neighbour's body: the one measure of the row gap's reading and of its check (R1). */
+export function rowRoomClearance(model: LayoutModel, link: LayoutLink, node: string): number {
+  return STRAIGHT_PATH_CLEARANCE.node + (linkStrokeWidth(link) + (model.nodes[node]?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2;
+}
+
+/**
+ * The row room a straight flat member holds (dense-16x9 ticket 04, slice 3, step 2): every row neighbour that a row gap of its end node names
+ * (`blockRowGaps`) stands the node clearance from the drawn chord. A row gap is that clearance reserved at the floor angle; after the freeze the
+ * chord as drawn is what a mover may not take closer. One fault per neighbour, with its shortfall.
+ */
+function rowRoomFaults(model: LayoutModel, link: LayoutLink, chord: { from: Point; to: Point }): BlockFault[] {
+  const ends = new Set([link.attachments!.from.node, link.attachments!.to.node]), faults: BlockFault[] = [];
+  for (const gap of model.blockRowGaps ?? []) {
+    const neighbour = ends.has(gap.left) ? gap.right : ends.has(gap.right) ? gap.left : undefined, body = neighbour === undefined ? undefined : model.nodes[neighbour]?.bounds;
+    if (neighbour === undefined || ends.has(neighbour) || body === undefined) continue;
+    const short = rowRoomClearance(model, link, neighbour) - segmentRectDistance({ ...chord, owner: link.owner }, body);
+    if (short > blockAllowance('room')) faults.push({ constraint: `room:${neighbour}`, fault: `${link.id} lost its reserved row room beside ${neighbour}`, short });
+  }
+  return faults;
+}
+
 function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutModel['blockReservations']>[number], straight: boolean): BlockFault[] {
   const link = model.links.find(item => item.id === id);
   if (!link?.attachments) return [{ constraint: 'endpoints', fault: `${id} has no endpoints`, short: 0 }];
@@ -170,7 +194,7 @@ function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutM
   const boxes = (from: Point, to: Point, sideExit: boolean): void => {
     for (const box of chordBoxFaults(model, link, { from, to, owner: link.owner }, 0, sideExit)) {
       // A box clearance short by the tolerance or less holds; an edge the chord leaves by a face with no edge has no measure, and is a fault.
-      if (box.short > BLOCK_TOLERANCE || box.constraint.endsWith(':face')) faults.push({ constraint: `box:${box.constraint}`, fault: `${id} lost its reserved box clearance (${box.entry})`, short: box.short });
+      if (box.short > blockAllowance(box.entry) || box.constraint.endsWith(':face')) faults.push({ constraint: `box:${box.constraint}`, fault: `${id} lost its reserved box clearance (${box.entry})`, short: box.short });
     }
   };
   if (entry.mode === 'flat') {
@@ -180,8 +204,9 @@ function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutM
     if (straight && chord === undefined) faults.push({ constraint: 'box:chord', fault: `${id} lost its reserved box clearance (edge)`, short: 0 });
     if (chord !== undefined) {
       const floor = angleShortfall(chord.from, chord.to, BLOCK_FLOOR_ANGLE);
-      if (floor > BLOCK_TOLERANCE) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: floor });
+      if (floor > blockAllowance('floor')) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: floor });
       boxes(chord.from, chord.to, true);
+      faults.push(...rowRoomFaults(model, link, chord));
     }
   } else boxes(a!, b!, false);
   const upper = model.tierBands.find(band => band.tier === entry.above)?.bounds;
@@ -189,6 +214,6 @@ function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutM
   const gap = upper && lower ? lower.y - upper.y - upper.height : -Infinity;
   if (gap + EPS < entry.chosen) faults.push({ constraint: 'gap', fault: `${id} lost its reserved gap`, short: Number.isFinite(gap) ? entry.chosen - gap : Infinity });
   const angle = entry.mode === undefined ? angleShortfall(a!, b!, BLOCK_ANGLE) : 0;
-  if (angle > BLOCK_TOLERANCE) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: angle });
+  if (angle > blockAllowance('angle')) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: angle });
   return faults;
 }

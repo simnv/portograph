@@ -3,11 +3,15 @@
  * re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
  */
 import type { LayoutModel } from '../model/index.js';
+import type { BlockBoxPad, BlockRowGap } from '../model/layout.js';
 import { SolidBlockRefusal, TrunkBlocked, producerRefusal } from '../layout/placement-refusal.js';
 import { FAN_WRAP_DECLINED, placedExtent, staggerRefusal, staggerTrigger, wrapGateVerdict } from '../layout/stagger.js';
 import { aspectAim, aspectGap } from '../layout/aspect.js';
 import { ASPECT_EPS } from '../layout/tolerance.js';
 import { EPS } from '../geometry/planar.js';
+import { blockBoxPadsAsked, blockRowGapsAsked, blockRoomBound, roomShort } from '../layout/block-pads.js';
+
+/** The placements the block box paddings may spend per command (R4): each reads the paddings of the one before (`blockBoxPadsAsked`). */
 import type { Diagnostic } from '../model/index.js';
 import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
@@ -163,18 +167,70 @@ if (first.groupArrangements !== undefined) {
 // each clamped to [its floor, its 34 degree demand], and one more placement stands at those gaps. It is kept only when its 7f trial stands
 // nearer the aim than the floor placement (the width can move); else the floor stands. Bound (R4): one placement more per command for all
 // flat blocks together, outside the placement cap as the gate trials are (`env.gateRuns`), and two 7f trials.
+// A 7f trial reads the placed model alone. A trial of the model the last trial ran on (the placement the stagger gate kept, whose trial the
+// gate ran, or the last room placement, which the gap choice reads again) takes that result and does not run again (`takenTrial`, dense-16x9
+// ticket 21); a refusal there is the refusal here. The room rounds and the gap choice read this one trial.
+const trial = async (model: LayoutModel): Promise<LayoutModel | undefined> => {
+  const taken = takenTrial(ran, model);
+  if (taken !== undefined) return taken.banded;
+  let banded: LayoutModel | Error;
+  try { banded = (await env.bands(model, true)).model; } catch (error) { if (staggerRefusal(error) || producerRefusal(error)) banded = error as Error; else throw error; }
+  ran = { model, banded };
+  return banded instanceof Error ? undefined : banded;
+};
+// The room of the flat block members (dense-16x9 ticket 04, slice 3, step 2): the side padding of each box a member would leave through a
+// corner (`blockBoxPadsAsked`) and the row gap beside an end node whose neighbour reaches past the face (`blockRowGapsAsked`), read on the 7f
+// trial of the complete placement at each member's angle at the block's floor, and placed again with them as placement inputs
+// (`env.blockBoxPads`, `env.blockRowGaps`). A placement with more room moves the members, so the next trial reads them again; the records only
+// grow. The placement with the room stands whatever its aspect: it buys the members' straight chords (ADR-0025, amendment of 2026-11-17).
+// The rounds run to the fixed point: a trial that asks for no more than the records hold. Bound (R4): one placement per flat member at most
+// (`blockRoomBound`), outside the placement cap (`env.exemptPlacing`); the trial after the last placement is read too, and a room still short
+// there is named (`BLOCK_ROOM_UNSETTLED`, R6). A refused placement keeps the one before it (`BLOCK_ROOM_REFUSED`).
+const describe = (pads: readonly BlockBoxPad[], gaps: readonly BlockRowGap[]): string => [...pads.map(item => `${item.box} ${item.side} side ${item.pad.toFixed(2)} px`),
+  ...gaps.map(item => `${item.left} to ${item.right} gap ${item.gap.toFixed(2)} px`)].join(', ');
+if ((first.blockReservations ?? []).some(record => record.mode === 'flat')) {
+  // The bound is read once, when a reading first asks for room (a sheet that asks none needs none).
+  let bound: number | undefined;
+  for (let round = 0; ; round++) {
+    const placed = await trial(first);
+    if (placed === undefined) break;
+    const asked = blockBoxPadsAsked(placed), gaps = blockRowGapsAsked(placed);
+    const short = roomShort(asked, gaps, env.blockBoxPads ?? [], env.blockRowGaps ?? []);
+    if (!short.length) break;
+    bound ??= options.testBlockRoomBound ?? blockRoomBound(first);
+    if (round >= bound) {
+      gateNotes.push({ stage: 'placement', severity: 'warning', code: 'BLOCK_ROOM_UNSETTLED', owners: short.flatMap(item => item.owners),
+        message: `The room of the flat block members did not settle in ${bound} placements: ${short.map(item => item.text).join(', ')} still short; the members it would hold may fall back.` });
+      break;
+    }
+    const saved = { kept, declinedSolidBlocks: env.declinedSolidBlocks, blockProbes: env.blockProbes, reruns: env.reruns, model: first, pads: env.blockBoxPads, gaps: env.blockRowGaps };
+    if (asked.length) env.blockBoxPads = asked;
+    if (gaps.length) env.blockRowGaps = gaps;
+    if (env.declinedSolidBlocks !== undefined) env.declinedSolidBlocks = new Map(env.declinedSolidBlocks);
+    let refused: string | undefined;
+    // Each placement of the round, its retries included, is credited outside the cap as it starts (`env.exemptPlacing`).
+    env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
+    try { await placeFirst(); } catch (error) {
+      if (!(staggerRefusal(error) || producerRefusal(error))) throw error;
+      refused = (error as Error).message;
+    } finally { env.exemptPlacing--; }
+    if (refused !== undefined) {
+      kept = saved.kept; env.blockProbes = saved.blockProbes; env.reruns = saved.reruns; first = saved.model;
+      if (saved.declinedSolidBlocks === undefined) delete env.declinedSolidBlocks; else env.declinedSolidBlocks = saved.declinedSolidBlocks;
+      if (saved.pads === undefined) delete env.blockBoxPads; else env.blockBoxPads = saved.pads;
+      if (saved.gaps === undefined) delete env.blockRowGaps; else env.blockRowGaps = saved.gaps;
+      gateNotes.push({ stage: 'placement', severity: 'warning', code: 'BLOCK_ROOM_REFUSED', owners: [],
+        message: `The placement with the block reservations ${describe(asked, gaps)} was refused (${refused}); the placement before it stands.` });
+      break;
+    }
+    // One note names the room that stands: a later round replaces it.
+    for (let at = gateNotes.length - 1; at >= 0; at--) if (gateNotes[at]!.code === 'BLOCK_ROOM') gateNotes.splice(at, 1);
+    gateNotes.push({ stage: 'placement', severity: 'info', code: 'BLOCK_ROOM', owners: [],
+      message: `The flat block members take room: ${describe(asked, gaps)}.` });
+  }
+}
 const flat = (first.blockReservations ?? []).filter(record => record.mode === 'flat');
 if (flat.length) {
-  // A 7f trial reads the placed model alone. A trial of the model the last trial ran on (the placement the stagger gate kept, whose trial the
-  // gate ran) takes that result and does not run again (`takenTrial`, dense-16x9 ticket 21); a refusal there is the refusal here.
-  const trial = async (model: LayoutModel): Promise<LayoutModel | undefined> => {
-    const taken = takenTrial(ran, model);
-    if (taken !== undefined) return taken.banded;
-    let banded: LayoutModel | Error;
-    try { banded = (await env.bands(model, true)).model; } catch (error) { if (staggerRefusal(error) || producerRefusal(error)) banded = error as Error; else throw error; }
-    ran = { model, banded };
-    return banded instanceof Error ? undefined : banded;
-  };
   const floorBanded = await trial(first), floorBox = floorBanded === undefined ? undefined : placedExtent(floorBanded);
   const aim = aspectAim(env.document);
   let extra = floorBox === undefined ? 0 : Math.max(0, floorBox.width / aim - floorBox.height);
