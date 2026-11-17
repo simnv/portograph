@@ -31,7 +31,6 @@ function scanSource(source: string) {
 
 /** Exact registry of `(file, cacheName)` pairs in `src/`. Adding a read cache requires registering it with `readCache('<name>')`. */
 const EXPECTED_READ_CACHES: ReadonlyArray<readonly [string, string]> = [
-  ['src/layout/admission-memo.ts', 'fanAdmission'],
   ['src/layout/alignment-targets.ts', 'alignmentLinkIndex'],
   ['src/layout/bands.ts', 'bandsRoutedStroke'],
   ['src/layout/centre.ts', 'centreCarry'],
@@ -85,7 +84,6 @@ const EXPECTED_WEAKMAPS: Readonly<Record<string, { count: number; reason: string
 
 /** Every module-scope `new Map` in `src/`. */
 const EXPECTED_MODULE_MAPS: Readonly<Record<string, { count: number; reason: string }>> = {
-  'src/layout/admission-memo.ts': { count: 1, reason: 'admissionMemo registered with fanAdmission readCache: open while a command runs, keyed by the content each call read' },
   'src/layout/corridor-order.ts': { count: 1, reason: 'IDENTITY empty constant map' },
   'src/layout/gap-plan.ts': { count: 1, reason: 'gapPlanMemo registered with gapPlan readCache' },
   'src/layout/side-hints.ts': { count: 1, reason: 'NO_SIDE_HINTS empty constant map' },

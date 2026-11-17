@@ -5,7 +5,6 @@ import { linkStrokeWidth, pathStrokeWidth } from '../theme/geometry.js';
 import { chordsApart, chordVerdict, fanCrossedBoxes, fixedPointRefusal, foreignBox, isRoutedChord, orthogonalLeg, siblingStemCrowded, SIDE_EDGE_SLACK } from './frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
-import { memoAdmission } from './admission-memo.js';
 
 /**
  * The joint admission of a fan family (architecture-2 ticket 40, merged design Sections 2 and 3).
@@ -206,11 +205,6 @@ export function refuseStemCrowded(draft: LayoutModel): Map<string, FanFallbackRe
  * another one that is not decided yet, whose members would all stand as fallback legs.
  */
 export function admitFanFamilies(draft: LayoutModel, members: readonly LayoutLink[], budget = FAN_SEARCH_BUDGET): void {
-  // A placement asks for the admission on the same reads again (the replays of the `bars` and `bundles` rules): the memo makes the writes of
-  // the first call again (`admission-memo.ts`, dense-16x9 ticket 21).
-  memoAdmission(draft, members, budget, admitFanFamiliesOnce);
-}
-function admitFanFamiliesOnce(draft: LayoutModel, members: readonly LayoutLink[], budget: number): void {
   const gapOf = (id: string): string | undefined => {
     const record = draft.blockReservations?.find(item => item.family === id);
     return record === undefined ? undefined : `${record.above}|${record.below}`;
