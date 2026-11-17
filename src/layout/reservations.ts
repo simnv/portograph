@@ -460,13 +460,16 @@ export function floorFailure(item: Reservation, model: LayoutModel): string | un
  */
 /**
  * Why a declined stagger (`staggerDeclined`, dense-16x9 ticket 22 review 2) does not hold on `model`, or `undefined`: the row stands one line, with no
- * stagger record and an arrangement that is not a stagger. The one predicate of the kind: the round check (`holds`) and restore (`validateReservations`) call it.
+ * stagger record and an arrangement that is not a stagger, and every link the decline names is a link of the model. The one predicate of the kind:
+ * the round check (`holds`) and restore (`validateReservations`, `validateEarlyReservations`) call it.
  */
 export function staggerDeclineFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'staggerDeclined') return undefined;
   const group = item.payload.group;
-  return (model.staggerRows ?? []).some(row => row.group === group) || model.groupArrangements?.[group]?.chosen === 'stagger'
-    ? `the row ${group} stands on two lines although its stagger is declined` : undefined;
+  if ((model.staggerRows ?? []).some(row => row.group === group) || model.groupArrangements?.[group]?.chosen === 'stagger') return `the row ${group} stands on two lines although its stagger is declined`;
+  // The links a held-straight decline names are links of the model (dense-16x9 ticket 35, review 1): the record names no evidence it does not have.
+  const unknown = item.payload.links?.find(id => !model.links.some(link => link.id === id));
+  return unknown === undefined ? undefined : `the decline of ${group} names the link ${unknown}, which the model does not have`;
 }
 
 /** The stages before `sides-two`, in the order of `stages` (mutation.ts). */
@@ -619,8 +622,10 @@ function shapeFailure(entry: unknown): string | undefined {
     }
     case 'staggerDeclined': {
       const links = payload['links'];
+      // The held-straight clause names the links it lost (at least one); no other clause names links (dense-16x9 ticket 35, review 1).
+      const named = Array.isArray(links) && links.length > 0 && links.every(isString);
       return isString(payload['group']) && isString(payload['reason']) && (STAGGER_DECLINE_CLAUSES as readonly unknown[]).includes(payload['clause'])
-        && (links === undefined || (Array.isArray(links) && links.length > 0 && links.every(isString))) ? undefined : bad;
+        && (payload['clause'] === 'held-straight' ? named : links === undefined) ? undefined : bad;
     }
     case 'refusedChord': return isString(payload['link']) ? undefined : bad;
     case 'farEndOrder': {
