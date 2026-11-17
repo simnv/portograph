@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { layout, parse } from '../../src/index.js';
+import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { ofKind, type Reservation } from '../../src/layout/reservations.js';
@@ -8,12 +8,15 @@ import type { LayoutModel } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
+import { withMoveBeforeGrow } from './move-before-grow.js';
 
 /**
  * Dense-16x9 ticket 36, slice 1: stage 5 seats a child row under its parents' ports as one seat set (`seatSet`), and 7c applies it.
- * The fixture's children grew to 220 px on main to reach their feeds; the set keeps their width and stands both feeds vertical.
+ * The set keeps the members at their own width and stands their feeds vertical; where they also feed the row below, 7c without the set
+ * stretches them toward it (a-seated-row-leaves-its-lower-row-one-feed).
  */
-const fixture = readFileSync(new URL('../../goldens/synthetic/a-child-row-stands-under-its-parents-ports.yaml', import.meta.url), 'utf8');
+const sheet = (name: string): string => readFileSync(new URL(`../../goldens/synthetic/${name}.yaml`, import.meta.url), 'utf8');
+const fixture = sheet('a-child-row-stands-under-its-parents-ports');
 const run = async (yaml: string): Promise<LayoutModel> => layout(parse(yaml), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const seatSets = (model: LayoutModel) => ofKind(model.reservations ?? [], 'seatSet');
 const vertical = (model: LayoutModel, link: string): boolean => {
@@ -21,6 +24,14 @@ const vertical = (model: LayoutModel, link: string): boolean => {
   const a = findPort(model, item.attachments!.from)!.anchor!, b = findPort(model, item.attachments!.to)!.anchor!;
   return Math.abs(a.x - b.x) <= 1e-6;
 };
+/** The link between two ports, by its ends. */
+const between = (model: LayoutModel, from: string, to: string): string => {
+  const [a, b] = [from.split('.'), to.split('.')];
+  const ends = (end: { node: string; name?: string }, [node, name]: string[]) => end.node === node && end.name === name;
+  return model.links.find(entry => ends(entry.attachments!.from, a!) && ends(entry.attachments!.to, b!))!.id;
+};
+const findings = (model: LayoutModel): string[] =>
+  Object.entries(score(model).snapshot.gates).filter(([, gate]) => !gate.passed && gate.severity === 'error').map(([id]) => id).sort();
 /** The seat set by content: each kept link as its two node ends, and each member's x from the set's first boundary node. */
 const content = (model: LayoutModel) => seatSets(model).map(({ payload }) => {
   const ends = (link: string) => { const item = model.links.find(entry => entry.id === link)!; return `${item.attachments!.from.node}>${item.attachments!.to.node}`; };
@@ -33,7 +44,7 @@ describe('the seat set of a child row (dense-16x9 ticket 36, slice 1)', () => {
     const [entry] = seatSets(model);
     expect(seatSets(model)).toHaveLength(1);
     expect(entry!.payload.row).toBe('site#1');
-    expect(entry!.payload.order).toEqual(['c1', 'c2']);
+    expect(entry!.payload.order).toEqual(['c1', 'n1', 'c2']);
     expect(content(model)[0]!.seats).toEqual(['p1>c1', 'p2>c2']);
     for (const seat of entry!.payload.seats) expect(vertical(model, seat.link), seat.link).toBe(true);
     // The fed children keep the width of their content, as the unfed member does: no alignment growth inside an owned row.
@@ -66,15 +77,43 @@ describe('the seat set of a child row (dense-16x9 ticket 36, slice 1)', () => {
     for (const id of ['c1', 'c2']) expect(flipped.nodes[id]!.bounds!.width, id).toBe(flipped.nodes.n1!.bounds!.width);
   }, 120000);
 
-  it('is what keeps the children narrow: without seat sets 7c grows them toward their feeds', async () => {
-    const legacy = await layout(parse(fixture), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSeatSets: false });
-    expect(seatSets(legacy)).toEqual([]);
-    for (const id of ['c1', 'c2']) expect(legacy.nodes[id]!.bounds!.width, id).toBeGreaterThan(legacy.nodes.n1!.bounds!.width);
-  }, 60000);
-
   it('makes no seat set without moveBeforeGrow', async () => {
     const model = await run(fixture.replace('layout: { moveBeforeGrow: true }', 'layout: { moveBeforeGrow: false }'));
     expect(seatSets(model)).toEqual([]);
     expect(model.diagnostics.filter(note => note.code.startsWith('SEAT_SET_'))).toEqual([]);
+  }, 60000);
+});
+
+// The coordinator's ruling (option C): the seat set does not buy the verticals of the row below by stretched nodes; slice 3 seats both
+// adjacent rows. These two sheets are that trade: one without a gate finding, and one that stands as expected-fail until slice 3.
+describe('a seated row that also feeds the row below (dense-16x9 ticket 36, slice 1 trade)', () => {
+  it('keeps its members at their own width under their parents; one feed to the row below stays a chord, with no gate finding', async () => {
+    const model = await run(sheet('a-seated-row-leaves-its-lower-row-one-feed'));
+    const upper = seatSets(model).find(item => item.payload.row === 'site#1')!;
+    expect(content(model).find(item => item.row === 'site#1')!.seats).toEqual(['p1>c1', 'p2>c2']);
+    for (const seat of upper.payload.seats) expect(vertical(model, seat.link), seat.link).toBe(true);
+    for (const id of ['c1', 'c2']) expect(model.nodes[id]!.bounds!.width, id).toBe(model.nodes.n1!.bounds!.width);
+    const below = [between(model, 'c1.b', 'k1.t1'), between(model, 'c2.b', 'k1.t3')];
+    expect(below.filter(link => vertical(model, link))).toHaveLength(1);
+    expect(findings(model)).toEqual([]);
+  }, 120000);
+
+  it('is what keeps the members narrow: without seat sets 7c stretches them toward the row below', async () => {
+    const legacy = await layout(parse(sheet('a-seated-row-leaves-its-lower-row-one-feed')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, testSeatSets: false });
+    expect(seatSets(legacy)).toEqual([]);
+    for (const id of ['c1', 'c2']) expect(legacy.nodes[id]!.bounds!.width, id).toBeGreaterThan(legacy.nodes.n1!.bounds!.width);
+  }, 120000);
+
+  // Expected to fail until slice 3 (both adjacent rows): today G6 parallel clearance, the chord c2 > k1 against the detour of n1 > k1.
+  it.fails('slice 3: both adjacent rows: a-seated-row-and-the-row-below-stand-together has no gate finding (now G6, link-6 with link-7)', async () => {
+    const model = await run(withMoveBeforeGrow(sheet('a-seated-row-and-the-row-below-stand-together')));
+    expect(seatSets(model).map(item => item.payload.row)).toContain('site#1');
+    expect(findings(model)).toEqual([]);
+  }, 60000);
+
+  it('is a sheet of the default without the option: no seat set, no gate finding', async () => {
+    const model = await run(sheet('a-seated-row-and-the-row-below-stand-together'));
+    expect(seatSets(model)).toEqual([]);
+    expect(findings(model)).toEqual([]);
   }, 60000);
 });

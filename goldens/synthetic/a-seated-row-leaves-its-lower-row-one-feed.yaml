@@ -1,0 +1,26 @@
+# Expected (dense-16x9 ticket 36, slice 1, a trade the coordinator accepted): the seated members `c1` and `c2` also feed `k1` in the row
+# below. Main stretches `c1` and `c2` to 220 px: both stand under their parents, their bottom ports stand 72 px apart over `k1`, and one feed
+# to `k1` is a short chord. The seat set keeps both at 50 px (no stretched nodes): their bottom ports stand 442 px apart, `k1` stands under
+# `c1`, and the feed from `c2` is a chord of about 6 degrees. The sheet has no gate finding.
+# Slice 3 (both adjacent rows) owns the lower row.
+# Test: test/layout/seat-set.test.ts.
+portograph: 2
+layout: { moveBeforeGrow: true }
+groups:
+  up: { tier: 0 }
+  site: { tier: 1, label: "One site in ranks" }
+nodes:
+  t0: { group: up, ports: [{ name: a, side: bottom }, { name: b, side: bottom }] }
+  p1: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  p2: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  c1: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  n1: { group: site, ports: [{ name: b, side: bottom }] }
+  c2: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  k1: { group: site, ports: [{ name: t1, side: top }, { name: t3, side: top }] }
+links:
+  - { from: t0.a, to: p1.up }
+  - { from: t0.b, to: p2.up }
+  - { from: p1.d1, to: c1.u1 }
+  - { from: p2.d1, to: c2.u1 }
+  - { from: c1.b, to: k1.t1 }
+  - { from: c2.b, to: k1.t3 }

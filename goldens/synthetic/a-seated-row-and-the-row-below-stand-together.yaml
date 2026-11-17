@@ -1,0 +1,25 @@
+# Expected-fail of dense-16x9 ticket 36, slice 3 (both adjacent rows). With `layout.moveBeforeGrow: true` (the test adds it; the sheet stays
+# a sheet of the default) the seat set keeps `c1` and `c2` at 50 px under `p1` and `p2`; `k1` stands under `c1`, the feed from `c2`
+# to `k1` is a chord of about 5 degrees, and it runs closer than 10 px to the detour of `n1` (G6 parallel clearance). Main grows `c1` and
+# `c2` to 220 px and has no finding. Slice 3 seats this row and the row below together.
+# Test: test/layout/seat-set.test.ts (it.fails).
+portograph: 2
+groups:
+  up: { tier: 0 }
+  site: { tier: 1, label: "One site in ranks" }
+nodes:
+  t0: { group: up, ports: [{ name: a, side: bottom }, { name: b, side: bottom }] }
+  p1: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  p2: { group: site, size: { width: 420, height: 40 }, ports: [{ name: up, side: top }, { name: d1, side: bottom }] }
+  c1: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  n1: { group: site, ports: [{ name: b, side: bottom }] }
+  c2: { group: site, ports: [{ name: u1, side: top }, { name: b, side: bottom }] }
+  k1: { group: site, ports: [{ name: t1, side: top }, { name: t2, side: top }, { name: t3, side: top }] }
+links:
+  - { from: t0.a, to: p1.up }
+  - { from: t0.b, to: p2.up }
+  - { from: p1.d1, to: c1.u1 }
+  - { from: p2.d1, to: c2.u1 }
+  - { from: c1.b, to: k1.t1 }
+  - { from: n1.b, to: k1.t2 }
+  - { from: c2.b, to: k1.t3 }
