@@ -1,3 +1,4 @@
+import { blockMoveRefusal, blockReservationFaults, type BlockReading } from './block-checks.js';
 /**
  * The close-up (architecture-2 ticket 69): after the end trim, a leaf top-level group moves toward its sibling on its left by at most the
  * width the trim freed, its order kept, when no guard declines. The move is a decision of the `bands` producer, recorded with the trim
@@ -84,6 +85,8 @@ interface GapReading { height: number; residual: Set<string>; crowded: Set<strin
 interface Reading {
   /** Frozen chords a body blocks (`STRAIGHT_LINK_BLOCKED`) and frozen chords that leave a frame by a side edge (`STRAIGHT_LINK_EDGE`). */
   blocked: Set<string>; edge: Set<string>;
+  /** The faults of the solid-block reservations (`blockReservationFaults`), read by the judge of a move after the freeze (dense-16x9 ticket 31). */
+  blockFaults: BlockReading;
   /** The reservations that fail, by id. */
   failing: Set<string>;
   /** Per tier gap: the plan's height, its residual parts, crowded legs and slant-limited units by id, and the count of its planned crossings. */
@@ -117,7 +120,7 @@ function reading(model: LayoutModel): Reading {
     if (link !== undefined && ends(model, link).some(port => port !== undefined && Math.abs(port.anchor!.x - lane.x) <= PLACEMENT_EPS)) lanePorts.add(`${lane.id}|${link.id}`);
   }
   return {
-    blocked: new Set(blockedChords(model)), edge: new Set(edgeLeavers(model)), lanePorts,
+    blocked: new Set(blockedChords(model)), edge: new Set(edgeLeavers(model)), lanePorts, blockFaults: blockReservationFaults(model),
     failing: new Set(holds(model.reservations ?? [], model).map(failure => failure.id)),
     gaps, axis, overlay: straightChordIds(model), overlapping: overlappingPairs(model),
     anchors: new Map(Object.values(model.nodes).flatMap(node => node.ports.flatMap((port, index) => port.anchor === undefined ? [] : [[`${node.id}#${index}`, port.anchor.x] as [string, number]]))),
@@ -164,6 +167,8 @@ function closeUpRefusal(model: LayoutModel, before: Reading, room: { deficits: R
   // R6: a lane that contradicts the boxes is a refusal with its reason, never a skipped check.
   try { validateLanes(model); } catch (error) { return `a lane would contradict the boxes: ${error instanceof Error ? error.message : String(error)}`; }
   if ((id = gained(before.blocked, after.blocked)) !== undefined) return `a body would block the chord ${id}`;
+  const block = blockMoveRefusal(before.blockFaults, model);
+  if (block !== undefined) return `a solid block would lose its reservation: ${block.fault}`;
   if ((id = gained(before.edge, after.edge)) !== undefined) return `the chord ${id} would leave its frame by an edge`;
   if ((id = gained(before.failing, after.failing)) !== undefined) return `the reservation ${id} would fail`;
   for (const [above, now] of after.gaps) {

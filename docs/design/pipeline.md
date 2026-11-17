@@ -1821,6 +1821,44 @@ published straight still does (a pushed port may carry one); otherwise nothing m
 node id, then the place on the face (R3); at most `SEAT_TRIALS` (16) seats are tried per attempt (R4), and the pairs left untried then are named by
 `OVERLAY_SEAT_CUT` (a warning, R6). The
 anchors are its record, as for the nest.
+**A move after the freeze keeps the solid blocks (dense-16x9 ticket 31).** From the chord freeze on, the members of a solid block
+and its followers are walls. One judge reads every move after the freeze: `blockMoveRefusal` (`block-checks.ts`).
+- It reads `blockReservationFaults` where the move begins and where it ends. For each member these are all its faults: the faces, the
+  block pitch of each port, the clearance of each box, the reserved gap and the reserved angle; for each follower, its alignment. A
+  straight member of a flat block reads the floor angle and the box clearance (side exit allowed) on its drawn chord instead, as its
+  admission does (`flatMemberRefusal`). Each fault has a measure of how short it is, in px; the angle is read as the height the chord
+  lacks.
+- The angle, the floor and the box clearance hold within `BLOCK_TOLERANCE`, 0.01 px. The validator, the judge of a move and the judge of
+  a step read this one constant; `EPS` stays a float compare. Why 0.01 px: the block is reserved at exactly its demand, and the 7c passes
+  after the freeze are an iterative solve. Their residue moves one end of a member by 0.001 to 0.004 px, which left the ticket 31
+  synthetic 1.5e-4 to 2.4e-3 px of height short of 34 degrees. A drawn constraint cannot be held tighter than the residue of the solve
+  that runs after it; 0.01 px is about 4 times the largest dip measured, and invisible in the drawing.
+- It refuses a move that adds a fault: a new key, or a new constraint on a key that had a fault.
+- It refuses a move that takes a fault that stood further from its reservation (a member a little more off its angle).
+- A fault that stood may stay or heal. Before ticket 31, `chordsHold` refused every move while any block fault stood. A centring step
+  that took a member off its angle for a moment then froze the replay in that state, and publication threw.
+
+Its callers:
+- `chordsHold`: every translation that `holdsMove`, `holdsNodeMove` and the chord step judge.
+- `adoptSettled`, the end trim (`trimRefusal`), the sibling close-up (`closeUpRefusal`), and the guard of the nest and the seat of
+  the overlay ports.
+- `judgedMove` (`post-freeze-judge.ts`), around each mover of 7f that calls a replay:
+  - the close-up;
+  - the keep-out;
+  - the steps of a round (the linkless step, the step over a chord and their replay);
+  - the tail centring;
+  - the lane reseat;
+  - the linkless step and the centring replay after the tier-gap growth.
+
+  A refused mover gives the model back whole, as it stood before the mover, and is named (`POST_FREEZE_MOVE_REFUSED`, a warning,
+  R6). It runs only after the freeze on a sheet with a solid block, so a sheet without one copies nothing. A refused round of the
+  chord step also gives back the state it holds outside the model (`saveChordState`): its movers may move again, and the growth its
+  moves spent is not spent. The settled trials it read stay spent (R4).
+
+The rule is absolute: after every judged move or step, each member stands within the tolerance, or a fault that stood is no larger.
+That is the validator after every step, so drift cannot add up across steps or passes. `chordsHold` reads each translation so, the
+seat steps of 7c included. The label-band producer right after the freeze is a required move, and it is not refused whole: the
+publication validator reads what it leaves.
 **A diagonal run has windows too (ticket 20).** A label on a diagonal overlay line, or on a held routed chord
 (ticket 22), lies on the line,
 turned to its angle (ticket 16), and is tested by its turned rectangle (text plus halo). Its windows
