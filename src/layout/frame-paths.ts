@@ -880,7 +880,9 @@ export function chordsHold(model: LayoutModel, proposed: { group: { id?: string;
 
 /**
  * The clearance of every pair of held chords that stands nearer than `within` px and does not cross strictly, keyed `a|b` in link order.
- * Read before and after 7f, it says which pairs 7f closed under the clearance (ticket 89 review); it moves nothing.
+ * Read before and after 7f, it says which pairs 7f closed under the clearance (ticket 89 review); it moves nothing. The clearance is the
+ * gate's own (`runClearance`, G6): two chords of one solid block that share a node are measured past the sheaf zone (dense-16x9 ticket 34),
+ * so a pair the gate excuses is never read as closed.
  */
 export function chordClearances(model: LayoutModel, within = 30): Map<string, number> {
   const chords = model.links.filter(link => isRoutedChord(model, link));
@@ -890,7 +892,21 @@ export function chordClearances(model: LayoutModel, within = 30): Map<string, nu
     if (Math.min(a.from.x, a.to.x) - within > Math.max(b.from.x, b.to.x) || Math.min(b.from.x, b.to.x) - within > Math.max(a.from.x, a.to.x)
       || Math.min(a.from.y, a.to.y) - within > Math.max(b.from.y, b.to.y) || Math.min(b.from.y, b.to.y) - within > Math.max(a.from.y, a.to.y)) continue;
     if (strictCrossing(a, b)) continue;
-    result.set(`${one.id}|${other.id}`, segmentDistance(a, b) - (linkStrokeWidth(one) + linkStrokeWidth(other)) / 2);
+    result.set(`${one.id}|${other.id}`, runClearance(model, { segment: a, link: one, stroke: linkStrokeWidth(one) }, { segment: b, link: other, stroke: linkStrokeWidth(other) }));
+  }
+  return result;
+}
+
+/**
+ * The pairs 7f closed (dense-16x9 ticket 34): read on `chordClearances` at the freeze (`before`) and after 7f (`after`), a pair is closed when it
+ * stands under the chord clearance now and nearer than at the freeze. A pair the freeze did not read (it stood farther than `within`, or crossed)
+ * is not named; a pair that stood under the clearance at the freeze and got wider lost nothing.
+ */
+export function closedChordPairs(before: ReadonlyMap<string, number>, after: ReadonlyMap<string, number>): { pair: string; before: number; now: number }[] {
+  const result: { pair: string; before: number; now: number }[] = [];
+  for (const [pair, now] of after) {
+    const was = before.get(pair);
+    if (was !== undefined && now < STRAIGHT_PATH_CLEARANCE.path - PLACEMENT_EPS && now < was - PLACEMENT_EPS) result.push({ pair, before: was, now });
   }
   return result;
 }
