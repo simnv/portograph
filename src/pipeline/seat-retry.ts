@@ -81,7 +81,8 @@ type Banded = Awaited<ReturnType<Env['bands']>>;
 export async function bandsWithoutWithdrawnSeats(env: Env, ledger: Reservations, placed: LayoutModel, trial: boolean, notes: Diagnostic[]): Promise<{ placed: LayoutModel; banded: Banded }> {
   const band = (model: LayoutModel): Promise<Banded> => trial ? env.bands(model, true) : env.bands(model);
   let banded = await band(placed);
-  if (placed.document.layout?.moveBeforeGrow !== true) return { placed, banded };
+  // Only a run that withdrew a set retries (a set exists only with `layout.moveBeforeGrow`).
+  if (!withdrawnSeatRows(banded.model).size) return { placed, banded };
   const result = await retryWithdrawnSeatSets(banded.model, {
     place: async () => {
       env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;

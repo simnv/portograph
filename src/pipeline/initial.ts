@@ -13,6 +13,7 @@ import { blockBoxPadsAsked, blockRowGapsAsked, blockRoomBound, roomShort } from 
 import { courseLegPitches } from '../layout/solid-blocks.js';
 import { STEEP_PREMISE, steepFamilies, unheldSteepBlocks } from '../layout/placement-inputs.js';
 import { PostconditionRefusal } from '../layout/placement-refusal.js';
+import { withdrawnSeatRows } from '../layout/seat-set.js';
 import { retryWithdrawnSeatSets } from './seat-retry.js';
 import { attemptCounters } from '../layout/attempt-counters.js';
 
@@ -118,7 +119,7 @@ const restoreEnv = (state: EnvSnapshot): void => {
 const seatNotes: Diagnostic[] = [];
 const placeFirst = async (): Promise<void> => {
   await placeOnce();
-  if (first.document.layout?.moveBeforeGrow !== true) return;
+  if (!withdrawnSeatRows(first).size) return;
   const result = await retryWithdrawnSeatSets(first, {
     place: async () => {
       env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
