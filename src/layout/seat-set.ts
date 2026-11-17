@@ -1,6 +1,7 @@
 import { LAYOUT_STAGES, stageReached, type LayoutGroup, type LayoutLink, type LayoutModel, type LayoutPort } from '../model/layout.js';
 import type { Rect } from '../model/geometry.js';
 import { expectedRowPath, findPort } from './row-paths.js';
+import { equationEnds, equationKind } from './read/seat-equation.js';
 import { portId } from './skeleton-graph.js';
 import { portKey } from './sides-one.js';
 import { ofKind, reservation, seatSetFault, type ReservationOf, type SeatEquation, type SeatSetPayload } from './reservations.js';
@@ -92,11 +93,6 @@ export function seatSetScope(model: LayoutModel, group: LayoutGroup): string | u
   return undefined;
 }
 
-function ends(model: LayoutModel, link: LayoutLink): [LayoutPort, LayoutPort] | undefined {
-  if (!link.attachments || link.layer !== 'routed') return undefined;
-  const a = findPort(model, link.attachments.from), b = findPort(model, link.attachments.to);
-  return a?.anchor && b?.anchor ? [a, b] : undefined;
-}
 
 /**
  * The gaps the repack keeps between the members (`repackOverlaps` with the label detours): `rowGap`, and the room of a labelled link that
@@ -121,16 +117,15 @@ function readRow(model: LayoutModel, group: LayoutGroup): RowInput | string {
   const gaps = repackGaps(model, order, bodies.map(body => body.width));
   const feeds: Feed[] = [], holds: RowInput['holds'] = [];
   for (const link of model.links) {
-    const pair = ends(model, link);
     // A solid block member is the block's chord, never a seat or a held vertical: the block reservation owns it (`blockFaces`, the owner check).
-    if (pair === undefined || link.solidBlock) continue;
+    const pair = equationEnds(model, link);
+    if (pair === undefined) continue;
     for (const [port, far] of [pair, [pair[1], pair[0]] as const]) {
       const member = index.get(port.ref.node);
       if (member === undefined || index.has(far.ref.node)) continue;
-      const farGroup = model.groups[model.document.nodes[far.ref.node]!.group]!;
-      const feed = port.side === 'top' && far.side === 'bottom' && !link.bundle && farGroup.frame === group.frame && farGroup.tier! < group.tier!;
-      if (feed) feeds.push({ link, member, port, far, x: far.anchor!.x - (port.anchor!.x - bodies[member]!.x) });
-      else if ((port.side === 'top' || port.side === 'bottom') && Math.abs(far.anchor!.x - port.anchor!.x) <= SEAT_STANDS_EPS) holds.push({ link, member, port, far });
+      const kind = equationKind(model, group, link, port, far);
+      if (kind === 'feed') feeds.push({ link, member, port, far, x: far.anchor!.x - (port.anchor!.x - bodies[member]!.x) });
+      else if (kind === 'side' && Math.abs(far.anchor!.x - port.anchor!.x) <= SEAT_STANDS_EPS) holds.push({ link, member, port, far });
     }
   }
   const fixed = new Set(holds.map(item => item.member));

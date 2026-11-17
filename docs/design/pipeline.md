@@ -1170,8 +1170,9 @@ step over chords): it holds 0; a set whose row moves along sets no bound; a set 
 whose box does not stand in its window now, does not move; a set whose seated row carries far ends of a further set takes that set along (a
 chain; the rows that move along are read as a closure before any bound, so the range does not depend on the order of the ledger, R3); a set
 withdrawn from 7c on keeps the far ends of its own equations where 7c left them (`seatSetDeclined.fixed`, each far end with the link of its
-equation; `seatSetDeclinedFault` proves each one a link from the far end to a member of the declined row, once, and refuses `fixed` on a decline
-before 7c or at the input). Lifetime of `fixed`: the rest of the placement run that withdrew the set, its publication replays included (R1);
+equation; `seatSetDeclinedFault` proves each one a link the rows rule reads as an equation of the row (`equationEnds`, `equationKind`, the
+readers of `readRow`: routed, no solid-block chord, through a member's top or bottom face) from the far end to a member, once, and refuses
+`fixed` on a decline before 7c or at the input, and any decline whose rule the model has not reached; review 3 of ticket 36a). Lifetime of `fixed`: the rest of the placement run that withdrew the set, its publication replays included (R1);
 the placement the command runs without the set writes the decline again at its input with no far ends, so its 7c moves those rows again. A set seated on the anchor tier cannot translate and sets no bound: the step
 moves its far ends, the rule withdraws it ("its row is the anchor tier"), and the command places once more without it. The room is the
 frame column only: a translation that crosses a lane is withdrawn by `translationFault` as before. Both are deviations from the clamp of

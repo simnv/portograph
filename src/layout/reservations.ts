@@ -11,6 +11,7 @@ import type { PlacementInputField } from '../model/layout.js';
 import type { PairPitch } from '../model/layout.js';
 import { LAYOUT_STAGES, stageReached } from '../model/layout.js';
 import { portKey } from './sides-one.js';
+import { equationEnds, equationKind } from './read/seat-equation.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
@@ -552,6 +553,8 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
   if (item.kind !== 'seatSet') return undefined;
   const p = item.payload;
   if (BEFORE_SIDES_TWO.has(model.stage) || model.stage === 'sides-two') return `the seat set of ${p.row} stands on a ${model.stage} model, before stage 6 makes it`;
+  if (item.owner.kind !== 'group' || item.owner.id !== p.row || item.producer !== 'rows') return `the seat set of ${p.row} is owned or produced by another rule`;
+  if ((model.reservations ?? []).filter(entry => entry.kind === 'seatSet' && entry.payload.row === p.row).length > 1) return `the row ${p.row} holds more than one seat set`;
   const group = model.groups[p.row];
   if (group?.bounds === undefined || group.frame !== p.frame) return `${p.row} is no cell of ${p.frame}`;
   if (!same(group.rowOrder ?? group.nodes, p.order)) return `${p.row} no longer stands in the order of its seat set`;
@@ -590,8 +593,9 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
 
 /**
  * Why the claims of a seat-set payload are not facts of `model` (review 1 of slice 1, finding 1), or `undefined`: each equation names a link of the
- * model whose two ends are its member port and its far port, the member in the row and the far node outside it (a seat: the member's top port
- * under a bottom port of a node above); the boundary is exactly the far ports of the equations, in key order (its first port is the origin); each
+ * model whose two ends are its member port and its far port, the member in the row and the far node outside it, each link once (a seat: a feed
+ * by `equationKind`, the reader `readRow` uses, with its far port above; a hold: any other link through a member's top or bottom face; neither a
+ * solid-block chord nor unrouted, `equationEnds`); the boundary is exactly the far ports of the equations, in key order (its first port is the origin); each
  * block face is a face of a member and lists exactly the solid-block ports of that face; every member face that carries a solid-block port is
  * listed; and each declined feed names a link with one end on a member and the other outside the row. `farOffset` is not read: it records the
  * far port's offset at the decision, and the ruled boundary is the port, not the body, so a parent body that grows keeps the set.
@@ -599,15 +603,19 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
 function seatSetProvenanceFault(p: SeatSetPayload, model: LayoutModel, port: (ref: PortRef) => LayoutModel['nodes'][string]['ports'][number] | undefined): string | undefined {
   const members = new Set(p.order), links = new Map(model.links.map(link => [link.id, link] as const));
   const ends = (id: string): [string, string] | undefined => { const a = links.get(id)?.attachments; return a === undefined ? undefined : [portKey(a.from), portKey(a.to)]; };
+  const group = model.groups[p.row]!, used = new Set<string>();
   for (const [kind, eq] of [...p.seats.map(item => ['seat', item] as const), ...p.holds.map(item => ['hold', item] as const)]) {
-    const pair = ends(eq.link), m = portKey(eq.member), f = portKey(eq.far);
-    if (pair === undefined) return `the ${kind} ${eq.link} of the seat set of ${p.row} names no link of the model`;
+    const pair = ends(eq.link), m = portKey(eq.member), f = portKey(eq.far), link = links.get(eq.link);
+    if (pair === undefined || link === undefined) return `the ${kind} ${eq.link} of the seat set of ${p.row} names no link of the model`;
+    if (used.has(eq.link)) return `the ${kind} ${eq.link} of the seat set of ${p.row} is a second equation of one link`;
+    used.add(eq.link);
     if (!((pair[0] === m && pair[1] === f) || (pair[0] === f && pair[1] === m))) return `the ${kind} ${eq.link} of the seat set of ${p.row} does not join its member port and its far port`;
     if (!members.has(eq.member.node) || members.has(eq.far.node)) return `the ${kind} ${eq.link} of the seat set of ${p.row} does not join a member to a node outside the row`;
-    if (kind === 'seat') {
-      const a = port(eq.member), b = port(eq.far);
-      if (a?.side !== 'top' || b?.side !== 'bottom' || a.anchor === undefined || b.anchor === undefined || b.anchor.y >= a.anchor.y) return `the seat ${eq.link} of the seat set of ${p.row} does not feed a member's top port from a bottom port above`;
-    }
+    // The links the rows rule reads (`readRow`, through the same readers): a seat is a feed, a hold is any other link through a member's top or
+    // bottom face; neither is a solid-block chord or an unrouted link (review 3 of ticket 36a).
+    const a = port(eq.member), b = port(eq.far), read = equationEnds(model, link) === undefined || a === undefined || b === undefined ? undefined : equationKind(model, group, link, a, b);
+    if (kind === 'seat' && (read !== 'feed' || b!.anchor!.y >= a!.anchor!.y)) return `the seat ${eq.link} of the seat set of ${p.row} does not feed a member's top port from a bottom port above`;
+    if (kind === 'hold' && read !== 'side') return `the hold ${eq.link} of the seat set of ${p.row} is no link the rows rule reads as a hold`;
   }
   const far = [...new Set([...p.seats, ...p.holds].map(eq => portKey(eq.far)))].sort(), boundary = p.boundary.map(item => portKey(item.port));
   if (!same(far, boundary)) return `the boundary of the seat set of ${p.row} is not the far ports of its equations`;
@@ -626,9 +634,13 @@ function seatSetProvenanceFault(p: SeatSetPayload, model: LayoutModel, port: (re
   }
   const left = [...solid.keys()].sort().find(key => !claimed.includes(key));
   if (left !== undefined) return `the seat set of ${p.row} leaves the solid-block face ${left} of a member out`;
+  // A declined feed is a feed of the row the set does not keep: once, and no equation of the set. Its reason is a label of the diagnostic, read by no decision.
   for (const item of p.declined) {
-    const a = links.get(item.link)?.attachments;
+    const link = links.get(item.link), a = link?.attachments;
     if (a === undefined || members.has(a.from.node) === members.has(a.to.node)) return `the declined feed ${item.link} of the seat set of ${p.row} is no link from a member to a node outside the row`;
+    const [mine, other] = members.has(a.from.node) ? [a.from, a.to] : [a.to, a.from], mp = port(mine), op = port(other);
+    if (used.has(item.link) || equationEnds(model, link!) === undefined || mp === undefined || op === undefined || equationKind(model, group, link!, mp, op) !== 'feed') return `the declined feed ${item.link} of the seat set of ${p.row} is no feed of the row the set leaves`;
+    used.add(item.link);
   }
   return undefined;
 }
@@ -642,17 +654,30 @@ export function seatSetDeclinedFault(item: Reservation, model: LayoutModel): str
   if (item.kind !== 'seatSetDeclined') return undefined;
   const { row } = item.payload;
   if (BEFORE_SIDES_TWO.has(model.stage) || model.stage === 'sides-two') return `the seat-set decline of ${row} stands on a ${model.stage} model, before stage 6 records it`;
+  if (item.owner.kind !== 'group' || item.owner.id !== row || item.producer !== 'rows') return `the seat-set decline of ${row} is owned or produced by another rule`;
+  if ((model.reservations ?? []).filter(entry => entry.kind === 'seatSetDeclined' && entry.payload.row === row).length > 1) return `the row ${row} is declined twice`;
   if (model.groups[row] === undefined) return `the seat-set decline names ${row}, which is no group of the model`;
+  // `at` is the input (a decline the command carries into stage 6), or the rule that withdrew the set, from the rows rule on; a model that has not
+  // reached that rule carries no withdrawal of it (review 3 of ticket 36a: a future withdrawal is forged, as the steep blocks read not-yet apart).
+  const at = item.payload.at;
+  if (at !== 'input' && (!LAYOUT_STAGES.includes(at as LayoutStage) || !stageReached(at as LayoutStage, 'rows'))) return `the seat-set decline of ${row} names ${at}, which is no rule that withdraws a set`;
+  // A rule edits a draft that still carries the stage before it (`withdrawSeatSet`), and its postconditions read that draft: the model must
+  // have reached the stage before the rule that withdrew the set.
+  const before = LAYOUT_STAGES[LAYOUT_STAGES.indexOf(at as LayoutStage) - 1]!;
+  if (at !== 'input' && !stageReached(model.stage, before)) return `the seat-set decline of ${row} records a withdrawal at ${at} on a ${model.stage} model, which has not reached that rule`;
   const fixed = item.payload.fixed;
   if (fixed !== undefined) {
     // Only a set withdrawn from 7c on keeps far ends fixed (`withdrawSeatSet`): a decline at the input or before 7c has no 7c position to hold.
-    const at = item.payload.at as LayoutStage;
-    if (!LAYOUT_STAGES.includes(at) || !stageReached(at, 'centre')) return `the seat-set decline of ${row} at ${item.payload.at} keeps far ends fixed, which only a withdrawal from 7c on records`;
-    // Each far end is proved by its own equation: a link that joins it to a member of the declined row, from outside the row; once each.
-    const members = new Set(model.groups[row]!.nodes), links = new Map(model.links.map(link => [link.id, link] as const)), seen = new Set<string>();
+    if (at === 'input' || !stageReached(at as LayoutStage, 'centre')) return `the seat-set decline of ${row} at ${at} keeps far ends fixed, which only a withdrawal from 7c on records`;
+    // Each far end is proved by its own equation: a link the rows rule reads as an equation of the row (`equationEnds`, `equationKind`, as
+    // `readRow` reads it: routed, no solid-block chord, through a member's top or bottom face), from the far end to a member; once each. The
+    // equation need not stand vertical any more: the move that broke it withdrew the set.
+    const group = model.groups[row]!, members = new Set(group.nodes), links = new Map(model.links.map(link => [link.id, link] as const)), seen = new Set<string>();
     for (const { link, node } of fixed) {
-      const a = links.get(link)?.attachments, ends = a === undefined ? [] : [a.from.node, a.to.node];
-      if (seen.has(link) || !ends.includes(node) || members.has(node) || !ends.some(end => end !== node && members.has(end))) return `the seat-set decline of ${row} keeps ${node} fixed by ${link}, which is no equation of the row once`;
+      const one = links.get(link), a = one?.attachments, [mine, other] = a === undefined ? [] : a.to.node === node ? [a.from, a.to] : [a.to, a.from];
+      const mp = mine && model.nodes[mine.node]?.ports.find(p => portKey(p.ref) === portKey(mine)), op = other && model.nodes[other.node]?.ports.find(p => portKey(p.ref) === portKey(other));
+      if (seen.has(link) || one === undefined || other?.node !== node || members.has(node) || !members.has(mine!.node) || mp === undefined || op === undefined
+        || equationEnds(model, one) === undefined || equationKind(model, group, one, mp, op) === undefined) return `the seat-set decline of ${row} keeps ${node} fixed by ${link}, which is no equation of the row once`;
       seen.add(link);
     }
   }

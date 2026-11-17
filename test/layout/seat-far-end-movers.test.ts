@@ -135,24 +135,26 @@ describe('no 7c mover takes a far end of a standing seat set along (dense-16x9 t
   it('completes the sheet that stood a hold half a pixel off, and reads a hold to SEAT_STANDS_EPS', async () => {
     const sheet = 'test/fixtures/staged/a-seat-set-hold-half-a-pixel-off-is-published.yaml';
     await expect(layout(parse(readFileSync(join(root, sheet), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt })).resolves.toBeDefined();
-    const model = await layout(parse(readFileSync(join(root, 'goldens/synthetic/a-compared-placement-holds-the-seat-sets-the-kept-placement-holds.yaml'), 'utf8')),
-      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-    const entry = (model.reservations ?? []).find(item => item.kind === 'seatSet');
-    expect(entry, 'the sheet publishes a seat set').toBeDefined();
-    // The member of the first equation stands d to the left, with its ports, and with the seat x, interval and cell box stage 6 would have recorded.
+    // A hold is a link the rows rule reads through a member's top or bottom face that is no feed (`equationKind`): here c1 of site#1 feeds z1
+    // in the row below. The test records it as a hold of site#1 as stage 6 would have, then moves its far port by d, with the boundary offset
+    // stage 6 would have recorded (z1 sorts after the parents, so the origin of the set stays).
+    const child = readFileSync(join(root, 'goldens/synthetic/a-child-row-stands-under-its-parents-ports.yaml'), 'utf8');
+    const text = child.replace('\nlinks:', '\n  z1: { group: site, ports: [{ name: u, side: top }] }\nlinks:') + '\n  - { from: c1.b, to: z1.u }\n';
+    const model = await layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const side = model.links.find(link => link.attachments?.from.node === 'c1' && link.attachments.to.node === 'z1')!;
+    const entry = (model.reservations ?? []).find(item => item.kind === 'seatSet' && item.payload.order.includes('c1'));
+    expect(entry, 'the sheet publishes the set of the row of c1').toBeDefined();
+    expect(entry!.kind === 'seatSet' && entry!.payload.order.includes('z1'), 'z1 stands in another row').toBe(false);
+    const anchor = (m: LayoutModel, ref: { node: string }) => m.nodes[ref.node]!.ports.find(port => portKey(port.ref) === portKey(ref as never))!.anchor!.x;
     const skewed = (d: number): string | undefined => {
       const copy = JSON.parse(JSON.stringify(model)) as LayoutModel, item = copy.reservations!.find(one => one.id === entry!.id)!;
       if (item.kind !== 'seatSet') throw new Error('not a seat set');
-      const p = item.payload, eq = [...p.seats, ...p.holds][0]!;
-      p.seats = p.seats.filter(one => one !== eq);
-      if (!p.holds.includes(eq)) p.holds = [...p.holds, eq];
-      const node = copy.nodes[eq.member.node]!;
-      node.bounds = { ...node.bounds!, x: node.bounds!.x - d };
-      for (const port of node.ports) if (port.anchor) port.anchor = { ...port.anchor, x: port.anchor.x - d };
-      p.xs = p.xs.map((x, i) => p.order[i] === eq.member.node ? x - d : x);
-      p.interval = { ...p.interval, low: p.interval.low - d };
-      const cell = copy.groups[p.row]!;
-      cell.bounds = { ...cell.bounds!, x: cell.bounds!.x - d, width: cell.bounds!.width + d };
+      const p = item.payload, member = side.attachments!.from, far = side.attachments!.to, origin = anchor(copy, p.boundary[0]!.port);
+      p.holds = [...p.holds, { link: side.id, member, far, memberOffset: anchor(copy, member) - copy.nodes.c1!.bounds!.x, farOffset: anchor(copy, far) - copy.nodes.z1!.bounds!.x }];
+      p.boundary = [...p.boundary, { port: far, x: anchor(copy, far) - origin + d }].sort((a, b) => portKey(a.port).localeCompare(portKey(b.port)));
+      expect(portKey(p.boundary[0]!.port), 'the origin stays').not.toBe(portKey(far));
+      const port = copy.nodes.z1!.ports.find(one => portKey(one.ref) === portKey(far))!;
+      port.anchor = { ...port.anchor!, x: port.anchor!.x + d };
       return seatSetFault(item, copy);
     };
     expect(skewed(0)).toBeUndefined();

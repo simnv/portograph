@@ -7,10 +7,53 @@ import { entryFailure, ofKind, reservation, seatSetFault } from '../../src/layou
 import { clampFarEndShift, nameFarEndClamp, SEAT_FAR_END_CLAMPED, seatFarEndRange, seatInterval, seatSetsLost } from '../../src/layout/seat-set.js';
 import type { SeatSetPayload } from '../../src/layout/reservations.js';
 import { withMoveBeforeGrow } from './move-before-grow.js';
+import { createEnv } from '../../src/pipeline/env.js';
+import type { LayoutStage } from '../../src/model/index.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
-// Dense-16x9 ticket 36a, review 2: the guards of the seat-set records and of the far-end range, closed as a class (the pattern of tickets 29 and 31).
+// Dense-16x9 ticket 36a, reviews 2 and 3: the guards of the seat-set records and of the far-end range, closed as a class (the pattern of tickets
+// 29 and 31).
+//
+// Every field of the two records, the predicate that proves it, and its reads. "Reads" means all three of `RESERVATION_CHECKS` (round, early,
+// final: `everywhere`) and both restores, through `seatSetFault` and `seatSetDeclinedFault` in reservations.ts. `shape` is `shapeFailure`, and
+// `ledger` is `validateLedgerShape`, at both restores and at every round check.
+//
+// seatSet (entry)
+//   id, activeFrom, revision   ledger: unique id, the kind's activeFrom, an integer revision >= 0.
+//   owner, producer            seatSetFault: the group of `row`, producer 'rows'; one seat set per row.
+// seatSet.payload
+//   row                        seatSetFault: a group of the model with a box; owner is that group.
+//   frame                      seatSetFault: the group's frame.
+//   order                      seatSetFault: the group's rowOrder (or nodes), the same list.
+//   widths, xs                 seatSetFault: each member body at its x (relative to the origin) and width, to PLACEMENT_EPS.
+//   seats[]                    seatSetProvenanceFault: a link of the model, once over seats, holds and declined; its ends are the member and far
+//                              ports; member in the row, far outside; a feed by `equationKind` (the reader `readRow` uses: routed, no solid-block
+//                              chord, the member's top port under a bottom port of a node of the frame on a tier above, no bundle), far port above.
+//     memberOffset             seatSetFault: the member port's offset on its body, to PLACEMENT_EPS.
+//     farOffset                read by no decision and not proved: the far port's offset at the decision; the ruled boundary is the port, so a
+//                              parent body that grows keeps the set (the doc of seatSetProvenanceFault says so).
+//     the equation             seatSetFault: member port over far port, to PLACEMENT_EPS.
+//   holds[]                    seatSetProvenanceFault: as a seat, but a `side` link by `equationKind` (through a member's top or bottom face, no
+//                              feed); seatSetFault: the two anchors within SEAT_STANDS_EPS.
+//   blockFaces[]               seatSetProvenanceFault: each solid-block face of a member claimed exactly once (keys with counts) with its
+//                              complete port list; seatSetFault: the ports in that order.
+//   boundary[]                 seatSetProvenanceFault: exactly the far ports of the equations, in key order; seatSetFault: each at its offset x.
+//   interval                   seatSetFault: covers every member body, and the cell box covers it.
+//   declined[]                 seatSetProvenanceFault: a feed of the row by `equationKind`, once, and no equation of the set. reason: shape only;
+//                              a label of the diagnostic, read by no decision.
+// seatSetDeclined (entry)
+//   id, activeFrom, revision   ledger, as above.
+//   owner, producer            seatSetDeclinedFault: the group of `row`, producer 'rows'; one decline per row; no seat set of the row stands.
+// seatSetDeclined.payload
+//   row                        seatSetDeclinedFault: a group of the model, on a model from stage 6 on.
+//   at                         seatSetDeclinedFault: 'input', or a rule from the rows rule on that the model has reached (its stage at least the
+//                              stage before the rule: a rule edits a draft that carries the stage before it).
+//   why                        shape only: the reason the rule gave. `seatSetsLost` reads its clause on the settled copies of one run (never on a
+//                              restored model), and the retry names it.
+//   fixed[]                    seatSetDeclinedFault: only on a withdrawal from 7c on; each { link, node } a link the rows rule reads as an equation
+//                              of the row (`equationEnds`, `equationKind`) from `node` outside the row to a member, once. Lifetime: the rest of the
+//                              placement run that withdrew the set; the next placement writes the decline at its input without it.
 const opts = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 const CHILD_ROW = readFileSync(new URL('../../goldens/synthetic/a-child-row-stands-under-its-parents-ports.yaml', import.meta.url), 'utf8');
 /** The child row with a complete solid block under it: `c1` and `c2` feed `g1`, `g2` and `n1`, so the set holds two bottom block faces. */
@@ -126,6 +169,44 @@ describe('the seat-set records prove their own evidence (dense-16x9 ticket 36a, 
     expect(check({ row: 'up', at: 'centre', why: 'probe', fixed: [{ link: eq.link, node: 'c1' }] })).toMatch(/no equation of the row/);
     expect(check({ row: set.row, at: 'centre', why: 'probe', fixed: [{ link: eq.link, node: eq.member.node }] })).toMatch(/no equation of the row/);
     expect(check({ row: set.row, at: 'centre', why: 'probe', fixed: [{ link: eq.link, node: eq.far.node }, { link: eq.link, node: eq.far.node }] })).toMatch(/no equation of the row/);
+  }, 120000);
+
+  // Review 3: the two states restore accepted at 7a198abe. Each is refused by the round, early and final reads and by the full restore.
+  const reads = (m: LayoutModel, e: Parameters<typeof entryFailure>[0]): string[] => {
+    let restore = 'ACCEPTED';
+    try { restoreLayoutModel(JSON.stringify(m)); } catch (error) { restore = String(error); }
+    return [entryFailure(e, m, 'round') ?? 'ACCEPTED', entryFailure(e, m, 'early') ?? 'ACCEPTED', entryFailure(e, m, 'final') ?? 'ACCEPTED', restore];
+  };
+  it('refuses a withdrawal the model has not reached: fixed far ends at 7c on a stage-6 model', async () => {
+    const env = createEnv(parse(CHILD_ROW), opts), step = env.step;
+    let rows: LayoutModel | undefined;
+    env.step = ((stage: LayoutStage, ...rest: unknown[]) => {
+      const out = (step as (...args: unknown[]) => LayoutModel)(stage, ...rest);
+      if (stage === 'rows') rows = structuredClone(out);
+      return out;
+    }) as typeof env.step;
+    await env.place([]);
+    expect(rows!.stage).toBe('rows');
+    const p = ofKind(rows!.reservations ?? [], 'seatSet')[0]!.payload, eq = p.seats[0]!;
+    const entry = reservation('seatSetDeclined', { kind: 'group', id: p.row }, '', 'rows', 0, { row: p.row, at: 'centre', why: 'a future withdrawal', fixed: [{ link: eq.link, node: eq.far.node }] });
+    rows!.reservations = [...(rows!.reservations ?? []).filter(item => item.kind !== 'seatSet'), entry];
+    const out = reads(rows!, entry);
+    expect(out.filter(item => item === 'ACCEPTED')).toEqual([]);
+    expect(out[0]).toMatch(/has not reached that rule/);
+  }, 120000);
+  it('refuses a solid-block chord as a fixed far end: the rows rule never reads it as an equation', async () => {
+    const model = await layout(parse(BLOCK), opts);
+    const p = ofKind(model.reservations ?? [], 'seatSet').find(item => item.payload.blockFaces.length >= 2)!.payload;
+    const chord = model.links.find(link => link.solidBlock && [link.attachments!.from.node, link.attachments!.to.node].includes(p.order.find(id => p.blockFaces.some(face => face.node === id))!))!;
+    const member = p.order.includes(chord.attachments!.from.node) ? chord.attachments!.from.node : chord.attachments!.to.node;
+    const node = chord.attachments!.from.node === member ? chord.attachments!.to.node : chord.attachments!.from.node;
+    expect(p.order.includes(node), 'the chord leaves the row').toBe(false);
+    const entry = reservation('seatSetDeclined', { kind: 'group', id: p.row }, '', 'rows', 0, { row: p.row, at: 'centre', why: 'probe', fixed: [{ link: chord.id, node }] });
+    const copy = structuredClone(model);
+    copy.reservations = [...(copy.reservations ?? []).filter(item => !(item.kind === 'seatSet' && item.payload.row === p.row)), entry];
+    const out = reads(copy, entry);
+    expect(out.filter(item => item === 'ACCEPTED')).toEqual([]);
+    expect(out[0]).toMatch(/no equation of the row/);
   }, 120000);
 
   // Lifetime of `fixed`: from the withdrawal to the end of that placement run. The placement the command runs without the set writes the
