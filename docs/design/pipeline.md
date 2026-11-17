@@ -525,6 +525,19 @@ stays and `FEED_ORDER_PAIR_BOUND` names the pair (R6).
   sorts the cell's fed members by their places, and the pair stood them in key order, so the keys keep their order. The earlier joint
   choice is then still a minimum, and it stays. So the second round ends the loop; the cap of one round per judged row and one more
   (R4) withdraws by name any entry still broken.
+- **Open members** (dense-16x9 ticket 36, slice 3; only with `layout.moveBeforeGrow: true`; owner ruling 2 of 2026-11-17: unfed members
+  may stand in the gaps the seats leave). After the cells are decided (`orderByFeeds`, and again in `refreshFeedOrders`), `withOpen`
+  reads each cell entry once more. A member is **open** when every link of it ends in the sub-tier directly below the cell
+  (`openMemberFault`, `read/open-member.ts`: no feed from above, no self link, no peer link in the row) and when, at every other slot of
+  the row, stage 4's own reader (`below`) decides the same below the cell: the joint choice of the pair under it with its crossings, the
+  feed order of each row it feeds, and every frame order. The order stage 4 chose stays; the entry lists the open members (`open`), and
+  the seat set closes their slots in stage 6. A member that the decisions below hold keeps its slot, named
+  (`FEED_ORDER_SLOT_HELD`, at the first place that changes them; fixture
+  `an-unfed-member-keeps-its-slot-where-the-row-below-reads-it`). `layout.corridorRowOrder: false` and `layout.feedOrder: false` open
+  nothing. Every slot is tried once per member (at most the row length times its members, R4). `rowOrderFailure` reads the feeds premise
+  without the open members, refuses an entry that lists a member twice or a member that `openMemberFault` refuses, and accepts
+  a row that stands in another order only when it permutes open members alone, from stage 6 on, with a `seatSet` entry in that order (or
+  a `seatSetDeclined` entry past the input).
 
 **Sibling rows (dense-16x9 ticket 06, slice C; owner ruling "mirror one pair", 2026-11-15).** Once the frame order has settled
 (after `settlePullsAndFeeds`), `seatSiblingFrameEnds` (`src/layout/sibling-frames.ts`) seats the ends of every **sibling-frame link**
@@ -624,6 +637,10 @@ shared-port peers use their mean coordinate. Capture those coordinates before th
 rebuild. Author `order:` sorts the author-ordered subsequence; free ports occupy the remaining
 positions. Preserve signed keys and the relative physical order of unequal author keys, not an
 absolute slot number.
+The sort is one function (dense-16x9 ticket 36, slice 3): `faceSortOf` reads the keys of the sheet once, `orderFace` orders one
+face (the key sort, a far-end order the ledger reserves, then `seatAuthored`), and `faceKeyReads` names the nodes whose position a
+face's key reads. The stage-5 loop calls `orderFace`; the seat set of stage 6 calls it for the faces that read a moved open member, so
+no second sorter exists.
 
 **That order is provisional, and a ledger entry can replace it** (dense-16x9 ticket 07). The far ends move after this sort: 7c centres and grows, the close-up and 7f move boxes, and
 a face sorted here can stand the wrong way round at publication (G5 fails it). Stage 5 stays the one place that seats a face. The **far-end round** (`farEnd`, `rounds.ts`; the last
@@ -861,6 +878,28 @@ members in port order, the parent ports with their offsets from the first of the
 the seated members) and the feeds left off, each with why (`shared-port`, `fixed`, `pitch` for a parallel link the two faces' pitches keep
 off, `conflict`). Every x is relative to the anchor of the first parent port, so the set moves as a whole and a parent body that grows on
 a face moves no seat.
+
+**Open slots in the seat set** (dense-16x9 ticket 36, slice 3; owner ruling 2). Stage 4 opens a named freedom in the cell's
+`rowOrder` entry (`open`, the open members, stage 4 above); the seat set of the row closes it. The open members that hold no vertical
+are movable. The search tries the row order stage 4 left, and every order that puts the movable members in other slots and keeps the
+other members in their order, when stage 4's own reader (`belowReader`) decides the same below the row under it; at most
+`SEAT_SET_SLOT_ORDERS` (64) orders per row, else the open members keep their slots, named (`SEAT_SET_SLOT_BOUND`). Two open members in
+a row of six give 30 orders. Each order is searched as above (`assignments`); an added order gives one candidate per kept set, its first
+in read order. The read order puts the **reach** after the row width: the sum of the distances from each open member's ports to its far
+ends (the far-end pull of a free member, architecture-2 ticket 22). So a slot choice never costs a seat (the kept verticals first),
+then ruling 4, then the row width, then the area with the block height, as before; the last keys are the kept links by content, the row
+order by content and `sourceIndex` (R3). A gap too small for an open member loses seats there, so the kept verticals reject it. A
+candidate stands its order (`stageLeaf`): the cell takes the order, and every face whose stage-5 key reads a moved open member
+(`faceKeyReads`) is sorted again by the stage-5 sorter (`orderFace`) on its stage-5 slots (`faceSlots`, `placeFaceFromSlots`;
+`resortFaces`, `free-slots.ts`). A face that another owner holds (a turn record or the planned turns, a `farEndOrder` entry, a bar, a
+bundle, a bus, a stagger row, a flank, a grid) or that stands off its slots declines the candidate by name. Ruling 4 reads the other
+links of a face sorted again too. The `seatSet` entry records the order. `seatSetFault` checks it against the cell's `rowOrder`
+entry (only open members moved) and refuses, by the G5 predicate (`staleThrough`, `far-end-order.ts`), a face that reads a moved
+open member and stands out of the order of its far ends: a row reordered with the faces below left in their stage-5 order. The mutation
+check lets the rows rule move open members alone in `rowOrder`, and turn a face only into the order `orderFace` gives on the draft; any
+other rule that moves an open member changes the topology. On the outside sheet the core rows stand their two unfed members in the gap
+between the seats (16:9: 3543x2106 against 3543x2263 on main; 21:10: 3543x1831 against 3543x2005), with the bent links, the crossings and
+the kept verticals as on main. Fixture: `an-unfed-member-stands-in-a-gap-its-row-seats-leave`.
 
 The frame columns give way to a seated row as wholes (`separateFrameColumns`, after the sets): a frame moves with the parents of its rows,
 so no seat moves, and a neighbour on the left pushes the seated frame right. A flank, bar or grid gives no way, and then the set is declined
