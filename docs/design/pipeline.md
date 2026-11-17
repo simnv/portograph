@@ -1168,10 +1168,11 @@ compares. The scopes, one table:
 |---|---|
 | A compared placement (`initial.ts`: the first run, each trial of the stagger gate, the leg-pitch and room rounds) | stays an entry of that placement; nothing acts on it, and the next placement decides the set again on its own geometry |
 | The kept placement, at the 7f run of the driver's baseline | declines the row for the command (`env.seatSetDeclined`, like the steep blocks) and places once more from stage 6 |
-| A routed trial of a round, at its 7f run | declines the row and places the trial once more; a refused trial gives back the declines its 7f added |
+| A routed trial of a round, at its 7f run | declines the row and places the trial once more; a refused trial gives back the declines its 7f added; the placement that replaces the trial passes the same admission (`admitPlacement`: fallback, the round's 7e checks, preflight) before it is banded, and a refusal there refuses the trial |
+| The publication replay (`refuseCrowdedChords`), at its 7f run | declines the row and places the replay once more from its ledger, before the gates judge it; a replay the gates discard gives back its declines and publishes none of its notes |
 
 Stage 6 writes each decline at its input (`at: 'input'`) and names the row (clause `withdrawn`), so no kept placement holds an interval
-without a set that stands. One loop serves both kept scopes (`retryWithdrawnSeatSets`, `bandsWithoutWithdrawnSeats`): a retry that
+without a set that stands. One loop serves the kept scopes (`retryWithdrawnSeatSets`, `bandsWithoutWithdrawnSeats`): a retry that
 withdraws another row declines it too and places again; a retry whose placement is refused gives the declines back and the placement before it
 stands (`SEAT_SET_RETRY_REFUSED`). Bound: each row is declined once per command, and at most `SEAT_SET_RETRIES` placements per loop run
 (`SEAT_SET_RETRY_BOUND` past it); every retry is credited outside the placement cap (`env.exemptPlacing`), as the room rounds are, and

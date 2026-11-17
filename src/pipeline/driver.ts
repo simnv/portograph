@@ -17,7 +17,7 @@ import { crowdedHeldChords } from '../layout/direct-families.js';
 import { refuseChordEntries, reserve as addReservations } from '../layout/reservations.js';
 import { score } from '../score/index.js';
 import { restoreLayoutModel } from '../layout/mutation.js';
-import type { LayoutModel } from '../model/index.js';
+import type { Diagnostic, LayoutModel } from '../model/index.js';
 import { bandsWithoutWithdrawnSeats } from './seat-retry.js';
 
 /** The rounds in the order of the pipeline. A group holds the rounds that compete for the same starts: the fan, the span, the side and course, the turn and overlay, and last the far-end round, which reads the settled result of all of them. */
@@ -151,15 +151,20 @@ export async function refuseCrowdedChords(env: Env, s: State): Promise<void> {
   const before = s.routedFinal ?? s.routedBase ?? await env.route(s.base);
   const entries = refuseChordEntries(crowded, env.placements);
   const kept7e = restoreLayoutModel(JSON.stringify({ ...s.kept7e, reservations: addReservations(s.kept7e.reservations ?? [], entries) }));
-  const banded = await env.bands(kept7e);
+  // The replay is a placement the command may keep (dense-16x9 ticket 36, review 1, finding 4): a seat set its 7f withdraws is declined and the
+  // replay placed once more from its ledger (`bandsWithoutWithdrawnSeats`), before the gates judge it. A replay the gates discard gives back the
+  // declines it added, and its notes are not published: the command does not act on a discarded placement's withdrawal.
+  const declined = env.seatSetDeclined, ledger = addReservations(s.kept, entries), notes: Diagnostic[] = [];
+  const { placed, banded } = await bandsWithoutWithdrawnSeats(env, ledger, kept7e, false, notes);
   const routed = await env.route(banded.model);
   const was = errorFindings(before);
   if ([...errorFindings(routed)].some(key => !was.has(key))) {
+    if (declined === undefined) delete env.seatSetDeclined; else env.seatSetDeclined = declined;
     // The kept state is a protected model: the warning joins the notes that stage 9 publishes.
     s.sideNotes.push({ stage: 'placement', severity: 'warning', code: 'HELD_CHORD_CROWDED', owners: crowded.map(id => ({ kind: 'link' as const, id })),
       message: `The held ${crowded.length === 1 ? 'chord' : 'chords'} ${crowded.join(', ')} ${crowded.length === 1 ? 'stands' : 'stand'} under the clearance of a planned part; the replay without ${crowded.length === 1 ? 'it' : 'them'} adds a gate finding, so ${crowded.length === 1 ? 'it stays' : 'they stay'} straight and the gates judge.` });
     return;
   }
-  s.kept7e = kept7e; s.kept = addReservations(s.kept, entries); s.base = banded.model; s.baseMoved = banded.moved; s.baseUnmoved = banded.unmoved;
-  s.routedFinal = routed;
+  s.kept7e = placed; s.kept = ledger; s.base = banded.model; s.baseMoved = banded.moved; s.baseUnmoved = banded.unmoved;
+  s.routedFinal = routed; s.sideNotes.push(...notes);
 }
