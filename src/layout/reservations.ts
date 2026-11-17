@@ -53,6 +53,13 @@ export interface ReservationPayload {
    */
   staggerDeclined: { group: string; reason: string };
   /**
+   * The seat set of a child row (dense-16x9 ticket 36, slice 1): stage 5 stands the members of the rank cell `row` under their parents' bottom
+   * ports, all together, with the order, the face orders, the widths and the parents fixed (`planSeatSet`, `seat-set.ts`). Every later stage reads
+   * it: the cell box covers `interval`, 7c applies `xs` and does not choose again. Written by stage 5 of each placement run (producer
+   * 'sides-two'); 7c withdraws it whole by name when it cannot stand (`SEAT_SET_WITHDRAWN`).
+   */
+  seatSet: SeatSetPayload;
+  /**
    * A held chord that the publication step refused (dense-16x9 ticket 14, slice 3, built for ticket 04 slice 2): on the state to publish the plan
    * named it crowded (`TIER_GAP_CHORD_CROWDED`) and it stood under the G6 clearance, so placement replays once from the kept 7e model with this
    * entry. 7f refuses `link` before the freeze as `crowds` and decides nothing again (R1); the freeze then holds no refused chord.
@@ -103,6 +110,30 @@ export interface ReservationPayload {
   bundleNeighbours: { group: string; pairs: readonly (readonly [string, string])[] };
 }
 export type ReservationKind = keyof ReservationPayload;
+/** One equation of a seat set: x(member) + memberOffset = x(far) + farOffset, the offsets measured from the left body edge. */
+export interface SeatEquation { link: string; member: PortRef; far: PortRef; memberOffset: number; farOffset: number }
+/** The payload of a `seatSet` entry. Every x is relative to the left body edge of `boundary[0]`, so the set translates as a whole. */
+export interface SeatSetPayload {
+  row: string;
+  frame: string;
+  /** The members in row order (premise: the cell's `rowOrder`), with their fixed body widths. */
+  order: string[];
+  widths: number[];
+  /** The kept verticals to the parents. */
+  seats: SeatEquation[];
+  /** The verticals a member already held at stage 5 to a node outside the row: that member does not move. */
+  holds: SeatEquation[];
+  /** The faces of the members that carry solid block ports, in port order (a translation keeps them; the check reads them). */
+  blockFaces: { node: string; side: 'top' | 'bottom'; ports: string[] }[];
+  /** The far ends the equations read, by node id, with their x: the boundary of the set. */
+  boundary: { node: string; x: number }[];
+  /** The x of each member, in `order`. */
+  xs: number[];
+  /** The two-sided reach the cell reserves: the content box of the seated members. */
+  interval: { low: number; high: number };
+  /** The feeds the set leaves off their parents, each with why. */
+  declined: { link: string; reason: 'shared-port' | 'conflict' | 'fixed' }[];
+}
 /** A feeding row of a `rowOrder` or `groupOrder` entry: the group, and the order its nodes stood in when the feeds were read. */
 export interface RowFeed { row: string; order: readonly string[] }
 
@@ -128,7 +159,7 @@ const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', pairFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', refusedChord: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
+  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', seatSet: 'sides-two', refusedChord: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton', bundleNeighbours: 'skeleton',
 };
 
@@ -459,6 +490,66 @@ export function staggerDeclineFailure(item: Reservation, model: LayoutModel): st
     ? `the row ${group} stands on two lines although its stagger is declined` : undefined;
 }
 
+/** Why a `seatSet` payload is malformed, or undefined (the shape check of the kind). */
+function seatSetShapeFailure(payload: Record<string, unknown>): string | undefined {
+  const strings = (value: unknown): boolean => Array.isArray(value) && value.every(item => typeof item === 'string');
+  const numbers = (value: unknown): boolean => Array.isArray(value) && value.every(isNumber);
+  const ref = (value: unknown): boolean => typeof value === 'object' && value !== null && typeof (value as { node?: unknown }).node === 'string';
+  const equations = (value: unknown): boolean => Array.isArray(value) && value.every(item => typeof item === 'object' && item !== null
+    && typeof item.link === 'string' && ref(item.member) && ref(item.far) && isNumber(item.memberOffset) && isNumber(item.farOffset));
+  const order = payload['order'], interval = payload['interval'] as { low?: unknown; high?: unknown } | undefined;
+  const ok = typeof payload['row'] === 'string' && typeof payload['frame'] === 'string' && strings(order) && (order as string[]).length > 0
+    && numbers(payload['widths']) && (payload['widths'] as number[]).length === (order as string[]).length
+    && numbers(payload['xs']) && (payload['xs'] as number[]).length === (order as string[]).length
+    && equations(payload['seats']) && (payload['seats'] as unknown[]).length > 0 && equations(payload['holds'])
+    && Array.isArray(payload['blockFaces']) && (payload['blockFaces'] as unknown[]).every(face => typeof face === 'object' && face !== null
+      && typeof (face as { node?: unknown }).node === 'string' && ['top', 'bottom'].includes((face as { side?: string }).side ?? '') && strings((face as { ports?: unknown }).ports))
+    && Array.isArray(payload['boundary']) && (payload['boundary'] as unknown[]).length > 0 && (payload['boundary'] as { node?: unknown; x?: unknown }[]).every(item => typeof item.node === 'string' && isNumber(item.x))
+    && typeof interval === 'object' && interval !== null && isNumber(interval.low) && isNumber(interval.high) && interval.low <= interval.high
+    && Array.isArray(payload['declined']) && (payload['declined'] as { link?: unknown; reason?: unknown }[]).every(item => typeof item.link === 'string' && ['shared-port', 'conflict', 'fixed'].includes(item.reason as string));
+  return ok ? undefined : 'malformed seat set';
+}
+
+/**
+ * Why a seat set (`seatSet`, dense-16x9 ticket 36) does not hold on `model`, or `undefined`. The one predicate of the kind, at the round check and
+ * at both restores. Relative to its first boundary node, every member stands at its x with its width, in the cell's order; every seat and hold
+ * equation holds, with its ports where the offsets put them; the boundary nodes stand where they stood relative to each other; the block faces keep
+ * their port order; and the cell box covers the interval. All to `PLACEMENT_EPS`: the set moves only as a whole.
+ */
+export function seatSetFault(item: Reservation, model: LayoutModel): string | undefined {
+  if (item.kind !== 'seatSet') return undefined;
+  const p = item.payload;
+  if (BEFORE_SIDES_TWO.has(model.stage)) return `the seat set of ${p.row} stands on a ${model.stage} model, before stage 5 makes it`;
+  const group = model.groups[p.row];
+  if (group?.bounds === undefined || group.frame !== p.frame) return `${p.row} is no cell of ${p.frame}`;
+  if (!same(group.rowOrder ?? group.nodes, p.order)) return `${p.row} no longer stands in the order of its seat set`;
+  const origin = model.nodes[p.boundary[0]!.node]?.bounds?.x;
+  if (origin === undefined) return `the seat set of ${p.row} reads ${p.boundary[0]!.node}, which has no box`;
+  const off = (a: number, b: number): boolean => Math.abs(a - b) > PLACEMENT_EPS;
+  for (const { node, x } of p.boundary) {
+    const box = model.nodes[node]?.bounds;
+    if (box === undefined || off(box.x - origin, x)) return `the boundary node ${node} of the seat set of ${p.row} moved off its offset ${x}`;
+  }
+  for (const [i, id] of p.order.entries()) {
+    const box = model.nodes[id]?.bounds;
+    if (box === undefined || off(box.x - origin, p.xs[i]!) || off(box.width, p.widths[i]!)) return `the member ${id} of ${p.row} left its seat (x ${p.xs[i]}, width ${p.widths[i]})`;
+  }
+  const port = (ref: PortRef) => model.nodes[ref.node]?.ports.find(item => portKey(item.ref) === portKey(ref));
+  for (const eq of [...p.seats, ...p.holds]) {
+    const a = port(eq.member), b = port(eq.far), ma = model.nodes[eq.member.node]?.bounds, fb = model.nodes[eq.far.node]?.bounds;
+    if (a?.anchor === undefined || b?.anchor === undefined || ma === undefined || fb === undefined) return `the equation of ${eq.link} in the seat set of ${p.row} has no ports`;
+    if (off(a.anchor.x - ma.x, eq.memberOffset) || off(b.anchor.x - fb.x, eq.farOffset) || off(a.anchor.x, b.anchor.x)) return `the link ${eq.link} no longer stands vertical in the seat set of ${p.row}`;
+  }
+  for (const face of p.blockFaces) {
+    const now = (model.nodes[face.node]?.ports ?? []).filter(item => item.side === face.side && item.anchor && face.ports.includes(portKey(item.ref)))
+      .sort((a, b) => a.anchor!.x - b.anchor!.x).map(item => portKey(item.ref));
+    if (!same(now, face.ports)) return `the ${face.side} block face of ${face.node} changed its port order in the seat set of ${p.row}`;
+  }
+  const box = group.bounds;
+  if (box.x > origin + p.interval.low + PLACEMENT_EPS || box.x + box.width < origin + p.interval.high - PLACEMENT_EPS) return `the box of ${p.row} does not cover the interval of its seat set`;
+  return undefined;
+}
+
 /** The stages before `sides-two`, in the order of `stages` (mutation.ts). */
 const BEFORE_SIDES_TWO: ReadonlySet<LayoutStage> = new Set<LayoutStage>(['normalised', 'resolve', 'sides-one', 'size', 'skeleton']);
 /**
@@ -569,7 +660,7 @@ const isPort = (value: unknown): boolean => isObject(value) && isString(value['n
 const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.length > 0
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'staggerDeclined', 'refusedChord', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'staggerDeclined', 'seatSet', 'refusedChord', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
 const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'sides-two', 'lanes', 'bands', 'publish']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
@@ -608,6 +699,7 @@ function shapeFailure(entry: unknown): string | undefined {
       return scopeOk && exceptOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
     }
     case 'staggerDeclined': return isString(payload['group']) && isString(payload['reason']) ? undefined : bad;
+    case 'seatSet': return seatSetShapeFailure(payload) === undefined ? undefined : bad;
     case 'refusedChord': return isString(payload['link']) ? undefined : bad;
     case 'farEndOrder': {
       const ports = payload['ports'];
@@ -688,6 +780,8 @@ export const RESERVATION_CHECKS: { readonly [K in ReservationKind]: KindCheck } 
   trunkDeclined: { at: { round: ROUND_OWN, final: 'compared with the declined trunk joins of the model (`validateReservations`)', early: NOT_EARLY_YET } },
   // The keep-mode run copies the stagger rows into the resolved model (`place.ts`), so every stage of a run carries them (review 4).
   staggerDeclined: everywhere((item, model) => staggerDeclineFailure(item, model)),
+  // Written by stage 5; the predicate refuses it on a model before 'sides-two' (dense-16x9 ticket 36).
+  seatSet: everywhere((item, model) => seatSetFault(item, model)),
   // Written on the kept 7e model only; the predicate refuses it on a model before `sides-two` (review 2 of dense-16x9 ticket 04 slice 2).
   refusedChord: everywhere((item, model) => refusedChordFailure(item, model)),
   riserKeepOut: transientKind, trunkExtension: transientKind, laneSide: transientKind, sideAlignment: transientKind, spanCorridor: transientKind, groupExit: transientKind, labelRoom: transientKind,

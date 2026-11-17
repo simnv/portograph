@@ -67,6 +67,11 @@ export function blockReserve(constraint: BlockConstraint): number { return gateB
  * line into it unjudged (DR-12 review), and producers pass raw shifts of that size.
  */
 export const NO_MOVE_EPS = 1e-9;
+/**
+ * A link stands vertical within this distance, px: the half pixel the centring step counts as standing (7c). The seat set (dense-16x9 ticket
+ * 36) reads with it which verticals a member already holds at stage 5; its own equations hold to `PLACEMENT_EPS`.
+ */
+export const SEAT_STANDS_EPS = 0.5;
 
 /**
  * Riser keep-out depth, px: a routed port stands in the keep-out when its depth is `> RISER_DEPTH_EPS`, and a move keeps it no deeper when the
