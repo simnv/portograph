@@ -4,7 +4,7 @@ import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { repackOverlaps } from '../../src/layout/rows.js';
 import { findPort } from '../../src/layout/row-paths.js';
-import { ofKind, type Reservation } from '../../src/layout/reservations.js';
+import { entryFailure, ofKind, type Reservation, type SeatSetPayload } from '../../src/layout/reservations.js';
 import { SEAT_SET_REDECISIONS, seatSetScope } from '../../src/layout/seat-set.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
@@ -14,7 +14,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
 import { withMoveBeforeGrow } from './move-before-grow.js';
 
 /**
- * Dense-16x9 ticket 36, slice 1: stage 5 seats a child row under its parents' ports as one seat set (`seatSet`), and 7c applies it.
+ * Dense-16x9 ticket 36, slice 1: the rows rule (stage 6) seats a child row under its parents' ports as one seat set (`seatSet`), and 7c applies it.
  * The set keeps the members at their own width and stands their feeds vertical; where they also feed the row below, 7c without the set
  * stretches them toward it (a-seated-row-leaves-its-lower-row-one-feed).
  */
@@ -67,6 +67,32 @@ describe('the seat set of a child row (dense-16x9 ticket 36, slice 1)', () => {
     expect(() => restoreLayoutModel(JSON.stringify(narrow))).toThrow('does not cover the interval of its seat set');
     const malformed = { ...model, reservations: (model.reservations ?? []).map(item => item.kind === 'seatSet' ? { ...item, payload: { ...item.payload, seats: [] } } as unknown as Reservation : item) };
     expect(() => restoreLayoutModel(JSON.stringify(malformed))).toThrow('Reservation is malformed');
+  }, 60000);
+
+  // Review 1, finding 1: every claim of the payload is a fact of the model, at the round check and at the restore. Each forgery of the review
+  // passed both on 5c32149b.
+  it('refuses a record whose links, boundary, block faces, declined feeds or interval are not facts of the model', async () => {
+    const model = await run(fixture);
+    const forgeries: Record<string, (p: SeatSetPayload, m: LayoutModel) => void> = {
+      'no link': p => { p.seats[0]!.link = 'not-a-link'; },
+      'another real link': (p, m) => { p.seats[0]!.link = m.links.find(link => link.id !== p.seats[0]!.link && link.attachments!.from.node !== p.seats[0]!.member.node)!.id; },
+      'a self equation': p => { p.seats[0]!.far = { ...p.seats[0]!.member }; },
+      'a boundary port left out': p => { p.boundary.pop(); },
+      'a block face of no member': p => { p.blockFaces.push({ node: 'absent', side: 'top', ports: [] }); },
+      'an interval that covers no member': p => { p.interval = { low: 0, high: 0 }; },
+      'a declined feed of no link': p => { p.declined.push({ link: 'not-a-link', reason: 'pitch' }); },
+    };
+    for (const [name, forge] of Object.entries(forgeries)) {
+      const copy = JSON.parse(JSON.stringify(model)) as LayoutModel, [entry] = seatSets(copy);
+      forge(entry!.payload, copy);
+      if (name === 'an interval that covers no member') { const box = copy.groups[entry!.payload.row]!.bounds!; copy.groups[entry!.payload.row]!.bounds = { ...box }; }
+      expect(entryFailure(entry!, copy, 'round'), name).toBeDefined();
+      expect(() => restoreLayoutModel(JSON.stringify(copy)), name).toThrow();
+    }
+    // The far offset is not read (the boundary is the port): a parent body that grows keeps the set.
+    const grown = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    seatSets(grown)[0]!.payload.seats[0]!.farOffset += 100;
+    expect(entryFailure(seatSets(grown)[0]!, grown, 'round')).toBeUndefined();
   }, 60000);
 
   // With the links reversed the sheet is the same, and so is the set. With the nodes reversed stage 4 stands the parents the other way round

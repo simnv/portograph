@@ -1429,7 +1429,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const box = model.nodes[seats.get(key)!.child.ref.node]!.bounds!;
     notes.start.set(key, { low: box.x - want, high: right(box) - want });
   }
-  // A row with a seat set (dense-16x9 ticket 36, slice 1) stands where stage 5 seated it, relative to its parents: the step applies the entry and
+  // A row with a seat set (dense-16x9 ticket 36, slice 1) stands where stage 6 seated it, relative to its parents: the step applies the entry and
   // chooses nothing. An entry that cannot stand (a parent moved off its offset) is withdrawn by name, and the step seats the row as before.
   const owned = seatSetOf(model, id);
   if (owned !== undefined) {

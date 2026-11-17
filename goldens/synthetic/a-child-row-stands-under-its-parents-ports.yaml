@@ -1,4 +1,4 @@
-# Expected (dense-16x9 ticket 36, slice 1): with `layout.moveBeforeGrow: true` stage 5 seats the child row `site#1` (`c1`, `n1`, `c2`)
+# Expected (dense-16x9 ticket 36, slice 1): with `layout.moveBeforeGrow: true` the rows rule (stage 6) seats the child row `site#1` (`c1`, `n1`, `c2`)
 # under its parents' ports as one seat set: `c1` stands under `p1` and `c2` under `p2`, each at the width of its content (50 px, as the
 # unfed `n1`). The set is one `seatSet` entry; 7c applies it and does not choose again. Main has the same straight links: its 7c moves the
 # parents' bottom ports toward the children. No member feeds a row below (that case, and the change from main: a-seated-row-leaves-its-lower-row-one-feed).

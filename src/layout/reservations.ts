@@ -60,10 +60,10 @@ export interface ReservationPayload {
    */
   staggerDeclined: { group: string; reason: string; clause: StaggerDeclineClause; links?: string[] };
   /**
-   * The seat set of a child row (dense-16x9 ticket 36, slice 1): stage 5 stands the members of the rank cell `row` under their parents' bottom
-   * ports, all together, with the order, the face orders, the widths and the parents fixed (`planSeatSet`, `seat-set.ts`). Every later stage reads
-   * it: the cell box covers `interval`, 7c applies `xs` and does not choose again. Written by stage 5 of each placement run (producer
-   * 'sides-two'); 7c withdraws it whole by name when it cannot stand (`SEAT_SET_WITHDRAWN`).
+   * The seat set of a child row (dense-16x9 ticket 36, slice 1): the last repack of the rows rule (stage 6) stands the members of the rank cell
+   * `row` under their parents' bottom ports, all together, with the order, the face orders, the widths and the parents fixed (`planSeatSet`,
+   * `seat-set.ts`). Every later stage reads it: the cell box covers `interval`, 7c applies `xs` and does not choose again. Written by stage 6 of
+   * each placement run (producer 'rows'); 7c withdraws it whole by name when it cannot stand (`SEAT_SET_WITHDRAWN`).
    */
   seatSet: SeatSetPayload;
   /**
@@ -124,8 +124,9 @@ export interface ReservationPayload {
 }
 export type ReservationKind = keyof ReservationPayload;
 /**
- * One equation of a seat set: x(member) + memberOffset = x(far) + farOffset, the offsets measured from the left body edge. The far offset is the
- * value at the decision, a variable of the equation (slice 2 chooses it): the check reads the vertical, the two port anchors on one x.
+ * One equation of a seat set: x(member) + memberOffset = x(far) + farOffset, the offsets measured from the left body edge. `farOffset` is the
+ * value at the decision and is not binding: the ruled boundary is the far port, not the parent body, so a parent body that grows on its face keeps
+ * the set; no check reads it (slice 2 makes it a variable). The check reads the link, its two ends, and the vertical: the two port anchors on one x.
  */
 export interface SeatEquation { link: string; member: PortRef; far: PortRef; memberOffset: number; farOffset: number }
 /** The payload of a `seatSet` entry. Every x is relative to the anchor of the far port `boundary[0]`, so the set translates as a whole. */
@@ -550,6 +551,8 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
   if (group?.bounds === undefined || group.frame !== p.frame) return `${p.row} is no cell of ${p.frame}`;
   if (!same(group.rowOrder ?? group.nodes, p.order)) return `${p.row} no longer stands in the order of its seat set`;
   const port = (ref: PortRef) => model.nodes[ref.node]?.ports.find(item => portKey(item.ref) === portKey(ref));
+  const provenance = seatSetProvenanceFault(p, model, port);
+  if (provenance !== undefined) return provenance;
   const origin = port(p.boundary[0]!.port)?.anchor?.x;
   if (origin === undefined) return `the seat set of ${p.row} reads ${portKey(p.boundary[0]!.port)}, which has no anchor`;
   const off = (a: number, b: number): boolean => Math.abs(a - b) > PLACEMENT_EPS;
@@ -573,6 +576,49 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
   }
   const box = group.bounds;
   if (box.x > origin + p.interval.low + PLACEMENT_EPS || box.x + box.width < origin + p.interval.high - PLACEMENT_EPS) return `the box of ${p.row} does not cover the interval of its seat set`;
+  // The interval is the room the cell reserves for the seated row: it covers every member body (the occupied extent it claims to reserve).
+  const low = Math.min(...p.xs), high = Math.max(...p.xs.map((x, i) => x + p.widths[i]!));
+  if (p.interval.low > low + PLACEMENT_EPS || p.interval.high < high - PLACEMENT_EPS) return `the interval of the seat set of ${p.row} does not cover its members (${low} to ${high})`;
+  return undefined;
+}
+
+/**
+ * Why the claims of a seat-set payload are not facts of `model` (review 1 of slice 1, finding 1), or `undefined`: each equation names a link of the
+ * model whose two ends are its member port and its far port, the member in the row and the far node outside it (a seat: the member's top port
+ * under a bottom port of a node above); the boundary is exactly the far ports of the equations, in key order (its first port is the origin); each
+ * block face is a face of a member and lists exactly the solid-block ports of that face; every member face that carries a solid-block port is
+ * listed; and each declined feed names a link with one end on a member and the other outside the row. `farOffset` is not read: it records the
+ * far port's offset at the decision, and the ruled boundary is the port, not the body, so a parent body that grows keeps the set.
+ */
+function seatSetProvenanceFault(p: SeatSetPayload, model: LayoutModel, port: (ref: PortRef) => LayoutModel['nodes'][string]['ports'][number] | undefined): string | undefined {
+  const members = new Set(p.order), links = new Map(model.links.map(link => [link.id, link] as const));
+  const ends = (id: string): [string, string] | undefined => { const a = links.get(id)?.attachments; return a === undefined ? undefined : [portKey(a.from), portKey(a.to)]; };
+  for (const [kind, eq] of [...p.seats.map(item => ['seat', item] as const), ...p.holds.map(item => ['hold', item] as const)]) {
+    const pair = ends(eq.link), m = portKey(eq.member), f = portKey(eq.far);
+    if (pair === undefined) return `the ${kind} ${eq.link} of the seat set of ${p.row} names no link of the model`;
+    if (!((pair[0] === m && pair[1] === f) || (pair[0] === f && pair[1] === m))) return `the ${kind} ${eq.link} of the seat set of ${p.row} does not join its member port and its far port`;
+    if (!members.has(eq.member.node) || members.has(eq.far.node)) return `the ${kind} ${eq.link} of the seat set of ${p.row} does not join a member to a node outside the row`;
+    if (kind === 'seat') {
+      const a = port(eq.member), b = port(eq.far);
+      if (a?.side !== 'top' || b?.side !== 'bottom' || a.anchor === undefined || b.anchor === undefined || b.anchor.y >= a.anchor.y) return `the seat ${eq.link} of the seat set of ${p.row} does not feed a member's top port from a bottom port above`;
+    }
+  }
+  const far = [...new Set([...p.seats, ...p.holds].map(eq => portKey(eq.far)))].sort(), boundary = p.boundary.map(item => portKey(item.port));
+  if (!same(far, boundary)) return `the boundary of the seat set of ${p.row} is not the far ports of its equations`;
+  const solid = new Map<string, Set<string>>();
+  for (const link of model.links) if (link.solidBlock && link.attachments) for (const ref of [link.attachments.from, link.attachments.to]) {
+    const side = port(ref)?.side;
+    if (members.has(ref.node) && (side === 'top' || side === 'bottom')) { const key = `${ref.node}|${side}`; solid.set(key, (solid.get(key) ?? new Set()).add(portKey(ref))); }
+  }
+  for (const face of p.blockFaces) {
+    const own = solid.get(`${face.node}|${face.side}`);
+    if (!members.has(face.node) || own === undefined || !same([...own].sort(), [...face.ports].sort())) return `the ${face.side} block face of ${face.node} in the seat set of ${p.row} is not the solid-block face of a member`;
+  }
+  if (solid.size !== p.blockFaces.length) return `the seat set of ${p.row} leaves a solid-block face of a member out`;
+  for (const item of p.declined) {
+    const a = links.get(item.link)?.attachments;
+    if (a === undefined || members.has(a.from.node) === members.has(a.to.node)) return `the declined feed ${item.link} of the seat set of ${p.row} is no link from a member to a node outside the row`;
+  }
   return undefined;
 }
 
