@@ -1,4 +1,4 @@
-import type { LayoutGroup, LayoutLink, LayoutModel, LayoutPort } from '../model/layout.js';
+import { LAYOUT_STAGES, type LayoutGroup, type LayoutLink, type LayoutModel, type LayoutPort } from '../model/layout.js';
 import type { Rect } from '../model/geometry.js';
 import { findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
@@ -14,7 +14,7 @@ import { isCantonFrame } from './read/canton.js';
 import { contentBox } from './regions.js';
 import { deriveFrames } from './frames.js';
 import { besideGap, holdColumnAxes, separateFrameColumns } from './columns.js';
-import { validateSkeletonBands } from './skeleton-geometry.js';
+import { rebuildBands, validateSkeletonBands } from './skeleton-geometry.js';
 import { blockDemands, type BlockDemand } from './solid-blocks.js';
 import { BLOCK_CAP } from './block-checks.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
@@ -468,8 +468,10 @@ export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetP
   const box = contentBox(model, group);
   group.bounds = { ...group.bounds!, x: box.x, width: box.width };
   coverInterval(model, group, p);
+  // The bands are derived from the boxes: read the band check on bands rebuilt for the translated row, and rebuild them again on a refusal.
+  if (before !== undefined && moves) rebuildBands(model);
   const refused = before === undefined || !moves ? undefined : wall!(group) ?? translationFault(model, group, before);
-  if (refused !== undefined) { undo(); rebuildNodeGeometry(model, p.order, 'current'); group.bounds = was; }
+  if (refused !== undefined) { undo(); rebuildNodeGeometry(model, p.order, 'current'); group.bounds = was; rebuildBands(model); }
   return refused;
 }
 const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((item, i) => item === b[i]);
@@ -482,10 +484,12 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
 export function withdrawSeatSet(model: LayoutModel, group: string, why: string): void {
   if (model.reservations === undefined || seatSetOf(model, group) === undefined) return;
   model.reservations = model.reservations.filter(entry => !(entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group));
+  // A rule edits a draft that still carries the stage before it: the rule that withdraws is the next stage.
+  const rule = LAYOUT_STAGES[LAYOUT_STAGES.indexOf(model.stage) + 1] ?? model.stage;
   model.diagnostics.push({ stage: 'placement', severity: 'warning', code: SEAT_SET_WITHDRAWN, owners: [{ kind: 'group', id: group }],
-    message: model.stage === 'sides-two' || model.stage === 'rows'
+    message: rule === 'rows'
       ? `The seat set of ${group} is withdrawn at rows: ${why}. The row stands as the repack leaves it and is seated by the centring step.`
-      : `The seat set of ${group} is withdrawn at ${model.stage}: ${why}. The row is seated by the centring step; the room its interval reserved in the frame column stays, because the lanes own their windows.` });
+      : `The seat set of ${group} is withdrawn at ${rule}: ${why}. The row is seated by the centring step; the room its interval reserved in the frame column stays, because the lanes own their windows.` });
 }
 
 /**
