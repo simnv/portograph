@@ -17,6 +17,18 @@ import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, 
 import type { Env } from './env.js';
 import type { State } from './state.js';
 
+/** A 7f trial that ran on a placement: the placement and what the trial gave (a refusal is an `Error`). */
+export interface RanTrial { model: LayoutModel; banded: LayoutModel | Error }
+/**
+ * The 7f trial of `model` taken from one that ran already (dense-16x9 ticket 21): a 7f trial reads the placed model alone, so a trial that
+ * ran on the same model object, frozen since, gave what a new one gives. A refusal reads as no banded model, as `trial` returns it.
+ * `undefined` when the trial must run: no trial ran, it ran on another model, or the model is not frozen.
+ */
+export function takenTrial(ran: RanTrial | undefined, model: LayoutModel): { banded: LayoutModel | undefined } | undefined {
+  if (ran === undefined || ran.model !== model || !Object.isFrozen(model)) return undefined;
+  return { banded: ran.banded instanceof Error ? undefined : ran.banded };
+}
+
 export async function firstState(env: Env): Promise<State> {
   const options = env.options;
 // D-Q5: a lift trial run (and the no-lift run, with `[]`) applies its lift record from the first placement on.
@@ -83,6 +95,8 @@ await placeFirst();
 const chosen = (first.staggerRows ?? []).map(row => row.group)
   .filter(group => (env.arrangedRows ?? []).includes(group) && first.groupArrangements?.[group]?.chosen === 'stagger');
 const gateNotes: Diagnostic[] = [];
+/** The last 7f trial of this function and its placement: first the one the stagger gate ran on the placement it kept (dense-16x9 ticket 21). */
+let ran: RanTrial | undefined;
 if (chosen.length) {
   type Snapshot = { [K in 'declinedSolidBlocks' | 'arranged' | 'staggerRows' | 'groupArrangements' | 'arrangedRows' | 'declinedArrangements']: Env[K] | undefined }
     & Pick<Env, 'blockProbes' | 'reruns'> & { kept: Reservations };
@@ -138,6 +152,7 @@ if (chosen.length) {
     keep.push(id); best = trial as Trial;
   }
   restore(best.state); first = best.model;
+  ran = { model: best.model, banded: best.banded };
 }
 // Stage 5 of this run chose each group's arrangement (ticket 51). Every later placement run of the command keeps that choice, not a new one,
 // also when this run chose nothing.
@@ -152,8 +167,16 @@ if (first.groupArrangements !== undefined) {
 // each clamped to [its floor, its 34 degree demand], and one more placement stands at those gaps. It is kept only when its 7f trial stands
 // nearer the aim than the floor placement (the width can move); else the floor stands. Bound (R4): one placement more per command for all
 // flat blocks together, outside the placement cap as the gate trials are (`env.gateRuns`), and two 7f trials.
+// A 7f trial reads the placed model alone. A trial of the model the last trial ran on (the placement the stagger gate kept, whose trial the
+// gate ran, or the last room placement, which the gap choice reads again) takes that result and does not run again (`takenTrial`, dense-16x9
+// ticket 21); a refusal there is the refusal here. The room rounds and the gap choice read this one trial.
 const trial = async (model: LayoutModel): Promise<LayoutModel | undefined> => {
-  try { return (await env.bands(model, true)).model; } catch (error) { if (staggerRefusal(error) || producerRefusal(error)) return undefined; throw error; }
+  const taken = takenTrial(ran, model);
+  if (taken !== undefined) return taken.banded;
+  let banded: LayoutModel | Error;
+  try { banded = (await env.bands(model, true)).model; } catch (error) { if (staggerRefusal(error) || producerRefusal(error)) banded = error as Error; else throw error; }
+  ran = { model, banded };
+  return banded instanceof Error ? undefined : banded;
 };
 // The room of the flat block members (dense-16x9 ticket 04, slice 3, step 2): the side padding of each box a member would leave through a
 // corner (`blockBoxPadsAsked`) and the row gap beside an end node whose neighbour reaches past the face (`blockRowGapsAsked`), read on the 7f

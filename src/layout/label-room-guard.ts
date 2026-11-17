@@ -9,8 +9,8 @@ import type { LayoutGroup, LayoutModel, LayoutNode } from '../model/layout.js';
 import type { Rect } from '../model/geometry.js';
 import { reserveLinkLabelRoom, type LinkLabelShortfall } from './bands.js';
 import type { ProposedBox } from './frames.js';
+import { readCache } from '../model/read-cache.js';
 
-const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const sameRect = (a: Rect, b: Rect): boolean => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 const isRow = (item: LinkLabelShortfall): boolean => item.axis === 'row' || item.axis === 'row window';
 
@@ -32,11 +32,59 @@ function movedModel(model: LayoutModel, proposed: readonly ProposedBox[]): { mov
   return { moved: { ...model, groups, nodes }, shift };
 }
 
+/** The links with a row shortfall on the model `text` serialises, by the producer's reading on the copy that text parses to, in reading order. */
+function readRows(text: string): string[] {
+  const shortfalls: LinkLabelShortfall[] = [];
+  reserveLinkLabelRoom(JSON.parse(text) as LayoutModel, shortfalls, undefined, 'rows');
+  return [...new Set(shortfalls.filter(isRow).map(item => item.link))];
+}
+
+/**
+ * The memo of the row reading (dense-16x9 ticket 21). The guards read the rows again for every proposed move of a step, on the model as the
+ * step found it: the same model text many times. The reading runs on a copy parsed from `JSON.stringify(model)`, and on nothing else (the copy
+ * shares no object with any cache or scope), so that text is its complete input and the key. A key is the whole content: no write to a model
+ * can leave an entry stale, and no mutation boundary has to drop one. One map per document object: `resolve` parses a fresh document for every
+ * placement, and the models of that placement and their copies share it. The memo is open while a command runs (`openRowReadingMemo`, called by
+ * `layout`) and every map is dropped when the last running command ends, so a published model that keeps its document keeps no entry (review 1
+ * of ticket 21); outside a command the reading runs directly. Bounded by count (R4): `ROW_READING_MEMO_LIMIT` keys per document, the least
+ * recently used one dropped first.
+ */
+const ROW_READING_MEMO_LIMIT = 64;
+let rowReadings = new WeakMap<object, Map<string, readonly string[]>>();
+const rowReadingCache = readCache('rowRoomReading');
+let commands = 0;
+
+/** Opens the row reading memo for one command; the function returned closes it, and the last close drops every entry. */
+export function openRowReadingMemo(): () => void {
+  commands++;
+  let open = true;
+  return () => {
+    if (!open) return;
+    open = false;
+    if (--commands === 0) rowReadings = new WeakMap<object, Map<string, readonly string[]>>();
+  };
+}
+
 /** The links with a row shortfall on `model`, by the producer's reading on a copy. */
 function rowShort(model: LayoutModel): Set<string> {
-  const shortfalls: LinkLabelShortfall[] = [];
-  reserveLinkLabelRoom(clone(model), shortfalls, undefined, 'rows');
-  return new Set(shortfalls.filter(isRow).map(item => item.link));
+  const text = JSON.stringify(model);
+  if (commands === 0) return new Set(readRows(text));
+  let memo = rowReadings.get(model.document);
+  if (memo === undefined) rowReadings.set(model.document, memo = new Map());
+  const cached = memo.get(text);
+  if (cached !== undefined) {
+    memo.delete(text);
+    memo.set(text, cached);
+    return new Set(rowReadingCache.hit(model, cached, () => readRows(text)));
+  }
+  rowReadingCache.miss();
+  const read = readRows(text);
+  if (memo.size >= ROW_READING_MEMO_LIMIT) {
+    const oldest = memo.keys().next().value;
+    if (oldest !== undefined) memo.delete(oldest);
+  }
+  memo.set(text, read);
+  return new Set(read);
 }
 
 /** The links with a row shortfall on `model` (the evidence of a resize), or `undefined` when no link carries a label. */
