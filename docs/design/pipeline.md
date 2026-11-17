@@ -770,6 +770,29 @@ none; absent means no stage 5 of this pipeline ran on the model. Each placement 
 pair has its room (`feedPairRoom`, the one reader of a recorded pair, which the check of each split calls too). Later stages move the feeding tiers again (7c, the close-up), so no later stage reads the
 room or decides the split again.
 
+**The seat set of a child row** (dense-16x9 ticket 36, slice 1; only with `layout.moveBeforeGrow: true`; `src/layout/seat-set.ts`). Last in
+stage 5, after the feed splits and the block followers and before the freeze, `reserveSeatSets` stands the members of each rank cell under
+their parents' bottom ports, all members together, top tier first and then by cell id. The row order, the port order of each face, the body
+widths and the parents are fixed; a member moves as a rigid body. In scope is a `row` cell that is not staggered, not in a canton and not in a
+feeding chain; solid-block members are in scope. A feed is a top port of a member linked to a bottom port of a node in a higher tier of the same
+frame (not a bundle member and not a solid-block link: the block owns its chords). A member that already stands a vertical to a node outside the
+row (within `SEAT_STANDS_EPS`, the half pixel 7c counts as standing) keeps its x. Each member is offered one x per distinct seat position, at
+most `SEAT_SET_CANDIDATES` (8); the search tries a seat or no seat for each fed member under the row order and the stage-5 `rowGap`, one seat
+per parent port, at most `SEAT_SET_VISITS` (5000) visits; a member without a seat stands nearest its own x in the room its neighbours leave.
+It ranks by the most kept verticals, then the least body span (owner ruling "tight room"), then the least movement, then the kept links by
+content (port ids), then `sourceIndex`. The best candidate that breaks no owner wins: a solid block may not pass `BLOCK_CAP` and a flat block's
+floor demand may not pass its gap (both read with `blockDemands`, the one demand reader `reserveBlockGaps` reserves from), and the interval may
+not meet a flank or a bar. A cut search (`bound`), a row out of scope, a row where no set keeps more than it stands (`no-gain`) and a row whose
+every better set breaks an owner (`owner`) keep no record and are named (`SEAT_SET_DECLINED`). A set moves its members, makes the cell box cover
+its interval and writes one `seatSet` entry: the order, the widths, each kept vertical as an equation `x(member) + memberOffset = x(parent) +
+farOffset`, the verticals a member held, the block faces of the members in port order, the parents with their offsets from the first of them,
+the member offsets, the interval (the content box of the seated members) and the feeds left off, each with why (`shared-port`, `fixed`, `pitch`
+for a parallel link the two faces' pitches keep off, `conflict`). Every x is relative to the first parent, so the set moves as a whole.
+`seatSetFault` holds the entry at the round check and at both restores (`RESERVATION_CHECKS`). Each placement run decides on its own stage-5
+geometry, so the aspect choices decide on seated geometry (the stagger gate's trials and the first run's 7f trial that `chooseFlatGaps`
+reads are placements); only a withdrawal from 7c on (below) can change it after them, and the forced-on corpus counts those withdrawals as the
+measured risk.
+
 ## Stage 6 — rows
 
 Group titles in stage 6 (D7, decision review 2026-11-07; ruling V3): every group is labelled. The title edge is fixed from natural sides (the edge with fewer incident link ports, ADR-0011), and its height is reserved; the title itself is placed at the end of 7f (`placeGroupTitles`). An axis-aligned link never runs under a title or label by placement. A diagonal may cross a title or its own label, with a halo and a `crossedBy` record (ADR-0023). No placement step bends a link to clear a title.
@@ -1108,6 +1131,13 @@ ports → warning, extra links route. *Moves:* the flank, two nodes' sizes. *Re-
 links on the peer.
 
 ### 7c — child under parents
+**A row with a seat set** (dense-16x9 ticket 36, slice 1) is not centred: its step applies the entry, each member at its stored offset from
+the first parent where that parent stands now, and chooses nothing; the cell box covers the interval (`fitRegionGroup` reads the entry, so no
+fit gives that room back). The parent spread leaves the members and parents of a set where they stand. After the overlay windows each run of
+the passes applies every set again. A set whose parents no longer stand at their stored offsets, or whose step does not stand, is withdrawn
+whole by name (`SEAT_SET_WITHDRAWN`, with the failed equation), and the step seats the row as before; so is a set that any rule from 7c to 7f
+leaves broken (`withdrawBrokenSeatSets`, at the end of each rule). What a withdrawal cannot give back is the room the interval reserved in the
+frame column: after 7a the lanes own their windows, and the message says so.
 
 Ticket 83 block feeds centre the row without stretching its faces toward individual peers.
 The gap decision waits for settled 7e geometry and its disposable mandatory label/grid packing forecast; an earlier 7c replay reserves no speculative height. The forecast transfers only gap demand, before the real chord freeze.
