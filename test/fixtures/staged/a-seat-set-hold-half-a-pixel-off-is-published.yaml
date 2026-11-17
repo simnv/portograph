@@ -2,6 +2,7 @@
 # the seat set records the vertical as a hold. The publication check of the rows rule reads a hold to that half pixel too. Before, it read every
 # equation to PLACEMENT_EPS: a hold of core#1 that stood 0.5 px off its far port in a site row below failed the rows rule that recorded it, and
 # the command ended ("the link ... no longer stands vertical in the seat set of core#1"). The command now completes.
+# Since ruling 3 the far ends move with their set, so this sheet no longer stands a hold off; the test reads the hold tolerance on a published set.
 # Test-only input, outside the corpus: the dense synthetic fan draws with gate findings (G4 to G6, removed links) that are not its subject.
 # Test: test/layout/seat-far-end-movers.test.ts.
 portograph: 2

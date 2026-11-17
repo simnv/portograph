@@ -20,6 +20,8 @@ import { chordDecision, CANVAS_GROWTH_SHARE, edge, rankShare, SLIDE_GROWTH, type
 import { nodeTier } from './read/tier.js';
 import { memberRoom, standsInRootCanton } from './read/canton.js';
 import { overlayCourse } from './courses.js';
+import { farEndRangeOutside } from './centre.js';
+import { clampFarEndShift, nameFarEndClamp } from './seat-set.js';
 
 /** The decision loop lives in `decide.ts`; these are re-exported for the callers and the tests that name them here. */
 export { overlayCrossings, pickRankMove, spent, type AdoptedCopy, type RankMove } from './decide.js';
@@ -308,11 +310,22 @@ export function stepOverChords(model: LayoutModel, follow: ((probe: LayoutModel)
             const above = walls.filter(wall => wall.low >= box.x - PLACEMENT_EPS).map(wall => wall.low);
             inside = { low: Math.max(inside.low, ...below), high: Math.min(inside.high, ...above) };
           }
-          const feasible = (x: number): boolean => x >= inside.low - PLACEMENT_EPS && x <= inside.high + PLACEMENT_EPS
+          // A group that carries a far end of a seat set moves only with its set, as a whole, and only as far as the set stays in its room
+          // (dense-16x9 ticket 36a): the replay of 7c the decision runs translates the set after it. A step past that is clamped to the room, named.
+          const range = farEndRangeOutside(model, [group.id]), open = inside;
+          if (range !== undefined) inside = { low: Math.max(inside.low, box.x + range.low), high: Math.min(inside.high, box.x + range.high) };
+          const within = (run: { low: number; high: number }) => (x: number): boolean => x >= run.low - PLACEMENT_EPS && x <= run.high + PLACEMENT_EPS
             && !walls.some(({ low, high }) => x > low + PLACEMENT_EPS && x < high - PLACEMENT_EPS);
+          const feasible = within(inside);
           // A lower rank asks the ends of the banned runs only, pushed out (ticket 146); the wall edges are no chord clearances.
-          const candidates = lower ? nearest(banned.flatMap(({ low, high }) => [box.x + low - PLACEMENT_EPS, box.x + high + PLACEMENT_EPS]), box.x, feasible)
-            : nearest([...banned.flatMap(({ low, high }) => [box.x + low, box.x + high]), ...walls.flatMap(({ low, high }) => [low, high])], box.x, feasible);
+          const edges = lower ? banned.flatMap(({ low, high }) => [box.x + low - PLACEMENT_EPS, box.x + high + PLACEMENT_EPS])
+            : [...banned.flatMap(({ low, high }) => [box.x + low, box.x + high]), ...walls.flatMap(({ low, high }) => [low, high])];
+          // The clamp: the edges of the set's room are candidates too, and a nearest edge past them is named.
+          const candidates = nearest(range === undefined ? edges : [...edges, inside.low, inside.high], box.x, feasible);
+          if (range !== undefined) {
+            const asked = nearest(edges, box.x, within(open))[0];
+            if (asked !== undefined && !feasible(asked)) nameFarEndClamp(model, 'the step over chords', group.id, asked - box.x, clampFarEndShift(range, asked - box.x).dx, range.why);
+          }
           const undo = saveGroups(model, [group]);
           // A cell of a frame slides alone (ticket 80) only where every frame box stays as it is: the cell goes to the room its frame has beside it.
           const boxesBefore = cellOfFrame(group) ? deriveFrames(model)?.map(item => item.box) : undefined;

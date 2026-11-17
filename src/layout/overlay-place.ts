@@ -6,6 +6,7 @@ import { occupiedOverhang, selectAnchorTier } from './lanes.js';
 import { holdsMove } from './move-reservations.js';
 import { crosses, sharedBlockers, overlayBasePath, straightChord } from './overlay-paths.js';
 import { saveGroups } from './overlay-order.js';
+import { nameFarEndClamp, seatFarEndRange } from './seat-set.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { orderedNodeIds } from '../model/model.js';
 import { deriveFrames, FRAME_TO_FRAME_GAP } from './frames.js';
@@ -147,6 +148,14 @@ function place(model: LayoutModel, columns: readonly FrameColumn[], windows: boo
   }
   /** The groups this pass may move: no routed link out, and no other rule that owns the group's place. */
   const free = overlayFreeGroups(model, anchor);
+  // A group that carries a far end of a seat set stays where 7c left it, a wall of the pack (dense-16x9 ticket 36a): its set moves only with its
+  // far ends as a whole, and the overlay window packs runs of groups that it cannot clamp one by one. A far end is the end of a routed link out of
+  // its row, so `overlayFreeGroups` does not list its row today; this guard keeps that so if the free set changes
+  // (`test/layout/seat-far-end-movers.test.ts` reads both).
+  for (const id of [...free].sort()) {
+    const range = seatFarEndRange(model, [id], () => ({ low: -Infinity, high: Infinity }));
+    if (range !== undefined) { free.delete(id); nameFarEndClamp(model, 'the overlay window', id, undefined, 0, range.why); }
+  }
   if (!free.size) return;
 
   const partners = new Map<string, string[]>();

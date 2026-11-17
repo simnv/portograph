@@ -1,9 +1,9 @@
 # Expected (dense-16x9 ticket 36a, ruling on review 1 finding 2): every placement the command compares and the placement it keeps hold the same
 # seat sets. The upstream row is a fan the stage-5 stagger gate decides (its trials place the sheet with and without the two lines); the row
-# core#1 is seated under the edge row core#0, whose nodes are the far ends of its set. No 7c mover moves core#0 (`seatFarEndRefusal`), so no
-# trial withdraws the set on the wall of its frame column. Before the ruling the centring step of core#0 moved the far ends, a compared
-# placement withdrew the set at centre ("the row would leave the column of its frame"), and the command declined it. The sheet also holds a
-# hold read 0.5 px off its far port, which the publication check of the rows rule now reads to SEAT_STANDS_EPS.
+# core#1 is seated under the edge row core#0, whose nodes are the far ends of its set. A 7c mover moves core#0 only with the set, inside the
+# frame column of core#1 (`seatFarEndRange`, ruling 3), so no trial withdraws the set on the wall of its frame column. Before the ruling the
+# centring step of core#0 moved the far ends alone, a compared placement withdrew the set at centre ("the row would leave the column of its
+# frame"), and the command declined it.
 # Test-only input, outside the corpus: the dense synthetic fan draws with gate findings (G4 to G6, removed links) that are not its subject.
 # Test: test/layout/seat-far-end-movers.test.ts.
 portograph: 2

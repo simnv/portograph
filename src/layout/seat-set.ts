@@ -208,19 +208,12 @@ function assignments(input: RowInput): Leaf[] | undefined {
 }
 
 /**
- * The most area the added block height of a seat set may take for each vertical it wins, as a share of the placed area `W x H` (dense-16x9
- * ticket 36a, ruling on review 1 finding 2): a candidate whose spread makes its solid blocks steeper so that the taller tier gaps take more than
- * this share of the sheet per won vertical (`Cost.block`) is not the tight room the owner asked for, and the next candidate is read.
- */
-export const SEAT_SET_BLOCK_AREA_PER_VERTICAL = 0.01;
-
-/**
  * What a candidate costs the placed extent, read at stage 6 (owner ruling 'tight room' is area, not span): `span` the interval width, `dw` the
  * growth of the cell box, `dh` the growth of the tier gaps its solid blocks demand (`blockDemands` with the members at the candidate's xs, by
  * tier gap: the larger of the band gap and the 34 degree demand, or the floor of a flat block, as `reserveBlockGaps` reserves them), `area` the
- * area the extent `W x H` of the groups gains, (W + dw)(H + dh) - W H, and `block` its part the block height takes, (W + dw) dh, as a share of W H.
+ * area the extent `W x H` of the groups gains, (W + dw)(H + dh) - W H.
  */
-interface Cost { span: number; dw: number; dh: number; area: number; block: number }
+interface Cost { span: number; dw: number; dh: number; area: number }
 
 /** The height of each tier gap that the solid blocks demand (`reserveBlockGaps`' mandatory gap, without the room of a flat gap). */
 function blockHeights(demands: readonly BlockDemand[]): Map<number, number> {
@@ -240,7 +233,7 @@ function candidateCost(model: LayoutModel, input: RowInput, leaf: Leaf, blocks: 
   const dw = Math.max(0, fit.width - start.width);
   let dh = 0;
   for (const [below, height] of heights ?? []) dh += Math.max(0, height - (start.heights.get(below) ?? height));
-  return { span: leaf.width, dw, dh, area: (start.w + dw) * (start.h + dh) - start.w * start.h, block: start.w * start.h > 0 ? (start.w + dw) * dh / (start.w * start.h) : 0 };
+  return { span: leaf.width, dw, dh, area: (start.w + dw) * (start.h + dh) - start.w * start.h };
 }
 
 /** The extent of the placed groups, W x H. */
@@ -252,12 +245,22 @@ function groupExtent(model: LayoutModel): { w: number; h: number } {
 }
 
 /**
- * Rank (owner ruling 'tight room', amended 2026-11-17: area, not span): the most kept verticals, then the least added area (`candidateCost`,
- * the block height of the spread included), the least movement, the kept links by content, then sourceIndex (R3).
+ * The order the candidates are read in (owner ruling 'tight room'): the most kept verticals, then the least interval width, the least movement,
+ * the kept links by content, then sourceIndex (R3). The read bound (`SEAT_SET_GAIN_READS`) cuts this order, so the candidate this order admits
+ * first is always read.
  */
-const rank = (cost: ReadonlyMap<Leaf, Cost>) => (a: Leaf, b: Leaf): number => b.kept.length - a.kept.length
-  || (Math.abs(cost.get(a)!.area - cost.get(b)!.area) > PLACEMENT_EPS ? cost.get(a)!.area - cost.get(b)!.area : 0)
+const readOrder = (a: Leaf, b: Leaf): number => b.kept.length - a.kept.length || (Math.abs(a.width - b.width) > PLACEMENT_EPS ? a.width - b.width : 0)
   || (Math.abs(a.movement - b.movement) > PLACEMENT_EPS ? a.movement - b.movement : 0) || a.key.localeCompare(b.key) || a.index.localeCompare(b.index);
+
+/**
+ * The choice among the admitted candidates of the most kept verticals and the narrowest row (owner ruling of 2026-11-17: straight links win
+ * over compactness inside a frame; reserve only the exact room the seats need): the least added area (`candidateCost`, the block height of the
+ * spread included), then the read order. Area never overrides the kept verticals or the row width, so it never buys back a straight link the
+ * read order keeps: a wider row with a smaller block changed the extent of a stagger-gate trial and the block room of the kept placement, and
+ * bent chords the narrower row kept straight (dense-16x9 ticket 36a, outside sheet).
+ */
+const choice = (a: { leaf: Leaf; cost: Cost }, b: { leaf: Leaf; cost: Cost }): number =>
+  (Math.abs(a.cost.area - b.cost.area) > PLACEMENT_EPS ? a.cost.area - b.cost.area : 0) || readOrder(a.leaf, b.leaf);
 
 /** Moves the members to `xs` (bodies and port anchors), and gives back a function that undoes the move exactly. */
 function moveMembers(model: LayoutModel, order: readonly string[], xs: readonly number[]): () => void {
@@ -305,34 +308,35 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
   const now = keptFeeds(input, input.x0).length;
   const hasBlocks = input.order.some(id => model.links.some(link => link.solidBlock && (link.attachments?.from.node === id || link.attachments?.to.node === id)));
   const blocks = hasBlocks ? blockDemands(model).demands : [];
-  // Every candidate that wins a vertical is costed once (the visit bound bounds the leaves, R4); the others are never read.
   const start = { width: input.group.bounds!.width, heights: blockHeights(blocks), ...groupExtent(model) };
-  const gaining = leaves.filter(leaf => leaf.kept.length > now), cost = new Map(gaining.map(leaf => [leaf, candidateCost(model, input, leaf, hasBlocks, start)] as const));
-  gaining.sort(rank(cost));
-  let first: string | undefined, reads = 0, lost: string | undefined, dear: string | undefined;
-  const before = straightLinks(model, input.order);
+  const gaining = leaves.filter(leaf => leaf.kept.length > now).sort(readOrder);
+  let first: string | undefined, reads = 0, lost: string | undefined;
+  const before = straightLinks(model, input.order), admitted: { leaf: Leaf; cost: Cost; fit: Rect }[] = [];
+  // In read order, up to the read bound: the first admitted candidate sets the kept verticals and the row width, and every later candidate
+  // with both (the width to PLACEMENT_EPS) is read too; the choice among them is made by area.
   for (const leaf of gaining) {
-    const paid = cost.get(leaf)!, won = leaf.kept.length - now;
-    if (paid.block > SEAT_SET_BLOCK_AREA_PER_VERTICAL * won + EPS) {
-      dear ??= `the best seat set makes its solid blocks ${paid.dh.toFixed(1)} px taller, ${(paid.block * 100).toFixed(1)} % of the sheet for ${won} verticals, past ${SEAT_SET_BLOCK_AREA_PER_VERTICAL * 100} % each`;
-      continue;
-    }
+    const head = admitted[0]?.leaf;
+    if (head && (leaf.kept.length < head.kept.length || leaf.width - head.width > PLACEMENT_EPS)) break;
+    if (reads >= SEAT_SET_GAIN_READS) break;
     const box = input.group.bounds!, undo = moveMembers(model, input.order, leaf.xs);
     const fit = contentBox(model, input.group);
     // The gain is read on both faces of the members (ruling 4 of 2026-11-17): a set that wins k verticals and turns more than k straight links
     // of its members (verticals or chords that hold) into bends or refused chords is no gain. Read on the moved members, before the model is given back.
-    const after = reads < SEAT_SET_GAIN_READS ? straightLinks(model, input.order) : undefined;
+    const after = straightLinks(model, input.order);
     undo(); input.group.bounds = box;
-    if (after === undefined) break;
     reads++;
     const fault = blockOwnerFault(model, input, leaf.xs, blocks);
     if (fault !== undefined) { first ??= fault; continue; }
     const gained = [...after.vertical].filter(id => !before.vertical.has(id)).length, gone = [...before.straight].filter(id => !after.straight.has(id)).sort();
     if (gone.length > gained) { lost ??= `wins ${gained} verticals and loses ${gone.length} straight links (${gone.join(', ')})`; continue; }
-    return { kind: 'set', payload: payloadOf(model, input, leaf, fit) };
+    admitted.push({ leaf, cost: candidateCost(model, input, leaf, hasBlocks, start), fit });
+  }
+  if (admitted.length) {
+    const best = admitted.sort(choice)[0]!;
+    return { kind: 'set', payload: payloadOf(model, input, best.leaf, best.fit) };
   }
   if (first !== undefined) return { kind: 'declined', clause: 'owner', why: first };
-  return { kind: 'declined', clause: 'no-gain', why: lost !== undefined ? `the best seat set ${lost}` : dear !== undefined ? dear
+  return { kind: 'declined', clause: 'no-gain', why: lost !== undefined ? `the best seat set ${lost}`
     : `no seat set keeps more than the ${now} verticals the row stands` };
 }
 
@@ -524,32 +528,79 @@ export function seatSetNodes(model: LayoutModel): Set<string> {
   return nodes;
 }
 
-/** The diagnostic of a 7c move a standing seat set forbids (`seatFarEndRefusal`): the row, the far end it carries, and the set. */
-export const SEAT_FAR_END_FIXED = 'SEAT_FAR_END_FIXED';
+/** The clause of a seat-set withdrawal on the wall of its frame column (`seatWall` of 7c): read by the step decision of 7f (`chordDecision`). */
+export const SEAT_WALL_COLUMN = 'the row would leave the column of its frame';
+
+/** The diagnostic of a 7c move a standing seat set clamps (`seatFarEndRange`): the mover, the row, how far it asked and how far it went, and why. */
+export const SEAT_FAR_END_CLAMPED = 'SEAT_FAR_END_CLAMPED';
+
+/** The x shifts a 7c mover may give a translation, and the condition that bounds them (`seatFarEndRange`). */
+export interface FarEndRange { low: number; high: number; why: string }
 
 /**
- * Why a 7c move of the groups `groups` is one a standing seat set forbids, or undefined (dense-16x9 ticket 36a, review 1 finding 2). A far end of a
- * set is a bound of its interval: the frame column of the seated row was decided at stage 6 with the far ends where they stood, so a mover that
- * takes a row with a far end along (its own centring, a parent spread, a pack) moves the set off its column. The overlay window of 7c
- * (`placeOverlayFree`) packs runs of groups and does not read it yet; `test/layout/seat-far-end-movers.test.ts` fails on a sheet where it moves one. The row that
- * carries a far end keeps its stage-6 x; the members stand on their seats. The one reading of every 7c mover, from the far ends `seatSetNodes`
- * holds; it names the first far end in group and node order (R3).
+ * The x shifts a 7c mover may give the groups `moving`, translated together, or undefined when none of them carries a far end of a seat set
+ * (dense-16x9 ticket 36a, ruling 3 on review 1 finding 2). A far end of a standing set moves only together with its set: the set translates as
+ * a whole, as stage 6 placed it, so every group that carries one of its far ends must move, and only as far as the box of the seated row stays in
+ * `room` (the window of its frame column in 7c, `columnWindow`). A set whose row moves with them sets no bound. A set
+ * withdrawn from 7c on keeps its far ends where 7c left them (`seatSetDeclined.fixed`), and a set whose box does not stand in its room does not move.
+ * A set seated on the anchor tier sets no bound: it cannot translate, and its rule withdraws it.
+ * The range always holds 0; the one reading of every 7c mover.
  */
-export function seatFarEndRefusal(model: LayoutModel, groups: Iterable<string>): string | undefined {
-  const far = seatSetFarEnds(model);
-  if (!far.size) return undefined;
-  for (const id of [...groups].sort()) {
-    const node = model.groups[id]?.nodes.filter(item => far.has(item)).sort()[0];
-    if (node !== undefined) return `the row ${id} carries ${node}, a far end of the seat set of ${far.get(node)!}: 7c keeps it at its stage-6 x`;
+export function seatFarEndRange(model: LayoutModel, moving: Iterable<string>, room: (row: string) => { low: number; high: number }): FarEndRange | undefined {
+  const moved = new Set(moving), groupOf = (node: string): string => model.document.nodes[node]!.group;
+  let range: FarEndRange | undefined;
+  const bound = (low: number, high: number, why: string): void => {
+    low = Math.min(low, 0); high = Math.max(high, 0);
+    if (range === undefined) { range = { low, high, why }; return; }
+    if (low > range.low) range = { ...range, low, why };
+    if (high < range.high) range = { ...range, high, why };
+  };
+  // A set that translates with the moving groups takes its own row along, and that row may carry far ends of further sets (a chain): the reading
+  // runs until no set joins, each set once (R4: at most one round per set).
+  const read = new Set<string>();
+  for (let joined = true; joined;) {
+    joined = false;
+    for (const entry of model.reservations ?? []) {
+      if (entry.kind === 'seatSetDeclined') {
+        const held = (entry.payload.fixed ?? []).find(node => moved.has(groupOf(node)));
+        if (held !== undefined && !read.has(entry.id)) { read.add(entry.id); bound(0, 0, `${held} is a far end of the seat set of ${entry.payload.row}, withdrawn at ${entry.payload.at}, and stays where 7c left it`); }
+        continue;
+      }
+      if (entry.kind !== 'seatSet' || read.has(entry.id)) continue;
+      const p = entry.payload, carriers = [...new Set([...p.seats, ...p.holds].map(eq => groupOf(eq.far.node)))].sort();
+      if (!carriers.some(id => moved.has(id)) || moved.has(p.row)) continue;
+      read.add(entry.id);
+      const left = carriers.filter(id => !moved.has(id));
+      if (left.length) { bound(0, 0, `the far ends of the seat set of ${p.row} stand in ${carriers.join(', ')}, and ${left.join(', ')} does not move with them`); continue; }
+      // A set seated on the anchor tier cannot translate: no step of 7c moves that row. It sets no bound, so a mover is not frozen by it; the rows
+      // rule withdraws the set at its next application ("its row is the anchor tier") and the retry runs without it. A clamp to 0 here froze
+      // the parent row and cost more straight links than the set holds (forced-on corpus, 2026-11-17: a new G5 and 8 bends on three sheets).
+      if (model.groups[p.row]!.tier === model.anchorTier) continue;
+      // The box the wall reads is the one the set leaves when it is applied where its far ends stand: its interval (`payloadOf` takes it from the cell's fit).
+      // The cell box may also be wider than the interval (a label): the wall reads the union where the set stands now.
+      const at = seatInterval(model, p), cell = model.groups[p.row]!.bounds!, x = Math.min(at.low, cell.x), end = Math.max(at.high, cell.x + cell.width);
+      const box = { x, width: end - x }, window = room(p.row), low = window.low - box.x, high = window.high - box.x - box.width;
+      // A box that does not stand in its room now has no shift that keeps it there: the set does not move.
+      if (low > PLACEMENT_EPS || high < -PLACEMENT_EPS) bound(0, 0, `the box of ${p.row} (${box.x.toFixed(1)} to ${(box.x + box.width).toFixed(1)}) does not stand in its window (${window.low.toFixed(1)} to ${window.high.toFixed(1)}), so its seat set does not move`);
+      else bound(low, high, `the seat set of ${p.row} translates with its far ends and stays in its window (${window.low.toFixed(1)} to ${window.high.toFixed(1)})`);
+      moved.add(p.row); joined = true;
+    }
   }
-  return undefined;
+  return range;
 }
 
-/** Names a refused 7c move (`seatFarEndRefusal`) once per mover and row: an info diagnostic, read by no decision. */
-export function nameFarEndRefusal(model: LayoutModel, mover: string, group: string, why: string): void {
-  const message = `${mover} leaves ${group} where it stands: ${why}.`;
-  if (model.diagnostics.some(d => d.code === SEAT_FAR_END_FIXED && d.message === message)) return;
-  model.diagnostics.push({ stage: 'placement', severity: 'info', code: SEAT_FAR_END_FIXED, owners: [{ kind: 'group', id: group }], message });
+/** The shift a mover takes inside `range`: `dx` clamped, and whether the clamp cut it. */
+export function clampFarEndShift(range: FarEndRange | undefined, dx: number): { dx: number; clamped: boolean } {
+  if (range === undefined) return { dx, clamped: false };
+  const kept = Math.max(range.low, Math.min(range.high, dx));
+  return { dx: kept, clamped: Math.abs(kept - dx) > PLACEMENT_EPS };
+}
+
+/** Names a clamp of a 7c mover (`seatFarEndRange`) once per mover, row and shift: an info diagnostic, read by no decision. */
+export function nameFarEndClamp(model: LayoutModel, mover: string, group: string, asked: number | undefined, kept: number, why: string): void {
+  const message = asked === undefined ? `${mover} holds ${group} as a wall: ${why}.` : `${mover} moves ${group} ${kept.toFixed(1)} px of the ${asked.toFixed(1)} px it asked: ${why}.`;
+  if (model.diagnostics.some(d => d.code === SEAT_FAR_END_CLAMPED && d.message === message)) return;
+  model.diagnostics.push({ stage: 'placement', severity: 'info', code: SEAT_FAR_END_CLAMPED, owners: [{ kind: 'group', id: group }], message });
 }
 
 /** Why the boundary of `p` no longer stands as stored (a far port moved off its offset from the first), or undefined. */
@@ -600,6 +651,7 @@ export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetP
   const moves = p.order.some((id, i) => Math.abs(model.nodes[id]!.bounds!.x - xs[i]!) > PLACEMENT_EPS);
   if (guard && moves && group.tier === model.anchorTier) return 'its row is the anchor tier, which the centring step does not move';
   const before: TranslationReading | undefined = guard && moves ? { bands: new Set(validateSkeletonBands(model, true, group.tier)), lane: laneFault(model) } : undefined, was = { ...group.bounds! };
+  const nodesWere = JSON.stringify(p.order.map(id => model.nodes[id]));
   const undo = moveMembers(model, p.order, xs);
   rebuildNodeGeometry(model, p.order, 'current');
   const box = contentBox(model, group);
@@ -609,7 +661,10 @@ export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetP
   if (before !== undefined) rebuildBands(model);
   const refused = before === undefined ? undefined : wall!(group) ?? translationFault(model, group, before);
   if (refused !== undefined) { undo(); rebuildNodeGeometry(model, p.order, 'current'); group.bounds = was; rebuildBands(model); }
-  else if (moves || Object.entries(was).some(([key, value]) => Math.abs((group.bounds as unknown as Record<string, number>)[key]! - (value as number)) > PLACEMENT_EPS)) seatMoves.add(model);
+  // A move, a changed cell box, a band rebuild (also of a refused translation: the bands are read again from the boxes), or a node the geometry
+  // rebuild changed (its pills) leaves the regions to rebuild.
+  if (before !== undefined || moves || Object.entries(was).some(([key, value]) => Math.abs((group.bounds as unknown as Record<string, number>)[key]! - (value as number)) > PLACEMENT_EPS)
+    || JSON.stringify(p.order.map(id => model.nodes[id])) !== nodesWere) seatMoves.add(model);
   return refused;
 }
 
@@ -636,7 +691,8 @@ export function withdrawSeatSet(model: LayoutModel, group: string, why: string):
   // A rule edits a draft that still carries the stage before it: the rule that withdraws is the next stage.
   const rule = LAYOUT_STAGES[LAYOUT_STAGES.indexOf(model.stage) + 1] ?? model.stage;
   attemptCounters.seatWithdrawals++;
-  // A set withdrawn from 7c on keeps its far ends fixed for the rest of the run (`seatFarEndRefusal`): 7c held their rows while it stood.
+  if (why.includes(SEAT_WALL_COLUMN)) attemptCounters.seatWallWithdrawals++;
+  // A set withdrawn from 7c on keeps its far ends where 7c left them for the rest of the run (`seatFarEndRange`).
   const p = seatSetOf(model, group)!, fixed = [...new Set([...p.seats, ...p.holds].map(eq => eq.far.node))].sort();
   // The withdrawal is a decline in the ledger (ruling B): the command reads it and places once more without the set (`retryWithdrawnSeatSets`).
   model.reservations = [...model.reservations.filter(entry => !(entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group)),

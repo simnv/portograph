@@ -54,6 +54,8 @@ export interface AttemptCounters {
   seatRetries: number;
   /** Seat sets withdrawn by name in any placement of a command, kept or compared (dense-16x9 ticket 36; `withdrawSeatSet`). */
   seatWithdrawals: number;
+  /** The seat-set withdrawals on the wall of a frame column (`SEAT_WALL_COLUMN`; dense-16x9 ticket 36a: none in any placement). */
+  seatWallWithdrawals: number;
   /** Course preflight checks on stage-7e trials that lost a baseline-kept straight chord: checked and refused before stage 7f. */
   coursePreflight: { checked: number; refusedAt7e: number };
   /** Rounds of the 7f loop, over all attempts, and how many of them ended with the close-up still open. */
@@ -115,7 +117,7 @@ const zeroInvalidations = (): Invalidations => ({ closeUpReopened: 0, overlayStr
   overlayWindowsKept: 0, fanReruns: 0, sideReruns: 0, cantonNonConvergence: 0 });
 
 export const attemptCounters: AttemptCounters = { settleCalls: 0, centringPasses: 0, candidateCopies: 0, validationReplays: 0, replays: 0, settledTrials: 0,
-  cheapTrials: 0, centreCheckFallbacks: 0, centreCarry: { carried: 0, fresh: 0 }, gapSolves: 0, gapPlan: { calls: 0, computes: 0, memoHits: 0, edgeVisits: 0 }, parentFeedReads: { calls: 0, computes: 0 }, placeRuns: 0, placeStarts: 0, farEndStarts: 0, attempts: 0, crowdRetries: 0, seatRetries: 0, seatWithdrawals: 0, coursePreflight: { checked: 0, refusedAt7e: 0 }, rounds: 0, openRounds: 0, chordRoundsMoved: 0, reseat: { adopted: 0, refused: 0, none: 0 },
+  cheapTrials: 0, centreCheckFallbacks: 0, centreCarry: { carried: 0, fresh: 0 }, gapSolves: 0, gapPlan: { calls: 0, computes: 0, memoHits: 0, edgeVisits: 0 }, parentFeedReads: { calls: 0, computes: 0 }, placeRuns: 0, placeStarts: 0, farEndStarts: 0, attempts: 0, crowdRetries: 0, seatRetries: 0, seatWithdrawals: 0, seatWallWithdrawals: 0, coursePreflight: { checked: 0, refusedAt7e: 0 }, rounds: 0, openRounds: 0, chordRoundsMoved: 0, reseat: { adopted: 0, refused: 0, none: 0 },
   ledger: false, in7f: 0, invalidations: zeroInvalidations(), placements: [], attemptLog: [] };
 
 /** Zeroes every count. The `ledger` switch stays as the caller set it. */
@@ -123,7 +125,7 @@ export function resetAttemptCounters(): void {
   const c = attemptCounters;
   c.settleCalls = 0; c.centringPasses = 0; c.candidateCopies = 0; c.validationReplays = 0;
   c.replays = 0; c.settledTrials = 0; c.cheapTrials = 0; c.centreCheckFallbacks = 0; c.centreCarry = { carried: 0, fresh: 0 }; c.gapSolves = 0; c.gapPlan = { calls: 0, computes: 0, memoHits: 0, edgeVisits: 0 }; c.parentFeedReads = { calls: 0, computes: 0 }; c.placeRuns = 0; c.placeStarts = 0; c.farEndStarts = 0;
-  c.attempts = 0; c.crowdRetries = 0; c.seatRetries = 0; c.seatWithdrawals = 0; c.coursePreflight = { checked: 0, refusedAt7e: 0 }; c.rounds = 0; c.openRounds = 0; c.chordRoundsMoved = 0;
+  c.attempts = 0; c.crowdRetries = 0; c.seatRetries = 0; c.seatWithdrawals = 0; c.seatWallWithdrawals = 0; c.coursePreflight = { checked: 0, refusedAt7e: 0 }; c.rounds = 0; c.openRounds = 0; c.chordRoundsMoved = 0;
   c.reseat = { adopted: 0, refused: 0, none: 0 }; c.in7f = 0; c.invalidations = zeroInvalidations();
   c.placements = []; c.attemptLog = [];
 }

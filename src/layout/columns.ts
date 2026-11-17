@@ -1298,12 +1298,12 @@ export function sweptUnits(model: LayoutModel): Map<string, string> {
  * the row is laid again at the start and at the end of centring, and after the rows rule. A child stays on the side
  * it stands on and moves toward the cells of its parent: its frame box ends `GROUP_PADDING` from the widest parent cell
  * on that side, and two children side by side end `2 * GROUP_PADDING` apart, the margin each block keeps. The
- * parent's cells stay where they are, and a child with a cell that `movable` refuses stays where it is. Every move asks the move guard
+ * parent's cells stay where they are, and a child with a cell that `movable` refuses, or a move that `allow` refuses whole, stays where it is. Every move asks the move guard
  * (`holdsMove`, R2): a child that would break a reservation (a lane reserved in 7a, a straight link, an exit) stays where it is, and in a row
  * of children the ones before it close up to it from the other side; `FRAME_PACK_HELD` names a child whose row still stands open. Idempotent:
  * a row that stands packed is not moved. Returns whether a cell moved.
  */
-export function packBesideRows(model: LayoutModel, movable: (cell: string) => boolean = () => true): boolean {
+export function packBesideRows(model: LayoutModel, movable: (cell: string) => boolean = () => true, allow: (cells: readonly string[], delta: number) => boolean = () => true): boolean {
   const frames = model.document.frames, derived = deriveFrames(model);
   if (frames === undefined || derived === undefined) return false;
   const box = new Map(derived.map(frame => [frame.id, frame.box]));
@@ -1323,6 +1323,8 @@ export function packBesideRows(model: LayoutModel, movable: (cell: string) => bo
       // A child with a cell that the caller may not move (the anchor tier or a flank in centring) stays; its edge still bounds the next.
       if (!cells.every(movable)) return false;
       if (Math.abs(delta) <= PLACEMENT_EPS) { warnPackHeld(model, item.child, parent, 0); return false; }
+      // A move the caller holds whole (a far end of a seat set in 7c, dense-16x9 ticket 36a) leaves the child where it stands, as an unmovable cell does.
+      if (!allow(cells, delta)) return false;
       // The pack is a later write to boxes (R2): it asks the move guard, as every column move does. A child that would cross a lane, a straight link or
       // an exit reserved before it stays where it stands, and its edge bounds the next; `FRAME_PACK_HELD` names it while its row stands open.
       if (!holdsMove(model, cells.map(cell => ({ group: model.groups[cell]!, bounds: { ...model.groups[cell]!.bounds!, x: model.groups[cell]!.bounds!.x + delta } })), false)) {

@@ -196,10 +196,12 @@ const seatNotes = (model: LayoutModel, code: string): string[] => (model.diagnos
 // Ruling B, scope V, with the far ends fixed in 7c (dense-16x9 ticket 36a): on the sheet where a compared placement withdrew a set at centre and the
 // kept placement withdrew another on the column wall, no placement withdraws one now. The kept retry is covered by test/pipeline/seat-retry-*.test.ts.
 describe('a compared placement and the kept placement hold the same seat sets (dense-16x9 ticket 36, ruling B, scope V; ticket 36a)', () => {
-  it('withdraws no set in any placement, declines no row, and restores', async () => {
-    const withdrawn = attemptCounters.seatWithdrawals;
+  // Ticket 36a, ruling 3: the far ends move with their set, clamped to the set's frame column, so no placement withdraws a set on the column wall.
+  // A set seated on the anchor tier cannot translate, so a compared placement may still withdraw it by that rule and decide it again.
+  it('withdraws no set on the column wall in any placement, declines no row in the kept one, and restores', async () => {
+    const walled = attemptCounters.seatWallWithdrawals;
     const model = await run(sheet('a-compared-placement-holds-the-seat-sets-the-kept-placement-holds'));
-    expect(attemptCounters.seatWithdrawals - withdrawn).toBe(0);
+    expect(attemptCounters.seatWallWithdrawals - walled).toBe(0);
     expect(ofKind(model.reservations ?? [], 'seatSetDeclined')).toEqual([]);
     expect(seatSets(model).map(item => item.payload.row)).toEqual(expect.arrayContaining(['loc#2', 'zone#4']));
     expect(seatNotes(model, 'SEAT_SET_WITHDRAWN')).toEqual([]);

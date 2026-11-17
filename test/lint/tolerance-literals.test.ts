@@ -26,7 +26,6 @@ const EXCEPTIONS = new Set([
   'src/render/drawio.ts:EPS', // renderer distance owner, px
   'src/render/drawio.ts:PHASE_GRAIN', // renderer phase grain
   'src/layout/lift.ts:LIFT_MIN_GAIN', // least estimated area drop of a lift candidate, a fraction of the canvas area
-  'src/layout/seat-set.ts:SEAT_SET_BLOCK_AREA_PER_VERTICAL', // most block-height area of a seat set per won vertical, a fraction of the placed area
 ]);
 
 const value = (text: string): number => Number(text.replace(/_/g, ''));

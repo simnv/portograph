@@ -1,52 +1,69 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { LayoutModel } from '../../src/model/index.js';
 import { layout, parse } from '../../src/index.js';
-import { SEAT_FAR_END_FIXED } from '../../src/layout/seat-set.js';
+import { SEAT_SET_WITHDRAWN, SEAT_WALL_COLUMN } from '../../src/layout/seat-set.js';
+import { overlayFreeGroups } from '../../src/layout/columns.js';
 import { portKey } from '../../src/layout/sides-one.js';
-import { PLACEMENT_EPS, SEAT_STANDS_EPS } from '../../src/layout/tolerance.js';
+import { SEAT_STANDS_EPS } from '../../src/layout/tolerance.js';
+import { seatSetFault } from '../../src/layout/reservations.js';
 import { moveTrace } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from './phase-two-fixture.js';
 import { withMoveBeforeGrow } from './move-before-grow.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
-// Dense-16x9 ticket 36a, review 1 finding 2: in 7c no mover takes a far end of a standing seat set along. The movers are found, not listed (the
-// pattern of ticket 33): the test wraps the centre rule, records every `moveGroup` of a row that carries a far end while the rule runs, and compares
-// the x of every far end where the rule began and where it ends (a node move inside a row, `shiftNode`, is no `moveGroup`). A new 7c mover that does
-// not read `seatFarEndRefusal` fails it on these sheets. Coverage evidence on the sheets below, not a proof. The test reads the far ends itself, from
-// the ledger, so it reads the same on code without the predicate.
-const spans: { before: Map<string, number>; after?: Map<string, number>; sets: string[]; kept?: string[]; holdOff: number }[] = [];
+// Dense-16x9 ticket 36a, ruling 3 on review 1 finding 2: in 7c a far end of a standing seat set moves only with its set, as a whole, inside the
+// set's room. The movers are found, not listed (the pattern of ticket 33): the test wraps the centre rule and records every `moveGroup` of a row that
+// carries a far end while the rule runs, with whether a judge is on its call stack (a top-level function of `src/` that calls `seatFarEndRange`,
+// `farEndRange`, `farEndRangeOutside` or `holdFarEnds`). It also reads the far ports of every set that stood when the rule began: a set still
+// standing keeps their offsets, and no set is withdrawn on the wall of its frame column. The overlay window moves only the groups
+// `overlayFreeGroups` lists, and its guard reads the range; the test checks that the list holds no far-end row when the rule begins and ends. A new
+// 7c mover that does not read the range fails it on these sheets. Coverage evidence on the sheets below, not a proof. The test reads the far ends
+// itself, from the ledger.
+const spans: { before: Map<string, Map<string, number>>; after?: Map<string, Map<string, number>>; sets: string[]; kept?: string[]; walls: string[]; free: string[] }[] = [];
 const setRows = (model: LayoutModel): string[] => (model.reservations ?? []).flatMap(entry => entry.kind === 'seatSet' ? [entry.payload.row] : []).sort();
-const farEnds = (model: LayoutModel): Map<string, number> => {
-  const out = new Map<string, number>();
+/** The x of each far port of each standing set, by row. */
+const farPorts = (model: LayoutModel): Map<string, Map<string, number>> => {
+  const out = new Map<string, Map<string, number>>();
   for (const entry of model.reservations ?? []) if (entry.kind === 'seatSet') {
-    for (const eq of [...entry.payload.seats, ...entry.payload.holds]) out.set(`${entry.payload.row}:${eq.far.node}`, model.nodes[eq.far.node]!.bounds!.x);
+    out.set(entry.payload.row, new Map([...entry.payload.seats, ...entry.payload.holds].map(eq => [portKey(eq.far), model.nodes[eq.far.node]!.ports.find(port => portKey(port.ref) === portKey(eq.far))!.anchor!.x])));
   }
   return out;
 };
 /** The groups that carry a far end of a standing set, read from the ledger. */
-const farGroups = (model: LayoutModel): Set<string> => new Set([...farEnds(model).keys()].map(key => model.document.nodes[key.split(':')[1]!]!.group));
-/** The largest distance between the two anchors of a hold of a standing set (a hold is read to `SEAT_STANDS_EPS` at stage 6). */
-const holdOff = (model: LayoutModel): number => {
-  const anchor = (ref: { node: string }) => model.nodes[ref.node]!.ports.find(port => portKey(port.ref) === portKey(ref as never))?.anchor?.x ?? NaN;
-  let off = 0;
-  for (const entry of model.reservations ?? []) if (entry.kind === 'seatSet') for (const eq of entry.payload.holds) off = Math.max(off, Math.abs(anchor(eq.member) - anchor(eq.far)));
-  return off;
-};
+const farGroups = (model: LayoutModel): Set<string> => new Set((model.reservations ?? []).flatMap(entry => entry.kind === 'seatSet'
+  ? [...entry.payload.seats, ...entry.payload.holds].map(eq => model.document.nodes[eq.far.node]!.group) : []));
+const walled = (model: LayoutModel): string[] => model.diagnostics.filter(d => d.code === SEAT_SET_WITHDRAWN && d.message.includes(SEAT_WALL_COLUMN)).map(d => d.message);
+/** The far-end rows the overlay window would take as free. */
+const freeFar = (model: LayoutModel): string[] => { const far = farGroups(model); return [...overlayFreeGroups(model, model.anchorTier)].filter(id => far.has(id)).sort(); };
+const root0 = fileURLToPath(new URL('../..', import.meta.url));
+const walk = (dir: string): string[] => readdirSync(dir).sort().flatMap(name => { const path = join(dir, name); return statSync(path).isDirectory() ? walk(path) : path.endsWith('.ts') ? [path] : []; });
+/** The top-level functions of `src/` that read the far-end range, read as the box writer lint reads its call sites. */
+function judges(): Set<string> {
+  const found = new Set<string>();
+  for (const file of walk(join(root0, 'src'))) {
+    let fn = '';
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      const head = /^(?:export )?(?:async )?function\*? ?(\w+)/.exec(line) ?? /^(?:export )?const (\w+)\s*(?::[^=]*)?=/.exec(line);
+      if (head) fn = head[1]!;
+      if (/\b(seatFarEndRange|farEndRange|farEndRangeOutside|holdFarEnds)\(/.test(line) && !/function (seatFarEndRange|farEndRange|farEndRangeOutside|holdFarEnds)\(/.test(line)) found.add(fn);
+    }
+  }
+  return found;
+}
 let inCentre = false;
 vi.mock('../../src/layout/centre.js', async original => {
   const actual = await original<typeof import('../../src/layout/centre.js')>();
   return {
     ...actual,
     centre: (model: LayoutModel) => {
-      const span: (typeof spans)[number] = { before: farEnds(model), sets: setRows(model), holdOff: holdOff(model) };
+      const span: (typeof spans)[number] = { before: farPorts(model), sets: setRows(model), walls: [], free: freeFar(model) };
       inCentre = true;
       try {
         const out = actual.centre(model);
-        // Every far end of a set that stood when the rule began, read where the rule leaves its node (a set it withdrew included).
-        span.after = new Map([...span.before.keys()].map(key => [key, out.nodes[key.split(':')[1]!]!.bounds!.x])); span.kept = setRows(out);
+        span.after = farPorts(out); span.kept = setRows(out); span.walls = walled(out); span.free.push(...freeFar(out));
         return out;
       } finally {
         inCentre = false;
@@ -68,30 +85,34 @@ const SHEETS = [
 ];
 
 describe('no 7c mover takes a far end of a standing seat set along (dense-16x9 ticket 36a)', () => {
-  it('keeps every far end at its stage-6 x and records no move of its row', async () => {
-    const moves: string[] = [], limit = Error.stackTraceLimit;
+  it('moves a far-end row only under a judge, keeps the offsets of the far ports of every set, and withdraws none on the column wall', async () => {
+    const judged = judges();
+    expect([...judged]).toEqual(expect.arrayContaining(['centreGroupStep', 'settleRows', 'packClear', 'standNearFeed', 'spreadParent', 'place', 'stepOverChords']));
+    const moves = new Map<string, boolean>(), limit = Error.stackTraceLimit;
     Error.stackTraceLimit = Infinity;
     moveTrace.hook = (model, group, dx) => {
       if (!inCentre || Math.abs(dx) <= 1e-6 || !farGroups(model).has(group.id)) return;
       const frames = (new Error().stack ?? '').split('\n').slice(2).map(line => /at (?:\S+\.)?(\w+) \(/.exec(line)?.[1]).filter((name): name is string => name !== undefined);
-      moves.push(`${group.id} ${frames.slice(0, 4).join('<')}`);
+      const key = `${group.id} ${frames.slice(0, 3).join('<')}`;
+      moves.set(key, (moves.get(key) ?? false) || !frames.some(name => judged.has(name)));
     };
-    const named: string[] = [];
+    spans.length = 0;
     try {
-      for (const sheet of SHEETS) {
-        const model = await layout(parse(readFileSync(join(root, sheet), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-        named.push(...model.diagnostics.filter(d => d.code === SEAT_FAR_END_FIXED).map(d => d.message));
-      }
+      for (const sheet of SHEETS) await layout(parse(readFileSync(join(root, sheet), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     } finally {
       delete moveTrace.hook;
       Error.stackTraceLimit = limit;
     }
     const standing = spans.filter(span => span.before.size > 0);
     expect(standing.length, 'the sheets reach 7c with a standing seat set').toBeGreaterThan(0);
-    const drifted = standing.flatMap(span => [...span.after!].filter(([key, x]) => span.before.has(key) && Math.abs(x - span.before.get(key)!) > 1e-6)
-      .map(([key, x]) => `${key} ${(x - span.before.get(key)!).toFixed(1)}`));
-    expect({ moves: [...new Set(moves)], drifted: [...new Set(drifted)] }, 'a 7c mover moved a far end of a standing seat set').toEqual({ moves: [], drifted: [] });
-    expect(named.length, 'a refused move is named').toBeGreaterThan(0);
+    expect(moves.size, 'the sheets move a far-end row in 7c').toBeGreaterThan(0);
+    const unjudged = [...moves].filter(([, open]) => open).map(([key]) => key);
+    // A set that stands at the end of the rule keeps the offsets of its far ports: they moved as one.
+    const torn = standing.flatMap(span => [...span.after!].filter(([row]) => span.before.has(row)).flatMap(([row, now]) => {
+      const was = span.before.get(row)!, shifts = [...now].map(([key, x]) => x - was.get(key)!);
+      return shifts.every(shift => Math.abs(shift - shifts[0]!) <= 1e-6) ? [] : [`${row} ${shifts.map(shift => shift.toFixed(1)).join(',')}`];
+    }));
+    expect({ unjudged, torn, walls: standing.flatMap(span => span.walls), free: standing.flatMap(span => span.free) }).toEqual({ unjudged: [], torn: [], walls: [], free: [] });
   }, 900000);
 
   // The state-table row of scope V (docs/design/pipeline.md, 7c): every placement, compared or kept, holds the sets of the kept placement.
@@ -107,14 +128,47 @@ describe('no 7c mover takes a far end of a standing seat set along (dense-16x9 t
     expect(model.diagnostics.filter(d => d.code === 'SEAT_SET_WITHDRAWN' || (d.code === 'SEAT_SET_DECLINED' && /withdrawn/.test(d.message))).map(d => d.message)).toEqual([]);
   }, 900000);
 
-  // A hold is a vertical a member stood when stage 6 read it, to SEAT_STANDS_EPS; the publication check of the rows rule reads it so too.
-  it('publishes a seat set whose hold stands half a pixel off its far port', async () => {
-    spans.length = 0;
+  // A hold is a vertical a member stood when stage 6 read it, to SEAT_STANDS_EPS; the publication check of the rows rule reads it so too. The sheet
+  // that stood a hold half a pixel off now completes: the far ends move with their set, so its verticals stand exact. The reading itself is checked
+  // on a published set: an equation read as a hold, its member moved by d with the seat x stage 6 would have recorded, stands for d up to
+  // SEAT_STANDS_EPS and no further.
+  it('completes the sheet that stood a hold half a pixel off, and reads a hold to SEAT_STANDS_EPS', async () => {
     const sheet = 'test/fixtures/staged/a-seat-set-hold-half-a-pixel-off-is-published.yaml';
-    await layout(parse(readFileSync(join(root, sheet), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
-    const off = Math.max(...spans.map(span => span.holdOff));
-    expect(off).toBeGreaterThan(PLACEMENT_EPS);
-    expect(off).toBeLessThanOrEqual(SEAT_STANDS_EPS);
+    await expect(layout(parse(readFileSync(join(root, sheet), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt })).resolves.toBeDefined();
+    const model = await layout(parse(readFileSync(join(root, 'goldens/synthetic/a-compared-placement-holds-the-seat-sets-the-kept-placement-holds.yaml'), 'utf8')),
+      { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const entry = (model.reservations ?? []).find(item => item.kind === 'seatSet');
+    expect(entry, 'the sheet publishes a seat set').toBeDefined();
+    // The member of the first equation stands d to the left, with its ports, and with the seat x, interval and cell box stage 6 would have recorded.
+    const skewed = (d: number): string | undefined => {
+      const copy = JSON.parse(JSON.stringify(model)) as LayoutModel, item = copy.reservations!.find(one => one.id === entry!.id)!;
+      if (item.kind !== 'seatSet') throw new Error('not a seat set');
+      const p = item.payload, eq = [...p.seats, ...p.holds][0]!;
+      p.seats = p.seats.filter(one => one !== eq);
+      if (!p.holds.includes(eq)) p.holds = [...p.holds, eq];
+      const node = copy.nodes[eq.member.node]!;
+      node.bounds = { ...node.bounds!, x: node.bounds!.x - d };
+      for (const port of node.ports) if (port.anchor) port.anchor = { ...port.anchor, x: port.anchor.x - d };
+      p.xs = p.xs.map((x, i) => p.order[i] === eq.member.node ? x - d : x);
+      p.interval = { ...p.interval, low: p.interval.low - d };
+      const cell = copy.groups[p.row]!;
+      cell.bounds = { ...cell.bounds!, x: cell.bounds!.x - d, width: cell.bounds!.width + d };
+      return seatSetFault(item, copy);
+    };
+    expect(skewed(0)).toBeUndefined();
+    expect(skewed(SEAT_STANDS_EPS - 0.1)).toBeUndefined();
+    expect(skewed(SEAT_STANDS_EPS + 0.1)).toMatch(/no longer stands vertical/);
+  }, 900000);
+
+  // The step over chords (7f) moves a far-end row only inside its set's room, and a step whose settled copy withdraws a set on the column wall,
+  // where the copy without it keeps the set, does not stand (`chordDecision`). Before, a step of a far-end row on this sheet left a row 28 px out of
+  // its column at the replay, and the kept placement declined that set by the wall.
+  it('keeps every set of a placement off the column wall through the step over chords', async () => {
+    const sheet = withMoveBeforeGrow(readFileSync(join(root, 'goldens/synthetic/four-locations-each-with-a-zone.yaml'), 'utf8'));
+    const model = await layout(parse(sheet), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    const declined = (model.reservations ?? []).flatMap(entry => entry.kind === 'seatSetDeclined' ? [`${entry.payload.row}: ${entry.payload.why}`] : []);
+    expect(declined.filter(item => item.includes(SEAT_WALL_COLUMN))).toEqual([]);
+    expect(model.diagnostics.filter(d => d.code === 'SEAT_FAR_END_CLAMPED' && d.message.startsWith('the step over chords')).length).toBeGreaterThan(0);
   }, 900000);
 
   // A set withdrawn after 7c keeps its far ends fixed for the rest of the run: 7c held their rows, and the publication replay of the rule that

@@ -1,8 +1,10 @@
 # Expected (dense-16x9 ticket 36a, ruling on review 1 finding 2): the placements the command compares and the placement it keeps hold the same
 # seat sets. The sheet of ranked-groups ticket 28 with moveBeforeGrow. Under ticket 36 a compared placement (the first run, before its room rounds)
 # withdrew the set of loc#2 at centre (its row was the anchor tier of that placement), and the kept placement withdrew zone#4 on the wall of its
-# frame column ("the row would leave the column of its frame") and declined it. No 7c mover now moves a row that carries a far end of a standing
-# set (`seatFarEndRefusal`): no placement withdraws a set, no row is declined, and loc#2 and zone#4 stand. The restore passes.
+# frame column ("the row would leave the column of its frame") and declined it. A 7c mover now moves a row that carries a far end of a standing
+# set only with the set, inside the frame column of its row (`seatFarEndRange`, ruling 3): no placement withdraws a set on the column wall, the
+# kept placement declines no row, and loc#2 and zone#4 stand. A set on the anchor tier cannot translate, so the first run may still withdraw
+# loc#2 by that rule and decide it again. The restore passes.
 # Test-only input owned by dense-16x9 ticket 36; test/layout/seat-set.test.ts reads the layout.
 portograph: 2
 layout: { moveBeforeGrow: true }

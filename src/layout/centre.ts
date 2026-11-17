@@ -1,5 +1,5 @@
 import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
-import { applySeatSet, applySeatSets, nameFarEndRefusal, seatFarEndRefusal, seatSetNodes, seatSetOf, takeSeatSetMoves, withdrawSeatSet, type SeatWall } from './seat-set.js';
+import { applySeatSet, applySeatSets, clampFarEndShift, nameFarEndClamp, seatFarEndRange, seatSetNodes, seatSetOf, SEAT_WALL_COLUMN, takeSeatSetMoves, withdrawSeatSet, type FarEndRange, type SeatWall } from './seat-set.js';
 import { liftedGroups } from './lift.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceExcess, facePairPitches } from './pair-pitch.js';
@@ -502,13 +502,34 @@ function geometry(model: LayoutModel): number[] {
 }
 /** The child columns stand against the parent cells beside them again; the anchor tier and the flanks keep their place in centring (idempotent, ticket 28). */
 function settleRows(model: LayoutModel): boolean {
-  return packBesideRows(model, cell => {
-    if (model.groups[cell]!.tier === model.anchorTier || model.groups[cell]!.flank) return false;
-    // A cell with a far end of a standing seat set stays, and its child frame with it (dense-16x9 ticket 36a).
-    const fixed = seatFarEndRefusal(model, [cell]);
-    if (fixed !== undefined) nameFarEndRefusal(model, 'the child-frame pack', cell, fixed);
-    return fixed === undefined;
+  let context: CentreContext | undefined;
+  return packBesideRows(model, cell => model.groups[cell]!.tier !== model.anchorTier && !model.groups[cell]!.flank, (cells, delta) => {
+    // A child frame whose cells carry a far end of a seat set moves only with the set, inside its room (dense-16x9 ticket 36a); a pack it cannot
+    // take whole holds the frame, as a cell the pack may not move does, and is named.
+    if (model.anchorTier === undefined || !model.tierBands.some(band => band.tier === model.anchorTier)) return true;
+    const range = farEndRange(model, context ??= centreContext(model, model.anchorTier!), cells);
+    const shift = clampFarEndShift(range, delta);
+    if (shift.clamped) nameFarEndClamp(model, 'the child-frame pack', cells[0]!, delta, 0, range!.why);
+    return !shift.clamped;
   });
+}
+/**
+ * The range of a far-end move in 7c: the room of the seated row is the window of its frame column (`columnWindow`), the wall that withdrew sets
+ * before. A lane or a flank is not read here: a translation that crosses one is withdrawn by `translationFault` and placed once more without the
+ * set, as before (a clamp at the lanes kept the parent row off its feed and cost 14 bends on one forced-on sheet, 2026-11-17).
+ */
+function farEndRange(model: LayoutModel, context: CentreContext, moving: readonly string[]): FarEndRange | undefined {
+  return seatFarEndRange(model, moving, row => columnWindow(model, context, model.groups[row]!.tier!, row));
+}
+/**
+ * The far-end range of `moving` for a mover outside 7c that a replay of 7c judges (the step over chords, dense-16x9 ticket 36a): the room
+ * `farEndRange` reads, on a context built for the call. Undefined when no moving group carries a far end.
+ */
+export function farEndRangeOutside(model: LayoutModel, moving: readonly string[]): FarEndRange | undefined {
+  const open = (): { low: number; high: number } => ({ low: -Infinity, high: Infinity });
+  const any = seatFarEndRange(model, moving, open);
+  if (any === undefined || model.anchorTier === undefined || !model.tierBands.some(band => band.tier === model.anchorTier)) return any;
+  return farEndRange(model, centreContext(model, model.anchorTier), moving);
 }
 /** Reusable bounded producer. The caller shares one budget across all ordered placement replay. */
 export interface CentreContext {
@@ -595,7 +616,7 @@ function reservedWindow(model: LayoutModel, context: CentreContext, tier: number
 function seatWall(model: LayoutModel, context: CentreContext): SeatWall {
   return group => {
     const window = columnWindow(model, context, group.tier!, group.id), box = group.bounds!;
-    if (box.x < window.low - PLACEMENT_EPS || right(box) > window.high + PLACEMENT_EPS) return `the row would leave the column of its frame (${box.x.toFixed(1)} to ${right(box).toFixed(1)}, window ${window.low.toFixed(1)} to ${window.high.toFixed(1)})`;
+    if (box.x < window.low - PLACEMENT_EPS || right(box) > window.high + PLACEMENT_EPS) return `${SEAT_WALL_COLUMN} (${box.x.toFixed(1)} to ${right(box).toFixed(1)}, window ${window.low.toFixed(1)} to ${window.high.toFixed(1)})`;
     return undefined;
   };
 }
@@ -646,8 +667,8 @@ function tailReservation(model: LayoutModel, context: CentreContext, tier: numbe
   // exact for the whole tier step. It costs one pass over the groups of the tier.
   for (const id of [...order].reverse()) {
     result.set(id, bound);
-    // A row with a far end of a standing seat set does not give way (dense-16x9 ticket 36a): the groups before it end where it stands.
-    const fixed = seatFarEndRefusal(model, [id]) !== undefined ? model.groups[id]!.bounds!.x + model.groups[id]!.bounds!.width : Infinity;
+    // A row with a far end of a seat set gives way only as far as its set may translate (dense-16x9 ticket 36a).
+    const range = farEndRange(model, context, [id]), fixed = range === undefined ? Infinity : right(model.groups[id]!.bounds!) + range.high;
     bound = Math.min(bound, fixed, reservedWindow(model, context, tier, id).high, guardWall(model, id)) - model.groups[id]!.bounds!.width - bandGap(model);
   }
   return result;
@@ -666,11 +687,11 @@ function packClear(model: LayoutModel, context: CentreContext, tier: number, gro
   const low = Math.max(window.low, right(previous.bounds!) + bandGap(model));
   if (group.bounds!.x >= low - EPS) return;
   const bounds = { ...group.bounds!, x: low };
-  // A row with a far end of a standing seat set keeps its stage-6 x (dense-16x9 ticket 36a); the tail reservation keeps the groups before it
-  // clear of it, so a pack it would need is named as infeasible.
-  const fixed = seatFarEndRefusal(model, [group.id]);
-  if (fixed !== undefined) {
-    placementWarning(model, 'CENTRE_TIER_PACK_INFEASIBLE', `${group.id} cannot clear ${previous.id}: ${fixed}; the final gates judge the result.`, [group.id], 'group');
+  // A row with a far end of a seat set moves only with its set, inside its room (dense-16x9 ticket 36a); the tail reservation keeps the groups
+  // before it inside that room, so a pack past it is named as infeasible.
+  const range = farEndRange(model, context, [group.id]), shift = clampFarEndShift(range, low - group.bounds!.x);
+  if (shift.clamped) {
+    placementWarning(model, 'CENTRE_TIER_PACK_INFEASIBLE', `${group.id} cannot clear ${previous.id}: ${range!.why}; the final gates judge the result.`, [group.id], 'group');
     return;
   }
   // A forced move: it passes the lane sides but not the side-lane frame guard (the riser keep-out is exempt the same way).
@@ -707,9 +728,10 @@ function standNearFeed(model: LayoutModel, context: CentreContext, tier: number,
   if (!standsInCanton(model, group) || !Number.isFinite(target) || box.width > high - low + EPS) return;
   const dx = Math.max(low, Math.min(target, high - box.width)) - box.x;
   if (Math.abs(dx) <= EPS || !holdsMove(model, [{ group, bounds: { ...box, x: box.x + dx } }])) return;
-  const fixed = seatFarEndRefusal(model, [id]);
-  if (fixed !== undefined) { nameFarEndRefusal(model, 'the stand near the feed', id, fixed); return; }
-  moveGroup(model, group, dx, 0);
+  // A row with a far end of a seat set moves only with its set, inside its room (dense-16x9 ticket 36a): the stand is clamped and named.
+  const range = farEndRange(model, context, [id]), shift = clampFarEndShift(range, dx);
+  if (shift.clamped) nameFarEndClamp(model, 'the stand near the feed', id, dx, shift.dx, range!.why);
+  if (Math.abs(shift.dx) > EPS) moveGroup(model, group, shift.dx, 0);
 }
 
 /** How many targets of a face stand in engine order at the face's pitch: the in-order keep of `keptTargets` without its limits, cap or stops. */
@@ -1093,10 +1115,10 @@ function spreadParent(model: LayoutModel, context: CentreContext, tier: number, 
   // The ports as the model holds them now: a spread before this one, or its undoing, moved or replaced the nodes of its row.
   const feeds = plan.feeds.map(feed => ({ key: feed.key, link: feed.link, parent: findPort(model, feed.parent.ref)!, child: findPort(model, feed.child.ref)! }));
   const decline = (why: string): undefined => declineSpread(model, plan.node, feeds.map(feed => feed.link), why);
-  // A spread moves its row (the growth shifts the neighbours, the clamp moves the group): a row with a far end of a standing seat set keeps its
-  // stage-6 x (dense-16x9 ticket 36a), so the spread is declined by that name.
-  const fixed = seatFarEndRefusal(model, [group.id]);
-  if (fixed !== undefined) return decline(fixed);
+  // A spread resizes its row (the growth shifts the neighbours apart): the far ends of a seat set in that row would no longer translate as one
+  // (dense-16x9 ticket 36a), so the spread is declined by that name.
+  const range = farEndRange(model, context, [group.id]);
+  if (range !== undefined) return decline(`its row carries far ends of a seat set, which move only as a whole (${range.why})`);
   // The ports take the spacing of their children about their own mean: a block centred on the face stays centred on it (ticket 10), and the body grows
   // by the deficit, half on each side. Sums in ascending order (R3), as `centringOffset` takes them.
   const mean = (values: number[]): number => [...values].sort((a, b) => a - b).reduce((sum, x) => sum + x, 0) / values.length;
@@ -1236,13 +1258,51 @@ const breachedIds = (model: LayoutModel): Set<string> => new Set([...keepOutShif
 function centreGroupStep(model: LayoutModel, context: CentreContext, tier: number, list: Feed[], id: string, previous: LayoutGroup | undefined, warn: boolean, tail: Map<string, number>, rowSeat: ReadonlyMap<string, number>, base?: BaseReadings, carried?: CarriedReadings): GroupStep {
   return withStepLinkKinds(model, () => {
     const began = model.groups[id];
-    const step = centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, rowSeat, base, carried);
+    const range = farEndRange(model, context, [id]), saved = range === undefined ? undefined : farEndSnapshot(model, id);
+    const raw = centreGroupStepChecked(model, context, tier, list, id, previous, warn, tail, rowSeat, base, carried);
+    const step = range === undefined ? raw : holdFarEnds(model, id, range, saved!, raw);
     // The targets the step kept, grew toward or declined, read on the geometry it leaves on every exit (architecture-2 ticket 66).
     writeAlignmentTargets(model, model.groups[id]!.nodes, step.notes, warn ? stepPass : 0);
     // The seats, only when the step's own geometry stands: a step given back or kept at its start leaves no seat of its own (ADR-0027).
     if (step.group === began) writeAlignmentSeats(model, step.notes.seated, warn ? stepPass : 0, step.notes.unseated);
     return step;
   });
+}
+/** What the step of a far-end row may give back (`holdFarEnds`): its group and nodes, the labels, the diagnostics, the ledger, and the far ports' x. */
+interface FarEndSnapshot { text: string; labels: LayoutModel['labels']; diagnostics: LayoutModel['diagnostics']; reservations: LayoutModel['reservations']; far: Map<string, number> }
+function farEndSnapshot(model: LayoutModel, id: string): FarEndSnapshot {
+  const group = model.groups[id]!, far = new Map<string, number>();
+  for (const entry of model.reservations ?? []) if (entry.kind === 'seatSet') for (const eq of [...entry.payload.seats, ...entry.payload.holds]) {
+    if (group.nodes.includes(eq.far.node)) far.set(portId(eq.far), findPort(model, eq.far)!.anchor!.x);
+  }
+  return { text: JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) }), labels: [...model.labels], diagnostics: [...model.diagnostics],
+    reservations: model.reservations, far };
+}
+/**
+ * The step of a row that carries a far end of a seat set (dense-16x9 ticket 36a, ruling 3 on review 1 finding 2): the set moves with its far ends as
+ * a whole, inside its room (`range`). A step that keeps the offsets of the far ports and stays inside the range stands. Any other step is given
+ * back whole, and the row translates by the shift it asked, clamped into the range (the shift of its far ports where they kept their offsets, else
+ * of its box) when the move guard holds (`holdsMove`), named (`SEAT_FAR_END_CLAMPED`); the feeds it leaves off their x stay open. From 7e on a
+ * translation is not judged here, so the row stays where the step began.
+ */
+function holdFarEnds(model: LayoutModel, id: string, range: FarEndRange, saved: FarEndSnapshot, step: GroupStep): GroupStep {
+  const was = JSON.parse(saved.text) as { group: LayoutGroup; nodes: LayoutNode[] }, group = model.groups[id]!;
+  const shifts = [...saved.far].map(([key, x]) => { const [ref] = [...group.nodes].flatMap(node => model.nodes[node]!.ports).filter(port => portId(port.ref) === key); return ref?.anchor === undefined ? NaN : ref.anchor.x - x; });
+  const intact = shifts.every(shift => Number.isFinite(shift) && Math.abs(shift - shifts[0]!) <= PLACEMENT_EPS);
+  const asked = intact && shifts.length ? shifts[0]! : group.bounds!.x - was.group.bounds!.x, shift = clampFarEndShift(range, asked);
+  if (intact && !shift.clamped) return step;
+  model.groups[id] = was.group;
+  for (const node of was.nodes) model.nodes[node.id] = node;
+  model.labels = saved.labels; model.diagnostics = saved.diagnostics;
+  if (saved.reservations === undefined) delete model.reservations; else model.reservations = saved.reservations;
+  // The translation asks the move guard as the stand near the feed does; a move it refuses keeps the row where the step began.
+  const free = !CHORD_STAGES.includes(model.stage) && Math.abs(shift.dx) > EPS && holdsMove(model, [{ group: was.group, bounds: { ...was.group.bounds!, x: was.group.bounds!.x + shift.dx } }]);
+  const kept = free ? shift.dx : 0;
+  if (free) { moveGroup(model, was.group, kept, 0); rebuildNodeGeometry(model, was.group.nodes, 'current'); }
+  nameFarEndClamp(model, 'the centring step', id, asked, kept, intact ? range.why : `the step moves the far ends apart; ${range.why}`);
+  const ports = new Map(was.group.nodes.flatMap(node => model.nodes[node]!.ports.map(port => [portId(port.ref), port] as const)));
+  const open = new Set([...step.notes.wanted].filter(([key, want]) => { const at = ports.get(key)?.anchor?.x; return at === undefined || Math.abs(at - want) > 0.5; }).map(([key]) => key));
+  return { unresolved: open, group: was.group, notes: { ...step.notes, grown: new Map(), declined: new Map(), seated: new Map() } };
 }
 /**
  * The seats of `nodes` that fall, each with its first kept port that no longer stands over its feed (`wanted`, the feed x of each child port)
@@ -1457,13 +1517,6 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
     const why = applySeatSet(model, group, owned, seatWall(model, context));
     if (why === undefined) return { unresolved, group, notes };
     withdrawSeatSet(model, id, why);
-  }
-  // A row that carries a far end of a standing seat set keeps its stage-6 x (dense-16x9 ticket 36a): the step is refused by name, its wanted
-  // ports stay open, and the next reading of the set finds its far ends where it planned them.
-  const fixed = seatFarEndRefusal(model, [id]);
-  if (fixed !== undefined) {
-    nameFarEndRefusal(model, 'the centring step', id, fixed);
-    return { unresolved: new Set([...unresolved, ...wanted.keys()]), group, notes };
   }
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };
