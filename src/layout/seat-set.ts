@@ -401,7 +401,9 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
   const gaining = leaves.filter(leaf => leaf.kept.length > now).sort(readOrder);
   const stage: Stage = { model, group, base, open: movable };
   let first: string | undefined, reads = 0, lost: string | undefined;
-  const baseline = straightLinks(model, base), admitted: { leaf: Leaf; cost: Cost; fit: Rect }[] = [];
+  // The reading of each link on the row as it stands, kept for the solve: every candidate's `before` reads the same geometry (review 1 of slice 3).
+  const standing = new Map<string, 'vertical' | 'straight' | 'bent'>();
+  const baseline = straightLinks(model, base, new Set(), standing), admitted: { leaf: Leaf; cost: Cost; fit: Rect }[] = [];
   // In read order, up to the read bound: the first admitted candidate sets the kept verticals and the row width, and every later candidate
   // with both (the width to PLACEMENT_EPS) is read too; the choice among them is made by area.
   for (const leaf of gaining) {
@@ -420,7 +422,7 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
     let demands: BlockDemand[] | undefined;
     if (hasBlocks) { group.bounds = fit; try { demands = blockDemands(model).demands; } finally { group.bounds = box; } }
     staged.undo(); group.bounds = box;
-    const before = also.size ? straightLinks(model, base, also) : baseline;
+    const before = also.size ? straightLinks(model, base, also, standing) : baseline;
     const fault = blockOwnerFault(model, blocks, demands);
     if (fault !== undefined) { first ??= fault; continue; }
     const gained = [...after.vertical].filter(id => !before.vertical.has(id)).length, gone = [...before.straight].filter(id => !after.straight.has(id)).sort();
@@ -442,15 +444,22 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
  * what placement can read at stage 6 of what a set costs elsewhere: the chords are decided after the rows rule (`rebuildRowPaths`) on the
  * same reading. A link an overlay or a later rule draws is not read.
  */
-function straightLinks(model: LayoutModel, order: readonly string[], also: ReadonlySet<string> = new Set()): { vertical: Set<string>; straight: Set<string> } {
+function straightLinks(model: LayoutModel, order: readonly string[], also: ReadonlySet<string> = new Set(),
+  read?: Map<string, 'vertical' | 'straight' | 'bent'>): { vertical: Set<string>; straight: Set<string> } {
   const members = new Set(order), vertical = new Set<string>(), straight = new Set<string>();
   for (const link of model.links) {
     const ends = link.attachments;
     if (ends === undefined || link.layer !== 'routed' || (members.has(ends.from.node) === members.has(ends.to.node) && !also.has(link.id))) continue;
-    const a = findPort(model, ends.from)?.anchor, b = findPort(model, ends.to)?.anchor;
-    if (a === undefined || b === undefined) continue;
-    if (Math.abs(a.x - b.x) <= SEAT_STANDS_EPS) { vertical.add(link.id); straight.add(link.id); }
-    else if (expectedRowPath(model, link) !== undefined) straight.add(link.id);
+    // `read` keeps the reading of each link on one geometry (the row as it stands, `planSeatSet`), so a link is read there once per solve.
+    let state = read?.get(link.id);
+    if (state === undefined) {
+      const a = findPort(model, ends.from)?.anchor, b = findPort(model, ends.to)?.anchor;
+      if (a === undefined || b === undefined) continue;
+      state = Math.abs(a.x - b.x) <= SEAT_STANDS_EPS ? 'vertical' : expectedRowPath(model, link) !== undefined ? 'straight' : 'bent';
+      read?.set(link.id, state);
+    }
+    if (state === 'vertical') vertical.add(link.id);
+    if (state !== 'bent') straight.add(link.id);
   }
   return { vertical, straight };
 }
