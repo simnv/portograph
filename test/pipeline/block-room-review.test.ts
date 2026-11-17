@@ -5,7 +5,7 @@ import { resolve } from '../../src/resolve/index.js';
 import { sidesOne } from '../../src/layout/sides-one.js';
 import { sizeNodes } from '../../src/layout/size.js';
 import { deriveFrames } from '../../src/layout/frames.js';
-import { blockReservationsFault } from '../../src/layout/block-checks.js';
+import { blockMoveRefusal, blockReservationFaults, blockReservationsFault } from '../../src/layout/block-checks.js';
 import { blockBoxPadsAsked, blockRowGapsAsked } from '../../src/layout/block-pads.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import type { LayoutModel } from '../../src/model/layout.js';
@@ -80,5 +80,18 @@ describe('the room of a hub frame (the reviewer\'s frame probe)', () => {
     const broken = { ...model, frames: bare };
     expect(blockReservationsFault(broken)).toMatch(/box clearance/);
     expect(() => restoreLayoutModel(JSON.stringify(broken))).toThrow();
+  }, 180000);
+});
+
+describe('the one judge of a move after the freeze reads the row room (ticket 31)', () => {
+  it('refuses a move that takes a row neighbour into the clearance its row gap reserved', async () => {
+    const model = await lay(fixture('a-tall-hub-takes-its-row-gap-at-the-fixed-point'));
+    const before = blockReservationFaults(model);
+    expect(blockReservationsFault(model)).toBeUndefined();
+    // A mover shifts `core-b` beside `core-a`, its row gap given back: its body now stands in the chords of `core-a`.
+    const moved = JSON.parse(JSON.stringify(model)) as LayoutModel, a = moved.nodes['core-a']!.bounds!, b = moved.nodes['core-b']!.bounds!;
+    b.x = a.x + a.width + 1;
+    expect(blockReservationsFault(moved)).toMatch(/lost its reserved row room beside core-b/);
+    expect(blockMoveRefusal(before, moved)?.fault).toMatch(/row room beside core-b/);
   }, 180000);
 });

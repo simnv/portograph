@@ -2,9 +2,10 @@ import { chordBoxFaults, chordBoxRefusal } from './chord-boxes.js';
 import { chordEnds } from './overlay-paths.js';
 import type { Point } from '../model/geometry.js';
 import type { LayoutLink, LayoutModel } from '../model/layout.js';
-import { EPS } from '../geometry/planar.js';
+import { EPS, segmentRectDistance } from '../geometry/planar.js';
+import { DEFAULT_STROKE_WIDTHS, linkStrokeWidth } from '../theme/geometry.js';
 import { BLOCK_TOLERANCE } from './tolerance.js';
-import { findPort } from './row-paths.js';
+import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
 import { facePairPitches } from './pair-pitch.js';
 import { portId } from './skeleton-graph.js';
 
@@ -134,6 +135,27 @@ function followerFault(model: LayoutModel, id: string): BlockFault | undefined {
   return undefined;
 }
 
+/** The node clearance a flat member's chord keeps from a row neighbour's body: the one measure of the row gap's reading and of its check (R1). */
+export function rowRoomClearance(model: LayoutModel, link: LayoutLink, node: string): number {
+  return STRAIGHT_PATH_CLEARANCE.node + (linkStrokeWidth(link) + (model.nodes[node]?.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2;
+}
+
+/**
+ * The row room a straight flat member holds (dense-16x9 ticket 04, slice 3, step 2): every row neighbour that a row gap of its end node names
+ * (`blockRowGaps`) stands the node clearance from the drawn chord. A row gap is that clearance reserved at the floor angle; after the freeze the
+ * chord as drawn is what a mover may not take closer. One fault per neighbour, with its shortfall.
+ */
+function rowRoomFaults(model: LayoutModel, link: LayoutLink, chord: { from: Point; to: Point }): BlockFault[] {
+  const ends = new Set([link.attachments!.from.node, link.attachments!.to.node]), faults: BlockFault[] = [];
+  for (const gap of model.blockRowGaps ?? []) {
+    const neighbour = ends.has(gap.left) ? gap.right : ends.has(gap.right) ? gap.left : undefined, body = neighbour === undefined ? undefined : model.nodes[neighbour]?.bounds;
+    if (neighbour === undefined || ends.has(neighbour) || body === undefined) continue;
+    const short = rowRoomClearance(model, link, neighbour) - segmentRectDistance({ ...chord, owner: link.owner }, body);
+    if (short > BLOCK_TOLERANCE) faults.push({ constraint: `room:${neighbour}`, fault: `${link.id} lost its reserved row room beside ${neighbour}`, short });
+  }
+  return faults;
+}
+
 function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutModel['blockReservations']>[number], straight: boolean): BlockFault[] {
   const link = model.links.find(item => item.id === id);
   if (!link?.attachments) return [{ constraint: 'endpoints', fault: `${id} has no endpoints`, short: 0 }];
@@ -165,6 +187,7 @@ function memberFaults(model: LayoutModel, id: string, entry: NonNullable<LayoutM
       const floor = angleShortfall(chord.from, chord.to, BLOCK_FLOOR_ANGLE);
       if (floor > BLOCK_TOLERANCE) faults.push({ constraint: 'angle', fault: `${id} lost its reserved angle`, short: floor });
       boxes(chord.from, chord.to, true);
+      faults.push(...rowRoomFaults(model, link, chord));
     }
   } else boxes(a!, b!, false);
   const upper = model.tierBands.find(band => band.tier === entry.above)?.bounds;

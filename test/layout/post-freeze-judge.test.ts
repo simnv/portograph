@@ -140,9 +140,12 @@ describe('a move after the chord freeze keeps every solid-block reservation (den
     const member = flat.links.find(link => link.id === 'link-1')!, core = member.attachments!.from.node, other = member.attachments!.to.node;
     const away = Math.sign(flat.nodes[other]!.bounds!.x - flat.nodes[core]!.bounds!.x) || 1;
     const short = (state: LayoutModel, constraint: string): number => blockReservationFaults(state).get('link-1')?.find(fault => fault.constraint.startsWith(constraint))?.short ?? 0;
-    // The core end 20 px aside: link-1 leaves the core box by the side edge, too near the corner.
+    // The core end moved aside past the side room its box holds (`blockBoxPads`, dense-16x9 ticket 04 slice 3, step 2): link-1 leaves the core
+    // box by the side edge, too near the corner. The first fault is a jump (the chord turns from the bottom edge to the side edge); ten pixels
+    // further the crossing moves along the side edge with each pixel.
     const broken = structuredClone(flat);
-    shift(broken, core, -20);
+    for (let moved = 0; moved < 2000 && blockReservationFaults(broken).size === 0; moved++) shift(broken, core, -1);
+    shift(broken, core, -10);
     expect([...blockReservationFaults(broken).keys()]).toEqual(['link-1']);
     expect(short(broken, 'box:')).toBeGreaterThan(0);
     // The pixel that takes the crossing nearer the corner is refused; the move back is kept.
@@ -159,9 +162,12 @@ describe('a move after the chord freeze keeps every solid-block reservation (den
     const flattest = structuredClone(flatter);
     shift(flattest, other, away, 0);
     expect(blockMoveRefusal(flatter, flattest)?.fault).toBe('link-1 lost its reserved angle, further than before the move');
-    // The move back heals the angle but takes the side crossing nearer the core box's corner: a fault grows, so it is refused too.
+    // The move back heals the angle. The core box holds its side room down to the floor angle (`blockBoxPads`, dense-16x9 ticket 04 slice 3,
+    // step 2), so the crossing of the core box does not move nearer its corner (the far end stands outside its own box in both states, and the
+    // move back takes it nearer): no fault grows, and the move is kept.
     expect(short(flatter, 'angle')).toBeLessThan(short(flattest, 'angle'));
-    expect(blockMoveRefusal(flattest, flatter)?.fault).toBe('link-1 lost its reserved box clearance (edge), further than before the move');
+    expect(blockReservationFaults(flatter).get('link-1')?.some(fault => fault.constraint.startsWith('box:core'))).toBe(false);
+    expect(blockMoveRefusal(flattest, flatter)).toBeUndefined();
   }, 180000);
 
   it('lets a step leave a member within BLOCK_TOLERANCE of its angle, and refuses a step that leaves it 0.02 px of height short (the review 1 ruling)', async () => {

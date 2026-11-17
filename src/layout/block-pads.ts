@@ -1,11 +1,11 @@
 import type { BlockBoxPad, BlockRowGap, LayoutModel, Owner } from '../model/layout.js';
 import { EPS } from '../geometry/planar.js';
-import { DEFAULT_STROKE_WIDTHS, GROUP_EDGE_LINK_CLEARANCE, linkStrokeWidth } from '../theme/geometry.js';
+import { GROUP_EDGE_LINK_CLEARANCE } from '../theme/geometry.js';
 import { groupBoxes } from '../score/model.js';
 import { chordHolders } from './chord-boxes.js';
-import { memberChord } from './block-checks.js';
+import { memberChord, rowRoomClearance } from './block-checks.js';
 import { SIDE_EDGE_SLACK } from './frame-paths.js';
-import { findPort, STRAIGHT_PATH_CLEARANCE } from './row-paths.js';
+import { findPort } from './row-paths.js';
 
 /**
  * The side room of a box for the own-box exit of flat block members (dense-16x9 ticket 04, slice 3, step 2).
@@ -136,7 +136,7 @@ export function blockRowGapsAsked(model: LayoutModel): BlockRowGap[] {
         // The corner's reach past the point the chord starts from (the face point: the anchor, or a pill's outer edge).
         const drop = face === 'bottom' ? other.y + other.height - anchor.y : anchor.y - other.y;
         const inset = toward > 0 ? edge - anchor.x : anchor.x - edge;
-        const clearance = STRAIGHT_PATH_CLEARANCE.node + (linkStrokeWidth(link) + (model.nodes[next.id]!.strokeWidth ?? DEFAULT_STROKE_WIDTHS.node)) / 2;
+        const clearance = rowRoomClearance(model, link, next.id);
         if ((clearance + drop * cos) / sin - inset <= next.gap + EPS) continue;
         // A short gap takes `SIDE_EDGE_SLACK` more in the clearance, for the same drift as the box room.
         const need = (clearance + SIDE_EDGE_SLACK + drop * cos) / sin - inset;
