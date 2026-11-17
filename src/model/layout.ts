@@ -596,6 +596,12 @@ export interface PlacementInputs {
   blockBoxPads: BlockBoxPad[];
   /** The least gaps between row neighbours that flat block members ask (step 2; `blockRowGapsAsked`): read by `rowGap`. Absent: none. */
   blockRowGaps: BlockRowGap[];
+  /**
+   * Dense-16x9 ticket 29: the solid blocks a complete placement of this command recorded under the cap (a `blockReservations` record with no
+   * `mode: 'flat'`, `steepFamilies`), sorted: the fact stage 6 reads for the angle of a `leg` pitch (`reservedBlockAngle`). Sizing comes before the
+   * block records, so a run reads the fact a placement before it recorded. Absent: no such placement asked for a leg pitch; no leg pitch is reserved.
+   */
+  steepBlocks: string[];
 }
 /** The name of one placement input (`PlacementInputs`). */
 export type PlacementInputField = keyof PlacementInputs;

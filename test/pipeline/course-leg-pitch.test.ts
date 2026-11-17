@@ -5,8 +5,11 @@ import type { LayoutModel } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { pairPitchFault } from '../../src/layout/pair-pitch.js';
 import { portId } from '../../src/layout/skeleton-graph.js';
-import { courseLegPitchFault, courseLegPitches, reservedBlockAngle } from '../../src/layout/solid-blocks.js';
-import { BLOCK_ANGLE, BLOCK_FLOOR_ANGLE } from '../../src/layout/block-checks.js';
+import { steepBlocksFault } from '../../src/layout/placement-inputs.js';
+import { courseLegPitchFault, courseLegPitches, reservedBlockAngle, steepFamilies } from '../../src/layout/solid-blocks.js';
+import { BLOCK_ANGLE } from '../../src/layout/block-checks.js';
+import { resolve } from '../../src/resolve/index.js';
+import { sidesOne } from '../../src/layout/sides-one.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
@@ -15,6 +18,7 @@ import { reversed } from '../../scripts/r3-lib.mjs';
 // angle its block reserves passes the tip of the course's stem. On main 906de428 the member beside the course port stood 21 px from it, its
 // chord crossed the U's stem, and 8 of the 12 block members fell back.
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-u-course-port-keeps-the-pitch-a-block-chord-needs-past-its-stem.yaml', import.meta.url), 'utf8');
+const flat = readFileSync(new URL('../../goldens/synthetic/a-u-course-port-beside-a-flat-block-keeps-no-leg-pitch.yaml', import.meta.url), 'utf8');
 const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 const legs = (model: LayoutModel): { node: string; min: number }[] => Object.values(model.nodes)
   .flatMap(node => (['top', 'bottom'] as const).flatMap(side => (node.pairPitch?.[side] ?? []).filter(entry => entry.rule === 'leg').map(entry => ({ node: node.id, min: entry.min }))));
@@ -59,14 +63,46 @@ describe('a u-turn course port keeps the pitch a block chord needs past its stem
     expect(pairPitchFault({ ...node, pairPitch: { top: [{ rule: 'leg', ports: [], min: 43 }] } } as never)).toMatch(/unreadable/);
   });
 
-  it('takes the floor angle for a flat block, whose leg pitch passes the cap and is not reserved', async () => {
+  it('reads the angle from the steep blocks a placement recorded, and reserves nothing without that fact', async () => {
     const model = await run(yaml);
-    const family = model.fanFamilies!.find(item => item.kind === 'solid')!.id;
-    expect(reservedBlockAngle(model, family)).toBe(BLOCK_ANGLE);
-    const flat = { ...model, flatBlockGaps: model.fanFamilies!.filter(item => item.kind === 'solid').map(item => ({ family: item.id, gap: 300 })) } as LayoutModel;
-    expect(reservedBlockAngle(flat, family)).toBe(BLOCK_FLOOR_ANGLE);
-    // At 15 degrees the pitch is about 100 px, past the 60 px cap of a face pair: the face keeps its pitch and the member falls back by name.
-    expect(courseLegPitches(flat)).toEqual([]);
+    const families = model.fanFamilies!.filter(item => item.kind === 'solid').map(item => item.id).sort();
+    // The first placement recorded both blocks under the cap, and the command placed once more with them as the input.
+    expect(model.steepBlocks).toEqual(families);
+    expect(steepFamilies(model)).toEqual(families);
+    expect(reservedBlockAngle(model, families[0]!)).toBe(BLOCK_ANGLE);
+    const unknown = { ...model } as LayoutModel;
+    delete unknown.steepBlocks;
+    expect(reservedBlockAngle(unknown, families[0]!)).toBeUndefined();
+    expect(courseLegPitches(unknown)).toEqual([]);
     expect(courseLegPitches(model).map(([node, , entry]) => [node, entry.min])).toEqual([['a-hub-1', 43], ['b-hub-1', 43]]);
+  }, 180000);
+
+  it('reserves no leg pitch beside a floor-only flat block (review 1: no angle is assumed)', async () => {
+    const model = await run(flat);
+    expect(model.blockReservations?.map(item => item.mode)).toEqual(['flat', 'flat']);
+    expect(model.flatBlockGaps).toBeUndefined();
+    expect(model.steepBlocks).toBeUndefined();
+    expect(legs(model)).toEqual([]);
+    expect(courseLegPitchFault(model)).toBeUndefined();
+    expect(orthogonalMembers(model).length).toBeGreaterThan(0);
+  }, 180000);
+
+  it('refuses a leg pitch on a model before stage 6, where no course stands to check it (review 1, R6)', () => {
+    const model = sidesOne(resolve(parse('portograph: 2\ngroups: {a: {tier: 0}, b: {tier: 1}}\nnodes: {n: {group: a, ports: [p]}, m: {group: b, ports: [q]}}\nlinks: [[n.p, m.q]]')));
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+    const node = model.nodes['n']!;
+    node.pairPitch = { bottom: [{ rule: 'leg', ports: [portId(node.ports[0]!.ref)], min: 43 }] };
+    expect(() => restoreLayoutModel(JSON.stringify(model))).toThrow(/n has a leg pitch before stage 6/);
+  });
+
+  it('refuses a forged steep block input at restore', async () => {
+    const model = await run(yaml);
+    for (const forged of [['block:nowhere'], [], ['b', 'a']]) {
+      const copy = JSON.parse(JSON.stringify(model)) as LayoutModel;
+      copy.steepBlocks = forged;
+      // The leg check or the input's own predicate refuses it, whichever restore reads first; the predicate alone names the input.
+      expect(steepBlocksFault(copy)).toBeDefined();
+      expect(() => restoreLayoutModel(JSON.stringify(copy))).toThrow(/steepBlocks|leg pitch/);
+    }
   }, 180000);
 });

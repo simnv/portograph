@@ -720,6 +720,15 @@ function validateEarlyPitches(model: LayoutModel): void {
   for (const node of Object.values(model.nodes ?? {})) {
     const fault = pairPitchFault(node);
     if (fault !== undefined) throw new Error(fault);
+    // A leg pitch belongs to a u-turn course end (dense-16x9 ticket 29), and courses stand from stage 6 on: before it no reader can check one,
+    // so none may stand (R6). From stage 6 on the producer's own function checks every entry (R5).
+    if (at < stages.indexOf('sides-two') && Object.values(node.pairPitch ?? {}).some(entries => entries?.some(entry => entry.rule === 'leg'))) {
+      throw new Error(`${node.id} has a leg pitch before stage 6, where its course stands`);
+    }
+  }
+  if (at >= stages.indexOf('sides-two')) {
+    const legs = courseLegPitchFault(model);
+    if (legs !== undefined) throw new Error(legs);
   }
   if (at < stages.indexOf('size')) return;
   for (const node of Object.values(model.nodes)) {

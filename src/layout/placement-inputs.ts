@@ -44,6 +44,24 @@ export function flatBlockGapsFault(model: LayoutModel): string | undefined {
   return undefined;
 }
 
+/**
+ * What a validator checks on `model.steepBlocks` (R5, dense-16x9 ticket 29): a sorted list of distinct family ids, not empty, each naming a solid
+ * family of the model once the families stand. The input is the decision of the placement that recorded it; a later run keeps it (the room it
+ * reserves is a floor), so its records are not compared here.
+ */
+export function steepBlocksFault(model: LayoutModel): string | undefined {
+  const record = model.steepBlocks;
+  if (record === undefined) return undefined;
+  if (!Array.isArray(record) || !record.length) return 'the steep blocks are recorded empty';
+  if (record.some((item, index) => typeof item !== 'string' || (index > 0 && record[index - 1]! >= item))) return 'the steep blocks are unreadable or out of order';
+  const solid = model.fanFamilies?.filter(family => family.kind === 'solid').map(family => family.id);
+  if (solid !== undefined) {
+    const stray = record.find(item => !solid.includes(item) && !model.declinedSolidBlocks?.some(declined => declined.family === item));
+    if (stray !== undefined) return `the steep block ${stray} names no solid block`;
+  }
+  return undefined;
+}
+
 /** What a validator checks on `model.blockBoxPads` (R5): sorted by box then side, one entry per pair, a finite positive pad. */
 export function blockBoxPadsFault(model: LayoutModel): string | undefined {
   const record = model.blockBoxPads;

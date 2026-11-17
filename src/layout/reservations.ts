@@ -13,7 +13,7 @@ import { portKey } from './sides-one.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
-import { blockBoxPadsFault, blockRowGapsFault, flatBlockGapsFault } from './placement-inputs.js';
+import { blockBoxPadsFault, blockRowGapsFault, flatBlockGapsFault, steepBlocksFault } from './placement-inputs.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
 /** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
@@ -708,6 +708,7 @@ export const FIELD_CHECKS: { readonly [K in PlacementInputField]: { readonly pre
   flatBlockGaps: { predicate: flatBlockGapsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
   blockBoxPads: { predicate: blockBoxPadsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
   blockRowGaps: { predicate: blockRowGapsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
+  steepBlocks: { predicate: steepBlocksFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
 };
 /** The first field of `FIELD_CHECKS` whose record fails the check `reader` makes on `model`, with why, or `undefined`. */
 export function fieldFailure(model: LayoutModel, reader: keyof KindCheck['at']): string | undefined {

@@ -10,6 +10,7 @@ import { aspectAim, aspectGap } from '../layout/aspect.js';
 import { ASPECT_EPS } from '../layout/tolerance.js';
 import { EPS } from '../geometry/planar.js';
 import { blockBoxPadsAsked, blockRowGapsAsked, blockRoomBound, roomShort } from '../layout/block-pads.js';
+import { courseLegPitches, steepFamilies } from '../layout/solid-blocks.js';
 
 /** The placements the block box paddings may spend per command (R4): each reads the paddings of the one before (`blockBoxPadsAsked`). */
 import type { Diagnostic } from '../model/index.js';
@@ -83,6 +84,35 @@ for (;;) {
 }
 };
 await placeFirst();
+// Dense-16x9 ticket 29: the leg pitch of a u-turn course port beside solid-block members reads the angle its blocks reserve, a fact the block
+// records only after sizing (`reserveBlockGaps`). So the first complete placement records it, and when a course port would take a leg pitch on
+// it, the command places once more with the blocks it recorded under the cap as an input (`steepBlocks`, read by stage 6). A block that placement
+// records flat leaves the input, and the command places again: the input only shrinks, so the rounds end (one per block at most, and one more).
+// Each placement is credited outside the cap (`env.exemptPlacing`), as the room rounds are; a refused placement keeps the one before it, named.
+const legNotes: Diagnostic[] = [];
+for (let round = 0, wanted = steepFamilies(first); round <= (first.blockReservations?.length ?? 0); round++) {
+  const target = wanted.length && courseLegPitches({ ...first, steepBlocks: wanted }).length ? wanted : [];
+  if (target.join('|') === (env.steepBlocks ?? []).join('|')) break;
+  const saved = { kept, declinedSolidBlocks: env.declinedSolidBlocks, blockProbes: env.blockProbes, reruns: env.reruns, model: first, steep: env.steepBlocks };
+  if (target.length) env.steepBlocks = target; else delete env.steepBlocks;
+  if (env.declinedSolidBlocks !== undefined) env.declinedSolidBlocks = new Map(env.declinedSolidBlocks);
+  let refused: string | undefined;
+  env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
+  try { await placeFirst(); } catch (error) {
+    if (!(staggerRefusal(error) || producerRefusal(error))) throw error;
+    refused = (error as Error).message;
+  } finally { env.exemptPlacing--; }
+  if (refused !== undefined) {
+    kept = saved.kept; env.blockProbes = saved.blockProbes; env.reruns = saved.reruns; first = saved.model;
+    if (saved.declinedSolidBlocks === undefined) delete env.declinedSolidBlocks; else env.declinedSolidBlocks = saved.declinedSolidBlocks;
+    if (saved.steep === undefined) delete env.steepBlocks; else env.steepBlocks = saved.steep;
+    legNotes.push({ stage: 'placement', severity: 'warning', code: 'COURSE_LEG_PITCH_REFUSED', owners: [],
+      message: `The placement with the leg pitches of the u-turn course ports (steep blocks ${target.join(', ') || 'none'}) was refused (${refused}); the placement before it stands.` });
+    break;
+  }
+  const now = steepFamilies(first);
+  wanted = target.filter(family => now.includes(family));
+}
 // The acceptance gate of the staggers stage 5 chose (fan wrap, D-Q4; ADR-0024, second amendment; dense-16x9 ticket 22): each row is judged on
 // its own, greedy in the stage-5 order (widest first). A row keeps its two lines only when the complete placement with it beats the placement
 // with the rows kept so far (`wrapGateVerdict`: nearer the aspect aim, or less area at an equal gap; no more planned bends; no straight link
@@ -269,5 +299,5 @@ if (flat.length) {
     }
   }
 }
-return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: gateNotes, promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
+return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: [...legNotes, ...gateNotes], promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
 }

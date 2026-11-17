@@ -49,6 +49,8 @@ export interface Env {
   blockBoxPads?: BlockBoxPad[];
   /** The least row gaps that flat block members ask (`blockRowGapsAsked`); absent: none. */
   blockRowGaps?: BlockRowGap[];
+  /** Dense-16x9 ticket 29: the blocks a complete placement recorded under the cap, for the leg pitch of stage 6 (`steepBlocks`); absent: none known. */
+  steepBlocks?: string[];
   /** Ticket 51: the arrangement stage 5 of the first placement run chose; every later run of the command keeps it (R1). */
   groupArrangements?: Record<string, GroupArrangement>;
   /** Ticket 51: true once the first placement run has completed; every later run keeps its arrangement and decides none. */

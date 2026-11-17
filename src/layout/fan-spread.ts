@@ -11,8 +11,10 @@ import { endPitch, neighbourPitch } from './pair-pitch.js';
 import { holds, profiles, reading, straightOf, tapVerdict } from './objective.js';
 
 /**
- * The widest port pitch a fan may be given (ticket 89): five times the 12 px base pitch. A face that would need more is
- * declined, because a body that wide would break the width a column or a frame reserves for it.
+ * The widest pitch placement holds two neighbouring ports apart for a chord (ticket 89): five times the 12 px base pitch, per pair. A pair that
+ * would need more keeps its pitch, because a body that wide would break the width a column or a frame reserves for it. It bounds every
+ * pair-separation rule of a face: the fan pairs (`measureFans`) and the `leg` pitch of a course port beside block members (dense-16x9 ticket 29,
+ * `courseLegPitches`).
  */
 export const FAN_PITCH_CAP = 60;
 
