@@ -787,6 +787,16 @@ function aspectOf(model: LayoutModel): { width: number; height: number } | undef
 }
 const size = (box: { width: number; height: number } | undefined): string => box === undefined ? 'unmeasured' : `${box.width.toFixed(2)} x ${box.height.toFixed(2)} px`;
 
+/**
+ * Whether the stage-5 wrap gate owns the arrangement of `group` (dense-16x9 ticket 36, ruling A): a row the arrangement may try as a stagger,
+ * that is a candidate (`exitSide`) that `rowReason` passes (every hub feeds three or more members), with `layout.autoArrange` on. One owner
+ * per row arrangement: the seat set of the rows rule does not change a premise this gate decided on, so such a row is no seat-set row.
+ */
+export function wrapGateOwns(model: LayoutModel, group: LayoutGroup): boolean {
+  if (model.document.layout?.autoArrange === false) return false;
+  return exitSide(model, group) !== undefined && rowReason(model, group, true) === undefined;
+}
+
 /** The first rule that keeps `group` one row before any draft (ticket 51), or undefined when stage 5 may try it. */
 function rowReason(model: LayoutModel, group: LayoutGroup, candidate: boolean): string | undefined {
   const source = model.document.groups[group.id];

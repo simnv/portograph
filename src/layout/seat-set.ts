@@ -9,6 +9,7 @@ import { rowGap } from './sides-two.js';
 import { labelSpans, rowGroups } from './rows.js';
 import { rowLabelGap } from './row-label-room.js';
 import { groupShape } from './grid.js';
+import { wrapGateOwns } from './stagger.js';
 import { chainBlockOf } from './read/chain.js';
 import { isCantonFrame } from './read/canton.js';
 import { contentBox } from './regions.js';
@@ -76,6 +77,7 @@ export function seatSetScope(model: LayoutModel, group: LayoutGroup): string | u
   if (group.frame === undefined) return 'not a rank cell';
   if (groupShape(model, group.id) !== 'row') return `a ${groupShape(model, group.id)} group`;
   if (model.staggerRows?.some(row => row.group === group.id)) return 'a staggered row';
+  if (wrapGateOwns(model, group)) return 'the wrap gate owns this row';
   let frame: string | undefined = group.frame;
   while (frame !== undefined) { if (isCantonFrame(model, frame)) return 'in a canton'; frame = model.document.frames?.[frame]?.parent; }
   if (group.nodes.some(node => chainBlockOf(model, node) !== undefined)) return 'a member of a feeding chain';

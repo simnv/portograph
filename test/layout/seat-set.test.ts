@@ -5,6 +5,7 @@ import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { repackOverlaps } from '../../src/layout/rows.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { ofKind, type Reservation } from '../../src/layout/reservations.js';
+import { seatSetScope } from '../../src/layout/seat-set.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createAttempt } from './phase-two-fixture.js';
@@ -130,4 +131,23 @@ describe('a seated row that also feeds the row below (dense-16x9 ticket 36, slic
     expect(seatSets(model)).toEqual([]);
     expect(findings(model)).toEqual([]);
   }, 60000);
+});
+
+// Ruling A: one owner per row arrangement. A row the stage-5 wrap gate owns (a fan) takes no seat set, so the gate decides on the premise it read.
+describe('a fan row the wrap gate owns takes no seat set (dense-16x9 ticket 36, slice 1, ruling A)', () => {
+  it('stays wrapped on two lines, with no seat set and no gate finding', async () => {
+    const model = await run(sheet('a-fan-row-the-wrap-gate-owns-takes-no-seat-set'));
+    expect(model.staggerRows?.map(row => row.group)).toContain('west-zone#2');
+    expect(seatSets(model).map(item => item.payload.row)).not.toContain('west-zone#2');
+    expect(findings(model)).toEqual([]);
+  }, 120000);
+
+  it('names the scope of the fan row on its one-line reading: the wrap gate owns this row', async () => {
+    const model = await run(sheet('a-fan-row-the-wrap-gate-owns-takes-no-seat-set'));
+    const plain = JSON.parse(JSON.stringify(model)) as LayoutModel;
+    delete plain.staggerRows;
+    expect(seatSetScope(plain, plain.groups['west-zone#2']!)).toBe('the wrap gate owns this row');
+    // A row of the same sheet that is no fan stays in scope.
+    expect(seatSetScope(plain, plain.groups['east-zone#2']!)).toBeUndefined();
+  }, 120000);
 });
