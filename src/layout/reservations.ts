@@ -7,13 +7,13 @@
  * plain JSON), and every predicate that judges one is code in this file, outside the model.
  */
 import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Rect, Side, Size } from '../model/index.js';
-import type { RoomField } from '../model/layout.js';
+import type { PlacementInputField } from '../model/layout.js';
 import type { PairPitch } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
-import { blockBoxPadsFault, blockRowGapsFault } from './room-records.js';
+import { blockBoxPadsFault, blockRowGapsFault, flatBlockGapsFault } from './placement-inputs.js';
 
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
 /** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
@@ -697,13 +697,15 @@ export const RESERVATION_CHECKS: { readonly [K in ReservationKind]: KindCheck } 
   bundleNeighbours: everywhere((item, model) => bundleNeighboursFailure(item, model)),
 };
 /**
- * The placement inputs that stand in model fields outside the ledger (dense-16x9 ticket 04, slice 3, step 2, review 1): the room of the flat block
- * members. They are not ledger entries: the rounds of `initial.ts` decide them before any round of the driver, `env` carries them and `place`
+ * The placement inputs that stand in model fields outside the ledger (dense-16x9 ticket 04, slice 3; `PlacementInputs`): the gaps of the flat
+ * blocks and the room of their members. They are not ledger entries: the rounds of `initial.ts` decide them before any round of the driver, `env` carries them and `place`
  * copies them, unchanged, into every placement run from `resolve` on. One predicate per field and the same three readers as `RESERVATION_CHECKS`.
- * The table is a mapped type over the keys of `RoomRecords`, their one declaration: a new room field without an entry does not compile.
+ * The table is a mapped type over the keys of `PlacementInputs`, their one declaration: a new placement input without an entry does not compile.
  */
-const NO_ROUND_WRITES = 'no round writes it: the room is decided before the rounds and copied unchanged into every run, so a round has nothing to compare';
-export const FIELD_CHECKS: { readonly [K in RoomField]: { readonly predicate: (model: LayoutModel) => string | undefined; readonly at: KindCheck['at'] } } = {
+const NO_ROUND_WRITES = 'no round writes it: the input is decided before the rounds and copied unchanged into every run, so a round has nothing to compare';
+export const FIELD_CHECKS: { readonly [K in PlacementInputField]: { readonly predicate: (model: LayoutModel) => string | undefined; readonly at: KindCheck['at'] } } = {
+  // The records the predicate compares with are written from the placement stage on; before them it reads the entries alone.
+  flatBlockGaps: { predicate: flatBlockGapsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
   blockBoxPads: { predicate: blockBoxPadsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
   blockRowGaps: { predicate: blockRowGapsFault, at: { round: NO_ROUND_WRITES, final: true, early: true } },
 };

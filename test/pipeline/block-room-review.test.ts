@@ -68,6 +68,35 @@ describe('a forged room record is refused at restore (finding 2)', () => {
   }, 180000);
 });
 
+describe('a forged flat block gap is refused at restore (the placement inputs table)', () => {
+  it.each([
+    [[{ family: 'block:core:1:', gap: -5 }]],
+    [[]],
+    [[{ family: 'block:core:1:', gap: 900 }, { family: 'block:core:1:', gap: 900 }]],
+  ])('refuses %j on a model before the freeze', record => {
+    const model = JSON.parse(JSON.stringify(sizeNodes(sidesOne(resolve(parse(fixture('a-flat-block-member-at-its-box-corner-takes-side-room'))))))) as Record<string, unknown>;
+    model['flatBlockGaps'] = record;
+    expect(() => restoreLayoutModel(JSON.stringify(model))).toThrow(/placement input flatBlockGaps/);
+  });
+  it('refuses a published model whose flat block gaps disagree with the block records', async () => {
+    const model = await lay(fixture('a-flat-block-member-at-its-box-corner-takes-side-room'));
+    const [entry] = model.flatBlockGaps!, record = model.blockReservations!.find(item => item.family === entry!.family)!;
+    expect(record.mode).toBe('flat');
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+    const forged = (edit: (copy: LayoutModel) => void): string => { const copy = JSON.parse(JSON.stringify(model)) as LayoutModel; edit(copy); return JSON.stringify(copy); };
+    // A gap the record did not take (it stands below the asked gap, and the demand allows more).
+    expect(record.chosen + 100).toBeLessThan(record.target);
+    expect(() => restoreLayoutModel(forged(copy => { copy.flatBlockGaps![0]!.gap = record.chosen + 100; }))).toThrow(/does not take its chosen gap/);
+    // An entry that names no block.
+    expect(() => restoreLayoutModel(forged(copy => { copy.flatBlockGaps![0]!.family = 'block:none:'; }))).toThrow(/names no flat block/);
+    // Two entries of one tier gap that ask two values.
+    expect(() => restoreLayoutModel(forged(copy => {
+      copy.blockReservations!.push({ ...record, family: 'block:twin:' });
+      copy.flatBlockGaps!.push({ family: 'block:twin:', gap: entry!.gap + 1 });
+    }))).toThrow(/flat block gaps of tier gap \d+ differ/);
+  }, 180000);
+});
+
 describe('the room of a hub frame (the reviewer\'s frame probe)', () => {
   it('widens the frame by its room on each side; a frame without it loses a member\'s box clearance, and restore refuses it', async () => {
     const model = await lay(fixture('a-flat-block-hub-frame-takes-side-room'));
