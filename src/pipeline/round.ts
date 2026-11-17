@@ -130,7 +130,7 @@ async function keptStaggers<O>(env: Env, s: State, round: Round<O>, ledger: Rese
       const named = staggerRefusal(error) ? [...new Set(error.owners.flatMap(owner => owner.kind === 'group' && rows.includes(owner.id) && !env.rebasedRows?.has(owner.id) ? [owner.id] : []))].sort() : [];
       if (!named.length) return { at: 'bands', why: (error as Error).message, error: error as Error };
       for (const group of named) (env.rebasedRows ??= new Set()).add(group);
-      ledger = addReservations(replaced ? ledger : s.kept, named.flatMap(group => declineStagger(group, (error as Error).message, round.id, env.placements)));
+      ledger = addReservations(replaced ? ledger : s.kept, named.flatMap(group => declineStagger(group, (error as Error).message, 'later-placement', round.id, env.placements)));
       replaced = true;
       // The placement stands outside the cap: it is credited before it starts (`place` counts and checks the cap at once), and the credit is set to the
       // placements it started (none when it did not run).

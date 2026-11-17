@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { layout, parse } from '../../src/index.js';
 import { createAttempt } from '../layout/phase-two-fixture.js';
 import { createAvoidAttempt } from '../route/fixture.js';
@@ -12,6 +12,16 @@ import { firstState } from '../../src/pipeline/initial.js';
 import { place } from '../../src/pipeline/place.js';
 import { FAN_ROUNDS, MAX_RERUNS } from '../../src/pipeline/limits.js';
 import { PlacementRefusal, SolidBlockRefusal, TrunkBlocked } from '../../src/layout/placement-refusal.js';
+
+// A stub model of the stubbed trials below is no layout model: the copy that carries the stagger gate's declines (dense-16x9 ticket 35) is read
+// back as plain JSON, frozen as a restore freezes it. A real model restores as before.
+vi.mock('../../src/layout/mutation.js', async original => {
+  const real = await original<typeof import('../../src/layout/mutation.js')>();
+  return { ...real, restoreLayoutModel: (json: string) => {
+    const model = JSON.parse(json) as LayoutModel;
+    return model.runtime === undefined ? Object.freeze(model) : real.restoreLayoutModel(json);
+  } };
+});
 
 // Dense-16x9 ticket 04 slice 3, review 1: the floor reads the drawn chord (finding 1), and the flat-gap trial stands outside the cap (finding 2).
 const named = readFileSync(new URL('../../goldens/synthetic/a-flat-block-of-named-ports-keeps-the-floor-on-the-drawn-chord.yaml', import.meta.url), 'utf8');
@@ -77,7 +87,7 @@ describe('a placement started inside an exempt trial is credited once (review 2)
   const stub = (first: object, later: object, refuseAt: number, extra: object = {}): Env => {
     let calls = 0;
     const env = { document: { layout: { aspect: 2 } }, options: {}, maxReruns: 3, placeCap: 4, placements: 0, reruns: 0, blockProbes: 0, gateRuns: 0,
-      farEndRuns: 0, timed: async (_: string, run: () => unknown) => run(), ...extra,
+      farEndRuns: 0, stage3Sizes: new WeakMap(), timed: async (_: string, run: () => unknown) => run(), ...extra,
       step: () => { if (calls === refuseAt) throw new SolidBlockRefusal(new Map([['b', 'refused in the trial']])); throw reached; },
       place: async (kept: unknown) => {
         calls++;
@@ -108,7 +118,9 @@ describe('a placement started inside an exempt trial is credited once (review 2)
     const env = stub(first, plain, 2, { arrangedRows: ['g'],
       bands: async (model: unknown) => { if (model === first) throw new PlacementRefusal('stagger', 'the lines of g are refused at 7f'); return { model, moved: false }; } });
     const state = await firstState(env);
-    expect(state.base).toBe(plain);
+    // The kept plain trial, with the gate's decline of g in its ledger.
+    expect(state.base).toMatchObject(plain);
+    expect(state.base.reservations?.map(entry => [entry.kind, entry.owner])).toEqual([['staggerDeclined', { kind: 'group', id: 'g' }]]);
     expect(env.declinedSolidBlocks?.has('b')).toBe(true);
     expect(env.placements).toBe(3);
     expect(env.gateRuns).toBe(2);

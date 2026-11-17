@@ -74,7 +74,7 @@ describe('a top row staggers when a lower tier sets the stage-5 width (dense-16x
 
   it('checks a declined stagger in the ledger: a model that still stands the row on two lines does not hold it (R5)', async () => {
     const [lines, one] = await Promise.all([run(yaml), run(withLayoutEntry(yaml, 'autoArrange: false'))]);
-    const ledger = declineStagger('leaves', 'a named refusal', 'fan', 1);
+    const ledger = declineStagger('leaves', 'a named refusal', 'later-placement', 'fan', 1);
     expect(holds(ledger, lines).map(failure => failure.why)).toEqual(['the row leaves stands on two lines although its stagger is declined']);
     expect(holds(ledger, one)).toEqual([]);
     // Restore reads the same predicate (review 3): a stored decline that the stored stagger contradicts does not restore.
@@ -104,7 +104,7 @@ describe('a top row staggers when a lower tier sets the stage-5 width (dense-16x
       const reason = 'Stagger chord corridor of link link-1 enters leaf-2';
       expect(model.groupArrangements?.leaves).toEqual({ chosen: 'row', reason: `a later placement refused the two lines: ${reason}` });
       expect(model.staggerRows ?? []).toEqual([]);
-      expect((model.reservations ?? []).filter(entry => entry.kind === 'staggerDeclined').map(entry => entry.payload)).toEqual([{ group: 'leaves', reason }]);
+      expect((model.reservations ?? []).filter(entry => entry.kind === 'staggerDeclined').map(entry => entry.payload)).toEqual([{ group: 'leaves', reason, clause: 'later-placement' }]);
       // The fan round goes on on the baseline without the row: its floors stand, as in the one-line run.
       const floors = (item: LayoutModel): number => (item.reservations ?? []).filter(entry => entry.kind === 'pairFloor').length;
       expect(floors(model)).toBe(floors(one));

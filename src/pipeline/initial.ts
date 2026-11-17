@@ -5,7 +5,7 @@
 import type { LayoutModel } from '../model/index.js';
 import type { BlockBoxPad, BlockRowGap } from '../model/layout.js';
 import { SolidBlockRefusal, TrunkBlocked, producerRefusal } from '../layout/placement-refusal.js';
-import { FAN_WRAP_DECLINED, placedExtent, staggerRefusal, staggerTrigger, wrapGateVerdict } from '../layout/stagger.js';
+import { FAN_WRAP_DECLINED, placedExtent, staggerRefusal, staggerTrigger, wrapGateDecline, type GateDecline } from '../layout/stagger.js';
 import { aspectAim, aspectGap } from '../layout/aspect.js';
 import { ASPECT_EPS } from '../layout/tolerance.js';
 import { EPS } from '../geometry/planar.js';
@@ -14,8 +14,9 @@ import { courseLegPitches, steepFamilies } from '../layout/solid-blocks.js';
 
 /** The placements the block box paddings may spend per command (R4): each reads the paddings of the one before (`blockBoxPadsAsked`). */
 import type { Diagnostic } from '../model/index.js';
-import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
+import { nodeFloors as floorEntries, reserve as addReservations, courseEntries, declinedTrunksOf, declineStagger, declineTrunk, sideFaces, spanEntries, turnEntries, type Reservations } from '../layout/reservations.js';
 import type { Env } from './env.js';
+import { restoreLayoutModel } from '../layout/mutation.js';
 import type { State } from './state.js';
 
 /** A 7f trial that ran on a placement: the placement and what the trial gave (a refusal is an `Error`). */
@@ -115,8 +116,8 @@ for (let round = 0, wanted = steepFamilies(first); round <= (first.blockReservat
 }
 // The acceptance gate of the staggers stage 5 chose (fan wrap, D-Q4; ADR-0024, second amendment; dense-16x9 ticket 22): each row is judged on
 // its own, greedy in the stage-5 order (widest first). A row keeps its two lines only when the complete placement with it beats the placement
-// with the rows kept so far (`wrapGateVerdict`: nearer the aspect aim, or less area at an equal gap; no more planned bends; no straight link
-// lost; no separation shorter; a fan wrap, the block trigger, keeps the area rule of D-Q4: less area). Each trial is a placement of the first run's choice in keep mode with only those rows staggered (every other chosen row a `row`),
+// with the rows kept so far (`wrapGateDecline`: nearer the aspect aim, or less area at an equal gap; no more planned bends; no link held
+// straight at the 7f trial of the placement lost, a reading of the trial, not of the published sheet (dense-16x9 ticket 35); no separation shorter; a fan wrap, the block trigger, keeps the area rule of D-Q4: less area). Each trial is a placement of the first run's choice in keep mode with only those rows staggered (every other chosen row a `row`),
 // and its 7f run as a trial: the same publication checks as every placement. A stagger refusal or a producer refusal (DR-11) of a trial
 // declines that row by name, never thrown. The trials spend no `MAX_RERUNS` (`env.exemptPlacing`: `env.gateRuns` lifts the cap by their placements), so the
 // gate is always available; the state (the ledger, the declined blocks, the re-run count) of the run it keeps is the state the command goes on
@@ -169,20 +170,29 @@ if (chosen.length) {
   };
   // The placement without any of the chosen rows: the first baseline. A refusal in its 7f leaves the lines the only placement that stands.
   let best = await placeWith([]) as Trial;
-  const keep: string[] = [];
+  const keep: string[] = [], declines: { id: string; decline: GateDecline }[] = [];
   for (const id of chosen) {
     const rows = [...keep, id], trial = rows.length === chosen.length ? whole : await placeWith(rows);
-    const why = trial instanceof Error ? `the placement refused them: ${trial.message}`
-      : trial.banded instanceof Error ? `7f refused them: ${trial.banded.message}`
-      : best.banded instanceof Error ? undefined : wrapGateVerdict(trial.banded, best.banded, staggerTrigger(rowsOf.get(id)!));
-    if (why !== undefined) {
-      gateNotes.push({ stage: 'placement', severity: 'info', code: FAN_WRAP_DECLINED, message: `The two lines of ${id} are declined: ${why}.`, owners: [{ kind: 'group', id }] });
-      continue;
-    }
+    const decline: GateDecline | undefined = trial instanceof Error ? { clause: 'placement', text: `the placement refused them: ${trial.message}` }
+      : trial.banded instanceof Error ? { clause: 'trial', text: `7f refused them: ${trial.banded.message}` }
+      : best.banded instanceof Error ? undefined : wrapGateDecline(trial.banded, best.banded, staggerTrigger(rowsOf.get(id)!));
+    if (decline !== undefined) { declines.push({ id, decline }); continue; }
     keep.push(id); best = trial as Trial;
   }
   restore(best.state); first = best.model;
-  ran = { model: best.model, banded: best.banded };
+  // Every decline of the gate is in the ledger, with its clause and the links it names (`staggerDeclined`, dense-16x9 ticket 35): every later run
+  // reads it, none decides the row again, the checks table holds it (`RESERVATION_CHECKS`), and publication names it (`FAN_WRAP_DECLINED`).
+  // The kept placement carries the same entries, as the replay of a refused chord does (`refuseCrowdedChords`): the published ledger holds every
+  // decline, and the restore checks it. Its geometry is the kept trial's, so the gate's 7f trial of it stands (`takenTrial`).
+  const entries = declines.flatMap(({ id, decline }) => declineStagger(id, decline.text, decline.clause, 'initial', env.placements, decline.links));
+  if (entries.length) {
+    kept = addReservations(kept, entries);
+    first = restoreLayoutModel(JSON.stringify({ ...best.model, reservations: addReservations(best.model.reservations ?? [], entries) }));
+    // The stage-3 sizes are keyed by the placed model object (`movedFloor`): the copy keys the same sizes, or a round's floors would read none.
+    const sizes = env.stage3Sizes.get(best.model);
+    if (sizes !== undefined) env.stage3Sizes.set(first, sizes);
+  }
+  ran = { model: first, banded: best.banded };
 }
 // Stage 5 of this run chose each group's arrangement (ticket 51). Every later placement run of the command keeps that choice, not a new one,
 // also when this run chose nothing.

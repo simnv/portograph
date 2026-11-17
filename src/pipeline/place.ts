@@ -52,7 +52,11 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   if (env.blockRowGaps?.length) resolved.blockRowGaps = JSON.parse(JSON.stringify(env.blockRowGaps)) as typeof env.blockRowGaps;
   if (env.groupArrangements !== undefined) {
     resolved.groupArrangements = JSON.parse(JSON.stringify(env.groupArrangements)) as typeof env.groupArrangements;
-    for (const [group, reason] of declinedStaggers) resolved.groupArrangements![group] = { chosen: 'row', reason: `a later placement refused the two lines: ${reason}` };
+    // A row a later placement refused takes the ledger's sentence. A row the acceptance gate declined keeps the record the gate wrote, which
+    // points at FAN_WRAP_DECLINED (dense-16x9 ticket 35): the note reads the same entry.
+    for (const [group, { clause, reason }] of declinedStaggers) {
+      if (clause === 'later-placement') resolved.groupArrangements![group] = { chosen: 'row', reason: `a later placement refused the two lines: ${reason}` };
+    }
   }
   const courses = coursesOf(reservations), spans = spansOf(reservations);
   // A course face ranks above a hint (ticket 15): each end that does not keep its natural face names the port and the face.
