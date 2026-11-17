@@ -1,4 +1,5 @@
 /** Two-line row reservations, made before stage 5 freezes port topology: the width-budget search (ticket 166) and stage 5's own choice (ticket 51, fan wrap D-Q4). */
+import type { StaggerDeclineClause } from './reservations.js';
 import type { GroupArrangement, LayoutLink, LayoutModel, LayoutGroup, PathSegment } from '../model/layout.js';
 import type { PortRef } from '../model/document.js';
 import type { StaggerRow } from '../model/layout.js';
@@ -1104,28 +1105,44 @@ export const staggerTrigger = (row: StaggerRow): 'block' | 'aspect' => Array.isA
  * - `block` (a rank cell, the fan wrap of D-Q4: its block is too wide for its hub): less area, strictly;
  * - `aspect` (a plain row: the sheet is wider than the aim): nearer the aspect aim (ADR-0025, `aspectGap` smaller by more than
  *   `ASPECT_EPS`), or, at an equal gap, less area.
- * Then, for both, every link `plain` places straight stays straight, no hard separation is shorter than in `plain`, and the planned bends of
+ * Then, for both, every link `plain` holds straight at its 7f trial stays straight at the wrapped trial (`wrapGateDecline`), no hard separation is shorter than in `plain`, and the planned bends of
  * all links (`plannedBends`, the placement's lower bound, CONTEXT.md) add up to no more than in `plain` (the gate trades no turn it can see;
  * dense-16x9 ticket 22 review). Returns the reason to decline, or undefined to keep.
  */
 export function wrapGateVerdict(wrapped: LayoutModel, plain: LayoutModel, trigger: 'block' | 'aspect'): string | undefined {
+  return wrapGateDecline(wrapped, plain, trigger)?.text;
+}
+
+/** One decline of the acceptance gate: the clause that declines (`StaggerDeclineClause`), the links it names, and the sentence that says why. */
+export interface GateDecline { readonly clause: StaggerDeclineClause; readonly links?: readonly string[]; readonly text: string }
+
+/**
+ * The acceptance gate's judgement of one row (`wrapGateVerdict`), with the clause that declines it (dense-16x9 ticket 35): the ledger records the
+ * clause and the links it names (`staggerDeclined`). The straight-link clause reads the links held straight at the 7f trial of the placement
+ * (`placedStraight`: held chords, aligned ends, straight overlays), the reading the gate can afford before the rounds and routing: it is named so,
+ * and is no reading of the published sheet (ticket 35 ruling of 2026-11-17).
+ */
+export function wrapGateDecline(wrapped: LayoutModel, plain: LayoutModel, trigger: 'block' | 'aspect'): GateDecline | undefined {
   const w = placedExtent(wrapped), p = placedExtent(plain), aim = aspectAim(plain.document), less = w.width * w.height < p.width * p.height - PLACEMENT_EPS;
-  if (trigger === 'block' && !less) return `the complete placement is ${size(w)} with two lines, not less area than ${size(p)} without`;
+  if (trigger === 'block' && !less) return { clause: 'area', text: `the complete placement is ${size(w)} with two lines, not less area than ${size(p)} without` };
   if (trigger === 'aspect') {
     const gap = aspectGap(w.width, w.height, aim) - aspectGap(p.width, p.height, aim);
-    if (gap > ASPECT_EPS) return `the complete placement is ${size(w)} with two lines, farther from the aim ${aim.toFixed(3)} than ${size(p)} without`;
-    if (gap >= -ASPECT_EPS && !less) return `the complete placement is ${size(w)} with two lines, as near the aim ${aim.toFixed(3)} as ${size(p)} without and not less area`;
+    if (gap > ASPECT_EPS) return { clause: 'aspect', text: `the complete placement is ${size(w)} with two lines, farther from the aim ${aim.toFixed(3)} than ${size(p)} without` };
+    if (gap >= -ASPECT_EPS && !less) return { clause: 'aspect', text: `the complete placement is ${size(w)} with two lines, as near the aim ${aim.toFixed(3)} as ${size(p)} without and not less area` };
   }
   // A link the plain run stands straight only by a seat that slid its body (ADR-0027) is not lost: the move is a choice of the plain run, which
   // the two lines may decline (ruling of 2026-11-15).
   const links = new Map(plain.links.map(link => [link.id, link]));
   const kept = placedStraight(wrapped), lost = [...placedStraight(plain)].filter(id => !kept.has(id) && !standsBySeatMove(plain, links.get(id)!)).sort(compareId);
-  if (lost.length) return `the link${lost.length > 1 ? 's' : ''} ${lost.join(', ')} ${lost.length > 1 ? 'are' : 'is'} straight without the two lines and not with them`;
+  if (lost.length) {
+    return { clause: 'held-straight', links: lost,
+      text: `the link${lost.length > 1 ? 's' : ''} ${lost.join(', ')} ${lost.length > 1 ? 'are' : 'is'} held straight at the 7f trial of the placement without the two lines and not with them` };
+  }
   const short = worseSeparations(separationShortfalls(wrapped), separationShortfalls(plain)).sort(compareId);
-  if (short.length) return `the two lines leave the separation ${short[0]} short`;
+  if (short.length) return { clause: 'separation', text: `the two lines leave the separation ${short[0]} short` };
   // Last, so a lost straight link (which also adds planned bends) is named as such.
   const bends = (model: LayoutModel): number => model.links.reduce((sum, link) => sum + (link.removed === true ? 0 : plannedBends(model, link)), 0);
   const [after, before] = [bends(wrapped), bends(plain)];
-  if (after > before) return `the planned bends rise from ${before} to ${after} with two lines`;
+  if (after > before) return { clause: 'planned-bends', text: `the planned bends rise from ${before} to ${after} with two lines` };
   return undefined;
 }

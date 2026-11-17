@@ -46,7 +46,7 @@ describe('one check table for every reservation kind (dense-16x9 ticket 22, revi
     expect(early!.stage).toBe('size');
     expect(early!.staggerRows?.map(row => row.group)).toContain('leaves');
     expect(() => restoreLayoutModel(JSON.stringify(early))).not.toThrow();
-    const forged = { ...early!, reservations: reserve(early!.reservations ?? [], declineStagger('leaves', 'test refusal', 'fan', 1)) };
+    const forged = { ...early!, reservations: reserve(early!.reservations ?? [], declineStagger('leaves', 'test refusal', 'later-placement', 'fan', 1)) };
     expect(holds(forged.reservations, forged).map(failure => failure.kind)).toContain('staggerDeclined');
     expect(() => restoreLayoutModel(JSON.stringify(forged))).toThrow('does not hold: the row leaves stands on two lines although its stagger is declined');
   }, 60000);

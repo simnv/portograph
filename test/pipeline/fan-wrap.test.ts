@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { layout, parse, score } from '../../src/index.js';
 import { restoreLayoutModel } from '../../src/internal.js';
 import { wrapGateVerdict } from '../../src/layout/stagger.js';
+import { ofKind } from '../../src/layout/reservations.js';
 import { ownSideWidth } from '../../src/layout/size.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import type { LayoutModel } from '../../src/index.js';
@@ -197,9 +198,11 @@ describe('fan wrap: the acceptance gate (D-Q4)', () => {
       const model = await layout(parse(fixture(DECLINED)), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt, ...(testMaxReruns ? { testMaxReruns } : {}) });
       expect(model.staggerRows, `testMaxReruns ${testMaxReruns}`).toBeUndefined();
       expect(lines(model, CELL)).toBe(1);
+      const reason = 'the link link-3 is held straight at the 7f trial of the placement without the two lines and not with them';
       expect(model.groupArrangements![CELL]).toEqual({ chosen: 'row', reason: 'the acceptance gate declined the two lines (FAN_WRAP_DECLINED names why)' });
-      expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED').map(note => note.message))
-        .toEqual([`The two lines of ${CELL} are declined: the link link-3 is straight without the two lines and not with them.`]);
+      // The decline is in the ledger with its clause and the link it names (dense-16x9 ticket 35); the note reads that entry.
+      expect(ofKind(model.reservations ?? [], 'staggerDeclined').map(entry => entry.payload)).toEqual([{ group: CELL, clause: 'held-straight', links: ['link-3'], reason }]);
+      expect(model.diagnostics.filter(note => note.code === 'FAN_WRAP_DECLINED').map(note => note.message)).toEqual([`The two lines of ${CELL} are declined: ${reason}.`]);
     }
   }, 120000);
 
@@ -247,6 +250,6 @@ ${links('a', 'sw1')}${links('b', 'sw2')}`;
     const feed = moved.links.find(link => link.attachments?.from.node === 'w-gw' && link.attachments.to.node === 'w-hub')!;
     moved.nodes['w-gw']!.ports.find(item => item.side === 'bottom')!.anchor!.x += 30;
     delete feed.path;
-    expect(wrapGateVerdict(moved, plain, 'block')).toMatch(new RegExp(`^the link ${feed.id} is straight without the two lines and not with them$`));
+    expect(wrapGateVerdict(moved, plain, 'block')).toMatch(new RegExp(`^the link ${feed.id} is held straight at the 7f trial of the placement without the two lines and not with them$`));
   }, 60000);
 });

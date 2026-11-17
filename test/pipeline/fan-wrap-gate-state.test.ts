@@ -2,12 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LayoutModel } from '../../src/index.js';
 import type { Env } from '../../src/pipeline/env.js';
 import { PostconditionRefusal, TrunkBlocked } from '../../src/layout/placement-refusal.js';
-import { declinedTrunksOf } from '../../src/layout/reservations.js';
+import { declinedStaggersOf, declinedTrunksOf, ofKind } from '../../src/layout/reservations.js';
 
 // The verdict keeps the wrap: this test is about the state the comparison run leaves, not about the verdict.
-vi.mock('../../src/layout/stagger.js', async original => ({ ...(await original<typeof import('../../src/layout/stagger.js')>()), wrapGateVerdict: vi.fn(() => undefined) }));
+vi.mock('../../src/layout/stagger.js', async original => ({ ...(await original<typeof import('../../src/layout/stagger.js')>()), wrapGateDecline: vi.fn(() => undefined) }));
+// The stub models are no layout models: the copy that carries the gate's declines is read back as plain JSON, frozen as a restore freezes it.
+vi.mock('../../src/layout/mutation.js', async original => ({ ...(await original<typeof import('../../src/layout/mutation.js')>()),
+  restoreLayoutModel: vi.fn((json: string) => Object.freeze(JSON.parse(json) as LayoutModel)) }));
 const { firstState } = await import('../../src/pipeline/initial.js');
-const { wrapGateVerdict } = await import('../../src/layout/stagger.js');
+const { wrapGateDecline } = await import('../../src/layout/stagger.js');
 
 // Fan wrap acceptance gate (D-Q4, ticket 07, review round 2): the comparison run has its own state. Here its trunk join is blocked on one
 // line (the comparison needs a trunk re-run) and the wrap is kept: the kept wrap goes on as if the comparison had not run, and every
@@ -43,6 +46,7 @@ describe('fan wrap: the comparison run leaves no state behind a kept wrap', () =
     expect(env.gateRuns).toBe(2);
     expect(env.placements - env.blockProbes - env.gateRuns).toBe(1);
     expect(state.keptNotes.filter(note => note.code === 'FAN_WRAP_DECLINED')).toEqual([]);
+    expect(declinedStaggersOf(state.kept).size).toBe(0);
   });
 });
 
@@ -70,19 +74,25 @@ describe('fan wrap: a producer refusal at 7f of a gate run', () => {
     return { state: await firstState(env), wrapped, plain };
   };
 
-  it('declines the lines by name when the wrapped run refuses', async () => {
+  // Every decline of the gate is in the ledger with its clause (dense-16x9 ticket 35): the kept ledger declines the row, and publication names
+  // the decline from that entry only, so the gate itself leaves no note.
+  it('declines the lines by name in the ledger when the wrapped run refuses', async () => {
     const { state, plain } = await run('wrapped');
-    expect(state.kept7e).toBe(plain);
-    const notes = state.keptNotes.filter(note => note.code === 'FAN_WRAP_DECLINED');
-    expect(notes).toHaveLength(1);
-    expect(notes[0]!.message).toMatch(/^The two lines of w are declined: 7f refused them: Postcondition of bands failed: laneSide g/);
+    expect(state.kept7e).toMatchObject(plain);
+    const entries = ofKind(state.kept, 'staggerDeclined');
+    // The kept placement carries the same entries: the published ledger holds the decline.
+    expect(state.kept7e.reservations).toEqual(entries);
+    expect(entries.map(entry => [entry.producer, entry.payload.group, entry.payload.clause, entry.payload.links])).toEqual([['initial', 'w', 'trial', undefined]]);
+    expect(declinedStaggersOf(state.kept).get('w')?.reason).toMatch(/^7f refused them: Postcondition of bands failed: laneSide g/);
+    expect(state.keptNotes.filter(note => note.code === 'FAN_WRAP_DECLINED')).toEqual([]);
   });
 
   it('keeps the wrapped run with no comparison when the plain run refuses', async () => {
-    vi.mocked(wrapGateVerdict).mockClear();
+    vi.mocked(wrapGateDecline).mockClear();
     const { state, wrapped } = await run('plain');
     expect(state.kept7e).toBe(wrapped);
-    expect(wrapGateVerdict).not.toHaveBeenCalled();
+    expect(wrapGateDecline).not.toHaveBeenCalled();
     expect(state.keptNotes.filter(note => note.code === 'FAN_WRAP_DECLINED')).toEqual([]);
+    expect(declinedStaggersOf(state.kept).size).toBe(0);
   });
 });
