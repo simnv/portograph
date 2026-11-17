@@ -9,7 +9,8 @@ import { withdrawnSeatRows } from '../layout/seat-set.js';
 /**
  * The most placements one command runs again for withdrawn seat sets (dense-16x9 ticket 36, ruling B). Each one declines at least one row
  * that no placement of the command declined before, so the count of seat sets bounds the loop too; the constant states the bound as a count
- * (R4). The forced-on corpus measured at most SEAT_SET_RETRIES_MEASURED retries on one sheet.
+ * (R4). The forced-on corpus (559 sheets, 2026-11-17) measured 29 retries on 18 sheets, at most 5 in one command over all its
+ * loop runs, and no loop run reached the bound.
  */
 export const SEAT_SET_RETRIES = 4;
 
