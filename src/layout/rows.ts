@@ -15,7 +15,7 @@ import { columnOf } from './read/arrangement.js';
 import { portEndInsets } from './port-insets.js';
 import { rowLabelGap } from './row-label-room.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { seatRows } from './seat-set.js';
+import { seatRowsAndColumns } from './seat-set.js';
 
 const right = (rect: Rect): number => rect.x + rect.width;
 const overlaps = (a: Rect, b: Rect): boolean => a.x < right(b) && b.x < right(a) && a.y < b.y + b.height && b.y < a.y + a.height;
@@ -143,8 +143,10 @@ export function repackOverlaps(draft: LayoutModel, labelDetours = true, solve = 
     }
   }
   rebuildBands(draft);
-  // A seat set widens its cell on either side; the frames that hold such a cell move apart as wholes, which keeps every seat.
-  if (seatRows(draft, solve, gap)) { separateFrameColumns(draft); rebuildBands(draft); }
+  // A seat set widens its cell on either side; the frame columns then move apart as wholes (a frame moves with the parents of its rows), which
+  // keeps every seat: a cell is never pushed alone, off its parents.
+  seatRowsAndColumns(draft, solve);
+  rebuildBands(draft);
 }
 
 interface SideTarget { port: string; y: number }

@@ -11,8 +11,10 @@ import { rowLabelGap } from './row-label-room.js';
 import { groupShape } from './grid.js';
 import { chainBlockOf } from './read/chain.js';
 import { isCantonFrame } from './read/canton.js';
-import { contentBox } from './regions.js';
-import { moveGroup, validateSkeletonBands } from './skeleton-geometry.js';
+import { contentBox, GROUP_PADDING } from './regions.js';
+import { deriveFrames, frameDepth } from './frames.js';
+import { besideGap, separateFrameColumns } from './columns.js';
+import { validateSkeletonBands } from './skeleton-geometry.js';
 import { blockDemands, type BlockDemand } from './solid-blocks.js';
 import { BLOCK_CAP } from './block-checks.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
@@ -23,8 +25,8 @@ import { EPS } from '../geometry/planar.js';
  * `layout.moveBeforeGrow`, stage 6 (the last repack of the rows rule, where the parents' rows are packed) chooses where each member of a
  * rank cell stands under its parents' bottom ports, all members together, with the row order, the face port orders, the body widths and
  * the parents fixed. The choice is one `seatSet` ledger entry: the kept verticals as equations, the verticals and block faces the members
- * already hold, the boundary nodes the equations read, the member positions and the interval the cell reserves, all relative to one
- * boundary node. The cell box covers the interval and the siblings of its band give way on either side; every later repack and 7c apply
+ * already hold, the parent ports the equations read, the member positions and the interval the cell reserves, all relative to one
+ * parent port. The cell box covers the interval and the siblings of its band give way on either side; every later repack and 7c apply
  * the stored positions and do not choose again.
  */
 
@@ -224,14 +226,24 @@ function blockOwnerFault(model: LayoutModel, input: RowInput, xs: readonly numbe
 const fixedKind = (model: LayoutModel, group: LayoutGroup): string | undefined => group.flank !== undefined ? 'the flank'
   : groupShape(model, group.id) !== 'row' ? `the ${groupShape(model, group.id)}` : undefined;
 
-/** Why the interval `[low, high]` meets a flank, bar or grid beside the row, or undefined: those groups do not move for a row (stage 6). */
+/**
+ * Why the interval `[low, high]` brings the row, or the top-level frame that holds it, nearer than the beside gap to a flank, bar or grid, or
+ * undefined. Those groups do not move for a row, and the frame columns move apart only as wholes (`separateFrameColumns`): a frame that grows
+ * toward a fixed group across any of its sub-tiers would have to pass it.
+ */
 function fixedNeighbourFault(model: LayoutModel, group: LayoutGroup, low: number, high: number): string | undefined {
-  const box = group.bounds!;
+  const frames = deriveFrames(model, false) ?? [];
+  let frame = frames.find(item => item.id === group.frame);
+  while (frame?.parent !== undefined) { const parent: string = frame.parent; frame = frames.find(item => item.id === parent); }
+  const box = group.bounds!, pad = GROUP_PADDING * (1 + frameDepth(model, group.id));
+  const span = frame === undefined ? { x: low, y: box.y, width: high - low, height: box.height }
+    : { x: Math.min(frame.box.x, low - pad), y: frame.box.y, width: Math.max(right(frame.box), high + pad) - Math.min(frame.box.x, low - pad), height: frame.box.height };
+  const gap = besideGap(model, true, false);
   for (const other of Object.values(model.groups)) {
     const kind = other.id === group.id || !other.bounds ? undefined : fixedKind(model, other);
     if (kind === undefined || other.nodes.length === 0 && other.flank === undefined) continue;
     const o = other.bounds!;
-    if (o.y < box.y + box.height && box.y < o.y + o.height && o.x < high && low < right(o)) return `the row would meet ${kind} ${other.id}`;
+    if (o.y < span.y + span.height && span.y < o.y + o.height && o.x < right(span) + gap && span.x - gap < right(o)) return `the row would bring ${frame === undefined ? 'its box' : `the frame ${frame.id}`} nearer than ${gap} px to ${kind} ${other.id}`;
   }
   return undefined;
 }
@@ -270,8 +282,8 @@ function payloadOf(model: LayoutModel, input: RowInput, leaf: Leaf, fit: Rect): 
     memberOffset: port.anchor!.x - memberX, farOffset: far.anchor!.x - model.nodes[far.ref.node]!.bounds!.x });
   const seats = leaf.kept.map(feed => equation(feed.link, feed.port, feed.far, input.x0[feed.member]!));
   const holds = input.holds.map(item => equation(item.link, item.port, item.far, input.x0[item.member]!));
-  const farNodes = [...new Set([...seats, ...holds].map(item => item.far.node))].sort();
-  const origin = model.nodes[farNodes[0]!]!.bounds!.x;
+  const farPorts = [...new Map([...seats, ...holds].map(item => [portKey(item.far), item.far] as const)).values()].sort((a, b) => (portKey(a) < portKey(b) ? -1 : portKey(a) > portKey(b) ? 1 : 0));
+  const anchor = (ref: SeatEquation['far']): number => findPort(model, ref)!.anchor!.x, origin = anchor(farPorts[0]!);
   const blockFaces: SeatSetPayload['blockFaces'] = [];
   for (const id of input.order) for (const side of ['top', 'bottom'] as const) {
     const solid = new Set(model.links.filter(link => link.solidBlock).flatMap(link => [portId(link.attachments!.from), portId(link.attachments!.to)]));
@@ -284,7 +296,7 @@ function payloadOf(model: LayoutModel, input: RowInput, leaf: Leaf, fit: Rect): 
       : leaf.kept.some(seat => seat.member === feed.member && seat.far.ref.node === feed.far.ref.node) ? 'pitch' as const : 'conflict' as const }));
   return {
     row: input.group.id, frame: input.group.frame!, order: [...input.order], widths: [...input.widths], seats, holds, blockFaces,
-    boundary: farNodes.map(node => ({ node, x: model.nodes[node]!.bounds!.x - origin })),
+    boundary: farPorts.map(ref => ({ port: { ...ref }, x: anchor(ref) - origin })),
     xs: leaf.xs.map(x => x - origin), interval: { low: fit.x - origin, high: right(fit) - origin }, declined,
   };
 }
@@ -293,78 +305,34 @@ function payloadOf(model: LayoutModel, input: RowInput, leaf: Leaf, fit: Rect): 
 export const SEAT_SET_DECLINED = 'SEAT_SET_DECLINED';
 
 /**
- * The x moves that make a band's row groups stand a band gap apart while every owned cell (a cell with a seat set) stays: a sibling gives way
- * on either side (to the left of an owned cell it moves left, to its right it moves right, each push carried on to the next sibling, so the
- * cascade ends at the band's last row group). A flank, bar or grid gives no way. The moves as a map (group to dx), or the owned cell whose
- * set cannot stand and why: another owned cell is in its way, or a sibling would meet a group that does not move.
- */
-function giveWay(model: LayoutModel, band: { groups: string[] }, owned: ReadonlySet<string>, gap: number): Map<string, number> | { cell: string; why: string } {
-  const core = rowGroups(model, band).sort((a, b) => a.bounds!.x - b.bounds!.x || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const x = new Map(core.map(group => [group.id, group.bounds!.x])), width = (id: string): number => model.groups[id]!.bounds!.width;
-  const ownedAt = core.map((group, i) => owned.has(group.id) ? i : -1).filter(i => i >= 0);
-  for (const at of ownedAt) {
-    let wall = x.get(core[at]!.id)!;
-    for (let i = at - 1; i >= 0; i--) {
-      const id = core[i]!.id, need = x.get(id)! + width(id) + gap - wall;
-      if (need <= PLACEMENT_EPS) break;
-      if (owned.has(id)) return { cell: core[at]!.id, why: `the seat set of ${id} stands in its way` };
-      x.set(id, x.get(id)! - need); wall = x.get(id)!;
-    }
-  }
-  let end = -Infinity, last: string | undefined;
-  for (const group of core) {
-    const at = x.get(group.id)!;
-    if (at < end - PLACEMENT_EPS) {
-      if (owned.has(group.id)) return { cell: group.id, why: last !== undefined && owned.has(last) ? `the seat set of ${last} stands in its way` : `the row group ${last} stands in its way` };
-      x.set(group.id, end);
-    }
-    end = x.get(group.id)! + width(group.id) + gap; last = group.id;
-  }
-  const moves = new Map<string, number>();
-  for (const group of core) { const dx = x.get(group.id)! - group.bounds!.x; if (Math.abs(dx) > PLACEMENT_EPS) moves.set(group.id, dx); }
-  for (const fixed of band.groups.map(id => model.groups[id]!).filter(group => fixedKind(model, group) !== undefined && group.bounds !== undefined)) {
-    for (const [id, dx] of moves) {
-      const box = { ...model.groups[id]!.bounds!, x: model.groups[id]!.bounds!.x + dx };
-      if (box.x < right(fixed.bounds!) && fixed.bounds!.x < right(box) && box.y < fixed.bounds!.y + fixed.bounds!.height && fixed.bounds!.y < box.y + box.height) {
-        // The owned cell nearest the moved group pays: its push made the move.
-        const near = [...owned].sort((a, b) => Math.abs(x.get(a)! - x.get(id)!) - Math.abs(x.get(b)! - x.get(id)!) || (a < b ? -1 : 1))[0]!;
-        return { cell: near, why: `${id} would meet ${fixedKind(model, fixed)} ${fixed.id}, which gives no way` };
-      }
-    }
-  }
-  return moves;
-}
-
-/**
  * Stage 6, at the end of each `repackOverlaps`, with `layout.moveBeforeGrow`: band by band from the top tier, each rank cell that holds a
  * seat set stands on it where its boundary stands now (`applySeatSet`); with `solve` (the last repack of the rows rule) each cell in scope
  * without one gets its set (`planSeatSet`, top tier first, then by id, R3) on the geometry the repack left. A set moves its members, makes
- * the cell box cover its interval and writes its `seatSet` entry (producer `rows`); then the band's siblings give way (`giveWay`). A set
- * that cannot stand is withdrawn by name and its row is given back as it stood. A declined row keeps its place and gets `SEAT_SET_DECLINED`.
- * True when a group or member moved.
+ * the cell box cover its interval and writes its `seatSet` entry (producer `rows`). The caller then moves the frame columns apart as wholes
+ * (`separateFrameColumns`): a frame moves with the parents of its rows, so no seat moves off its parent. A set whose boundary no longer
+ * stands is withdrawn by name; a declined row keeps its place and gets `SEAT_SET_DECLINED`. True when a set stands.
  */
-export function seatRows(model: LayoutModel, solve: boolean, gap: number): boolean {
+export function seatRows(model: LayoutModel, solve: boolean, refused: ReadonlyMap<string, string> = new Map()): boolean {
   if (model.document.layout?.moveBeforeGrow !== true) return false;
   if (!solve && !(model.reservations ?? []).some(entry => entry.kind === 'seatSet')) return false;
   let moved = false;
   for (const band of [...model.tierBands].sort((a, b) => a.tier - b.tier || a.bounds!.y - b.bounds!.y)) {
     const cells = rowGroups(model, band).filter(group => group.frame !== undefined).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    const undo = new Map<string, () => void>(), owned = new Set<string>();
+    const owned = new Set<string>();
     for (const group of cells) {
-      const box = { ...group.bounds! }, restore = moveMembers(model, group.nodes, group.nodes.map(id => model.nodes[id]!.bounds!.x));
       const entry = seatSetOf(model, group.id);
       if (entry !== undefined) {
         const why = applySeatSet(model, group, entry);
         if (why !== undefined) { withdrawSeatSet(model, group.id, why); continue; }
       }
       else if (solve) {
-        const plan = planSeatSet(model, group);
+        const plan: SeatSetOutcome = refused.has(group.id) ? { kind: 'declined', clause: 'owner', why: refused.get(group.id)! } : planSeatSet(model, group);
         if (plan.kind === 'declined') {
           if (plan.why !== NO_FEED) model.diagnostics.push({ stage: 'placement', severity: 'info', code: SEAT_SET_DECLINED,
             message: `The seat set of ${group.id} is declined (${plan.clause}): ${plan.why}.`, owners: [{ kind: 'group', id: group.id }] });
           continue;
         }
-        const p = plan.payload, origin = model.nodes[p.boundary[0]!.node]!.bounds!.x;
+        const p = plan.payload, origin = boundaryOrigin(model, p)!;
         moveMembers(model, p.order, p.xs.map(x => origin + x));
         rebuildNodeGeometry(model, p.order, 'current');
         coverInterval(model, group, p);
@@ -372,19 +340,46 @@ export function seatRows(model: LayoutModel, solve: boolean, gap: number): boole
       }
       else continue;
       owned.add(group.id);
-      undo.set(group.id, () => { restore(); rebuildNodeGeometry(model, group.nodes, 'current'); group.bounds = box; });
     }
-    if (!owned.size) continue;
-    let moves = giveWay(model, band, owned, gap);
-    while (!(moves instanceof Map)) {
-      withdrawSeatSet(model, moves.cell, moves.why);
-      undo.get(moves.cell)!(); owned.delete(moves.cell);
-      moves = giveWay(model, band, owned, gap);
-    }
-    for (const [id, dx] of moves) moveGroup(model, model.groups[id]!, dx, 0);
-    moved = true;
+    if (owned.size) moved = true;
   }
   return moved;
+}
+
+/** The pairs (frame or row group, fixed group) that stand nearer than the beside gap across a sub-tier they share: the clearance G9 reads. */
+function fixedClearances(model: LayoutModel): Set<string> {
+  const pairs = new Set<string>(), gap = besideGap(model, true, false);
+  const fixed = Object.values(model.groups).filter(group => group.bounds !== undefined && fixedKind(model, group) !== undefined && (group.nodes.length > 0 || group.flank !== undefined));
+  const units = [...(deriveFrames(model, false) ?? []).filter(frame => frame.parent === undefined).map(frame => ({ id: `frame:${frame.id}`, box: frame.box })),
+    ...Object.values(model.groups).filter(group => group.frame === undefined && group.bounds !== undefined && fixedKind(model, group) === undefined).map(group => ({ id: group.id, box: group.bounds! }))];
+  for (const unit of units) for (const other of fixed) {
+    const o = other.bounds!, b = unit.box;
+    if (o.y < b.y + b.height && b.y < o.y + o.height && o.x < right(b) + gap - PLACEMENT_EPS && b.x - gap + PLACEMENT_EPS < right(o)) pairs.add(`${unit.id}|${other.id}`);
+  }
+  return pairs;
+}
+
+/**
+ * The seat sets of the last repack of the rows rule, with the frame columns moved apart after them (`separateFrameColumns`): a frame moves
+ * with the parents of its rows, so no seat moves. A flank, bar or grid gives no way: when the sets would bring a frame or a row group nearer to
+ * one than the beside gap, the model is given back and the last set that stood is refused by name (clause `owner`), and the sets are decided
+ * again, at most once per set. Every other repack applies the sets it finds.
+ */
+export function seatRowsAndColumns(model: LayoutModel, solve: boolean): void {
+  if (!solve) { if (seatRows(model, false)) separateFrameColumns(model); return; }
+  const before = fixedClearances(model), saved = JSON.stringify({ nodes: model.nodes, groups: model.groups, labels: model.labels, reservations: model.reservations, diagnostics: model.diagnostics });
+  const refused = new Map<string, string>();
+  for (;;) {
+    if (!seatRows(model, true, refused)) return;
+    separateFrameColumns(model);
+    const added = [...fixedClearances(model)].filter(pair => !before.has(pair)).sort();
+    const sets = (model.reservations ?? []).filter(entry => entry.kind === 'seatSet');
+    if (!added.length || !sets.length) return;
+    const [unit, fixed] = added[0]!.split('|');
+    const last = sets.at(-1)!.payload.row;
+    refused.set(last, `the frame columns would move ${unit!.replace('frame:', 'the frame ')} nearer than the beside gap to ${fixedKind(model, model.groups[fixed!]!)} ${fixed}, which gives no way`);
+    Object.assign(model, JSON.parse(saved) as Pick<LayoutModel, 'nodes' | 'groups' | 'labels' | 'reservations' | 'diagnostics'>);
+  }
 }
 
 /** The seat set of `group` on `model`, or undefined: the one reader of the entry for every stage that fits, moves or reads the cell. */
@@ -392,9 +387,14 @@ export function seatSetOf(model: LayoutModel, group: string): SeatSetPayload | u
   return (model.reservations ?? []).find((entry): entry is ReservationOf<'seatSet'> => entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group)?.payload;
 }
 
+/** The anchor x of the first boundary port of `p` where it stands now: the origin of every x of the set, or undefined. */
+export function boundaryOrigin(model: LayoutModel, p: SeatSetPayload): number | undefined {
+  return findPort(model, p.boundary[0]!.port)?.anchor?.x;
+}
+
 /** The interval of a seat set where its boundary stands now: [low, high] in model x. */
 export function seatInterval(model: LayoutModel, p: SeatSetPayload): { low: number; high: number } {
-  const origin = model.nodes[p.boundary[0]!.node]!.bounds!.x;
+  const origin = boundaryOrigin(model, p)!;
   return { low: origin + p.interval.low, high: origin + p.interval.high };
 }
 
@@ -418,17 +418,13 @@ export function seatSetNodes(model: LayoutModel): Set<string> {
   return nodes;
 }
 
-/** Why the boundary of `p` no longer stands as stored (a far end moved off its offset, or one far port moved on its face), or undefined. */
+/** Why the boundary of `p` no longer stands as stored (a far port moved off its offset from the first), or undefined. */
 function boundaryFault(model: LayoutModel, p: SeatSetPayload): string | undefined {
-  const origin = model.nodes[p.boundary[0]!.node]?.bounds?.x;
-  if (origin === undefined) return `${p.boundary[0]!.node} has no box`;
-  for (const { node, x } of p.boundary) {
-    const box = model.nodes[node]?.bounds;
-    if (box === undefined || Math.abs(box.x - origin - x) > PLACEMENT_EPS) return `the parent ${node} moved off its offset ${x.toFixed(1)} from ${p.boundary[0]!.node}`;
-  }
-  for (const eq of [...p.seats, ...p.holds]) {
-    const far = findPort(model, eq.far), box = model.nodes[eq.far.node]?.bounds;
-    if (far?.anchor === undefined || box === undefined || Math.abs(far.anchor.x - box.x - eq.farOffset) > PLACEMENT_EPS) return `the far port of ${eq.link} moved on its face`;
+  const origin = boundaryOrigin(model, p);
+  if (origin === undefined) return `${portKey(p.boundary[0]!.port)} has no anchor`;
+  for (const { port, x } of p.boundary) {
+    const at = findPort(model, port)?.anchor?.x;
+    if (at === undefined || Math.abs(at - origin - x) > PLACEMENT_EPS) return `the parent port ${portKey(port)} moved off its offset ${x.toFixed(1)} from ${portKey(p.boundary[0]!.port)}`;
   }
   return undefined;
 }
@@ -450,16 +446,20 @@ function translationFault(model: LayoutModel, group: LayoutGroup, before: Readon
   return undefined;
 }
 
+/** The wall a step of 7c reads for a translated row: why its box leaves the window centring gives the cell (its frame column), or undefined. */
+export type SeatWall = (group: LayoutGroup) => string | undefined;
+
 /**
  * Applies the seat set of `group` (no choice again): each member stands at its stored x relative to the boundary where the boundary stands now,
- * and the box covers the interval. Undefined when it stands; else why it cannot, and nothing is moved. With `guard` (7c), the row only
- * translates: the anchor tier does not move, and a translation that `translationFault` refuses is given back.
+ * and the box covers the interval. Undefined when it stands; else why it cannot, and nothing is moved. With `wall` (7c), the row only
+ * translates: the anchor tier does not move, and a translation that the wall or `translationFault` refuses is given back.
  */
-export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetPayload, guard = false): string | undefined {
+export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetPayload, wall?: SeatWall): string | undefined {
+  const guard = wall !== undefined;
   const fault = boundaryFault(model, p);
   if (fault !== undefined) return fault;
   if (!sameOrder(group.rowOrder ?? group.nodes, p.order)) return 'the row no longer stands in its order';
-  const origin = model.nodes[p.boundary[0]!.node]!.bounds!.x, xs = p.xs.map(x => origin + x);
+  const origin = boundaryOrigin(model, p)!, xs = p.xs.map(x => origin + x);
   const moves = p.order.some((id, i) => Math.abs(model.nodes[id]!.bounds!.x - xs[i]!) > PLACEMENT_EPS);
   if (guard && moves && group.tier === model.anchorTier) return 'its row is the anchor tier, which the centring step does not move';
   const before = guard ? new Set(validateSkeletonBands(model, true, group.tier)) : undefined, was = { ...group.bounds! };
@@ -468,7 +468,7 @@ export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetP
   const box = contentBox(model, group);
   group.bounds = { ...group.bounds!, x: box.x, width: box.width };
   coverInterval(model, group, p);
-  const refused = before === undefined || !moves ? undefined : translationFault(model, group, before);
+  const refused = before === undefined || !moves ? undefined : wall!(group) ?? translationFault(model, group, before);
   if (refused !== undefined) { undo(); rebuildNodeGeometry(model, p.order, 'current'); group.bounds = was; }
   return refused;
 }
@@ -493,14 +493,14 @@ export function withdrawSeatSet(model: LayoutModel, group: string, why: string):
  * calls it after the rules that move groups it does not step (the settled rows, the overlay windows), so that a row stands on its seats
  * at the end of every run of the passes. True when a member moved.
  */
-export function applySeatSets(model: LayoutModel): boolean {
+export function applySeatSets(model: LayoutModel, wall: SeatWall): boolean {
   let moved = false;
   for (const entry of [...(model.reservations ?? [])]) {
     if (entry.kind !== 'seatSet' || entry.owner.kind !== 'group') continue;
     const group = model.groups[entry.owner.id];
     if (group === undefined) { withdrawSeatSet(model, entry.owner.id, 'its row has no group'); continue; }
     const before = entry.payload.order.map(id => model.nodes[id]?.bounds?.x);
-    const why = applySeatSet(model, group, entry.payload, true);
+    const why = applySeatSet(model, group, entry.payload, wall);
     if (why !== undefined) { withdrawSeatSet(model, group.id, why); continue; }
     if (entry.payload.order.some((id, i) => Math.abs(model.nodes[id]!.bounds!.x - (before[i] ?? NaN)) > PLACEMENT_EPS)) moved = true;
   }

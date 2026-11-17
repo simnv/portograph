@@ -303,3 +303,11 @@ export const framesOf = (model: LayoutModel): readonly Frame[] => model.frames ?
 export function frameNodes(model: LayoutModel, frame: string): string[] {
   return frameCells(model, frame).flatMap(cell => model.groups[cell]?.nodes ?? []);
 }
+
+/** How many frames hold the frame of a rank cell: 0 for a cell of a top-level frame. */
+export function frameDepth(model: LayoutModel, id: string): number {
+  const frames = model.document.frames ?? {};
+  let depth = 0;
+  for (let frame = frames[model.groups[id]!.frame ?? '']?.parent; frame !== undefined; frame = frames[frame]?.parent) depth++;
+  return depth;
+}

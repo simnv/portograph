@@ -117,9 +117,12 @@ export interface ReservationPayload {
   bundleNeighbours: { group: string; pairs: readonly (readonly [string, string])[] };
 }
 export type ReservationKind = keyof ReservationPayload;
-/** One equation of a seat set: x(member) + memberOffset = x(far) + farOffset, the offsets measured from the left body edge. */
+/**
+ * One equation of a seat set: x(member) + memberOffset = x(far) + farOffset, the offsets measured from the left body edge. The far offset is the
+ * value at the decision, a variable of the equation (slice 2 chooses it): the check reads the vertical, the two port anchors on one x.
+ */
 export interface SeatEquation { link: string; member: PortRef; far: PortRef; memberOffset: number; farOffset: number }
-/** The payload of a `seatSet` entry. Every x is relative to the left body edge of `boundary[0]`, so the set translates as a whole. */
+/** The payload of a `seatSet` entry. Every x is relative to the anchor of the far port `boundary[0]`, so the set translates as a whole. */
 export interface SeatSetPayload {
   row: string;
   frame: string;
@@ -132,8 +135,8 @@ export interface SeatSetPayload {
   holds: SeatEquation[];
   /** The faces of the members that carry solid block ports, in port order (a translation keeps them; the check reads them). */
   blockFaces: { node: string; side: 'top' | 'bottom'; ports: string[] }[];
-  /** The far ends the equations read, by node id, with their x: the boundary of the set. */
-  boundary: { node: string; x: number }[];
+  /** The far ports the equations read, with their anchor x: the boundary of the set. A parent body that grows on a face moves none of them. */
+  boundary: { port: PortRef; x: number }[];
   /** The x of each member, in `order`. */
   xs: number[];
   /** The two-sided reach the cell reserves: the content box of the seated members. */
@@ -521,7 +524,7 @@ function seatSetShapeFailure(payload: Record<string, unknown>): string | undefin
     && equations(payload['seats']) && (payload['seats'] as unknown[]).length > 0 && equations(payload['holds'])
     && Array.isArray(payload['blockFaces']) && (payload['blockFaces'] as unknown[]).every(face => typeof face === 'object' && face !== null
       && typeof (face as { node?: unknown }).node === 'string' && ['top', 'bottom'].includes((face as { side?: string }).side ?? '') && strings((face as { ports?: unknown }).ports))
-    && Array.isArray(payload['boundary']) && (payload['boundary'] as unknown[]).length > 0 && (payload['boundary'] as { node?: unknown; x?: unknown }[]).every(item => typeof item.node === 'string' && isNumber(item.x))
+    && Array.isArray(payload['boundary']) && (payload['boundary'] as unknown[]).length > 0 && (payload['boundary'] as { port?: unknown; x?: unknown }[]).every(item => ref(item.port) && isNumber(item.x))
     && typeof interval === 'object' && interval !== null && isNumber(interval.low) && isNumber(interval.high) && interval.low <= interval.high
     && Array.isArray(payload['declined']) && (payload['declined'] as { link?: unknown; reason?: unknown }[]).every(item => typeof item.link === 'string' && ['shared-port', 'conflict', 'fixed', 'pitch'].includes(item.reason as string));
   return ok ? undefined : 'malformed seat set';
@@ -540,22 +543,22 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
   const group = model.groups[p.row];
   if (group?.bounds === undefined || group.frame !== p.frame) return `${p.row} is no cell of ${p.frame}`;
   if (!same(group.rowOrder ?? group.nodes, p.order)) return `${p.row} no longer stands in the order of its seat set`;
-  const origin = model.nodes[p.boundary[0]!.node]?.bounds?.x;
-  if (origin === undefined) return `the seat set of ${p.row} reads ${p.boundary[0]!.node}, which has no box`;
+  const port = (ref: PortRef) => model.nodes[ref.node]?.ports.find(item => portKey(item.ref) === portKey(ref));
+  const origin = port(p.boundary[0]!.port)?.anchor?.x;
+  if (origin === undefined) return `the seat set of ${p.row} reads ${portKey(p.boundary[0]!.port)}, which has no anchor`;
   const off = (a: number, b: number): boolean => Math.abs(a - b) > PLACEMENT_EPS;
-  for (const { node, x } of p.boundary) {
-    const box = model.nodes[node]?.bounds;
-    if (box === undefined || off(box.x - origin, x)) return `the boundary node ${node} of the seat set of ${p.row} moved off its offset ${x}`;
+  for (const { port: ref, x } of p.boundary) {
+    const at = port(ref)?.anchor?.x;
+    if (at === undefined || off(at - origin, x)) return `the boundary port ${portKey(ref)} of the seat set of ${p.row} moved off its offset ${x}`;
   }
   for (const [i, id] of p.order.entries()) {
     const box = model.nodes[id]?.bounds;
     if (box === undefined || off(box.x - origin, p.xs[i]!) || off(box.width, p.widths[i]!)) return `the member ${id} of ${p.row} left its seat (x ${p.xs[i]}, width ${p.widths[i]}; at stage ${model.stage}: x ${box === undefined ? '-' : box.x - origin})`;
   }
-  const port = (ref: PortRef) => model.nodes[ref.node]?.ports.find(item => portKey(item.ref) === portKey(ref));
   for (const eq of [...p.seats, ...p.holds]) {
-    const a = port(eq.member), b = port(eq.far), ma = model.nodes[eq.member.node]?.bounds, fb = model.nodes[eq.far.node]?.bounds;
-    if (a?.anchor === undefined || b?.anchor === undefined || ma === undefined || fb === undefined) return `the equation of ${eq.link} in the seat set of ${p.row} has no ports`;
-    if (off(a.anchor.x - ma.x, eq.memberOffset) || off(b.anchor.x - fb.x, eq.farOffset) || off(a.anchor.x, b.anchor.x)) return `the link ${eq.link} no longer stands vertical in the seat set of ${p.row}`;
+    const a = port(eq.member), b = port(eq.far), ma = model.nodes[eq.member.node]?.bounds;
+    if (a?.anchor === undefined || b?.anchor === undefined || ma === undefined) return `the equation of ${eq.link} in the seat set of ${p.row} has no ports`;
+    if (off(a.anchor.x - ma.x, eq.memberOffset) || off(a.anchor.x, b.anchor.x)) return `the link ${eq.link} no longer stands vertical in the seat set of ${p.row}`;
   }
   for (const face of p.blockFaces) {
     const now = (model.nodes[face.node]?.ports ?? []).filter(item => item.side === face.side && item.anchor && face.ports.includes(portKey(item.ref)))

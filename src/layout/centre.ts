@@ -1,5 +1,5 @@
 import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
-import { applySeatSet, applySeatSets, seatSetNodes, seatSetOf, withdrawSeatSet } from './seat-set.js';
+import { applySeatSet, applySeatSets, seatSetNodes, seatSetOf, withdrawSeatSet, type SeatWall } from './seat-set.js';
 import { liftedGroups } from './lift.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceExcess, facePairPitches } from './pair-pitch.js';
@@ -9,7 +9,7 @@ import { portAnchor } from '../geometry/index.js';
 import { laneSidesHold, rightWallReach, spanBreaches, recordSeatedSideLanes, occupiedOverhang, riserAvoidance, riserKeepOutAfterMove, riserNoDeeper, riserPenetrations, selectAnchorTier } from './lanes.js';
 import { holdsMove, holdsNodeMove, resizeEvidence, resizeHolds, seatRefusal, type ResizeEvidence } from './move-reservations.js';
 import { rowRoomKeptByStep } from './label-room-guard.js';
-import { cellReach } from './frames.js';
+import { cellReach, frameDepth } from './frames.js';
 import { memberRoom, standsInCanton } from './read/canton.js';
 import { centringFeeds, type Feed } from './read/feeds.js';
 import { straightChordIds } from './read/overlay-straight.js';
@@ -575,13 +575,6 @@ function reservedWindow(model: LayoutModel, context: CentreContext, tier: number
   return { low: Math.max(low + reach.left, column.low), high: Math.min(high - reach.right, column.high) };
 }
 
-/** How many frames hold the frame of a rank cell: 0 for a cell of a top-level frame. */
-function frameDepth(model: LayoutModel, id: string): number {
-  const frames = model.document.frames ?? {};
-  let depth = 0;
-  for (let frame = frames[model.groups[id]!.frame ?? '']?.parent; frame !== undefined; frame = frames[frame]?.parent) depth++;
-  return depth;
-}
 
 /**
  * The window the columns of the frames of a tier leave a group (ranked-groups ticket 09). A rank cell
@@ -589,6 +582,17 @@ function frameDepth(model: LayoutModel, id: string): number {
  * bodies and pills, lie between the column edges. Any other group stays `besideGap` out of the column of every
  * frame that spans its sub-tier, on the side it stands on (the gap G9 reads, ticket 75). Unbounded for a tier with no frame.
  */
+/**
+ * The wall of a translated seat-set row in 7c (dense-16x9 ticket 36): the row's box stays in the window `columnWindow` gives its cell and on
+ * its side of every lane `limits` holds, as a step's own move does.
+ */
+function seatWall(model: LayoutModel, context: CentreContext): SeatWall {
+  return group => {
+    const window = columnWindow(model, context, group.tier!, group.id), box = group.bounds!;
+    if (box.x < window.low - PLACEMENT_EPS || right(box) > window.high + PLACEMENT_EPS) return `the row would leave the column of its frame (${box.x.toFixed(1)} to ${right(box).toFixed(1)}, window ${window.low.toFixed(1)} to ${window.high.toFixed(1)})`;
+    return undefined;
+  };
+}
 function columnWindow(model: LayoutModel, context: CentreContext, tier: number, id: string): WideningLimit {
   const group = model.groups[id]!, box = group.bounds!;
   const own = context.columns.find(column => column.cells.has(id));
@@ -1429,7 +1433,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // chooses nothing. An entry that cannot stand (a parent moved off its offset) is withdrawn by name, and the step seats the row as before.
   const owned = seatSetOf(model, id);
   if (owned !== undefined) {
-    const why = applySeatSet(model, group, owned, true);
+    const why = applySeatSet(model, group, owned, seatWall(model, context));
     if (why === undefined) return { unresolved, group, notes };
     withdrawSeatSet(model, id, why);
   }
@@ -1756,7 +1760,10 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
     // The rows with a seat set stand on their seats where the rules above left their parents (dense-16x9 ticket 36): moved, or withdrawn by name.
     // The steps applied the sets without a region rebuild of their own, so the regions are rebuilt whenever a set exists.
-    if (model.reservations?.some(entry => entry.kind === 'seatSet')) { applySeatSets(model); rebuildRegions(model); }
+    if (model.reservations?.some(entry => entry.kind === 'seatSet')) {
+      const walls = model.anchorTier !== undefined && model.tierBands.some(band => band.tier === model.anchorTier) ? centreContext(model, model.anchorTier) : undefined;
+      applySeatSets(model, walls === undefined ? () => undefined : seatWall(model, walls)); rebuildRegions(model);
+    }
     // The parent stand, the seated faces and the overlay windows move feeds after the last step: a seat whose kept port they leave off its feed is withdrawn.
     withdrawFallenSeatsOf(model);
   };
@@ -1905,7 +1912,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
           // A row with a seat set stands on its seats whether or not this step reads its feeds (dense-16x9 ticket 36).
           const owned = seatSetOf(model, id);
           if (owned !== undefined) {
-            const why = applySeatSet(model, group, owned, true);
+            const why = applySeatSet(model, group, owned, seatWall(model, context));
             if (why === undefined) { carry = undefined; previous = group; continue; }
             withdrawSeatSet(model, id, why);
           }
