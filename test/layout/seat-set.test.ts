@@ -5,7 +5,7 @@ import { restoreLayoutModel } from '../../src/layout/mutation.js';
 import { repackOverlaps } from '../../src/layout/rows.js';
 import { findPort } from '../../src/layout/row-paths.js';
 import { ofKind, type Reservation } from '../../src/layout/reservations.js';
-import { seatSetScope } from '../../src/layout/seat-set.js';
+import { SEAT_SET_REDECISIONS, seatSetScope } from '../../src/layout/seat-set.js';
 import type { LayoutModel } from '../../src/model/layout.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
 import { createAttempt } from './phase-two-fixture.js';
@@ -151,3 +151,31 @@ describe('a fan row the wrap gate owns takes no seat set (dense-16x9 ticket 36, 
     expect(seatSetScope(plain, plain.groups['east-zone#2']!)).toBeUndefined();
   }, 120000);
 });
+
+const seatNotes = (model: LayoutModel, code: string): string[] => (model.diagnostics ?? []).filter(item => item.code === code).map(item => item.message);
+
+// Ruling B: a set that 7c withdraws is declined in the ledger, and the command places once more from stage 6 without it.
+describe('a withdrawn seat set is declined and the command places once more (dense-16x9 ticket 36, ruling B)', () => {
+  it('keeps no set and no withdrawal for the rows an earlier placement withdrew, names each one, and restores', async () => {
+    const model = await run(withMoveBeforeGrow(sheet('a-leaf-child-and-its-beside-cells-stay-one-row')));
+    const declined = ofKind(model.reservations ?? [], 'seatSetDeclined').map(entry => entry.payload);
+    expect(declined.map(entry => [entry.row, entry.at])).toEqual([['loc#2', 'input'], ['zone#4', 'input']]);
+    expect(seatSets(model).map(item => item.payload.row).filter(row => declined.some(entry => entry.row === row))).toEqual([]);
+    expect(seatNotes(model, 'SEAT_SET_WITHDRAWN')).toEqual([]);
+    expect(seatNotes(model, 'SEAT_SET_DECLINED').filter(message => message.includes('(withdrawn)'))).toHaveLength(2);
+    expect(() => restoreLayoutModel(JSON.stringify(model))).not.toThrow();
+  }, 120000);
+});
+
+// The guard of the last repack refuses one set per round while the frame columns would crowd a fixed group, at most SEAT_SET_REDECISIONS rounds.
+describe('the sets are decided again at most SEAT_SET_REDECISIONS times (dense-16x9 ticket 36, slice 1)', () => {
+  it('refuses one set per round, and past the bound every set of the run, each by name', async () => {
+    const model = await run(withMoveBeforeGrow(sheet('a-grid-group-stands-fixed-beside-frames')));
+    const owner = seatNotes(model, 'SEAT_SET_DECLINED').filter(message => message.includes('(owner)') && message.includes('the grid spares, which gives no way'));
+    const bound = `(the sets were decided ${SEAT_SET_REDECISIONS} times)`;
+    expect(owner.filter(message => !message.includes(bound))).toHaveLength(SEAT_SET_REDECISIONS - 1);
+    expect(owner.filter(message => message.includes(bound)).length).toBeGreaterThan(0);
+    expect(seatSets(model)).toEqual([]);
+  }, 120000);
+});
+

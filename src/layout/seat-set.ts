@@ -3,7 +3,7 @@ import type { Rect } from '../model/geometry.js';
 import { findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 import { portKey } from './sides-one.js';
-import { reservation, seatSetFault, type ReservationOf, type SeatEquation, type SeatSetPayload } from './reservations.js';
+import { ofKind, reservation, seatSetFault, type ReservationOf, type SeatEquation, type SeatSetPayload } from './reservations.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
 import { rowGap } from './sides-two.js';
 import { labelSpans, rowGroups } from './rows.js';
@@ -52,7 +52,7 @@ export const SEAT_SET_REDECISIONS = 8;
 export type { SeatEquation, SeatSetPayload };
 
 /** Why a seat set is declined or cut, as `SEAT_SET_DECLINED` names it. */
-export type SeatSetClause = 'scope' | 'no-gain' | 'owner' | 'bound';
+export type SeatSetClause = 'scope' | 'no-gain' | 'owner' | 'bound' | 'withdrawn';
 export type SeatSetOutcome = { kind: 'set'; payload: SeatSetPayload } | { kind: 'declined'; clause: SeatSetClause; why: string };
 
 interface Feed { link: LayoutLink; member: number; port: LayoutPort; far: LayoutPort; x: number }
@@ -298,7 +298,7 @@ export const SEAT_SET_DECLINED = 'SEAT_SET_DECLINED';
  * (`separateFrameColumns`): a frame moves with the parents of its rows, so no seat moves off its parent. A set whose boundary no longer
  * stands is withdrawn by name; a declined row keeps its place and gets `SEAT_SET_DECLINED`. True when a set stands.
  */
-export function seatRows(model: LayoutModel, solve: boolean, refused: ReadonlyMap<string, string> = new Map()): boolean {
+export function seatRows(model: LayoutModel, solve: boolean, refused: ReadonlyMap<string, string> = new Map(), declined: ReadonlyMap<string, string> = new Map()): boolean {
   if (model.document.layout?.moveBeforeGrow !== true) return false;
   if (!solve && !(model.reservations ?? []).some(entry => entry.kind === 'seatSet')) return false;
   let moved = false;
@@ -312,7 +312,8 @@ export function seatRows(model: LayoutModel, solve: boolean, refused: ReadonlyMa
         if (why !== undefined) { withdrawSeatSet(model, group.id, why); continue; }
       }
       else if (solve) {
-        const plan: SeatSetOutcome = refused.has(group.id) ? { kind: 'declined', clause: 'owner', why: refused.get(group.id)! } : planSeatSet(model, group);
+        const plan: SeatSetOutcome = declined.has(group.id) ? { kind: 'declined', clause: 'withdrawn', why: `in an earlier placement of this command it was ${declined.get(group.id)!}` }
+          : refused.has(group.id) ? { kind: 'declined', clause: 'owner', why: refused.get(group.id)! } : planSeatSet(model, group);
         if (plan.kind === 'declined') {
           if (plan.why !== NO_FEED) model.diagnostics.push({ stage: 'placement', severity: 'info', code: SEAT_SET_DECLINED,
             message: `The seat set of ${group.id} is declined (${plan.clause}): ${plan.why}.`, owners: [{ kind: 'group', id: group.id }] });
@@ -356,13 +357,17 @@ function fixedClearances(model: LayoutModel): Map<string, number> {
  * one than the beside gap, the model is given back and the last set that stood is refused by name (clause `owner`), and the sets are decided
  * again, at most once per set. Every other repack applies the sets it finds.
  */
-export function seatRowsAndColumns(model: LayoutModel, solve: boolean): void {
+export function seatRowsAndColumns(model: LayoutModel, solve: boolean, declined: ReadonlyMap<string, string> = new Map()): void {
   if (!solve) { if (seatRows(model, false)) { separateFrameColumns(model); holdColumnAxes(model); } return; }
+  // The rows the command declined (ruling B) are in the ledger of every run, from its input, so the row is not decided again.
+  const input = [...declined].filter(([row]) => model.groups[row] !== undefined).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  if (input.length) model.reservations = [...(model.reservations ?? []),
+    ...input.map(([row, why]) => reservation('seatSetDeclined', { kind: 'group', id: row }, '', 'rows', 0, { row, at: 'input', why }))];
   const before = fixedClearances(model), saved = JSON.stringify({ nodes: model.nodes, groups: model.groups, labels: model.labels, reservations: model.reservations, diagnostics: model.diagnostics });
   const restore = (): void => { Object.assign(model, JSON.parse(saved) as Pick<LayoutModel, 'nodes' | 'groups' | 'labels' | 'reservations' | 'diagnostics'>); };
   const refused = new Map<string, string>();
   for (let round = 0; ; round++) {
-    if (!seatRows(model, true, refused)) return;
+    if (!seatRows(model, true, refused, declined)) return;
     // The column moves of every later repack, here once: the frames move apart, and each column is pulled back toward its feeds (both move
     // whole frames, so no seat moves). The clearance to a fixed group is read where those moves leave the frames, not before them.
     separateFrameColumns(model);
@@ -377,7 +382,7 @@ export function seatRowsAndColumns(model: LayoutModel, solve: boolean): void {
     if (round + 1 >= SEAT_SET_REDECISIONS) {
       // The bound: every set of the run is refused by name, and the rows stand as the repack left them.
       for (const entry of sets) refused.set(entry.payload.row, `${why} (the sets were decided ${SEAT_SET_REDECISIONS} times)`);
-      seatRows(model, true, refused);
+      seatRows(model, true, refused, declined);
       return;
     }
     refused.set(sets.at(-1)!.payload.row, why);
@@ -485,13 +490,24 @@ const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.len
  */
 export function withdrawSeatSet(model: LayoutModel, group: string, why: string): void {
   if (model.reservations === undefined || seatSetOf(model, group) === undefined) return;
-  model.reservations = model.reservations.filter(entry => !(entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group));
   // A rule edits a draft that still carries the stage before it: the rule that withdraws is the next stage.
   const rule = LAYOUT_STAGES[LAYOUT_STAGES.indexOf(model.stage) + 1] ?? model.stage;
+  // The withdrawal is a decline in the ledger (ruling B): the command reads it and places once more without the set (`retryWithdrawnSeatSets`).
+  model.reservations = [...model.reservations.filter(entry => !(entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group)),
+    reservation('seatSetDeclined', { kind: 'group', id: group }, '', 'rows', 0, { row: group, at: rule, why })];
   model.diagnostics.push({ stage: 'placement', severity: 'warning', code: SEAT_SET_WITHDRAWN, owners: [{ kind: 'group', id: group }],
     message: rule === 'rows'
       ? `The seat set of ${group} is withdrawn at rows: ${why}. The row stands as the repack leaves it and is seated by the centring step.`
-      : `The seat set of ${group} is withdrawn at ${rule}: ${why}. The row is seated by the centring step; the room its interval reserved in the frame column stays, because the lanes own their windows.` });
+      : `The seat set of ${group} is withdrawn at ${rule}: ${why}. The command places once more without it; until then the room its interval reserved in the frame column stays, because the lanes own their windows.` });
+}
+
+/**
+ * The rows whose seat set `model` withdrew in this run (the `seatSetDeclined` entries a rule wrote, not the ones the rows rule wrote from the
+ * command's input), each with where and why: what `retryWithdrawnSeatSets` declines for the next placement.
+ */
+export function withdrawnSeatRows(model: LayoutModel): Map<string, string> {
+  return new Map(ofKind(model.reservations ?? [], 'seatSetDeclined').filter(entry => entry.payload.at !== 'input')
+    .map(entry => [entry.payload.row, `withdrawn at ${entry.payload.at}: ${entry.payload.why}`] as const));
 }
 
 /**

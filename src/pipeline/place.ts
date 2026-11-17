@@ -125,7 +125,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(model) : undefined;
   const entry = ledger ? startPlacementEntry() : undefined;
   const account = (stage: string): void => { if (seen === undefined || entry === undefined) return; const now = ledgerSnapshot(model); countStage(stage, seen, now, entry); seen = now; };
-  model = stepIn('rows', () => rows(model, env.options.testSeatSets !== false)); account('rows');
+  model = stepIn('rows', () => rows(model, env.options.testSeatSets !== false, env.seatSetDeclined)); account('rows');
   model = stepIn('lanes', () => lanes(model)); account('lanes');
   model = stepIn('flanks', () => flanks(model)); account('flanks');
   model = stepIn('centre', () => centre(model)); account('centre');

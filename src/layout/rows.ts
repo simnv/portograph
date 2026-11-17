@@ -95,7 +95,7 @@ export function labelSpans(model: LayoutModel, order: readonly string[]): { left
  * `layout.moveBeforeGrow`, the rank rows stand on their seat sets (`seatRows`, dense-16x9 ticket 36): `solve` (the last repack of the rows
  * rule, where the parents' rows are final) decides the sets; every other repack applies the sets the ledger holds and decides none.
  */
-export function repackOverlaps(draft: LayoutModel, labelDetours = true, solve = false): void {
+export function repackOverlaps(draft: LayoutModel, labelDetours = true, solve = false, declined: ReadonlyMap<string, string> = new Map()): void {
   const gap = bandGap(draft);
   // First every row group takes the width its nodes need; then the columns of the frames move apart as
   // wholes (ranked-groups ticket 12); only then does a sweep push what is left, a group with no frame.
@@ -145,7 +145,7 @@ export function repackOverlaps(draft: LayoutModel, labelDetours = true, solve = 
   rebuildBands(draft);
   // A seat set widens its cell on either side; the frame columns then move apart as wholes (a frame moves with the parents of its rows), which
   // keeps every seat: a cell is never pushed alone, off its parents.
-  seatRowsAndColumns(draft, solve);
+  seatRowsAndColumns(draft, solve, declined);
   rebuildBands(draft);
 }
 
@@ -216,10 +216,10 @@ function levelFacingPorts(draft: LayoutModel): void {
 }
 
 /** Stage 6: one baseline per tier row, repack on overlap, level facing ports. The transaction pins eligible row paths. */
-export function rows(model: LayoutModel, seatSets = true): LayoutModel {
+export function rows(model: LayoutModel, seatSets = true, declined: ReadonlyMap<string, string> = new Map()): LayoutModel {
   return withStageMutation(model, 'rows', draft => {
     // Each placement run decides its seat sets on its own geometry (dense-16x9 ticket 36): the entries of an earlier run go.
-    if (draft.reservations?.some(entry => entry.kind === 'seatSet')) draft.reservations = draft.reservations.filter(entry => entry.kind !== 'seatSet');
+    if (draft.reservations?.some(entry => entry.kind === 'seatSet' || entry.kind === 'seatSetDeclined')) draft.reservations = draft.reservations.filter(entry => entry.kind !== 'seatSet' && entry.kind !== 'seatSetDeclined');
     flattenRows(draft);
     reseatBands(draft);
     repackOverlaps(draft, false);
@@ -230,6 +230,6 @@ export function rows(model: LayoutModel, seatSets = true): LayoutModel {
     // leg (ADR-0015 rule 1). The gap is asked again on the levelled anchors, so no leg's room is
     // left for stage 8 to discover. Nodes move in x only, which cannot undo the levelling.
     // The seat sets are decided here and not in the first repack: the levelling and the label detours can widen the parents' rows again.
-    repackOverlaps(draft, true, seatSets && draft.document.layout?.moveBeforeGrow === true);
+    repackOverlaps(draft, true, seatSets && draft.document.layout?.moveBeforeGrow === true, declined);
   });
 }

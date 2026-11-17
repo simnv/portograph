@@ -18,6 +18,7 @@ import { refuseChordEntries, reserve as addReservations } from '../layout/reserv
 import { score } from '../score/index.js';
 import { restoreLayoutModel } from '../layout/mutation.js';
 import type { LayoutModel } from '../model/index.js';
+import { bandsWithoutWithdrawnSeats } from './seat-retry.js';
 
 /** The rounds in the order of the pipeline. A group holds the rounds that compete for the same starts: the fan, the span, the side and course, the turn and overlay, and last the far-end round, which reads the settled result of all of them. */
 const PLAN: readonly (readonly AnyRound[])[] = [[fan], [span], [side, course], [turn, overlay], [farEnd]];
@@ -43,9 +44,14 @@ export async function reservedFor(env: Env, s: State, group: readonly AnyRound[]
   return count;
 }
 
-/** The kept 7e result gets its 7f run: the baseline every offer is measured on, and its routed result. */
+/**
+ * The kept 7e result gets its 7f run: the baseline every offer is measured on, and its routed result. A seat set that 7f withdraws (dense-16x9
+ * ticket 36, ruling B) leaves room for a set that no longer stands: the command places the kept ledger once more with that row declined and
+ * bands it again (`bandsWithoutWithdrawnSeats`).
+ */
 async function baseline(env: Env, s: State): Promise<void> {
-  const banded = await env.bands(s.kept7e);
+  const { placed, banded } = await bandsWithoutWithdrawnSeats(env, s.kept, s.kept7e, false, s.sideNotes);
+  s.kept7e = placed;
   s.base = banded.model; s.baseMoved = banded.moved; s.baseUnmoved = banded.unmoved;
   if (env.options.testCourses === undefined) s.routedBase = await env.route(s.base);
 }

@@ -806,15 +806,20 @@ function claims(model: LayoutModel) {
     labelBands: model.labelBands, barDrops: model.barDrops, obstacles: model.obstacles,
     labels: model.labels.filter(label => !['node', 'description', 'pill'].includes(label.role ?? '')) };
 }
-/** Whether `after` is `before` with some seatSet entries withdrawn and nothing else changed (dense-16x9 ticket 36). */
+/**
+ * Whether `after` is `before` with some seatSet entries withdrawn, each replaced by its `seatSetDeclined` entry at the end of the ledger, and nothing else
+ * changed (dense-16x9 ticket 36, ruling B).
+ */
 function onlySeatSetsWithdrawn(after: LayoutModel['reservations'], before: LayoutModel['reservations']): boolean {
   if (after === before || before === undefined || after === undefined) return false;
-  const kept = new Set(after.map(entry => entry.id));
-  return JSON.stringify(after) === JSON.stringify(before.filter(entry => entry.kind !== 'seatSet' || kept.has(entry.id)));
+  const kept = new Set(after.map(entry => entry.id)), stays = before.filter(entry => entry.kind !== 'seatSet' || kept.has(entry.id));
+  const added = after.slice(stays.length);
+  return JSON.stringify(after.slice(0, stays.length)) === JSON.stringify(stays) && added.every(entry => entry.kind === 'seatSetDeclined'
+    && before.some(item => item.kind === 'seatSet' && item.owner.kind === 'group' && item.owner.id === entry.payload.row && !kept.has(item.id)));
 }
 /** Whether `after` differs from `before` in seatSet entries only (dense-16x9 ticket 36: the rows rule writes them). */
 function onlySeatSetsDiffer(after: LayoutModel['reservations'], before: LayoutModel['reservations']): boolean {
-  const others = (ledger: LayoutModel['reservations']) => JSON.stringify((ledger ?? []).filter(entry => entry.kind !== 'seatSet'));
+  const others = (ledger: LayoutModel['reservations']) => JSON.stringify((ledger ?? []).filter(entry => entry.kind !== 'seatSet' && entry.kind !== 'seatSetDeclined'));
   return after !== before && others(after) === others(before);
 }
 function hasUnsupportedClaims(model: LayoutModel): boolean {

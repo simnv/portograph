@@ -13,6 +13,8 @@ import { blockBoxPadsAsked, blockRowGapsAsked, blockRoomBound, roomShort } from 
 import { courseLegPitches } from '../layout/solid-blocks.js';
 import { STEEP_PREMISE, steepFamilies, unheldSteepBlocks } from '../layout/placement-inputs.js';
 import { PostconditionRefusal } from '../layout/placement-refusal.js';
+import { retryWithdrawnSeatSets } from './seat-retry.js';
+import { attemptCounters } from '../layout/attempt-counters.js';
 
 /** The placements the block box paddings may spend per command (R4): each reads the paddings of the one before (`blockBoxPadsAsked`). */
 import type { Diagnostic } from '../model/index.js';
@@ -49,7 +51,7 @@ let kept: Reservations = [...floorEntries(options.testNodeFloors ?? new Map(), '
   // Whether every placement run orders the ports of a face by the planned first turn (ticket 24): forced by the test option, or set by a kept turn round.
   ...turnEntries(options.testTurnOrder === true, options.testTurnLinks ?? [], false, 'initial', 0, options.testTurnExcept ?? [])];
 // A trunk with no admissible side is declined by one placement re-run, which shares `MAX_RERUNS` (mesh-bus.md, section 12.4).
-const placeFirst = async (): Promise<void> => {
+const placeOnce = async (): Promise<void> => {
 for (;;) {
   // The last run the budget allows declines every trunk, so that it cannot be blocked and no run past the budget is needed.
   if (env.reruns >= env.maxReruns) kept = addReservations(kept, declineTrunk(undefined, 'the placement budget is spent', env.placements));
@@ -86,17 +88,17 @@ for (;;) {
   }
 }
 };
-await placeFirst();
 /**
  * The environment a placement run of this function writes, besides the model it returns (`first`): the ledger, the declined blocks, the counters
  * a refused run must not keep, the arrangement state stage 5 records (ticket 51) and the steep-block input (dense-16x9 ticket 29). The one snapshot of
  * every trial here that is undone whole: the stagger gate and the leg-pitch rounds (review 2 of ticket 29: one write set, not a list per caller).
  * Started placements stay counted (`env.placements`); a snapshot never gives one back.
  */
-type EnvSnapshot = { [K in 'declinedSolidBlocks' | 'arranged' | 'staggerRows' | 'groupArrangements' | 'arrangedRows' | 'declinedArrangements' | 'steepBlocks']: Env[K] | undefined }
+type EnvSnapshot = { [K in 'declinedSolidBlocks' | 'arranged' | 'staggerRows' | 'groupArrangements' | 'arrangedRows' | 'declinedArrangements' | 'steepBlocks' | 'seatSetDeclined']: Env[K] | undefined }
   & Pick<Env, 'blockProbes' | 'reruns'> & { kept: Reservations };
 const snapshotEnv = (): EnvSnapshot => ({ kept, declinedSolidBlocks: env.declinedSolidBlocks, blockProbes: env.blockProbes, reruns: env.reruns, arranged: env.arranged,
-  staggerRows: env.staggerRows, groupArrangements: env.groupArrangements, arrangedRows: env.arrangedRows, declinedArrangements: env.declinedArrangements, steepBlocks: env.steepBlocks });
+  staggerRows: env.staggerRows, groupArrangements: env.groupArrangements, arrangedRows: env.arrangedRows, declinedArrangements: env.declinedArrangements, steepBlocks: env.steepBlocks,
+  seatSetDeclined: env.seatSetDeclined });
 const restoreEnv = (state: EnvSnapshot): void => {
   kept = state.kept; env.blockProbes = state.blockProbes; env.reruns = state.reruns;
   if (state.declinedSolidBlocks === undefined) delete env.declinedSolidBlocks; else env.declinedSolidBlocks = state.declinedSolidBlocks;
@@ -106,7 +108,34 @@ const restoreEnv = (state: EnvSnapshot): void => {
   if (state.arrangedRows === undefined) delete env.arrangedRows; else env.arrangedRows = state.arrangedRows;
   if (state.declinedArrangements === undefined) delete env.declinedArrangements; else env.declinedArrangements = state.declinedArrangements;
   if (state.steepBlocks === undefined) delete env.steepBlocks; else env.steepBlocks = state.steepBlocks;
+  if (state.seatSetDeclined === undefined) delete env.seatSetDeclined; else env.seatSetDeclined = state.seatSetDeclined;
 };
+// Dense-16x9 ticket 36, ruling B: a placement that withdrew a seat set is placed once more with that row declined (`retryWithdrawnSeatSets`),
+// so no room stays for a set that no longer stands. Every caller of `placeFirst` (the first run, the leg-pitch rounds, the stagger gate's
+// trials) gets a placement whose own withdrawals are declined. The declines are command state (`env.seatSetDeclined`): every later run and
+// trial reads them, and a refused call is undone whole with the rest of that state (`restoreEnv`). Each retry is credited outside the cap
+// (`env.exemptPlacing`), as the room rounds are; `SEAT_SET_RETRIES` bounds them per call.
+const seatNotes: Diagnostic[] = [];
+const placeFirst = async (): Promise<void> => {
+  await placeOnce();
+  if (first.document.layout?.moveBeforeGrow !== true) return;
+  const result = await retryWithdrawnSeatSets(first, {
+    place: async () => {
+      env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
+      try { await placeOnce(); } finally { env.exemptPlacing--; }
+      return first;
+    },
+    declined: () => env.seatSetDeclined ?? new Map(),
+    decline: rows => { env.seatSetDeclined = new Map([...(env.seatSetDeclined ?? []), ...rows]); },
+    snapshot: () => ({ state: snapshotEnv(), first }),
+    restore: saved => { restoreEnv(saved.state); first = saved.first; },
+    refused: error => staggerRefusal(error) || producerRefusal(error),
+  });
+  first = result.model;
+  attemptCounters.seatRetries += result.retries;
+  seatNotes.push(...result.notes);
+};
+await placeFirst();
 // Dense-16x9 ticket 29: the leg pitch of a u-turn course port beside solid-block members reads the angle its blocks reserve, a fact the block
 // records only after sizing (`reserveBlockGaps`). The first complete placement records it. When a course port would take a leg pitch on a block it
 // recorded under the cap, the command places again with those blocks as the input `steepBlocks` (read by stage 6). The 7e postconditions refuse a
@@ -336,5 +365,5 @@ if (flat.length) {
     }
   }
 }
-return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: [...legNotes, ...gateNotes], promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
+return { kept7e: first, base: first, baseMoved: false, kept, cuts: [], sideNotes: [], keptNotes: [...seatNotes, ...legNotes, ...gateNotes], promised: new Map(), refused: new Set(), trialLinks: new Map(), silent: false, sideRound: 0, unmovedRebuilt: false };
 }

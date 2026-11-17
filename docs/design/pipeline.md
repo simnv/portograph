@@ -827,7 +827,9 @@ packed. The first repack decides nothing, because the levelling and the label de
 and a record made there would break for a reason that is not its own (21 errors of the forced-on corpus had this one cause, a stage-5
 producer). Band by band from the top tier, then by cell id, each rank cell in scope stands its members under their parents' bottom ports,
 all members together. The row order, the port order of each face, the body widths and the parents are fixed; a member moves as a rigid
-body. In scope is a `row` cell that is not staggered, not in a canton and not in a feeding chain; solid-block members are in scope. A feed
+body. In scope is a `row` cell that is not staggered, not in a canton, not in a feeding chain and not a row whose arrangement the stage-5 wrap
+gate owns (`wrapGateOwns`: its one-line reading passes `rowReason` and every hub of it feeds three or more members; ruling A: one owner per
+row arrangement, so the gate decides on the premise it read); solid-block members are in scope. A feed
 is a top port of a member linked to a bottom port of a node in a higher tier of the same frame (not a bundle member and not a solid-block
 link: the block owns its chords). A member that already stands a vertical to a node outside the row (within `SEAT_STANDS_EPS`, the half
 pixel 7c counts as standing) keeps its x. Each member is offered one x per distinct seat position, at most `SEAT_SET_CANDIDATES` (8); the
@@ -1151,6 +1153,18 @@ longer stand at their stored offsets, whose translation a wall refuses, or whose
 (`SEAT_SET_WITHDRAWN`, with the failed condition), and the step seats the row as before; so is a set that any rule from 7c to 7f leaves
 broken (`withdrawBrokenSeatSets`, at the end of each rule). What a withdrawal cannot give back is the room the interval reserved in the
 frame column: after 7a the lanes own their windows, and the message says so.
+
+So the command places once more without the set (ruling B; `src/pipeline/seat-retry.ts`). A withdrawal replaces the entry with a
+`seatSetDeclined` entry (the row, the rule that withdrew it, the failed condition; under `RESERVATION_CHECKS`: a declined row holds no
+`seatSet` entry). When the 7f run of a placement holds such an entry for a row the command has not declined, the command declines that row
+(`env.seatSetDeclined`, command state like the steep blocks) and places once more from stage 6 with the same ledger; stage 6 writes the
+decline at its input (`at: 'input'`) and names the row (clause `withdrawn`), so no interval stays without a set that stands. The first
+placement, the baseline of the driver and every routed trial of a round read 7f through the one loop (`retryWithdrawnSeatSets`,
+`bandsWithoutWithdrawnSeats`). A retry that withdraws another row declines it too and places again; a retry whose placement is refused gives
+the declines back (`snapshotEnv` and `restoreEnv`, or the trial's own copy) and the placement before it stands (`SEAT_SET_RETRY_REFUSED`); a
+refused round trial gives back the declines its 7f added. Bound: each row is declined once per command, and at most `SEAT_SET_RETRIES`
+placements per loop run (`SEAT_SET_RETRY_BOUND` past it); every retry is credited outside the placement cap (`env.exemptPlacing`), as the
+room rounds are, and counted (`attemptCounters.seatRetries`).
 
 Ticket 83 block feeds centre the row without stretching its faces toward individual peers.
 The gap decision waits for settled 7e geometry and its disposable mandatory label/grid packing forecast; an earlier 7c replay reserves no speculative height. The forecast transfers only gap demand, before the real chord freeze.

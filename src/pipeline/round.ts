@@ -11,6 +11,7 @@ import { declineStagger, reserve as addReservations, type Reservations } from '.
 import { holds } from '../layout/reservation-checks.js';
 import type { Env } from './env.js';
 import type { State, Trial } from './state.js';
+import { bandsWithoutWithdrawnSeats } from './seat-retry.js';
 
 export type RoundId = 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
 /** Where a trial ended: the placement run, the ELK fallback check, the ledger at 7e, the side predictor, stage 7f or the route, the judge's verdict, or a kept promise at the route. */
@@ -161,8 +162,18 @@ export async function open<O>(env: Env, s: State, round: Round<O>, o: O): Promis
   return { ledger, trial7e };
 }
 
-/** Check, band, route, judge and commit a placed trial. Returns `undefined` when the trial was kept, else the refusal. */
-export async function close<O>(env: Env, s: State, round: Round<O>, o: O, { ledger, trial7e }: Opened): Promise<Refusal | undefined> {
+/**
+ * Check, band, route, judge and commit a placed trial. Returns `undefined` when the trial was kept, else the refusal. A refused trial gives back the
+ * seat-set declines its 7f added (dense-16x9 ticket 36, ruling B): they are a fact of its geometry, not of the kept one.
+ */
+export async function close<O>(env: Env, s: State, round: Round<O>, o: O, opened: Opened): Promise<Refusal | undefined> {
+  const declined = env.seatSetDeclined;
+  const refusal = await closeTrial(env, s, round, o, opened);
+  if (refusal !== undefined) { if (declined === undefined) delete env.seatSetDeclined; else env.seatSetDeclined = declined; }
+  return refusal;
+}
+
+async function closeTrial<O>(env: Env, s: State, round: Round<O>, o: O, { ledger, trial7e }: Opened): Promise<Refusal | undefined> {
   if (!round.routed && trial7e.staggerRows?.length) {
     const staggered = await keptStaggers(env, s, round, ledger, trial7e);
     if (staggered !== undefined && 'at' in staggered) return refuse(env, s, round, o, staggered);
@@ -185,7 +196,9 @@ export async function close<O>(env: Env, s: State, round: Round<O>, o: O, { ledg
     try {
       const preflight = await round.preflight?.(env, s, o, trial7e);
       if (preflight !== undefined) return refuse(env, s, round, o, preflight);
-      const banded = await env.bands(trial7e, true);
+      // A seat set that the trial's 7f withdraws is declined and the trial placed once more (dense-16x9 ticket 36, ruling B).
+      const seated = await bandsWithoutWithdrawnSeats(env, ledger, trial7e, true, s.sideNotes), banded = seated.banded;
+      trial7e = seated.placed;
       await round.ready?.(env, s);
       t = { ledger, trial7e, trial: banded.model, routedTrial: await env.route(banded.model, true), moved: banded.moved, unmoved: banded.unmoved };
     } catch (error) {

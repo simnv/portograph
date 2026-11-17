@@ -16,7 +16,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * the list below fails too, so a new kind is named in this test with its readers.
  */
 const KINDS = ['bundleNeighbours', 'corridorSide', 'course', 'farEndOrder', 'groupExit', 'groupOrder', 'labelRoom', 'laneOwner', 'laneSide', 'nodeFloor',
-  'pairFloor', 'pitchFloor', 'refusedChord', 'riserKeepOut', 'rowOrder', 'seatSet', 'sideAlignment', 'sideFace', 'spanChord', 'spanCorridor', 'staggerDeclined', 'trunkDeclined',
+  'pairFloor', 'pitchFloor', 'refusedChord', 'riserKeepOut', 'rowOrder', 'seatSet', 'seatSetDeclined', 'sideAlignment', 'sideFace', 'spanChord', 'spanCorridor', 'staggerDeclined', 'trunkDeclined',
   'trunkExtension', 'turnOrder'];
 const yaml = readFileSync(new URL('../../goldens/synthetic/a-top-row-staggers-when-a-lower-tier-sets-the-stage-5-width.yaml', import.meta.url), 'utf8');
 

@@ -51,6 +51,11 @@ export interface Env {
   blockRowGaps?: BlockRowGap[];
   /** Dense-16x9 ticket 29: the blocks a complete placement recorded under the cap, for the leg pitch of stage 6 (`steepBlocks`); absent: none known. */
   steepBlocks?: string[];
+  /**
+   * Dense-16x9 ticket 36, ruling B: the rows whose seat set a placement of this command withdrew, each with where and why. Stage 6 of every later
+   * run declines them (`seatSetDeclined`, at `input`), so no row is decided again; absent: none.
+   */
+  seatSetDeclined?: Map<string, string>;
   /** Ticket 51: the arrangement stage 5 of the first placement run chose; every later run of the command keeps it (R1). */
   groupArrangements?: Record<string, GroupArrangement>;
   /** Ticket 51: true once the first placement run has completed; every later run keeps its arrangement and decides none. */

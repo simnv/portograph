@@ -67,6 +67,12 @@ export interface ReservationPayload {
    */
   seatSet: SeatSetPayload;
   /**
+   * A row whose seat set this command withdrew (dense-16x9 ticket 36, ruling B): `at` names the rule, `why` the failed equation or clause. The
+   * withdrawing rule writes it; the command then places once more without the set, and the rows rule of every later run writes it again from
+   * the command's input (`at: 'input'`), so the row is not decided again.
+   */
+  seatSetDeclined: { row: string; at: string; why: string };
+  /**
    * A held chord that the publication step refused (dense-16x9 ticket 14, slice 3, built for ticket 04 slice 2): on the state to publish the plan
    * named it crowded (`TIER_GAP_CHORD_CROWDED`) and it stood under the G6 clearance, so placement replays once from the kept 7e model with this
    * entry. 7f refuses `link` before the freeze as `crowds` and decides nothing again (R1); the freeze then holds no refused chord.
@@ -173,7 +179,7 @@ const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', pairFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', seatSet: 'rows', refusedChord: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
+  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', seatSet: 'rows', seatSetDeclined: 'rows', refusedChord: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton', bundleNeighbours: 'skeleton',
 };
 
@@ -570,6 +576,20 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
   return undefined;
 }
 
+/**
+ * Why a seat-set decline (`seatSetDeclined`, dense-16x9 ticket 36, ruling B) does not hold on `model`, or `undefined`: the record exists only from
+ * the rows rule on (before it a run has recorded no seat set yet, so a decline there is forged), it names a group of the model, and the
+ * declined row holds no `seatSet` entry, so its cell reserves no seat interval.
+ */
+export function seatSetDeclinedFault(item: Reservation, model: LayoutModel): string | undefined {
+  if (item.kind !== 'seatSetDeclined') return undefined;
+  const { row } = item.payload;
+  if (BEFORE_SIDES_TWO.has(model.stage) || model.stage === 'sides-two') return `the seat-set decline of ${row} stands on a ${model.stage} model, before stage 6 records it`;
+  if (model.groups[row] === undefined) return `the seat-set decline names ${row}, which is no group of the model`;
+  if ((model.reservations ?? []).some(entry => entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === row)) return `the row ${row} is declined and still holds a seat set`;
+  return undefined;
+}
+
 /** The stages before `sides-two`, in the order of `stages` (mutation.ts). */
 const BEFORE_SIDES_TWO: ReadonlySet<LayoutStage> = new Set<LayoutStage>(['normalised', 'resolve', 'sides-one', 'size', 'skeleton']);
 /**
@@ -680,7 +700,7 @@ const isPort = (value: unknown): boolean => isObject(value) && isString(value['n
 const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.length > 0
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
-const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'staggerDeclined', 'seatSet', 'refusedChord', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
+const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'staggerDeclined', 'seatSet', 'seatSetDeclined', 'refusedChord', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
 const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'sides-two', 'rows', 'lanes', 'bands', 'publish']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
@@ -726,6 +746,7 @@ function shapeFailure(entry: unknown): string | undefined {
         && (payload['clause'] === 'held-straight' ? named : links === undefined) ? undefined : bad;
     }
     case 'seatSet': return seatSetShapeFailure(payload) === undefined ? undefined : bad;
+    case 'seatSetDeclined': return typeof payload['row'] === 'string' && typeof payload['at'] === 'string' && typeof payload['why'] === 'string' ? undefined : bad;
     case 'refusedChord': return isString(payload['link']) ? undefined : bad;
     case 'farEndOrder': {
       const ports = payload['ports'];
@@ -808,6 +829,7 @@ export const RESERVATION_CHECKS: { readonly [K in ReservationKind]: KindCheck } 
   staggerDeclined: everywhere((item, model) => staggerDeclineFailure(item, model)),
   // Written by stage 5; the predicate refuses it on a model before 'sides-two' (dense-16x9 ticket 36).
   seatSet: everywhere((item, model) => seatSetFault(item, model)),
+  seatSetDeclined: everywhere((item, model) => seatSetDeclinedFault(item, model)),
   // Written on the kept 7e model only; the predicate refuses it on a model before `sides-two` (review 2 of dense-16x9 ticket 04 slice 2).
   refusedChord: everywhere((item, model) => refusedChordFailure(item, model)),
   riserKeepOut: transientKind, trunkExtension: transientKind, laneSide: transientKind, sideAlignment: transientKind, spanCorridor: transientKind, groupExit: transientKind, labelRoom: transientKind,
