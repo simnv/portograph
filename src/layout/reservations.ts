@@ -15,6 +15,12 @@ import { PLACEMENT_EPS } from './tolerance.js';
 import { frameSubtreeCells } from '../model/model.js';
 import { blockBoxPadsFault, blockRowGapsFault, flatBlockGapsFault } from './placement-inputs.js';
 
+/**
+ * Why a stagger is declined (`staggerDeclined`): a clause of the acceptance gate (`wrapGateDecline`, dense-16x9 tickets 22 and 35), the
+ * gate's trial placement or its 7f trial refusing the lines, or a later placement that refused them (`keptStaggers`).
+ */
+export const STAGGER_DECLINE_CLAUSES = ['area', 'aspect', 'held-straight', 'separation', 'planned-bends', 'placement', 'trial', 'later-placement'] as const;
+export type StaggerDeclineClause = typeof STAGGER_DECLINE_CLAUSES[number];
 export type RoundId = 'initial' | 'fan' | 'span' | 'course' | 'side' | 'turn' | 'overlay' | 'farEnd';
 /** A model owner, or the command (a reservation no single element owns: the turn order of every face, a budget decline of every trunk). */
 export type ReservationOwner = Owner | { kind: 'command'; id: string };
@@ -48,10 +54,11 @@ export interface ReservationPayload {
   /** A trunk join (or every trunk join) that placement declines. */
   trunkDeclined: { scope: { all: true } | { key: string }; reason: string };
   /**
-   * A stagger stage 5 of the first run chose, declined by a later placement that it refused (dense-16x9 ticket 22, review 2): every later run
-   * keeps `group` one line, with `reason`; none decides it again.
+   * A stagger stage 5 of the first run chose, declined: by the acceptance gate (dense-16x9 ticket 35; `clause` names the clause of
+   * `wrapGateDecline` that declined it, and `links` the links it names), or by a later placement that it refused (ticket 22, review 2;
+   * `clause: 'later-placement'`). Every later run keeps `group` one line, with `reason`; none decides it again.
    */
-  staggerDeclined: { group: string; reason: string };
+  staggerDeclined: { group: string; reason: string; clause: StaggerDeclineClause; links?: string[] };
   /**
    * The seat set of a child row (dense-16x9 ticket 36, slice 1): stage 5 stands the members of the rank cell `row` under their parents' bottom
    * ports, all together, with the order, the face orders, the widths and the parents fixed (`planSeatSet`, `seat-set.ts`). Every later stage reads
@@ -420,12 +427,15 @@ export function declineTrunk(key: string | undefined, reason: string, revision: 
     ? [reservation('trunkDeclined', { kind: 'command', id: 'trunk-declines' }, 'all', 'initial', revision, { scope: { all: true }, reason })]
     : [reservation('trunkDeclined', { kind: 'mesh-bus', id: key }, key, 'initial', revision, { scope: { key }, reason })];
 }
-/** The staggers the ledger declines: group to reason, in ledger order. */
-export const declinedStaggersOf = (ledger: Reservations): Map<string, string> =>
-  new Map(ofKind(ledger, 'staggerDeclined').map(({ payload }) => [payload.group, payload.reason] as const));
-/** One declined stagger: the row `group` stands one line in every later run, for `reason`. */
-export const declineStagger = (group: string, reason: string, producer: Reservation['producer'], revision: number): Reservations =>
-  [reservation('staggerDeclined', { kind: 'group', id: group }, '', producer, revision, { group, reason })];
+/** The staggers the ledger declines: group to its entry, in ledger order. */
+export const declinedStaggersOf = (ledger: Reservations): Map<string, ReservationPayload['staggerDeclined']> =>
+  new Map(ofKind(ledger, 'staggerDeclined').map(({ payload }) => [payload.group, payload] as const));
+/** Why the ledger declines a stagger, as the note `FAN_WRAP_DECLINED` says it: the reason of the gate's clause, or a later placement's refusal. */
+export const staggerDeclineSentence = (payload: ReservationPayload['staggerDeclined']): string =>
+  payload.clause === 'later-placement' ? `a later placement refused them: ${payload.reason}` : payload.reason;
+/** One declined stagger: the row `group` stands one line in every later run, for `reason`, by `clause` (with the links the clause names). */
+export const declineStagger = (group: string, reason: string, clause: StaggerDeclineClause, producer: Reservation['producer'], revision: number, links?: readonly string[]): Reservations =>
+  [reservation('staggerDeclined', { kind: 'group', id: group }, '', producer, revision, { group, reason, clause, ...(links?.length ? { links: [...links] } : {}) })];
 export function declinedEntries(declined: DeclinedTrunks, revision: number): Reservations {
   const owner = { kind: 'command' as const, id: 'trunk-declines' };
   return [
@@ -481,13 +491,16 @@ export function floorFailure(item: Reservation, model: LayoutModel): string | un
  */
 /**
  * Why a declined stagger (`staggerDeclined`, dense-16x9 ticket 22 review 2) does not hold on `model`, or `undefined`: the row stands one line, with no
- * stagger record and an arrangement that is not a stagger. The one predicate of the kind: the round check (`holds`) and restore (`validateReservations`) call it.
+ * stagger record and an arrangement that is not a stagger, and every link the decline names is a link of the model. The one predicate of the kind:
+ * the round check (`holds`) and restore (`validateReservations`, `validateEarlyReservations`) call it.
  */
 export function staggerDeclineFailure(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'staggerDeclined') return undefined;
   const group = item.payload.group;
-  return (model.staggerRows ?? []).some(row => row.group === group) || model.groupArrangements?.[group]?.chosen === 'stagger'
-    ? `the row ${group} stands on two lines although its stagger is declined` : undefined;
+  if ((model.staggerRows ?? []).some(row => row.group === group) || model.groupArrangements?.[group]?.chosen === 'stagger') return `the row ${group} stands on two lines although its stagger is declined`;
+  // The links a held-straight decline names are links of the model (dense-16x9 ticket 35, review 1): the record names no evidence it does not have.
+  const unknown = item.payload.links?.find(id => !model.links.some(link => link.id === id));
+  return unknown === undefined ? undefined : `the decline of ${group} names the link ${unknown}, which the model does not have`;
 }
 
 /** Why a `seatSet` payload is malformed, or undefined (the shape check of the kind). */
@@ -698,7 +711,13 @@ function shapeFailure(entry: unknown): string | undefined {
       const exceptOk = payload['except'] === undefined || (Array.isArray(payload['except']) && payload['except'].every(isString));
       return scopeOk && exceptOk && typeof payload['requireChanged'] === 'boolean' ? undefined : bad;
     }
-    case 'staggerDeclined': return isString(payload['group']) && isString(payload['reason']) ? undefined : bad;
+    case 'staggerDeclined': {
+      const links = payload['links'];
+      // The held-straight clause names the links it lost (at least one); no other clause names links (dense-16x9 ticket 35, review 1).
+      const named = Array.isArray(links) && links.length > 0 && links.every(isString);
+      return isString(payload['group']) && isString(payload['reason']) && (STAGGER_DECLINE_CLAUSES as readonly unknown[]).includes(payload['clause'])
+        && (payload['clause'] === 'held-straight' ? named : links === undefined) ? undefined : bad;
+    }
     case 'seatSet': return seatSetShapeFailure(payload) === undefined ? undefined : bad;
     case 'refusedChord': return isString(payload['link']) ? undefined : bad;
     case 'farEndOrder': {
