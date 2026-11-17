@@ -5,12 +5,11 @@
 import type { Diagnostic, LayoutModel } from '../model/index.js';
 import { linkLabels } from '../layout/link-labels.js';
 import { declinedFanDiagnostics, measureFans } from '../layout/fan-spread.js';
-import { chordClearances } from '../layout/frame-paths.js';
+import { chordClearances, closedChordPairs } from '../layout/frame-paths.js';
 import { STRAIGHT_PATH_CLEARANCE } from '../layout/row-paths.js';
 import { sideHintDiagnostics } from '../layout/side-hints.js';
 import { turnMissed } from '../layout/turn-order.js';
 import { routedBends } from '../layout/side-judge.js';
-import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { declinedStaggersOf, sideHintsOf, staggerDeclineSentence } from '../layout/reservations.js';
 import { FAN_WRAP_DECLINED } from '../layout/stagger.js';
 import { holdsRouted } from '../layout/reservation-checks.js';
@@ -37,15 +36,14 @@ export async function publish(env: Env, s: State): Promise<LayoutModel> {
   const atFreeze = chordClearances(s.kept7e);
   s.kept7e = s.base;
   // 7f moves columns in x after the chords are decided, and no rule bounds it: a pair it closes under the clearance is named here, with the
-  // clearance it had at the freeze, so that a G6 failure can be traced to the move (ticket 89 review). Nothing is changed.
+  // clearance it had at the freeze, so that a G6 failure can be traced to the move (ticket 89 review). Nothing is changed. The pair is read
+  // as G6 reads it (`chordClearances`: `runClearance`, the sheaf zone excused) and named only when 7f closed it: under the clearance now and
+  // nearer than at the freeze (dense-16x9 ticket 34).
   const lost: Diagnostic[] = [...sideHintDiagnostics(s.kept7e)];
-  for (const [pair, now] of chordClearances(s.kept7e)) {
-    const before = atFreeze.get(pair);
-    if (now < STRAIGHT_PATH_CLEARANCE.path - PLACEMENT_EPS && before !== undefined) {
-      lost.push({ stage: 'placement', severity: 'warning', code: 'CHORD_CLEARANCE_LOST',
-        message: `Placement moved the straight links ${pair.replace('|', ' and ')} from ${before.toFixed(1)} px apart to ${now.toFixed(1)} px, under the ${STRAIGHT_PATH_CLEARANCE.path} px chord clearance.`,
-        owners: pair.split('|').map(id => ({ kind: 'link' as const, id })) });
-    }
+  for (const { pair, before, now } of closedChordPairs(atFreeze, chordClearances(s.kept7e))) {
+    lost.push({ stage: 'placement', severity: 'warning', code: 'CHORD_CLEARANCE_LOST',
+      message: `Placement moved the straight links ${pair.replace('|', ' and ')} from ${before.toFixed(1)} px apart to ${now.toFixed(1)} px, under the ${STRAIGHT_PATH_CLEARANCE.path} px chord clearance.`,
+      owners: pair.split('|').map(id => ({ kind: 'link' as const, id })) });
   }
   // With the setting on, the kept model is routed once more to publish: a judged route carries the ordinary overlay paths.
   const published = s.kept7e.document.layout?.overlayOverBodies === true ? await env.route(s.kept7e, undefined, true) : s.routedFinal ?? s.routedBase ?? await env.route(s.kept7e);
