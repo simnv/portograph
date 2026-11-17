@@ -80,8 +80,10 @@ type Banded = Awaited<ReturnType<Env['bands']>>;
  * are. The state it writes is the declines of the command (`env.seatSetDeclined`) and the placement it returns; a refused retry gives back both.
  * The baseline of the driver and every routed trial of a round read 7f through it, so no kept 7f result keeps room for a withdrawn set. The
  * placements `initial.ts` compares do not (scope V): a compared placement carries its withdrawal and the next placement decides the set again.
+ * `admit` reads each replacement placement before it is banded (a round trial's admission); it throws to refuse the replacement.
  */
-export async function bandsWithoutWithdrawnSeats(env: Env, ledger: Reservations, placed: LayoutModel, trial: boolean, notes: Diagnostic[]): Promise<{ placed: LayoutModel; banded: Banded }> {
+export async function bandsWithoutWithdrawnSeats(env: Env, ledger: Reservations, placed: LayoutModel, trial: boolean, notes: Diagnostic[],
+  admit?: (placed: LayoutModel) => Promise<void>): Promise<{ placed: LayoutModel; banded: Banded }> {
   const band = (model: LayoutModel): Promise<Banded> => trial ? env.bands(model, true) : env.bands(model);
   let banded = await band(placed);
   // Only a run that withdrew a set retries (a set exists only with `layout.moveBeforeGrow`).
@@ -90,6 +92,7 @@ export async function bandsWithoutWithdrawnSeats(env: Env, ledger: Reservations,
     place: async () => {
       env.exemptPlacing = (env.exemptPlacing ?? 0) + 1;
       try { placed = await env.timed('place', () => env.place(ledger, trial ? env.trialAbort : undefined)); } finally { env.exemptPlacing--; }
+      await admit?.(placed);
       banded = await band(placed);
       return banded.model;
     },

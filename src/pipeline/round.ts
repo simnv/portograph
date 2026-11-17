@@ -173,6 +173,23 @@ export async function close<O>(env: Env, s: State, round: Round<O>, o: O, opened
   return refusal;
 }
 
+/**
+ * The admission of a placed trial before it is banded: no new ELK fallback, the round's 7e checks (`holdsAt7e`, the predictor) and, in a routed
+ * round, its preflight. One function for the trial `open` placed and for every placement that replaces it (the seat-set retry), so no replacement
+ * reaches 7f, routing or the judge without the checks its trial passed.
+ */
+async function admitPlacement<O>(env: Env, s: State, round: Round<O>, o: O, ledger: Reservations, trial7e: LayoutModel): Promise<Refusal | undefined> {
+  if (trial7e.fallbackUsed && !(s.fallbackFrom ?? s.kept7e).fallbackUsed) return { at: 'fallback', why: `ELK fell back during the ${round.id} trial` };
+  const held = round.holdsAt7e(env, s, o, ledger, trial7e) ?? round.predict?.(env, s, o, trial7e);
+  if (held !== undefined) return held;
+  return round.routed ? await round.preflight?.(env, s, o, trial7e) : undefined;
+}
+
+/** A replacement placement that its round's admission refused: the trial is refused with it. */
+class AdmissionRefusal extends Error {
+  constructor(readonly refusal: Refusal) { super(refusal.why); }
+}
+
 async function closeTrial<O>(env: Env, s: State, round: Round<O>, o: O, { ledger, trial7e }: Opened): Promise<Refusal | undefined> {
   if (!round.routed && trial7e.staggerRows?.length) {
     const staggered = await keptStaggers(env, s, round, ledger, trial7e);
@@ -187,21 +204,28 @@ async function closeTrial<O>(env: Env, s: State, round: Round<O>, o: O, { ledger
       return undefined;
     }
   }
-  const held = round.holdsAt7e(env, s, o, ledger, trial7e) ?? round.predict?.(env, s, o, trial7e);
-  if (held !== undefined) return refuse(env, s, round, o, held);
+  if (!round.routed) {
+    const held = await admitPlacement(env, s, round, o, ledger, trial7e);
+    if (held !== undefined) return refuse(env, s, round, o, held);
+  }
   let t: Trial;
   if (!round.routed) {
     t = { ledger, trial7e, trial: trial7e, routedTrial: trial7e, moved: false, unmoved: undefined };
   } else {
     try {
-      const preflight = await round.preflight?.(env, s, o, trial7e);
-      if (preflight !== undefined) return refuse(env, s, round, o, preflight);
-      // A seat set that the trial's 7f withdraws is declined and the trial placed once more (dense-16x9 ticket 36, ruling B).
-      const seated = await bandsWithoutWithdrawnSeats(env, ledger, trial7e, true, s.sideNotes), banded = seated.banded;
+      const admitted = await admitPlacement(env, s, round, o, ledger, trial7e);
+      if (admitted !== undefined) return refuse(env, s, round, o, admitted);
+      // A seat set that the trial's 7f withdraws is declined and the trial placed once more (dense-16x9 ticket 36, ruling B). The placement
+      // that replaces the trial passes the same admission before it is banded (review 1, finding 3); a refusal there refuses the trial.
+      const seated = await bandsWithoutWithdrawnSeats(env, ledger, trial7e, true, s.sideNotes, async placed => {
+        const refusal = await admitPlacement(env, s, round, o, ledger, placed);
+        if (refusal !== undefined) throw new AdmissionRefusal(refusal);
+      }), banded = seated.banded;
       trial7e = seated.placed;
       await round.ready?.(env, s);
       t = { ledger, trial7e, trial: banded.model, routedTrial: await env.route(banded.model, true), moved: banded.moved, unmoved: banded.unmoved };
     } catch (error) {
+      if (error instanceof AdmissionRefusal) return refuse(env, s, round, o, error.refusal);
       if (!withdraws(round, error, 'bands')) throw error;
       return refuse(env, s, round, o, { at: 'bands', why: (error as Error).message, error: error as Error });
     }
