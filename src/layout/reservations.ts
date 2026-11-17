@@ -9,6 +9,7 @@
 import type { Course, GroupExit, LayoutModel, LayoutStage, Owner, PortRef, Rect, Side, Size } from '../model/index.js';
 import type { PlacementInputField } from '../model/layout.js';
 import type { PairPitch } from '../model/layout.js';
+import { LAYOUT_STAGES, stageReached } from '../model/layout.js';
 import { portKey } from './sides-one.js';
 import { formsChains, lateralPairs } from './bundle-ends.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
@@ -72,7 +73,7 @@ export interface ReservationPayload {
    * the command's input (`at: 'input'`), so the row is not decided again. `fixed`: the far ends of a set withdrawn from 7c on (dense-16x9 ticket
    * 36a). 7c held their rows at their stage-6 x while the set stood, so every later step and replay of the run reads them as fixed still (R1).
    */
-  seatSetDeclined: { row: string; at: string; why: string; fixed?: string[] };
+  seatSetDeclined: { row: string; at: string; why: string; fixed?: { link: string; node: string }[] };
   /**
    * A held chord that the publication step refused (dense-16x9 ticket 14, slice 3, built for ticket 04 slice 2): on the state to publish the plan
    * named it crowded (`TIER_GAP_CHORD_CROWDED`) and it stood under the G6 clearance, so placement replays once from the kept 7e model with this
@@ -615,11 +616,16 @@ function seatSetProvenanceFault(p: SeatSetPayload, model: LayoutModel, port: (re
     const side = port(ref)?.side;
     if (members.has(ref.node) && (side === 'top' || side === 'bottom')) { const key = `${ref.node}|${side}`; solid.set(key, (solid.get(key) ?? new Set()).add(portKey(ref))); }
   }
+  // The faces as a set with counts: each solid-block face of a member is claimed exactly once, with its complete port list (review 2 of ticket 36a).
+  const claimed = p.blockFaces.map(face => `${face.node}|${face.side}`);
+  const twice = claimed.find((key, i) => claimed.indexOf(key) !== i);
+  if (twice !== undefined) return `the seat set of ${p.row} claims the block face ${twice} twice`;
   for (const face of p.blockFaces) {
     const own = solid.get(`${face.node}|${face.side}`);
     if (!members.has(face.node) || own === undefined || !same([...own].sort(), [...face.ports].sort())) return `the ${face.side} block face of ${face.node} in the seat set of ${p.row} is not the solid-block face of a member`;
   }
-  if (solid.size !== p.blockFaces.length) return `the seat set of ${p.row} leaves a solid-block face of a member out`;
+  const left = [...solid.keys()].sort().find(key => !claimed.includes(key));
+  if (left !== undefined) return `the seat set of ${p.row} leaves the solid-block face ${left} of a member out`;
   for (const item of p.declined) {
     const a = links.get(item.link)?.attachments;
     if (a === undefined || members.has(a.from.node) === members.has(a.to.node)) return `the declined feed ${item.link} of the seat set of ${p.row} is no link from a member to a node outside the row`;
@@ -637,8 +643,19 @@ export function seatSetDeclinedFault(item: Reservation, model: LayoutModel): str
   const { row } = item.payload;
   if (BEFORE_SIDES_TWO.has(model.stage) || model.stage === 'sides-two') return `the seat-set decline of ${row} stands on a ${model.stage} model, before stage 6 records it`;
   if (model.groups[row] === undefined) return `the seat-set decline names ${row}, which is no group of the model`;
-  const unknown = item.payload.fixed?.find(node => model.nodes[node] === undefined);
-  if (unknown !== undefined) return `the seat-set decline of ${row} keeps ${unknown} fixed, which is no node of the model`;
+  const fixed = item.payload.fixed;
+  if (fixed !== undefined) {
+    // Only a set withdrawn from 7c on keeps far ends fixed (`withdrawSeatSet`): a decline at the input or before 7c has no 7c position to hold.
+    const at = item.payload.at as LayoutStage;
+    if (!LAYOUT_STAGES.includes(at) || !stageReached(at, 'centre')) return `the seat-set decline of ${row} at ${item.payload.at} keeps far ends fixed, which only a withdrawal from 7c on records`;
+    // Each far end is proved by its own equation: a link that joins it to a member of the declined row, from outside the row; once each.
+    const members = new Set(model.groups[row]!.nodes), links = new Map(model.links.map(link => [link.id, link] as const)), seen = new Set<string>();
+    for (const { link, node } of fixed) {
+      const a = links.get(link)?.attachments, ends = a === undefined ? [] : [a.from.node, a.to.node];
+      if (seen.has(link) || !ends.includes(node) || members.has(node) || !ends.some(end => end !== node && members.has(end))) return `the seat-set decline of ${row} keeps ${node} fixed by ${link}, which is no equation of the row once`;
+      seen.add(link);
+    }
+  }
   if ((model.reservations ?? []).some(entry => entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === row)) return `the row ${row} is declined and still holds a seat set`;
   return undefined;
 }
@@ -800,7 +817,8 @@ function shapeFailure(entry: unknown): string | undefined {
     }
     case 'seatSet': return seatSetShapeFailure(payload) === undefined ? undefined : bad;
     case 'seatSetDeclined': return typeof payload['row'] === 'string' && typeof payload['at'] === 'string' && typeof payload['why'] === 'string'
-      && (payload['fixed'] === undefined || (Array.isArray(payload['fixed']) && payload['fixed'].every(isString))) ? undefined : bad;
+      && (payload['fixed'] === undefined || (Array.isArray(payload['fixed']) && payload['fixed'].every(item => typeof item === 'object' && item !== null
+        && isString((item as Record<string, unknown>)['link']) && isString((item as Record<string, unknown>)['node'])))) ? undefined : bad;
     case 'refusedChord': return isString(payload['link']) ? undefined : bad;
     case 'farEndOrder': {
       const ports = payload['ports'];

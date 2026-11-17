@@ -18,7 +18,7 @@ import { attemptTimings, timed, timedTrial } from './attempt-timings.js';
 import { copyWithShared } from './trial-copy.js';
 import { drawnOverlays, judges, lazySeparation, compare, gains, holds as readingHolds, read, reading, tapVerdict, type Reading } from './objective.js';
 import { moveBeforeGrow } from './read/move-before-grow.js';
-import { SEAT_WALL_COLUMN } from './seat-set.js';
+import { SEAT_WALL_COLUMN, seatSetsLost } from './seat-set.js';
 
 /**
  * The decision loop of stage 7f (architecture ticket 13, phase 3). Three kinds of optional discrete choice are made here, and nowhere else:
@@ -279,14 +279,11 @@ export function chordDecision(model: LayoutModel, follow: ((probe: LayoutModel) 
     // The candidate's position is its tie: the nearest move first, then the smaller dx. The incumbent stands at 0.
     const candidate = after === undefined ? undefined : { ...after, tie: [Math.abs(dx), dx], widthCap: edge(model).base + (ranked ? rankShare(edge(model)) : CANVAS_GROWTH_SHARE * edge(model).base) };
     const incumbent = baseline === undefined ? undefined : { ...baseline, tie: [0, 0] };
-    // A move whose settled copy withdraws a seat set on the wall of its frame column, where the copy without the move keeps it, does not stand
-    // (dense-16x9 ticket 36a; read from the copy's ledger, `seatSetDeclined`, R5): its replay of 7c could not translate the set with its far ends
-    // inside the column. The step's own range reads that room before the move, on the geometry the move starts from; the settled copy reads it
-    // after the settle that follows. Other withdrawals (a lane, the anchor tier, a step that does not stand) keep their rule: the command places
-    // once more without the set.
-    const walled = (one: Verdict | undefined): number => one === undefined ? 0
-      : (copies.get(one)!.copy.reservations ?? []).filter(entry => entry.kind === 'seatSetDeclined' && entry.payload.why.startsWith(SEAT_WALL_COLUMN)).length;
-    const keepsSets = walled(after) <= walled(baseline);
+    // A move whose settled copy withdraws a seat set on the wall of its frame column, where the settled copy without the move keeps that set,
+    // does not stand (dense-16x9 ticket 36a; review 2: identities, not counts, `seatSetsLost`). The step's own range reads the room before the
+    // move; the settled copy reads it after the settle that follows. Other withdrawals (a lane, the anchor tier, a step that does not stand) keep
+    // their rule: the command places once more without the set. Refusing every lost set instead cost 14 bends on one forced-on sheet.
+    const keepsSets = after === undefined || baseline === undefined || seatSetsLost(copies.get(baseline)!.copy, copies.get(after)!.copy, SEAT_WALL_COLUMN).length === 0;
     const settledHolds = keepsSets && candidate !== undefined && incumbent !== undefined && gains(candidate, incumbent, ranked ? judges.rankSettled : judges.chordSettled);
     tapVerdict('holdsSettled', () => `${settledHolds} ${after?.overlay.straight}/${baseline?.overlay.straight} ${after?.growth.width}/${baseline?.growth.width}`);
     return settledHolds

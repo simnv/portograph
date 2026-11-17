@@ -868,7 +868,8 @@ by name: when the column move brings a frame or a row group nearer than the besi
 the last set that stood (clause `owner`) and decides the sets again, at most `SEAT_SET_REDECISIONS` times. Every later repack (the one 7e
 runs) applies the sets it finds and decides none. `seatSetFault` holds the entry at the round check and at both restores
 (`RESERVATION_CHECKS`): the members at their offsets and widths, the parent ports at theirs, each equation vertical, the block faces in
-order, and the cell box over the interval. Each placement run decides on its own stage-6 geometry, so the aspect choices decide on seated
+order (each solid-block face of a member claimed exactly once, compared as keys with counts: a duplicate or a missing face is refused, review 2
+of ticket 36a), and the cell box over the interval. Each placement run decides on its own stage-6 geometry, so the aspect choices decide on seated
 geometry; only a 7c withdrawal can change it after them, and the forced-on corpus counts those withdrawals as the measured risk.
 
 A **row path** is a derived claim, not a callback edit. The transaction rebuilds every row
@@ -1167,8 +1168,11 @@ as a whole, as stage 6 placed it, and only as far as the box of the seated row (
 frame column (`columnWindow`). One reader gives the range of a move (`seatFarEndRange`; `farEndRange` in 7c, `farEndRangeOutside` for the
 step over chords): it holds 0; a set whose row moves along sets no bound; a set whose far ends stand in a group that does not move along, or
 whose box does not stand in its window now, does not move; a set whose seated row carries far ends of a further set takes that set along (a
-chain, each set read once); a set withdrawn from 7c on keeps its far ends where 7c left them (`seatSetDeclined.fixed`: the rest of the run,
-its publication replays included, reads them as fixed, R1). A set seated on the anchor tier cannot translate and sets no bound: the step
+chain; the rows that move along are read as a closure before any bound, so the range does not depend on the order of the ledger, R3); a set
+withdrawn from 7c on keeps the far ends of its own equations where 7c left them (`seatSetDeclined.fixed`, each far end with the link of its
+equation; `seatSetDeclinedFault` proves each one a link from the far end to a member of the declined row, once, and refuses `fixed` on a decline
+before 7c or at the input). Lifetime of `fixed`: the rest of the placement run that withdrew the set, its publication replays included (R1);
+the placement the command runs without the set writes the decline again at its input with no far ends, so its 7c moves those rows again. A set seated on the anchor tier cannot translate and sets no bound: the step
 moves its far ends, the rule withdraws it ("its row is the anchor tier"), and the command places once more without it. The room is the
 frame column only: a translation that crosses a lane is withdrawn by `translationFault` as before. Both are deviations from the clamp of
 ruling 3, measured on the forced-on corpus (2026-11-17; 559 sheets, 1966 bends at 5c32149b and at this rule): a clamp at 0 for an anchor-tier
@@ -1183,7 +1187,12 @@ groups `overlayFreeGroups` lists, and a far end is the end of a routed link out 
 that so. The step over chords of 7f (`stepOverChords`) moves a far-end row only inside the range, the range's edges among its candidates;
 its decision (`chordDecision`) reads the settled copy of each move, and a move whose copy withdraws a set on the column wall
 (`SEAT_WALL_COLUMN`, read from the copy's ledger) where the copy without the move keeps it does not stand: the range is read before the
-move, and the settle after it can move the column. A new 7c mover that does not read the range
+move, and the settle after it can move the column. The sets are compared as identities (`seatSetsLost`, review 2 of ticket 36a), so a move
+that withdraws one set and keeps another the copy without it withdrew is a loss. Refusing every lost set, any clause, cost 14 bends on
+`four-locations-each-with-a-zone` (26 to 40); withdrawals by another clause keep their rule and the retry. The range and the guards are read by
+one table-driven test (`test/layout/seat-set-guards.test.ts`: no set, one set, a chain, a chain with a direct feed in both ledger orders, two
+sets on one far-end row in different columns, an anchor-tier set, a withdrawn set; each with a move inside the room, past the wall, and of an
+unrelated row). A new 7c mover that does not read the range
 fails `test/layout/seat-far-end-movers.test.ts`, which records every move of such a row in 7c and the far ends' x before and after. After the overlay windows each run of the passes applies every set again. A set whose parent ports no
 longer stand at their stored offsets, whose translation a wall refuses, or whose step does not stand is withdrawn whole by name
 (`SEAT_SET_WITHDRAWN`, with the failed condition), and the step seats the row as before; so is a set that any rule from 7c to 7f leaves

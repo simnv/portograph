@@ -1,4 +1,4 @@
-import { LAYOUT_STAGES, type LayoutGroup, type LayoutLink, type LayoutModel, type LayoutPort } from '../model/layout.js';
+import { LAYOUT_STAGES, stageReached, type LayoutGroup, type LayoutLink, type LayoutModel, type LayoutPort } from '../model/layout.js';
 import type { Rect } from '../model/geometry.js';
 import { expectedRowPath, findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
@@ -516,7 +516,7 @@ function seatSetFarEnds(model: LayoutModel): Map<string, string> {
   const far = new Map<string, string>();
   for (const entry of model.reservations ?? []) {
     if (entry.kind === 'seatSet') for (const eq of [...entry.payload.seats, ...entry.payload.holds]) { if (!far.has(eq.far.node)) far.set(eq.far.node, entry.payload.row); }
-    else if (entry.kind === 'seatSetDeclined') for (const node of entry.payload.fixed ?? []) if (!far.has(node)) far.set(node, entry.payload.row);
+    else if (entry.kind === 'seatSetDeclined') for (const { node } of entry.payload.fixed ?? []) if (!far.has(node)) far.set(node, entry.payload.row);
   }
   return far;
 }
@@ -528,8 +528,19 @@ export function seatSetNodes(model: LayoutModel): Set<string> {
   return nodes;
 }
 
-/** The clause of a seat-set withdrawal on the wall of its frame column (`seatWall` of 7c): read by the step decision of 7f (`chordDecision`). */
+/** The clause of a seat-set withdrawal on the wall of its frame column (`seatWall` of 7c): read by the step decision of 7f (`chordDecision`) and counted. */
 export const SEAT_WALL_COLUMN = 'the row would leave the column of its frame';
+
+/**
+ * The rows whose seat set stands on `before` and is withdrawn on `after` by the clause `clause` (all clauses when undefined), read from the
+ * ledgers (dense-16x9 ticket 36a, review 2): identities, not counts, so a move that withdraws one set and keeps another that `before` withdrew
+ * still loses the first. The one reading of the step decisions that compare two settled copies (`chordDecision`).
+ */
+export function seatSetsLost(before: LayoutModel, after: LayoutModel, clause?: string): string[] {
+  const standing = new Set((before.reservations ?? []).flatMap(entry => entry.kind === 'seatSet' ? [entry.payload.row] : []));
+  return (after.reservations ?? []).flatMap(entry => entry.kind === 'seatSetDeclined' && standing.has(entry.payload.row)
+    && (clause === undefined || entry.payload.why.startsWith(clause)) ? [entry.payload.row] : []).sort();
+}
 
 /** The diagnostic of a 7c move a standing seat set clamps (`seatFarEndRange`): the mover, the row, how far it asked and how far it went, and why. */
 export const SEAT_FAR_END_CLAMPED = 'SEAT_FAR_END_CLAMPED';
@@ -542,12 +553,13 @@ export interface FarEndRange { low: number; high: number; why: string }
  * (dense-16x9 ticket 36a, ruling 3 on review 1 finding 2). A far end of a standing set moves only together with its set: the set translates as
  * a whole, as stage 6 placed it, so every group that carries one of its far ends must move, and only as far as the box of the seated row stays in
  * `room` (the window of its frame column in 7c, `columnWindow`). A set whose row moves with them sets no bound. A set
- * withdrawn from 7c on keeps its far ends where 7c left them (`seatSetDeclined.fixed`), and a set whose box does not stand in its room does not move.
- * A set seated on the anchor tier sets no bound: it cannot translate, and its rule withdraws it.
- * The range always holds 0; the one reading of every 7c mover.
+ * withdrawn from 7c on keeps the far ends of its own equations where 7c left them (`seatSetDeclined.fixed`), and a set whose box does not stand
+ * in its room does not move. A set seated on the anchor tier sets no bound: it cannot translate, and its rule withdraws it. The rows that move
+ * along are read as a closure before any bound, so the range does not depend on the order of the ledger (R3). The range always holds 0; the one
+ * reading of every 7c mover.
  */
 export function seatFarEndRange(model: LayoutModel, moving: Iterable<string>, room: (row: string) => { low: number; high: number }): FarEndRange | undefined {
-  const moved = new Set(moving), groupOf = (node: string): string => model.document.nodes[node]!.group;
+  const start = new Set(moving), groupOf = (node: string): string => model.document.nodes[node]!.group;
   let range: FarEndRange | undefined;
   const bound = (low: number, high: number, why: string): void => {
     low = Math.min(low, 0); high = Math.max(high, 0);
@@ -555,36 +567,39 @@ export function seatFarEndRange(model: LayoutModel, moving: Iterable<string>, ro
     if (low > range.low) range = { ...range, low, why };
     if (high < range.high) range = { ...range, high, why };
   };
-  // A set that translates with the moving groups takes its own row along, and that row may carry far ends of further sets (a chain): the reading
-  // runs until no set joins, each set once (R4: at most one round per set).
-  const read = new Set<string>();
-  for (let joined = true; joined;) {
-    joined = false;
-    for (const entry of model.reservations ?? []) {
-      if (entry.kind === 'seatSetDeclined') {
-        const held = (entry.payload.fixed ?? []).find(node => moved.has(groupOf(node)));
-        if (held !== undefined && !read.has(entry.id)) { read.add(entry.id); bound(0, 0, `${held} is a far end of the seat set of ${entry.payload.row}, withdrawn at ${entry.payload.at}, and stays where 7c left it`); }
-        continue;
-      }
-      if (entry.kind !== 'seatSet' || read.has(entry.id)) continue;
-      const p = entry.payload, carriers = [...new Set([...p.seats, ...p.holds].map(eq => groupOf(eq.far.node)))].sort();
-      if (!carriers.some(id => moved.has(id)) || moved.has(p.row)) continue;
-      read.add(entry.id);
-      const left = carriers.filter(id => !moved.has(id));
-      if (left.length) { bound(0, 0, `the far ends of the seat set of ${p.row} stand in ${carriers.join(', ')}, and ${left.join(', ')} does not move with them`); continue; }
-      // A set seated on the anchor tier cannot translate: no step of 7c moves that row. It sets no bound, so a mover is not frozen by it; the rows
-      // rule withdraws the set at its next application ("its row is the anchor tier") and the retry runs without it. A clamp to 0 here froze
-      // the parent row and cost more straight links than the set holds (forced-on corpus, 2026-11-17: a new G5 and 8 bends on three sheets).
-      if (model.groups[p.row]!.tier === model.anchorTier) continue;
-      // The box the wall reads is the one the set leaves when it is applied where its far ends stand: its interval (`payloadOf` takes it from the cell's fit).
-      // The cell box may also be wider than the interval (a label): the wall reads the union where the set stands now.
-      const at = seatInterval(model, p), cell = model.groups[p.row]!.bounds!, x = Math.min(at.low, cell.x), end = Math.max(at.high, cell.x + cell.width);
-      const box = { x, width: end - x }, window = room(p.row), low = window.low - box.x, high = window.high - box.x - box.width;
-      // A box that does not stand in its room now has no shift that keeps it there: the set does not move.
-      if (low > PLACEMENT_EPS || high < -PLACEMENT_EPS) bound(0, 0, `the box of ${p.row} (${box.x.toFixed(1)} to ${(box.x + box.width).toFixed(1)}) does not stand in its window (${window.low.toFixed(1)} to ${window.high.toFixed(1)}), so its seat set does not move`);
-      else bound(low, high, `the seat set of ${p.row} translates with its far ends and stays in its window (${window.low.toFixed(1)} to ${window.high.toFixed(1)})`);
-      moved.add(p.row); joined = true;
+  const sets = (model.reservations ?? []).flatMap(entry => entry.kind === 'seatSet' ? [entry.payload] : []);
+  const carriersOf = (p: SeatSetPayload): string[] => [...new Set([...p.seats, ...p.holds].map(eq => groupOf(eq.far.node)))].sort();
+  // The closure first (R3: no ledger order): a set whose far ends all move takes its row along, unless the row stands on the anchor tier, which no
+  // step of 7c moves; that row may carry far ends of a further set (a chain). Each row joins once, so the loop ends after at most one round per set (R4).
+  const moved = new Set(start), joined = new Set<string>();
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const p of sets) {
+      if (moved.has(p.row) || model.groups[p.row]!.tier === model.anchorTier || !carriersOf(p).every(id => moved.has(id))) continue;
+      moved.add(p.row); joined.add(p.row); grew = true;
     }
+  }
+  // A set withdrawn from 7c on keeps the far ends of its own equations where 7c left them (`seatSetDeclined.fixed`).
+  for (const entry of model.reservations ?? []) if (entry.kind === 'seatSetDeclined') {
+    const held = (entry.payload.fixed ?? []).find(item => moved.has(groupOf(item.node)));
+    if (held !== undefined) bound(0, 0, `${held.node} is a far end of ${held.link} in the seat set of ${entry.payload.row}, withdrawn at ${entry.payload.at}, and stays where 7c left it`);
+  }
+  for (const p of sets) {
+    const carriers = carriersOf(p);
+    if (!carriers.some(id => moved.has(id)) || (moved.has(p.row) && !joined.has(p.row))) continue;
+    const left = carriers.filter(id => !moved.has(id));
+    if (left.length) { bound(0, 0, `the far ends of the seat set of ${p.row} stand in ${carriers.join(', ')}, and ${left.join(', ')} does not move with them`); continue; }
+    // A set seated on the anchor tier cannot translate: no step of 7c moves that row. It sets no bound, so a mover is not frozen by it; the rows
+    // rule withdraws the set at its next application ("its row is the anchor tier") and the retry runs without it. A clamp to 0 here froze
+    // the parent row and cost more straight links than the set holds (forced-on corpus, 2026-11-17: a new G5 and 8 bends on three sheets).
+    if (!joined.has(p.row)) continue;
+    // The box the wall reads is the one the set leaves when it is applied where its far ends stand: its interval (`payloadOf` takes it from the cell's fit).
+    // The cell box may also be wider than the interval (a label): the wall reads the union where the set stands now.
+    const at = seatInterval(model, p), cell = model.groups[p.row]!.bounds!, x = Math.min(at.low, cell.x), end = Math.max(at.high, cell.x + cell.width);
+    const box = { x, width: end - x }, window = room(p.row), low = window.low - box.x, high = window.high - box.x - box.width;
+    // A box that does not stand in its room now has no shift that keeps it there: the set does not move.
+    if (low > PLACEMENT_EPS || high < -PLACEMENT_EPS) bound(0, 0, `the box of ${p.row} (${box.x.toFixed(1)} to ${(box.x + box.width).toFixed(1)}) does not stand in its window (${window.low.toFixed(1)} to ${window.high.toFixed(1)}), so its seat set does not move`);
+    else bound(low, high, `the seat set of ${p.row} translates with its far ends and stays in its window (${window.low.toFixed(1)} to ${window.high.toFixed(1)})`);
   }
   return range;
 }
@@ -692,11 +707,14 @@ export function withdrawSeatSet(model: LayoutModel, group: string, why: string):
   const rule = LAYOUT_STAGES[LAYOUT_STAGES.indexOf(model.stage) + 1] ?? model.stage;
   attemptCounters.seatWithdrawals++;
   if (why.includes(SEAT_WALL_COLUMN)) attemptCounters.seatWallWithdrawals++;
-  // A set withdrawn from 7c on keeps its far ends where 7c left them for the rest of the run (`seatFarEndRange`).
-  const p = seatSetOf(model, group)!, fixed = [...new Set([...p.seats, ...p.holds].map(eq => eq.far.node))].sort();
+  // A set withdrawn from 7c on keeps the far ends of its own equations where 7c left them (`seatFarEndRange`), each with the link that proves it
+  // (`seatSetDeclinedFault`). Lifetime: the rest of this placement run, its publication replays included. The placement that the command runs
+  // without the set writes the decline again at its input (`at: 'input'`, stage 6) with no far ends, so its 7c moves those rows again.
+  const p = seatSetOf(model, group)!, keeps = stageReached(rule, 'centre');
+  const fixed = [...p.seats, ...p.holds].map(eq => ({ link: eq.link, node: eq.far.node })).sort((a, b) => a.link.localeCompare(b.link) || a.node.localeCompare(b.node));
   // The withdrawal is a decline in the ledger (ruling B): the command reads it and places once more without the set (`retryWithdrawnSeatSets`).
   model.reservations = [...model.reservations.filter(entry => !(entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group)),
-    reservation('seatSetDeclined', { kind: 'group', id: group }, '', 'rows', 0, { row: group, at: rule, why, ...(rule === 'rows' ? {} : { fixed }) })];
+    reservation('seatSetDeclined', { kind: 'group', id: group }, '', 'rows', 0, { row: group, at: rule, why, ...(keeps ? { fixed } : {}) })];
   model.diagnostics.push({ stage: 'placement', severity: 'warning', code: SEAT_SET_WITHDRAWN, owners: [{ kind: 'group', id: group }],
     message: rule === 'rows'
       ? `The seat set of ${group} is withdrawn at rows: ${why}. The row stands as the repack leaves it and is seated by the centring step.`
