@@ -710,9 +710,14 @@ export function rowGap(model: LayoutModel, a: string, b: string, labelDetours = 
     const span = Math.max(reach(neighbour, 'top'), reach(neighbour, 'bottom'));
     const top = other.bounds.y - span, bottom = other.bounds.y + other.bounds.height + span;
     const entersNeighbour = (peer: PortRef): boolean => peer.node === neighbour && findPort(model, peer)?.side === facing;
+    // The leg turns toward its far end at the end of the stem, so it passes the neighbour when the neighbour stands anywhere between the port's
+    // height and the far end's height (dense-16x9 ticket 36: a port just below the neighbour whose far end is above rises beside it).
+    const passes = (y: number, peer: PortRef): boolean => {
+      const far = findPort(model, peer)?.anchor?.y ?? y;
+      return Math.min(y, far) <= bottom && Math.max(y, far) >= top;
+    };
     const blocked = owner.ports.some(port => port.side === side && port.anchor !== undefined
-      && port.anchor.y >= top && port.anchor.y <= bottom
-      && (peers.get(key(port.ref)) ?? []).some(({ peer }) => !entersNeighbour(peer)));
+      && (peers.get(key(port.ref)) ?? []).some(({ peer }) => !entersNeighbour(peer) && passes(port.anchor!.y, peer)));
     return blocked ? sideStemReach(model, owner, side) + reach(neighbour, facing) : 0;
   };
   const left = protrusion(a, 'right'), right = protrusion(b, 'left');
