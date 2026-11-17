@@ -1,9 +1,8 @@
-# Expected (dense-16x9 ticket 36a, ruling on review 1 finding 2): every placement the command compares and the placement it keeps hold the same
-# seat sets. The upstream row is a fan the stage-5 stagger gate decides (its trials place the sheet with and without the two lines); the row
-# core#1 is seated under the edge row core#0, whose nodes are the far ends of its set. No 7c mover moves core#0 (`seatFarEndRefusal`), so no
-# trial withdraws the set on the wall of its frame column. Before the ruling the centring step of core#0 moved the far ends, a compared
-# placement withdrew the set at centre ("the row would leave the column of its frame"), and the command declined it. The sheet also holds a
-# hold read 0.5 px off its far port, which the publication check of the rows rule now reads to SEAT_STANDS_EPS.
+# Expected (dense-16x9 ticket 36a): a member that stands a vertical within SEAT_STANDS_EPS (the half pixel 7c counts as standing) keeps its x, and
+# the seat set records the vertical as a hold. The publication check of the rows rule reads a hold to that half pixel too. Before, it read every
+# equation to PLACEMENT_EPS: a hold of core#1 that stood 0.5 px off its far port in a site row below failed the rows rule that recorded it, and
+# the command ended ("the link ... no longer stands vertical in the seat set of core#1"). The command now completes.
+# Test-only input, outside the corpus: the dense synthetic fan draws with gate findings (G4 to G6, removed links) that are not its subject.
 # Test: test/layout/seat-far-end-movers.test.ts.
 portograph: 2
 profile: network
@@ -63,15 +62,18 @@ links:
   - [e1, u02, { id: up02 }]
   - [e1, u03, { id: up03 }]
   - [e1, u04, { id: up04 }]
-  - [e2, u05, { id: up05 }]
-  - [e2, u06, { id: up06 }]
-  - [e2, u07, { id: up07 }]
-  - [e3, u08, { id: up08 }]
-  - [e3, u09, { id: up09 }]
-  - [e3, u10, { id: up10 }]
-  - [e4, u11, { id: up11 }]
-  - [e4, u12, { id: up12 }]
-  - [e4, u13, { id: up13 }]
+  - [e2, u04, { id: up05 }]
+  - [e2, u05, { id: up06 }]
+  - [e2, u06, { id: up07 }]
+  - [e2, u07, { id: up08 }]
+  - [e3, u07, { id: up09 }]
+  - [e3, u08, { id: up10 }]
+  - [e3, u09, { id: up11 }]
+  - [e3, u10, { id: up12 }]
+  - [e4, u10, { id: up13 }]
+  - [e4, u11, { id: up14 }]
+  - [e4, u12, { id: up15 }]
+  - [e4, u13, { id: up16 }]
   - [r1, se1, { id: l18 }]
   - [r1, se1, { id: l19 }]
   - [r1, se1, { id: l20 }]
@@ -81,7 +83,6 @@ links:
   - [r2, se2, { id: l24 }]
   - [r2, e4, { id: l25 }]
   - [r3, e3, { id: l26 }]
-  - [r3, e4, { id: l26c }]
   - [r4, e4, { id: l27 }]
   - [b1, r1, { id: l28 }]
   - [b1, r2, { id: l29 }]

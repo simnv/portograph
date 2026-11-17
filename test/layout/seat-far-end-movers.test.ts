@@ -9,6 +9,7 @@ import { portKey } from '../../src/layout/sides-one.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from '../../src/layout/tolerance.js';
 import { moveTrace } from '../../src/layout/skeleton-geometry.js';
 import { createAttempt } from './phase-two-fixture.js';
+import { withMoveBeforeGrow } from './move-before-grow.js';
 import { createAvoidAttempt } from '../route/fixture.js';
 
 // Dense-16x9 ticket 36a, review 1 finding 2: in 7c no mover takes a far end of a standing seat set along. The movers are found, not listed (the
@@ -56,7 +57,7 @@ vi.mock('../../src/layout/centre.js', async original => {
 });
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
-const SAME_SETS = 'goldens/synthetic/a-stagger-gate-compares-placements-that-hold-the-same-seat-sets.yaml';
+const SAME_SETS = 'test/fixtures/staged/a-stagger-gate-compares-placements-that-hold-the-same-seat-sets.yaml';
 const SHEETS = [
   SAME_SETS,
   'goldens/synthetic/a-compared-placement-holds-the-seat-sets-the-kept-placement-holds.yaml',
@@ -109,10 +110,18 @@ describe('no 7c mover takes a far end of a standing seat set along (dense-16x9 t
   // A hold is a vertical a member stood when stage 6 read it, to SEAT_STANDS_EPS; the publication check of the rows rule reads it so too.
   it('publishes a seat set whose hold stands half a pixel off its far port', async () => {
     spans.length = 0;
-    const sheet = 'goldens/synthetic/a-seat-set-hold-half-a-pixel-off-is-published.yaml';
+    const sheet = 'test/fixtures/staged/a-seat-set-hold-half-a-pixel-off-is-published.yaml';
     await layout(parse(readFileSync(join(root, sheet), 'utf8')), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
     const off = Math.max(...spans.map(span => span.holdOff));
     expect(off).toBeGreaterThan(PLACEMENT_EPS);
     expect(off).toBeLessThanOrEqual(SEAT_STANDS_EPS);
+  }, 900000);
+
+  // A set withdrawn after 7c keeps its far ends fixed for the rest of the run: 7c held their rows, and the publication replay of the rule that
+  // withdrew it reads them as 7c did. Before, the replay centred the far-end row again and refused the run ("Centring invariant violated").
+  it('reads the far ends of a set withdrawn after 7c as fixed in the replays of that run', async () => {
+    const sheet = withMoveBeforeGrow(readFileSync(join(root, 'goldens/synthetic/a-flank-bundle-into-a-ranked-group-stays-beside-the-frame.yaml'), 'utf8'));
+    const model = await layout(parse(sheet), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
+    expect(model.diagnostics.filter(d => d.code === 'SEAT_SET_DECLINED' && d.message.includes('withdrawn at bundles')).length).toBe(1);
   }, 900000);
 });

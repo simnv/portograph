@@ -1163,7 +1163,9 @@ parents of a set where they stand. A far end of a standing set is a bound of its
 row that carries one: its own centring step, a parent spread, the pack of the tier (`packClear`, and `tailReservation` ends the groups
 before it where it stands), the child-frame pack (`settleRows`) and the stand near the feed each read `seatFarEndRefusal` and leave the row
 at its stage-6 x, named (`SEAT_FAR_END_FIXED`, info; a refused spread and pack keep their own codes). The overlay window
-(`placeOverlayFree`) does not read it yet: it packs runs of groups, and a fixed row there must be a wall of the pack. A new 7c mover that does not read it
+(`placeOverlayFree`) does not read it yet: it packs runs of groups, and a fixed row there must be a wall of the pack. A set withdrawn from 7c on keeps its far
+ends in its decline (`seatSetDeclined.fixed`): 7c held their rows while the set stood, so the rest of the run, its publication replays
+included, reads them as fixed (R1). A new 7c mover that does not read it
 fails `test/layout/seat-far-end-movers.test.ts`, which records every move of such a row in 7c and the far ends' x before and after. After the overlay windows each run of the passes applies every set again. A set whose parent ports no
 longer stand at their stored offsets, whose translation a wall refuses, or whose step does not stand is withdrawn whole by name
 (`SEAT_SET_WITHDRAWN`, with the failed condition), and the step seats the row as before; so is a set that any rule from 7c to 7f leaves
@@ -1180,7 +1182,7 @@ compares. The scopes, one table:
 | A compared placement (`initial.ts`: the first run, each trial of the stagger gate, the leg-pitch and room rounds) | stays an entry of that placement; nothing acts on it, and the next placement decides the set again on its own geometry |
 | The kept placement, at the 7f run of the driver's baseline | declines the row for the command (`env.seatSetDeclined`, like the steep blocks) and places once more from stage 6 |
 | A routed trial of a round, at its 7f run | declines the row and places the trial once more; a refused trial gives back the declines its 7f added; the placement that replaces the trial passes the same admission (`admitPlacement`: fallback, the round's 7e checks, preflight) before it is banded, and a refusal there refuses the trial |
-| Every placement, compared or kept, on one ledger | holds the sets of the kept placement: no 7c mover takes a far end along (`seatFarEndRefusal`), so the column wall withdraws none of them (`a-stagger-gate-compares-placements-that-hold-the-same-seat-sets.yaml`: the gate's trials and the kept placement hold the same set) |
+| Every placement, compared or kept, on one ledger | holds the sets of the kept placement: no 7c mover takes a far end along (`seatFarEndRefusal`), so the column wall withdraws none of them (`test/fixtures/staged/a-stagger-gate-compares-placements-that-hold-the-same-seat-sets.yaml`: the gate's trials and the kept placement hold the same set) |
 | The publication replay (`refuseCrowdedChords`), at its 7f run | declines the row and places the replay once more from its ledger, before the gates judge it; a replay the gates discard gives back its declines and publishes none of its notes |
 
 Stage 6 writes each decline at its input (`at: 'input'`) and names the row (clause `withdrawn`), so no kept placement holds an interval

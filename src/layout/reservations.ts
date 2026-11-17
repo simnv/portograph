@@ -69,9 +69,10 @@ export interface ReservationPayload {
   /**
    * A row whose seat set this command withdrew (dense-16x9 ticket 36, ruling B): `at` names the rule, `why` the failed equation or clause. The
    * withdrawing rule writes it; the command then places once more without the set, and the rows rule of every later run writes it again from
-   * the command's input (`at: 'input'`), so the row is not decided again.
+   * the command's input (`at: 'input'`), so the row is not decided again. `fixed`: the far ends of a set withdrawn from 7c on (dense-16x9 ticket
+   * 36a). 7c held their rows at their stage-6 x while the set stood, so every later step and replay of the run reads them as fixed still (R1).
    */
-  seatSetDeclined: { row: string; at: string; why: string };
+  seatSetDeclined: { row: string; at: string; why: string; fixed?: string[] };
   /**
    * A held chord that the publication step refused (dense-16x9 ticket 14, slice 3, built for ticket 04 slice 2): on the state to publish the plan
    * named it crowded (`TIER_GAP_CHORD_CROWDED`) and it stood under the G6 clearance, so placement replays once from the kept 7e model with this
@@ -636,6 +637,8 @@ export function seatSetDeclinedFault(item: Reservation, model: LayoutModel): str
   const { row } = item.payload;
   if (BEFORE_SIDES_TWO.has(model.stage) || model.stage === 'sides-two') return `the seat-set decline of ${row} stands on a ${model.stage} model, before stage 6 records it`;
   if (model.groups[row] === undefined) return `the seat-set decline names ${row}, which is no group of the model`;
+  const unknown = item.payload.fixed?.find(node => model.nodes[node] === undefined);
+  if (unknown !== undefined) return `the seat-set decline of ${row} keeps ${unknown} fixed, which is no node of the model`;
   if ((model.reservations ?? []).some(entry => entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === row)) return `the row ${row} is declined and still holds a seat set`;
   return undefined;
 }
@@ -796,7 +799,8 @@ function shapeFailure(entry: unknown): string | undefined {
         && (payload['clause'] === 'held-straight' ? named : links === undefined) ? undefined : bad;
     }
     case 'seatSet': return seatSetShapeFailure(payload) === undefined ? undefined : bad;
-    case 'seatSetDeclined': return typeof payload['row'] === 'string' && typeof payload['at'] === 'string' && typeof payload['why'] === 'string' ? undefined : bad;
+    case 'seatSetDeclined': return typeof payload['row'] === 'string' && typeof payload['at'] === 'string' && typeof payload['why'] === 'string'
+      && (payload['fixed'] === undefined || (Array.isArray(payload['fixed']) && payload['fixed'].every(isString))) ? undefined : bad;
     case 'refusedChord': return isString(payload['link']) ? undefined : bad;
     case 'farEndOrder': {
       const ports = payload['ports'];

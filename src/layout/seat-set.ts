@@ -507,11 +507,12 @@ export function coverInterval(model: LayoutModel, group: LayoutGroup, p: SeatSet
 /** The diagnostic of a seat set 7c withdraws: the row, the equation that failed, and what stays. */
 export const SEAT_SET_WITHDRAWN = 'SEAT_SET_WITHDRAWN';
 
-/** The far ends of the equations of every standing seat set, each with the row of the first set that reads it (entry order). */
+/** The far ends of the equations of every standing seat set and of every set withdrawn from 7c on (`fixed`), each with the row of the first entry that reads it (entry order). */
 function seatSetFarEnds(model: LayoutModel): Map<string, string> {
   const far = new Map<string, string>();
-  for (const entry of model.reservations ?? []) if (entry.kind === 'seatSet') {
-    for (const eq of [...entry.payload.seats, ...entry.payload.holds]) if (!far.has(eq.far.node)) far.set(eq.far.node, entry.payload.row);
+  for (const entry of model.reservations ?? []) {
+    if (entry.kind === 'seatSet') for (const eq of [...entry.payload.seats, ...entry.payload.holds]) { if (!far.has(eq.far.node)) far.set(eq.far.node, entry.payload.row); }
+    else if (entry.kind === 'seatSetDeclined') for (const node of entry.payload.fixed ?? []) if (!far.has(node)) far.set(node, entry.payload.row);
   }
   return far;
 }
@@ -635,9 +636,11 @@ export function withdrawSeatSet(model: LayoutModel, group: string, why: string):
   // A rule edits a draft that still carries the stage before it: the rule that withdraws is the next stage.
   const rule = LAYOUT_STAGES[LAYOUT_STAGES.indexOf(model.stage) + 1] ?? model.stage;
   attemptCounters.seatWithdrawals++;
+  // A set withdrawn from 7c on keeps its far ends fixed for the rest of the run (`seatFarEndRefusal`): 7c held their rows while it stood.
+  const p = seatSetOf(model, group)!, fixed = [...new Set([...p.seats, ...p.holds].map(eq => eq.far.node))].sort();
   // The withdrawal is a decline in the ledger (ruling B): the command reads it and places once more without the set (`retryWithdrawnSeatSets`).
   model.reservations = [...model.reservations.filter(entry => !(entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group)),
-    reservation('seatSetDeclined', { kind: 'group', id: group }, '', 'rows', 0, { row: group, at: rule, why })];
+    reservation('seatSetDeclined', { kind: 'group', id: group }, '', 'rows', 0, { row: group, at: rule, why, ...(rule === 'rows' ? {} : { fixed }) })];
   model.diagnostics.push({ stage: 'placement', severity: 'warning', code: SEAT_SET_WITHDRAWN, owners: [{ kind: 'group', id: group }],
     message: rule === 'rows'
       ? `The seat set of ${group} is withdrawn at rows: ${why}. The row stands as the repack leaves it and is seated by the centring step.`
