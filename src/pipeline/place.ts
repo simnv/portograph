@@ -116,7 +116,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   const ledger = ledgerOn(env.options.attemptTrace !== undefined);
   env.arrangedRows = [];
   const arrange: Arrange = env.arranged ? { mode: 'keep' } : { mode: 'decide', declined: env.declinedArrangements ?? new Map() };
-  let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors.size > 0 ? nodeFloors : undefined, arrange, env.options.testSeatSets !== false));
+  let model = stepIn('sides-two', () => sidesTwo(resolved, nodeFloors.size > 0 ? nodeFloors : undefined, arrange));
   // The groups stage 5 of this run chose itself (tickets 51 and 52): its staggers (not rows the width-budget search gave) and its columns.
   env.arrangedRows = arrange.mode === 'decide' && model.groupArrangements !== undefined
     ? [...(env.staggerRows?.length ? [] : (model.staggerRows ?? []).map(row => row.group)),
@@ -124,7 +124,7 @@ export async function place(env: Env, reservations: Reservations, abort?: (stage
   let seen: LedgerSnapshot | undefined = ledger ? ledgerSnapshot(model) : undefined;
   const entry = ledger ? startPlacementEntry() : undefined;
   const account = (stage: string): void => { if (seen === undefined || entry === undefined) return; const now = ledgerSnapshot(model); countStage(stage, seen, now, entry); seen = now; };
-  model = stepIn('rows', () => rows(model)); account('rows');
+  model = stepIn('rows', () => rows(model, env.options.testSeatSets !== false)); account('rows');
   model = stepIn('lanes', () => lanes(model)); account('lanes');
   model = stepIn('flanks', () => flanks(model)); account('flanks');
   model = stepIn('centre', () => centre(model)); account('centre');

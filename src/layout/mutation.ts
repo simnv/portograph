@@ -798,6 +798,11 @@ function onlySeatSetsWithdrawn(after: LayoutModel['reservations'], before: Layou
   const kept = new Set(after.map(entry => entry.id));
   return JSON.stringify(after) === JSON.stringify(before.filter(entry => entry.kind !== 'seatSet' || kept.has(entry.id)));
 }
+/** Whether `after` differs from `before` in seatSet entries only (dense-16x9 ticket 36: the rows rule writes them). */
+function onlySeatSetsDiffer(after: LayoutModel['reservations'], before: LayoutModel['reservations']): boolean {
+  const others = (ledger: LayoutModel['reservations']) => JSON.stringify((ledger ?? []).filter(entry => entry.kind !== 'seatSet'));
+  return after !== before && others(after) === others(before);
+}
 function hasUnsupportedClaims(model: LayoutModel): boolean {
   const rowStage = stages.indexOf(model.stage) >= stages.indexOf('rows');
   const laneStage = stages.indexOf(model.stage) >= stages.indexOf('lanes');
@@ -893,7 +898,9 @@ function mutate(model: LayoutModel, rule: PlacementRule, edit: (draft: LayoutMod
     ...(rule === 'link-labels' ? ['groupLifts'] : []),
     // The centring of 7c to 7f withdraws a seat set that cannot stand (dense-16x9 ticket 36, `SEAT_SET_WITHDRAWN`): the ledger may lose seatSet
     // entries there, and nothing else.
-    ...(['centre', 'bars', 'bundles', 'bands'].includes(rule) && onlySeatSetsWithdrawn(draft.reservations, model.reservations) ? ['reservations'] : [])];
+    ...(['centre', 'bars', 'bundles', 'bands'].includes(rule) && onlySeatSetsWithdrawn(draft.reservations, model.reservations) ? ['reservations'] : []),
+    // The rows rule decides the seat sets of the rank rows (dense-16x9 ticket 36): it replaces the seatSet entries, and nothing else of the ledger.
+    ...(rule === 'rows' && onlySeatSetsDiffer(draft.reservations, model.reservations) ? ['reservations'] : [])];
   same(omit(unriser(draft), declared), omit(unriser(model), declared), 'Undeclared model field changed');
   // Stage 8 alone removes links (`ROUTE_CHECKPOINT_SKIPPED`, `ROUTE_GAP_REJECTED`); every later stage keeps the list.
   if (rule !== 'route') same(draft.removedLinks, model.removedLinks, 'Only the route rule may remove a link');

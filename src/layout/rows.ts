@@ -15,6 +15,7 @@ import { columnOf } from './read/arrangement.js';
 import { portEndInsets } from './port-insets.js';
 import { rowLabelGap } from './row-label-room.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
+import { seatRows } from './seat-set.js';
 
 const right = (rect: Rect): number => rect.x + rect.width;
 const overlaps = (a: Rect, b: Rect): boolean => a.x < right(b) && b.x < right(a) && a.y < b.y + b.height && b.y < a.y + a.height;
@@ -24,7 +25,7 @@ function moveNode(draft: LayoutModel, id: string, dx: number, dy: number): void 
   node.bounds!.x += dx; node.bounds!.y += dy;
   for (const port of node.ports) if (port.anchor) { port.anchor.x += dx; port.anchor.y += dy; }
 }
-function rowGroups(draft: LayoutModel, band: { groups: string[] }): LayoutGroup[] {
+export function rowGroups(draft: LayoutModel, band: { groups: string[] }): LayoutGroup[] {
   return band.groups.map(id => draft.groups[id]!).filter(group => !group.flank && groupShape(draft, group.id) === 'row' && group.nodes.length > 0);
 }
 /** Keep the left edge and width; fit the vertical extent to the flattened nodes with standard padding. */
@@ -75,8 +76,26 @@ function reseatBands(draft: LayoutModel): void {
   rebuildBands(draft);
 }
 
-/** Push overlapping row neighbours rightwards in row order, then push displaced row groups; flanks never move. */
-export function repackOverlaps(draft: LayoutModel, labelDetours = true): void {
+/**
+ * The labelled links of a row that span more than one gap (`left`, `right`: row indices): the repack keeps the label room between their ends
+ * (`rowLabelGap`), not in every gap they cross. The seat set of a child row reads the same spans (dense-16x9 ticket 36).
+ */
+export function labelSpans(model: LayoutModel, order: readonly string[]): { left: number; right: number }[] {
+  const places = new Map(order.map((id, index) => [id, index]));
+  return model.links.flatMap(link => {
+    if (!link.attachments || !model.document.links[link.sourceIndex]?.label) return [];
+    const a = places.get(link.attachments.from.node), b = places.get(link.attachments.to.node);
+    if (a === undefined || b === undefined || Math.abs(a - b) < 2) return [];
+    return [{ left: Math.min(a, b), right: Math.max(a, b) }];
+  });
+}
+
+/**
+ * Push overlapping row neighbours rightwards in row order, then push displaced row groups; flanks never move. Last, with
+ * `layout.moveBeforeGrow`, the rank rows stand on their seat sets (`seatRows`, dense-16x9 ticket 36): `solve` (the last repack of the rows
+ * rule, where the parents' rows are final) decides the sets; every other repack applies the sets the ledger holds and decides none.
+ */
+export function repackOverlaps(draft: LayoutModel, labelDetours = true, solve = false): void {
   const gap = bandGap(draft);
   // First every row group takes the width its nodes need; then the columns of the frames move apart as
   // wholes (ranked-groups ticket 12); only then does a sweep push what is left, a group with no frame.
@@ -84,13 +103,7 @@ export function repackOverlaps(draft: LayoutModel, labelDetours = true): void {
     for (const group of rowGroups(draft, band)) {
       if (staggerOf(draft, group.id) !== undefined || columnOf(draft, group.id)) continue;
       const order = group.rowOrder ?? group.nodes;
-      const places = new Map(order.map((id, index) => [id, index]));
-      const spans = labelDetours ? draft.links.flatMap(link => {
-        if (!link.attachments || !draft.document.links[link.sourceIndex]?.label) return [];
-        const a = places.get(link.attachments.from.node), b = places.get(link.attachments.to.node);
-        if (a === undefined || b === undefined || Math.abs(a - b) < 2) return [];
-        return [{ left: Math.min(a, b), right: Math.max(a, b) }];
-      }) : [];
+      const spans = labelDetours ? labelSpans(draft, order) : [];
       for (let i = 1; i < order.length; i++) {
         const prior = draft.nodes[order[i - 1]!]!.bounds!, node = draft.nodes[order[i]!]!;
         let minimum = right(prior) + rowGap(draft, order[i - 1]!, order[i]!, labelDetours);
@@ -130,6 +143,8 @@ export function repackOverlaps(draft: LayoutModel, labelDetours = true): void {
     }
   }
   rebuildBands(draft);
+  // A seat set widens its cell on either side; the frames that hold such a cell move apart as wholes, which keeps every seat.
+  if (seatRows(draft, solve, gap)) { separateFrameColumns(draft); rebuildBands(draft); }
 }
 
 interface SideTarget { port: string; y: number }
@@ -199,8 +214,10 @@ function levelFacingPorts(draft: LayoutModel): void {
 }
 
 /** Stage 6: one baseline per tier row, repack on overlap, level facing ports. The transaction pins eligible row paths. */
-export function rows(model: LayoutModel): LayoutModel {
+export function rows(model: LayoutModel, seatSets = true): LayoutModel {
   return withStageMutation(model, 'rows', draft => {
+    // Each placement run decides its seat sets on its own geometry (dense-16x9 ticket 36): the entries of an earlier run go.
+    if (draft.reservations?.some(entry => entry.kind === 'seatSet')) draft.reservations = draft.reservations.filter(entry => entry.kind !== 'seatSet');
     flattenRows(draft);
     reseatBands(draft);
     repackOverlaps(draft, false);
@@ -210,6 +227,7 @@ export function rows(model: LayoutModel): LayoutModel {
     // Levelling moves anchors, which can turn a straight crossing into a jog and so add a turning
     // leg (ADR-0015 rule 1). The gap is asked again on the levelled anchors, so no leg's room is
     // left for stage 8 to discover. Nodes move in x only, which cannot undo the levelling.
-    repackOverlaps(draft);
+    // The seat sets are decided here and not in the first repack: the levelling and the label detours can widen the parents' rows again.
+    repackOverlaps(draft, true, seatSets && draft.document.layout?.moveBeforeGrow === true);
   });
 }

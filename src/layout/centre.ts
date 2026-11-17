@@ -1429,7 +1429,7 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   // chooses nothing. An entry that cannot stand (a parent moved off its offset) is withdrawn by name, and the step seats the row as before.
   const owned = seatSetOf(model, id);
   if (owned !== undefined) {
-    const why = applySeatSet(model, group, owned);
+    const why = applySeatSet(model, group, owned, true);
     if (why === undefined) return { unresolved, group, notes };
     withdrawSeatSet(model, id, why);
   }
@@ -1755,7 +1755,8 @@ export function centreDraft(model: LayoutModel, budget: CentreBudget): void {
     recentreSeatedFaces(model, seated, feedPorts(model));
     if (selectAnchorTier(model) !== undefined) timed('centre-overlay-final', () => { placeOverlayFree(model); rebuildRegions(model); });
     // The rows with a seat set stand on their seats where the rules above left their parents (dense-16x9 ticket 36): moved, or withdrawn by name.
-    if (applySeatSets(model)) rebuildRegions(model);
+    // The steps applied the sets without a region rebuild of their own, so the regions are rebuilt whenever a set exists.
+    if (model.reservations?.some(entry => entry.kind === 'seatSet')) { applySeatSets(model); rebuildRegions(model); }
     // The parent stand, the seated faces and the overlay windows move feeds after the last step: a seat whose kept port they leave off its feed is withdrawn.
     withdrawFallenSeatsOf(model);
   };
@@ -1904,7 +1905,7 @@ function centrePasses(model: LayoutModel, budget: CentreBudget): void {
           // A row with a seat set stands on its seats whether or not this step reads its feeds (dense-16x9 ticket 36).
           const owned = seatSetOf(model, id);
           if (owned !== undefined) {
-            const why = applySeatSet(model, group, owned);
+            const why = applySeatSet(model, group, owned, true);
             if (why === undefined) { carry = undefined; previous = group; continue; }
             withdrawSeatSet(model, id, why);
           }

@@ -5,13 +5,14 @@ import { portId } from './skeleton-graph.js';
 import { portKey } from './sides-one.js';
 import { reservation, seatSetFault, type ReservationOf, type SeatEquation, type SeatSetPayload } from './reservations.js';
 import { rebuildNodeGeometry } from './node-geometry.js';
-import { orderedNodeIds } from '../model/model.js';
 import { rowGap } from './sides-two.js';
+import { labelSpans, rowGroups } from './rows.js';
+import { rowLabelGap } from './row-label-room.js';
 import { groupShape } from './grid.js';
 import { chainBlockOf } from './read/chain.js';
 import { isCantonFrame } from './read/canton.js';
 import { contentBox } from './regions.js';
-import { rebuildBands } from './skeleton-geometry.js';
+import { moveGroup, validateSkeletonBands } from './skeleton-geometry.js';
 import { blockDemands, type BlockDemand } from './solid-blocks.js';
 import { BLOCK_CAP } from './block-checks.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
@@ -19,11 +20,12 @@ import { EPS } from '../geometry/planar.js';
 
 /**
  * The seat set of a child row (dense-16x9 ticket 36, slice 1; design `36-seats-design.md`, mechanisms III and IV). With
- * `layout.moveBeforeGrow`, stage 5 chooses where each member of a rank cell stands under its parents' bottom ports, all members
- * together, with the row order, the face port orders, the body widths and the parents fixed. The choice is one `seatSet` ledger
- * entry: the kept verticals as equations, the verticals and block faces the members already hold, the boundary nodes the equations
- * read, the member positions and the interval the cell reserves, all relative to one boundary node. The cell box covers the
- * interval; 7c applies the stored positions and does not choose again.
+ * `layout.moveBeforeGrow`, stage 6 (the last repack of the rows rule, where the parents' rows are packed) chooses where each member of a
+ * rank cell stands under its parents' bottom ports, all members together, with the row order, the face port orders, the body widths and
+ * the parents fixed. The choice is one `seatSet` ledger entry: the kept verticals as equations, the verticals and block faces the members
+ * already hold, the boundary nodes the equations read, the member positions and the interval the cell reserves, all relative to one
+ * boundary node. The cell box covers the interval and the siblings of its band give way on either side; every later repack and 7c apply
+ * the stored positions and do not choose again.
  */
 
 /**
@@ -78,11 +80,27 @@ function ends(model: LayoutModel, link: LayoutLink): [LayoutPort, LayoutPort] | 
   return a?.anchor && b?.anchor ? [a, b] : undefined;
 }
 
+/**
+ * The gaps the repack keeps between the members (`repackOverlaps` with the label detours): `rowGap`, and the room of a labelled link that
+ * spans more gaps (`labelSpans`, the repack's own reader), folded into the last gap of its span at the tightest pack of the members between
+ * (enough, since the members between only stand farther apart). So no later repack pushes a seated member.
+ */
+function repackGaps(model: LayoutModel, order: readonly string[], widths: readonly number[]): number[] {
+  const gaps = order.slice(1).map((id, i) => rowGap(model, order[i]!, id, true));
+  for (const span of labelSpans(model, order).sort((a, b) => a.right - b.right || b.left - a.left)) {
+    const needed = rowLabelGap(model, order[span.left]!, order[span.right]!, true);
+    let between = 0;
+    for (let i = span.left + 1; i < span.right; i++) between += gaps[i - 1]! + widths[i]!;
+    gaps[span.right - 1] = Math.max(gaps[span.right - 1]!, needed - between);
+  }
+  return gaps;
+}
+
 /** The row as the solver reads it: members, widths, gaps, the feeds from a higher tier of the frame, the verticals a member holds. */
 function readRow(model: LayoutModel, group: LayoutGroup): RowInput | string {
   const order = [...(group.rowOrder ?? group.nodes)], index = new Map(order.map((id, i) => [id, i]));
   const bodies = order.map(id => model.nodes[id]!.bounds!);
-  const gaps = order.slice(1).map((id, i) => rowGap(model, order[i]!, id));
+  const gaps = repackGaps(model, order, bodies.map(body => body.width));
   const feeds: Feed[] = [], holds: RowInput['holds'] = [];
   for (const link of model.links) {
     const pair = ends(model, link);
@@ -202,20 +220,25 @@ function blockOwnerFault(model: LayoutModel, input: RowInput, xs: readonly numbe
   return undefined;
 }
 
-/** Why the interval `[low, high]` meets a flank or a bar beside the row, or undefined: those groups do not move for a row (stage 6). */
+/** A group the rows rule does not move for a row: a flank, or a group that is no row (a bar, a grid). The name it has in a decline. */
+const fixedKind = (model: LayoutModel, group: LayoutGroup): string | undefined => group.flank !== undefined ? 'the flank'
+  : groupShape(model, group.id) !== 'row' ? `the ${groupShape(model, group.id)}` : undefined;
+
+/** Why the interval `[low, high]` meets a flank, bar or grid beside the row, or undefined: those groups do not move for a row (stage 6). */
 function fixedNeighbourFault(model: LayoutModel, group: LayoutGroup, low: number, high: number): string | undefined {
   const box = group.bounds!;
   for (const other of Object.values(model.groups)) {
-    if (other.id === group.id || !other.bounds || (other.flank === undefined && groupShape(model, other.id) !== 'bar')) continue;
-    const o = other.bounds;
-    if (o.y < box.y + box.height && box.y < o.y + o.height && o.x < high && low < right(o)) return `the row would meet ${other.flank ? 'the flank' : 'the bar'} ${other.id}`;
+    const kind = other.id === group.id || !other.bounds ? undefined : fixedKind(model, other);
+    if (kind === undefined || other.nodes.length === 0 && other.flank === undefined) continue;
+    const o = other.bounds!;
+    if (o.y < box.y + box.height && box.y < o.y + o.height && o.x < high && low < right(o)) return `the row would meet ${kind} ${other.id}`;
   }
   return undefined;
 }
 
 /**
- * The seat set of the cell `group` on the stage-5 `model` (no write): the best assignment that breaks no owner, as a record payload,
- * or why there is none. The model is moved only to read an owner, and is given back exactly.
+ * The seat set of the cell `group` on `model` (no write): the best assignment that breaks no owner, as a record payload, or why there is
+ * none. The model is moved only to read an owner, and is given back exactly.
  */
 export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutcome {
   const scope = seatSetScope(model, group);
@@ -270,30 +293,98 @@ function payloadOf(model: LayoutModel, input: RowInput, leaf: Leaf, fit: Rect): 
 export const SEAT_SET_DECLINED = 'SEAT_SET_DECLINED';
 
 /**
- * Stage 5 (`sidesTwo`, before the freeze), with `layout.moveBeforeGrow`: the seat set of every rank cell, top tier first, then by id (R3).
- * A set moves its members to their seats, makes the cell box cover its interval and writes its `seatSet` entry; the entries of an earlier run
- * are replaced, so a placement re-run decides again on its own geometry. A declined row keeps its place and gets `SEAT_SET_DECLINED`.
+ * The x moves that make a band's row groups stand a band gap apart while every owned cell (a cell with a seat set) stays: a sibling gives way
+ * on either side (to the left of an owned cell it moves left, to its right it moves right, each push carried on to the next sibling, so the
+ * cascade ends at the band's last row group). A flank, bar or grid gives no way. The moves as a map (group to dx), or the owned cell whose
+ * set cannot stand and why: another owned cell is in its way, or a sibling would meet a group that does not move.
  */
-export function reserveSeatSets(model: LayoutModel): void {
-  if (model.document.layout?.moveBeforeGrow !== true) return;
-  const kept = (model.reservations ?? []).filter(entry => entry.kind !== 'seatSet'), entries: ReturnType<typeof reservation<'seatSet'>>[] = [];
-  const cells = Object.values(model.groups).filter(group => group.frame !== undefined && group.nodes.length > 0 && group.bounds !== undefined)
-    .sort((a, b) => a.tier! - b.tier! || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  for (const group of cells) {
-    const plan = planSeatSet(model, group);
-    if (plan.kind === 'declined') {
-      if (plan.why !== NO_FEED) model.diagnostics.push({ stage: 'placement', severity: 'info', code: SEAT_SET_DECLINED,
-        message: `The seat set of ${group.id} is declined (${plan.clause}): ${plan.why}.`, owners: [{ kind: 'group', id: group.id }] });
-      continue;
+function giveWay(model: LayoutModel, band: { groups: string[] }, owned: ReadonlySet<string>, gap: number): Map<string, number> | { cell: string; why: string } {
+  const core = rowGroups(model, band).sort((a, b) => a.bounds!.x - b.bounds!.x || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const x = new Map(core.map(group => [group.id, group.bounds!.x])), width = (id: string): number => model.groups[id]!.bounds!.width;
+  const ownedAt = core.map((group, i) => owned.has(group.id) ? i : -1).filter(i => i >= 0);
+  for (const at of ownedAt) {
+    let wall = x.get(core[at]!.id)!;
+    for (let i = at - 1; i >= 0; i--) {
+      const id = core[i]!.id, need = x.get(id)! + width(id) + gap - wall;
+      if (need <= PLACEMENT_EPS) break;
+      if (owned.has(id)) return { cell: core[at]!.id, why: `the seat set of ${id} stands in its way` };
+      x.set(id, x.get(id)! - need); wall = x.get(id)!;
     }
-    const p = plan.payload, origin = model.nodes[p.boundary[0]!.node]!.bounds!.x;
-    moveMembers(model, p.order, p.xs.map(x => origin + x));
-    coverInterval(model, group, p);
-    entries.push(reservation('seatSet', { kind: 'group', id: group.id }, '', 'sides-two', 0, p));
   }
-  // The labels, icons and pills of the moved members, rebuilt in document order as the stage validation rebuilds them.
-  if (entries.length) { rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current'); rebuildBands(model); }
-  if (model.reservations !== undefined || entries.length) model.reservations = [...kept, ...entries];
+  let end = -Infinity, last: string | undefined;
+  for (const group of core) {
+    const at = x.get(group.id)!;
+    if (at < end - PLACEMENT_EPS) {
+      if (owned.has(group.id)) return { cell: group.id, why: last !== undefined && owned.has(last) ? `the seat set of ${last} stands in its way` : `the row group ${last} stands in its way` };
+      x.set(group.id, end);
+    }
+    end = x.get(group.id)! + width(group.id) + gap; last = group.id;
+  }
+  const moves = new Map<string, number>();
+  for (const group of core) { const dx = x.get(group.id)! - group.bounds!.x; if (Math.abs(dx) > PLACEMENT_EPS) moves.set(group.id, dx); }
+  for (const fixed of band.groups.map(id => model.groups[id]!).filter(group => fixedKind(model, group) !== undefined && group.bounds !== undefined)) {
+    for (const [id, dx] of moves) {
+      const box = { ...model.groups[id]!.bounds!, x: model.groups[id]!.bounds!.x + dx };
+      if (box.x < right(fixed.bounds!) && fixed.bounds!.x < right(box) && box.y < fixed.bounds!.y + fixed.bounds!.height && fixed.bounds!.y < box.y + box.height) {
+        // The owned cell nearest the moved group pays: its push made the move.
+        const near = [...owned].sort((a, b) => Math.abs(x.get(a)! - x.get(id)!) - Math.abs(x.get(b)! - x.get(id)!) || (a < b ? -1 : 1))[0]!;
+        return { cell: near, why: `${id} would meet ${fixedKind(model, fixed)} ${fixed.id}, which gives no way` };
+      }
+    }
+  }
+  return moves;
+}
+
+/**
+ * Stage 6, at the end of each `repackOverlaps`, with `layout.moveBeforeGrow`: band by band from the top tier, each rank cell that holds a
+ * seat set stands on it where its boundary stands now (`applySeatSet`); with `solve` (the last repack of the rows rule) each cell in scope
+ * without one gets its set (`planSeatSet`, top tier first, then by id, R3) on the geometry the repack left. A set moves its members, makes
+ * the cell box cover its interval and writes its `seatSet` entry (producer `rows`); then the band's siblings give way (`giveWay`). A set
+ * that cannot stand is withdrawn by name and its row is given back as it stood. A declined row keeps its place and gets `SEAT_SET_DECLINED`.
+ * True when a group or member moved.
+ */
+export function seatRows(model: LayoutModel, solve: boolean, gap: number): boolean {
+  if (model.document.layout?.moveBeforeGrow !== true) return false;
+  if (!solve && !(model.reservations ?? []).some(entry => entry.kind === 'seatSet')) return false;
+  let moved = false;
+  for (const band of [...model.tierBands].sort((a, b) => a.tier - b.tier || a.bounds!.y - b.bounds!.y)) {
+    const cells = rowGroups(model, band).filter(group => group.frame !== undefined).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const undo = new Map<string, () => void>(), owned = new Set<string>();
+    for (const group of cells) {
+      const box = { ...group.bounds! }, restore = moveMembers(model, group.nodes, group.nodes.map(id => model.nodes[id]!.bounds!.x));
+      const entry = seatSetOf(model, group.id);
+      if (entry !== undefined) {
+        const why = applySeatSet(model, group, entry);
+        if (why !== undefined) { withdrawSeatSet(model, group.id, why); continue; }
+      }
+      else if (solve) {
+        const plan = planSeatSet(model, group);
+        if (plan.kind === 'declined') {
+          if (plan.why !== NO_FEED) model.diagnostics.push({ stage: 'placement', severity: 'info', code: SEAT_SET_DECLINED,
+            message: `The seat set of ${group.id} is declined (${plan.clause}): ${plan.why}.`, owners: [{ kind: 'group', id: group.id }] });
+          continue;
+        }
+        const p = plan.payload, origin = model.nodes[p.boundary[0]!.node]!.bounds!.x;
+        moveMembers(model, p.order, p.xs.map(x => origin + x));
+        rebuildNodeGeometry(model, p.order, 'current');
+        coverInterval(model, group, p);
+        model.reservations = [...(model.reservations ?? []), reservation('seatSet', { kind: 'group', id: group.id }, '', 'rows', 0, p)];
+      }
+      else continue;
+      owned.add(group.id);
+      undo.set(group.id, () => { restore(); rebuildNodeGeometry(model, group.nodes, 'current'); group.bounds = box; });
+    }
+    if (!owned.size) continue;
+    let moves = giveWay(model, band, owned, gap);
+    while (!(moves instanceof Map)) {
+      withdrawSeatSet(model, moves.cell, moves.why);
+      undo.get(moves.cell)!(); owned.delete(moves.cell);
+      moves = giveWay(model, band, owned, gap);
+    }
+    for (const [id, dx] of moves) moveGroup(model, model.groups[id]!, dx, 0);
+    moved = true;
+  }
+  return moved;
 }
 
 /** The seat set of `group` on `model`, or undefined: the one reader of the entry for every stage that fits, moves or reads the cell. */
@@ -343,20 +434,43 @@ function boundaryFault(model: LayoutModel, p: SeatSetPayload): string | undefine
 }
 
 /**
- * 7c applies the seat set of `group` (the step does not choose again): each member stands at its stored x relative to the boundary where the
- * boundary stands now, and the box covers the interval. Undefined when it stands; else why it cannot, and nothing is moved.
+ * Why the translated row breaks what a step of 7c may not change, or undefined: a band check the row did not fail before (a cell over a
+ * sibling cell), or a lane of its tier that its box now meets or stands on the wrong side of. The row's own repack (`seatRows`) makes its
+ * siblings give way instead; from 7c on the lanes own their windows and the step only translates.
  */
-export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetPayload): string | undefined {
+function translationFault(model: LayoutModel, group: LayoutGroup, before: ReadonlySet<string>): string | undefined {
+  const added = validateSkeletonBands(model, true, group.tier).find(error => !before.has(error));
+  if (added !== undefined) return `the translated row breaks the band: ${added}`;
+  const box = group.bounds!;
+  for (const lane of model.lanes ?? []) {
+    if (lane.tier !== group.tier) continue;
+    if (lane.group === group.id && (lane.side === 'left' ? lane.x >= box.x : lane.x <= right(box))) return `the lane ${lane.id} would stand on the wrong side of the row`;
+    if (lane.group !== group.id && lane.bounds.x < right(box) - PLACEMENT_EPS && box.x < lane.bounds.x + lane.bounds.width - PLACEMENT_EPS) return `the row would meet the lane ${lane.id}`;
+  }
+  return undefined;
+}
+
+/**
+ * Applies the seat set of `group` (no choice again): each member stands at its stored x relative to the boundary where the boundary stands now,
+ * and the box covers the interval. Undefined when it stands; else why it cannot, and nothing is moved. With `guard` (7c), the row only
+ * translates: the anchor tier does not move, and a translation that `translationFault` refuses is given back.
+ */
+export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetPayload, guard = false): string | undefined {
   const fault = boundaryFault(model, p);
   if (fault !== undefined) return fault;
   if (!sameOrder(group.rowOrder ?? group.nodes, p.order)) return 'the row no longer stands in its order';
-  const origin = model.nodes[p.boundary[0]!.node]!.bounds!.x;
-  moveMembers(model, p.order, p.xs.map(x => origin + x));
+  const origin = model.nodes[p.boundary[0]!.node]!.bounds!.x, xs = p.xs.map(x => origin + x);
+  const moves = p.order.some((id, i) => Math.abs(model.nodes[id]!.bounds!.x - xs[i]!) > PLACEMENT_EPS);
+  if (guard && moves && group.tier === model.anchorTier) return 'its row is the anchor tier, which the centring step does not move';
+  const before = guard ? new Set(validateSkeletonBands(model, true, group.tier)) : undefined, was = { ...group.bounds! };
+  const undo = moveMembers(model, p.order, xs);
   rebuildNodeGeometry(model, p.order, 'current');
   const box = contentBox(model, group);
   group.bounds = { ...group.bounds!, x: box.x, width: box.width };
   coverInterval(model, group, p);
-  return undefined;
+  const refused = before === undefined || !moves ? undefined : translationFault(model, group, before);
+  if (refused !== undefined) { undo(); rebuildNodeGeometry(model, p.order, 'current'); group.bounds = was; }
+  return refused;
 }
 const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((item, i) => item === b[i]);
 
@@ -369,7 +483,9 @@ export function withdrawSeatSet(model: LayoutModel, group: string, why: string):
   if (model.reservations === undefined || seatSetOf(model, group) === undefined) return;
   model.reservations = model.reservations.filter(entry => !(entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group));
   model.diagnostics.push({ stage: 'placement', severity: 'warning', code: SEAT_SET_WITHDRAWN, owners: [{ kind: 'group', id: group }],
-    message: `The seat set of ${group} is withdrawn at ${model.stage}: ${why}. The row is seated by the centring step; the room its interval reserved in the frame column stays, because the lanes own their windows.` });
+    message: model.stage === 'sides-two' || model.stage === 'rows'
+      ? `The seat set of ${group} is withdrawn at rows: ${why}. The row stands as the repack leaves it and is seated by the centring step.`
+      : `The seat set of ${group} is withdrawn at ${model.stage}: ${why}. The row is seated by the centring step; the room its interval reserved in the frame column stays, because the lanes own their windows.` });
 }
 
 /**
@@ -384,7 +500,7 @@ export function applySeatSets(model: LayoutModel): boolean {
     const group = model.groups[entry.owner.id];
     if (group === undefined) { withdrawSeatSet(model, entry.owner.id, 'its row has no group'); continue; }
     const before = entry.payload.order.map(id => model.nodes[id]?.bounds?.x);
-    const why = applySeatSet(model, group, entry.payload);
+    const why = applySeatSet(model, group, entry.payload, true);
     if (why !== undefined) { withdrawSeatSet(model, group.id, why); continue; }
     if (entry.payload.order.some((id, i) => Math.abs(model.nodes[id]!.bounds!.x - (before[i] ?? NaN)) > PLACEMENT_EPS)) moved = true;
   }

@@ -152,7 +152,7 @@ export type Reservation = { [K in ReservationKind]: Readonly<{
   id: string;
   kind: K;
   owner: ReservationOwner;
-  producer: RoundId | 'skeleton' | 'sides-two' | 'lanes' | 'bands' | 'publish';
+  producer: RoundId | 'skeleton' | 'sides-two' | 'rows' | 'lanes' | 'bands' | 'publish';
   /** The measured baseline the reservation was made on: the number of placements the command had started. */
   revision: number;
   activeFrom: LayoutStage;
@@ -170,7 +170,7 @@ const ownerKey = (owner: ReservationOwner): string => 'node' in owner ? `${owner
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const ACTIVE_FROM: Record<ReservationKind, LayoutStage> = {
   pitchFloor: 'size', pairFloor: 'size', nodeFloor: 'size', sideFace: 'sides-one', laneOwner: 'sides-one', course: 'sides-one', spanChord: 'resolve',
-  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', seatSet: 'sides-two', refusedChord: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
+  turnOrder: 'sides-two', farEndOrder: 'sides-two', trunkDeclined: 'resolve', staggerDeclined: 'resolve', seatSet: 'rows', refusedChord: 'sides-two', riserKeepOut: 'lanes', trunkExtension: 'lanes', laneSide: 'lanes', sideAlignment: 'lanes', spanCorridor: 'lanes', groupExit: 'lanes', labelRoom: 'lanes',
   rowOrder: 'skeleton', groupOrder: 'skeleton', corridorSide: 'skeleton', bundleNeighbours: 'skeleton',
 };
 
@@ -536,7 +536,7 @@ function seatSetShapeFailure(payload: Record<string, unknown>): string | undefin
 export function seatSetFault(item: Reservation, model: LayoutModel): string | undefined {
   if (item.kind !== 'seatSet') return undefined;
   const p = item.payload;
-  if (BEFORE_SIDES_TWO.has(model.stage)) return `the seat set of ${p.row} stands on a ${model.stage} model, before stage 5 makes it`;
+  if (BEFORE_SIDES_TWO.has(model.stage) || model.stage === 'sides-two') return `the seat set of ${p.row} stands on a ${model.stage} model, before stage 6 makes it`;
   const group = model.groups[p.row];
   if (group?.bounds === undefined || group.frame !== p.frame) return `${p.row} is no cell of ${p.frame}`;
   if (!same(group.rowOrder ?? group.nodes, p.order)) return `${p.row} no longer stands in the order of its seat set`;
@@ -678,7 +678,7 @@ const feedsShape = (feeds: unknown): boolean => Array.isArray(feeds) && feeds.le
   && feeds.every(feed => isObject(feed) && isString(feed['row']) && Array.isArray(feed['order']) && (feed['order'] as unknown[]).every(isString));
 const orderShape = (order: unknown): boolean => Array.isArray(order) && order.length > 1 && order.every(isString) && new Set(order).size === order.length;
 const STORED_KINDS: ReadonlySet<string> = new Set(['pitchFloor', 'pairFloor', 'nodeFloor', 'sideFace', 'laneOwner', 'course', 'spanChord', 'turnOrder', 'farEndOrder', 'trunkDeclined', 'staggerDeclined', 'seatSet', 'refusedChord', 'rowOrder', 'groupOrder', 'corridorSide', 'bundleNeighbours']);
-const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'sides-two', 'lanes', 'bands', 'publish']);
+const PRODUCERS: ReadonlySet<string> = new Set(['initial', 'fan', 'span', 'course', 'side', 'turn', 'overlay', 'farEnd', 'skeleton', 'sides-two', 'rows', 'lanes', 'bands', 'publish']);
 
 /** Why a stored entry is not the shape its kind has, or undefined. Restore reads JSON a hand may have written. */
 function shapeFailure(entry: unknown): string | undefined {
