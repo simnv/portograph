@@ -1,4 +1,5 @@
 import { blockMoveRefusal, blockReservationFaults } from './block-checks.js';
+import { applySeatSet, seatSetNodes, seatSetOf, withdrawSeatSet } from './seat-set.js';
 import { liftedGroups } from './lift.js';
 import { portEndInsets, portSideCapacity } from './port-insets.js';
 import { faceExcess, facePairPitches } from './pair-pitch.js';
@@ -1030,7 +1031,9 @@ function reserveParentSpreads(model: LayoutModel, context: CentreContext, column
 function spreadPlans(model: LayoutModel, tier: number, authority: number): { node: string; feeds: Feed[] }[] {
   const list = centringFeeds(model, tier, authority), links = linkById(model);
   const groupOf = (node: string): string => model.document.nodes[node]!.group;
-  const fixed = (node: string): boolean => { const group = groupOf(node); return model.document.groups[group]!.shape === 'bar' || Boolean(model.groups[group]!.flank) || isGridGroup(model, group); };
+  // The members and parents of a seat set stand fixed (dense-16x9 ticket 36, slice 1): a spread would move a port its equations read.
+  const owned = seatSetNodes(model);
+  const fixed = (node: string): boolean => { const group = groupOf(node); return owned.has(node) || model.document.groups[group]!.shape === 'bar' || Boolean(model.groups[group]!.flank) || isGridGroup(model, group); };
   const portFeeds = new Map<string, number>(), parentsOf = new Map<string, Set<string>>(), byParent = new Map<string, Feed[]>();
   for (const feed of list) {
     portFeeds.set(feed.key, (portFeeds.get(feed.key) ?? 0) + 1);
@@ -1327,6 +1330,8 @@ function centreGroupStepChecked(model: LayoutModel, context: CentreContext, tier
     && (blockBefore === undefined || blockMoveRefusal(blockBefore, model) === undefined);
   tapVerdict('centreGroupStep', () => `${stands} ${now.size}/${held.size}`);
   if (stands) return { ...result, carry: { held: now, breached: after } };
+  // A seat set whose step does not stand is withdrawn whole (dense-16x9 ticket 36): the geometry given back below is not its seats.
+  withdrawSeatSet(model, id, 'the step that applies it does not stand (a straight chord, a breached frame edge, the row room or a block reservation)');
   model.groups[id] = snapshot.group;
   for (const node of snapshot.nodes) model.nodes[node.id] = node;
   model.labels = labels;
@@ -1419,6 +1424,14 @@ function centreGroupStepRaw(model: LayoutModel, context: CentreContext, tier: nu
   for (const [key, want] of wanted) {
     const box = model.nodes[seats.get(key)!.child.ref.node]!.bounds!;
     notes.start.set(key, { low: box.x - want, high: right(box) - want });
+  }
+  // A row with a seat set (dense-16x9 ticket 36, slice 1) stands where stage 5 seated it, relative to its parents: the step applies the entry and
+  // chooses nothing. An entry that cannot stand (a parent moved off its offset) is withdrawn by name, and the step seats the row as before.
+  const owned = seatSetOf(model, id);
+  if (owned !== undefined) {
+    const why = applySeatSet(model, group, owned);
+    if (why === undefined) return { unresolved, group, notes };
+    withdrawSeatSet(model, id, why);
   }
   const startPenetration = riserPenetrations(model, group), startCrossings = chordLaneCrossings(model, group), startBreaches = spanBreaches(model);
   const saved = JSON.parse(JSON.stringify({ group, nodes: group.nodes.map(node => model.nodes[node]!) })) as { group: LayoutGroup; nodes: LayoutNode[] };

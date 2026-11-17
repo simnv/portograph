@@ -1,4 +1,5 @@
 import { blockBoxPad } from './block-pads.js';
+import { coverInterval, seatSetOf } from './seat-set.js';
 import type { LayoutGroup, LayoutModel } from '../model/layout.js';
 import type { Rect, Side } from '../model/geometry.js';
 import { measurePortPill } from '../text/index.js';
@@ -142,11 +143,14 @@ function cantonTitleFloor(model: LayoutModel, group: LayoutGroup): number {
 export function fitRegionGroup(model: LayoutModel, group: LayoutGroup): void {
   if (!group.nodes.length) return;
   const content = contentBox(model, group);
-  if (bandHeldBy(model, group.id) === undefined) { group.bounds = content; return; }
+  // A cell with a seat set covers its interval (dense-16x9 ticket 36): the entry owns that room, and no fit gives it back while it stands.
+  const seats = seatSetOf(model, group.id);
+  if (bandHeldBy(model, group.id) === undefined) { group.bounds = content; if (seats !== undefined) coverInterval(model, group, seats); return; }
   // A band group keeps any extent placement granted it beyond its content: label widening and
   // the linked-group grid (7f) only ever grow a box, and content never leaves it.
   const old = group.bounds!, x = Math.min(old.x, content.x), y = Math.min(old.y, content.y);
   group.bounds = { x, y, width: Math.max(right(old), right(content)) - x, height: Math.max(bottom(old), bottom(content)) - y };
+  if (seats !== undefined) coverInterval(model, group, seats);
 }
 export function expandCanvas(model: LayoutModel): void {
   const boxes = [...Object.values(model.groups).map(group => group.bounds!), ...(model.frames ?? []).map(frame => frame.box), ...model.lanes.map(lane => lane.bounds)];

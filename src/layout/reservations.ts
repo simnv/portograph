@@ -138,8 +138,12 @@ export interface SeatSetPayload {
   xs: number[];
   /** The two-sided reach the cell reserves: the content box of the seated members. */
   interval: { low: number; high: number };
-  /** The feeds the set leaves off their parents, each with why. */
-  declined: { link: string; reason: 'shared-port' | 'conflict' | 'fixed' }[];
+  /**
+   * The feeds the set leaves off their parents, each with why: another child stands under the parent port (`shared-port`), the member is held by
+   * another vertical (`fixed`), a parallel link of a kept seat whose faces do not keep one pitch (`pitch`; slice 2 raises the parent's pair pitch),
+   * or the order and gaps leave no room with the kept set (`conflict`).
+   */
+  declined: { link: string; reason: 'shared-port' | 'conflict' | 'fixed' | 'pitch' }[];
 }
 /** A feeding row of a `rowOrder` or `groupOrder` entry: the group, and the order its nodes stood in when the feeds were read. */
 export interface RowFeed { row: string; order: readonly string[] }
@@ -519,7 +523,7 @@ function seatSetShapeFailure(payload: Record<string, unknown>): string | undefin
       && typeof (face as { node?: unknown }).node === 'string' && ['top', 'bottom'].includes((face as { side?: string }).side ?? '') && strings((face as { ports?: unknown }).ports))
     && Array.isArray(payload['boundary']) && (payload['boundary'] as unknown[]).length > 0 && (payload['boundary'] as { node?: unknown; x?: unknown }[]).every(item => typeof item.node === 'string' && isNumber(item.x))
     && typeof interval === 'object' && interval !== null && isNumber(interval.low) && isNumber(interval.high) && interval.low <= interval.high
-    && Array.isArray(payload['declined']) && (payload['declined'] as { link?: unknown; reason?: unknown }[]).every(item => typeof item.link === 'string' && ['shared-port', 'conflict', 'fixed'].includes(item.reason as string));
+    && Array.isArray(payload['declined']) && (payload['declined'] as { link?: unknown; reason?: unknown }[]).every(item => typeof item.link === 'string' && ['shared-port', 'conflict', 'fixed', 'pitch'].includes(item.reason as string));
   return ok ? undefined : 'malformed seat set';
 }
 
@@ -545,7 +549,7 @@ export function seatSetFault(item: Reservation, model: LayoutModel): string | un
   }
   for (const [i, id] of p.order.entries()) {
     const box = model.nodes[id]?.bounds;
-    if (box === undefined || off(box.x - origin, p.xs[i]!) || off(box.width, p.widths[i]!)) return `the member ${id} of ${p.row} left its seat (x ${p.xs[i]}, width ${p.widths[i]})`;
+    if (box === undefined || off(box.x - origin, p.xs[i]!) || off(box.width, p.widths[i]!)) return `the member ${id} of ${p.row} left its seat (x ${p.xs[i]}, width ${p.widths[i]}; at stage ${model.stage}: x ${box === undefined ? '-' : box.x - origin})`;
   }
   const port = (ref: PortRef) => model.nodes[ref.node]?.ports.find(item => portKey(item.ref) === portKey(ref));
   for (const eq of [...p.seats, ...p.holds]) {

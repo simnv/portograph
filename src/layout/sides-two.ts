@@ -1,4 +1,5 @@
 import { blockRowGap } from './block-pads.js';
+import { reserveSeatSets } from './seat-set.js';
 import { addPairPitch, neighbourPitch } from './pair-pitch.js';
 import { separationShortfalls, worseSeparations } from './constraints/separation.js';
 import { reserveBlockPitch, seatBlockFollowers } from './solid-blocks.js';
@@ -1164,5 +1165,7 @@ export function sidesTwo(model: LayoutModel, nodeFloors?: ReadonlyMap<string, Si
     return worseSeparations(now, then).map(reason => ({ owners: now.get(reason)!.owners, reason }));
   });
   model.stage = 'sides-two';
+  // The seat sets of the child rows (dense-16x9 ticket 36, slice 1), on the final stage-5 geometry, before the freeze.
+  reserveSeatSets(model);
   return freezePortTopology(model, nodeFloors, turned);
 }

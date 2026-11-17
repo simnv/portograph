@@ -3,12 +3,15 @@ import type { Rect } from '../model/geometry.js';
 import { findPort } from './row-paths.js';
 import { portId } from './skeleton-graph.js';
 import { portKey } from './sides-one.js';
-import type { SeatEquation, SeatSetPayload } from './reservations.js';
+import { reservation, type ReservationOf, type SeatEquation, type SeatSetPayload } from './reservations.js';
+import { rebuildNodeGeometry } from './node-geometry.js';
+import { orderedNodeIds } from '../model/model.js';
 import { rowGap } from './sides-two.js';
 import { groupShape } from './grid.js';
 import { chainBlockOf } from './read/chain.js';
 import { isCantonFrame } from './read/canton.js';
 import { contentBox } from './regions.js';
+import { rebuildBands } from './skeleton-geometry.js';
 import { blockDemands, type BlockDemand } from './solid-blocks.js';
 import { BLOCK_CAP } from './block-checks.js';
 import { PLACEMENT_EPS, SEAT_STANDS_EPS } from './tolerance.js';
@@ -55,6 +58,7 @@ interface RowInput {
 }
 
 const right = (box: Rect): number => box.x + box.width;
+const NO_FEED = 'no member is fed from a higher tier of its frame';
 const linkKey = (link: LayoutLink): string => `${portId(link.attachments!.from)}>${portId(link.attachments!.to)}`;
 
 /** Why the cell `group` is no seat-set row, or undefined: the solver cannot state its stagger, grid, canton or feeding chain. */
@@ -218,7 +222,7 @@ export function planSeatSet(model: LayoutModel, group: LayoutGroup): SeatSetOutc
   if (scope !== undefined) return { kind: 'declined', clause: 'scope', why: scope };
   const input = readRow(model, group);
   if (typeof input === 'string') return { kind: 'declined', clause: 'bound', why: input };
-  if (!input.feeds.length) return { kind: 'declined', clause: 'scope', why: 'no member is fed from a higher tier of its frame' };
+  if (!input.feeds.length) return { kind: 'declined', clause: 'scope', why: NO_FEED };
   const leaves = assignments(input);
   if (leaves === undefined) return { kind: 'declined', clause: 'bound', why: `the search passed ${SEAT_SET_VISITS} visits` };
   const now = keptFeeds(input, input.x0).length;
@@ -253,10 +257,117 @@ function payloadOf(model: LayoutModel, input: RowInput, leaf: Leaf, fit: Rect): 
   }
   const keptIds = new Set(leaf.kept.map(feed => feed.link.id)), claimed = new Set(leaf.kept.map(feed => portId(feed.far.ref)));
   const declined = input.feeds.filter(feed => !keptIds.has(feed.link.id)).sort((a, b) => a.link.id.localeCompare(b.link.id))
-    .map(feed => ({ link: feed.link.id, reason: input.fixed.has(feed.member) ? 'fixed' as const : claimed.has(portId(feed.far.ref)) ? 'shared-port' as const : 'conflict' as const }));
+    .map(feed => ({ link: feed.link.id, reason: input.fixed.has(feed.member) ? 'fixed' as const : claimed.has(portId(feed.far.ref)) ? 'shared-port' as const
+      : leaf.kept.some(seat => seat.member === feed.member && seat.far.ref.node === feed.far.ref.node) ? 'pitch' as const : 'conflict' as const }));
   return {
     row: input.group.id, frame: input.group.frame!, order: [...input.order], widths: [...input.widths], seats, holds, blockFaces,
     boundary: farNodes.map(node => ({ node, x: model.nodes[node]!.bounds!.x - origin })),
     xs: leaf.xs.map(x => x - origin), interval: { low: fit.x - origin, high: right(fit) - origin }, declined,
   };
+}
+
+/** The diagnostic of a row the seat set declines (`planSeatSet`): the row, the clause, why. Not for a row that no parent feeds. */
+export const SEAT_SET_DECLINED = 'SEAT_SET_DECLINED';
+
+/**
+ * Stage 5 (`sidesTwo`, before the freeze), with `layout.moveBeforeGrow`: the seat set of every rank cell, top tier first, then by id (R3).
+ * A set moves its members to their seats, makes the cell box cover its interval and writes its `seatSet` entry; the entries of an earlier run
+ * are replaced, so a placement re-run decides again on its own geometry. A declined row keeps its place and gets `SEAT_SET_DECLINED`.
+ */
+export function reserveSeatSets(model: LayoutModel): void {
+  if (model.document.layout?.moveBeforeGrow !== true) return;
+  const kept = (model.reservations ?? []).filter(entry => entry.kind !== 'seatSet'), entries: ReturnType<typeof reservation<'seatSet'>>[] = [];
+  const cells = Object.values(model.groups).filter(group => group.frame !== undefined && group.nodes.length > 0 && group.bounds !== undefined)
+    .sort((a, b) => a.tier! - b.tier! || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  for (const group of cells) {
+    const plan = planSeatSet(model, group);
+    if (plan.kind === 'declined') {
+      if (plan.why !== NO_FEED) model.diagnostics.push({ stage: 'placement', severity: 'info', code: SEAT_SET_DECLINED,
+        message: `The seat set of ${group.id} is declined (${plan.clause}): ${plan.why}.`, owners: [{ kind: 'group', id: group.id }] });
+      continue;
+    }
+    const p = plan.payload, origin = model.nodes[p.boundary[0]!.node]!.bounds!.x;
+    moveMembers(model, p.order, p.xs.map(x => origin + x));
+    coverInterval(model, group, p);
+    entries.push(reservation('seatSet', { kind: 'group', id: group.id }, '', 'sides-two', 0, p));
+  }
+  // The labels, icons and pills of the moved members, rebuilt in document order as the stage validation rebuilds them.
+  if (entries.length) { rebuildNodeGeometry(model, orderedNodeIds(model.document), 'current'); rebuildBands(model); }
+  if (model.reservations !== undefined || entries.length) model.reservations = [...kept, ...entries];
+}
+
+/** The seat set of `group` on `model`, or undefined: the one reader of the entry for every stage that fits, moves or reads the cell. */
+export function seatSetOf(model: LayoutModel, group: string): SeatSetPayload | undefined {
+  return (model.reservations ?? []).find((entry): entry is ReservationOf<'seatSet'> => entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group)?.payload;
+}
+
+/** The interval of a seat set where its boundary stands now: [low, high] in model x. */
+export function seatInterval(model: LayoutModel, p: SeatSetPayload): { low: number; high: number } {
+  const origin = model.nodes[p.boundary[0]!.node]!.bounds!.x;
+  return { low: origin + p.interval.low, high: origin + p.interval.high };
+}
+
+/** Grows the box of `group` to cover the interval of its seat set (never shrinks it): the entry owns that room. */
+export function coverInterval(model: LayoutModel, group: LayoutGroup, p: SeatSetPayload = seatSetOf(model, group.id)!): void {
+  const { low, high } = seatInterval(model, p), box = group.bounds!;
+  const x = Math.min(box.x, low), end = Math.max(right(box), high);
+  if (x < box.x || end > right(box)) group.bounds = { ...box, x, width: end - x };
+}
+
+/** The diagnostic of a seat set 7c withdraws: the row, the equation that failed, and what stays. */
+export const SEAT_SET_WITHDRAWN = 'SEAT_SET_WITHDRAWN';
+
+/** The nodes every seat set reads as fixed (dense-16x9 ticket 36, slice 1): its members and the far ends of its equations. No parent spread moves them. */
+export function seatSetNodes(model: LayoutModel): Set<string> {
+  const nodes = new Set<string>();
+  for (const entry of model.reservations ?? []) if (entry.kind === 'seatSet') {
+    for (const id of entry.payload.order) nodes.add(id);
+    for (const eq of [...entry.payload.seats, ...entry.payload.holds]) nodes.add(eq.far.node);
+  }
+  return nodes;
+}
+
+/** Why the boundary of `p` no longer stands as stored (a far end moved off its offset, or one far port moved on its face), or undefined. */
+function boundaryFault(model: LayoutModel, p: SeatSetPayload): string | undefined {
+  const origin = model.nodes[p.boundary[0]!.node]?.bounds?.x;
+  if (origin === undefined) return `${p.boundary[0]!.node} has no box`;
+  for (const { node, x } of p.boundary) {
+    const box = model.nodes[node]?.bounds;
+    if (box === undefined || Math.abs(box.x - origin - x) > PLACEMENT_EPS) return `the parent ${node} moved off its offset ${x.toFixed(1)} from ${p.boundary[0]!.node}`;
+  }
+  for (const eq of [...p.seats, ...p.holds]) {
+    const far = findPort(model, eq.far), box = model.nodes[eq.far.node]?.bounds;
+    if (far?.anchor === undefined || box === undefined || Math.abs(far.anchor.x - box.x - eq.farOffset) > PLACEMENT_EPS) return `the far port of ${eq.link} moved on its face`;
+  }
+  return undefined;
+}
+
+/**
+ * 7c applies the seat set of `group` (the step does not choose again): each member stands at its stored x relative to the boundary where the
+ * boundary stands now, and the box covers the interval. Undefined when it stands; else why it cannot, and nothing is moved.
+ */
+export function applySeatSet(model: LayoutModel, group: LayoutGroup, p: SeatSetPayload): string | undefined {
+  const fault = boundaryFault(model, p);
+  if (fault !== undefined) return fault;
+  if (!sameOrder(group.rowOrder ?? group.nodes, p.order)) return 'the row no longer stands in its order';
+  const origin = model.nodes[p.boundary[0]!.node]!.bounds!.x;
+  moveMembers(model, p.order, p.xs.map(x => origin + x));
+  rebuildNodeGeometry(model, p.order, 'current');
+  const box = contentBox(model, group);
+  group.bounds = { ...group.bounds!, x: box.x, width: box.width };
+  coverInterval(model, group, p);
+  return undefined;
+}
+const sameOrder = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((item, i) => item === b[i]);
+
+/**
+ * Withdraws the seat set of `group` whole, by name (ruling 1 of slice 1): the entry leaves the ledger, the row is seated by the legacy path,
+ * and the diagnostic names the failed equation. What stays: the interval the cell box covered. After 7a the lanes own their windows, so the
+ * frame column keeps that room; the diagnostic says so and the corpus count reads it.
+ */
+export function withdrawSeatSet(model: LayoutModel, group: string, why: string): void {
+  if (model.reservations === undefined || seatSetOf(model, group) === undefined) return;
+  model.reservations = model.reservations.filter(entry => !(entry.kind === 'seatSet' && entry.owner.kind === 'group' && entry.owner.id === group));
+  model.diagnostics.push({ stage: 'placement', severity: 'warning', code: SEAT_SET_WITHDRAWN, owners: [{ kind: 'group', id: group }],
+    message: `The seat set of ${group} is withdrawn at ${model.stage}: ${why}. The row is seated by the centring step; the room its interval reserved in the frame column stays, because the lanes own their windows.` });
 }
