@@ -23,9 +23,12 @@ export interface SkeletonOptions {
    */
   budget?: Budget;
 }
-/** A skeleton refusal. `cause`: the exception a tier attempt threw, when this refusal wraps one (dense-16x9 ticket 56: the fallback reads it). */
+/**
+ * A skeleton refusal. `caught`: the value a tier attempt threw or rejected with, when this refusal wraps one, also `undefined` (dense-16x9 ticket
+ * 56, reviews 1 and 2: the fallback reads it, `qualifyingRefusal`).
+ */
 export class SkeletonError extends PlacementRefusal {
-  constructor(message: string, cause?: unknown) { super('skeleton', message, { stage: 'skeleton', ...(cause === undefined ? {} : { cause }) }); this.name = 'SkeletonError'; }
+  constructor(message: string, ...caught: [] | [unknown]) { super('skeleton', message, { stage: 'skeleton', ...(caught.length ? { cause: caught[0] } : {}) }); this.name = 'SkeletonError'; }
 }
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 

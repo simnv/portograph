@@ -21,7 +21,10 @@ export interface RefusalDetail {
   reservationIds?: readonly string[];
   /** The nodes, ports or links the refusal names. */
   owners?: readonly Owner[];
-  /** The lower-level failure this refusal wraps. */
+  /**
+   * The value a catch caught, when this refusal is built from one (dense-16x9 ticket 56, review 2). The key present marks the refusal as caught,
+   * also when the caught value is `undefined` or `null` (a rejection with no reason); a refusal built from a measurement leaves it out.
+   */
   cause?: unknown;
 }
 
@@ -31,11 +34,23 @@ export class PlacementRefusal extends Error {
   readonly reservationIds: readonly string[];
   readonly owners: readonly Owner[];
   declare readonly cause: unknown;
+  /** Whether a catch built this refusal from a caught value (`cause`, which may be `undefined` or `null`). */
+  readonly caught: boolean;
   constructor(code: RefusalCode, message: string, detail: RefusalDetail = {}) {
     super(message);
     this.code = code; this.stage = detail.stage; this.reservationIds = detail.reservationIds ?? []; this.owners = detail.owners ?? [];
-    if (detail.cause !== undefined) this.cause = detail.cause;
+    this.caught = Object.hasOwn(detail, 'cause');
+    if (this.caught) this.cause = detail.cause;
   }
+}
+
+/**
+ * Whether `error` is a placement reason (dense-16x9 ticket 56, the fallback of a default-on run): a `PlacementRefusal` with a code of the closed
+ * set, built from a measurement, or built in a catch from a value that is itself such a refusal (reviews 1 and 2, R6). A refusal built from a
+ * worker bug, a reader exception, a deadline, a timeout or a rejection with no reason is none.
+ */
+export function qualifyingRefusal(error: unknown): error is PlacementRefusal {
+  return error instanceof PlacementRefusal && isRefusalCode(error.code) && (!error.caught || qualifyingRefusal(error.cause));
 }
 
 /** A placement run refused a side hint (not a candidate, a lateral vote, a floor below the content). The side round drops the offer; every other error is a bug. */
@@ -71,7 +86,8 @@ export class SolidBlockRefusal extends PlacementRefusal {
  * main line the command fails and names the reservation.
  */
 export class PostconditionRefusal extends PlacementRefusal {
-  constructor(readonly rule: 'bundles' | 'bands', readonly findings: readonly { kind: string; subject: string; detail: string }[]) {
-    super('postcondition', `Postcondition of ${rule} failed: ${findings.map(item => `${item.kind} ${item.subject}: ${item.detail}`).join('; ')}`, { stage: rule });
+  /** `caught`: the value a check threw, when a finding is built from one (`postconditionViolations`); the refusal then carries it as its cause. */
+  constructor(readonly rule: 'bundles' | 'bands', readonly findings: readonly { kind: string; subject: string; detail: string }[], caught?: { value: unknown }) {
+    super('postcondition', `Postcondition of ${rule} failed: ${findings.map(item => `${item.kind} ${item.subject}: ${item.detail}`).join('; ')}`, { stage: rule, ...(caught === undefined ? {} : { cause: caught.value }) });
   }
 }

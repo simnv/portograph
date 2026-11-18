@@ -122,10 +122,11 @@ function compare(base, head) {
       if (h.error === undefined && unlistedFallback(file, h.cells.fallback)) { cells.push(['fallback', '-', h.cells.fallback]); sheetFlags = ['fallback']; }
     } else {
       cells = columns.filter((column) => b.cells[column] !== h.cells[column]).map((column) => [column, b.cells[column], h.cells[column]]);
-      if (cells.length === 0) continue;
+      // The head's fallback is judged before an unchanged row is skipped (review 2 of ticket 56): an unlisted fallback shows as a cell even when the
+      // base has it too, or has no column (read as 0).
       sheetFlags = flags(b.cells, h.cells, file);
-      // An unlisted fallback shows as a cell even when the base has it too, or has no column (read as 0; dense-16x9 ticket 56).
       if (sheetFlags.includes('fallback') && !cells.some(([column]) => column === 'fallback')) cells.push(['fallback', b.cells.fallback ?? '-', h.cells.fallback]);
+      if (cells.length === 0) continue;
     }
     changed++;
     if (cells.some(([column]) => column === 'hash')) geometry++;

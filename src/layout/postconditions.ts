@@ -15,7 +15,7 @@ import { foreignOverExtensions, trunkHeads } from './trunk.js';
 import { blockedChords } from './frame-paths.js';
 import { holds } from './reservation-checks.js';
 import { groupExitViolations, missingGroupExits } from './group-exit-check.js';
-import { PostconditionRefusal } from './placement-refusal.js';
+import { PostconditionRefusal, qualifyingRefusal } from './placement-refusal.js';
 import { unheldSteepBlocks } from './placement-inputs.js';
 
 /**
@@ -39,13 +39,15 @@ export interface PostconditionViolation {
 export const postconditionSink: { hook?: (violation: PostconditionViolation) => void } = {};
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
+/** The value a check threw, by the finding built from it (dense-16x9 ticket 56, review 2): the refusal carries it as its cause. */
+const caughtBy = new WeakMap<PostconditionViolation, { value: unknown }>();
 
 /** Every violation of the net draft `after` of `rule`, against the entry model `before`. A check that cannot read its input is a violation (R6). */
 export function postconditionViolations(before: LayoutModel, after: LayoutModel, rule: 'bundles' | 'bands'): PostconditionViolation[] {
   const out: PostconditionViolation[] = [];
   const add = (kind: PostconditionKind, subject: string, detail: string, ledger?: string): void => { out.push({ rule, kind, subject, detail, ...(ledger === undefined ? {} : { ledger }) }); };
   const attempt = (kind: PostconditionKind, run: () => void): void => {
-    try { run(); } catch (error) { add(kind, 'check', `the check could not read the draft: ${message(error)}`); }
+    try { run(); } catch (error) { add(kind, 'check', `the check could not read the draft: ${message(error)}`); caughtBy.set(out.at(-1)!, { value: error }); }
   };
   // Riser keep-out: no routed port stands deeper in a riser keep-out than it stood at entry.
   attempt('riserKeepOut', () => {
@@ -65,7 +67,7 @@ export function postconditionViolations(before: LayoutModel, after: LayoutModel,
   });
   // Lane sides: the lanes stand clear of every occupied box, and no group changed side of a lane it stood beside at entry and stands beside now.
   attempt('laneSide', () => {
-    try { validateLanes(after); } catch (error) { add('laneSide', 'lanes', message(error)); }
+    try { validateLanes(after); } catch (error) { add('laneSide', 'lanes', message(error)); caughtBy.set(out.at(-1)!, { value: error }); }
     const beside = (box: { y: number; height: number }, lane: { bounds: { y: number; height: number } }): boolean => box.y < lane.bounds.y + lane.bounds.height && lane.bounds.y < box.y + box.height;
     const straddles = (box: { x: number; width: number }, x: number): boolean => box.x < x && x < box.x + box.width;
     for (const lane of after.lanes) {
@@ -137,5 +139,7 @@ export function judgePostconditions(before: LayoutModel, after: LayoutModel, rul
   const found = postconditionViolations(before, after, rule);
   for (const violation of found) postconditionSink.hook?.(violation);
   const refused = found.filter(item => !advisory(item));
-  if (refused.length) throw new PostconditionRefusal(rule, refused);
+  // A finding built from a caught value makes the refusal a caught one: the first such value that is no placement reason, else the first.
+  const caught = refused.flatMap(item => caughtBy.get(item) ?? []);
+  if (refused.length) throw new PostconditionRefusal(rule, refused, caught.find(item => !qualifyingRefusal(item.value)) ?? caught[0]);
 }

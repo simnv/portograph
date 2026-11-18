@@ -169,3 +169,14 @@ it('refuses a fallback cell that is not 0 or 1 (dense-16x9 ticket 56, review 1)'
   expect(result.status).toBe(2);
   expect(String(result.stderr)).toContain('fallback is not 0 or 1');
 });
+
+it('judges an unlisted fallback on an unchanged row (dense-16x9 ticket 56, review 2: the reviewer\'s two pairs)', () => {
+  // Both TSVs hold the same row with fallback 1.
+  const persistent = compareFallback(fallbackRow('1'), fallbackRow('1'));
+  expect(persistent).toMatch(/fallback\s+1\s+1\s+WORSE/);
+  expect(persistent).toContain('worse: fallback 1');
+  // A base with no fallback column (read as 0) and otherwise equal cells.
+  const legacy = compareFallback(sheet(), fallbackRow('1'), HEADER);
+  expect(legacy).toMatch(/fallback\s+-\s+1\s+WORSE/);
+  expect(legacy).toContain('worse: fallback 1');
+});

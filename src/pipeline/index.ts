@@ -22,7 +22,7 @@ import { floatComponents } from '../layout/lift.js';
 import { resolve } from '../resolve/index.js';
 import type { Diagnostic, StaggerRow } from '../model/layout.js';
 import { defaultMeansOn, FALLBACK_STAGE, fallbackMessage, MOVE_BEFORE_GROW_FALLBACK, moveBeforeGrowMode } from '../layout/read/move-before-grow.js';
-import { isRefusalCode, PlacementRefusal } from '../layout/placement-refusal.js';
+import { qualifyingRefusal, type PlacementRefusal } from '../layout/placement-refusal.js';
 import { UNBOUNDED_BUDGET, type Budget } from './budget.js';
 
 export { MAX_RERUNS, PlacementBudgetExceeded } from './limits.js';
@@ -78,15 +78,14 @@ const withMoveBeforeGrow = (document: NormalisedDocument, on: boolean): Normalis
  * reason. A deadline (the command's, ELK's, or the caller's timeout) is no refusal and never falls back; a refusal falls back only while the
  * command budget has time left (`remainingMs() > 0`), and the option-off run spends what is left, so a deadline in it propagates.
  *
- * The rule reads the cause, not the wrapper (review 1, R6): a refusal that wraps another exception (`SkeletonError` of a tier attempt, the one
- * catch that wraps into a refusal) qualifies only when that cause is itself a qualifying refusal. A worker bug, a deadline or a timeout under it
- * ends the command.
+ * The rule reads the cause, not the wrapper (reviews 1 and 2, R6; `qualifyingRefusal`): a refusal built in a catch (the tier attempt of the
+ * skeleton, a postcondition check that cannot read its draft) carries the caught value, also `undefined`, and qualifies only when that value is
+ * itself a qualifying refusal. A worker bug, a reader exception, a deadline, a timeout or a rejection with no reason under it ends the command.
  */
 export function fallsBack(error: unknown, budget: Budget): error is PlacementRefusal {
   return qualifyingRefusal(error) && budget.remainingMs() > 0;
 }
-const qualifyingRefusal = (error: unknown): error is PlacementRefusal =>
-  error instanceof PlacementRefusal && isRefusalCode(error.code) && (error.cause === undefined || qualifyingRefusal(error.cause));
+
 
 /** One complete pipeline run; the width-budget trials share the caller's command deadline. */
 async function layoutOnce(document: NormalisedDocument, options: LayoutOptions, staggerRows?: StaggerRow[]): Promise<LayoutModel> {

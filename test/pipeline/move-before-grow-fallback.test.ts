@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CommandDeadlineError, layout, parse, ResolveError, restoreFinalLayout, serializeLayoutModel } from '../../src/index.js';
 import { fallsBack } from '../../src/pipeline/index.js';
 import { UNBOUNDED_BUDGET, type Budget } from '../../src/pipeline/budget.js';
-import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
+import { PlacementRefusal, PostconditionRefusal, qualifyingRefusal } from '../../src/layout/placement-refusal.js';
+import * as trunk from '../../src/layout/trunk.js';
+import * as lanesModule from '../../src/layout/lanes.js';
 import { ElkDeadlineError } from '../../src/layout/elk-worker.js';
 import { SkeletonError } from '../../src/layout/skeleton.js';
 import { restoreLayoutModel } from '../../src/layout/mutation.js';
@@ -262,4 +264,64 @@ describe('the restore refuses a run record the command cannot have written (dens
     expect(() => restoreLayoutModel(early(unknownCode))).toThrow(/is no refusal code/);
     expect(() => restoreLayoutModel(early(parseStage))).toThrow(/has the stage parse/);
   }, 300000);
+});
+
+/**
+ * Review 2 (R6): a refusal built in a catch carries the caught value, also `undefined`, and is no placement reason unless that value is one
+ * (`qualifyingRefusal`). The census of review 2 found three such catches that reach a default-on run: the tier attempt of the skeleton, and the
+ * two catches of the postcondition checks (a check that cannot read its draft; the lane validator of the lane-side check).
+ */
+describe('a refusal built from a caught value does not fall back unless that value is a placement reason (dense-16x9 ticket 56, review 2)', () => {
+  const TWO_GROUPS = 'portograph: 2\ngroups: {g: {tier: 0}, h: {tier: 1}}\nnodes: {a: {group: g}, b: {group: h}}\nlinks: [[a,b]]\n';
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('reads the caught marker, also for an undefined or null cause', () => {
+    const measured = new PlacementRefusal('centring', 'measured');
+    expect(measured.caught).toBe(false);
+    expect(qualifyingRefusal(measured)).toBe(true);
+    expect(qualifyingRefusal(new PlacementRefusal('skeleton', 'x', { cause: undefined }))).toBe(false);
+    expect(qualifyingRefusal(new PlacementRefusal('skeleton', 'x', { cause: null }))).toBe(false);
+    expect(qualifyingRefusal(new PlacementRefusal('skeleton', 'x', { cause: measured }))).toBe(true);
+    expect(qualifyingRefusal(new SkeletonError('x', undefined))).toBe(false);
+    expect(qualifyingRefusal(new SkeletonError('x'))).toBe(true);
+    expect(qualifyingRefusal(new PostconditionRefusal('bundles', [], { value: new TypeError('reader') }))).toBe(false);
+    expect(qualifyingRefusal(new PostconditionRefusal('bundles', [], { value: measured }))).toBe(true);
+    expect(qualifyingRefusal(new PostconditionRefusal('bundles', []))).toBe(true);
+  });
+
+  it('does not fall back on an ELK rejection with no reason under the tier fallback (the reviewer\'s Promise.reject())', async () => {
+    moveBeforeGrowDefaultTest.on = true;
+    let made = 0;
+    const createElkAttempt: typeof createAttempt = () => (++made <= 2 ? { terminateWorker() {}, layout: () => Promise.reject() } as unknown as ReturnType<typeof createAttempt> : createAttempt());
+    const error = await layout(parse(TWO_GROUPS), { ...factories, createElkAttempt }).then(() => undefined, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SkeletonError);
+    expect((error as SkeletonError).caught).toBe(true);
+    expect((error as SkeletonError).cause).toBeUndefined();
+    expect(made).toBe(2);
+  }, 120000);
+
+  // The reviewer's probe: a TypeError of `trunkHeads`, read by the bundles postcondition of the option-on run only.
+  const failIn = (pattern: string, make: () => Error) => <T extends (...args: never[]) => unknown>(real: T) => ((...args: Parameters<T>) => {
+    const model = args[0] as unknown as { document?: { layout?: { moveBeforeGrow?: boolean } } };
+    if (model.document?.layout?.moveBeforeGrow === true && new Error().stack?.includes(pattern)) throw make();
+    return real(...args);
+  }) as T;
+  for (const [site, mock] of [
+    ['a check that cannot read its draft (trunkHeads)', () => { const real = trunk.trunkHeads; vi.spyOn(trunk, 'trunkHeads').mockImplementation(failIn('postconditions.ts', () => new TypeError('trunk reader failed'))(real)); }],
+    ['the lane validator of the lane-side check (validateLanes)', () => { const real = lanesModule.validateLanes; vi.spyOn(lanesModule, 'validateLanes').mockImplementation(failIn('postconditions.ts', () => new TypeError('lane reader failed'))(real)); }],
+  ] as const) {
+    it(`does not fall back on a reader exception in a postcondition: ${site}`, async () => {
+      mock();
+      const strict = await layout(written(parse(TWO_GROUPS), true), factories).then(() => undefined, (caught: unknown) => caught);
+      expect(strict).toBeInstanceOf(PostconditionRefusal);
+      expect((strict as PostconditionRefusal).caught).toBe(true);
+      expect((strict as PostconditionRefusal).cause).toBeInstanceOf(TypeError);
+      moveBeforeGrowDefaultTest.on = true;
+      const error = await layout(parse(TWO_GROUPS), factories).then(() => undefined, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(PostconditionRefusal);
+      expect((error as PostconditionRefusal).cause).toBeInstanceOf(TypeError);
+      // The option-off run is unaffected by the mock and draws.
+      expect((await layout(written(parse(TWO_GROUPS), false), factories)).moveBeforeGrowRun).toBeUndefined();
+    }, 120000);
+  }
 });
