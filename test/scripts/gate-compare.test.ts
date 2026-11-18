@@ -148,3 +148,24 @@ it('flags a head-only sheet that falls back NEW-FAIL (dense-16x9 ticket 56)', ()
   expect(out).toMatch(/goldens\/new\.yaml\s+fallback\s+-\s+1\s+NEW-FAIL/);
   expect(out).toContain('worse: new-fail 1');
 });
+
+it('judges an unlisted fallback worse when the head recovers from a base error (dense-16x9 ticket 56, review 1)', () => {
+  const out = compareFallback('goldens/a.yaml\tERROR original failure', fallbackRow('1'));
+  expect(out).toMatch(/goldens\/a\.yaml\s+fallback\s+-\s+1\s+WORSE/);
+  expect(out).toContain('worse: fallback 1');
+});
+
+it('judges an unlisted fallback worse when the base had it too (dense-16x9 ticket 56, review 1)', () => {
+  const out = compareFallback(fallbackRow('1'), fallbackRow('1', { hash: 'bbbbbbbbbbbb' }));
+  expect(out).toMatch(/fallback\s+1\s+1\s+WORSE/);
+  expect(out).toContain('worse: fallback 1');
+});
+
+it('refuses a fallback cell that is not 0 or 1 (dense-16x9 ticket 56, review 1)', () => {
+  dir = mkdtempSync(join(tmpdir(), 'pg-compare-'));
+  writeFileSync(join(dir, 'base.tsv'), `${WITH_FALLBACK.join('\t')}\n${fallbackRow('0')}\n`);
+  writeFileSync(join(dir, 'head.tsv'), `${WITH_FALLBACK.join('\t')}\n${fallbackRow('yes')}\n`);
+  const result = spawnSync('node', [compareScript, join(dir, 'base.tsv'), join(dir, 'head.tsv')], { encoding: 'utf8' });
+  expect(result.status).toBe(2);
+  expect(String(result.stderr)).toContain('fallback is not 0 or 1');
+});

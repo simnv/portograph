@@ -23,8 +23,9 @@ export interface SkeletonOptions {
    */
   budget?: Budget;
 }
+/** A skeleton refusal. `cause`: the exception a tier attempt threw, when this refusal wraps one (dense-16x9 ticket 56: the fallback reads it). */
 export class SkeletonError extends PlacementRefusal {
-  constructor(message: string) { super('skeleton', message, { stage: 'skeleton' }); this.name = 'SkeletonError'; }
+  constructor(message: string, cause?: unknown) { super('skeleton', message, { stage: 'skeleton', ...(cause === undefined ? {} : { cause }) }); this.name = 'SkeletonError'; }
 }
 const copy = (model: LayoutModel): LayoutModel => JSON.parse(JSON.stringify(model)) as LayoutModel;
 
@@ -80,7 +81,7 @@ export async function skeleton(model: LayoutModel, options: SkeletonOptions = {}
           if (errors.length) throw new SkeletonError(errors.join('; '));
         } catch (error) {
           if (error instanceof ElkDeadlineError) { work.deadlineHit = true; throw error; }
-          throw new SkeletonError(`Fallback tier ${tier} failed: ${String(error)}`);
+          throw new SkeletonError(`Fallback tier ${tier} failed: ${String(error)}`, error);
         }
       }
       stackBands(work, false);

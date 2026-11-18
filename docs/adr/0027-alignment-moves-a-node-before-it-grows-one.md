@@ -208,7 +208,8 @@ false` keeps the clauses above for every row, for tests whose subject is one of 
 The option has three modes, read by one reader (`moveBeforeGrowMode`, `src/layout/read/move-before-grow.ts`): written `true` is strict and throws as
 before, written `false` is off, and a sheet that writes nothing takes the default (`DEFAULT_MEANS_ON`, false until ticket 45 flips it). In the
 default-on mode `layout` runs the whole command with the option on and writes the effective mode into the document of the run. When that run fails
-with a `PlacementRefusal` (any code, the centring invariant included) while the command budget has time left, it runs the complete input once more
+with a `PlacementRefusal` (any code of the closed set `REFUSAL_CODES`, the centring invariant included; a refusal that wraps another exception, the
+`SkeletonError` of a tier attempt, only when that cause qualifies too) while the command budget has time left, it runs the complete input once more
 with the option off: a fresh ledger, the ordinary pipeline with its width and lift selection and the publication fit, on what is left of the budget.
 Only that run's own validated result publishes, with the warning `MOVE_BEFORE_GROW_FALLBACK`, which names the first failure by code and message
 (R6), and the record `moveBeforeGrowRun` (`requested: default`, `effective: off`, the failure). A failure of that run propagates. A parse or

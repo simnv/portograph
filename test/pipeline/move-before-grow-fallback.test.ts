@@ -5,6 +5,9 @@ import { fallsBack } from '../../src/pipeline/index.js';
 import { UNBOUNDED_BUDGET, type Budget } from '../../src/pipeline/budget.js';
 import { PlacementRefusal } from '../../src/layout/placement-refusal.js';
 import { ElkDeadlineError } from '../../src/layout/elk-worker.js';
+import { SkeletonError } from '../../src/layout/skeleton.js';
+import { restoreLayoutModel } from '../../src/layout/mutation.js';
+import { resolve } from '../../src/resolve/index.js';
 import { defaultMeansOn, fallbackMessage, MOVE_BEFORE_GROW_FALLBACK, moveBeforeGrow, moveBeforeGrowDefaultTest, moveBeforeGrowMode } from '../../src/layout/read/move-before-grow.js';
 import type { LayoutModel, NormalisedDocument } from '../../src/model/index.js';
 import { reversed } from '../../scripts/r3-lib.mjs';
@@ -133,7 +136,34 @@ describe('the one reader of layout.moveBeforeGrow gives the mode (dense-16x9 tic
     expect(fallsBack(new CommandDeadlineError(1000, 'skeleton'), UNBOUNDED_BUDGET)).toBe(false);
     expect(fallsBack(new ElkDeadlineError(1000), UNBOUNDED_BUDGET)).toBe(false);
     expect(fallsBack(new Error('a bug'), UNBOUNDED_BUDGET)).toBe(false);
+    // Review 1, P1: the rule reads the cause, not the wrapper.
+    expect(fallsBack(new SkeletonError('Fallback tier 0 failed: bands overlap'), UNBOUNDED_BUDGET)).toBe(true);
+    expect(fallsBack(new SkeletonError('Fallback tier 0 failed', new SkeletonError('bands overlap')), UNBOUNDED_BUDGET)).toBe(true);
+    expect(fallsBack(new SkeletonError('Fallback tier 0 failed', new TypeError('worker smoke')), UNBOUNDED_BUDGET)).toBe(false);
+    expect(fallsBack(new SkeletonError('Fallback tier 0 failed', new CommandDeadlineError(100, 'worker')), UNBOUNDED_BUDGET)).toBe(false);
+    // A code outside the closed set is no refusal the command records.
+    expect(fallsBack(new PlacementRefusal('not-a-code' as 'centring', 'x'), UNBOUNDED_BUDGET)).toBe(false);
   });
+
+  // Review 1, P1 (R6): a worker exception under the skeleton's tier fallback is no placement reason, so the command ends with it; it does
+  // not publish the option-off run. The reviewer's three reproductions: the first two ELK attempts (the partitioned one and tier 0) throw.
+  const TWO = 'portograph: 2\ngroups: {g: {tier: 0}, h: {tier: 1}}\nnodes: {a: {group: g}, b: {group: h}}\nlinks: [[a,b]]\n';
+  const throwing: Record<string, () => Error> = {
+    TypeError: () => new TypeError('worker smoke'),
+    TimeoutError: () => new DOMException('upstream timeout', 'TimeoutError'),
+    CommandDeadlineError: () => new CommandDeadlineError(100, 'worker'),
+  };
+  for (const [kind, make] of Object.entries(throwing)) {
+    it(`does not fall back on a ${kind} of the ELK worker under the tier fallback`, async () => {
+      moveBeforeGrowDefaultTest.on = true;
+      let made = 0;
+      const createElkAttempt: typeof createAttempt = () => (++made <= 2 ? { terminateWorker() {}, layout() { throw make(); } } as unknown as ReturnType<typeof createAttempt> : createAttempt());
+      const error = await layout(parse(TWO), { ...factories, createElkAttempt }).then(() => undefined, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(SkeletonError);
+      expect(((error as SkeletonError).cause as Error).name).toBe(kind);
+      expect(made).toBe(2);
+    }, 120000);
+  }
 });
 
 describe('a default sheet runs as before while the default is off (dense-16x9 ticket 56)', () => {
@@ -213,5 +243,23 @@ describe('the restore refuses a run record the command cannot have written (dens
     expect(() => restoreFinalLayout(forge(forged => { delete forged.moveBeforeGrowRun; }))).toThrow(/a fallback warning without a record/);
     expect(() => restoreFinalLayout(forge(forged => { (forged.moveBeforeGrowRun as unknown as Record<string, unknown>).requested = 'strict'; }))).toThrow(/the requested mode is not default/);
     expect(() => restoreFinalLayout(forge(forged => { (forged.moveBeforeGrowRun as unknown as Record<string, unknown>).extra = 1; }))).toThrow(/unknown field/);
+    // Review 1, P2: a code outside the closed set, with a warning that matches it, and a warning of another stage, at both restore boundaries.
+    const unknownCode = (forged: LayoutModel): void => {
+      forged.moveBeforeGrowRun!.failure!.code = 'not-a-placement-refusal';
+      forged.diagnostics.find(note => note.code === MOVE_BEFORE_GROW_FALLBACK)!.message = fallbackMessage(forged.moveBeforeGrowRun!.failure!);
+    };
+    const parseStage = (forged: LayoutModel): void => { forged.diagnostics.find(note => note.code === MOVE_BEFORE_GROW_FALLBACK)!.stage = 'parse'; };
+    expect(() => restoreFinalLayout(forge(unknownCode))).toThrow(/the failure code not-a-placement-refusal is no refusal code/);
+    expect(() => restoreFinalLayout(forge(parseStage))).toThrow(/the fallback warning has the stage parse, not placement/);
+    const early = (change: (forged: LayoutModel) => void): string => {
+      const forged = JSON.parse(JSON.stringify(resolve(written(parse(S21), false)))) as LayoutModel;
+      forged.moveBeforeGrowRun = structuredClone(model.moveBeforeGrowRun!);
+      forged.diagnostics.push(structuredClone(model.diagnostics.find(note => note.code === MOVE_BEFORE_GROW_FALLBACK)!));
+      change(forged);
+      return JSON.stringify(forged);
+    };
+    expect(() => restoreLayoutModel(early(() => {}))).not.toThrow();
+    expect(() => restoreLayoutModel(early(unknownCode))).toThrow(/is no refusal code/);
+    expect(() => restoreLayoutModel(early(parseStage))).toThrow(/has the stage parse/);
   }, 300000);
 });

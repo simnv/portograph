@@ -21,8 +21,8 @@ import { decideLifts } from './lift-round.js';
 import { floatComponents } from '../layout/lift.js';
 import { resolve } from '../resolve/index.js';
 import type { Diagnostic, StaggerRow } from '../model/layout.js';
-import { defaultMeansOn, fallbackMessage, MOVE_BEFORE_GROW_FALLBACK, moveBeforeGrowMode } from '../layout/read/move-before-grow.js';
-import { PlacementRefusal } from '../layout/placement-refusal.js';
+import { defaultMeansOn, FALLBACK_STAGE, fallbackMessage, MOVE_BEFORE_GROW_FALLBACK, moveBeforeGrowMode } from '../layout/read/move-before-grow.js';
+import { isRefusalCode, PlacementRefusal } from '../layout/placement-refusal.js';
 import { UNBOUNDED_BUDGET, type Budget } from './budget.js';
 
 export { MAX_RERUNS, PlacementBudgetExceeded } from './limits.js';
@@ -56,7 +56,7 @@ export async function layout(document: NormalisedDocument, options: LayoutOption
       // One terminal retry of the whole input with the option off, on what is left of the command budget: a fresh ledger, the ordinary pipeline
       // (the width and lift selection too), and its own validation. It names the first failure (R6); its own failure propagates.
       const failure = { code: error.code, message: error.message };
-      const warning: Diagnostic = { stage: 'placement', severity: 'warning', code: MOVE_BEFORE_GROW_FALLBACK, message: fallbackMessage(failure), owners: [...error.owners] };
+      const warning: Diagnostic = { stage: FALLBACK_STAGE, severity: 'warning', code: MOVE_BEFORE_GROW_FALLBACK, message: fallbackMessage(failure), owners: [...error.owners] };
       return await command(withMoveBeforeGrow(document, false), { ...given, diagnostics: [...given.diagnostics ?? [], warning], moveBeforeGrowRun: { requested: 'default', effective: 'off', failure } });
     }
   } finally { close(); }
@@ -73,14 +73,20 @@ const withMoveBeforeGrow = (document: NormalisedDocument, on: boolean): Normalis
 
 /**
  * Whether a failure of the option-on run of a default-on sheet falls back to the option-off run (dense-16x9 ticket 56). A `PlacementRefusal`
- * does: any code, the centring invariant included, and the placement count (`PlacementBudgetExceeded`), since the option-off run counts its
- * own placements. Nothing else does: a parse or resolve error fails in both modes, and a bug is no placement reason. A deadline (the command's,
- * ELK's, or the caller's timeout) is no refusal and never falls back; a refusal falls back only while the command budget has time left
- * (`remainingMs() > 0`), and the option-off run spends what is left, so a deadline in it propagates.
+ * does: any code of the closed set (`REFUSAL_CODES`), the centring invariant included, and the placement count (`PlacementBudgetExceeded`),
+ * since the option-off run counts its own placements. Nothing else does: a parse or resolve error fails in both modes, and a bug is no placement
+ * reason. A deadline (the command's, ELK's, or the caller's timeout) is no refusal and never falls back; a refusal falls back only while the
+ * command budget has time left (`remainingMs() > 0`), and the option-off run spends what is left, so a deadline in it propagates.
+ *
+ * The rule reads the cause, not the wrapper (review 1, R6): a refusal that wraps another exception (`SkeletonError` of a tier attempt, the one
+ * catch that wraps into a refusal) qualifies only when that cause is itself a qualifying refusal. A worker bug, a deadline or a timeout under it
+ * ends the command.
  */
 export function fallsBack(error: unknown, budget: Budget): error is PlacementRefusal {
-  return error instanceof PlacementRefusal && budget.remainingMs() > 0;
+  return qualifyingRefusal(error) && budget.remainingMs() > 0;
 }
+const qualifyingRefusal = (error: unknown): error is PlacementRefusal =>
+  error instanceof PlacementRefusal && isRefusalCode(error.code) && (error.cause === undefined || qualifyingRefusal(error.cause));
 
 /** One complete pipeline run; the width-budget trials share the caller's command deadline. */
 async function layoutOnce(document: NormalisedDocument, options: LayoutOptions, staggerRows?: StaggerRow[]): Promise<LayoutModel> {

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { changedSheets, worseRows } from '../../scripts/gate-rows.mjs';
+import { changedSheets, newRemovals, worseRows } from '../../scripts/gate-rows.mjs';
 
 // Cells are two or more spaces apart, as gate:compare pads them.
 const row = (...cells: string[]): string => cells.join('  ');
@@ -29,4 +29,12 @@ it('reads the WORSE and NEW-FAIL rows of gate:compare output', () => {
 
 it('lists the sheets with a changed hash and the head-only sheets that did not fail to lay out, for the R3 report, sorted, once each', () => {
   expect(changedSheets(OUTPUT)).toEqual(['goldens/a.yaml', 'goldens/c.yaml', 'goldens/m.yaml']);
+});
+
+// Dense-16x9 ticket 56, review 1: a sweep row that falls back on an unlisted sheet fails the branch gate like a new removal.
+it('fails a sweep row that falls back to the option-off run on an unlisted sheet', () => {
+  expect(newRemovals('v1\tremoved=-\n', 'v1\tremoved=-\tfallback=centring\n')).toEqual(['v1:fallback=centring']);
+  expect(newRemovals('v1\tremoved=-\tfallback=centring\n', 'v1\tremoved=-\tfallback=centring\n')).toEqual(['v1:fallback=centring']);
+  expect(newRemovals('v1\tremoved=-\n', 'v1\tremoved=-\n')).toEqual([]);
+  expect(newRemovals('v1\tremoved=-\n', 'v1\tremoved=l1\n')).toEqual(['v1:l1']);
 });

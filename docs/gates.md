@@ -39,7 +39,7 @@ The corpus file has a header line and these columns: `file Q X Xf W gates warn r
 
 A sheet that fails to lay out gets `<file>\tERROR <message>`.
 
-`gate:compare` marks `WORSE` a cell that judges a sheet worse, in this order: `error`, `bends`, `removed`, `gates`, `crossings`, `canvas`, `labelBorder`, `track`, `fallback`. A `fallback` is worse when the base has none and `FALLBACK_SHEETS` (`scripts/gate-lib.mjs`, empty today) does not list the sheet. A sheet that only the head has is judged on its own: an `ERROR` or `TIMEOUT` row, a `gates` cell that is not `-`, `removed` above 0, or an unlisted `fallback` marks it `NEW-FAIL`.
+`gate:compare` marks `WORSE` a cell that judges a sheet worse, in this order: `error`, `bends`, `removed`, `gates`, `crossings`, `canvas`, `labelBorder`, `track`, `fallback`. A `fallback` is worse whatever the base when `FALLBACK_SHEETS` (`scripts/gate-lib.mjs`, empty today) does not list the sheet (`unlistedFallback`, on a changed row and on a row that recovers from a base error); a sweep row with `fallback=<code>` on an unlisted sheet fails `gate:branch` like a new removed link. A sheet that only the head has is judged on its own: an `ERROR` or `TIMEOUT` row, a `gates` cell that is not `-`, `removed` above 0, or an unlisted `fallback` marks it `NEW-FAIL`.
 
 ## Before a merge request: `gate:branch`
 

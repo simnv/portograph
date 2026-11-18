@@ -22,7 +22,7 @@ import { cpSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { COLUMNS, COLUMNS_BEFORE_FALLBACK, ROOT } from './gate-lib.mjs';
-import { changedSheets, worseRows } from './gate-rows.mjs';
+import { changedSheets, newRemovals, worseRows } from './gate-rows.mjs';
 
 /** At most this many changed sheets get the R3 report; each takes three layouts. */
 const R3_MAX = 40;
@@ -118,26 +118,6 @@ function checkR3(files) {
   }).map((line) => { const [sheet, kind] = line.split('\t'); return `r3 ${kind} ${sheet}`; });
 }
 
-/** Links a sweep file removes that the base sweep did not, as `name:id`; a new ERROR or TIMEOUT counts as one. */
-function newRemovals(baseText, headText) {
-  const parse = (text) => new Map(text.split('\n').filter(Boolean).map((line) => {
-    const [name, rest = ''] = line.split('\t');
-    return [name, rest];
-  }));
-  const ids = (value) => (value === undefined || !value.startsWith('removed=') ? [] : value.slice(8).split(',').filter((id) => id !== '-' && id !== ''));
-  const base = parse(baseText);
-  const found = [];
-  for (const [name, rest] of parse(headText)) {
-    const before = base.get(name);
-    if (rest.startsWith('ERROR') || rest.startsWith('TIMEOUT')) {
-      if (before !== rest) found.push(`${name}:${rest}`);
-      continue;
-    }
-    const known = new Set(ids(before));
-    for (const id of ids(rest)) if (!known.has(id)) found.push(`${name}:${id}`);
-  }
-  return found;
-}
 
 const CANARY_SHEETS = [
   'goldens/real/avd-dual-dc-l3ls.yaml',
@@ -232,7 +212,7 @@ function main(argv) {
 
   const diff = run('diff', [baseSweep, headSweep]);
   say(diff.stdout.trim() === '' ? 'sweep: no change' : `sweep diff:\n${diff.stdout.trimEnd()}`);
-  for (const removal of newRemovals(readFileSync(baseSweep, 'utf8'), readFileSync(headSweep, 'utf8'))) reasons.push(`new removed link ${removal}`);
+  for (const removal of newRemovals(readFileSync(baseSweep, 'utf8'), readFileSync(headSweep, 'utf8'))) reasons.push(removal.includes(':fallback=') ? `unlisted fallback ${removal}` : `new removed link ${removal}`);
   return reasons;
 }
 

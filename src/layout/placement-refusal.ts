@@ -9,7 +9,10 @@ import type { Owner } from '../model/index.js';
  * What refused: a side hint, a course, a span corridor, a trunk join, the centring invariant, the skeleton (ELK), a bundle path, the placement budget, a reservation of
  * the ledger, a stagger reservation (its seat, its stage-5 proof or its validator; ticket 51), a solid block, or a producer postcondition of 7e or 7f (DR-11).
  */
-export type RefusalCode = 'side' | 'course' | 'span' | 'trunk' | 'centring' | 'skeleton' | 'bundle' | 'budget' | 'ledger' | 'stagger' | 'solid-block' | 'postcondition';
+export const REFUSAL_CODES = ['side', 'course', 'span', 'trunk', 'centring', 'skeleton', 'bundle', 'budget', 'ledger', 'stagger', 'solid-block', 'postcondition'] as const;
+export type RefusalCode = typeof REFUSAL_CODES[number];
+/** Whether `code` is one of the closed set of refusal codes (`REFUSAL_CODES`). */
+export const isRefusalCode = (code: unknown): code is RefusalCode => typeof code === 'string' && (REFUSAL_CODES as readonly string[]).includes(code);
 
 export interface RefusalDetail {
   /** The pipeline or model stage that refused, when the source knows it. */

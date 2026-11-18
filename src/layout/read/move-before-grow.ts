@@ -1,5 +1,6 @@
 import type { LayoutModel } from '../../model/layout.js';
 import type { NormalisedDocument } from '../../model/document.js';
+import { isRefusalCode } from '../placement-refusal.js';
 
 /**
  * What the sheet asks of `layout.moveBeforeGrow` (dense-16x9 ticket 56): `strict` when it writes `true` (a failure of the run throws), `off` when
@@ -41,6 +42,8 @@ export function moveBeforeGrow(model: Pick<LayoutModel, 'document'>): boolean {
 
 /** The warning of a command that published the option-off run of a default-on sheet (dense-16x9 ticket 56). */
 export const MOVE_BEFORE_GROW_FALLBACK = 'MOVE_BEFORE_GROW_FALLBACK';
+/** The stage of that warning: `layout` writes it, the record check reads it. */
+export const FALLBACK_STAGE = 'placement';
 
 /** The text of the fallback warning (`MOVE_BEFORE_GROW_FALLBACK`): it names the failure of the option-on run by code and message. */
 export function fallbackMessage(failure: { code: string; message: string }): string {
@@ -70,7 +73,9 @@ export function moveBeforeGrowRunFault(model: Pick<LayoutModel, 'document' | 'di
   const failure = run.failure;
   if (typeof failure !== 'object' || failure === null || Object.keys(failure).sort().join(',') !== 'code,message'
     || typeof failure.code !== 'string' || typeof failure.message !== 'string') return 'the failure is not a code and a message';
+  if (!isRefusalCode(failure.code)) return `the failure code ${failure.code} is no refusal code`;
   if (written !== false) return 'an off run whose document does not hold layout.moveBeforeGrow: false';
   if (warnings.length !== 1 || warnings[0]!.severity !== 'warning' || warnings[0]!.message !== fallbackMessage(failure)) return 'an off run that does not name its failure once';
+  if (warnings[0]!.stage !== FALLBACK_STAGE) return `the fallback warning has the stage ${warnings[0]!.stage}, not ${FALLBACK_STAGE}`;
   return undefined;
 }

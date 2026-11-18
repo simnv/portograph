@@ -24,10 +24,20 @@ export const COLUMNS = ['file', 'Q', 'X', 'Xf', 'W', 'gates', 'warn', 'routed', 
  */
 export const COLUMNS_BEFORE_FALLBACK = COLUMNS.filter((column) => column !== 'fallback');
 /**
- * The sheets that may fall back to the option-off run of `layout.moveBeforeGrow` (dense-16x9 ticket 56), each with its reason. A sheet that
- * falls back and is not listed is worse in `gate:compare` (and a head-only one fails), so a new class of failure shows up. None today.
+ * The sheets that may fall back to the option-off run of `layout.moveBeforeGrow` (dense-16x9 ticket 56), each with its reason: a corpus sheet by
+ * its path, a sweep sheet by its name. A sheet that falls back and is not listed fails the gate on every path (`unlistedFallback`), so a new class
+ * of failure shows up. None today.
  */
 export const FALLBACK_SHEETS = new Map();
+
+/**
+ * Whether `value`, the fallback of `sheet` (the corpus `fallback` cell, or the refusal code of a sweep `fallback=` field), is a fallback that
+ * `FALLBACK_SHEETS` does not list (review 1 of ticket 56). The one rule of every path: a corpus row changed, recovered from an error or only in
+ * the head, and a sweep row. Absent, `0` and an empty field are no fallback.
+ */
+export function unlistedFallback(sheet, value) {
+  return value !== undefined && value !== '' && value !== '0' && !FALLBACK_SHEETS.has(sheet);
+}
 
 /** The repository root, as a path. */
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));

@@ -17,12 +17,12 @@
  *
  * Worse means: more bends; more removed links; a gate id with a violation that the base did not
  * have; more crossings; a larger canvas area; more label border crossings; more overlay run pairs on one track; a fallback to the option-off run
- * of `layout.moveBeforeGrow` that the base did not have, on a sheet `FALLBACK_SHEETS` does not list (dense-16x9 ticket 56; a base with no
- * `fallback` column reads as 0).
+ * of `layout.moveBeforeGrow` on a sheet `FALLBACK_SHEETS` does not list (dense-16x9 ticket 56, `unlistedFallback`), whatever the base: a
+ * changed row, a row that recovers from a base error, and a head-only row alike. A base with no `fallback` column reads as 0.
  */
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
-import { COLUMNS, FALLBACK_SHEETS } from './gate-lib.mjs';
+import { COLUMNS, unlistedFallback } from './gate-lib.mjs';
 
 const JUDGED = ['bends', 'removed', 'gates', 'crossings', 'canvas', 'labelBorder', 'track', 'fallback'];
 /** The flag of a sheet that only the head has, judged on its own. */
@@ -58,6 +58,7 @@ function parseTsv(path) {
     }
     if (fields.length !== columns.length) throw new ParseError(`${path}:${index + 2}: ${fields.length} fields, header has ${columns.length}`);
     const cells = Object.fromEntries(columns.map((column, position) => [column, fields[position]]));
+    if ('fallback' in cells && !/^[01]$/.test(cells.fallback)) throw new ParseError(`${path}:${index + 2}: fallback is not 0 or 1: ${cells.fallback}`);
     for (const column of ['bends', 'removed', 'X', 'Xf', 'labelBorder', 'track']) {
       if (column in cells && !/^\d+$/.test(cells[column])) throw new ParseError(`${path}:${index + 2}: ${column} is not a count: ${cells[column]}`);
     }
@@ -71,7 +72,7 @@ function parseTsv(path) {
 function newFailures(row, file) {
   if (row.error !== undefined) return [['(sheet)', row.error]];
   const failures = [];
-  if ('fallback' in row.cells && row.cells.fallback !== '0' && !FALLBACK_SHEETS.has(file)) failures.push(['fallback', row.cells.fallback]);
+  if (unlistedFallback(file, row.cells.fallback)) failures.push(['fallback', row.cells.fallback]);
   if ('gates' in row.cells && row.cells.gates !== '-') failures.push(['gates', row.cells.gates]);
   if ('removed' in row.cells && Number(row.cells.removed) > 0) failures.push(['removed', row.cells.removed]);
   return failures;
@@ -91,7 +92,7 @@ function flags(base, head, file) {
   if (both('W') && head.W !== '-' && base.W !== '-' && area(head.W) > area(base.W)) worse.push('canvas');
   if (both('labelBorder') && Number(head.labelBorder) > Number(base.labelBorder)) worse.push('labelBorder');
   if (both('track') && Number(head.track) > Number(base.track)) worse.push('track');
-  if ('fallback' in head && Number(head.fallback) > Number(base.fallback ?? '0') && !FALLBACK_SHEETS.has(file)) worse.push('fallback');
+  if (unlistedFallback(file, head.fallback)) worse.push('fallback');
   return worse;
 }
 
@@ -117,12 +118,14 @@ function compare(base, head) {
       if (b.error === h.error) continue;
       cells.push(['(sheet)', b.error ?? 'ok', h.error ?? 'ok']);
       if (h.error !== undefined && b.error === undefined) sheetFlags = ['error'];
+      // A head that recovers from a base error is judged on its fallback all the same (review 1 of ticket 56).
+      if (h.error === undefined && unlistedFallback(file, h.cells.fallback)) { cells.push(['fallback', '-', h.cells.fallback]); sheetFlags = ['fallback']; }
     } else {
       cells = columns.filter((column) => b.cells[column] !== h.cells[column]).map((column) => [column, b.cells[column], h.cells[column]]);
-      // A base written before the fallback column reads as 0 there (dense-16x9 ticket 56).
-      if (!('fallback' in b.cells) && 'fallback' in h.cells && h.cells.fallback !== '0') cells.push(['fallback', '-', h.cells.fallback]);
       if (cells.length === 0) continue;
       sheetFlags = flags(b.cells, h.cells, file);
+      // An unlisted fallback shows as a cell even when the base has it too, or has no column (read as 0; dense-16x9 ticket 56).
+      if (sheetFlags.includes('fallback') && !cells.some(([column]) => column === 'fallback')) cells.push(['fallback', b.cells.fallback ?? '-', h.cells.fallback]);
     }
     changed++;
     if (cells.some(([column]) => column === 'hash')) geometry++;
