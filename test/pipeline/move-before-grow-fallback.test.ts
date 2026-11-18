@@ -20,7 +20,13 @@ import { createAvoidAttempt } from '../route/fixture.js';
 const factories = { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt };
 afterEach(() => { delete moveBeforeGrowDefaultTest.on; });
 
-/** The reviewer's two-line variant of ticket 46a (review 1, P1), with the option line left out: the mode is the default. */
+/**
+ * The reviewer's two-line variant of the cause-(a) fixture of ticket 46 (review 1 of 46a, P1), with the option line left out: the mode is the
+ * default. `core` holds three feeds of `edge` and two overlays, `spare` an author size and two feeds of `edge`. Written `true`, it throws the
+ * centring invariant before the chord freeze as written and with links reversed (the frozen bound of cause a does not reach it), and draws with
+ * nodes reversed. This file is the one place of the sheet: ticket 56 answers it with the fallback, and a producer fix (ticket 53) changes
+ * `STRICT_THROWS`.
+ */
 const S21 = `portograph: 2
 profile: network
 title: A two-line row unit
@@ -88,6 +94,9 @@ links:
     - edge
     - {}
 `;
+/** The orders whose strict run (`moveBeforeGrow: true` written) throws today, and the throw. */
+const STRICT_THROWS: Record<string, boolean> = { 'as written': true, 'links reversed': true, 'nodes reversed': false };
+const S21_THROW = /Centring invariant violated: link-4: the row unit of other stands off its seat: a replay of its tier moves other/;
 const written = (document: NormalisedDocument, on: boolean): NormalisedDocument => ({ ...document, layout: { ...document.layout, moveBeforeGrow: on } });
 const orders = (yaml: string): Record<string, string> => ({ 'as written': yaml, 'links reversed': reversed(yaml, 'links') as string, 'nodes reversed': reversed(yaml, 'nodes') as string });
 
@@ -138,15 +147,17 @@ describe('a default sheet runs as before while the default is off (dense-16x9 ti
 
 describe('a default-on sheet whose option-on run fails publishes the option-off run (dense-16x9 ticket 56)', () => {
   for (const [name, yaml] of Object.entries(orders(S21))) {
-    it(`s21 ${name}: the option-off run plus the warning, or the option-on run when it draws; a sheet that writes true is strict`, async () => {
+    it(`s21 ${name}: ${STRICT_THROWS[name] ? 'written true throws; unset, the option-off run plus the warning' : 'written true draws; unset, the option-on run'}`, async () => {
       const base = parse(yaml);
       let refusal: unknown;
       const strict = await layout(written(base, true), factories).catch((error: unknown) => { refusal = error; return undefined; });
+      expect(strict === undefined).toBe(STRICT_THROWS[name]);
       const off = await layout(written(base, false), factories);
       moveBeforeGrowDefaultTest.on = true;
       const model = await layout(base, factories);
       if (strict === undefined) {
         expect(refusal).toBeInstanceOf(PlacementRefusal);
+        expect(String((refusal as Error).message)).toMatch(S21_THROW);
         const failure = { code: (refusal as PlacementRefusal).code, message: (refusal as PlacementRefusal).message };
         expect(model.moveBeforeGrowRun).toEqual({ requested: 'default', effective: 'off', failure });
         expect(model.document.layout?.moveBeforeGrow).toBe(false);
@@ -160,12 +171,6 @@ describe('a default-on sheet whose option-on run fails publishes the option-off 
       expect(() => restoreFinalLayout(serializeLayoutModel(model))).not.toThrow();
     }, 300000);
   }
-
-  it('s21 as written falls back today: the strict run throws the centring invariant', async () => {
-    await expect(layout(written(parse(S21), true), factories)).rejects.toThrow(/Centring invariant violated/);
-    moveBeforeGrowDefaultTest.on = true;
-    expect((await layout(parse(S21), factories)).moveBeforeGrowRun?.effective).toBe('off');
-  }, 300000);
 
   it('does not fall back when the command budget has no time left', async () => {
     let spent = false;
