@@ -4,7 +4,8 @@
 # the group-edge margin, as G6 reads it, so the row stands at least the margin below the frame edge. Before the ticket the plan read the
 # frame box of a canton only: the row stood 5.75 px below the edge of `east` (G6 segment-group-edge, link-7 with east).
 # Also G5 port-order on l0 (the far-end order the routed trial declines): ticket 49, not this ticket.
-# Test: test/layout/frame-edge-rows.test.ts.
+# Staged, not in goldens/synthetic: the sheet keeps ticket 49's G5, and the corpus gate takes a new sheet with an error finding as a failure.
+# Test-only input owned by dense-16x9 ticket 52; test/layout/frame-edge-rows.test.ts reads it.
 portograph: 2
 layout: { moveBeforeGrow: true }
 groups:

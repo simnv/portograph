@@ -13,7 +13,7 @@ import { createAvoidAttempt } from '../route/fixture.js';
  * gap plan read the frame box of a canton only, and seated the turn row of `eastg` > `l1` 5.75 px below the edge of `east` (G6
  * segment-group-edge). The sheet's G5 on l0 is ticket 49's, and the G9 of its `nodes` order is ticket 48's: neither is asserted here.
  */
-const yaml = readFileSync(new URL('../../goldens/synthetic/a-tier-gap-row-keeps-the-margin-of-a-frame-edge.yaml', import.meta.url), 'utf8');
+const yaml = readFileSync(new URL('../fixtures/staged/a-tier-gap-row-keeps-the-margin-of-a-frame-edge.yaml', import.meta.url), 'utf8');
 const orders = { 'as written': yaml, 'links reversed': reversed(yaml, 'links') as string, 'nodes reversed': reversed(yaml, 'nodes') as string };
 const run = (text: string): Promise<LayoutModel> => layout(parse(text), { createElkAttempt: createAttempt, createRouteAttempt: createAvoidAttempt });
 
