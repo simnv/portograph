@@ -9,6 +9,7 @@ import { PLACEMENT_EPS } from '../layout/tolerance.js';
 import { pathBends } from '../layout/objective.js';
 import { isDeadlineError } from './deadline.js';
 import { chordHubOf } from '../layout/read/stagger.js';
+import { carryFit } from './publication-fit.js';
 
 type Run = (document: NormalisedDocument, options: LayoutOptions, rows?: StaggerRow[]) => Promise<LayoutModel>;
 
@@ -70,5 +71,7 @@ export async function fitWidthBudget(input: NormalisedDocument, options: LayoutO
   if (best.canvas!.width > budget) notes.push({ stage: 'placement', severity: 'warning', code: 'WIDTH_BUDGET_UNMET',
     message: `The narrowest valid result tried is ${best.canvas!.width.toFixed(2)} px wide; the width budget is ${budget} px.` });
   if (best !== first) notes.unshift(...liftNotes);
-  return notes.length === 0 ? best : restoreLayoutModel(JSON.stringify({ ...best, diagnostics: [...best.diagnostics, ...notes] }));
+  // The publication fit of the run picked is the command's (`carryFit`, dense-16x9 ticket 42 review 1); the trials were judged without it.
+  const decorate = (model: LayoutModel): LayoutModel => restoreLayoutModel(JSON.stringify({ ...model, diagnostics: [...model.diagnostics, ...notes] }));
+  return notes.length === 0 ? best : carryFit(best, decorate(best), decorate);
 }

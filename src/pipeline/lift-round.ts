@@ -13,6 +13,7 @@ import { restoreLayoutModel } from '../layout/mutation.js';
 import { serializeLayoutModel } from '../model/model.js';
 import { isDeadlineError } from './deadline.js';
 import { PlacementRefusal } from '../layout/placement-refusal.js';
+import { carryFit } from './publication-fit.js';
 
 /**
  * The lift decision of one command whose document has a float component in the first slice (`layoutOnce` runs any other document once,
@@ -95,8 +96,12 @@ export async function decideLifts(document: LayoutModel['document'], options: La
     }
   }
   // The published geometry is the best run's; its record and notes become the command's (declined entries move no band).
-  const copy = JSON.parse(serializeLayoutModel(best)) as LayoutModel;
-  copy.groupLifts = record;
-  copy.diagnostics.push(...notes);
-  return restoreLayoutModel(JSON.stringify(copy));
+  const decorate = (model: LayoutModel): LayoutModel => {
+    const copy = JSON.parse(serializeLayoutModel(model)) as LayoutModel;
+    copy.groupLifts = record;
+    copy.diagnostics.push(...notes);
+    return restoreLayoutModel(JSON.stringify(copy));
+  };
+  // The publication fit of the best run is the command's (`carryFit`, dense-16x9 ticket 42 review 1); the trials were judged without it.
+  return carryFit(best, decorate(best), decorate);
 }

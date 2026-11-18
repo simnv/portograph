@@ -15,6 +15,7 @@ import { openRowReadingMemo } from '../layout/label-room-guard.js';
 import { firstState } from './initial.js';
 import { chooseFlatGapsAgain, drive, refuseCrowdedChords } from './driver.js';
 import { publish } from './publish.js';
+import { fitPublication, offerFit } from './publication-fit.js';
 import { fitWidthBudget } from './width-budget.js';
 import { decideLifts } from './lift-round.js';
 import { floatComponents } from '../layout/lift.js';
@@ -37,7 +38,8 @@ export type { LayoutOptions, LayoutProgress } from './options.js';
  * normalised document no longer holds, so the order cannot be derived again here.
  */
 export async function layout(document: NormalisedDocument, options: LayoutOptions = {}): Promise<LayoutModel> {
-  const run = (): Promise<LayoutModel> => document.layout?.maxWidth !== undefined ? fitWidthBudget(document, options, layoutOnce) : layoutOnce(document, options);
+  // The publication fit (the final flat-gap choice, dense-16x9 ticket 42) runs once, on the run the command publishes (`fitPublication`).
+  const run = async (): Promise<LayoutModel> => fitPublication(await (document.layout?.maxWidth !== undefined ? fitWidthBudget(document, options, layoutOnce) : layoutOnce(document, options)));
   // The row reading memo lives while the command runs (dense-16x9 ticket 21).
   const close = openRowReadingMemo();
   try { return await (options.checkCaches ? checkReadCaches(run, options.checkCaches === 'sampled' ? 'sampled' : 'all') : run()); } finally { close(); }
@@ -58,7 +60,8 @@ async function layoutOnce(document: NormalisedDocument, options: LayoutOptions, 
   await drive(env, state);
   // The state to publish: a held chord the plan names crowded falls back before a gate finding is published (one bounded replay).
   await refuseCrowdedChords(env, state);
-  // The flat gaps chosen once more on the sheet the rounds left (dense-16x9 ticket 42): after the last step that changes the sheet.
-  await chooseFlatGapsAgain(env, state);
-  return publish(env, state);
+  const model = await publish(env, state);
+  // The flat gaps chosen once more on the sheet the rounds left (dense-16x9 ticket 42): after the last step that changes the sheet, and only on
+  // the run the command publishes (review 1): a lift or width trial is judged on `model`. A choice that ran publishes once more.
+  return offerFit(model, async () => await chooseFlatGapsAgain(env, state) ? publish(env, state) : model);
 }
