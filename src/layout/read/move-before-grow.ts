@@ -12,12 +12,11 @@ import { FINAL_STAGES } from '../mutation.js';
 export type MoveBeforeGrowMode = 'strict' | 'off' | 'default';
 
 /**
- * Whether a sheet that does not write `layout.moveBeforeGrow` runs with it on (ADR-0027). False: the option is an opt-in. Ticket 45 flips the
- * default by setting this to `true`; from then on `layout` runs such a sheet with the option on and falls back to the option-off run when that run
- * fails for a placement reason (ticket 56), and chooses the option-off run on the whole sheet when that run completed with a seat short (the growth
- * choice, ticket 60; both in `pipeline/index.ts`).
+ * Whether a sheet that does not write `layout.moveBeforeGrow` runs with it on (ADR-0027). True since 0.3.0 (dense-16x9 ticket 45): `layout` runs
+ * such a sheet with the option on, falls back to the option-off run when that run fails for a placement reason (ticket 56), and chooses the
+ * option-off run on the whole sheet when that run completed with a seat short (the growth choice, ticket 60; both in `pipeline/index.ts`).
  */
-const DEFAULT_MEANS_ON = false;
+const DEFAULT_MEANS_ON = true;
 
 /** Test only (dense-16x9 ticket 56): `on` replaces `DEFAULT_MEANS_ON`, so a test reaches the default-on mode through this one reader. */
 export const moveBeforeGrowDefaultTest: { on?: boolean } = {};
